@@ -2370,6 +2370,224 @@ export interface paths {
                         requestId: string;
                         command: {
                             /** @enum {string} */
+                            operation: "mcp.clients.list";
+                            /** Format: uuid */
+                            before?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "mcp.clients.put";
+                            /** Format: uuid */
+                            clientId: string;
+                            configuration: {
+                                name: string;
+                                enabled: boolean;
+                                redirectUris: string[];
+                                scopes: string[];
+                                worldIds: string[] | null;
+                            };
+                            expectedVersion: number;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "mcp.grants.list";
+                            /** Format: uuid */
+                            before?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "mcp.grants.revoke";
+                            /** Format: uuid */
+                            grantId: string;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "worlds.list";
+                            /** Format: uuid */
+                            before?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "worlds.read";
+                            /** Format: uuid */
+                            worldId: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "worlds.records";
+                            /** Format: uuid */
+                            worldId: string;
+                            before?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "worlds.create";
+                            prompt: string;
+                            budgetUsd: number;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "worlds.command";
+                            /** Format: uuid */
+                            worldId: string;
+                            command: {
+                                /** @enum {string} */
+                                command: "advance";
+                                /** @description 管理者が追加する期間。ミリ秒表記で、1日以上かつ1日の整数倍 */
+                                duration: number;
+                            } | {
+                                /** @enum {string} */
+                                command: "resume" | "finish";
+                            };
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "worlds.graph";
+                            /** Format: uuid */
+                            worldId: string;
+                            query: {
+                                /** @enum {string} */
+                                kind: "edge";
+                                /** Format: uuid */
+                                id: string;
+                            } | {
+                                /** @enum {string} */
+                                kind: "nodes";
+                                /** Format: uuid */
+                                after?: string;
+                            } | {
+                                /** @enum {string} */
+                                kind: "node";
+                                /** Format: uuid */
+                                id: string;
+                                at?: number;
+                            } | {
+                                /** @enum {string} */
+                                kind: "relations";
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                relation: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+                                /** @enum {string} */
+                                direction: "in" | "out";
+                                at: number;
+                                through?: number;
+                                /** Format: uuid */
+                                after?: string;
+                            } | {
+                                /** @enum {string} */
+                                kind: "history";
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                relation: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+                                /** @enum {string} */
+                                direction: "in" | "out";
+                                through: number;
+                                /** @default 0 */
+                                from?: number;
+                                after?: {
+                                    from: number;
+                                    /** Format: uuid */
+                                    id: string;
+                                };
+                            } | {
+                                /** @enum {string} */
+                                kind: "receipts";
+                                /** Format: uuid */
+                                after?: string;
+                            };
+                        } | {
+                            /** @enum {string} */
+                            operation: "worlds.edit";
+                            /** Format: uuid */
+                            worldId: string;
+                            at: number;
+                            dependencies: {
+                                key: string;
+                                version: number;
+                            }[];
+                            changes: {
+                                nodes: ({
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @description 同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す */
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "existence";
+                                } | {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "script";
+                                } | {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "event";
+                                    period: {
+                                        from: number;
+                                        until?: number;
+                                    };
+                                })[];
+                                /** @default [] */
+                                revisions?: ({
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @description 同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す */
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "existence";
+                                } | {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "script";
+                                } | {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "event";
+                                    period: {
+                                        from: number;
+                                        until?: number;
+                                    };
+                                })[];
+                                edges: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    kind: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+                                    /** Format: uuid */
+                                    source: string;
+                                    /** Format: uuid */
+                                    target: string;
+                                    /** @enum {string} */
+                                    role?: "content" | "about";
+                                    /** @description 関係の内容。seeではその存在に提示できる受容内容の本文 */
+                                    text?: string;
+                                    period: {
+                                        from: number;
+                                        until?: number;
+                                    };
+                                    observation?: {
+                                        /** @description 受容した側面・範囲。textがない場合は、受容内容の本文も含める */
+                                        aspect: string;
+                                        through: number;
+                                        /** @default [] */
+                                        sourceIds?: string[];
+                                        /** @default [] */
+                                        pathIds?: string[];
+                                        /** @description サーバーが確定時に保存する版。モデルからの値は使用しない */
+                                        versions?: {
+                                            [key: string]: number;
+                                        };
+                                    };
+                                }[];
+                                endEdges: string[];
+                            };
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
                             operation: "backups.read";
                         } | {
                             /** @enum {string} */

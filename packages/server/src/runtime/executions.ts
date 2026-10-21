@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
+import { McpOrigin, type McpPermission } from "../http/mcp-origin.js";
 import { RuntimeStopped } from "./control.js";
 
 type Kind = "construction" | "scene" | "join";
@@ -76,34 +77,43 @@ export class RuntimeExecutions {
       if (acquired) break;
       await delay(500);
     }
-    return scope.run({ kind, id, token }, async () => {
-      let failed = false,
-        code: string | null = null;
-      try {
-        return await work();
-      } catch (error) {
-        failed = true;
-        code =
-          error instanceof RuntimeStopped ? error.code : "EXECUTION_FAILED";
-        throw error;
-      } finally {
-        await pool.query(
-          `WITH done AS (UPDATE runtime_execution SET state=$4,error_code=$5,finished_at=now()
+    const origin =
+      (
+        await pool.query<{ permission: McpPermission | null }>(
+          "SELECT permission FROM mcp_execution WHERE kind=$1 AND id=$2",
+          [kind, id],
+        )
+      ).rows[0]?.permission ?? null;
+    return McpOrigin.run(origin, () =>
+      scope.run({ kind, id, token }, async () => {
+        let failed = false,
+          code: string | null = null;
+        try {
+          return await work();
+        } catch (error) {
+          failed = true;
+          code =
+            error instanceof RuntimeStopped ? error.code : "EXECUTION_FAILED";
+          throw error;
+        } finally {
+          await pool.query(
+            `WITH done AS (UPDATE runtime_execution SET state=$4,error_code=$5,finished_at=now()
           WHERE kind=$1 AND id=$2 AND token=$3 RETURNING extract(epoch FROM now()-started_at)*1000 AS latency)
           INSERT INTO runtime_metric(at,completed,failed,latency_ms) SELECT date_trunc('minute',now()),1,$6,ceil(latency)::bigint FROM done
           ON CONFLICT(at) DO UPDATE SET completed=runtime_metric.completed+1,failed=runtime_metric.failed+$6,
           latency_ms=greatest(runtime_metric.latency_ms,excluded.latency_ms)`,
-          [
-            kind,
-            id,
-            token,
-            failed ? "paused" : "finished",
-            code,
-            failed ? 1 : 0,
-          ],
-        );
-      }
-    });
+            [
+              kind,
+              id,
+              token,
+              failed ? "paused" : "finished",
+              code,
+              failed ? 1 : 0,
+            ],
+          );
+        }
+      }),
+    );
   }
   static async attach(
     db: Pick<pg.Pool, "query">,
@@ -145,8 +155,12 @@ export class RuntimeExecutions {
   }
   static bind<A extends unknown[], R>(work: (...args: A) => R) {
     const current = scope.getStore();
+    const permission = McpOrigin.current ?? null;
     return current
-      ? (...args: A) => scope.run(current, () => work(...args))
+      ? (...args: A) =>
+          McpOrigin.run(permission, () =>
+            scope.run(current, () => work(...args)),
+          )
       : work;
   }
   static async reconcile(db: Pick<pg.Pool, "query">) {

@@ -2,11 +2,13 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
 import { authPage, escapeHtml as escape } from "./auth-page.js";
+import type { Operations } from "@gestaloka/server/operations";
 
 export async function oauthRoutes(
   app: FastifyInstance,
   identity: OryIdentity,
   adminUrl: string,
+  operations?: Operations,
 ) {
   const hydra = async <T>(
     path: string,
@@ -77,6 +79,10 @@ export async function oauthRoutes(
       client: { client_name?: string; client_id: string };
     }>("consent", challenge);
     if (data.subject !== session.userId) throw new IdentityError(401);
+    if (data.requested_scope.includes("mcp.connect")) {
+      if (!operations) throw new IdentityError(401);
+      await operations.mcp.consent(data);
+    }
     return data;
   };
   app.get<{ Querystring: { consent_challenge?: string } }>(
@@ -86,6 +92,9 @@ export async function oauthRoutes(
       if (!challenge) throw new IdentityError(401);
       const data = await consent(request.headers.cookie, challenge);
       const requestUrl = new URL(data.request_url);
+      const targets = data.requested_scope.includes("mcp.connect")
+        ? (await operations!.mcp.consent(data)).worldIds
+        : undefined;
       const callback = new URL(requestUrl.searchParams.get("redirect_uri")!);
       const formSources = `'self' ${requestUrl.origin} ${callback.origin === "null" ? callback.protocol : callback.origin}`;
       const csrf = randomBytes(32).toString("hex");
@@ -99,7 +108,7 @@ export async function oauthRoutes(
       return authPage(
         reply,
         "アクセスの許可",
-        `<p>${escape(data.client.client_name ?? data.client.client_id)}</p><p>要求する権限: ${escape(data.requested_scope.join(", "))}</p><form method="post"><input type="hidden" name="challenge" value="${escape(challenge)}"><input type="hidden" name="csrf" value="${csrf}"><button name="decision" value="accept">許可する</button><button name="decision" value="reject">拒否する</button></form>`,
+        `<p>${escape(data.client.client_name ?? data.client.client_id)}</p><p>要求する権限: ${escape(data.requested_scope.join(", "))}</p>${targets === undefined ? "" : `<p>対象の世界: ${targets === null ? "すべての世界" : targets.length ? escape(targets.join(", ")) : "なし"}</p>`}<form method="post"><input type="hidden" name="challenge" value="${escape(challenge)}"><input type="hidden" name="csrf" value="${csrf}"><button name="decision" value="accept">許可する</button><button name="decision" value="reject">拒否する</button></form>`,
         formSources,
       );
     },
@@ -131,7 +140,23 @@ export async function oauthRoutes(
         decision === "accept"
           ? {
               grant_scope: data.requested_scope,
-              grant_access_token_audience: data.requested_access_token_audience,
+              grant_access_token_audience: data.requested_scope.includes(
+                "mcp.connect",
+              )
+                ? [operations!.mcp.resource]
+                : data.requested_access_token_audience,
+              ...(data.requested_scope.includes("mcp.connect")
+                ? {
+                    session: {
+                      access_token: {
+                        gestaloka_grant: await operations!.mcp.approve(
+                          data,
+                          challenge,
+                        ),
+                      },
+                    },
+                  }
+                : {}),
               remember: false,
             }
           : {

@@ -14,6 +14,7 @@ import type { OryIdentity } from "@gestaloka/server/identity";
 import { authRoutes } from "./auth-routes.js";
 import type { Operations } from "@gestaloka/server/operations";
 import { operationsRoutes } from "./operations-routes.js";
+import { mcpRoutes } from "./mcp-routes.js";
 
 export async function createApp(
   access?: WorldAccess,
@@ -41,12 +42,13 @@ export async function createApp(
     },
   );
   await worldRoutes(app, access, identity, operations);
+  await mcpRoutes(app, operations, access);
   await app.register(async (scope) =>
     operationsRoutes(scope, identity, operations, access?.players),
   );
   if (identity)
     await app.register(async (scope) =>
-      authRoutes(scope, identity, hydraAdminUrl),
+      authRoutes(scope, identity, hydraAdminUrl, operations),
     );
   await app.ready();
   return app;

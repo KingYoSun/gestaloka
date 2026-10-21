@@ -1,4 +1,5 @@
 import { RuntimeStopped } from "../runtime/control.js";
+import { McpOrigin } from "./mcp-origin.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type pg from "pg";
@@ -201,7 +202,9 @@ export class WorldAccess {
           "REQUEST_CONFLICT",
           "同じ要求IDに異なる内容は使用できません",
         );
-      const response = saved.response ?? (await perform(client));
+      const response =
+        saved.response ??
+        (await McpOrigin.run(McpOrigin.current ?? null, () => perform(client)));
       if (saved.response === null)
         await client.query("UPDATE api_request SET response=$2 WHERE id=$1", [
           requestId,

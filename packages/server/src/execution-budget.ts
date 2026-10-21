@@ -1,4 +1,5 @@
 import { RuntimeExecutions } from "./runtime/executions.js";
+import { McpOrigin } from "./http/mcp-origin.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type pg from "pg";
 import { RuntimeControl, type Authority } from "./runtime/control.js";
@@ -51,7 +52,14 @@ export class ExecutionBudget {
       );
     await pool.query(
       "INSERT INTO execution_budget(id,user_id,authority) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
-      [id, userId ?? null, authority ?? null],
+      [
+        id,
+        userId ?? null,
+        {
+          ...authority,
+          ...(McpOrigin.current ? { mcp: McpOrigin.current } : {}),
+        },
+      ],
     );
     const saved = (
       await pool.query<{ user_id: string | null; authority: Authority | null }>(
@@ -59,6 +67,15 @@ export class ExecutionBudget {
         [id],
       )
     ).rows[0]!;
+    const authorityWithOrigin = {
+      ...(saved.authority ?? {}),
+      ...(McpOrigin.current ? { mcp: McpOrigin.current } : {}),
+    };
+    if (McpOrigin.current === null) delete authorityWithOrigin.mcp;
+    await pool.query("UPDATE execution_budget SET authority=$2 WHERE id=$1", [
+      id,
+      authorityWithOrigin,
+    ]);
     return scope.run(
       {
         pool,
@@ -66,7 +83,7 @@ export class ExecutionBudget {
         worldId,
         operationId: id,
         userId: saved.user_id ?? undefined,
-        authority: saved.authority ?? undefined,
+        authority: authorityWithOrigin,
       },
       async () => {
         await RuntimeExecutions.attach(

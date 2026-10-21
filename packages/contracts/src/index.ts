@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { Change, RelationKind } from "./world.js";
+export { Change, WorldNode, WorldEdge, RelationKind } from "./world.js";
 
 export const Health = z.object({
   service: z.literal("gestaloka"),
@@ -446,7 +448,151 @@ export const BackupConfiguration = z
     region: z.string().min(1),
   })
   .strict();
+const worldTime = z.number().int().nonnegative().safe();
+export const WorldGraphQuery = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("edge"), id: z.uuid() }).strict(),
+  z.object({ kind: z.literal("nodes"), after: z.uuid().optional() }).strict(),
+  z
+    .object({ kind: z.literal("node"), id: z.uuid(), at: worldTime.optional() })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("relations"),
+      id: z.uuid(),
+      relation: RelationKind,
+      direction: z.enum(["in", "out"]),
+      at: worldTime,
+      through: worldTime.optional(),
+      after: z.uuid().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("history"),
+      id: z.uuid(),
+      relation: RelationKind,
+      direction: z.enum(["in", "out"]),
+      through: worldTime,
+      from: worldTime.default(0),
+      after: z.object({ from: worldTime, id: z.uuid() }).optional(),
+    })
+    .strict(),
+  z
+    .object({ kind: z.literal("receipts"), after: z.uuid().optional() })
+    .strict(),
+]);
+export const McpClientConfiguration = z
+  .object({
+    name: z.string().trim().min(1),
+    enabled: z.boolean(),
+    redirectUris: z
+      .array(
+        z.url().refine((s) => {
+          const u = new URL(s);
+          return (
+            !u.hash &&
+            !u.username &&
+            !u.password &&
+            (u.protocol === "https:" ||
+              (u.protocol === "http:" &&
+                ["127.0.0.1", "localhost", "[::1]"].includes(u.hostname)) ||
+              ![
+                "http:",
+                "javascript:",
+                "data:",
+                "file:",
+                "about:",
+                "vbscript:",
+              ].includes(u.protocol))
+          );
+        }),
+      )
+      .min(1),
+    scopes: z.array(z.string().regex(/^[a-zA-Z]+(?:\.[a-zA-Z]+)+$/)),
+    worldIds: z.array(z.uuid()).nullable(),
+  })
+  .strict();
 export const Operation = z.discriminatedUnion("operation", [
+  z
+    .object({
+      operation: z.literal("mcp.clients.list"),
+      before: z.uuid().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("mcp.clients.put"),
+      clientId: z.uuid(),
+      configuration: McpClientConfiguration,
+      expectedVersion: z.number().int().nonnegative(),
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("mcp.grants.list"),
+      before: z.uuid().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("mcp.grants.revoke"),
+      grantId: z.uuid(),
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("worlds.list"),
+      before: z.uuid().optional(),
+    })
+    .strict(),
+  z.object({ operation: z.literal("worlds.read"), worldId: z.uuid() }).strict(),
+  z
+    .object({
+      operation: z.literal("worlds.records"),
+      worldId: z.uuid(),
+      before: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("worlds.create"),
+      prompt: z.string().min(1),
+      budgetUsd: BudgetUsd,
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("worlds.command"),
+      worldId: z.uuid(),
+      command: z.discriminatedUnion("command", [
+        WorldCommand.options[0].omit({ requestId: true }),
+        WorldCommand.options[1].omit({ requestId: true }),
+      ]),
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("worlds.graph"),
+      worldId: z.uuid(),
+      query: WorldGraphQuery,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("worlds.edit"),
+      worldId: z.uuid(),
+      at: worldTime,
+      dependencies: z.array(
+        z.object({ key: z.string().min(1), version: worldTime }).strict(),
+      ),
+      changes: Change,
+      reason: operationReason,
+    })
+    .strict(),
   z.object({ operation: z.literal("backups.read") }).strict(),
   z
     .object({

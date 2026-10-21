@@ -14,7 +14,8 @@
     "./scene": "./dist/runtime/scene.js",
     "./players": "./dist/runtime/players.js",
     "./identity": "./dist/http/identity.js",
-    "./operations": "./dist/http/operations.js"
+    "./operations": "./dist/http/operations.js",
+    "./mcp": "./dist/http/mcp.js"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.1-rc.2",

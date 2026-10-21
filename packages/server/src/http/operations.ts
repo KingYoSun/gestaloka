@@ -1,12 +1,15 @@
 import { RuntimeMonitor } from "../runtime/monitor.js";
 import { Backups } from "../runtime/backups.js";
+import { McpAuthorization, type McpPrincipal } from "./mcp.js";
+import { McpOrigin, type McpPermission } from "./mcp-origin.js";
+import { WorldManagement } from "./world-management.js";
 import { seal } from "../secrets.js";
 import { readJobs, resumeJob } from "../runtime/jobs.js";
 import { RuntimeControl, RuntimeStopped } from "../runtime/control.js";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { z } from "zod";
-import { AccessError } from "./access.js";
+import { AccessError, WorldAccess } from "./access.js";
 import type { WorldPlayers } from "../runtime/players.js";
 import { ModelLimits } from "../llm/limits.js";
 import { WorldBudget } from "../llm/world-budget.js";
@@ -35,6 +38,8 @@ const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 type Database = Pick<pg.Pool, "query">;
 type Context = {
+  continuation?: McpPermission | null;
+  mcp?: McpPrincipal;
   legacyToken?: string | undefined;
   players?: WorldPlayers | undefined;
 };
@@ -61,18 +66,21 @@ export async function requireMember(
 
 /** Shared by HTTP, local recovery, and the later MCP adapter. */
 export class Operations {
+  readonly mcp: McpAuthorization;
   readonly backups = new Backups();
   readonly models: ModelSettings;
   constructor(
     readonly pool: pg.Pool,
     readonly tokenSecret: string,
     transport: typeof fetch = fetch,
+    mcpOptions: ConstructorParameters<typeof McpAuthorization>[1] = {},
   ) {
     if (!/^[a-f0-9]{64}$/.test(tokenSecret))
       throw new Error(
         "OPERATIONS_TOKEN_SECRETを設定してください（pnpm auth:init）",
       );
     this.models = new ModelSettings(pool, tokenSecret, transport);
+    this.mcp = new McpAuthorization(pool, mcpOptions);
   }
   async setup() {
     await ModelSettings.setup(this.pool);
@@ -230,11 +238,17 @@ export class Operations {
     input: Input,
     context: Context = {},
   ) {
-    return this.#execute(
-      z.uuid().parse(actor),
-      requestId,
-      Operation.parse(input),
-      context,
+    return McpOrigin.run(
+      context.mcp
+        ? { grantId: context.mcp.grantId, scope: input.operation }
+        : (context.continuation ?? null),
+      () =>
+        this.#execute(
+          z.uuid().parse(actor),
+          requestId,
+          Operation.parse(input),
+          context,
+        ),
     );
   }
   async recover(userId: string, requestId: string, reason: string) {
@@ -252,6 +266,11 @@ export class Operations {
     context: Context = {},
   ) {
     z.uuid().parse(requestId);
+    const digest = hash(JSON.stringify(input));
+    await this.pool.query(
+      "INSERT INTO operation_request(id,actor_id,operation,input_hash) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+      [requestId, actor, input.operation, digest],
+    );
     let preflightError: AccessError | undefined;
     let dependencies:
       | { configurationVersion?: number; credentials: Record<string, number> }
@@ -262,13 +281,14 @@ export class Operations {
         input.operation === "credentials.put") &&
       !(
         await this.pool.query(
-          "SELECT id FROM operation_request WHERE id=$1 AND actor_id=$2",
+          "SELECT id FROM operation_request WHERE id=$1 AND actor_id=$2 AND (result IS NOT NULL OR error IS NOT NULL)",
           [requestId, actor],
         )
       ).rowCount
     ) {
       try {
         await this.authorize(actor, true);
+        await this.#mcpCheck(this.pool, actor, input, context);
         if (input.operation === "models.put")
           dependencies = {
             credentials: await this.models.verify(input.configuration),
@@ -302,7 +322,6 @@ export class Operations {
       }
     }
     const database = await this.pool.connect();
-    const digest = hash(JSON.stringify(input));
     let result: Record<string, unknown> = {},
       failure: AccessError | undefined;
     try {
@@ -314,7 +333,7 @@ export class Operations {
         await database.query<{
           actor_id: string | null;
           input_hash: string;
-          result: Record<string, unknown>;
+          result: Record<string, unknown> | null;
           error: {
             status: 403 | 404 | 409;
             code: string;
@@ -322,6 +341,8 @@ export class Operations {
           } | null;
         }>("SELECT * FROM operation_request WHERE id=$1", [requestId])
       ).rows[0];
+      const completed =
+        !!saved && (saved.result !== null || saved.error !== null);
       if (saved && (saved.actor_id !== actor || saved.input_hash !== digest)) {
         await this.#audit(
           database,
@@ -338,11 +359,6 @@ export class Operations {
           "同じ要求IDに異なる内容は使用できません",
         );
       }
-      if (!saved)
-        await database.query(
-          "INSERT INTO operation_request(id,actor_id,operation,input_hash) VALUES($1,$2,$3,$4)",
-          [requestId, actor, input.operation, digest],
-        );
       await database.query("SAVEPOINT operation");
       try {
         if (actor && input.operation !== "account.register")
@@ -353,6 +369,7 @@ export class Operations {
             ),
             database,
           );
+        if (actor) await this.#mcpCheck(database, actor, input, context, true);
         if (actor && input.operation === "account.register") {
           const current = (
             await database.query<UserRow>(
@@ -363,14 +380,14 @@ export class Operations {
           if (current?.banned)
             throw new AccessError(403, "USER_BANNED", "利用が停止されています");
         }
-        if (saved) {
+        if (completed) {
           if (saved.error)
             throw new AccessError(
               saved.error.status,
               saved.error.code,
               saved.error.message,
             );
-          result = saved.result;
+          result = saved!.result!;
         } else if (preflightError) throw preflightError;
         else {
           if (
@@ -402,13 +419,22 @@ export class Operations {
             ? new AccessError(409, error.code, error.message)
             : error;
       }
-      if (!saved)
+      const retryableFailure =
+        !!failure &&
+        ([401, 403, 503].includes(failure.status) ||
+          [
+            "MAINTENANCE",
+            "USER_BANNED",
+            "AUTHORITY_LOST",
+            "MCP_AUTH_REVOKED",
+          ].includes(failure.code));
+      if (!completed)
         await database.query(
           "UPDATE operation_request SET result=$2,error=$3 WHERE id=$1",
           [
             requestId,
             failure ? null : JSON.stringify(result),
-            failure
+            failure && !retryableFailure
               ? JSON.stringify({
                   status: failure.status,
                   code: failure.code,
@@ -422,19 +448,24 @@ export class Operations {
         actor,
         requestId,
         input.operation,
-        failure ? "denied" : saved ? "replayed" : "accepted",
-        failure
-          ? { code: failure.code }
-          : saved ||
-              input.operation.endsWith(".list") ||
-              input.operation === "invites.uses" ||
-              input.operation.endsWith(".read") ||
-              input.operation.startsWith("monitor.")
-            ? {}
-            : {
-                ...result,
-                ...("reason" in input ? { reason: input.reason } : {}),
-              },
+        failure ? "denied" : completed ? "replayed" : "accepted",
+        {
+          ...(context.mcp
+            ? { clientId: context.mcp.clientId, grantId: context.mcp.grantId }
+            : {}),
+          ...(failure
+            ? { code: failure.code }
+            : completed ||
+                input.operation.endsWith(".list") ||
+                input.operation === "invites.uses" ||
+                input.operation.endsWith(".read") ||
+                input.operation.startsWith("monitor.")
+              ? {}
+              : {
+                  ...result,
+                  ...("reason" in input ? { reason: input.reason } : {}),
+                }),
+        },
       );
       await database.query("COMMIT");
     } catch (error) {
@@ -454,6 +485,50 @@ export class Operations {
     if (input.operation === "invites.create")
       return { ...result, token: this.#token(result.id as string) };
     return result;
+  }
+  async #mcpCheck(
+    db: Database,
+    actor: string,
+    input:
+      Input | { operation: "recovery.admin"; userId: string; reason: string },
+    context: Context,
+    lock = false,
+  ) {
+    const p = context.mcp;
+    if (!p) return;
+    if (p.userId !== actor)
+      throw new AccessError(
+        403,
+        "MCP_ACTOR_MISMATCH",
+        "認可された利用者を変更できません",
+      );
+    let worldId = "worldId" in input ? input.worldId : undefined;
+    if (
+      "query" in input &&
+      "worldId" in input.query &&
+      typeof input.query.worldId === "string"
+    )
+      worldId = input.query.worldId;
+    if (
+      ["jobs.read", "jobs.resume"].includes(input.operation) &&
+      "kind" in input
+    ) {
+      if (input.kind === "construction") worldId = input.id;
+      else
+        worldId = (
+          await db.query(
+            `SELECT construction_id FROM ${input.kind === "scene" ? "world_scene" : "world_join"} WHERE id=$1`,
+            [input.id],
+          )
+        ).rows[0]?.construction_id;
+    }
+    if (input.operation === "worlds.resumeJoin")
+      worldId = (
+        await db.query("SELECT construction_id FROM world_join WHERE id=$1", [
+          input.joinId,
+        ])
+      ).rows[0]?.construction_id;
+    await this.mcp.check(db, p, input.operation, worldId, lock);
   }
   async #audit(
     database: Database,
@@ -477,6 +552,85 @@ export class Operations {
     requestId: string,
   ): Promise<Record<string, unknown>> {
     switch (input.operation) {
+      case "mcp.clients.list":
+        return this.mcp.clients(db, input.before);
+      case "mcp.clients.put":
+        return this.mcp.put(
+          db,
+          input.clientId,
+          input.configuration,
+          input.expectedVersion,
+          actor!,
+        );
+      case "mcp.grants.list":
+        return this.mcp.grants(db, input.before);
+      case "mcp.grants.revoke": {
+        const r = (
+          await db.query(
+            "UPDATE mcp_grant SET revoked=true WHERE id=$1 RETURNING id,revoked",
+            [input.grantId],
+          )
+        ).rows[0];
+        if (!r)
+          throw new AccessError(
+            404,
+            "MCP_GRANT_NOT_FOUND",
+            "認可が見つかりません",
+          );
+        return r;
+      }
+      case "worlds.list": {
+        const allowed = context.mcp
+          ? await this.mcp.worlds(db, context.mcp)
+          : null;
+        const rows = (
+          await db.query(
+            "SELECT id FROM world_construction WHERE ($1::uuid IS NULL OR id<$1) AND ($2::uuid[] IS NULL OR id=ANY($2)) ORDER BY id DESC LIMIT 51",
+            [input.before ?? null, allowed],
+          )
+        ).rows;
+        return {
+          items: rows.slice(0, 50),
+          next: rows.length > 50 ? rows[49].id : null,
+        };
+      }
+      case "worlds.read":
+        return {
+          world: await this.#access(context).status(actor!, input.worldId),
+        };
+      case "worlds.records":
+        return this.#access(context).records(
+          actor!,
+          input.worldId,
+          input.before,
+        );
+      case "worlds.create":
+        return this.#access(context).create(actor!, {
+          requestId,
+          prompt: input.prompt,
+          budgetUsd: input.budgetUsd,
+        });
+      case "worlds.command":
+        return this.#access(context).command(actor!, input.worldId, {
+          ...input.command,
+          requestId,
+        });
+      case "worlds.graph":
+        return new WorldManagement(this.#access(context).players).read(
+          db,
+          input.worldId,
+          input.query,
+        );
+      case "worlds.edit": {
+        await RuntimeControl.check(db, {}, true);
+        return new WorldManagement(this.#access(context).players).edit(
+          db,
+          actor!,
+          input.worldId,
+          requestId,
+          input,
+        );
+      }
       case "backups.read":
       case "backups.jobs":
       case "backups.list":
@@ -485,7 +639,19 @@ export class Operations {
       case "backups.configure":
       case "backups.create":
       case "backups.restore":
-        return this.backups.call("prepare", { id: requestId, actor, input });
+        return this.backups.call("prepare", {
+          id: requestId,
+          actor,
+          input,
+          ...(context.mcp
+            ? {
+                permission: {
+                  grantId: context.mcp.grantId,
+                  scope: input.operation,
+                },
+              }
+            : {}),
+        });
       case "jobs.list":
         return readJobs(db, input.query);
       case "jobs.read":
@@ -1037,5 +1203,14 @@ export class Operations {
         };
       }
     }
+  }
+  #access(context: Context) {
+    if (!context.players)
+      throw new AccessError(
+        503,
+        "RUNTIME_NOT_CONFIGURED",
+        "実行サービスを設定してください",
+      );
+    return new WorldAccess(context.players.construction);
   }
 }

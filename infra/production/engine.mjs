@@ -171,7 +171,7 @@ export class BackupEngine {
       next: items.length > 50 ? `${last.createdAt}|${last.id}` : null,
     };
   }
-  async prepare({ id, actor, input }, local = false) {
+  async prepare({ id, actor, input, permission = null }, local = false) {
     input = Operation.parse(input);
     if (
       !/^backups\.(configure|create|restore)$/.test(input.operation) ||
@@ -182,6 +182,10 @@ export class BackupEngine {
       saved = await this.load(`jobs/${id}.json`, null);
     if (saved) {
       if (saved.hash !== hash) throw new Error("REQUEST_CONFLICT");
+      if (saved.state === "prepared") {
+        saved.permission = permission;
+        await this.save(`jobs/${id}.json`, saved);
+      }
       return { id };
     }
     const current = await this.settings();
@@ -207,6 +211,7 @@ export class BackupEngine {
       phase: "受付",
       createdAt: new Date().toISOString(),
       local,
+      permission,
     });
     return { id };
   }
@@ -327,6 +332,7 @@ export class BackupEngine {
     job.quiesced = true;
     await this.step(job, "新規接続を停止");
     await this.compose("stop", "caddy", "api");
+    await this.authorize(job);
     for (;;) {
       const { n } = (
         await this.pool
@@ -586,7 +592,7 @@ export class BackupEngine {
   async container(service) {
     return (await this.compose("ps", "-aq", service)).toString().trim();
   }
-  async process(job) {
+  async authorize(job) {
     if (!job.local) {
       const actor = (
         await this.pool.query("SELECT role,banned FROM app_user WHERE id=$1", [
@@ -595,7 +601,28 @@ export class BackupEngine {
       ).rows[0];
       if (!actor || actor.role !== "admin" || actor.banned)
         throw new Error("ADMIN_REQUIRED");
+      if (job.permission) {
+        const g = (
+          await this.pool.query(
+            `SELECT g.scopes,g.world_ids,g.revoked,c.configuration FROM mcp_grant g JOIN mcp_client c ON c.id=g.client_id WHERE g.id=$1 AND g.user_id=$2`,
+            [job.permission.grantId, job.actor],
+          )
+        ).rows[0];
+        if (
+          !g ||
+          g.revoked ||
+          !g.configuration.enabled ||
+          !g.scopes.includes(job.operation) ||
+          !g.configuration.scopes.includes(job.operation) ||
+          g.world_ids !== null ||
+          g.configuration.worldIds !== null
+        )
+          throw new Error("MCP_AUTH_REVOKED");
+      }
     }
+  }
+  async process(job) {
+    await this.authorize(job);
     const input = this.decrypt(job.cipher);
     if (input.operation === "backups.configure") {
       const current = await this.settings();

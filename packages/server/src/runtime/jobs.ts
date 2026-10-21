@@ -6,6 +6,7 @@ import { RuntimeExecutions } from "./executions.js";
 import { sceneId } from "./scene-data.js";
 import type { WorldPlayers } from "./players.js";
 import { RuntimeControl } from "./control.js";
+import { McpOrigin } from "../http/mcp-origin.js";
 
 const sources = `WITH logical AS (
   SELECT 'construction' AS kind,c.id,c.id AS world_id,b.world_id AS graph_world_id,c.user_id,c.participant_id AS actor_id,c.state,c.at,c.error,
@@ -161,6 +162,7 @@ export async function resumeJob(
     db,
     {
       ...authority,
+      ...(McpOrigin.current ? { mcp: McpOrigin.current } : {}),
       userId: found.userId ?? undefined,
       worldId: found.graphWorldId,
     },

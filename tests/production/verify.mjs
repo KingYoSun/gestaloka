@@ -35,12 +35,15 @@ const rpc = async (name, action, body) =>
 const ops = async (name, input, id = randomUUID()) =>
   JSON.parse(
     (
-      await runNode(
+      await command([
+        "exec",
         `${name}-api-1`,
-        "import {Operations} from '@gestaloka/server/operations';import {connectDatabases} from '@gestaloka/server';const d=connectDatabases();try{const admin=(await d.postgres.query('SELECT data FROM recovery_expectation')).rows[0].data.admin;console.log(JSON.stringify(await new Operations(d.postgres,process.env.OPERATIONS_TOKEN_SECRET).execute(admin,process.argv[1],JSON.parse(process.argv[2]))));}finally{await d.close();}",
-        id,
-        JSON.stringify(input),
-      )
+        "node",
+        "--import",
+        "tsx",
+        "tests/production/mcp.mjs",
+        JSON.stringify({ ...input, requestId: id }),
+      ])
     ).toString(),
   );
 const wait = async (name, id) => {
@@ -235,33 +238,27 @@ try {
   assert.equal(snapshots.items.length, 1);
   const snapshot = snapshots.items[0].id;
   const configureId = randomUUID();
-  await command([
-    "exec",
-    `${target.config.name}-controller-1`,
-    "node",
-    "infra/production/local.mjs",
-    JSON.stringify({
+  await ops(
+    target.config.name,
+    {
       operation: "backups.configure",
       configuration,
       expectedVersion: 0,
       reason: "隔離復元の事前設定",
-      requestId: configureId,
-    }),
-  ]);
+    },
+    configureId,
+  );
   await wait(target.config.name, configureId);
   const restoreId = randomUUID();
-  await command([
-    "exec",
-    `${target.config.name}-controller-1`,
-    "node",
-    "infra/production/local.mjs",
-    JSON.stringify({
+  await ops(
+    target.config.name,
+    {
       operation: "backups.restore",
       snapshot,
       reason: "空の隔離環境へ復元",
-      requestId: restoreId,
-    }),
-  ]);
+    },
+    restoreId,
+  );
   await wait(target.config.name, restoreId);
   await cli("sync", target);
   const result = JSON.parse(

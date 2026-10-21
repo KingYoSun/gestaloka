@@ -1,5 +1,6 @@
 import { RuntimeExecutions } from "./executions.js";
 import { RuntimeControl, RuntimeStopped } from "./control.js";
+import { McpOrigin } from "../http/mcp-origin.js";
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { PgBoss } from "pg-boss";
@@ -123,6 +124,7 @@ export class WorldConstruction {
   }
 
   async #enqueue(client: pg.PoolClient, id: string, play = false) {
+    await McpOrigin.capture(client, "construction", id);
     await this.queue.send(
       play ? `${this.queueName}-play` : this.queueName,
       { id },

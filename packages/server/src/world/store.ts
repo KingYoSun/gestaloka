@@ -18,6 +18,7 @@ type Direction = "in" | "out";
 type Lease = { worldId: string; runId: string; generation: number };
 export type Dependency = { key: string; version: number };
 export type Receipt = {
+  management?: { editorId: string; reason: string; requestHash: string };
   commitId: string;
   runId: string;
   at: number;
@@ -160,6 +161,7 @@ export class WorldContext {
     direction: Direction,
     at: number,
     through: number = at,
+    page?: { after?: string | undefined; limit: number },
   ): Promise<WorldEdge[]> {
     z.uuid().parse(id);
     RelationKind.parse(kind);
@@ -172,8 +174,16 @@ export class WorldContext {
       const result = await tx.run(
         `MATCH (n:WorldNode {worldId: $worldId, id: $id})
         MATCH ${pattern} WHERE r.worldId = $worldId AND r.validFrom <= $through
-        AND (r.validTo IS NULL OR $at < r.validTo) RETURN r.data AS data ORDER BY r.id`,
-        { worldId: this.worldId, id, at, through },
+        AND (r.validTo IS NULL OR $at < r.validTo) AND ($after IS NULL OR r.id>$after)
+        RETURN r.data AS data ORDER BY r.id ${page ? "LIMIT $limit" : ""}`,
+        {
+          worldId: this.worldId,
+          id,
+          at,
+          through,
+          after: page?.after ?? null,
+          limit: int(page?.limit ?? 51),
+        },
       );
       return result.records.map((row) =>
         WorldEdge.parse(JSON.parse(row.get("data"))),
@@ -187,6 +197,7 @@ export class WorldContext {
     direction: Direction,
     through: number,
     from = 0,
+    page?: { after?: { from: number; id: string } | undefined; limit: number },
   ): Promise<WorldEdge[]> {
     z.uuid().parse(id);
     RelationKind.parse(kind);
@@ -199,8 +210,17 @@ export class WorldContext {
       const result = await tx.run(
         `MATCH(n:WorldNode {worldId:$worldId,id:$id}) MATCH ${pattern}
         WHERE r.worldId=$worldId AND r.validFrom>=$from AND r.validFrom<=$through
-        RETURN r.data AS data ORDER BY r.validFrom,r.id`,
-        { worldId: this.worldId, id, from, through },
+        AND ($after IS NULL OR r.validFrom>$after OR (r.validFrom=$after AND r.id>$cursor))
+        RETURN r.data AS data ORDER BY r.validFrom,r.id ${page ? "LIMIT $limit" : ""}`,
+        {
+          worldId: this.worldId,
+          id,
+          from,
+          through,
+          after: page?.after?.from ?? null,
+          cursor: page?.after?.id ?? null,
+          limit: int(page?.limit ?? 51),
+        },
       );
       return result.records.map((row) =>
         WorldEdge.parse(JSON.parse(row.get("data"))),
@@ -384,13 +404,26 @@ export class WorldStore {
   async commit(
     lease: Lease,
     context: WorldContext,
-    input: { commitId: string; at: number; changes: unknown },
+    input: {
+      commitId: string;
+      at: number;
+      changes: unknown;
+      management?: { editorId: string; reason: string; requestHash: string };
+    },
   ): Promise<Receipt> {
     const parsed = z
       .object({
         commitId: z.uuid(),
         at: z.number().int().nonnegative().safe(),
         changes: Change,
+        management: z
+          .object({
+            editorId: z.uuid(),
+            reason: z.string().trim().min(1),
+            requestHash: z.string().regex(/^[a-f0-9]{64}$/),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .parse(input);
@@ -401,7 +434,12 @@ export class WorldStore {
     const { worldId, runId, generation } = lease;
     const hash = createHash("sha256")
       .update(
-        JSON.stringify({ runId, at, changes: requestedChange(changes, at) }),
+        JSON.stringify({
+          runId,
+          at,
+          changes: requestedChange(changes, at),
+          ...(parsed.management ? { management: parsed.management } : {}),
+        }),
       )
       .digest("hex");
     const session = this.driver.session();
@@ -680,6 +718,7 @@ export class WorldStore {
           at,
           committedAt: new Date().toISOString(),
           changes: { ...changes, edges: canonicalEdges },
+          ...(parsed.management ? { management: parsed.management } : {}),
         };
         await tx.run(
           "CREATE (:WorldReceipt {worldId: $worldId, commitId: $commitId, hash: $hash, data: $data,pendingDelivery:true})",

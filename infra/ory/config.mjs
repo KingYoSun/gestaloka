@@ -65,6 +65,7 @@ export function oryConfiguration(env) {
     log: { level: "info", format: "json", leak_sensitive_values: false },
   };
   const hydra = {
+    oauth2: { pkce: { enforced_for_public_clients: true } },
     urls: {
       self: { issuer: env.ORY_HYDRA_PUBLIC_URL },
       login: `${env.ORY_AUTH_URL}/oauth/login`,
@@ -76,7 +77,10 @@ export function oryConfiguration(env) {
       },
     },
     serve: { cookies: { same_site_mode: "Lax" } },
-    oidc: { subject_identifiers: { supported_types: ["public", "pairwise"] } },
+    oidc: {
+      subject_identifiers: { supported_types: ["public", "pairwise"] },
+      dynamic_client_registration: { enabled: false },
+    },
     log: { level: "info", format: "json", leak_sensitive_values: false },
   };
 

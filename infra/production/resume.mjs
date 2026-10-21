@@ -29,6 +29,13 @@ try {
       )
     ).rowCount;
     if (!stopped) continue;
+    const continuation =
+      (
+        await db.postgres.query(
+          "SELECT permission FROM mcp_execution WHERE kind=$1 AND id=$2",
+          [kind, id],
+        )
+      ).rows[0]?.permission ?? null;
     const admin = (
       await db.postgres.query(
         "SELECT id FROM app_user WHERE role='admin' AND NOT banned ORDER BY created_at LIMIT 1",
@@ -45,7 +52,7 @@ try {
           id,
           reason: "バックアップ・復元後に保存状態から再開",
         },
-        { players: access.players },
+        { players: access.players, continuation },
       );
     } catch {
       console.error("保存状態の再開には運用画面での確認が必要です");
