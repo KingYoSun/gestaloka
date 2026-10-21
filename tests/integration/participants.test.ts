@@ -154,6 +154,9 @@ beforeAll(async () => {
   b = (await access.players.list(two, world)).items[0]!.actorId!;
 });
 afterAll(async () => {
+  await db.postgres.query("DELETE FROM runtime_execution WHERE world_id=$1", [
+    graph,
+  ]);
   await setup.databases.postgres.query(
     "DELETE FROM world_budget WHERE world_id=$1",
     [graph],

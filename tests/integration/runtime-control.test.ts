@@ -1,3 +1,4 @@
+import { WORLD_DAY_MS } from "@gestaloka/contracts";
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
@@ -248,7 +249,14 @@ test.each(["maintenance", "ban", "demotion"] as const)(
 );
 
 test("確定判断の応答後に停止した場合、判断を再生成せず世界確定から再開する", async () => {
-  const world = await create(),
+  const requestId = randomUUID(),
+    world = (
+      await access.create(admin, {
+        requestId,
+        prompt: "確定境界の確認",
+        budgetUsd: 100,
+      })
+    ).id,
     model = runtime.agent.model,
     original = model.complete.bind(model);
   const spy = vi
@@ -278,10 +286,29 @@ test("確定判断の応答後に停止した場合、判断を再生成せず�
     userId: admin,
     responseId: world,
     deliveries: 2,
+    requestId,
     state: "ready",
     calls: { used: 2 },
   });
   expect(JSON.stringify(job)).not.toMatch(/PRIVATE_|reasoning_content/);
+  const advance = randomUUID();
+  await access.command(admin, world, {
+    requestId: advance,
+    command: "advance",
+    duration: WORLD_DAY_MS,
+  });
+  const pending = await auth.operations.execute(admin, randomUUID(), {
+    operation: "jobs.read",
+    kind: "construction",
+    id: world,
+  });
+  expect(pending.job).toMatchObject({
+    requestId: advance,
+    responseId: null,
+    calculatedNanoUsd: null,
+    unsettledNanoUsd: null,
+    job: { state: "created" },
+  });
 });
 
 test("未開始の参加生成をBANで止め、解除後に同じ参加要求を再開する", async () => {
@@ -435,6 +462,15 @@ test("操作対象の権限失効を未開始シーンへ反映し、再付与�
     id: scene.id,
     state: "ready",
   });
+  expect(
+    (
+      await auth.operations.execute(admin, randomUUID(), {
+        operation: "jobs.read",
+        kind: "scene",
+        id: scene.id,
+      })
+    ).job,
+  ).toMatchObject({ requestId: scene.id, responseId: scene.id });
 });
 
 test("ワーカー中断時は未確定予約を残し、旧ワーカーと再開側の重複送信を防ぐ", async () => {

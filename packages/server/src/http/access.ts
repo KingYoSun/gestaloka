@@ -249,8 +249,8 @@ export class WorldAccess {
           client,
         );
         await client.query(
-          "UPDATE world_construction SET user_id=$2 WHERE id=$1",
-          [id, subject],
+          "UPDATE world_construction SET user_id=$2,request_id=$3 WHERE id=$1",
+          [id, subject, input.requestId],
         );
         await ExecutionBudget.attribute(client, id, subject, { role: "admin" });
         await client.query(
@@ -297,8 +297,8 @@ export class WorldAccess {
         }
         if (input.command === "advance")
           await client.query(
-            "UPDATE world_construction SET user_id=$2 WHERE id=$1",
-            [id, subject],
+            "UPDATE world_construction SET user_id=$2,request_id=$3 WHERE id=$1",
+            [id, subject, input.requestId],
           );
         return this.statusData(row);
       },
@@ -661,8 +661,8 @@ export class WorldAccess {
             actorId: grant.actor_id!,
           });
           await client.query(
-            "UPDATE world_construction SET user_id=$2 WHERE id=$1",
-            [id, subject],
+            "UPDATE world_construction SET user_id=$2,request_id=$3 WHERE id=$1",
+            [id, subject, input.requestId],
           );
           return this.playerData(
             await this.construction.play(

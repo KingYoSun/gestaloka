@@ -26,6 +26,7 @@ type Work = {
 export type Construction = {
   id: string;
   user_id?: string | null;
+  request_id?: string | null;
   suspended?: boolean;
   state:
     | "generating"
@@ -86,7 +87,7 @@ export class WorldConstruction {
       started_at bigint NOT NULL,at bigint NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS world_run_latest ON world_run(construction_id,actor_id,created_at DESC);`);
     await this.pool.query(
-      "ALTER TABLE world_construction ADD COLUMN IF NOT EXISTS budget_id uuid, ADD COLUMN IF NOT EXISTS user_id uuid, ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false",
+      "ALTER TABLE world_construction ADD COLUMN IF NOT EXISTS budget_id uuid, ADD COLUMN IF NOT EXISTS user_id uuid, ADD COLUMN IF NOT EXISTS request_id uuid, ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false",
     );
     await this.pool.query(`ALTER TABLE world_construction
       ADD COLUMN IF NOT EXISTS public_title text NOT NULL DEFAULT '',
@@ -173,6 +174,12 @@ export class WorldConstruction {
           throw new ConstructionStateError(
             "区切りに到達した構築セッションを指定してください",
           );
+        row.request_id = null;
+        row.user_id = null;
+        await client.query(
+          "UPDATE world_construction SET request_id=NULL,user_id=NULL WHERE id=$1",
+          [id],
+        );
         ConstructionDuration.parse(duration);
         row.target = time.parse(row.at + duration!);
         row.state = "running";

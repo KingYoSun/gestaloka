@@ -9,15 +9,15 @@ import { RuntimeControl } from "./control.js";
 
 const sources = `WITH logical AS (
   SELECT 'construction' AS kind,c.id,c.id AS world_id,b.world_id AS graph_world_id,c.user_id,c.participant_id AS actor_id,c.state,c.at,c.error,
-    CASE WHEN c.world_id IS NULL THEN c.id WHEN c.state IN ('playing','play_paused') THEN coalesce(c.budget_id,c.id) ELSE coalesce((c.current->>'id')::uuid,c.id) END AS response_id,
-    (c.current->>'operationId')::uuid AS operation_id,b.commit_id,NULL::uuid AS action_id,NULL::text AS phase
+    CASE WHEN c.world_id IS NULL THEN c.id WHEN c.state IN ('playing','play_paused') THEN coalesce(c.budget_id,c.id) ELSE (c.current->>'id')::uuid END AS response_id,
+    (c.current->>'operationId')::uuid AS operation_id,b.commit_id,NULL::uuid AS action_id,NULL::text AS phase,c.request_id
   FROM world_construction c JOIN world_build b ON b.run_id=c.id
   UNION ALL
   SELECT 'scene',s.id,s.construction_id,b.world_id,s.user_id,s.actor_id,s.state,(s.data->>'at')::bigint,s.data->>'error',NULL,
-    (s.data->>'operationId')::uuid,NULL,(s.data->'actions'->-1->>'id')::uuid,CASE WHEN s.state='paused' THEN s.data->>'resumeState' ELSE s.state END
+    (s.data->>'operationId')::uuid,NULL,(s.data->'actions'->-1->>'id')::uuid,CASE WHEN s.state='paused' THEN s.data->>'resumeState' ELSE s.state END,(s.data->>'requestId')::uuid
   FROM world_scene s JOIN world_build b ON b.run_id=s.construction_id
   UNION ALL
-  SELECT 'join',j.id,j.construction_id,b.world_id,j.subject_id,j.actor_id,j.state,j.at,j.error,j.id,j.operation_id,NULL,NULL,NULL
+  SELECT 'join',j.id,j.construction_id,b.world_id,j.subject_id,j.actor_id,j.state,j.at,j.error,j.id,j.operation_id,NULL,NULL,NULL,j.id
   FROM world_join j JOIN world_build b ON b.run_id=j.construction_id)
 `;
 type Database = Pick<pg.Pool, "query">;
@@ -29,12 +29,13 @@ export async function readJobs(
   await RuntimeExecutions.reconcile(db);
   const rows = (
     await db.query(
-      `${sources} SELECT l.*,o.run_id,coalesce(o.commit_id,l.commit_id) AS committed_id,
-    coalesce(r.job_id,j.id) AS job_id,r.state AS execution_state,r.deliveries,r.error_code,r.started_at,r.finished_at,
+      `${sources} SELECT l.*,o.run_id,o.id AS actual_operation_id,coalesce(o.commit_id,CASE WHEN l.kind='construction' AND (l.response_id=l.id OR (l.state IN ('ready','finished') AND r.response_id=l.id)) THEN l.commit_id END) AS committed_id,r.response_id AS latest_response_id,
+    coalesce(j.id,r.job_id) AS job_id,r.state AS execution_state,r.deliveries,r.error_code,r.started_at,r.finished_at,
     j.name AS queue,j.state AS job_state,j.retry_count,j.started_on,j.created_on
-    FROM logical l LEFT JOIN world_operation o ON o.id=l.operation_id LEFT JOIN runtime_execution r ON r.kind=l.kind AND r.id=l.id
+    FROM logical l LEFT JOIN runtime_execution r ON r.kind=l.kind AND r.id=l.id
+    LEFT JOIN world_operation o ON o.id=coalesce(l.operation_id,CASE WHEN l.kind='construction' AND l.state IN ('ready','finished') THEN r.operation_id END)
     LEFT JOIN LATERAL(SELECT id,name,state,retry_count,started_on,created_on FROM pgboss.job WHERE
-      (r.job_id IS NOT NULL AND id=r.job_id) OR (r.job_id IS NULL AND data->>'id'=l.id::text)
+      data->>'id'=l.id::text
       ORDER BY created_on DESC,id DESC LIMIT 1) j ON true
     WHERE ($1::text IS NULL OR l.kind=$1) AND ($2::uuid IS NULL OR l.world_id=$2) AND ($3::uuid IS NULL OR l.user_id=$3)
       AND ($4::uuid IS NULL OR l.id<$4) AND ($5::uuid IS NULL OR l.id=$5)
@@ -60,7 +61,10 @@ export async function readJobs(
             : ["acting", "active"].includes(r.phase)
               ? (r.action_id ?? r.id)
               : sceneId(`${r.id}:reflection`)
-          : r.response_id,
+          : (r.response_id ??
+            (["ready", "finished"].includes(r.state)
+              ? r.latest_response_id
+              : null)),
     };
   });
   const usageRows = (
@@ -87,7 +91,8 @@ export async function readJobs(
       error: r.error,
       errorCode: r.error_code,
       runId: r.run_id ?? r.id,
-      operationId: r.operation_id,
+      operationId: r.actual_operation_id,
+      requestId: r.request_id,
       commitId: r.committed_id,
       responseId,
       executionState: r.execution_state ?? null,
@@ -104,8 +109,8 @@ export async function readJobs(
       startedAt: r.started_at?.toISOString() ?? null,
       finishedAt: r.finished_at?.toISOString() ?? null,
       calls: usage ? { used: usage.llm_used, limit: usage.llm_limit } : null,
-      calculatedNanoUsd: usage?.calculated ?? "0",
-      unsettledNanoUsd: usage?.unsettled ?? "0",
+      calculatedNanoUsd: usage?.calculated ?? null,
+      unsettledNanoUsd: usage?.unsettled ?? null,
     };
   });
   return { items, next: rows.length > 50 ? rows[49].id : null };

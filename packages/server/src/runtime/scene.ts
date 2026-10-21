@@ -46,6 +46,7 @@ type Work = {
 };
 export type SceneData = {
   commandId: string;
+  requestId?: string;
   worldId: string;
   at: number;
   startedAt: number;
@@ -221,6 +222,7 @@ export class WorldScenes {
       claim: null,
       data: {
         commandId: requestId,
+        requestId,
         worldId: c.world_id!,
         at: c.at,
         startedAt: c.at,
@@ -302,6 +304,7 @@ export class WorldScenes {
         throw new ConstructionStateError(
           "シーンが操作可能になってから入力してください",
         );
+      row.data.requestId = input.requestId;
       if (command === "finish") row.state = "reflecting";
       else {
         row.state = "acting";
