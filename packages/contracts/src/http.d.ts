@@ -2370,6 +2370,70 @@ export interface paths {
                         requestId: string;
                         command: {
                             /** @enum {string} */
+                            operation: "monitor.samples";
+                            query: {
+                                before?: string;
+                            };
+                        } | {
+                            /** @enum {string} */
+                            operation: "monitor.notifications";
+                            query: {
+                                before?: string;
+                            };
+                        } | {
+                            /** @enum {string} */
+                            operation: "monitorWebhook.put";
+                            /** Format: uri */
+                            url: string | null;
+                            expectedVersion: number;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "runtime.read";
+                        } | {
+                            /** @enum {string} */
+                            operation: "runtime.put";
+                            configuration: {
+                                paused: boolean;
+                                concurrency: number | null;
+                                sampleIntervalSeconds: number;
+                                retentionDays: number;
+                                thresholds: {
+                                    [key: string]: number;
+                                };
+                            };
+                            expectedVersion: number;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "jobs.list";
+                            query: {
+                                /** @enum {string} */
+                                kind?: "construction" | "scene" | "join";
+                                /** Format: uuid */
+                                worldId?: string;
+                                /** Format: uuid */
+                                userId?: string;
+                                /** Format: uuid */
+                                before?: string;
+                            };
+                        } | {
+                            /** @enum {string} */
+                            operation: "jobs.read";
+                            /** @enum {string} */
+                            kind: "construction" | "scene" | "join";
+                            /** Format: uuid */
+                            id: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "jobs.resume";
+                            /** @enum {string} */
+                            kind: "construction" | "scene" | "join";
+                            /** Format: uuid */
+                            id: string;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
                             operation: "costs.read";
                             query: {
                                 /** Format: date-time */
@@ -2384,6 +2448,12 @@ export interface paths {
                                 /** Format: uuid */
                                 userId?: string | null;
                                 task?: string | null;
+                                /** Format: uuid */
+                                responseId?: string;
+                                /** Format: uuid */
+                                operationId?: string;
+                                /** Format: uuid */
+                                callId?: string;
                                 /** @enum {string} */
                                 view: "summary" | "calls" | "timeline";
                                 /**

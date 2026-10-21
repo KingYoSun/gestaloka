@@ -1,3 +1,5 @@
+import { RuntimeStopped } from "./control.js";
+import { ExecutionBudget } from "../execution-budget.js";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type pg from "pg";
@@ -181,6 +183,7 @@ type Operation = {
   candidate: WorldProposal | null;
   result: WorldProposal | null;
   approved: boolean;
+  suspended: boolean;
   combined_judgment: boolean;
 };
 export class OperationPaused extends Error {}
@@ -220,7 +223,7 @@ export class WorldAgent {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS world_controlled_actor (
       world_id uuid NOT NULL,actor_id uuid NOT NULL,PRIMARY KEY(world_id,actor_id));`);
     await this.pool.query(
-      "ALTER TABLE world_operation ADD COLUMN IF NOT EXISTS approved boolean NOT NULL DEFAULT false",
+      "ALTER TABLE world_operation ADD COLUMN IF NOT EXISTS approved boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false",
     );
     await this.pool.query(
       "ALTER TABLE world_operation ADD COLUMN IF NOT EXISTS combined_judgment boolean NOT NULL DEFAULT false",
@@ -851,454 +854,495 @@ export class WorldAgent {
 
   async #run(id: string, resumeInput?: string): Promise<WorldProposal> {
     z.uuid().parse(id);
+    await ExecutionBudget.check();
     const activated = await this.#activate(id);
     const { row, claim } = activated;
     let { lease } = activated;
-    if (row.state === "complete" && row.result) return row.result;
-    if (
-      row.state === "paused" &&
-      (resumeInput !== undefined ||
-        (await this.model.ledger.state(callId(id, row.epoch, row.step))) !==
-          "complete")
-    ) {
-      row.epoch++;
-      row.step = 0;
-      if (row.messages)
-        row.messages.push({
-          role: "user",
-          content: JSON.stringify({ resume: true, input: resumeInput ?? null }),
-        });
-      await this.#save(row, claim);
-    }
-    const ask = task(
-      "world-thought",
-      async (input: { id: string; messages: ChatMessage[] }) =>
-        this.model.complete(
-          input.id,
-          "world-update",
-          input.messages,
-          ["interaction", "resolution", "participant"].includes(
-            row.request.phase,
-          )
-            ? "resolution"
-            : "default",
-        ),
-    );
-    const query = task(
-      "world-query",
-      async (input: { row: Operation; requests: z.infer<typeof Query>[] }) =>
-        this.read(input.row, input.requests),
-    );
-    const commit = async (input: {
-      dependencies: Dependency[];
-      candidate: WorldProposal;
-    }) => {
-      if (
-        row.request.phase === "participant" &&
-        input.candidate.newParticipantId
-      )
-        await this.pool.query(
-          "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
-          [row.request.worldId, input.candidate.newParticipantId],
+    try {
+      if (row.state === "complete" && row.result) return row.result;
+      if (await this.store.receipt(row.request.worldId, row.commit_id))
+        return this.#finish(row, claim);
+      if (await this.model.ledger.hasPendingOperation(id))
+        throw new OperationPaused(
+          "送信済み要求の結果が未確定です。自動では再送しません",
         );
-      return this.store.commit(
-        lease,
-        this.store.context(row.request.worldId, input.dependencies),
-        {
-          commitId: row.commit_id,
-          at: input.candidate.resolvedUntil,
-          changes: input.candidate.changes,
+      if (
+        row.state === "paused" &&
+        !row.suspended &&
+        (resumeInput !== undefined ||
+          (await this.model.ledger.state(callId(id, row.epoch, row.step))) !==
+            "complete")
+      ) {
+        row.epoch++;
+        row.step = 0;
+        if (row.messages)
+          row.messages.push({
+            role: "user",
+            content: JSON.stringify({
+              resume: true,
+              input: resumeInput ?? null,
+            }),
+          });
+        await this.#save(row, claim);
+      }
+      const ask = task(
+        "world-thought",
+        async (input: { id: string; messages: ChatMessage[] }) =>
+          this.model.complete(
+            input.id,
+            "world-update",
+            input.messages,
+            ["interaction", "resolution", "participant"].includes(
+              row.request.phase,
+            )
+              ? "resolution"
+              : "default",
+          ),
+      );
+      const query = task(
+        "world-query",
+        async (input: { row: Operation; requests: z.infer<typeof Query>[] }) =>
+          this.read(input.row, input.requests),
+      );
+      const commit = async (input: {
+        dependencies: Dependency[];
+        candidate: WorldProposal;
+      }) => {
+        if (
+          row.request.phase === "participant" &&
+          input.candidate.newParticipantId
+        )
+          await this.pool.query(
+            "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
+            [row.request.worldId, input.candidate.newParticipantId],
+          );
+        return ExecutionBudget.commit(() =>
+          this.store.commit(
+            lease,
+            this.store.context(row.request.worldId, input.dependencies),
+            {
+              commitId: row.commit_id,
+              at: input.candidate.resolvedUntil,
+              changes: input.candidate.changes,
+            },
+          ),
+        );
+      };
+      const commitTask = task(
+        "world-commit",
+        async (input: Parameters<typeof commit>[0]) => {
+          try {
+            await commit(input);
+            return null;
+          } catch (error) {
+            // Failed workflow tasks abort the parent; a version conflict must return to its retry loop.
+            if (error instanceof WorldConflict) return error.message;
+            throw error;
+          }
         },
       );
-    };
-    const commitTask = task(
-      "world-commit",
-      async (input: Parameters<typeof commit>[0]) => {
-        try {
-          await commit(input);
-          return null;
-        } catch (error) {
-          // Failed workflow tasks abort the parent; a version conflict must return to its retry loop.
-          if (error instanceof WorldConflict) return error.message;
-          throw error;
-        }
-      },
-    );
-    let communicationRestarts = 0;
-    const workflow = entrypoint(
-      { name: "world-operation", checkpointer: this.checkpointer },
-      async () => {
-        for (;;) {
-          const receipt = await this.store.receipt(
-            row.request.worldId,
-            row.commit_id,
-          );
-          if (receipt) return this.#finish(row, claim);
-          try {
-            await this.store
-              .context(row.request.worldId, row.dependencies)
-              .validate();
-            if (!row.messages) {
-              const seed = await this.context(row.request, row.dependencies);
-              row.dependencies = seed.dependencies;
-              row.messages = [
-                { role: "system", content: row.system_prompt },
-                {
-                  role: "user",
-                  content: JSON.stringify({
-                    request: row.request,
-                    initialContext: seed.initialContext,
-                    controlledActorIds: seed.controlledActorIds,
-                    responseSchema: z.toJSONSchema(Decision, { io: "input" }),
-                  }),
-                },
-              ];
-              await this.#save(row, claim);
-            }
-            if (
-              this.model.settingsFor("resolution").provider === "deepseek" &&
-              (["interaction", "resolution", "participant"].includes(
-                row.request.phase,
-              ) ||
-                row.candidate)
-            ) {
-              let proposalId = row.candidate ? randomUUID() : undefined;
-              let paused: string | undefined;
-              let committed = false;
-              // Native tools share acceptance rules, not the direct API's JSON return protocol.
-              const reviewPrompt = [
-                "提出済み候補とrequest・evidenceを、次の条件で照合してください。",
-                ...(
-                  await readFile(
-                    new URL(
-                      "../../../../prompts/world-commit.md",
-                      import.meta.url,
-                    ),
-                    "utf8",
-                  )
-                )
-                  .split(/\r?\n/)
-                  .filter((line) => line.startsWith("- ")),
-                "条件を満たす候補はworld_commitで確定します。不備や確認不足があればworld_readで必要な根拠を照会し、world_proposeで修正した候補を提出してください。新しいproposalIdを受け取ってから再度照合し、world_commitへ進みます。必要な条件を本当に取得できない場合はworld_pauseを使います。特定の物語や返答の好みを合否基準にせず、推論過程は出力しません。",
-              ].join("\n\n");
-              try {
-                await runHarness({
-                  id,
-                  epoch: row.epoch,
-                  model: this.model,
-                  restartOn: (error) =>
-                    error instanceof WorldConflict ||
-                    error instanceof ExecutionLimit ||
-                    error instanceof SupersededWorker,
-                  system:
-                    row.system_prompt.replace(
-                      "与えられたJSONスキーマに一致するJSONオブジェクトだけを返してください。",
-                      "",
-                    ) +
-                    "\n\n追加照会はworld_read、候補の提出はworld_proposeを使います。提出後、返されたproposalIdと候補・根拠を確認し、world_commitで確定を要求してください。保留はworld_pauseを使い、本文だけで確定したことにしません。確定後は短く完了を伝えて終了してください。\n\n" +
-                    reviewPrompt,
-                  input: {
-                    ...this.#reviewContext(row),
-                    proposalId,
-                  },
-                  tools: [
-                    {
-                      name: "world_read",
-                      description:
-                        "この世界の必要なノード・関係・履歴を照会する。内部照会は観測ではない。",
-                      schema: z.toJSONSchema(
-                        z.object({ requests: z.array(Query).min(1) }).strict(),
-                        { io: "input" },
-                      ),
-                      execute: async (input) => {
-                        const value = z
-                          .object({ requests: z.array(Query).min(1) })
-                          .parse(input);
-                        // MCP returns recoverable tool errors to dsh; a failed workflow task would abort the parent.
-                        const output = await this.read(row, value.requests);
-                        row.dependencies = output.dependencies;
-                        await this.#save(row, claim);
-                        return output.results;
-                      },
-                    },
-                    {
-                      name: "world_propose",
-                      description:
-                        "世界変更の候補を提出する。まだ世界へ確定しない。返されたproposalIdを確認し確定判断へ進む。",
-                      schema: z.toJSONSchema(Proposal, { io: "input" }),
-                      execute: async (input) => {
-                        if (paused || committed)
-                          throw new Error("この実行は既に終了しています");
-                        const candidate = this.#sceneProposal(
-                          row,
-                          Proposal.parse(input),
-                        );
-                        row.dependencies = await this.#validateProposal(
-                          row,
-                          candidate,
-                        );
-                        row.candidate = candidate;
-                        row.approved = false;
-                        proposalId = randomUUID();
-                        await this.#save(row, claim);
-                        return {
-                          proposalId,
-                          candidate,
-                          execution: this.#reviewContext(row, candidate)
-                            .execution,
-                          review: reviewPrompt,
-                        };
-                      },
-                    },
-                    {
-                      name: "world_commit",
-                      description:
-                        "提出した候補と根拠を照合し、受入条件を満たす場合に確定する。形式・参照・版検査を通して原子的に確定する。",
-                      schema: z.toJSONSchema(
-                        z
-                          .object({
-                            proposalId: z.uuid(),
-                            reason: z.string().min(1),
-                          })
-                          .strict(),
-                        { io: "input" },
-                      ),
-                      execute: async (input) => {
-                        const approval = z
-                          .object({
-                            proposalId: z.uuid(),
-                            reason: z.string().min(1),
-                          })
-                          .parse(input);
-                        if (
-                          paused ||
-                          approval.proposalId !== proposalId ||
-                          !row.candidate
-                        )
-                          throw new Error(
-                            "有効な候補のproposalIdを指定してください",
-                          );
-                        if (committed) return { committed: true };
-                        row.dependencies = await this.#validateProposal(
-                          row,
-                          row.candidate,
-                        );
-                        row.approved = true;
-                        await this.#save(row, claim);
-                        await commit({
-                          candidate: row.candidate,
-                          dependencies: row.dependencies,
-                        });
-                        committed = true;
-                        return {
-                          committed: true,
-                          summary: row.candidate.summary,
-                        };
-                      },
-                    },
-                    {
-                      name: "world_pause",
-                      description:
-                        "取得できない必要条件を明示し、世界を変更せず保留する。",
-                      schema: z.toJSONSchema(
-                        z.object({ reason: z.string().min(1) }).strict(),
-                        { io: "input" },
-                      ),
-                      execute: async (input) => {
-                        paused = z
-                          .object({ reason: z.string().min(1) })
-                          .parse(input).reason;
-                        return { paused: true };
-                      },
-                    },
-                  ],
-                });
-              } catch (error) {
-                if (
-                  !(await this.store.receipt(
-                    row.request.worldId,
-                    row.commit_id,
-                  ))
-                )
-                  throw error;
-              }
-              if (await this.store.receipt(row.request.worldId, row.commit_id))
-                return this.#finish(row, claim);
-              throw new OperationPaused(
-                paused ?? "dshから世界への確定が完了していないため保留します",
-              );
-            }
-            if (row.candidate) {
-              if (!row.approved) {
-                const reviewId = callId(id, row.epoch, row.step + 1000000);
-                const saved = (await this.model.ledger.input(reviewId)) as
-                  | {
-                      request: {
-                        system?: string;
-                        messages?: ChatMessage[];
-                        input?: ChatMessage[];
-                      };
-                    }
-                  | undefined;
-                const frozenMessages =
-                  saved?.request.system !== undefined
-                    ? [
-                        {
-                          role: "system" as const,
-                          content: saved.request.system,
-                        },
-                        ...saved.request.messages!,
-                      ]
-                    : (saved?.request.messages ?? saved?.request.input);
-                const review = await this.model.complete(
-                  reviewId,
-                  "world-commit",
-                  frozenMessages ?? [
-                    {
-                      role: "system",
-                      content: await readFile(
-                        new URL(
-                          "../../../../prompts/world-commit.md",
-                          import.meta.url,
-                        ),
-                        "utf8",
-                      ),
-                    },
-                    {
-                      role: "user",
-                      content: JSON.stringify({
-                        commitReview: this.#reviewContext(row),
-                        responseSchema: z.toJSONSchema(CommitDecision, {
-                          io: "input",
-                        }),
-                      }),
-                    },
-                  ],
-                  "resolution",
-                );
-                if (review.finishReason !== "stop")
-                  throw new OperationPaused("確定判断の応答が未完了です");
-                const decision = CommitDecision.parse(
-                  JSON.parse(review.content),
-                );
-                if (decision.type === "pause")
-                  throw new OperationPaused(decision.reason);
-                if (decision.type === "revise") {
-                  row.candidate = null;
-                  row.messages.push({
+      let communicationRestarts = 0;
+      const workflow = entrypoint(
+        { name: "world-operation", checkpointer: this.checkpointer },
+        async () => {
+          for (;;) {
+            const receipt = await this.store.receipt(
+              row.request.worldId,
+              row.commit_id,
+            );
+            if (receipt) return this.#finish(row, claim);
+            try {
+              await this.store
+                .context(row.request.worldId, row.dependencies)
+                .validate();
+              if (!row.messages) {
+                const seed = await this.context(row.request, row.dependencies);
+                row.dependencies = seed.dependencies;
+                row.messages = [
+                  { role: "system", content: row.system_prompt },
+                  {
                     role: "user",
-                    content: JSON.stringify({ commitReview: decision.reason }),
-                  });
-                  await this.#save(row, claim);
-                  continue;
-                }
-                row.dependencies = await this.#validateProposal(
-                  row,
-                  row.candidate,
-                );
-                row.approved = true;
+                    content: JSON.stringify({
+                      request: row.request,
+                      initialContext: seed.initialContext,
+                      controlledActorIds: seed.controlledActorIds,
+                      responseSchema: z.toJSONSchema(Decision, { io: "input" }),
+                    }),
+                  },
+                ];
                 await this.#save(row, claim);
               }
-              const conflict = await commitTask({
-                candidate: row.candidate,
-                dependencies: row.dependencies,
-              });
-              if (conflict) throw new WorldConflict(conflict);
-              return this.#finish(row, claim);
-            }
-            const response = await ask({
-              id: callId(id, row.epoch, row.step),
-              messages: row.messages,
-            });
-            if (response.finishReason !== "stop")
-              throw new OperationPaused("モデル応答が未完了のため保留します");
-            row.messages.push({ role: "assistant", content: response.content });
-            row.step++;
-            let decision;
-            try {
-              decision = Decision.parse(JSON.parse(response.content));
-            } catch (error) {
-              row.messages.push({
-                role: "user",
-                content: JSON.stringify({
-                  validationErrors:
-                    error instanceof z.ZodError ? error.issues : "invalid JSON",
-                }),
-              });
-              await this.#save(row, claim);
-              continue;
-            }
-            if (decision.type === "pause") {
-              await this.#save(row, claim);
-              throw new OperationPaused(decision.reason);
-            }
-            try {
-              if (decision.type === "query") {
-                const output = await query({
-                  row,
-                  requests: decision.requests,
+              if (row.candidate && row.approved) {
+                await commit({
+                  candidate: row.candidate,
+                  dependencies: row.dependencies,
                 });
-                row.dependencies = output.dependencies;
+                return this.#finish(row, claim);
+              }
+              if (
+                this.model.settingsFor("resolution").provider === "deepseek" &&
+                (["interaction", "resolution", "participant"].includes(
+                  row.request.phase,
+                ) ||
+                  row.candidate)
+              ) {
+                let proposalId = row.candidate ? randomUUID() : undefined;
+                let paused: string | undefined;
+                let committed = false;
+                // Native tools share acceptance rules, not the direct API's JSON return protocol.
+                const reviewPrompt = [
+                  "提出済み候補とrequest・evidenceを、次の条件で照合してください。",
+                  ...(
+                    await readFile(
+                      new URL(
+                        "../../../../prompts/world-commit.md",
+                        import.meta.url,
+                      ),
+                      "utf8",
+                    )
+                  )
+                    .split(/\r?\n/)
+                    .filter((line) => line.startsWith("- ")),
+                  "条件を満たす候補はworld_commitで確定します。不備や確認不足があればworld_readで必要な根拠を照会し、world_proposeで修正した候補を提出してください。新しいproposalIdを受け取ってから再度照合し、world_commitへ進みます。必要な条件を本当に取得できない場合はworld_pauseを使います。特定の物語や返答の好みを合否基準にせず、推論過程は出力しません。",
+                ].join("\n\n");
+                try {
+                  await runHarness({
+                    id,
+                    epoch: row.epoch,
+                    model: this.model,
+                    restartOn: (error) =>
+                      error instanceof WorldConflict ||
+                      error instanceof ExecutionLimit ||
+                      error instanceof RuntimeStopped ||
+                      error instanceof SupersededWorker,
+                    system:
+                      row.system_prompt.replace(
+                        "与えられたJSONスキーマに一致するJSONオブジェクトだけを返してください。",
+                        "",
+                      ) +
+                      "\n\n追加照会はworld_read、候補の提出はworld_proposeを使います。提出後、返されたproposalIdと候補・根拠を確認し、world_commitで確定を要求してください。保留はworld_pauseを使い、本文だけで確定したことにしません。確定後は短く完了を伝えて終了してください。\n\n" +
+                      reviewPrompt,
+                    input: {
+                      ...this.#reviewContext(row),
+                      proposalId,
+                    },
+                    tools: [
+                      {
+                        name: "world_read",
+                        description:
+                          "この世界の必要なノード・関係・履歴を照会する。内部照会は観測ではない。",
+                        schema: z.toJSONSchema(
+                          z
+                            .object({ requests: z.array(Query).min(1) })
+                            .strict(),
+                          { io: "input" },
+                        ),
+                        execute: async (input) => {
+                          const value = z
+                            .object({ requests: z.array(Query).min(1) })
+                            .parse(input);
+                          // MCP returns recoverable tool errors to dsh; a failed workflow task would abort the parent.
+                          const output = await this.read(row, value.requests);
+                          row.dependencies = output.dependencies;
+                          await this.#save(row, claim);
+                          return output.results;
+                        },
+                      },
+                      {
+                        name: "world_propose",
+                        description:
+                          "世界変更の候補を提出する。まだ世界へ確定しない。返されたproposalIdを確認し確定判断へ進む。",
+                        schema: z.toJSONSchema(Proposal, { io: "input" }),
+                        execute: async (input) => {
+                          if (paused || committed)
+                            throw new Error("この実行は既に終了しています");
+                          const candidate = this.#sceneProposal(
+                            row,
+                            Proposal.parse(input),
+                          );
+                          row.dependencies = await this.#validateProposal(
+                            row,
+                            candidate,
+                          );
+                          row.candidate = candidate;
+                          row.approved = false;
+                          proposalId = randomUUID();
+                          await this.#save(row, claim);
+                          return {
+                            proposalId,
+                            candidate,
+                            execution: this.#reviewContext(row, candidate)
+                              .execution,
+                            review: reviewPrompt,
+                          };
+                        },
+                      },
+                      {
+                        name: "world_commit",
+                        description:
+                          "提出した候補と根拠を照合し、受入条件を満たす場合に確定する。形式・参照・版検査を通して原子的に確定する。",
+                        schema: z.toJSONSchema(
+                          z
+                            .object({
+                              proposalId: z.uuid(),
+                              reason: z.string().min(1),
+                            })
+                            .strict(),
+                          { io: "input" },
+                        ),
+                        execute: async (input) => {
+                          const approval = z
+                            .object({
+                              proposalId: z.uuid(),
+                              reason: z.string().min(1),
+                            })
+                            .parse(input);
+                          if (
+                            paused ||
+                            approval.proposalId !== proposalId ||
+                            !row.candidate
+                          )
+                            throw new Error(
+                              "有効な候補のproposalIdを指定してください",
+                            );
+                          if (committed) return { committed: true };
+                          row.dependencies = await this.#validateProposal(
+                            row,
+                            row.candidate,
+                          );
+                          row.approved = true;
+                          await this.#save(row, claim);
+                          await commit({
+                            candidate: row.candidate,
+                            dependencies: row.dependencies,
+                          });
+                          committed = true;
+                          return {
+                            committed: true,
+                            summary: row.candidate.summary,
+                          };
+                        },
+                      },
+                      {
+                        name: "world_pause",
+                        description:
+                          "取得できない必要条件を明示し、世界を変更せず保留する。",
+                        schema: z.toJSONSchema(
+                          z.object({ reason: z.string().min(1) }).strict(),
+                          { io: "input" },
+                        ),
+                        execute: async (input) => {
+                          paused = z
+                            .object({ reason: z.string().min(1) })
+                            .parse(input).reason;
+                          return { paused: true };
+                        },
+                      },
+                    ],
+                  });
+                } catch (error) {
+                  if (
+                    !(await this.store.receipt(
+                      row.request.worldId,
+                      row.commit_id,
+                    ))
+                  )
+                    throw error;
+                }
+                if (
+                  await this.store.receipt(row.request.worldId, row.commit_id)
+                )
+                  return this.#finish(row, claim);
+                throw new OperationPaused(
+                  paused ?? "dshから世界への確定が完了していないため保留します",
+                );
+              }
+              if (row.candidate) {
+                if (!row.approved) {
+                  const reviewId = callId(id, row.epoch, row.step + 1000000);
+                  const saved = (await this.model.ledger.input(reviewId)) as
+                    | {
+                        request: {
+                          system?: string;
+                          messages?: ChatMessage[];
+                          input?: ChatMessage[];
+                        };
+                      }
+                    | undefined;
+                  const frozenMessages =
+                    saved?.request.system !== undefined
+                      ? [
+                          {
+                            role: "system" as const,
+                            content: saved.request.system,
+                          },
+                          ...saved.request.messages!,
+                        ]
+                      : (saved?.request.messages ?? saved?.request.input);
+                  const review = await this.model.complete(
+                    reviewId,
+                    "world-commit",
+                    frozenMessages ?? [
+                      {
+                        role: "system",
+                        content: await readFile(
+                          new URL(
+                            "../../../../prompts/world-commit.md",
+                            import.meta.url,
+                          ),
+                          "utf8",
+                        ),
+                      },
+                      {
+                        role: "user",
+                        content: JSON.stringify({
+                          commitReview: this.#reviewContext(row),
+                          responseSchema: z.toJSONSchema(CommitDecision, {
+                            io: "input",
+                          }),
+                        }),
+                      },
+                    ],
+                    "resolution",
+                  );
+                  if (review.finishReason !== "stop")
+                    throw new OperationPaused("確定判断の応答が未完了です");
+                  const decision = CommitDecision.parse(
+                    JSON.parse(review.content),
+                  );
+                  if (decision.type === "pause")
+                    throw new OperationPaused(decision.reason);
+                  if (decision.type === "revise") {
+                    row.candidate = null;
+                    row.messages.push({
+                      role: "user",
+                      content: JSON.stringify({
+                        commitReview: decision.reason,
+                      }),
+                    });
+                    await this.#save(row, claim);
+                    continue;
+                  }
+                  row.dependencies = await this.#validateProposal(
+                    row,
+                    row.candidate,
+                  );
+                  row.approved = true;
+                  await this.#save(row, claim);
+                }
+                const conflict = await commitTask({
+                  candidate: row.candidate,
+                  dependencies: row.dependencies,
+                });
+                if (conflict) throw new WorldConflict(conflict);
+                return this.#finish(row, claim);
+              }
+              const response = await ask({
+                id: callId(id, row.epoch, row.step),
+                messages: row.messages,
+              });
+              if (response.finishReason !== "stop")
+                throw new OperationPaused("モデル応答が未完了のため保留します");
+              row.messages.push({
+                role: "assistant",
+                content: response.content,
+              });
+              row.step++;
+              let decision;
+              try {
+                decision = Decision.parse(JSON.parse(response.content));
+              } catch (error) {
                 row.messages.push({
                   role: "user",
                   content: JSON.stringify({
-                    requests: decision.requests,
-                    results: output.results,
+                    validationErrors:
+                      error instanceof z.ZodError
+                        ? error.issues
+                        : "invalid JSON",
                   }),
                 });
-              } else {
-                decision = this.#sceneProposal(row, decision);
-                row.dependencies = await this.#validateProposal(row, decision);
-                row.candidate = decision;
-                row.approved = row.combined_judgment;
+                await this.#save(row, claim);
+                continue;
               }
+              if (decision.type === "pause") {
+                await this.#save(row, claim);
+                throw new OperationPaused(decision.reason);
+              }
+              try {
+                if (decision.type === "query") {
+                  const output = await query({
+                    row,
+                    requests: decision.requests,
+                  });
+                  row.dependencies = output.dependencies;
+                  row.messages.push({
+                    role: "user",
+                    content: JSON.stringify({
+                      requests: decision.requests,
+                      results: output.results,
+                    }),
+                  });
+                } else {
+                  decision = this.#sceneProposal(row, decision);
+                  row.dependencies = await this.#validateProposal(
+                    row,
+                    decision,
+                  );
+                  row.candidate = decision;
+                  row.approved = row.combined_judgment;
+                }
+              } catch (error) {
+                if (
+                  !(error instanceof CandidateRejected) &&
+                  !(error instanceof z.ZodError)
+                )
+                  throw error;
+                row.messages.push({
+                  role: "user",
+                  content: JSON.stringify({
+                    validationErrors:
+                      error instanceof Error
+                        ? error.message
+                        : "invalid candidate",
+                  }),
+                });
+              }
+              await this.#save(row, claim);
             } catch (error) {
-              if (
-                !(error instanceof CandidateRejected) &&
-                !(error instanceof z.ZodError)
-              )
-                throw error;
-              row.messages.push({
-                role: "user",
-                content: JSON.stringify({
-                  validationErrors:
-                    error instanceof Error
-                      ? error.message
-                      : "invalid candidate",
-                }),
-              });
+              if (!(error instanceof WorldConflict)) {
+                if (
+                  (await this.model.ledger.hasPendingOperation(id)) ||
+                  !(error instanceof HarnessCommunicationError) ||
+                  communicationRestarts++ > 0
+                )
+                  throw error;
+              }
+              row.epoch++;
+              row.step = 0;
+              row.messages = null;
+              row.candidate = null;
+              row.approved = false;
+              row.dependencies = [];
+              await this.#save(row, claim);
+              const renewed = await this.#activate(id, claim);
+              lease = renewed.lease;
             }
-            await this.#save(row, claim);
-          } catch (error) {
-            if (!(error instanceof WorldConflict)) {
-              if (
-                !(error instanceof HarnessCommunicationError) ||
-                communicationRestarts++ > 0
-              )
-                throw error;
-            }
-            row.epoch++;
-            row.step = 0;
-            row.messages = null;
-            row.candidate = null;
-            row.approved = false;
-            row.dependencies = [];
-            await this.#save(row, claim);
-            const renewed = await this.#activate(id, claim);
-            lease = renewed.lease;
           }
-        }
-      },
-    );
-    try {
+        },
+      );
       return await workflow.invoke(
         {},
         { configurable: { thread_id: `${id}:${claim}` } },
       );
     } catch (error) {
       await this.pool.query(
-        "UPDATE world_operation SET state='paused',pause_reason=$3 WHERE id=$1 AND claim_key=$2 AND state<>'complete'",
-        [id, claim, error instanceof Error ? error.message : "paused"],
+        "UPDATE world_operation SET state='paused',pause_reason=$3,suspended=$4 WHERE id=$1 AND claim_key=$2 AND state<>'complete'",
+        [
+          id,
+          claim,
+          error instanceof Error ? error.message : "paused",
+          error instanceof RuntimeStopped,
+        ],
       );
       throw error;
     }

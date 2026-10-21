@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { Authority } from "../runtime/control.js";
 import { ExecutionBudget } from "../execution-budget.js";
 import { ModelSettings, type SettingsSnapshot } from "./settings.js";
 import type pg from "pg";
@@ -263,6 +264,7 @@ export class LlmClient {
     work: () => Promise<T>,
     worldId?: string,
     userId?: string,
+    authority?: Authority,
   ): Promise<T> {
     return ExecutionBudget.run(
       this.ledger.pool,
@@ -284,6 +286,7 @@ export class LlmClient {
       },
       worldId,
       userId,
+      authority,
     );
   }
   bind<A extends unknown[], R>(work: (...args: A) => R) {

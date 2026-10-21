@@ -1,3 +1,5 @@
+import { RuntimeExecutions } from "./executions.js";
+import { RuntimeControl, RuntimeStopped } from "./control.js";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
@@ -73,6 +75,7 @@ export type SceneData = {
   resumeState?: SceneRow["state"];
   error?: string;
   limitReached?: boolean;
+  suspended?: boolean;
 };
 export type SceneRow = {
   id: string;
@@ -197,6 +200,7 @@ export class WorldScenes {
     requestId: string,
     actorId?: string,
   ) {
+    await RuntimeControl.check(client, {}, true);
     const c = await this.construction.get(world, client, true);
     const actor = actorId ?? c.participant_id;
     const prior = actor ? await this.latest(world, client, true, actor) : null;
@@ -252,6 +256,7 @@ export class WorldScenes {
     input: { requestId: string; actionText?: string },
     actorId?: string,
   ) {
+    await RuntimeControl.check(client, {}, true);
     const c = await this.construction.get(world, client, true),
       row = await this.latest(
         world,
@@ -269,7 +274,14 @@ export class WorldScenes {
       if (row.state !== "paused")
         throw new ConstructionStateError("保留中のシーンを指定してください");
       row.state = row.data.resumeState!;
-      if (row.data.work && !row.data.limitReached) {
+      if (
+        row.data.work &&
+        (await this.agent.model.ledger.state(row.data.work.id)) === "pending"
+      )
+        throw new ConstructionStateError(
+          "送信済み要求の結果が未確定です。自動では再送しません",
+        );
+      if (row.data.work && !row.data.limitReached && !row.data.suspended) {
         row.data.work = {
           ...row.data.work,
           id: randomUUID(),
@@ -284,6 +296,7 @@ export class WorldScenes {
       }
       delete row.data.error;
       delete row.data.limitReached;
+      delete row.data.suspended;
     } else {
       if (row.state !== "active")
         throw new ConstructionStateError(
@@ -760,7 +773,12 @@ export class WorldScenes {
         : null,
     };
   }
-  async tick(id: string) {
+  async tick(id: string, jobId?: string) {
+    return RuntimeExecutions.run(this.pool, "scene", id, jobId, () =>
+      this.#tick(id),
+    );
+  }
+  async #tick(id: string) {
     const claim = randomUUID(),
       row = await this.#transaction(async (client) => {
         const row = (
@@ -778,12 +796,19 @@ export class WorldScenes {
       });
     if (row.claim !== claim) return;
     try {
+      await RuntimeControl.check(this.pool, {
+        userId: row.user_id ?? undefined,
+        worldId: row.data.worldId,
+        role: "user",
+        actorId: row.actor_id,
+      });
       if (row.state === "preparing")
         await this.agent.model.run(
           this.#budget(row),
           () => this.#background(row),
           row.data.worldId,
           row.user_id ?? undefined,
+          { role: "user", actorId: row.actor_id },
         );
       else if (row.state === "acting") {
         if (
@@ -792,6 +817,7 @@ export class WorldScenes {
             () => this.#action(row),
             row.data.worldId,
             row.user_id ?? undefined,
+            { role: "user", actorId: row.actor_id },
           )
         )
           await this.agent.model.run(
@@ -799,6 +825,7 @@ export class WorldScenes {
             () => this.#reflect(row),
             row.data.worldId,
             row.user_id ?? undefined,
+            { role: "user", actorId: row.actor_id },
           );
       } else
         await this.agent.model.run(
@@ -806,11 +833,13 @@ export class WorldScenes {
           () => this.#reflect(row),
           row.data.worldId,
           row.user_id ?? undefined,
+          { role: "user", actorId: row.actor_id },
         );
     } catch (error) {
       if (error instanceof SupersededWorker) return;
       row.data.resumeState = row.state;
       row.data.limitReached = error instanceof ExecutionLimit;
+      row.data.suspended = error instanceof RuntimeStopped;
       row.data.error =
         error instanceof Error ? error.message : "シーンを保留しました";
       row.state = "paused";
@@ -825,7 +854,7 @@ export class WorldScenes {
       async (jobs) => {
         for (const job of jobs)
           try {
-            await this.tick(job.data.id);
+            await this.tick(job.data.id, job.id);
           } catch (error) {
             console.error(
               JSON.stringify({

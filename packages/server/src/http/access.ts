@@ -1,3 +1,4 @@
+import { RuntimeStopped } from "../runtime/control.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type pg from "pg";
@@ -210,6 +211,8 @@ export class WorldAccess {
       return response;
     } catch (error) {
       await client.query("ROLLBACK");
+      if (error instanceof RuntimeStopped)
+        throw new AccessError(409, error.code, error.message);
       throw error;
     } finally {
       client.release();
@@ -249,7 +252,7 @@ export class WorldAccess {
           "UPDATE world_construction SET user_id=$2 WHERE id=$1",
           [id, subject],
         );
-        await ExecutionBudget.attribute(client, id, subject);
+        await ExecutionBudget.attribute(client, id, subject, { role: "admin" });
         await client.query(
           "UPDATE world_budget SET updated_by=$2 FROM world_build b WHERE world_budget.world_id=b.world_id AND b.run_id=$1",
           [id, subject],
@@ -653,7 +656,14 @@ export class WorldAccess {
               client,
             );
           }
-          await ExecutionBudget.attribute(client, input.requestId, subject);
+          await ExecutionBudget.attribute(client, input.requestId, subject, {
+            role: "user",
+            actorId: grant.actor_id!,
+          });
+          await client.query(
+            "UPDATE world_construction SET user_id=$2 WHERE id=$1",
+            [id, subject],
+          );
           return this.playerData(
             await this.construction.play(
               id,

@@ -333,6 +333,9 @@ export const CostQuery = z
     worldId: z.uuid().nullable().optional(),
     userId: z.uuid().nullable().optional(),
     task: z.string().min(1).nullable().optional(),
+    responseId: z.uuid().optional(),
+    operationId: z.uuid().optional(),
+    callId: z.uuid().optional(),
     view: z.enum(["summary", "calls", "timeline"]),
     interval: z.enum(["hour", "day", "month"]).default("day"),
     after: z.string().optional(),
@@ -397,7 +400,82 @@ export const CostReport = z.object({
   timeline: z.array(CostTotals.extend({ at: z.iso.datetime() })).optional(),
   next: z.string().nullable(),
 });
+export const RuntimeSettings = z
+  .object({
+    paused: z.boolean(),
+    concurrency: z.number().int().positive().safe().nullable(),
+    sampleIntervalSeconds: z.number().int().positive().safe(),
+    retentionDays: z.number().int().positive().safe(),
+    thresholds: z.partialRecord(
+      z.enum([
+        "errorPercent",
+        "latencyMs",
+        "queueAgeSeconds",
+        "postgresBytes",
+        "postgresConnectionPercent",
+        "postgresUnavailable",
+        "graphUnavailable",
+        "calculatedUsd",
+        "unsettledUsd",
+      ]),
+      z.number().nonnegative().finite(),
+    ),
+  })
+  .strict();
+export const JobKind = z.enum(["construction", "scene", "join"]);
+export const JobQuery = z
+  .object({
+    kind: JobKind.optional(),
+    worldId: z.uuid().optional(),
+    userId: z.uuid().optional(),
+    before: z.uuid().optional(),
+  })
+  .strict();
+export const MonitorPageQuery = z
+  .object({ before: z.string().regex(/^\d+$/).optional() })
+  .strict();
 export const Operation = z.discriminatedUnion("operation", [
+  z
+    .object({
+      operation: z.literal("monitor.samples"),
+      query: MonitorPageQuery,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("monitor.notifications"),
+      query: MonitorPageQuery,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("monitorWebhook.put"),
+      url: z.url().nullable(),
+      expectedVersion: z.number().int().nonnegative(),
+      reason: z.string().trim().min(1),
+    })
+    .strict(),
+  z.object({ operation: z.literal("runtime.read") }).strict(),
+  z
+    .object({
+      operation: z.literal("runtime.put"),
+      configuration: RuntimeSettings,
+      expectedVersion: z.number().int().positive(),
+      reason: z.string().trim().min(1),
+    })
+    .strict(),
+  z.object({ operation: z.literal("jobs.list"), query: JobQuery }).strict(),
+  z
+    .object({ operation: z.literal("jobs.read"), kind: JobKind, id: z.uuid() })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("jobs.resume"),
+      kind: JobKind,
+      id: z.uuid(),
+      reason: z.string().trim().min(1),
+    })
+    .strict(),
   z.object({ operation: z.literal("costs.read"), query: CostQuery }).strict(),
   z.object({ operation: z.literal("models.read") }).strict(),
   z

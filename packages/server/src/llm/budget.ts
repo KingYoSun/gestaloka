@@ -217,6 +217,14 @@ export class BudgetLedger {
     }
   }
 
+  async hasPendingOperation(id: string) {
+    return !!(
+      await this.pool.query(
+        "SELECT id FROM llm_call WHERE state='pending' AND (operation_id=$1 OR request->>'operationId'=$1::text) LIMIT 1",
+        [id],
+      )
+    ).rowCount;
+  }
   async state(id: string) {
     const result = await this.pool.query<{ state: string }>(
       "SELECT state FROM llm_call WHERE id=$1 AND budget_id=$2",

@@ -1,3 +1,5 @@
+import { RuntimeExecutions } from "./executions.js";
+import { RuntimeControl } from "./control.js";
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { AccessError } from "../http/access.js";
@@ -54,6 +56,7 @@ export class WorldPlayers {
     db: pg.PoolClient,
   ) {
     await requireMember(db, userId);
+    await RuntimeControl.check(db, {}, true);
     const world = (
       await db.query<{
         world_id: string;
@@ -122,12 +125,13 @@ export class WorldPlayers {
         world.at,
       ],
     );
-    await ExecutionBudget.attribute(db, id, userId);
+    await ExecutionBudget.attribute(db, id, userId, { role: "user" });
     await this.#enqueue(db, id);
     return { id, state: "joining" };
   }
   async resume(userId: string, id: string, db: pg.PoolClient) {
     await requireMember(db, userId);
+    await RuntimeControl.check(db, {}, true);
     const row = (
       await db.query<JoinRow>(
         "SELECT * FROM world_join WHERE id=$1 AND subject_id=$2 FOR UPDATE",
@@ -146,7 +150,7 @@ export class WorldPlayers {
       "UPDATE world_join SET state='joining',claim=NULL,error=NULL WHERE id=$1",
       [id],
     );
-    await ExecutionBudget.attribute(db, id, userId);
+    await ExecutionBudget.attribute(db, id, userId, { role: "user" });
     await this.#enqueue(db, id);
     return { id, state: "joining" };
   }
@@ -187,7 +191,12 @@ export class WorldPlayers {
       db.release();
     }
   }
-  async tick(id: string) {
+  async tick(id: string, jobId?: string) {
+    return RuntimeExecutions.run(this.pool, "join", id, jobId, () =>
+      this.#tick(id),
+    );
+  }
+  async #tick(id: string) {
     const claim = randomUUID();
     const row = await this.#transaction(async (db) => {
       const row = (
@@ -203,6 +212,10 @@ export class WorldPlayers {
     });
     if (row.claim !== claim) return;
     try {
+      await RuntimeControl.check(this.pool, {
+        userId: row.subject_id,
+        role: "user",
+      });
       const result = await ExecutionBudget.run(this.pool, id, () =>
         this.construction.agent.run(row.operation_id),
       );
@@ -260,7 +273,7 @@ export class WorldPlayers {
       async (jobs) => {
         for (const job of jobs)
           try {
-            await this.tick(job.data.id);
+            await this.tick(job.data.id, job.id);
           } catch {
             console.error(
               JSON.stringify({ joinId: job.data.id, state: "paused" }),
