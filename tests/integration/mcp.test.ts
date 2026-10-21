@@ -146,6 +146,124 @@ test("要求の受付照会にも元の操作のscopeが必要となる", async 
     ),
   ).toMatchObject({ state: "accepted", operation: "settings.read" });
 });
+
+test("外部MCPクライアントが世界を構築・完了・読取・編集し、同じ確定と費用を再利用する", async () => {
+  const { token } = await delegation([
+    "worlds.create",
+    "worlds.command",
+    "worlds.read",
+    "worlds.graph",
+    "worlds.edit",
+    "requests.read",
+    "costs.read",
+    "jobs.list",
+  ]);
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  await app.listen({ host: "127.0.0.1", port: 18980 });
+  const client = new Client({ name: "world-operator", version: "1" });
+  try {
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL("http://127.0.0.1:18980/mcp"), {
+        requestInit: { headers: { authorization: `Bearer ${token}` } },
+      }),
+    );
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const result = await client.callTool({
+        name,
+        arguments: { requestId: randomUUID(), ...args },
+      });
+      expect(result.isError).not.toBe(true);
+      const text = result.content.find((v) => v.type === "text")?.text;
+      if (typeof text !== "string") throw new Error("MCPの応答がありません");
+      return JSON.parse(text) as Record<string, unknown>;
+    };
+    const created = await call("worlds_create", {
+        prompt: "外部MCPから作る世界",
+        budgetUsd: 10,
+        reason: "一貫検証",
+      }),
+      worldId = String(created.id);
+    await runtime.tick(worldId);
+    expect(await call("worlds_read", { worldId })).toMatchObject({
+      world: { id: worldId, state: "ready" },
+    });
+    expect(
+      await call("worlds_command", {
+        worldId,
+        command: { command: "finish" },
+        reason: "構築完了",
+      }),
+    ).toMatchObject({ state: "finished" });
+    const graph = await call("worlds_graph", {
+        worldId,
+        query: { kind: "nodes" },
+      }),
+      nodeId = randomUUID(),
+      requestId = randomUUID();
+    const input = {
+      requestId,
+      worldId,
+      at: 0,
+      dependencies: graph.dependencies,
+      changes: {
+        nodes: [
+          { id: nodeId, kind: "existence", text: "外部LLMが設定した目印" },
+        ],
+        edges: [],
+        revisions: [],
+        endEdges: [],
+      },
+      reason: "管理者による明示的な世界修正",
+    };
+    const db = isolated.databases.postgres;
+    const count = async () =>
+      (await db.query("SELECT count(*)::int AS n FROM llm_call")).rows[0].n;
+    const calls = await count(),
+      first = await call("worlds_edit", input);
+    expect(first.commitId).toBe(requestId);
+    expect(await call("worlds_edit", input)).toEqual(first);
+    expect(await count()).toBe(calls);
+    expect(await call("requests_read", { id: requestId })).toMatchObject({
+      state: "accepted",
+      operation: "worlds.edit",
+      result: { commitId: requestId },
+    });
+    expect(
+      JSON.stringify(
+        await call("worlds_graph", {
+          worldId,
+          query: { kind: "node", id: nodeId },
+        }),
+      ),
+    ).toContain("外部LLMが設定した目印");
+    const receipts = await isolated.databases.graph.executeQuery(
+      "MATCH(r:WorldReceipt {commitId:$id}) RETURN r",
+      { id: requestId },
+    );
+    expect(receipts.records).toHaveLength(1);
+    expect(
+      await call("costs_read", {
+        query: {
+          from: new Date(Date.now() - 86400000).toISOString(),
+          to: new Date(Date.now() + 86400000).toISOString(),
+          worldId,
+          view: "summary",
+        },
+      }),
+    ).toMatchObject({ basis: "calculated", totals: { calls } });
+    expect(await call("jobs_list", { query: { worldId } })).toMatchObject({
+      items: [{ id: worldId, state: "finished" }],
+    });
+  } finally {
+    await client.close();
+    await app.close();
+  }
+});
 test("外部SDKのMCP接続で全共通操作を列挙し、認証・scope・再送・監査を適用する", async () => {
   const { token, principal } = await delegation(["users.list", "users.role"]),
     user = (await auth.person("user")).id;

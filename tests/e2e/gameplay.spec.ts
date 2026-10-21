@@ -4,6 +4,7 @@ import { connectDatabases } from "@gestaloka/server";
 import type { Page } from "@playwright/test";
 
 async function participate(page: Page) {
+  await expect(page.getByText("世界構築を完了", { exact: true })).toBeVisible();
   const id = new URL(page.url()).pathname.split("/")[2]!;
   const preset = await page.request.post("/api/operations", {
     headers: { "X-Gestaloka-Request": "1" },
