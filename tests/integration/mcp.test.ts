@@ -123,6 +123,29 @@ const create = async () => {
   await runtime.tick(id);
   return id;
 };
+
+test("要求の受付照会にも元の操作のscopeが必要となる", async () => {
+  const id = randomUUID();
+  await auth.operations.execute(admin, id, { operation: "settings.read" });
+  const limited = await delegation(["requests.read"]);
+  await expect(
+    auth.operations.execute(
+      admin,
+      randomUUID(),
+      { operation: "requests.read", id },
+      { mcp: limited.principal },
+    ),
+  ).rejects.toMatchObject({ code: "MCP_SCOPE_DENIED" });
+  const allowed = await delegation(["requests.read", "settings.read"]);
+  expect(
+    await auth.operations.execute(
+      admin,
+      randomUUID(),
+      { operation: "requests.read", id },
+      { mcp: allowed.principal },
+    ),
+  ).toMatchObject({ state: "accepted", operation: "settings.read" });
+});
 test("外部SDKのMCP接続で全共通操作を列挙し、認証・scope・再送・監査を適用する", async () => {
   const { token, principal } = await delegation(["users.list", "users.role"]),
     user = (await auth.person("user")).id;

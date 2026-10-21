@@ -53,7 +53,7 @@
 
 設定は`enabled`、`intervalHours`、`retentionDays`、`repository`、`accessKey`、`secretKey`、`password`、`region`を持つ。未設定では取得しない。初期運用は24時間ごと、30日保持とし、`enabled: true`にしてから定期取得を始める。実行済みの分は暗号化してS3へ送り、同じ配置の保持期間外のスナップショットを整理して保管データを検証する。
 
-MCPからも同じAPIを使い、管理画面への接続は#73で行う。サーバー上では`pnpm production controller <設定ディレクトリ> <操作JSONファイル>`でも操作できる。これはOSの管理権限による復旧手段で、実行者を`null`、理由と結果を独立した制御記録へ保存する。操作JSONには`requestId`も指定できる。秘密値を含むJSONファイルは権限を制限し、設定後に削除する。
+管理画面の`/operations/backups`とMCPも同じAPIを使う。サーバー上では`pnpm production controller <設定ディレクトリ> <操作JSONファイル>`でも操作できる。これはOSの管理権限による復旧手段で、実行者を`null`、理由と結果を独立した制御記録へ保存する。操作JSONには`requestId`も指定できる。秘密値を含むJSONファイルは権限を制限し、設定後に削除する。
 
 ## 取得と復元の境界
 

@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useRouter, useSearch } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -21,6 +21,7 @@ import { Input } from "./components/ui/input.js";
 import { Label } from "./components/ui/label.js";
 import { ScenePlayer } from "./ScenePlayer.js";
 import { Publication, Presets, WorldBudgetSettings } from "./operations-ui.js";
+import { operate } from "./operations-client.js";
 
 const PromptForm = CreateWorld.omit({ requestId: true }).extend({
   prompt: z.string().min(1, "初期設定を入力してください"),
@@ -57,13 +58,30 @@ export function Home() {
       ...(pending ? { budgetUsd: pending.budgetUsd } : {}),
     },
   });
-  const worlds = $api.useQuery("get", "/api/worlds");
+  const [before, setBefore] = useState<string>();
+  const worlds = useQuery({
+    queryKey: ["admin-worlds", before],
+    gcTime: 0,
+    queryFn: async ({ signal }) =>
+      z
+        .object({
+          items: z.array(z.object({ id: z.uuid() })),
+          next: z.uuid().nullable(),
+        })
+        .parse(
+          await operate(
+            { operation: "worlds.list", ...(before ? { before } : {}) },
+            undefined,
+            signal,
+          ),
+        ),
+  });
   const create = $api.useMutation("post", "/api/worlds", {
     onSuccess: (data) => {
       if (!data) return;
       save(null);
       form.reset();
-      void client.invalidateQueries({ queryKey: ["get", "/api/worlds"] });
+      void client.invalidateQueries({ queryKey: ["admin-worlds"] });
       if (alive.current)
         void router.navigate({ to: "/worlds/$id", params: { id: data.id } });
     },
@@ -128,11 +146,23 @@ export function Home() {
           <Problem error={worlds.error} />
         ) : worlds.isPending ? (
           <Notice>記録を読み込んでいます</Notice>
-        ) : !worlds.data?.length ? (
+        ) : !worlds.data?.items.length ? (
           <p className="muted">作成した世界はここから開けます。</p>
         ) : (
-          worlds.data.map((world) => <WorldCard key={world.id} id={world.id} />)
+          worlds.data.items.map((world) => (
+            <WorldCard key={world.id} id={world.id} />
+          ))
         )}
+        <div className="action-footer">
+          {before && (
+            <Button onClick={() => setBefore(undefined)}>先頭の世界へ</Button>
+          )}
+          {worlds.data?.next && (
+            <Button onClick={() => setBefore(worlds.data!.next!)}>
+              次の世界を取得
+            </Button>
+          )}
+        </div>
       </section>
       <Presets />
     </main>

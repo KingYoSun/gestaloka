@@ -513,6 +513,7 @@ export const McpClientConfiguration = z
   })
   .strict();
 export const Operation = z.discriminatedUnion("operation", [
+  z.object({ operation: z.literal("requests.read"), id: z.uuid() }).strict(),
   z
     .object({
       operation: z.literal("mcp.clients.list"),

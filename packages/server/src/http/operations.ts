@@ -552,8 +552,40 @@ export class Operations {
     requestId: string,
   ): Promise<Record<string, unknown>> {
     switch (input.operation) {
+      case "requests.read": {
+        const row = (
+          await db.query(
+            `SELECT r.operation,r.result,r.error,a.outcome,a.details->>'code' AS code FROM operation_request r
+          LEFT JOIN LATERAL (SELECT outcome,details FROM operation_audit WHERE request_id=r.id ORDER BY id DESC LIMIT 1) a ON true
+          WHERE r.id=$1 AND r.actor_id=$2`,
+            [input.id, actor],
+          )
+        ).rows[0];
+        if (!row) return { id: input.id, state: "unreceived" };
+        if (context.mcp)
+          await this.mcp.check(db, context.mcp, row.operation, undefined, true);
+        return {
+          id: input.id,
+          operation: row.operation,
+          state: row.error
+            ? "failed"
+            : row.result !== null
+              ? "accepted"
+              : "pending",
+          outcome: row.outcome ?? null,
+          code: row.code ?? null,
+          result:
+            row.result && row.operation === "invites.create"
+              ? { ...row.result, token: this.#token(row.result.id) }
+              : row.result,
+          error: row.error,
+        };
+      }
       case "mcp.clients.list":
-        return this.mcp.clients(db, input.before);
+        return {
+          ...(await this.mcp.clients(db, input.before)),
+          resource: this.mcp.resource,
+        };
       case "mcp.clients.put":
         return this.mcp.put(
           db,

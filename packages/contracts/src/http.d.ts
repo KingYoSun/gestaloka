@@ -2370,6 +2370,11 @@ export interface paths {
                         requestId: string;
                         command: {
                             /** @enum {string} */
+                            operation: "requests.read";
+                            /** Format: uuid */
+                            id: string;
+                        } | {
+                            /** @enum {string} */
                             operation: "mcp.clients.list";
                             /** Format: uuid */
                             before?: string;
