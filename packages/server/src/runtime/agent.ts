@@ -21,7 +21,7 @@ import {
 import type { LlmClient, ChatMessage } from "../llm/client.js";
 import { HarnessCommunicationError, runHarness } from "./harness.js";
 import { CompletedScene, mergeSceneChanges } from "./scene-data.js";
-import { ExecutionBudget, ExecutionLimit } from "../execution-budget.js";
+import { ExecutionLimit } from "../execution-budget.js";
 
 const Time = z.number().int().nonnegative().safe();
 const IntentResult = z.object({ actionText: z.string().min(1) }).strict();
@@ -233,13 +233,13 @@ export class WorldAgent {
     database: Pick<pg.Pool, "query"> = this.pool,
     dependencies: Dependency[] = [],
   ) {
-    const target = this.model.settingsFor("resolution");
+    const request = Interaction.parse(input),
+      id = randomUUID();
+    const target = await this.model.settingsAt("resolution", id, database);
     const combined =
       target.judgment === "combined" &&
       target.provider !== "deepseek" &&
       ["interaction", "resolution"].includes(input.phase);
-    const request = Interaction.parse(input),
-      id = randomUUID();
     z.uuid().parse(runId);
     let system = await readFile(
       new URL(
@@ -832,8 +832,7 @@ export class WorldAgent {
         [id],
       )
     ).rows[0];
-    return ExecutionBudget.run(
-      this.pool,
+    return this.model.run(
       id,
       () => this.#run(id, resumeInput),
       world?.world_id,
@@ -1367,8 +1366,7 @@ export class WorldAgent {
   ) {
     if ((await this.controlledActors(worldId, [observerId])).has(observerId))
       throw new Error("プレイヤーの新たな意図は本人の入力が必要です");
-    return ExecutionBudget.run(
-      this.pool,
+    return this.model.run(
       id,
       () =>
         this.#intent(worldId, observerId, at, id, ownIntentions, activityUntil),

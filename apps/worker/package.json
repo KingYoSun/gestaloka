@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
-    "start": "node --env-file-if-exists=../../.env dist/main.js"
+    "dev": "tsx watch --env-file-if-exists=../../.env --env-file-if-exists=../../.env.ory src/main.ts",
+    "start": "node --env-file-if-exists=../../.env --env-file-if-exists=../../.env.ory dist/main.js"
   },
   "dependencies": {
     "@gestaloka/server": "workspace:*"

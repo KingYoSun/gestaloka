@@ -34,7 +34,7 @@ databases.queue.on("error", (error) => console.error(error));
 try {
   await databases.verify();
   await databases.queue.start();
-  const model = new LlmClient(databases.postgres);
+  const model = await LlmClient.create(databases.postgres);
   const construction = new WorldConstruction(
     new WorldBuilder(
       databases.postgres,

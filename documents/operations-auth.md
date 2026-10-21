@@ -152,3 +152,19 @@ API送信前に、その世界の計算済み額と未確定予約額へ新し�
 無限ループの防止には `responseLimits.read`・`responseLimits.put` を使う。変更時は `calls`・取得した `expectedVersion`・`reason` を指定する。初期値は64回で、同じ応答生成の親子処理・修正・再試行・再開・dshを通算する。保存済みの応答の再利用では消費しない。再開ボタンによる枠の追加とグラフ照会の通算上限は廃止した。次の独立した応答は別のcall回数を持つ。
 
 `LLM_BUDGET_ID`・`LLM_BUDGET_USD` は明示した開発・検証用の全体費用枠として残す。未設定なら実運用へ全体の固定上限を追加しない。#25の100ドルを世界の初期予算やユーザーの上限へ転用しない。
+
+## モデル・単価・APIキーの運用設定
+
+管理者の共通APIは `models.read`・`models.put`・`credentials.put`。`models.read` は現在の設定版、設定本文、変更者・日時と、登録済みAPIキーのプロバイダー・版・変更者・日時を返す。APIキーの値は返さない。
+
+`models.put` は取得した `expectedVersion`、変更理由 `reason`、`configuration` を指定する。設定本文は `default`（基本モデル）・`resolution`（上位モデル）・`judgment`（`separate` または `combined`）で構成する。両モデルには `provider`・`model`・`baseUrl`・`api`・`effort`・`initialEffort`・`contextTokens`・`maxOutputTokens`・`inputUsdPerMillion`・`cachedInputUsdPerMillion`・`outputUsdPerMillion`・`pricingDate` を指定する。単価はUSD／100万トークン、適用日はYYYY-MM-DD。DeepSeekの上位担当には必要に応じて `harnessBaseUrl` も指定できる。
+
+保存前に接続先のモデル一覧を確認する。新しいプロバイダーを使う場合はAPIキーを先に登録する。接続・設定版・権限の確認に失敗した設定は適用しない。接続確認中にモデル設定やAPIキーが変わった場合も、現在の設定を読み直してから変更する。基本モデルと上位モデルの担当、およびDeepSeekの上位処理で使うdshは維持する。
+
+`credentials.put` は `provider`・新しいキーの `value`・現在の `expectedVersion`・変更理由 `reason` を指定する。初回の版は0。値は書き込み専用で、読取や監査に原文を含めない。使用中のプロバイダーでは新しいキーの接続を確認してから差し替える。既に送信したAPIは中断せず、次の枠取得から新しいキーを使う。待機中もキーの差替えを確認し、差替えでモデルの共有枠をリセットしない。
+
+モデル・推論量・単価の版は応答生成1回の間は固定し、修正・再開でも保持する。次の応答は変更後の設定を使う。世界予算とモデル共有枠は、それぞれ送信前の最新設定を確認する。
+
+API、ワーカー、通常の世界操作CLIは `.env.ory` の `OPERATIONS_TOKEN_SECRET` を共有する。この鍵からAPIキー保護用の鍵を導出する。DBと同じ時点の `.env.ory` を一緒に保管・復元し、再起動のたびに作り直さない。キーを差し替える場合は `credentials.put` を使い、`.env` の旧値で上書きしない。
+
+初期設定とAPIキーは環境変数から一度だけ取り込む。移行後はDBへ保存した運用設定を使い、再起動で旧環境設定へ戻さない。プロバイダーのキーを環境変数から外した後も、DBと `OPERATIONS_TOKEN_SECRET` から通常の処理を再開できる。秘密情報を含むAPI要求やDBの全文をログ・Issueへ貼り付けない。

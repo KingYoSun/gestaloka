@@ -1,6 +1,6 @@
 import { connectDatabases } from "@gestaloka/server";
 import { createApp } from "./app.js";
-import { LlmClient, llmApiKey } from "@gestaloka/server/llm";
+import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldConstruction } from "@gestaloka/server/construction";
@@ -23,9 +23,9 @@ try {
       : undefined;
   await operations?.setup();
   let access: WorldAccess | undefined;
-  if (llmApiKey() && operations) {
+  if (operations) {
     await databases.queue.start();
-    const model = new LlmClient(databases.postgres);
+    const model = await LlmClient.create(databases.postgres);
     access = new WorldAccess(
       new WorldConstruction(
         new WorldBuilder(

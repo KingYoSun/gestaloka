@@ -24,7 +24,7 @@ if (!values.build && !values.resume)
 const databases = connectDatabases();
 try {
   await databases.verify();
-  const model = new LlmClient(databases.postgres, {
+  const model = await LlmClient.create(databases.postgres, {
     ...process.env,
     LLM_MAX_OUTPUT_TOKENS: process.env.LLM_MAX_OUTPUT_TOKENS ?? "65536",
   });

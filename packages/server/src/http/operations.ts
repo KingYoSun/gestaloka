@@ -6,6 +6,7 @@ import type { WorldPlayers } from "../runtime/players.js";
 import { ModelLimits } from "../llm/limits.js";
 import { WorldBudget } from "../llm/world-budget.js";
 import { ExecutionBudget } from "../execution-budget.js";
+import { ModelSettings, ModelCheckFailed } from "../llm/settings.js";
 
 import {
   Member,
@@ -54,16 +55,20 @@ export async function requireMember(
 
 /** Shared by HTTP, local recovery, and the later MCP adapter. */
 export class Operations {
+  readonly models: ModelSettings;
   constructor(
     readonly pool: pg.Pool,
     readonly tokenSecret: string,
+    transport: typeof fetch = fetch,
   ) {
     if (!/^[a-f0-9]{64}$/.test(tokenSecret))
       throw new Error(
         "OPERATIONS_TOKEN_SECRETを設定してください（pnpm auth:init）",
       );
+    this.models = new ModelSettings(pool, tokenSecret, transport);
   }
   async setup() {
+    await ModelSettings.setup(this.pool);
     await ModelLimits.setup(this.pool);
     await ExecutionBudget.setup(this.pool);
     await WorldBudget.setup(this.pool);
@@ -239,6 +244,55 @@ export class Operations {
     context: Context = {},
   ) {
     z.uuid().parse(requestId);
+    let preflightError: AccessError | undefined;
+    let dependencies:
+      | { configurationVersion?: number; credentials: Record<string, number> }
+      | undefined;
+    if (
+      actor &&
+      (input.operation === "models.put" ||
+        input.operation === "credentials.put") &&
+      !(
+        await this.pool.query(
+          "SELECT id FROM operation_request WHERE id=$1 AND actor_id=$2",
+          [requestId, actor],
+        )
+      ).rowCount
+    ) {
+      try {
+        await this.authorize(actor, true);
+        if (input.operation === "models.put")
+          dependencies = {
+            credentials: await this.models.verify(input.configuration),
+          };
+        else {
+          const current = await this.models.latest();
+          dependencies = {
+            configurationVersion: current?.version ?? 0,
+            credentials: {},
+          };
+          if (
+            current &&
+            [
+              current.configuration.default.provider,
+              current.configuration.resolution.provider,
+            ].includes(input.provider)
+          )
+            await this.models.verify(current.configuration, input);
+        }
+      } catch (error) {
+        preflightError =
+          error instanceof AccessError
+            ? error
+            : new AccessError(
+                409,
+                "MODEL_CHECK_FAILED",
+                error instanceof ModelCheckFailed
+                  ? error.message
+                  : "モデル設定または接続を確認できません",
+              );
+      }
+    }
     const database = await this.pool.connect();
     const digest = hash(JSON.stringify(input));
     let result: Record<string, unknown> = {},
@@ -309,7 +363,17 @@ export class Operations {
               saved.error.message,
             );
           result = saved.result;
-        } else
+        } else if (preflightError) throw preflightError;
+        else {
+          if (
+            dependencies &&
+            !(await this.models.unchanged(database, dependencies))
+          )
+            throw new AccessError(
+              409,
+              "SETTINGS_CHANGED",
+              "接続確認中に設定が変わりました。現在の設定を読み直してください",
+            );
           result = await this.#perform(
             database,
             actor,
@@ -317,6 +381,7 @@ export class Operations {
             context,
             requestId,
           );
+        }
       } catch (error) {
         if (!(error instanceof AccessError)) throw error;
         await database.query("ROLLBACK TO SAVEPOINT operation");
@@ -348,10 +413,7 @@ export class Operations {
           : saved ||
               input.operation.endsWith(".list") ||
               input.operation === "invites.uses" ||
-              input.operation === "modelLimits.read" ||
-              input.operation === "worldBudgets.read" ||
-              input.operation === "responseLimits.read" ||
-              input.operation === "settings.read"
+              input.operation.endsWith(".read")
             ? {}
             : {
                 ...result,
@@ -393,6 +455,39 @@ export class Operations {
     requestId: string,
   ): Promise<Record<string, unknown>> {
     switch (input.operation) {
+      case "models.read":
+        return this.models.read(db);
+      case "models.put": {
+        const saved = await this.models.put(
+          db,
+          input.configuration,
+          input.expectedVersion,
+          actor,
+        );
+        if (!saved)
+          throw new AccessError(
+            409,
+            "SETTINGS_CHANGED",
+            "現在のモデル設定版を読み直してください",
+          );
+        return saved;
+      }
+      case "credentials.put": {
+        const saved = await this.models.putSecret(
+          db,
+          input.provider,
+          input.value,
+          input.expectedVersion,
+          actor,
+        );
+        if (!saved)
+          throw new AccessError(
+            409,
+            "SETTINGS_CHANGED",
+            "現在のAPIキー設定版を読み直してください",
+          );
+        return saved;
+      }
       case "responseLimits.read": {
         const row = (
           await db.query(

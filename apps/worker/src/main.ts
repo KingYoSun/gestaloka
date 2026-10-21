@@ -12,7 +12,7 @@ try {
   await databases.verify();
   await databases.checkpointer.setup();
   await databases.queue.start();
-  const model = new LlmClient(databases.postgres, {
+  const model = await LlmClient.create(databases.postgres, {
     ...process.env,
     LLM_MAX_OUTPUT_TOKENS: process.env.LLM_MAX_OUTPUT_TOKENS ?? "65536",
   });
