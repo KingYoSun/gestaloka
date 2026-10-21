@@ -1,5 +1,6 @@
 import type pg from "pg";
 import { RuntimeSettings } from "@gestaloka/contracts";
+import { McpOrigin, type McpPermission } from "../http/mcp-origin.js";
 
 export class RuntimeStopped extends Error {
   constructor(
@@ -9,10 +10,15 @@ export class RuntimeStopped extends Error {
     super(message);
   }
 }
-export type Authority = { role?: "admin" | "user"; actorId?: string };
+export type Authority = {
+  role?: "admin" | "user";
+  actorId?: string;
+  mcp?: McpPermission;
+};
 type Database = Pick<pg.Pool, "query">;
 export class RuntimeControl {
   static async setup(db: Database) {
+    await McpOrigin.setup(db);
     await db.query(`CREATE TABLE IF NOT EXISTS runtime_control(singleton boolean PRIMARY KEY CHECK(singleton),
       version integer NOT NULL DEFAULT 1,configuration jsonb NOT NULL,updated_by uuid,updated_at timestamptz NOT NULL DEFAULT now());`);
     await db.query(
@@ -81,6 +87,36 @@ export class RuntimeControl {
         "AUTHORITY_LOST",
         "実行に必要な権限が失効したため処理を保留しました。",
       );
+    if (context.mcp) {
+      const r = (
+        await db.query(
+          `SELECT c.configuration,g.scopes,g.world_ids,g.revoked,u.role AS operator_role,u.banned AS operator_banned FROM mcp_grant g JOIN mcp_client c ON c.id=g.client_id JOIN app_user u ON u.id=g.user_id
+        WHERE g.id=$1${lock ? " FOR SHARE OF g,c,u" : ""}`,
+          [context.mcp.grantId],
+        )
+      ).rows[0];
+      const world = (
+        await db.query("SELECT run_id FROM world_build WHERE world_id=$1", [
+          context.worldId ?? null,
+        ])
+      ).rows[0]?.run_id;
+      if (
+        !r ||
+        r.revoked ||
+        !r.configuration.enabled ||
+        r.operator_role !== "admin" ||
+        r.operator_banned ||
+        !r.scopes.includes(context.mcp.scope) ||
+        !r.configuration.scopes.includes(context.mcp.scope) ||
+        [r.world_ids, r.configuration.worldIds].some(
+          (ids) => ids !== null && !ids.includes(world),
+        )
+      )
+        throw new RuntimeStopped(
+          "MCP_AUTH_REVOKED",
+          "MCPの認可が失効したため処理を保留しました。",
+        );
+    }
     if (
       context.actorId &&
       !(

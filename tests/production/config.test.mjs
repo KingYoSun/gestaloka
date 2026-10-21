@@ -154,7 +154,7 @@ test("送信済み応答の保存を待ってからワーカーとグラフを�
       await responseSaved;
       return { rows: [{ n: 0 }] };
     };
-    const job = { id: randomUUID() },
+    const job = { id: randomUUID(), local: true },
       pending = engine.freeze(job);
     await draining;
     assert.deepEqual(calls, ["stop caddy api"]);
@@ -171,4 +171,41 @@ test("送信済み応答の保存を待ってからワーカーとグラフを�
     await engine?.pool.end();
     await rm(root, { recursive: true, force: true });
   }
+});
+test("受付後にMCPの許可を取り消したバックアップは外部送信・停止を始めない", async () => {
+  const engine = new BackupEngine();
+  let sent = false;
+  engine.pool = {
+    query: async (sql) => ({
+      rows: sql.startsWith("SELECT role")
+        ? [{ role: "admin", banned: false }]
+        : [
+            {
+              revoked: true,
+              scopes: ["backups.create"],
+              world_ids: null,
+              configuration: {
+                enabled: true,
+                scopes: ["backups.create"],
+                worldIds: null,
+              },
+            },
+          ],
+    }),
+  };
+  engine.run = async () => {
+    sent = true;
+    throw Error("unexpected container call");
+  };
+  await assert.rejects(
+    engine.process({
+      id: randomUUID(),
+      actor: randomUUID(),
+      local: false,
+      operation: "backups.create",
+      permission: { grantId: randomUUID(), scope: "backups.create" },
+    }),
+    /MCP_AUTH_REVOKED/,
+  );
+  assert.equal(sent, false);
 });

@@ -27,7 +27,7 @@
 5. `https://api.example.com/auth/login`から本人がログインして利用登録する。最初の1人だけが初代管理者になり、その後は招待制となる。管理者はモデル、単価、上限、世界予算を設定する。開発費100ドルは公開環境の予算に流用しない。
 6. Google/X双方のログイン、ログアウト、管理者の権限、管理画面を確認する。公開するときは`profile.json`の`accessCidrs`を公開対象へ変更し、`pnpm production render .deployments/production`の後に同じ`up`を実行する。
 
-利用者画面は`https://play.example.com`、管理画面は`https://admin.example.com`、認証・API・MCPの入口は`https://api.example.com`となる。ブラウザー向けURLとOry内部接続先を分け、認証フローのフォーム・戻り先・発行者には公開HTTPS URLを使う。OryのCookieはこの環境の親ドメインに限定する。MCPクライアントの登録と権限は#72で共通APIへ接続する。
+利用者画面は`https://play.example.com`、管理画面は`https://admin.example.com`、認証・API・MCPの入口は`https://api.example.com`となる。ブラウザー向けURLとOry内部接続先を分け、認証フローのフォーム・戻り先・発行者には公開HTTPS URLを使う。OryのCookieはこの環境の親ドメインに限定する。MCPクライアントの登録と権限は[管理MCP](mcp.md)を参照する。
 
 ## 秘密情報
 
@@ -53,7 +53,7 @@
 
 設定は`enabled`、`intervalHours`、`retentionDays`、`repository`、`accessKey`、`secretKey`、`password`、`region`を持つ。未設定では取得しない。初期運用は24時間ごと、30日保持とし、`enabled: true`にしてから定期取得を始める。実行済みの分は暗号化してS3へ送り、同じ配置の保持期間外のスナップショットを整理して保管データを検証する。
 
-管理画面とMCPは#73と#72でこのAPIへ接続する。サーバー上では`pnpm production controller <設定ディレクトリ> <操作JSONファイル>`でも操作できる。これはOSの管理権限による復旧手段で、実行者を`null`、理由と結果を独立した制御記録へ保存する。操作JSONには`requestId`も指定できる。秘密値を含むJSONファイルは権限を制限し、設定後に削除する。
+MCPからも同じAPIを使い、管理画面への接続は#73で行う。サーバー上では`pnpm production controller <設定ディレクトリ> <操作JSONファイル>`でも操作できる。これはOSの管理権限による復旧手段で、実行者を`null`、理由と結果を独立した制御記録へ保存する。操作JSONには`requestId`も指定できる。秘密値を含むJSONファイルは権限を制限し、設定後に削除する。
 
 ## 取得と復元の境界
 

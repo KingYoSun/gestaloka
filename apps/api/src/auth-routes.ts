@@ -1,13 +1,16 @@
 import type { FastifyInstance } from "fastify";
+import type { Operations } from "@gestaloka/server/operations";
 import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
 import { oauthRoutes } from "./oauth-routes.js";
 import { authPage, authStyle, escapeHtml as escape } from "./auth-page.js";
 import { BrowserSession } from "@gestaloka/contracts";
+import { AccessError } from "@gestaloka/server/access";
 
 export async function authRoutes(
   app: FastifyInstance,
   identity: OryIdentity,
   hydraAdminUrl?: string,
+  operations?: Operations,
 ) {
   app.addHook("onRequest", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -15,6 +18,10 @@ export async function authRoutes(
     reply.header("X-Frame-Options", "DENY");
   });
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof AccessError)
+      return reply
+        .code(error.status)
+        .send({ code: error.code, message: error.message });
     const status = error instanceof IdentityError ? error.status : 503;
     return reply.code(status).send({
       code: status === 401 ? "LOGIN_REQUIRED" : "IDENTITY_UNAVAILABLE",
@@ -146,5 +153,6 @@ export async function authRoutes(
       '<p>ログインできませんでした。</p><a href="/auth/login">やり直す</a>',
     ),
   );
-  if (hydraAdminUrl) await oauthRoutes(app, identity, hydraAdminUrl);
+  if (hydraAdminUrl)
+    await oauthRoutes(app, identity, hydraAdminUrl, operations);
 }

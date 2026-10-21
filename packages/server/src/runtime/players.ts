@@ -1,4 +1,5 @@
 import { RuntimeExecutions } from "./executions.js";
+import { McpOrigin } from "../http/mcp-origin.js";
 import { RuntimeControl } from "./control.js";
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
@@ -43,6 +44,7 @@ export class WorldPlayers {
     });
   }
   async #enqueue(db: pg.PoolClient, id: string) {
+    await McpOrigin.capture(db, "join", id);
     await this.construction.queue.send(
       this.queueName,
       { id },
