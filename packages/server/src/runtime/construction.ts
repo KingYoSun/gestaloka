@@ -1,3 +1,5 @@
+import { RuntimeExecutions } from "./executions.js";
+import { RuntimeControl, RuntimeStopped } from "./control.js";
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { PgBoss } from "pg-boss";
@@ -24,6 +26,8 @@ type Work = {
 export type Construction = {
   id: string;
   user_id?: string | null;
+  request_id?: string | null;
+  suspended?: boolean;
   state:
     | "generating"
     | "ready"
@@ -83,7 +87,7 @@ export class WorldConstruction {
       started_at bigint NOT NULL,at bigint NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS world_run_latest ON world_run(construction_id,actor_id,created_at DESC);`);
     await this.pool.query(
-      "ALTER TABLE world_construction ADD COLUMN IF NOT EXISTS budget_id uuid, ADD COLUMN IF NOT EXISTS user_id uuid",
+      "ALTER TABLE world_construction ADD COLUMN IF NOT EXISTS budget_id uuid, ADD COLUMN IF NOT EXISTS user_id uuid, ADD COLUMN IF NOT EXISTS request_id uuid, ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false",
     );
     await this.pool.query(`ALTER TABLE world_construction
       ADD COLUMN IF NOT EXISTS public_title text NOT NULL DEFAULT '',
@@ -163,12 +167,19 @@ export class WorldConstruction {
     existing?: pg.PoolClient,
   ) {
     return this.#transaction(async (client) => {
+      await RuntimeControl.check(client, {}, true);
       const row = await this.get(id, client, true);
       if (command === "advance") {
         if (row.state !== "ready")
           throw new ConstructionStateError(
             "区切りに到達した構築セッションを指定してください",
           );
+        row.request_id = null;
+        row.user_id = null;
+        await client.query(
+          "UPDATE world_construction SET request_id=NULL,user_id=NULL WHERE id=$1",
+          [id],
+        );
         ConstructionDuration.parse(duration);
         row.target = time.parse(row.at + duration!);
         row.state = "running";
@@ -190,22 +201,30 @@ export class WorldConstruction {
             : row.world_id
               ? "running"
               : "generating";
-        const blocked = await ExecutionBudget.exhausted(
-          row.state === "generating"
-            ? row.id
-            : row.state === "playing"
-              ? (row.budget_id ?? row.id)
-              : (row.current?.id ?? row.id),
-          client,
-        );
+        const blocked =
+          row.suspended ||
+          (await ExecutionBudget.exhausted(
+            row.state === "generating"
+              ? row.id
+              : row.state === "playing"
+                ? (row.budget_id ?? row.id)
+                : (row.current?.id ?? row.id),
+            client,
+          ));
         for (const work of (blocked ? [] : row.current?.members) ??
           (row.current ? [row.current] : []))
           if (
             work.mode === "intent" &&
             work.actionText === undefined &&
             !(await this.agent.hasCompletedIntent(work.id))
-          )
+          ) {
+            if (await this.agent.model.ledger.hasPendingOperation(work.id))
+              throw new ConstructionStateError(
+                "送信済み要求の結果が未確定です。自動では再送しません",
+              );
             work.id = randomUUID();
+          }
+        row.suspended = false;
       } else if (command === "finish") {
         if (row.state !== "ready")
           throw new ConstructionStateError(
@@ -241,6 +260,7 @@ export class WorldConstruction {
         throw new ConstructionStateError(
           "前の行動が区切られてから操作してください",
         );
+      await RuntimeControl.check(client, {}, true);
       row.state = "playing";
       row.budget_id = runId;
       await client.query(
@@ -272,7 +292,7 @@ export class WorldConstruction {
   ) {
     const result = await client.query(
       `WITH updated AS (UPDATE world_construction SET state=$2,world_id=$3,actor_id=$4,root_ids=$5,
-       at=$6,target=$7,agenda=$8,current=$9,participant_id=$10,claim=$11,error=$12,budget_id=$14
+       at=$6,target=$7,agenda=$8,current=$9,participant_id=$10,claim=$11,error=$12,budget_id=$14,suspended=$15
        WHERE id=$1 AND ($13::uuid IS NULL OR claim=$13) RETURNING id,state,at,participant_id),
        progress AS (UPDATE world_run r SET at=u.at,state=CASE u.state WHEN 'playing' THEN 'running' WHEN 'play_paused' THEN 'paused' ELSE 'ready' END
        FROM updated u WHERE u.participant_id IS NOT NULL AND u.state IN ('playing','play_paused','finished')
@@ -293,6 +313,7 @@ export class WorldConstruction {
         row.error,
         expected ?? null,
         row.budget_id ?? null,
+        row.suspended ?? false,
       ],
     );
     if (result.rowCount !== 1)
@@ -654,7 +675,12 @@ export class WorldConstruction {
     return { id: randomUUID(), at: first.at, mode: "frame", members };
   }
 
-  async tick(id: string) {
+  async tick(id: string, jobId?: string) {
+    return RuntimeExecutions.run(this.pool, "construction", id, jobId, () =>
+      this.#tick(id),
+    );
+  }
+  async #tick(id: string) {
     const claim = randomUUID();
     let row = await this.#transaction(async (client) => {
       const row = await this.get(id, client, true);
@@ -674,6 +700,7 @@ export class WorldConstruction {
           : row.current!.id,
       async () => {
         try {
+          await ExecutionBudget.check();
           if (row.state === "generating") {
             const build = await this.builder.generate(id);
             row.world_id = build.world_id;
@@ -745,6 +772,7 @@ export class WorldConstruction {
               await this.#enqueue(client, id, row.state === "playing");
           });
         } catch (error) {
+          row.suspended = error instanceof RuntimeStopped;
           row.state = row.state === "playing" ? "play_paused" : "paused";
           row.error =
             error instanceof Error ? error.message : "実行を保留しました";
@@ -756,6 +784,9 @@ export class WorldConstruction {
       },
       row.world_id ?? undefined,
       row.user_id ?? undefined,
+      row.state === "playing"
+        ? { role: "user", actorId: row.participant_id! }
+        : { role: "admin" },
     );
   }
 
@@ -768,7 +799,7 @@ export class WorldConstruction {
           async (jobs) => {
             for (const job of jobs) {
               try {
-                await this.tick(job.data.id);
+                await this.tick(job.data.id, job.id);
               } catch (error) {
                 if (!(error instanceof Error)) throw error;
                 console.error(

@@ -10,12 +10,13 @@ import { modelEnvironment, approvedTransport } from "./model.js";
 export async function fixtureRuntime(
   scope = process.env.E2E_SCOPE,
   transform?: (content: unknown, user: Record<string, unknown>) => unknown,
+  supplied?: ReturnType<typeof connectDatabases>,
 ): Promise<{
   databases: ReturnType<typeof connectDatabases>;
   runtime: WorldConstruction;
 }> {
   if (!scope) throw new Error("E2E_SCOPEが必要です");
-  const databases = connectDatabases();
+  const databases = supplied ?? connectDatabases();
   await databases.verify();
   databases.queue.on("error", console.error);
   await databases.queue.start();
@@ -245,7 +246,7 @@ export async function fixtureRuntime(
             })),
         };
       }
-      content = transform?.(content, user) ?? content;
+      content = (await transform?.(content, user)) ?? content;
       return new Response(
         JSON.stringify({
           id: randomUUID(),

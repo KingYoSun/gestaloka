@@ -1,9 +1,4 @@
-import {
-  createCipheriv,
-  createDecipheriv,
-  createHmac,
-  randomBytes,
-} from "node:crypto";
+import { seal, unseal } from "../secrets.js";
 import type pg from "pg";
 import {
   ModelConfiguration,
@@ -78,27 +73,6 @@ export class ModelSettings {
     }
     return env;
   }
-  #key() {
-    if (!/^[a-f0-9]{64}$/.test(this.master))
-      throw new Error(
-        "運用設定を保護するOPERATIONS_TOKEN_SECRETを設定してください",
-      );
-    return createHmac("sha256", Buffer.from(this.master, "hex"))
-      .update("gestaloka.llm-credentials.v1")
-      .digest();
-  }
-  #encrypt(provider: Provider, value: string) {
-    const iv = randomBytes(12),
-      cipher = createCipheriv("aes-256-gcm", this.#key(), iv);
-    cipher.setAAD(Buffer.from(provider));
-    const encrypted = Buffer.concat([
-      cipher.update(value, "utf8"),
-      cipher.final(),
-    ]);
-    return [iv, cipher.getAuthTag(), encrypted]
-      .map((part) => part.toString("base64"))
-      .join(".");
-  }
   async #credential(provider: Provider, db: Database = this.pool) {
     const row = (
       await db.query<{ cipher: string; version: number }>(
@@ -107,16 +81,14 @@ export class ModelSettings {
       )
     ).rows[0];
     if (!row) return undefined;
-    const [iv, tag, body] = row.cipher
-      .split(".")
-      .map((part) => Buffer.from(part, "base64"));
-    const decipher = createDecipheriv("aes-256-gcm", this.#key(), iv!);
-    decipher.setAAD(Buffer.from(provider));
-    decipher.setAuthTag(tag!);
+
     return {
       version: row.version,
-      value: Buffer.concat([decipher.update(body!), decipher.final()]).toString(
-        "utf8",
+      value: unseal(
+        this.master,
+        "gestaloka.llm-credentials.v1",
+        provider,
+        row.cipher,
       ),
     };
   }
@@ -271,7 +243,12 @@ export class ModelSettings {
     expectedVersion: number,
     actor: string | null,
   ) {
-    const cipher = this.#encrypt(provider, value);
+    const cipher = seal(
+      this.master,
+      "gestaloka.llm-credentials.v1",
+      provider,
+      value,
+    );
     const row =
       (
         await db.query(

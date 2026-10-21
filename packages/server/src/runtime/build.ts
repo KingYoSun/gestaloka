@@ -1,3 +1,5 @@
+import { RuntimeControl } from "./control.js";
+import { ExecutionBudget } from "../execution-budget.js";
 import { createHash, randomUUID } from "node:crypto";
 import { WorldBudget } from "../llm/world-budget.js";
 import { BudgetUsd } from "@gestaloka/contracts";
@@ -126,6 +128,7 @@ export class WorldBuilder {
     budgetUsd: number,
     database: Pick<pg.Pool, "query"> = this.pool,
   ) {
+    await RuntimeControl.check(database, {}, true);
     BudgetUsd.parse(budgetUsd);
     const runId = randomUUID();
     const worldId = randomUUID();
@@ -216,11 +219,13 @@ export class WorldBuilder {
     const commit = task(
       "initial-world-commit",
       async (proposal: z.infer<typeof Proposal>) => {
-        await this.store.commit(lease, this.store.context(build.world_id), {
-          commitId: build.commit_id,
-          at: 0,
-          changes: proposal.changes,
-        });
+        await ExecutionBudget.commit(() =>
+          this.store.commit(lease, this.store.context(build.world_id), {
+            commitId: build.commit_id,
+            at: 0,
+            changes: proposal.changes,
+          }),
+        );
         await this.pool.query(
           "UPDATE world_build SET state = 'ready', result = $2 WHERE run_id = $1",
           [runId, JSON.stringify(proposal)],

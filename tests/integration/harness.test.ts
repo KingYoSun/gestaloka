@@ -127,6 +127,7 @@ test.each([
   { failAfterCommit: false, repairCommit: false, transportFailure: true },
   { failAfterCommit: false, repairCommit: false, transientFailure: true },
   { failAfterCommit: false, repairCommit: false, participant: true },
+  { failAfterCommit: false, repairCommit: false, stopBeforeCommit: true },
 ])(
   "実際のdshで二重適用を防ぐ: 確定後通信失敗 $failAfterCommit / 修正 $repairCommit / 競合 $conflictDuringRead / 永続通信失敗 $transportFailure / 一時通信失敗 $transientFailure / 参加生成 $participant",
   async ({
@@ -136,6 +137,7 @@ test.each([
     transportFailure,
     transientFailure,
     participant,
+    stopBeforeCommit,
   }) => {
     const worldId = randomUUID(),
       actor = randomUUID(),
@@ -298,6 +300,10 @@ test.each([
             expect(
               await new WorldStore(d.graph).context(worldId).node(script),
             ).toBeUndefined();
+            if (stopBeforeCommit)
+              await d.postgres.query(
+                "UPDATE runtime_control SET configuration=jsonb_set(configuration,'{paused}','true') WHERE singleton",
+              );
             return call("world_commit", {
               proposalId: findProposal(body),
               reason: "候補と根拠を照合した",
@@ -369,13 +375,13 @@ test.each([
         ? []
         : [{ actorId: actor, actionText: "状態を確かめる", continuing: false }],
     });
-    if (transportFailure) {
+    if (transportFailure || transientFailure) {
       await expect(agent.run(id)).rejects.toThrow("UND_ERR_SOCKET");
-      expect(transport).toHaveBeenCalledTimes(2);
+      expect(transport).toHaveBeenCalledTimes(1);
       expect(await store.context(worldId).node(script)).toBeUndefined();
       expect(await model.ledger.summary()).toMatchObject({
-        calls: 2,
-        unsettled: 2,
+        calls: 1,
+        unsettled: 1,
       });
       expect(
         (
@@ -384,7 +390,7 @@ test.each([
             [id],
           )
         ).rows[0],
-      ).toEqual({ llm_used: 2 });
+      ).toEqual({ llm_used: 1 });
       expect(
         (
           await d.postgres.query(
@@ -392,7 +398,25 @@ test.each([
             [id],
           )
         ).rows[0],
-      ).toMatchObject({ state: "paused", epoch: 1 });
+      ).toMatchObject({ state: "paused", epoch: 0 });
+      await expect(agent.run(id)).rejects.toThrow("未確定");
+      expect(transport).toHaveBeenCalledTimes(1);
+      return;
+    }
+    if (stopBeforeCommit) {
+      await expect(agent.run(id)).rejects.toMatchObject({
+        code: "MAINTENANCE",
+      });
+      expect(await store.context(worldId).node(script)).toBeUndefined();
+      const calls = transport.mock.calls.length;
+      await d.postgres.query(
+        "UPDATE runtime_control SET configuration=jsonb_set(configuration,'{paused}','false') WHERE singleton",
+      );
+      expect(await agent.run(id)).toEqual(candidate);
+      expect(transport).toHaveBeenCalledTimes(calls);
+      expect(await store.context(worldId).node(script)).toMatchObject({
+        id: script,
+      });
       return;
     }
     expect(await agent.run(id)).toEqual(candidate);

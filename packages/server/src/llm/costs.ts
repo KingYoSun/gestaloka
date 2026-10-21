@@ -27,6 +27,9 @@ export async function readCosts(
     ["worldId", "b.run_id"],
     ["userId", "c.user_id"],
     ["task", "c.request->>'role'"],
+    ["responseId", "c.response_id"],
+    ["operationId", "c.operation_id"],
+    ["callId", "c.id"],
   ] as const) {
     if (q[key] === undefined) continue;
     if (q[key] === null) conditions.push(`${expression} IS NULL`);

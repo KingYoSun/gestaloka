@@ -1,3 +1,7 @@
+import { RuntimeMonitor } from "../runtime/monitor.js";
+import { seal } from "../secrets.js";
+import { readJobs, resumeJob } from "../runtime/jobs.js";
+import { RuntimeControl, RuntimeStopped } from "../runtime/control.js";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { z } from "zod";
@@ -72,6 +76,7 @@ export class Operations {
     await ModelSettings.setup(this.pool);
     await ModelLimits.setup(this.pool);
     await ExecutionBudget.setup(this.pool);
+    await RuntimeMonitor.setup(this.pool);
     await WorldBudget.setup(this.pool);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS app_user (
       id uuid PRIMARY KEY REFERENCES app_identity(id),role text NOT NULL CHECK(role IN ('admin','user')),
@@ -384,9 +389,16 @@ export class Operations {
           );
         }
       } catch (error) {
-        if (!(error instanceof AccessError)) throw error;
+        if (
+          !(error instanceof AccessError) &&
+          !(error instanceof RuntimeStopped)
+        )
+          throw error;
         await database.query("ROLLBACK TO SAVEPOINT operation");
-        failure = error;
+        failure =
+          error instanceof RuntimeStopped
+            ? new AccessError(409, error.code, error.message)
+            : error;
       }
       if (!saved)
         await database.query(
@@ -414,7 +426,8 @@ export class Operations {
           : saved ||
               input.operation.endsWith(".list") ||
               input.operation === "invites.uses" ||
-              input.operation.endsWith(".read")
+              input.operation.endsWith(".read") ||
+              input.operation.startsWith("monitor.")
             ? {}
             : {
                 ...result,
@@ -456,6 +469,68 @@ export class Operations {
     requestId: string,
   ): Promise<Record<string, unknown>> {
     switch (input.operation) {
+      case "jobs.list":
+        return readJobs(db, input.query);
+      case "jobs.read":
+        return { job: (await readJobs(db, {}, input)).items[0] };
+      case "jobs.resume": {
+        if (!context.players)
+          throw new AccessError(
+            503,
+            "RUNTIME_NOT_CONFIGURED",
+            "実行サービスを設定してください",
+          );
+        return resumeJob(db, context.players, input.kind, input.id, requestId);
+      }
+      case "monitor.samples":
+        return RuntimeMonitor.page(db, "samples", input.query.before);
+      case "monitor.notifications":
+        return RuntimeMonitor.page(db, "notifications", input.query.before);
+      case "monitorWebhook.put": {
+        const cipher =
+          input.url === null
+            ? null
+            : seal(
+                this.tokenSecret,
+                "gestaloka.monitor-webhook.v1",
+                "url",
+                input.url,
+              );
+        const row = (
+          await db.query(
+            "UPDATE runtime_control SET webhook_cipher=$1,webhook_version=webhook_version+1,version=version+1,updated_by=$2,updated_at=now() WHERE singleton AND webhook_version=$3 RETURNING webhook_version AS version,webhook_cipher IS NOT NULL AS configured",
+            [cipher, actor, input.expectedVersion],
+          )
+        ).rows[0];
+        if (!row)
+          throw new AccessError(
+            409,
+            "SETTINGS_CHANGED",
+            "現在の通知先の設定版を読み直してください",
+          );
+        return row;
+      }
+      case "runtime.read":
+        return RuntimeControl.read(db);
+      case "runtime.put": {
+        const previous = await RuntimeControl.read(db);
+        const row = (
+          await db.query(
+            "UPDATE runtime_control SET configuration=$1,version=version+1,updated_by=$2,updated_at=now() WHERE singleton AND version=$3 RETURNING version",
+            [input.configuration, actor, input.expectedVersion],
+          )
+        ).rows[0];
+        if (!row)
+          throw new AccessError(
+            409,
+            "SETTINGS_CHANGED",
+            "現在の運用設定版を読み直してください",
+          );
+        return {
+          ...(await RuntimeControl.read(db)),
+          previous: previous.configuration,
+        };
+      }
       case "costs.read":
         return readCosts(db, input.query);
       case "models.read":
