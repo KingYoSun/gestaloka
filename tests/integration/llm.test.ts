@@ -451,6 +451,9 @@ test.each(["messages", "responses"] as const)(
       completion_tokens: 3,
       prompt_cache_hit_tokens: 6,
       prompt_cache_miss_tokens: 14,
+      ...(api === "messages"
+        ? { cache_write_5m_tokens: 4, cache_write_1h_tokens: 0 }
+        : {}),
     });
     const requests = transport.mock.calls
       .slice(2)
@@ -483,7 +486,7 @@ test.each(["messages", "responses"] as const)(
       /upper-secret|PRIVATE_THINKING/,
     );
     expect((await client.ledger.summary()).upperCostUsd).toBeCloseTo(
-      0.00097406,
+      api === "messages" ? 0.00101406 : 0.00097406,
       9,
     );
   },

@@ -122,6 +122,7 @@ export class WorldPlayers {
         world.at,
       ],
     );
+    await ExecutionBudget.attribute(db, id, userId);
     await this.#enqueue(db, id);
     return { id, state: "joining" };
   }
@@ -145,6 +146,7 @@ export class WorldPlayers {
       "UPDATE world_join SET state='joining',claim=NULL,error=NULL WHERE id=$1",
       [id],
     );
+    await ExecutionBudget.attribute(db, id, userId);
     await this.#enqueue(db, id);
     return { id, state: "joining" };
   }

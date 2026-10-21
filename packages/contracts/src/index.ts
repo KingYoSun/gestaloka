@@ -311,6 +311,8 @@ export const ModelSetting = z
     maxOutputTokens: quotaCount,
     inputUsdPerMillion: z.number().positive().finite(),
     cachedInputUsdPerMillion: z.number().nonnegative().finite(),
+    cacheWrite5mUsdPerMillion: z.number().nonnegative().finite().optional(),
+    cacheWrite1hUsdPerMillion: z.number().nonnegative().finite().optional(),
     outputUsdPerMillion: z.number().positive().finite(),
     pricingDate: z.iso.date(),
   })
@@ -322,7 +324,81 @@ export const ModelConfiguration = z
     judgment: z.enum(["separate", "combined"]),
   })
   .strict();
+export const CostQuery = z
+  .object({
+    from: z.iso.datetime({ offset: true }),
+    to: z.iso.datetime({ offset: true }),
+    provider: ModelProvider.nullable().optional(),
+    model: z.string().min(1).optional(),
+    worldId: z.uuid().nullable().optional(),
+    userId: z.uuid().nullable().optional(),
+    task: z.string().min(1).nullable().optional(),
+    view: z.enum(["summary", "calls", "timeline"]),
+    interval: z.enum(["hour", "day", "month"]).default("day"),
+    after: z.string().optional(),
+  })
+  .strict()
+  .refine((v) => Date.parse(v.from) < Date.parse(v.to), {
+    message: "期間の終了は開始より後にしてください",
+  });
+const nanoAmount = z.string().regex(/^\d+$/);
+export const CostTotals = z.object({
+  calls: z.number().int().nonnegative(),
+  calculatedNanoUsd: nanoAmount,
+  reservedNanoUsd: nanoAmount,
+  unknownNanoUsd: nanoAmount,
+  reservedCalls: z.number().int().nonnegative(),
+  unknownCalls: z.number().int().nonnegative(),
+});
+export const CostCall = z.object({
+  id: z.uuid(),
+  createdAt: z.iso.datetime(),
+  worldId: z.uuid().nullable(),
+  graphWorldId: z.uuid().nullable(),
+  userId: z.uuid().nullable(),
+  responseId: z.uuid().nullable(),
+  operationId: z.uuid().nullable(),
+  provider: ModelProvider.nullable(),
+  requestedModel: z.string().nullable(),
+  responseModel: z.string().nullable(),
+  task: z.string().nullable(),
+  configurationVersion: z.number().int().nullable(),
+  pricingDate: z.string().nullable(),
+  status: z.enum(["calculated", "reserved", "unknown"]),
+  calculatedNanoUsd: nanoAmount.nullable(),
+  reservationNanoUsd: nanoAmount,
+  elapsedMs: z.number().int().nullable(),
+  usage: z
+    .object({
+      input: z.number(),
+      cachedInput: z.number(),
+      cacheMissInput: z.number(),
+      output: z.number(),
+      cacheWrite5m: z.number().nullable(),
+      cacheWrite1h: z.number().nullable(),
+      reasoning: z.number().nullable(),
+    })
+    .nullable(),
+  ratesNanoUsdPerToken: z
+    .object({
+      input: z.number(),
+      cachedInput: z.number(),
+      output: z.number(),
+      cacheWrite5m: z.number().nullable(),
+      cacheWrite1h: z.number().nullable(),
+    })
+    .nullable(),
+});
+export const CostReport = z.object({
+  currency: z.literal("USD"),
+  basis: z.literal("calculated"),
+  totals: CostTotals.optional(),
+  calls: z.array(CostCall).optional(),
+  timeline: z.array(CostTotals.extend({ at: z.iso.datetime() })).optional(),
+  next: z.string().nullable(),
+});
 export const Operation = z.discriminatedUnion("operation", [
+  z.object({ operation: z.literal("costs.read"), query: CostQuery }).strict(),
   z.object({ operation: z.literal("models.read") }).strict(),
   z
     .object({

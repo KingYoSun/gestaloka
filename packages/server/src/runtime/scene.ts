@@ -77,6 +77,7 @@ export type SceneData = {
 export type SceneRow = {
   id: string;
   construction_id: string;
+  user_id?: string | null;
   actor_id: string;
   state:
     | "preparing"
@@ -114,6 +115,9 @@ export class WorldScenes {
       .query(`UPDATE world_construction c SET state='finished',claim=NULL,error=NULL
       WHERE c.state IN ('playing','play_paused') AND EXISTS(SELECT 1 FROM world_scene s WHERE s.construction_id=c.id AND s.actor_id=c.participant_id)
       AND NOT EXISTS(SELECT 1 FROM world_run r WHERE r.construction_id=c.id AND r.state IN ('running','paused'))`);
+    await this.pool.query(
+      "ALTER TABLE world_scene ADD COLUMN IF NOT EXISTS user_id uuid",
+    );
     await this.construction.queue.createQueue(this.queueName, {
       retryLimit: 2,
       retryDelay: 5,
@@ -779,6 +783,7 @@ export class WorldScenes {
           this.#budget(row),
           () => this.#background(row),
           row.data.worldId,
+          row.user_id ?? undefined,
         );
       else if (row.state === "acting") {
         if (
@@ -786,18 +791,21 @@ export class WorldScenes {
             this.#budget(row),
             () => this.#action(row),
             row.data.worldId,
+            row.user_id ?? undefined,
           )
         )
           await this.agent.model.run(
             this.#budget(row),
             () => this.#reflect(row),
             row.data.worldId,
+            row.user_id ?? undefined,
           );
       } else
         await this.agent.model.run(
           this.#budget(row),
           () => this.#reflect(row),
           row.data.worldId,
+          row.user_id ?? undefined,
         );
     } catch (error) {
       if (error instanceof SupersededWorker) return;

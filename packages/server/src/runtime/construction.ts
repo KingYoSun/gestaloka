@@ -23,6 +23,7 @@ type Work = {
 };
 export type Construction = {
   id: string;
+  user_id?: string | null;
   state:
     | "generating"
     | "ready"
@@ -82,7 +83,7 @@ export class WorldConstruction {
       started_at bigint NOT NULL,at bigint NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS world_run_latest ON world_run(construction_id,actor_id,created_at DESC);`);
     await this.pool.query(
-      "ALTER TABLE world_construction ADD COLUMN IF NOT EXISTS budget_id uuid",
+      "ALTER TABLE world_construction ADD COLUMN IF NOT EXISTS budget_id uuid, ADD COLUMN IF NOT EXISTS user_id uuid",
     );
     await this.pool.query(`ALTER TABLE world_construction
       ADD COLUMN IF NOT EXISTS public_title text NOT NULL DEFAULT '',
@@ -754,6 +755,7 @@ export class WorldConstruction {
         return row;
       },
       row.world_id ?? undefined,
+      row.user_id ?? undefined,
     );
   }
 

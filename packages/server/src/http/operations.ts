@@ -7,6 +7,7 @@ import { ModelLimits } from "../llm/limits.js";
 import { WorldBudget } from "../llm/world-budget.js";
 import { ExecutionBudget } from "../execution-budget.js";
 import { ModelSettings, ModelCheckFailed } from "../llm/settings.js";
+import { readCosts } from "../llm/costs.js";
 
 import {
   Member,
@@ -455,6 +456,8 @@ export class Operations {
     requestId: string,
   ): Promise<Record<string, unknown>> {
     switch (input.operation) {
+      case "costs.read":
+        return readCosts(db, input.query);
       case "models.read":
         return this.models.read(db);
       case "models.put": {
