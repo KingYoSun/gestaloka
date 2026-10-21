@@ -58,7 +58,7 @@ export async function authRoutes(
           return reply.redirect(url.toString());
         }
         const response = await identity.transport(
-          `${base}/self-service/${kind}/flows?id=${encodeURIComponent(flow)}`,
+          `${identity.internalUrl.replace(/\/$/, "")}/self-service/${kind}/flows?id=${encodeURIComponent(flow)}`,
           {
             headers: {
               cookie: request.headers.cookie ?? "",
@@ -124,7 +124,7 @@ export async function authRoutes(
     const response = await identity.transport(
       new URL(
         "self-service/logout/browser",
-        `${identity.publicUrl.replace(/\/$/, "")}/`,
+        `${identity.internalUrl.replace(/\/$/, "")}/`,
       ),
       {
         headers: {

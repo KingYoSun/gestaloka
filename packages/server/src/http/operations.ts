@@ -1,4 +1,5 @@
 import { RuntimeMonitor } from "../runtime/monitor.js";
+import { Backups } from "../runtime/backups.js";
 import { seal } from "../secrets.js";
 import { readJobs, resumeJob } from "../runtime/jobs.js";
 import { RuntimeControl, RuntimeStopped } from "../runtime/control.js";
@@ -60,6 +61,7 @@ export async function requireMember(
 
 /** Shared by HTTP, local recovery, and the later MCP adapter. */
 export class Operations {
+  readonly backups = new Backups();
   readonly models: ModelSettings;
   constructor(
     readonly pool: pg.Pool,
@@ -443,6 +445,12 @@ export class Operations {
       database.release();
     }
     if (failure) throw failure;
+    if (
+      ["backups.configure", "backups.create", "backups.restore"].includes(
+        input.operation,
+      )
+    )
+      await this.backups.call("activate", { id: requestId });
     if (input.operation === "invites.create")
       return { ...result, token: this.#token(result.id as string) };
     return result;
@@ -469,6 +477,15 @@ export class Operations {
     requestId: string,
   ): Promise<Record<string, unknown>> {
     switch (input.operation) {
+      case "backups.read":
+      case "backups.jobs":
+      case "backups.list":
+      case "backups.job":
+        return this.backups.call(input.operation.slice(8), input);
+      case "backups.configure":
+      case "backups.create":
+      case "backups.restore":
+        return this.backups.call("prepare", { id: requestId, actor, input });
       case "jobs.list":
         return readJobs(db, input.query);
       case "jobs.read":

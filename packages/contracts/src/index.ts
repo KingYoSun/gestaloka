@@ -434,7 +434,51 @@ export const JobQuery = z
 export const MonitorPageQuery = z
   .object({ before: z.string().regex(/^\d+$/).optional() })
   .strict();
+export const BackupConfiguration = z
+  .object({
+    enabled: z.boolean(),
+    intervalHours: z.number().int().positive().safe(),
+    retentionDays: z.number().int().positive().safe(),
+    repository: z.string().regex(/^s3:https?:\/\/[^\s?#@]+$/),
+    accessKey: z.string().min(1),
+    secretKey: z.string().min(1),
+    password: z.string().min(16),
+    region: z.string().min(1),
+  })
+  .strict();
 export const Operation = z.discriminatedUnion("operation", [
+  z.object({ operation: z.literal("backups.read") }).strict(),
+  z
+    .object({
+      operation: z.literal("backups.jobs"),
+      before: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("backups.list"),
+      before: z.string().optional(),
+    })
+    .strict(),
+  z.object({ operation: z.literal("backups.job"), id: z.uuid() }).strict(),
+  z
+    .object({
+      operation: z.literal("backups.configure"),
+      configuration: BackupConfiguration,
+      expectedVersion: z.number().int().nonnegative(),
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({ operation: z.literal("backups.create"), reason: operationReason })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("backups.restore"),
+      snapshot: z.string().regex(/^[a-f0-9]{64}$/),
+      reason: operationReason,
+    })
+    .strict(),
   z
     .object({
       operation: z.literal("monitor.samples"),
