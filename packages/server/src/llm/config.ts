@@ -123,12 +123,22 @@ export function settings(
       );
     return value === undefined
       ? fallback!
-      : (name === "CACHED_INPUT" ? price : price.positive()).parse(value) *
-          1000;
+      : (["INPUT", "OUTPUT"].includes(name) ? price.positive() : price).parse(
+          value,
+        ) * 1000;
   };
   const context = get("CONTEXT_TOKENS") ?? known?.context;
   if (context === undefined)
     throw new Error(`${model}のCONTEXT_TOKENSを設定してください`);
+  const inputMiss = rate("INPUT", known?.inputMiss);
+  const cacheWrite =
+    providerFor(model, get("PROVIDER")) === "anthropic" &&
+    env.LLM_CACHE_BILLING !== "legacy"
+      ? {
+          cacheWrite5m: rate("CACHE_WRITE_5M", inputMiss * 1.25),
+          cacheWrite1h: rate("CACHE_WRITE_1H", inputMiss * 2),
+        }
+      : {};
   const api = z
     .enum(["chat-completions", "responses", "messages"])
     .parse(
@@ -180,7 +190,8 @@ export function settings(
     maxOutput: count.parse(
       get("MAX_OUTPUT_TOKENS") ?? env.LLM_MAX_OUTPUT_TOKENS ?? 16384,
     ),
-    inputMiss: rate("INPUT", known?.inputMiss),
+    inputMiss,
+    ...cacheWrite,
     inputHit: rate("CACHED_INPUT", known?.inputHit),
     output: rate("OUTPUT", known?.output),
     pricingDate: z.iso.date().parse(get("PRICING_DATE") ?? "2026-10-20"),
@@ -205,7 +216,16 @@ export function settings(
     .nonnegative()
     .safe()
     .parse(
-      result.context * result.inputMiss + result.maxOutput * result.output,
+      Math.ceil(
+        result.context *
+          Math.max(
+            result.inputMiss,
+            result.inputHit,
+            result.cacheWrite5m ?? 0,
+            result.cacheWrite1h ?? 0,
+          ) +
+          result.maxOutput * result.output,
+      ),
     );
   return result;
 }

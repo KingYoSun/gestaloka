@@ -15,6 +15,9 @@ export type SavedCompletion = {
     completion_tokens: number;
     prompt_cache_hit_tokens: number;
     prompt_cache_miss_tokens: number;
+    cache_write_5m_tokens?: number;
+    cache_write_1h_tokens?: number;
+    reasoning_tokens?: number;
   };
 };
 
@@ -40,6 +43,11 @@ export class BudgetLedger {
     );
     await this.pool
       .query(`ALTER TABLE llm_call ADD COLUMN IF NOT EXISTS world_id uuid;
+      ALTER TABLE llm_call ADD COLUMN IF NOT EXISTS user_id uuid,
+        ADD COLUMN IF NOT EXISTS response_id uuid, ADD COLUMN IF NOT EXISTS operation_id uuid,
+        ADD COLUMN IF NOT EXISTS delivery text NOT NULL DEFAULT 'unknown';
+      CREATE INDEX IF NOT EXISTS llm_call_time ON llm_call(created_at,id);
+      CREATE INDEX IF NOT EXISTS llm_call_user ON llm_call(user_id,created_at,id);
       CREATE INDEX IF NOT EXISTS llm_call_world ON llm_call(world_id,created_at);`);
     await WorldBudget.setup(this.pool);
     const result = await this.pool.query<{ limit_nano: string | null }>(
@@ -123,7 +131,7 @@ export class BudgetLedger {
       }
       await ExecutionBudget.take(client);
       await client.query(
-        "INSERT INTO llm_call (id, budget_id, hash, reserved_nano, request,world_id) VALUES ($1,$2,$3,$4,$5,$6)",
+        "INSERT INTO llm_call (id, budget_id, hash, reserved_nano, request,world_id,user_id,response_id,operation_id,delivery) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'reserved')",
         [
           id,
           this.budgetId,
@@ -131,6 +139,9 @@ export class BudgetLedger {
           reservation,
           JSON.stringify(request),
           worldId ?? null,
+          ExecutionBudget.attribution.userId,
+          ExecutionBudget.attribution.responseId,
+          ExecutionBudget.attribution.operationId,
         ],
       );
       await client.query(
@@ -191,6 +202,18 @@ export class BudgetLedger {
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  async track<T>(id: string, work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      await this.pool.query(
+        "UPDATE llm_call SET delivery='unknown' WHERE id=$1 AND budget_id=$2 AND state='pending'",
+        [id, this.budgetId],
+      );
+      throw error;
     }
   }
 

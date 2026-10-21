@@ -5,6 +5,8 @@ const scope = new AsyncLocalStorage<{
   pool: pg.Pool;
   id: string;
   worldId?: string | undefined;
+  userId?: string | undefined;
+  operationId: string;
 }>();
 export class ExecutionLimit extends Error {}
 
@@ -15,6 +17,7 @@ export class ExecutionBudget {
       id uuid PRIMARY KEY, llm_used integer NOT NULL DEFAULT 0,llm_limit integer NOT NULL DEFAULT 64);
       CREATE TABLE IF NOT EXISTS response_call_policy(singleton boolean PRIMARY KEY CHECK(singleton),
       calls integer NOT NULL DEFAULT 64,version integer NOT NULL DEFAULT 1,updated_by uuid,updated_at timestamptz NOT NULL DEFAULT now());
+      ALTER TABLE execution_budget ADD COLUMN IF NOT EXISTS user_id uuid;
       INSERT INTO response_call_policy(singleton) VALUES(true) ON CONFLICT DO NOTHING;`);
   }
 
@@ -23,20 +26,55 @@ export class ExecutionBudget {
     id: string,
     work: () => Promise<T>,
     worldId?: string,
+    userId?: string,
   ): Promise<T> {
     const current = scope.getStore();
     if (current)
-      return worldId && !current.worldId
-        ? scope.run({ ...current, worldId }, work)
-        : work();
+      return scope.run(
+        { ...current, worldId: current.worldId ?? worldId, operationId: id },
+        work,
+      );
     await pool.query(
-      "INSERT INTO execution_budget(id) VALUES($1) ON CONFLICT DO NOTHING",
-      [id],
+      "INSERT INTO execution_budget(id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
+      [id, userId ?? null],
     );
-    return scope.run({ pool, id, worldId }, work);
+    const saved = (
+      await pool.query<{ user_id: string | null }>(
+        "SELECT user_id FROM execution_budget WHERE id=$1",
+        [id],
+      )
+    ).rows[0]!;
+    return scope.run(
+      {
+        pool,
+        id,
+        worldId,
+        operationId: id,
+        userId: saved.user_id ?? undefined,
+      },
+      work,
+    );
   }
   static get worldId() {
     return scope.getStore()?.worldId;
+  }
+  static get attribution() {
+    const current = scope.getStore();
+    return {
+      responseId: current?.id ?? null,
+      operationId: current?.operationId ?? null,
+      userId: current?.userId ?? null,
+    };
+  }
+  static async attribute(
+    db: Pick<pg.Pool, "query">,
+    id: string,
+    userId: string,
+  ) {
+    await db.query(
+      "INSERT INTO execution_budget(id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
+      [id, userId],
+    );
   }
   static get id() {
     return scope.getStore()?.id;

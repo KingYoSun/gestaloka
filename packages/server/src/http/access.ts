@@ -22,6 +22,7 @@ import {
 import { WorldScenes, type SceneRow } from "../runtime/scene.js";
 import { sceneAnchors } from "../runtime/scene-data.js";
 import { requireMember } from "./operations.js";
+import { ExecutionBudget } from "../execution-budget.js";
 import { WorldPlayers } from "../runtime/players.js";
 
 export class AccessError extends Error {
@@ -245,6 +246,11 @@ export class WorldAccess {
           client,
         );
         await client.query(
+          "UPDATE world_construction SET user_id=$2 WHERE id=$1",
+          [id, subject],
+        );
+        await ExecutionBudget.attribute(client, id, subject);
+        await client.query(
           "UPDATE world_budget SET updated_by=$2 FROM world_build b WHERE world_budget.world_id=b.world_id AND b.run_id=$1",
           [id, subject],
         );
@@ -286,6 +292,11 @@ export class WorldAccess {
             throw new AccessError(409, "STATE_CONFLICT", error.message);
           throw error;
         }
+        if (input.command === "advance")
+          await client.query(
+            "UPDATE world_construction SET user_id=$2 WHERE id=$1",
+            [id, subject],
+          );
         return this.statusData(row);
       },
     );
@@ -525,7 +536,7 @@ export class WorldAccess {
           actorId,
         );
         try {
-          return this.sceneData(
+          const row =
             input.command === "prepare"
               ? await this.scenes.open(
                   id,
@@ -540,9 +551,12 @@ export class WorldAccess {
                   client,
                   input,
                   grant.actor_id!,
-                ),
-            compact,
-          );
+                );
+          await client.query("UPDATE world_scene SET user_id=$2 WHERE id=$1", [
+            row.id,
+            subject,
+          ]);
+          return this.sceneData(row, compact);
         } catch (error) {
           if (error instanceof ConstructionStateError)
             throw new AccessError(409, "STATE_CONFLICT", error.message);
@@ -639,6 +653,7 @@ export class WorldAccess {
               client,
             );
           }
+          await ExecutionBudget.attribute(client, input.requestId, subject);
           return this.playerData(
             await this.construction.play(
               id,

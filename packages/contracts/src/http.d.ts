@@ -2370,6 +2370,31 @@ export interface paths {
                         requestId: string;
                         command: {
                             /** @enum {string} */
+                            operation: "costs.read";
+                            query: {
+                                /** Format: date-time */
+                                from: string;
+                                /** Format: date-time */
+                                to: string;
+                                /** @enum {string|null} */
+                                provider?: "deepseek" | "gemini" | "openai" | "anthropic" | null;
+                                model?: string;
+                                /** Format: uuid */
+                                worldId?: string | null;
+                                /** Format: uuid */
+                                userId?: string | null;
+                                task?: string | null;
+                                /** @enum {string} */
+                                view: "summary" | "calls" | "timeline";
+                                /**
+                                 * @default day
+                                 * @enum {string}
+                                 */
+                                interval?: "hour" | "day" | "month";
+                                after?: string;
+                            };
+                        } | {
+                            /** @enum {string} */
                             operation: "models.read";
                         } | {
                             /** @enum {string} */
@@ -2393,6 +2418,8 @@ export interface paths {
                                     maxOutputTokens: number;
                                     inputUsdPerMillion: number;
                                     cachedInputUsdPerMillion: number;
+                                    cacheWrite5mUsdPerMillion?: number;
+                                    cacheWrite1hUsdPerMillion?: number;
                                     outputUsdPerMillion: number;
                                     /** Format: date */
                                     pricingDate: string;
@@ -2415,6 +2442,8 @@ export interface paths {
                                     maxOutputTokens: number;
                                     inputUsdPerMillion: number;
                                     cachedInputUsdPerMillion: number;
+                                    cacheWrite5mUsdPerMillion?: number;
+                                    cacheWrite1hUsdPerMillion?: number;
                                     outputUsdPerMillion: number;
                                     /** Format: date */
                                     pricingDate: string;

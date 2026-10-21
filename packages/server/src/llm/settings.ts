@@ -19,6 +19,7 @@ type Database = Pick<pg.Pool, "query">;
 export type SettingsSnapshot = {
   version: number;
   configuration: Configuration;
+  billingVersion?: number;
 };
 export class ModelCheckFailed extends Error {}
 
@@ -31,10 +32,17 @@ export class ModelSettings {
   static async setup(db: Database) {
     await db.query(`CREATE TABLE IF NOT EXISTS llm_settings(version integer PRIMARY KEY,configuration jsonb NOT NULL,updated_by uuid,updated_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS llm_credential(provider text PRIMARY KEY,cipher text NOT NULL,version integer NOT NULL DEFAULT 1,updated_by uuid,updated_at timestamptz NOT NULL DEFAULT now());
-      CREATE TABLE IF NOT EXISTS llm_response_settings(id uuid PRIMARY KEY,version integer NOT NULL REFERENCES llm_settings(version));`);
+      CREATE TABLE IF NOT EXISTS llm_response_settings(id uuid PRIMARY KEY,version integer NOT NULL REFERENCES llm_settings(version));
+      ALTER TABLE llm_response_settings ADD COLUMN IF NOT EXISTS billing_version integer NOT NULL DEFAULT 1;`);
   }
-  static environment(config: Configuration): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { LLM_RESOLUTION_JUDGMENT: config.judgment };
+  static environment(
+    config: Configuration,
+    billingVersion = 2,
+  ): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = {
+      LLM_RESOLUTION_JUDGMENT: config.judgment,
+      LLM_CACHE_BILLING: billingVersion === 1 ? "legacy" : "split",
+    };
     for (const role of ["default", "resolution"] as const) {
       const m = config[role],
         prefix = role === "default" ? "LLM_" : "LLM_RESOLUTION_";
@@ -50,9 +58,13 @@ export class ModelSettings {
         INPUT_USD_PER_MILLION: m.inputUsdPerMillion,
         CACHED_INPUT_USD_PER_MILLION: m.cachedInputUsdPerMillion,
         OUTPUT_USD_PER_MILLION: m.outputUsdPerMillion,
+        CACHE_WRITE_5M_USD_PER_MILLION:
+          m.cacheWrite5mUsdPerMillion ?? m.inputUsdPerMillion * 1.25,
+        CACHE_WRITE_1H_USD_PER_MILLION:
+          m.cacheWrite1hUsdPerMillion ?? m.inputUsdPerMillion * 2,
         PRICING_DATE: m.pricingDate,
       }))
-        env[prefix + key] = String(value);
+        if (value !== undefined) env[prefix + key] = String(value);
       env[`${m.provider.toUpperCase()}_API_KEY`] = "stored-credential";
       if (role === "default") {
         env[`${m.provider.toUpperCase()}_REASONING_EFFORT`] = m.effort;
@@ -142,12 +154,12 @@ export class ModelSettings {
   }
   async capture(id: string, db: Database = this.pool, version?: number) {
     await db.query(
-      `INSERT INTO llm_response_settings(id,version) SELECT $1,version FROM llm_settings WHERE ($2::int IS NULL OR version=$2) ORDER BY version DESC LIMIT 1 ON CONFLICT(id) DO NOTHING`,
+      `INSERT INTO llm_response_settings(id,version,billing_version) SELECT $1,version,2 FROM llm_settings WHERE ($2::int IS NULL OR version=$2) ORDER BY version DESC LIMIT 1 ON CONFLICT(id) DO NOTHING`,
       [id, version ?? null],
     );
     return (
       await db.query<SettingsSnapshot>(
-        "SELECT c.version,c.configuration FROM llm_settings c JOIN llm_response_settings s ON s.version=c.version WHERE s.id=$1",
+        'SELECT c.version,c.configuration,s.billing_version AS "billingVersion" FROM llm_settings c JOIN llm_response_settings s ON s.version=c.version WHERE s.id=$1',
         [id],
       )
     ).rows[0];
@@ -299,6 +311,12 @@ export class ModelSettings {
         inputUsdPerMillion: s.inputMiss / 1000,
         cachedInputUsdPerMillion: s.inputHit / 1000,
         outputUsdPerMillion: s.output / 1000,
+        ...(s.cacheWrite5m === undefined
+          ? {}
+          : {
+              cacheWrite5mUsdPerMillion: s.cacheWrite5m / 1000,
+              cacheWrite1hUsdPerMillion: s.cacheWrite1h! / 1000,
+            }),
         pricingDate: s.pricingDate,
         ...(role === "resolution" &&
         s.provider === "deepseek" &&

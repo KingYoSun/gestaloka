@@ -27,6 +27,8 @@ export type Connection = {
   inputMiss: number;
   inputHit: number;
   output: number;
+  cacheWrite5m?: number;
+  cacheWrite1h?: number;
   provider?: Provider;
   api?: Api;
 };
@@ -69,6 +71,9 @@ const ChatResponse = z.object({
     prompt_tokens_details: z
       .object({ cached_tokens: count.optional() })
       .nullish(),
+    completion_tokens_details: z
+      .object({ reasoning_tokens: count.optional() })
+      .nullish(),
   }),
 });
 export const MessageUsage = z.object({
@@ -76,17 +81,48 @@ export const MessageUsage = z.object({
   output_tokens: count,
   cache_creation_input_tokens: count.optional(),
   cache_read_input_tokens: count.optional(),
+  cache_creation: z
+    .object({
+      ephemeral_5m_input_tokens: count,
+      ephemeral_1h_input_tokens: count,
+    })
+    .optional(),
 });
 export function messageUsage(
   input: z.infer<typeof MessageUsage>,
 ): SavedCompletion["usage"] {
-  const miss = input.input_tokens + (input.cache_creation_input_tokens ?? 0),
+  if (
+    input.cache_creation &&
+    input.cache_creation_input_tokens !== undefined &&
+    input.cache_creation.ephemeral_5m_input_tokens +
+      input.cache_creation.ephemeral_1h_input_tokens !==
+      input.cache_creation_input_tokens
+  )
+    throw new Error("キャッシュ作成の使用量内訳が整合しません");
+  const miss =
+      input.input_tokens +
+      (input.cache_creation_input_tokens ??
+        (input.cache_creation
+          ? input.cache_creation.ephemeral_5m_input_tokens +
+            input.cache_creation.ephemeral_1h_input_tokens
+          : 0)),
     hit = input.cache_read_input_tokens ?? 0;
   return {
     prompt_tokens: miss + hit,
     completion_tokens: input.output_tokens,
     prompt_cache_hit_tokens: hit,
     prompt_cache_miss_tokens: miss,
+    ...(input.cache_creation
+      ? {
+          cache_write_5m_tokens: input.cache_creation.ephemeral_5m_input_tokens,
+          cache_write_1h_tokens: input.cache_creation.ephemeral_1h_input_tokens,
+        }
+      : input.cache_creation_input_tokens === undefined
+        ? {}
+        : {
+            cache_write_5m_tokens: input.cache_creation_input_tokens,
+            cache_write_1h_tokens: 0,
+          }),
   };
 }
 const MessageResponse = z.object({
@@ -113,6 +149,9 @@ const ResponsesResponse = z.object({
     output_tokens: count,
     input_tokens_details: z
       .object({ cached_tokens: count.optional() })
+      .optional(),
+    output_tokens_details: z
+      .object({ reasoning_tokens: count.optional() })
       .optional(),
   }),
 });
@@ -179,7 +218,10 @@ export class LlmClient {
     return config
       ? {
           ...this.#baseEnvironment,
-          ...ModelSettings.environment(config.configuration),
+          ...ModelSettings.environment(
+            config.configuration,
+            config.billingVersion,
+          ),
         }
       : this.#baseEnvironment;
   }
@@ -206,7 +248,12 @@ export class LlmClient {
     return settings(
       {
         ...this.#baseEnvironment,
-        ...(snapshot ? ModelSettings.environment(snapshot.configuration) : {}),
+        ...(snapshot
+          ? ModelSettings.environment(
+              snapshot.configuration,
+              snapshot.billingVersion,
+            )
+          : {}),
       },
       target,
     );
@@ -215,6 +262,7 @@ export class LlmClient {
     id: string,
     work: () => Promise<T>,
     worldId?: string,
+    userId?: string,
   ): Promise<T> {
     return ExecutionBudget.run(
       this.ledger.pool,
@@ -235,6 +283,7 @@ export class LlmClient {
         return configurationScope.run(snapshot ?? null, work);
       },
       worldId,
+      userId,
     );
   }
   bind<A extends unknown[], R>(work: (...args: A) => R) {
@@ -367,6 +416,12 @@ export class LlmClient {
             ? { provider: previous.connection.provider }
             : {}),
           ...(previous.connection.api ? { api: previous.connection.api } : {}),
+          ...(previous.connection.cacheWrite5m === undefined
+            ? {}
+            : {
+                cacheWrite5m: previous.connection.cacheWrite5m,
+                cacheWrite1h: previous.connection.cacheWrite1h!,
+              }),
         }
       : {
           baseUrl: selected.baseUrl,
@@ -376,6 +431,12 @@ export class LlmClient {
           output: previous ? known!.output : selected.output,
           provider,
           api,
+          ...(previous || selected.cacheWrite5m === undefined
+            ? {}
+            : {
+                cacheWrite5m: selected.cacheWrite5m,
+                cacheWrite1h: selected.cacheWrite1h!,
+              }),
         };
     const stored = {
       role,
@@ -407,125 +468,177 @@ export class LlmClient {
         const cached = await this.ledger.reserve(
           id,
           hash,
-          connection.context * connection.inputMiss +
-            maxOutput * connection.output,
+          Math.ceil(
+            connection.context *
+              Math.max(
+                connection.inputMiss,
+                connection.inputHit,
+                connection.cacheWrite5m ?? 0,
+                connection.cacheWrite1h ?? 0,
+              ) +
+              maxOutput * connection.output,
+          ),
           stored,
         );
         if (cached) return cached;
-        const started = performance.now();
-        const path =
-          api === "messages"
-            ? "messages"
-            : api === "responses"
-              ? "responses"
-              : "chat/completions";
-        quota.sent();
-        const response = await this.transport(`${connection.baseUrl}/${path}`, {
-          method: "POST",
-          headers: {
-            ...(await this.headers(provider, quota.key)),
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(request),
-          signal: AbortSignal.timeout(180000),
-        });
-        if (!response.ok)
-          throw new Error(
-            `LLM要求の結果を確定できません: HTTP ${response.status}。予約枠は保持します`,
-          );
-        const raw: unknown = await response.json().catch(() => {
-          throw new Error("LLM応答の形式を確認できません。予約枠は保持します");
-        });
-        let completion: SavedCompletion;
-        if (api === "messages") {
-          const result = MessageResponse.parse(raw);
-          completion = {
-            id: result.id,
-            model: result.model,
-            content: result.content
-              .filter((c) => c.type === "text")
-              .map((c) => c.text ?? "")
-              .join(""),
-            finishReason:
-              result.stop_reason === "end_turn"
-                ? "stop"
-                : (result.stop_reason ?? "incomplete"),
-            usage: messageUsage(result.usage),
-          };
-        } else if (api === "responses") {
-          const result = ResponsesResponse.parse(raw),
-            hit = result.usage.input_tokens_details?.cached_tokens ?? 0;
-          completion = {
-            id: result.id,
-            model: result.model,
-            content: result.output
-              .filter((o) => o.type === "message")
-              .flatMap((o) => o.content ?? [])
-              .filter((c) => c.type === "output_text")
-              .map((c) => c.text ?? "")
-              .join(""),
-            finishReason:
-              result.status === "completed" ? "stop" : result.status,
-            usage: {
-              prompt_tokens: result.usage.input_tokens,
-              completion_tokens: result.usage.output_tokens,
-              prompt_cache_hit_tokens: hit,
-              prompt_cache_miss_tokens: result.usage.input_tokens - hit,
+        return this.ledger.track(id, async () => {
+          const started = performance.now();
+          const path =
+            api === "messages"
+              ? "messages"
+              : api === "responses"
+                ? "responses"
+                : "chat/completions";
+          quota.sent();
+          const response = await this.transport(
+            `${connection.baseUrl}/${path}`,
+            {
+              method: "POST",
+              headers: {
+                ...(await this.headers(provider, quota.key)),
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(request),
+              signal: AbortSignal.timeout(180000),
             },
-          };
-        } else {
-          const result = ChatResponse.parse(raw),
-            usage = result.usage;
+          );
+          if (!response.ok)
+            throw new Error(
+              `LLM要求の結果を確定できません: HTTP ${response.status}。予約枠は保持します`,
+            );
+          const raw: unknown = await response.json().catch(() => {
+            throw new Error(
+              "LLM応答の形式を確認できません。予約枠は保持します",
+            );
+          });
+          let completion: SavedCompletion;
+          if (api === "messages") {
+            const result = MessageResponse.parse(raw);
+            completion = {
+              id: result.id,
+              model: result.model,
+              content: result.content
+                .filter((c) => c.type === "text")
+                .map((c) => c.text ?? "")
+                .join(""),
+              finishReason:
+                result.stop_reason === "end_turn"
+                  ? "stop"
+                  : (result.stop_reason ?? "incomplete"),
+              usage: messageUsage(result.usage),
+            };
+          } else if (api === "responses") {
+            const result = ResponsesResponse.parse(raw),
+              hit = result.usage.input_tokens_details?.cached_tokens ?? 0;
+            completion = {
+              id: result.id,
+              model: result.model,
+              content: result.output
+                .filter((o) => o.type === "message")
+                .flatMap((o) => o.content ?? [])
+                .filter((c) => c.type === "output_text")
+                .map((c) => c.text ?? "")
+                .join(""),
+              finishReason:
+                result.status === "completed" ? "stop" : result.status,
+              usage: {
+                prompt_tokens: result.usage.input_tokens,
+                completion_tokens: result.usage.output_tokens,
+                prompt_cache_hit_tokens: hit,
+                prompt_cache_miss_tokens: result.usage.input_tokens - hit,
+                ...(result.usage.output_tokens_details?.reasoning_tokens ===
+                undefined
+                  ? {}
+                  : {
+                      reasoning_tokens:
+                        result.usage.output_tokens_details.reasoning_tokens,
+                    }),
+              },
+            };
+          } else {
+            const result = ChatResponse.parse(raw),
+              usage = result.usage;
+            if (
+              (provider !== "deepseek" && usage.total_tokens === undefined) ||
+              (usage.total_tokens !== undefined &&
+                usage.total_tokens <
+                  usage.prompt_tokens + usage.completion_tokens)
+            )
+              throw new Error(
+                "LLMの総使用量を確認できません。予約枠は保持します",
+              );
+            const hit =
+              usage.prompt_cache_hit_tokens ??
+              usage.prompt_tokens_details?.cached_tokens ??
+              0;
+            completion = {
+              id: result.id,
+              model: result.model,
+              content: result.choices[0]!.message.content ?? "",
+              finishReason: result.choices[0]!.finish_reason,
+              usage: {
+                prompt_tokens: usage.prompt_tokens,
+                completion_tokens: Math.max(
+                  usage.completion_tokens,
+                  (usage.total_tokens ?? 0) - usage.prompt_tokens,
+                ),
+                prompt_cache_hit_tokens: hit,
+                prompt_cache_miss_tokens:
+                  usage.prompt_cache_miss_tokens ?? usage.prompt_tokens - hit,
+                ...(usage.completion_tokens_details?.reasoning_tokens ===
+                undefined
+                  ? {}
+                  : {
+                      reasoning_tokens:
+                        usage.completion_tokens_details.reasoning_tokens,
+                    }),
+              },
+            };
+          }
+          const usage = completion.usage;
+          quota.used(usage.prompt_tokens + usage.completion_tokens);
           if (
-            (provider !== "deepseek" && usage.total_tokens === undefined) ||
-            (usage.total_tokens !== undefined &&
-              usage.total_tokens <
-                usage.prompt_tokens + usage.completion_tokens)
+            usage.prompt_cache_hit_tokens + usage.prompt_cache_miss_tokens !==
+              usage.prompt_tokens ||
+            usage.prompt_cache_miss_tokens < 0 ||
+            usage.prompt_cache_hit_tokens > usage.prompt_tokens
           )
             throw new Error(
-              "LLMの総使用量を確認できません。予約枠は保持します",
+              "LLMの使用量内訳が整合しません。予約枠は保持します",
             );
-          const hit =
-            usage.prompt_cache_hit_tokens ??
-            usage.prompt_tokens_details?.cached_tokens ??
-            0;
-          completion = {
-            id: result.id,
-            model: result.model,
-            content: result.choices[0]!.message.content ?? "",
-            finishReason: result.choices[0]!.finish_reason,
-            usage: {
-              prompt_tokens: usage.prompt_tokens,
-              completion_tokens: Math.max(
-                usage.completion_tokens,
-                (usage.total_tokens ?? 0) - usage.prompt_tokens,
-              ),
-              prompt_cache_hit_tokens: hit,
-              prompt_cache_miss_tokens:
-                usage.prompt_cache_miss_tokens ?? usage.prompt_tokens - hit,
-            },
-          };
-        }
-        const usage = completion.usage;
-        quota.used(usage.prompt_tokens + usage.completion_tokens);
-        if (
-          usage.prompt_cache_hit_tokens + usage.prompt_cache_miss_tokens !==
-            usage.prompt_tokens ||
-          usage.prompt_cache_miss_tokens < 0 ||
-          usage.prompt_cache_hit_tokens > usage.prompt_tokens
-        )
-          throw new Error("LLMの使用量内訳が整合しません。予約枠は保持します");
-        await this.ledger.settle(
-          id,
-          usage.prompt_cache_hit_tokens * connection.inputHit +
-            usage.prompt_cache_miss_tokens * connection.inputMiss +
-            usage.completion_tokens * connection.output,
-          completion,
-          Math.round(performance.now() - started),
-        );
-        return completion;
+          await this.ledger.settle(
+            id,
+            calculatedCharge(usage, connection),
+            completion,
+            Math.round(performance.now() - started),
+          );
+          return completion;
+        });
       },
     );
   }
 }
 export { LlmClient as DeepSeekClient };
+
+export function calculatedCharge(
+  usage: SavedCompletion["usage"],
+  rates: Pick<
+    Connection,
+    "inputMiss" | "inputHit" | "output" | "cacheWrite5m" | "cacheWrite1h"
+  >,
+) {
+  const write5m = usage.cache_write_5m_tokens ?? 0,
+    write1h = usage.cache_write_1h_tokens ?? 0;
+  if (
+    write5m + write1h > usage.prompt_cache_miss_tokens ||
+    (usage.reasoning_tokens ?? 0) > usage.completion_tokens
+  )
+    throw new Error("LLMの使用量内訳が整合しません。予約枠は保持します");
+  return Math.round(
+    usage.prompt_cache_hit_tokens * rates.inputHit +
+      usage.prompt_cache_miss_tokens * rates.inputMiss +
+      write5m * ((rates.cacheWrite5m ?? rates.inputMiss) - rates.inputMiss) +
+      write1h * ((rates.cacheWrite1h ?? rates.inputMiss) - rates.inputMiss) +
+      usage.completion_tokens * rates.output,
+  );
+}

@@ -280,6 +280,27 @@ test("独立したシーンを保ちながら確定した作用を後続の参�
   expect(await runtime.agent.controlledActors(graph, [a, b])).toEqual(
     new Set([a, b]),
   );
+  for (const [responseId, owner] of [
+    [world, admin],
+    [x.id, one],
+    [y.id, two],
+  ]) {
+    const rows = (
+      await db.postgres.query(
+        "SELECT DISTINCT user_id,world_id FROM llm_call WHERE budget_id=$1 AND response_id=$2",
+        [`e2e-${scope}`, responseId],
+      )
+    ).rows;
+    expect(rows).toEqual([{ user_id: owner, world_id: graph }]);
+  }
+  const joins = (
+    await db.postgres.query(
+      "SELECT DISTINCT c.user_id,j.subject_id FROM llm_call c JOIN world_join j ON j.id=c.response_id WHERE j.construction_id=$1 ORDER BY j.subject_id",
+      [world],
+    )
+  ).rows;
+  expect(joins).toHaveLength(2);
+  expect(joins.every((r) => r.user_id === r.subject_id)).toBe(true);
 });
 
 test("他プレイヤーをNPCの登場主体にせず新たな意図を代行しない", async () => {
