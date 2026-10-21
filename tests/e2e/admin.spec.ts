@@ -124,6 +124,11 @@ test("招待・追加管理者・BANを画面から操作し、権限変更で�
   await page.reload();
   await page.getByLabel("操作を選択").selectOption("invites.create");
   await expect(page.getByText("招待トークン", { exact: true })).toBeVisible();
+  const invitation = await page
+    .getByText("招待トークン", { exact: true })
+    .locator("..")
+    .locator("dd")
+    .innerText();
   expect(
     (
       await isolated.databases.postgres.query(
@@ -175,6 +180,47 @@ test("招待・追加管理者・BANを画面から操作し、権限変更で�
     ),
   ).toBeVisible({ timeout: 10000 });
   await context.clearCookies();
+  const invited = randomUUID();
+  await isolated.databases.postgres.query(
+    "INSERT INTO app_identity(id,ory_id) VALUES($1,$2)",
+    [invited, randomUUID()],
+  );
+  await context.addCookies([
+    {
+      name: "test_ory",
+      value: invited,
+      url: "http://127.0.0.1",
+      httpOnly: true,
+      sameSite: "Strict",
+    },
+  ]);
+  await page.goto("http://127.0.0.1:4174/auth/register");
+  await page
+    .getByLabel("招待トークン", { exact: true })
+    .fill("invalid-invitation");
+  await page.getByRole("button", { name: "利用登録する", exact: true }).click();
+  await expect(
+    page.getByText("有効な招待トークンが必要です", { exact: true }),
+  ).toBeVisible();
+  expect((await auth.operations.state(invited)).member).toBeNull();
+  await page.getByLabel("招待トークン", { exact: true }).fill(invitation);
+  await page.getByRole("button", { name: "利用登録する", exact: true }).click();
+  await expect(
+    page.getByText("利用登録済みです。", { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  expect((await auth.operations.state(invited)).member?.role).toBe("user");
+  expect(
+    (
+      await isolated.databases.postgres.query(
+        "SELECT uses::int AS n FROM app_invite",
+      )
+    ).rows[0].n,
+  ).toBe(1);
+  await page.goto("http://127.0.0.1:4174/operations/users");
+  await expect(
+    page.getByText("管理者の権限が必要です。", { exact: true }),
+  ).toBeVisible();
 });
 
 test("設定・計算額・世界差分を共通APIへ接続し、狭い画面とテーマを維持する", async ({
