@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@10.16.1",
   "engines": {
-    "node": "^22.14.0 || ^24.0.0"
+    "node": "^22.23.4 || ^24.22.1"
   },
   "scripts": {
     "production": "pnpm build:server && node scripts/production.mjs",

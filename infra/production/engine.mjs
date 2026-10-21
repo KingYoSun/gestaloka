@@ -23,7 +23,7 @@ const { Pool } = require("pg");
 const RESTIC =
   "restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510";
 const TAR =
-  "node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5";
+  "node:24.22.1-bookworm-slim@sha256:1681862882da07ee5476fee047bcf34138833f1df42633bb25bcb0f438d5bf3d";
 const digest = (s) => createHash("sha256").update(s).digest("hex");
 export function command(args, input, environment = process.env) {
   return new Promise((resolvePromise, reject) => {

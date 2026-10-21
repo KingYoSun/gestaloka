@@ -123,6 +123,29 @@ try {
     });
     deployments.push(d);
     await cli("build", d);
+    for (const role of ["api", "worker", "controller"]) {
+      const image = `${d.config.name}-${role === "controller" ? role : "server"}`;
+      console.log(
+        JSON.stringify({
+          role,
+          image,
+          imageId: (
+            await command(["image", "inspect", "--format", "{{.Id}}", image])
+          )
+            .toString()
+            .trim(),
+          tls: JSON.parse(
+            await command([
+              "run",
+              "--rm",
+              image,
+              "node",
+              "tests/production/tls.mjs",
+            ]),
+          ),
+        }),
+      );
+    }
     await cli("up", d);
     for (const host of ["play", "admin", "api"]) {
       let page;
