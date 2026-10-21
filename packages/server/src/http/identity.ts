@@ -23,6 +23,7 @@ export class OryIdentity {
     readonly pool: pg.Pool,
     readonly publicUrl: string,
     readonly transport: typeof fetch = fetch,
+    readonly internalUrl: string = publicUrl,
   ) {}
 
   async setup() {
@@ -36,7 +37,7 @@ export class OryIdentity {
     let response: Response;
     try {
       response = await this.transport(
-        new URL("sessions/whoami", `${this.publicUrl.replace(/\/$/, "")}/`),
+        new URL("sessions/whoami", `${this.internalUrl.replace(/\/$/, "")}/`),
         {
           headers: { cookie, accept: "application/json" },
           redirect: "error",

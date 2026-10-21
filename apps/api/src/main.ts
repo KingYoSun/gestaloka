@@ -14,7 +14,13 @@ databases.queue.on("error", (error) => console.error(error));
 try {
   await databases.verify();
   const identity = process.env.ORY_KRATOS_PUBLIC_URL
-    ? new OryIdentity(databases.postgres, process.env.ORY_KRATOS_PUBLIC_URL)
+    ? new OryIdentity(
+        databases.postgres,
+        process.env.ORY_KRATOS_PUBLIC_URL,
+        fetch,
+        process.env.ORY_KRATOS_INTERNAL_URL ??
+          process.env.ORY_KRATOS_PUBLIC_URL,
+      )
     : undefined;
   await identity?.setup();
   const operations =
@@ -50,9 +56,10 @@ try {
     identity,
     process.env.ORY_HYDRA_ADMIN_URL,
     operations,
+    process.env.TRUST_PROXY === "1",
   );
   await app.listen({
-    host: "127.0.0.1",
+    host: process.env.HOST ?? "127.0.0.1",
     port: Number(process.env.PORT ?? 3000),
   });
   console.log("API ready");

@@ -2370,6 +2370,46 @@ export interface paths {
                         requestId: string;
                         command: {
                             /** @enum {string} */
+                            operation: "backups.read";
+                        } | {
+                            /** @enum {string} */
+                            operation: "backups.jobs";
+                            before?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "backups.list";
+                            before?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "backups.job";
+                            /** Format: uuid */
+                            id: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "backups.configure";
+                            configuration: {
+                                enabled: boolean;
+                                intervalHours: number;
+                                retentionDays: number;
+                                repository: string;
+                                accessKey: string;
+                                secretKey: string;
+                                password: string;
+                                region: string;
+                            };
+                            expectedVersion: number;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "backups.create";
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "backups.restore";
+                            snapshot: string;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
                             operation: "monitor.samples";
                             query: {
                                 before?: string;

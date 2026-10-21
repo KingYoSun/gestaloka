@@ -20,8 +20,9 @@ export async function createApp(
   identity?: OryIdentity,
   hydraAdminUrl?: string,
   operations?: Operations,
+  trustProxy = false,
 ) {
-  const app = Fastify().withTypeProvider<ZodTypeProvider>();
+  const app = Fastify({ trustProxy }).withTypeProvider<ZodTypeProvider>();
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   await app.register(swagger, {

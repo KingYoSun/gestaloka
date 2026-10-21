@@ -1,0 +1,14 @@
+.git
+.codegraph
+.deployments
+.env
+.env.*
+.ory
+node_modules
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+artifacts
+test-results
+playwright-report
+AGENTS.local.md

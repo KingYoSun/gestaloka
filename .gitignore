@@ -9,3 +9,5 @@ dist/
 test-results/
 playwright-report/
 artifacts/
+
+.deployments/
