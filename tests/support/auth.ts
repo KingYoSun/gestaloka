@@ -10,6 +10,7 @@ export async function fixtureAuth(
     token: string,
   ) => Promise<{ ory: string; session: string } | undefined>,
   mcpOptions?: ConstructorParameters<typeof Operations>[3],
+  modelTransport: typeof fetch = fetch,
 ) {
   const sessions = new Map<string, { ory: string; session: string }>();
   const ids: string[] = [];
@@ -36,7 +37,12 @@ export async function fixtureAuth(
     },
   );
   await identity.setup();
-  const operations = new Operations(pool, "2".repeat(64), fetch, mcpOptions);
+  const operations = new Operations(
+    pool,
+    "2".repeat(64),
+    modelTransport,
+    mcpOptions,
+  );
   await operations.setup();
   return {
     identity,

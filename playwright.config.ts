@@ -1,6 +1,18 @@
 import { defineConfig } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { connectDatabases } from "@gestaloka/server";
 process.env.E2E_SCOPE ??= randomUUID();
+const schema = `e2e_${process.env.E2E_SCOPE.replaceAll("-", "")}`;
+if (!/^e2e_[a-f0-9]{32}$/.test(schema)) throw new Error("E2E_SCOPEが不正です");
+const url = new URL(process.env.DATABASE_URL!);
+url.searchParams.set("options", `-c search_path=${schema}`);
+process.env.DATABASE_URL = url.toString();
+const database = connectDatabases();
+try {
+  await database.postgres.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
+} finally {
+  await database.close();
+}
 
 export default defineConfig({
   testDir: "tests/e2e",

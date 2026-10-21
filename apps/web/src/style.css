@@ -528,7 +528,127 @@ select {
 .scene-history-toggle {
   margin-top: 24px;
 }
+.admin-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 32px;
+}
+.admin-layout > nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-self: start;
+}
+.admin-layout > nav a {
+  padding: 8px;
+  overflow-wrap: anywhere;
+}
+.admin-layout > nav a[aria-current] {
+  border-left: 3px solid var(--primary);
+  background: var(--card);
+}
+.admin-content {
+  min-width: 0;
+}
+.admin-content select {
+  width: 100%;
+  padding: 10px;
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.admin-content .form-panel {
+  margin-top: 24px;
+}
+.admin-content fieldset {
+  min-width: 0;
+  border: 1px solid var(--border);
+  padding: 16px;
+}
+.admin-content form > fieldset {
+  border: 0;
+  padding: 0;
+}
+.admin-field {
+  display: block;
+  margin: 16px 0;
+}
+.admin-field label,
+.admin-field legend {
+  margin-bottom: 8px;
+}
+.admin-field input[type="checkbox"] {
+  margin-right: 8px;
+}
+.scope-list {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  padding: 12px;
+}
+.scope-list label {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.admin-record {
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 20px;
+  margin: 16px 0;
+  border-radius: var(--radius);
+}
+.admin-data {
+  margin: 12px 0;
+}
+.admin-data > div {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(0, 2fr);
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+}
+.admin-data dt {
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
+.admin-data dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.admin-data summary {
+  cursor: pointer;
+}
+.admin-table {
+  overflow: auto;
+}
+.admin-table table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.admin-table th,
+.admin-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+.admin-content code {
+  overflow-wrap: anywhere;
+}
 @media (max-width: 768px) {
+  .admin-layout {
+    display: block;
+  }
+  .admin-layout > nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+  .admin-data > div {
+    display: block;
+  }
   .site-header {
     padding: 16px 20px;
     flex-wrap: wrap;

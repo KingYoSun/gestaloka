@@ -35,6 +35,9 @@ const Manage = lazy(() =>
 const Player = lazy(() =>
   import("./screens.js").then((module) => ({ default: module.Player })),
 );
+const AdminOperations = lazy(() =>
+  import("./admin.js").then((m) => ({ default: m.AdminOperations })),
+);
 import { Button } from "./components/ui/button.js";
 import { Notice, Problem } from "./presentation.js";
 import { $api } from "./api.js";
@@ -95,12 +98,18 @@ function Shell() {
         </Link>
         <nav>
           <Link to="/">世界一覧</Link>
+          {surface === "admin" && (
+            <Link to="/operations/$section" params={{ section: "users" }}>
+              運用管理
+            </Link>
+          )}
           {surface === "admin" ? (
             <a href={userApp}>ユーザー画面</a>
           ) : account.data?.member?.role === "admin" ? (
             <a href={adminApp}>管理画面</a>
           ) : null}
           <a href="/auth/claim">このブラウザーのデータを引き継ぐ</a>
+          <a href="/auth/link">ログイン方法を追加</a>
           <a href="/auth/logout">ログアウト</a>
           <ThemeButton />
         </nav>
@@ -128,6 +137,16 @@ function ManageRoute() {
 function HomeRoute() {
   return useSurface() === "admin" ? <Home /> : <Catalog />;
 }
+function OperationsRoute() {
+  const { section } = useParams({ from: "/operations/$section" });
+  return useSurface() === "admin" ? (
+    <AdminOperations key={section} section={section} />
+  ) : (
+    <main className="page">
+      <p role="alert">管理者の画面から開いてください。</p>
+    </main>
+  );
+}
 function PlayerRoute() {
   const { id } = useParams({ from: "/worlds/$id/play" });
   return useSurface() === "user" ? (
@@ -150,6 +169,11 @@ const root = createRootRoute({
   ),
 });
 const routeTree = root.addChildren([
+  createRoute({
+    getParentRoute: () => root,
+    path: "/operations/$section",
+    component: OperationsRoute,
+  }),
   createRoute({ getParentRoute: () => root, path: "/", component: HomeRoute }),
   createRoute({
     getParentRoute: () => root,
@@ -212,7 +236,12 @@ function Membership({
 }: {
   navigation: ReturnType<typeof createAppRouter>;
 }) {
-  const account = $api.useQuery("get", "/api/account");
+  const account = $api.useQuery(
+    "get",
+    "/api/account",
+    {},
+    { refetchInterval: 5000 },
+  );
   const surface = useSurface();
   if (account.error)
     return (
@@ -229,6 +258,11 @@ function Membership({
   if (!account.data.member || account.data.member.banned)
     return (
       <main className="page">
+        {account.data.member?.banned && (
+          <p role="alert">
+            利用が停止されています（BAN）。解除後に保存状態から再開できます。
+          </p>
+        )}
         <a href="/auth/register">利用登録を確認する</a>
       </main>
     );
@@ -239,7 +273,33 @@ function Membership({
         <a href={userApp}>ユーザー画面へ</a>
       </main>
     );
-  return <RouterProvider router={navigation} />;
+  return (
+    <ResourceScope key={account.data.member.role} navigation={navigation} />
+  );
+}
+function ResourceScope({
+  navigation,
+}: {
+  navigation: ReturnType<typeof createAppRouter>;
+}) {
+  const [client] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      }),
+  );
+  useEffect(
+    () => () => {
+      void client.cancelQueries();
+      client.clear();
+    },
+    [client],
+  );
+  return (
+    <QueryClientProvider client={client}>
+      <RouterProvider router={navigation} />
+    </QueryClientProvider>
+  );
 }
 export function App({
   navigation = router,

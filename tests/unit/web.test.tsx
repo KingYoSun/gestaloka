@@ -135,7 +135,13 @@ const server = setupServer(
               since: "2026-10-21T00:00:00Z",
               historyScope: "all",
             }
-          : { items: [], next: null },
+          : {
+              items:
+                body.command.operation === "worlds.list" && created
+                  ? [{ id: W }]
+                  : [],
+              next: null,
+            },
     });
   }),
   http.get("*/api/catalog/worlds", () => json({ items: [], next: null })),

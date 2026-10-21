@@ -113,6 +113,83 @@ test("同時登録でも初代管理者は一度だけ成立し、再送・再�
   ).toBe(1);
 });
 
+test("受付照会は本人の要求だけを返し、未受付・受付待ち・受付済み・失敗と秘密値を区別する", async () => {
+  const a = await founder(),
+    b = await join(a.id);
+  await run(a.id, {
+    operation: "users.role",
+    userId: b.id,
+    role: "admin",
+    reason: "照会の主体を分ける",
+  });
+  const id = randomUUID();
+  expect(await run(a.id, { operation: "requests.read", id })).toMatchObject({
+    state: "unreceived",
+  });
+  const invite = await run(
+    a.id,
+    {
+      operation: "invites.create",
+      maxUses: 2,
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+      reason: "復帰の確認",
+    },
+    id,
+  );
+  expect(await run(a.id, { operation: "requests.read", id })).toMatchObject({
+    state: "accepted",
+    operation: "invites.create",
+    result: invite,
+  });
+  expect(await run(b.id, { operation: "requests.read", id })).toMatchObject({
+    state: "unreceived",
+  });
+  const pending = randomUUID();
+  await db.postgres.query(
+    "INSERT INTO operation_request(id,actor_id,operation,input_hash) VALUES($1,$2,'credentials.put','fixture')",
+    [pending, a.id],
+  );
+  expect(
+    await run(a.id, { operation: "requests.read", id: pending }),
+  ).toMatchObject({ state: "pending", result: null, error: null });
+  const failed = randomUUID();
+  await expect(
+    run(
+      a.id,
+      {
+        operation: "users.role",
+        userId: randomUUID(),
+        role: "user",
+        reason: "存在しない対象",
+      },
+      failed,
+    ),
+  ).rejects.toMatchObject({ code: "USER_NOT_FOUND" });
+  expect(
+    await run(a.id, { operation: "requests.read", id: failed }),
+  ).toMatchObject({ state: "failed", error: { code: "USER_NOT_FOUND" } });
+  const secret = randomUUID();
+  await run(
+    a.id,
+    {
+      operation: "credentials.put",
+      provider: "anthropic",
+      value: "fixture-write-only-secret",
+      expectedVersion: 0,
+      reason: "キーの照会に値を出さない",
+    },
+    secret,
+  );
+  const receipt = await run(a.id, { operation: "requests.read", id: secret });
+  expect(receipt).toMatchObject({
+    state: "accepted",
+    result: { provider: "anthropic", version: 1 },
+  });
+  expect(JSON.stringify(receipt)).not.toMatch(
+    /fixture-write-only-secret|input_hash|cipher/,
+  );
+});
+
 test("追加管理者も任命でき、一般ユーザーは拒否され、最後の有効な管理者を保護する", async () => {
   const first = await founder(),
     second = await join(first.id),
