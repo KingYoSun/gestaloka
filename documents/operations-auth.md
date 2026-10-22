@@ -75,7 +75,7 @@ Linuxでは`auth:init`を実行したユーザーのUID/GIDを`.env.ory`へ記�
 | Hydra Public / issuer        | `http://127.0.0.1:24444`             |
 | Hydra Admin                  | `http://127.0.0.1:24445`             |
 
-管理APIはループバックだけへバインドし、Ory用PostgreSQLのポートはホストへ公開しない。開発用ComposeはHTTP向けの`--dev`を使う。公開環境のHTTPS、サブドメイン間のCookie、プロキシ、秘密情報の配布・保管、復旧手順は#71で構成する。
+管理APIはループバックだけへバインドし、Ory用PostgreSQLのポートはホストへ公開しない。開発用ComposeはHTTP向けの`--dev`を使う。#71で実装した公開環境のHTTPS、サブドメイン間のCookie、プロキシ、秘密情報の配布・保管、復旧手順は[公開配置と復旧](deployment.md)を参照する。
 
 ## GoogleとXの設定
 
