@@ -7,7 +7,7 @@
 
 ## ローカル起動
 
-Node.js 22.14以上の22系または24系、pnpm 10.16.1、Linuxコンテナーを実行できるDocker Composeを使用します。
+Node.js 22.23.4以上の22系または24.22.1以上の24系、pnpm 10.16.1、Linuxコンテナーを実行できるDocker Composeを使用します。
 
 ```powershell
 pnpm install --frozen-lockfile
@@ -18,15 +18,18 @@ pnpm dev
 
 Webは <http://127.0.0.1:5173> です。Viteが `/api` をAPIへ転送し、HTTPとSSEを同一オリジンで利用できます。API・Web・DBの公開ポートはループバックへ限定しています。`pnpm env:init` はランダムな開発用DB資格情報を `.env` に生成し、既存ファイルは上書きしません。手動設定する場合は `.env.example` を複製して空欄を埋めてください。資格情報の変更時は、永続化されたDBの資格情報も変更してください。
 
-API・ワーカー・Webは、それぞれ `pnpm --filter @gestaloka/api dev`、`pnpm --filter @gestaloka/worker dev`、`pnpm --filter @gestaloka/web dev` でも起動できます。個別起動の前に `pnpm build:server` を実行してください。
+管理画面は <http://127.0.0.1:5174> の別アプリです。世界を操作するにはOryの起動と本人のログイン・利用登録も必要です。[認証・利用登録の手順](documents/operations-auth.md)を参照してください。
 
-`pnpm db:stop` はデータを残してDBを停止します。再起動は `pnpm db:up` です。Neo4j Community 5.26系とPostgreSQL 17をイメージのdigestで固定し、名前付きvolumeに永続化します。本番用の構成・公開認証は別途設計します。
+API・ワーカー・Web・管理画面は、それぞれ `pnpm --filter @gestaloka/api dev`、`pnpm --filter @gestaloka/worker dev`、`pnpm --filter @gestaloka/web dev`、`pnpm --filter @gestaloka/admin dev` でも起動できます。個別起動の前に `pnpm build:server` を実行してください。
+
+`pnpm db:stop` はデータを残してDBを停止します。再起動は `pnpm db:up` です。Neo4j Community 5.26系とPostgreSQL 17をイメージのdigestで固定し、名前付きvolumeに永続化します。本番用のCompose・HTTPS・Ory認証・バックアップと復旧は[公開配置と復旧](documents/deployment.md)に実装済みの手順があります。サーバー契約・DNS公開・外部保管先の設定と、隔離環境での検証は区別します。
 
 ## 構成と公開契約
 
 - `apps/api`: FastifyのHTTP/SSEと公開スキーマの登録。
 - `apps/worker`: APIとは独立したNode.jsプロセス。pg-bossで構築ジョブを取得し、共通Agentで進行。
 - `apps/web`: React / Vite。サーバー内部への依存をESLintで拒否。
+- `apps/admin`: 管理者向けの別アプリ。共通の運用APIを利用。
 - `packages/contracts`: ブラウザーでも利用できる公開Zodスキーマと生成HTTP型。
 - `packages/server`: サーバー用のDB・キュー・チェックポイント接続。
 
@@ -109,7 +112,7 @@ ANTHROPIC_BASE_URL=https://api.anthropic.com/v1
 既知の3モデル以外では、コンテキスト上限と3種類の単価が必須です。基本モデルへ使う場合は `LLM_RESOLUTION_` を `LLM_` に置き換えます。キャッシュ書込や長い入力の割増がある場合は、それを含む上限単価にしてください。`LLM_RESOLUTION_BASE_URL` で上位モデル専用の接続先も指定できます。`LLM_RESOLUTION_MODEL` が空欄なら従来の基本モデルを引き継ぐため、上位モデルで運用するには明示設定が必要です。
 
 ```powershell
-pnpm llm:probe --target resolution
+pnpm llm:probe --target resolution --budget <USD>
 ```
 
 この確認は専用の小さな世界を作り、結果提案から世界への確定まで実行します。既存の試遊世界は変更しません。モデル・料金の変更は新しい呼出しへ適用し、保存済みの要求と応答は元の条件で再利用します。
@@ -127,7 +130,7 @@ DEEPSEEK_HARNESS_HOME=artifacts/harness
 ```
 
 ```powershell
-pnpm llm:harness-probe
+pnpm llm:harness-probe --budget <USD>
 ```
 
 このコマンドはプロセス内だけでDeepSeekを選び、同じ専用世界の確認をdsh経由で行います。`.env` の基本モデルは変更しません。dshに公開するツールは世界の照会・候補の提出・提出済み候補の確定・保留だけです。提出と確定は別のモデル判断にし、シェルやファイル編集のツールは公開しません。モデルへの送信前に共通予算を予約し、応答が不明な場合は自動再送せず予約を保持します。
@@ -150,21 +153,21 @@ LLM_MODEL_LIMITS={"gemini:YOUR_MODEL_ID":{"concurrency":2,"requestsPerMinute":30
 
 ```powershell
 pnpm llm:probe
-pnpm world:generate --prompt examples/village.txt
+pnpm world:generate --prompt examples/village.txt --budget <USD>
 pnpm world:generate --resume <runId>
 ```
 
 初期入力はファイルから読み込み、エンジン内の固定設定にはしません。生成候補の構造・接続と独立した意味的審査を経て、Neo4jへの確定とPostgreSQLの構築記録・LangGraphチェックポイントを関連づけます。`ready` はT0の成立を表し、管理者による世界構築完了とは区別します。再取得だけでは生成や観測を再実行しません。[詳しさの異なる入力の検証](documents/evaluations/initial-variants-2026-10-20.md)に、不足の検出・修正と確定後の照合を記録しています。
 
-`LLM_BUDGET_ID` / `LLM_BUDGET_USD` は管理者のAPI費用枠を指定します。今回の#25以降の開発・検証は同じIDで100ドルを通算し、実運用の個別利用者向け予算にはしません。未設定時の40ドルは開発設定の既定値で、100ドルを製品の固定上限にはしていません。保存済み予算は設定だけでは増額せず、管理者の明示的な判断で台帳の上限も変更する必要があります。使用済み額と応答未確定の予約は保持し、モデルを変えても同じIDでDeepSeek・Gemini・OpenAI・Claudeの費用を通算します。既定IDは既存記録を引き継ぐため`deepseek-v4.1-flash-1017-evaluation`のままです。
+世界ごとの予算は作成時に明示し、初期生成から計算済み額と未確定予約額を通算します。`LLM_BUDGET_ID` / `LLM_BUDGET_USD` は、これとは別に明示した開発・検証用の全体費用枠です。#25以降の100ドルは既存の開発記録であり、実運用の世界や利用者の予算へ流用しません。未設定時に全体の金額上限は追加せず、予算IDの既定値は`service-usage`です。使用済み額と応答未確定の予約は保持し、モデルを変えても同じ枠で費用を通算します。世界予算の変更手順は[運用設定](documents/operations-auth.md#世界予算と応答生成のcall上限)を参照してください。
 
-費用とは別に、各操作の処理量をLLM 64回・グラフ照会4096回までとします。背景準備・1回の行動・シーン確定・1構築区間でそれぞれ通算し、親子の呼出しや再送でリセットしません。上限では保存して保留し、明示再開でだけ枠を追加します。詳細は[ADR-009](documents/adr/ADR-009-execution-limits.md)を参照してください。
+費用とは別に、応答生成1回のLLM call上限を管理者が設定でき、初期値は64回です。親子の呼出し・修正・再試行・再開・dshを通算し、再開で枠を追加しません。構築は活動の節目ごとに通算し、グラフ照会の通算上限は設けません。上限では保存して保留し、管理者が上限を見直した後に再開します。[ADR-014](documents/adr/ADR-014-operating-limits.md)が[ADR-009の旧方式](documents/adr/ADR-009-execution-limits.md)を置き換えています。
 
-表示額は請求額ではなく、2026-10-19に公式資料で確認した料金から計算する上限見積です。DeepSeekは既存のピーク単価を維持します。Geminiは[公表済みの2027年以降の標準単価](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.8-flash)（100万トークンあたり入力1.50ドル・キャッシュ0.15ドル・出力7.50ドル）、GPT-6 Lunaは[長い入力とキャッシュ書込の割増](https://developers.openai.com/api/docs/models/gpt-6-luna)を含む上限単価（入力0.25ドル・出力0.75ドル）を使います。Geminiの2026年中の標準料金やGPTの通常の短い入力では、見積が請求より大きくなります。組み込み料金は上記の公式サービスのテキスト生成を対象とし、別料金の独自gatewayを使う場合はこの見積をそのまま請求額として扱わないでください。
+表示額は使用量と保存済みの適用単価から求める計算額であり、請求額ではありません。推奨Claude構成の採用単価は[ADR-016](documents/adr/ADR-016-claude-model-selection.md)を参照してください。以下の組み込み3モデルの単価は、2026-10-19に公式資料で確認した上限見積用の値です。DeepSeekは既存のピーク単価を維持します。Geminiは[公表済みの2027年以降の標準単価](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.8-flash)（100万トークンあたり入力1.50ドル・キャッシュ0.15ドル・出力7.50ドル）、GPT-6 Lunaは[長い入力とキャッシュ書込の割増](https://developers.openai.com/api/docs/models/gpt-6-luna)を含む上限単価（入力0.25ドル・出力0.75ドル）を使います。Geminiの2026年中の標準料金やGPTの通常の短い入力では、見積が請求より大きくなります。組み込み料金は上記の公式サービスのテキスト生成を対象とし、別料金の独自gatewayを使う場合はこの見積をそのまま請求額として扱わないでください。
 
 応答喪失時は予約を残し、同じ呼出しIDを自動再送しません。上限や応答未確定による停止は実行上の保留であり、世界内の失敗ではありません。応答・使用量は共通の台帳へ保存します。新しい要求には接続条件と上限単価も保存し、設定変更後に同じ呼び出しを再開しても元の要求・精算条件を保持します。
 
-1回の最大出力は接続確認で16,384トークン、初期生成で65,536トークンです。`LLM_MAX_OUTPUT_TOKENS` で設定でき、予約額にも反映します。APIキーは実測記録へ保存しません。サーバー側の入出力・使用量・遅延はPostgreSQL、生成の確認記録はローカルの `artifacts/evaluations/` に保存します。
+1回の最大出力はモデル設定で指定し、推奨構成では両担当とも65,536トークンです。初回の環境設定には`LLM_MAX_OUTPUT_TOKENS`等を使い、保存済み設定の運用変更は管理画面から行います。出力上限は予約額にも反映します。APIキーは実測記録へ保存しません。サーバー側の入出力・使用量・遅延はPostgreSQL、生成の確認記録はローカルの `artifacts/evaluations/` に保存します。
 
 実測結果は [初期生成の確認記録](documents/evaluations/deepseek-initial-world-2026-10-19.md) を参照してください。
 
@@ -189,30 +192,28 @@ pnpm world:act --resume <operationId>
 別のターミナルで `pnpm --filter @gestaloka/worker dev` を起動し、次の管理者用CLIを使います。モデルのAPIキーが必要です。受付コマンドはジョブを保存して返り、ブラウザーやCLIを閉じてもワーカーが処理します。
 
 ```powershell
-pnpm world:build create --prompt examples/village.txt
+pnpm world:build create --prompt examples/village.txt --budget <USD>
 pnpm world:build show --id <constructionId>
 pnpm world:build advance --id <constructionId> --days 1
 pnpm world:build show --id <constructionId>
 pnpm world:build advance --id <constructionId> --days 1
 pnpm world:build finish --id <constructionId>
-pnpm world:build join --id <constructionId>
-pnpm world:build act --id <constructionId> --action examples/greet-neighbor.txt
 pnpm world:build resume --id <constructionId>
 ```
 
 `advance`はreadyの区切りから、`--days`で指定した日数を追加します。管理者の指定は最小1日、1日単位です。内部ではミリ秒で時点を保持し、1日未満の相互作用も処理します。構築中は各人物が本人の知識から期間の活動方針を形成し、日常や短いやり取りをまとめ、重要な変化で方針を見直します。追加期間では継続意図を保って新しい方針を形成します。詳細は [ADR-007](documents/adr/ADR-007-construction-activity-plans.md) を参照してください。
 
-`finish`はその区切りで構築を完了し、`join`は別の新しい村民を共通Agentで生成します。試遊村民の存在・履歴・所有・知識は残ります。`resume`はpausedの処理を再開します。目標未到達の保留を、構築完了として扱いません。人間の自由記述行動は、期間方針による要約を適用せず、次の本人の判断場面まで進めます。
+`finish`はその区切りで構築を完了します。参加は管理者が公開・受付を設定した後、ユーザー画面または共通APIの`worlds.join`からプリセットを選んで行います。CLIの`join`は廃止済みです。別の新しい村民を生成し、試遊村民の存在・履歴・所有・知識は残します。`resume`はpausedの処理を再開します。目標未到達の保留を、構築完了として扱いません。人間の自由記述行動は、期間方針による要約を適用せず、次の本人の判断場面まで進めます。
 
-`act`は参加した人間の村民へファイルの行動文を渡します。期間は指定せず、NPCの判断を必要に応じて挟み、次に人間の判断が必要になる場面まで進めます。人間の次の意図をAIで形成しません。継続中の活動は保持し、途中保留の再開にも同じ保存記録を使います。
+新規参加後の操作はユーザー画面で人物を選び、シーンから行います。既存の`participant_id`を持つ構築記録では、`pnpm world:build act --id <constructionId> --action examples/greet-neighbor.txt`も利用できます。この従来の通常行動は期間を指定せず、NPCの判断を必要に応じて挟み、次に人間の判断が必要になる場面まで進めます。人間の次の意図をAIで形成せず、継続中の活動と再開用の保存記録を保持します。
 
 取得結果は到達時刻・目標時刻・主な処理記録・未処理の起動を含む管理情報です。区間をまたぐ継続と参加の契約は [ADR-003](documents/adr/ADR-003-construction-lifecycle.md)、実行結果と時間配分の残る問題は [構築の実測記録](documents/evaluations/construction-2026-10-19.md) を参照してください。
 
 ## 管理APIと公開知識
 
-APIとワーカーを起動し、同じオリジンから利用します。初回の `POST /api/session` で発行するHttpOnly Cookieがローカルの操作主体を識別します。変更操作には `X-Gestaloka-Request: 1` を付け、世界の作成・構築操作には再送用のrequestIdを指定します。
+API・ワーカーとOryを起動し、ブラウザーからは同じオリジンのAPIを利用します。`GET/POST /api/session`はOryで認証したアプリIDを返し、利用登録・BANを確認します。匿名Cookieは本人確認後の既存データ引き継ぎに限って使います。変更操作には `X-Gestaloka-Request: 1` を付け、世界の作成・構築操作には再送用のrequestIdを指定します。
 
-`/api/worlds` で自分の世界を作成・取得し、`/api/worlds/:id/commands` で期間追加・再開・完了・参加を受け付けます。受付とpg-boss投入は同時保存され、202の後はワーカーで実行します。`/records` は管理者向けの報告、`/knowledge` は割り当てた村民本人の観測・解釈だけを返します。履歴は1ページ50件で、nextから続きを取得できます。
+管理者は`/api/worlds`で予算を指定して世界を作成・取得し、`/api/worlds/:id/commands`で期間追加・再開・完了を行います。参加は`POST /api/operations`の`worlds.join`へ一本化しています。受付とpg-boss投入は同時保存され、202の後はワーカーで実行します。`/records` は管理者向けの報告、`/knowledge` は本人に対応する村民の観測・解釈だけを返します。履歴は1ページ50件で、nextから続きを取得できます。公開・参加・複数人物の選択は[ADR-013](documents/adr/ADR-013-world-participation.md)と[運用手順](documents/operations-auth.md#世界の公開と参加の共通api)を参照してください。
 
 `/api/worlds/:id/actions` は自由記述のactionTextとrequestIdを受け付けます。操作対象はサーバー側の割当で決め、actorIdの自己申告は受け付けません。受付結果のrunIdから `/api/runs/:id` で本人の入力・到達時刻・処理状態を取得でき、`/api/worlds/:id/play/resume` で途中保留を再開できます。入力の受付と世界内の成功は区別します。
 
@@ -222,11 +223,11 @@ APIとワーカーを起動し、同じオリジンから利用します。初�
 
 世界の確定時にNeo4jのreceiptへ未配信印を同時保存し、認可された更新通知へ反映してから配信済みにします。二つのDB間で停止した場合はreceiptから通知だけを回復します。他者の未観測情報を通知本文へ含めず、取得・配信だけで新しい観測も作りません。
 
-`/api/worlds/:id/events?role=admin` または `role=player` は、現在の権限を確認して更新通知を配信します。Last-Event-IDによる再送に対応し、別の主体・世界・ロールのcursorは拒否します。取得や再接続だけで世界内の観測は追加しません。CLIで作った世界へブラウザーの権限を自動付与しません。詳細は [ADR-004](documents/adr/ADR-004-world-api.md) を参照してください。
+`/api/worlds/:id/events?role=admin` または `role=player` は、現在の権限を確認して更新通知を配信します。Last-Event-IDによる再送に対応し、別の主体・世界・ロールのcursorは拒否します。取得や再接続だけで世界内の観測は追加しません。CLIで作った世界にも現在のサービス管理権限を適用し、CLI実行だけでは利用者へプレイヤーの操作対象を割り当てません。詳細は [ADR-004](documents/adr/ADR-004-world-api.md) を参照してください。
 
 同時刻の意図と人間への操作返却は [ADR-005](documents/adr/ADR-005-human-play.md)、待ち時間と推論量の比較は [通常行動の実測](documents/evaluations/human-play-2026-10-19.md) を参照してください。`LLM_REASONING_EFFORT`で通常行動、`LLM_INITIAL_REASONING_EFFORT`で初期生成の推論量を指定できます。DeepSeekはnone・low・high・max、Geminiはlow・medium・high、GPT-6 Lunaはnone・low・medium・high・xhigh・maxを使えます。同じ呼出しIDの保存済み設定と応答は保持し、新しい呼出しから設定を適用します。
 
-画面は [ADR-006](documents/adr/ADR-006-gameplay-ui.md) に従います。受付後の再読込で行動を追加送信せず、保存されたrunIdの入力と進行へ戻ります。履歴は前後へ取得でき、保持は4ページ、描画は表示範囲に絞ります。過去を読んでいる間の更新では位置を移動しません。通信の再接続時は、配信位置と公開状態を取得し直します。
+画面の履歴表示と再接続は[ADR-006](documents/adr/ADR-006-gameplay-ui.md)を引き継ぎ、シーン導線はADR-008、管理アプリの分離と参加導線はADR-013へ移行しています。受付後の再読込で行動を追加送信せず、保存された入力と進行へ戻ります。履歴は前後へ取得でき、保持は4ページ、描画は表示範囲に絞ります。過去を読んでいる間の更新では位置を移動しません。通信の再接続時は、配信位置と公開状態を取得し直します。
 
 `pnpm llm:compare --operation <operationId> --effort low` は上位モデル設定で完了済みの最終入力から候補を再生成し、構造と時間・使用量を記録します。差分を世界へ確定せず、同じ予算で通算します。dshによるツール実行が必要なDeepSeekはこの単独比較の対象外です。一つの候補の構造検査を、意味的な品質や通常プレイ全体の保証にはしません。
 
