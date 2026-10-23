@@ -543,13 +543,8 @@ export class WorldScenes {
           (
             await this.agent.controlledActors(d.worldId, [d.nextDecisions[0]!])
           ).has(d.nextDecisions[0]!)
-        ) {
-          d.nextPurpose = action.text;
-          action.state = "boundary";
-          row.state = "reflecting";
-          await this.#save(row, undefined, row.claim!);
-          return true;
-        }
+        )
+          break;
         const actor = d.nextDecisions[0]!,
           own = [
             ...(d.previous[actor] ? [d.previous[actor]!.actionText] : []),
@@ -604,14 +599,7 @@ export class WorldScenes {
           responseSchema: z.toJSONSchema(SceneStep, { io: "input" }),
         }),
         step = SceneStep.parse(value.value);
-      if (step.type === "boundary") {
-        d.nextPurpose = action.text;
-        action.state = "boundary";
-        row.state = "reflecting";
-        delete d.work;
-        await this.#save(row, undefined, row.claim!);
-        return true;
-      }
+      if (step.type === "boundary") break;
       const actors = new Set(intents.map((i) => i.actorId));
       if (
         Object.keys(step.decisions).sort().join() !== [...actors].sort().join()
@@ -665,8 +653,16 @@ export class WorldScenes {
         await this.#save(row, undefined, row.claim!);
         return false;
       }
+      if (!d.nextDecisions.length && !step.events.length && !step.elapsedMs)
+        break;
       await this.#save(row, undefined, row.claim!);
     }
+    d.nextPurpose = action.text;
+    action.state = "boundary";
+    row.state = "reflecting";
+    delete d.work;
+    await this.#save(row, undefined, row.claim!);
+    return true;
   }
   async #reflect(row: SceneRow) {
     const d = row.data;

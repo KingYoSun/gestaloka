@@ -75,7 +75,15 @@ const model = new LlmClient(
         }[],
         response = intentions.some((i) => i.actorId === npc);
       if (intentions.some((i) => i.actionText === "別の場所へ向かう"))
-        content = { type: "boundary", reason: "移動先の背景情報が必要" };
+        content = {
+          type: "scene",
+          events: [],
+          decisions: Object.fromEntries(
+            intentions.map((i) => [i.actorId, "pending"]),
+          ),
+          newDecisions: [],
+          elapsedMs: 0,
+        };
       else if (!response && user.sceneHistory.length) {
         // 返答待ちには新たな判断主体がなくても、同じ意図で時間が進む。
         expect(intentions).toEqual([
@@ -90,8 +98,8 @@ const model = new LlmClient(
           type: "scene",
           events: [],
           decisions: { [actor]: "pending" },
-          newDecisions: [npc],
-          elapsedMs: 1000,
+          newDecisions: user.request.at === 0 ? [] : [npc],
+          elapsedMs: user.request.at === 0 ? 1000 : 0,
         };
       } else if (
         intentions.find((i) => i.actorId === actor)?.actionText.includes("一歩")
@@ -431,7 +439,7 @@ test("長いシーンを50件ずつ前後に復元し、概要の転送量と他
     await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [sceneId]);
   }
 });
-test("あらすじ→開始→本人の返答→背景更新の区切り→確定後のリザルトを保存し、失敗と再送でもシーンを維持する", async () => {
+test("返答待ちでも進行し、進展のない応答は場面の区切りにして、履歴・未完了の意図・再送を維持する", async () => {
   const prepareId = randomUUID(),
     opened = await command({
       requestId: prepareId,
@@ -531,7 +539,7 @@ test("あらすじ→開始→本人の返答→背景更新の区切り→確�
         [requestId],
       )
     ).rows[0],
-  ).toEqual({ llm_used: 68, llm_limit: 128 });
+  ).toEqual({ llm_used: 69, llm_limit: 128 });
   await d.postgres.query(
     "UPDATE response_call_policy SET calls=64 WHERE singleton",
   );
