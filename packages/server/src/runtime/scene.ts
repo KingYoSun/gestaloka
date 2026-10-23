@@ -665,8 +665,6 @@ export class WorldScenes {
         await this.#save(row, undefined, row.claim!);
         return false;
       }
-      if (!d.nextDecisions.length)
-        throw new Error("シーンの次の判断へ進めません");
       await this.#save(row, undefined, row.claim!);
     }
   }

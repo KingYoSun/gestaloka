@@ -76,7 +76,24 @@ const model = new LlmClient(
         response = intentions.some((i) => i.actorId === npc);
       if (intentions.some((i) => i.actionText === "別の場所へ向かう"))
         content = { type: "boundary", reason: "移動先の背景情報が必要" };
-      else if (
+      else if (!response && user.sceneHistory.length) {
+        // 返答待ちには新たな判断主体がなくても、同じ意図で時間が進む。
+        expect(intentions).toEqual([
+          {
+            actorId: actor,
+            actionText: "何か手伝えることはありますかと聞き、返答を待つ",
+            continuing: true,
+          },
+        ]);
+        expect(user.sceneHistory).toHaveLength(1);
+        content = {
+          type: "scene",
+          events: [],
+          decisions: { [actor]: "pending" },
+          newDecisions: [npc],
+          elapsedMs: 1000,
+        };
+      } else if (
         intentions.find((i) => i.actorId === actor)?.actionText.includes("一歩")
       ) {
         content = {
@@ -113,7 +130,7 @@ const model = new LlmClient(
           decisions: response
             ? { [actor]: "decide", [npc]: "pending" }
             : { [actor]: "pending" },
-          newDecisions: response ? [] : [npc],
+          newDecisions: [],
         };
       }
     } else if (user.request?.completedScene) {
@@ -138,7 +155,7 @@ const model = new LlmClient(
       );
       expect(user.confirmed.unfinishedAction).toBe("別の場所へ向かう");
       expect(
-        (await agent.view(world, actor, 0)).observations.some(
+        (await agent.view(world, actor, 1000)).observations.some(
           (o) => o.text === "明日の手伝いはこれから相談しようと聞いた",
         ),
       ).toBe(true);
@@ -514,12 +531,16 @@ test("あらすじ→開始→本人の返答→背景更新の区切り→確�
         [requestId],
       )
     ).rows[0],
-  ).toEqual({ llm_used: 67, llm_limit: 128 });
+  ).toEqual({ llm_used: 68, llm_limit: 128 });
   await d.postgres.query(
     "UPDATE response_call_policy SET calls=64 WHERE singleton",
   );
   view = await status();
   expect(view.state).toBe("active");
+  expect(view.at).toBe(1000);
+  expect((await access.scenes.latest(construction))!.data.events).toHaveLength(
+    2,
+  );
   expect(view.messages.map((m: { text: string }) => m.text)).toContain(
     "明日の手伝いはこれから相談しようと聞いた",
   );
@@ -547,7 +568,7 @@ test("あらすじ→開始→本人の返答→背景更新の区切り→確�
   });
   await access.scenes.tick(scene.id);
   view = await status();
-  expect(view.at).toBe(1000);
+  expect(view.at).toBe(2000);
   expect((await runtime.get(construction)).at).toBe(0);
   const outsider = await auth.person("user");
   const hidden = await app.inject({
@@ -611,12 +632,12 @@ test("あらすじ→開始→本人の返答→背景更新の区切り→確�
         w.actorId === npc && w.deferred && w.actionText?.includes("返事を待つ"),
     ),
   ).toBe(true);
-  expect(row.at).toBe(1000);
+  expect(row.at).toBe(2000);
   expect(row.agenda.some((w) => w.actorId === actor && w.deferred)).toBe(true);
-  const movement = (await agent.view(world, actor, 1000)).observations.find(
+  const movement = (await agent.view(world, actor, 2000)).observations.find(
     (o) => o.text === "一歩近づいた",
   );
-  expect(movement?.period).toEqual({ from: 0, until: 1000 });
+  expect(movement?.period).toEqual({ from: 1000, until: 2000 });
   const finalCount = modelCalls;
   await access.scenes.tick(scene.id);
   expect(modelCalls).toBe(finalCount);
