@@ -161,17 +161,15 @@ test.each([
 beforeAll(() => databases.verify());
 
 test("未完了出力はJSONとして補完せず、使用量だけ精算し再開時も自動再送しない", async () => {
-  const transport = vi
-    .fn<typeof fetch>()
-    .mockImplementation(async () =>
-      Response.json({
-        id: "truncated",
-        model: "claude-sonnet-5-5",
-        stop_reason: "max_tokens",
-        content: [{ type: "text", text: '{"text":"未完了' }],
-        usage: { input_tokens: 20, output_tokens: 4 },
-      }),
-    );
+  const transport = vi.fn<typeof fetch>().mockImplementation(async () =>
+    Response.json({
+      id: "truncated",
+      model: "claude-sonnet-5-5",
+      stop_reason: "max_tokens",
+      content: [{ type: "text", text: '{"text":"未完了' }],
+      usage: { input_tokens: 20, output_tokens: 4 },
+    }),
+  );
   const client = new LlmClient(
     databases.postgres,
     {
