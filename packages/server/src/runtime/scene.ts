@@ -4,6 +4,7 @@ import { RuntimeControl, RuntimeStopped } from "./control.js";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
+import { parseOutput } from "../llm/prompt.js";
 import { ExecutionLimit } from "../execution-budget.js";
 import type pg from "pg";
 import type { ChatMessage } from "../llm/client.js";
@@ -361,7 +362,20 @@ export class WorldScenes {
               "utf8",
             ),
           },
-          { role: "user", content: JSON.stringify(input) },
+          {
+            role: "user",
+            content: JSON.stringify(
+              kind === "intent"
+                ? {
+                    ...(input as object),
+                    responseSchema: z.toJSONSchema(
+                      z.object({ actionText: z.string().min(1) }).strict(),
+                      { io: "input" },
+                    ),
+                  }
+                : input,
+            ),
+          },
         ],
       };
       await this.#save(row, undefined, row.claim!);
@@ -377,7 +391,7 @@ export class WorldScenes {
       throw new Error("シーンのモデル応答が未完了です");
     return {
       content: response.content,
-      value: JSON.parse(response.content) as unknown,
+      value: parseOutput(response.content),
     };
   }
   #request(row: SceneRow): z.infer<typeof Interaction> {

@@ -7,6 +7,7 @@ import type pg from "pg";
 import { z } from "zod";
 import { BudgetLedger, NANO_USD, type SavedCompletion } from "./budget.js";
 import { ModelLimits } from "./limits.js";
+import { anthropicPrompt, canonical, parseOutput } from "./prompt.js";
 import {
   settings,
   budgetSettings,
@@ -44,6 +45,7 @@ type StoredRequest = {
   thinking?: { type: string };
 };
 type StoredInput = {
+  sourceMessages?: ChatMessage[];
   configurationVersion?: number;
   role: string;
   requestedVersion: string;
@@ -350,6 +352,19 @@ export class LlmClient {
       return this.run(id, () => this.complete(id, role, messages, target));
     z.uuid().parse(id);
     const previous = (await this.ledger.input(id)) as StoredInput | undefined;
+    if (previous?.sourceMessages) {
+      if (
+        previous.role !== role ||
+        canonical(previous.sourceMessages) !== canonical(messages)
+      )
+        throw new Error("同じ呼出しIDに異なる要求を使用できません");
+      return (await this.ledger.reserve(
+        id,
+        createHash("sha256").update(canonical(previous)).digest("hex"),
+        0,
+        previous,
+      ))!;
+    }
     const selected = previous ? this.settings : this.settingsFor(target);
     const model = previous?.request.model ?? selected.model;
     const provider = previous
@@ -371,18 +386,29 @@ export class LlmClient {
       (role === "initial-generation"
         ? selected.initialEffort
         : selected.effort);
+    const prompt =
+      !previous && api === "messages"
+        ? // The full world schema exceeds Anthropic's grammar limit; retain Zod validation.
+          anthropicPrompt(messages, role !== "world-update")
+        : undefined;
     const request =
       api === "messages"
         ? {
             model,
-            system: messages
-              .filter((m) => m.role === "system")
-              .map((m) => m.content)
-              .join("\n\n"),
-            messages: messages.filter((m) => m.role !== "system"),
+            system:
+              prompt?.system ??
+              messages
+                .filter((m) => m.role === "system")
+                .map((m) => m.content)
+                .join("\n\n"),
+            messages:
+              prompt?.messages ?? messages.filter((m) => m.role !== "system"),
             max_tokens: maxOutput,
             thinking: { type: effort === "none" ? "disabled" : "adaptive" },
-            output_config: effort === "none" ? {} : { effort },
+            output_config: {
+              ...(effort === "none" ? {} : { effort }),
+              ...(prompt?.format ? { format: prompt.format } : {}),
+            },
             stream: false,
           }
         : api === "responses"
@@ -442,6 +468,7 @@ export class LlmClient {
               }),
         };
     const stored = {
+      ...(prompt ? { sourceMessages: messages } : {}),
       role,
       requestedVersion: previous?.requestedVersion ?? selected.version,
       pricingDate: previous?.pricingDate ?? selected.pricingDate,
@@ -456,7 +483,7 @@ export class LlmClient {
       ...(previous && !previous.connection ? {} : { connection }),
     };
     const hash = createHash("sha256")
-      .update(JSON.stringify(stored))
+      .update(prompt ? canonical(stored) : JSON.stringify(stored))
       .digest("hex");
     if (previous) return (await this.ledger.reserve(id, hash, 0, stored))!;
     return this.limits.run(
@@ -599,6 +626,15 @@ export class LlmClient {
             };
           }
           const usage = completion.usage;
+          if (prompt && completion.finishReason === "stop") {
+            try {
+              completion.content = JSON.stringify(
+                parseOutput(completion.content, prompt.schema),
+              );
+            } catch {
+              /* Persist the invalid response; the caller's existing validation handles it. */
+            }
+          }
           quota.used(usage.prompt_tokens + usage.completion_tokens);
           if (
             usage.prompt_cache_hit_tokens + usage.prompt_cache_miss_tokens !==
