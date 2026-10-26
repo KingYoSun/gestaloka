@@ -646,6 +646,7 @@ export class WorldScenes {
       ];
       delete d.work;
       if (
+        step.decisions[row.actor_id] === "finished" ||
         step.decisions[row.actor_id] === "decide" ||
         step.newDecisions.includes(row.actor_id)
       ) {

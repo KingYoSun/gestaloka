@@ -118,3 +118,44 @@ test("時点を進めても元の活動・本人の返答待ち・未実施の�
   expect(old[0]?.at).toBe(0);
   expect(old[0]?.previousActions).toEqual(["以前からの活動"]);
 });
+
+test("入力完了後に終了してもNPCの判定待ちと途中の活動をagendaへ引き継ぐ", () => {
+  const unrelated = randomUUID();
+  const original = [
+    {
+      id: randomUUID(),
+      at: 0,
+      actorId: npc,
+      mode: "resolve" as const,
+      actionText: "途中の活動",
+    },
+    { id: randomUUID(), at: 2000, actorId: unrelated, mode: "intent" as const },
+  ];
+  const next = sceneAgenda(
+    original,
+    actor,
+    1000,
+    {
+      type: "propose",
+      summary: "",
+      resolvedUntil: 1000,
+      changes: { nodes: [], edges: [], revisions: [], endEdges: [] },
+      settledIntentions: [
+        { actorId: actor, reason: "礼を述べる入力が成立した" },
+      ],
+      deferredIntentions: [npc],
+      wakeups: [],
+    },
+    {
+      [npc]: { actorId: npc, actionText: "本人の返事を待つ", continuing: true },
+    },
+    [npc],
+  );
+  expect(next.find((w) => w.actorId === npc)).toMatchObject({
+    at: 1000,
+    mode: "intent",
+    previousActions: ["途中の活動\n\n本人の返事を待つ", "本人の返事を待つ"],
+  });
+  expect(next.find((w) => w.actorId === unrelated)).toEqual(original[1]);
+  expect(original[0]?.actionText).toBe("途中の活動");
+});
