@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { connectDatabases } from "@gestaloka/server";
 import { BudgetUnavailable, LlmClient, llmApiKey } from "@gestaloka/server/llm";
 
@@ -36,7 +37,173 @@ const response = () =>
       },
     }),
   );
+
+test.each([
+  "scene-result",
+  "scene-intent",
+  "scene-background",
+  "scene-resolve",
+  "initial-generation",
+])(
+  "%sの構造化出力と参照を復元し、設定変更・再開でも凍結した入力と料金を再利用する",
+  async (role) => {
+    const actor = randomUUID();
+    const schema = z
+      .object({
+        decisions: z.record(z.uuid(), z.enum(["pending", "finished"])),
+      })
+      .strict();
+    const config = {
+      ...environment(),
+      LLM_MODEL: "claude-sonnet-5-5",
+      ANTHROPIC_API_KEY: "unused",
+      LLM_CONTEXT_TOKENS: "1000000",
+      LLM_INPUT_USD_PER_MILLION: "2",
+      LLM_CACHED_INPUT_USD_PER_MILLION: "0.1",
+      LLM_OUTPUT_USD_PER_MILLION: "10",
+    };
+    const transport = vi.fn<typeof fetch>().mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            id: "structured",
+            model: "claude-sonnet-5-5",
+            stop_reason: "end_turn",
+            content: [
+              {
+                type: "text",
+                text:
+                  role === "initial-generation"
+                    ? "```json\n" +
+                      JSON.stringify({ decisions: { [actor]: "pending" } }) +
+                      "\n```"
+                    : JSON.stringify({ decisions: { [actor]: "pending" } }),
+              },
+            ],
+            usage: {
+              input_tokens: 10,
+              cache_creation_input_tokens: 20,
+              cache_read_input_tokens: 30,
+              output_tokens: 5,
+            },
+          }),
+        ),
+    );
+    const client = new LlmClient(databases.postgres, config, transport);
+    await client.ledger.setup();
+    const messages = [
+      { role: "system" as const, content: "固定の指示" },
+      {
+        role: "user" as const,
+        content: JSON.stringify({
+          background: { synopsis: "背景" },
+          sceneHistory: [],
+          request: {
+            at: 1,
+            actorId: actor,
+            intentions: [
+              { actorId: actor, actionText: "返答を待つ", continuing: true },
+            ],
+          },
+          responseSchema: z.toJSONSchema(schema, { io: "input" }),
+        }),
+      },
+    ];
+    const id = randomUUID(),
+      result = await client.complete(id, role, messages);
+    expect(schema.parse(JSON.parse(result.content))).toEqual({
+      decisions: { [actor]: "pending" },
+    });
+    const request = JSON.parse(String(transport.mock.calls[0]![1]!.body));
+    expect(await client.ledger.input(id)).toMatchObject({
+      sourceMessages: messages,
+    });
+    if (!["scene-result"].includes(role))
+      expect(request.output_config.format).toBeUndefined();
+    else
+      expect(
+        request.output_config.format.schema.properties.decisions.type,
+      ).toBe("object");
+    expect(request.system[0].cache_control).toEqual({ type: "ephemeral" });
+    expect(
+      request.messages[0].content.find((b: { text: string }) =>
+        b.text.includes("background"),
+      ).cache_control,
+    ).toBeDefined();
+    expect(request.messages[0].content.at(-1).cache_control).toBeUndefined();
+    const reopened = new LlmClient(
+      databases.postgres,
+      { ...config, LLM_MODEL: "claude-haiku-5-5" },
+      transport,
+    );
+    expect(await reopened.complete(id, role, messages)).toEqual(result);
+    expect(transport).toHaveBeenCalledTimes(1);
+    await expect(
+      reopened.complete(id, role, [{ role: "user", content: "別の入力" }]),
+    ).rejects.toThrow("異なる要求");
+    const summary = await client.ledger.summary();
+    expect(summary.upperCostUsd).toBeCloseTo(0.000123, 9);
+    const pending = new LlmClient(
+      databases.postgres,
+      config,
+      vi.fn<typeof fetch>().mockRejectedValue(new Error("response lost")),
+    );
+    const pendingId = randomUUID();
+    await expect(pending.complete(pendingId, role, messages)).rejects.toThrow(
+      "response lost",
+    );
+    await expect(reopened.complete(pendingId, role, messages)).rejects.toThrow(
+      "自動では再送",
+    );
+    expect(transport).toHaveBeenCalledTimes(1);
+  },
+);
 beforeAll(() => databases.verify());
+
+test("未完了出力はJSONとして補完せず、使用量だけ精算し再開時も自動再送しない", async () => {
+  const transport = vi.fn<typeof fetch>().mockImplementation(async () =>
+    Response.json({
+      id: "truncated",
+      model: "claude-sonnet-5-5",
+      stop_reason: "max_tokens",
+      content: [{ type: "text", text: '{"text":"未完了' }],
+      usage: { input_tokens: 20, output_tokens: 4 },
+    }),
+  );
+  const client = new LlmClient(
+    databases.postgres,
+    {
+      ...environment(),
+      LLM_MODEL: "claude-sonnet-5-5",
+      ANTHROPIC_API_KEY: "unused",
+      LLM_CONTEXT_TOKENS: "10000",
+      LLM_MAX_OUTPUT_TOKENS: "4",
+      LLM_INPUT_USD_PER_MILLION: "2",
+      LLM_CACHED_INPUT_USD_PER_MILLION: "0.1",
+      LLM_OUTPUT_USD_PER_MILLION: "10",
+    },
+    transport,
+  );
+  await client.ledger.setup();
+  const id = randomUUID(),
+    messages = [
+      {
+        role: "user" as const,
+        content: JSON.stringify({
+          confirmed: { observations: [] },
+          responseSchema: z.toJSONSchema(
+            z.object({ text: z.string().min(1) }).strict(),
+          ),
+        }),
+      },
+    ];
+  const first = await client.complete(id, "scene-result", messages);
+  expect(first.finishReason).toBe("max_tokens");
+  expect(first.content).toBe('{"text":"未完了');
+  expect(await client.complete(id, "scene-result", messages)).toEqual(first);
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect((await client.ledger.summary()).unsettled).toBe(0);
+});
 afterAll(async () => {
   await databases.postgres.query(
     "DELETE FROM llm_call WHERE budget_id = ANY($1)",

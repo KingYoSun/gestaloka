@@ -4,12 +4,14 @@ import { RuntimeControl, RuntimeStopped } from "./control.js";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
+import { parseOutput } from "../llm/prompt.js";
 import { ExecutionLimit } from "../execution-budget.js";
 import type pg from "pg";
 import type { ChatMessage } from "../llm/client.js";
 import type { Dependency } from "../world/store.js";
 import {
   Query,
+  IntentResult,
   type Interaction,
   SupersededWorker,
   type WorldProposal,
@@ -361,7 +363,10 @@ export class WorldScenes {
               "utf8",
             ),
           },
-          { role: "user", content: JSON.stringify(input) },
+          {
+            role: "user",
+            content: JSON.stringify(input),
+          },
         ],
       };
       await this.#save(row, undefined, row.claim!);
@@ -377,7 +382,7 @@ export class WorldScenes {
       throw new Error("シーンのモデル応答が未完了です");
     return {
       content: response.content,
-      value: JSON.parse(response.content) as unknown,
+      value: parseOutput(response.content),
     };
   }
   #request(row: SceneRow): z.infer<typeof Interaction> {
@@ -572,10 +577,7 @@ export class WorldScenes {
         );
         const choice = {
           actorId: actor,
-          actionText: z
-            .object({ actionText: z.string().min(1) })
-            .strict()
-            .parse(value.value).actionText,
+          actionText: IntentResult.parse(value.value).actionText,
           continuing: false,
         };
         d.pending[actor] = choice;
@@ -644,6 +646,7 @@ export class WorldScenes {
       ];
       delete d.work;
       if (
+        step.decisions[row.actor_id] === "finished" ||
         step.decisions[row.actor_id] === "decide" ||
         step.newDecisions.includes(row.actor_id)
       ) {

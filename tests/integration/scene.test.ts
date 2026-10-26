@@ -74,7 +74,24 @@ const model = new LlmClient(
           actionText: string;
         }[],
         response = intentions.some((i) => i.actorId === npc);
-      if (intentions.some((i) => i.actionText === "別の場所へ向かう"))
+      if (intentions.some((i) => i.actionText === "礼だけを伝える"))
+        content = {
+          type: "scene",
+          events: [
+            {
+              actorId: actor,
+              text: "若者が礼を伝えた",
+              receipts: [
+                { observerId: actor, text: "礼を伝えた" },
+                { observerId: npc, text: "若者から礼を聞いた" },
+              ],
+            },
+          ],
+          decisions: { [actor]: "finished" },
+          newDecisions: [npc],
+          elapsedMs: 0,
+        };
+      else if (intentions.some((i) => i.actionText === "別の場所へ向かう"))
         content = {
           type: "scene",
           events: [],
@@ -439,6 +456,65 @@ test("長いシーンを50件ずつ前後に復元し、概要の転送量と他
     await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [sceneId]);
   }
 });
+test("入力完了で操作を返し、NPCの判定待ちを次の入力へ渡して、再送では進めない", async () => {
+  const opened = await command({
+    requestId: randomUUID(),
+    command: "prepare",
+    purpose: "村人へ礼を伝える",
+  });
+  const scene = opened.json().scene;
+  ids.push(scene.id);
+  try {
+    await access.scenes.tick(scene.id);
+    await command({ requestId: randomUUID(), command: "start" });
+    const requestId = randomUUID(),
+      before = modelCalls;
+    const first = await command({
+      requestId,
+      command: "act",
+      actionText: "礼だけを伝える",
+    });
+    await access.scenes.tick(scene.id);
+    expect(modelCalls).toBe(before + 1);
+    const row = (await access.scenes.latest(construction))!;
+    expect(row.state).toBe("active");
+    expect(row.data.actions.at(-1)?.state).toBe("complete");
+    expect(row.data.nextDecisions).toEqual([npc]);
+    expect(row.data.events).toHaveLength(1);
+    expect(row.data.choices.filter((c) => c.actorId === npc)).toEqual([]);
+    const count = modelCalls;
+    expect(
+      (
+        await command({
+          requestId,
+          command: "act",
+          actionText: "礼だけを伝える",
+        })
+      ).json(),
+    ).toEqual(first.json());
+    await access.scenes.tick(scene.id);
+    expect(modelCalls).toBe(count);
+    await command({
+      requestId: randomUUID(),
+      command: "act",
+      actionText: "村人の反応を待つ",
+    });
+    await access.scenes.tick(scene.id);
+    const next = (await access.scenes.latest(construction))!;
+    expect(next.state).toBe("active");
+    expect(next.data.events).toHaveLength(2);
+    expect(
+      next.data.events.at(-1)?.receipts.some((r) => r.observerId === actor),
+    ).toBe(true);
+    expect(next.data.pending[npc]?.continuing).toBe(true);
+    expect(next.data.choices.filter((c) => c.actorId === npc)).toHaveLength(1);
+    expect(resultCalls).toBe(0);
+  } finally {
+    await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [scene.id]);
+    inputs.length = 0;
+  }
+});
+
 test("返答待ちでも進行し、進展のない応答は場面の区切りにして、履歴・未完了の意図・再送を維持する", async () => {
   const prepareId = randomUUID(),
     opened = await command({

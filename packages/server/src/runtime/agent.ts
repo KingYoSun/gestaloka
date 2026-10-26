@@ -7,6 +7,7 @@ import type { Driver } from "neo4j-driver";
 import { entrypoint, task } from "@langchain/langgraph";
 import type { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import { z } from "zod";
+import { parseOutput } from "../llm/prompt.js";
 import {
   WorldStore,
   WorldConflict,
@@ -26,7 +27,9 @@ import { CompletedScene, mergeSceneChanges } from "./scene-data.js";
 import { ExecutionLimit } from "../execution-budget.js";
 
 const Time = z.number().int().nonnegative().safe();
-const IntentResult = z.object({ actionText: z.string().min(1) }).strict();
+export const IntentResult = z
+  .object({ actionText: z.string().min(1) })
+  .strict();
 export const Interaction = z
   .object({
     worldId: z.uuid(),
@@ -1162,6 +1165,7 @@ export class WorldAgent {
                   const reviewId = callId(id, row.epoch, row.step + 1000000);
                   const saved = (await this.model.ledger.input(reviewId)) as
                     | {
+                        sourceMessages?: ChatMessage[];
                         request: {
                           system?: string;
                           messages?: ChatMessage[];
@@ -1170,7 +1174,8 @@ export class WorldAgent {
                       }
                     | undefined;
                   const frozenMessages =
-                    saved?.request.system !== undefined
+                    saved?.sourceMessages ??
+                    (saved?.request.system !== undefined
                       ? [
                           {
                             role: "system" as const,
@@ -1178,7 +1183,7 @@ export class WorldAgent {
                           },
                           ...saved.request.messages!,
                         ]
-                      : (saved?.request.messages ?? saved?.request.input);
+                      : (saved?.request.messages ?? saved?.request.input));
                   const review = await this.model.complete(
                     reviewId,
                     "world-commit",
@@ -1208,7 +1213,7 @@ export class WorldAgent {
                   if (review.finishReason !== "stop")
                     throw new OperationPaused("確定判断の応答が未完了です");
                   const decision = CommitDecision.parse(
-                    JSON.parse(review.content),
+                    parseOutput(review.content),
                   );
                   if (decision.type === "pause")
                     throw new OperationPaused(decision.reason);
@@ -1250,7 +1255,7 @@ export class WorldAgent {
               row.step++;
               let decision;
               try {
-                decision = Decision.parse(JSON.parse(response.content));
+                decision = Decision.parse(parseOutput(response.content));
               } catch (error) {
                 row.messages.push({
                   role: "user",
@@ -1393,7 +1398,7 @@ export class WorldAgent {
     try {
       return (
         saved?.finishReason === "stop" &&
-        IntentResult.safeParse(JSON.parse(saved.content)).success
+        IntentResult.safeParse(parseOutput(saved.content)).success
       );
     } catch {
       return false;
@@ -1464,7 +1469,10 @@ export class WorldAgent {
     const ask = task("actor-intent", async () =>
       this.model.complete(id, "intent", [
         { role: "system", content: system },
-        { role: "user", content: JSON.stringify(view) },
+        {
+          role: "user",
+          content: JSON.stringify(view),
+        },
       ]),
     );
     const workflow = entrypoint(
@@ -1477,6 +1485,6 @@ export class WorldAgent {
     );
     if (response.finishReason !== "stop")
       throw new OperationPaused("行動意図の応答が未完了です");
-    return IntentResult.parse(JSON.parse(response.content)).actionText;
+    return IntentResult.parse(parseOutput(response.content)).actionText;
   }
 }
