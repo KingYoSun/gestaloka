@@ -27,7 +27,9 @@ import { CompletedScene, mergeSceneChanges } from "./scene-data.js";
 import { ExecutionLimit } from "../execution-budget.js";
 
 const Time = z.number().int().nonnegative().safe();
-const IntentResult = z.object({ actionText: z.string().min(1) }).strict();
+export const IntentResult = z
+  .object({ actionText: z.string().min(1) })
+  .strict();
 export const Interaction = z
   .object({
     worldId: z.uuid(),
@@ -1440,7 +1442,6 @@ export class WorldAgent {
       if (activityUntil !== undefined) Time.gt(at).parse(activityUntil);
       const view = {
         ...(await this.view(worldId, observerId, at)),
-        responseSchema: z.toJSONSchema(IntentResult, { io: "input" }),
         ...(ownIntentions.length ? { ownIntentions } : {}),
         ...(activityUntil === undefined
           ? {}

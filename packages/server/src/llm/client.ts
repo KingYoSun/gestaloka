@@ -389,7 +389,11 @@ export class LlmClient {
     const prompt =
       !previous && api === "messages"
         ? // The full world schema exceeds Anthropic's grammar limit; retain Zod validation.
-          anthropicPrompt(messages, role !== "world-update")
+          anthropicPrompt(
+            messages,
+            ["scene-result", "world-commit", "initial-commit"].includes(role),
+            ["intent", "scene-intent"].includes(role),
+          )
         : undefined;
     const request =
       api === "messages"
@@ -629,7 +633,7 @@ export class LlmClient {
           if (prompt && completion.finishReason === "stop") {
             try {
               completion.content = JSON.stringify(
-                parseOutput(completion.content, prompt.schema),
+                parseOutput(completion.content),
               );
             } catch {
               /* Persist the invalid response; the caller's existing validation handles it. */

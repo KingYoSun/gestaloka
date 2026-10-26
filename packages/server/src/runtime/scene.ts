@@ -11,6 +11,7 @@ import type { ChatMessage } from "../llm/client.js";
 import type { Dependency } from "../world/store.js";
 import {
   Query,
+  IntentResult,
   type Interaction,
   SupersededWorker,
   type WorldProposal,
@@ -364,17 +365,7 @@ export class WorldScenes {
           },
           {
             role: "user",
-            content: JSON.stringify(
-              kind === "intent"
-                ? {
-                    ...(input as object),
-                    responseSchema: z.toJSONSchema(
-                      z.object({ actionText: z.string().min(1) }).strict(),
-                      { io: "input" },
-                    ),
-                  }
-                : input,
-            ),
+            content: JSON.stringify(input),
           },
         ],
       };
@@ -586,10 +577,7 @@ export class WorldScenes {
         );
         const choice = {
           actorId: actor,
-          actionText: z
-            .object({ actionText: z.string().min(1) })
-            .strict()
-            .parse(value.value).actionText,
+          actionText: IntentResult.parse(value.value).actionText,
           continuing: false,
         };
         d.pending[actor] = choice;

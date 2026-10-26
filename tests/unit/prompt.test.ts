@@ -22,7 +22,7 @@ test("重複したグラフと観測を参照へ置換し、期間・来歴・�
     },
   };
   const input = {
-    observations: [{ ...edge, sourceChanged: true }],
+    observations: [{ edge, sourceChanged: true, timeAdvanced: true }],
     history: [edge],
     node: {
       id: "event",
@@ -43,12 +43,24 @@ test("重複したグラフと観測を参照へ置換し、期間・来歴・�
     },
     dependencies: [{ key: "node:event", version: 7 }],
   };
-  const packed = compact(input) as { values: unknown[]; context: unknown };
+  const packed = compact(input) as {
+    values: Record<string, unknown>;
+    context: unknown;
+  };
   const expand = (v: unknown): unknown => {
     if (Array.isArray(v)) return v.map(expand);
     if (v && typeof v === "object") {
-      if ("$value" in v)
-        return expand(packed.values[(v as { $value: number }).$value]);
+      if ("$ref" in v) {
+        const key = String(v.$ref);
+        const item = expand(packed.values[key]);
+        return item &&
+          typeof item === "object" &&
+          !Array.isArray(item) &&
+          "kind" in item &&
+          !("id" in item)
+          ? { id: key, ...item }
+          : item;
+      }
       return Object.fromEntries(
         Object.entries(v).map(([k, x]) => [k, expand(x)]),
       );
@@ -61,7 +73,125 @@ test("重複したグラフと観測を参照へ置換し、期間・来歴・�
   );
 });
 
-test("構造化出力の辞書を可逆変換し、APIにない制約と意味の検証をZodへ残す", () => {
+test("照会をまたぐグラフの参照を共有し、追記で既存のprefixを変更しない", () => {
+  const node = {
+    id: "00000000-0000-4000-8000-000000000001",
+    kind: "existence",
+    text: "本人",
+  };
+  const schema = z.toJSONSchema(z.object({ text: z.string() }).strict());
+  const initial = [
+    { role: "system" as const, content: "指示" },
+    {
+      role: "user" as const,
+      content: JSON.stringify({
+        initialContext: [node, node],
+        controlledActorIds: [node.id],
+        request: { at: 1 },
+        responseSchema: schema,
+      }),
+    },
+  ];
+  const first = anthropicPrompt(initial)!;
+  const next = anthropicPrompt([
+    ...initial,
+    { role: "assistant", content: '{"type":"query"}' },
+    {
+      role: "user",
+      content: JSON.stringify({
+        results: [node],
+        dependencies: [{ key: `node:${node.id}`, version: 7 }],
+      }),
+    },
+  ])!;
+  expect(next.messages[0]).toEqual(first.messages[0]);
+  const source = JSON.stringify(next.messages);
+  expect(source.match(/\\"kind\\":\\"existence\\"/g)?.length).toBe(1);
+  expect(source).toContain("$ref");
+  expect(source).toContain(`node:${node.id}`);
+});
+
+test("キャッシュ境界で分割しても単一のJSONを復元でき、履歴・参照・変更フラグを失わない", () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const node = { id, kind: "existence", text: "同一性を維持する存在" };
+  const schema = z.toJSONSchema(z.object({ text: z.string() }).strict());
+  const original = {
+    initialContext: [
+      { node },
+      { node, sourceChanged: null, period: { from: 1, until: 9 } },
+    ],
+    controlledActorIds: [id],
+    request: { at: 9, rootIds: [id] },
+  };
+  const prompt = anthropicPrompt([
+    { role: "system", content: "指示" },
+    {
+      role: "user",
+      content: JSON.stringify({ ...original, responseSchema: schema }),
+    },
+  ])!;
+  const blocks = prompt.messages[0]!.content as {
+    text: string;
+    cache_control?: unknown;
+  }[];
+  const packet = JSON.parse(blocks.map((b) => b.text).join("")) as {
+    records: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+  const expand = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(expand);
+    if (v && typeof v === "object") {
+      if ("$ref" in v) {
+        const key = String(v.$ref);
+        const item = expand(packet.records[key]);
+        return item &&
+          typeof item === "object" &&
+          !Array.isArray(item) &&
+          "kind" in item &&
+          !("id" in item)
+          ? { id: key, ...item }
+          : item;
+      }
+      return Object.fromEntries(
+        Object.entries(v).map(([k, x]) => [k, expand(x)]),
+      );
+    }
+    return v;
+  };
+  expect(
+    expand(
+      Object.fromEntries(
+        Object.entries(packet).filter(([key]) => key !== "records"),
+      ),
+    ),
+  ).toEqual(original);
+  expect(
+    blocks.filter((b) => b.cache_control).length + prompt.system.length,
+  ).toBeLessThanOrEqual(4);
+  const history = Array.from({ length: 105 }, (_, at) => ({
+    text: `出来事${at}`,
+    period: { from: at },
+  }));
+  const own = {
+    observerId: id,
+    interpretations: [],
+    observations: history,
+    at: 105,
+    ownIntentions: ["本人だけの意図"],
+  };
+  const ownPrompt = anthropicPrompt([
+    { role: "system", content: "本人の意図" },
+    {
+      role: "user",
+      content: JSON.stringify({ ...own, responseSchema: schema }),
+    },
+  ])!;
+  const ownBlocks = ownPrompt.messages[0]!.content as { text: string }[];
+  expect(JSON.parse(ownBlocks.map((b) => b.text).join(""))).toEqual(own);
+});
+
+test("動的な判断主体のキーをAPIの固定オブジェクトへ展開し、値の意味とZod検証を維持する", () => {
+  const id = "00000000-0000-4000-8000-000000000001";
   const schema = z
     .object({
       decisions: z.record(z.uuid(), z.enum(["pending", "finished"])),
@@ -70,50 +200,32 @@ test("構造化出力の辞書を可逆変換し、APIにない制約と意味�
     })
     .strict();
   const original = z.toJSONSchema(schema, { io: "input" });
-  const wire = outputSchema(original);
+  const wire = outputSchema(original, [id]);
   expect(wire).toMatchObject({
     properties: {
       decisions: {
-        type: "array",
-        items: { required: ["key", "value"], additionalProperties: false },
+        type: "object",
+        properties: { [id]: { enum: ["pending", "finished"] } },
+        required: [id],
+        additionalProperties: false,
       },
-      elapsed: { type: "integer" },
-      text: { type: "string" },
     },
   });
   expect(JSON.stringify(wire)).not.toMatch(/minimum|minLength|propertyNames/);
-  const id = "00000000-0000-4000-8000-000000000001";
-  const value = parseOutput(
-    JSON.stringify({
-      decisions: [{ key: id, value: "pending" }],
-      elapsed: 0,
-      text: "自由な内容",
-    }),
-    original,
-  );
-  expect(schema.parse(value)).toEqual({
-    decisions: { [id]: "pending" },
-    elapsed: 0,
-    text: "自由な内容",
-  });
-  expect(() =>
+  expect(
     schema.parse(
-      parseOutput('{"decisions":[],"elapsed":-1,"text":""}', original),
+      parseOutput(
+        JSON.stringify({
+          decisions: { [id]: "pending" },
+          elapsed: 0,
+          text: "自由な内容",
+        }),
+      ),
     ),
-  ).toThrow();
+  ).toEqual({ decisions: { [id]: "pending" }, elapsed: 0, text: "自由な内容" });
   expect(() =>
-    parseOutput(
-      JSON.stringify({
-        decisions: [
-          { key: id, value: "pending" },
-          { key: id, value: "finished" },
-        ],
-        elapsed: 0,
-        text: "x",
-      }),
-      original,
-    ),
-  ).toThrow("重複");
+    schema.parse(parseOutput('{"decisions":{},"elapsed":-1,"text":""}')),
+  ).toThrow();
 });
 
 test("応答全体が単一のJSONコードフェンスの場合だけ正規化する", () => {
@@ -159,7 +271,9 @@ test("背景・追記履歴を可変の入力より前に置き、本人以外�
       .slice(0, 2)
       .map((b) => b.text),
   );
-  expect(blocks(first)[0]!.cache_control).toBeDefined();
+  expect(
+    blocks(first).find((b) => b.text.includes("background"))!.cache_control,
+  ).toBeDefined();
   expect(blocks(first).at(-1)!.cache_control).toBeUndefined();
   expect(JSON.stringify(first.messages)).not.toContain("responseSchema");
   const own = anthropicPrompt([
@@ -181,8 +295,7 @@ test("背景・追記履歴を可変の入力より前に置き、本人以外�
   expect(JSON.stringify(empty.messages)).toContain("sceneHistory");
   const fallback = anthropicPrompt(messages([], 0), false)!;
   expect(fallback.format).toBeUndefined();
-  expect(fallback.schema).toBeUndefined();
   expect(fallback.system[0]!.text).toContain(
-    "responseSchema=" + JSON.stringify(schema),
+    "responseSchema=" + JSON.stringify(outputSchema(schema)),
   );
 });
