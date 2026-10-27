@@ -75,21 +75,41 @@ afterEach(async () => {
   await isolated.close();
 });
 
-test.each([false, true])(
-  "非課金のHTTP 400は全体・世界の予約を解除し、拒否を保存して再送しない（構造化入力=%s）",
-  async (structured) => {
+test.each([
+  { provider: "anthropic", structured: false },
+  { provider: "anthropic", structured: true },
+  { provider: "gemini", structured: false },
+])(
+  "$provider / 構造化入力=$structured: 非課金のHTTP 400は全体・世界の予約を解除し、拒否を保存して再送しない",
+  async ({ provider, structured }) => {
     const pool = isolated.databases.postgres,
       id = randomUUID(),
       worldId = randomUUID(),
-      config = env(model.ledger.budgetId),
-      rejection = {
-        type: "error",
-        error: {
-          type: "invalid_request_error",
-          message: "Schema is too large",
-        },
-        request_id: "rejected-request",
+      config = {
+        ...env(model.ledger.budgetId),
+        LLM_PROVIDER: provider,
+        LLM_MODEL: `test-${provider}`,
+        GEMINI_API_KEY: "private-key",
       },
+      rejection =
+        provider === "anthropic"
+          ? {
+              type: "error",
+              error: {
+                type: "invalid_request_error",
+                message: "Schema is too large",
+              },
+              request_id: "rejected-request",
+            }
+          : [
+              {
+                error: {
+                  code: 400,
+                  message: "Please pass a valid API key",
+                  status: "INVALID_ARGUMENT",
+                },
+              },
+            ],
       input = [
         {
           role: "user" as const,
