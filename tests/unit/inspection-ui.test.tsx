@@ -59,7 +59,7 @@ test("欠測と別系列を表示し、元の提示と意味評価へ辿れる",
       }}
     />,
   );
-  expect(screen.getByText(/平均 欠測/)).toBeTruthy();
+  expect(screen.getByText(/^平均 欠測/)).toBeTruthy();
   expect(screen.getByRole("img", { name: /移動量の時系列/ })).toBeTruthy();
   fireEvent.click(screen.getByText("提示と根拠"));
   expect(onUse).toHaveBeenCalledWith({

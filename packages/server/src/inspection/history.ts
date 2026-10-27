@@ -185,6 +185,22 @@ export function summarizeHistory(rows: HistoryRow[]) {
       metricVersion: group[0]!.selection.metricVersion,
       weights: group[0]!.selection.weights,
       n: group[0]!.selection.n,
+      generation: [
+        ...new Set(
+          group.flatMap((r) =>
+            r.sources.flatMap((s) =>
+              s.calls.map((c) =>
+                JSON.stringify([c.model, c.configurationVersion]),
+              ),
+            ),
+          ),
+        ),
+      ]
+        .sort()
+        .map((value) => {
+          const [model, configurationVersion] = JSON.parse(value);
+          return { model, configurationVersion };
+        }),
       windows: group.length,
       measuredWindows: values.length,
       missingWindows: group.length - values.length,

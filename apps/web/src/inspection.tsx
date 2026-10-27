@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { InspectionReadResult } from "@gestaloka/contracts";
+import { InspectionReadResult, SemanticAssessment } from "@gestaloka/contracts";
 import { Button } from "./components/ui/button.js";
 
 type Values = Record<string, unknown>;
@@ -10,6 +10,14 @@ const number = (v: number | null) =>
 const Series = z.object({
   seriesId: z.string(),
   manifestIds: z.array(z.string()),
+  generation: z
+    .array(
+      z.object({
+        model: z.string().nullable(),
+        configurationVersion: z.number().nullable(),
+      }),
+    )
+    .default([]),
   windows: z.number(),
   measuredWindows: z.number(),
   missingWindows: z.number(),
@@ -116,6 +124,45 @@ function Trend({ points }: { points: (number | null)[] }) {
   );
 }
 
+function SemanticSummary({ value }: { value: unknown }) {
+  const parsed = z
+    .object({
+      model: z.string().nullable().optional(),
+      skill: z.object({ rubricVersion: z.string() }).optional(),
+      assessment: SemanticAssessment.optional(),
+      evaluationCost: z
+        .object({ calculatedNanoUsd: z.string().nullable() })
+        .optional(),
+    })
+    .safeParse(value);
+  if (!parsed.success) return <p>意味評価の値は未取得です。</p>;
+  const v = parsed.data,
+    o = v.assessment?.overall;
+  return (
+    <>
+      <p>
+        評価モデル {v.model ?? "未記録"} / ルーブリック{" "}
+        {v.skill?.rubricVersion ?? "未記録"}
+      </p>
+      <p>
+        意味上の新情報 {o?.newInformation ?? "欠測"} / 重要度の平均{" "}
+        {number(o?.importance ?? null)} / 原則適合{" "}
+        {o?.principle === "violation"
+          ? "違反あり"
+          : o?.principle === "consistent"
+            ? "適合"
+            : "不明"}
+      </p>
+      <p>
+        評価費用{" "}
+        {v.evaluationCost?.calculatedNanoUsd
+          ? `${number(Number(v.evaluationCost.calculatedNanoUsd) / 1e9)} USD`
+          : "欠測"}
+      </p>
+    </>
+  );
+}
+
 export function InspectionResults({
   value,
   onUse,
@@ -136,6 +183,15 @@ export function InspectionResults({
             <h3>
               {s.metricVersion} / {s.weights.version} / {s.n}シーン
             </h3>
+            <p>
+              生成モデル・設定{" "}
+              {s.generation
+                .map(
+                  (g) =>
+                    `${g.model ?? "未記録"} / 設定${g.configurationVersion ?? "未記録"}`,
+                )
+                .join("、") || "未記録"}
+            </p>
             <Trend
               points={report.items
                 .filter((p) => s.manifestIds.includes(p.id))
@@ -239,6 +295,7 @@ export function InspectionResults({
               >
                 評価の根拠と費用
               </Button>
+              <SemanticSummary value={e.result} />
               <details>
                 <summary>評価内容・モデル・ルーブリック</summary>
                 <pre>{JSON.stringify(e.result, null, 2)}</pre>
