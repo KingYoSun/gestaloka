@@ -316,6 +316,100 @@ test("応答喪失後は予約を維持し、同じ呼出しを自動再送し�
   expect(transport).toHaveBeenCalledTimes(1);
 });
 
+test.each([
+  {
+    name: "タイムアウト",
+    reply: () => {
+      throw new DOMException("timeout", "TimeoutError");
+    },
+  },
+  {
+    name: "HTTP 400の本文喪失",
+    reply: () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new Error("body lost"));
+          },
+        }),
+        { status: 400 },
+      ),
+  },
+  {
+    name: "HTTP 400の不正なJSON",
+    reply: () => new Response("not JSON", { status: 400 }),
+  },
+  {
+    name: "HTTP 400の未確認の拒否形式",
+    reply: () => Response.json({ error: "Bad Request" }, { status: 400 }),
+  },
+  {
+    name: "HTTP 500",
+    reply: () =>
+      Response.json(
+        {
+          type: "error",
+          error: { type: "invalid_request_error", message: "failure" },
+          request_id: "failed",
+        },
+        { status: 500 },
+      ),
+  },
+  {
+    name: "他providerのHTTP 400",
+    model: "deepseek-flash",
+    reply: () =>
+      Response.json(
+        {
+          type: "error",
+          error: { type: "invalid_request_error", message: "failure" },
+          request_id: "failed",
+        },
+        { status: 400 },
+      ),
+  },
+])("$name: 予約を保持し、同じ呼出しを再送しない", async ({ model, reply }) => {
+  const config = {
+    ...environment(),
+    LLM_MODEL: model ?? "claude-sonnet-5-5",
+    ANTHROPIC_API_KEY: "unused",
+    LLM_CONTEXT_TOKENS: "10000",
+    LLM_MAX_OUTPUT_TOKENS: "1000",
+    LLM_INPUT_USD_PER_MILLION: "2",
+    LLM_CACHED_INPUT_USD_PER_MILLION: "0.1",
+    LLM_OUTPUT_USD_PER_MILLION: "10",
+  };
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async () => reply());
+  const client = new LlmClient(databases.postgres, config, transport);
+  await client.ledger.setup();
+  const id = randomUUID();
+  await expect(client.complete(id, "probe", [])).rejects.toThrow();
+  const before = await client.ledger.summary();
+  expect(before.unsettled).toBe(1);
+  expect(before.upperCostUsd).toBeGreaterThan(0);
+  expect(
+    (
+      await databases.postgres.query(
+        "SELECT state,delivery,charged_nano,response FROM llm_call WHERE id=$1",
+        [id],
+      )
+    ).rows[0],
+  ).toEqual({
+    state: "pending",
+    delivery: "unknown",
+    charged_nano: null,
+    response: null,
+  });
+  const reopened = new LlmClient(databases.postgres, config, transport);
+  await expect(reopened.complete(id, "probe", [])).rejects.toBeInstanceOf(
+    BudgetUnavailable,
+  );
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect(await client.ledger.summary()).toEqual(before);
+});
+
 test("推論量の設定を変更しても保存済み呼出しを再送せず、新しい呼出しだけへ適用する", async () => {
   const config = environment(),
     transport = vi
