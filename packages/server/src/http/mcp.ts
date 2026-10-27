@@ -111,6 +111,7 @@ export class McpAuthorization {
         "共通操作のscopeを指定してください",
       );
     const targeted = [
+      ...operationNames.filter((s) => s.startsWith("inspection.")),
       "worlds.list",
       "worlds.read",
       "worlds.records",
@@ -134,7 +135,7 @@ export class McpAuthorization {
       throw new AccessError(
         409,
         "MCP_TARGET_SCOPE_MISMATCH",
-        "世界を限定する場合は、世界・世界予算・費用・ジョブの操作だけをscopeに指定してください",
+        "世界を限定する場合は、世界・世界予算・費用・ジョブ・検品の操作だけをscopeに指定してください",
       );
     const previous = (
       await db.query("SELECT version FROM mcp_client WHERE id=$1 FOR UPDATE", [

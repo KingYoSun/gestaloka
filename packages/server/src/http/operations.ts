@@ -16,6 +16,12 @@ import { WorldBudget } from "../llm/world-budget.js";
 import { ExecutionBudget } from "../execution-budget.js";
 import { ModelSettings, ModelCheckFailed } from "../llm/settings.js";
 import { readCosts } from "../llm/costs.js";
+import { InspectionStore } from "../inspection/store.js";
+import {
+  inspectionHistory,
+  inspectionSettings,
+  configureInspection,
+} from "../inspection/history.js";
 
 import {
   Member,
@@ -88,6 +94,7 @@ export class Operations {
     await ExecutionBudget.setup(this.pool);
     await RuntimeMonitor.setup(this.pool);
     await WorldBudget.setup(this.pool);
+    await InspectionStore.setup(this.pool);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS app_user (
       id uuid PRIMARY KEY REFERENCES app_identity(id),role text NOT NULL CHECK(role IN ('admin','user')),
       banned boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now());
@@ -503,6 +510,8 @@ export class Operations {
         "認可された利用者を変更できません",
       );
     let worldId = "worldId" in input ? input.worldId : undefined;
+    if (input.operation === "inspection.select")
+      worldId = input.selection.worldId;
     if (
       "query" in input &&
       "worldId" in input.query &&
@@ -552,6 +561,62 @@ export class Operations {
     requestId: string,
   ): Promise<Record<string, unknown>> {
     switch (input.operation) {
+      case "inspection.select":
+        return InspectionStore.select(db, input.selection);
+      case "inspection.read":
+        return InspectionStore.read(
+          db,
+          input.worldId,
+          input.manifestId,
+          input.after,
+        );
+      case "inspection.evaluate": {
+        await InspectionStore.manifest(db, input.worldId, input.manifestId);
+        if (
+          !(
+            await db.query(
+              "SELECT version FROM llm_settings WHERE version=$1",
+              [input.configuration.configurationVersion],
+            )
+          ).rowCount
+        )
+          throw new AccessError(
+            409,
+            "INSPECTION_MODEL_NOT_FOUND",
+            "保存済みの評価モデル設定版を指定してください",
+          );
+        await db.query(
+          "INSERT INTO inspection_evaluation(id,manifest_id,configuration) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
+          [requestId, input.manifestId, input.configuration],
+        );
+        return { id: requestId, status: "queued" };
+      }
+      case "inspection.evaluation": {
+        const row = (
+          await db.query(
+            'SELECT e.id,e.manifest_id AS "manifestId",e.configuration,e.status,e.result FROM inspection_evaluation e JOIN inspection_manifest m ON m.id=e.manifest_id WHERE e.id=$1 AND m.world_id=$2',
+            [input.id, input.worldId],
+          )
+        ).rows[0];
+        if (!row)
+          throw new AccessError(
+            404,
+            "INSPECTION_EVALUATION_NOT_FOUND",
+            "評価実行が見つかりません",
+          );
+        return row;
+      }
+      case "inspection.history":
+        return inspectionHistory(db, input.query);
+      case "inspection.settings":
+        return inspectionSettings(db, input.worldId);
+      case "inspection.configure":
+        return configureInspection(
+          db,
+          input.worldId,
+          input.configuration,
+          input.expectedVersion,
+        );
       case "requests.read": {
         const row = (
           await db.query(

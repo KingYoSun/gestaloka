@@ -512,7 +512,61 @@ export const McpClientConfiguration = z
     worldIds: z.array(z.uuid()).nullable(),
   })
   .strict();
+export * from "./inspection.js";
+import {
+  InspectionSelection,
+  InspectionPageQuery,
+  InspectionEvaluation,
+  InspectionSchedule,
+  InspectionHistoryQuery,
+} from "./inspection.js";
+
 export const Operation = z.discriminatedUnion("operation", [
+  z
+    .object({
+      operation: z.literal("inspection.select"),
+      selection: InspectionSelection,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("inspection.read"),
+      ...InspectionPageQuery.shape,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("inspection.evaluate"),
+      worldId: z.uuid(),
+      manifestId: z.string().regex(/^[a-f0-9]{64}$/),
+      configuration: InspectionEvaluation,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("inspection.evaluation"),
+      worldId: z.uuid(),
+      id: z.uuid(),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("inspection.history"),
+      query: InspectionHistoryQuery,
+    })
+    .strict(),
+  z
+    .object({ operation: z.literal("inspection.settings"), worldId: z.uuid() })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("inspection.configure"),
+      worldId: z.uuid(),
+      configuration: InspectionSchedule,
+      expectedVersion: z.number().int().nonnegative(),
+      reason: operationReason,
+    })
+    .strict(),
   z.object({ operation: z.literal("requests.read"), id: z.uuid() }).strict(),
   z
     .object({

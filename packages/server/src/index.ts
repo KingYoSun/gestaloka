@@ -41,3 +41,4 @@ export { RuntimeControl, RuntimeStopped } from "./runtime/control.js";
 export { RuntimeExecutions } from "./runtime/executions.js";
 
 export { RuntimeMonitor } from "./runtime/monitor.js";
+export { InspectionWorker } from "./inspection/worker.js";

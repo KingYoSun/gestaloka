@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { InspectionResults } from "./inspection.js";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
@@ -225,7 +226,10 @@ function Results({
           結果をコピー
         </Button>
       </div>
-      {data.basis === "calculated" ? (
+      {data.kind === "inspection-history" ||
+      (data.manifest && data.measurement) ? (
+        <InspectionResults value={data} onUse={onUse} />
+      ) : data.basis === "calculated" ? (
         <Costs value={data} />
       ) : (
         <>
@@ -294,7 +298,7 @@ function defaults(name: Name, seed: Values) {
     value.at = seed.at ?? 0;
     value.dependencies = seed.dependencies ?? [];
   }
-  if (name === "costs.read") {
+  if (name === "costs.read" || name === "inspection.history") {
     const from = new Date();
     from.setHours(0, 0, 0, 0);
     const to = new Date(from);
@@ -313,7 +317,10 @@ function nextCommand(command: Command, next: unknown): Command {
   const cursor = next === null ? undefined : next;
   const parent = "query" in value ? object(value.query) : value;
   const key =
-    command.operation === "costs.read" || command.operation === "worlds.graph"
+    command.operation === "costs.read" ||
+    command.operation === "worlds.graph" ||
+    command.operation === "inspection.read" ||
+    command.operation === "inspection.history"
       ? "after"
       : "before";
   if (cursor === undefined) delete parent[key];
@@ -589,10 +596,25 @@ function OperationForm({
       {data && Object.keys(data).length > 0 && (
         <Results
           data={data}
-          {...(editAfterRead[name]
+          {...(editAfterRead[name] || name === "inspection.history"
             ? {
                 onUse: (v: Values) =>
-                  onUse({ ...value, ...object(data.world), ...data, ...v }),
+                  onUse({
+                    ...value,
+                    ...object(data.world),
+                    ...data,
+                    ...v,
+                    ...(name.startsWith("inspection.")
+                      ? { operation: v.operation ?? editAfterRead[name] }
+                      : {}),
+                    ...(name === "inspection.select"
+                      ? {
+                          worldId: object(object(data.manifest).selection)
+                            .worldId,
+                          manifestId: object(data.manifest).id,
+                        }
+                      : {}),
+                  }),
               }
             : {})}
         />
@@ -645,7 +667,10 @@ export function AdminOperations({ section }: { section: string }) {
   function useValue(v: Values) {
     setSeed(v);
     setRevision((n) => n + 1);
-    const target = editAfterRead[name];
+    const target =
+      name.startsWith("inspection.") && typeof v.operation === "string"
+        ? v.operation
+        : editAfterRead[name];
     if (target && target in group![1]) setSelected(target as Name);
     window.scrollTo({ top: 0 });
   }

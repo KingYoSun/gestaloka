@@ -12,6 +12,7 @@ import {
   PlayerPresetPage,
   WorldPlayerPage,
   ResourceId,
+  InspectionReadResult,
 } from "@gestaloka/contracts";
 import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
 import { type Operations } from "@gestaloka/server/operations";
@@ -116,7 +117,12 @@ export async function operationsRoutes(
       schema: {
         body: z.object({ requestId: z.uuid(), command: Operation }).strict(),
         response: {
-          200: z.object({ result: z.record(z.string(), z.unknown()) }),
+          200: z.object({
+            result: z.union([
+              InspectionReadResult.passthrough(),
+              z.record(z.string(), z.unknown()),
+            ]),
+          }),
           ...errors,
         },
       },

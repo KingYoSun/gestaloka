@@ -1,4 +1,6 @@
 import { RuntimeExecutions } from "./executions.js";
+import { Information, type Presentation } from "@gestaloka/contracts";
+import { recordPresentations } from "../inspection/record.js";
 import { McpOrigin } from "../http/mcp-origin.js";
 import { RuntimeControl, RuntimeStopped } from "./control.js";
 import { randomUUID } from "node:crypto";
@@ -40,7 +42,25 @@ const BackgroundDecision = z.discriminatedUnion("type", [
     .strict(),
   z.object({ type: z.literal("pause"), reason: z.string() }).strict(),
 ]);
-const Narrative = z.object({ text: z.string().min(1) }).strict();
+const Narrative = z
+  .object({
+    text: z.string().min(1),
+    information: z.array(Information).optional(),
+  })
+  .strict();
+async function scenePrompt(file: string, information = true) {
+  const files = [file, ...(information ? ["presentation-information.md"] : [])];
+  return (
+    await Promise.all(
+      files.map((name) =>
+        readFile(
+          new URL(`../../../../prompts/${name}`, import.meta.url),
+          "utf8",
+        ),
+      ),
+    )
+  ).join("\n\n");
+}
 type Work = {
   id: string;
   kind: "background" | "resolve" | "intent" | "result";
@@ -48,6 +68,10 @@ type Work = {
   target: "default" | "resolution";
 };
 export type SceneData = {
+  recordingVersion?: "inspection-record-v1";
+  presentations?: Presentation[];
+  resultInformation?: Information[];
+  reflectionResponseId?: string;
   commandId: string;
   requestId?: string;
   worldId: string;
@@ -68,6 +92,8 @@ export type SceneData = {
     id: string;
     text: string;
     state: "running" | "complete" | "boundary";
+    submittedAt?: string;
+    completedAt?: string;
   }[];
   nextDecisions: string[];
   previous: Record<string, SceneIntent>;
@@ -125,6 +151,9 @@ export class WorldScenes {
     await this.pool.query(
       "ALTER TABLE world_scene ADD COLUMN IF NOT EXISTS user_id uuid",
     );
+    await this.pool.query(
+      "ALTER TABLE world_scene ADD COLUMN IF NOT EXISTS inspection_revision bigint NOT NULL DEFAULT 0",
+    );
     await this.construction.queue.createQueue(this.queueName, {
       retryLimit: 2,
       retryDelay: 5,
@@ -177,9 +206,10 @@ export class WorldScenes {
     );
   }
   async #save(row: SceneRow, client?: pg.PoolClient, expected?: string) {
+    recordPresentations(row);
     const save = async (c: pg.PoolClient) => {
       const result = await c.query(
-        "UPDATE world_scene SET state=$2,data=$3,claim=$4 WHERE id=$1 AND ($5::uuid IS NULL OR claim=$5)",
+        "UPDATE world_scene SET state=$2,data=$3,claim=$4,inspection_revision=inspection_revision+1 WHERE id=$1 AND ($5::uuid IS NULL OR claim=$5)",
         [
           row.id,
           row.state,
@@ -225,6 +255,8 @@ export class WorldScenes {
       state: "preparing",
       claim: null,
       data: {
+        recordingVersion: "inspection-record-v1",
+        reflectionResponseId: sceneId(`${requestId}:reflection`),
         commandId: requestId,
         requestId,
         worldId: c.world_id!,
@@ -316,6 +348,7 @@ export class WorldScenes {
           id: input.requestId,
           text: input.actionText!,
           state: "running",
+          submittedAt: new Date().toISOString(),
         });
         const intent = {
           actorId: row.actor_id,
@@ -358,10 +391,7 @@ export class WorldScenes {
         messages: [
           {
             role: "system",
-            content: await readFile(
-              new URL(`../../../../prompts/${file}`, import.meta.url),
-              "utf8",
-            ),
+            content: await scenePrompt(file, kind !== "intent"),
           },
           {
             role: "user",
@@ -423,13 +453,7 @@ export class WorldScenes {
           messages: [
             {
               role: "system",
-              content: await readFile(
-                new URL(
-                  "../../../../prompts/scene-background.md",
-                  import.meta.url,
-                ),
-                "utf8",
-              ),
+              content: await scenePrompt("scene-background.md"),
             },
             ...d.backgroundMessages,
           ],
@@ -625,6 +649,7 @@ export class WorldScenes {
       for (const e of step.events)
         d.events.push({
           ...e,
+          inputId: action.id,
           id: sceneId(`${row.id}:event:${d.events.length}`),
           period: { from: d.at, until: nextAt },
         });
@@ -703,9 +728,12 @@ export class WorldScenes {
       const source = await this.resultSource(row);
       const value = await this.#ask(row, "result", "scene-result.md", {
         confirmed: source,
+        presented: d.presentations ?? [],
         responseSchema: z.toJSONSchema(Narrative, { io: "input" }),
       });
-      d.result = Narrative.parse(value.value).text;
+      const narrative = Narrative.parse(value.value);
+      d.result = narrative.text;
+      if (narrative.information) d.resultInformation = narrative.information;
     }
     delete d.work;
     row.state = "result";

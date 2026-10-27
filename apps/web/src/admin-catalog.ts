@@ -3,6 +3,18 @@ import type { z } from "zod";
 export type Command = z.infer<typeof Operation>;
 export type Name = Command["operation"];
 export const operations = {
+  inspection: [
+    "物語の検品",
+    {
+      "inspection.history": "成績の推移・分布",
+      "inspection.select": "検品対象のシーンを固定",
+      "inspection.read": "提示文と根拠を読む",
+      "inspection.evaluate": "保存資料を意味評価",
+      "inspection.evaluation": "意味評価の実行結果",
+      "inspection.settings": "定期検品の設定",
+      "inspection.configure": "定期検品を設定",
+    },
+  ],
   worlds: [
     "世界・参加設定",
     {
@@ -108,6 +120,9 @@ export const userOperations = [
   "worlds.resumeJoin",
 ] as const;
 export const editAfterRead: Partial<Record<Name, Name>> = {
+  "inspection.select": "inspection.read",
+  "inspection.settings": "inspection.configure",
+  "inspection.evaluate": "inspection.evaluation",
   "worlds.list": "worlds.read",
   "worlds.read": "worlds.configure",
   "worlds.graph": "worlds.edit",
@@ -134,7 +149,9 @@ export const catalog: Partial<Record<Name, string>> = Object.assign(
   ...Object.values(operations).map((v) => v[1]),
 );
 export const readOnly = (name: string) =>
-  /\.(read|list|records|graph|samples|notifications|jobs|job|uses)$/.test(name);
+  /\.(read|list|records|graph|samples|notifications|jobs|job|uses|select|history|evaluation|settings)$/.test(
+    name,
+  );
 export const schemas = Object.fromEntries(
   Operation.options.map((s) => [s.shape.operation.value, s]),
 ) as {
@@ -144,6 +161,8 @@ export const schemas = Object.fromEntries(
   >;
 };
 export const guidance: Partial<Record<Section, string>> = {
+  inspection:
+    "保存済みの提示記録を検品します。移動量は新情報の代理指標であり、満足度の実測ではありません。意味評価と原則適合は別に表示します。定期評価の予算は1回の対象抽出全体へ適用します。",
   worlds:
     "世界構築の画面では、日単位の進行・公開・参加受付・予算・プリセットも操作できます。直接編集は確定済みの世界と履歴を扱います。内部の読取は人物の観測になりません。",
   users:
