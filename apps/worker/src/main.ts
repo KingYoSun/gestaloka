@@ -1,4 +1,8 @@
-import { RuntimeMonitor, connectDatabases } from "@gestaloka/server";
+import {
+  RuntimeMonitor,
+  InspectionWorker,
+  connectDatabases,
+} from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldAgent } from "@gestaloka/server/agent";
@@ -40,6 +44,11 @@ try {
   const players = new WorldPlayers(construction);
   await players.setup();
   await players.work();
+  await new InspectionWorker(
+    databases.postgres,
+    databases.queue,
+    process.env.OPERATIONS_TOKEN_SECRET!,
+  ).work();
   await RuntimeMonitor.setup(databases.postgres);
   monitor = new RuntimeMonitor(
     databases.postgres,

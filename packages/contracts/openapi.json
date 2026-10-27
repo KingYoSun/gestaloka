@@ -4600,6 +4600,513 @@
                           "operation": {
                             "type": "string",
                             "enum": [
+                              "inspection.select"
+                            ]
+                          },
+                          "selection": {
+                            "type": "object",
+                            "properties": {
+                              "worldId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "userId": {
+                                "nullable": true,
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "actorId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "endSceneId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "n": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              },
+                              "metricVersion": {
+                                "default": "presentation-v1",
+                                "type": "string",
+                                "enum": [
+                                  "presentation-v1"
+                                ]
+                              },
+                              "weights": {
+                                "default": {
+                                  "version": "unit-v1",
+                                  "values": {
+                                    "node": 1,
+                                    "edge": 1,
+                                    "aspect": 1,
+                                    "update": 1
+                                  },
+                                  "rationale": "全区分1の未校正の基準値。満足度や意味的重要度を表さない。"
+                                },
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "values": {
+                                    "type": "object",
+                                    "properties": {
+                                      "node": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "edge": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "aspect": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "update": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      }
+                                    },
+                                    "required": [
+                                      "node",
+                                      "edge",
+                                      "aspect",
+                                      "update"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "rationale": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "values",
+                                  "rationale"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "lowThreshold": {
+                                "default": 0,
+                                "type": "number",
+                                "minimum": 0
+                              }
+                            },
+                            "required": [
+                              "worldId",
+                              "userId",
+                              "actorId",
+                              "endSceneId",
+                              "n"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "operation",
+                          "selection"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "inspection.read"
+                            ]
+                          },
+                          "worldId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "manifestId": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "after": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "operation",
+                          "worldId",
+                          "manifestId"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "inspection.evaluate"
+                            ]
+                          },
+                          "worldId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "manifestId": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "configuration": {
+                            "type": "object",
+                            "properties": {
+                              "configurationVersion": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              },
+                              "target": {
+                                "type": "string",
+                                "enum": [
+                                  "default",
+                                  "resolution"
+                                ]
+                              },
+                              "budgetUsd": {
+                                "type": "number",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199.25474099
+                              }
+                            },
+                            "required": [
+                              "configurationVersion",
+                              "target",
+                              "budgetUsd"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "operation",
+                          "worldId",
+                          "manifestId",
+                          "configuration"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "inspection.evaluation"
+                            ]
+                          },
+                          "worldId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          }
+                        },
+                        "required": [
+                          "operation",
+                          "worldId",
+                          "id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "inspection.history"
+                            ]
+                          },
+                          "query": {
+                            "type": "object",
+                            "properties": {
+                              "worldId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "from": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "to": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "userId": {
+                                "nullable": true,
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "actorId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "n": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              },
+                              "metricVersion": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "weightVersion": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "model": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "configurationVersion": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "after": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "worldId",
+                              "from",
+                              "to"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "operation",
+                          "query"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "inspection.settings"
+                            ]
+                          },
+                          "worldId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          }
+                        },
+                        "required": [
+                          "operation",
+                          "worldId"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "inspection.configure"
+                            ]
+                          },
+                          "worldId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "configuration": {
+                            "type": "object",
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean"
+                              },
+                              "intervalMinutes": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              },
+                              "periodHours": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              },
+                              "n": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              },
+                              "lowThreshold": {
+                                "type": "number",
+                                "minimum": 0
+                              },
+                              "weights": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "values": {
+                                    "type": "object",
+                                    "properties": {
+                                      "node": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "edge": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "aspect": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "update": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      }
+                                    },
+                                    "required": [
+                                      "node",
+                                      "edge",
+                                      "aspect",
+                                      "update"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "rationale": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "values",
+                                  "rationale"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "evaluation": {
+                                "nullable": true,
+                                "type": "object",
+                                "properties": {
+                                  "configurationVersion": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "exclusiveMinimum": true,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "target": {
+                                    "type": "string",
+                                    "enum": [
+                                      "default",
+                                      "resolution"
+                                    ]
+                                  },
+                                  "budgetUsd": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "exclusiveMinimum": true,
+                                    "maximum": 9007199.25474099
+                                  }
+                                },
+                                "required": [
+                                  "configurationVersion",
+                                  "target",
+                                  "budgetUsd"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "sampleCount": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "enabled",
+                              "intervalMinutes",
+                              "periodHours",
+                              "n",
+                              "lowThreshold",
+                              "weights",
+                              "evaluation",
+                              "sampleCount"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "expectedVersion": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "operation",
+                          "worldId",
+                          "configuration",
+                          "expectedVersion",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
                               "requests.read"
                             ]
                           },
@@ -7119,8 +7626,614 @@
                   "type": "object",
                   "properties": {
                     "result": {
-                      "type": "object",
-                      "additionalProperties": {}
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "manifest": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "pattern": "^[a-f0-9]{64}$"
+                                },
+                                "recordVersion": {
+                                  "type": "string",
+                                  "enum": [
+                                    "inspection-record-v1"
+                                  ]
+                                },
+                                "capturedAt": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                },
+                                "selection": {
+                                  "type": "object",
+                                  "properties": {
+                                    "worldId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    },
+                                    "userId": {
+                                      "nullable": true,
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    },
+                                    "actorId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    },
+                                    "endSceneId": {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    },
+                                    "n": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "metricVersion": {
+                                      "default": "presentation-v1",
+                                      "type": "string",
+                                      "enum": [
+                                        "presentation-v1"
+                                      ]
+                                    },
+                                    "weights": {
+                                      "default": {
+                                        "version": "unit-v1",
+                                        "values": {
+                                          "node": 1,
+                                          "edge": 1,
+                                          "aspect": 1,
+                                          "update": 1
+                                        },
+                                        "rationale": "全区分1の未校正の基準値。満足度や意味的重要度を表さない。"
+                                      },
+                                      "type": "object",
+                                      "properties": {
+                                        "version": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "values": {
+                                          "type": "object",
+                                          "properties": {
+                                            "node": {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "edge": {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "aspect": {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "update": {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 9007199254740991
+                                            }
+                                          },
+                                          "required": [
+                                            "node",
+                                            "edge",
+                                            "aspect",
+                                            "update"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "rationale": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        }
+                                      },
+                                      "required": [
+                                        "version",
+                                        "values",
+                                        "rationale"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "lowThreshold": {
+                                      "default": 0,
+                                      "type": "number",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "worldId",
+                                    "userId",
+                                    "actorId",
+                                    "endSceneId",
+                                    "n",
+                                    "metricVersion",
+                                    "weights",
+                                    "lowThreshold"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "requestedScenes": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "actualScenes": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "priorMissingScenes": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  }
+                                },
+                                "sceneOrder": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      },
+                                      "revision": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "state": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "revision",
+                                      "state"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "recordVersion",
+                                "capturedAt",
+                                "selection",
+                                "requestedScenes",
+                                "actualScenes",
+                                "priorMissingScenes",
+                                "sceneOrder"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "measurement": {
+                              "type": "object",
+                              "properties": {
+                                "manifestId": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "metricVersion": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "weights": {
+                                  "type": "object",
+                                  "properties": {
+                                    "version": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "values": {
+                                      "type": "object",
+                                      "properties": {
+                                        "node": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "edge": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "aspect": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "update": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "node",
+                                        "edge",
+                                        "aspect",
+                                        "update"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "rationale": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "version",
+                                    "values",
+                                    "rationale"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "requestedScenes": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "actualScenes": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "complete",
+                                    "partial"
+                                  ]
+                                },
+                                "total": {
+                                  "type": "object",
+                                  "properties": {
+                                    "counts": {
+                                      "type": "object",
+                                      "properties": {
+                                        "node": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "edge": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "aspect": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "update": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "node",
+                                        "edge",
+                                        "aspect",
+                                        "update"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "origins": {
+                                      "type": "object",
+                                      "properties": {
+                                        "reference": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "generated": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "reference",
+                                        "generated"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "observedValue": {
+                                      "type": "number"
+                                    },
+                                    "value": {
+                                      "nullable": true,
+                                      "type": "number"
+                                    },
+                                    "coverage": {
+                                      "type": "object",
+                                      "properties": {
+                                        "presentations": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "mapped": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "ratio": {
+                                          "nullable": true,
+                                          "type": "number"
+                                        }
+                                      },
+                                      "required": [
+                                        "presentations",
+                                        "mapped",
+                                        "ratio"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "missing": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      }
+                                    },
+                                    "calls": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "calculatedNanoUsd": {
+                                      "nullable": true,
+                                      "type": "string"
+                                    },
+                                    "knownNanoUsd": {
+                                      "type": "string"
+                                    },
+                                    "costMissing": {
+                                      "type": "boolean"
+                                    },
+                                    "modelCallMs": {
+                                      "nullable": true,
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "responseWaitMs": {
+                                      "nullable": true,
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "perUsd": {
+                                      "nullable": true,
+                                      "type": "number"
+                                    },
+                                    "perWaitSecond": {
+                                      "nullable": true,
+                                      "type": "number"
+                                    },
+                                    "inputCount": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "perInput": {
+                                      "nullable": true,
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "counts",
+                                    "origins",
+                                    "observedValue",
+                                    "value",
+                                    "coverage",
+                                    "missing",
+                                    "calls",
+                                    "calculatedNanoUsd",
+                                    "knownNanoUsd",
+                                    "costMissing",
+                                    "modelCallMs",
+                                    "responseWaitMs",
+                                    "perUsd",
+                                    "perWaitSecond",
+                                    "inputCount",
+                                    "perInput"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "missingScenes": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  }
+                                },
+                                "priorMissingScenes": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  }
+                                },
+                                "lowRuns": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "inputIds": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        }
+                                      },
+                                      "length": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      }
+                                    },
+                                    "required": [
+                                      "inputIds",
+                                      "length"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "longestLowRun": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "limitations": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                }
+                              },
+                              "required": [
+                                "manifestId",
+                                "metricVersion",
+                                "weights",
+                                "requestedScenes",
+                                "actualScenes",
+                                "status",
+                                "total",
+                                "missingScenes",
+                                "priorMissingScenes",
+                                "lowRuns",
+                                "longestLowRun",
+                                "limitations"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "section": {
+                                    "type": "string",
+                                    "enum": [
+                                      "prior",
+                                      "scene",
+                                      "input",
+                                      "presentation",
+                                      "call",
+                                      "administrator",
+                                      "measure-scene",
+                                      "measure-diff"
+                                    ]
+                                  },
+                                  "sceneId": {
+                                    "nullable": true,
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "inputId": {
+                                    "nullable": true,
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "value": {}
+                                },
+                                "required": [
+                                  "id",
+                                  "section",
+                                  "sceneId",
+                                  "inputId",
+                                  "value"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "next": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "fetched": {
+                              "type": "object",
+                              "properties": {
+                                "offset": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "complete": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "offset",
+                                "count",
+                                "total",
+                                "complete"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "retention": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "manifest",
+                            "measurement",
+                            "items",
+                            "next",
+                            "fetched",
+                            "retention"
+                          ],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      ]
                     }
                   },
                   "required": [

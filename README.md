@@ -5,6 +5,23 @@
 動的な自由記述シェアワールドを構築するプロジェクトです。
 共通の世界更新Agent、時間指定の構築、別村民の生成、人間の自由記述行動を実装しています。Webから初期生成・試遊・追加進行・明示完了・別村民への参加を操作できます。村民の画面は、本人の観測・解釈と入力を表示します。
 
+## 保存した物語の検品
+
+`pnpm story:inspect`は、保存済みの提示情報からnシーンの移動量を取得し、JSONと可読報告を保存します。計測だけなら追加のLLM呼出しはありません。APIとワーカーを起動し、接続先を`GESTALOKA_API_URL`、管理者のログインCookieを`GESTALOKA_COOKIE`、またはMCP認可トークンを`GESTALOKA_MCP_TOKEN`へローカルで設定してください。MCPには利用する`inspection.*`のscopeと対象世界の許可が必要です。秘密値をコマンドや報告へ貼り付けないでください。
+
+```powershell
+pnpm story:inspect --world <worldId> --user <userId> --actor <actorId> --end <sceneId> --n 3
+pnpm story:inspect --world <worldId> --manifest <manifestId>
+pnpm story:inspect --world <worldId> --manifest <manifestId> --compare <otherManifestId>
+pnpm story:inspect --world <worldId> --manifest <manifestId> --semantic --configuration <modelSettingsVersion> --target resolution --budget 1
+```
+
+既定の保存先は`artifacts/inspection`です。`--output <directory>`で変更できます。旧匿名記録では`--user`を省略します。意味評価の費用上限は生成費用と別で、設定したモデル版と共に記録します。既定では最大900秒待ち、未完了なら実行IDを含む部分評価を保存します。`--wait-seconds`で待機時間を指定できます。比較の右側は計測だけを取得し、意味評価がないことを比較条件に残します。移動量の低さでコマンドを失敗にしたり、世界を再生成したりしません。
+
+管理画面の「物語の検品」では、対象資料、時系列、分布、欠測、費用と待ち時間、意味評価を確認できます。「定期検品の設定」を読み、対象世界、期間、n、頻度、サンプル数、モデル設定版と費用上限を指定して有効にします。費用上限は1回の対象抽出全体で共有します。設定前は無効で、既存pg-bossワーカーが有効な世界を1分ごとに確認します。プレイの応答は採点を待ちません。
+
+規則は[ADR-017](documents/adr/ADR-017-narrative-inspection.md)、評価手順は[物語検品スキル](.agents/skills/narrative-inspection/SKILL.md)を参照してください。指標は未校正で、満足度の実測ではありません。旧記録の不足と未取得の続きは欠測として残します。
+
 ## ローカル起動
 
 Node.js 22.23.4以上の22系または24.22.1以上の24系、pnpm 10.16.1、Linuxコンテナーを実行できるDocker Composeを使用します。

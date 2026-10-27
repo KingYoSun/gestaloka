@@ -1,0 +1,3060 @@
+{
+  "manifest": {
+    "id": "c1ec20a99a6ebc48835977f4099b02e31f1c3831112a9299a94105872e6c8643",
+    "recordVersion": "inspection-record-v1",
+    "capturedAt": "2026-10-27T16:29:08.316Z",
+    "selection": {
+      "worldId": "ac04f8e8-e1ed-487f-938b-5338532c3e82",
+      "userId": "2516c261-7759-48e2-9db6-775038c2d0f7",
+      "actorId": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+      "endSceneId": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+      "n": 2,
+      "metricVersion": "presentation-v1",
+      "weights": {
+        "version": "unit-v1",
+        "values": {
+          "node": 1,
+          "edge": 1,
+          "aspect": 1,
+          "update": 1
+        },
+        "rationale": "全区分1の未校正の基準値。満足度や意味的重要度を表さない。"
+      },
+      "lowThreshold": 0
+    },
+    "requestedScenes": 2,
+    "actualScenes": 2,
+    "prior": [],
+    "priorMissingScenes": [],
+    "scenes": [
+      {
+        "id": "9d33111b-4ab0-407e-abf6-695f3ed5e450",
+        "revision": "7af0cfe37a15bbeca5fc089dad5b5c1664a266c271f8e231107f1a818b5fa16e",
+        "state": "result",
+        "createdAt": "2026-10-27T16:27:46.121Z",
+        "inputs": [
+          {
+            "id": "eac18d53-6bfc-48de-b9a4-dbc8c56010b4",
+            "text": "橋の様子を村人に尋ね、返事を待つ。",
+            "state": "complete",
+            "submittedAt": "2026-10-27T16:27:53.749Z",
+            "completedAt": "2026-10-27T16:28:05.668Z"
+          },
+          {
+            "id": "20244480-01b2-4fcf-ac2b-e04a21168918",
+            "text": "教えてくれたことに礼を伝える。",
+            "state": "complete",
+            "submittedAt": "2026-10-27T16:28:05.688Z",
+            "completedAt": "2026-10-27T16:28:08.193Z"
+          }
+        ],
+        "presentations": [
+          {
+            "id": "d9b0105a-07f8-4274-ad67-2c4490f01238",
+            "sceneId": "9d33111b-4ab0-407e-abf6-695f3ed5e450",
+            "inputId": null,
+            "kind": "synopsis",
+            "ordinal": 0,
+            "text": "木橋の手前にある村の広場。旅人ソラの目の前には村の木橋があり、床板の一部が腐っているため、橋守のミナが通行を止めている。ミナとソラは広場で声が届く距離にいる。ソラはここで村人と橋について話そうとしている。",
+            "at": 0,
+            "providedAt": "2026-10-27T16:27:53.714Z",
+            "information": [
+              {
+                "kind": "edge",
+                "id": "df9fa7d5-b67d-4d40-b1d3-7744306cb8fd",
+                "aspect": "ソラの観測",
+                "state": "広場で木橋とミナが見える",
+                "version": "1",
+                "at": 0,
+                "origin": "reference",
+                "evidence": "木橋の手前にある村の広場。旅人ソラの目の前には村の木橋があり"
+              },
+              {
+                "kind": "node",
+                "id": "cf3c8598-a0f6-4799-8acb-b7d56d84d4dc",
+                "aspect": "木橋の状態",
+                "state": "床板の一部が腐り通行止め",
+                "version": null,
+                "at": 0,
+                "origin": "reference",
+                "evidence": "床板の一部が腐っているため、橋守のミナが通行を止めている"
+              },
+              {
+                "kind": "edge",
+                "id": "ccf412a7-4d71-495b-a744-a575d4d53e27",
+                "aspect": "木橋の現在状態",
+                "state": "通行止め",
+                "version": null,
+                "at": 0,
+                "origin": "reference",
+                "evidence": "橋守のミナが通行を止めている"
+              },
+              {
+                "kind": "node",
+                "id": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                "aspect": "ミナの位置",
+                "state": "ソラと声が届く距離",
+                "version": null,
+                "at": 0,
+                "origin": "reference",
+                "evidence": "ミナとソラは広場で声が届く距離にいる"
+              }
+            ]
+          },
+          {
+            "id": "3d68dfd7-3785-4409-aaf9-3c0b71efc630",
+            "sceneId": "9d33111b-4ab0-407e-abf6-695f3ed5e450",
+            "inputId": "eac18d53-6bfc-48de-b9a4-dbc8c56010b4",
+            "kind": "response",
+            "ordinal": 1,
+            "text": "ソラは橋守のミナに橋の様子を尋ね、返事を待っている。",
+            "at": 0,
+            "providedAt": "2026-10-27T16:27:57.219Z",
+            "information": []
+          },
+          {
+            "id": "d55ff475-b432-4e3d-ad7d-882e6c021707",
+            "sceneId": "9d33111b-4ab0-407e-abf6-695f3ed5e450",
+            "inputId": "eac18d53-6bfc-48de-b9a4-dbc8c56010b4",
+            "kind": "response",
+            "ordinal": 2,
+            "text": "ミナが私に向き直り、床板の一部が腐っていて通行止めであること、傷んだ範囲の全体はまだ確認できておらず安全とは言えないので渡るのを待ってほしいことを告げた。迂回路や別の渡河地点は知らないとも言い、橋について知っていることや急ぎの事情はあるかと私に尋ねて返事を待っている。",
+            "at": 0,
+            "providedAt": "2026-10-27T16:28:05.668Z",
+            "information": [
+              {
+                "kind": "node",
+                "id": "cf3c8598-a0f6-4799-8acb-b7d56d84d4dc",
+                "aspect": "木橋の状態",
+                "state": "床板の一部が腐り通行止め",
+                "version": null,
+                "at": 0,
+                "origin": "reference",
+                "evidence": "床板の一部が腐っていて、今は通行を止めています"
+              },
+              {
+                "kind": "edge",
+                "id": "ccf412a7-4d71-495b-a744-a575d4d53e27",
+                "aspect": "木橋の現在状態",
+                "state": "通行止め",
+                "version": null,
+                "at": 0,
+                "origin": "reference",
+                "evidence": "渡るのは待ってください"
+              }
+            ]
+          },
+          {
+            "id": "d3921e91-b8b9-4c49-a79e-cf5298961a10",
+            "sceneId": "9d33111b-4ab0-407e-abf6-695f3ed5e450",
+            "inputId": "20244480-01b2-4fcf-ac2b-e04a21168918",
+            "kind": "response",
+            "ordinal": 3,
+            "text": "私はミナに、橋の様子を教えてくれたことへの礼を伝えた。",
+            "at": 0,
+            "providedAt": "2026-10-27T16:28:08.193Z",
+            "information": []
+          },
+          {
+            "id": "388a6e98-2aee-4f24-ac7c-e1f3b9d6b6b4",
+            "sceneId": "9d33111b-4ab0-407e-abf6-695f3ed5e450",
+            "inputId": null,
+            "kind": "result",
+            "ordinal": 4,
+            "text": "【今回のできごと】\nソラは橋守のミナに橋の様子を尋ねました。ミナはソラに向き直り、床板の一部が腐っていて通行止めであること、傷んだ範囲の全体はまだ確認できておらず安全とは言えないので、渡るのを待ってほしいことを伝えました。迂回路や別の渡河地点は知らないとも話しています。ソラはその説明への礼を伝えました。\n\n【残った影響】\n橋は引き続き通行止めです。今回の会話で橋の状態が変わったという記録はありません。\n\n【まだ決まっていないこと】\n傷んだ範囲の全体は確認されていません。迂回路や別の渡河地点は、ミナが知らないと述べただけで、存在しないとは確認されていません。ミナは、ソラが橋について知っていることや急ぎの事情があるかを尋ねており、その返事は待たれたままです。",
+            "at": 0,
+            "providedAt": "2026-10-27T16:28:23.367Z",
+            "information": [
+              {
+                "kind": "node",
+                "id": "cf3c8598-a0f6-4799-8acb-b7d56d84d4dc",
+                "aspect": "木橋の状態",
+                "state": "床板の一部が腐り通行止め",
+                "version": null,
+                "at": 0,
+                "origin": "reference",
+                "evidence": "床板の一部が腐っていて通行止めであること"
+              },
+              {
+                "kind": "edge",
+                "id": "ccf412a7-4d71-495b-a744-a575d4d53e27",
+                "aspect": "木橋の現在状態",
+                "state": "通行止め",
+                "version": null,
+                "at": 0,
+                "origin": "reference",
+                "evidence": "橋は引き続き通行止めです。"
+              }
+            ]
+          }
+        ],
+        "calls": [
+          {
+            "id": "beb1b621-70c8-4660-99ac-c1b714943c66",
+            "responseId": "9d33111b-4ab0-407e-abf6-695f3ed5e450",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "scene-background",
+            "status": "complete:reserved",
+            "nanoUsd": "31052500",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 6997,
+            "inputTokens": 8707,
+            "outputTokens": 940
+          },
+          {
+            "id": "7ff5cd49-cdba-4a55-b69d-4199e179d680",
+            "responseId": "eac18d53-6bfc-48de-b9a4-dbc8c56010b4",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "scene-resolve",
+            "status": "complete:reserved",
+            "nanoUsd": "12795000",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 3413,
+            "inputTokens": 3765,
+            "outputTokens": 346
+          },
+          {
+            "id": "70c56c0a-4e46-4e35-a9f8-9b221ef3f8e3",
+            "responseId": "eac18d53-6bfc-48de-b9a4-dbc8c56010b4",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "scene-intent",
+            "status": "complete:reserved",
+            "nanoUsd": "5047500",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 2378,
+            "inputTokens": 1229,
+            "outputTokens": 198
+          },
+          {
+            "id": "3eae30bc-3671-4122-af18-a36fc6fc1905",
+            "responseId": "eac18d53-6bfc-48de-b9a4-dbc8c56010b4",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "scene-resolve",
+            "status": "complete:reserved",
+            "nanoUsd": "19235500",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 6008,
+            "inputTokens": 4400,
+            "outputTokens": 843
+          },
+          {
+            "id": "d68f6780-3681-45ad-88c0-2c043e4a74cd",
+            "responseId": "20244480-01b2-4fcf-ac2b-e04a21168918",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "scene-resolve",
+            "status": "complete:reserved",
+            "nanoUsd": "16004000",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 2454,
+            "inputTokens": 5205,
+            "outputTokens": 318
+          },
+          {
+            "id": "1dd0e041-683c-473c-a5ff-f9cee6fc10f3",
+            "responseId": "b0ae4868-32fa-47cc-a2b3-4a017dcee5fd",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "world-update",
+            "status": "complete:reserved",
+            "nanoUsd": "44438000",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 3727,
+            "inputTokens": 17043,
+            "outputTokens": 357
+          },
+          {
+            "id": "f90c257b-ed77-44a7-a1ac-bba3ff542f96",
+            "responseId": "b0ae4868-32fa-47cc-a2b3-4a017dcee5fd",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "scene-result",
+            "status": "complete:reserved",
+            "nanoUsd": "12651000",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 10327,
+            "inputTokens": 3283,
+            "outputTokens": 537
+          }
+        ],
+        "administratorEvidence": {
+          "background": {
+            "type": "background",
+            "facts": [
+              {
+                "text": "木橋の床板の一部が腐っており、橋守が通行を止めている。",
+                "aboutIds": ["0a77ba14-562e-4c95-91ce-38e3bc3502bb"],
+                "subjectId": "c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e"
+              },
+              {
+                "text": "橋守のミナは広場で旅人ソラと声が届く距離にいる。",
+                "aboutIds": [
+                  "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "48d52bc4-6cc8-486a-87e2-00ccca9e2c8a"
+                ],
+                "subjectId": "0a77ba14-562e-4c95-91ce-38e3bc3502bb"
+              }
+            ],
+            "beliefs": [],
+            "synopsis": "木橋の手前にある村の広場。旅人ソラの目の前には村の木橋があり、床板の一部が腐っているため、橋守のミナが通行を止めている。ミナとソラは広場で声が届く距離にいる。ソラはここで村人と橋について話そうとしている。",
+            "unknowns": [
+              "腐った床板の範囲や修理の見通し",
+              "ミナがソラの話にどう応じるか",
+              "広場に他の村人がいるか"
+            ],
+            "creations": [],
+            "perceptions": [],
+            "participants": [
+              "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+              "0a77ba14-562e-4c95-91ce-38e3bc3502bb"
+            ],
+            "synopsisInformation": [
+              {
+                "at": 0,
+                "id": "df9fa7d5-b67d-4d40-b1d3-7744306cb8fd",
+                "kind": "edge",
+                "state": "広場で木橋とミナが見える",
+                "aspect": "ソラの観測",
+                "origin": "reference",
+                "version": "1",
+                "evidence": "木橋の手前にある村の広場。旅人ソラの目の前には村の木橋があり"
+              },
+              {
+                "at": 0,
+                "id": "cf3c8598-a0f6-4799-8acb-b7d56d84d4dc",
+                "kind": "node",
+                "state": "床板の一部が腐り通行止め",
+                "aspect": "木橋の状態",
+                "origin": "reference",
+                "version": null,
+                "evidence": "床板の一部が腐っているため、橋守のミナが通行を止めている"
+              },
+              {
+                "at": 0,
+                "id": "ccf412a7-4d71-495b-a744-a575d4d53e27",
+                "kind": "edge",
+                "state": "通行止め",
+                "aspect": "木橋の現在状態",
+                "origin": "reference",
+                "version": null,
+                "evidence": "橋守のミナが通行を止めている"
+              },
+              {
+                "at": 0,
+                "id": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                "kind": "node",
+                "state": "ソラと声が届く距離",
+                "aspect": "ミナの位置",
+                "origin": "reference",
+                "version": null,
+                "evidence": "ミナとソラは広場で声が届く距離にいる"
+              }
+            ]
+          },
+          "events": [
+            {
+              "id": "3fc03004-8706-41ed-a1c3-d557aef49818",
+              "text": "ソラは広場で声が届く距離にいる橋守のミナに向かって、「この橋はいまどんな様子ですか」と尋ね、返事を待った。",
+              "period": {
+                "from": 0,
+                "until": 0
+              },
+              "actorId": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+              "inputId": "eac18d53-6bfc-48de-b9a4-dbc8c56010b4",
+              "receipts": [
+                {
+                  "text": "ソラは橋守のミナに橋の様子を尋ね、返事を待っている。",
+                  "observerId": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "information": []
+                },
+                {
+                  "text": "旅人ソラが、橋の様子はどうなのかと私に尋ねてきた。",
+                  "observerId": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "information": []
+                }
+              ]
+            },
+            {
+              "id": "3944ad65-07f7-4d93-a7cd-3540ca286e40",
+              "text": "ミナはソラに向き直り、「床板の一部が腐っていて、今は通行を止めています。どの範囲がどれほど傷んでいるか全体はまだ確認できていないので、安全とは言えません。渡るのは待ってください」と伝えた。続けて、迂回できる道や別の渡河地点については何も知らないと言い、「ソラさんは橋について何かご存じのことや、急ぎの事情はありますか」と尋ね、返事を待った。",
+              "period": {
+                "from": 0,
+                "until": 0
+              },
+              "actorId": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+              "inputId": "eac18d53-6bfc-48de-b9a4-dbc8c56010b4",
+              "receipts": [
+                {
+                  "text": "ミナが私に向き直り、床板の一部が腐っていて通行止めであること、傷んだ範囲の全体はまだ確認できておらず安全とは言えないので渡るのを待ってほしいことを告げた。迂回路や別の渡河地点は知らないとも言い、橋について知っていることや急ぎの事情はあるかと私に尋ねて返事を待っている。",
+                  "observerId": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "information": [
+                    {
+                      "at": 0,
+                      "id": "cf3c8598-a0f6-4799-8acb-b7d56d84d4dc",
+                      "kind": "node",
+                      "state": "床板の一部が腐り通行止め",
+                      "aspect": "木橋の状態",
+                      "origin": "reference",
+                      "version": null,
+                      "evidence": "床板の一部が腐っていて、今は通行を止めています"
+                    },
+                    {
+                      "at": 0,
+                      "id": "ccf412a7-4d71-495b-a744-a575d4d53e27",
+                      "kind": "edge",
+                      "state": "通行止め",
+                      "aspect": "木橋の現在状態",
+                      "origin": "reference",
+                      "version": null,
+                      "evidence": "渡るのは待ってください"
+                    }
+                  ]
+                },
+                {
+                  "text": "私はソラに向き直り、観測した範囲で、床板の一部が腐って通行止めであり全体の傷みは未確認で安全とは言えないと伝えた。迂回路や別の渡河地点は知らないと答え、橋について知っていることや急ぎの事情を尋ねて、ソラの返事を待っている。",
+                  "observerId": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "information": []
+                }
+              ]
+            },
+            {
+              "id": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+              "text": "ソラはミナに「教えてくださってありがとうございます」と礼を伝えた。",
+              "period": {
+                "from": 0,
+                "until": 0
+              },
+              "actorId": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+              "inputId": "20244480-01b2-4fcf-ac2b-e04a21168918",
+              "receipts": [
+                {
+                  "text": "私はミナに、橋の様子を教えてくれたことへの礼を伝えた。",
+                  "observerId": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "information": []
+                },
+                {
+                  "text": "ソラが、橋の様子を教えたことに礼を述べた。",
+                  "observerId": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "information": []
+                }
+              ]
+            }
+          ],
+          "dependencies": [
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:status:out",
+              "version": 0
+            },
+            {
+              "key": "node:2d11f81d-082a-4544-a0b9-b7165c3bf733",
+              "version": 1
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:status:in",
+              "version": 0
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:interpret:in",
+              "version": 0
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:has:out",
+              "version": 0
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:effect:in",
+              "version": 0
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:see:out",
+              "version": 1
+            },
+            {
+              "key": "source:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a",
+              "version": 1
+            },
+            {
+              "key": "node:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a",
+              "version": 1
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:happen:out",
+              "version": 0
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:interpret:out",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:status:out",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:status:in",
+              "version": 1
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:interpret:in",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:has:out",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:effect:in",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:see:out",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:happen:out",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:interpret:out",
+              "version": 0
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:status:out",
+              "version": 0
+            },
+            {
+              "key": "node:0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+              "version": 1
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:status:in",
+              "version": 0
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:interpret:in",
+              "version": 0
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:has:out",
+              "version": 0
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:effect:in",
+              "version": 0
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:see:out",
+              "version": 1
+            },
+            {
+              "key": "source:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e",
+              "version": 1
+            },
+            {
+              "key": "node:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e",
+              "version": 1
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:happen:out",
+              "version": 0
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:interpret:out",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:status:out",
+              "version": 1
+            },
+            {
+              "key": "relations:cf3c8598-a0f6-4799-8acb-b7d56d84d4dc:status:out",
+              "version": 1
+            },
+            {
+              "key": "node:cf3c8598-a0f6-4799-8acb-b7d56d84d4dc",
+              "version": 1
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:status:in",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:interpret:in",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:has:out",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:effect:in",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:see:out",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:happen:out",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:interpret:out",
+              "version": 0
+            }
+          ],
+          "projection": {
+            "type": "propose",
+            "changes": {
+              "edges": [
+                {
+                  "id": "ab38e168-ca3d-44de-a2e7-1d2e45cdbbe4",
+                  "kind": "status",
+                  "role": "content",
+                  "period": {
+                    "from": 0
+                  },
+                  "source": "c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e",
+                  "target": "a05bcdbb-806b-4bf5-a3d9-55fea7565a54"
+                },
+                {
+                  "id": "517a2ff1-d81c-4a91-ab1b-7ab9abf21aca",
+                  "kind": "status",
+                  "role": "about",
+                  "period": {
+                    "from": 0
+                  },
+                  "source": "a05bcdbb-806b-4bf5-a3d9-55fea7565a54",
+                  "target": "0a77ba14-562e-4c95-91ce-38e3bc3502bb"
+                },
+                {
+                  "id": "03f6b2b0-370c-4b39-a609-5a8aed16a055",
+                  "kind": "status",
+                  "role": "content",
+                  "period": {
+                    "from": 0
+                  },
+                  "source": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "target": "d9cddeba-00eb-4e24-ab07-1b1bb3ae0571"
+                },
+                {
+                  "id": "6ea9f623-6887-4115-a30c-b2b3ef9d0c7e",
+                  "kind": "status",
+                  "role": "about",
+                  "period": {
+                    "from": 0
+                  },
+                  "source": "d9cddeba-00eb-4e24-ab07-1b1bb3ae0571",
+                  "target": "2d11f81d-082a-4544-a0b9-b7165c3bf733"
+                },
+                {
+                  "id": "9acaa658-81cd-455f-a74b-521c7cb1f9d9",
+                  "kind": "status",
+                  "role": "about",
+                  "period": {
+                    "from": 0
+                  },
+                  "source": "d9cddeba-00eb-4e24-ab07-1b1bb3ae0571",
+                  "target": "48d52bc4-6cc8-486a-87e2-00ccca9e2c8a"
+                },
+                {
+                  "id": "20a6e701-0071-4e72-ab96-0b5b4ad639ef",
+                  "kind": "happen",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "target": "3fc03004-8706-41ed-a1c3-d557aef49818"
+                },
+                {
+                  "id": "21651bc0-0ad8-440a-a3df-312780ed0c3c",
+                  "kind": "effect",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "3fc03004-8706-41ed-a1c3-d557aef49818",
+                  "target": "2d11f81d-082a-4544-a0b9-b7165c3bf733"
+                },
+                {
+                  "id": "f13d99b4-2303-4f97-a3f0-35a6916c0865",
+                  "kind": "see",
+                  "text": "ソラは橋守のミナに橋の様子を尋ね、返事を待っている。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "target": "3fc03004-8706-41ed-a1c3-d557aef49818",
+                  "observation": {
+                    "aspect": "ソラは橋守のミナに橋の様子を尋ね、返事を待っている。",
+                    "pathIds": ["21651bc0-0ad8-440a-a3df-312780ed0c3c"],
+                    "through": 0,
+                    "sourceIds": ["3fc03004-8706-41ed-a1c3-d557aef49818"]
+                  }
+                },
+                {
+                  "id": "9a8dc3d5-d9f6-4da8-a035-86a37031667f",
+                  "kind": "effect",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "3fc03004-8706-41ed-a1c3-d557aef49818",
+                  "target": "0a77ba14-562e-4c95-91ce-38e3bc3502bb"
+                },
+                {
+                  "id": "2c72db63-3fac-4a26-a2d3-6d2f53b8f7f3",
+                  "kind": "see",
+                  "text": "旅人ソラが、橋の様子はどうなのかと私に尋ねてきた。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "target": "3fc03004-8706-41ed-a1c3-d557aef49818",
+                  "observation": {
+                    "aspect": "旅人ソラが、橋の様子はどうなのかと私に尋ねてきた。",
+                    "pathIds": ["9a8dc3d5-d9f6-4da8-a035-86a37031667f"],
+                    "through": 0,
+                    "sourceIds": ["3fc03004-8706-41ed-a1c3-d557aef49818"]
+                  }
+                },
+                {
+                  "id": "a2f30cb0-e5b0-46d2-a65e-e49d4b4651a7",
+                  "kind": "happen",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "target": "3944ad65-07f7-4d93-a7cd-3540ca286e40"
+                },
+                {
+                  "id": "4746464e-8d10-48ea-a669-72d808be8be6",
+                  "kind": "effect",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "3944ad65-07f7-4d93-a7cd-3540ca286e40",
+                  "target": "2d11f81d-082a-4544-a0b9-b7165c3bf733"
+                },
+                {
+                  "id": "972e76d1-0df8-4af0-ae3d-63fc70329307",
+                  "kind": "see",
+                  "text": "ミナが私に向き直り、床板の一部が腐っていて通行止めであること、傷んだ範囲の全体はまだ確認できておらず安全とは言えないので渡るのを待ってほしいことを告げた。迂回路や別の渡河地点は知らないとも言い、橋について知っていることや急ぎの事情はあるかと私に尋ねて返事を待っている。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "target": "3944ad65-07f7-4d93-a7cd-3540ca286e40",
+                  "observation": {
+                    "aspect": "ミナが私に向き直り、床板の一部が腐っていて通行止めであること、傷んだ範囲の全体はまだ確認できておらず安全とは言えないので渡るのを待ってほしいことを告げた。迂回路や別の渡河地点は知らないとも言い、橋について知っていることや急ぎの事情はあるかと私に尋ねて返事を待っている。",
+                    "pathIds": ["4746464e-8d10-48ea-a669-72d808be8be6"],
+                    "through": 0,
+                    "sourceIds": ["3944ad65-07f7-4d93-a7cd-3540ca286e40"]
+                  }
+                },
+                {
+                  "id": "7ebbf451-88df-4a1b-accd-b9c22b510510",
+                  "kind": "effect",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "3944ad65-07f7-4d93-a7cd-3540ca286e40",
+                  "target": "0a77ba14-562e-4c95-91ce-38e3bc3502bb"
+                },
+                {
+                  "id": "2a2f0b51-35bf-46ce-a697-f626186962ae",
+                  "kind": "see",
+                  "text": "私はソラに向き直り、観測した範囲で、床板の一部が腐って通行止めであり全体の傷みは未確認で安全とは言えないと伝えた。迂回路や別の渡河地点は知らないと答え、橋について知っていることや急ぎの事情を尋ねて、ソラの返事を待っている。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "target": "3944ad65-07f7-4d93-a7cd-3540ca286e40",
+                  "observation": {
+                    "aspect": "私はソラに向き直り、観測した範囲で、床板の一部が腐って通行止めであり全体の傷みは未確認で安全とは言えないと伝えた。迂回路や別の渡河地点は知らないと答え、橋について知っていることや急ぎの事情を尋ねて、ソラの返事を待っている。",
+                    "pathIds": ["7ebbf451-88df-4a1b-accd-b9c22b510510"],
+                    "through": 0,
+                    "sourceIds": ["3944ad65-07f7-4d93-a7cd-3540ca286e40"]
+                  }
+                },
+                {
+                  "id": "69ad2409-1b26-4208-a4fc-587e0038badc",
+                  "kind": "happen",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "target": "6cd8cefb-742f-46d4-ada7-70bf4dca683e"
+                },
+                {
+                  "id": "02989af2-1200-4b17-ad77-8e46728d09a9",
+                  "kind": "effect",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+                  "target": "2d11f81d-082a-4544-a0b9-b7165c3bf733"
+                },
+                {
+                  "id": "fdac4863-34f1-45e4-a302-80bff01646af",
+                  "kind": "see",
+                  "text": "私はミナに、橋の様子を教えてくれたことへの礼を伝えた。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "target": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+                  "observation": {
+                    "aspect": "私はミナに、橋の様子を教えてくれたことへの礼を伝えた。",
+                    "pathIds": ["02989af2-1200-4b17-ad77-8e46728d09a9"],
+                    "through": 0,
+                    "sourceIds": ["6cd8cefb-742f-46d4-ada7-70bf4dca683e"]
+                  }
+                },
+                {
+                  "id": "6d917c0a-9d42-432e-a9d1-777e02e611d4",
+                  "kind": "effect",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+                  "target": "0a77ba14-562e-4c95-91ce-38e3bc3502bb"
+                },
+                {
+                  "id": "9a32109c-f5fb-4b45-a50d-bce306ff35f4",
+                  "kind": "see",
+                  "text": "ソラが、橋の様子を教えたことに礼を述べた。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "target": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+                  "observation": {
+                    "aspect": "ソラが、橋の様子を教えたことに礼を述べた。",
+                    "pathIds": ["6d917c0a-9d42-432e-a9d1-777e02e611d4"],
+                    "through": 0,
+                    "sourceIds": ["6cd8cefb-742f-46d4-ada7-70bf4dca683e"]
+                  }
+                }
+              ],
+              "nodes": [
+                {
+                  "id": "a05bcdbb-806b-4bf5-a3d9-55fea7565a54",
+                  "kind": "script",
+                  "text": "木橋の床板の一部が腐っており、橋守が通行を止めている。"
+                },
+                {
+                  "id": "d9cddeba-00eb-4e24-ab07-1b1bb3ae0571",
+                  "kind": "script",
+                  "text": "橋守のミナは広場で旅人ソラと声が届く距離にいる。"
+                },
+                {
+                  "id": "3fc03004-8706-41ed-a1c3-d557aef49818",
+                  "kind": "event",
+                  "text": "ソラは広場で声が届く距離にいる橋守のミナに向かって、「この橋はいまどんな様子ですか」と尋ね、返事を待った。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  }
+                },
+                {
+                  "id": "3944ad65-07f7-4d93-a7cd-3540ca286e40",
+                  "kind": "event",
+                  "text": "ミナはソラに向き直り、「床板の一部が腐っていて、今は通行を止めています。どの範囲がどれほど傷んでいるか全体はまだ確認できていないので、安全とは言えません。渡るのは待ってください」と伝えた。続けて、迂回できる道や別の渡河地点については何も知らないと言い、「ソラさんは橋について何かご存じのことや、急ぎの事情はありますか」と尋ね、返事を待った。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  }
+                },
+                {
+                  "id": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+                  "kind": "event",
+                  "text": "ソラはミナに「教えてくださってありがとうございます」と礼を伝えた。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  }
+                }
+              ],
+              "endEdges": [],
+              "revisions": []
+            },
+            "summary": "完了したシーンは、ソラの質問、ミナの通行止めと安全未確認の説明、ソラの礼で構成されている。これらはanchorsで既に確定するため、追加の状態変化や作用は加えない。木橋の通行止めは継続中で、開始時のstatusは終了しない。ミナの意図は、ソラの返答を受けてから次の対応を決める性質のため、deferredとして保持する。ソラの礼の意図は実行済みなので、settledとして処遇する。",
+            "wakeups": [],
+            "resolvedUntil": 0,
+            "settledIntentions": [
+              {
+                "reason": "ソラはミナへ礼を伝え、その発言と受容がシーン内で確定済み。",
+                "actorId": "2d11f81d-082a-4544-a0b9-b7165c3bf733"
+              }
+            ],
+            "deferredIntentions": ["0a77ba14-562e-4c95-91ce-38e3bc3502bb"]
+          }
+        },
+        "recording": "recorded"
+      },
+      {
+        "id": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+        "revision": "2c356008a2e42e1a2438e9b4d419cfb75889e503f89179e5c946d016177100f8",
+        "state": "result",
+        "createdAt": "2026-10-27T16:28:23.481Z",
+        "inputs": [
+          {
+            "id": "904ce841-e034-4da4-b875-62377049e1d1",
+            "text": "橋の様子を村人に尋ね、返事を待つ。",
+            "state": "complete",
+            "submittedAt": "2026-10-27T16:28:34.912Z",
+            "completedAt": "2026-10-27T16:28:51.160Z"
+          },
+          {
+            "id": "c403ba54-752f-4d9f-9bd5-e78241a4d07b",
+            "text": "教えてくれたことに礼を伝える。",
+            "state": "complete",
+            "submittedAt": "2026-10-27T16:28:51.183Z",
+            "completedAt": "2026-10-27T16:28:55.284Z"
+          }
+        ],
+        "presentations": [
+          {
+            "id": "d5ef2278-7d81-46d1-a2d3-1300ea7962f6",
+            "sceneId": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+            "inputId": null,
+            "kind": "synopsis",
+            "ordinal": 0,
+            "text": "村の広場。木橋の手前に旅人ソラが立ち、橋守のミナとは声が届く距離にいる。橋は床板の一部が腐っていて、ミナが通行を止めている。ミナは先ほど、傷んだ範囲の全体はまだ確認できておらず安全とは言えないので渡るのを待ってほしいと伝え、迂回路や別の渡河地点は知らないと述べた。ソラは礼を返したところで、これから橋の近くで見える範囲の状態を確かめようとしている。",
+            "at": 0,
+            "providedAt": "2026-10-27T16:28:34.844Z",
+            "information": [
+              {
+                "kind": "node",
+                "id": "48d52bc4-6cc8-486a-87e2-00ccca9e2c8a",
+                "aspect": "場所",
+                "state": "木橋の手前の村の広場",
+                "version": "1",
+                "at": 0,
+                "origin": "reference",
+                "evidence": "村の広場。木橋の手前に旅人ソラが立ち"
+              },
+              {
+                "kind": "node",
+                "id": "d9cddeba-00eb-4e24-ab07-1b1bb3ae0571",
+                "aspect": "ソラとミナの位置関係",
+                "state": "広場で声が届く距離",
+                "version": null,
+                "at": 0,
+                "origin": "reference",
+                "evidence": "橋守のミナとは声が届く距離にいる"
+              },
+              {
+                "kind": "node",
+                "id": "a05bcdbb-806b-4bf5-a3d9-55fea7565a54",
+                "aspect": "橋の状態",
+                "state": "床板の一部が腐り通行止め",
+                "version": null,
+                "at": 0,
+                "origin": "reference",
+                "evidence": "橋は床板の一部が腐っていて、ミナが通行を止めている"
+              },
+              {
+                "kind": "node",
+                "id": "3944ad65-07f7-4d93-a7cd-3540ca286e40",
+                "aspect": "ミナの警告",
+                "state": "全体は未確認で待つよう伝えた",
+                "version": "1",
+                "at": 0,
+                "origin": "reference",
+                "evidence": "傷んだ範囲の全体はまだ確認できておらず安全とは言えないので渡るのを待ってほしいと伝え"
+              },
+              {
+                "kind": "node",
+                "id": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+                "aspect": "ソラの礼",
+                "state": "礼を伝えた",
+                "version": "1",
+                "at": 0,
+                "origin": "reference",
+                "evidence": "ソラは礼を返したところで"
+              }
+            ]
+          },
+          {
+            "id": "9504d4c2-858f-4136-a76f-175640abc9ff",
+            "sceneId": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+            "inputId": "904ce841-e034-4da4-b875-62377049e1d1",
+            "kind": "response",
+            "ordinal": 1,
+            "text": "自分は広場の村人に向かって橋の様子を尋ね、返事を待っている。",
+            "at": 0,
+            "providedAt": "2026-10-27T16:28:38.003Z",
+            "information": []
+          },
+          {
+            "id": "80a5d0fc-12b0-481e-aec5-8977640490b9",
+            "sceneId": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+            "inputId": "904ce841-e034-4da4-b875-62377049e1d1",
+            "kind": "response",
+            "ordinal": 2,
+            "text": "ミナが礼に短く応え、橋は渡らないよう改めて念を押した。広場の人々にも聞こえるように、床板の一部が腐っていて全体の傷みは未確認だと伝え、迂回路や別の渡河地点は知らないので知っていそうな人に尋ねるよう勧めてくれた。",
+            "at": 0,
+            "providedAt": "2026-10-27T16:28:51.160Z",
+            "information": []
+          },
+          {
+            "id": "f7c4af97-9f54-4efb-ac10-83144870ce03",
+            "sceneId": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+            "inputId": "c403ba54-752f-4d9f-9bd5-e78241a4d07b",
+            "kind": "response",
+            "ordinal": 3,
+            "text": "自分はミナに、教えてくれたことへの礼を伝えた。",
+            "at": 0,
+            "providedAt": "2026-10-27T16:28:55.284Z",
+            "information": [
+              {
+                "kind": "node",
+                "id": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+                "aspect": "ソラの礼",
+                "state": "礼を伝えた",
+                "version": "1",
+                "at": 0,
+                "origin": "reference",
+                "evidence": "「教えてくださってありがとうございます」と礼を伝えた"
+              }
+            ]
+          },
+          {
+            "id": "03784006-79b1-44dc-a798-ab10d2564be1",
+            "sceneId": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+            "inputId": null,
+            "kind": "result",
+            "ordinal": 4,
+            "text": "【今回の結果】\nソラは広場でミナに橋の様子を尋ね、ミナから説明を受けたうえで、教えてもらったことへの礼を伝えました。\n\n【実際に起きたこと】\n・ミナは礼に短く応え、橋は渡らないよう改めて念を押しました。\n・ミナは、床板の一部が腐っていて、傷んだ範囲の全体はまだ確認できていないと、広場の人々にも聞こえるように伝えました。\n・迂回路や別の渡河地点については「知らない」と述べ、知っていそうな人に尋ねるよう勧めました。\n・ソラはミナに礼を伝えました。\n\n【残っている状況】\n・橋はミナによって通行が止められたままです。\n・橋の傷みの全体はまだ確認されておらず、安全かどうかは分かっていません。\n・迂回路や別の渡河地点があるかどうかは分かっていません。ミナが知らないと述べただけで、存在しないと決まったわけではありません。\n\n【この先】\nこの場では、ソラが橋の近くで見える範囲の状態を確かめようとしているところです。まだ実行された記録はなく、確認の結果も出ていません。",
+            "at": 0,
+            "providedAt": "2026-10-27T16:29:08.283Z",
+            "information": [
+              {
+                "kind": "node",
+                "id": "a05bcdbb-806b-4bf5-a3d9-55fea7565a54",
+                "aspect": "橋の状態",
+                "state": "床板の一部が腐り通行止め",
+                "version": null,
+                "at": 0,
+                "origin": "reference",
+                "evidence": "橋はミナによって通行が止められたままです。"
+              },
+              {
+                "kind": "node",
+                "id": "3944ad65-07f7-4d93-a7cd-3540ca286e40",
+                "aspect": "ミナの警告",
+                "state": "全体は未確認で待つよう伝えた",
+                "version": "1",
+                "at": 0,
+                "origin": "reference",
+                "evidence": "ミナは、床板の一部が腐っていて、傷んだ範囲の全体はまだ確認できていないと、広場の人々にも聞こえるように伝えました。"
+              },
+              {
+                "kind": "node",
+                "id": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+                "aspect": "ソラの礼",
+                "state": "礼を伝えた",
+                "version": "1",
+                "at": 0,
+                "origin": "reference",
+                "evidence": "ソラはミナに礼を伝えました。"
+              }
+            ]
+          }
+        ],
+        "calls": [
+          {
+            "id": "4030002d-557f-47e7-a268-dd11dfc8be24",
+            "responseId": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "scene-background",
+            "status": "complete:reserved",
+            "nanoUsd": "41690400",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 10606,
+            "inputTokens": 14683,
+            "outputTokens": 1356
+          },
+          {
+            "id": "d4b02b91-9777-4a63-801f-5ebe71c8768a",
+            "responseId": "904ce841-e034-4da4-b875-62377049e1d1",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "scene-resolve",
+            "status": "complete:reserved",
+            "nanoUsd": "7589100",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 2985,
+            "inputTokens": 4182,
+            "outputTokens": 355
+          },
+          {
+            "id": "03f7188c-f9d4-45a1-8f28-497498a7d222",
+            "responseId": "904ce841-e034-4da4-b875-62377049e1d1",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "scene-intent",
+            "status": "complete:reserved",
+            "nanoUsd": "5271200",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 3954,
+            "inputTokens": 1849,
+            "outputTokens": 311
+          },
+          {
+            "id": "0f9e5bd2-0e34-4e58-9913-bdc88887a0d4",
+            "responseId": "904ce841-e034-4da4-b875-62377049e1d1",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "scene-resolve",
+            "status": "complete:reserved",
+            "nanoUsd": "11743500",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 9137,
+            "inputTokens": 4937,
+            "outputTokens": 618
+          },
+          {
+            "id": "22b9c1ee-3f5b-4d5f-ba2f-2a0fcaf002f5",
+            "responseId": "c403ba54-752f-4d9f-9bd5-e78241a4d07b",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "scene-resolve",
+            "status": "complete:reserved",
+            "nanoUsd": "12512000",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 4047,
+            "inputTokens": 5510,
+            "outputTokens": 551
+          },
+          {
+            "id": "a4a1d182-121b-435a-a59b-3cf1b7ccdbe9",
+            "responseId": "de598c02-2da9-49fe-a455-1098a440ae54",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "world-update",
+            "status": "complete:reserved",
+            "nanoUsd": "53111200",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 4685,
+            "inputTokens": 24100,
+            "outputTokens": 443
+          },
+          {
+            "id": "bfd80472-b09b-4127-9a08-6a3304a74944",
+            "responseId": "de598c02-2da9-49fe-a455-1098a440ae54",
+            "model": "claude-sonnet-5-5",
+            "configurationVersion": null,
+            "task": "scene-result",
+            "status": "complete:reserved",
+            "nanoUsd": "12087000",
+            "reservedNanoUsd": "4655360000",
+            "elapsedMs": 7070,
+            "inputTokens": 3442,
+            "outputTokens": 792
+          }
+        ],
+        "administratorEvidence": {
+          "background": {
+            "type": "background",
+            "facts": [
+              {
+                "text": "木橋は村の広場の手前に面しており、床板の一部が腐っている。橋守が通行を止めており、傷んだ範囲の全体は未確認である。",
+                "aboutIds": [
+                  "48d52bc4-6cc8-486a-87e2-00ccca9e2c8a",
+                  "0a77ba14-562e-4c95-91ce-38e3bc3502bb"
+                ],
+                "subjectId": "c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e"
+              },
+              {
+                "text": "橋守のミナは広場でソラと声が届く距離にいて、橋の通行を止めている。",
+                "aboutIds": [
+                  "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e"
+                ],
+                "subjectId": "0a77ba14-562e-4c95-91ce-38e3bc3502bb"
+              }
+            ],
+            "beliefs": [],
+            "synopsis": "村の広場。木橋の手前に旅人ソラが立ち、橋守のミナとは声が届く距離にいる。橋は床板の一部が腐っていて、ミナが通行を止めている。ミナは先ほど、傷んだ範囲の全体はまだ確認できておらず安全とは言えないので渡るのを待ってほしいと伝え、迂回路や別の渡河地点は知らないと述べた。ソラは礼を返したところで、これから橋の近くで見える範囲の状態を確かめようとしている。",
+            "unknowns": [
+              "床板の傷みの全体の範囲と程度",
+              "迂回路や別の渡河地点の有無",
+              "橋の近くで目視できる具体的な損傷の様子"
+            ],
+            "creations": [],
+            "perceptions": [
+              {
+                "text": "広場から木橋と橋守のミナが見え、橋は通行が止められている。",
+                "sourceIds": [
+                  "48d52bc4-6cc8-486a-87e2-00ccca9e2c8a",
+                  "c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e"
+                ],
+                "observerId": "2d11f81d-082a-4544-a0b9-b7165c3bf733"
+              }
+            ],
+            "participants": [
+              "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+              "0a77ba14-562e-4c95-91ce-38e3bc3502bb"
+            ],
+            "synopsisInformation": [
+              {
+                "at": 0,
+                "id": "48d52bc4-6cc8-486a-87e2-00ccca9e2c8a",
+                "kind": "node",
+                "state": "木橋の手前の村の広場",
+                "aspect": "場所",
+                "origin": "reference",
+                "version": "1",
+                "evidence": "村の広場。木橋の手前に旅人ソラが立ち"
+              },
+              {
+                "at": 0,
+                "id": "d9cddeba-00eb-4e24-ab07-1b1bb3ae0571",
+                "kind": "node",
+                "state": "広場で声が届く距離",
+                "aspect": "ソラとミナの位置関係",
+                "origin": "reference",
+                "version": null,
+                "evidence": "橋守のミナとは声が届く距離にいる"
+              },
+              {
+                "at": 0,
+                "id": "a05bcdbb-806b-4bf5-a3d9-55fea7565a54",
+                "kind": "node",
+                "state": "床板の一部が腐り通行止め",
+                "aspect": "橋の状態",
+                "origin": "reference",
+                "version": null,
+                "evidence": "橋は床板の一部が腐っていて、ミナが通行を止めている"
+              },
+              {
+                "at": 0,
+                "id": "3944ad65-07f7-4d93-a7cd-3540ca286e40",
+                "kind": "node",
+                "state": "全体は未確認で待つよう伝えた",
+                "aspect": "ミナの警告",
+                "origin": "reference",
+                "version": "1",
+                "evidence": "傷んだ範囲の全体はまだ確認できておらず安全とは言えないので渡るのを待ってほしいと伝え"
+              },
+              {
+                "at": 0,
+                "id": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+                "kind": "node",
+                "state": "礼を伝えた",
+                "aspect": "ソラの礼",
+                "origin": "reference",
+                "version": "1",
+                "evidence": "ソラは礼を返したところで"
+              }
+            ]
+          },
+          "events": [
+            {
+              "id": "1ad6a6a1-b164-4254-af43-e9c8243cc8bd",
+              "text": "ソラは広場にいる村人に向かって、「この橋の様子について、何かご存じのことはありませんか」と尋ね、返事を待った。",
+              "period": {
+                "from": 0,
+                "until": 0
+              },
+              "actorId": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+              "inputId": "904ce841-e034-4da4-b875-62377049e1d1",
+              "receipts": [
+                {
+                  "text": "自分は広場の村人に向かって橋の様子を尋ね、返事を待っている。",
+                  "observerId": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "information": []
+                },
+                {
+                  "text": "ソラが広場の村人に向けて、橋の様子について何か知っていることはないかと尋ねる声が聞こえた。",
+                  "observerId": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "information": []
+                }
+              ]
+            },
+            {
+              "id": "a48cc013-37bf-4936-ae00-ccab55880ee7",
+              "text": "ミナはソラの礼に「いえ」と短く応え、「橋は渡らないでください」と改めて念を押した。続けて広場の村人たちにも聞こえるよう、「床板の一部が腐っています。ただ、傷みの全体はまだ確認できていません」と、自分が見た範囲を簡潔に伝えた。さらにソラに、「迂回路や別の渡河地点は私は知りません。知っていそうな人がいれば、声をかけて尋ねてみてください」と勧めた。",
+              "period": {
+                "from": 0,
+                "until": 0
+              },
+              "actorId": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+              "inputId": "904ce841-e034-4da4-b875-62377049e1d1",
+              "receipts": [
+                {
+                  "text": "ミナが礼に短く応え、橋は渡らないよう改めて念を押した。広場の人々にも聞こえるように、床板の一部が腐っていて全体の傷みは未確認だと伝え、迂回路や別の渡河地点は知らないので知っていそうな人に尋ねるよう勧めてくれた。",
+                  "observerId": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "information": []
+                },
+                {
+                  "text": "自分はソラの礼に短く応え、橋を渡らないよう念を押した。見た範囲(床板の一部の腐れ、全体は未確認)を広場に聞こえるよう伝え、迂回路は知らないので知っていそうな人に尋ねるようソラに勧めた。",
+                  "observerId": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "information": []
+                }
+              ]
+            },
+            {
+              "id": "9da72fd0-357d-4525-ad88-17b3fc8734fe",
+              "text": "ソラはミナに向き直り、「教えてくださってありがとうございます」と礼を伝えた。",
+              "period": {
+                "from": 0,
+                "until": 0
+              },
+              "actorId": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+              "inputId": "c403ba54-752f-4d9f-9bd5-e78241a4d07b",
+              "receipts": [
+                {
+                  "text": "自分はミナに、教えてくれたことへの礼を伝えた。",
+                  "observerId": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "information": [
+                    {
+                      "at": 0,
+                      "id": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+                      "kind": "node",
+                      "state": "礼を伝えた",
+                      "aspect": "ソラの礼",
+                      "origin": "reference",
+                      "version": "1",
+                      "evidence": "「教えてくださってありがとうございます」と礼を伝えた"
+                    }
+                  ]
+                },
+                {
+                  "text": "ソラが自分に向き直り、教えたことへの礼を伝えてきた。",
+                  "observerId": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "information": [
+                    {
+                      "at": 0,
+                      "id": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+                      "kind": "node",
+                      "state": "礼を伝えた",
+                      "aspect": "ソラの礼",
+                      "origin": "reference",
+                      "version": "1",
+                      "evidence": "ソラはミナに向き直り、「教えてくださってありがとうございます」と礼を伝えた"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "dependencies": [
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:status:out",
+              "version": 0
+            },
+            {
+              "key": "node:2d11f81d-082a-4544-a0b9-b7165c3bf733",
+              "version": 1
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:status:in",
+              "version": 1
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:interpret:in",
+              "version": 0
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:has:out",
+              "version": 0
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:effect:in",
+              "version": 1
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:see:out",
+              "version": 2
+            },
+            {
+              "key": "source:3944ad65-07f7-4d93-a7cd-3540ca286e40",
+              "version": 1
+            },
+            {
+              "key": "edge:4746464e-8d10-48ea-a669-72d808be8be6",
+              "version": 1
+            },
+            {
+              "key": "source:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a",
+              "version": 2
+            },
+            {
+              "key": "source:3fc03004-8706-41ed-a1c3-d557aef49818",
+              "version": 1
+            },
+            {
+              "key": "edge:21651bc0-0ad8-440a-a3df-312780ed0c3c",
+              "version": 1
+            },
+            {
+              "key": "source:6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+              "version": 1
+            },
+            {
+              "key": "edge:02989af2-1200-4b17-ad77-8e46728d09a9",
+              "version": 1
+            },
+            {
+              "key": "node:3944ad65-07f7-4d93-a7cd-3540ca286e40",
+              "version": 1
+            },
+            {
+              "key": "node:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a",
+              "version": 1
+            },
+            {
+              "key": "node:3fc03004-8706-41ed-a1c3-d557aef49818",
+              "version": 1
+            },
+            {
+              "key": "node:6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+              "version": 1
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:happen:out",
+              "version": 1
+            },
+            {
+              "key": "relations:2d11f81d-082a-4544-a0b9-b7165c3bf733:interpret:out",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:status:out",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:status:in",
+              "version": 2
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:interpret:in",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:has:out",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:effect:in",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:see:out",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:happen:out",
+              "version": 0
+            },
+            {
+              "key": "relations:48d52bc4-6cc8-486a-87e2-00ccca9e2c8a:interpret:out",
+              "version": 0
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:status:out",
+              "version": 1
+            },
+            {
+              "key": "relations:d9cddeba-00eb-4e24-ab07-1b1bb3ae0571:status:out",
+              "version": 1
+            },
+            {
+              "key": "node:d9cddeba-00eb-4e24-ab07-1b1bb3ae0571",
+              "version": 1
+            },
+            {
+              "key": "node:0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+              "version": 1
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:status:in",
+              "version": 1
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:interpret:in",
+              "version": 0
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:has:out",
+              "version": 0
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:effect:in",
+              "version": 1
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:see:out",
+              "version": 2
+            },
+            {
+              "key": "source:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e",
+              "version": 2
+            },
+            {
+              "key": "edge:7ebbf451-88df-4a1b-accd-b9c22b510510",
+              "version": 1
+            },
+            {
+              "key": "edge:9a8dc3d5-d9f6-4da8-a035-86a37031667f",
+              "version": 1
+            },
+            {
+              "key": "edge:6d917c0a-9d42-432e-a9d1-777e02e611d4",
+              "version": 1
+            },
+            {
+              "key": "node:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e",
+              "version": 1
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:happen:out",
+              "version": 1
+            },
+            {
+              "key": "relations:0a77ba14-562e-4c95-91ce-38e3bc3502bb:interpret:out",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:status:out",
+              "version": 2
+            },
+            {
+              "key": "relations:a05bcdbb-806b-4bf5-a3d9-55fea7565a54:status:out",
+              "version": 1
+            },
+            {
+              "key": "node:a05bcdbb-806b-4bf5-a3d9-55fea7565a54",
+              "version": 1
+            },
+            {
+              "key": "relations:cf3c8598-a0f6-4799-8acb-b7d56d84d4dc:status:out",
+              "version": 1
+            },
+            {
+              "key": "node:cf3c8598-a0f6-4799-8acb-b7d56d84d4dc",
+              "version": 1
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:status:in",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:interpret:in",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:has:out",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:effect:in",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:see:out",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:happen:out",
+              "version": 0
+            },
+            {
+              "key": "relations:c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e:interpret:out",
+              "version": 0
+            }
+          ],
+          "projection": {
+            "type": "propose",
+            "changes": {
+              "edges": [
+                {
+                  "id": "62bd19d4-3bdd-4b5d-a342-9fc103ba8235",
+                  "kind": "status",
+                  "role": "content",
+                  "period": {
+                    "from": 0
+                  },
+                  "source": "c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e",
+                  "target": "82ad8072-06a2-461e-a5e0-bf9ec915b496"
+                },
+                {
+                  "id": "f4414fbe-370e-47bd-affd-157788c6e2ba",
+                  "kind": "status",
+                  "role": "about",
+                  "period": {
+                    "from": 0
+                  },
+                  "source": "82ad8072-06a2-461e-a5e0-bf9ec915b496",
+                  "target": "48d52bc4-6cc8-486a-87e2-00ccca9e2c8a"
+                },
+                {
+                  "id": "65d21a97-3915-47f2-ab27-d019f031446e",
+                  "kind": "status",
+                  "role": "about",
+                  "period": {
+                    "from": 0
+                  },
+                  "source": "82ad8072-06a2-461e-a5e0-bf9ec915b496",
+                  "target": "0a77ba14-562e-4c95-91ce-38e3bc3502bb"
+                },
+                {
+                  "id": "5c735e4c-8296-4ce3-aea5-cf66365d1c8c",
+                  "kind": "status",
+                  "role": "content",
+                  "period": {
+                    "from": 0
+                  },
+                  "source": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "target": "2295a149-b92d-40da-a8d5-bad6bd5e1ede"
+                },
+                {
+                  "id": "2a02e250-64e6-496b-aac6-3bbf008cea4b",
+                  "kind": "status",
+                  "role": "about",
+                  "period": {
+                    "from": 0
+                  },
+                  "source": "2295a149-b92d-40da-a8d5-bad6bd5e1ede",
+                  "target": "2d11f81d-082a-4544-a0b9-b7165c3bf733"
+                },
+                {
+                  "id": "2766d1c3-983f-4c0a-a779-a3be9c88d666",
+                  "kind": "status",
+                  "role": "about",
+                  "period": {
+                    "from": 0
+                  },
+                  "source": "2295a149-b92d-40da-a8d5-bad6bd5e1ede",
+                  "target": "c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e"
+                },
+                {
+                  "id": "051d6593-b6af-427e-aaa4-f9d689d77adc",
+                  "kind": "see",
+                  "text": "広場から木橋と橋守のミナが見え、橋は通行が止められている。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "target": "48d52bc4-6cc8-486a-87e2-00ccca9e2c8a",
+                  "observation": {
+                    "aspect": "広場から木橋と橋守のミナが見え、橋は通行が止められている。",
+                    "pathIds": [],
+                    "through": 0,
+                    "sourceIds": [
+                      "48d52bc4-6cc8-486a-87e2-00ccca9e2c8a",
+                      "c2ea2fef-e2f8-42c8-8eff-96a63a4ee50e"
+                    ]
+                  }
+                },
+                {
+                  "id": "65d3d210-3495-460d-a130-f248a5850c34",
+                  "kind": "happen",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "target": "1ad6a6a1-b164-4254-af43-e9c8243cc8bd"
+                },
+                {
+                  "id": "4c7a4cae-67bc-437c-ae3a-aad18526f31f",
+                  "kind": "effect",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "1ad6a6a1-b164-4254-af43-e9c8243cc8bd",
+                  "target": "2d11f81d-082a-4544-a0b9-b7165c3bf733"
+                },
+                {
+                  "id": "ebbde965-02e8-4e4a-a8a4-d311646a39fa",
+                  "kind": "see",
+                  "text": "自分は広場の村人に向かって橋の様子を尋ね、返事を待っている。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "target": "1ad6a6a1-b164-4254-af43-e9c8243cc8bd",
+                  "observation": {
+                    "aspect": "自分は広場の村人に向かって橋の様子を尋ね、返事を待っている。",
+                    "pathIds": ["4c7a4cae-67bc-437c-ae3a-aad18526f31f"],
+                    "through": 0,
+                    "sourceIds": ["1ad6a6a1-b164-4254-af43-e9c8243cc8bd"]
+                  }
+                },
+                {
+                  "id": "461cc81c-ac9f-4e33-ae8c-30eaa696a428",
+                  "kind": "effect",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "1ad6a6a1-b164-4254-af43-e9c8243cc8bd",
+                  "target": "0a77ba14-562e-4c95-91ce-38e3bc3502bb"
+                },
+                {
+                  "id": "55f0e98d-6c33-4a84-aad5-8ab01930d36e",
+                  "kind": "see",
+                  "text": "ソラが広場の村人に向けて、橋の様子について何か知っていることはないかと尋ねる声が聞こえた。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "target": "1ad6a6a1-b164-4254-af43-e9c8243cc8bd",
+                  "observation": {
+                    "aspect": "ソラが広場の村人に向けて、橋の様子について何か知っていることはないかと尋ねる声が聞こえた。",
+                    "pathIds": ["461cc81c-ac9f-4e33-ae8c-30eaa696a428"],
+                    "through": 0,
+                    "sourceIds": ["1ad6a6a1-b164-4254-af43-e9c8243cc8bd"]
+                  }
+                },
+                {
+                  "id": "cc43bab7-2f38-48f5-a427-abfaebf81aa0",
+                  "kind": "happen",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "target": "a48cc013-37bf-4936-ae00-ccab55880ee7"
+                },
+                {
+                  "id": "0decb973-9390-4418-a08d-227da8e4b838",
+                  "kind": "effect",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "a48cc013-37bf-4936-ae00-ccab55880ee7",
+                  "target": "2d11f81d-082a-4544-a0b9-b7165c3bf733"
+                },
+                {
+                  "id": "29ed1345-adc6-48f5-a61a-ba3c2f07c00a",
+                  "kind": "see",
+                  "text": "ミナが礼に短く応え、橋は渡らないよう改めて念を押した。広場の人々にも聞こえるように、床板の一部が腐っていて全体の傷みは未確認だと伝え、迂回路や別の渡河地点は知らないので知っていそうな人に尋ねるよう勧めてくれた。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "target": "a48cc013-37bf-4936-ae00-ccab55880ee7",
+                  "observation": {
+                    "aspect": "ミナが礼に短く応え、橋は渡らないよう改めて念を押した。広場の人々にも聞こえるように、床板の一部が腐っていて全体の傷みは未確認だと伝え、迂回路や別の渡河地点は知らないので知っていそうな人に尋ねるよう勧めてくれた。",
+                    "pathIds": ["0decb973-9390-4418-a08d-227da8e4b838"],
+                    "through": 0,
+                    "sourceIds": ["a48cc013-37bf-4936-ae00-ccab55880ee7"]
+                  }
+                },
+                {
+                  "id": "59947b42-a2dd-4cb5-a68f-0f9821ebc8cf",
+                  "kind": "effect",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "a48cc013-37bf-4936-ae00-ccab55880ee7",
+                  "target": "0a77ba14-562e-4c95-91ce-38e3bc3502bb"
+                },
+                {
+                  "id": "7a0c6484-fd58-4085-a8c5-002a5405bead",
+                  "kind": "see",
+                  "text": "自分はソラの礼に短く応え、橋を渡らないよう念を押した。見た範囲(床板の一部の腐れ、全体は未確認)を広場に聞こえるよう伝え、迂回路は知らないので知っていそうな人に尋ねるようソラに勧めた。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "target": "a48cc013-37bf-4936-ae00-ccab55880ee7",
+                  "observation": {
+                    "aspect": "自分はソラの礼に短く応え、橋を渡らないよう念を押した。見た範囲(床板の一部の腐れ、全体は未確認)を広場に聞こえるよう伝え、迂回路は知らないので知っていそうな人に尋ねるようソラに勧めた。",
+                    "pathIds": ["59947b42-a2dd-4cb5-a68f-0f9821ebc8cf"],
+                    "through": 0,
+                    "sourceIds": ["a48cc013-37bf-4936-ae00-ccab55880ee7"]
+                  }
+                },
+                {
+                  "id": "6f2f31fc-6fd9-474d-a9f0-2dbb396a48fe",
+                  "kind": "happen",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "target": "9da72fd0-357d-4525-ad88-17b3fc8734fe"
+                },
+                {
+                  "id": "7bc9365a-789b-4860-a0d6-d57698871fff",
+                  "kind": "effect",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "9da72fd0-357d-4525-ad88-17b3fc8734fe",
+                  "target": "2d11f81d-082a-4544-a0b9-b7165c3bf733"
+                },
+                {
+                  "id": "8544f5e3-077b-426a-ae76-ce233f924b36",
+                  "kind": "see",
+                  "text": "自分はミナに、教えてくれたことへの礼を伝えた。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "2d11f81d-082a-4544-a0b9-b7165c3bf733",
+                  "target": "9da72fd0-357d-4525-ad88-17b3fc8734fe",
+                  "observation": {
+                    "aspect": "自分はミナに、教えてくれたことへの礼を伝えた。",
+                    "pathIds": ["7bc9365a-789b-4860-a0d6-d57698871fff"],
+                    "through": 0,
+                    "sourceIds": ["9da72fd0-357d-4525-ad88-17b3fc8734fe"]
+                  }
+                },
+                {
+                  "id": "2180c1b4-d46f-4608-a0d1-1112f0dc897c",
+                  "kind": "effect",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "9da72fd0-357d-4525-ad88-17b3fc8734fe",
+                  "target": "0a77ba14-562e-4c95-91ce-38e3bc3502bb"
+                },
+                {
+                  "id": "12643dc9-29cb-4863-aa76-b4bae7d71628",
+                  "kind": "see",
+                  "text": "ソラが自分に向き直り、教えたことへの礼を伝えてきた。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  },
+                  "source": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+                  "target": "9da72fd0-357d-4525-ad88-17b3fc8734fe",
+                  "observation": {
+                    "aspect": "ソラが自分に向き直り、教えたことへの礼を伝えてきた。",
+                    "pathIds": ["2180c1b4-d46f-4608-a0d1-1112f0dc897c"],
+                    "through": 0,
+                    "sourceIds": ["9da72fd0-357d-4525-ad88-17b3fc8734fe"]
+                  }
+                }
+              ],
+              "nodes": [
+                {
+                  "id": "82ad8072-06a2-461e-a5e0-bf9ec915b496",
+                  "kind": "script",
+                  "text": "木橋は村の広場の手前に面しており、床板の一部が腐っている。橋守が通行を止めており、傷んだ範囲の全体は未確認である。"
+                },
+                {
+                  "id": "2295a149-b92d-40da-a8d5-bad6bd5e1ede",
+                  "kind": "script",
+                  "text": "橋守のミナは広場でソラと声が届く距離にいて、橋の通行を止めている。"
+                },
+                {
+                  "id": "1ad6a6a1-b164-4254-af43-e9c8243cc8bd",
+                  "kind": "event",
+                  "text": "ソラは広場にいる村人に向かって、「この橋の様子について、何かご存じのことはありませんか」と尋ね、返事を待った。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  }
+                },
+                {
+                  "id": "a48cc013-37bf-4936-ae00-ccab55880ee7",
+                  "kind": "event",
+                  "text": "ミナはソラの礼に「いえ」と短く応え、「橋は渡らないでください」と改めて念を押した。続けて広場の村人たちにも聞こえるよう、「床板の一部が腐っています。ただ、傷みの全体はまだ確認できていません」と、自分が見た範囲を簡潔に伝えた。さらにソラに、「迂回路や別の渡河地点は私は知りません。知っていそうな人がいれば、声をかけて尋ねてみてください」と勧めた。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  }
+                },
+                {
+                  "id": "9da72fd0-357d-4525-ad88-17b3fc8734fe",
+                  "kind": "event",
+                  "text": "ソラはミナに向き直り、「教えてくださってありがとうございます」と礼を伝えた。",
+                  "period": {
+                    "from": 0,
+                    "until": 0
+                  }
+                }
+              ],
+              "endEdges": [],
+              "revisions": []
+            },
+            "summary": "広場での局所シーンを反映。アンカーに含まれる発言・受容・橋と二人の状態以外に追加すべき状態変化や作用はなく、開始時のstatusを終了させる出来事もなかったため追加変更なし。ミナの意図(ソラが急ぎの事情を話した場合の手伝いの申し出、新情報が出た際の通行止め見直し)はソラの返答待ちで未完了のため、deferredとして保持する。ソラの意図(礼を伝える)はシーン内で実行済みのため完了とする。",
+            "wakeups": [],
+            "continuation": "ミナはソラの返答や新たな情報を待っている。迂回路や橋の専門的な見立てが出てくれば、通行止めの扱いを見直す。",
+            "resolvedUntil": 0,
+            "settledIntentions": [
+              {
+                "reason": "教えてくれたことへの礼をミナに伝える意図は、シーン内で実際に伝えられて完了した。",
+                "actorId": "2d11f81d-082a-4544-a0b9-b7165c3bf733"
+              }
+            ],
+            "deferredIntentions": ["0a77ba14-562e-4c95-91ce-38e3bc3502bb"]
+          }
+        },
+        "recording": "recorded"
+      }
+    ]
+  },
+  "measurement": {
+    "manifestId": "c1ec20a99a6ebc48835977f4099b02e31f1c3831112a9299a94105872e6c8643",
+    "metricVersion": "presentation-v1",
+    "weights": {
+      "version": "unit-v1",
+      "values": {
+        "node": 1,
+        "edge": 1,
+        "aspect": 1,
+        "update": 1
+      },
+      "rationale": "全区分1の未校正の基準値。満足度や意味的重要度を表さない。"
+    },
+    "requestedScenes": 2,
+    "actualScenes": 2,
+    "status": "complete",
+    "total": {
+      "counts": {
+        "node": 7,
+        "edge": 2,
+        "aspect": 0,
+        "update": 0
+      },
+      "origins": {
+        "reference": 9,
+        "generated": 0
+      },
+      "observedValue": 9,
+      "value": 9,
+      "coverage": {
+        "presentations": 10,
+        "mapped": 10,
+        "ratio": 1
+      },
+      "missing": [],
+      "inputCount": 4,
+      "perInput": 0,
+      "calls": 14,
+      "calculatedNanoUsd": "285227900",
+      "knownNanoUsd": "285227900",
+      "costMissing": false,
+      "modelCallMs": 77788,
+      "responseWaitMs": 34773,
+      "perUsd": 31.553715467526146,
+      "perWaitSecond": 0.25882149943922006
+    },
+    "missingScenes": [],
+    "priorMissingScenes": [],
+    "scenes": [
+      {
+        "id": "9d33111b-4ab0-407e-abf6-695f3ed5e450",
+        "state": "result",
+        "revision": "7af0cfe37a15bbeca5fc089dad5b5c1664a266c271f8e231107f1a818b5fa16e",
+        "counts": {
+          "node": 2,
+          "edge": 2,
+          "aspect": 0,
+          "update": 0
+        },
+        "origins": {
+          "reference": 4,
+          "generated": 0
+        },
+        "observedValue": 4,
+        "value": 4,
+        "coverage": {
+          "presentations": 5,
+          "mapped": 5,
+          "ratio": 1
+        },
+        "missing": [],
+        "inputs": [
+          {
+            "id": "eac18d53-6bfc-48de-b9a4-dbc8c56010b4",
+            "state": "complete",
+            "counts": {
+              "node": 0,
+              "edge": 0,
+              "aspect": 0,
+              "update": 0
+            },
+            "origins": {
+              "reference": 0,
+              "generated": 0
+            },
+            "observedValue": 0,
+            "value": 0,
+            "coverage": {
+              "presentations": 2,
+              "mapped": 2,
+              "ratio": 1
+            },
+            "missing": [],
+            "calls": 3,
+            "calculatedNanoUsd": "37078000",
+            "knownNanoUsd": "37078000",
+            "costMissing": false,
+            "modelCallMs": 11799,
+            "responseWaitMs": 11919,
+            "perUsd": 0,
+            "perWaitSecond": 0
+          },
+          {
+            "id": "20244480-01b2-4fcf-ac2b-e04a21168918",
+            "state": "complete",
+            "counts": {
+              "node": 0,
+              "edge": 0,
+              "aspect": 0,
+              "update": 0
+            },
+            "origins": {
+              "reference": 0,
+              "generated": 0
+            },
+            "observedValue": 0,
+            "value": 0,
+            "coverage": {
+              "presentations": 1,
+              "mapped": 1,
+              "ratio": 1
+            },
+            "missing": [],
+            "calls": 1,
+            "calculatedNanoUsd": "16004000",
+            "knownNanoUsd": "16004000",
+            "costMissing": false,
+            "modelCallMs": 2454,
+            "responseWaitMs": 2505,
+            "perUsd": 0,
+            "perWaitSecond": 0
+          }
+        ],
+        "kinds": {
+          "synopsis": {
+            "counts": {
+              "node": 2,
+              "edge": 2,
+              "aspect": 0,
+              "update": 0
+            },
+            "origins": {
+              "reference": 4,
+              "generated": 0
+            },
+            "observedValue": 4,
+            "value": 4,
+            "coverage": {
+              "presentations": 1,
+              "mapped": 1,
+              "ratio": 1
+            },
+            "missing": []
+          },
+          "response": {
+            "counts": {
+              "node": 0,
+              "edge": 0,
+              "aspect": 0,
+              "update": 0
+            },
+            "origins": {
+              "reference": 0,
+              "generated": 0
+            },
+            "observedValue": 0,
+            "value": 0,
+            "coverage": {
+              "presentations": 3,
+              "mapped": 3,
+              "ratio": 1
+            },
+            "missing": []
+          },
+          "result": {
+            "counts": {
+              "node": 0,
+              "edge": 0,
+              "aspect": 0,
+              "update": 0
+            },
+            "origins": {
+              "reference": 0,
+              "generated": 0
+            },
+            "observedValue": 0,
+            "value": 0,
+            "coverage": {
+              "presentations": 1,
+              "mapped": 1,
+              "ratio": 1
+            },
+            "missing": []
+          }
+        },
+        "calls": 7,
+        "calculatedNanoUsd": "141223500",
+        "knownNanoUsd": "141223500",
+        "costMissing": false,
+        "modelCallMs": 35304,
+        "responseWaitMs": 14424,
+        "perUsd": 28.32389793483379,
+        "perWaitSecond": 0.27731558513588467
+      },
+      {
+        "id": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+        "state": "result",
+        "revision": "2c356008a2e42e1a2438e9b4d419cfb75889e503f89179e5c946d016177100f8",
+        "counts": {
+          "node": 5,
+          "edge": 0,
+          "aspect": 0,
+          "update": 0
+        },
+        "origins": {
+          "reference": 5,
+          "generated": 0
+        },
+        "observedValue": 5,
+        "value": 5,
+        "coverage": {
+          "presentations": 5,
+          "mapped": 5,
+          "ratio": 1
+        },
+        "missing": [],
+        "inputs": [
+          {
+            "id": "904ce841-e034-4da4-b875-62377049e1d1",
+            "state": "complete",
+            "counts": {
+              "node": 0,
+              "edge": 0,
+              "aspect": 0,
+              "update": 0
+            },
+            "origins": {
+              "reference": 0,
+              "generated": 0
+            },
+            "observedValue": 0,
+            "value": 0,
+            "coverage": {
+              "presentations": 2,
+              "mapped": 2,
+              "ratio": 1
+            },
+            "missing": [],
+            "calls": 3,
+            "calculatedNanoUsd": "24603800",
+            "knownNanoUsd": "24603800",
+            "costMissing": false,
+            "modelCallMs": 16076,
+            "responseWaitMs": 16248,
+            "perUsd": 0,
+            "perWaitSecond": 0
+          },
+          {
+            "id": "c403ba54-752f-4d9f-9bd5-e78241a4d07b",
+            "state": "complete",
+            "counts": {
+              "node": 0,
+              "edge": 0,
+              "aspect": 0,
+              "update": 0
+            },
+            "origins": {
+              "reference": 0,
+              "generated": 0
+            },
+            "observedValue": 0,
+            "value": 0,
+            "coverage": {
+              "presentations": 1,
+              "mapped": 1,
+              "ratio": 1
+            },
+            "missing": [],
+            "calls": 1,
+            "calculatedNanoUsd": "12512000",
+            "knownNanoUsd": "12512000",
+            "costMissing": false,
+            "modelCallMs": 4047,
+            "responseWaitMs": 4101,
+            "perUsd": 0,
+            "perWaitSecond": 0
+          }
+        ],
+        "kinds": {
+          "synopsis": {
+            "counts": {
+              "node": 5,
+              "edge": 0,
+              "aspect": 0,
+              "update": 0
+            },
+            "origins": {
+              "reference": 5,
+              "generated": 0
+            },
+            "observedValue": 5,
+            "value": 5,
+            "coverage": {
+              "presentations": 1,
+              "mapped": 1,
+              "ratio": 1
+            },
+            "missing": []
+          },
+          "response": {
+            "counts": {
+              "node": 0,
+              "edge": 0,
+              "aspect": 0,
+              "update": 0
+            },
+            "origins": {
+              "reference": 0,
+              "generated": 0
+            },
+            "observedValue": 0,
+            "value": 0,
+            "coverage": {
+              "presentations": 3,
+              "mapped": 3,
+              "ratio": 1
+            },
+            "missing": []
+          },
+          "result": {
+            "counts": {
+              "node": 0,
+              "edge": 0,
+              "aspect": 0,
+              "update": 0
+            },
+            "origins": {
+              "reference": 0,
+              "generated": 0
+            },
+            "observedValue": 0,
+            "value": 0,
+            "coverage": {
+              "presentations": 1,
+              "mapped": 1,
+              "ratio": 1
+            },
+            "missing": []
+          }
+        },
+        "calls": 7,
+        "calculatedNanoUsd": "144004400",
+        "knownNanoUsd": "144004400",
+        "costMissing": false,
+        "modelCallMs": 42484,
+        "responseWaitMs": 20349,
+        "perUsd": 34.72116129784923,
+        "perWaitSecond": 0.2457123200157256
+      }
+    ],
+    "diffs": [
+      {
+        "presentationId": "d9b0105a-07f8-4274-ad67-2c4490f01238",
+        "sceneId": "9d33111b-4ab0-407e-abf6-695f3ed5e450",
+        "inputId": null,
+        "kind": "synopsis",
+        "missing": false,
+        "elements": [
+          {
+            "kind": "edge",
+            "id": "df9fa7d5-b67d-4d40-b1d3-7744306cb8fd",
+            "aspect": "ソラの観測",
+            "state": "広場で木橋とミナが見える",
+            "version": "1",
+            "at": 0,
+            "origin": "reference",
+            "evidence": "木橋の手前にある村の広場。旅人ソラの目の前には村の木橋があり",
+            "category": "edge"
+          },
+          {
+            "kind": "node",
+            "id": "cf3c8598-a0f6-4799-8acb-b7d56d84d4dc",
+            "aspect": "木橋の状態",
+            "state": "床板の一部が腐り通行止め",
+            "version": null,
+            "at": 0,
+            "origin": "reference",
+            "evidence": "床板の一部が腐っているため、橋守のミナが通行を止めている",
+            "category": "node"
+          },
+          {
+            "kind": "edge",
+            "id": "ccf412a7-4d71-495b-a744-a575d4d53e27",
+            "aspect": "木橋の現在状態",
+            "state": "通行止め",
+            "version": null,
+            "at": 0,
+            "origin": "reference",
+            "evidence": "橋守のミナが通行を止めている",
+            "category": "edge"
+          },
+          {
+            "kind": "node",
+            "id": "0a77ba14-562e-4c95-91ce-38e3bc3502bb",
+            "aspect": "ミナの位置",
+            "state": "ソラと声が届く距離",
+            "version": null,
+            "at": 0,
+            "origin": "reference",
+            "evidence": "ミナとソラは広場で声が届く距離にいる",
+            "category": "node"
+          }
+        ]
+      },
+      {
+        "presentationId": "3d68dfd7-3785-4409-aaf9-3c0b71efc630",
+        "sceneId": "9d33111b-4ab0-407e-abf6-695f3ed5e450",
+        "inputId": "eac18d53-6bfc-48de-b9a4-dbc8c56010b4",
+        "kind": "response",
+        "missing": false,
+        "elements": []
+      },
+      {
+        "presentationId": "d55ff475-b432-4e3d-ad7d-882e6c021707",
+        "sceneId": "9d33111b-4ab0-407e-abf6-695f3ed5e450",
+        "inputId": "eac18d53-6bfc-48de-b9a4-dbc8c56010b4",
+        "kind": "response",
+        "missing": false,
+        "elements": [
+          {
+            "kind": "node",
+            "id": "cf3c8598-a0f6-4799-8acb-b7d56d84d4dc",
+            "aspect": "木橋の状態",
+            "state": "床板の一部が腐り通行止め",
+            "version": null,
+            "at": 0,
+            "origin": "reference",
+            "evidence": "床板の一部が腐っていて、今は通行を止めています",
+            "category": "repeat"
+          },
+          {
+            "kind": "edge",
+            "id": "ccf412a7-4d71-495b-a744-a575d4d53e27",
+            "aspect": "木橋の現在状態",
+            "state": "通行止め",
+            "version": null,
+            "at": 0,
+            "origin": "reference",
+            "evidence": "渡るのは待ってください",
+            "category": "repeat"
+          }
+        ]
+      },
+      {
+        "presentationId": "d3921e91-b8b9-4c49-a79e-cf5298961a10",
+        "sceneId": "9d33111b-4ab0-407e-abf6-695f3ed5e450",
+        "inputId": "20244480-01b2-4fcf-ac2b-e04a21168918",
+        "kind": "response",
+        "missing": false,
+        "elements": []
+      },
+      {
+        "presentationId": "388a6e98-2aee-4f24-ac7c-e1f3b9d6b6b4",
+        "sceneId": "9d33111b-4ab0-407e-abf6-695f3ed5e450",
+        "inputId": null,
+        "kind": "result",
+        "missing": false,
+        "elements": [
+          {
+            "kind": "node",
+            "id": "cf3c8598-a0f6-4799-8acb-b7d56d84d4dc",
+            "aspect": "木橋の状態",
+            "state": "床板の一部が腐り通行止め",
+            "version": null,
+            "at": 0,
+            "origin": "reference",
+            "evidence": "床板の一部が腐っていて通行止めであること",
+            "category": "repeat"
+          },
+          {
+            "kind": "edge",
+            "id": "ccf412a7-4d71-495b-a744-a575d4d53e27",
+            "aspect": "木橋の現在状態",
+            "state": "通行止め",
+            "version": null,
+            "at": 0,
+            "origin": "reference",
+            "evidence": "橋は引き続き通行止めです。",
+            "category": "repeat"
+          }
+        ]
+      },
+      {
+        "presentationId": "d5ef2278-7d81-46d1-a2d3-1300ea7962f6",
+        "sceneId": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+        "inputId": null,
+        "kind": "synopsis",
+        "missing": false,
+        "elements": [
+          {
+            "kind": "node",
+            "id": "48d52bc4-6cc8-486a-87e2-00ccca9e2c8a",
+            "aspect": "場所",
+            "state": "木橋の手前の村の広場",
+            "version": "1",
+            "at": 0,
+            "origin": "reference",
+            "evidence": "村の広場。木橋の手前に旅人ソラが立ち",
+            "category": "node"
+          },
+          {
+            "kind": "node",
+            "id": "d9cddeba-00eb-4e24-ab07-1b1bb3ae0571",
+            "aspect": "ソラとミナの位置関係",
+            "state": "広場で声が届く距離",
+            "version": null,
+            "at": 0,
+            "origin": "reference",
+            "evidence": "橋守のミナとは声が届く距離にいる",
+            "category": "node"
+          },
+          {
+            "kind": "node",
+            "id": "a05bcdbb-806b-4bf5-a3d9-55fea7565a54",
+            "aspect": "橋の状態",
+            "state": "床板の一部が腐り通行止め",
+            "version": null,
+            "at": 0,
+            "origin": "reference",
+            "evidence": "橋は床板の一部が腐っていて、ミナが通行を止めている",
+            "category": "node"
+          },
+          {
+            "kind": "node",
+            "id": "3944ad65-07f7-4d93-a7cd-3540ca286e40",
+            "aspect": "ミナの警告",
+            "state": "全体は未確認で待つよう伝えた",
+            "version": "1",
+            "at": 0,
+            "origin": "reference",
+            "evidence": "傷んだ範囲の全体はまだ確認できておらず安全とは言えないので渡るのを待ってほしいと伝え",
+            "category": "node"
+          },
+          {
+            "kind": "node",
+            "id": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+            "aspect": "ソラの礼",
+            "state": "礼を伝えた",
+            "version": "1",
+            "at": 0,
+            "origin": "reference",
+            "evidence": "ソラは礼を返したところで",
+            "category": "node"
+          }
+        ]
+      },
+      {
+        "presentationId": "9504d4c2-858f-4136-a76f-175640abc9ff",
+        "sceneId": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+        "inputId": "904ce841-e034-4da4-b875-62377049e1d1",
+        "kind": "response",
+        "missing": false,
+        "elements": []
+      },
+      {
+        "presentationId": "80a5d0fc-12b0-481e-aec5-8977640490b9",
+        "sceneId": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+        "inputId": "904ce841-e034-4da4-b875-62377049e1d1",
+        "kind": "response",
+        "missing": false,
+        "elements": []
+      },
+      {
+        "presentationId": "f7c4af97-9f54-4efb-ac10-83144870ce03",
+        "sceneId": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+        "inputId": "c403ba54-752f-4d9f-9bd5-e78241a4d07b",
+        "kind": "response",
+        "missing": false,
+        "elements": [
+          {
+            "kind": "node",
+            "id": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+            "aspect": "ソラの礼",
+            "state": "礼を伝えた",
+            "version": "1",
+            "at": 0,
+            "origin": "reference",
+            "evidence": "「教えてくださってありがとうございます」と礼を伝えた",
+            "category": "repeat"
+          }
+        ]
+      },
+      {
+        "presentationId": "03784006-79b1-44dc-a798-ab10d2564be1",
+        "sceneId": "2269328c-fb88-4174-a402-7eb78d0f4f2f",
+        "inputId": null,
+        "kind": "result",
+        "missing": false,
+        "elements": [
+          {
+            "kind": "node",
+            "id": "a05bcdbb-806b-4bf5-a3d9-55fea7565a54",
+            "aspect": "橋の状態",
+            "state": "床板の一部が腐り通行止め",
+            "version": null,
+            "at": 0,
+            "origin": "reference",
+            "evidence": "橋はミナによって通行が止められたままです。",
+            "category": "repeat"
+          },
+          {
+            "kind": "node",
+            "id": "3944ad65-07f7-4d93-a7cd-3540ca286e40",
+            "aspect": "ミナの警告",
+            "state": "全体は未確認で待つよう伝えた",
+            "version": "1",
+            "at": 0,
+            "origin": "reference",
+            "evidence": "ミナは、床板の一部が腐っていて、傷んだ範囲の全体はまだ確認できていないと、広場の人々にも聞こえるように伝えました。",
+            "category": "repeat"
+          },
+          {
+            "kind": "node",
+            "id": "6cd8cefb-742f-46d4-ada7-70bf4dca683e",
+            "aspect": "ソラの礼",
+            "state": "礼を伝えた",
+            "version": "1",
+            "at": 0,
+            "origin": "reference",
+            "evidence": "ソラはミナに礼を伝えました。",
+            "category": "repeat"
+          }
+        ]
+      }
+    ],
+    "lowRuns": [
+      {
+        "inputIds": [
+          "eac18d53-6bfc-48de-b9a4-dbc8c56010b4",
+          "20244480-01b2-4fcf-ac2b-e04a21168918",
+          "904ce841-e034-4da4-b875-62377049e1d1",
+          "c403ba54-752f-4d9f-9bd5-e78241a4d07b"
+        ],
+        "length": 4
+      }
+    ],
+    "longestLowRun": 4,
+    "limitations": [
+      "構造化対応と本文の意味的一致はLLM検品の対象。別IDの同義情報は決定論では除外しない。",
+      "提供はサーバー出力としての提供可能時点。閲読・理解やネットワーク待ちを推定しない。",
+      "費用は既存台帳の計算額。準備・反映費用を入力へ按分しない。"
+    ]
+  },
+  "evaluation": {
+    "runId": "872204bf-9e5d-485b-98ac-7f91bb8da4fc",
+    "manifestId": "c1ec20a99a6ebc48835977f4099b02e31f1c3831112a9299a94105872e6c8643",
+    "configuration": {
+      "target": "resolution",
+      "budgetUsd": 60,
+      "configurationVersion": 1
+    },
+    "skill": {
+      "version": "narrative-inspection-v1",
+      "rubricVersion": "meaning-v1",
+      "hash": "7181f0a1367aff5607b9c68c16a8c4af2a45d60fd3b1c938ec3341872443cd7a"
+    },
+    "status": "partial",
+    "assessment": {
+      "inputs": [
+        {
+          "inputId": "eac18d53-6bfc-48de-b9a4-dbc8c56010b4",
+          "units": [
+            {
+              "text": "傷んだ範囲の全体は未確認で、安全とは言えないので渡るのを待ってほしい、とミナが述べた。",
+              "category": "update",
+              "importance": 2,
+              "evidence": [
+                {
+                  "presentationId": "d55ff475-b432-4e3d-ad7d-882e6c021707",
+                  "quote": "傷んだ範囲の全体はまだ確認できておらず安全とは言えない"
+                }
+              ],
+              "explanation": "冒頭のあらすじは「床板の一部が腐っている」ことまでしか示していない。この応答で被害範囲が未確認であることと、渡らない判断の理由が加わり、次の判断材料が変わる。"
+            },
+            {
+              "text": "ミナは迂回路や別の渡河地点を知らない。",
+              "category": "addition",
+              "importance": 2,
+              "evidence": [
+                {
+                  "presentationId": "d55ff475-b432-4e3d-ad7d-882e6c021707",
+                  "quote": "迂回路や別の渡河地点は知らない"
+                }
+              ],
+              "explanation": "橋以外の手段を探す選択に直結する新しい情報。ただしミナが知らないだけで、存在しないとは確認されていない。"
+            },
+            {
+              "text": "ミナがソラに、橋について知っていることや急ぎの事情を尋ね、返事を待っている。",
+              "category": "addition",
+              "importance": 2,
+              "evidence": [
+                {
+                  "presentationId": "d55ff475-b432-4e3d-ad7d-882e6c021707",
+                  "quote": "橋について知っていることや急ぎの事情はあるかと私に尋ねて返事を待っている"
+                }
+              ],
+              "explanation": "ミナ側の関心と、ソラが次に話せる材料を示している。会話が続く足がかりになる。"
+            },
+            {
+              "text": "床板の一部が腐って通行止めである。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "d55ff475-b432-4e3d-ad7d-882e6c021707",
+                  "quote": "床板の一部が腐っていて"
+                }
+              ],
+              "explanation": "冒頭のあらすじで提示済みの内容の繰り返し。"
+            },
+            {
+              "text": "ソラが橋の様子を尋ねて返事を待っている。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "3d68dfd7-3785-4409-aaf9-3c0b71efc630",
+                  "quote": "ソラは橋守のミナに橋の様子を尋ね、返事を待っている。"
+                }
+              ],
+              "explanation": "入力の復唱にとどまる。"
+            }
+          ],
+          "responsiveness": "responsive",
+          "principle": "consistent",
+          "principleEvidence": [],
+          "missing": []
+        },
+        {
+          "inputId": "20244480-01b2-4fcf-ac2b-e04a21168918",
+          "units": [
+            {
+              "text": "ソラがミナに礼を伝えた。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "d3921e91-b8b9-4c49-a79e-cf5298961a10",
+                  "quote": "私はミナに、橋の様子を教えてくれたことへの礼を伝えた。"
+                }
+              ],
+              "explanation": "入力の言い換えのみで、ミナの反応や関係の変化はこの応答に書かれていない。"
+            }
+          ],
+          "responsiveness": "unresponsive",
+          "principle": "consistent",
+          "principleEvidence": [],
+          "missing": [
+            "ミナの反応は次のシーンの応答（80a5d0fc）で初めて示される。この入力の応答内では確認できない。"
+          ]
+        },
+        {
+          "inputId": "904ce841-e034-4da4-b875-62377049e1d1",
+          "units": [
+            {
+              "text": "ミナが礼に短く応え、橋は渡らないよう改めて念を押した。",
+              "category": "addition",
+              "importance": 1,
+              "evidence": [
+                {
+                  "presentationId": "80a5d0fc-12b0-481e-aec5-8977640490b9",
+                  "quote": "ミナが礼に短く応え、橋は渡らないよう改めて念を押した。"
+                }
+              ],
+              "explanation": "前の礼に対するミナの反応が初めて示される。人物の応じ方は分かるが、理解の変化は小さい。"
+            },
+            {
+              "text": "ミナは広場の人々にも聞こえるように警告を伝えた。",
+              "category": "addition",
+              "importance": 1,
+              "evidence": [
+                {
+                  "presentationId": "80a5d0fc-12b0-481e-aec5-8977640490b9",
+                  "quote": "広場の人々にも聞こえるように"
+                }
+              ],
+              "explanation": "ミナが周囲にも注意を促す人物であることが分かる。局所的な情報。"
+            },
+            {
+              "text": "迂回路について、知っていそうな人に尋ねるようミナが勧めた。",
+              "category": "addition",
+              "importance": 2,
+              "evidence": [
+                {
+                  "presentationId": "80a5d0fc-12b0-481e-aec5-8977640490b9",
+                  "quote": "知っていそうな人に尋ねるよう勧めてくれた"
+                }
+              ],
+              "explanation": "次の行動の手がかりを与え、選択の判断材料が変わる。"
+            },
+            {
+              "text": "床板の一部が腐り、傷みの全体は未確認。迂回路は知らない。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "80a5d0fc-12b0-481e-aec5-8977640490b9",
+                  "quote": "床板の一部が腐っていて全体の傷みは未確認だと伝え"
+                }
+              ],
+              "explanation": "前のシーンの応答（d55ff475）で提示済み。"
+            },
+            {
+              "text": "ソラが広場の村人に橋の様子を尋ね、返事を待っている。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "9504d4c2-858f-4136-a76f-175640abc9ff",
+                  "quote": "自分は広場の村人に向かって橋の様子を尋ね、返事を待っている。"
+                }
+              ],
+              "explanation": "入力の復唱。さらに、この入力は前のシーンの入力と同文である。"
+            }
+          ],
+          "responsiveness": "partial",
+          "principle": "violation",
+          "principleEvidence": [
+            {
+              "presentationId": "d5ef2278-7d81-46d1-a2d3-1300ea7962f6",
+              "quote": "これから橋の近くで見える範囲の状態を確かめようとしている",
+              "explanation": "このシーンのあらすじが、プレイヤーの入力にない次の意図をソラの行動として前提にしている。実際の入力は村人への質問であり、この意図とは一致しない。入力を代行して実害が出たとまでは言えないため、違反の候補として扱う。"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "inputId": "c403ba54-752f-4d9f-9bd5-e78241a4d07b",
+          "units": [
+            {
+              "text": "ソラがミナに礼を伝えた。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "f7c4af97-9f54-4efb-ac10-83144870ce03",
+                  "quote": "自分はミナに、教えてくれたことへの礼を伝えた。"
+                }
+              ],
+              "explanation": "前のシーンですでに礼が行われている。入力の復唱であり、ミナの反応もこの応答内にはない。"
+            }
+          ],
+          "responsiveness": "unresponsive",
+          "principle": "consistent",
+          "principleEvidence": [],
+          "missing": []
+        }
+      ],
+      "otherPresentations": [
+        {
+          "presentationId": "d9b0105a-07f8-4274-ad67-2c4490f01238",
+          "units": [
+            {
+              "text": "木橋は床板の一部が腐っており、橋守のミナが通行を止めている。",
+              "category": "addition",
+              "importance": 2,
+              "evidence": [
+                {
+                  "presentationId": "d9b0105a-07f8-4274-ad67-2c4490f01238",
+                  "quote": "床板の一部が腐っているため、橋守のミナが通行を止めている"
+                }
+              ],
+              "explanation": "最初の場面設定で、橋の状態、通行止め、橋守という人物が示される。以降の理解の前提になる。"
+            },
+            {
+              "text": "ミナとソラは広場で声が届く距離にいる。",
+              "category": "addition",
+              "importance": 1,
+              "evidence": [
+                {
+                  "presentationId": "d9b0105a-07f8-4274-ad67-2c4490f01238",
+                  "quote": "ミナとソラは広場で声が届く距離にいる"
+                }
+              ],
+              "explanation": "会話が可能な位置関係を示す局所的な情報。"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "presentationId": "388a6e98-2aee-4f24-ac7c-e1f3b9d6b6b4",
+          "units": [
+            {
+              "text": "橋は引き続き通行止めである。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "388a6e98-2aee-4f24-ac7c-e1f3b9d6b6b4",
+                  "quote": "橋は引き続き通行止めです。"
+                }
+              ],
+              "explanation": "あらすじと応答で提示済み。"
+            },
+            {
+              "text": "迂回路の有無は、ミナが知らないと述べただけで、存在しないとは確認されていない。",
+              "category": "certainty",
+              "importance": 1,
+              "evidence": [
+                {
+                  "presentationId": "388a6e98-2aee-4f24-ac7c-e1f3b9d6b6b4",
+                  "quote": "存在しないとは確認されていません"
+                }
+              ],
+              "explanation": "応答で出た「知らない」を、未確定の事項として整理し直している。確度の明確化にあたり、新しい事実ではない。"
+            },
+            {
+              "text": "ミナの問いへの返事は待たれたままである。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "388a6e98-2aee-4f24-ac7c-e1f3b9d6b6b4",
+                  "quote": "その返事は待たれたままです"
+                }
+              ],
+              "explanation": "応答（d55ff475）で提示済み。"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "presentationId": "d5ef2278-7d81-46d1-a2d3-1300ea7962f6",
+          "units": [
+            {
+              "text": "広場、橋の状態、位置関係、ミナの警告、ソラの礼の再掲。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "d5ef2278-7d81-46d1-a2d3-1300ea7962f6",
+                  "quote": "傷んだ範囲の全体はまだ確認できておらず安全とは言えないので渡るのを待ってほしいと伝え"
+                }
+              ],
+              "explanation": "前のシーンですでに提示された内容の要約であり、新情報はない。"
+            },
+            {
+              "text": "ソラがこれから橋の近くで見える範囲の状態を確かめようとしている。",
+              "category": "addition",
+              "importance": 1,
+              "evidence": [
+                {
+                  "presentationId": "d5ef2278-7d81-46d1-a2d3-1300ea7962f6",
+                  "quote": "これから橋の近くで見える範囲の状態を確かめようとしている"
+                }
+              ],
+              "explanation": "次の行動を示す新しい意図の記述。ただし、プレイヤーが入力していない意図の提示であり、原則適合の面で懸念がある。"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "presentationId": "03784006-79b1-44dc-a798-ab10d2564be1",
+          "units": [
+            {
+              "text": "ミナが礼に応え、念を押し、傷みの全体は未確認で、迂回路は不明という状況の再掲。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "03784006-79b1-44dc-a798-ab10d2564be1",
+                  "quote": "ミナは礼に短く応え、橋は渡らないよう改めて念を押しました。"
+                }
+              ],
+              "explanation": "同じシーンの応答（80a5d0fc）と前のシーンの結果で提示済み。"
+            },
+            {
+              "text": "ソラが橋の近くで見える範囲の状態を確かめようとしているところで、確認の結果はまだない。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "03784006-79b1-44dc-a798-ab10d2564be1",
+                  "quote": "ソラが橋の近くで見える範囲の状態を確かめようとしているところです。"
+                }
+              ],
+              "explanation": "同じシーンのあらすじで提示済み。入力にない意図が結果にも引き継がれている。"
+            }
+          ],
+          "missing": []
+        }
+      ],
+      "overall": {
+        "newInformation": null,
+        "importance": 1.5,
+        "responsiveness": "4入力のうち、responsiveが1件、partialが1件、unresponsiveが2件。2シーンとも、橋の様子を尋ねる入力には、ミナが通行止め・被害範囲の未確認・迂回路は不明という内容で答えている。礼を伝える入力は、2回とも復唱にとどまった。ミナの反応は次の入力の応答に回っており、応答の組み立てにずれがある。",
+        "stagnation": "決定論の測定では、4入力すべてが0で、低値の連続は4。意味的には、最初の質問への応答だけが明確な新情報（被害範囲の未確認、迂回路は不明、ミナからの問い）を含む。それ以外は、礼の復唱と既出情報の再掲が中心。シーン2の入力2件はシーン1と同文で、プレイヤーが同じ行動を繰り返した結果という文脈がある。したがって、物語の欠陥とは断定せず、後半が停滞気味と評価する。礼や関係の応答は人物交流として評価するが、このウィンドウでは関係に目立った変化は見られなかった。",
+        "principle": "violation",
+        "explanation": "新情報は、入力由来が6単位、あらすじとリザルト由来が4単位（シーン1のあらすじ2、シーン1のリザルト1、シーン2のあらすじ1）、合計10単位。平均重要度は1.5（合計15）。原則面では、シーン2のあらすじ（d5ef2278）とリザルト（03784006）が、プレイヤーの入力にない「橋の近くで状態を確かめようとしている」意図をソラに与えている。実際に入力された行動は村人への質問と礼であり、選択の代行までは起きていないため、重度ではなく違反候補とする。その他の応答は、入力に沿った因果として整合している。なお、シーン2の応答80a5d0fcがミナの礼への反応を、礼の入力c403ba54より前に示している点は、あらすじがシーン1の礼を前提としているため矛盾とは判断しなかったが、順序のずれとして記録する。この評価はLLMによる推定であり、決定論的な測定値や満足度の実測ではない。",
+        "missing": [
+          "この評価は、入力に貼られたmanifestの内容だけを根拠にしている。inspection.readでの全ページ取得は確認していない（nextの有無も不明）。",
+          "窓より前の提示（prior）は空で、シーン1の前の既知情報は確認できない。",
+          "旧記録の実行ID、スキルとルーブリックとモデルの版、評価費用は呼出し側が保存する情報であり、ここでは扱っていない。",
+          "世界の編集、再生成、新しい観測の保存は行っていない。"
+        ]
+      },
+      "disagreements": [
+        {
+          "presentationId": "d55ff475-b432-4e3d-ad7d-882e6c021707",
+          "explanation": "決定論の測定では、この応答の対応は既出ID（cf3c8598、ccf412a7）の再提示だけで、入力1の値は0。しかし本文には、被害範囲の未確認、迂回路は不明、ミナからの問いという新しい意味単位があり、対応資料が捉えていない。構造対応の漏れ。"
+        },
+        {
+          "presentationId": "d5ef2278-7d81-46d1-a2d3-1300ea7962f6",
+          "explanation": "決定論では5ノードが新規と数えられた。しかし意味的には、a05bcdbb は cf3c8598/ccf412a7 と、d9cddeba は 0a77ba14 と同義。48d52bc4（広場）、3944ad65（ミナの警告）、6cd8cefb（ソラの礼）も、すべて前のシーンで提示済み。別IDによる水増しで、意味上の新規は「橋の近くで状態を確かめようとしている」意図の1件のみ。"
+        },
+        {
+          "presentationId": "d9b0105a-07f8-4274-ad67-2c4490f01238",
+          "explanation": "決定論では4要素（エッジ2、ノード2）だが、意味的には、橋の状態と通行止め（cf3c8598 と ccf412a7）は同じ内容の重複であり、「ソラの観測」エッジ（df9fa7d5）も独立した新情報ではない。新規の意味単位は2つ。"
+        },
+        {
+          "presentationId": "03784006-79b1-44dc-a798-ab10d2564be1",
+          "explanation": "決定論では3要素がrepeat、つまり新規0と分類された。意味的には、「迂回路の有無は未確定」という確度の明確化に小さな整理の価値があるものの、新しい事実ではなく、duplicateとcertaintyの混在として扱った。測定値との大きな不一致はない。"
+        }
+      ]
+    },
+    "model": "claude-sonnet-5-5",
+    "usage": {
+      "prompt_tokens": 37315,
+      "completion_tokens": 11848,
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 37315,
+      "cache_write_5m_tokens": 4617,
+      "cache_write_1h_tokens": 0
+    },
+    "modelConfiguration": {
+      "api": "messages",
+      "model": "claude-sonnet-5-5",
+      "effort": "medium",
+      "baseUrl": "https://api.anthropic.com/v1",
+      "provider": "anthropic",
+      "pricingDate": "2026-10-23",
+      "contextTokens": 1000000,
+      "initialEffort": "medium",
+      "maxOutputTokens": 65536,
+      "inputUsdPerMillion": 2,
+      "outputUsdPerMillion": 10,
+      "cachedInputUsdPerMillion": 0.1,
+      "cacheWrite1hUsdPerMillion": 4,
+      "cacheWrite5mUsdPerMillion": 2.5
+    },
+    "elapsedMs": 91521,
+    "modelCallMs": 91442,
+    "evaluationCost": {
+      "calculatedNanoUsd": "195418500",
+      "reservationNanoUsd": "4655360000",
+      "reservedNanoUsd": "0",
+      "reason": "complete"
+    }
+  },
+  "earlierEvaluations": [
+    {
+      "runId": "70a84582-f15e-4678-a023-b7b2fc8a4565",
+      "manifestId": "c1ec20a99a6ebc48835977f4099b02e31f1c3831112a9299a94105872e6c8643",
+      "configuration": {
+        "target": "resolution",
+        "budgetUsd": 60,
+        "configurationVersion": 1
+      },
+      "skill": {
+        "version": "narrative-inspection-v1",
+        "rubricVersion": "meaning-v1",
+        "hash": "207103df7908cab9172080c400623627b7d84d6ef46760d4746c8b2c1dce2d09"
+      },
+      "status": "failed",
+      "reason": "原則適合の根拠が当該入力への提示ではありません",
+      "elapsedMs": 56366,
+      "modelCallMs": 56289,
+      "evaluationCost": {
+        "calculatedNanoUsd": "148466000",
+        "reservationNanoUsd": "4655360000",
+        "reservedNanoUsd": "0",
+        "reason": "complete"
+      }
+    },
+    {
+      "runId": "11a896aa-e05d-4612-a9e2-d1fbf432f887",
+      "manifestId": "c1ec20a99a6ebc48835977f4099b02e31f1c3831112a9299a94105872e6c8643",
+      "configuration": {
+        "target": "resolution",
+        "budgetUsd": 60,
+        "configurationVersion": 1
+      },
+      "skill": {
+        "version": "narrative-inspection-v1",
+        "rubricVersion": "meaning-v1",
+        "hash": "207103df7908cab9172080c400623627b7d84d6ef46760d4746c8b2c1dce2d09"
+      },
+      "status": "failed",
+      "reason": "意味単位が後日の提示を根拠にしています",
+      "elapsedMs": 64444,
+      "modelCallMs": 64367,
+      "evaluationCost": {
+        "calculatedNanoUsd": "146289200",
+        "reservationNanoUsd": "4655360000",
+        "reservedNanoUsd": "0",
+        "reason": "complete"
+      }
+    }
+  ],
+  "comparison": {
+    "basis": "同じ保存済みmanifestを100回再計測。再生成した比較ではない。",
+    "iterations": 100,
+    "elapsedMs": 10.3185,
+    "meanMs": 0.103185,
+    "additionalLlmCalls": 0,
+    "calculatedNanoUsdDifference": "0",
+    "playerResponseWaitMsDifference": 0,
+    "sourceUnchanged": true,
+    "manifestBytes": 55187,
+    "measurementBytes": 11778,
+    "presentationMetadataBytes": 4280,
+    "metadataTokenDelta": null,
+    "metadataCostDelta": null,
+    "metadataGenerationWaitDelta": null,
+    "unknownReason": "メタデータなしで生成した対照応答がない。UTF-8バイト数を課金トークン数へ換算しない。生成全体の使用量は各callに記録。"
+  },
+  "developmentBudget": {
+    "claudeLimitUsd": 65,
+    "overallLimitUsd": 100,
+    "provider": "anthropic",
+    "calculatedNanoUsd": "1668246500",
+    "calculatedUsd": 1.6682465,
+    "calls": 42,
+    "unknownCalls": 0,
+    "otherProvidersUsd": 0
+  }
+}

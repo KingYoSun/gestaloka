@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { Information } from "@gestaloka/contracts";
 import { Change } from "../world/model.js";
 import type { WorldAgent } from "./agent.js";
 import type { WorldProposal } from "./agent.js";
@@ -13,6 +14,7 @@ export const SceneBackground = z
   .object({
     type: z.literal("background"),
     synopsis: text,
+    synopsisInformation: z.array(Information).optional(),
     participants: z.array(id).min(1),
     facts: z.array(Fact),
     perceptions: z.array(
@@ -30,7 +32,15 @@ export const SceneEvent = z
   .object({
     actorId: id,
     text,
-    receipts: z.array(z.object({ observerId: id, text }).strict()),
+    receipts: z.array(
+      z
+        .object({
+          observerId: id,
+          text,
+          information: z.array(Information).optional(),
+        })
+        .strict(),
+    ),
   })
   .strict();
 const Period = z
@@ -42,6 +52,7 @@ const Period = z
 export type RecordedSceneEvent = z.infer<typeof SceneEvent> & {
   id: string;
   period: z.infer<typeof Period>;
+  inputId?: string;
 };
 export const SceneStep = z.discriminatedUnion("type", [
   z
@@ -58,7 +69,9 @@ export const SceneStep = z.discriminatedUnion("type", [
 export const CompletedScene = z
   .object({
     background: SceneBackground,
-    events: z.array(SceneEvent.extend({ id, period: Period })),
+    events: z.array(
+      SceneEvent.extend({ id, period: Period, inputId: id.optional() }),
+    ),
     anchors: Change,
   })
   .strict();

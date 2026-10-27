@@ -2370,6 +2370,132 @@ export interface paths {
                         requestId: string;
                         command: {
                             /** @enum {string} */
+                            operation: "inspection.select";
+                            selection: {
+                                /** Format: uuid */
+                                worldId: string;
+                                /** Format: uuid */
+                                userId: string | null;
+                                /** Format: uuid */
+                                actorId: string;
+                                /** Format: uuid */
+                                endSceneId: string;
+                                n: number;
+                                /**
+                                 * @default presentation-v1
+                                 * @enum {string}
+                                 */
+                                metricVersion?: "presentation-v1";
+                                /**
+                                 * @default {
+                                 *       "version": "unit-v1",
+                                 *       "values": {
+                                 *         "node": 1,
+                                 *         "edge": 1,
+                                 *         "aspect": 1,
+                                 *         "update": 1
+                                 *       },
+                                 *       "rationale": "全区分1の未校正の基準値。満足度や意味的重要度を表さない。"
+                                 *     }
+                                 */
+                                weights?: {
+                                    version: string;
+                                    values: {
+                                        node: number;
+                                        edge: number;
+                                        aspect: number;
+                                        update: number;
+                                    };
+                                    rationale: string;
+                                };
+                                /** @default 0 */
+                                lowThreshold?: number;
+                            };
+                        } | {
+                            /** @enum {string} */
+                            operation: "inspection.read";
+                            /** Format: uuid */
+                            worldId: string;
+                            manifestId: string;
+                            after?: number;
+                        } | {
+                            /** @enum {string} */
+                            operation: "inspection.evaluate";
+                            /** Format: uuid */
+                            worldId: string;
+                            manifestId: string;
+                            configuration: {
+                                configurationVersion: number;
+                                /** @enum {string} */
+                                target: "default" | "resolution";
+                                budgetUsd: number;
+                            };
+                        } | {
+                            /** @enum {string} */
+                            operation: "inspection.evaluation";
+                            /** Format: uuid */
+                            worldId: string;
+                            /** Format: uuid */
+                            id: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "inspection.history";
+                            query: {
+                                /** Format: uuid */
+                                worldId: string;
+                                /** Format: date-time */
+                                from: string;
+                                /** Format: date-time */
+                                to: string;
+                                /** Format: uuid */
+                                userId?: string | null;
+                                /** Format: uuid */
+                                actorId?: string;
+                                n?: number;
+                                metricVersion?: string;
+                                weightVersion?: string;
+                                model?: string;
+                                configurationVersion?: number;
+                                after?: number;
+                            };
+                        } | {
+                            /** @enum {string} */
+                            operation: "inspection.settings";
+                            /** Format: uuid */
+                            worldId: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "inspection.configure";
+                            /** Format: uuid */
+                            worldId: string;
+                            configuration: {
+                                enabled: boolean;
+                                intervalMinutes: number;
+                                periodHours: number;
+                                n: number;
+                                lowThreshold: number;
+                                weights: {
+                                    version: string;
+                                    values: {
+                                        node: number;
+                                        edge: number;
+                                        aspect: number;
+                                        update: number;
+                                    };
+                                    rationale: string;
+                                };
+                                evaluation: {
+                                    configurationVersion: number;
+                                    /** @enum {string} */
+                                    target: "default" | "resolution";
+                                    budgetUsd: number;
+                                } | null;
+                                sampleCount: number;
+                            };
+                            expectedVersion: number;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
                             operation: "requests.read";
                             /** Format: uuid */
                             id: string;
@@ -2946,7 +3072,140 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            result: {
+                            result: ({
+                                manifest: {
+                                    id: string;
+                                    /** @enum {string} */
+                                    recordVersion: "inspection-record-v1";
+                                    /** Format: date-time */
+                                    capturedAt: string;
+                                    selection: {
+                                        /** Format: uuid */
+                                        worldId: string;
+                                        /** Format: uuid */
+                                        userId: string | null;
+                                        /** Format: uuid */
+                                        actorId: string;
+                                        /** Format: uuid */
+                                        endSceneId: string;
+                                        n: number;
+                                        /**
+                                         * @default presentation-v1
+                                         * @enum {string}
+                                         */
+                                        metricVersion: "presentation-v1";
+                                        /**
+                                         * @default {
+                                         *       "version": "unit-v1",
+                                         *       "values": {
+                                         *         "node": 1,
+                                         *         "edge": 1,
+                                         *         "aspect": 1,
+                                         *         "update": 1
+                                         *       },
+                                         *       "rationale": "全区分1の未校正の基準値。満足度や意味的重要度を表さない。"
+                                         *     }
+                                         */
+                                        weights: {
+                                            version: string;
+                                            values: {
+                                                node: number;
+                                                edge: number;
+                                                aspect: number;
+                                                update: number;
+                                            };
+                                            rationale: string;
+                                        };
+                                        /** @default 0 */
+                                        lowThreshold: number;
+                                    };
+                                    requestedScenes: number;
+                                    actualScenes: number;
+                                    priorMissingScenes: string[];
+                                    sceneOrder: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        revision: string;
+                                        state: string;
+                                    }[];
+                                };
+                                measurement: {
+                                    manifestId: string;
+                                    metricVersion: string;
+                                    weights: {
+                                        version: string;
+                                        values: {
+                                            node: number;
+                                            edge: number;
+                                            aspect: number;
+                                            update: number;
+                                        };
+                                        rationale: string;
+                                    };
+                                    requestedScenes: number;
+                                    actualScenes: number;
+                                    /** @enum {string} */
+                                    status: "complete" | "partial";
+                                    total: {
+                                        counts: {
+                                            node: number;
+                                            edge: number;
+                                            aspect: number;
+                                            update: number;
+                                        };
+                                        origins: {
+                                            reference: number;
+                                            generated: number;
+                                        };
+                                        observedValue: number;
+                                        value: number | null;
+                                        coverage: {
+                                            presentations: number;
+                                            mapped: number;
+                                            ratio: number | null;
+                                        };
+                                        missing: string[];
+                                        calls: number;
+                                        calculatedNanoUsd: string | null;
+                                        knownNanoUsd: string;
+                                        costMissing: boolean;
+                                        modelCallMs: number | null;
+                                        responseWaitMs: number | null;
+                                        perUsd: number | null;
+                                        perWaitSecond: number | null;
+                                        inputCount: number;
+                                        perInput: number | null;
+                                    };
+                                    missingScenes: string[];
+                                    priorMissingScenes: string[];
+                                    lowRuns: {
+                                        inputIds: string[];
+                                        length: number;
+                                    }[];
+                                    longestLowRun: number;
+                                    limitations: string[];
+                                };
+                                items: {
+                                    id: string;
+                                    /** @enum {string} */
+                                    section: "prior" | "scene" | "input" | "presentation" | "call" | "administrator" | "measure-scene" | "measure-diff";
+                                    /** Format: uuid */
+                                    sceneId: string | null;
+                                    /** Format: uuid */
+                                    inputId: string | null;
+                                    value: unknown;
+                                }[];
+                                next: number | null;
+                                fetched: {
+                                    offset: number;
+                                    count: number;
+                                    total: number;
+                                    complete: boolean;
+                                };
+                                retention: string;
+                            } & {
+                                [key: string]: unknown;
+                            }) | {
                                 [key: string]: unknown;
                             };
                         };

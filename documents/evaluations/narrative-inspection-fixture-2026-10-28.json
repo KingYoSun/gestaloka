@@ -1,0 +1,634 @@
+{
+  "manifest": {
+    "id": "aefd6bb98796917723da0a32bf48920d4202d4e355ed97e433b02066ff2ad071",
+    "recordVersion": "inspection-record-v1",
+    "capturedAt": "2026-10-28T00:00:02.000Z",
+    "selection": {
+      "worldId": "29e49b4a-d559-4bf3-a762-17b7d8142f8b",
+      "userId": "491e4687-fc6a-4736-a0af-03c907688a3e",
+      "actorId": "bcb2da50-7ece-4b50-a48f-d5bae50f84f0",
+      "endSceneId": "cd13dcc5-cddf-4846-a2d3-3b8016c1c407",
+      "n": 1,
+      "metricVersion": "presentation-v1",
+      "weights": {
+        "version": "unit-v1",
+        "values": {
+          "node": 1,
+          "edge": 1,
+          "aspect": 1,
+          "update": 1
+        },
+        "rationale": "全区分1の未校正の基準値。満足度や意味的重要度を表さない。"
+      },
+      "lowThreshold": 0
+    },
+    "requestedScenes": 1,
+    "actualScenes": 1,
+    "prior": [
+      {
+        "id": "1a45376e-752f-490e-ae2b-cc73c77bbb7b",
+        "sceneId": "cd13dcc5-cddf-4846-a2d3-3b8016c1c407",
+        "inputId": null,
+        "kind": "synopsis",
+        "ordinal": 0,
+        "text": "扉が閉まっている。村人は姉について話していた。",
+        "at": 0,
+        "providedAt": "2026-10-28T00:00:01.000Z",
+        "information": [
+          {
+            "kind": "node",
+            "id": "2168da5e-da6b-429b-a456-6c6092dffd36",
+            "aspect": "状態",
+            "state": "閉じている",
+            "version": "1",
+            "at": 0,
+            "origin": "generated",
+            "evidence": "閉じている"
+          },
+          {
+            "kind": "node",
+            "id": "97c8acc1-799b-4d03-a4d5-2a852f631de3",
+            "aspect": "状態",
+            "state": "姉についての証言",
+            "version": "1",
+            "at": 0,
+            "origin": "generated",
+            "evidence": "姉についての証言"
+          }
+        ]
+      }
+    ],
+    "priorMissingScenes": [],
+    "scenes": [
+      {
+        "id": "cd13dcc5-cddf-4846-a2d3-3b8016c1c407",
+        "revision": "fixture-v1",
+        "state": "result",
+        "createdAt": "2026-10-28T00:00:00.000Z",
+        "inputs": [
+          {
+            "id": "14ce2d2c-d2b1-4d88-a280-8d5e3aae699c",
+            "text": "扉に手をかける。",
+            "state": "complete",
+            "submittedAt": "2026-10-28T00:00:00.000Z",
+            "completedAt": "2026-10-28T00:00:01.000Z"
+          },
+          {
+            "id": "a1338166-1831-4e73-af60-c612ffff21dd",
+            "text": "扉を開ける。",
+            "state": "complete",
+            "submittedAt": "2026-10-28T00:00:00.000Z",
+            "completedAt": "2026-10-28T00:00:01.000Z"
+          },
+          {
+            "id": "2a1ce6a1-81d8-4c56-afc4-9747b50c4f63",
+            "text": "橋を渡ってよいか聞く。",
+            "state": "complete",
+            "submittedAt": "2026-10-28T00:00:00.000Z",
+            "completedAt": "2026-10-28T00:00:01.000Z"
+          },
+          {
+            "id": "bad4f07a-932f-4d84-a4fb-4e23fe7c7824",
+            "text": "姉をどう思っているか聞く。",
+            "state": "complete",
+            "submittedAt": "2026-10-28T00:00:00.000Z",
+            "completedAt": "2026-10-28T00:00:01.000Z"
+          },
+          {
+            "id": "a3002bc6-401e-4c44-a4b5-783700f5bf54",
+            "text": "机の上を調べる。",
+            "state": "complete",
+            "submittedAt": "2026-10-28T00:00:00.000Z",
+            "completedAt": "2026-10-28T00:00:01.000Z"
+          },
+          {
+            "id": "5789b1a4-3eab-449e-aa69-4fea4933bd36",
+            "text": "姉の署名を見比べる。",
+            "state": "complete",
+            "submittedAt": "2026-10-28T00:00:00.000Z",
+            "completedAt": "2026-10-28T00:00:01.000Z"
+          },
+          {
+            "id": "5b9a7a75-3b54-4a49-a320-706f702b64f1",
+            "text": "しばらく待つ。",
+            "state": "complete",
+            "submittedAt": "2026-10-28T00:00:00.000Z",
+            "completedAt": "2026-10-28T00:00:01.000Z"
+          },
+          {
+            "id": "4ba6d4a7-48fa-4fde-a3a4-823ab659da48",
+            "text": "提案を聞く。まだ同意しない。",
+            "state": "complete",
+            "submittedAt": "2026-10-28T00:00:00.000Z",
+            "completedAt": "2026-10-28T00:00:01.000Z"
+          },
+          {
+            "id": "ebfd9ee6-9663-475d-a6e2-14e913b0478a",
+            "text": "橋の事情を確かめる。",
+            "state": "complete",
+            "submittedAt": "2026-10-28T00:00:00.000Z",
+            "completedAt": "2026-10-28T00:00:01.000Z"
+          }
+        ],
+        "presentations": [
+          {
+            "id": "6d3d3b13-75ad-4ca6-a94f-ba86231d1005",
+            "sceneId": "cd13dcc5-cddf-4846-a2d3-3b8016c1c407",
+            "inputId": "14ce2d2c-d2b1-4d88-a280-8d5e3aae699c",
+            "kind": "response",
+            "ordinal": 0,
+            "text": "扉に手をかけます。",
+            "at": 0,
+            "providedAt": "2026-10-28T00:00:01.000Z",
+            "information": []
+          },
+          {
+            "id": "1ded2fc9-703a-48fd-a433-16f768c6ff0f",
+            "sceneId": "cd13dcc5-cddf-4846-a2d3-3b8016c1c407",
+            "inputId": "a1338166-1831-4e73-af60-c612ffff21dd",
+            "kind": "response",
+            "ordinal": 1,
+            "text": "扉は開いた。",
+            "at": 0,
+            "providedAt": "2026-10-28T00:00:01.000Z",
+            "information": [
+              {
+                "kind": "node",
+                "id": "2168da5e-da6b-429b-a456-6c6092dffd36",
+                "aspect": "状態",
+                "state": "開いている",
+                "version": "1",
+                "at": 1,
+                "origin": "generated",
+                "evidence": "開いている"
+              }
+            ]
+          },
+          {
+            "id": "2cad2852-b5c9-4ebc-acb5-68b3e6564681",
+            "sceneId": "cd13dcc5-cddf-4846-a2d3-3b8016c1c407",
+            "inputId": "2a1ce6a1-81d8-4c56-afc4-9747b50c4f63",
+            "kind": "response",
+            "ordinal": 2,
+            "text": "村人は「橋板が腐っているから渡せない」と答えた。",
+            "at": 0,
+            "providedAt": "2026-10-28T00:00:01.000Z",
+            "information": [
+              {
+                "kind": "node",
+                "id": "2a1ce6a1-81d8-4c56-afc4-9747b50c4f63",
+                "aspect": "状態",
+                "state": "橋板が腐っている",
+                "version": "1",
+                "at": 0,
+                "origin": "generated",
+                "evidence": "橋板が腐っている"
+              }
+            ]
+          },
+          {
+            "id": "d72d65b6-4057-430c-a497-f3c62a9bce98",
+            "sceneId": "cd13dcc5-cddf-4846-a2d3-3b8016c1c407",
+            "inputId": "bad4f07a-932f-4d84-a4fb-4e23fe7c7824",
+            "kind": "response",
+            "ordinal": 3,
+            "text": "村人は姉に救われたことを打ち明け、声を震わせた。",
+            "at": 0,
+            "providedAt": "2026-10-28T00:00:01.000Z",
+            "information": [
+              {
+                "kind": "node",
+                "id": "97c8acc1-799b-4d03-a4d5-2a852f631de3",
+                "aspect": "姉との関係",
+                "state": "姉に救われた",
+                "version": "1",
+                "at": 0,
+                "origin": "generated",
+                "evidence": "姉に救われた"
+              }
+            ]
+          },
+          {
+            "id": "c5aa09de-73a6-4fc1-acf8-9c034ba21ced",
+            "sceneId": "cd13dcc5-cddf-4846-a2d3-3b8016c1c407",
+            "inputId": "a3002bc6-401e-4c44-a4b5-783700f5bf54",
+            "kind": "response",
+            "ordinal": 4,
+            "text": "机に、誰のものか分からない三つ目の封印がある。",
+            "at": 0,
+            "providedAt": "2026-10-28T00:00:01.000Z",
+            "information": [
+              {
+                "kind": "node",
+                "id": "dbafd691-9abf-4564-a4ad-60a2e3122798",
+                "aspect": "状態",
+                "state": "第三の封印がある",
+                "version": "1",
+                "at": 0,
+                "origin": "generated",
+                "evidence": "第三の封印がある"
+              }
+            ]
+          },
+          {
+            "id": "988d4461-25d2-44ac-a408-911611150c4b",
+            "sceneId": "cd13dcc5-cddf-4846-a2d3-3b8016c1c407",
+            "inputId": "5789b1a4-3eab-449e-aa69-4fea4933bd36",
+            "kind": "response",
+            "ordinal": 5,
+            "text": "手紙の署名は姉の筆跡と一致した。",
+            "at": 0,
+            "providedAt": "2026-10-28T00:00:01.000Z",
+            "information": [
+              {
+                "kind": "node",
+                "id": "97c8acc1-799b-4d03-a4d5-2a852f631de3",
+                "aspect": "状態",
+                "state": "姉の証言が署名で裏付けられた",
+                "version": "1",
+                "at": 2,
+                "origin": "generated",
+                "evidence": "姉の証言が署名で裏付けられた"
+              }
+            ]
+          },
+          {
+            "id": "4be1283e-149e-4f79-ac1b-5afcb15c08e8",
+            "sceneId": "cd13dcc5-cddf-4846-a2d3-3b8016c1c407",
+            "inputId": "5b9a7a75-3b54-4a49-a320-706f702b64f1",
+            "kind": "response",
+            "ordinal": 6,
+            "text": "時間が過ぎる。",
+            "at": 0,
+            "providedAt": "2026-10-28T00:00:01.000Z",
+            "information": []
+          },
+          {
+            "id": "955d03b8-236d-457f-a1dd-56752b7f060a",
+            "sceneId": "cd13dcc5-cddf-4846-a2d3-3b8016c1c407",
+            "inputId": "4ba6d4a7-48fa-4fde-a3a4-823ab659da48",
+            "kind": "response",
+            "ordinal": 7,
+            "text": "あなたは提案に同意し、契約に署名した。",
+            "at": 0,
+            "providedAt": "2026-10-28T00:00:01.000Z",
+            "information": [
+              {
+                "kind": "node",
+                "id": "5b9b2a97-9e1e-4415-a873-2edff510a162",
+                "aspect": "状態",
+                "state": "契約への署名が成立",
+                "version": "1",
+                "at": 0,
+                "origin": "generated",
+                "evidence": "契約への署名が成立"
+              }
+            ]
+          },
+          {
+            "id": "4c113ed1-5a81-40ab-a075-810057b10100",
+            "sceneId": "cd13dcc5-cddf-4846-a2d3-3b8016c1c407",
+            "inputId": "ebfd9ee6-9663-475d-a6e2-14e913b0478a",
+            "kind": "response",
+            "ordinal": 8,
+            "text": "橋板が傷んでいるため通行できないとの返事だった。",
+            "at": 0,
+            "providedAt": "2026-10-28T00:00:01.000Z",
+            "information": [
+              {
+                "kind": "node",
+                "id": "217453ec-6bd4-4ef6-a9a1-08ec37e4cbbd",
+                "aspect": "状態",
+                "state": "橋板の腐食で通行拒否",
+                "version": "1",
+                "at": 0,
+                "origin": "generated",
+                "evidence": "橋板の腐食で通行拒否"
+              }
+            ]
+          }
+        ],
+        "calls": [
+          {
+            "id": "cfe92ec2-dd03-4cb9-a1e7-1c57403800e8",
+            "responseId": "a1338166-1831-4e73-af60-c612ffff21dd",
+            "model": "fixture-model",
+            "configurationVersion": 1,
+            "task": "scene-resolve",
+            "status": "complete:complete",
+            "nanoUsd": "1000000",
+            "reservedNanoUsd": "2000000",
+            "elapsedMs": 100,
+            "inputTokens": 100,
+            "outputTokens": 100
+          }
+        ],
+        "administratorEvidence": {
+          "background": null,
+          "events": [
+            {
+              "id": "94c84426-49fb-44ad-aa1a-554af65fa809",
+              "text": "NPCだけが秘密の地下道を発見した。プレイヤーへは提示されていない。"
+            }
+          ],
+          "dependencies": [],
+          "projection": null
+        },
+        "recording": "recorded"
+      }
+    ]
+  },
+  "evaluation": {
+    "runId": "64441832-b42a-4b03-97df-759f1bd09d89",
+    "manifestId": "aefd6bb98796917723da0a32bf48920d4202d4e355ed97e433b02066ff2ad071",
+    "configuration": {
+      "target": "resolution",
+      "budgetUsd": 65,
+      "configurationVersion": 1
+    },
+    "skill": {
+      "version": "narrative-inspection-v1",
+      "rubricVersion": "meaning-v1",
+      "hash": "207103df7908cab9172080c400623627b7d84d6ef46760d4746c8b2c1dce2d09"
+    },
+    "status": "partial",
+    "assessment": {
+      "inputs": [
+        {
+          "inputId": "14ce2d2c-d2b1-4d88-a280-8d5e3aae699c",
+          "units": [
+            {
+              "text": "入力した「扉に手をかける」の言い換えのみで、新しい理解は加わらない。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "6d3d3b13-75ad-4ca6-a94f-ba86231d1005",
+                  "quote": "扉に手をかけます。"
+                }
+              ],
+              "explanation": "入力の復唱であり、取り除いても理解・予想・判断は変わらない。"
+            }
+          ],
+          "responsiveness": "unresponsive",
+          "principle": "consistent",
+          "principleEvidence": [],
+          "missing": []
+        },
+        {
+          "inputId": "a1338166-1831-4e73-af60-c612ffff21dd",
+          "units": [
+            {
+              "text": "扉が閉じた状態から開いた状態に変わった。",
+              "category": "update",
+              "importance": 1,
+              "evidence": [
+                {
+                  "presentationId": "1ded2fc9-703a-48fd-a433-16f768c6ff0f",
+                  "quote": "扉は開いた。"
+                }
+              ],
+              "explanation": "窓前の「扉が閉まっている」からの状態更新。予想どおりの局所的な結果。"
+            }
+          ],
+          "responsiveness": "responsive",
+          "principle": "consistent",
+          "principleEvidence": [],
+          "missing": []
+        },
+        {
+          "inputId": "2a1ce6a1-81d8-4c56-afc4-9747b50c4f63",
+          "units": [
+            {
+              "text": "橋を渡れない理由は橋板が腐っているためだと村人が答えた。",
+              "category": "addition",
+              "importance": 2,
+              "evidence": [
+                {
+                  "presentationId": "2cad2852-b5c9-4ebc-acb5-68b3e6564681",
+                  "quote": "橋板が腐っているから渡せない"
+                }
+              ],
+              "explanation": "問いに対する理由つきの拒否で、次の判断材料（橋を渡る手段）が変わる。"
+            }
+          ],
+          "responsiveness": "responsive",
+          "principle": "consistent",
+          "principleEvidence": [],
+          "missing": []
+        },
+        {
+          "inputId": "bad4f07a-932f-4d84-a4fb-4e23fe7c7824",
+          "units": [
+            {
+              "text": "村人は姉に救われた過去があり、強い感情を抱いている。",
+              "category": "addition",
+              "importance": 3,
+              "evidence": [
+                {
+                  "presentationId": "d72d65b6-4057-430c-a497-f3c62a9bce98",
+                  "quote": "村人は姉に救われたことを打ち明け、声を震わせた。"
+                }
+              ],
+              "explanation": "窓前の「姉についての証言」の中身が分かり、村人と姉の関係・動機の解釈が大きく変わる。重要度は3とするが未校正の判断。"
+            }
+          ],
+          "responsiveness": "responsive",
+          "principle": "consistent",
+          "principleEvidence": [],
+          "missing": []
+        },
+        {
+          "inputId": "a3002bc6-401e-4c44-a4b5-783700f5bf54",
+          "units": [
+            {
+              "text": "机に、誰のものか分からない三つ目の封印がある。",
+              "category": "addition",
+              "importance": 2,
+              "evidence": [
+                {
+                  "presentationId": "c5aa09de-73a6-4fc1-acf8-9c034ba21ced",
+                  "quote": "誰のものか分からない三つ目の封印がある。"
+                }
+              ],
+              "explanation": "調べた結果として新しい謎が加わり、今後の予想や調査の方向が変わる。"
+            }
+          ],
+          "responsiveness": "responsive",
+          "principle": "consistent",
+          "principleEvidence": [],
+          "missing": [
+            "「三つ目」の前提となる最初の二つの封印は、窓前の提示情報に見当たらない。"
+          ]
+        },
+        {
+          "inputId": "5789b1a4-3eab-449e-aa69-4fea4933bd36",
+          "units": [
+            {
+              "text": "手紙の署名が姉の筆跡と一致し、姉に関する証言が裏付けられた。",
+              "category": "certainty",
+              "importance": 3,
+              "evidence": [
+                {
+                  "presentationId": "988d4461-25d2-44ac-a408-911611150c4b",
+                  "quote": "手紙の署名は姉の筆跡と一致した。"
+                }
+              ],
+              "explanation": "証言から確証への変化で、姉に関する理解の信頼性が変わる。"
+            },
+            {
+              "text": "見比べの対象として手紙が登場した。",
+              "category": "addition",
+              "importance": 1,
+              "evidence": [
+                {
+                  "presentationId": "988d4461-25d2-44ac-a408-911611150c4b",
+                  "quote": "手紙の署名"
+                }
+              ],
+              "explanation": "手紙の存在はこの提示で初めて明示されるが、内容は不明で局所的な追加にとどまる。"
+            }
+          ],
+          "responsiveness": "responsive",
+          "principle": "consistent",
+          "principleEvidence": [],
+          "missing": ["手紙がどこにあり、何の手紙かが提示されていない。"]
+        },
+        {
+          "inputId": "5b9a7a75-3b54-4a49-a320-706f702b64f1",
+          "units": [
+            {
+              "text": "時間が過ぎたという以外の内容はない。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "4be1283e-149e-4f79-ac1b-5afcb15c08e8",
+                  "quote": "時間が過ぎる。"
+                }
+              ],
+              "explanation": "「待つ」の結果として時間経過を述べるのみで、取り除いても理解は変わらない。"
+            }
+          ],
+          "responsiveness": "unresponsive",
+          "principle": "consistent",
+          "principleEvidence": [],
+          "missing": []
+        },
+        {
+          "inputId": "4ba6d4a7-48fa-4fde-a3a4-823ab659da48",
+          "units": [
+            {
+              "text": "プレイヤーが提案に同意し、契約に署名したという事態の記述。",
+              "category": "addition",
+              "importance": 3,
+              "evidence": [
+                {
+                  "presentationId": "955d03b8-236d-457f-a1dd-56752b7f060a",
+                  "quote": "あなたは提案に同意し、契約に署名した。"
+                }
+              ],
+              "explanation": "契約成立は選択の前提を大きく変えるが、入力が明示的に否定した同意を根拠なく代行して作られた情報。新情報として数えるが、原則違反と合わせて扱う。"
+            }
+          ],
+          "responsiveness": "unresponsive",
+          "principle": "violation",
+          "principleEvidence": [
+            {
+              "presentationId": "955d03b8-236d-457f-a1dd-56752b7f060a",
+              "quote": "あなたは提案に同意し、契約に署名した。",
+              "explanation": "入力は「提案を聞く。まだ同意しない。」で、同意を明示的に留保している。にもかかわらず、プレイヤーが同意して署名したと記述しており、入力にない同意と次の選択の代行にあたる。これを正当化する因果上の根拠も提示にない。"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "inputId": "ebfd9ee6-9663-475d-a6e2-14e913b0478a",
+          "units": [
+            {
+              "text": "橋板の傷みで通行できないという、すでに提示された理由の言い換え。",
+              "category": "duplicate",
+              "importance": 0,
+              "evidence": [
+                {
+                  "presentationId": "4c113ed1-5a81-40ab-a075-810057b10100",
+                  "quote": "橋板が傷んでいるため通行できないとの返事だった。"
+                }
+              ],
+              "explanation": "同じ内容を2つ前の応答「橋板が腐っているから渡せない」で提示済み。別IDの同義情報であり、新しい理解は加わらない。"
+            }
+          ],
+          "responsiveness": "partial",
+          "principle": "consistent",
+          "principleEvidence": [],
+          "missing": [
+            "橋の事情を確かめる入力に対し、橋板以外の事情や修復の可能性などの追加の手がかりがない。"
+          ]
+        }
+      ],
+      "overall": {
+        "newInformation": null,
+        "importance": 2.142857142857143,
+        "responsiveness": "9入力中、responsive 5、partial 1、unresponsive 3。扉の開閉、橋の質問、姉との関係の質問、机の調査、署名の照合には結果があった。最初の入力は復唱のみ、待機は時間経過のみ、提案の入力は同意を代行する応答で、いずれも入力への応答性が低い。",
+        "stagnation": "意味上の新情報がない入力は、扉に手をかける、待つ、橋の事情の確認（重複）の3件。待機以外は連続しておらず、最長の連続は1。ただし橋の確認は直前の応答の繰り返しであり、場面の文脈では橋の話が足踏みしている。",
+        "principle": "violation",
+        "explanation": "新情報の数は、重複でない単位の合計7（addition 4、update 1、certainty 1、うち署名の応答に追加の手紙が1）。重要度は、3（姉の関係）、3（署名の確証）、3（契約署名）、2（橋の理由）、2（封印）、1（扉）、1（手紙）の平均で約2.14。ただしこの契約署名は原則違反による情報であり、重要度の押し上げに頼れない。原則適合は新情報量や重要度とは独立に判定し、同意を明示的に留保した入力に対して同意・署名を代行した応答は違反とする。決定論の測定は総計7（node 4、aspect 1、update 2）、最長の低値連続1。測定と本検品の差は、契約署名の応答が原則違反でありながら新情報として数えられていること、橋の確認が別IDで同義の重複であるのに決定論では1と数えられていること、手紙の登場が構造に対応していないことによる。これらの数値と評価はLLMの推定で、満足度の実測ではない。管理者資料の「NPCだけが秘密の地下道を発見した」はプレイヤーへ提示されていないため、新情報には数えていない。",
+        "missing": [
+          "窓前の提示に三つ目の封印の前提（一つ目・二つ目）が見当たらない。",
+          "手紙の由来と内容が提示されていない。",
+          "呼出し側が保存するべき評価費用は未反映。決定論側では費用の欠測が入力単位で多数ある（calls が1件のみ）。"
+        ]
+      },
+      "disagreements": [
+        {
+          "presentationId": "4c113ed1-5a81-40ab-a075-810057b10100",
+          "explanation": "決定論では node 1 と数えられるが、直前の「橋板が腐っているから渡せない」と同義の重複で、意味上の新情報ではない。"
+        },
+        {
+          "presentationId": "955d03b8-236d-457f-a1dd-56752b7f060a",
+          "explanation": "決定論では node 1 と数えられるが、入力が留保した同意をプレイヤーに代行させた違反である。新情報の増加としては評価できず、原則違反として扱う。"
+        },
+        {
+          "presentationId": "d72d65b6-4057-430c-a497-f3c62a9bce98",
+          "explanation": "決定論は aspect 1 と数えるが、同じ対象の「姉についての証言」の内容が分かる意味上の追加である。構造上の対応先のIDは既存ノードと同一で、更新との区別が揺れうる。"
+        },
+        {
+          "presentationId": "988d4461-25d2-44ac-a408-911611150c4b",
+          "explanation": "決定論は update 1 と数えるが、確証への変化に加え、手紙という新しい要素の登場があり、構造対応に反映されていない。"
+        }
+      ]
+    },
+    "model": "claude-sonnet-5-5",
+    "usage": {
+      "prompt_tokens": 13014,
+      "completion_tokens": 4205,
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 13014,
+      "cache_write_5m_tokens": 4032,
+      "cache_write_1h_tokens": 0
+    },
+    "modelConfiguration": {
+      "api": "messages",
+      "model": "claude-sonnet-5-5",
+      "effort": "medium",
+      "baseUrl": "https://api.anthropic.com/v1",
+      "provider": "anthropic",
+      "pricingDate": "2026-10-23",
+      "contextTokens": 1000000,
+      "initialEffort": "medium",
+      "maxOutputTokens": 65536,
+      "inputUsdPerMillion": 2,
+      "outputUsdPerMillion": 10,
+      "cachedInputUsdPerMillion": 0.1,
+      "cacheWrite1hUsdPerMillion": 4,
+      "cacheWrite5mUsdPerMillion": 2.5
+    },
+    "elapsedMs": 30979,
+    "modelCallMs": 30921,
+    "evaluationCost": {
+      "calculatedNanoUsd": "70094000",
+      "reservedNanoUsd": "4655360000",
+      "reason": "complete"
+    }
+  }
+}
