@@ -781,8 +781,12 @@ export class WorldScenes {
     if (!receipt) throw new Error("世界への確定記録がまだありません");
     const observations = receipt.changes.edges
       .filter((e) => e.kind === "see" && e.source === row.actor_id)
-      .map((e) => e.text ?? e.observation?.aspect ?? "");
-    const interpretations: string[] = [];
+      .map((e) => ({
+        id: e.id,
+        targetId: e.target,
+        text: e.text ?? e.observation?.aspect ?? "",
+      }));
+    const interpretations = [];
     for (const e of receipt.changes.edges.filter(
       (e) =>
         e.kind === "interpret" &&
@@ -792,7 +796,12 @@ export class WorldScenes {
       const script =
         receipt.changes.nodes.find((n) => n.id === e.target) ??
         (await this.agent.store.context(d.worldId).node(e.target, d.at));
-      if (script?.kind === "script") interpretations.push(script.text);
+      if (script?.kind === "script")
+        interpretations.push({
+          id: e.id,
+          targetId: script.id,
+          text: script.text,
+        });
     }
     return {
       synopsis: d.background!.synopsis,
