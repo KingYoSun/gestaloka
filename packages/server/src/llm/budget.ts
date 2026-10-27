@@ -49,6 +49,7 @@ export class BudgetLedger {
         ADD COLUMN IF NOT EXISTS delivery text NOT NULL DEFAULT 'unknown';
       CREATE INDEX IF NOT EXISTS llm_call_time ON llm_call(created_at,id);
       CREATE INDEX IF NOT EXISTS llm_call_user ON llm_call(user_id,created_at,id);
+      CREATE INDEX IF NOT EXISTS llm_call_response ON llm_call(response_id,created_at,id);
       CREATE INDEX IF NOT EXISTS llm_call_world ON llm_call(world_id,created_at);`);
     await WorldBudget.setup(this.pool);
     const result = await this.pool.query<{ limit_nano: string | null }>(
