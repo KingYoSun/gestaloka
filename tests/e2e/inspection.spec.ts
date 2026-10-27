@@ -86,6 +86,7 @@ test("定期集計の画面から固定した提示文と根拠を読む", async
     });
   } finally {
     await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.close();
     await app.close();
     await isolated.close();
   }
