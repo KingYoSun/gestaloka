@@ -10,6 +10,14 @@ export const unitWeights = {
   rationale: "全区分1の未校正の基準値。満足度や意味的重要度を表さない。",
 };
 export function measure(manifest: InspectionManifest) {
+  const priorMissingScenes = [
+    ...new Set([
+      ...manifest.priorMissingScenes,
+      ...manifest.prior
+        .filter((p) => p.information === null)
+        .map((p) => p.sceneId),
+    ]),
+  ];
   const elements = new Set<string>(),
     aspects = new Set<string>(),
     states = new Set<string>();
@@ -66,7 +74,10 @@ export function measure(manifest: InspectionManifest) {
       counts,
       origins,
       observedValue,
-      value: known === parts.length ? observedValue : null,
+      value:
+        !priorMissingScenes.length && known === parts.length
+          ? observedValue
+          : null,
       coverage: {
         presentations: parts.length,
         mapped: known,
@@ -144,8 +155,7 @@ export function measure(manifest: InspectionManifest) {
     .filter((s) => s.recording === "legacy")
     .map((s) => s.id);
   const known =
-    scenes.every((s) => s.value !== null) &&
-    !manifest.priorMissingScenes.length;
+    scenes.every((s) => s.value !== null) && !priorMissingScenes.length;
   const waits = allInputs.map((a) => a.responseWaitMs),
     waitMs =
       waits.length && waits.every((v) => v !== null)
@@ -161,7 +171,7 @@ export function measure(manifest: InspectionManifest) {
       manifest.actualScenes < manifest.requestedScenes ||
       missingScenes.length ||
       total.missing.length ||
-      manifest.priorMissingScenes.length
+      priorMissingScenes.length
         ? "partial"
         : "complete",
     total: {
@@ -187,7 +197,7 @@ export function measure(manifest: InspectionManifest) {
       ),
     },
     missingScenes,
-    priorMissingScenes: manifest.priorMissingScenes,
+    priorMissingScenes,
     scenes,
     diffs,
     lowRuns,

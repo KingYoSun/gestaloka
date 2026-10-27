@@ -101,7 +101,14 @@ export class InspectionStore {
       requestedScenes: selection.n,
       actualScenes: scenes.length,
       prior: result.prior,
-      priorMissingScenes: result.prior_missing,
+      priorMissingScenes: [
+        ...new Set([
+          ...result.prior_missing,
+          ...result.prior
+            .filter((p) => p.information === null)
+            .map((p) => p.sceneId),
+        ]),
+      ],
       scenes,
     };
     const manifest = InspectionManifest.parse({

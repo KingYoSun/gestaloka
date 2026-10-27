@@ -115,6 +115,16 @@ test("未記録、旧記録、途中、保留、件数不足、費用・時間�
   expect(r.total.responseWaitMs).toBeNull();
   expect(r.total.coverage.ratio).toBeLessThan(1);
 });
+
+test("窓前の提示で対応が不明なら既知集合が完全とは扱わない", () => {
+  const m = inspectionFixture();
+  m.prior[0]!.sceneId = fid("prior-scene");
+  m.prior[0]!.information = null;
+  const r = measure(m);
+  expect(r.total.value).toBeNull();
+  expect(r.status).toBe("partial");
+  expect(r.priorMissingScenes).toContain(fid("prior-scene"));
+});
 test("本人向け提示の記録は再保存で増えず、終了時のグラフと同じIDを使う", () => {
   const bg = SceneBackground.parse({
     type: "background",

@@ -133,6 +133,7 @@ export function validateAssessment(
   ].flatMap((a) => a.units.filter((u) => u.category !== "duplicate"));
   if (
     manifest.priorMissingScenes.length ||
+    manifest.prior.some((p) => p.information === null) ||
     manifest.scenes.some(
       (s) =>
         s.recording === "legacy" ||
@@ -269,6 +270,7 @@ export async function runEvaluation(
     const evaluated = await evaluateManifest(model, id, manifest);
     const incomplete =
       manifest.priorMissingScenes.length ||
+      manifest.prior.some((p) => p.information === null) ||
       manifest.scenes.some(
         (s) =>
           s.recording === "legacy" ||
