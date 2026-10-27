@@ -160,6 +160,138 @@ test.each([
 );
 beforeAll(() => databases.verify());
 
+test.each(["complete", "disconnect", "error", "missing-usage"])(
+  "Anthropicストリームの%sを区別し、実使用量だけ精算して再送しない",
+  async (ending) => {
+    const frame = (event: unknown) => `data: ${JSON.stringify(event)}\r\n\r\n`;
+    const start = {
+      type: "message_start",
+      message: {
+        id: "msg_stream",
+        model: "claude-sonnet-5-5",
+        content: [],
+        stop_reason: null,
+        usage: {
+          input_tokens: 10,
+          output_tokens: 1,
+          cache_read_input_tokens: 30,
+          cache_creation_input_tokens: 20,
+        },
+      },
+    };
+    const wire = [
+      start,
+      { type: "ping" },
+      { type: "future_event" },
+      {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "thinking", thinking: "PRIVATE_THINKING" },
+      },
+      {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "thinking_delta", thinking: "PRIVATE_THINKING" },
+      },
+      { type: "content_block_stop", index: 0 },
+      {
+        type: "content_block_start",
+        index: 1,
+        content_block: { type: "text", text: "" },
+      },
+      {
+        type: "content_block_delta",
+        index: 1,
+        delta: { type: "text_delta", text: '{"挨拶":"こんにちは"}' },
+      },
+      { type: "content_block_stop", index: 1 },
+      ...(ending === "disconnect"
+        ? []
+        : ending === "error"
+          ? [{ type: "error", error: { type: "overloaded_error" } }]
+          : [
+              {
+                type: "message_delta",
+                delta: { stop_reason: "end_turn" },
+                ...(ending === "missing-usage"
+                  ? {}
+                  : { usage: { output_tokens: 5 } }),
+              },
+              { type: "message_stop" },
+            ]),
+    ]
+      .map(frame)
+      .join("");
+    const bytes = new TextEncoder().encode(wire);
+    const transport = vi.fn<typeof fetch>().mockImplementation(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              for (let i = 0; i < bytes.length; i += 7)
+                controller.enqueue(bytes.slice(i, i + 7));
+              controller.close();
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+    );
+    const client = new LlmClient(
+      databases.postgres,
+      {
+        ...environment(),
+        LLM_MODEL: "claude-sonnet-5-5",
+        ANTHROPIC_API_KEY: "unused",
+        LLM_CONTEXT_TOKENS: "1000000",
+        LLM_INPUT_USD_PER_MILLION: "2",
+        LLM_CACHED_INPUT_USD_PER_MILLION: "0.1",
+        LLM_OUTPUT_USD_PER_MILLION: "10",
+      },
+      transport,
+    );
+    await client.ledger.setup();
+    const id = randomUUID(),
+      messages = [{ role: "user" as const, content: "挨拶" }];
+    if (ending === "complete") {
+      const result = await client.complete(id, "stream-test", messages);
+      expect(result).toMatchObject({
+        content: '{"挨拶":"こんにちは"}',
+        finishReason: "stop",
+        usage: {
+          prompt_tokens: 60,
+          completion_tokens: 5,
+          prompt_cache_hit_tokens: 30,
+          prompt_cache_miss_tokens: 30,
+        },
+      });
+      expect(await client.complete(id, "stream-test", messages)).toEqual(
+        result,
+      );
+      expect((await client.ledger.summary()).upperCostUsd).toBeCloseTo(
+        0.000123,
+        9,
+      );
+    } else {
+      await expect(
+        client.complete(id, "stream-test", messages),
+      ).rejects.toThrow("予約枠");
+      await expect(
+        client.complete(id, "stream-test", messages),
+      ).rejects.toThrow("自動では再送");
+      expect((await client.ledger.summary()).unsettled).toBe(1);
+    }
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(transport.mock.calls[0]![1]!.body)).stream).toBe(
+      true,
+    );
+    const saved = await databases.postgres.query(
+      "SELECT response FROM llm_call WHERE id=$1",
+      [id],
+    );
+    expect(JSON.stringify(saved.rows)).not.toContain("PRIVATE_THINKING");
+  },
+);
+
 test("未完了出力はJSONとして補完せず、使用量だけ精算し再開時も自動再送しない", async () => {
   const transport = vi.fn<typeof fetch>().mockImplementation(async () =>
     Response.json({

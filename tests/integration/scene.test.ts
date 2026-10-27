@@ -175,17 +175,36 @@ const model = new LlmClient(
       expect(JSON.stringify(user.confirmed)).not.toMatch(
         /PRIVATE_|NPCだけの秘密/,
       );
-      expect(user.confirmed.observations).toContain(
-        "明日の手伝いはこれから相談しようと聞いた",
+      const observation = user.confirmed.observations.find(
+        (o: { text: string }) =>
+          o.text === "明日の手伝いはこれから相談しようと聞いた",
       );
+      expect(observation).toBeDefined();
       expect(user.confirmed.unfinishedAction).toBe("別の場所へ向かう");
       expect(
-        (await agent.view(world, actor, 1000)).observations.some(
-          (o) => o.text === "明日の手伝いはこれから相談しようと聞いた",
-        ),
-      ).toBe(true);
+        (await agent.view(world, actor, 1000)).observations,
+      ).toContainEqual(
+        expect.objectContaining({
+          id: observation.id,
+          target: observation.targetId,
+          text: observation.text,
+        }),
+      );
       content = {
         text: "村人と挨拶を交わしました。手伝いの内容はまだ決まっておらず、相談の続きが残っています。",
+        information: [
+          {
+            kind: "edge",
+            id: observation.id,
+            aspect: "村人の返答",
+            state: observation.text,
+            version: null,
+            at: 1000,
+            origin: "reference",
+            evidence:
+              "手伝いの内容はまだ決まっておらず、相談の続きが残っています。",
+          },
+        ],
       };
     } else
       throw new Error(
@@ -687,6 +706,15 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
   await access.scenes.tick(scene.id);
   view = await status();
   expect(view.state).toBe("result");
+  const recordedResult = (await access.scenes.latest(
+    construction,
+    d.postgres,
+    false,
+    actor,
+  ))!.data.presentations!.find((p) => p.kind === "result")!;
+  expect(recordedResult.information).toEqual([
+    expect.objectContaining({ kind: "edge", origin: "reference" }),
+  ]);
   expect(view.result).toContain("まだ決まっておらず");
   expect(JSON.stringify(view)).not.toMatch(/PRIVATE_|NPCだけの秘密/);
   expect(resultCalls).toBe(1);

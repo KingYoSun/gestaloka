@@ -135,6 +135,98 @@ const MessageResponse = z.object({
   content: z.array(z.object({ type: z.string(), text: z.string().optional() })),
   usage: MessageUsage,
 });
+const MessageEvent = z.object({
+  type: z.string(),
+  message: MessageResponse.optional(),
+  index: count.optional(),
+  content_block: z
+    .object({ type: z.string(), text: z.string().optional() })
+    .optional(),
+  delta: z
+    .object({
+      type: z.string().optional(),
+      text: z.string().optional(),
+      stop_reason: z.string().nullable().optional(),
+    })
+    .optional(),
+  usage: MessageUsage.partial().optional(),
+});
+async function streamedMessage(response: Response) {
+  if (!response.body) throw new Error("LLM応答のストリームがありません");
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "",
+    message: z.infer<typeof MessageResponse> | undefined;
+  let finalUsage = false;
+  const open = new Set<number>();
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done)
+        throw new Error("LLM応答が完了前に切断されました。予約枠は保持します");
+      buffer += chunk.value;
+      let boundary: RegExpExecArray | null;
+      while ((boundary = /\r?\n\r?\n/.exec(buffer))) {
+        const frame = buffer.slice(0, boundary.index);
+        buffer = buffer.slice(boundary.index + boundary[0].length);
+        const data = frame
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trimStart())
+          .join("\n");
+        if (!data) continue;
+        const event = MessageEvent.parse(JSON.parse(data));
+        if (event.type === "error")
+          throw new Error(
+            "LLM応答中にAPIエラーが発生しました。予約枠は保持します",
+          );
+        if (event.type === "message_start") message = event.message;
+        else if (
+          event.type === "content_block_start" &&
+          message &&
+          event.index !== undefined &&
+          event.content_block
+        ) {
+          // Thinking and signatures are never accumulated or persisted.
+          message.content[event.index] =
+            event.content_block.type === "text"
+              ? event.content_block
+              : { type: event.content_block.type };
+          open.add(event.index);
+        } else if (
+          event.type === "content_block_delta" &&
+          event.delta?.type === "text_delta"
+        ) {
+          const block = message?.content[event.index ?? -1];
+          if (!block || block.type !== "text" || !open.has(event.index!))
+            throw new Error("LLM応答の本文ブロックが不正です");
+          block.text = (block.text ?? "") + (event.delta.text ?? "");
+        } else if (
+          event.type === "content_block_stop" &&
+          event.index !== undefined
+        )
+          open.delete(event.index);
+        else if (event.type === "message_delta" && message) {
+          message.usage = MessageUsage.parse({
+            ...message.usage,
+            ...event.usage,
+          });
+          if (event.usage?.output_tokens !== undefined) finalUsage = true;
+          if (event.delta?.stop_reason !== undefined)
+            message.stop_reason = event.delta.stop_reason;
+        } else if (event.type === "message_stop") {
+          if (!message?.stop_reason || !finalUsage || open.size)
+            throw new Error(
+              "LLM応答の終了または使用量を確認できません。予約枠は保持します",
+            );
+          return MessageResponse.parse(message);
+        }
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
 const ResponsesResponse = z.object({
   id: z.string(),
   model: z.string(),
@@ -413,7 +505,7 @@ export class LlmClient {
               ...(effort === "none" ? {} : { effort }),
               ...(prompt?.format ? { format: prompt.format } : {}),
             },
-            stream: false,
+            stream: true,
           }
         : api === "responses"
           ? {
@@ -583,7 +675,14 @@ export class LlmClient {
               `LLM要求の結果を確定できません: HTTP ${response.status}。予約枠は保持します`,
             );
           }
-          const raw: unknown = await response.json().catch(() => {
+          const raw: unknown = await (
+            api === "messages" &&
+            response.headers.get("content-type")?.includes("text/event-stream")
+              ? streamedMessage(response)
+              : response.json()
+          ).catch((error: unknown) => {
+            if (error instanceof Error && error.message.includes("予約枠"))
+              throw error;
             throw new Error(
               "LLM応答の形式を確認できません。予約枠は保持します",
             );

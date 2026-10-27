@@ -253,6 +253,50 @@ test("意味評価の引用と入力の対応を検証し、原則違反を情�
   ).toThrow("参照先");
 });
 
+test("構造対応の欠測と本文・履歴の欠測を分けて意味評価する", () => {
+  const m = inspectionFixture();
+  const assessment = {
+    inputs: m.scenes.flatMap((s) =>
+      s.inputs.map((i) => ({
+        inputId: i.id,
+        units: [],
+        responsiveness: "responsive",
+        principle: "consistent",
+        principleEvidence: [],
+        missing: [] as string[],
+      })),
+    ),
+    otherPresentations: m.scenes.flatMap((s) =>
+      s.presentations
+        .filter((p) => p.kind !== "response")
+        .map((p) => ({ presentationId: p.id, units: [], missing: [] })),
+    ),
+    overall: {
+      newInformation: 0,
+      importance: null,
+      responsiveness: "結果を確認",
+      stagnation: "なし",
+      principle: "consistent",
+      explanation: "本文を評価",
+      missing: [],
+    },
+    disagreements: [],
+  };
+  m.prior[0]!.information = null;
+  m.scenes[0]!.presentations[0]!.information = null;
+  expect(measure(m).total.value).toBeNull();
+  expect(validateAssessment(assessment, m).overall.newInformation).toBe(0);
+  m.priorMissingScenes = [fid("lost-history")];
+  expect(validateAssessment(assessment, m).overall.newInformation).toBeNull();
+  m.priorMissingScenes = [];
+  m.requestedScenes = m.actualScenes + 1;
+  expect(validateAssessment(assessment, m).overall.newInformation).toBeNull();
+  m.requestedScenes = m.actualScenes;
+  const absent = structuredClone(assessment);
+  absent.inputs[0]!.missing.push("入力の応答本文が未保存");
+  expect(validateAssessment(absent, m).overall.newInformation).toBeNull();
+});
+
 test("実モデルの保存済み評価が必要な区別・根拠・不足を記録している", async () => {
   const record = JSON.parse(
     await readFile(
