@@ -356,23 +356,61 @@ test.each([
       ),
   },
   {
-    name: "他providerのHTTP 400",
+    name: "DeepSeekの非課金を確認できないHTTP 400",
     model: "deepseek-flash",
     reply: () =>
       Response.json(
         {
-          type: "error",
-          error: { type: "invalid_request_error", message: "failure" },
-          request_id: "failed",
+          error: {
+            type: "invalid_request_error",
+            message: "failure",
+            param: null,
+            code: "invalid_request_error",
+          },
         },
         { status: 400 },
       ),
   },
-])("$name: 予約を保持し、同じ呼出しを再送しない", async ({ model, reply }) => {
+  ...["chat-completions", "responses"].map((api) => ({
+    name: `OpenAI ${api}の非課金を確認できないHTTP 400`,
+    model: "gpt-6-luna",
+    api,
+    reply: () =>
+      Response.json(
+        {
+          error: {
+            type: "invalid_request_error",
+            message: "failure",
+            param: "input",
+            code: "invalid_value",
+          },
+        },
+        { status: 400 },
+      ),
+  })),
+  {
+    name: "Geminiの本文を確認できないHTTP 400",
+    model: "gemini-3.8-flash",
+    reply: () => new Response("not JSON", { status: 400 }),
+  },
+  {
+    name: "Geminiの不整合な拒否形式",
+    model: "gemini-3.8-flash",
+    reply: () =>
+      Response.json(
+        [{ error: { code: 500, message: "failure", status: "INTERNAL" } }],
+        { status: 400 },
+      ),
+  },
+])("$name: 予約を保持し、同じ呼出しを再送しない", async (failure) => {
+  const { model, reply } = failure;
   const config = {
     ...environment(),
     LLM_MODEL: model ?? "claude-sonnet-5-5",
+    LLM_API: "api" in failure ? failure.api : undefined,
     ANTHROPIC_API_KEY: "unused",
+    OPENAI_API_KEY: "unused",
+    GEMINI_API_KEY: "unused",
     LLM_CONTEXT_TOKENS: "10000",
     LLM_MAX_OUTPUT_TOKENS: "1000",
     LLM_INPUT_USD_PER_MILLION: "2",
