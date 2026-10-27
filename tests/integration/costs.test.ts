@@ -75,6 +75,119 @@ afterEach(async () => {
   await isolated.close();
 });
 
+test.each([false, true])(
+  "非課金のHTTP 400は全体・世界の予約を解除し、拒否を保存して再送しない（構造化入力=%s）",
+  async (structured) => {
+    const pool = isolated.databases.postgres,
+      id = randomUUID(),
+      worldId = randomUUID(),
+      config = env(model.ledger.budgetId),
+      rejection = {
+        type: "error",
+        error: {
+          type: "invalid_request_error",
+          message: "Schema is too large",
+        },
+        request_id: "rejected-request",
+      },
+      input = [
+        {
+          role: "user" as const,
+          content: structured
+            ? JSON.stringify({
+                confirmed: { text: "確定情報" },
+                responseSchema: {
+                  type: "object",
+                  properties: { text: { type: "string" } },
+                  required: ["text"],
+                  additionalProperties: false,
+                },
+              })
+            : "JSON",
+        },
+      ],
+      transport = vi.fn<typeof fetch>().mockImplementation(async () => {
+        expect((await model.ledger.summary()).upperCostUsd).toBeGreaterThan(0);
+        expect(
+          (
+            await pool.query(
+              "SELECT used_nano FROM world_budget WHERE world_id=$1",
+              [worldId],
+            )
+          ).rows[0].used_nano,
+        ).not.toBe("0");
+        return Response.json(rejection, { status: 400 });
+      });
+    model = new LlmClient(pool, config, transport);
+    await pool.query(
+      "INSERT INTO world_budget(world_id,limit_nano) VALUES($1,40000000000)",
+      [worldId],
+    );
+    await expect(
+      model.run(
+        id,
+        () => model.complete(id, "scene-result", input),
+        worldId,
+        user,
+      ),
+    ).rejects.toThrow("HTTP 400で拒否されました。予約枠を解除しました");
+    const saved = (await pool.query("SELECT * FROM llm_call WHERE id=$1", [id]))
+      .rows[0];
+    expect(saved).toMatchObject({
+      state: "complete",
+      charged_nano: "0",
+      response: { rejection },
+    });
+    expect(saved.response).not.toHaveProperty("usage");
+    expect(Boolean(saved.request.sourceMessages)).toBe(structured);
+    const reopened = new LlmClient(pool, config, transport);
+    await expect(reopened.complete(id, "scene-result", input)).rejects.toThrow(
+      saved.response.error,
+    );
+    await expect(
+      reopened.complete(id, "scene-result", [
+        { role: "user", content: "別の要求" },
+      ]),
+    ).rejects.toThrow("異なる要求");
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(
+      (await pool.query("SELECT * FROM llm_call WHERE id=$1", [id])).rows[0],
+    ).toEqual(saved);
+    expect(await model.ledger.summary()).toMatchObject({
+      upperCostUsd: 0,
+      calls: 1,
+      unsettled: 0,
+    });
+    expect(
+      (
+        await pool.query(
+          "SELECT used_nano FROM world_budget WHERE world_id=$1",
+          [worldId],
+        )
+      ).rows[0].used_nano,
+    ).toBe("0");
+    expect(
+      (await pool.query("SELECT tokens FROM llm_model_use")).rows.map(
+        (r) => r.tokens,
+      ),
+    ).toEqual(["0"]);
+    expect((await read({ ...query, view: "summary" })).totals).toEqual({
+      calls: 1,
+      calculatedNanoUsd: "0",
+      reservedNanoUsd: "0",
+      unknownNanoUsd: "0",
+      reservedCalls: 0,
+      unknownCalls: 0,
+    });
+    expect((await read({ ...query, view: "calls" })).calls![0]).toMatchObject({
+      status: "calculated",
+      calculatedNanoUsd: "0",
+      responseModel: null,
+      usage: null,
+    });
+  },
+);
+
 test("キャッシュの読取・5分作成・1時間作成を分け、標準倍率と上書き単価を保存する", async () => {
   const id = randomUUID(),
     root = randomUUID(),

@@ -536,10 +536,42 @@ export class LlmClient {
               signal: AbortSignal.timeout(180000),
             },
           );
-          if (!response.ok)
+          if (!response.ok) {
+            if (
+              provider === "anthropic" &&
+              api === "messages" &&
+              response.status === 400
+            ) {
+              const raw: unknown = await response.json().catch(() => null);
+              const rejected = z
+                .object({
+                  type: z.literal("error"),
+                  error: z.object({
+                    type: z.literal("invalid_request_error"),
+                    message: z.string(),
+                  }),
+                  request_id: z.string(),
+                })
+                .safeParse(raw);
+              if (rejected.success) {
+                // Failed API calls are not billed; timeouts remain uncertain.
+                // https://support.claude.com/en/articles/8977456
+                const error =
+                  "LLM要求がHTTP 400で拒否されました。予約枠を解除しました";
+                await this.ledger.settle(
+                  id,
+                  0,
+                  { error, rejection: raw },
+                  Math.round(performance.now() - started),
+                );
+                quota.used(0);
+                throw new Error(error);
+              }
+            }
             throw new Error(
               `LLM要求の結果を確定できません: HTTP ${response.status}。予約枠は保持します`,
             );
+          }
           const raw: unknown = await response.json().catch(() => {
             throw new Error(
               "LLM応答の形式を確認できません。予約枠は保持します",

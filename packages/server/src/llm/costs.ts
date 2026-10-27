@@ -117,7 +117,7 @@ export async function readCosts(
     request->'connection'->>'provider' AS provider,request->'request'->>'model' AS requested_model,
     response->>'model' AS response_model,request->>'role' AS task,request->'configurationVersion' AS configuration_version,
     request->>'pricingDate' AS pricing_date,state,delivery,charged_nano,reserved_nano,elapsed_ms,
-    CASE WHEN response IS NULL THEN NULL ELSE jsonb_build_object(
+    CASE WHEN response->'usage' IS NULL THEN NULL ELSE jsonb_build_object(
       'input',response->'usage'->'prompt_tokens','cachedInput',response->'usage'->'prompt_cache_hit_tokens',
       'cacheMissInput',response->'usage'->'prompt_cache_miss_tokens','output',response->'usage'->'completion_tokens',
       'cacheWrite5m',response->'usage'->'cache_write_5m_tokens','cacheWrite1h',response->'usage'->'cache_write_1h_tokens',

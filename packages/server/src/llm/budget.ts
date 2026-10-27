@@ -20,6 +20,7 @@ export type SavedCompletion = {
     reasoning_tokens?: number;
   };
 };
+type SavedResponse = SavedCompletion | { error: string; rejection: unknown };
 
 export class BudgetLedger {
   constructor(
@@ -85,7 +86,7 @@ export class BudgetLedger {
         hash: string;
         budget_id: string;
         state: string;
-        response: SavedCompletion;
+        response: SavedResponse;
       }>(
         "SELECT hash, budget_id, state, response FROM llm_call WHERE id = $1",
         [id],
@@ -100,6 +101,8 @@ export class BudgetLedger {
           throw new BudgetUnavailable(
             "送信済み要求の結果が未確定です。自動では再送しません",
           );
+        if ("error" in prior.rows[0].response)
+          throw new Error(prior.rows[0].response.error);
         await client.query("COMMIT");
         return prior.rows[0].response;
       }
@@ -161,7 +164,7 @@ export class BudgetLedger {
   async settle(
     id: string,
     charged: number,
-    response: SavedCompletion,
+    response: SavedResponse,
     elapsedMs: number,
   ) {
     const client = await this.pool.connect();
