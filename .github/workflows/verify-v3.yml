@@ -36,7 +36,9 @@ jobs:
       - run: pnpm test:integration
       - run: pnpm auth:up
       - run: pnpm test:auth
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: |
+          sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources
+          pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - if: failure()
         run: docker compose logs && docker compose --env-file .env --env-file .env.ory -f compose.yaml -f compose.ory.yaml logs --no-color
