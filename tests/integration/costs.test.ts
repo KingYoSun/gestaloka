@@ -736,9 +736,19 @@ test("OpenAIの30分・12時間書込を重複せず精算し、旧応答の料�
   );
   const oldCall = randomUUID(),
     newCall = randomUUID();
-  await managed.run(legacy, () =>
-    managed.complete(oldCall, "openai-cache", messages),
-  );
+  await managed.run(legacy, async () => {
+    const child = randomUUID();
+    await managed.settingsAt("resolution", child, pool);
+    expect(
+      (
+        await pool.query(
+          "SELECT billing_version FROM llm_response_settings WHERE id=$1",
+          [child],
+        )
+      ).rows[0].billing_version,
+    ).toBe(2);
+    await managed.complete(oldCall, "openai-cache", messages);
+  });
   await managed.run(randomUUID(), () =>
     managed.complete(newCall, "openai-cache", messages),
   );

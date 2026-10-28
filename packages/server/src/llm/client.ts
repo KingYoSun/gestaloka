@@ -373,6 +373,7 @@ export class LlmClient {
       id,
       database,
       configurationScope.getStore()?.version,
+      configurationScope.getStore()?.billingVersion,
     );
     if (!snapshot) throw new Error("モデルの運用設定を有効にしてください");
     return settings(
@@ -410,6 +411,7 @@ export class LlmClient {
                 rootId,
                 undefined,
                 child?.version,
+                child?.billingVersion,
               );
         return configurationScope.run(snapshot ?? null, work);
       },

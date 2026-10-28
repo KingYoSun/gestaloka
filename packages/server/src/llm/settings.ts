@@ -136,10 +136,15 @@ export class ModelSettings {
       credentials,
     };
   }
-  async capture(id: string, db: Database = this.pool, version?: number) {
+  async capture(
+    id: string,
+    db: Database = this.pool,
+    version?: number,
+    billingVersion = 3,
+  ) {
     await db.query(
-      `INSERT INTO llm_response_settings(id,version,billing_version) SELECT $1,version,3 FROM llm_settings WHERE ($2::int IS NULL OR version=$2) ORDER BY version DESC LIMIT 1 ON CONFLICT(id) DO NOTHING`,
-      [id, version ?? null],
+      `INSERT INTO llm_response_settings(id,version,billing_version) SELECT $1,version,$3 FROM llm_settings WHERE ($2::int IS NULL OR version=$2) ORDER BY version DESC LIMIT 1 ON CONFLICT(id) DO NOTHING`,
+      [id, version ?? null, billingVersion],
     );
     return snapshot(
       (
