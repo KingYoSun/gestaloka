@@ -1,15 +1,12 @@
 import { expect, test } from "vitest";
 import { readFile } from "node:fs/promises";
-import { z } from "zod";
-import { outputSchema } from "../../packages/server/src/llm/prompt.js";
 import { InspectionManifest } from "@gestaloka/contracts";
 import { measure } from "../../packages/server/src/inspection/measure.js";
 import { summarizeHistory } from "../../packages/server/src/inspection/history.js";
 import { recordPresentations } from "../../packages/server/src/inspection/record.js";
 import {
   validateAssessment,
-  assessmentDraft,
-  decodeAssessment,
+  inspectionItem,
   quoteSources,
 } from "../../packages/server/src/inspection/evaluate.js";
 import {
@@ -171,67 +168,41 @@ test("初期提示を既知集合へ加え、未記録と旧指標を区別す�
   });
 });
 
-test("評価出力は全対象のIDを必須とし、未来の根拠とモデルによる欠測の追加を許さない", () => {
+test("引用候補は当該応答を必須とし、元のIDと原文へ復元する", () => {
   const m = inspectionFixture(),
-    schema = assessmentDraft(m),
-    value = {
-      inputs: m.scenes
-        .flatMap((s) => s.inputs)
-        .map((_i, index) => ({
-          index,
-          units: [],
-          responsiveness: "responsive",
-          principle: "consistent",
-          principleEvidence: [] as {
-            presentationId: number;
-            quote: string;
-            explanation: string;
-          }[],
-          disagreements: [],
-        })),
-      otherPresentations: m.scenes
-        .flatMap((s) => s.presentations.filter((p) => p.kind !== "response"))
-        .map((_p, index) => ({ index, units: [], disagreements: [] })),
-      overall: {
-        responsiveness: "結果を確認",
-        stagnation: "なし",
-        principle: "consistent",
-        explanation: "保存済みの提示を評価",
+    sources = [m.prior[0]!, m.scenes[0]!.presentations[0]!],
+    item = inspectionItem("input", sources, [1]);
+  const current = item.quotes.find((q) => q.presentationId === 1)!,
+    previous = item.quotes.find((q) => q.presentationId === 0)!;
+  const value = {
+    units: [
+      {
+        text: "入力の復唱",
+        category: "duplicate",
+        importance: 0,
+        evidence: {
+          current: { quoteIndex: current.quoteIndex },
+          context: [{ quoteIndex: previous.quoteIndex }],
+        },
+        explanation: "既知情報の再提示",
       },
-    };
-  expect(() => schema.parse(value)).not.toThrow();
-  expect(decodeAssessment(value, m).overall.newInformation).toBe(0);
-  const first = Object.values(value.inputs)[0]!;
-  first.principleEvidence = [
-    {
-      presentationId: m.prior.length + m.scenes[0]!.presentations.length - 1,
-      quote: m.scenes[0]!.presentations.at(-1)!.text,
-      explanation: "未来の根拠",
-    },
-  ];
-  expect(() => decodeAssessment(value, m)).toThrow("提示範囲");
-  first.principleEvidence = [];
-  expect(() =>
-    schema.parse({
-      ...value,
-      overall: { ...value.overall, missing: ["構造対応がnull"] },
-    }),
-  ).toThrow();
-  const incomplete = structuredClone(value);
-  incomplete.inputs.pop();
-  expect(() => schema.parse(incomplete)).toThrow();
-});
-
-test("評価対象を増やしてもプロバイダーの出力schemaを大きくしない", () => {
-  const a = inspectionFixture(),
-    b = structuredClone(a);
-  b.scenes[0]!.inputs.push({
-    ...b.scenes[0]!.inputs[0]!,
-    id: fid("extra-input"),
-  });
-  const native = (m: typeof a) =>
-    outputSchema(z.toJSONSchema(assessmentDraft(m), { reused: "ref" }));
-  expect(native(b)).toEqual(native(a));
+    ],
+    responsiveness: "responsive",
+    principle: "consistent",
+    principleEvidence: [
+      { quoteIndex: current.quoteIndex, explanation: "当該応答を確認" },
+    ],
+    disagreements: [{ presentationId: 0, explanation: "比較元" }],
+  };
+  const { disagreements, ...part } = item.restore(item.schema.parse(value));
+  expect(part.units[0]!.evidence).toEqual([
+    { presentationId: sources[1]!.id, quote: current.text },
+    { presentationId: sources[0]!.id, quote: previous.text },
+  ]);
+  expect(disagreements[0]!.presentationId).toBe(sources[0]!.id);
+  const wrong = structuredClone(value);
+  wrong.units[0]!.evidence.current.quoteIndex = previous.quoteIndex;
+  expect(() => item.schema.parse(wrong)).toThrow();
 });
 
 test("引用候補は原文の短い範囲を保持し、引用文を生成しない", () => {
