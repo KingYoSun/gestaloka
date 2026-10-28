@@ -139,9 +139,9 @@ try {
       ).rows[0]?.version ?? 0,
       admin,
     );
-    await mkdir("/runtime/harness", { recursive: true });
+    await mkdir("/runtime/backup-fixture", { recursive: true });
     await writeFile(
-      "/runtime/harness/recovery-context.json",
+      "/runtime/backup-fixture/recovery-context.json",
       JSON.stringify({ id: join, continuation: "saved-context" }),
     );
     const fees = (
@@ -204,7 +204,7 @@ try {
     );
     assert.equal(
       JSON.parse(
-        await readFile("/runtime/harness/recovery-context.json", "utf8"),
+        await readFile("/runtime/backup-fixture/recovery-context.json", "utf8"),
       ).id,
       expected.join,
     );
@@ -255,7 +255,7 @@ try {
         roles: true,
         actor: true,
         scene: true,
-        harnessContext: true,
+        runtimeFiles: true,
         encryptedCredential: true,
         receiptReconciled: true,
         noReroll: true,

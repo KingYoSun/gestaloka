@@ -3,7 +3,7 @@ import type pg from "pg";
 import {
   ModelConfiguration,
   ModelProvider,
-  type ModelSetting,
+  ModelSetting,
 } from "@gestaloka/contracts";
 import type { z } from "zod";
 import { settings, llmApiKey } from "./config.js";
@@ -11,6 +11,15 @@ import { settings, llmApiKey } from "./config.js";
 type Configuration = z.infer<typeof ModelConfiguration>;
 type Provider = z.infer<typeof ModelProvider>;
 type Database = Pick<pg.Pool, "query">;
+const snapshot = (row: SettingsSnapshot | undefined) =>
+  row && {
+    ...row,
+    configuration: {
+      ...row.configuration,
+      default: ModelSetting.strip().parse(row.configuration.default),
+      resolution: ModelSetting.strip().parse(row.configuration.resolution),
+    },
+  };
 export type SettingsSnapshot = {
   version: number;
   configuration: Configuration;
@@ -32,11 +41,12 @@ export class ModelSettings {
   }
   static environment(
     config: Configuration,
-    billingVersion = 2,
+    billingVersion = 3,
   ): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = {
       LLM_RESOLUTION_JUDGMENT: config.judgment,
       LLM_CACHE_BILLING: billingVersion === 1 ? "legacy" : "split",
+      LLM_OPENAI_CACHE_BILLING: billingVersion >= 3 ? "split" : "legacy",
     };
     for (const role of ["default", "resolution"] as const) {
       const m = config[role],
@@ -57,6 +67,10 @@ export class ModelSettings {
           m.cacheWrite5mUsdPerMillion ?? m.inputUsdPerMillion * 1.25,
         CACHE_WRITE_1H_USD_PER_MILLION:
           m.cacheWrite1hUsdPerMillion ?? m.inputUsdPerMillion * 2,
+        CACHE_WRITE_30M_USD_PER_MILLION:
+          m.cacheWrite30mUsdPerMillion ?? m.inputUsdPerMillion * 1.25,
+        CACHE_WRITE_12H_USD_PER_MILLION:
+          m.cacheWrite12hUsdPerMillion ?? m.inputUsdPerMillion * 2.5,
         PRICING_DATE: m.pricingDate,
       }))
         if (value !== undefined) env[prefix + key] = String(value);
@@ -66,10 +80,6 @@ export class ModelSettings {
         env[`${m.provider.toUpperCase()}_INITIAL_REASONING_EFFORT`] =
           m.initialEffort;
       }
-      if (role === "resolution" && m.provider === "deepseek")
-        env.DEEPSEEK_HARNESS_BASE_URL =
-          m.harnessBaseUrl ??
-          `${m.baseUrl.replace(/\/v1\/?$/, "").replace(/\/+$/, "")}/anthropic`;
     }
     return env;
   }
@@ -98,11 +108,13 @@ export class ModelSettings {
   async latest(
     db: Database = this.pool,
   ): Promise<SettingsSnapshot | undefined> {
-    return (
-      await db.query<SettingsSnapshot>(
-        "SELECT version,configuration FROM llm_settings ORDER BY version DESC LIMIT 1",
-      )
-    ).rows[0];
+    return snapshot(
+      (
+        await db.query<SettingsSnapshot>(
+          "SELECT version,configuration FROM llm_settings ORDER BY version DESC LIMIT 1",
+        )
+      ).rows[0],
+    );
   }
   async read(db: Database = this.pool) {
     const row = await this.latest(db);
@@ -126,15 +138,17 @@ export class ModelSettings {
   }
   async capture(id: string, db: Database = this.pool, version?: number) {
     await db.query(
-      `INSERT INTO llm_response_settings(id,version,billing_version) SELECT $1,version,2 FROM llm_settings WHERE ($2::int IS NULL OR version=$2) ORDER BY version DESC LIMIT 1 ON CONFLICT(id) DO NOTHING`,
+      `INSERT INTO llm_response_settings(id,version,billing_version) SELECT $1,version,3 FROM llm_settings WHERE ($2::int IS NULL OR version=$2) ORDER BY version DESC LIMIT 1 ON CONFLICT(id) DO NOTHING`,
       [id, version ?? null],
     );
-    return (
-      await db.query<SettingsSnapshot>(
-        'SELECT c.version,c.configuration,s.billing_version AS "billingVersion" FROM llm_settings c JOIN llm_response_settings s ON s.version=c.version WHERE s.id=$1',
-        [id],
-      )
-    ).rows[0];
+    return snapshot(
+      (
+        await db.query<SettingsSnapshot>(
+          'SELECT c.version,c.configuration,s.billing_version AS "billingVersion" FROM llm_settings c JOIN llm_response_settings s ON s.version=c.version WHERE s.id=$1',
+          [id],
+        )
+      ).rows[0],
+    );
   }
   async verify(
     configuration: Configuration,
@@ -295,11 +309,12 @@ export class ModelSettings {
               cacheWrite1hUsdPerMillion: s.cacheWrite1h! / 1000,
             }),
         pricingDate: s.pricingDate,
-        ...(role === "resolution" &&
-        s.provider === "deepseek" &&
-        env.DEEPSEEK_HARNESS_BASE_URL
-          ? { harnessBaseUrl: env.DEEPSEEK_HARNESS_BASE_URL }
-          : {}),
+        ...(s.cacheWrite30m === undefined
+          ? {}
+          : {
+              cacheWrite30mUsdPerMillion: s.cacheWrite30m / 1000,
+              cacheWrite12hUsdPerMillion: s.cacheWrite12h! / 1000,
+            }),
       };
     };
     const configuration = {

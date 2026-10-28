@@ -25,6 +25,8 @@ export type SavedCompletion = {
     prompt_cache_miss_tokens: number;
     cache_write_5m_tokens?: number;
     cache_write_1h_tokens?: number;
+    cache_write_30m_tokens?: number;
+    cache_write_12h_tokens?: number;
     reasoning_tokens?: number;
   };
 };
@@ -84,6 +86,7 @@ export class BudgetLedger {
     reservation: number,
     request: unknown,
     inputTokens?: number,
+    countSource = "anthropic-count-tokens",
   ): Promise<SavedCompletion | undefined> {
     const client = await this.pool.connect();
     try {
@@ -162,7 +165,7 @@ export class BudgetLedger {
             ? null
             : JSON.stringify({
                 version: 1,
-                source: "anthropic-count-tokens",
+                source: countSource,
                 inputTokens,
               }),
         ],
@@ -339,11 +342,14 @@ export class BudgetLedger {
     return result.rows[0]?.state;
   }
   async input(id: string) {
-    const result = await this.pool.query<{ request: unknown }>(
-      "SELECT request FROM llm_call WHERE id=$1 AND budget_id=$2",
+    return (await this.savedInput(id))?.request;
+  }
+  async savedInput(id: string) {
+    const result = await this.pool.query<{ hash: string; request: unknown }>(
+      "SELECT hash,request FROM llm_call WHERE id=$1 AND budget_id=$2",
       [id, this.budgetId],
     );
-    return result.rows[0]?.request;
+    return result.rows[0];
   }
 
   async summary() {

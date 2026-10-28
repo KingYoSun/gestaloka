@@ -131,9 +131,13 @@ async function agent(
   await runtime.setup();
   return runtime;
 }
-test.each(["separate", "combined"])(
-  "%sの判断方式を操作に保存し、形式の修正と再実行でも二重適用しない",
-  async (judgment) => {
+test.each(
+  ["separate", "combined"].flatMap((judgment) =>
+    ["openai", "deepseek"].map((provider) => ({ judgment, provider })),
+  ),
+)(
+  "$provider / $judgmentの判断方式を操作に保存し、形式の修正と再実行でも二重適用しない",
+  async ({ judgment, provider }) => {
     const scene = await fixture();
     const accepted = edge("see", scene.actor, scene.object, "今回受容した側面");
     let attempts = 0;
@@ -154,8 +158,11 @@ test.each(["separate", "combined"])(
       );
     });
     const runtime = await agent(transport, {
-      LLM_RESOLUTION_MODEL: "gpt-6-luna",
+      LLM_RESOLUTION_MODEL:
+        provider === "deepseek" ? "deepseek-flash" : "gpt-6-luna",
+      LLM_RESOLUTION_PROVIDER: provider,
       OPENAI_API_KEY: "unused",
+      DEEPSEEK_API_KEY: "unused",
       LLM_RESOLUTION_JUDGMENT: judgment,
     });
     const calls = vi.spyOn(runtime.model, "complete");

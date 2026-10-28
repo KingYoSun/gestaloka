@@ -22,9 +22,7 @@ import {
   type WorldEdge,
 } from "../world/model.js";
 import type { LlmClient, ChatMessage } from "../llm/client.js";
-import { HarnessCommunicationError, runHarness } from "./harness.js";
 import { CompletedScene, mergeSceneChanges } from "./scene-data.js";
-import { ExecutionLimit } from "../execution-budget.js";
 
 const Time = z.number().int().nonnegative().safe();
 export const IntentResult = z
@@ -244,7 +242,6 @@ export class WorldAgent {
     const target = await this.model.settingsAt("resolution", id, database);
     const combined =
       target.judgment === "combined" &&
-      target.provider !== "deepseek" &&
       ["interaction", "resolution"].includes(input.phase);
     z.uuid().parse(runId);
     let system = await readFile(
@@ -944,7 +941,6 @@ export class WorldAgent {
           }
         },
       );
-      let communicationRestarts = 0;
       const workflow = entrypoint(
         { name: "world-operation", checkpointer: this.checkpointer },
         async () => {
@@ -981,184 +977,6 @@ export class WorldAgent {
                   dependencies: row.dependencies,
                 });
                 return this.#finish(row, claim);
-              }
-              if (
-                this.model.settingsFor("resolution").provider === "deepseek" &&
-                (["interaction", "resolution", "participant"].includes(
-                  row.request.phase,
-                ) ||
-                  row.candidate)
-              ) {
-                let proposalId = row.candidate ? randomUUID() : undefined;
-                let paused: string | undefined;
-                let committed = false;
-                // Native tools share acceptance rules, not the direct API's JSON return protocol.
-                const reviewPrompt = [
-                  "提出済み候補とrequest・evidenceを、次の条件で照合してください。",
-                  ...(
-                    await readFile(
-                      new URL(
-                        "../../../../prompts/world-commit.md",
-                        import.meta.url,
-                      ),
-                      "utf8",
-                    )
-                  )
-                    .split(/\r?\n/)
-                    .filter((line) => line.startsWith("- ")),
-                  "条件を満たす候補はworld_commitで確定します。不備や確認不足があればworld_readで必要な根拠を照会し、world_proposeで修正した候補を提出してください。新しいproposalIdを受け取ってから再度照合し、world_commitへ進みます。必要な条件を本当に取得できない場合はworld_pauseを使います。特定の物語や返答の好みを合否基準にせず、推論過程は出力しません。",
-                ].join("\n\n");
-                try {
-                  await runHarness({
-                    id,
-                    epoch: row.epoch,
-                    model: this.model,
-                    restartOn: (error) =>
-                      error instanceof WorldConflict ||
-                      error instanceof ExecutionLimit ||
-                      error instanceof RuntimeStopped ||
-                      error instanceof SupersededWorker,
-                    system:
-                      row.system_prompt.replace(
-                        "与えられたJSONスキーマに一致するJSONオブジェクトだけを返してください。",
-                        "",
-                      ) +
-                      "\n\n追加照会はworld_read、候補の提出はworld_proposeを使います。提出後、返されたproposalIdと候補・根拠を確認し、world_commitで確定を要求してください。保留はworld_pauseを使い、本文だけで確定したことにしません。確定後は短く完了を伝えて終了してください。\n\n" +
-                      reviewPrompt,
-                    input: {
-                      ...this.#reviewContext(row),
-                      proposalId,
-                    },
-                    tools: [
-                      {
-                        name: "world_read",
-                        description:
-                          "この世界の必要なノード・関係・履歴を照会する。内部照会は観測ではない。",
-                        schema: z.toJSONSchema(
-                          z
-                            .object({ requests: z.array(Query).min(1) })
-                            .strict(),
-                          { io: "input" },
-                        ),
-                        execute: async (input) => {
-                          const value = z
-                            .object({ requests: z.array(Query).min(1) })
-                            .parse(input);
-                          // MCP returns recoverable tool errors to dsh; a failed workflow task would abort the parent.
-                          const output = await this.read(row, value.requests);
-                          row.dependencies = output.dependencies;
-                          await this.#save(row, claim);
-                          return output.results;
-                        },
-                      },
-                      {
-                        name: "world_propose",
-                        description:
-                          "世界変更の候補を提出する。まだ世界へ確定しない。返されたproposalIdを確認し確定判断へ進む。",
-                        schema: z.toJSONSchema(Proposal, { io: "input" }),
-                        execute: async (input) => {
-                          if (paused || committed)
-                            throw new Error("この実行は既に終了しています");
-                          const candidate = this.#sceneProposal(
-                            row,
-                            Proposal.parse(input),
-                          );
-                          row.dependencies = await this.#validateProposal(
-                            row,
-                            candidate,
-                          );
-                          row.candidate = candidate;
-                          row.approved = false;
-                          proposalId = randomUUID();
-                          await this.#save(row, claim);
-                          return {
-                            proposalId,
-                            candidate,
-                            execution: this.#reviewContext(row, candidate)
-                              .execution,
-                            review: reviewPrompt,
-                          };
-                        },
-                      },
-                      {
-                        name: "world_commit",
-                        description:
-                          "提出した候補と根拠を照合し、受入条件を満たす場合に確定する。形式・参照・版検査を通して原子的に確定する。",
-                        schema: z.toJSONSchema(
-                          z
-                            .object({
-                              proposalId: z.uuid(),
-                              reason: z.string().min(1),
-                            })
-                            .strict(),
-                          { io: "input" },
-                        ),
-                        execute: async (input) => {
-                          const approval = z
-                            .object({
-                              proposalId: z.uuid(),
-                              reason: z.string().min(1),
-                            })
-                            .parse(input);
-                          if (
-                            paused ||
-                            approval.proposalId !== proposalId ||
-                            !row.candidate
-                          )
-                            throw new Error(
-                              "有効な候補のproposalIdを指定してください",
-                            );
-                          if (committed) return { committed: true };
-                          row.dependencies = await this.#validateProposal(
-                            row,
-                            row.candidate,
-                          );
-                          row.approved = true;
-                          await this.#save(row, claim);
-                          await commit({
-                            candidate: row.candidate,
-                            dependencies: row.dependencies,
-                          });
-                          committed = true;
-                          return {
-                            committed: true,
-                            summary: row.candidate.summary,
-                          };
-                        },
-                      },
-                      {
-                        name: "world_pause",
-                        description:
-                          "取得できない必要条件を明示し、世界を変更せず保留する。",
-                        schema: z.toJSONSchema(
-                          z.object({ reason: z.string().min(1) }).strict(),
-                          { io: "input" },
-                        ),
-                        execute: async (input) => {
-                          paused = z
-                            .object({ reason: z.string().min(1) })
-                            .parse(input).reason;
-                          return { paused: true };
-                        },
-                      },
-                    ],
-                  });
-                } catch (error) {
-                  if (
-                    !(await this.store.receipt(
-                      row.request.worldId,
-                      row.commit_id,
-                    ))
-                  )
-                    throw error;
-                }
-                if (
-                  await this.store.receipt(row.request.worldId, row.commit_id)
-                )
-                  return this.#finish(row, claim);
-                throw new OperationPaused(
-                  paused ?? "dshから世界への確定が完了していないため保留します",
-                );
               }
               if (row.candidate) {
                 if (!row.approved) {
@@ -1314,14 +1132,7 @@ export class WorldAgent {
               }
               await this.#save(row, claim);
             } catch (error) {
-              if (!(error instanceof WorldConflict)) {
-                if (
-                  (await this.model.ledger.hasPendingOperation(id)) ||
-                  !(error instanceof HarnessCommunicationError) ||
-                  communicationRestarts++ > 0
-                )
-                  throw error;
-              }
+              if (!(error instanceof WorldConflict)) throw error;
               row.epoch++;
               row.step = 0;
               row.messages = null;

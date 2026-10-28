@@ -6699,10 +6699,6 @@
                                     "type": "string",
                                     "format": "uri"
                                   },
-                                  "harnessBaseUrl": {
-                                    "type": "string",
-                                    "format": "uri"
-                                  },
                                   "api": {
                                     "type": "string",
                                     "enum": [
@@ -6759,6 +6755,14 @@
                                     "minimum": 0
                                   },
                                   "cacheWrite1hUsdPerMillion": {
+                                    "type": "number",
+                                    "minimum": 0
+                                  },
+                                  "cacheWrite30mUsdPerMillion": {
+                                    "type": "number",
+                                    "minimum": 0
+                                  },
+                                  "cacheWrite12hUsdPerMillion": {
                                     "type": "number",
                                     "minimum": 0
                                   },
@@ -6809,10 +6813,6 @@
                                     "type": "string",
                                     "format": "uri"
                                   },
-                                  "harnessBaseUrl": {
-                                    "type": "string",
-                                    "format": "uri"
-                                  },
                                   "api": {
                                     "type": "string",
                                     "enum": [
@@ -6869,6 +6869,14 @@
                                     "minimum": 0
                                   },
                                   "cacheWrite1hUsdPerMillion": {
+                                    "type": "number",
+                                    "minimum": 0
+                                  },
+                                  "cacheWrite30mUsdPerMillion": {
+                                    "type": "number",
+                                    "minimum": 0
+                                  },
+                                  "cacheWrite12hUsdPerMillion": {
                                     "type": "number",
                                     "minimum": 0
                                   },

@@ -22,6 +22,9 @@ export const profiles: Record<
     inputMiss: number;
     inputHit: number;
     output: number;
+    api?: Api;
+    pricingDate?: string;
+    longContext?: { threshold: number; input: number; output: number };
   }
 > = {
   "deepseek-flash": {
@@ -38,9 +41,34 @@ export const profiles: Record<
     version: "Gemini 3.8 Flash",
     context: 1048576,
     maxOutput: 65536,
-    inputMiss: 1500,
-    inputHit: 150,
-    output: 7500,
+    inputMiss: 750,
+    inputHit: 75,
+    output: 3750,
+    pricingDate: "2026-10-29",
+  },
+  "gpt-6.1-terra": {
+    provider: "openai",
+    version: "GPT-6.1 Terra",
+    api: "responses",
+    context: 1050000,
+    maxOutput: 128000,
+    inputMiss: 1000,
+    inputHit: 50,
+    output: 5000,
+    pricingDate: "2026-10-29",
+    longContext: { threshold: 272000, input: 2, output: 1.5 },
+  },
+  "gpt-6.1-sol": {
+    provider: "openai",
+    version: "GPT-6.1 Sol",
+    api: "responses",
+    context: 1050000,
+    maxOutput: 128000,
+    inputMiss: 2000,
+    inputHit: 100,
+    output: 10000,
+    pricingDate: "2026-10-29",
+    longContext: { threshold: 272000, input: 2, output: 1.5 },
   },
   "gpt-6-luna": {
     provider: "openai",
@@ -138,12 +166,18 @@ export function settings(
           cacheWrite5m: rate("CACHE_WRITE_5M", inputMiss * 1.25),
           cacheWrite1h: rate("CACHE_WRITE_1H", inputMiss * 2),
         }
-      : {};
+      : provider === "openai" && env.LLM_OPENAI_CACHE_BILLING !== "legacy"
+        ? {
+            cacheWrite30m: rate("CACHE_WRITE_30M", inputMiss * 1.25),
+            cacheWrite12h: rate("CACHE_WRITE_12H", inputMiss * 2.5),
+          }
+        : {};
   const api = z
     .enum(["chat-completions", "responses", "messages"])
     .parse(
       get("API") ??
         optional(env, `${prefix}_API`) ??
+        known?.api ??
         (provider === "anthropic" ? "messages" : "chat-completions"),
     );
   if (
@@ -194,7 +228,13 @@ export function settings(
     ...cacheWrite,
     inputHit: rate("CACHED_INPUT", known?.inputHit),
     output: rate("OUTPUT", known?.output),
-    pricingDate: z.iso.date().parse(get("PRICING_DATE") ?? "2026-10-20"),
+    pricingDate: z.iso
+      .date()
+      .parse(get("PRICING_DATE") ?? known?.pricingDate ?? "2026-10-20"),
+    longContext:
+      env.LLM_OPENAI_CACHE_BILLING === "legacy"
+        ? undefined
+        : known?.longContext,
     ...budgetSettings(env),
   };
   const allowed =
@@ -223,6 +263,8 @@ export function settings(
             result.inputHit,
             result.cacheWrite5m ?? 0,
             result.cacheWrite1h ?? 0,
+            result.cacheWrite30m ?? 0,
+            result.cacheWrite12h ?? 0,
           ) +
           result.maxOutput * result.output,
       ),

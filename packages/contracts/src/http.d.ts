@@ -2865,8 +2865,6 @@ export interface paths {
                                     model: string;
                                     /** Format: uri */
                                     baseUrl: string;
-                                    /** Format: uri */
-                                    harnessBaseUrl?: string;
                                     /** @enum {string} */
                                     api: "chat-completions" | "responses" | "messages";
                                     /** @enum {string} */
@@ -2879,6 +2877,8 @@ export interface paths {
                                     cachedInputUsdPerMillion: number;
                                     cacheWrite5mUsdPerMillion?: number;
                                     cacheWrite1hUsdPerMillion?: number;
+                                    cacheWrite30mUsdPerMillion?: number;
+                                    cacheWrite12hUsdPerMillion?: number;
                                     outputUsdPerMillion: number;
                                     /** Format: date */
                                     pricingDate: string;
@@ -2889,8 +2889,6 @@ export interface paths {
                                     model: string;
                                     /** Format: uri */
                                     baseUrl: string;
-                                    /** Format: uri */
-                                    harnessBaseUrl?: string;
                                     /** @enum {string} */
                                     api: "chat-completions" | "responses" | "messages";
                                     /** @enum {string} */
@@ -2903,6 +2901,8 @@ export interface paths {
                                     cachedInputUsdPerMillion: number;
                                     cacheWrite5mUsdPerMillion?: number;
                                     cacheWrite1hUsdPerMillion?: number;
+                                    cacheWrite30mUsdPerMillion?: number;
+                                    cacheWrite12hUsdPerMillion?: number;
                                     outputUsdPerMillion: number;
                                     /** Format: date */
                                     pricingDate: string;

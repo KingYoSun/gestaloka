@@ -17,8 +17,6 @@ import { anthropicPrompt, canonical, parseOutput } from "./prompt.js";
 import {
   settings,
   budgetSettings,
-  providerFor,
-  profiles,
   type Provider,
   type Api,
   type LlmTarget,
@@ -37,11 +35,16 @@ export type Connection = {
   output: number;
   cacheWrite5m?: number;
   cacheWrite1h?: number;
+  cacheWrite30m?: number;
+  cacheWrite12h?: number;
   provider?: Provider;
   api?: Api;
 };
 type StoredRequest = {
   model: string;
+  system?: string;
+  messages?: ChatMessage[];
+  input?: ChatMessage[];
   reasoning_effort?: string;
   max_tokens?: number;
   max_completion_tokens?: number;
@@ -60,6 +63,35 @@ type StoredInput = {
   request: StoredRequest;
 };
 const count = z.number().int().nonnegative().safe();
+const CacheDetails = z.object({
+  cached_tokens: count.optional(),
+  cache_write_tokens: count.optional(),
+  cache_write_tokens_details: z
+    .object({ ttl_30m_tokens: count, ttl_12h_tokens: count })
+    .optional(),
+});
+function cacheWrites(details: z.infer<typeof CacheDetails> | null | undefined) {
+  const split = details?.cache_write_tokens_details;
+  if (
+    split &&
+    details.cache_write_tokens !== undefined &&
+    split.ttl_30m_tokens + split.ttl_12h_tokens !== details.cache_write_tokens
+  )
+    throw new Error(
+      "キャッシュ作成の使用量内訳が整合しません。予約枠は保持します",
+    );
+  return split
+    ? {
+        cache_write_30m_tokens: split.ttl_30m_tokens,
+        cache_write_12h_tokens: split.ttl_12h_tokens,
+      }
+    : details?.cache_write_tokens === undefined
+      ? {}
+      : {
+          cache_write_30m_tokens: details.cache_write_tokens,
+          cache_write_12h_tokens: 0,
+        };
+}
 const ChatResponse = z.object({
   id: z.string(),
   model: z.string(),
@@ -77,9 +109,7 @@ const ChatResponse = z.object({
     total_tokens: count.optional(),
     prompt_cache_hit_tokens: count.optional(),
     prompt_cache_miss_tokens: count.optional(),
-    prompt_tokens_details: z
-      .object({ cached_tokens: count.optional() })
-      .nullish(),
+    prompt_tokens_details: CacheDetails.nullish(),
     completion_tokens_details: z
       .object({ reasoning_tokens: count.optional() })
       .nullish(),
@@ -249,9 +279,7 @@ const ResponsesResponse = z.object({
   usage: z.object({
     input_tokens: count,
     output_tokens: count,
-    input_tokens_details: z
-      .object({ cached_tokens: count.optional() })
-      .optional(),
+    input_tokens_details: CacheDetails.optional(),
     output_tokens_details: z
       .object({ reasoning_tokens: count.optional() })
       .optional(),
@@ -450,43 +478,40 @@ export class LlmClient {
     if (this.#configuration && configurationScope.getStore() === undefined)
       return this.run(id, () => this.complete(id, role, messages, target));
     z.uuid().parse(id);
-    const previous = (await this.ledger.input(id)) as StoredInput | undefined;
-    if (previous?.sourceMessages) {
-      if (
-        previous.role !== role ||
-        canonical(previous.sourceMessages) !== canonical(messages)
-      )
+    const cachedInput = await this.ledger.savedInput(id);
+    const previous = cachedInput?.request as StoredInput | undefined;
+    if (previous) {
+      const original =
+        previous.sourceMessages ??
+        (previous.request.system !== undefined
+          ? {
+              system: previous.request.system,
+              messages: previous.request.messages,
+            }
+          : (previous.request.messages ?? previous.request.input));
+      const current =
+        !previous.sourceMessages && previous.request.system !== undefined
+          ? {
+              system: messages
+                .filter((m) => m.role === "system")
+                .map((m) => m.content)
+                .join("\n\n"),
+              messages: messages.filter((m) => m.role !== "system"),
+            }
+          : messages;
+      if (previous.role !== role || canonical(original) !== canonical(current))
         throw new Error("同じ呼出しIDに異なる要求を使用できません");
-      return (await this.ledger.reserve(
-        id,
-        createHash("sha256").update(canonical(previous)).digest("hex"),
-        0,
-        previous,
-      ))!;
+      return (await this.ledger.reserve(id, cachedInput!.hash, 0, previous))!;
     }
-    const selected = previous ? this.settings : this.settingsFor(target);
-    const model = previous?.request.model ?? selected.model;
-    const provider = previous
-      ? (previous.connection?.provider ?? providerFor(model))
-      : selected.provider;
-    const api = previous
-      ? (previous.connection?.api ?? "chat-completions")
-      : selected.api;
-    const maxOutput =
-      previous?.request.max_completion_tokens ??
-      previous?.request.max_tokens ??
-      previous?.request.max_output_tokens ??
-      selected.maxOutput;
+    const selected = this.settingsFor(target),
+      model = selected.model,
+      provider = selected.provider,
+      api = selected.api,
+      maxOutput = selected.maxOutput;
     const effort =
-      previous?.request.reasoning_effort ??
-      previous?.request.reasoning?.effort ??
-      previous?.request.output_config?.effort ??
-      (previous?.request.thinking?.type === "disabled" ? "none" : undefined) ??
-      (role === "initial-generation"
-        ? selected.initialEffort
-        : selected.effort);
+      role === "initial-generation" ? selected.initialEffort : selected.effort;
     const prompt =
-      !previous && api === "messages"
+      api === "messages"
         ? // The full world schema exceeds Anthropic's grammar limit; retain Zod validation.
           anthropicPrompt(
             messages,
@@ -535,84 +560,87 @@ export class LlmClient {
               model,
               messages,
               response_format: { type: "json_object" },
-              reasoning_effort: effort,
+              ...(provider === "deepseek"
+                ? {
+                    thinking: {
+                      type: effort === "none" ? "disabled" : "enabled",
+                    },
+                    ...(effort === "none" ? {} : { reasoning_effort: effort }),
+                  }
+                : { reasoning_effort: effort }),
               ...(provider === "openai"
                 ? { max_completion_tokens: maxOutput }
                 : { max_tokens: maxOutput }),
               stream: false,
               ...(provider === "openai" ? { service_tier: "default" } : {}),
             };
-    const known = profiles[model];
-    const connection: Connection = previous?.connection
-      ? {
-          baseUrl: previous.connection.baseUrl,
-          context: previous.connection.context,
-          inputMiss: previous.connection.inputMiss,
-          inputHit: previous.connection.inputHit,
-          output: previous.connection.output,
-          ...(previous.connection.provider
-            ? { provider: previous.connection.provider }
-            : {}),
-          ...(previous.connection.api ? { api: previous.connection.api } : {}),
-          ...(previous.connection.cacheWrite5m === undefined
-            ? {}
-            : {
-                cacheWrite5m: previous.connection.cacheWrite5m,
-                cacheWrite1h: previous.connection.cacheWrite1h!,
-              }),
-        }
-      : {
-          baseUrl: selected.baseUrl,
-          context: previous ? known!.context : selected.context,
-          inputMiss: previous ? known!.inputMiss : selected.inputMiss,
-          inputHit: previous ? known!.inputHit : selected.inputHit,
-          output: previous ? known!.output : selected.output,
-          provider,
-          api,
-          ...(previous || selected.cacheWrite5m === undefined
-            ? {}
-            : {
-                cacheWrite5m: selected.cacheWrite5m,
-                cacheWrite1h: selected.cacheWrite1h!,
-              }),
-        };
+    const connection: Connection = {
+      baseUrl: selected.baseUrl,
+      context: selected.context,
+      inputMiss: selected.inputMiss,
+      inputHit: selected.inputHit,
+      output: selected.output,
+      provider,
+      api,
+      ...(selected.cacheWrite5m === undefined
+        ? {}
+        : {
+            cacheWrite5m: selected.cacheWrite5m,
+            cacheWrite1h: selected.cacheWrite1h!,
+          }),
+      ...(selected.cacheWrite30m === undefined
+        ? {}
+        : {
+            cacheWrite30m: selected.cacheWrite30m,
+            cacheWrite12h: selected.cacheWrite12h!,
+          }),
+    };
     const stored = {
       ...(prompt ? { sourceMessages: messages } : {}),
       role,
-      requestedVersion: previous?.requestedVersion ?? selected.version,
-      pricingDate: previous?.pricingDate ?? selected.pricingDate,
-      ...(previous
-        ? previous.configurationVersion === undefined
-          ? {}
-          : { configurationVersion: previous.configurationVersion }
-        : this.configurationVersion === null
-          ? {}
-          : { configurationVersion: this.configurationVersion }),
+      requestedVersion: selected.version,
+      pricingDate: selected.pricingDate,
+      ...(this.configurationVersion === null
+        ? {}
+        : { configurationVersion: this.configurationVersion }),
       request,
-      ...(previous && !previous.connection ? {} : { connection }),
+      connection,
     };
-    const hash = createHash("sha256")
-      .update(prompt ? canonical(stored) : JSON.stringify(stored))
-      .digest("hex");
-    if (previous) return (await this.ledger.reserve(id, hash, 0, stored))!;
+    const requestHash = () =>
+      createHash("sha256")
+        .update(prompt ? canonical(stored) : JSON.stringify(stored))
+        .digest("hex");
     return this.limits.run(
       {
         name: `${provider}:${model}`,
         key: () => this.apiKey(provider),
         request,
         maxOutput,
-        cached: !!previous,
+        cached: false,
       },
       async (quota) => {
         let inputTokens: number | undefined;
-        if (provider === "anthropic" && api === "messages") {
+        const countedApi =
+          provider === "anthropic" && api === "messages"
+            ? "messages/count_tokens"
+            : provider === "openai" && api === "responses"
+              ? "responses/input_tokens"
+              : null;
+        if (countedApi) {
           const input = Object.fromEntries(
             Object.entries(request).filter(
-              ([key]) => !["max_tokens", "stream"].includes(key),
+              ([key]) =>
+                ![
+                  "max_tokens",
+                  "max_output_tokens",
+                  "stream",
+                  "store",
+                  "service_tier",
+                ].includes(key),
             ),
           );
           const counted = await this.transport(
-            `${connection.baseUrl}/messages/count_tokens`,
+            `${connection.baseUrl}/${countedApi}`,
             {
               method: "POST",
               headers: {
@@ -631,6 +659,22 @@ export class LlmClient {
             .object({ input_tokens: count })
             .parse(await counted.json()).input_tokens;
         }
+        if (
+          inputTokens !== undefined &&
+          selected.longContext &&
+          inputTokens > selected.longContext.threshold
+        ) {
+          for (const key of [
+            "inputMiss",
+            "inputHit",
+            "cacheWrite30m",
+            "cacheWrite12h",
+          ] as const)
+            if (connection[key] !== undefined)
+              connection[key] *= selected.longContext.input;
+          connection.output *= selected.longContext.output;
+        }
+        const hash = requestHash();
         const cached = await this.ledger.reserve(
           id,
           hash,
@@ -641,11 +685,16 @@ export class LlmClient {
                 connection.inputHit,
                 connection.cacheWrite5m ?? 0,
                 connection.cacheWrite1h ?? 0,
+                connection.cacheWrite30m ?? 0,
+                connection.cacheWrite12h ?? 0,
               ) +
               maxOutput * connection.output,
           ),
           stored,
           inputTokens,
+          provider === "openai"
+            ? "openai-input-tokens"
+            : "anthropic-count-tokens",
         );
         if (cached) return cached;
         return this.ledger.track(id, async () => {
@@ -784,6 +833,7 @@ export class LlmClient {
                   completion_tokens: result.usage.output_tokens,
                   prompt_cache_hit_tokens: hit,
                   prompt_cache_miss_tokens: result.usage.input_tokens - hit,
+                  ...cacheWrites(result.usage.input_tokens_details),
                   ...(result.usage.output_tokens_details?.reasoning_tokens ===
                   undefined
                     ? {}
@@ -823,6 +873,9 @@ export class LlmClient {
                   prompt_cache_hit_tokens: hit,
                   prompt_cache_miss_tokens:
                     usage.prompt_cache_miss_tokens ?? usage.prompt_tokens - hit,
+                  ...(provider === "openai"
+                    ? cacheWrites(usage.prompt_tokens_details)
+                    : {}),
                   ...(usage.completion_tokens_details?.reasoning_tokens ===
                   undefined
                     ? {}
@@ -888,13 +941,21 @@ export function calculatedCharge(
   usage: SavedCompletion["usage"],
   rates: Pick<
     Connection,
-    "inputMiss" | "inputHit" | "output" | "cacheWrite5m" | "cacheWrite1h"
+    | "inputMiss"
+    | "inputHit"
+    | "output"
+    | "cacheWrite5m"
+    | "cacheWrite1h"
+    | "cacheWrite30m"
+    | "cacheWrite12h"
   >,
 ) {
   const write5m = usage.cache_write_5m_tokens ?? 0,
-    write1h = usage.cache_write_1h_tokens ?? 0;
+    write1h = usage.cache_write_1h_tokens ?? 0,
+    write30m = usage.cache_write_30m_tokens ?? 0,
+    write12h = usage.cache_write_12h_tokens ?? 0;
   if (
-    write5m + write1h > usage.prompt_cache_miss_tokens ||
+    write5m + write1h + write30m + write12h > usage.prompt_cache_miss_tokens ||
     (usage.reasoning_tokens ?? 0) > usage.completion_tokens
   )
     throw new Error("LLMの使用量内訳が整合しません。予約枠は保持します");
@@ -903,6 +964,8 @@ export function calculatedCharge(
       usage.prompt_cache_miss_tokens * rates.inputMiss +
       write5m * ((rates.cacheWrite5m ?? rates.inputMiss) - rates.inputMiss) +
       write1h * ((rates.cacheWrite1h ?? rates.inputMiss) - rates.inputMiss) +
+      write30m * ((rates.cacheWrite30m ?? rates.inputMiss) - rates.inputMiss) +
+      write12h * ((rates.cacheWrite12h ?? rates.inputMiss) - rates.inputMiss) +
       usage.completion_tokens * rates.output,
   );
 }

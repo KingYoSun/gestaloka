@@ -305,7 +305,6 @@ export const ModelSetting = z
     provider: ModelProvider,
     model: z.string().trim().min(1),
     baseUrl: z.url(),
-    harnessBaseUrl: z.url().optional(),
     api: z.enum(["chat-completions", "responses", "messages"]),
     effort: z.enum(["none", "low", "medium", "high", "xhigh", "max"]),
     initialEffort: z.enum(["none", "low", "medium", "high", "xhigh", "max"]),
@@ -315,6 +314,8 @@ export const ModelSetting = z
     cachedInputUsdPerMillion: z.number().nonnegative().finite(),
     cacheWrite5mUsdPerMillion: z.number().nonnegative().finite().optional(),
     cacheWrite1hUsdPerMillion: z.number().nonnegative().finite().optional(),
+    cacheWrite30mUsdPerMillion: z.number().nonnegative().finite().optional(),
+    cacheWrite12hUsdPerMillion: z.number().nonnegative().finite().optional(),
     outputUsdPerMillion: z.number().positive().finite(),
     pricingDate: z.iso.date(),
   })
@@ -381,6 +382,8 @@ export const CostCall = z.object({
       output: z.number(),
       cacheWrite5m: z.number().nullable(),
       cacheWrite1h: z.number().nullable(),
+      cacheWrite30m: z.number().nullable().optional(),
+      cacheWrite12h: z.number().nullable().optional(),
       reasoning: z.number().nullable(),
     })
     .nullable(),
@@ -391,6 +394,8 @@ export const CostCall = z.object({
       output: z.number(),
       cacheWrite5m: z.number().nullable(),
       cacheWrite1h: z.number().nullable(),
+      cacheWrite30m: z.number().nullable().optional(),
+      cacheWrite12h: z.number().nullable().optional(),
     })
     .nullable(),
 });

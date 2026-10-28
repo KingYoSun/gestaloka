@@ -165,7 +165,7 @@ pnpm ops:recover-admin <app-user-id> "復旧理由"
 
 ## 世界予算と応答生成のcall上限
 
-世界を作成するときは、管理画面で「この世界の予算上限（USD）」を指定する。`POST /api/worlds` の `budgetUsd` も必須とし、未指定の要求では初期生成を開始しない。構築CLIの `create` と初期生成CLIでは `--budget <USD>` を指定する。上位モデル・dshの接続確認で試験世界を作る場合も `--budget` が必要になる。
+世界を作成するときは、管理画面で「この世界の予算上限（USD）」を指定する。`POST /api/worlds` の `budgetUsd` も必須とし、未指定の要求では初期生成を開始しない。構築CLIの `create` と初期生成CLIでは `--budget <USD>` を指定する。上位モデルの接続確認で試験世界を作る場合も `--budget` が必要になる。
 
 管理画面の世界詳細では予算上限と、計算済み額・未確定予約額の合計を確認し、上限を変更できる。共通APIは `worldBudgets.read` と `worldBudgets.put`。`worldId` は構築セッションのIDを使い、変更時は取得した `expectedVersion`・`budgetUsd`・`reason` を渡す。既存世界の初回設定だけは版0を指定する。
 
@@ -173,7 +173,7 @@ pnpm ops:recover-admin <app-user-id> "復旧理由"
 
 API送信前に、その世界の計算済み額と未確定予約額へ新しい予約を加えて上限を確認する。予約にはモデルの文脈・出力上限と単価から求めた上限額を使い、応答取得後に使用量に基づく計算額へ精算する。通信結果が不明な予約は保持する。上限到達時は世界と履歴を保留し、管理者が増額した後に保存状態から再開する。
 
-無限ループの防止には `responseLimits.read`・`responseLimits.put` を使う。変更時は `calls`・取得した `expectedVersion`・`reason` を指定する。初期値は64回で、同じ応答生成の親子処理・修正・再試行・再開・dshを通算する。保存済みの応答の再利用では消費しない。再開ボタンによる枠の追加とグラフ照会の通算上限は廃止した。次の独立した応答は別のcall回数を持つ。
+無限ループの防止には `responseLimits.read`・`responseLimits.put` を使う。変更時は `calls`・取得した `expectedVersion`・`reason` を指定する。初期値は64回で、同じ応答生成の親子処理・修正・再試行・再開を通算する。保存済みの応答の再利用では消費しない。再開ボタンによる枠の追加とグラフ照会の通算上限は廃止した。次の独立した応答は別のcall回数を持つ。
 
 `LLM_BUDGET_ID`・`LLM_BUDGET_USD` は明示した開発・検証用の全体費用枠として残す。未設定なら実運用へ全体の固定上限を追加しない。#25の100ドルを世界の初期予算やユーザーの上限へ転用しない。
 
@@ -183,7 +183,7 @@ API送信前に、その世界の計算済み額と未確定予約額へ新し�
 
 `models.put` は取得した `expectedVersion`、変更理由 `reason`、`configuration` を指定する。設定本文は `default`（基本モデル）・`resolution`（上位モデル）・`judgment`（`separate` または `combined`）で構成する。両モデルには `provider`・`model`・`baseUrl`・`api`・`effort`・`initialEffort`・`contextTokens`・`maxOutputTokens`・`inputUsdPerMillion`・`cachedInputUsdPerMillion`・`outputUsdPerMillion`・`pricingDate` を指定する。単価はUSD／100万トークン、適用日はYYYY-MM-DD。DeepSeekの上位担当には必要に応じて `harnessBaseUrl` も指定できる。
 
-保存前に接続先のモデル一覧を確認する。新しいプロバイダーを使う場合はAPIキーを先に登録する。接続・設定版・権限の確認に失敗した設定は適用しない。接続確認中にモデル設定やAPIキーが変わった場合も、現在の設定を読み直してから変更する。基本モデルと上位モデルの担当、およびDeepSeekの上位処理で使うdshは維持する。
+保存前に接続先のモデル一覧を確認する。新しいプロバイダーを使う場合はAPIキーを先に登録する。接続・設定版・権限の確認に失敗した設定は適用しない。接続確認中にモデル設定やAPIキーが変わった場合も、現在の設定を読み直してから変更する。基本モデルと上位モデルの担当は維持し、DeepSeekも直接APIを使う。
 
 `credentials.put` は `provider`・新しいキーの `value`・現在の `expectedVersion`・変更理由 `reason` を指定する。初回の版は0。値は書き込み専用で、読取や監査に原文を含めない。使用中のプロバイダーでは新しいキーの接続を確認してから差し替える。既に送信したAPIは中断せず、次の枠取得から新しいキーを使う。待機中もキーの差替えを確認し、差替えでモデルの共有枠をリセットしない。
 
@@ -203,7 +203,7 @@ API、ワーカー、通常の世界操作CLIは `.env.ory` の `OPERATIONS_TOKE
 
 明細には適用単価・設定版・使用量・要求と応答のモデル、世界・ユーザー・応答生成・操作・呼出しIDを返す。APIキーと入力・応答の本文は含めない。記録がない過去の対応や内訳は `null` とし、保存済み金額を再計算しない。推論トークンは取得できた場合だけ出力の内数として記録する。キャッシュ作成の内訳もキャッシュミス入力の内数であり、表示時に入力へ重ねて加算しない。
 
-Anthropicの新しい応答は、5分のキャッシュ作成単価を通常入力の1.25倍、1時間を2倍で初期設定する。管理者はモデル設定の `cacheWrite5mUsdPerMillion`・`cacheWrite1hUsdPerMillion` を上書きでき、省略時は通常入力単価から倍率で求める。移行前に開始した応答は従来の算定方式を保持する。DeepSeekのdshは、Anthropic互換の通信形式を使っていてもDeepSeekの単価で算定する。
+Anthropicの新しい応答は、5分のキャッシュ作成単価を通常入力の1.25倍、1時間を2倍で初期設定する。管理者はモデル設定の `cacheWrite5mUsdPerMillion`・`cacheWrite1hUsdPerMillion` を上書きでき、省略時は通常入力単価から倍率で求める。移行前に開始した応答は従来の算定方式を保持する。DeepSeekは通常APIの使用量と設定単価で算定する。
 
 ## 停止とジョブの運用
 

@@ -59,10 +59,6 @@ try {
         source.request.request.max_output_tokens,
     ),
   });
-  if (model.settingsFor("resolution").provider === "deepseek")
-    throw new Error(
-      "DeepSeekの結果提案と確定はdsh経由です。pnpm llm:harness-probe または世界の通常行動で確認してください",
-    );
   await model.ledger.setup();
   const callId = randomUUID();
   console.log(
