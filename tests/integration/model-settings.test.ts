@@ -48,6 +48,8 @@ let env: NodeJS.ProcessEnv;
 const transport: typeof fetch = async (url, init) => {
   const path = new URL(String(url)).pathname,
     headers = new Headers(init?.headers);
+  if (path.endsWith("/messages/count_tokens"))
+    return Response.json({ input_tokens: 1 });
   if (path.endsWith("/models")) {
     probes++;
     await probeGate;

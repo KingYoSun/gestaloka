@@ -8,6 +8,10 @@ import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureAuth } from "../support/auth.js";
 import { createApp } from "../../apps/api/src/app.js";
 import type { z } from "zod";
+import {
+  createCountedClient,
+  withTokenCount,
+} from "../support/token-counting.js";
 
 let isolated: ReturnType<typeof isolatedDatabases>,
   auth: Awaited<ReturnType<typeof fixtureAuth>>,
@@ -61,7 +65,7 @@ beforeEach(async () => {
   auth = await fixtureAuth(isolated.databases.postgres);
   admin = (await auth.person()).id;
   user = (await auth.person("user")).id;
-  model = new LlmClient(
+  model = createCountedClient(
     isolated.databases.postgres,
     env(randomUUID()),
     async () => response(),
@@ -138,7 +142,7 @@ test.each([
         ).not.toBe("0");
         return Response.json(rejection, { status: 400 });
       });
-    model = new LlmClient(pool, config, transport);
+    model = createCountedClient(pool, config, transport);
     await pool.query(
       "INSERT INTO world_budget(world_id,limit_nano) VALUES($1,40000000000)",
       [worldId],
@@ -160,7 +164,7 @@ test.each([
     });
     expect(saved.response).not.toHaveProperty("usage");
     expect(Boolean(saved.request.sourceMessages)).toBe(structured);
-    const reopened = new LlmClient(pool, config, transport);
+    const reopened = createCountedClient(pool, config, transport);
     await expect(reopened.complete(id, "scene-result", input)).rejects.toThrow(
       saved.response.error,
     );
@@ -255,7 +259,7 @@ test("キャッシュの読取・5分作成・1時間作成を分け、標準倍
   expect(JSON.stringify(calls)).not.toMatch(
     /private prompt|private response|private-key/,
   );
-  const override = new LlmClient(
+  const override = createCountedClient(
     pool,
     {
       ...env(model.ledger.budgetId),
@@ -311,7 +315,7 @@ test("旧応答の算定を保持し、次の応答から新しい区分単価�
       LLM_BUDGET_ID: model.ledger.budgetId,
       OPERATIONS_TOKEN_SECRET: "2".repeat(64),
     },
-    async () => response(),
+    withTokenCount(async () => response()),
   );
   await managed.run(old, () => managed.complete(randomUUID(), "old", messages));
   expect(
@@ -404,7 +408,7 @@ test("推論は出力の内数とし、Chat/Responsesで重複加算せず、使
     OPENAI_API_KEY: "private-key",
     LLM_MODEL: "test-openai",
   };
-  const chat = new LlmClient(pool, settings, transport);
+  const chat = createCountedClient(pool, settings, transport);
   await chat.complete(randomUUID(), "chat", messages);
   expect(
     (await read({ ...query, task: "chat", view: "calls" })).calls![0],
@@ -412,7 +416,7 @@ test("推論は出力の内数とし、Chat/Responsesで重複加算せず、使
     calculatedNanoUsd: "242000",
     usage: { output: 20, reasoning: 15 },
   });
-  const responses = new LlmClient(
+  const responses = createCountedClient(
     pool,
     { ...settings, LLM_API: "responses" },
     async () =>
@@ -454,10 +458,14 @@ test("送信中の予約と通信失敗後の未確定額を区別し、精算�
       release = r;
     }),
     pool = isolated.databases.postgres;
-  const waiting = new LlmClient(pool, env(model.ledger.budgetId), async () => {
-      await gate;
-      return response();
-    }),
+  const waiting = createCountedClient(
+      pool,
+      env(model.ledger.budgetId),
+      async () => {
+        await gate;
+        return response();
+      },
+    ),
     id = randomUUID();
   const running = waiting.complete(id, "running", messages);
   try {
@@ -480,9 +488,13 @@ test("送信中の予約と通信失敗後の未確定額を区別し、精算�
     await waiting.complete(id, "running", messages),
     1,
   );
-  const failed = new LlmClient(pool, env(model.ledger.budgetId), async () => {
-    throw new Error("connection lost");
-  });
+  const failed = createCountedClient(
+    pool,
+    env(model.ledger.budgetId),
+    async () => {
+      throw new Error("connection lost");
+    },
+  );
   await expect(
     failed.complete(randomUUID(), "failed", messages),
   ).rejects.toThrow("connection lost");
@@ -492,7 +504,7 @@ test("送信中の予約と通信失敗後の未確定額を区別し、精算�
     calculatedNanoUsd: "960000",
     reservedCalls: 0,
     unknownCalls: 1,
-    unknownNanoUsd: "50000000",
+    unknownNanoUsd: "11480000",
   });
   expect((await model.ledger.summary()).upperCostUsd).toBe(
     (Number(totals.calculatedNanoUsd) + Number(totals.unknownNanoUsd)) / 1e9,

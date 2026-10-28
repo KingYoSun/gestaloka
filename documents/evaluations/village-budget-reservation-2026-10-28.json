@@ -1,0 +1,317 @@
+{
+  "recordVersion": "village-budget-revision-v1",
+  "capturedAt": "2026-10-28T14:25:56.990Z",
+  "countedAt": "2026-10-28T14:07:56.253Z",
+  "changes": [
+    {
+      "schema": "village_days_9b6883ae5f1342aab02b2841fbf81f55",
+      "id": "55d5b1dd-3b2f-437f-a09f-aaaa22aa233f",
+      "hash": "c8c546f38bf5d7b3c64c344953bea6186046ee7d03f58afdd9fd4e2e8076bd4b",
+      "requestSha256": "ee5661ca6d1621e874ca146c213115bec98cc5ff9c989d259feb72ff45b9de64",
+      "responseSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "state": "pending",
+      "delivery": "unknown",
+      "chargedNanoUsd": null,
+      "inputTokens": 17312,
+      "maxOutputTokens": 65536,
+      "beforeNanoUsd": "4655360000",
+      "afterNanoUsd": "724608000",
+      "basis": {
+        "source": "anthropic-count-tokens",
+        "version": 1,
+        "revisedAt": "2026-10-28T14:25:56.799Z",
+        "inputTokens": 17312,
+        "requestHash": "c8c546f38bf5d7b3c64c344953bea6186046ee7d03f58afdd9fd4e2e8076bd4b",
+        "previousNanoUsd": "4655360000"
+      },
+      "worldBefore": {
+        "world_id": "36ce606c-8509-4fd6-829e-753f45675255",
+        "limit_nano": "63331753500",
+        "used_nano": "4655360000"
+      },
+      "worldAfter": {
+        "world_id": "36ce606c-8509-4fd6-829e-753f45675255",
+        "limit_nano": "63331753500",
+        "used_nano": "724608000"
+      },
+      "budgetBefore": {
+        "id": "village-days-9b6883ae-5f13-42aa-b02b-2841fbf81f55",
+        "limit_nano": "63331753500",
+        "used_nano": "14635429200"
+      },
+      "budgetAfter": {
+        "id": "village-days-9b6883ae-5f13-42aa-b02b-2841fbf81f55",
+        "limit_nano": "63331753500",
+        "used_nano": "10704677200"
+      },
+      "verification": {
+        "requestAndResponseUnchanged": true,
+        "unknownRetained": true,
+        "repeatedRevisionIgnored": true,
+        "worldAndGlobalDeltaEqual": true
+      }
+    },
+    {
+      "schema": "village_days_9b6883ae5f1342aab02b2841fbf81f55",
+      "id": "efa373d4-6bea-47cd-a621-ef43f6d82a00",
+      "hash": "1b89d917bea886ce63d558b6e07ecb67ec24c438b44389588fab4fbfd2b3f26c",
+      "requestSha256": "d83f8a4b195467a1d6c439a2b96a494a53851107ba705456af39e017ad7759af",
+      "responseSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "state": "pending",
+      "delivery": "unknown",
+      "chargedNanoUsd": null,
+      "inputTokens": 17319,
+      "maxOutputTokens": 65536,
+      "beforeNanoUsd": "4655360000",
+      "afterNanoUsd": "724636000",
+      "basis": {
+        "source": "anthropic-count-tokens",
+        "version": 1,
+        "revisedAt": "2026-10-28T14:25:56.830Z",
+        "inputTokens": 17319,
+        "requestHash": "1b89d917bea886ce63d558b6e07ecb67ec24c438b44389588fab4fbfd2b3f26c",
+        "previousNanoUsd": "4655360000"
+      },
+      "worldBefore": {
+        "world_id": "6c3a6e22-1e8a-4c20-aaec-bd453ce496f4",
+        "limit_nano": "63331753500",
+        "used_nano": "4655360000"
+      },
+      "worldAfter": {
+        "world_id": "6c3a6e22-1e8a-4c20-aaec-bd453ce496f4",
+        "limit_nano": "63331753500",
+        "used_nano": "724636000"
+      },
+      "budgetBefore": {
+        "id": "village-days-9b6883ae-5f13-42aa-b02b-2841fbf81f55",
+        "limit_nano": "63331753500",
+        "used_nano": "10704677200"
+      },
+      "budgetAfter": {
+        "id": "village-days-9b6883ae-5f13-42aa-b02b-2841fbf81f55",
+        "limit_nano": "63331753500",
+        "used_nano": "6773953200"
+      },
+      "verification": {
+        "requestAndResponseUnchanged": true,
+        "unknownRetained": true,
+        "repeatedRevisionIgnored": true,
+        "worldAndGlobalDeltaEqual": true
+      }
+    },
+    {
+      "schema": "village_reliability_15eefe8c36614314bcb8b83a737ef25a",
+      "id": "3045125d-2f91-4d49-a670-eb906b481a18",
+      "hash": "ac163c06838c3b338d43c1cded0d0371d907e0b5e8d4e960b13525f5817f8cbb",
+      "requestSha256": "1dacd88b4ee5f743e475e880fca3cccc81d6d65bb58a5a808e8481a24bd1ecfe",
+      "responseSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "state": "pending",
+      "delivery": "unknown",
+      "chargedNanoUsd": null,
+      "inputTokens": 14233,
+      "maxOutputTokens": 65536,
+      "beforeNanoUsd": "4655360000",
+      "afterNanoUsd": "712292000",
+      "basis": {
+        "source": "anthropic-count-tokens",
+        "version": 1,
+        "revisedAt": "2026-10-28T14:25:56.869Z",
+        "inputTokens": 14233,
+        "requestHash": "ac163c06838c3b338d43c1cded0d0371d907e0b5e8d4e960b13525f5817f8cbb",
+        "previousNanoUsd": "4655360000"
+      },
+      "worldBefore": {
+        "world_id": "704acf80-1d8c-4be8-a295-eb4b951710bf",
+        "limit_nano": "48696324300",
+        "used_nano": "4655360000"
+      },
+      "worldAfter": {
+        "world_id": "704acf80-1d8c-4be8-a295-eb4b951710bf",
+        "limit_nano": "48696324300",
+        "used_nano": "712292000"
+      },
+      "budgetBefore": {
+        "id": "village-reliability-15eefe8c-3661-4314-bcb8-b83a737ef25a",
+        "limit_nano": "48696324300",
+        "used_nano": "44120565700"
+      },
+      "budgetAfter": {
+        "id": "village-reliability-15eefe8c-3661-4314-bcb8-b83a737ef25a",
+        "limit_nano": "48696324300",
+        "used_nano": "40177497700"
+      },
+      "verification": {
+        "requestAndResponseUnchanged": true,
+        "unknownRetained": true,
+        "repeatedRevisionIgnored": true,
+        "worldAndGlobalDeltaEqual": true
+      }
+    },
+    {
+      "schema": "village_reliability_15eefe8c36614314bcb8b83a737ef25a",
+      "id": "6ce35510-eb74-42ee-a888-8fd4fcf71f9d",
+      "hash": "c4775f4b3834bed10cbfaf99e962866b438058cd262bee25e3fadcd75d8b1c49",
+      "requestSha256": "c7fe0de5905edec9e37851a7d936b269d0d46c014b6bb5159db18081545a228a",
+      "responseSha256": "e5888e6567fa43b360b9dffb9d984ec8a627fe8470a3b2de7a00874c74c0cea6",
+      "state": "pending",
+      "delivery": "unknown",
+      "chargedNanoUsd": null,
+      "inputTokens": 16828,
+      "maxOutputTokens": 65536,
+      "beforeNanoUsd": "4655360000",
+      "afterNanoUsd": "722672000",
+      "basis": {
+        "source": "anthropic-count-tokens",
+        "version": 1,
+        "revisedAt": "2026-10-28T14:25:56.898Z",
+        "inputTokens": 16828,
+        "requestHash": "c4775f4b3834bed10cbfaf99e962866b438058cd262bee25e3fadcd75d8b1c49",
+        "previousNanoUsd": "4655360000"
+      },
+      "worldBefore": {
+        "world_id": "3fa1c06c-c861-48b7-b39d-ac6e94d39c35",
+        "limit_nano": "48696324300",
+        "used_nano": "4655360000"
+      },
+      "worldAfter": {
+        "world_id": "3fa1c06c-c861-48b7-b39d-ac6e94d39c35",
+        "limit_nano": "48696324300",
+        "used_nano": "722672000"
+      },
+      "budgetBefore": {
+        "id": "village-reliability-15eefe8c-3661-4314-bcb8-b83a737ef25a",
+        "limit_nano": "48696324300",
+        "used_nano": "40177497700"
+      },
+      "budgetAfter": {
+        "id": "village-reliability-15eefe8c-3661-4314-bcb8-b83a737ef25a",
+        "limit_nano": "48696324300",
+        "used_nano": "36244809700"
+      },
+      "verification": {
+        "requestAndResponseUnchanged": true,
+        "unknownRetained": true,
+        "repeatedRevisionIgnored": true,
+        "worldAndGlobalDeltaEqual": true
+      }
+    }
+  ],
+  "allocation": {
+    "priorUpperNanoUsd": "8442199700",
+    "beforePrimaryLimitNanoUsd": "48696324300",
+    "afterPrimaryLimitNanoUsd": "56557800300",
+    "claudeLimitNanoUsd": "65000000000",
+    "geminiLimitNanoUsd": "35000000000",
+    "totalLimitNanoUsd": "100000000000"
+  },
+  "runChanges": [
+    {
+      "path": "artifacts/evaluations/village-improvements-a-2026-10-28/run.json",
+      "oldLimitUsd": 48.6963243,
+      "newLimitUsd": 56.5578003
+    },
+    {
+      "path": "artifacts/evaluations/village-improvements-b-2026-10-28/run.json",
+      "oldLimitUsd": 48.6963243,
+      "newLimitUsd": 56.5578003
+    },
+    {
+      "path": "artifacts/evaluations/village-improvements-audit-2026-10-28/run.json",
+      "oldLimitUsd": 48.6963243,
+      "newLimitUsd": 56.5578003
+    }
+  ],
+  "preserved": [
+    {
+      "path": "documents/evaluations/village-duration-2026-10-28.md",
+      "sha256": "bb874001eb669012fe68814847f165237e4862ac5eeea451e894cc0dc9c1cb25"
+    },
+    {
+      "path": "documents/evaluations/village-duration-2026-10-28.json",
+      "sha256": "152c058f6a8eed600a0da6c5cfba6624f67ee6c51e2ce4c7733d54847e64e9d4"
+    },
+    {
+      "path": "documents/evaluations/village-reliability-2026-10-28.md",
+      "sha256": "abdb4ad9e7261c8e80123e90fb3e34ea1f9450c1dcc357908695207be2dec103"
+    },
+    {
+      "path": "documents/evaluations/village-reliability-2026-10-28.json",
+      "sha256": "560fe3955bf1c0f2ff9170a024b03f2718a95f32b793dad4f0b4d7ce6f7d5ad4"
+    },
+    {
+      "path": "documents/evaluations/village-reinspection-2026-10-28.md",
+      "sha256": "70ee4fde5f29334146e22b036ae32c651463801b8b48eab88e75338c9b992124"
+    },
+    {
+      "path": "documents/evaluations/village-reinspection-2026-10-28.json",
+      "sha256": "102beb40a474d8a0a3039e8a738a562488a8c03fcc74a2356b66e38b9502f79e"
+    },
+    {
+      "path": "documents/evaluations/village-improvements-a-2026-10-28.md",
+      "sha256": "ee591b68a17a2fb0f01e1c4f32bfe7fcf5419cfa4c945d9630737bc2a50cb90d"
+    },
+    {
+      "path": "documents/evaluations/village-improvements-a-2026-10-28.json",
+      "sha256": "a382ed6f6424df422e214a71c834c37d0a5029c80ce6cf2cb3f560906fec04ed"
+    },
+    {
+      "path": "documents/evaluations/village-eight-replay-2026-10-28.md",
+      "sha256": "51239a61627397de24d45969eab06864b093fba2306816ac62aa16c388a6cf80"
+    },
+    {
+      "path": "documents/evaluations/village-eight-replay-2026-10-28.json",
+      "sha256": "cdcf6fbe9bf320ba9b351bf980af22fb08db9425c185e50d26a438b1cb75a14a"
+    },
+    {
+      "path": "documents/evaluations/village-improvements-b-2026-10-28.md",
+      "sha256": "e1e04a9443ecd84c0997d530c6e475a4433f47f691c94559b919c9958be0775e"
+    },
+    {
+      "path": "documents/evaluations/village-improvements-b-2026-10-28.json",
+      "sha256": "2f97b25960a9e719a244ec7405d3b265609f9498fe47a72fbad5d923879391a0"
+    }
+  ],
+  "source": {
+    "packages/server/src/llm/client.ts": "c03f2060dbbb7baef9a488aea547f066396794366b8c71b0348076dd7ed56490",
+    "packages/server/src/llm/budget.ts": "d2c53973e38880356407e75d15c1bf63eb52868c23b4b18579aea77bc0165f04"
+  },
+  "costs": {
+    "claudeKnownNanoUsd": "41802801400",
+    "geminiKnownNanoUsd": "2899425150",
+    "unknownReservedNanoUsd": "2884208000",
+    "beforeUnknownReservedNanoUsd": "18621440000",
+    "releasedNanoUsd": "15737232000",
+    "claudeEstimatedUpperNanoUsd": "44687009400",
+    "totalEstimatedUpperNanoUsd": "47586434550",
+    "claudeRemainingNanoUsd": "20312990600",
+    "overallRemainingNanoUsd": "52413565450",
+    "unknownCalls": 4
+  },
+  "billingComparison": {
+    "reportedClaudeTodayUsd": 32.85,
+    "reportedBy": "user",
+    "localClaudeUtc20261028NanoUsd": "33152379100",
+    "localClaudeUtcDayDifferenceNanoUsd": "302379100",
+    "officialBillingReconciled": false,
+    "adminKeyAvailable": false
+  },
+  "verification": {
+    "allOldReportsPreserved": true,
+    "knownCalculatedCostsUnchanged": true,
+    "unknownCallsNotRegenerated": true,
+    "allUnknownsRetained": true,
+    "allBudgetDeltasReconciled": true,
+    "userBudgetLimitsPreserved": true,
+    "additionalPaidGenerations": 0
+  },
+  "structuredCountProbe": {
+    "at": "2026-10-28T14:27:13.473Z",
+    "sourceCallId": "81e3c1d1-7ba8-4ae0-ab27-faa33010659d",
+    "sourceHash": "01605e678d28c34989f4a94ae46cd0f0683d63f89f65cac9a920ec5039793ed1",
+    "requestSha256": "3b1918d740a0eb6d838a9e38b7a119e4b86e18a66a7a3c3552442b33a3f87d7c",
+    "httpStatus": 200,
+    "inputTokens": 14151,
+    "hasStructuredFormat": true,
+    "additionalPaidGenerations": 0
+  }
+}
