@@ -67,7 +67,9 @@ API・ワーカー・Web・管理画面は、それぞれ `pnpm --filter @gestal
 | `gpt-6-luna`       | `OPENAI_API_KEY`    | `OPENAI_BASE_URL`    | `https://api.openai.com/v1`                               |
 | ClaudeのモデルID   | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com/v1`                            |
 
-endpointには `/chat/completions`・`/responses`・`/messages` を付けません。末尾の `/` はどちらでも使えます。ClaudeはAnthropic Messages API、OpenAIは既定でChat Completionsを使います。Responses APIを使うモデルには `OPENAI_API=responses` または対象側の `LLM_RESOLUTION_API=responses` を指定します。
+endpointには `/chat/completions`・`/responses`・`/messages` を付けません。末尾の `/` はどちらでも使えます。ClaudeはAnthropic Messages API、OpenAIは既定でChat Completionsを使います。Responses APIを使うモデルには `OPENAI_API=responses` または対象側の `LLM_RESOLUTION_API=responses` を指定します。GPT-6.1 TerraとSolの既定のAPI形式はResponsesです。
+
+OpenAIの新規応答では入力を事前計数し、30分・12時間キャッシュ作成の使用量と料金を分けて保存します。作成単価は `cacheWrite30mUsdPerMillion`・`cacheWrite12hUsdPerMillion` で上書きでき、省略時は通常入力の1.25倍・2.5倍です。272,000入力トークンを超えるTerra・Solの要求には、入力とキャッシュ2倍・出力1.5倍の単価を適用します。開始済み応答の料金版は子の処理にも引き継ぎ、既存の要求・応答の算定は変更しません。
 
 Gemini 3.8 Flash／lowを使う場合は、次の値を設定します。既存行があれば置き換えてください。キーの値はチャットへ送らず、ローカルの `.env` に記入します。
 

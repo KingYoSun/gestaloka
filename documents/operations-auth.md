@@ -205,6 +205,8 @@ API、ワーカー、通常の世界操作CLIは `.env.ory` の `OPERATIONS_TOKE
 
 Anthropicの新しい応答は、5分のキャッシュ作成単価を通常入力の1.25倍、1時間を2倍で初期設定する。管理者はモデル設定の `cacheWrite5mUsdPerMillion`・`cacheWrite1hUsdPerMillion` を上書きでき、省略時は通常入力単価から倍率で求める。移行前に開始した応答は従来の算定方式を保持する。DeepSeekは通常APIの使用量と設定単価で算定する。
 
+OpenAIの新しい応答は30分・12時間のキャッシュ作成を分け、通常入力の1.25倍・2.5倍を初期単価とする。`cacheWrite30mUsdPerMillion`・`cacheWrite12hUsdPerMillion` で上書きできる。料金版3より前に開始した応答の計算は保持する。
+
 ## 停止とジョブの運用
 
 管理者は共通APIの `runtime.read` で現在の設定と版を取得し、`runtime.put` へ `configuration`・`expectedVersion`・変更理由 `reason` を渡す。取得した設定を編集し、全項目を指定する。`paused` の初期値は `false`。`true` にすると世界生成・構築進行・参加・シーン処理の新規受付を止める。閲覧と管理操作は利用でき、同じ要求IDの再送は保存済み結果の取得として扱う。
