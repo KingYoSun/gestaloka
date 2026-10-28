@@ -30,6 +30,7 @@ import {
   sceneAgenda,
   sceneId,
   sceneView,
+  presentationEvidence,
   type RecordedSceneEvent,
   type SceneIntent,
   type SceneView,
@@ -412,7 +413,7 @@ export class WorldScenes {
       throw new Error("シーンのモデル応答が未完了です");
     return {
       content: response.content,
-      value: parseOutput(response.content),
+      value: presentationEvidence(parseOutput(response.content)),
     };
   }
   #request(row: SceneRow): z.infer<typeof Interaction> {

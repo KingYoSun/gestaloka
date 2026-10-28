@@ -118,7 +118,9 @@ test.each([
     expect(await client.ledger.input(id)).toMatchObject({
       sourceMessages: messages,
     });
-    if (!["scene-result"].includes(role))
+    if (
+      ["scene-background", "scene-intent", "initial-generation"].includes(role)
+    )
       expect(request.output_config.format).toBeUndefined();
     else
       expect(

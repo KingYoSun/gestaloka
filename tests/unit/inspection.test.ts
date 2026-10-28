@@ -4,7 +4,10 @@ import { InspectionManifest } from "@gestaloka/contracts";
 import { measure } from "../../packages/server/src/inspection/measure.js";
 import { summarizeHistory } from "../../packages/server/src/inspection/history.js";
 import { recordPresentations } from "../../packages/server/src/inspection/record.js";
-import { validateAssessment } from "../../packages/server/src/inspection/evaluate.js";
+import {
+  validateAssessment,
+  assessmentDraft,
+} from "../../packages/server/src/inspection/evaluate.js";
 import {
   fid,
   info,
@@ -15,6 +18,7 @@ import type { SceneRow } from "../../packages/server/src/runtime/scene.js";
 import {
   sceneAnchors,
   SceneBackground,
+  presentationEvidence,
 } from "../../packages/server/src/runtime/scene-data.js";
 
 test("固定manifestから同じ分類・値を返し、窓前の状態、別側面、更新、内部情報を区別する", () => {
@@ -162,6 +166,56 @@ test("初期提示を既知集合へ加え、未記録と旧指標を区別す�
     total: { value: 7 },
   });
 });
+
+test("評価出力は全対象のIDを必須とし、未来の根拠とモデルによる欠測の追加を許さない", () => {
+  const m = inspectionFixture(),
+    schema = assessmentDraft(m),
+    value = {
+      inputs: m.scenes
+        .flatMap((s) => s.inputs)
+        .map((i) => ({
+          inputId: i.id,
+          units: [],
+          responsiveness: "responsive",
+          principle: "consistent",
+          principleEvidence: [] as {
+            presentationId: string;
+            quote: string;
+            explanation: string;
+          }[],
+        })),
+      otherPresentations: m.scenes
+        .flatMap((s) => s.presentations.filter((p) => p.kind !== "response"))
+        .map((p) => ({ presentationId: p.id, units: [] })),
+      overall: {
+        responsiveness: "結果を確認",
+        stagnation: "なし",
+        principle: "consistent",
+        explanation: "保存済みの提示を評価",
+      },
+      disagreements: [],
+    };
+  expect(() => schema.parse(value)).not.toThrow();
+  const first = Object.values(value.inputs)[0]!;
+  first.principleEvidence = [
+    {
+      presentationId: m.scenes[0]!.presentations.at(-1)!.id,
+      quote: m.scenes[0]!.presentations.at(-1)!.text,
+      explanation: "未来の根拠",
+    },
+  ];
+  expect(() => schema.parse(value)).toThrow();
+  first.principleEvidence = [];
+  expect(() =>
+    schema.parse({
+      ...value,
+      overall: { ...value.overall, missing: ["構造対応がnull"] },
+    }),
+  ).toThrow();
+  const incomplete = structuredClone(value);
+  incomplete.inputs.pop();
+  expect(() => schema.parse(incomplete)).toThrow();
+});
 test("本人向け提示の記録は再保存で増えず、終了時のグラフと同じIDを使う", () => {
   const bg = SceneBackground.parse({
     type: "background",
@@ -221,6 +275,27 @@ test("本人向け提示の記録は再保存で増えず、終了時のグラ�
     "提示していない引用";
   recordPresentations(row);
   expect(row.data.presentations[1]!.information).toBeNull();
+});
+
+test("生成用の対応情報は実際の提示本文と結び、旧形式の引用を上書きしない", () => {
+  const reference = {
+    kind: "node",
+    id: fid("evidence"),
+    aspect: "状態",
+    state: "開いた",
+    at: 0,
+    version: null,
+    origin: "reference",
+  };
+  expect(
+    presentationEvidence({ text: "扉が開いた。", information: [reference] }),
+  ).toMatchObject({ information: [{ evidence: "扉が開いた。" }] });
+  expect(
+    presentationEvidence({
+      text: "扉が開いた。",
+      information: [{ ...reference, evidence: "旧形式の引用" }],
+    }),
+  ).toMatchObject({ information: [{ evidence: "旧形式の引用" }] });
 });
 test("意味評価の引用と入力の対応を検証し、原則違反を情報量で相殺させない", () => {
   const m = inspectionFixture(),

@@ -7,6 +7,44 @@ import {
   parseOutput,
 } from "../../packages/server/src/llm/prompt.js";
 
+test("提供情報の対応配列は生成時に必須とし、旧記録を読む元schemaは変えない", () => {
+  const schema = z.toJSONSchema(
+    z
+      .object({
+        text: z.string(),
+        information: z.array(z.string()).optional(),
+        synopsisInformation: z.array(z.string()).optional(),
+      })
+      .strict(),
+    { io: "input" },
+  );
+  const original = structuredClone(schema),
+    converted = outputSchema(schema);
+  expect(converted.required).toEqual([
+    "text",
+    "information",
+    "synopsisInformation",
+  ]);
+  expect(schema).toEqual(original);
+});
+
+test("引用本文は生成させず、保存契約の元schemaにだけ残す", () => {
+  const schema = z.toJSONSchema(
+    z
+      .object({
+        kind: z.string(),
+        id: z.string(),
+        aspect: z.string(),
+        origin: z.string(),
+        evidence: z.string(),
+      })
+      .strict(),
+  );
+  const converted = outputSchema(schema);
+  expect(converted.properties).not.toHaveProperty("evidence");
+  expect(schema.properties).toHaveProperty("evidence");
+});
+
 test("重複したグラフと観測を参照へ置換し、期間・来歴・変更フラグ・依存版を完全に復元できる", () => {
   const edge = {
     id: "edge",

@@ -41,33 +41,45 @@ let auth: Awaited<ReturnType<typeof fixtureAuth>>,
 let generationCalls = 0,
   evaluationCalls = 0;
 const selection = { ...m.selection, userId: null };
-const output = {
-  inputs: m.scenes[0]!.inputs.map((a) => ({
-    inputId: a.id,
-    units: [],
-    responsiveness: "unknown",
-    principle: "unknown",
-    principleEvidence: [],
-    missing: ["CIではモデルの意味判断を代替しない"],
-  })),
-  overall: {
-    newInformation: null,
-    importance: null,
-    responsiveness: "fixture",
-    stagnation: "fixture",
-    principle: "unknown",
-    explanation: "fixture",
-    missing: ["fixture"],
-  },
-  disagreements: [],
-};
-const transport: typeof fetch = async () => {
+const transport: typeof fetch = async (_url, options) => {
   evaluationCalls++;
+  const body = JSON.parse(String(options?.body));
+  const source = JSON.parse(
+    body.messages.find((message: { role: string }) => message.role === "user")
+      .content,
+  ).manifest as typeof m;
   return Response.json({
     id: randomUUID(),
     model: "fixture-model",
     choices: [
-      { finish_reason: "stop", message: { content: JSON.stringify(output) } },
+      {
+        finish_reason: "stop",
+        message: {
+          content: JSON.stringify({
+            inputs: source.scenes.flatMap((s) =>
+              s.inputs.map((i) => ({
+                inputId: i.id,
+                units: [],
+                responsiveness: "unknown",
+                principle: "unknown",
+                principleEvidence: [],
+              })),
+            ),
+            otherPresentations: source.scenes
+              .flatMap((s) =>
+                s.presentations.filter((p) => p.kind !== "response"),
+              )
+              .map((p) => ({ presentationId: p.id, units: [] })),
+            overall: {
+              responsiveness: "fixture",
+              stagnation: "fixture",
+              principle: "unknown",
+              explanation: "CIでは実モデルの意味判断を代替しない",
+            },
+            disagreements: [],
+          }),
+        },
+      },
     ],
     usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200 },
   });
@@ -393,7 +405,7 @@ test("文書化したCLI入口が計測・比較と意味評価を実行し、JS
         },
       },
     );
-    expect(JSON.parse(paid.stdout).status).toBe("partial");
+    expect(JSON.parse(paid.stdout).status).toBe("complete");
     const evaluated = JSON.parse(
       await readFile(join(directory, `${id}.json`), "utf8"),
     );

@@ -134,6 +134,29 @@ export function outputSchema(
         ];
       }),
     );
+    if (converted.properties) {
+      const properties = converted.properties as Schema;
+      if (
+        "aspect" in properties &&
+        "origin" in properties &&
+        "evidence" in properties
+      ) {
+        delete properties.evidence;
+        converted.required = ((converted.required as string[]) ?? []).filter(
+          (key) => key !== "evidence",
+        );
+      }
+      const metadata = Object.keys(converted.properties).filter(
+        (key) => key === "information" || key === "synopsisInformation",
+      );
+      if (metadata.length)
+        converted.required = [
+          ...new Set([
+            ...((converted.required as string[]) ?? []),
+            ...metadata,
+          ]),
+        ];
+    }
     return converted;
   };
   return convert(schema as Schema);

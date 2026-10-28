@@ -5,7 +5,9 @@ description: 保存済みmanifestから物語の提示情報を検品し、意�
 
 # 物語の提示情報の検品
 
-スキル版は`narrative-inspection-v3`、ルーブリック版は`meaning-v1`。指定manifestを[API手順](references/api.md)で最後のページまで取得し、[ルーブリック](references/rubric.md)と公開契約`SemanticAssessment`に従って評価する。呼出し側が全件取得済みのmanifestを同梱した場合は、その資料を使い、追加取得を要求しない。資料の不足や未取得の続きは明示し、未保存ログを推測で補わない。
+スキル版は`narrative-inspection-v4`、ルーブリック版は`meaning-v1`。指定manifestを[API手順](references/api.md)で最後のページまで取得し、[ルーブリック](references/rubric.md)と公開契約`SemanticAssessment`に従って評価する。呼出し側が全件取得済みのmanifestを同梱した場合は、その資料を使い、追加取得を要求しない。資料の不足や未取得の続きは明示し、未保存ログを推測で補わない。
+
+自動実行では、指定された入力IDと提示IDを一つずつ全件評価する。欠測と合計値は呼出し側が保存記録から確定する。構造対応の不足はdisagreementsと説明へ残し、資料の未取得とは扱わない。boundary・completeの入力に応答提示がない場合も、提示がなかったという記録であり、未取得ではない。
 
 原則は「世界の因果とプレイヤーの選択を両立する」。原則適合は新情報量や重要度から独立して判定する。情報量の多さで違反を相殺しない。「他者の主体性の尊重」へ検品範囲を広げない。
 
