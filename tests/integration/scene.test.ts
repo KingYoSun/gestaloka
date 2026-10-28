@@ -376,6 +376,44 @@ afterAll(async () => {
   await isolated.close();
 });
 
+test("シーン前に本人へ返した初期知識だけを保存し、再取得で増やさない", async () => {
+  const before = modelCalls;
+  const page = await access.knowledge(
+    subject,
+    construction,
+    undefined,
+    undefined,
+    undefined,
+    actor,
+  );
+  expect(page.items.map((i) => i.text)).toEqual(["人間だけの記憶"]);
+  await access.knowledge(
+    subject,
+    construction,
+    undefined,
+    undefined,
+    undefined,
+    actor,
+  );
+  const saved = (
+    await d.postgres.query(
+      "SELECT data FROM player_initial_presentation WHERE construction_id=$1 AND actor_id=$2",
+      [construction, actor],
+    )
+  ).rows;
+  expect(saved).toHaveLength(1);
+  expect(saved[0].data).toMatchObject({
+    text: "人間だけの記憶",
+    information: [
+      { kind: "edge", id: page.items[0]!.id },
+      { kind: "node", id: place },
+    ],
+  });
+  expect(saved[0].data.providedAt).toMatch(/Z$/);
+  expect(JSON.stringify(saved)).not.toContain("NPCだけの秘密");
+  expect(modelCalls).toBe(before);
+});
+
 test("長いシーンを50件ずつ前後に復元し、概要の転送量と他者の受容を抑える", async () => {
   const sceneId = randomUUID();
   const events = Array.from({ length: 261 }, (_, i) => ({

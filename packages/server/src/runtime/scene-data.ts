@@ -28,6 +28,26 @@ export const SceneBackground = z
   })
   .strict();
 export type SceneBackground = z.infer<typeof SceneBackground>;
+export function presentationEvidence(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(presentationEvidence);
+  if (!value || typeof value !== "object") return value;
+  const result = Object.fromEntries(
+    Object.entries(value).map(([key, v]) => [key, presentationEvidence(v)]),
+  );
+  for (const [body, field] of [
+    ["synopsis", "synopsisInformation"],
+    ["text", "information"],
+  ] as const) {
+    if (typeof result[body] !== "string" || !Array.isArray(result[field]))
+      continue;
+    result[field] = result[field].map((reference: unknown) =>
+      reference && typeof reference === "object" && !("evidence" in reference)
+        ? { ...reference, evidence: result[body] }
+        : reference,
+    );
+  }
+  return result;
+}
 export const SceneEvent = z
   .object({
     actorId: id,

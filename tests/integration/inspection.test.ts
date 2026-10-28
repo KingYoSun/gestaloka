@@ -12,6 +12,7 @@ import {
 } from "@gestaloka/contracts";
 import { LlmClient } from "@gestaloka/server/llm";
 import { InspectionStore } from "../../packages/server/src/inspection/store.js";
+import { recordInitialPresentation } from "../../packages/server/src/inspection/record.js";
 import { InspectionWorker } from "../../packages/server/src/inspection/worker.js";
 import { runEvaluation } from "../../packages/server/src/inspection/evaluate.js";
 import {
@@ -40,33 +41,79 @@ let auth: Awaited<ReturnType<typeof fixtureAuth>>,
 let generationCalls = 0,
   evaluationCalls = 0;
 const selection = { ...m.selection, userId: null };
-const output = {
-  inputs: m.scenes[0]!.inputs.map((a) => ({
-    inputId: a.id,
-    units: [],
-    responsiveness: "unknown",
-    principle: "unknown",
-    principleEvidence: [],
-    missing: ["CIではモデルの意味判断を代替しない"],
-  })),
-  overall: {
-    newInformation: null,
-    importance: null,
-    responsiveness: "fixture",
-    stagnation: "fixture",
-    principle: "unknown",
-    explanation: "fixture",
-    missing: ["fixture"],
-  },
-  disagreements: [],
-};
-const transport: typeof fetch = async () => {
+const transport: typeof fetch = async (_url, options) => {
   evaluationCalls++;
+  const body = JSON.parse(String(options?.body));
+  const source = JSON.parse(
+    body.messages.find((message: { role: string }) => message.role === "user")
+      .content,
+  ) as {
+    task: string;
+    context: {
+      input?: { text: string };
+      presentations?: {
+        text: string;
+        presentationId: number;
+        currentResponse: boolean;
+      }[];
+      quotes?: { quoteIndex: number; presentationId: number; text: string }[];
+    };
+  };
+  if (
+    source.task === "input" &&
+    source.context.input?.text === m.scenes[0]!.inputs[0]!.text
+  )
+    expect(
+      source.context.presentations!.some((p) =>
+        p.text.includes("扉は開いた。"),
+      ),
+    ).toBe(false);
+  const item =
+    source.task === "summary"
+      ? {
+          responsiveness: "fixture",
+          stagnation: "fixture",
+          principle: "unknown",
+          explanation: "CIでは実モデルの意味判断を代替しない",
+        }
+      : source.task === "input"
+        ? {
+            units: [],
+            responsiveness: "unknown",
+            principle: "unknown",
+            principleEvidence: [],
+            disagreements: [],
+          }
+        : { units: [], disagreements: [] };
+  if (source.task === "input") {
+    const current = source.context.presentations!.find(
+      (p) => p.currentResponse,
+    )!;
+    const quote = source.context.quotes!.find(
+      (q) => q.presentationId === current.presentationId,
+    )!;
+    Object.assign(item, {
+      units: [
+        {
+          text: "入力の復唱",
+          category: "duplicate",
+          importance: 0,
+          evidence: { current: { quoteIndex: quote.quoteIndex }, context: [] },
+          explanation: "検証用の復唱",
+        },
+      ],
+    });
+  }
   return Response.json({
     id: randomUUID(),
     model: "fixture-model",
     choices: [
-      { finish_reason: "stop", message: { content: JSON.stringify(output) } },
+      {
+        finish_reason: "stop",
+        message: {
+          content: JSON.stringify(item),
+        },
+      },
     ],
     usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200 },
   });
@@ -94,6 +141,21 @@ beforeAll(async () => {
     },
   );
   await model.ledger.setup();
+  await pool.query(
+    "INSERT INTO player_initial_presentation(id,construction_id,actor_id,provided_at,data) VALUES($1,$2,$3,now()-interval '2 minutes',$4)",
+    [
+      fid("initial"),
+      selection.worldId,
+      selection.actorId,
+      {
+        id: fid("initial"),
+        text: "",
+        at: 0,
+        providedAt: new Date(Date.now() - 120000).toISOString(),
+        information: [],
+      },
+    ],
+  );
   await pool.query(
     "CREATE TABLE world_scene(id uuid PRIMARY KEY,construction_id uuid NOT NULL,actor_id uuid NOT NULL,user_id uuid,state text NOT NULL,data jsonb NOT NULL,claim uuid,created_at timestamptz NOT NULL DEFAULT now(),inspection_revision bigint NOT NULL DEFAULT 0)",
   );
@@ -163,6 +225,98 @@ const select = async () =>
       selection,
     }),
   );
+
+test("初期提示の全ページを凍結し、他者とシーン開始後の取得を混ぜない", async () => {
+  const worldId = randomUUID(),
+    actorId = randomUUID(),
+    sceneId = randomUUID();
+  const make = (offset: number, length: number) =>
+    Array.from({ length }, (_, i) => ({
+      id: fid(`initial-edge-${offset + i}`),
+      kind: "observation" as const,
+      text: `初期知識${offset + i}`,
+      from: 0,
+    }));
+  const first = make(0, 50),
+    second = make(50, 2);
+  await recordInitialPresentation(
+    pool,
+    worldId,
+    user.id,
+    {
+      viewerId: randomUUID(),
+      at: 0,
+      items: make(90, 1),
+      next: null,
+      previous: null,
+    },
+    new Map([[fid("initial-edge-90"), fid("other-target")]]),
+  );
+  for (const items of [first, first, second])
+    await recordInitialPresentation(
+      pool,
+      worldId,
+      admin.id,
+      {
+        viewerId: actorId,
+        at: 0,
+        items,
+        next: items === second ? null : "next",
+        previous: null,
+      },
+      new Map(items.map((i) => [i.id, fid(`target-${i.id}`)])),
+    );
+  const data = {
+    actions: [],
+    events: [],
+    presentations: [],
+    recordingVersion: "inspection-record-v1",
+    basis: [],
+  };
+  await pool.query(
+    "INSERT INTO world_scene(id,construction_id,actor_id,user_id,state,data) VALUES($1,$2,$3,$4,'result',$5)",
+    [sceneId, worldId, actorId, admin.id, data],
+  );
+  const selected = await InspectionStore.select(pool, {
+    worldId,
+    actorId,
+    userId: admin.id,
+    endSceneId: sceneId,
+    n: 1,
+  });
+  const m = await InspectionStore.manifest(pool, worldId, selected.manifest.id);
+  expect(m.initial).toHaveLength(2);
+  expect(
+    m
+      .initial!.map((p) => p.text)
+      .join("\n")
+      .split("\n"),
+  ).toHaveLength(52);
+  expect(selected.manifest.initialRecording).toBe("recorded");
+  await recordInitialPresentation(
+    pool,
+    worldId,
+    admin.id,
+    {
+      viewerId: actorId,
+      at: 1,
+      items: make(60, 1),
+      next: null,
+      previous: null,
+    },
+    new Map([[fid("initial-edge-60"), fid("later-target")]]),
+  );
+  const reread = await InspectionStore.select(pool, {
+    worldId,
+    actorId,
+    userId: admin.id,
+    endSceneId: sceneId,
+    n: 1,
+  });
+  expect(reread.manifest.id).toBe(selected.manifest.id);
+  const page = await InspectionStore.read(pool, worldId, m.id);
+  expect(page.items.filter((i) => i.section === "initial")).toHaveLength(2);
+});
 
 test("APIと共通計測の値が一致し、全ページの取得・再取得は生成も世界更新もしない", async () => {
   const selected = await select(),
@@ -285,7 +439,7 @@ test("文書化したCLI入口が計測・比較と意味評価を実行し、JS
         },
       },
     );
-    expect(JSON.parse(paid.stdout).status).toBe("partial");
+    expect(JSON.parse(paid.stdout).status).toBe("complete");
     const evaluated = JSON.parse(
       await readFile(join(directory, `${id}.json`), "utf8"),
     );
@@ -293,6 +447,16 @@ test("文書化したCLI入口が計測・比較と意味評価を実行し、JS
     expect(
       evaluated.semantic.result.evaluationCost.calculatedNanoUsd,
     ).not.toBeNull();
+    const charged = (
+      await pool.query(
+        "SELECT sum(charged_nano)::text AS amount,count(*)::int AS calls FROM llm_call WHERE response_id=$1",
+        [evaluated.semantic.result.runId],
+      )
+    ).rows[0];
+    expect(charged.calls).toBeGreaterThan(1);
+    expect(evaluated.semantic.result.evaluationCost.calculatedNanoUsd).toBe(
+      charged.amount,
+    );
   } finally {
     evaluator.mockRestore();
     await app.close();
@@ -477,6 +641,42 @@ test("同一評価ジョブは再送せず、意図した再評価を別保存�
   ).toBe("partial");
   expect(evaluationCalls).toBe(count);
 });
+test("個別評価の応答喪失を合算して予約を保持し、再開時に再送しない", async () => {
+  const selected = await select(),
+    id = randomUUID();
+  await auth.operations.execute(admin.id, id, {
+    operation: "inspection.evaluate",
+    worldId: selection.worldId,
+    manifestId: selected.manifest.id,
+    configuration: {
+      configurationVersion: 1,
+      target: "resolution",
+      budgetUsd: 1,
+    },
+  });
+  const lost = vi
+    .fn<typeof fetch>()
+    .mockRejectedValue(new Error("response lost"));
+  const first = await runEvaluation(pool, id, "2".repeat(64), lost);
+  expect(first!.evaluationCost).toMatchObject({ calculatedNanoUsd: null });
+  expect(
+    Number(
+      (first!.evaluationCost as { reservedNanoUsd: string }).reservedNanoUsd,
+    ),
+  ).toBeGreaterThan(0);
+  const calls = lost.mock.calls.length;
+  await pool.query(
+    "UPDATE inspection_evaluation SET status='queued' WHERE id=$1",
+    [id],
+  );
+  const resumed = await runEvaluation(pool, id, "2".repeat(64), lost);
+  expect(resumed).toMatchObject({
+    status: "partial",
+    reason: expect.stringContaining("自動では再送しません"),
+  });
+  expect(lost).toHaveBeenCalledTimes(calls);
+});
+
 test("定期集計は再開で重複せず、重複窓の入力と費用を水増ししない", async () => {
   await auth.operations.execute(admin.id, randomUUID(), {
     operation: "inspection.configure",

@@ -483,7 +483,13 @@ export class LlmClient {
         ? // The full world schema exceeds Anthropic's grammar limit; retain Zod validation.
           anthropicPrompt(
             messages,
-            ["scene-result", "world-commit", "initial-commit"].includes(role),
+            [
+              "scene-resolve",
+              "scene-result",
+              "narrative-inspection",
+              "world-commit",
+              "initial-commit",
+            ].includes(role),
             ["intent", "scene-intent"].includes(role),
           )
         : undefined;

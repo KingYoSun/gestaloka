@@ -12,12 +12,14 @@ import { sceneId } from "../runtime/scene-data.js";
 import { canonical } from "../llm/prompt.js";
 import { AccessError } from "../http/access.js";
 import { measure } from "./measure.js";
+import { setupInitialPresentations } from "./record.js";
 
 type Database = Pick<pg.Pool, "query">;
 export const digest = (v: unknown) =>
   createHash("sha256").update(canonical(v)).digest("hex");
 export class InspectionStore {
   static async setup(db: Database) {
+    await setupInitialPresentations(db);
     await db.query(`CREATE TABLE IF NOT EXISTS inspection_manifest(id text PRIMARY KEY,world_id uuid NOT NULL,actor_id uuid NOT NULL,user_id uuid,captured_at timestamptz NOT NULL DEFAULT now(),data jsonb NOT NULL,measurement jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS inspection_weights(version text PRIMARY KEY,definition jsonb NOT NULL);
       CREATE INDEX IF NOT EXISTS inspection_manifest_history ON inspection_manifest(world_id,captured_at,id);
@@ -43,6 +45,7 @@ export class InspectionStore {
         selected: RawScene[];
         prior: Presentation[];
         prior_missing: string[];
+        initial: InspectionManifest["initial"];
       }>(
         `
       WITH endpoint AS (SELECT created_at,id FROM world_scene WHERE id=$4 AND construction_id=$1 AND actor_id=$2 AND user_id IS NOT DISTINCT FROM $3::uuid),
@@ -56,7 +59,9 @@ export class InspectionStore {
         WHERE c.response_id=ANY(ARRAY[s.id,(s.data->>'reflectionResponseId')::uuid]||(SELECT coalesce(array_agg((a->>'id')::uuid),'{}'::uuid[]) FROM jsonb_array_elements(s.data->'actions') a))
         AND c.request->>'role' IS DISTINCT FROM 'narrative-inspection'), '[]'::jsonb)) ORDER BY s.created_at,s.id) FROM chosen s),'[]'::jsonb) AS selected,
       coalesce((SELECT jsonb_agg(p.value ORDER BY s.created_at,s.id,p.ordinality) FROM prior s CROSS JOIN LATERAL jsonb_array_elements(coalesce(s.data->'presentations','[]')) WITH ORDINALITY p),'[]'::jsonb) AS prior,
-      coalesce((SELECT jsonb_agg(s.id ORDER BY s.created_at,s.id) FROM prior s WHERE s.data->>'recordingVersion' IS NULL),'[]'::jsonb) AS prior_missing`,
+      coalesce((SELECT jsonb_agg(s.id ORDER BY s.created_at,s.id) FROM prior s WHERE s.data->>'recordingVersion' IS NULL),'[]'::jsonb) AS prior_missing,
+      (SELECT jsonb_agg(p.data ORDER BY p.provided_at,p.id) FROM player_initial_presentation p WHERE p.construction_id=$1 AND p.actor_id=$2 AND p.user_id IS NOT DISTINCT FROM $3::uuid
+       AND p.provided_at<(SELECT min(created_at) FROM world_scene WHERE construction_id=$1 AND actor_id=$2)) AS initial`,
         [
           selection.worldId,
           selection.actorId,
@@ -96,19 +101,13 @@ export class InspectionStore {
       return InspectionScene.parse({ ...scene, revision: digest(scene) });
     });
     const content = {
-      recordVersion: "inspection-record-v1" as const,
+      recordVersion: "inspection-record-v2" as const,
+      initial: result.initial,
       selection,
       requestedScenes: selection.n,
       actualScenes: scenes.length,
       prior: result.prior,
-      priorMissingScenes: [
-        ...new Set([
-          ...result.prior_missing,
-          ...result.prior
-            .filter((p) => p.information === null)
-            .map((p) => p.sceneId),
-        ]),
-      ],
+      priorMissingScenes: result.prior_missing,
       scenes,
     };
     const manifest = InspectionManifest.parse({
@@ -182,7 +181,7 @@ export class InspectionStore {
   static async read(db: Database, worldId: string, id: string, after = 0) {
     const row = (
       await db.query(
-        `SELECT (data-'prior'-'scenes')||jsonb_build_object('sceneOrder',(SELECT jsonb_agg(jsonb_build_object('id',s.value->'id','revision',s.value->'revision','state',s.value->'state') ORDER BY s.ordinality) FROM jsonb_array_elements(data->'scenes') WITH ORDINALITY s)) AS manifest,measurement-'scenes'-'diffs' AS measurement,
+        `SELECT (data-'initial'-'prior'-'scenes')||jsonb_build_object('initialRecording',CASE WHEN jsonb_typeof(data->'initial')='array' THEN 'recorded' ELSE 'missing' END,'sceneOrder',(SELECT jsonb_agg(jsonb_build_object('id',s.value->'id','revision',s.value->'revision','state',s.value->'state') ORDER BY s.ordinality) FROM jsonb_array_elements(data->'scenes') WITH ORDINALITY s)) AS manifest,measurement-'scenes'-'diffs' AS measurement,
       (SELECT count(*)::int FROM inspection_evidence WHERE manifest_id=$1) AS total
       FROM inspection_manifest WHERE id=$1 AND world_id=$2`,
         [id, worldId],
@@ -280,6 +279,7 @@ export function entries(m: InspectionManifest) {
     inputId: string | null,
     value: unknown,
   ) => items.push({ id, section, sceneId, inputId, value });
+  for (const p of m.initial ?? []) add(p.id, "initial", null, null, p);
   for (const p of m.prior) add(p.id, "prior", p.sceneId, p.inputId, p);
   for (const s of m.scenes) {
     add(s.id, "scene", s.id, null, {

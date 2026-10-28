@@ -29,6 +29,13 @@ export const Presentation = z
   })
   .strict();
 export type Presentation = z.infer<typeof Presentation>;
+export const InitialPresentation = Presentation.pick({
+  id: true,
+  text: true,
+  at: true,
+  providedAt: true,
+  information: true,
+});
 export const InspectionWeights = z
   .object({
     version: text,
@@ -45,7 +52,9 @@ export const InspectionSelection = z
     actorId: z.uuid(),
     endSceneId: z.uuid(),
     n: z.number().int().positive().safe(),
-    metricVersion: z.literal("presentation-v1").default("presentation-v1"),
+    metricVersion: z
+      .enum(["presentation-v1", "presentation-v2"])
+      .default("presentation-v2"),
     weights: InspectionWeights.default({
       version: "unit-v1",
       values: { node: 1, edge: 1, aspect: 1, update: 1 },
@@ -102,11 +111,12 @@ export const InspectionScene = z
 export const InspectionManifest = z
   .object({
     id: z.string().regex(/^[a-f0-9]{64}$/),
-    recordVersion: z.literal("inspection-record-v1"),
+    recordVersion: z.enum(["inspection-record-v1", "inspection-record-v2"]),
     capturedAt: z.iso.datetime(),
     selection: InspectionSelection,
     requestedScenes: count,
     actualScenes: count,
+    initial: z.array(InitialPresentation).nullable().optional(),
     prior: z.array(Presentation),
     priorMissingScenes: z.array(z.uuid()),
     scenes: z.array(InspectionScene),
@@ -284,6 +294,7 @@ export const InspectionMeasurement = z.object({
   weights: InspectionWeights,
   requestedScenes: count,
   actualScenes: count,
+  initialMissing: z.boolean().default(true),
   status: z.enum(["complete", "partial"]),
   total: Breakdown.extend({
     ...Resources.shape,
@@ -301,6 +312,7 @@ export const InspectionMeasurement = z.object({
 export const InspectionEvidence = z.object({
   id: text,
   section: z.enum([
+    "initial",
     "prior",
     "scene",
     "input",
@@ -315,7 +327,12 @@ export const InspectionEvidence = z.object({
   value: z.unknown(),
 });
 export const InspectionReadResult = z.object({
-  manifest: InspectionManifest.omit({ prior: true, scenes: true }).extend({
+  manifest: InspectionManifest.omit({
+    initial: true,
+    prior: true,
+    scenes: true,
+  }).extend({
+    initialRecording: z.enum(["recorded", "missing"]).default("missing"),
     sceneOrder: z.array(
       z.object({ id: z.uuid(), revision: text, state: text }),
     ),

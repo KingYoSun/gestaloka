@@ -4,7 +4,11 @@ import { InspectionManifest } from "@gestaloka/contracts";
 import { measure } from "../../packages/server/src/inspection/measure.js";
 import { summarizeHistory } from "../../packages/server/src/inspection/history.js";
 import { recordPresentations } from "../../packages/server/src/inspection/record.js";
-import { validateAssessment } from "../../packages/server/src/inspection/evaluate.js";
+import {
+  validateAssessment,
+  inspectionItem,
+  quoteSources,
+} from "../../packages/server/src/inspection/evaluate.js";
 import {
   fid,
   info,
@@ -15,6 +19,7 @@ import type { SceneRow } from "../../packages/server/src/runtime/scene.js";
 import {
   sceneAnchors,
   SceneBackground,
+  presentationEvidence,
 } from "../../packages/server/src/runtime/scene-data.js";
 
 test("固定manifestから同じ分類・値を返し、窓前の状態、別側面、更新、内部情報を区別する", () => {
@@ -125,6 +130,98 @@ test("窓前の提示で対応が不明なら既知集合が完全とは扱わ�
   expect(r.status).toBe("partial");
   expect(r.priorMissingScenes).toContain(fid("prior-scene"));
 });
+
+test("初期提示を既知集合へ加え、未記録と旧指標を区別する", () => {
+  const m = inspectionFixture();
+  m.initial = [
+    {
+      id: fid("initial-known"),
+      text: "橋板が腐っている",
+      at: 0,
+      providedAt: "2026-10-27T23:59:00.000Z",
+      information: [info("refusal", "橋板が腐っている")],
+    },
+  ];
+  expect(measure(m).total.value).toBe(6);
+  expect(
+    measure(m)
+      .diffs.flatMap((d) => d.elements)
+      .some((e) => e.id === fid("refusal") && e.category === "repeat"),
+  ).toBe(true);
+  m.initial = null;
+  expect(measure(m)).toMatchObject({
+    initialMissing: true,
+    status: "partial",
+    total: { value: null },
+  });
+  const legacy = { ...m };
+  delete legacy.initial;
+  const old = InspectionManifest.parse({
+    ...legacy,
+    recordVersion: "inspection-record-v1",
+    selection: { ...m.selection, metricVersion: "presentation-v1" },
+  });
+  expect(old.initial).toBeUndefined();
+  expect(measure(old)).toMatchObject({
+    initialMissing: true,
+    total: { value: 7 },
+  });
+});
+
+test("引用候補は当該応答を必須とし、元のIDと原文へ復元する", () => {
+  const m = inspectionFixture(),
+    sources = [m.prior[0]!, m.scenes[0]!.presentations[0]!],
+    item = inspectionItem("input", sources, [1]);
+  const current = item.quotes.find((q) => q.presentationId === 1)!,
+    previous = item.quotes.find((q) => q.presentationId === 0)!;
+  const value = {
+    units: [
+      {
+        text: "入力の復唱",
+        category: "duplicate",
+        importance: 0,
+        evidence: {
+          current: { quoteIndex: current.quoteIndex },
+          context: [{ quoteIndex: previous.quoteIndex }],
+        },
+        explanation: "既知情報の再提示",
+      },
+    ],
+    responsiveness: "responsive",
+    principle: "consistent",
+    principleEvidence: [
+      { quoteIndex: current.quoteIndex, explanation: "当該応答を確認" },
+    ],
+    disagreements: [{ presentationId: 0, explanation: "比較元" }],
+  };
+  const { disagreements, ...part } = item.restore(item.schema.parse(value));
+  expect(part.units[0]!.evidence).toEqual([
+    { presentationId: sources[1]!.id, quote: current.text },
+    { presentationId: sources[0]!.id, quote: previous.text },
+  ]);
+  expect(disagreements[0]!.presentationId).toBe(sources[0]!.id);
+  const wrong = structuredClone(value);
+  wrong.units[0]!.evidence.current.quoteIndex = previous.quoteIndex;
+  expect(() => item.schema.parse(wrong)).toThrow();
+});
+
+test("引用候補は原文の短い範囲を保持し、引用文を生成しない", () => {
+  const source = [
+    { text: "村人が返事をした。落ち葉、小石がある！\n返事を待つ。" },
+    { text: "……。" },
+  ];
+  const quotes = quoteSources(source);
+  expect(quotes.map((q) => q.text)).toEqual([
+    "村人が返事をした。",
+    "落ち葉、",
+    "小石がある！",
+    "返事を待つ。",
+    "……。",
+  ]);
+  expect(quotes.map((q) => q.quoteIndex)).toEqual([0, 1, 2, 3, 4]);
+  for (const q of quotes)
+    expect(source[q.presentationId]!.text).toContain(q.text);
+});
 test("本人向け提示の記録は再保存で増えず、終了時のグラフと同じIDを使う", () => {
   const bg = SceneBackground.parse({
     type: "background",
@@ -184,6 +281,27 @@ test("本人向け提示の記録は再保存で増えず、終了時のグラ�
     "提示していない引用";
   recordPresentations(row);
   expect(row.data.presentations[1]!.information).toBeNull();
+});
+
+test("生成用の対応情報は実際の提示本文と結び、旧形式の引用を上書きしない", () => {
+  const reference = {
+    kind: "node",
+    id: fid("evidence"),
+    aspect: "状態",
+    state: "開いた",
+    at: 0,
+    version: null,
+    origin: "reference",
+  };
+  expect(
+    presentationEvidence({ text: "扉が開いた。", information: [reference] }),
+  ).toMatchObject({ information: [{ evidence: "扉が開いた。" }] });
+  expect(
+    presentationEvidence({
+      text: "扉が開いた。",
+      information: [{ ...reference, evidence: "旧形式の引用" }],
+    }),
+  ).toMatchObject({ information: [{ evidence: "旧形式の引用" }] });
 });
 test("意味評価の引用と入力の対応を検証し、原則違反を情報量で相殺させない", () => {
   const m = inspectionFixture(),

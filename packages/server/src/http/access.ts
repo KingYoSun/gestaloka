@@ -26,6 +26,10 @@ import { sceneAnchors } from "../runtime/scene-data.js";
 import { requireMember } from "./operations.js";
 import { ExecutionBudget } from "../execution-budget.js";
 import { WorldPlayers } from "../runtime/players.js";
+import {
+  setupInitialPresentations,
+  recordInitialPresentation,
+} from "../inspection/record.js";
 
 export class AccessError extends Error {
   constructor(
@@ -117,6 +121,7 @@ export class WorldAccess {
       CREATE OR REPLACE TRIGGER construction_notification AFTER UPDATE ON world_construction
       FOR EACH ROW EXECUTE FUNCTION notify_construction();`);
     await this.scenes.setup();
+    await setupInitialPresentations(this.pool);
     await this.players.setup();
     await this.pool.query(`INSERT INTO world_controlled_actor(world_id,actor_id)
       SELECT c.world_id,a.actor_id FROM world_access a JOIN world_construction c ON c.id=a.construction_id
@@ -860,13 +865,21 @@ export class WorldAccess {
             JSON.stringify({ from: edge.period.from, id: edge.id }),
           ).toString("base64url")
         : null;
-    return KnowledgePage.parse({
+    const page = KnowledgePage.parse({
       viewerId: grant.actor_id,
       at: row.at,
       items,
       next: after || all.length > 50 ? encode(edges.at(-1)) : null,
       previous: (after ? all.length > 50 : !!before) ? encode(edges[0]) : null,
     });
+    await recordInitialPresentation(
+      this.pool,
+      id,
+      subject,
+      page,
+      new Map(edges.map((e) => [e.id, e.target])),
+    );
+    return page;
   }
   async reconcile(id: string) {
     const row = (

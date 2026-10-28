@@ -192,6 +192,7 @@ export function readableInspection(
     `状態: ${report.status === "complete" ? "完了" : "部分評価"}`,
     `指標: ${m.metricVersion} / 重み: ${m.weights.version}`,
     `シーン: 要求${m.requestedScenes} / 実${m.actualScenes} / 入力${m.total.inputCount}`,
+    `初期提示: ${report.manifest.initialRecording === "recorded" ? "記録あり" : "欠測（旧指標の保存値には初期提示を含まない）"}`,
     `移動量: ${m.total.value ?? "欠測"}（確認済み部分 ${m.total.observedValue}）`,
     `提示対応: ${m.total.coverage.mapped}/${m.total.coverage.presentations}`,
     `最長の連続低移動入力: ${m.longestLowRun}`,
@@ -210,6 +211,7 @@ export function readableInspection(
   for (const item of report.items.filter(
     (i) =>
       i.section === "presentation" ||
+      i.section === "initial" ||
       i.section === "prior" ||
       i.section === "input",
   )) {
