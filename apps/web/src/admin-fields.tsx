@@ -36,7 +36,6 @@ export const labels: Record<string, string> = {
   provider: "APIサービス",
   model: "モデルID",
   baseUrl: "API接続先",
-  harnessBaseUrl: "dsh接続先",
   api: "API形式",
   effort: "通常の推論量",
   initialEffort: "初期生成の推論量",
@@ -46,6 +45,10 @@ export const labels: Record<string, string> = {
   cachedInputUsdPerMillion: "キャッシュ読取単価（USD / 100万トークン）",
   cacheWrite5mUsdPerMillion: "5分キャッシュ作成単価（USD / 100万トークン）",
   cacheWrite1hUsdPerMillion: "1時間キャッシュ作成単価（USD / 100万トークン）",
+  cacheWrite30mUsdPerMillion:
+    "OpenAI・30分キャッシュ作成単価（USD / 100万トークン）",
+  cacheWrite12hUsdPerMillion:
+    "OpenAI・12時間キャッシュ作成単価（USD / 100万トークン）",
   outputUsdPerMillion: "出力単価（USD / 100万トークン）",
   pricingDate: "単価の基準日",
   judgment: "提案と確定の呼び出し方式",

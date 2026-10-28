@@ -12,31 +12,16 @@ import { WorldStore } from "@gestaloka/server/world";
 const { values } = parseArgs({
   options: {
     target: { type: "string", default: "default" },
-    harness: { type: "boolean", default: false },
     budget: { type: "string" },
   },
 });
-const target = z
-  .enum(["default", "resolution"])
-  .parse(values.harness ? "resolution" : values.target);
-const environment = values.harness
-  ? {
-      DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
-      DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL,
-      DEEPSEEK_HARNESS_BASE_URL: process.env.DEEPSEEK_HARNESS_BASE_URL,
-      LLM_MODEL: process.env.DEEPSEEK_MODEL ?? "deepseek-flash",
-      LLM_BUDGET_ID: process.env.LLM_BUDGET_ID,
-      LLM_BUDGET_USD: process.env.LLM_BUDGET_USD,
-      LLM_MAX_OUTPUT_TOKENS: process.env.LLM_MAX_OUTPUT_TOKENS,
-      LLM_REASONING_EFFORT: process.env.DEEPSEEK_REASONING_EFFORT ?? "high",
-    }
-  : process.env;
+const target = z.enum(["default", "resolution"]).parse(values.target);
 
 const databases = connectDatabases();
 try {
   await databases.verify();
   await databases.checkpointer.setup();
-  const model = new LlmClient(databases.postgres, environment);
+  const model = new LlmClient(databases.postgres);
   await model.ledger.setup();
   const identity = await model.verifyModel(target);
   if (target === "resolution") {
@@ -108,10 +93,6 @@ try {
         {
           ...identity,
           target,
-          runtime:
-            model.settingsFor(target).provider === "deepseek"
-              ? "dsh"
-              : "direct",
           worldId,
           operationId,
           summary: result.summary,

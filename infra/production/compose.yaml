@@ -20,7 +20,6 @@ x-app: &app
     MCP_RESOURCE_URL: ${ORY_KRATOS_PUBLIC_URL}/mcp
     HOST: 0.0.0.0
     TRUST_PROXY: "1"
-    DEEPSEEK_HARNESS_HOME: /runtime/harness
     BACKUP_CONTROLLER_URL: http://controller:3100
     BACKUP_CONTROLLER_TOKEN: ${CONTROL_TOKEN}
   volumes:

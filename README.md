@@ -67,7 +67,9 @@ API・ワーカー・Web・管理画面は、それぞれ `pnpm --filter @gestal
 | `gpt-6-luna`       | `OPENAI_API_KEY`    | `OPENAI_BASE_URL`    | `https://api.openai.com/v1`                               |
 | ClaudeのモデルID   | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com/v1`                            |
 
-endpointには `/chat/completions`・`/responses`・`/messages` を付けません。末尾の `/` はどちらでも使えます。ClaudeはAnthropic Messages API、OpenAIは既定でChat Completionsを使います。Responses APIを使うモデルには `OPENAI_API=responses` または対象側の `LLM_RESOLUTION_API=responses` を指定します。
+endpointには `/chat/completions`・`/responses`・`/messages` を付けません。末尾の `/` はどちらでも使えます。ClaudeはAnthropic Messages API、OpenAIは既定でChat Completionsを使います。Responses APIを使うモデルには `OPENAI_API=responses` または対象側の `LLM_RESOLUTION_API=responses` を指定します。GPT-6.1 TerraとSolの既定のAPI形式はResponsesです。
+
+OpenAIの新規応答では入力を事前計数し、30分・12時間キャッシュ作成の使用量と料金を分けて保存します。作成単価は `cacheWrite30mUsdPerMillion`・`cacheWrite12hUsdPerMillion` で上書きでき、省略時は通常入力の1.25倍・2.5倍です。272,000入力トークンを超えるTerra・Solの要求には、入力とキャッシュ2倍・出力1.5倍の単価を適用します。開始済み応答の料金版は子の処理にも引き継ぎ、既存の要求・応答の算定は変更しません。
 
 Gemini 3.8 Flash／lowを使う場合は、次の値を設定します。既存行があれば置き換えてください。キーの値はチャットへ送らず、ローカルの `.env` に記入します。
 
@@ -106,7 +108,7 @@ Geminiは公式の[OpenAI互換endpoint](https://ai.google.dev/gemini-api/docs/o
 
 確定担当は、提案と照会済みの根拠を読み、承認・修正要求・保留を返します。承認後も構造・依存版・実行世代を検証し、既存の原子的な確定とreceiptを使います。LLMが直接DBを書き換えることはありません。初期生成は上位モデルで候補を作り、別の呼出しで明示入力の充足・関係の意味・知識の分離を審査します。不合格なら修正へ戻し、承認された候補だけをT0へ確定します。
 
-`LLM_RESOLUTION_JUDGMENT=combined` では、相互作用・継続作用の結果提案と意味的な確定判断を、上位モデルの同じ応答で行います。未指定時の `separate` は提案後に別の呼出しで確認します。Geminiなどが作る観測候補は引き続き上位モデルが別に確認し、本人の意図形成には各主体の観測・解釈だけを渡します。判断方式は操作の作成時に保存するため、設定を変えても既存操作の再開方法は変わりません。DeepSeekのdsh経路は従来のツールによる確定判断を使います。
+`LLM_RESOLUTION_JUDGMENT=combined` では、相互作用・継続作用の結果提案と意味的な確定判断を、上位モデルの同じ応答で行います。未指定時の `separate` は提案後に別の呼出しで確認します。Geminiなどが作る観測候補は引き続き上位モデルが別に確認し、本人の意図形成には各主体の観測・解釈だけを渡します。判断方式は操作の作成時に保存するため、設定を変えても既存操作の再開方法は変わりません。DeepSeekも同じ設定と確定判断の処理を使います。
 
 同時点に起動する主体の観測は一括で確定し、意図は本人ごとに最大4並列で形成します。通常行動の同時点の応答処理では、新しい作用がない別主体のdeferredを元の行動文のまま保持し、結果担当へ繰り返し渡しません。本人への作用、新しいプレイヤー行動、世界内の時間経過では再評価し、世界構築の期間方針の評価は維持します。
 
@@ -136,27 +138,13 @@ pnpm llm:probe --target resolution --budget <USD>
 
 同じ開始状態・行動によるGPT-6.1 Sol、Claude Sonnet 5.5、DeepSeek Flashの比較は、[上位モデルの実測記録](documents/evaluations/upper-models-2026-10-20.md)を参照してください。
 
-### DeepSeek Harness
+### DeepSeek API
 
-DeepSeekを結果担当に選んだ場合、結果提案と確定判断の両方を公式の[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）経由で実行します。上位設定を省略して基本モデルにDeepSeekを選んだ場合も同じです。独立したChat Completions呼出しへ置き換えません。
-
-```dotenv
-DEEPSEEK_API_KEY=<APIキー>
-DEEPSEEK_HARNESS_BASE_URL=https://api.deepseek.com/anthropic
-DEEPSEEK_HARNESS_HOME=artifacts/harness
-```
-
-```powershell
-pnpm llm:harness-probe --budget <USD>
-```
-
-このコマンドはプロセス内だけでDeepSeekを選び、同じ専用世界の確認をdsh経由で行います。`.env` の基本モデルは変更しません。dshに公開するツールは世界の照会・候補の提出・提出済み候補の確定・保留だけです。提出と確定は別のモデル判断にし、シェルやファイル編集のツールは公開しません。モデルへの送信前に共通予算を予約し、応答が不明な場合は自動再送せず予約を保持します。
-
-Harnessが会話を再利用するため、署名や推論ブロックを含むnative応答は非公開の実行記録へ保存します。APIキーは保存せず、これらの内部記録を共有グラフ・プレイヤーの観測へ転記しません。ClaudeとOpenAIの直接呼出しでは、テキストと使用量だけを共通応答へ保存します。
+DeepSeekもChat Completions APIで直接呼び出します。結果提案・確定判断・参加生成は、他プロバイダーと同じ共通処理で実行します。接続確認は`pnpm llm:probe --target resolution --budget <USD>`で行います。
 
 ## モデル利用枠
 
-`LLM_MODEL_LIMITS`へ`provider:model`別のJSONを設定すると、同じAPIキーを使う複数ワーカーとdshで利用枠を共有します。未設定のモデルには追加の枠待ちを設けません。全プロセスに同じ設定を渡してください。値は利用するAPI契約に合わせます。
+`LLM_MODEL_LIMITS`へ`provider:model`別のJSONを設定すると、同じAPIキーを使う複数ワーカーで利用枠を共有します。未設定のモデルには追加の枠待ちを設けません。全プロセスに同じ設定を渡してください。値は利用するAPI契約に合わせます。
 
 ```dotenv
 LLM_MODEL_LIMITS={"gemini:YOUR_MODEL_ID":{"concurrency":2,"requestsPerMinute":30,"tokensPerMinute":200000}}
@@ -178,7 +166,7 @@ pnpm world:generate --resume <runId>
 
 世界ごとの予算は作成時に明示し、初期生成から計算済み額と未確定予約額を通算します。`LLM_BUDGET_ID` / `LLM_BUDGET_USD` は、これとは別に明示した開発・検証用の全体費用枠です。#25以降の100ドルは既存の開発記録であり、実運用の世界や利用者の予算へ流用しません。未設定時に全体の金額上限は追加せず、予算IDの既定値は`service-usage`です。使用済み額と応答未確定の予約は保持し、モデルを変えても同じ枠で費用を通算します。世界予算の変更手順は[運用設定](documents/operations-auth.md#世界予算と応答生成のcall上限)を参照してください。
 
-費用とは別に、応答生成1回のLLM call上限を管理者が設定でき、初期値は64回です。親子の呼出し・修正・再試行・再開・dshを通算し、再開で枠を追加しません。構築は活動の節目ごとに通算し、グラフ照会の通算上限は設けません。上限では保存して保留し、管理者が上限を見直した後に再開します。[ADR-014](documents/adr/ADR-014-operating-limits.md)が[ADR-009の旧方式](documents/adr/ADR-009-execution-limits.md)を置き換えています。
+費用とは別に、応答生成1回のLLM call上限を管理者が設定でき、初期値は64回です。親子の呼出し・修正・再試行・再開を通算し、再開で枠を追加しません。構築は活動の節目ごとに通算し、グラフ照会の通算上限は設けません。上限では保存して保留し、管理者が上限を見直した後に再開します。[ADR-014](documents/adr/ADR-014-operating-limits.md)が[ADR-009の旧方式](documents/adr/ADR-009-execution-limits.md)を置き換えています。
 
 表示額は使用量と保存済みの適用単価から求める計算額であり、請求額ではありません。推奨Claude構成の採用単価は[ADR-016](documents/adr/ADR-016-claude-model-selection.md)を参照してください。以下の組み込み3モデルの単価は、2026-10-19に公式資料で確認した上限見積用の値です。DeepSeekは既存のピーク単価を維持します。Geminiは[公表済みの2027年以降の標準単価](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.8-flash)（100万トークンあたり入力1.50ドル・キャッシュ0.15ドル・出力7.50ドル）、GPT-6 Lunaは[長い入力とキャッシュ書込の割増](https://developers.openai.com/api/docs/models/gpt-6-luna)を含む上限単価（入力0.25ドル・出力0.75ドル）を使います。Geminiの2026年中の標準料金やGPTの通常の短い入力では、見積が請求より大きくなります。組み込み料金は上記の公式サービスのテキスト生成を対象とし、別料金の独自gatewayを使う場合はこの見積をそのまま請求額として扱わないでください。
 
@@ -246,7 +234,7 @@ API・ワーカーとOryを起動し、ブラウザーからは同じオリジ�
 
 画面の履歴表示と再接続は[ADR-006](documents/adr/ADR-006-gameplay-ui.md)を引き継ぎ、シーン導線はADR-008、管理アプリの分離と参加導線はADR-013へ移行しています。受付後の再読込で行動を追加送信せず、保存された入力と進行へ戻ります。履歴は前後へ取得でき、保持は4ページ、描画は表示範囲に絞ります。過去を読んでいる間の更新では位置を移動しません。通信の再接続時は、配信位置と公開状態を取得し直します。
 
-`pnpm llm:compare --operation <operationId> --effort low` は上位モデル設定で完了済みの最終入力から候補を再生成し、構造と時間・使用量を記録します。差分を世界へ確定せず、同じ予算で通算します。dshによるツール実行が必要なDeepSeekはこの単独比較の対象外です。一つの候補の構造検査を、意味的な品質や通常プレイ全体の保証にはしません。
+`pnpm llm:compare --operation <operationId> --effort low` は上位モデル設定で完了済みの最終入力から候補を再生成し、構造と時間・使用量を記録します。差分を世界へ確定せず、同じ予算で通算します。DeepSeekも通常APIを使う同じ比較の対象です。一つの候補の構造検査を、意味的な品質や通常プレイ全体の保証にはしません。
 
 ## 検証
 

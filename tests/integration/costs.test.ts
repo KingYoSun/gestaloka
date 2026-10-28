@@ -667,3 +667,123 @@ test("既存の金額・未確定額・欠けた対応を保持し、管理者�
     await app.close();
   }
 });
+
+test("OpenAIの30分・12時間書込を重複せず精算し、旧応答の料金版と再利用を保持する", async () => {
+  const pool = isolated.databases.postgres,
+    store = new ModelSettings(pool, "2".repeat(64));
+  await ModelSettings.setup(pool);
+  const setting = {
+    provider: "openai" as const,
+    model: "gpt-6.1-terra",
+    api: "responses" as const,
+    baseUrl: "https://api.openai.com/v1",
+    effort: "low" as const,
+    initialEffort: "low" as const,
+    contextTokens: 1050000,
+    maxOutputTokens: 65536,
+    inputUsdPerMillion: 1,
+    cachedInputUsdPerMillion: 0.05,
+    outputUsdPerMillion: 5,
+    pricingDate: "2026-10-29",
+  };
+  await store.put(
+    pool,
+    { default: setting, resolution: setting, judgment: "combined" },
+    0,
+    null,
+  );
+  await store.putSecret(pool, "openai", "private-key", 0, null);
+  const legacy = randomUUID();
+  await pool.query(
+    "INSERT INTO llm_response_settings(id,version,billing_version) VALUES($1,1,2)",
+    [legacy],
+  );
+  const transport = vi.fn<typeof fetch>().mockImplementation(async (url) =>
+    String(url).endsWith("/input_tokens")
+      ? Response.json({ input_tokens: 12000 })
+      : Response.json({
+          id: "upstream",
+          model: "gpt-6.1-terra",
+          status: "completed",
+          output: [
+            {
+              type: "message",
+              content: [{ type: "output_text", text: "{}" }],
+            },
+          ],
+          usage: {
+            input_tokens: 12000,
+            input_tokens_details: {
+              cached_tokens: 4000,
+              cache_write_tokens: 7000,
+              cache_write_tokens_details: {
+                ttl_30m_tokens: 3000,
+                ttl_12h_tokens: 4000,
+              },
+            },
+            output_tokens: 100,
+            output_tokens_details: { reasoning_tokens: 40 },
+          },
+        }),
+  );
+  const managed = await LlmClient.create(
+    pool,
+    {
+      LLM_BUDGET_ID: model.ledger.budgetId,
+      OPERATIONS_TOKEN_SECRET: "2".repeat(64),
+    },
+    transport,
+  );
+  const oldCall = randomUUID(),
+    newCall = randomUUID();
+  await managed.run(legacy, async () => {
+    const child = randomUUID();
+    await managed.settingsAt("resolution", child, pool);
+    expect(
+      (
+        await pool.query(
+          "SELECT billing_version FROM llm_response_settings WHERE id=$1",
+          [child],
+        )
+      ).rows[0].billing_version,
+    ).toBe(2);
+    await managed.complete(oldCall, "openai-cache", messages);
+  });
+  await managed.run(randomUUID(), () =>
+    managed.complete(newCall, "openai-cache", messages),
+  );
+  expect(
+    (await read({ ...query, callId: oldCall, view: "calls" })).calls![0],
+  ).toMatchObject({
+    calculatedNanoUsd: "8700000",
+    ratesNanoUsdPerToken: { cacheWrite30m: null, cacheWrite12h: null },
+  });
+  const row = (await read({ ...query, callId: newCall, view: "calls" }))
+    .calls![0];
+  expect(row).toMatchObject({
+    calculatedNanoUsd: "15450000",
+    usage: {
+      input: 12000,
+      cachedInput: 4000,
+      cacheMissInput: 8000,
+      output: 100,
+      cacheWrite30m: 3000,
+      cacheWrite12h: 4000,
+      reasoning: 40,
+    },
+    ratesNanoUsdPerToken: {
+      input: 1000,
+      cachedInput: 50,
+      output: 5000,
+      cacheWrite30m: 1250,
+      cacheWrite12h: 2500,
+    },
+  });
+  const saved = await managed.ledger.input(newCall);
+  await managed.run(randomUUID(), () =>
+    managed.complete(newCall, "openai-cache", messages),
+  );
+  expect(transport).toHaveBeenCalledTimes(4);
+  expect(await managed.ledger.input(newCall)).toEqual(saved);
+  expect(JSON.stringify(row)).not.toContain("private-key");
+});

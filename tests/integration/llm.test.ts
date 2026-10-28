@@ -629,8 +629,8 @@ test("推論量の設定を変更しても保存済み呼出しを再送せず�
   expect(transport).toHaveBeenCalledTimes(1);
   await low.complete(randomUUID(), "probe", messages);
   expect(
-    JSON.parse(String(transport.mock.calls[1]![1]!.body)).reasoning_effort,
-  ).toBe("none");
+    JSON.parse(String(transport.mock.calls[1]![1]!.body)).thinking,
+  ).toEqual({ type: "disabled" });
   await low.complete(randomUUID(), "initial-generation", messages);
   expect(
     JSON.parse(String(transport.mock.calls[2]![1]!.body)).reasoning_effort,
@@ -642,7 +642,7 @@ test("推論量の設定を変更しても保存済み呼出しを再送せず�
 });
 
 test.each([
-  { model: "gemini-3.8-flash", prefix: "GEMINI", output: 27, cost: 0.0002475 },
+  { model: "gemini-3.8-flash", prefix: "GEMINI", output: 27, cost: 0.00012375 },
   { model: "gpt-6-luna", prefix: "OPENAI", output: 20, cost: 0.0000225 },
 ])(
   "$modelを専用キーとendpointで接続し、lowと使用量を扱う",
@@ -970,3 +970,31 @@ test("未登録モデルの料金・文脈上限が未設定なら送信前に�
     }),
   ).toThrow("料金が未設定");
 });
+
+test.each(["none", "low", "high", "max"])(
+  "DeepSeekの%sを通常APIのthinkingとeffortへ渡し、推論過程を保存しない",
+  async (effort) => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => response());
+    const client = createCountedClient(
+      databases.postgres,
+      { ...environment(), LLM_REASONING_EFFORT: effort },
+      transport,
+    );
+    await client.ledger.setup();
+    const id = randomUUID();
+    await client.complete(id, "probe", [{ role: "user", content: "JSON" }]);
+    const [url, init] = transport.mock.calls[0]!;
+    expect(String(url)).toBe("https://api.deepseek.com/chat/completions");
+    const body = JSON.parse(String(init?.body));
+    expect(body.thinking).toEqual({
+      type: effort === "none" ? "disabled" : "enabled",
+    });
+    expect(body.reasoning_effort).toBe(effort === "none" ? undefined : effort);
+    expect(body.response_format).toEqual({ type: "json_object" });
+    expect(JSON.stringify(await client.ledger.input(id))).not.toContain(
+      "reasoning_content",
+    );
+  },
+);

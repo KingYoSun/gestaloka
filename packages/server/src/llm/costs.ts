@@ -121,10 +121,12 @@ export async function readCosts(
       'input',response->'usage'->'prompt_tokens','cachedInput',response->'usage'->'prompt_cache_hit_tokens',
       'cacheMissInput',response->'usage'->'prompt_cache_miss_tokens','output',response->'usage'->'completion_tokens',
       'cacheWrite5m',response->'usage'->'cache_write_5m_tokens','cacheWrite1h',response->'usage'->'cache_write_1h_tokens',
+      'cacheWrite30m',response->'usage'->'cache_write_30m_tokens','cacheWrite12h',response->'usage'->'cache_write_12h_tokens',
       'reasoning',response->'usage'->'reasoning_tokens') END AS usage,
     CASE WHEN request->'connection' IS NULL THEN NULL ELSE jsonb_build_object(
       'input',request->'connection'->'inputMiss','cachedInput',request->'connection'->'inputHit','output',request->'connection'->'output',
-      'cacheWrite5m',request->'connection'->'cacheWrite5m','cacheWrite1h',request->'connection'->'cacheWrite1h') END AS rates
+      'cacheWrite5m',request->'connection'->'cacheWrite5m','cacheWrite1h',request->'connection'->'cacheWrite1h',
+      'cacheWrite30m',request->'connection'->'cacheWrite30m','cacheWrite12h',request->'connection'->'cacheWrite12h') END AS rates
     FROM selected WHERE ($${values.length - 1}::timestamptz IS NULL OR (created_at,id)>($${values.length - 1},$${values.length}::uuid))
     ORDER BY created_at,id LIMIT 51`,
       values,

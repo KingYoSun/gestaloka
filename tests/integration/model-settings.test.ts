@@ -48,7 +48,10 @@ let env: NodeJS.ProcessEnv;
 const transport: typeof fetch = async (url, init) => {
   const path = new URL(String(url)).pathname,
     headers = new Headers(init?.headers);
-  if (path.endsWith("/messages/count_tokens"))
+  if (
+    path.endsWith("/messages/count_tokens") ||
+    path.endsWith("/responses/input_tokens")
+  )
     return Response.json({ input_tokens: 1 });
   if (path.endsWith("/models")) {
     probes++;
@@ -509,4 +512,40 @@ test("キーだけを運用登録した初期状態を環境変数で上書き�
     restarted.complete(randomUUID(), "test", messages),
   );
   expect(requests.at(-1)?.key).toBe("Bearer operator-key");
+});
+
+test("廃止した接続先を含む旧設定版は内容を保持し、通常APIの設定として読み取れる", async () => {
+  const pool = isolated.databases.postgres,
+    store = new ModelSettings(pool, master);
+  const legacy = {
+    ...configuration,
+    resolution: {
+      ...configuration.resolution,
+      provider: "deepseek",
+      model: "deepseek-flash",
+      baseUrl: "https://api.deepseek.com",
+      harnessBaseUrl: "https://old-harness.invalid",
+    },
+  };
+  await pool.query(
+    "INSERT INTO llm_settings(version,configuration) VALUES(2,$1)",
+    [JSON.stringify(legacy)],
+  );
+  const read = await store.read(),
+    captured = await store.capture(randomUUID());
+  expect(
+    ModelConfiguration.parse(read.configuration).resolution,
+  ).not.toHaveProperty("harnessBaseUrl");
+  expect(captured?.configuration.resolution).toMatchObject({
+    provider: "deepseek",
+    baseUrl: "https://api.deepseek.com",
+    api: "chat-completions",
+  });
+  expect(
+    Object.keys(ModelSettings.environment(captured!.configuration)),
+  ).not.toContain("DEEPSEEK_HARNESS_BASE_URL");
+  expect(
+    (await pool.query("SELECT configuration FROM llm_settings WHERE version=2"))
+      .rows[0].configuration,
+  ).toEqual(legacy);
 });

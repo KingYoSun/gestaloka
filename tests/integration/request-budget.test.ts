@@ -265,3 +265,90 @@ test.each([false, true])(
     expect((await WorldBudget.read(pool, world))?.upperCostUsd).toBe(0.00009);
   },
 );
+
+test.each([272000, 272001])(
+  "Terraは実入力%dで長文料金を判定して単価と予約を凍結する",
+  async (tokens) => {
+    const transport = vi.fn<typeof fetch>().mockImplementation(async (url) =>
+      String(url).endsWith("/input_tokens")
+        ? Response.json({ input_tokens: tokens })
+        : Response.json({
+            id: "upstream",
+            model: "gpt-6.1-terra",
+            status: "completed",
+            output: [
+              {
+                type: "message",
+                content: [{ type: "output_text", text: "{}" }],
+              },
+            ],
+            usage: {
+              input_tokens: tokens,
+              input_tokens_details: {
+                cached_tokens: 0,
+                cache_write_tokens: 0,
+                cache_write_tokens_details: {
+                  ttl_30m_tokens: 0,
+                  ttl_12h_tokens: 0,
+                },
+              },
+              output_tokens: 1,
+            },
+          }),
+    );
+    const client = new LlmClient(
+      pool,
+      {
+        ...env(),
+        LLM_BUDGET_USD: "4",
+        LLM_PROVIDER: "openai",
+        LLM_API: "responses",
+        LLM_MODEL: "gpt-6.1-terra",
+        LLM_CONTEXT_TOKENS: "1050000",
+        LLM_INPUT_USD_PER_MILLION: "1",
+        LLM_CACHED_INPUT_USD_PER_MILLION: "0.05",
+        LLM_OUTPUT_USD_PER_MILLION: "5",
+        OPENAI_API_KEY: "private-key",
+      },
+      transport,
+    );
+    await client.ledger.setup();
+    const id = randomUUID();
+    await client.complete(id, "probe", messages);
+    const stored = (await client.ledger.input(id)) as {
+      connection: {
+        inputMiss: number;
+        inputHit: number;
+        output: number;
+        cacheWrite30m: number;
+        cacheWrite12h: number;
+      };
+    };
+    const long = tokens > 272000;
+    expect(stored.connection).toMatchObject({
+      inputMiss: long ? 2000 : 1000,
+      inputHit: long ? 100 : 50,
+      output: long ? 7500 : 5000,
+      cacheWrite30m: long ? 2500 : 1250,
+      cacheWrite12h: long ? 5000 : 2500,
+    });
+    expect((await client.ledger.summary()).upperCostUsd).toBe(
+      (tokens * (long ? 2000 : 1000) + (long ? 7500 : 5000)) / 1e9,
+    );
+    const record = (
+      await pool.query(
+        "SELECT reserved_nano::text,reservation_basis FROM llm_call WHERE id=$1",
+        [id],
+      )
+    ).rows[0];
+    expect(record.reserved_nano).toBe(
+      String(tokens * (long ? 5000 : 2500) + 65536 * (long ? 7500 : 5000)),
+    );
+    expect(record.reservation_basis).toMatchObject({
+      inputTokens: tokens,
+      source: "openai-input-tokens",
+    });
+    await client.complete(id, "probe", messages);
+    expect(transport).toHaveBeenCalledTimes(2);
+  },
+);
