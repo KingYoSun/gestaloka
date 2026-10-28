@@ -4634,11 +4634,12 @@
                                 "maximum": 9007199254740991
                               },
                               "metricVersion": {
-                                "default": "presentation-v2",
+                                "default": "presentation-v3",
                                 "type": "string",
                                 "enum": [
                                   "presentation-v1",
-                                  "presentation-v2"
+                                  "presentation-v2",
+                                  "presentation-v3"
                                 ]
                               },
                               "weights": {
@@ -7642,7 +7643,8 @@
                                   "type": "string",
                                   "enum": [
                                     "inspection-record-v1",
-                                    "inspection-record-v2"
+                                    "inspection-record-v2",
+                                    "inspection-record-v3"
                                   ]
                                 },
                                 "capturedAt": {
@@ -7681,11 +7683,12 @@
                                       "maximum": 9007199254740991
                                     },
                                     "metricVersion": {
-                                      "default": "presentation-v2",
+                                      "default": "presentation-v3",
                                       "type": "string",
                                       "enum": [
                                         "presentation-v1",
-                                        "presentation-v2"
+                                        "presentation-v2",
+                                        "presentation-v3"
                                       ]
                                     },
                                     "weights": {
@@ -7776,6 +7779,82 @@
                                   "type": "integer",
                                   "minimum": 0,
                                   "maximum": 9007199254740991
+                                },
+                                "declaredContext": {
+                                  "type": "object",
+                                  "properties": {
+                                    "character": {
+                                      "nullable": true,
+                                      "type": "object",
+                                      "properties": {
+                                        "presetId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "version": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "settings": {
+                                          "type": "string"
+                                        },
+                                        "registrationAt": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "presetId",
+                                        "version",
+                                        "settings",
+                                        "registrationAt"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "preparations": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "sceneId": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
+                                          "purpose": {
+                                            "nullable": true,
+                                            "type": "string"
+                                          },
+                                          "createdAt": {
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                          }
+                                        },
+                                        "required": [
+                                          "sceneId",
+                                          "purpose",
+                                          "createdAt"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "timeBasis": {
+                                      "type": "string",
+                                      "enum": [
+                                        "world-clock-is-not-character-history"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "character",
+                                    "preparations",
+                                    "timeBasis"
+                                  ],
+                                  "additionalProperties": false
                                 },
                                 "priorMissingScenes": {
                                   "type": "array",
@@ -7995,6 +8074,12 @@
                                         "ratio": {
                                           "nullable": true,
                                           "type": "number"
+                                        },
+                                        "adequacy": {
+                                          "type": "string",
+                                          "enum": [
+                                            "unreviewed"
+                                          ]
                                         }
                                       },
                                       "required": [

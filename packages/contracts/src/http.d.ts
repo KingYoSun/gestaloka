@@ -2382,10 +2382,10 @@ export interface paths {
                                 endSceneId: string;
                                 n: number;
                                 /**
-                                 * @default presentation-v2
+                                 * @default presentation-v3
                                  * @enum {string}
                                  */
-                                metricVersion?: "presentation-v1" | "presentation-v2";
+                                metricVersion?: "presentation-v1" | "presentation-v2" | "presentation-v3";
                                 /**
                                  * @default {
                                  *       "version": "unit-v1",
@@ -3076,7 +3076,7 @@ export interface paths {
                                 manifest: {
                                     id: string;
                                     /** @enum {string} */
-                                    recordVersion: "inspection-record-v1" | "inspection-record-v2";
+                                    recordVersion: "inspection-record-v1" | "inspection-record-v2" | "inspection-record-v3";
                                     /** Format: date-time */
                                     capturedAt: string;
                                     selection: {
@@ -3090,10 +3090,10 @@ export interface paths {
                                         endSceneId: string;
                                         n: number;
                                         /**
-                                         * @default presentation-v2
+                                         * @default presentation-v3
                                          * @enum {string}
                                          */
-                                        metricVersion: "presentation-v1" | "presentation-v2";
+                                        metricVersion: "presentation-v1" | "presentation-v2" | "presentation-v3";
                                         /**
                                          * @default {
                                          *       "version": "unit-v1",
@@ -3121,6 +3121,24 @@ export interface paths {
                                     };
                                     requestedScenes: number;
                                     actualScenes: number;
+                                    declaredContext?: {
+                                        character: {
+                                            /** Format: uuid */
+                                            presetId: string;
+                                            version: number;
+                                            settings: string;
+                                            registrationAt: number;
+                                        } | null;
+                                        preparations: {
+                                            /** Format: uuid */
+                                            sceneId: string;
+                                            purpose: string | null;
+                                            /** Format: date-time */
+                                            createdAt: string;
+                                        }[];
+                                        /** @enum {string} */
+                                        timeBasis: "world-clock-is-not-character-history";
+                                    };
                                     priorMissingScenes: string[];
                                     /**
                                      * @default missing
@@ -3170,6 +3188,8 @@ export interface paths {
                                             presentations: number;
                                             mapped: number;
                                             ratio: number | null;
+                                            /** @enum {string} */
+                                            adequacy?: "unreviewed";
                                         };
                                         missing: string[];
                                         calls: number;

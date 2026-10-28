@@ -10,17 +10,19 @@ export const unitWeights = {
   rationale: "全区分1の未校正の基準値。満足度や意味的重要度を表さない。",
 };
 export function measure(manifest: InspectionManifest) {
+  const canonicalRequired =
+    manifest.selection.metricVersion === "presentation-v3";
+  const missing = (p: { information: Information[] | null }) =>
+    p.information === null ||
+    (canonicalRequired && p.information.some((r) => !r.canonical));
   const initialMissing =
-    manifest.initial == null ||
-    manifest.initial.some((p) => p.information === null);
+    manifest.initial == null || manifest.initial.some(missing);
   const initialRequired =
-    manifest.selection.metricVersion === "presentation-v2";
+    manifest.selection.metricVersion !== "presentation-v1";
   const priorMissingScenes = [
     ...new Set([
       ...manifest.priorMissingScenes,
-      ...manifest.prior
-        .filter((p) => p.information === null)
-        .map((p) => p.sceneId),
+      ...manifest.prior.filter(missing).map((p) => p.sceneId),
     ]),
   ];
   const elements = new Set<string>(),
@@ -44,21 +46,25 @@ export function measure(manifest: InspectionManifest) {
     return category;
   };
   for (const p of manifest.prior)
-    for (const r of p.information ?? []) classify(r);
+    for (const r of p.information ?? [])
+      if (!canonicalRequired || r.canonical) classify(r);
   if (initialRequired)
     for (const p of manifest.initial ?? [])
-      for (const r of p.information ?? []) classify(r);
+      for (const r of p.information ?? [])
+        if (!canonicalRequired || r.canonical) classify(r);
   const diffs = manifest.scenes.flatMap((s) =>
     s.presentations.map((p) => ({
       presentationId: p.id,
       sceneId: s.id,
       inputId: p.inputId,
       kind: p.kind,
-      missing: p.information === null,
-      elements: (p.information ?? []).map((r) => ({
-        ...r,
-        category: classify(r),
-      })),
+      missing: missing(p),
+      elements: (p.information ?? [])
+        .filter((r) => !canonicalRequired || r.canonical)
+        .map((r) => ({
+          ...r,
+          category: classify(r),
+        })),
     })),
   );
   const summarize = (presentations: Presentation[]) => {
@@ -92,6 +98,7 @@ export function measure(manifest: InspectionManifest) {
         presentations: parts.length,
         mapped: known,
         ratio: parts.length ? known / parts.length : null,
+        ...(canonicalRequired ? { adequacy: "unreviewed" as const } : {}),
       },
       missing: parts.filter((d) => d.missing).map((d) => d.presentationId),
     };
@@ -222,7 +229,7 @@ export function measure(manifest: InspectionManifest) {
             "初期提示が未記録。旧指標presentation-v1の保存値は初期提示を比較元に含まない。",
           ]
         : []),
-      "構造化対応と本文の意味的一致はLLM検品の対象。別IDの同義情報は決定論では除外しない。",
+      "対応記録の有無と対応の十分さは別。構造対応と本文の意味的一致はLLM検品の対象。別IDの同義情報は決定論では除外しない。",
       "提供はサーバー出力としての提供可能時点。閲読・理解やネットワーク待ちを推定しない。",
       "費用は既存台帳の計算額。準備・反映費用を入力へ按分しない。",
     ],

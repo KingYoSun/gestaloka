@@ -12,9 +12,15 @@ export const Information = z
     at: count,
     origin: z.enum(["reference", "generated"]),
     evidence: text,
+    canonical: z.literal(true).optional(),
   })
   .strict();
 export type Information = z.infer<typeof Information>;
+export const InformationReference = z.union([
+  z.object({ id: text, evidence: text.optional() }).strict(),
+  Information,
+]);
+export type InformationReference = z.infer<typeof InformationReference>;
 export const Presentation = z
   .object({
     id: z.uuid(),
@@ -53,8 +59,8 @@ export const InspectionSelection = z
     endSceneId: z.uuid(),
     n: z.number().int().positive().safe(),
     metricVersion: z
-      .enum(["presentation-v1", "presentation-v2"])
-      .default("presentation-v2"),
+      .enum(["presentation-v1", "presentation-v2", "presentation-v3"])
+      .default("presentation-v3"),
     weights: InspectionWeights.default({
       version: "unit-v1",
       values: { node: 1, edge: 1, aspect: 1, update: 1 },
@@ -84,6 +90,7 @@ export const InspectionScene = z
     revision: text,
     state: text,
     createdAt: z.iso.datetime(),
+    purpose: z.string().optional(),
     inputs: z.array(
       z
         .object({
@@ -103,6 +110,7 @@ export const InspectionScene = z
         events: z.array(z.unknown()),
         dependencies: z.array(z.unknown()),
         projection: z.unknown(),
+        contextRequests: z.array(z.unknown()).optional(),
       })
       .strict(),
     recording: z.enum(["recorded", "legacy"]),
@@ -111,12 +119,40 @@ export const InspectionScene = z
 export const InspectionManifest = z
   .object({
     id: z.string().regex(/^[a-f0-9]{64}$/),
-    recordVersion: z.enum(["inspection-record-v1", "inspection-record-v2"]),
+    recordVersion: z.enum([
+      "inspection-record-v1",
+      "inspection-record-v2",
+      "inspection-record-v3",
+    ]),
     capturedAt: z.iso.datetime(),
     selection: InspectionSelection,
     requestedScenes: count,
     actualScenes: count,
     initial: z.array(InitialPresentation).nullable().optional(),
+    declaredContext: z
+      .object({
+        character: z
+          .object({
+            presetId: z.uuid(),
+            version: count,
+            settings: z.string(),
+            registrationAt: count,
+          })
+          .strict()
+          .nullable(),
+        preparations: z.array(
+          z
+            .object({
+              sceneId: z.uuid(),
+              purpose: z.string().nullable(),
+              createdAt: z.iso.datetime(),
+            })
+            .strict(),
+        ),
+        timeBasis: z.literal("world-clock-is-not-character-history"),
+      })
+      .strict()
+      .optional(),
     prior: z.array(Presentation),
     priorMissingScenes: z.array(z.uuid()),
     scenes: z.array(InspectionScene),
@@ -250,6 +286,7 @@ const Breakdown = z.object({
     presentations: count,
     mapped: count,
     ratio: z.number().nullable(),
+    adequacy: z.literal("unreviewed").optional(),
   }),
   missing: z.array(z.uuid()),
 });

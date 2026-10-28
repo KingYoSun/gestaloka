@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { Information } from "@gestaloka/contracts";
+import { InformationReference } from "@gestaloka/contracts";
 import { Change } from "../world/model.js";
 import type { WorldAgent } from "./agent.js";
 import type { WorldProposal } from "./agent.js";
@@ -9,12 +9,19 @@ import { randomUUID } from "node:crypto";
 
 const id = z.uuid(),
   text = z.string().min(1);
-const Fact = z.object({ subjectId: id, text, aboutIds: z.array(id) }).strict();
+const Fact = z
+  .object({
+    subjectId: id,
+    text,
+    aboutIds: z.array(id),
+    at: z.number().int().nonnegative().safe().optional(),
+  })
+  .strict();
 export const SceneBackground = z
   .object({
     type: z.literal("background"),
     synopsis: text,
-    synopsisInformation: z.array(Information).optional(),
+    synopsisInformation: z.array(InformationReference).optional(),
     participants: z.array(id).min(1),
     facts: z.array(Fact),
     perceptions: z.array(
@@ -28,6 +35,22 @@ export const SceneBackground = z
   })
   .strict();
 export type SceneBackground = z.infer<typeof SceneBackground>;
+export const SceneContext = SceneBackground.omit({
+  synopsis: true,
+  synopsisInformation: true,
+  perceptions: true,
+  unknowns: true,
+}).extend({
+  type: z.literal("context"),
+  participants: z.array(id),
+  resolvedUnknowns: z.array(text),
+});
+export const ContextNeed = z
+  .object({
+    reason: text,
+    remainingActions: z.record(id, text),
+  })
+  .strict();
 export function presentationEvidence(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(presentationEvidence);
   if (!value || typeof value !== "object") return value;
@@ -57,7 +80,7 @@ export const SceneEvent = z
         .object({
           observerId: id,
           text,
-          information: z.array(Information).optional(),
+          information: z.array(InformationReference).optional(),
         })
         .strict(),
     ),
@@ -82,6 +105,7 @@ export const SceneStep = z.discriminatedUnion("type", [
       decisions: z.record(id, z.enum(["pending", "finished", "decide"])),
       newDecisions: z.array(id),
       elapsedMs: z.number().int().nonnegative().safe().default(0),
+      needsContext: ContextNeed.nullable().optional(),
     })
     .strict(),
   z.object({ type: z.literal("boundary"), reason: text }).strict(),
@@ -170,7 +194,7 @@ export function sceneAnchors(
         role: "content",
         source: f.subjectId,
         target: script,
-        period: { from: at },
+        period: { from: f.at ?? at },
       });
       for (const target of f.aboutIds)
         edges.push({
@@ -179,7 +203,7 @@ export function sceneAnchors(
           role: "about",
           source: script,
           target,
-          period: { from: at },
+          period: { from: f.at ?? at },
         });
     }
   }

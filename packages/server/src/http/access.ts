@@ -878,6 +878,7 @@ export class WorldAccess {
       subject,
       page,
       new Map(edges.map((e) => [e.id, e.target])),
+      this.construction.agent.store,
     );
     return page;
   }

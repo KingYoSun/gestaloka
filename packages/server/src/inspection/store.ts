@@ -46,6 +46,7 @@ export class InspectionStore {
         prior: Presentation[];
         prior_missing: string[];
         initial: InspectionManifest["initial"];
+        declared_context: InspectionManifest["declaredContext"];
       }>(
         `
       WITH endpoint AS (SELECT created_at,id FROM world_scene WHERE id=$4 AND construction_id=$1 AND actor_id=$2 AND user_id IS NOT DISTINCT FROM $3::uuid),
@@ -61,7 +62,11 @@ export class InspectionStore {
       coalesce((SELECT jsonb_agg(p.value ORDER BY s.created_at,s.id,p.ordinality) FROM prior s CROSS JOIN LATERAL jsonb_array_elements(coalesce(s.data->'presentations','[]')) WITH ORDINALITY p),'[]'::jsonb) AS prior,
       coalesce((SELECT jsonb_agg(s.id ORDER BY s.created_at,s.id) FROM prior s WHERE s.data->>'recordingVersion' IS NULL),'[]'::jsonb) AS prior_missing,
       (SELECT jsonb_agg(p.data ORDER BY p.provided_at,p.id) FROM player_initial_presentation p WHERE p.construction_id=$1 AND p.actor_id=$2 AND p.user_id IS NOT DISTINCT FROM $3::uuid
-       AND p.provided_at<(SELECT min(created_at) FROM world_scene WHERE construction_id=$1 AND actor_id=$2)) AS initial`,
+       AND p.provided_at<(SELECT min(created_at) FROM world_scene WHERE construction_id=$1 AND actor_id=$2)) AS initial,
+      jsonb_build_object('timeBasis','world-clock-is-not-character-history',
+        'character',(SELECT s.data->'character' FROM chosen s ORDER BY s.created_at,s.id LIMIT 1),
+        'preparations',coalesce((SELECT jsonb_agg(jsonb_build_object('sceneId',s.id,'purpose',s.data->>'purpose','createdAt',to_char(s.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) ORDER BY s.created_at,s.id)
+          FROM world_scene s,endpoint e WHERE s.construction_id=$1 AND s.actor_id=$2 AND s.user_id IS NOT DISTINCT FROM $3::uuid AND (s.created_at,s.id)<=(e.created_at,e.id)),'[]'::jsonb)) AS declared_context`,
         [
           selection.worldId,
           selection.actorId,
@@ -83,6 +88,7 @@ export class InspectionStore {
         id: row.id,
         state: row.state,
         createdAt: new Date(row.created_at).toISOString(),
+        purpose: d.purpose,
         inputs: d.actions.map((a) => ({
           ...a,
           submittedAt: a.submittedAt ?? null,
@@ -95,13 +101,15 @@ export class InspectionStore {
           events: d.events,
           dependencies: d.basis,
           projection: d.projection ?? null,
+          contextRequests: d.contextRequests ?? [],
         },
         recording: d.recordingVersion ? "recorded" : "legacy",
       };
       return InspectionScene.parse({ ...scene, revision: digest(scene) });
     });
     const content = {
-      recordVersion: "inspection-record-v2" as const,
+      recordVersion: "inspection-record-v3" as const,
+      declaredContext: result.declared_context,
       initial: result.initial,
       selection,
       requestedScenes: selection.n,
@@ -287,6 +295,7 @@ export function entries(m: InspectionManifest) {
       revision: s.revision,
       state: s.state,
       createdAt: s.createdAt,
+      ...(s.purpose !== undefined ? { purpose: s.purpose } : {}),
       recording: s.recording,
     });
     for (const a of s.inputs) add(a.id, "input", s.id, a.id, a);
@@ -296,6 +305,7 @@ export function entries(m: InspectionManifest) {
     add(`${s.id}:background`, "administrator", s.id, null, {
       background: s.administratorEvidence.background,
       dependencies: s.administratorEvidence.dependencies,
+      contextRequests: s.administratorEvidence.contextRequests,
     });
     for (const [i, event] of s.administratorEvidence.events.entries())
       add(`${s.id}:event:${i}`, "administrator", s.id, null, event);
