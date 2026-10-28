@@ -47,7 +47,63 @@ const transport: typeof fetch = async (_url, options) => {
   const source = JSON.parse(
     body.messages.find((message: { role: string }) => message.role === "user")
       .content,
-  ).manifest as typeof m;
+  ) as {
+    task: string;
+    context: {
+      input?: { text: string };
+      presentations?: {
+        text: string;
+        presentationId: number;
+        currentResponse: boolean;
+      }[];
+      quotes?: { quoteIndex: number; presentationId: number; text: string }[];
+    };
+  };
+  if (
+    source.task === "input" &&
+    source.context.input?.text === m.scenes[0]!.inputs[0]!.text
+  )
+    expect(
+      source.context.presentations!.some((p) =>
+        p.text.includes("扉は開いた。"),
+      ),
+    ).toBe(false);
+  const item =
+    source.task === "summary"
+      ? {
+          responsiveness: "fixture",
+          stagnation: "fixture",
+          principle: "unknown",
+          explanation: "CIでは実モデルの意味判断を代替しない",
+        }
+      : source.task === "input"
+        ? {
+            units: [],
+            responsiveness: "unknown",
+            principle: "unknown",
+            principleEvidence: [],
+            disagreements: [],
+          }
+        : { units: [], disagreements: [] };
+  if (source.task === "input") {
+    const current = source.context.presentations!.find(
+      (p) => p.currentResponse,
+    )!;
+    const quote = source.context.quotes!.find(
+      (q) => q.presentationId === current.presentationId,
+    )!;
+    Object.assign(item, {
+      units: [
+        {
+          text: "入力の復唱",
+          category: "duplicate",
+          importance: 0,
+          evidence: { current: { quoteIndex: quote.quoteIndex }, context: [] },
+          explanation: "検証用の復唱",
+        },
+      ],
+    });
+  }
   return Response.json({
     id: randomUUID(),
     model: "fixture-model",
@@ -55,29 +111,7 @@ const transport: typeof fetch = async (_url, options) => {
       {
         finish_reason: "stop",
         message: {
-          content: JSON.stringify({
-            inputs: source.scenes.flatMap((s) =>
-              s.inputs.map((i) => ({
-                inputId: i.id,
-                units: [],
-                responsiveness: "unknown",
-                principle: "unknown",
-                principleEvidence: [],
-              })),
-            ),
-            otherPresentations: source.scenes
-              .flatMap((s) =>
-                s.presentations.filter((p) => p.kind !== "response"),
-              )
-              .map((p) => ({ presentationId: p.id, units: [] })),
-            overall: {
-              responsiveness: "fixture",
-              stagnation: "fixture",
-              principle: "unknown",
-              explanation: "CIでは実モデルの意味判断を代替しない",
-            },
-            disagreements: [],
-          }),
+          content: JSON.stringify(item),
         },
       },
     ],
@@ -413,6 +447,16 @@ test("文書化したCLI入口が計測・比較と意味評価を実行し、JS
     expect(
       evaluated.semantic.result.evaluationCost.calculatedNanoUsd,
     ).not.toBeNull();
+    const charged = (
+      await pool.query(
+        "SELECT sum(charged_nano)::text AS amount,count(*)::int AS calls FROM llm_call WHERE response_id=$1",
+        [evaluated.semantic.result.runId],
+      )
+    ).rows[0];
+    expect(charged.calls).toBeGreaterThan(1);
+    expect(evaluated.semantic.result.evaluationCost.calculatedNanoUsd).toBe(
+      charged.amount,
+    );
   } finally {
     evaluator.mockRestore();
     await app.close();
@@ -597,6 +641,42 @@ test("同一評価ジョブは再送せず、意図した再評価を別保存�
   ).toBe("partial");
   expect(evaluationCalls).toBe(count);
 });
+test("個別評価の応答喪失を合算して予約を保持し、再開時に再送しない", async () => {
+  const selected = await select(),
+    id = randomUUID();
+  await auth.operations.execute(admin.id, id, {
+    operation: "inspection.evaluate",
+    worldId: selection.worldId,
+    manifestId: selected.manifest.id,
+    configuration: {
+      configurationVersion: 1,
+      target: "resolution",
+      budgetUsd: 1,
+    },
+  });
+  const lost = vi
+    .fn<typeof fetch>()
+    .mockRejectedValue(new Error("response lost"));
+  const first = await runEvaluation(pool, id, "2".repeat(64), lost);
+  expect(first!.evaluationCost).toMatchObject({ calculatedNanoUsd: null });
+  expect(
+    Number(
+      (first!.evaluationCost as { reservedNanoUsd: string }).reservedNanoUsd,
+    ),
+  ).toBeGreaterThan(0);
+  const calls = lost.mock.calls.length;
+  await pool.query(
+    "UPDATE inspection_evaluation SET status='queued' WHERE id=$1",
+    [id],
+  );
+  const resumed = await runEvaluation(pool, id, "2".repeat(64), lost);
+  expect(resumed).toMatchObject({
+    status: "partial",
+    reason: expect.stringContaining("自動では再送しません"),
+  });
+  expect(lost).toHaveBeenCalledTimes(calls);
+});
+
 test("定期集計は再開で重複せず、重複窓の入力と費用を水増ししない", async () => {
   await auth.operations.execute(admin.id, randomUUID(), {
     operation: "inspection.configure",

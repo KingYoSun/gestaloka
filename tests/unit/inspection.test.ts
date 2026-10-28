@@ -1,5 +1,7 @@
 import { expect, test } from "vitest";
 import { readFile } from "node:fs/promises";
+import { z } from "zod";
+import { outputSchema } from "../../packages/server/src/llm/prompt.js";
 import { InspectionManifest } from "@gestaloka/contracts";
 import { measure } from "../../packages/server/src/inspection/measure.js";
 import { summarizeHistory } from "../../packages/server/src/inspection/history.js";
@@ -7,6 +9,8 @@ import { recordPresentations } from "../../packages/server/src/inspection/record
 import {
   validateAssessment,
   assessmentDraft,
+  decodeAssessment,
+  quoteSources,
 } from "../../packages/server/src/inspection/evaluate.js";
 import {
   fid,
@@ -173,38 +177,39 @@ test("評価出力は全対象のIDを必須とし、未来の根拠とモデル
     value = {
       inputs: m.scenes
         .flatMap((s) => s.inputs)
-        .map((i) => ({
-          inputId: i.id,
+        .map((_i, index) => ({
+          index,
           units: [],
           responsiveness: "responsive",
           principle: "consistent",
           principleEvidence: [] as {
-            presentationId: string;
+            presentationId: number;
             quote: string;
             explanation: string;
           }[],
+          disagreements: [],
         })),
       otherPresentations: m.scenes
         .flatMap((s) => s.presentations.filter((p) => p.kind !== "response"))
-        .map((p) => ({ presentationId: p.id, units: [] })),
+        .map((_p, index) => ({ index, units: [], disagreements: [] })),
       overall: {
         responsiveness: "結果を確認",
         stagnation: "なし",
         principle: "consistent",
         explanation: "保存済みの提示を評価",
       },
-      disagreements: [],
     };
   expect(() => schema.parse(value)).not.toThrow();
+  expect(decodeAssessment(value, m).overall.newInformation).toBe(0);
   const first = Object.values(value.inputs)[0]!;
   first.principleEvidence = [
     {
-      presentationId: m.scenes[0]!.presentations.at(-1)!.id,
+      presentationId: m.prior.length + m.scenes[0]!.presentations.length - 1,
       quote: m.scenes[0]!.presentations.at(-1)!.text,
       explanation: "未来の根拠",
     },
   ];
-  expect(() => schema.parse(value)).toThrow();
+  expect(() => decodeAssessment(value, m)).toThrow("提示範囲");
   first.principleEvidence = [];
   expect(() =>
     schema.parse({
@@ -215,6 +220,36 @@ test("評価出力は全対象のIDを必須とし、未来の根拠とモデル
   const incomplete = structuredClone(value);
   incomplete.inputs.pop();
   expect(() => schema.parse(incomplete)).toThrow();
+});
+
+test("評価対象を増やしてもプロバイダーの出力schemaを大きくしない", () => {
+  const a = inspectionFixture(),
+    b = structuredClone(a);
+  b.scenes[0]!.inputs.push({
+    ...b.scenes[0]!.inputs[0]!,
+    id: fid("extra-input"),
+  });
+  const native = (m: typeof a) =>
+    outputSchema(z.toJSONSchema(assessmentDraft(m), { reused: "ref" }));
+  expect(native(b)).toEqual(native(a));
+});
+
+test("引用候補は原文の短い範囲を保持し、引用文を生成しない", () => {
+  const source = [
+    { text: "村人が返事をした。落ち葉、小石がある！\n返事を待つ。" },
+    { text: "……。" },
+  ];
+  const quotes = quoteSources(source);
+  expect(quotes.map((q) => q.text)).toEqual([
+    "村人が返事をした。",
+    "落ち葉、",
+    "小石がある！",
+    "返事を待つ。",
+    "……。",
+  ]);
+  expect(quotes.map((q) => q.quoteIndex)).toEqual([0, 1, 2, 3, 4]);
+  for (const q of quotes)
+    expect(source[q.presentationId]!.text).toContain(q.text);
 });
 test("本人向け提示の記録は再保存で増えず、終了時のグラフと同じIDを使う", () => {
   const bg = SceneBackground.parse({

@@ -5,7 +5,7 @@ description: 保存済みmanifestから物語の提示情報を検品し、意�
 
 # 物語の提示情報の検品
 
-スキル版は`narrative-inspection-v4`、ルーブリック版は`meaning-v1`。指定manifestを[API手順](references/api.md)で最後のページまで取得し、[ルーブリック](references/rubric.md)と公開契約`SemanticAssessment`に従って評価する。呼出し側が全件取得済みのmanifestを同梱した場合は、その資料を使い、追加取得を要求しない。資料の不足や未取得の続きは明示し、未保存ログを推測で補わない。
+スキル版は`narrative-inspection-v7`、ルーブリック版は`meaning-v1`。指定manifestを[API手順](references/api.md)で最後のページまで取得し、[ルーブリック](references/rubric.md)と公開契約`SemanticAssessment`に従って評価する。呼出し側が全件取得済みのmanifestを同梱した場合は、その資料を使い、追加取得を要求しない。資料の不足や未取得の続きは明示し、未保存ログを推測で補わない。
 
 自動実行では、指定された入力IDと提示IDを一つずつ全件評価する。欠測と合計値は呼出し側が保存記録から確定する。構造対応の不足はdisagreementsと説明へ残し、資料の未取得とは扱わない。boundary・completeの入力に応答提示がない場合も、提示がなかったという記録であり、未取得ではない。
 
@@ -26,3 +26,9 @@ manifest.initialは、最初のシーンより前に本人へ返した知識API�
 自動実行では、要求に含まれるresponseSchemaのJSONだけを返す。対話実行では、そのJSONと同じ根拠を用いた可読報告を添える。実行ID、manifest ID、スキル・ルーブリック・モデル・設定の版、費用上限、評価費用と処理時間は呼出し側が保存する。同じmanifestの再評価でも過去の結果は上書きしない。
 
 背景となる資料と限界は[参照資料](references/sources.md)を読む。
+
+自動実行で項目別のcontextsが与えられた場合、引用番号presentationIdは各項目のpresentations内だけで使う。別項目の番号を流用しない。indexは評価対象の番号で、元のIDへの復元は呼出し側が行う。knownInputsは本人が既に入力した意図であり、単なる言い換えは新情報へ数えない。実行結果や新しい証拠の提示とは区別する。
+
+taskがinputなら指定された入力1件、presentationなら指定されたあらすじ・リザルト1件だけを評価する。参照番号はその呼出しのpresentations内でのみ有効である。taskがsummaryなら検証済みの個別評価を変更せず全体をまとめる。意味単位・重要度・引用の書き換えや、数値による原則違反の相殺はしない。
+
+自動実行にquotesがある場合、根拠はquoteIndexを選ぶ。引用文を生成しない。evidence.currentは当該応答または評価中の提示から、evidence.contextは比較に必要な追加の引用候補から選ぶ。元の提示IDと正確な引用は呼出し側が復元する。
