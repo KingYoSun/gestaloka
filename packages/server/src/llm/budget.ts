@@ -5,9 +5,12 @@ import { WorldBudget } from "./world-budget.js";
 
 export const NANO_USD = 1_000_000_000;
 export class BudgetUnavailable extends Error {}
-export class ResponseFormatError extends Error {
-  constructor(readonly diagnostic: unknown) {
-    super("LLM応答の形式を確認できません。予約枠は保持します");
+export class UncertainResponse extends Error {
+  constructor(
+    readonly diagnostic: unknown,
+    message = "LLM応答の形式を確認できません。予約枠は保持します",
+  ) {
+    super(message);
   }
 }
 export type SavedCompletion = {
@@ -225,7 +228,7 @@ export class BudgetLedger {
         [
           id,
           this.budgetId,
-          error instanceof ResponseFormatError
+          error instanceof UncertainResponse
             ? JSON.stringify({
                 error: error.message,
                 diagnostic: error.diagnostic,
