@@ -107,7 +107,7 @@ const model = new LlmClient(
               ],
             },
           ],
-          decisions: { [actor]: "pending" },
+          decisions: { [actor]: "finished" },
           newDecisions: [],
           elapsedMs: 1000,
           needsContext: {
@@ -642,7 +642,7 @@ test("入力完了で操作を返し、NPCの判定待ちを次の入力へ渡�
   }
 });
 
-test("同じ入力の発生済み部分を保持し、不足文脈を補って残りだけ続ける", async () => {
+test("背景不足があればfinishedでも発生済み部分を保持し、同じ入力の残りだけ続ける", async () => {
   const opened = await command({
     requestId: randomUUID(),
     command: "prepare",

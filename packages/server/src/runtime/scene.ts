@@ -40,6 +40,7 @@ import {
   sceneAgenda,
   sceneId,
   sceneView,
+  sceneContinuations,
   presentationEvidence,
   type RecordedSceneEvent,
   type SceneIntent,
@@ -649,6 +650,19 @@ export class WorldScenes {
     for (;;) {
       if (d.contextNeed) await this.#background(row);
       const bg = d.background!;
+      if (!d.work) {
+        const next = sceneContinuations(
+          d.originalAgenda,
+          bg.participants.filter(
+            (id) => !d.intentions[id] && !d.nextDecisions.includes(id),
+          ),
+          row.actor_id,
+          d.at,
+        );
+        Object.assign(d.pending, next.pending);
+        Object.assign(d.intentions, next.pending);
+        d.nextDecisions.push(...next.nextDecisions);
+      }
       if (!d.pending[row.actor_id] && !d.nextDecisions.includes(row.actor_id)) {
         action.state = "complete";
         row.state = "active";
@@ -714,6 +728,8 @@ export class WorldScenes {
         }),
         step = SceneStep.parse(value.value);
       if (step.type === "boundary") break;
+      if (step.needsContext && step.decisions[row.actor_id] === "finished")
+        step.decisions[row.actor_id] = "pending";
       const actors = new Set(intents.map((i) => i.actorId));
       if (
         Object.keys(step.decisions).sort().join() !== [...actors].sort().join()

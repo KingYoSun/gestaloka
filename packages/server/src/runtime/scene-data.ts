@@ -130,6 +130,32 @@ export const sceneId = (value: string) => {
   const h = createHash("sha256").update(value).digest("hex");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
 };
+export function sceneContinuations(
+  agenda: Construction["agenda"],
+  participants: string[],
+  actor: string,
+  at: number,
+) {
+  const pending: Record<string, SceneIntent> = {},
+    nextDecisions: string[] = [];
+  for (const w of agenda) {
+    if (
+      !w.actorId ||
+      w.actorId === actor ||
+      w.at > at ||
+      !participants.includes(w.actorId)
+    )
+      continue;
+    if (w.mode === "resolve" && w.actionText && w.planUntil === undefined)
+      pending[w.actorId] = {
+        actorId: w.actorId,
+        actionText: w.actionText,
+        continuing: true,
+      };
+    else if (w.mode === "intent") nextDecisions.push(w.actorId);
+  }
+  return { pending, nextDecisions };
+}
 export function sceneView(
   base: SceneView,
   background: SceneBackground,
