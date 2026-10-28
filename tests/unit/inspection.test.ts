@@ -105,7 +105,9 @@ test("要約で提示自体を選んだ場合も保存済みの正本参照を�
       actions: [],
       informationBasis: { [original.id]: original },
       result: "扉が開いたことを振り返った",
-      resultInformation: [{ id: source.id }],
+      resultInformation: [
+        { id: source.id, evidence: "元の提示から誤って持ち越した引用" },
+      ],
     },
   } as unknown as SceneRow;
   recordPresentations(row);

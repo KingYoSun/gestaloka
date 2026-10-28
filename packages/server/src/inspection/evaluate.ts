@@ -28,8 +28,8 @@ export async function inspectionSkill() {
     ].map((file) => readFile(new URL(file, root), "utf8")),
   );
   return {
-    version: "narrative-inspection-v8",
-    rubricVersion: "meaning-v2",
+    version: "narrative-inspection-v9",
+    rubricVersion: "meaning-v3",
     hash: digest(files),
     body: files.join("\n\n"),
   };

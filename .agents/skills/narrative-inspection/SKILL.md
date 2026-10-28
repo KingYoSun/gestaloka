@@ -5,7 +5,7 @@ description: 保存済みmanifestから物語の提示情報を検品し、意�
 
 # 物語の提示情報の検品
 
-スキル版は`narrative-inspection-v8`、ルーブリック版は`meaning-v2`。指定manifestを[API手順](references/api.md)で最後のページまで取得し、[ルーブリック](references/rubric.md)と公開契約`SemanticAssessment`に従って評価する。呼出し側が全件取得済みのmanifestを同梱した場合は、その資料を使い、追加取得を要求しない。資料の不足や未取得の続きは明示し、未保存ログを推測で補わない。
+スキル版は`narrative-inspection-v9`、ルーブリック版は`meaning-v3`。指定manifestを[API手順](references/api.md)で最後のページまで取得し、[ルーブリック](references/rubric.md)と公開契約`SemanticAssessment`に従って評価する。呼出し側が全件取得済みのmanifestを同梱した場合は、その資料を使い、追加取得を要求しない。資料の不足や未取得の続きは明示し、未保存ログを推測で補わない。
 
 declaredContextは、参加時に実際に適用した設定の版と、本人が入力した準備目的を凍結した資料です。knownInputsと合わせて、その時点までの既知の宣言として比較します。宣言は発生・観測・達成の証拠ではありません。設定や目的を言い換えただけなら重複とし、新しい結果・根拠がある場合はその差を説明します。世界時計の原点、構築の区間、登録時点は人物の誕生・居住・記憶の開始とは独立です。資料に根拠のない履歴の断定は、設定との整合を確認し、内容上の問題として記録します。
 

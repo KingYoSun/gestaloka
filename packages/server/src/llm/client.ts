@@ -5,7 +5,12 @@ import { ExecutionBudget } from "../execution-budget.js";
 import { ModelSettings, type SettingsSnapshot } from "./settings.js";
 import type pg from "pg";
 import { z } from "zod";
-import { BudgetLedger, NANO_USD, type SavedCompletion } from "./budget.js";
+import {
+  BudgetLedger,
+  NANO_USD,
+  ResponseFormatError,
+  type SavedCompletion,
+} from "./budget.js";
 import { ModelLimits } from "./limits.js";
 import { anthropicPrompt, canonical, parseOutput } from "./prompt.js";
 import {
@@ -689,9 +694,19 @@ export class LlmClient {
           ).catch((error: unknown) => {
             if (error instanceof Error && error.message.includes("予約枠"))
               throw error;
-            throw new Error(
-              "LLM応答の形式を確認できません。予約枠は保持します",
-            );
+            throw new ResponseFormatError({
+              requestId: response.headers.get("request-id"),
+              contentType: response.headers.get("content-type"),
+              errorName: error instanceof Error ? error.name : "unknown",
+              ...(error instanceof z.ZodError
+                ? {
+                    issues: error.issues.map(({ code, path }) => ({
+                      code,
+                      path,
+                    })),
+                  }
+                : {}),
+            });
           });
           let completion: SavedCompletion;
           if (api === "messages") {

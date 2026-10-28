@@ -184,7 +184,7 @@ export function recordPresentations(
     const resolved = selections?.map((r) =>
       d.recordingVersion === "inspection-record-v2"
         ? d.informationBasis?.[r.id]
-          ? { ...d.informationBasis[r.id]!, evidence: r.evidence ?? text }
+          ? { ...d.informationBasis[r.id]!, evidence: text }
           : null
         : (r as Information),
     );
