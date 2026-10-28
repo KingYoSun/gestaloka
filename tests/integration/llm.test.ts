@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { connectDatabases } from "@gestaloka/server";
-import { BudgetUnavailable, LlmClient, llmApiKey } from "@gestaloka/server/llm";
+import { BudgetUnavailable, llmApiKey } from "@gestaloka/server/llm";
+import { createCountedClient } from "../support/token-counting.js";
 
 const databases = connectDatabases();
 const budgets: string[] = [];
@@ -89,7 +90,7 @@ test.each([
           }),
         ),
     );
-    const client = new LlmClient(databases.postgres, config, transport);
+    const client = createCountedClient(databases.postgres, config, transport);
     await client.ledger.setup();
     const messages = [
       { role: "system" as const, content: "固定の指示" },
@@ -133,7 +134,7 @@ test.each([
       ).cache_control,
     ).toBeDefined();
     expect(request.messages[0].content.at(-1).cache_control).toBeUndefined();
-    const reopened = new LlmClient(
+    const reopened = createCountedClient(
       databases.postgres,
       { ...config, LLM_MODEL: "claude-haiku-5-5" },
       transport,
@@ -145,7 +146,7 @@ test.each([
     ).rejects.toThrow("異なる要求");
     const summary = await client.ledger.summary();
     expect(summary.upperCostUsd).toBeCloseTo(0.000123, 9);
-    const pending = new LlmClient(
+    const pending = createCountedClient(
       databases.postgres,
       config,
       vi.fn<typeof fetch>().mockRejectedValue(new Error("response lost")),
@@ -252,7 +253,7 @@ test.each([
           },
         ),
     );
-    const client = new LlmClient(
+    const client = createCountedClient(
       databases.postgres,
       {
         ...environment(),
@@ -331,7 +332,7 @@ test("未完了出力はJSONとして補完せず、使用量だけ精算し再�
       usage: { input_tokens: 20, output_tokens: 4 },
     }),
   );
-  const client = new LlmClient(
+  const client = createCountedClient(
     databases.postgres,
     {
       ...environment(),
@@ -377,7 +378,7 @@ afterAll(async () => {
 });
 
 test("開発用の100ドルを製品の固定上限にせず、管理者のAPI費用枠を独立に設定できる", () => {
-  const model = new LlmClient(databases.postgres, {
+  const model = createCountedClient(databases.postgres, {
     ...environment(),
     LLM_BUDGET_USD: "1000",
   });
@@ -389,12 +390,12 @@ test("使用量をピーク料金で精算し、再接続後も保存済み応�
   const transport = vi
     .fn<typeof fetch>()
     .mockImplementation(async () => response());
-  const client = new LlmClient(databases.postgres, config, transport);
+  const client = createCountedClient(databases.postgres, config, transport);
   await client.ledger.setup();
   const id = randomUUID();
   const messages = [{ role: "user" as const, content: "JSON" }];
   const first = await client.complete(id, "probe", messages);
-  const another = new LlmClient(databases.postgres, config, transport);
+  const another = createCountedClient(databases.postgres, config, transport);
   expect(await another.complete(id, "probe", messages)).toEqual(first);
   expect(transport).toHaveBeenCalledTimes(1);
   expect(first).not.toHaveProperty("reasoning_content");
@@ -420,8 +421,8 @@ test("複数呼出しの予約が競合しても、費用上限を超えて送�
   const transport = vi
     .fn<typeof fetch>()
     .mockRejectedValue(new Error("connection lost"));
-  const a = new LlmClient(databases.postgres, config, transport);
-  const b = new LlmClient(databases.postgres, config, transport);
+  const a = createCountedClient(databases.postgres, config, transport);
+  const b = createCountedClient(databases.postgres, config, transport);
   await a.ledger.setup();
   const results = await Promise.allSettled([
     a.complete(randomUUID(), "probe", []),
@@ -445,19 +446,19 @@ test("応答喪失後は予約を維持し、同じ呼出しを自動再送し�
   const transport = vi
     .fn<typeof fetch>()
     .mockRejectedValue(new Error("response lost"));
-  const client = new LlmClient(databases.postgres, config, transport);
+  const client = createCountedClient(databases.postgres, config, transport);
   await client.ledger.setup();
   const id = randomUUID();
   await expect(client.complete(id, "probe", [])).rejects.toThrow(
     "response lost",
   );
-  const reopened = new LlmClient(databases.postgres, config, transport);
+  const reopened = createCountedClient(databases.postgres, config, transport);
   await expect(reopened.complete(id, "probe", [])).rejects.toBeInstanceOf(
     BudgetUnavailable,
   );
   expect(transport).toHaveBeenCalledTimes(1);
   expect((await client.ledger.summary()).upperCostUsd).toBeGreaterThan(0);
-  const raised = new LlmClient(
+  const raised = createCountedClient(
     databases.postgres,
     { ...config, LLM_BUDGET_USD: "100" },
     transport,
@@ -581,7 +582,7 @@ test.each([
   const transport = vi
     .fn<typeof fetch>()
     .mockImplementation(async () => reply());
-  const client = new LlmClient(databases.postgres, config, transport);
+  const client = createCountedClient(databases.postgres, config, transport);
   await client.ledger.setup();
   const id = randomUUID();
   await expect(client.complete(id, "probe", [])).rejects.toThrow();
@@ -601,7 +602,7 @@ test.each([
     charged_nano: null,
     response: null,
   });
-  const reopened = new LlmClient(databases.postgres, config, transport);
+  const reopened = createCountedClient(databases.postgres, config, transport);
   await expect(reopened.complete(id, "probe", [])).rejects.toBeInstanceOf(
     BudgetUnavailable,
   );
@@ -614,12 +615,12 @@ test("推論量の設定を変更しても保存済み呼出しを再送せず�
     transport = vi
       .fn<typeof fetch>()
       .mockImplementation(async () => response());
-  const high = new LlmClient(databases.postgres, config, transport);
+  const high = createCountedClient(databases.postgres, config, transport);
   await high.ledger.setup();
   const id = randomUUID(),
     messages = [{ role: "user" as const, content: "JSONで返す" }];
   const saved = await high.complete(id, "probe", messages);
-  const low = new LlmClient(
+  const low = createCountedClient(
     databases.postgres,
     { ...config, LLM_REASONING_EFFORT: "none" },
     transport,
@@ -692,7 +693,7 @@ test.each([
     expect(
       llmApiKey({ ...config, [`${prefix}_API_KEY`]: undefined }),
     ).toBeUndefined();
-    const client = new LlmClient(databases.postgres, config, transport);
+    const client = createCountedClient(databases.postgres, config, transport);
     await client.ledger.setup();
     expect((await client.verifyModel()).apiModel).toBe(model);
     const id = randomUUID(),
@@ -718,7 +719,7 @@ test.each([
       prefix === "OPENAI" ? "max_tokens" : "max_completion_tokens",
     );
     if (prefix === "OPENAI") expect(body.service_tier).toBe("default");
-    const reopened = new LlmClient(
+    const reopened = createCountedClient(
       databases.postgres,
       {
         ...config,
@@ -741,7 +742,7 @@ test.each([
 
 test("旧DeepSeek形式の保存済み要求はモデル切替後も同じハッシュで再利用する", async () => {
   const config = environment();
-  const client = new LlmClient(
+  const client = createCountedClient(
     databases.postgres,
     config,
     vi.fn<typeof fetch>(),
@@ -782,7 +783,7 @@ test("旧DeepSeek形式の保存済み要求はモデル切替後も同じハッ
   };
   await client.ledger.settle(id, 1500, saved, 1);
   const transport = vi.fn<typeof fetch>();
-  const switched = new LlmClient(
+  const switched = createCountedClient(
     databases.postgres,
     {
       ...config,
@@ -800,7 +801,7 @@ test.each(["gemini-3.8-flash", "gpt-6-luna"])(
   "%sも共通の費用上限を超えて送信しない",
   async (model) => {
     const transport = vi.fn<typeof fetch>();
-    const client = new LlmClient(
+    const client = createCountedClient(
       databases.postgres,
       {
         ...environment(),
@@ -889,7 +890,7 @@ test.each(["messages", "responses"] as const)(
         ),
       );
     });
-    const client = new LlmClient(databases.postgres, config, transport);
+    const client = createCountedClient(databases.postgres, config, transport);
     await client.ledger.setup();
     expect((await client.verifyModel("resolution")).apiModel).toBe(modelName);
     const messages = [
@@ -937,7 +938,7 @@ test.each(["messages", "responses"] as const)(
         max_output_tokens: 1000,
         store: false,
       });
-    const switched = new LlmClient(databases.postgres, base, transport);
+    const switched = createCountedClient(databases.postgres, base, transport);
     expect(
       await switched.complete(id, "world-update", messages, "resolution"),
     ).toEqual(result);
@@ -953,21 +954,19 @@ test.each(["messages", "responses"] as const)(
 );
 
 test("未登録モデルの料金・文脈上限が未設定なら送信前に拒否する", () => {
-  expect(
-    () =>
-      new LlmClient(databases.postgres, {
-        ...environment(),
-        LLM_MODEL: "claude-upper-for-test",
-        ANTHROPIC_API_KEY: "unused",
-      }),
+  expect(() =>
+    createCountedClient(databases.postgres, {
+      ...environment(),
+      LLM_MODEL: "claude-upper-for-test",
+      ANTHROPIC_API_KEY: "unused",
+    }),
   ).toThrow("CONTEXT_TOKENS");
-  expect(
-    () =>
-      new LlmClient(databases.postgres, {
-        ...environment(),
-        LLM_MODEL: "claude-upper-for-test",
-        ANTHROPIC_API_KEY: "unused",
-        LLM_CONTEXT_TOKENS: "100000",
-      }),
+  expect(() =>
+    createCountedClient(databases.postgres, {
+      ...environment(),
+      LLM_MODEL: "claude-upper-for-test",
+      ANTHROPIC_API_KEY: "unused",
+      LLM_CONTEXT_TOKENS: "100000",
+    }),
   ).toThrow("料金が未設定");
 });

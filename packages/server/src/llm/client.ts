@@ -604,11 +604,38 @@ export class LlmClient {
         cached: !!previous,
       },
       async (quota) => {
+        let inputTokens: number | undefined;
+        if (provider === "anthropic" && api === "messages") {
+          const input = Object.fromEntries(
+            Object.entries(request).filter(
+              ([key]) => !["max_tokens", "stream"].includes(key),
+            ),
+          );
+          const counted = await this.transport(
+            `${connection.baseUrl}/messages/count_tokens`,
+            {
+              method: "POST",
+              headers: {
+                ...(await this.headers(provider, quota.key)),
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(input),
+              signal: AbortSignal.timeout(30000),
+            },
+          );
+          if (!counted.ok)
+            throw new Error(
+              `入力トークン数を確認できません: HTTP ${counted.status}。生成は送信していません`,
+            );
+          inputTokens = z
+            .object({ input_tokens: count })
+            .parse(await counted.json()).input_tokens;
+        }
         const cached = await this.ledger.reserve(
           id,
           hash,
           Math.ceil(
-            connection.context *
+            (inputTokens ?? connection.context) *
               Math.max(
                 connection.inputMiss,
                 connection.inputHit,
@@ -618,6 +645,7 @@ export class LlmClient {
               maxOutput * connection.output,
           ),
           stored,
+          inputTokens,
         );
         if (cached) return cached;
         return this.ledger.track(id, async () => {

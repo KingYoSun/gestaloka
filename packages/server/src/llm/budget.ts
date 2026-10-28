@@ -57,6 +57,7 @@ export class BudgetLedger {
       ALTER TABLE llm_call ADD COLUMN IF NOT EXISTS user_id uuid,
         ADD COLUMN IF NOT EXISTS response_id uuid, ADD COLUMN IF NOT EXISTS operation_id uuid,
         ADD COLUMN IF NOT EXISTS delivery text NOT NULL DEFAULT 'unknown';
+      ALTER TABLE llm_call ADD COLUMN IF NOT EXISTS reservation_basis jsonb;
       CREATE INDEX IF NOT EXISTS llm_call_time ON llm_call(created_at,id);
       CREATE INDEX IF NOT EXISTS llm_call_user ON llm_call(user_id,created_at,id);
       CREATE INDEX IF NOT EXISTS llm_call_response ON llm_call(response_id,created_at,id);
@@ -82,6 +83,7 @@ export class BudgetLedger {
     hash: string,
     reservation: number,
     request: unknown,
+    inputTokens?: number,
   ): Promise<SavedCompletion | undefined> {
     const client = await this.pool.connect();
     try {
@@ -145,7 +147,7 @@ export class BudgetLedger {
       }
       await ExecutionBudget.take(client);
       await client.query(
-        "INSERT INTO llm_call (id, budget_id, hash, reserved_nano, request,world_id,user_id,response_id,operation_id,delivery) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'reserved')",
+        "INSERT INTO llm_call (id, budget_id, hash, reserved_nano, request,world_id,user_id,response_id,operation_id,delivery,reservation_basis) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'reserved',$10)",
         [
           id,
           this.budgetId,
@@ -156,6 +158,13 @@ export class BudgetLedger {
           ExecutionBudget.attribution.userId,
           ExecutionBudget.attribution.responseId,
           ExecutionBudget.attribution.operationId,
+          inputTokens === undefined
+            ? null
+            : JSON.stringify({
+                version: 1,
+                source: "anthropic-count-tokens",
+                inputTokens,
+              }),
         ],
       );
       await client.query(
@@ -164,6 +173,80 @@ export class BudgetLedger {
       );
       await client.query("COMMIT");
       return undefined;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async reviseReservation(
+    id: string,
+    hash: string,
+    reservedNano: number,
+    inputTokens: number,
+  ) {
+    if (
+      !Number.isSafeInteger(reservedNano) ||
+      reservedNano < 0 ||
+      !Number.isSafeInteger(inputTokens) ||
+      inputTokens < 0
+    )
+      throw new Error("予約額と入力トークン数を確認してください");
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT id FROM llm_budget WHERE id=$1 FOR UPDATE", [
+        this.budgetId,
+      ]);
+      const call = (
+        await client.query<{
+          hash: string;
+          state: string;
+          reserved_nano: string;
+          world_id: string | null;
+          reservation_basis: unknown;
+        }>(
+          "SELECT hash,state,reserved_nano::text,world_id,reservation_basis FROM llm_call WHERE id=$1 AND budget_id=$2 FOR UPDATE",
+          [id, this.budgetId],
+        )
+      ).rows[0];
+      if (!call || call.hash !== hash)
+        throw new Error("予約改定の元の要求が一致しません");
+      if (call.state !== "pending" || call.reservation_basis !== null) {
+        await client.query("COMMIT");
+        return false;
+      }
+      if (reservedNano > Number(call.reserved_nano))
+        throw new Error("既存予約を超える改定はできません");
+      const released = Number(call.reserved_nano) - reservedNano;
+      if (call.world_id)
+        await client.query(
+          "UPDATE world_budget SET used_nano=used_nano-$2 WHERE world_id=$1",
+          [call.world_id, released],
+        );
+      await client.query(
+        "UPDATE llm_budget SET used_nano=used_nano-$2 WHERE id=$1",
+        [this.budgetId, released],
+      );
+      await client.query(
+        "UPDATE llm_call SET reserved_nano=$2,reservation_basis=$3 WHERE id=$1",
+        [
+          id,
+          reservedNano,
+          JSON.stringify({
+            version: 1,
+            source: "anthropic-count-tokens",
+            inputTokens,
+            previousNanoUsd: call.reserved_nano,
+            requestHash: hash,
+            revisedAt: new Date().toISOString(),
+          }),
+        ],
+      );
+      await client.query("COMMIT");
+      return true;
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -193,7 +276,7 @@ export class BudgetLedger {
         [id, this.budgetId],
       );
       const call = result.rows[0];
-      if (!call || charged > Number(call.reserved_nano))
+      if (!call || !Number.isSafeInteger(charged) || charged < 0)
         throw new Error("使用量が予約した費用上限と整合しません");
       if (call.state === "pending") {
         if (call.world_id)
