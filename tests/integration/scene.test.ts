@@ -592,6 +592,22 @@ test("入力完了で操作を返し、NPCの判定待ちを次の入力へ渡�
   const scene = opened.json().scene;
   ids.push(scene.id);
   try {
+    await d.postgres.query(
+      "UPDATE world_scene SET data=jsonb_set(data,'{originalAgenda}',$2::jsonb) WHERE id=$1",
+      [
+        scene.id,
+        JSON.stringify([
+          {
+            id: randomUUID(),
+            actorId: npc,
+            at: 0,
+            mode: "resolve",
+            deferred: true,
+            actionText: "既に挨拶を返し、次の契機を待つ",
+          },
+        ]),
+      ],
+    );
     await access.scenes.tick(scene.id);
     await command({ requestId: randomUUID(), command: "start" });
     const requestId = randomUUID(),

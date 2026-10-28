@@ -141,6 +141,7 @@ export function sceneContinuations(
   for (const w of agenda) {
     if (
       !w.actorId ||
+      w.deferred ||
       w.actorId === actor ||
       w.at > at ||
       !participants.includes(w.actorId)

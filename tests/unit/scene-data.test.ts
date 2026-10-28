@@ -195,8 +195,16 @@ test("登場NPCの選択済みの継続と新しい判断を引き継ぎ、人�
         planUntil: 10,
         actionText: "構築の期間方針",
       },
+      {
+        id: "7",
+        actorId: "waiting",
+        at: 1,
+        mode: "resolve",
+        deferred: true,
+        actionText: "次の契機を待つ意図",
+      },
     ],
-    ["npc", "deciding", "actor", "future", "policy"],
+    ["npc", "deciding", "actor", "future", "policy", "waiting"],
     "actor",
     1,
   );
