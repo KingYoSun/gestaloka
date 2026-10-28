@@ -2382,10 +2382,10 @@ export interface paths {
                                 endSceneId: string;
                                 n: number;
                                 /**
-                                 * @default presentation-v1
+                                 * @default presentation-v2
                                  * @enum {string}
                                  */
-                                metricVersion?: "presentation-v1";
+                                metricVersion?: "presentation-v1" | "presentation-v2";
                                 /**
                                  * @default {
                                  *       "version": "unit-v1",
@@ -3076,7 +3076,7 @@ export interface paths {
                                 manifest: {
                                     id: string;
                                     /** @enum {string} */
-                                    recordVersion: "inspection-record-v1";
+                                    recordVersion: "inspection-record-v1" | "inspection-record-v2";
                                     /** Format: date-time */
                                     capturedAt: string;
                                     selection: {
@@ -3090,10 +3090,10 @@ export interface paths {
                                         endSceneId: string;
                                         n: number;
                                         /**
-                                         * @default presentation-v1
+                                         * @default presentation-v2
                                          * @enum {string}
                                          */
-                                        metricVersion: "presentation-v1";
+                                        metricVersion: "presentation-v1" | "presentation-v2";
                                         /**
                                          * @default {
                                          *       "version": "unit-v1",
@@ -3122,6 +3122,11 @@ export interface paths {
                                     requestedScenes: number;
                                     actualScenes: number;
                                     priorMissingScenes: string[];
+                                    /**
+                                     * @default missing
+                                     * @enum {string}
+                                     */
+                                    initialRecording: "recorded" | "missing";
                                     sceneOrder: {
                                         /** Format: uuid */
                                         id: string;
@@ -3144,6 +3149,8 @@ export interface paths {
                                     };
                                     requestedScenes: number;
                                     actualScenes: number;
+                                    /** @default true */
+                                    initialMissing: boolean;
                                     /** @enum {string} */
                                     status: "complete" | "partial";
                                     total: {
@@ -3188,7 +3195,7 @@ export interface paths {
                                 items: {
                                     id: string;
                                     /** @enum {string} */
-                                    section: "prior" | "scene" | "input" | "presentation" | "call" | "administrator" | "measure-scene" | "measure-diff";
+                                    section: "initial" | "prior" | "scene" | "input" | "presentation" | "call" | "administrator" | "measure-scene" | "measure-diff";
                                     /** Format: uuid */
                                     sceneId: string | null;
                                     /** Format: uuid */

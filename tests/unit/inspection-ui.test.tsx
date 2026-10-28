@@ -78,7 +78,9 @@ test("提示本文と内部根拠を区別し、部分取得を表示する", ()
   const m = inspectionFixture(),
     measurement = measure(m);
   const header = Object.fromEntries(
-    Object.entries(m).filter(([key]) => key !== "prior" && key !== "scenes"),
+    Object.entries(m).filter(
+      ([key]) => !["initial", "prior", "scenes"].includes(key),
+    ),
   );
   render(
     <InspectionResults

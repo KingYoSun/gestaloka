@@ -10,6 +10,11 @@ export const unitWeights = {
   rationale: "全区分1の未校正の基準値。満足度や意味的重要度を表さない。",
 };
 export function measure(manifest: InspectionManifest) {
+  const initialMissing =
+    manifest.initial == null ||
+    manifest.initial.some((p) => p.information === null);
+  const initialRequired =
+    manifest.selection.metricVersion === "presentation-v2";
   const priorMissingScenes = [
     ...new Set([
       ...manifest.priorMissingScenes,
@@ -40,6 +45,9 @@ export function measure(manifest: InspectionManifest) {
   };
   for (const p of manifest.prior)
     for (const r of p.information ?? []) classify(r);
+  if (initialRequired)
+    for (const p of manifest.initial ?? [])
+      for (const r of p.information ?? []) classify(r);
   const diffs = manifest.scenes.flatMap((s) =>
     s.presentations.map((p) => ({
       presentationId: p.id,
@@ -75,7 +83,9 @@ export function measure(manifest: InspectionManifest) {
       origins,
       observedValue,
       value:
-        !priorMissingScenes.length && known === parts.length
+        !(initialRequired && initialMissing) &&
+        !priorMissingScenes.length &&
+        known === parts.length
           ? observedValue
           : null,
       coverage: {
@@ -155,7 +165,9 @@ export function measure(manifest: InspectionManifest) {
     .filter((s) => s.recording === "legacy")
     .map((s) => s.id);
   const known =
-    scenes.every((s) => s.value !== null) && !priorMissingScenes.length;
+    scenes.every((s) => s.value !== null) &&
+    !priorMissingScenes.length &&
+    !(initialRequired && initialMissing);
   const waits = allInputs.map((a) => a.responseWaitMs),
     waitMs =
       waits.length && waits.every((v) => v !== null)
@@ -167,10 +179,12 @@ export function measure(manifest: InspectionManifest) {
     weights: manifest.selection.weights,
     requestedScenes: manifest.requestedScenes,
     actualScenes: manifest.actualScenes,
+    initialMissing,
     status:
       manifest.actualScenes < manifest.requestedScenes ||
       missingScenes.length ||
       total.missing.length ||
+      (initialRequired && initialMissing) ||
       priorMissingScenes.length
         ? "partial"
         : "complete",
@@ -203,6 +217,11 @@ export function measure(manifest: InspectionManifest) {
     lowRuns,
     longestLowRun: Math.max(0, ...lowRuns.map((r) => r.length)),
     limitations: [
+      ...(initialMissing
+        ? [
+            "初期提示が未記録。旧指標presentation-v1の保存値は初期提示を比較元に含まない。",
+          ]
+        : []),
       "構造化対応と本文の意味的一致はLLM検品の対象。別IDの同義情報は決定論では除外しない。",
       "提供はサーバー出力としての提供可能時点。閲読・理解やネットワーク待ちを推定しない。",
       "費用は既存台帳の計算額。準備・反映費用を入力へ按分しない。",

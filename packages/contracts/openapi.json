@@ -4634,10 +4634,11 @@
                                 "maximum": 9007199254740991
                               },
                               "metricVersion": {
-                                "default": "presentation-v1",
+                                "default": "presentation-v2",
                                 "type": "string",
                                 "enum": [
-                                  "presentation-v1"
+                                  "presentation-v1",
+                                  "presentation-v2"
                                 ]
                               },
                               "weights": {
@@ -7640,7 +7641,8 @@
                                 "recordVersion": {
                                   "type": "string",
                                   "enum": [
-                                    "inspection-record-v1"
+                                    "inspection-record-v1",
+                                    "inspection-record-v2"
                                   ]
                                 },
                                 "capturedAt": {
@@ -7679,10 +7681,11 @@
                                       "maximum": 9007199254740991
                                     },
                                     "metricVersion": {
-                                      "default": "presentation-v1",
+                                      "default": "presentation-v2",
                                       "type": "string",
                                       "enum": [
-                                        "presentation-v1"
+                                        "presentation-v1",
+                                        "presentation-v2"
                                       ]
                                     },
                                     "weights": {
@@ -7782,6 +7785,14 @@
                                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                   }
                                 },
+                                "initialRecording": {
+                                  "default": "missing",
+                                  "type": "string",
+                                  "enum": [
+                                    "recorded",
+                                    "missing"
+                                  ]
+                                },
                                 "sceneOrder": {
                                   "type": "array",
                                   "items": {
@@ -7818,6 +7829,7 @@
                                 "requestedScenes",
                                 "actualScenes",
                                 "priorMissingScenes",
+                                "initialRecording",
                                 "sceneOrder"
                               ],
                               "additionalProperties": false
@@ -7893,6 +7905,10 @@
                                   "type": "integer",
                                   "minimum": 0,
                                   "maximum": 9007199254740991
+                                },
+                                "initialMissing": {
+                                  "default": true,
+                                  "type": "boolean"
                                 },
                                 "status": {
                                   "type": "string",
@@ -8122,6 +8138,7 @@
                                 "weights",
                                 "requestedScenes",
                                 "actualScenes",
+                                "initialMissing",
                                 "status",
                                 "total",
                                 "missingScenes",
@@ -8144,6 +8161,7 @@
                                   "section": {
                                     "type": "string",
                                     "enum": [
+                                      "initial",
                                       "prior",
                                       "scene",
                                       "input",

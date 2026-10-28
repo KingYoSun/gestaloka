@@ -125,6 +125,43 @@ test("窓前の提示で対応が不明なら既知集合が完全とは扱わ�
   expect(r.status).toBe("partial");
   expect(r.priorMissingScenes).toContain(fid("prior-scene"));
 });
+
+test("初期提示を既知集合へ加え、未記録と旧指標を区別する", () => {
+  const m = inspectionFixture();
+  m.initial = [
+    {
+      id: fid("initial-known"),
+      text: "橋板が腐っている",
+      at: 0,
+      providedAt: "2026-10-27T23:59:00.000Z",
+      information: [info("refusal", "橋板が腐っている")],
+    },
+  ];
+  expect(measure(m).total.value).toBe(6);
+  expect(
+    measure(m)
+      .diffs.flatMap((d) => d.elements)
+      .some((e) => e.id === fid("refusal") && e.category === "repeat"),
+  ).toBe(true);
+  m.initial = null;
+  expect(measure(m)).toMatchObject({
+    initialMissing: true,
+    status: "partial",
+    total: { value: null },
+  });
+  const legacy = { ...m };
+  delete legacy.initial;
+  const old = InspectionManifest.parse({
+    ...legacy,
+    recordVersion: "inspection-record-v1",
+    selection: { ...m.selection, metricVersion: "presentation-v1" },
+  });
+  expect(old.initial).toBeUndefined();
+  expect(measure(old)).toMatchObject({
+    initialMissing: true,
+    total: { value: 7 },
+  });
+});
 test("本人向け提示の記録は再保存で増えず、終了時のグラフと同じIDを使う", () => {
   const bg = SceneBackground.parse({
     type: "background",

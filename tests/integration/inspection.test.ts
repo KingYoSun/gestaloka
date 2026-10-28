@@ -12,6 +12,7 @@ import {
 } from "@gestaloka/contracts";
 import { LlmClient } from "@gestaloka/server/llm";
 import { InspectionStore } from "../../packages/server/src/inspection/store.js";
+import { recordInitialPresentation } from "../../packages/server/src/inspection/record.js";
 import { InspectionWorker } from "../../packages/server/src/inspection/worker.js";
 import { runEvaluation } from "../../packages/server/src/inspection/evaluate.js";
 import {
@@ -95,6 +96,21 @@ beforeAll(async () => {
   );
   await model.ledger.setup();
   await pool.query(
+    "INSERT INTO player_initial_presentation(id,construction_id,actor_id,provided_at,data) VALUES($1,$2,$3,now()-interval '2 minutes',$4)",
+    [
+      fid("initial"),
+      selection.worldId,
+      selection.actorId,
+      {
+        id: fid("initial"),
+        text: "",
+        at: 0,
+        providedAt: new Date(Date.now() - 120000).toISOString(),
+        information: [],
+      },
+    ],
+  );
+  await pool.query(
     "CREATE TABLE world_scene(id uuid PRIMARY KEY,construction_id uuid NOT NULL,actor_id uuid NOT NULL,user_id uuid,state text NOT NULL,data jsonb NOT NULL,claim uuid,created_at timestamptz NOT NULL DEFAULT now(),inspection_revision bigint NOT NULL DEFAULT 0)",
   );
   const data = {
@@ -163,6 +179,98 @@ const select = async () =>
       selection,
     }),
   );
+
+test("初期提示の全ページを凍結し、他者とシーン開始後の取得を混ぜない", async () => {
+  const worldId = randomUUID(),
+    actorId = randomUUID(),
+    sceneId = randomUUID();
+  const make = (offset: number, length: number) =>
+    Array.from({ length }, (_, i) => ({
+      id: fid(`initial-edge-${offset + i}`),
+      kind: "observation" as const,
+      text: `初期知識${offset + i}`,
+      from: 0,
+    }));
+  const first = make(0, 50),
+    second = make(50, 2);
+  await recordInitialPresentation(
+    pool,
+    worldId,
+    user.id,
+    {
+      viewerId: randomUUID(),
+      at: 0,
+      items: make(90, 1),
+      next: null,
+      previous: null,
+    },
+    new Map([[fid("initial-edge-90"), fid("other-target")]]),
+  );
+  for (const items of [first, first, second])
+    await recordInitialPresentation(
+      pool,
+      worldId,
+      admin.id,
+      {
+        viewerId: actorId,
+        at: 0,
+        items,
+        next: items === second ? null : "next",
+        previous: null,
+      },
+      new Map(items.map((i) => [i.id, fid(`target-${i.id}`)])),
+    );
+  const data = {
+    actions: [],
+    events: [],
+    presentations: [],
+    recordingVersion: "inspection-record-v1",
+    basis: [],
+  };
+  await pool.query(
+    "INSERT INTO world_scene(id,construction_id,actor_id,user_id,state,data) VALUES($1,$2,$3,$4,'result',$5)",
+    [sceneId, worldId, actorId, admin.id, data],
+  );
+  const selected = await InspectionStore.select(pool, {
+    worldId,
+    actorId,
+    userId: admin.id,
+    endSceneId: sceneId,
+    n: 1,
+  });
+  const m = await InspectionStore.manifest(pool, worldId, selected.manifest.id);
+  expect(m.initial).toHaveLength(2);
+  expect(
+    m
+      .initial!.map((p) => p.text)
+      .join("\n")
+      .split("\n"),
+  ).toHaveLength(52);
+  expect(selected.manifest.initialRecording).toBe("recorded");
+  await recordInitialPresentation(
+    pool,
+    worldId,
+    admin.id,
+    {
+      viewerId: actorId,
+      at: 1,
+      items: make(60, 1),
+      next: null,
+      previous: null,
+    },
+    new Map([[fid("initial-edge-60"), fid("later-target")]]),
+  );
+  const reread = await InspectionStore.select(pool, {
+    worldId,
+    actorId,
+    userId: admin.id,
+    endSceneId: sceneId,
+    n: 1,
+  });
+  expect(reread.manifest.id).toBe(selected.manifest.id);
+  const page = await InspectionStore.read(pool, worldId, m.id);
+  expect(page.items.filter((i) => i.section === "initial")).toHaveLength(2);
+});
 
 test("APIと共通計測の値が一致し、全ページの取得・再取得は生成も世界更新もしない", async () => {
   const selected = await select(),

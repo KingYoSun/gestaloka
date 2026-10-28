@@ -337,20 +337,28 @@ export function InspectionResults({
       <p>
         指標 {m.metricVersion} / 重み {m.weights.version}。{m.weights.rationale}
       </p>
+      <p>
+        初期提示{" "}
+        {report.manifest.initialRecording === "recorded"
+          ? "記録あり"
+          : "欠測。旧指標の保存値は初期提示を比較元に含みません。"}
+      </p>
       {report.items.map((item) => (
         <article key={item.id} className="admin-record" id={item.id}>
           <h3>
             {item.section === "administrator"
               ? "管理者向けの検品根拠"
-              : item.section === "prior"
-                ? "窓より前の提示"
-                : item.section === "input"
-                  ? "プレイヤー入力"
-                  : item.section === "presentation"
-                    ? "本人への提示"
-                    : item.section === "measure-scene"
-                      ? "シーンと入力の計測"
-                      : "対応・生成の記録"}
+              : item.section === "initial"
+                ? "プレイ開始前の提示"
+                : item.section === "prior"
+                  ? "窓より前の提示"
+                  : item.section === "input"
+                    ? "プレイヤー入力"
+                    : item.section === "presentation"
+                      ? "本人への提示"
+                      : item.section === "measure-scene"
+                        ? "シーンと入力の計測"
+                        : "対応・生成の記録"}
           </h3>
           <p className="record-meta">
             {item.id} {item.inputId ? ` / 入力 ${item.inputId}` : ""}

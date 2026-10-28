@@ -117,7 +117,8 @@ export function inspectionFixture() {
     ordinal: i,
   }));
   const body = {
-    recordVersion: "inspection-record-v1",
+    recordVersion: "inspection-record-v2",
+    initial: [],
     capturedAt: "2026-10-28T00:00:02.000Z",
     selection: {
       worldId: fid("world"),

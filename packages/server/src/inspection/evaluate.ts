@@ -27,7 +27,7 @@ export async function inspectionSkill() {
     ].map((file) => readFile(new URL(file, root), "utf8")),
   );
   return {
-    version: "narrative-inspection-v2",
+    version: "narrative-inspection-v3",
     rubricVersion: "meaning-v1",
     hash: digest(files),
     body: files.join("\n\n"),
@@ -46,9 +46,16 @@ export function validateAssessment(
   )
     throw new Error("評価した入力IDが資料と一致しません");
   const presentations = new Map(
-    [...manifest.prior, ...manifest.scenes.flatMap((s) => s.presentations)].map(
-      (p) => [p.id, p],
-    ),
+    [
+      ...(manifest.initial ?? []).map((p) => ({
+        ...p,
+        inputId: null,
+        sceneId: null,
+        kind: "initial",
+      })),
+      ...manifest.prior,
+      ...manifest.scenes.flatMap((s) => s.presentations),
+    ].map((p) => [p.id, p]),
   );
   const cite = (e: { presentationId: string; quote: string }) => {
     const p = presentations.get(e.presentationId);
@@ -131,6 +138,10 @@ export function validateAssessment(
     ...assessment.inputs,
     ...assessment.otherPresentations,
   ].flatMap((a) => a.units.filter((u) => u.category !== "duplicate"));
+  if (manifest.initial == null)
+    assessment.overall.missing.push(
+      "プレイ開始前の初期提示情報が未記録であり、既知情報との比較元を確定できない。",
+    );
   if (
     manifest.requestedScenes > manifest.actualScenes ||
     manifest.priorMissingScenes.length ||
