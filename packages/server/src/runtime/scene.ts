@@ -723,14 +723,6 @@ export class WorldScenes {
         step.decisions[row.actor_id] === "finished" ||
         step.decisions[row.actor_id] === "decide" ||
         step.newDecisions.includes(row.actor_id);
-      if (
-        !returnsControl &&
-        step.needsContext &&
-        Object.keys(step.needsContext.remainingActions).some(
-          (id) => step.decisions[id] !== "pending",
-        )
-      )
-        throw new Error("文脈補足で続けられるのはpendingの意図だけです");
       for (const e of step.events) {
         if (
           !actors.has(e.actorId) ||
@@ -771,20 +763,26 @@ export class WorldScenes {
       ];
       delete d.work;
       if (step.needsContext && !returnsControl) {
-        for (const [id, text] of Object.entries(
-          step.needsContext.remainingActions,
-        )) {
+        const need = {
+          ...step.needsContext,
+          remainingActions: Object.fromEntries(
+            Object.entries(step.needsContext.remainingActions).filter(
+              ([id]) => d.pending[id],
+            ),
+          ),
+        };
+        for (const [id, text] of Object.entries(need.remainingActions)) {
           d.pending[id] = {
             ...d.pending[id]!,
             actionText: text,
             continuing: true,
           };
         }
-        d.contextNeed = step.needsContext;
+        d.contextNeed = need;
         (d.contextRequests ??= []).push({
           inputId: action.id,
           at: d.at,
-          ...step.needsContext,
+          ...need,
         });
         await this.#save(row, undefined, row.claim!);
         continue;

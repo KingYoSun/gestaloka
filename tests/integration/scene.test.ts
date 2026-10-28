@@ -112,7 +112,10 @@ const model = new LlmClient(
           elapsedMs: 1000,
           needsContext: {
             reason: "橋への道を確認する",
-            remainingActions: { [actor]: "橋の方へ歩く" },
+            remainingActions: {
+              [actor]: "橋の方へ歩く",
+              [npc]: "今回は選ばれていない行動を実行する",
+            },
           },
         };
       else if (intentions.some((i) => i.actionText === "橋の方へ歩く")) {
@@ -674,6 +677,10 @@ test("同じ入力の発生済み部分を保持し、不足文脈を補って�
     );
     expect(row.data.choices.filter((i) => i.actorId === actor)).toHaveLength(1);
     expect(row.data.contextRequests).toHaveLength(1);
+    expect(Object.keys(row.data.contextRequests![0]!.remainingActions)).toEqual(
+      [actor],
+    );
+    expect(row.data.choices.some((i) => i.actorId === npc)).toBe(false);
     expect(row.data.contextNeed).toBeUndefined();
     expect(
       row.data
