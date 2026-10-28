@@ -48,7 +48,7 @@ export const SceneContext = SceneBackground.omit({
 export const ContextNeed = z
   .object({
     reason: text,
-    remainingActions: z.record(id, text),
+    remainingActions: z.record(id, z.string()),
   })
   .strict();
 export function presentationEvidence(value: unknown): unknown {

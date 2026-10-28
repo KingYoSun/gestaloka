@@ -767,7 +767,7 @@ export class WorldScenes {
           ...step.needsContext,
           remainingActions: Object.fromEntries(
             Object.entries(step.needsContext.remainingActions).filter(
-              ([id]) => d.pending[id],
+              ([id, text]) => d.pending[id] && text.trim(),
             ),
           ),
         };

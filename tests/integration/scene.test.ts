@@ -141,7 +141,7 @@ const model = new LlmClient(
           elapsedMs: 1000,
           needsContext: {
             reason: "橋の先は本人の次の選択を待つ",
-            remainingActions: { [actor]: "橋の先を見る" },
+            remainingActions: { [actor]: "" },
           },
         };
       } else if (intentions.some((i) => i.actionText === "礼だけを伝える"))
