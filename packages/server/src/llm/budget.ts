@@ -5,6 +5,14 @@ import { WorldBudget } from "./world-budget.js";
 
 export const NANO_USD = 1_000_000_000;
 export class BudgetUnavailable extends Error {}
+export class UncertainResponse extends Error {
+  constructor(
+    readonly diagnostic: unknown,
+    message = "LLM応答の形式を確認できません。予約枠は保持します",
+  ) {
+    super(message);
+  }
+}
 export type SavedCompletion = {
   id: string;
   model: string;
@@ -20,7 +28,9 @@ export type SavedCompletion = {
     reasoning_tokens?: number;
   };
 };
-type SavedResponse = SavedCompletion | { error: string; rejection: unknown };
+type SavedResponse =
+  | SavedCompletion
+  | { error: string; rejection?: unknown; diagnostic?: unknown };
 
 export class BudgetLedger {
   constructor(
@@ -214,8 +224,17 @@ export class BudgetLedger {
       return await work();
     } catch (error) {
       await this.pool.query(
-        "UPDATE llm_call SET delivery='unknown' WHERE id=$1 AND budget_id=$2 AND state='pending'",
-        [id, this.budgetId],
+        "UPDATE llm_call SET delivery='unknown',response=coalesce($3::jsonb,response) WHERE id=$1 AND budget_id=$2 AND state='pending'",
+        [
+          id,
+          this.budgetId,
+          error instanceof UncertainResponse
+            ? JSON.stringify({
+                error: error.message,
+                diagnostic: error.diagnostic,
+              })
+            : null,
+        ],
       );
       throw error;
     }

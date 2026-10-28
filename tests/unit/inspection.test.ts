@@ -3,7 +3,10 @@ import { readFile } from "node:fs/promises";
 import { InspectionManifest } from "@gestaloka/contracts";
 import { measure } from "../../packages/server/src/inspection/measure.js";
 import { summarizeHistory } from "../../packages/server/src/inspection/history.js";
-import { recordPresentations } from "../../packages/server/src/inspection/record.js";
+import {
+  canonicalInformation,
+  recordPresentations,
+} from "../../packages/server/src/inspection/record.js";
 import {
   validateAssessment,
   inspectionItem,
@@ -21,6 +24,97 @@ import {
   SceneBackground,
   presentationEvidence,
 } from "../../packages/server/src/runtime/scene-data.js";
+
+test("正本の構造参照は言い換えと要約で増えず、実際の内容変更だけ更新になる", () => {
+  const m = inspectionFixture(),
+    s = m.scenes[0]!;
+  m.selection.metricVersion = "presentation-v3";
+  m.prior = [];
+  const first = canonicalInformation(
+    { id: fid("door"), kind: "script", text: "閉じている" },
+    "reference",
+    "扉は閉じている",
+  );
+  const changed = canonicalInformation(
+    { id: fid("door"), kind: "script", text: "開いている" },
+    "reference",
+    "扉は開いた",
+  );
+  m.initial = [
+    {
+      id: fid("initial"),
+      text: first.evidence,
+      at: 0,
+      providedAt: null,
+      information: [first],
+    },
+  ];
+  s.presentations = [
+    presentation("echo", "扉は閉まったままだ", [
+      { ...first, evidence: "扉は閉まったままだ" },
+    ]),
+    presentation("success", "扉は開いた", [changed]),
+    {
+      ...presentation("summary", "扉が開いたと振り返った", [
+        { ...changed, evidence: "扉が開いたと振り返った" },
+      ]),
+      kind: "result",
+    },
+    presentation("empty", "本文の対応漏れ", []),
+  ];
+  const result = measure(m);
+  expect(result.total.counts).toEqual({
+    node: 0,
+    edge: 0,
+    aspect: 0,
+    update: 1,
+  });
+  expect(result.total.coverage).toMatchObject({
+    mapped: 4,
+    adequacy: "unreviewed",
+  });
+  expect(
+    result.diffs.flatMap((d) => d.elements.map((r) => r.category)),
+  ).toEqual(["repeat", "update", "repeat"]);
+  s.presentations[0]!.information = [info("invented", "架空の版")];
+  expect(measure(m).total.value).toBeNull();
+});
+
+test("要約で提示自体を選んだ場合も保存済みの正本参照をそのまま再利用する", () => {
+  const original = canonicalInformation(
+    {
+      id: fid("event"),
+      kind: "event",
+      text: "扉が開いた",
+      period: { from: 1, until: 1 },
+    },
+    "generated",
+    "扉が開いた",
+  );
+  const source = presentation("source", "扉が開いた", [original]);
+  const row = {
+    id: fid("scene"),
+    actor_id: fid("actor"),
+    state: "result",
+    data: {
+      recordingVersion: "inspection-record-v2",
+      startedAt: 0,
+      at: 1,
+      presentations: [source],
+      events: [],
+      actions: [],
+      informationBasis: { [original.id]: original },
+      result: "扉が開いたことを振り返った",
+      resultInformation: [
+        { id: source.id, evidence: "元の提示から誤って持ち越した引用" },
+      ],
+    },
+  } as unknown as SceneRow;
+  recordPresentations(row);
+  expect(row.data.presentations![1]!.information).toEqual([
+    { ...original, evidence: row.data.result },
+  ]);
+});
 
 test("固定manifestから同じ分類・値を返し、窓前の状態、別側面、更新、内部情報を区別する", () => {
   const manifest = inspectionFixture(),

@@ -161,6 +161,13 @@ beforeAll(async () => {
   );
   const data = {
     ...m.scenes[0]!,
+    purpose: "扉の様子を確かめる",
+    character: {
+      presetId: fid("preset"),
+      version: 1,
+      settings: "以前から村で暮らす成人",
+      registrationAt: 0,
+    },
     recordingVersion: "inspection-record-v1",
     worldId: fid("graph"),
     at: 0,
@@ -322,6 +329,17 @@ test("APIと共通計測の値が一致し、全ページの取得・再取得�
   const selected = await select(),
     id = selected.manifest.id,
     raw = await InspectionStore.manifest(pool, selection.worldId, id);
+  expect(raw.declaredContext).toMatchObject({
+    character: {
+      version: 1,
+      settings: "以前から村で暮らす成人",
+      registrationAt: 0,
+    },
+    preparations: [
+      { sceneId: selection.endSceneId, purpose: "扉の様子を確かめる" },
+    ],
+    timeBasis: "world-clock-is-not-character-history",
+  });
   const before = (await pool.query("SELECT data FROM world_scene ORDER BY id"))
     .rows;
   const app = await createApp(
@@ -443,7 +461,7 @@ test("文書化したCLI入口が計測・比較と意味評価を実行し、JS
     const evaluated = JSON.parse(
       await readFile(join(directory, `${id}.json`), "utf8"),
     );
-    expect(evaluated.semantic.result.skill.rubricVersion).toBe("meaning-v1");
+    expect(evaluated.semantic.result.skill.rubricVersion).toBe("meaning-v3");
     expect(
       evaluated.semantic.result.evaluationCost.calculatedNanoUsd,
     ).not.toBeNull();

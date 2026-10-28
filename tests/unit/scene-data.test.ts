@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   mergeSceneChanges,
   sceneAgenda,
+  sceneContinuations,
   sceneAnchors,
   sceneView,
   type SceneBackground,
@@ -158,4 +159,63 @@ test("入力完了後に終了してもNPCの判定待ちと途中の活動をag
   });
   expect(next.find((w) => w.actorId === unrelated)).toEqual(original[1]);
   expect(original[0]?.actionText).toBe("途中の活動");
+});
+
+test("登場NPCの選択済みの継続と新しい判断を引き継ぎ、人間・範囲外・未来・期間方針は実行しない", () => {
+  const result = sceneContinuations(
+    [
+      {
+        id: "1",
+        actorId: "npc",
+        at: 1,
+        mode: "resolve",
+        actionText: "選択済みの案内の残り",
+      },
+      { id: "2", actorId: "deciding", at: 1, mode: "intent" },
+      {
+        id: "3",
+        actorId: "actor",
+        at: 1,
+        mode: "resolve",
+        actionText: "本人の以前の意図",
+      },
+      {
+        id: "4",
+        actorId: "remote",
+        at: 1,
+        mode: "resolve",
+        actionText: "範囲外",
+      },
+      { id: "5", actorId: "future", at: 2, mode: "intent" },
+      {
+        id: "6",
+        actorId: "policy",
+        at: 1,
+        mode: "resolve",
+        planUntil: 10,
+        actionText: "構築の期間方針",
+      },
+      {
+        id: "7",
+        actorId: "waiting",
+        at: 1,
+        mode: "resolve",
+        deferred: true,
+        actionText: "次の契機を待つ意図",
+      },
+    ],
+    ["npc", "deciding", "actor", "future", "policy", "waiting"],
+    "actor",
+    1,
+  );
+  expect(result).toEqual({
+    pending: {
+      npc: {
+        actorId: "npc",
+        actionText: "選択済みの案内の残り",
+        continuing: true,
+      },
+    },
+    nextDecisions: ["deciding"],
+  });
 });

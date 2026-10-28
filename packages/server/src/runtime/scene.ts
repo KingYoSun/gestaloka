@@ -1,6 +1,14 @@
 import { RuntimeExecutions } from "./executions.js";
-import { Information, type Presentation } from "@gestaloka/contracts";
-import { recordPresentations } from "../inspection/record.js";
+import {
+  InformationReference,
+  type Information,
+  type Presentation,
+  type InspectionManifest,
+} from "@gestaloka/contracts";
+import {
+  captureSceneInformation,
+  recordPresentations,
+} from "../inspection/record.js";
 import { McpOrigin } from "../http/mcp-origin.js";
 import { RuntimeControl, RuntimeStopped } from "./control.js";
 import { randomUUID } from "node:crypto";
@@ -25,11 +33,14 @@ import {
 } from "./construction.js";
 import {
   SceneBackground,
+  SceneContext,
+  ContextNeed,
   SceneStep,
   sceneAnchors,
   sceneAgenda,
   sceneId,
   sceneView,
+  sceneContinuations,
   presentationEvidence,
   type RecordedSceneEvent,
   type SceneIntent,
@@ -38,6 +49,7 @@ import {
 
 const BackgroundDecision = z.discriminatedUnion("type", [
   SceneBackground,
+  SceneContext,
   z
     .object({ type: z.literal("query"), requests: z.array(Query).min(1) })
     .strict(),
@@ -46,7 +58,7 @@ const BackgroundDecision = z.discriminatedUnion("type", [
 const Narrative = z
   .object({
     text: z.string().min(1),
-    information: z.array(Information).optional(),
+    information: z.array(InformationReference).optional(),
   })
   .strict();
 async function scenePrompt(file: string, information = true) {
@@ -69,9 +81,10 @@ type Work = {
   target: "default" | "resolution";
 };
 export type SceneData = {
-  recordingVersion?: "inspection-record-v1";
+  recordingVersion?: "inspection-record-v1" | "inspection-record-v2";
+  informationBasis?: Record<string, Information>;
   presentations?: Presentation[];
-  resultInformation?: Information[];
+  resultInformation?: z.infer<typeof InformationReference>[];
   reflectionResponseId?: string;
   commandId: string;
   requestId?: string;
@@ -79,11 +92,19 @@ export type SceneData = {
   at: number;
   startedAt: number;
   purpose: string;
+  character?: NonNullable<InspectionManifest["declaredContext"]>["character"];
   roots: string[];
   originalAgenda: Construction["agenda"];
   basis: Dependency[];
   backgroundMessages?: ChatMessage[];
   background?: SceneBackground;
+  contextNeed?: z.infer<typeof ContextNeed>;
+  contextRequests?: {
+    inputId: string;
+    at: number;
+    reason: string;
+    remainingActions: Record<string, string>;
+  }[];
   views: Record<string, SceneView>;
   events: RecordedSceneEvent[];
   pending: Record<string, SceneIntent>;
@@ -207,6 +228,8 @@ export class WorldScenes {
     );
   }
   async #save(row: SceneRow, client?: pg.PoolClient, expected?: string) {
+    if (row.data.recordingVersion === "inspection-record-v2")
+      await captureSceneInformation(row, this.agent.store);
     recordPresentations(row);
     const save = async (c: pg.PoolClient) => {
       const result = await c.query(
@@ -256,7 +279,7 @@ export class WorldScenes {
       state: "preparing",
       claim: null,
       data: {
-        recordingVersion: "inspection-record-v1",
+        recordingVersion: "inspection-record-v2",
         reflectionResponseId: sceneId(`${requestId}:reflection`),
         commandId: requestId,
         requestId,
@@ -264,6 +287,13 @@ export class WorldScenes {
         at: c.at,
         startedAt: c.at,
         purpose,
+        character:
+          (
+            await client.query(
+              "SELECT jsonb_build_object('presetId',j.preset_id,'version',j.preset_version,'settings',o.request->>'actionText','registrationAt',j.at) AS value FROM world_join j JOIN world_operation o ON o.id=j.operation_id WHERE j.construction_id=$1 AND j.actor_id=$2 ORDER BY j.id LIMIT 1",
+              [world, actor],
+            )
+          ).rows[0]?.value ?? null,
         roots: [...new Set([actor, ...c.root_ids])],
         originalAgenda: c.agenda,
         basis: [],
@@ -429,9 +459,12 @@ export class WorldScenes {
   }
   async #background(row: SceneRow) {
     const d = row.data,
-      request = this.#request(row);
+      request = {
+        ...this.#request(row),
+        actionText: d.contextNeed?.reason ?? d.purpose,
+      };
     if (!d.backgroundMessages) {
-      const context = await this.agent.context(request);
+      const context = await this.agent.context(request, d.basis);
       d.basis = context.dependencies;
       d.backgroundMessages = [
         {
@@ -440,6 +473,16 @@ export class WorldScenes {
             request,
             initialContext: context.initialContext,
             controlledActorIds: context.controlledActorIds,
+            ...(d.contextNeed
+              ? {
+                  needsContext: d.contextNeed,
+                  stagedScene: {
+                    background: d.background,
+                    events: d.events,
+                    intentions: Object.values(d.pending),
+                  },
+                }
+              : {}),
             responseSchema: z.toJSONSchema(BackgroundDecision, { io: "input" }),
           }),
         },
@@ -467,7 +510,8 @@ export class WorldScenes {
           "scene-background.md",
           {},
         ),
-        decision = BackgroundDecision.parse(response.value);
+        answer = BackgroundDecision.parse(response.value);
+      let decision = answer;
       if (decision.type === "pause") throw new Error(decision.reason);
       if (decision.type === "query") {
         const read = await this.agent.read(
@@ -490,6 +534,40 @@ export class WorldScenes {
         await this.#save(row, undefined, row.claim!);
         continue;
       }
+      if (d.contextNeed) {
+        if (answer.type !== "context")
+          throw new Error("進行中の背景は追記として補ってください");
+        const prior = d.background!;
+        decision = {
+          ...prior,
+          participants: [
+            ...new Set([...prior.participants, ...answer.participants]),
+          ],
+          facts: [
+            ...prior.facts,
+            ...answer.facts.map((f) => ({ ...f, at: d.at })),
+          ],
+          beliefs: [
+            ...prior.beliefs,
+            ...answer.beliefs.map((f) => ({ ...f, at: d.at })),
+          ],
+          creations: [...prior.creations, ...answer.creations],
+          unknowns: prior.unknowns.filter(
+            (u) => !answer.resolvedUnknowns.includes(u),
+          ),
+        };
+        if (
+          !answer.facts.length &&
+          !answer.beliefs.length &&
+          !answer.creations.length &&
+          decision.participants.length === prior.participants.length
+        )
+          throw new Error(
+            "不足文脈を補う変更がありません。世界の条件を確認してください",
+          );
+      }
+      if (decision.type !== "background")
+        throw new Error("開始時の背景が必要です");
       if (!decision.participants.includes(row.actor_id))
         throw new Error("背景情報に操作する本人が含まれていません");
       const controlled = await this.agent.controlledActors(
@@ -552,22 +630,45 @@ export class WorldScenes {
         d.basis = context.dependencies;
       }
       for (const id of decision.participants)
-        d.views[id] = creations.has(id)
+        d.views[id] ??= creations.has(id)
           ? { observerId: id, at: d.at, observations: [], interpretations: [] }
           : await this.agent.view(d.worldId, id, d.at);
       await this.agent.store.context(d.worldId, d.basis).validate();
       d.background = decision;
       delete d.work;
-      row.state = "ready";
+      delete d.backgroundMessages;
+      const extending = !!d.contextNeed;
+      delete d.contextNeed;
+      if (!extending) row.state = "ready";
       await this.#save(row, undefined, row.claim!);
       return;
     }
   }
   async #action(row: SceneRow) {
     const d = row.data,
-      bg = d.background!,
       action = d.actions.at(-1)!;
     for (;;) {
+      if (d.contextNeed) await this.#background(row);
+      const bg = d.background!;
+      if (!d.work) {
+        const next = sceneContinuations(
+          d.originalAgenda,
+          bg.participants.filter(
+            (id) => !d.intentions[id] && !d.nextDecisions.includes(id),
+          ),
+          row.actor_id,
+          d.at,
+        );
+        Object.assign(d.pending, next.pending);
+        Object.assign(d.intentions, next.pending);
+        d.nextDecisions.push(...next.nextDecisions);
+      }
+      if (!d.pending[row.actor_id] && !d.nextDecisions.includes(row.actor_id)) {
+        action.state = "complete";
+        row.state = "active";
+        await this.#save(row, undefined, row.claim!);
+        return false;
+      }
       if (d.nextDecisions.length) {
         if (
           (
@@ -627,11 +728,17 @@ export class WorldScenes {
         }),
         step = SceneStep.parse(value.value);
       if (step.type === "boundary") break;
+      if (step.needsContext && step.decisions[row.actor_id] === "finished")
+        step.decisions[row.actor_id] = "pending";
       const actors = new Set(intents.map((i) => i.actorId));
       if (
         Object.keys(step.decisions).sort().join() !== [...actors].sort().join()
       )
         throw new Error("シーンで未解決の意図が省略されています");
+      const returnsControl =
+        step.decisions[row.actor_id] === "finished" ||
+        step.decisions[row.actor_id] === "decide" ||
+        step.newDecisions.includes(row.actor_id);
       for (const e of step.events) {
         if (
           !actors.has(e.actorId) ||
@@ -671,6 +778,31 @@ export class WorldScenes {
         ]),
       ];
       delete d.work;
+      if (step.needsContext && !returnsControl) {
+        const need = {
+          ...step.needsContext,
+          remainingActions: Object.fromEntries(
+            Object.entries(step.needsContext.remainingActions).filter(
+              ([id, text]) => d.pending[id] && text.trim(),
+            ),
+          ),
+        };
+        for (const [id, text] of Object.entries(need.remainingActions)) {
+          d.pending[id] = {
+            ...d.pending[id]!,
+            actionText: text,
+            continuing: true,
+          };
+        }
+        d.contextNeed = need;
+        (d.contextRequests ??= []).push({
+          inputId: action.id,
+          at: d.at,
+          ...need,
+        });
+        await this.#save(row, undefined, row.claim!);
+        continue;
+      }
       if (
         step.decisions[row.actor_id] === "finished" ||
         step.decisions[row.actor_id] === "decide" ||

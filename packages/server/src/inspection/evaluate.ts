@@ -28,8 +28,8 @@ export async function inspectionSkill() {
     ].map((file) => readFile(new URL(file, root), "utf8")),
   );
   return {
-    version: "narrative-inspection-v7",
-    rubricVersion: "meaning-v1",
+    version: "narrative-inspection-v9",
+    rubricVersion: "meaning-v3",
     hash: digest(files),
     body: files.join("\n\n"),
   };
@@ -83,6 +83,15 @@ function assessmentMaterial(manifest: InspectionManifest) {
   );
   const measured = measure(manifest),
     diffs = new Map(measured.diffs.map((d) => [d.presentationId, d]));
+  const declared = (sceneId: string) => {
+    const context = manifest.declaredContext;
+    if (!context) return null;
+    const index = context.preparations.findIndex((p) => p.sceneId === sceneId);
+    return {
+      ...context,
+      preparations: context.preparations.slice(0, index + 1),
+    };
+  };
   const view = (items: typeof ordered, inputId?: string) =>
     items.map((p, presentationId) => ({
       presentationId,
@@ -106,6 +115,10 @@ function assessmentMaterial(manifest: InspectionManifest) {
         index,
         input: { text: input.text, state: input.state },
         knownInputs: inputs.slice(0, index + 1).map((i) => i.text),
+        declaredContext: declared(
+          manifest.scenes.find((s) => s.inputs.some((i) => i.id === input.id))!
+            .id,
+        ),
         presentations: view(inputSources[index]!, input.id),
         sceneIndex: manifest.scenes.findIndex((s) =>
           s.inputs.some((i) => i.id === input.id),
@@ -114,6 +127,7 @@ function assessmentMaterial(manifest: InspectionManifest) {
       otherPresentations: other.map((p, index) => ({
         index,
         currentPresentation: otherSources[index]!.length - 1,
+        declaredContext: declared(p.sceneId),
         presentations: view(otherSources[index]!),
         knownInputs: manifest.scenes.flatMap((s, sceneIndex) => {
           const current = manifest.scenes.findIndex((v) => v.id === p.sceneId);

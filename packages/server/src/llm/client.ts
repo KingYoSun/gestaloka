@@ -5,8 +5,14 @@ import { ExecutionBudget } from "../execution-budget.js";
 import { ModelSettings, type SettingsSnapshot } from "./settings.js";
 import type pg from "pg";
 import { z } from "zod";
-import { BudgetLedger, NANO_USD, type SavedCompletion } from "./budget.js";
+import {
+  BudgetLedger,
+  NANO_USD,
+  UncertainResponse,
+  type SavedCompletion,
+} from "./budget.js";
 import { ModelLimits } from "./limits.js";
+import { responseDeadline } from "./response-deadline.js";
 import { anthropicPrompt, canonical, parseOutput } from "./prompt.js";
 import {
   settings,
@@ -151,7 +157,7 @@ const MessageEvent = z.object({
     .optional(),
   usage: MessageUsage.partial().optional(),
 });
-async function streamedMessage(response: Response) {
+async function streamedMessage(response: Response, onData: () => void) {
   if (!response.body) throw new Error("LLM応答のストリームがありません");
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "",
@@ -163,6 +169,7 @@ async function streamedMessage(response: Response) {
       const chunk = await reader.read();
       if (chunk.done)
         throw new Error("LLM応答が完了前に切断されました。予約枠は保持します");
+      onData();
       buffer += chunk.value;
       let boundary: RegExpExecArray | null;
       while ((boundary = /\r?\n\r?\n/.exec(buffer))) {
@@ -622,188 +629,226 @@ export class LlmClient {
                 ? "responses"
                 : "chat/completions";
           quota.sent();
-          const response = await this.transport(
-            `${connection.baseUrl}/${path}`,
-            {
-              method: "POST",
-              headers: {
-                ...(await this.headers(provider, quota.key)),
-                "Content-Type": "application/json",
+          const deadline = responseDeadline(api === "messages");
+          try {
+            const response = await this.transport(
+              `${connection.baseUrl}/${path}`,
+              {
+                method: "POST",
+                headers: {
+                  ...(await this.headers(provider, quota.key)),
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(request),
+                signal: deadline.signal,
               },
-              body: JSON.stringify(request),
-              signal: AbortSignal.timeout(180000),
-            },
-          );
-          if (!response.ok) {
-            if (
-              response.status === 400 &&
-              (provider === "anthropic" || provider === "gemini")
-            ) {
-              const raw: unknown = await response.json().catch(() => null);
-              const rejected = (
-                provider === "anthropic"
-                  ? z.object({
-                      type: z.literal("error"),
-                      error: z.object({
-                        type: z.literal("invalid_request_error"),
-                        message: z.string(),
-                      }),
-                      request_id: z.string(),
-                    })
-                  : z.tuple([
-                      z.object({
+            );
+            if (!response.ok) {
+              if (
+                response.status === 400 &&
+                (provider === "anthropic" || provider === "gemini")
+              ) {
+                const raw: unknown = await response.json().catch(() => null);
+                const rejected = (
+                  provider === "anthropic"
+                    ? z.object({
+                        type: z.literal("error"),
                         error: z.object({
-                          code: z.literal(400),
+                          type: z.literal("invalid_request_error"),
                           message: z.string(),
-                          status: z.string().min(1),
                         }),
+                        request_id: z.string(),
+                      })
+                    : z.tuple([
+                        z.object({
+                          error: z.object({
+                            code: z.literal(400),
+                            message: z.string(),
+                            status: z.string().min(1),
+                          }),
+                        }),
+                      ])
+                ).safeParse(raw);
+                if (rejected.success) {
+                  // Failed API calls are not billed; timeouts remain uncertain.
+                  // https://support.claude.com/en/articles/8977456
+                  // Gemini still counts the request against quota:
+                  // https://ai.google.dev/gemini-api/docs/billing#faq
+                  const error =
+                    "LLM要求がHTTP 400で拒否されました。予約枠を解除しました";
+                  await this.ledger.settle(
+                    id,
+                    0,
+                    { error, rejection: raw },
+                    Math.round(performance.now() - started),
+                  );
+                  quota.used(0);
+                  throw new Error(error);
+                }
+              }
+              throw new Error(
+                `LLM要求の結果を確定できません: HTTP ${response.status}。予約枠は保持します`,
+              );
+            }
+            const raw: unknown = await (
+              api === "messages" &&
+              response.headers
+                .get("content-type")
+                ?.includes("text/event-stream")
+                ? streamedMessage(response, deadline.touch)
+                : response.json()
+            ).catch((error: unknown) => {
+              if (error instanceof Error && error.message.includes("予約枠"))
+                throw error;
+              throw new UncertainResponse(
+                {
+                  requestId: response.headers.get("request-id"),
+                  contentType: response.headers.get("content-type"),
+                  errorName: error instanceof Error ? error.name : "unknown",
+                  timeoutKind: deadline.timeoutKind,
+                  receivedChunks: deadline.receivedChunks,
+                  ...(error instanceof z.ZodError
+                    ? {
+                        issues: error.issues.map(({ code, path }) => ({
+                          code,
+                          path,
+                        })),
+                      }
+                    : {}),
+                },
+                deadline.signal.aborted
+                  ? "LLM応答の待機上限に達しました。予約枠は保持します"
+                  : undefined,
+              );
+            });
+            let completion: SavedCompletion;
+            if (api === "messages") {
+              const result = MessageResponse.parse(raw);
+              completion = {
+                id: result.id,
+                model: result.model,
+                content: result.content
+                  .filter((c) => c.type === "text")
+                  .map((c) => c.text ?? "")
+                  .join(""),
+                finishReason:
+                  result.stop_reason === "end_turn"
+                    ? "stop"
+                    : (result.stop_reason ?? "incomplete"),
+                usage: messageUsage(result.usage),
+              };
+            } else if (api === "responses") {
+              const result = ResponsesResponse.parse(raw),
+                hit = result.usage.input_tokens_details?.cached_tokens ?? 0;
+              completion = {
+                id: result.id,
+                model: result.model,
+                content: result.output
+                  .filter((o) => o.type === "message")
+                  .flatMap((o) => o.content ?? [])
+                  .filter((c) => c.type === "output_text")
+                  .map((c) => c.text ?? "")
+                  .join(""),
+                finishReason:
+                  result.status === "completed" ? "stop" : result.status,
+                usage: {
+                  prompt_tokens: result.usage.input_tokens,
+                  completion_tokens: result.usage.output_tokens,
+                  prompt_cache_hit_tokens: hit,
+                  prompt_cache_miss_tokens: result.usage.input_tokens - hit,
+                  ...(result.usage.output_tokens_details?.reasoning_tokens ===
+                  undefined
+                    ? {}
+                    : {
+                        reasoning_tokens:
+                          result.usage.output_tokens_details.reasoning_tokens,
                       }),
-                    ])
-              ).safeParse(raw);
-              if (rejected.success) {
-                // Failed API calls are not billed; timeouts remain uncertain.
-                // https://support.claude.com/en/articles/8977456
-                // Gemini still counts the request against quota:
-                // https://ai.google.dev/gemini-api/docs/billing#faq
-                const error =
-                  "LLM要求がHTTP 400で拒否されました。予約枠を解除しました";
-                await this.ledger.settle(
-                  id,
-                  0,
-                  { error, rejection: raw },
-                  Math.round(performance.now() - started),
+                },
+              };
+            } else {
+              const result = ChatResponse.parse(raw),
+                usage = result.usage;
+              if (
+                (provider !== "deepseek" && usage.total_tokens === undefined) ||
+                (usage.total_tokens !== undefined &&
+                  usage.total_tokens <
+                    usage.prompt_tokens + usage.completion_tokens)
+              )
+                throw new Error(
+                  "LLMの総使用量を確認できません。予約枠は保持します",
                 );
-                quota.used(0);
-                throw new Error(error);
+              const hit =
+                usage.prompt_cache_hit_tokens ??
+                usage.prompt_tokens_details?.cached_tokens ??
+                0;
+              completion = {
+                id: result.id,
+                model: result.model,
+                content: result.choices[0]!.message.content ?? "",
+                finishReason: result.choices[0]!.finish_reason,
+                usage: {
+                  prompt_tokens: usage.prompt_tokens,
+                  completion_tokens: Math.max(
+                    usage.completion_tokens,
+                    (usage.total_tokens ?? 0) - usage.prompt_tokens,
+                  ),
+                  prompt_cache_hit_tokens: hit,
+                  prompt_cache_miss_tokens:
+                    usage.prompt_cache_miss_tokens ?? usage.prompt_tokens - hit,
+                  ...(usage.completion_tokens_details?.reasoning_tokens ===
+                  undefined
+                    ? {}
+                    : {
+                        reasoning_tokens:
+                          usage.completion_tokens_details.reasoning_tokens,
+                      }),
+                },
+              };
+            }
+            const usage = completion.usage;
+            if (prompt && completion.finishReason === "stop") {
+              try {
+                completion.content = JSON.stringify(
+                  parseOutput(completion.content),
+                );
+              } catch {
+                /* Persist the invalid response; the caller's existing validation handles it. */
               }
             }
-            throw new Error(
-              `LLM要求の結果を確定できません: HTTP ${response.status}。予約枠は保持します`,
-            );
-          }
-          const raw: unknown = await (
-            api === "messages" &&
-            response.headers.get("content-type")?.includes("text/event-stream")
-              ? streamedMessage(response)
-              : response.json()
-          ).catch((error: unknown) => {
-            if (error instanceof Error && error.message.includes("予約枠"))
-              throw error;
-            throw new Error(
-              "LLM応答の形式を確認できません。予約枠は保持します",
-            );
-          });
-          let completion: SavedCompletion;
-          if (api === "messages") {
-            const result = MessageResponse.parse(raw);
-            completion = {
-              id: result.id,
-              model: result.model,
-              content: result.content
-                .filter((c) => c.type === "text")
-                .map((c) => c.text ?? "")
-                .join(""),
-              finishReason:
-                result.stop_reason === "end_turn"
-                  ? "stop"
-                  : (result.stop_reason ?? "incomplete"),
-              usage: messageUsage(result.usage),
-            };
-          } else if (api === "responses") {
-            const result = ResponsesResponse.parse(raw),
-              hit = result.usage.input_tokens_details?.cached_tokens ?? 0;
-            completion = {
-              id: result.id,
-              model: result.model,
-              content: result.output
-                .filter((o) => o.type === "message")
-                .flatMap((o) => o.content ?? [])
-                .filter((c) => c.type === "output_text")
-                .map((c) => c.text ?? "")
-                .join(""),
-              finishReason:
-                result.status === "completed" ? "stop" : result.status,
-              usage: {
-                prompt_tokens: result.usage.input_tokens,
-                completion_tokens: result.usage.output_tokens,
-                prompt_cache_hit_tokens: hit,
-                prompt_cache_miss_tokens: result.usage.input_tokens - hit,
-                ...(result.usage.output_tokens_details?.reasoning_tokens ===
-                undefined
-                  ? {}
-                  : {
-                      reasoning_tokens:
-                        result.usage.output_tokens_details.reasoning_tokens,
-                    }),
-              },
-            };
-          } else {
-            const result = ChatResponse.parse(raw),
-              usage = result.usage;
+            quota.used(usage.prompt_tokens + usage.completion_tokens);
             if (
-              (provider !== "deepseek" && usage.total_tokens === undefined) ||
-              (usage.total_tokens !== undefined &&
-                usage.total_tokens <
-                  usage.prompt_tokens + usage.completion_tokens)
+              usage.prompt_cache_hit_tokens + usage.prompt_cache_miss_tokens !==
+                usage.prompt_tokens ||
+              usage.prompt_cache_miss_tokens < 0 ||
+              usage.prompt_cache_hit_tokens > usage.prompt_tokens
             )
               throw new Error(
-                "LLMの総使用量を確認できません。予約枠は保持します",
+                "LLMの使用量内訳が整合しません。予約枠は保持します",
               );
-            const hit =
-              usage.prompt_cache_hit_tokens ??
-              usage.prompt_tokens_details?.cached_tokens ??
-              0;
-            completion = {
-              id: result.id,
-              model: result.model,
-              content: result.choices[0]!.message.content ?? "",
-              finishReason: result.choices[0]!.finish_reason,
-              usage: {
-                prompt_tokens: usage.prompt_tokens,
-                completion_tokens: Math.max(
-                  usage.completion_tokens,
-                  (usage.total_tokens ?? 0) - usage.prompt_tokens,
-                ),
-                prompt_cache_hit_tokens: hit,
-                prompt_cache_miss_tokens:
-                  usage.prompt_cache_miss_tokens ?? usage.prompt_tokens - hit,
-                ...(usage.completion_tokens_details?.reasoning_tokens ===
-                undefined
-                  ? {}
-                  : {
-                      reasoning_tokens:
-                        usage.completion_tokens_details.reasoning_tokens,
-                    }),
-              },
-            };
-          }
-          const usage = completion.usage;
-          if (prompt && completion.finishReason === "stop") {
-            try {
-              completion.content = JSON.stringify(
-                parseOutput(completion.content),
-              );
-            } catch {
-              /* Persist the invalid response; the caller's existing validation handles it. */
-            }
-          }
-          quota.used(usage.prompt_tokens + usage.completion_tokens);
-          if (
-            usage.prompt_cache_hit_tokens + usage.prompt_cache_miss_tokens !==
-              usage.prompt_tokens ||
-            usage.prompt_cache_miss_tokens < 0 ||
-            usage.prompt_cache_hit_tokens > usage.prompt_tokens
-          )
-            throw new Error(
-              "LLMの使用量内訳が整合しません。予約枠は保持します",
+            await this.ledger.settle(
+              id,
+              calculatedCharge(usage, connection),
+              completion,
+              Math.round(performance.now() - started),
             );
-          await this.ledger.settle(
-            id,
-            calculatedCharge(usage, connection),
-            completion,
-            Math.round(performance.now() - started),
-          );
-          return completion;
+            return completion;
+          } catch (error) {
+            if (
+              deadline.signal.aborted &&
+              !(error instanceof UncertainResponse)
+            )
+              throw new UncertainResponse(
+                {
+                  errorName: error instanceof Error ? error.name : "unknown",
+                  timeoutKind: deadline.timeoutKind,
+                  receivedChunks: deadline.receivedChunks,
+                },
+                "LLM応答の待機上限に達しました。予約枠は保持します",
+              );
+            throw error;
+          } finally {
+            deadline.close();
+          }
         });
       },
     );

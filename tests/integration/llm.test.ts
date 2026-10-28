@@ -162,7 +162,13 @@ test.each([
 );
 beforeAll(() => databases.verify());
 
-test.each(["complete", "disconnect", "error", "missing-usage"])(
+test.each([
+  "complete",
+  "disconnect",
+  "error",
+  "missing-usage",
+  "malformed-usage",
+])(
   "Anthropicストリームの%sを区別し、実使用量だけ精算して再送しない",
   async (ending) => {
     const frame = (event: unknown) => `data: ${JSON.stringify(event)}\r\n\r\n`;
@@ -178,6 +184,9 @@ test.each(["complete", "disconnect", "error", "missing-usage"])(
           output_tokens: 1,
           cache_read_input_tokens: 30,
           cache_creation_input_tokens: 20,
+          ...(ending === "malformed-usage"
+            ? { output_tokens: "PRIVATE_THINKING" }
+            : {}),
         },
       },
     };
@@ -235,7 +244,12 @@ test.each(["complete", "disconnect", "error", "missing-usage"])(
               controller.close();
             },
           }),
-          { headers: { "content-type": "text/event-stream" } },
+          {
+            headers: {
+              "content-type": "text/event-stream",
+              "request-id": "req_stream",
+            },
+          },
         ),
     );
     const client = new LlmClient(
@@ -291,6 +305,19 @@ test.each(["complete", "disconnect", "error", "missing-usage"])(
       [id],
     );
     expect(JSON.stringify(saved.rows)).not.toContain("PRIVATE_THINKING");
+    if (ending === "malformed-usage")
+      expect(saved.rows[0].response).toMatchObject({
+        diagnostic: {
+          requestId: "req_stream",
+          errorName: "ZodError",
+          issues: [
+            {
+              code: "invalid_type",
+              path: ["message", "usage", "output_tokens"],
+            },
+          ],
+        },
+      });
   },
 );
 

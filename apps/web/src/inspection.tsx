@@ -230,7 +230,7 @@ export function InspectionResults({
                 <th>採取日時</th>
                 <th>指標・重み</th>
                 <th>移動量</th>
-                <th>提示対応</th>
+                <th>対応記録</th>
                 <th>値/USD</th>
                 <th>値/待ち秒</th>
                 <th>根拠</th>
@@ -329,13 +329,14 @@ export function InspectionResults({
         / 別側面 {m.total.counts.aspect} / 更新 {m.total.counts.update}
       </p>
       <p>
-        提示対応 {m.total.coverage.mapped}/{m.total.coverage.presentations} /
-        資料取得 {report.fetched.offset + report.fetched.count}/
+        対応記録あり {m.total.coverage.mapped}/{m.total.coverage.presentations}{" "}
+        / 資料取得 {report.fetched.offset + report.fetched.count}/
         {report.fetched.total}{" "}
         {report.next === null ? "（このページが末尾）" : "（続きあり）"}
       </p>
       <p>
         指標 {m.metricVersion} / 重み {m.weights.version}。{m.weights.rationale}
+        対応記録の有無は、本文との対応が十分であることを意味しません。
       </p>
       <p>
         初期提示{" "}

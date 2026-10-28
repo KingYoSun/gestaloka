@@ -121,6 +121,7 @@ export function inspectionFixture() {
     initial: [],
     capturedAt: "2026-10-28T00:00:02.000Z",
     selection: {
+      metricVersion: "presentation-v2",
       worldId: fid("world"),
       userId: fid("user"),
       actorId: fid("actor"),

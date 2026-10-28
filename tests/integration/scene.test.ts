@@ -38,7 +38,24 @@ const model = new LlmClient(
       );
     inputs.push(user);
     let content: unknown;
-    if (
+    if (user.needsContext) {
+      expect(user.stagedScene.events).toHaveLength(1);
+      expect(user.stagedScene.events[0].text).toBe("若者が挨拶した");
+      content = {
+        type: "context",
+        participants: [],
+        creations: [],
+        beliefs: [],
+        resolvedUnknowns: [],
+        facts: [
+          {
+            subjectId: place,
+            text: "橋へ続く道が声をかけた場所から延びている",
+            aboutIds: [actor],
+          },
+        ],
+      };
+    } else if (
       user.responseSchema?.oneOf?.some(
         (s: { properties?: { type?: { const?: string } } }) =>
           s.properties?.type?.const === "background",
@@ -74,7 +91,60 @@ const model = new LlmClient(
           actionText: string;
         }[],
         response = intentions.some((i) => i.actorId === npc);
-      if (intentions.some((i) => i.actionText === "礼だけを伝える"))
+      if (intentions.some((i) => i.actionText === "挨拶して橋を見に行く"))
+        content = {
+          type: "scene",
+          events: [
+            {
+              actorId: actor,
+              text: "若者が挨拶した",
+              receipts: [
+                {
+                  observerId: actor,
+                  text: "挨拶をした",
+                  information: [{ id: "$event" }, { id: "$receipt" }],
+                },
+              ],
+            },
+          ],
+          decisions: { [actor]: "finished" },
+          newDecisions: [],
+          elapsedMs: 1000,
+          needsContext: {
+            reason: "橋への道を確認する",
+            remainingActions: {
+              [actor]: "橋の方へ歩く",
+              [npc]: "今回は選ばれていない行動を実行する",
+            },
+          },
+        };
+      else if (intentions.some((i) => i.actionText === "橋の方へ歩く")) {
+        expect(user.background.facts.at(-1)).toMatchObject({ at: 1000 });
+        expect(user.background.perceptions).toHaveLength(2);
+        content = {
+          type: "scene",
+          events: [
+            {
+              actorId: actor,
+              text: "若者が道を歩いた",
+              receipts: [
+                {
+                  observerId: actor,
+                  text: "道を進んだ",
+                  information: [{ id: "$event" }, { id: "$receipt" }],
+                },
+              ],
+            },
+          ],
+          decisions: { [actor]: "decide" },
+          newDecisions: [],
+          elapsedMs: 1000,
+          needsContext: {
+            reason: "橋の先は本人の次の選択を待つ",
+            remainingActions: { [actor]: "" },
+          },
+        };
+      } else if (intentions.some((i) => i.actionText === "礼だけを伝える"))
         content = {
           type: "scene",
           events: [
@@ -522,6 +592,22 @@ test("入力完了で操作を返し、NPCの判定待ちを次の入力へ渡�
   const scene = opened.json().scene;
   ids.push(scene.id);
   try {
+    await d.postgres.query(
+      "UPDATE world_scene SET data=jsonb_set(data,'{originalAgenda}',$2::jsonb) WHERE id=$1",
+      [
+        scene.id,
+        JSON.stringify([
+          {
+            id: randomUUID(),
+            actorId: npc,
+            at: 0,
+            mode: "resolve",
+            deferred: true,
+            actionText: "既に挨拶を返し、次の契機を待つ",
+          },
+        ]),
+      ],
+    );
     await access.scenes.tick(scene.id);
     await command({ requestId: randomUUID(), command: "start" });
     const requestId = randomUUID(),
@@ -568,6 +654,60 @@ test("入力完了で操作を返し、NPCの判定待ちを次の入力へ渡�
     expect(resultCalls).toBe(0);
   } finally {
     await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [scene.id]);
+    inputs.length = 0;
+  }
+});
+
+test("背景不足があればfinishedでも発生済み部分を保持し、同じ入力の残りだけ続ける", async () => {
+  const opened = await command({
+    requestId: randomUUID(),
+    command: "prepare",
+    purpose: "橋へ向かう",
+  });
+  const id = opened.json().scene.id;
+  try {
+    await access.scenes.tick(id);
+    await command({ requestId: randomUUID(), command: "start" });
+    const inputId = randomUUID();
+    await command({
+      requestId: inputId,
+      command: "act",
+      actionText: "挨拶して橋を見に行く",
+    });
+    await access.scenes.tick(id);
+    const row = (await access.scenes.latest(construction))!;
+    expect(row.state).toBe("active");
+    expect(row.data.actions).toMatchObject([
+      { id: inputId, state: "complete" },
+    ]);
+    expect(row.data.events.map((e) => e.text)).toEqual([
+      "若者が挨拶した",
+      "若者が道を歩いた",
+    ]);
+    expect(row.data.events.map((e) => e.period)).toEqual([
+      { from: 0, until: 1000 },
+      { from: 1000, until: 2000 },
+    ]);
+    expect(new Set(row.data.events.map((e) => e.inputId))).toEqual(
+      new Set([inputId]),
+    );
+    expect(row.data.choices.filter((i) => i.actorId === actor)).toHaveLength(1);
+    expect(row.data.contextRequests).toHaveLength(1);
+    expect(Object.keys(row.data.contextRequests![0]!.remainingActions)).toEqual(
+      [actor],
+    );
+    expect(row.data.choices.some((i) => i.actorId === npc)).toBe(false);
+    expect(row.data.contextNeed).toBeUndefined();
+    expect(
+      row.data
+        .presentations!.filter((p) => p.kind === "response")
+        .every((p) => p.information?.every((r) => r.canonical)),
+    ).toBe(true);
+    const before = modelCalls;
+    await access.scenes.tick(id);
+    expect(modelCalls).toBe(before);
+  } finally {
+    await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
     inputs.length = 0;
   }
 });
@@ -751,7 +891,11 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
     actor,
   ))!.data.presentations!.find((p) => p.kind === "result")!;
   expect(recordedResult.information).toEqual([
-    expect.objectContaining({ kind: "edge", origin: "reference" }),
+    expect.objectContaining({
+      kind: "edge",
+      canonical: true,
+      origin: "generated",
+    }),
   ]);
   expect(view.result).toContain("まだ決まっておらず");
   expect(JSON.stringify(view)).not.toMatch(/PRIVATE_|NPCだけの秘密/);

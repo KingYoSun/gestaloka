@@ -194,7 +194,7 @@ export function readableInspection(
     `シーン: 要求${m.requestedScenes} / 実${m.actualScenes} / 入力${m.total.inputCount}`,
     `初期提示: ${report.manifest.initialRecording === "recorded" ? "記録あり" : "欠測（旧指標の保存値には初期提示を含まない）"}`,
     `移動量: ${m.total.value ?? "欠測"}（確認済み部分 ${m.total.observedValue}）`,
-    `提示対応: ${m.total.coverage.mapped}/${m.total.coverage.presentations}`,
+    `対応記録あり: ${m.total.coverage.mapped}/${m.total.coverage.presentations}（対応の十分さは意味検品で確認）`,
     `最長の連続低移動入力: ${m.longestLowRun}`,
     `生成費用: ${m.total.calculatedNanoUsd === null ? "欠測" : Number(m.total.calculatedNanoUsd) / 1e9 + " USD"}`,
     `応答待ち: ${m.total.responseWaitMs ?? "欠測"} ms / モデルcall: ${m.total.modelCallMs ?? "欠測"} ms`,
