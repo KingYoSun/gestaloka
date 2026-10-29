@@ -366,28 +366,26 @@ test.each(
 test.each([100000, 100001])(
   "Haikuは実入力%dの料金段階を全キャッシュ区分へ適用する",
   async (tokens) => {
-    const transport = vi
-      .fn<typeof fetch>()
-      .mockImplementation(async (url) =>
-        String(url).endsWith("/count_tokens")
-          ? Response.json({ input_tokens: tokens })
-          : Response.json({
-              id: "upstream",
-              model: "claude-haiku-5-5",
-              stop_reason: "end_turn",
-              content: [{ type: "text", text: "{}" }],
-              usage: {
-                input_tokens: tokens - 300,
-                cache_read_input_tokens: 100,
-                cache_creation_input_tokens: 200,
-                cache_creation: {
-                  ephemeral_5m_input_tokens: 100,
-                  ephemeral_1h_input_tokens: 100,
-                },
-                output_tokens: 1,
+    const transport = vi.fn<typeof fetch>().mockImplementation(async (url) =>
+      String(url).endsWith("/count_tokens")
+        ? Response.json({ input_tokens: tokens })
+        : Response.json({
+            id: "upstream",
+            model: "claude-haiku-5-5",
+            stop_reason: "end_turn",
+            content: [{ type: "text", text: "{}" }],
+            usage: {
+              input_tokens: tokens - 300,
+              cache_read_input_tokens: 100,
+              cache_creation_input_tokens: 200,
+              cache_creation: {
+                ephemeral_5m_input_tokens: 100,
+                ephemeral_1h_input_tokens: 100,
               },
-            }),
-      );
+              output_tokens: 1,
+            },
+          }),
+    );
     const client = new LlmClient(
       pool,
       {
