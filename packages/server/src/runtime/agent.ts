@@ -870,6 +870,9 @@ export class WorldAgent {
         row.state === "paused" &&
         !row.suspended &&
         (resumeInput !== undefined ||
+          (await this.model.ledger.incomplete(
+            callId(id, row.epoch, row.step),
+          )) ||
           (await this.model.ledger.state(callId(id, row.epoch, row.step))) !==
             "complete")
       ) {

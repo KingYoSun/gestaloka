@@ -942,3 +942,58 @@ test("保存済みの確定要求は指示の更新後も元の入力と応答�
     unsettled: 0,
   });
 });
+
+test("確定済みの出力上限終了は再開で新しい呼出しに進み、旧出力と費用を保持する", async () => {
+  const scene = await fixture(),
+    transport = vi.fn<typeof fetch>();
+  transport.mockImplementation(async () => {
+    if (transport.mock.calls.length === 1)
+      return Response.json({
+        id: randomUUID(),
+        model: "gemini-3.8-flash",
+        choices: [
+          { finish_reason: "length", message: { content: '{"type":' } },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      });
+    return response(proposal(changes()));
+  });
+  const runtime = await agent(transport),
+    id = await runtime.create({
+      worldId: scene.worldId,
+      phase: "observation",
+      actorId: scene.actor.id,
+      at: 0,
+      until: 1000,
+      rootIds: [scene.actor.id],
+      actionText: "",
+    });
+  operations.push(id);
+  const commitId = (
+    await databases.postgres.query(
+      "SELECT commit_id FROM world_operation WHERE id=$1",
+      [id],
+    )
+  ).rows[0].commit_id;
+  await expect(runtime.run(id)).rejects.toThrow("未完了");
+  expect(await store.receipt(scene.worldId, commitId)).toBeUndefined();
+  await runtime.run(id);
+  expect(await store.receipt(scene.worldId, commitId)).toBeDefined();
+  const calls = transport.mock.calls.length;
+  await runtime.run(id);
+  expect(transport).toHaveBeenCalledTimes(calls);
+  const saved = (
+    await databases.postgres.query(
+      "SELECT state,charged_nano::text,response->>'finishReason' AS finish FROM llm_call WHERE budget_id=$1 ORDER BY created_at,id",
+      [runtime.model.ledger.budgetId],
+    )
+  ).rows;
+  expect(
+    saved.some(
+      (c) =>
+        c.state === "complete" &&
+        c.finish === "length" &&
+        BigInt(c.charged_nano) > 0n,
+    ),
+  ).toBe(true);
+});

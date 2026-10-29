@@ -345,6 +345,14 @@ export class BudgetLedger {
     );
     return result.rows[0]?.state;
   }
+  async incomplete(id: string) {
+    return !!(
+      await this.pool.query(
+        "SELECT 1 FROM llm_call WHERE id=$1 AND budget_id=$2 AND state='complete' AND response->>'finishReason'<>'stop'",
+        [id, this.budgetId],
+      )
+    ).rowCount;
+  }
   async input(id: string) {
     return (await this.savedInput(id))?.request;
   }
