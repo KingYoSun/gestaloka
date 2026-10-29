@@ -208,6 +208,22 @@ export function inspectionItem(
       priorQuotes.length
         ? z.union([
             check.extend({
+              proposition: z
+                .string()
+                .min(1)
+                .describe(
+                  "比較する両方に共通する同じ一つの命題。否定形の表現差を含めて正規化する",
+                ),
+              before: z
+                .enum(["true", "false", "unknown"])
+                .describe(
+                  "比較元の引用が、その共通命題を真と確定・偽と確定・真偽不明のいずれとして提示したか",
+                ),
+              after: z
+                .enum(["true", "false", "unknown"])
+                .describe(
+                  "今回の提示が、同じ共通命題を真と確定・偽と確定・真偽不明のいずれとして提示したか",
+                ),
               status: z.enum([
                 "preserved",
                 "grounded-change",
@@ -293,12 +309,20 @@ export function inspectionItem(
             ...d,
             presentationId: sources[d.presentationId]!.id,
           })),
-          ...checks
-            .filter((c) => c.status === "unsupported-change")
-            .map((c) => ({
-              presentationId: cite(c.quoteIndex).presentationId,
-              explanation: `状態・確かさの根拠のない変更: ${JSON.stringify([cite(c.quoteIndex), ...c.context.map((e) => cite(e.quoteIndex))])} ${c.explanation}`,
-            })),
+          ...checks.flatMap((c) => {
+            if (
+              !("proposition" in c) ||
+              (c.status !== "unsupported-change" &&
+                !(c.status === "preserved" && c.before !== c.after))
+            )
+              return [];
+            return [
+              {
+                presentationId: cite(c.quoteIndex).presentationId,
+                explanation: `状態・確かさの根拠のない変更: ${JSON.stringify([cite(c.quoteIndex), ...c.context.map((e) => cite(e.quoteIndex))])} 命題「${c.proposition}」: ${c.before} → ${c.after}。${c.explanation}`,
+              },
+            ];
+          }),
         ],
       };
     },

@@ -328,6 +328,9 @@ test("要約の全引用の継続照合を必須にし、根拠のない確か�
       quoteIndex: 1,
       context: [{ quoteIndex: 0 }],
       status: "unsupported-change",
+      proposition: "本人が入室した",
+      before: "false",
+      after: "unknown",
       explanation: "移動や見失った根拠なしに外にいる状態を不明へ弱めた",
     },
     {
@@ -357,10 +360,21 @@ test("要約の全引用の継続照合を必須にし、根拠のない確か�
       item.restore(
         item.schema.parse({
           ...value,
-          continuity: [{ ...continuity[0], status }, continuity[1]],
+          continuity: [
+            { ...continuity[0], status, after: "false" },
+            continuity[1],
+          ],
         }),
       ).disagreements,
     ).toEqual([]);
+  expect(
+    item.restore(
+      item.schema.parse({
+        ...value,
+        continuity: [{ ...continuity[0], status: "preserved" }, continuity[1]],
+      }),
+    ).disagreements,
+  ).toHaveLength(1);
 });
 test("本人向け提示の記録は再保存で増えず、終了時のグラフと同じIDを使う", () => {
   const bg = SceneBackground.parse({
