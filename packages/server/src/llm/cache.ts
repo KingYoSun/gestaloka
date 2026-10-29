@@ -171,9 +171,19 @@ export class PromptCache {
       config.baseUrl,
       `models/${config.model}:countTokens`,
       key,
-      {
-        generateContentRequest: { model: `models/${config.model}`, ...input },
-      },
+      input.contents.length
+        ? {
+            generateContentRequest: {
+              model: `models/${config.model}`,
+              ...input,
+            },
+          }
+        : {
+            model: `models/${config.model}`,
+            contents: [
+              { role: "user", parts: input.systemInstruction?.parts ?? [] },
+            ],
+          },
     );
     if (!response.ok)
       throw new Error(

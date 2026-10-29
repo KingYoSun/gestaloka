@@ -166,6 +166,54 @@ test("Geminiの作成結果が未確定でも予約を保持し、同じ作成�
   expect(pending).toEqual([{ reserved_nano: "208334", delivery: "unknown" }]);
 });
 
+test("Geminiの指示だけのprefixも内容を計数し、空のcontentsで計数APIへ送らない", async () => {
+  let created = 0;
+  const transport: typeof fetch = async (url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (String(url).endsWith(":countTokens")) {
+      expect(
+        body.generateContentRequest?.contents?.length ?? body.contents?.length,
+      ).toBeGreaterThan(0);
+      return Response.json({ totalTokens: 5000 });
+    }
+    if (String(url).endsWith("/cachedContents")) {
+      created++;
+      const now = Date.now();
+      return Response.json({
+        name: "cachedContents/instructions",
+        createTime: new Date(now).toISOString(),
+        expireTime: new Date(now + 300000).toISOString(),
+        usageMetadata: { totalTokenCount: 5000 },
+      });
+    }
+    expect(body.extra_body.google.cached_content).toBe(
+      "cachedContents/instructions",
+    );
+    return Response.json({
+      id: randomUUID(),
+      model: "gemini-3.8-flash",
+      choices: [{ finish_reason: "stop", message: { content: '{"ok":true}' } }],
+      usage: {
+        prompt_tokens: 5001,
+        completion_tokens: 1,
+        total_tokens: 5002,
+        prompt_tokens_details: { cached_tokens: 5000 },
+      },
+    });
+  };
+  const client = new LlmClient(
+    isolated.databases.postgres,
+    environment(),
+    transport,
+  );
+  await client.ledger.setup();
+  await client.complete(randomUUID(), "narrative-inspection", [
+    { role: "system", content: "JSONの共通指示".repeat(1000) },
+    { role: "user", content: "今回の依頼" },
+  ]);
+  expect(created).toBe(1);
+});
+
 test("OpenAIのChat・Responsesへ明示境界を送信し、旧要求の再利用では再送しない", async () => {
   for (const api of ["responses", "chat-completions"] as const) {
     const transport = vi.fn<typeof fetch>(async (_url, init) => {
