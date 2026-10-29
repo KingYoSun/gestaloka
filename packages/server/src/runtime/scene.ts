@@ -591,6 +591,17 @@ export class WorldScenes {
       const creations = new Set(decision.creations.map((n) => n.id)),
         context = this.agent.store.context(d.worldId, d.basis),
         known = new Set<string>();
+      const subjects = new Set([
+          ...decision.participants,
+          ...decision.facts.map((f) => f.subjectId),
+          ...decision.beliefs.map((f) => f.subjectId),
+          ...decision.perceptions.map((p) => p.observerId),
+        ]),
+        invalidSubjects: {
+          id: string;
+          actualKind: string;
+          requiredKind: "existence";
+        }[] = [];
       const refs = new Set([
         ...decision.participants,
         ...decision.facts.flatMap((f) => [f.subjectId, ...f.aboutIds]),
@@ -604,7 +615,30 @@ export class WorldScenes {
         } else {
           if (!node) throw new Error(`背景情報の参照が取得できません: ${id}`);
           known.add(id);
+          if (subjects.has(id) && node.kind !== "existence")
+            invalidSubjects.push({
+              id,
+              actualKind: node.kind,
+              requiredKind: "existence",
+            });
         }
+      }
+      if (invalidSubjects.length) {
+        d.basis = context.dependencies;
+        d.backgroundMessages.push(
+          { role: "assistant", content: response.content },
+          {
+            role: "user",
+            content: JSON.stringify({
+              validationErrors: invalidSubjects,
+              instruction:
+                "登場主体・状態や解釈の所有者・観測者にはexistenceのIDを使います。eventは出来事であり物や人物ではありません。既存の対象のIDを照会し、まだ具体化されていない対象だけをcreationsで新しいIDとして具体化してください。既存IDの種類は変更しません。未提示の今回の背景だけを修正し、stagedSceneの記録を変更しません。",
+            }),
+          },
+        );
+        delete d.work;
+        await this.#save(row, undefined, row.claim!);
+        continue;
       }
       for (const p of decision.perceptions)
         if (!decision.participants.includes(p.observerId))

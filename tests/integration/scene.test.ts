@@ -22,6 +22,7 @@ const actor = randomUUID(),
   secret = randomUUID(),
   world = randomUUID(),
   construction = randomUUID();
+let backgroundCalls = 0;
 let modelCalls = 0,
   worldPaused = false,
   resultCalls = 0;
@@ -67,7 +68,7 @@ const model = new LlmClient(
         participants: [actor, npc],
         facts: [
           {
-            subjectId: npc,
+            subjectId: backgroundCalls++ === 0 ? secret : npc,
             text: "村の道で若者の声が届く距離にいる",
             aboutIds: [actor, place],
           },
@@ -936,4 +937,5 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
   await access.scenes.tick(scene.id);
   expect(modelCalls).toBe(finalCount);
   expect(inputs.filter((i) => "observerId" in i)).toHaveLength(1);
+  expect(backgroundCalls).toBeGreaterThan(1);
 });

@@ -27,3 +27,5 @@ Geminiの検品はネイティブのJSON Schema出力を使う。既存の共通
 境界選定・入力の保持・各APIへの変換、Geminiの再利用・期限・資格情報の分離・保管料と未確定の保持を試験する。説明の予告・複合質問の欠落・具体的な返答・他人向けの引用を試験し、保存済みの問題例を別の評価IDで確認する。推奨のSonnet 5.5 low／medium・combinedで村の0・1・7日条件を各2シーン再検証する。原記録・旧評価・失敗した呼出しの費用を残す。
 
 公式仕様: [OpenAIのキャッシュ](https://developers.openai.com/api/docs/guides/prompt-caching)、[Geminiの明示キャッシュ](https://ai.google.dev/gemini-api/docs/generate-content/caching)、[OpenAI互換APIでの参照](https://ai.google.dev/gemini-api/docs/openai#extra-body)、[Gemini料金](https://ai.google.dev/gemini-api/docs/pricing)。
+
+シーン背景の登場主体・状態の所有者・観測者は、表示前に参照先がexistenceであることを確認する。eventやscriptを取り違えた場合は未提示の背景だけを生成側へ戻す。出来事を物へ変換せず、確定済みの履歴や表示済みの本文を変更しない。
