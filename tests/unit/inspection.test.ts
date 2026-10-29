@@ -326,7 +326,7 @@ test("要約の全引用の継続照合を必須にし、根拠のない確か�
   const continuity = [
     {
       quoteIndex: 1,
-      context: [{ quoteIndex: 0 }],
+      context: ["0: 入口の外に留まった。"],
       status: "unsupported-change",
       proposition: "本人が入室した",
       before: "false",
@@ -352,7 +352,7 @@ test("要約の全引用の継続照合を必須にし、根拠のない確か�
   for (const checks of [
     continuity.slice(0, 1),
     [continuity[0], continuity[0]],
-    [{ ...continuity[0], context: [{ quoteIndex: 1 }] }, continuity[1]],
+    [{ ...continuity[0], context: ["1: 入室したか未確定。"] }, continuity[1]],
   ])
     expect(() => item.schema.parse({ ...value, continuity: checks })).toThrow();
   for (const status of ["preserved", "grounded-change"])

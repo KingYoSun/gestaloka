@@ -193,6 +193,9 @@ export function inspectionItem(
     current.includes(q.presentationId),
   );
   const priorQuotes = quotes.filter((q) => !current.includes(q.presentationId));
+  const priorChoices = new Map(
+    priorQuotes.map((q) => [`${q.quoteIndex}: ${q.text}`, q.quoteIndex]),
+  );
   const check = z
     .object({
       quoteIndex: z.literal(currentQuotes.map((q) => q.quoteIndex)),
@@ -229,17 +232,7 @@ export function inspectionItem(
                 "grounded-change",
                 "unsupported-change",
               ]),
-              context: z
-                .array(
-                  z
-                    .object({
-                      quoteIndex: z.literal(
-                        priorQuotes.map((q) => q.quoteIndex),
-                      ),
-                    })
-                    .strict(),
-                )
-                .min(1),
+              context: z.array(z.literal([...priorChoices.keys()])).min(1),
             }),
             noComparison,
           ])
@@ -319,7 +312,7 @@ export function inspectionItem(
             return [
               {
                 presentationId: cite(c.quoteIndex).presentationId,
-                explanation: `状態・確かさの根拠のない変更: ${JSON.stringify([cite(c.quoteIndex), ...c.context.map((e) => cite(e.quoteIndex))])} 命題「${c.proposition}」: ${c.before} → ${c.after}。${c.explanation}`,
+                explanation: `状態・確かさの根拠のない変更: ${JSON.stringify([cite(c.quoteIndex), ...c.context.map((e) => cite(priorChoices.get(e)!))])} 命題「${c.proposition}」: ${c.before} → ${c.after}。${c.explanation}`,
               },
             ];
           }),
