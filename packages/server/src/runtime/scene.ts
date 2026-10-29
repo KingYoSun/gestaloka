@@ -724,16 +724,18 @@ export class WorldScenes {
           request: {
             at: d.at,
             controlledActorId: row.actor_id,
+            controlledInputId: action.id,
             controlledActionText: action.text,
             intentions: intents,
           },
-          responseSchema: z.toJSONSchema(CheckedSceneStep, { io: "input" }),
+          responseSchema: z.toJSONSchema(CheckedSceneStep, { io: "output" }),
         }),
         step = sceneResponse(
           value.value,
           row.actor_id,
-          action.text,
+          action.id,
           row.data.work?.coverageVersion === 1,
+          d.events,
         );
       if (step.type === "boundary") break;
       if (step.needsContext && step.decisions[row.actor_id] === "finished")

@@ -308,3 +308,52 @@ test("説明の予告や複合質問の欠落があれば操作を返さず、�
     decisions: old.decisions,
   });
 });
+
+test("同じ入力で前段に届いた説明を参照し、別入力の履歴を回答へ流用しない", () => {
+  const inputId = randomUUID(),
+    past = {
+      id: randomUUID(),
+      inputId,
+      actorId: npc,
+      text: "先に道具を伝えた",
+      period: { from: 0, until: 1 },
+      receipts: [{ observerId: actor, text: "木の籠を使ってください" }],
+    };
+  const value = {
+    type: "scene",
+    events: [
+      {
+        actorId: npc,
+        text: "注意を伝えた",
+        receipts: [{ observerId: actor, text: "赤い葉には触れないでください" }],
+      },
+    ],
+    decisions: { [actor]: "finished", [npc]: "finished" },
+    newDecisions: [],
+    elapsedMs: 0,
+    responseCoverage: [
+      {
+        requestPart: "使う道具",
+        outcome: "delivered",
+        evidence: [{ source: "history", eventIndex: 0, receiptIndex: 0 }],
+        explanation: "前段で聞いた道具",
+      },
+      {
+        requestPart: "扱いの注意",
+        outcome: "delivered",
+        evidence: [{ source: "events", eventIndex: 0, receiptIndex: 0 }],
+        explanation: "今回聞いた注意",
+      },
+    ],
+  };
+  expect(sceneResponse(value, actor, inputId, true, [past])).toMatchObject({
+    decisions: { [actor]: "finished" },
+  });
+  expect(() => sceneResponse(value, actor, randomUUID(), true, [past])).toThrow(
+    "本人向け提示",
+  );
+  value.responseCoverage[1]!.evidence[0]!.eventIndex = 7;
+  expect(() => sceneResponse(value, actor, inputId, true, [past])).toThrow(
+    "本人向け提示",
+  );
+});

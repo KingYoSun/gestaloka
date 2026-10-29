@@ -119,11 +119,11 @@ export const CheckedSceneStep = z.discriminatedUnion("type", [
           evidence: z.array(
             z
               .object({
+                source: z.enum(["events", "history"]).default("events"),
                 eventIndex: z.number().int().nonnegative(),
                 receiptIndex: z.number().int().nonnegative(),
-                quote: z.string().min(1),
               })
-              .strict(),
+              .strip(),
           ),
         }),
       )
@@ -134,8 +134,9 @@ export const CheckedSceneStep = z.discriminatedUnion("type", [
 export function sceneResponse(
   value: unknown,
   actorId: string,
-  inputText: string,
+  inputId: string,
   checkedFormat = true,
+  history: RecordedSceneEvent[] = [],
 ) {
   const parsed = CheckedSceneStep.safeParse(value);
   if (checkedFormat && !parsed.success) throw parsed.error;
@@ -143,17 +144,17 @@ export function sceneResponse(
     return SceneStep.parse(value);
   const { responseCoverage: parts, ...step } = parsed.data;
   for (const part of parts) {
-    if (
-      !inputText.includes(part.requestPart) ||
-      (part.outcome !== "pending" && !part.evidence.length)
-    )
+    if (part.outcome !== "pending" && !part.evidence.length)
       throw new Error("入力の各部分と返した内容の根拠を確認できません");
     for (const evidence of part.evidence) {
-      const event = step.events[evidence.eventIndex],
+      const event = (evidence.source === "history" ? history : step.events)[
+          evidence.eventIndex
+        ],
         receipt = event?.receipts[evidence.receiptIndex];
       if (
         !receipt ||
-        !receipt.text.includes(evidence.quote) ||
+        (evidence.source === "history" &&
+          history[evidence.eventIndex]?.inputId !== inputId) ||
         (part.outcome !== "pending" &&
           event!.actorId !== actorId &&
           receipt.observerId !== actorId)

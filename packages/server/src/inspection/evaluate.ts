@@ -270,7 +270,7 @@ export function inspectionItem(
             ?.filter((p) => p.outcome === "pending")
             .map((p) => ({
               presentationId: sources[current[0]!]!.id,
-              explanation: `入力「${p.requestPart}」への提示内容が不足: ${p.explanation}`,
+              explanation: `入力の項目（${p.requestPart}）への提示内容が不足: ${p.explanation}`,
             })) ?? []),
         ],
       };
@@ -477,15 +477,6 @@ export async function evaluateManifest(
         item.schema,
       );
       const { disagreements, ...part } = item.restore(value);
-      const coverage =
-        "responseCoverage" in value
-          ? z.array(ResponsePart.strip()).parse(value.responseCoverage)
-          : [];
-      if (coverage.some((p) => !context.input.text.includes(p.requestPart)))
-        throw new AssessmentRejected(
-          JSON.stringify(value),
-          new Error("照合した依頼が元入力にありません"),
-        );
       inputs[index] = inputSchema.parse({
         ...part,
         inputId: input.id,
