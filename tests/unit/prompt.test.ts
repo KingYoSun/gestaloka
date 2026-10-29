@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { z } from "zod";
 import {
-  anthropicPrompt,
+  preparePrompt,
   compact,
   outputSchema,
   parseOutput,
@@ -130,8 +130,8 @@ test("照会をまたぐグラフの参照を共有し、追記で既存のprefi
       }),
     },
   ];
-  const first = anthropicPrompt(initial)!;
-  const next = anthropicPrompt([
+  const first = preparePrompt(initial)!;
+  const next = preparePrompt([
     ...initial,
     { role: "assistant", content: '{"type":"query"}' },
     {
@@ -161,7 +161,7 @@ test("キャッシュ境界で分割しても単一のJSONを復元でき、履�
     controlledActorIds: [id],
     request: { at: 9, rootIds: [id] },
   };
-  const prompt = anthropicPrompt([
+  const prompt = preparePrompt([
     { role: "system", content: "指示" },
     {
       role: "user",
@@ -170,7 +170,7 @@ test("キャッシュ境界で分割しても単一のJSONを復元でき、履�
   ])!;
   const blocks = prompt.messages[0]!.content as {
     text: string;
-    cache_control?: unknown;
+    cacheBoundary?: unknown;
   }[];
   const packet = JSON.parse(blocks.map((b) => b.text).join("")) as {
     records: Record<string, unknown>;
@@ -204,7 +204,7 @@ test("キャッシュ境界で分割しても単一のJSONを復元でき、履�
     ),
   ).toEqual(original);
   expect(
-    blocks.filter((b) => b.cache_control).length + prompt.system.length,
+    blocks.filter((b) => b.cacheBoundary).length + prompt.system.length,
   ).toBeLessThanOrEqual(4);
   const history = Array.from({ length: 105 }, (_, at) => ({
     text: `出来事${at}`,
@@ -217,7 +217,7 @@ test("キャッシュ境界で分割しても単一のJSONを復元でき、履�
     at: 105,
     ownIntentions: ["本人だけの意図"],
   };
-  const ownPrompt = anthropicPrompt([
+  const ownPrompt = preparePrompt([
     { role: "system", content: "本人の意図" },
     {
       role: "user",
@@ -293,13 +293,13 @@ test("背景・追記履歴を可変の入力より前に置き、本人以外�
       }),
     },
   ];
-  const first = anthropicPrompt(messages([{ text: "出来事1" }], 1))!;
-  const next = anthropicPrompt(
+  const first = preparePrompt(messages([{ text: "出来事1" }], 1))!;
+  const next = preparePrompt(
     messages([{ text: "出来事1" }, { text: "出来事2" }], 2),
   )!;
   expect(first.system).toEqual(next.system);
   const blocks = (p: typeof first) =>
-    p.messages[0]!.content as { text: string; cache_control?: unknown }[];
+    p.messages[0]!.content as { text: string; cacheBoundary?: unknown }[];
   expect(
     blocks(first)
       .slice(0, 2)
@@ -310,11 +310,11 @@ test("背景・追記履歴を可変の入力より前に置き、本人以外�
       .map((b) => b.text),
   );
   expect(
-    blocks(first).find((b) => b.text.includes("background"))!.cache_control,
+    blocks(first).find((b) => b.text.includes("background"))!.cacheBoundary,
   ).toBeDefined();
-  expect(blocks(first).at(-1)!.cache_control).toBeUndefined();
+  expect(blocks(first).at(-1)!.cacheBoundary).toBeUndefined();
   expect(JSON.stringify(first.messages)).not.toContain("responseSchema");
-  const own = anthropicPrompt([
+  const own = preparePrompt([
     { role: "system", content: "本人の意図" },
     {
       role: "user",
@@ -329,9 +329,9 @@ test("背景・追記履歴を可変の入力より前に置き、本人以外�
   ])!;
   expect(JSON.stringify(own.messages)).toContain("本人だけが知る情報");
   expect(JSON.stringify(own.messages)).not.toContain("他人の秘密");
-  const empty = anthropicPrompt(messages([], 0))!;
+  const empty = preparePrompt(messages([], 0))!;
   expect(JSON.stringify(empty.messages)).toContain("sceneHistory");
-  const fallback = anthropicPrompt(messages([], 0), false)!;
+  const fallback = preparePrompt(messages([], 0), false)!;
   expect(fallback.format).toBeUndefined();
   expect(fallback.system[0]!.text).toContain(
     "responseSchema=" + JSON.stringify(outputSchema(schema)),

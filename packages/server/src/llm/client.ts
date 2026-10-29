@@ -13,7 +13,8 @@ import {
 } from "./budget.js";
 import { ModelLimits } from "./limits.js";
 import { responseDeadline } from "./response-deadline.js";
-import { anthropicPrompt, canonical, parseOutput } from "./prompt.js";
+import { preparePrompt, canonical, parseOutput } from "./prompt.js";
+import { PromptCache, geminiCachePlan, renderCachedPrompt } from "./cache.js";
 import {
   settings,
   budgetSettings,
@@ -37,6 +38,7 @@ export type Connection = {
   cacheWrite1h?: number;
   cacheWrite30m?: number;
   cacheWrite12h?: number;
+  cacheStorage?: number;
   provider?: Provider;
   api?: Api;
 };
@@ -513,32 +515,56 @@ export class LlmClient {
     const effort =
       role === "initial-generation" ? selected.initialEffort : selected.effort;
     const prompt =
-      api === "messages"
+      provider !== "deepseek"
         ? // The full world schema exceeds Anthropic's grammar limit; retain Zod validation.
-          anthropicPrompt(
+          preparePrompt(
             messages,
-            [
-              "scene-resolve",
-              "scene-result",
-              "narrative-inspection",
-              "world-commit",
-              "initial-commit",
-            ].includes(role),
+            (api === "messages" ||
+              (provider === "gemini" && role === "narrative-inspection")) &&
+              [
+                "scene-resolve",
+                "scene-result",
+                "narrative-inspection",
+                "world-commit",
+                "initial-commit",
+              ].includes(role),
             ["intent", "scene-intent"].includes(role),
+            provider === "anthropic",
           )
         : undefined;
+    const rendered = prompt
+      ? renderCachedPrompt(prompt, provider, api, model)
+      : undefined;
+    const cache = new PromptCache(this.ledger, this.transport);
+    const candidate =
+      provider === "gemini" && prompt && selected.cacheStorage !== undefined
+        ? geminiCachePlan(prompt)
+        : undefined;
+    const gemini =
+      candidate &&
+      (candidate.prefix.systemInstruction || candidate.prefix.contents.length)
+        ? candidate
+        : undefined;
+    const cacheName = gemini
+      ? await cache.gemini(
+          selected,
+          await this.apiKey(provider),
+          gemini,
+          this.configurationVersion,
+        )
+      : undefined;
     const request =
       api === "messages"
         ? {
             model,
             system:
-              prompt?.system ??
+              rendered?.system ??
               messages
                 .filter((m) => m.role === "system")
                 .map((m) => m.content)
                 .join("\n\n"),
             messages:
-              prompt?.messages ?? messages.filter((m) => m.role !== "system"),
+              rendered?.messages ?? messages.filter((m) => m.role !== "system"),
             max_tokens: maxOutput,
             thinking: { type: effort === "none" ? "disabled" : "adaptive" },
             output_config: {
@@ -550,7 +576,7 @@ export class LlmClient {
         : api === "responses"
           ? {
               model,
-              input: messages,
+              ...rendered,
               text: { format: { type: "json_object" } },
               reasoning: { effort },
               max_output_tokens: maxOutput,
@@ -560,8 +586,25 @@ export class LlmClient {
             }
           : {
               model,
-              messages,
-              response_format: { type: "json_object" },
+              ...rendered,
+              ...(!prompt ? { messages } : {}),
+              ...(cacheName && gemini
+                ? {
+                    messages: gemini.tail,
+                    extra_body: { google: { cached_content: cacheName } },
+                  }
+                : {}),
+              response_format:
+                provider === "gemini" && prompt?.format
+                  ? {
+                      type: "json_schema",
+                      json_schema: {
+                        name: "narrative_inspection",
+                        strict: true,
+                        schema: prompt.format.schema,
+                      },
+                    }
+                  : { type: "json_object" },
               ...(provider === "deepseek"
                 ? {
                     thinking: {
@@ -616,12 +659,24 @@ export class LlmClient {
       {
         name: `${provider}:${model}`,
         key: () => this.apiKey(provider),
-        request,
+        request: cacheName ? { ...request, ...rendered } : request,
         maxOutput,
         cached: false,
       },
       async (quota) => {
         let inputTokens: number | undefined;
+        if (gemini)
+          inputTokens = await cache.countGemini(selected, quota.key, {
+            ...gemini.full,
+            ...(prompt?.format
+              ? {
+                  generationConfig: {
+                    responseMimeType: "application/json",
+                    responseJsonSchema: prompt.format.schema,
+                  },
+                }
+              : {}),
+          });
         const countedApi =
           provider === "anthropic" && api === "messages"
             ? "messages/count_tokens"
@@ -638,6 +693,8 @@ export class LlmClient {
                   "stream",
                   "store",
                   "service_tier",
+                  "prompt_cache_options",
+                  "prompt_cache_key",
                 ].includes(key),
             ),
           );
@@ -696,7 +753,9 @@ export class LlmClient {
           inputTokens,
           provider === "openai"
             ? "openai-input-tokens"
-            : "anthropic-count-tokens",
+            : provider === "gemini"
+              ? "gemini-count-tokens"
+              : "anthropic-count-tokens",
         );
         if (cached) return cached;
         return this.ledger.track(id, async () => {

@@ -71,6 +71,8 @@ export class ModelSettings {
           m.cacheWrite30mUsdPerMillion ?? m.inputUsdPerMillion * 1.25,
         CACHE_WRITE_12H_USD_PER_MILLION:
           m.cacheWrite12hUsdPerMillion ?? m.inputUsdPerMillion * 2.5,
+        CACHE_STORAGE_USD_PER_MILLION_TOKEN_HOUR:
+          m.cacheStorageUsdPerMillionTokenHour,
         PRICING_DATE: m.pricingDate,
       }))
         if (value !== undefined) env[prefix + key] = String(value);
@@ -307,6 +309,12 @@ export class ModelSettings {
         inputUsdPerMillion: s.inputMiss / 1000,
         cachedInputUsdPerMillion: s.inputHit / 1000,
         outputUsdPerMillion: s.output / 1000,
+        ...(s.cacheStorage === undefined
+          ? {}
+          : {
+              cacheStorageUsdPerMillionTokenHour:
+                (s.cacheStorage * 3600) / 1000,
+            }),
         ...(s.cacheWrite5m === undefined
           ? {}
           : {

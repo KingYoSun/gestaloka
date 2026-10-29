@@ -922,8 +922,10 @@ test.each(["messages", "responses"] as const)(
     expect(requests.every((r) => r.model === modelName)).toBe(true);
     if (api === "messages") {
       expect(requests[0]).toMatchObject({
-        system: "JSON",
-        messages: [{ role: "user", content: "JSON" }],
+        system: [
+          { type: "text", text: "JSON", cache_control: { type: "ephemeral" } },
+        ],
+        messages: [{ role: "user", content: [{ type: "text", text: "JSON" }] }],
         thinking: { type: "adaptive" },
         output_config: { effort: "high" },
       });

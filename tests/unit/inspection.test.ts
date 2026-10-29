@@ -10,6 +10,7 @@ import {
 import {
   validateAssessment,
   inspectionItem,
+  inspectionCoverage,
   quoteSources,
 } from "../../packages/server/src/inspection/evaluate.js";
 import {
@@ -281,7 +282,6 @@ test("引用候補は当該応答を必須とし、元のIDと原文へ復元す
         explanation: "既知情報の再提示",
       },
     ],
-    responsiveness: "responsive",
     principle: "consistent",
     principleEvidence: [
       { quoteIndex: current.quoteIndex, explanation: "当該応答を確認" },
@@ -551,4 +551,45 @@ test("実モデルの保存済み評価が必要な区別・根拠・不足を�
     ),
   ).toBe(true);
   expect(result.overall.missing.length).toBeGreaterThan(0);
+});
+
+test("情報の問いへ行為の描写が返っても回答済みにせず、実際の内容と区別する", () => {
+  const m = inspectionFixture(),
+    sources = [m.prior[0]!, m.scenes[0]!.presentations[0]!],
+    item = inspectionCoverage(sources, [1]),
+    current = item.quotes[0]!;
+  const value = {
+    parts: [
+      {
+        requestPart: "手順",
+        requestedKind: "information",
+        responseKind: "action-report",
+        evidence: [{ quoteIndex: current.quoteIndex }],
+        explanation: "説明したという描写で手順そのものがない",
+      },
+    ],
+  };
+  expect(item.restore(item.schema.parse(value))).toMatchObject({
+    responsiveness: "unresponsive",
+  });
+  value.parts.push({
+    requestPart: "作業",
+    requestedKind: "information",
+    responseKind: "content",
+    evidence: [{ quoteIndex: current.quoteIndex }],
+    explanation: "具体的な作業がある",
+  });
+  expect(item.restore(item.schema.parse(value))).toMatchObject({
+    responsiveness: "partial",
+  });
+  value.parts[1]!.evidence = [{ quoteIndex: 0 }];
+  expect(() => item.schema.parse(value)).toThrow();
+  const action = { parts: [{ ...value.parts[0]!, requestedKind: "action" }] };
+  expect(item.restore(item.schema.parse(action))).toMatchObject({
+    responsiveness: "responsive",
+  });
+  const refusal = { parts: [{ ...value.parts[0]!, responseKind: "refusal" }] };
+  expect(item.restore(item.schema.parse(refusal))).toMatchObject({
+    responsiveness: "responsive",
+  });
 });

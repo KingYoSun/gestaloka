@@ -163,7 +163,7 @@ test.each([
       response: { rejection },
     });
     expect(saved.response).not.toHaveProperty("usage");
-    expect(Boolean(saved.request.sourceMessages)).toBe(structured);
+    expect(saved.request.sourceMessages).toEqual(input);
     const reopened = createCountedClient(pool, config, transport);
     await expect(reopened.complete(id, "scene-result", input)).rejects.toThrow(
       saved.response.error,

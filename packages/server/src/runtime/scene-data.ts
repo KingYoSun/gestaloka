@@ -1,3 +1,4 @@
+import { ResponsePart, responseCoverage } from "../response-coverage.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { InformationReference } from "@gestaloka/contracts";
@@ -110,6 +111,121 @@ export const SceneStep = z.discriminatedUnion("type", [
     .strict(),
   z.object({ type: z.literal("boundary"), reason: text }).strict(),
 ]);
+export const CheckedSceneStep = z.discriminatedUnion("type", [
+  SceneStep.options[0].extend({
+    arrivals: z
+      .array(
+        z
+          .object({
+            eventIndex: z.number().int().nonnegative(),
+            observerId: id,
+            text,
+          })
+          .strict(),
+      )
+      .default([]),
+    responseCoverage: z
+      .array(
+        ResponsePart.extend({
+          evidence: z.array(
+            z
+              .object({
+                source: z.enum(["events", "history"]).default("events"),
+                eventIndex: z.number().int().nonnegative(),
+                receiptIndex: z.number().int().nonnegative(),
+              })
+              .strip(),
+          ),
+        }),
+      )
+      .min(1),
+  }),
+  SceneStep.options[1],
+]);
+export function sceneResponse(
+  value: unknown,
+  actorId: string,
+  inputId: string,
+  checkedFormat = true,
+  history: RecordedSceneEvent[] = [],
+) {
+  const parsed = CheckedSceneStep.safeParse(value);
+  if (checkedFormat && !parsed.success) throw parsed.error;
+  if (!parsed.success || parsed.data.type === "boundary") {
+    const legacy = SceneStep.parse(value);
+    return legacy.type === "scene" ? { ...legacy, arrivals: [] } : legacy;
+  }
+  const { responseCoverage: parts, ...step } = parsed.data;
+  for (const part of parts) {
+    if (part.outcome !== "pending" && !part.evidence.length)
+      throw new Error("入力の各部分と返した内容の根拠を確認できません");
+    for (const evidence of part.evidence) {
+      const event = (evidence.source === "history" ? history : step.events)[
+          evidence.eventIndex
+        ],
+        receipt = event?.receipts[evidence.receiptIndex];
+      if (
+        !receipt ||
+        (evidence.source === "history" &&
+          history[evidence.eventIndex]?.inputId !== inputId) ||
+        (part.outcome !== "pending" &&
+          event!.actorId !== actorId &&
+          receipt.observerId !== actorId)
+      )
+        throw new Error("説明内容の根拠が本人向け提示と一致しません");
+    }
+  }
+  if (
+    responseCoverage(parts) !== "responsive" &&
+    (["finished", "decide"].includes(step.decisions[actorId] ?? "") ||
+      step.newDecisions.includes(actorId))
+  ) {
+    step.decisions[actorId] = "pending";
+    step.newDecisions = step.newDecisions.filter((id) => id !== actorId);
+    for (const event of step.events)
+      if (event.actorId !== actorId && event.actorId in step.decisions)
+        step.decisions[event.actorId] = "decide";
+  }
+  return step;
+}
+
+/** Add a new receiver to an existing, still-staged occurrence without re-emitting it. */
+export function sceneArrivals(
+  events: RecordedSceneEvent[],
+  arrivals: {
+    eventIndex: number;
+    observerId: string;
+    text: string;
+    information?: z.infer<typeof InformationReference>[] | undefined;
+  }[],
+  participants: string[],
+  actorId: string,
+  at: number,
+) {
+  const seen = new Set(
+      events.flatMap((e, i) => e.receipts.map((p) => `${i}:${p.observerId}`)),
+    ),
+    additions: {
+      event: RecordedSceneEvent;
+      receipt: RecordedSceneEvent["receipts"][number];
+    }[] = [];
+  for (const { eventIndex, ...receipt } of arrivals) {
+    const event = events[eventIndex];
+    if (
+      !event ||
+      event.period.until !== at ||
+      receipt.observerId === actorId ||
+      !participants.includes(receipt.observerId)
+    )
+      throw new Error("到達の参照先・受容者・時点がシーンと一致しません");
+    const key = `${eventIndex}:${receipt.observerId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    additions.push({ event, receipt });
+  }
+  for (const { event, receipt } of additions) event.receipts.push(receipt);
+  return [...new Set(additions.map((a) => a.receipt.observerId))];
+}
 export const CompletedScene = z
   .object({
     background: SceneBackground,

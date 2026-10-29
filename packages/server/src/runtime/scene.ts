@@ -35,7 +35,9 @@ import {
   SceneBackground,
   SceneContext,
   ContextNeed,
-  SceneStep,
+  CheckedSceneStep,
+  sceneResponse,
+  sceneArrivals,
   sceneAnchors,
   sceneAgenda,
   sceneId,
@@ -75,6 +77,7 @@ async function scenePrompt(file: string, information = true) {
   ).join("\n\n");
 }
 type Work = {
+  coverageVersion?: 1;
   id: string;
   kind: "background" | "resolve" | "intent" | "result";
   messages: ChatMessage[];
@@ -351,17 +354,25 @@ export class WorldScenes {
           "送信済み要求の結果が未確定です。自動では再送しません",
         );
       if (row.data.work && !row.data.limitReached && !row.data.suspended) {
-        row.data.work = {
-          ...row.data.work,
-          id: randomUUID(),
-          messages: [
-            ...row.data.work.messages,
-            {
-              role: "user",
-              content: JSON.stringify({ validationError: row.data.error }),
-            },
-          ],
-        };
+        const rejected = (
+          await this.pool.query(
+            "SELECT response ? 'rejection' AS rejected FROM llm_call WHERE id=$1",
+            [row.data.work.id],
+          )
+        ).rows[0]?.rejected;
+        if (rejected) delete row.data.work;
+        else
+          row.data.work = {
+            ...row.data.work,
+            id: randomUUID(),
+            messages: [
+              ...row.data.work.messages,
+              {
+                role: "user",
+                content: JSON.stringify({ validationError: row.data.error }),
+              },
+            ],
+          };
       }
       delete row.data.error;
       delete row.data.limitReached;
@@ -416,6 +427,7 @@ export class WorldScenes {
   ) {
     if (!row.data.work) {
       row.data.work = {
+        ...(kind === "resolve" ? { coverageVersion: 1 as const } : {}),
         id: randomUUID(),
         kind,
         target,
@@ -588,6 +600,17 @@ export class WorldScenes {
       const creations = new Set(decision.creations.map((n) => n.id)),
         context = this.agent.store.context(d.worldId, d.basis),
         known = new Set<string>();
+      const subjects = new Set([
+          ...decision.participants,
+          ...decision.facts.map((f) => f.subjectId),
+          ...decision.beliefs.map((f) => f.subjectId),
+          ...decision.perceptions.map((p) => p.observerId),
+        ]),
+        invalidSubjects: {
+          id: string;
+          actualKind: string;
+          requiredKind: "existence";
+        }[] = [];
       const refs = new Set([
         ...decision.participants,
         ...decision.facts.flatMap((f) => [f.subjectId, ...f.aboutIds]),
@@ -601,7 +624,30 @@ export class WorldScenes {
         } else {
           if (!node) throw new Error(`背景情報の参照が取得できません: ${id}`);
           known.add(id);
+          if (subjects.has(id) && node.kind !== "existence")
+            invalidSubjects.push({
+              id,
+              actualKind: node.kind,
+              requiredKind: "existence",
+            });
         }
+      }
+      if (invalidSubjects.length) {
+        d.basis = context.dependencies;
+        d.backgroundMessages.push(
+          { role: "assistant", content: response.content },
+          {
+            role: "user",
+            content: JSON.stringify({
+              validationErrors: invalidSubjects,
+              instruction:
+                "登場主体・状態や解釈の所有者・観測者にはexistenceのIDを使います。eventは出来事であり物や人物ではありません。既存の対象のIDを照会し、まだ具体化されていない対象だけをcreationsで新しいIDとして具体化してください。既存IDの種類は変更しません。未提示の今回の背景だけを修正し、stagedSceneの記録を変更しません。",
+            }),
+          },
+        );
+        delete d.work;
+        await this.#save(row, undefined, row.claim!);
+        continue;
       }
       for (const p of decision.perceptions)
         if (!decision.participants.includes(p.observerId))
@@ -721,12 +767,19 @@ export class WorldScenes {
           request: {
             at: d.at,
             controlledActorId: row.actor_id,
+            controlledInputId: action.id,
             controlledActionText: action.text,
             intentions: intents,
           },
-          responseSchema: z.toJSONSchema(SceneStep, { io: "input" }),
+          responseSchema: z.toJSONSchema(CheckedSceneStep, { io: "output" }),
         }),
-        step = SceneStep.parse(value.value);
+        step = sceneResponse(
+          value.value,
+          row.actor_id,
+          action.id,
+          row.data.work?.coverageVersion === 1,
+          d.events,
+        );
       if (step.type === "boundary") break;
       if (step.needsContext && step.decisions[row.actor_id] === "finished")
         step.decisions[row.actor_id] = "pending";
@@ -754,6 +807,17 @@ export class WorldScenes {
       const nextAt = d.at + step.elapsedMs;
       if (!Number.isSafeInteger(nextAt))
         throw new Error("シーンの経過時点が不正です");
+      const receivers = sceneArrivals(
+        d.events,
+        step.arrivals,
+        bg.participants,
+        row.actor_id,
+        d.at,
+      );
+      for (const receiver of receivers)
+        if (actors.has(receiver)) step.decisions[receiver] = "decide";
+        else step.newDecisions.push(receiver);
+      step.newDecisions = [...new Set(step.newDecisions)];
       for (const e of step.events)
         d.events.push({
           ...e,
@@ -814,7 +878,12 @@ export class WorldScenes {
         await this.#save(row, undefined, row.claim!);
         return false;
       }
-      if (!d.nextDecisions.length && !step.events.length && !step.elapsedMs)
+      if (
+        !d.nextDecisions.length &&
+        !step.events.length &&
+        !receivers.length &&
+        !step.elapsedMs
+      )
         break;
       await this.#save(row, undefined, row.claim!);
     }

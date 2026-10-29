@@ -42,8 +42,11 @@ let generationCalls = 0,
   evaluationCalls = 0;
 const selection = { ...m.selection, userId: null };
 const transport: typeof fetch = async (_url, options) => {
+  if (String(_url).endsWith(":countTokens"))
+    return Response.json({ totalTokens: 370 });
   evaluationCalls++;
   const body = JSON.parse(String(options?.body));
+  expect(body.response_format.type).toBe("json_schema");
   const source = JSON.parse(
     body.messages.find((message: { role: string }) => message.role === "user")
       .content,
@@ -68,6 +71,8 @@ const transport: typeof fetch = async (_url, options) => {
         p.text.includes("扉は開いた。"),
       ),
     ).toBe(false);
+  if (source.task === "coverage")
+    expect(source.context).not.toHaveProperty("administratorBackground");
   const item =
     source.task === "summary"
       ? {
@@ -76,15 +81,26 @@ const transport: typeof fetch = async (_url, options) => {
           principle: "unknown",
           explanation: "CIでは実モデルの意味判断を代替しない",
         }
-      : source.task === "input"
+      : source.task === "coverage"
         ? {
-            units: [],
-            responsiveness: "unknown",
-            principle: "unknown",
-            principleEvidence: [],
-            disagreements: [],
+            parts: [
+              {
+                requestPart: source.context.input!.text,
+                requestedKind: "information",
+                responseKind: "missing",
+                evidence: [],
+                explanation: "CIでは意味判断を代替しない",
+              },
+            ],
           }
-        : { units: [], disagreements: [] };
+        : source.task === "input"
+          ? {
+              units: [],
+              principle: "unknown",
+              principleEvidence: [],
+              disagreements: [],
+            }
+          : { units: [], disagreements: [] };
   if (source.task === "input") {
     const current = source.context.presentations!.find(
       (p) => p.currentResponse,
@@ -126,7 +142,9 @@ beforeAll(async () => {
   const model = new LlmClient(
     pool,
     modelEnvironment(randomUUID()),
-    async () => {
+    async (url) => {
+      if (String(url).endsWith(":countTokens"))
+        return Response.json({ totalTokens: 370 });
       generationCalls++;
       return Response.json({
         id: randomUUID(),
@@ -461,7 +479,7 @@ test("文書化したCLI入口が計測・比較と意味評価を実行し、JS
     const evaluated = JSON.parse(
       await readFile(join(directory, `${id}.json`), "utf8"),
     );
-    expect(evaluated.semantic.result.skill.rubricVersion).toBe("meaning-v3");
+    expect(evaluated.semantic.result.skill.rubricVersion).toBe("meaning-v4");
     expect(
       evaluated.semantic.result.evaluationCost.calculatedNanoUsd,
     ).not.toBeNull();
@@ -672,9 +690,11 @@ test("個別評価の応答喪失を合算して予約を保持し、再開時�
       budgetUsd: 1,
     },
   });
-  const lost = vi
-    .fn<typeof fetch>()
-    .mockRejectedValue(new Error("response lost"));
+  const lost = vi.fn<typeof fetch>().mockImplementation(async (url) => {
+    if (String(url).endsWith(":countTokens"))
+      return Response.json({ totalTokens: 370 });
+    throw new Error("response lost");
+  });
   const first = await runEvaluation(pool, id, "2".repeat(64), lost);
   expect(first!.evaluationCost).toMatchObject({ calculatedNanoUsd: null });
   expect(

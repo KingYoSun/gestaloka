@@ -117,6 +117,9 @@ export async function readCosts(
     request->'connection'->>'provider' AS provider,request->'request'->>'model' AS requested_model,
     response->>'model' AS response_model,request->>'role' AS task,request->'configurationVersion' AS configuration_version,
     request->>'pricingDate' AS pricing_date,state,delivery,charged_nano,reserved_nano,elapsed_ms,
+    CASE WHEN response->'usage'->'cache_storage_token_seconds' IS NULL THEN NULL ELSE jsonb_build_object(
+      'tokenSeconds',response->'usage'->'cache_storage_token_seconds',
+      'nanoUsdPerTokenSecond',request->'connection'->'cacheStorage') END AS cache_storage,
     CASE WHEN response->'usage' IS NULL THEN NULL ELSE jsonb_build_object(
       'input',response->'usage'->'prompt_tokens','cachedInput',response->'usage'->'prompt_cache_hit_tokens',
       'cacheMissInput',response->'usage'->'prompt_cache_miss_tokens','output',response->'usage'->'completion_tokens',
@@ -159,6 +162,7 @@ export async function readCosts(
       calculatedNanoUsd: r.charged_nano,
       reservationNanoUsd: r.reserved_nano,
       elapsedMs: r.elapsed_ms,
+      cacheStorage: r.cache_storage,
       usage: r.usage,
       ratesNanoUsdPerToken: r.rates,
     })),

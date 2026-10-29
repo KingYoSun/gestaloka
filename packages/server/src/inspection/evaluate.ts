@@ -13,6 +13,7 @@ import { ModelSettings } from "../llm/settings.js";
 import { parseOutput } from "../llm/prompt.js";
 import { digest } from "./store.js";
 import { measure } from "./measure.js";
+import { ResponsePart, responseCoverage } from "../response-coverage.js";
 
 export async function inspectionSkill() {
   const root = new URL(
@@ -28,8 +29,8 @@ export async function inspectionSkill() {
     ].map((file) => readFile(new URL(file, root), "utf8")),
   );
   return {
-    version: "narrative-inspection-v9",
-    rubricVersion: "meaning-v3",
+    version: "narrative-inspection-v11",
+    rubricVersion: "meaning-v4",
     hash: digest(files),
     body: files.join("\n\n"),
   };
@@ -190,7 +191,7 @@ export function inspectionItem(
   const schema =
     kind === "input"
       ? SemanticAssessment.shape.inputs.element
-          .omit({ inputId: true, missing: true })
+          .omit({ inputId: true, missing: true, responsiveness: true })
           .extend({
             units,
             principleEvidence: z.array(
@@ -209,32 +210,107 @@ export function inspectionItem(
   return {
     schema,
     quotes,
-    restore: (value: z.infer<typeof schema>) => ({
-      ...value,
-      units: value.units.map((unit) => ({
-        ...unit,
-        evidence: [unit.evidence.current, ...unit.evidence.context].map((e) =>
-          cite(e.quoteIndex),
-        ),
-      })),
-      ...("principleEvidence" in value
-        ? {
-            principleEvidence: (
-              value.principleEvidence as {
-                quoteIndex: number;
-                explanation: string;
-              }[]
-            ).map((e) => ({
-              ...cite(e.quoteIndex),
-              explanation: e.explanation,
-            })),
-          }
-        : {}),
-      disagreements: value.disagreements.map((d) => ({
-        ...d,
-        presentationId: sources[d.presentationId]!.id,
-      })),
-    }),
+    restore: (value: z.infer<typeof schema>) => {
+      return {
+        ...value,
+        units: value.units.map((unit) => ({
+          ...unit,
+          evidence: [unit.evidence.current, ...unit.evidence.context].map((e) =>
+            cite(e.quoteIndex),
+          ),
+        })),
+        ...("principleEvidence" in value
+          ? {
+              principleEvidence: (
+                value.principleEvidence as {
+                  quoteIndex: number;
+                  explanation: string;
+                }[]
+              ).map((e) => ({
+                ...cite(e.quoteIndex),
+                explanation: e.explanation,
+              })),
+            }
+          : {}),
+        disagreements: value.disagreements.map((d) => ({
+          ...d,
+          presentationId: sources[d.presentationId]!.id,
+        })),
+      };
+    },
+  };
+}
+export function inspectionCoverage(
+  sources: ReturnType<typeof orderedPresentations>,
+  current: number[],
+) {
+  const quotes = quoteSources(sources).filter((q) =>
+    current.includes(q.presentationId),
+  );
+  const schema = z
+    .object({
+      parts: z
+        .array(
+          ResponsePart.omit({ outcome: true })
+            .extend({
+              requestedKind: z.enum(["information", "action"]),
+              responseKind: z.enum([
+                "content",
+                "refusal",
+                "action-report",
+                "missing",
+              ]),
+              evidence: z.array(
+                z
+                  .object({
+                    quoteIndex: z.literal(quotes.map((q) => q.quoteIndex)),
+                  })
+                  .strict(),
+              ),
+            })
+            .superRefine((part, ctx) => {
+              if (part.responseKind !== "missing" && !part.evidence.length)
+                ctx.addIssue({
+                  code: "custom",
+                  message: "本文の根拠を選んでください",
+                });
+            }),
+        )
+        .min(1),
+    })
+    .strict();
+  return {
+    schema,
+    quotes,
+    restore(value: z.infer<typeof schema>) {
+      const parts = value.parts.map((p) => ({
+        ...p,
+        outcome:
+          p.responseKind === "refusal"
+            ? ("declined" as const)
+            : p.responseKind === "missing" ||
+                (p.requestedKind === "information" &&
+                  p.responseKind === "action-report")
+              ? ("pending" as const)
+              : ("delivered" as const),
+      }));
+      return {
+        responsiveness: responseCoverage(parts),
+        disagreements: parts
+          .filter((p) => p.outcome === "pending")
+          .map((p) => ({
+            presentationId:
+              sources[
+                p.evidence.length
+                  ? quotes.find(
+                      (q) => q.quoteIndex === p.evidence[0]!.quoteIndex,
+                    )!.presentationId
+                  : current[0]!
+              ]!.id,
+            explanation: `入力の項目（${p.requestPart}）への内容が不足: ${p.explanation}`,
+          })),
+      };
+    },
   };
 }
 export function validateAssessment(
@@ -436,13 +512,31 @@ export async function evaluateManifest(
         },
         item.schema,
       );
-      const { disagreements, ...part } = item.restore(value);
+      const { disagreements, ...part } = item.restore(value),
+        coverage = inspectionCoverage(sources, current);
+      const checked = coverage.restore(
+        await ask(
+          sceneId(id + ":coverage:" + input.id),
+          "coverage",
+          {
+            input: context.input,
+            priorPresentations: context.presentations
+              .filter((p) => !p.currentResponse)
+              .map((p) => ({ text: p.text })),
+            quotes: coverage.quotes,
+            instruction:
+              "求めた情報の中身と、説明したという行為の描写を分ける。表示された本文から具体的な答えそのものを得られるかを判定する。内部背景や意味単位の評価は与えない。質問の発信や制約遵守を回答に数えない。",
+          },
+          coverage.schema,
+        ),
+      );
       inputs[index] = inputSchema.parse({
         ...part,
         inputId: input.id,
+        responsiveness: checked.responsiveness,
         missing: [],
       });
-      inputDifferences[index] = disagreements;
+      inputDifferences[index] = [...disagreements, ...checked.disagreements];
     }),
     ...material.other.map((presentation, index) => async () => {
       const sources = material.otherSources[index]!;

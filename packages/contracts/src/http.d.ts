@@ -2879,6 +2879,7 @@ export interface paths {
                                     cacheWrite1hUsdPerMillion?: number;
                                     cacheWrite30mUsdPerMillion?: number;
                                     cacheWrite12hUsdPerMillion?: number;
+                                    cacheStorageUsdPerMillionTokenHour?: number;
                                     outputUsdPerMillion: number;
                                     /** Format: date */
                                     pricingDate: string;
@@ -2903,6 +2904,7 @@ export interface paths {
                                     cacheWrite1hUsdPerMillion?: number;
                                     cacheWrite30mUsdPerMillion?: number;
                                     cacheWrite12hUsdPerMillion?: number;
+                                    cacheStorageUsdPerMillionTokenHour?: number;
                                     outputUsdPerMillion: number;
                                     /** Format: date */
                                     pricingDate: string;

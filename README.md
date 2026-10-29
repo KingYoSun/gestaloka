@@ -73,6 +73,8 @@ OpenAIの新規応答では入力を事前計数し、30分・12時間キャッ�
 
 Gemini 3.8 Flash／lowを使う場合は、次の値を設定します。既存行があれば置き換えてください。キーの値はチャットへ送らず、ローカルの `.env` に記入します。
 
+Claude・対応するOpenAIモデル・Geminiの明示キャッシュは共通の入力分割で管理します。Claudeは5分、OpenAIは30分、Geminiは5分を使います。Geminiでは再利用する背景を作成APIへ保存し、期限内は履歴と現在の問いを別に送ります。生成費用に加えて保管料も予算へ含めます。Gemini 3.8 Flashの現行保管単価は100万トークン・時間あたり0.50 USDで、運用設定の `cacheStorageUsdPerMillionTokenHour` または環境変数 `LLM_CACHE_STORAGE_USD_PER_MILLION_TOKEN_HOUR` で上書きできます。
+
 ```dotenv
 LLM_MODEL=gemini-3.8-flash
 GEMINI_API_KEY=<APIキー>
