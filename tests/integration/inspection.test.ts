@@ -78,22 +78,26 @@ const transport: typeof fetch = async (_url, options) => {
           principle: "unknown",
           explanation: "CIでは実モデルの意味判断を代替しない",
         }
-      : source.task === "input"
+      : source.task === "coverage"
         ? {
-            units: [],
-            responseCoverage: [
+            parts: [
               {
                 requestPart: source.context.input!.text,
-                outcome: "pending",
+                requestedKind: "information",
+                responseKind: "missing",
                 evidence: [],
                 explanation: "CIでは意味判断を代替しない",
               },
             ],
-            principle: "unknown",
-            principleEvidence: [],
-            disagreements: [],
           }
-        : { units: [], disagreements: [] };
+        : source.task === "input"
+          ? {
+              units: [],
+              principle: "unknown",
+              principleEvidence: [],
+              disagreements: [],
+            }
+          : { units: [], disagreements: [] };
   if (source.task === "input") {
     const current = source.context.presentations!.find(
       (p) => p.currentResponse,
