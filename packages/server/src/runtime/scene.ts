@@ -772,6 +772,7 @@ export class WorldScenes {
           {
             background: bg,
             sceneHistory: d.events,
+            controlledView: d.views[row.actor_id],
             request: {
               at: d.at,
               controlledActorId: row.actor_id,

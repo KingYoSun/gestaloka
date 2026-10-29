@@ -87,6 +87,11 @@ const model = new LlmClient(
         actionText: "「明日の手伝いはこれから相談しよう」と伝え、返事を待つ。",
       };
     } else if (user.background) {
+      expect(user.controlledView.observerId).toBe(actor);
+      expect(JSON.stringify(user.controlledView)).toContain("人間だけの記憶");
+      expect(JSON.stringify(user.controlledView)).not.toContain(
+        "NPCだけの秘密",
+      );
       expect(
         body.messages.find((m: { role: string }) => m.role === "system")
           .content,
@@ -96,7 +101,34 @@ const model = new LlmClient(
           actionText: string;
         }[],
         response = intentions.some((i) => i.actorId === npc);
-      if (intentions.some((i) => i.actionText === "挨拶して橋を見に行く"))
+      if (intentions.some((i) => i.actionText === "前の返答を読み直す")) {
+        expect(user.sceneHistory).toEqual([]);
+        expect(user.controlledView.observations).toContainEqual(
+          expect.objectContaining({
+            text: "明日の手伝いはこれから相談しようと聞いた",
+          }),
+        );
+        content = {
+          type: "scene",
+          events: [
+            {
+              actorId: actor,
+              text: "若者が以前に受け取った返答を読み直した",
+              receipts: [
+                {
+                  observerId: actor,
+                  text: "前の返答は「明日の手伝いはこれから相談しよう」だった。",
+                },
+              ],
+            },
+          ],
+          decisions: { [actor]: "finished" },
+          newDecisions: [],
+          elapsedMs: 0,
+        };
+      } else if (
+        intentions.some((i) => i.actionText === "挨拶して橋を見に行く")
+      )
         content = {
           type: "scene",
           events: [
@@ -954,4 +986,33 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
   expect(modelCalls).toBe(finalCount);
   expect(inputs.filter((i) => "observerId" in i)).toHaveLength(1);
   expect(backgroundCalls).toBeGreaterThan(1);
+});
+
+test("前シーンで受け取った本文を追加照会なしで読み直し、他者の秘密は渡さない", async () => {
+  const opened = await command({
+    requestId: randomUUID(),
+    command: "prepare",
+    purpose: "前の返答を読み直す",
+  });
+  const id = opened.json().scene.id;
+  try {
+    await access.scenes.tick(id);
+    await command({ requestId: randomUUID(), command: "start" });
+    const before = modelCalls;
+    await command({
+      requestId: randomUUID(),
+      command: "act",
+      actionText: "前の返答を読み直す",
+    });
+    await access.scenes.tick(id);
+    expect(modelCalls).toBe(before + 1);
+    const view = await status();
+    expect(view.state).toBe("active");
+    expect(view.actions.at(-1)?.state).toBe("complete");
+    expect(view.messages.map((m: { text: string }) => m.text)).toContain(
+      "前の返答は「明日の手伝いはこれから相談しよう」だった。",
+    );
+  } finally {
+    await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
+  }
 });
