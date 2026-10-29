@@ -149,11 +149,14 @@ export function sceneResponse(
     )
       throw new Error("入力の各部分と返した内容の根拠を確認できません");
     for (const evidence of part.evidence) {
-      const receipt =
-        step.events[evidence.eventIndex]?.receipts[evidence.receiptIndex];
+      const event = step.events[evidence.eventIndex],
+        receipt = event?.receipts[evidence.receiptIndex];
       if (
-        receipt?.observerId !== actorId ||
-        !receipt.text.includes(evidence.quote)
+        !receipt ||
+        !receipt.text.includes(evidence.quote) ||
+        (part.outcome !== "pending" &&
+          event!.actorId !== actorId &&
+          receipt.observerId !== actorId)
       )
         throw new Error("説明内容の根拠が本人向け提示と一致しません");
     }

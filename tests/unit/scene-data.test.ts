@@ -280,6 +280,21 @@ test("説明の予告や複合質問の欠落があれば操作を返さず、�
   expect(sceneResponse(partial, actor, "手順と注意点を聞く")).toMatchObject({
     decisions: { [actor]: "pending" },
   });
+  const asked = make("delivered", "質問は村人へ届いた");
+  asked.events[0]!.actorId = actor;
+  asked.events[0]!.receipts[0]!.observerId = npc;
+  asked.decisions[actor] = "pending";
+  asked.newDecisions = [npc];
+  asked.responseCoverage.push({
+    requestPart: "注意点",
+    outcome: "pending",
+    evidence: [],
+    explanation: "相手の返答を待っている",
+  });
+  expect(sceneResponse(asked, actor, "手順と注意点を聞く")).toMatchObject({
+    decisions: { [actor]: "pending" },
+    newDecisions: [npc],
+  });
   const wrong = make("delivered", "本人へ返した内容");
   wrong.events[0]!.receipts[0]!.observerId = npc;
   expect(() => sceneResponse(wrong, actor, "手順と注意点を聞く")).toThrow(
