@@ -326,8 +326,11 @@ test("要約の全引用の継続照合を必須にし、根拠のない確か�
   const continuity = [
     {
       quoteIndex: 1,
-      context: [{ quoteIndex: 0 }],
+      context: ["0: 入口の外に留まった。"],
       status: "unsupported-change",
+      proposition: "本人が入室した",
+      before: "false",
+      after: "unknown",
       explanation: "移動や見失った根拠なしに外にいる状態を不明へ弱めた",
     },
     {
@@ -349,7 +352,7 @@ test("要約の全引用の継続照合を必須にし、根拠のない確か�
   for (const checks of [
     continuity.slice(0, 1),
     [continuity[0], continuity[0]],
-    [{ ...continuity[0], context: [{ quoteIndex: 1 }] }, continuity[1]],
+    [{ ...continuity[0], context: ["1: 入室したか未確定。"] }, continuity[1]],
   ])
     expect(() => item.schema.parse({ ...value, continuity: checks })).toThrow();
   for (const status of ["preserved", "grounded-change"])
@@ -357,10 +360,21 @@ test("要約の全引用の継続照合を必須にし、根拠のない確か�
       item.restore(
         item.schema.parse({
           ...value,
-          continuity: [{ ...continuity[0], status }, continuity[1]],
+          continuity: [
+            { ...continuity[0], status, after: "false" },
+            continuity[1],
+          ],
         }),
       ).disagreements,
     ).toEqual([]);
+  expect(
+    item.restore(
+      item.schema.parse({
+        ...value,
+        continuity: [{ ...continuity[0], status: "preserved" }, continuity[1]],
+      }),
+    ).disagreements,
+  ).toHaveLength(1);
 });
 test("本人向け提示の記録は再保存で増えず、終了時のグラフと同じIDを使う", () => {
   const bg = SceneBackground.parse({
@@ -657,4 +671,44 @@ test("情報の問いへ行為の描写が返っても回答済みにせず、�
   expect(item.restore(item.schema.parse(partial)).responsiveness).toBe(
     "partial",
   );
+});
+
+test("行為の未実施・予告は未回答に残し、根拠のある失敗や拒否と区別して集計する", () => {
+  for (const [text, kind, expected] of [
+    ["台詞を発声した。手拍子はまだしていない。", "incomplete", "partial"],
+    ["台詞を発声した。手拍子はこれから行う予定だ。", "incomplete", "partial"],
+    [
+      "台詞を発声した。手拍子を試みたが装具で手を動かせなかった。",
+      "refusal",
+      "responsive",
+    ],
+    ["台詞を発声した。三回手拍子をした。", "action-report", "responsive"],
+  ]) {
+    const item = inspectionCoverage(
+      [presentation("performance", text!, [])],
+      [0],
+    );
+    const result = item.restore(
+      item.schema.parse({
+        parts: [
+          {
+            requestPart: "台詞を発声する",
+            requestedKind: "action",
+            responseKind: "action-report",
+            evidence: [{ quoteIndex: 0 }],
+            explanation: "発声は成立",
+          },
+          {
+            requestPart: "続けて三回手拍子する",
+            requestedKind: "action",
+            responseKind: kind,
+            evidence: [{ quoteIndex: 1 }],
+            explanation: "成立・未完了・終結を照合",
+          },
+        ],
+      }),
+    );
+    expect(result.responsiveness).toBe(expected);
+    expect(result.disagreements.length).toBe(expected === "partial" ? 1 : 0);
+  }
 });

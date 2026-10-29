@@ -71,8 +71,12 @@ const transport: typeof fetch = async (_url, options) => {
         p.text.includes("扉は開いた。"),
       ),
     ).toBe(false);
-  if (source.task === "coverage")
+  if (source.task === "coverage") {
     expect(source.context).not.toHaveProperty("administratorBackground");
+    expect(
+      body.messages.find((m: { role: string }) => m.role === "system").content,
+    ).toContain("行為の未着手・途中・先送り");
+  }
   const item =
     source.task === "summary"
       ? {
@@ -494,7 +498,7 @@ test("文書化したCLI入口が計測・比較と意味評価を実行し、JS
     const evaluated = JSON.parse(
       await readFile(join(directory, `${id}.json`), "utf8"),
     );
-    expect(evaluated.semantic.result.skill.rubricVersion).toBe("meaning-v5");
+    expect(evaluated.semantic.result.skill.rubricVersion).toBe("meaning-v6");
     expect(
       evaluated.semantic.result.evaluationCost.calculatedNanoUsd,
     ).not.toBeNull();

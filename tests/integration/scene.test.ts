@@ -87,6 +87,10 @@ const model = new LlmClient(
         actionText: "「明日の手伝いはこれから相談しよう」と伝え、返事を待つ。",
       };
     } else if (user.background) {
+      expect(
+        body.messages.find((m: { role: string }) => m.role === "system")
+          .content,
+      ).toContain("行為の未着手・途中・先送り");
       const intentions = user.request.intentions as {
           actorId: string;
           actionText: string;

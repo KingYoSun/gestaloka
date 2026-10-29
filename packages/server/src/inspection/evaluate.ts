@@ -26,11 +26,12 @@ export async function inspectionSkill() {
       "references/rubric.md",
       "references/api.md",
       "references/sources.md",
+      "../../../prompts/response-coverage.md",
     ].map((file) => readFile(new URL(file, root), "utf8")),
   );
   return {
-    version: "narrative-inspection-v12",
-    rubricVersion: "meaning-v5",
+    version: "narrative-inspection-v13",
+    rubricVersion: "meaning-v6",
     hash: digest(files),
     body: files.join("\n\n"),
   };
@@ -192,6 +193,9 @@ export function inspectionItem(
     current.includes(q.presentationId),
   );
   const priorQuotes = quotes.filter((q) => !current.includes(q.presentationId));
+  const priorChoices = new Map(
+    priorQuotes.map((q) => [`${q.quoteIndex}: ${q.text}`, q.quoteIndex]),
+  );
   const check = z
     .object({
       quoteIndex: z.literal(currentQuotes.map((q) => q.quoteIndex)),
@@ -207,22 +211,28 @@ export function inspectionItem(
       priorQuotes.length
         ? z.union([
             check.extend({
+              proposition: z
+                .string()
+                .min(1)
+                .describe(
+                  "比較する両方に共通する同じ一つの命題。否定形の表現差を含めて正規化する",
+                ),
+              before: z
+                .enum(["true", "false", "unknown"])
+                .describe(
+                  "比較元の引用が、その共通命題を真と確定・偽と確定・真偽不明のいずれとして提示したか",
+                ),
+              after: z
+                .enum(["true", "false", "unknown"])
+                .describe(
+                  "今回の提示が、同じ共通命題を真と確定・偽と確定・真偽不明のいずれとして提示したか",
+                ),
               status: z.enum([
                 "preserved",
                 "grounded-change",
                 "unsupported-change",
               ]),
-              context: z
-                .array(
-                  z
-                    .object({
-                      quoteIndex: z.literal(
-                        priorQuotes.map((q) => q.quoteIndex),
-                      ),
-                    })
-                    .strict(),
-                )
-                .min(1),
+              context: z.array(z.literal([...priorChoices.keys()])).min(1),
             }),
             noComparison,
           ])
@@ -292,12 +302,20 @@ export function inspectionItem(
             ...d,
             presentationId: sources[d.presentationId]!.id,
           })),
-          ...checks
-            .filter((c) => c.status === "unsupported-change")
-            .map((c) => ({
-              presentationId: cite(c.quoteIndex).presentationId,
-              explanation: `状態・確かさの根拠のない変更: ${JSON.stringify([cite(c.quoteIndex), ...c.context.map((e) => cite(e.quoteIndex))])} ${c.explanation}`,
-            })),
+          ...checks.flatMap((c) => {
+            if (
+              !("proposition" in c) ||
+              (c.status !== "unsupported-change" &&
+                !(c.status === "preserved" && c.before !== c.after))
+            )
+              return [];
+            return [
+              {
+                presentationId: cite(c.quoteIndex).presentationId,
+                explanation: `状態・確かさの根拠のない変更: ${JSON.stringify([cite(c.quoteIndex), ...c.context.map((e) => cite(priorChoices.get(e)!))])} 命題「${c.proposition}」: ${c.before} → ${c.after}。${c.explanation}`,
+              },
+            ];
+          }),
         ],
       };
     },
@@ -320,6 +338,7 @@ export function inspectionCoverage(
               responseKind: z.enum([
                 "content",
                 "partial-content",
+                "incomplete",
                 "refusal",
                 "action-report",
                 "missing",
@@ -353,6 +372,7 @@ export function inspectionCoverage(
           p.responseKind === "refusal"
             ? ("declined" as const)
             : p.responseKind === "missing" ||
+                p.responseKind === "incomplete" ||
                 (p.requestedKind === "information" &&
                   p.responseKind === "action-report")
               ? ("pending" as const)
