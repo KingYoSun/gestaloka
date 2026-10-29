@@ -6766,6 +6766,10 @@
                                     "type": "number",
                                     "minimum": 0
                                   },
+                                  "cacheStorageUsdPerMillionTokenHour": {
+                                    "type": "number",
+                                    "minimum": 0
+                                  },
                                   "outputUsdPerMillion": {
                                     "type": "number",
                                     "minimum": 0,
@@ -6877,6 +6881,10 @@
                                     "minimum": 0
                                   },
                                   "cacheWrite12hUsdPerMillion": {
+                                    "type": "number",
+                                    "minimum": 0
+                                  },
+                                  "cacheStorageUsdPerMillionTokenHour": {
                                     "type": "number",
                                     "minimum": 0
                                   },

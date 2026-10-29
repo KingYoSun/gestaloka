@@ -6,7 +6,9 @@ export const withTokenCount =
     String(url).endsWith("/messages/count_tokens") ||
     String(url).endsWith("/responses/input_tokens")
       ? Response.json({ input_tokens: 370 })
-      : transport(url, init);
+      : String(url).endsWith(":countTokens")
+        ? Response.json({ totalTokens: 370 })
+        : transport(url, init);
 
 export function createCountedClient(
   ...args: ConstructorParameters<typeof LlmClient>

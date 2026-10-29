@@ -13,6 +13,7 @@ import { ModelSettings } from "../llm/settings.js";
 import { parseOutput } from "../llm/prompt.js";
 import { digest } from "./store.js";
 import { measure } from "./measure.js";
+import { ResponsePart, responseCoverage } from "../response-coverage.js";
 
 export async function inspectionSkill() {
   const root = new URL(
@@ -28,8 +29,8 @@ export async function inspectionSkill() {
     ].map((file) => readFile(new URL(file, root), "utf8")),
   );
   return {
-    version: "narrative-inspection-v9",
-    rubricVersion: "meaning-v3",
+    version: "narrative-inspection-v10",
+    rubricVersion: "meaning-v4",
     hash: digest(files),
     body: files.join("\n\n"),
   };
@@ -190,9 +191,30 @@ export function inspectionItem(
   const schema =
     kind === "input"
       ? SemanticAssessment.shape.inputs.element
-          .omit({ inputId: true, missing: true })
+          .omit({ inputId: true, missing: true, responsiveness: true })
           .extend({
             units,
+            responseCoverage: z
+              .array(
+                ResponsePart.extend({
+                  evidence: z.array(
+                    reference.extend({
+                      quoteIndex: z.literal(
+                        quotes
+                          .filter((q) => current.includes(q.presentationId))
+                          .map((q) => q.quoteIndex),
+                      ),
+                    }),
+                  ),
+                }).superRefine((part, ctx) => {
+                  if (part.outcome !== "pending" && !part.evidence.length)
+                    ctx.addIssue({
+                      code: "custom",
+                      message: "返した内容または具体的な拒否の根拠が必要です",
+                    });
+                }),
+              )
+              .min(1),
             principleEvidence: z.array(
               reference.extend({ explanation: z.string().min(1) }),
             ),
@@ -209,32 +231,50 @@ export function inspectionItem(
   return {
     schema,
     quotes,
-    restore: (value: z.infer<typeof schema>) => ({
-      ...value,
-      units: value.units.map((unit) => ({
-        ...unit,
-        evidence: [unit.evidence.current, ...unit.evidence.context].map((e) =>
-          cite(e.quoteIndex),
-        ),
-      })),
-      ...("principleEvidence" in value
-        ? {
-            principleEvidence: (
-              value.principleEvidence as {
-                quoteIndex: number;
-                explanation: string;
-              }[]
-            ).map((e) => ({
-              ...cite(e.quoteIndex),
-              explanation: e.explanation,
-            })),
-          }
-        : {}),
-      disagreements: value.disagreements.map((d) => ({
-        ...d,
-        presentationId: sources[d.presentationId]!.id,
-      })),
-    }),
+    restore: (value: z.infer<typeof schema>) => {
+      const { responseCoverage: parts, ...body } = value as z.infer<
+        typeof schema
+      > & {
+        responseCoverage?: (z.infer<typeof ResponsePart> & {
+          evidence: { quoteIndex: number }[];
+        })[];
+      };
+      return {
+        ...body,
+        ...(parts ? { responsiveness: responseCoverage(parts) } : {}),
+        units: value.units.map((unit) => ({
+          ...unit,
+          evidence: [unit.evidence.current, ...unit.evidence.context].map((e) =>
+            cite(e.quoteIndex),
+          ),
+        })),
+        ...("principleEvidence" in value
+          ? {
+              principleEvidence: (
+                value.principleEvidence as {
+                  quoteIndex: number;
+                  explanation: string;
+                }[]
+              ).map((e) => ({
+                ...cite(e.quoteIndex),
+                explanation: e.explanation,
+              })),
+            }
+          : {}),
+        disagreements: [
+          ...value.disagreements.map((d) => ({
+            ...d,
+            presentationId: sources[d.presentationId]!.id,
+          })),
+          ...(parts
+            ?.filter((p) => p.outcome === "pending")
+            .map((p) => ({
+              presentationId: sources[current[0]!]!.id,
+              explanation: `入力「${p.requestPart}」への提示内容が不足: ${p.explanation}`,
+            })) ?? []),
+        ],
+      };
+    },
   };
 }
 export function validateAssessment(
@@ -437,6 +477,15 @@ export async function evaluateManifest(
         item.schema,
       );
       const { disagreements, ...part } = item.restore(value);
+      const coverage =
+        "responseCoverage" in value
+          ? z.array(ResponsePart.strip()).parse(value.responseCoverage)
+          : [];
+      if (coverage.some((p) => !context.input.text.includes(p.requestPart)))
+        throw new AssessmentRejected(
+          JSON.stringify(value),
+          new Error("照合した依頼が元入力にありません"),
+        );
       inputs[index] = inputSchema.parse({
         ...part,
         inputId: input.id,

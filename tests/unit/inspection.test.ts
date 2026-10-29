@@ -281,7 +281,14 @@ test("引用候補は当該応答を必須とし、元のIDと原文へ復元す
         explanation: "既知情報の再提示",
       },
     ],
-    responsiveness: "responsive",
+    responseCoverage: [
+      {
+        requestPart: "入力",
+        outcome: "delivered",
+        evidence: [{ quoteIndex: current.quoteIndex }],
+        explanation: "当該応答を確認",
+      },
+    ],
     principle: "consistent",
     principleEvidence: [
       { quoteIndex: current.quoteIndex, explanation: "当該応答を確認" },
@@ -551,4 +558,40 @@ test("実モデルの保存済み評価が必要な区別・根拠・不足を�
     ),
   ).toBe(true);
   expect(result.overall.missing.length).toBeGreaterThan(0);
+});
+
+test("説明するという描写は未回答、一部だけ届けばpartialとし、他時点の根拠を使わない", () => {
+  const m = inspectionFixture(),
+    sources = [m.prior[0]!, m.scenes[0]!.presentations[0]!],
+    item = inspectionItem("input", sources, [1]),
+    current = item.quotes.find((q) => q.presentationId === 1)!,
+    previous = item.quotes.find((q) => q.presentationId === 0)!;
+  const value = {
+    units: [],
+    principle: "consistent",
+    principleEvidence: [],
+    disagreements: [],
+    responseCoverage: [
+      {
+        requestPart: "手順",
+        outcome: "pending",
+        evidence: [] as { quoteIndex: number }[],
+        explanation: "説明するという描写しかない",
+      },
+    ],
+  };
+  const empty = item.restore(item.schema.parse(value));
+  expect(empty).toMatchObject({ responsiveness: "unresponsive" });
+  expect(empty.disagreements[0]!.explanation).toContain("手順");
+  value.responseCoverage.push({
+    requestPart: "作業",
+    outcome: "delivered",
+    evidence: [{ quoteIndex: current.quoteIndex }],
+    explanation: "具体的な作業の提示",
+  });
+  expect(item.restore(item.schema.parse(value))).toMatchObject({
+    responsiveness: "partial",
+  });
+  value.responseCoverage[1]!.evidence = [{ quoteIndex: previous.quoteIndex }];
+  expect(() => item.schema.parse(value)).toThrow();
 });

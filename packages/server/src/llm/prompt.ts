@@ -168,10 +168,11 @@ export function parseOutput(content: string): unknown {
   );
 }
 
-export function anthropicPrompt(
+export function preparePrompt(
   messages: ChatMessage[],
   structured = true,
   cacheOnly = false,
+  graphReferences = true,
 ) {
   const parsed = messages.map((m) => {
     try {
@@ -182,15 +183,26 @@ export function anthropicPrompt(
   });
   const schema = parsed.find((v) => v?.responseSchema)?.responseSchema as
     Schema | undefined;
-  if (!schema && !cacheOnly) return undefined;
+  if (!schema && !cacheOnly)
+    return {
+      system: messages
+        .filter((m) => m.role === "system")
+        .map((m) => ({
+          type: "text" as const,
+          text: m.content,
+          cacheBoundary: true as const,
+        })),
+      messages: messages.filter((m) => m.role !== "system"),
+      format: undefined,
+    };
   const request = parsed.find((v) => v?.request)?.request as Schema | undefined;
   const keys = Array.isArray(request?.intentions)
     ? request.intentions.map((v) => String((v as Schema).actorId))
     : undefined;
-  const cache = { type: "ephemeral" as const };
   const table = new Map<string, string>();
   const used = new Set<string>();
-  const graphInput = parsed.some((v) => v?.initialContext !== undefined);
+  const graphInput =
+    graphReferences && parsed.some((v) => v?.initialContext !== undefined);
   const prepared = messages.flatMap<{
     role: ChatMessage["role"];
     content:
@@ -198,7 +210,7 @@ export function anthropicPrompt(
       | {
           type: "text";
           text: string;
-          cache_control?: { type: "ephemeral" };
+          cacheBoundary?: true;
         }[];
   }>((m, i) => {
     if (m.role === "system") return [];
@@ -214,7 +226,7 @@ export function anthropicPrompt(
       controlledActorIds,
       ...current
     } = input;
-    delete current.responseSchema;
+    if (graphReferences) delete current.responseSchema;
     const parts: Json[] = [];
     if (initialContext !== undefined)
       parts.push({
@@ -272,11 +284,11 @@ export function anthropicPrompt(
     const content: {
       type: "text";
       text: string;
-      cache_control?: typeof cache;
+      cacheBoundary?: true;
     }[] = [];
     const append = (text: string) => content.push({ type: "text", text });
     const mark = () => {
-      if (content.length) content[content.length - 1]!.cache_control = cache;
+      if (content.length) content[content.length - 1]!.cacheBoundary = true;
     };
     if (framed) {
       append('{"records":{');
@@ -327,10 +339,10 @@ export function anthropicPrompt(
         type: "text" as const,
         text:
           system +
-          (!structured && schema
+          (!structured && schema && graphReferences
             ? "\nresponseSchema=" + JSON.stringify(outputSchema(schema, keys))
             : ""),
-        cache_control: cache,
+        cacheBoundary: true as const,
       },
     ],
     messages: prepared,

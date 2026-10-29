@@ -25,6 +25,7 @@ export const profiles: Record<
     api?: Api;
     pricingDate?: string;
     longContext?: { threshold: number; input: number; output: number };
+    cacheStorage?: number;
   }
 > = {
   "deepseek-flash": {
@@ -45,6 +46,7 @@ export const profiles: Record<
     inputHit: 75,
     output: 3750,
     pricingDate: "2026-10-29",
+    cacheStorage: 500 / 3600,
   },
   "gpt-6.1-terra": {
     provider: "openai",
@@ -226,6 +228,16 @@ export function settings(
     ),
     inputMiss,
     ...cacheWrite,
+    ...(provider === "gemini"
+      ? {
+          cacheStorage:
+            get("CACHE_STORAGE_USD_PER_MILLION_TOKEN_HOUR") === undefined
+              ? known?.cacheStorage
+              : (price.parse(get("CACHE_STORAGE_USD_PER_MILLION_TOKEN_HOUR")) *
+                  1000) /
+                3600,
+        }
+      : {}),
     inputHit: rate("CACHED_INPUT", known?.inputHit),
     output: rate("OUTPUT", known?.output),
     pricingDate: z.iso

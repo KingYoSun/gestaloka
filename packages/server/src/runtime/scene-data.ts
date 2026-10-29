@@ -1,3 +1,4 @@
+import { ResponsePart, responseCoverage } from "../response-coverage.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { InformationReference } from "@gestaloka/contracts";
@@ -110,6 +111,66 @@ export const SceneStep = z.discriminatedUnion("type", [
     .strict(),
   z.object({ type: z.literal("boundary"), reason: text }).strict(),
 ]);
+export const CheckedSceneStep = z.discriminatedUnion("type", [
+  SceneStep.options[0].extend({
+    responseCoverage: z
+      .array(
+        ResponsePart.extend({
+          evidence: z.array(
+            z
+              .object({
+                eventIndex: z.number().int().nonnegative(),
+                receiptIndex: z.number().int().nonnegative(),
+                quote: z.string().min(1),
+              })
+              .strict(),
+          ),
+        }),
+      )
+      .min(1),
+  }),
+  SceneStep.options[1],
+]);
+export function sceneResponse(
+  value: unknown,
+  actorId: string,
+  inputText: string,
+  checkedFormat = true,
+) {
+  const parsed = CheckedSceneStep.safeParse(value);
+  if (checkedFormat && !parsed.success) throw parsed.error;
+  if (!parsed.success || parsed.data.type === "boundary")
+    return SceneStep.parse(value);
+  const { responseCoverage: parts, ...step } = parsed.data;
+  for (const part of parts) {
+    if (
+      !inputText.includes(part.requestPart) ||
+      (part.outcome !== "pending" && !part.evidence.length)
+    )
+      throw new Error("入力の各部分と返した内容の根拠を確認できません");
+    for (const evidence of part.evidence) {
+      const receipt =
+        step.events[evidence.eventIndex]?.receipts[evidence.receiptIndex];
+      if (
+        receipt?.observerId !== actorId ||
+        !receipt.text.includes(evidence.quote)
+      )
+        throw new Error("説明内容の根拠が本人向け提示と一致しません");
+    }
+  }
+  if (
+    responseCoverage(parts) !== "responsive" &&
+    (["finished", "decide"].includes(step.decisions[actorId] ?? "") ||
+      step.newDecisions.includes(actorId))
+  ) {
+    step.decisions[actorId] = "pending";
+    step.newDecisions = step.newDecisions.filter((id) => id !== actorId);
+    for (const event of step.events)
+      if (event.actorId !== actorId && event.actorId in step.decisions)
+        step.decisions[event.actorId] = "decide";
+  }
+  return step;
+}
 export const CompletedScene = z
   .object({
     background: SceneBackground,

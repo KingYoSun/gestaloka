@@ -316,6 +316,11 @@ export const ModelSetting = z
     cacheWrite1hUsdPerMillion: z.number().nonnegative().finite().optional(),
     cacheWrite30mUsdPerMillion: z.number().nonnegative().finite().optional(),
     cacheWrite12hUsdPerMillion: z.number().nonnegative().finite().optional(),
+    cacheStorageUsdPerMillionTokenHour: z
+      .number()
+      .nonnegative()
+      .finite()
+      .optional(),
     outputUsdPerMillion: z.number().positive().finite(),
     pricingDate: z.iso.date(),
   })
@@ -374,6 +379,13 @@ export const CostCall = z.object({
   calculatedNanoUsd: nanoAmount.nullable(),
   reservationNanoUsd: nanoAmount,
   elapsedMs: z.number().int().nullable(),
+  cacheStorage: z
+    .object({
+      tokenSeconds: z.number().nonnegative(),
+      nanoUsdPerTokenSecond: z.number().nonnegative(),
+    })
+    .nullable()
+    .optional(),
   usage: z
     .object({
       input: z.number(),

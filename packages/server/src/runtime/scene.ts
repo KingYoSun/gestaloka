@@ -35,7 +35,8 @@ import {
   SceneBackground,
   SceneContext,
   ContextNeed,
-  SceneStep,
+  CheckedSceneStep,
+  sceneResponse,
   sceneAnchors,
   sceneAgenda,
   sceneId,
@@ -75,6 +76,7 @@ async function scenePrompt(file: string, information = true) {
   ).join("\n\n");
 }
 type Work = {
+  coverageVersion?: 1;
   id: string;
   kind: "background" | "resolve" | "intent" | "result";
   messages: ChatMessage[];
@@ -416,6 +418,7 @@ export class WorldScenes {
   ) {
     if (!row.data.work) {
       row.data.work = {
+        ...(kind === "resolve" ? { coverageVersion: 1 as const } : {}),
         id: randomUUID(),
         kind,
         target,
@@ -724,9 +727,14 @@ export class WorldScenes {
             controlledActionText: action.text,
             intentions: intents,
           },
-          responseSchema: z.toJSONSchema(SceneStep, { io: "input" }),
+          responseSchema: z.toJSONSchema(CheckedSceneStep, { io: "input" }),
         }),
-        step = SceneStep.parse(value.value);
+        step = sceneResponse(
+          value.value,
+          row.actor_id,
+          action.text,
+          row.data.work?.coverageVersion === 1,
+        );
       if (step.type === "boundary") break;
       if (step.needsContext && step.decisions[row.actor_id] === "finished")
         step.decisions[row.actor_id] = "pending";

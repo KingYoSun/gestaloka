@@ -6,6 +6,7 @@ import {
   sceneContinuations,
   sceneAnchors,
   sceneView,
+  sceneResponse,
   type SceneBackground,
 } from "../../packages/server/src/runtime/scene-data.js";
 const actor = randomUUID(),
@@ -217,5 +218,78 @@ test("登場NPCの選択済みの継続と新しい判断を引き継ぎ、人�
       },
     },
     nextDecisions: ["deciding"],
+  });
+});
+
+test("説明の予告や複合質問の欠落があれば操作を返さず、発話者の次の判断を求める", () => {
+  const make = (
+    outcome: "delivered" | "declined" | "pending",
+    quote: string,
+  ) => ({
+    type: "scene",
+    events: [
+      {
+        actorId: npc,
+        text: quote,
+        receipts: [{ observerId: actor, text: quote }],
+      },
+    ],
+    decisions: { [actor]: "finished", [npc]: "finished" },
+    newDecisions: [actor],
+    elapsedMs: 0,
+    responseCoverage: [
+      {
+        requestPart: "手順と注意点を聞く",
+        outcome,
+        evidence: [{ eventIndex: 0, receiptIndex: 0, quote }],
+        explanation: "提示内容を照合",
+      },
+    ],
+  });
+  const deferred = sceneResponse(
+    make("pending", "注意点から話そう"),
+    actor,
+    "手順と注意点を聞く",
+  );
+  expect(deferred).toMatchObject({
+    decisions: { [actor]: "pending", [npc]: "decide" },
+    newDecisions: [],
+  });
+  for (const outcome of ["delivered", "declined"] as const) {
+    const complete = sceneResponse(
+      make(
+        outcome,
+        outcome === "delivered"
+          ? "籠を先に洗う。赤い葉には触らない"
+          : "今は患者の処置中なので説明できない",
+      ),
+      actor,
+      "手順と注意点を聞く",
+    );
+    expect(complete.type === "scene" && complete.decisions[actor]).toBe(
+      "finished",
+    );
+  }
+  const partial = make("delivered", "籠を洗う");
+  partial.responseCoverage.push({
+    requestPart: "注意点",
+    outcome: "pending",
+    evidence: [],
+    explanation: "注意点が届いていない",
+  });
+  expect(sceneResponse(partial, actor, "手順と注意点を聞く")).toMatchObject({
+    decisions: { [actor]: "pending" },
+  });
+  const wrong = make("delivered", "本人へ返した内容");
+  wrong.events[0]!.receipts[0]!.observerId = npc;
+  expect(() => sceneResponse(wrong, actor, "手順と注意点を聞く")).toThrow(
+    "本人向け提示",
+  );
+  const legacy = make("delivered", "以前の提示");
+  const { responseCoverage: _coverage, ...old } = legacy;
+  void _coverage;
+  expect(() => sceneResponse(old, actor, "手順と注意点を聞く")).toThrow();
+  expect(sceneResponse(old, actor, "手順と注意点を聞く", false)).toMatchObject({
+    decisions: old.decisions,
   });
 });

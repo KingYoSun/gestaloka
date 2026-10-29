@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { connectDatabases } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
-import { modelEnvironment, approvedTransport } from "../support/model.js";
+import {
+  modelEnvironment,
+  approvedTransport,
+  fixtureBody,
+} from "../support/model.js";
 import { WorldBudget } from "../../packages/server/src/llm/world-budget.js";
 import {
   WorldStore,
@@ -774,7 +778,7 @@ test.each(["observation", "interaction", "resolution"] as const)(
     const transport = vi
       .fn<typeof fetch>()
       .mockImplementation(async (_url, options) => {
-        const body = JSON.parse(String(options?.body)),
+        const body = fixtureBody(options),
           input = JSON.parse(body.messages[1].content);
         if (input.commitReview) {
           expect(body.model).toBe("gpt-6-luna");
@@ -826,6 +830,8 @@ test.each(["observation", "interaction", "resolution"] as const)(
         );
       });
     const normalized: typeof fetch = async (url, options) => {
+      if (String(url).endsWith(":countTokens"))
+        return Response.json({ totalTokens: 370 });
       const result = await transport(url, options),
         data = await result.json();
       data.usage.total_tokens = 2;

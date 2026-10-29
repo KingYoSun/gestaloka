@@ -49,6 +49,8 @@ export const labels: Record<string, string> = {
     "OpenAI・30分キャッシュ作成単価（USD / 100万トークン）",
   cacheWrite12hUsdPerMillion:
     "OpenAI・12時間キャッシュ作成単価（USD / 100万トークン）",
+  cacheStorageUsdPerMillionTokenHour:
+    "Gemini・キャッシュ保管単価（USD / 100万トークン・時間）",
   outputUsdPerMillion: "出力単価（USD / 100万トークン）",
   pricingDate: "単価の基準日",
   judgment: "提案と確定の呼び出し方式",

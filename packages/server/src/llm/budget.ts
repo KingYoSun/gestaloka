@@ -28,6 +28,7 @@ export type SavedCompletion = {
     cache_write_30m_tokens?: number;
     cache_write_12h_tokens?: number;
     reasoning_tokens?: number;
+    cache_storage_token_seconds?: number;
   };
 };
 type SavedResponse =
@@ -64,6 +65,9 @@ export class BudgetLedger {
       CREATE INDEX IF NOT EXISTS llm_call_user ON llm_call(user_id,created_at,id);
       CREATE INDEX IF NOT EXISTS llm_call_response ON llm_call(response_id,created_at,id);
       CREATE INDEX IF NOT EXISTS llm_call_world ON llm_call(world_id,created_at);`);
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS llm_prompt_cache(
+      key text PRIMARY KEY,call_id uuid NOT NULL,name text,expires_at timestamptz,
+      tokens integer);`);
     await WorldBudget.setup(this.pool);
     const result = await this.pool.query<{ limit_nano: string | null }>(
       `INSERT INTO llm_budget (id, limit_nano) VALUES ($1, $2)
