@@ -354,17 +354,25 @@ export class WorldScenes {
           "送信済み要求の結果が未確定です。自動では再送しません",
         );
       if (row.data.work && !row.data.limitReached && !row.data.suspended) {
-        row.data.work = {
-          ...row.data.work,
-          id: randomUUID(),
-          messages: [
-            ...row.data.work.messages,
-            {
-              role: "user",
-              content: JSON.stringify({ validationError: row.data.error }),
-            },
-          ],
-        };
+        const rejected = (
+          await this.pool.query(
+            "SELECT response ? 'rejection' AS rejected FROM llm_call WHERE id=$1",
+            [row.data.work.id],
+          )
+        ).rows[0]?.rejected;
+        if (rejected) delete row.data.work;
+        else
+          row.data.work = {
+            ...row.data.work,
+            id: randomUUID(),
+            messages: [
+              ...row.data.work.messages,
+              {
+                role: "user",
+                content: JSON.stringify({ validationError: row.data.error }),
+              },
+            ],
+          };
       }
       delete row.data.error;
       delete row.data.limitReached;

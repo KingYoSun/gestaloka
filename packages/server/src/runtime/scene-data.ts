@@ -115,9 +115,13 @@ export const CheckedSceneStep = z.discriminatedUnion("type", [
   SceneStep.options[0].extend({
     arrivals: z
       .array(
-        SceneEvent.shape.receipts.element.extend({
-          eventIndex: z.number().int().nonnegative(),
-        }),
+        z
+          .object({
+            eventIndex: z.number().int().nonnegative(),
+            observerId: id,
+            text,
+          })
+          .strict(),
       )
       .default([]),
     responseCoverage: z
