@@ -29,8 +29,8 @@ export async function inspectionSkill() {
     ].map((file) => readFile(new URL(file, root), "utf8")),
   );
   return {
-    version: "narrative-inspection-v11",
-    rubricVersion: "meaning-v4",
+    version: "narrative-inspection-v12",
+    rubricVersion: "meaning-v5",
     hash: digest(files),
     body: files.join("\n\n"),
   };
@@ -188,6 +188,57 @@ export function inspectionItem(
       presentationId: z.literal(sources.map((_p, index) => index)),
     }),
   );
+  const currentQuotes = quotes.filter((q) =>
+    current.includes(q.presentationId),
+  );
+  const priorQuotes = quotes.filter((q) => !current.includes(q.presentationId));
+  const check = z
+    .object({
+      quoteIndex: z.literal(currentQuotes.map((q) => q.quoteIndex)),
+      explanation: z.string().min(1),
+    })
+    .strict();
+  const noComparison = check.extend({
+    status: z.literal("not-comparable"),
+    context: z.array(reference).length(0),
+  });
+  const continuity = z
+    .array(
+      priorQuotes.length
+        ? z.union([
+            check.extend({
+              status: z.enum([
+                "preserved",
+                "grounded-change",
+                "unsupported-change",
+              ]),
+              context: z
+                .array(
+                  z
+                    .object({
+                      quoteIndex: z.literal(
+                        priorQuotes.map((q) => q.quoteIndex),
+                      ),
+                    })
+                    .strict(),
+                )
+                .min(1),
+            }),
+            noComparison,
+          ])
+        : noComparison,
+    )
+    .length(currentQuotes.length)
+    .superRefine((checks, ctx) => {
+      if (
+        new Set(checks.map((c) => c.quoteIndex)).size !== currentQuotes.length
+      )
+        ctx.addIssue({
+          code: "custom",
+          message:
+            "提示の全引用について状態と確かさの継続を一度ずつ照合してください",
+        });
+    });
   const schema =
     kind === "input"
       ? SemanticAssessment.shape.inputs.element
@@ -202,7 +253,7 @@ export function inspectionItem(
       : SemanticAssessment.shape.otherPresentations
           .unwrap()
           .element.omit({ presentationId: true, missing: true })
-          .extend({ units, disagreements: differences });
+          .extend({ units, disagreements: differences, continuity });
   const cite = (index: number) => {
     const q = quotes[index]!;
     return { presentationId: sources[q.presentationId]!.id, quote: q.text };
@@ -211,8 +262,12 @@ export function inspectionItem(
     schema,
     quotes,
     restore: (value: z.infer<typeof schema>) => {
-      return {
+      const { continuity: checks, ...assessment } = {
+        continuity: [],
         ...value,
+      };
+      return {
+        ...assessment,
         units: value.units.map((unit) => ({
           ...unit,
           evidence: [unit.evidence.current, ...unit.evidence.context].map((e) =>
@@ -232,10 +287,18 @@ export function inspectionItem(
               })),
             }
           : {}),
-        disagreements: value.disagreements.map((d) => ({
-          ...d,
-          presentationId: sources[d.presentationId]!.id,
-        })),
+        disagreements: [
+          ...value.disagreements.map((d) => ({
+            ...d,
+            presentationId: sources[d.presentationId]!.id,
+          })),
+          ...checks
+            .filter((c) => c.status === "unsupported-change")
+            .map((c) => ({
+              presentationId: cite(c.quoteIndex).presentationId,
+              explanation: `状態・確かさの根拠のない変更: ${JSON.stringify([cite(c.quoteIndex), ...c.context.map((e) => cite(e.quoteIndex))])} ${c.explanation}`,
+            })),
+        ],
       };
     },
   };
@@ -256,6 +319,7 @@ export function inspectionCoverage(
               requestedKind: z.enum(["information", "action"]),
               responseKind: z.enum([
                 "content",
+                "partial-content",
                 "refusal",
                 "action-report",
                 "missing",
@@ -295,9 +359,18 @@ export function inspectionCoverage(
               : ("delivered" as const),
       }));
       return {
-        responsiveness: responseCoverage(parts),
+        responsiveness: responseCoverage(
+          parts.flatMap((p) =>
+            p.responseKind === "partial-content"
+              ? [p, { outcome: "pending" as const }]
+              : [p],
+          ),
+        ),
         disagreements: parts
-          .filter((p) => p.outcome === "pending")
+          .filter(
+            (p) =>
+              p.outcome === "pending" || p.responseKind === "partial-content",
+          )
           .map((p) => ({
             presentationId:
               sources[

@@ -100,7 +100,22 @@ const transport: typeof fetch = async (_url, options) => {
               principleEvidence: [],
               disagreements: [],
             }
-          : { units: [], disagreements: [] };
+          : {
+              units: [],
+              disagreements: [],
+              continuity: source.context
+                .quotes!.filter(
+                  (q) =>
+                    q.presentationId ===
+                    source.context.presentations!.at(-1)!.presentationId,
+                )
+                .map((q) => ({
+                  quoteIndex: q.quoteIndex,
+                  context: [],
+                  status: "not-comparable",
+                  explanation: "CIでは意味判断を代替しない",
+                })),
+            };
   if (source.task === "input") {
     const current = source.context.presentations!.find(
       (p) => p.currentResponse,
@@ -479,7 +494,7 @@ test("文書化したCLI入口が計測・比較と意味評価を実行し、JS
     const evaluated = JSON.parse(
       await readFile(join(directory, `${id}.json`), "utf8"),
     );
-    expect(evaluated.semantic.result.skill.rubricVersion).toBe("meaning-v4");
+    expect(evaluated.semantic.result.skill.rubricVersion).toBe("meaning-v5");
     expect(
       evaluated.semantic.result.evaluationCost.calculatedNanoUsd,
     ).not.toBeNull();

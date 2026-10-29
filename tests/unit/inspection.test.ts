@@ -316,6 +316,52 @@ test("引用候補は原文の短い範囲を保持し、引用文を生成し�
   for (const q of quotes)
     expect(source[q.presentationId]!.text).toContain(q.text);
 });
+
+test("要約の全引用の継続照合を必須にし、根拠のない確かさの変更を旧形式の不一致へ残す", () => {
+  const sources = [
+    presentation("outside", "入口の外に留まった。", []),
+    presentation("summary", "入室したか未確定。作業はまだ始めていない。", []),
+  ];
+  const item = inspectionItem("presentation", sources, [1]);
+  const continuity = [
+    {
+      quoteIndex: 1,
+      context: [{ quoteIndex: 0 }],
+      status: "unsupported-change",
+      explanation: "移動や見失った根拠なしに外にいる状態を不明へ弱めた",
+    },
+    {
+      quoteIndex: 2,
+      context: [],
+      status: "not-comparable",
+      explanation: "以前の比較命題なし",
+    },
+  ];
+  const value = { units: [], disagreements: [], continuity };
+  const restored = item.restore(item.schema.parse(value));
+  expect(restored).not.toHaveProperty("continuity");
+  expect(restored.disagreements).toEqual([
+    {
+      presentationId: sources[1]!.id,
+      explanation: expect.stringContaining("入口の外に留まった。"),
+    },
+  ]);
+  for (const checks of [
+    continuity.slice(0, 1),
+    [continuity[0], continuity[0]],
+    [{ ...continuity[0], context: [{ quoteIndex: 1 }] }, continuity[1]],
+  ])
+    expect(() => item.schema.parse({ ...value, continuity: checks })).toThrow();
+  for (const status of ["preserved", "grounded-change"])
+    expect(
+      item.restore(
+        item.schema.parse({
+          ...value,
+          continuity: [{ ...continuity[0], status }, continuity[1]],
+        }),
+      ).disagreements,
+    ).toEqual([]);
+});
 test("本人向け提示の記録は再保存で増えず、終了時のグラフと同じIDを使う", () => {
   const bg = SceneBackground.parse({
     type: "background",
@@ -592,4 +638,23 @@ test("情報の問いへ行為の描写が返っても回答済みにせず、�
   expect(item.restore(item.schema.parse(refusal))).toMatchObject({
     responsiveness: "responsive",
   });
+  const partial = {
+    parts: [
+      {
+        ...value.parts[0]!,
+        responseKind: "partial-content",
+        explanation: "仕事があることは回答済みだが仕事内容と手順は不足",
+      },
+    ],
+  };
+  expect(item.restore(item.schema.parse(partial))).toMatchObject({
+    responsiveness: "partial",
+    disagreements: [
+      { explanation: expect.stringContaining("仕事内容と手順は不足") },
+    ],
+  });
+  partial.parts.push({ ...partial.parts[0]!, responseKind: "content" });
+  expect(item.restore(item.schema.parse(partial)).responsiveness).toBe(
+    "partial",
+  );
 });
