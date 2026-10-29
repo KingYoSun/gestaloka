@@ -266,15 +266,22 @@ test.each([false, true])(
   },
 );
 
-test.each([272000, 272001])(
-  "Terraは実入力%dで長文料金を判定して単価と予約を凍結する",
-  async (tokens) => {
+test.each(
+  [
+    { model: "gpt-6.1-terra", input: 1000, hit: 50 },
+    { model: "gpt-6-luna", input: 100, hit: 10 },
+  ].flatMap((model) =>
+    [272000, 272001].map((tokens) => ({ ...model, tokens })),
+  ),
+)(
+  "$modelは実入力$tokensで長文料金を判定して単価と予約を凍結する",
+  async ({ model, input, hit, tokens }) => {
     const transport = vi.fn<typeof fetch>().mockImplementation(async (url) =>
       String(url).endsWith("/input_tokens")
         ? Response.json({ input_tokens: tokens })
         : Response.json({
             id: "upstream",
-            model: "gpt-6.1-terra",
+            model,
             status: "completed",
             output: [
               {
@@ -303,11 +310,11 @@ test.each([272000, 272001])(
         LLM_BUDGET_USD: "4",
         LLM_PROVIDER: "openai",
         LLM_API: "responses",
-        LLM_MODEL: "gpt-6.1-terra",
+        LLM_MODEL: model,
         LLM_CONTEXT_TOKENS: "1050000",
-        LLM_INPUT_USD_PER_MILLION: "1",
-        LLM_CACHED_INPUT_USD_PER_MILLION: "0.05",
-        LLM_OUTPUT_USD_PER_MILLION: "5",
+        LLM_INPUT_USD_PER_MILLION: String(input / 1000),
+        LLM_CACHED_INPUT_USD_PER_MILLION: String(hit / 1000),
+        LLM_OUTPUT_USD_PER_MILLION: String((input * 5) / 1000),
         OPENAI_API_KEY: "private-key",
       },
       transport,
@@ -326,14 +333,14 @@ test.each([272000, 272001])(
     };
     const long = tokens > 272000;
     expect(stored.connection).toMatchObject({
-      inputMiss: long ? 2000 : 1000,
-      inputHit: long ? 100 : 50,
-      output: long ? 7500 : 5000,
-      cacheWrite30m: long ? 2500 : 1250,
-      cacheWrite12h: long ? 5000 : 2500,
+      inputMiss: input * (long ? 2 : 1),
+      inputHit: hit * (long ? 2 : 1),
+      output: input * 5 * (long ? 1.5 : 1),
+      cacheWrite30m: input * 1.25 * (long ? 2 : 1),
+      cacheWrite12h: input * 2.5 * (long ? 2 : 1),
     });
     expect((await client.ledger.summary()).upperCostUsd).toBe(
-      (tokens * (long ? 2000 : 1000) + (long ? 7500 : 5000)) / 1e9,
+      (tokens * input * (long ? 2 : 1) + input * 5 * (long ? 1.5 : 1)) / 1e9,
     );
     const record = (
       await pool.query(
@@ -342,12 +349,73 @@ test.each([272000, 272001])(
       )
     ).rows[0];
     expect(record.reserved_nano).toBe(
-      String(tokens * (long ? 5000 : 2500) + 65536 * (long ? 7500 : 5000)),
+      String(
+        tokens * input * 2.5 * (long ? 2 : 1) +
+          65536 * input * 5 * (long ? 1.5 : 1),
+      ),
     );
     expect(record.reservation_basis).toMatchObject({
       inputTokens: tokens,
       source: "openai-input-tokens",
     });
+    await client.complete(id, "probe", messages);
+    expect(transport).toHaveBeenCalledTimes(2);
+  },
+);
+
+test.each([100000, 100001])(
+  "Haikuは実入力%dの料金段階を全キャッシュ区分へ適用する",
+  async (tokens) => {
+    const transport = vi.fn<typeof fetch>().mockImplementation(async (url) =>
+      String(url).endsWith("/count_tokens")
+        ? Response.json({ input_tokens: tokens })
+        : Response.json({
+            id: "upstream",
+            model: "claude-haiku-5-5",
+            stop_reason: "end_turn",
+            content: [{ type: "text", text: "{}" }],
+            usage: {
+              input_tokens: tokens - 300,
+              cache_read_input_tokens: 100,
+              cache_creation_input_tokens: 200,
+              cache_creation: {
+                ephemeral_5m_input_tokens: 100,
+                ephemeral_1h_input_tokens: 100,
+              },
+              output_tokens: 1,
+            },
+          }),
+    );
+    const client = new LlmClient(
+      pool,
+      {
+        ...env(),
+        LLM_MODEL: "claude-haiku-5-5",
+        LLM_INPUT_USD_PER_MILLION: "0.1",
+        LLM_CACHED_INPUT_USD_PER_MILLION: "0.01",
+        LLM_OUTPUT_USD_PER_MILLION: "0.5",
+      },
+      transport,
+    );
+    await client.ledger.setup();
+    const id = randomUUID();
+    await client.complete(id, "probe", messages);
+    const multiplier = tokens > 100000 ? 5 : 1,
+      stored = (await client.ledger.input(id)) as {
+        connection: Record<string, number>;
+      };
+    expect(stored.connection).toMatchObject({
+      inputMiss: 100 * multiplier,
+      inputHit: 10 * multiplier,
+      output: 500 * multiplier,
+      cacheWrite5m: 125 * multiplier,
+      cacheWrite1h: 200 * multiplier,
+    });
+    expect((await client.ledger.summary()).upperCostUsd).toBe(
+      (((tokens - 300) * 100 + 100 * 10 + 100 * 125 + 100 * 200 + 500) *
+        multiplier) /
+        1e9,
+    );
     await client.complete(id, "probe", messages);
     expect(transport).toHaveBeenCalledTimes(2);
   },

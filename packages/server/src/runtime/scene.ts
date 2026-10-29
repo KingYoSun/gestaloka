@@ -765,18 +765,24 @@ export class WorldScenes {
         continue;
       }
       const intents = Object.values(d.pending),
-        value = await this.#ask(row, "resolve", "scene-play.md", {
-          background: bg,
-          sceneHistory: d.events,
-          request: {
-            at: d.at,
-            controlledActorId: row.actor_id,
-            controlledInputId: action.id,
-            controlledActionText: action.text,
-            intentions: intents,
+        value = await this.#ask(
+          row,
+          "resolve",
+          "scene-play.md",
+          {
+            background: bg,
+            sceneHistory: d.events,
+            request: {
+              at: d.at,
+              controlledActorId: row.actor_id,
+              controlledInputId: action.id,
+              controlledActionText: action.text,
+              intentions: intents,
+            },
+            responseSchema: z.toJSONSchema(CheckedSceneStep, { io: "output" }),
           },
-          responseSchema: z.toJSONSchema(CheckedSceneStep, { io: "output" }),
-        }),
+          "resolution",
+        ),
         step = sceneResponse(
           value.value,
           row.actor_id,

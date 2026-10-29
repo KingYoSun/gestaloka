@@ -326,6 +326,18 @@ const status = async () => {
   expect(r.statusCode).toBe(200);
   return r.json().scene;
 };
+const complete = model.complete.bind(model);
+model.complete = async (id, role, messages, target = "default") => {
+  const targets = new Map([
+    ["scene-resolve", "resolution"],
+    ["scene-background", "resolution"],
+    ["scene-intent", "default"],
+    ["scene-result", "default"],
+  ]);
+  if (targets.has(role)) expect(target).toBe(targets.get(role));
+  return complete(id, role, messages, target);
+};
+
 beforeAll(async () => {
   await isolated.setup();
   await WorldBudget.setup(d.postgres);

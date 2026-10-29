@@ -726,6 +726,8 @@ export class LlmClient {
           for (const key of [
             "inputMiss",
             "inputHit",
+            "cacheWrite5m",
+            "cacheWrite1h",
             "cacheWrite30m",
             "cacheWrite12h",
           ] as const)

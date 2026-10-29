@@ -643,7 +643,7 @@ test("推論量の設定を変更しても保存済み呼出しを再送せず�
 
 test.each([
   { model: "gemini-3.8-flash", prefix: "GEMINI", output: 27, cost: 0.00012375 },
-  { model: "gpt-6-luna", prefix: "OPENAI", output: 20, cost: 0.0000225 },
+  { model: "gpt-6-luna", prefix: "OPENAI", output: 20, cost: 0.0000121 },
 ])(
   "$modelを専用キーとendpointで接続し、lowと使用量を扱う",
   async ({ model, prefix, output, cost }) => {
