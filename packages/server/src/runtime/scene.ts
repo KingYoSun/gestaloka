@@ -64,7 +64,11 @@ const Narrative = z
   })
   .strict();
 async function scenePrompt(file: string, information = true) {
-  const files = [file, ...(information ? ["presentation-information.md"] : [])];
+  const files = [
+    file,
+    ...(file === "scene-play.md" ? ["response-coverage.md"] : []),
+    ...(information ? ["presentation-information.md"] : []),
+  ];
   return (
     await Promise.all(
       files.map((name) =>

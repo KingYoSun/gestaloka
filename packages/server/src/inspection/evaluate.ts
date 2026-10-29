@@ -26,11 +26,12 @@ export async function inspectionSkill() {
       "references/rubric.md",
       "references/api.md",
       "references/sources.md",
+      "../../../prompts/response-coverage.md",
     ].map((file) => readFile(new URL(file, root), "utf8")),
   );
   return {
-    version: "narrative-inspection-v12",
-    rubricVersion: "meaning-v5",
+    version: "narrative-inspection-v13",
+    rubricVersion: "meaning-v6",
     hash: digest(files),
     body: files.join("\n\n"),
   };
@@ -320,6 +321,7 @@ export function inspectionCoverage(
               responseKind: z.enum([
                 "content",
                 "partial-content",
+                "incomplete",
                 "refusal",
                 "action-report",
                 "missing",
@@ -353,6 +355,7 @@ export function inspectionCoverage(
           p.responseKind === "refusal"
             ? ("declined" as const)
             : p.responseKind === "missing" ||
+                p.responseKind === "incomplete" ||
                 (p.requestedKind === "information" &&
                   p.responseKind === "action-report")
               ? ("pending" as const)

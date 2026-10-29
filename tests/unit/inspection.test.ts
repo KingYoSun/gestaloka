@@ -658,3 +658,43 @@ test("情報の問いへ行為の描写が返っても回答済みにせず、�
     "partial",
   );
 });
+
+test("行為の未実施・予告は未回答に残し、根拠のある失敗や拒否と区別して集計する", () => {
+  for (const [text, kind, expected] of [
+    ["台詞を発声した。手拍子はまだしていない。", "incomplete", "partial"],
+    ["台詞を発声した。手拍子はこれから行う予定だ。", "incomplete", "partial"],
+    [
+      "台詞を発声した。手拍子を試みたが装具で手を動かせなかった。",
+      "refusal",
+      "responsive",
+    ],
+    ["台詞を発声した。三回手拍子をした。", "action-report", "responsive"],
+  ]) {
+    const item = inspectionCoverage(
+      [presentation("performance", text!, [])],
+      [0],
+    );
+    const result = item.restore(
+      item.schema.parse({
+        parts: [
+          {
+            requestPart: "台詞を発声する",
+            requestedKind: "action",
+            responseKind: "action-report",
+            evidence: [{ quoteIndex: 0 }],
+            explanation: "発声は成立",
+          },
+          {
+            requestPart: "続けて三回手拍子する",
+            requestedKind: "action",
+            responseKind: kind,
+            evidence: [{ quoteIndex: 1 }],
+            explanation: "成立・未完了・終結を照合",
+          },
+        ],
+      }),
+    );
+    expect(result.responsiveness).toBe(expected);
+    expect(result.disagreements.length).toBe(expected === "partial" ? 1 : 0);
+  }
+});
