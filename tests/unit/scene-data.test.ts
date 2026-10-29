@@ -7,6 +7,7 @@ import {
   sceneAnchors,
   sceneView,
   sceneResponse,
+  sceneArrivals,
   type SceneBackground,
 } from "../../packages/server/src/runtime/scene-data.js";
 const actor = randomUUID(),
@@ -356,4 +357,74 @@ test("同じ入力で前段に届いた説明を参照し、別入力の履歴�
   expect(() => sceneResponse(value, actor, inputId, true, [past])).toThrow(
     "本人向け提示",
   );
+});
+
+test("既存の声を後から加わったNPCへ届け、発言や既存受容を繰り返さない", () => {
+  const history = [
+    {
+      id: randomUUID(),
+      inputId: randomUUID(),
+      actorId: actor,
+      text: "手順を尋ねた",
+      period: { from: 0, until: 0 },
+      receipts: [{ observerId: actor, text: "手順を尋ね、返事を待っている" }],
+    },
+  ];
+  const arrival = {
+    eventIndex: 0,
+    observerId: npc,
+    text: "手順と注意点を教えてほしいという声が届いた",
+  };
+  expect(sceneArrivals(history, [arrival], bg.participants, actor, 0)).toEqual([
+    npc,
+  ]);
+  expect(history).toHaveLength(1);
+  expect(history[0]!.receipts[0]!.text).toBe("手順を尋ね、返事を待っている");
+  const view = sceneView(
+    { observerId: npc, at: 0, observations: [], interpretations: [] },
+    bg,
+    history,
+    [],
+    0,
+  );
+  expect(JSON.stringify(view.observations)).toContain(arrival.text);
+  expect(
+    sceneArrivals(
+      history,
+      [{ ...arrival, text: "別の内容へ変更" }],
+      bg.participants,
+      actor,
+      0,
+    ),
+  ).toEqual([]);
+  expect(history[0]!.receipts[1]!.text).toBe(arrival.text);
+  const untouched = structuredClone(history);
+  expect(() =>
+    sceneArrivals(
+      history,
+      [{ ...arrival, observerId: place }],
+      bg.participants,
+      actor,
+      0,
+    ),
+  ).toThrow("受容者");
+  expect(() =>
+    sceneArrivals(
+      history,
+      [{ ...arrival, observerId: actor }],
+      bg.participants,
+      actor,
+      0,
+    ),
+  ).toThrow("受容者");
+  expect(() =>
+    sceneArrivals(
+      history,
+      [{ ...arrival, eventIndex: 7 }],
+      bg.participants,
+      actor,
+      0,
+    ),
+  ).toThrow("参照先");
+  expect(history).toEqual(untouched);
 });

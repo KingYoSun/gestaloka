@@ -37,6 +37,7 @@ import {
   ContextNeed,
   CheckedSceneStep,
   sceneResponse,
+  sceneArrivals,
   sceneAnchors,
   sceneAgenda,
   sceneId,
@@ -798,6 +799,17 @@ export class WorldScenes {
       const nextAt = d.at + step.elapsedMs;
       if (!Number.isSafeInteger(nextAt))
         throw new Error("シーンの経過時点が不正です");
+      const receivers = sceneArrivals(
+        d.events,
+        step.arrivals,
+        bg.participants,
+        row.actor_id,
+        d.at,
+      );
+      for (const receiver of receivers)
+        if (actors.has(receiver)) step.decisions[receiver] = "decide";
+        else step.newDecisions.push(receiver);
+      step.newDecisions = [...new Set(step.newDecisions)];
       for (const e of step.events)
         d.events.push({
           ...e,
@@ -858,7 +870,12 @@ export class WorldScenes {
         await this.#save(row, undefined, row.claim!);
         return false;
       }
-      if (!d.nextDecisions.length && !step.events.length && !step.elapsedMs)
+      if (
+        !d.nextDecisions.length &&
+        !step.events.length &&
+        !receivers.length &&
+        !step.elapsedMs
+      )
         break;
       await this.#save(row, undefined, row.claim!);
     }

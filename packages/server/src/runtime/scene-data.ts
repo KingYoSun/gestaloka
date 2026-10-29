@@ -113,6 +113,13 @@ export const SceneStep = z.discriminatedUnion("type", [
 ]);
 export const CheckedSceneStep = z.discriminatedUnion("type", [
   SceneStep.options[0].extend({
+    arrivals: z
+      .array(
+        SceneEvent.shape.receipts.element.extend({
+          eventIndex: z.number().int().nonnegative(),
+        }),
+      )
+      .default([]),
     responseCoverage: z
       .array(
         ResponsePart.extend({
@@ -140,8 +147,10 @@ export function sceneResponse(
 ) {
   const parsed = CheckedSceneStep.safeParse(value);
   if (checkedFormat && !parsed.success) throw parsed.error;
-  if (!parsed.success || parsed.data.type === "boundary")
-    return SceneStep.parse(value);
+  if (!parsed.success || parsed.data.type === "boundary") {
+    const legacy = SceneStep.parse(value);
+    return legacy.type === "scene" ? { ...legacy, arrivals: [] } : legacy;
+  }
   const { responseCoverage: parts, ...step } = parsed.data;
   for (const part of parts) {
     if (part.outcome !== "pending" && !part.evidence.length)
@@ -174,6 +183,44 @@ export function sceneResponse(
         step.decisions[event.actorId] = "decide";
   }
   return step;
+}
+
+/** Add a new receiver to an existing, still-staged occurrence without re-emitting it. */
+export function sceneArrivals(
+  events: RecordedSceneEvent[],
+  arrivals: {
+    eventIndex: number;
+    observerId: string;
+    text: string;
+    information?: z.infer<typeof InformationReference>[] | undefined;
+  }[],
+  participants: string[],
+  actorId: string,
+  at: number,
+) {
+  const seen = new Set(
+      events.flatMap((e, i) => e.receipts.map((p) => `${i}:${p.observerId}`)),
+    ),
+    additions: {
+      event: RecordedSceneEvent;
+      receipt: RecordedSceneEvent["receipts"][number];
+    }[] = [];
+  for (const { eventIndex, ...receipt } of arrivals) {
+    const event = events[eventIndex];
+    if (
+      !event ||
+      event.period.until !== at ||
+      receipt.observerId === actorId ||
+      !participants.includes(receipt.observerId)
+    )
+      throw new Error("到達の参照先・受容者・時点がシーンと一致しません");
+    const key = `${eventIndex}:${receipt.observerId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    additions.push({ event, receipt });
+  }
+  for (const { event, receipt } of additions) event.receipts.push(receipt);
+  return [...new Set(additions.map((a) => a.receipt.observerId))];
 }
 export const CompletedScene = z
   .object({
