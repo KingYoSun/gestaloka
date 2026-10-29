@@ -519,7 +519,8 @@ export class LlmClient {
         ? // The full world schema exceeds Anthropic's grammar limit; retain Zod validation.
           preparePrompt(
             messages,
-            api === "messages" &&
+            (api === "messages" ||
+              (provider === "gemini" && role === "narrative-inspection")) &&
               [
                 "scene-resolve",
                 "scene-result",
@@ -593,7 +594,17 @@ export class LlmClient {
                     extra_body: { google: { cached_content: cacheName } },
                   }
                 : {}),
-              response_format: { type: "json_object" },
+              response_format:
+                provider === "gemini" && prompt?.format
+                  ? {
+                      type: "json_schema",
+                      json_schema: {
+                        name: "narrative_inspection",
+                        strict: true,
+                        schema: prompt.format.schema,
+                      },
+                    }
+                  : { type: "json_object" },
               ...(provider === "deepseek"
                 ? {
                     thinking: {
@@ -655,11 +666,17 @@ export class LlmClient {
       async (quota) => {
         let inputTokens: number | undefined;
         if (gemini)
-          inputTokens = await cache.countGemini(
-            selected,
-            quota.key,
-            gemini.full,
-          );
+          inputTokens = await cache.countGemini(selected, quota.key, {
+            ...gemini.full,
+            ...(prompt?.format
+              ? {
+                  generationConfig: {
+                    responseMimeType: "application/json",
+                    responseJsonSchema: prompt.format.schema,
+                  },
+                }
+              : {}),
+          });
         const countedApi =
           provider === "anthropic" && api === "messages"
             ? "messages/count_tokens"

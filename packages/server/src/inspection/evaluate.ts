@@ -520,9 +520,9 @@ export async function evaluateManifest(
           "coverage",
           {
             input: context.input,
-            priorPresentations: context.presentations.filter(
-              (p) => !p.currentResponse,
-            ),
+            priorPresentations: context.presentations
+              .filter((p) => !p.currentResponse)
+              .map((p) => ({ text: p.text })),
             quotes: coverage.quotes,
             instruction:
               "求めた情報の中身と、説明したという行為の描写を分ける。表示された本文から具体的な答えそのものを得られるかを判定する。内部背景や意味単位の評価は与えない。質問の発信や制約遵守を回答に数えない。",

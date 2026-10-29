@@ -22,6 +22,8 @@ DBでは短い操作で作成担当だけを確定し、API実行中にDBロッ�
 
 ## 検証
 
+Geminiの検品はネイティブのJSON Schema出力を使う。既存の共通schema変換を利用し、入力の事前計数にも同じschemaを含める。JSONを手作業で補修せず、形式不備の原出力と費用を残す。
+
 境界選定・入力の保持・各APIへの変換、Geminiの再利用・期限・資格情報の分離・保管料と未確定の保持を試験する。説明の予告・複合質問の欠落・具体的な返答・他人向けの引用を試験し、保存済みの問題例を別の評価IDで確認する。推奨のSonnet 5.5 low／medium・combinedで村の0・1・7日条件を各2シーン再検証する。原記録・旧評価・失敗した呼出しの費用を残す。
 
 公式仕様: [OpenAIのキャッシュ](https://developers.openai.com/api/docs/guides/prompt-caching)、[Geminiの明示キャッシュ](https://ai.google.dev/gemini-api/docs/generate-content/caching)、[OpenAI互換APIでの参照](https://ai.google.dev/gemini-api/docs/openai#extra-body)、[Gemini料金](https://ai.google.dev/gemini-api/docs/pricing)。

@@ -46,6 +46,7 @@ const transport: typeof fetch = async (_url, options) => {
     return Response.json({ totalTokens: 370 });
   evaluationCalls++;
   const body = JSON.parse(String(options?.body));
+  expect(body.response_format.type).toBe("json_schema");
   const source = JSON.parse(
     body.messages.find((message: { role: string }) => message.role === "user")
       .content,
@@ -70,6 +71,8 @@ const transport: typeof fetch = async (_url, options) => {
         p.text.includes("扉は開いた。"),
       ),
     ).toBe(false);
+  if (source.task === "coverage")
+    expect(source.context).not.toHaveProperty("administratorBackground");
   const item =
     source.task === "summary"
       ? {

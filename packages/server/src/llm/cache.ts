@@ -165,7 +165,12 @@ export class PromptCache {
   async countGemini(
     config: GeminiConfig,
     key: string,
-    input: ReturnType<typeof geminiInput>,
+    input: ReturnType<typeof geminiInput> & {
+      generationConfig?: {
+        responseMimeType: string;
+        responseJsonSchema: unknown;
+      };
+    },
   ) {
     const response = await this.#post(
       config.baseUrl,

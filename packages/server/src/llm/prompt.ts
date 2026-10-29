@@ -226,7 +226,7 @@ export function preparePrompt(
       controlledActorIds,
       ...current
     } = input;
-    if (graphReferences) delete current.responseSchema;
+    if (graphReferences || structured) delete current.responseSchema;
     const parts: Json[] = [];
     if (initialContext !== undefined)
       parts.push({
