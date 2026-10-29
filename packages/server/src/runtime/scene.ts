@@ -931,6 +931,7 @@ export class WorldScenes {
       const value = await this.#ask(row, "result", "scene-result.md", {
         confirmed: source,
         presented: d.presentations ?? [],
+        requestedInputs: d.actions.map(({ id, text }) => ({ id, text })),
         responseSchema: z.toJSONSchema(Narrative, { io: "input" }),
       });
       const narrative = Narrative.parse(value.value);
