@@ -149,7 +149,24 @@ export function sceneResponse(
   checkedFormat = true,
   history: RecordedSceneEvent[] = [],
 ) {
-  const parsed = CheckedSceneStep.safeParse(value);
+  const checked =
+    value &&
+    typeof value === "object" &&
+    "responseCoverage" in value &&
+    Array.isArray(value.responseCoverage)
+      ? {
+          ...value,
+          responseCoverage: value.responseCoverage.map((part: unknown) =>
+            part &&
+            typeof part === "object" &&
+            !Array.isArray(part) &&
+            !Object.hasOwn(part, "explanation")
+              ? { ...part, explanation: "説明未返却" }
+              : part,
+          ),
+        }
+      : value;
+  const parsed = CheckedSceneStep.safeParse(checked);
   if (checkedFormat && !parsed.success) throw parsed.error;
   if (!parsed.success || parsed.data.type === "boundary") {
     const legacy = SceneStep.parse(value);
