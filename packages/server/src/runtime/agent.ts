@@ -14,6 +14,7 @@ import {
   Change,
   RelationKind,
   type Dependency,
+  type WorldContext,
 } from "../world/store.js";
 import {
   bindingScripts,
@@ -1169,27 +1170,60 @@ export class WorldAgent {
 
   async view(worldId: string, observerId: string, at: number) {
     const context = this.store.context(worldId);
-    if ((await context.node(observerId, at))?.kind !== "existence")
-      throw new Error("観測主体が見つかりません");
-    const observations = await context.history(observerId, "see", "out", at);
-    const interpretations = [];
+    const view = await this.#view(context, observerId, at);
+    await context.validate();
+    return view;
+  }
+
+  async intentView(worldId: string, observerId: string, at: number) {
+    const context = this.store.context(worldId);
+    const view = await this.#view(context, observerId, at);
+    const conditions = await this.#descriptions(
+      context,
+      observerId,
+      at,
+      "status",
+    );
+    await context.validate();
+    return { ...view, conditions };
+  }
+
+  async #descriptions(
+    context: WorldContext,
+    observerId: string,
+    at: number,
+    kind: "status" | "interpret",
+  ) {
+    const descriptions = [];
     for (const relation of await context.relations(
       observerId,
-      "interpret",
+      kind,
       "out",
       at,
     )) {
       if (relation.role !== "content") continue;
       const content = await context.node(relation.target, at);
       if (content?.kind !== "script") continue;
-      interpretations.push({
+      descriptions.push({
         text: content.text,
-        about: (await context.relations(content.id, "interpret", "out", at))
+        about: (await context.relations(content.id, kind, "out", at))
           .filter((edge) => edge.role === "about")
           .map((edge) => edge.target),
       });
     }
-    await context.validate();
+    return descriptions;
+  }
+
+  async #view(context: WorldContext, observerId: string, at: number) {
+    if ((await context.node(observerId, at))?.kind !== "existence")
+      throw new Error("観測主体が見つかりません");
+    const observations = await context.history(observerId, "see", "out", at);
+    const interpretations = await this.#descriptions(
+      context,
+      observerId,
+      at,
+      "interpret",
+    );
     return {
       observerId,
       at,
@@ -1255,7 +1289,7 @@ export class WorldAgent {
     if (!saved.rows[0]) {
       if (activityUntil !== undefined) Time.gt(at).parse(activityUntil);
       const view = {
-        ...(await this.view(worldId, observerId, at)),
+        ...(await this.intentView(worldId, observerId, at)),
         ...(ownIntentions.length ? { ownIntentions } : {}),
         ...(activityUntil === undefined
           ? {}

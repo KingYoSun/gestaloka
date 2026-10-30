@@ -1,4 +1,3 @@
-import { ResponsePart, responseCoverage } from "../response-coverage.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { InformationReference } from "@gestaloka/contracts";
@@ -103,6 +102,17 @@ export const SceneStep = z.discriminatedUnion("type", [
     .object({
       type: z.literal("scene"),
       events: z.array(SceneEvent),
+      arrivals: z
+        .array(
+          z
+            .object({
+              eventIndex: z.number().int().nonnegative(),
+              observerId: id,
+              text,
+            })
+            .strict(),
+        )
+        .default([]),
       decisions: z.record(id, z.enum(["pending", "finished", "decide"])),
       newDecisions: z.array(id),
       elapsedMs: z.number().int().nonnegative().safe().default(0),
@@ -111,99 +121,35 @@ export const SceneStep = z.discriminatedUnion("type", [
     .strict(),
   z.object({ type: z.literal("boundary"), reason: text }).strict(),
 ]);
-export const CheckedSceneStep = z.discriminatedUnion("type", [
-  SceneStep.options[0].extend({
-    arrivals: z
-      .array(
-        z
-          .object({
-            eventIndex: z.number().int().nonnegative(),
-            observerId: id,
-            text,
-          })
-          .strict(),
-      )
-      .default([]),
-    responseCoverage: z
-      .array(
-        ResponsePart.extend({
-          evidence: z.array(
-            z
-              .object({
-                source: z.enum(["events", "history"]).default("events"),
-                eventIndex: z.number().int().nonnegative(),
-                receiptIndex: z.number().int().nonnegative(),
-              })
-              .strip(),
-          ),
-        }),
-      )
-      .min(1),
-  }),
-  SceneStep.options[1],
-]);
-export function sceneResponse(
-  value: unknown,
-  actorId: string,
-  inputId: string,
-  checkedFormat = true,
-  history: RecordedSceneEvent[] = [],
-) {
-  const checked =
-    value &&
-    typeof value === "object" &&
-    "responseCoverage" in value &&
-    Array.isArray(value.responseCoverage)
-      ? {
-          ...value,
-          responseCoverage: value.responseCoverage.map((part: unknown) =>
-            part &&
-            typeof part === "object" &&
-            !Array.isArray(part) &&
-            !Object.hasOwn(part, "explanation")
-              ? { ...part, explanation: "説明未返却" }
-              : part,
-          ),
-        }
+export function sceneResponse(value: unknown) {
+  // 保存済みworkの旧診断は、出来事や判断へ影響させない。
+  const step =
+    value && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value).filter(([key]) => key !== "responseCoverage"),
+        )
       : value;
-  const parsed = CheckedSceneStep.safeParse(checked);
-  if (checkedFormat && !parsed.success) throw parsed.error;
-  if (!parsed.success || parsed.data.type === "boundary") {
-    const legacy = SceneStep.parse(value);
-    return legacy.type === "scene" ? { ...legacy, arrivals: [] } : legacy;
-  }
-  const { responseCoverage: parts, ...step } = parsed.data;
-  for (const part of parts) {
-    if (part.outcome !== "pending" && !part.evidence.length)
-      throw new Error("入力の各部分と返した内容の根拠を確認できません");
-    for (const evidence of part.evidence) {
-      const event = (evidence.source === "history" ? history : step.events)[
-          evidence.eventIndex
-        ],
-        receipt = event?.receipts[evidence.receiptIndex];
-      if (
-        !receipt ||
-        (evidence.source === "history" &&
-          history[evidence.eventIndex]?.inputId !== inputId) ||
-        (part.outcome !== "pending" &&
-          event!.actorId !== actorId &&
-          receipt.observerId !== actorId)
+  return SceneStep.parse(step);
+}
+
+export function legacyCoverageFailure(message?: string) {
+  try {
+    const issues: unknown = JSON.parse(message ?? "null");
+    return (
+      Array.isArray(issues) &&
+      issues.length > 0 &&
+      issues.every(
+        (issue: unknown) =>
+          issue !== null &&
+          typeof issue === "object" &&
+          "path" in issue &&
+          Array.isArray(issue.path) &&
+          issue.path[0] === "responseCoverage",
       )
-        throw new Error("説明内容の根拠が本人向け提示と一致しません");
-    }
+    );
+  } catch {
+    return false;
   }
-  if (
-    responseCoverage(parts) !== "responsive" &&
-    (["finished", "decide"].includes(step.decisions[actorId] ?? "") ||
-      step.newDecisions.includes(actorId))
-  ) {
-    step.decisions[actorId] = "pending";
-    step.newDecisions = step.newDecisions.filter((id) => id !== actorId);
-    for (const event of step.events)
-      if (event.actorId !== actorId && event.actorId in step.decisions)
-        step.decisions[event.actorId] = "decide";
-  }
-  return step;
 }
 
 /** Add a new receiver to an existing, still-staged occurrence without re-emitting it. */
@@ -253,7 +199,9 @@ export const CompletedScene = z
   })
   .strict();
 export type CompletedScene = z.infer<typeof CompletedScene>;
-export type SceneView = Awaited<ReturnType<WorldAgent["view"]>>;
+export type SceneView = Awaited<ReturnType<WorldAgent["view"]>> & {
+  conditions?: Awaited<ReturnType<WorldAgent["intentView"]>>["conditions"];
+};
 export type SceneIntent = {
   actorId: string;
   actionText: string;
@@ -301,6 +249,12 @@ export function sceneView(
   return {
     ...base,
     at,
+    conditions: [
+      ...(base.conditions ?? []),
+      ...background.facts
+        .filter((fact) => fact.subjectId === base.observerId)
+        .map((fact) => ({ text: fact.text, about: fact.aboutIds })),
+    ],
     observations: [
       ...base.observations,
       ...background.perceptions

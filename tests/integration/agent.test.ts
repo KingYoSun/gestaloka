@@ -247,7 +247,7 @@ afterAll(async () => {
   await databases.close();
 });
 
-test("意図形成へ観測の側面だけを渡し、対象全体・未観測の秘密・管理文脈を渡さない", async () => {
+test("意図形成へ観測の側面を渡し、対象全体・未観測の秘密・管理文脈を渡さない", async () => {
   const scene = await fixture();
   let sent = "";
   const transport = vi
@@ -289,6 +289,72 @@ test("意図形成へ観測の側面だけを渡し、対象全体・未観測�
   expect(
     (await runtime.view(scene.worldId, scene.actor.id, 0)).observations,
   ).toHaveLength(2);
+});
+
+test("本人の性質と認知条件を意図だけへ分離して渡し、知識や他者の秘密へ広げない", async () => {
+  const scene = await fixture(),
+    disposition = node("script", "SELF_DISPOSITION"),
+    cognition = node("script", "SELF_COGNITION"),
+    belief = node("script", "SELF_BELIEF");
+  await store.commit(
+    await store.claim(scene.worldId, randomUUID()),
+    store.context(scene.worldId),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: changes(
+        [disposition, cognition, belief],
+        [
+          edge("status", scene.actor, disposition, undefined, "content"),
+          edge("status", disposition, scene.actor, undefined, "about"),
+          edge("status", scene.actor, cognition, undefined, "content"),
+          edge("status", cognition, scene.actor, undefined, "about"),
+          edge("interpret", scene.actor, belief, undefined, "content"),
+          edge("interpret", belief, scene.actor, undefined, "about"),
+        ],
+      ),
+    },
+  );
+  let sent: Record<string, unknown> | undefined;
+  const runtime = await agent(async (_url, options) => {
+    const body = JSON.parse(String(options?.body));
+    sent = JSON.parse(
+      body.messages.find((m: { role: string }) => m.role === "user").content,
+    );
+    return response({ actionText: "本人が次の行為を選ぶ" });
+  });
+  const knowledge = await runtime.view(scene.worldId, scene.actor.id, 0),
+    intentView = await runtime.intentView(scene.worldId, scene.actor.id, 0),
+    { conditions, ...intentKnowledge } = intentView;
+  expect(intentKnowledge).toEqual(knowledge);
+  expect(conditions).toHaveLength(2);
+  expect(conditions).toEqual(
+    expect.arrayContaining([
+      { text: disposition.text, about: [scene.actor.id] },
+      { text: cognition.text, about: [scene.actor.id] },
+    ]),
+  );
+  expect(knowledge.interpretations).toContainEqual({
+    text: belief.text,
+    about: [scene.actor.id],
+  });
+  expect(knowledge).not.toHaveProperty("conditions");
+  expect(JSON.stringify(knowledge)).not.toMatch(
+    /SELF_DISPOSITION|SELF_COGNITION|SECRET_FACT/,
+  );
+  expect(JSON.stringify(intentView)).not.toContain("SECRET_FACT");
+  await runtime.intent(scene.worldId, scene.actor.id, 0, randomUUID());
+  expect(sent).toMatchObject({
+    observerId: scene.actor.id,
+    conditions: expect.arrayContaining(conditions),
+  });
+  expect(sent?.conditions).toHaveLength(conditions.length);
+  expect(sent?.observations).toEqual(knowledge.observations);
+  expect(sent?.interpretations).toEqual(knowledge.interpretations);
+  expect(JSON.stringify(sent)).not.toContain("SECRET_FACT");
+  expect(await runtime.view(scene.worldId, scene.actor.id, 0)).toEqual(
+    knowledge,
+  );
 });
 
 test("照会・再評価・確定を共有し、進捗保存を失っても確定済みの過去を再生成しない", async () => {

@@ -35,8 +35,9 @@ import {
   SceneBackground,
   SceneContext,
   ContextNeed,
-  CheckedSceneStep,
+  SceneStep,
   sceneResponse,
+  legacyCoverageFailure,
   sceneArrivals,
   sceneAnchors,
   sceneAgenda,
@@ -64,11 +65,7 @@ const Narrative = z
   })
   .strict();
 async function scenePrompt(file: string, information = true) {
-  const files = [
-    file,
-    ...(file === "scene-play.md" ? ["response-coverage.md"] : []),
-    ...(information ? ["presentation-information.md"] : []),
-  ];
+  const files = [file, ...(information ? ["presentation-information.md"] : [])];
   return (
     await Promise.all(
       files.map((name) =>
@@ -81,7 +78,6 @@ async function scenePrompt(file: string, information = true) {
   ).join("\n\n");
 }
 type Work = {
-  coverageVersion?: 1;
   id: string;
   kind: "background" | "resolve" | "intent" | "result";
   messages: ChatMessage[];
@@ -357,7 +353,15 @@ export class WorldScenes {
         throw new ConstructionStateError(
           "送信済み要求の結果が未確定です。自動では再送しません",
         );
-      if (row.data.work && !row.data.limitReached && !row.data.suspended) {
+      if (
+        row.data.work &&
+        !row.data.limitReached &&
+        !row.data.suspended &&
+        !(
+          row.data.work.kind === "resolve" &&
+          legacyCoverageFailure(row.data.error)
+        )
+      ) {
         const rejected = (
           await this.pool.query(
             "SELECT response ? 'rejection' AS rejected FROM llm_call WHERE id=$1",
@@ -431,7 +435,6 @@ export class WorldScenes {
   ) {
     if (!row.data.work) {
       row.data.work = {
-        ...(kind === "resolve" ? { coverageVersion: 1 as const } : {}),
         id: randomUUID(),
         kind,
         target,
@@ -681,8 +684,16 @@ export class WorldScenes {
       }
       for (const id of decision.participants)
         d.views[id] ??= creations.has(id)
-          ? { observerId: id, at: d.at, observations: [], interpretations: [] }
-          : await this.agent.view(d.worldId, id, d.at);
+          ? {
+              observerId: id,
+              at: d.at,
+              observations: [],
+              interpretations: [],
+              ...(id === row.actor_id ? {} : { conditions: [] }),
+            }
+          : id === row.actor_id
+            ? await this.agent.view(d.worldId, id, d.at)
+            : await this.agent.intentView(d.worldId, id, d.at);
       await this.agent.store.context(d.worldId, d.basis).validate();
       d.background = decision;
       delete d.work;
@@ -736,6 +747,10 @@ export class WorldScenes {
                 ...(w.actionText ? [w.actionText] : []),
               ]),
           ];
+        d.views[actor]!.conditions ??= bg.creations.some((c) => c.id === actor)
+          ? []
+          : (await this.agent.intentView(d.worldId, actor, d.startedAt))
+              .conditions;
         const value = await this.#ask(
           row,
           "intent",
@@ -780,17 +795,11 @@ export class WorldScenes {
               controlledActionText: action.text,
               intentions: intents,
             },
-            responseSchema: z.toJSONSchema(CheckedSceneStep, { io: "output" }),
+            responseSchema: z.toJSONSchema(SceneStep, { io: "output" }),
           },
           "resolution",
         ),
-        step = sceneResponse(
-          value.value,
-          row.actor_id,
-          action.id,
-          row.data.work?.coverageVersion === 1,
-          d.events,
-        );
+        step = sceneResponse(value.value);
       if (step.type === "boundary") break;
       if (step.needsContext && step.decisions[row.actor_id] === "finished")
         step.decisions[row.actor_id] = "pending";
