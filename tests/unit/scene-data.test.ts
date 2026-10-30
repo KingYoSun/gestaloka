@@ -1,6 +1,8 @@
 import { expect, test } from "vitest";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import {
+  CheckedSceneStep,
   mergeSceneChanges,
   sceneAgenda,
   sceneContinuations,
@@ -292,6 +294,7 @@ test("説明の予告や複合質問の欠落があれば操作を返さず、�
     evidence: [],
     explanation: "相手の返答を待っている",
   });
+  Reflect.deleteProperty(asked.responseCoverage[0]!, "explanation");
   expect(sceneResponse(asked, actor, "手順と注意点を聞く")).toMatchObject({
     decisions: { [actor]: "pending" },
     newDecisions: [npc],
@@ -347,9 +350,33 @@ test("同じ入力で前段に届いた説明を参照し、別入力の履歴�
       },
     ],
   };
+  Reflect.deleteProperty(value.responseCoverage[0]!, "explanation");
+  const original = structuredClone(value);
+  const providerSchema = z.toJSONSchema(CheckedSceneStep, { io: "input" });
   expect(sceneResponse(value, actor, inputId, true, [past])).toMatchObject({
     decisions: { [actor]: "finished" },
   });
+  expect(value).toEqual(original);
+  expect(CheckedSceneStep.safeParse(value).success).toBe(false);
+  expect(z.toJSONSchema(CheckedSceneStep, { io: "input" })).toEqual(
+    providerSchema,
+  );
+  const missingOutcome = structuredClone(value);
+  Reflect.deleteProperty(missingOutcome.responseCoverage[0]!, "outcome");
+  expect(() =>
+    sceneResponse(missingOutcome, actor, inputId, true, [past]),
+  ).toThrow();
+  const invalidDiagnostic = structuredClone(value);
+  for (const explanation of [null, "", 1]) {
+    Reflect.set(
+      invalidDiagnostic.responseCoverage[0]!,
+      "explanation",
+      explanation,
+    );
+    expect(() =>
+      sceneResponse(invalidDiagnostic, actor, inputId, true, [past]),
+    ).toThrow();
+  }
   expect(() => sceneResponse(value, actor, randomUUID(), true, [past])).toThrow(
     "本人向け提示",
   );
