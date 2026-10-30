@@ -1178,12 +1178,9 @@ export class WorldAgent {
   async intentView(worldId: string, observerId: string, at: number) {
     const context = this.store.context(worldId);
     const view = await this.#view(context, observerId, at);
-    const conditions = await this.#descriptions(
-      context,
-      observerId,
-      at,
-      "status",
-    );
+    const conditions = (
+      await this.#descriptions(context, observerId, at, "status")
+    ).map((condition) => ({ ...condition, at }));
     await context.validate();
     return { ...view, conditions };
   }

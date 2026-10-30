@@ -329,26 +329,28 @@ test("本人条件を観測や自己解釈と分離し、背景の他者条件�
   const base = {
     observerId: npc,
     at: 0,
-    conditions: [{ text: "SELF_DISPOSITION", about: [npc] }],
+    conditions: [{ text: "SELF_DISPOSITION", about: [npc], at: 0 }],
     observations: [],
     interpretations: [{ text: "SELF_BELIEF", about: [place] }],
   };
   const background = {
     ...bg,
     facts: [
-      { subjectId: npc, text: "SELF_COGNITION", aboutIds: [place] },
+      { subjectId: npc, text: "SELF_COGNITION", aboutIds: [place], at: 500 },
       { subjectId: actor, text: "OTHER_PRIVATE_CONDITION", aboutIds: [] },
     ],
   };
   const view = sceneView(base, background, [], [], 1000);
   expect(view.conditions).toEqual([
     ...base.conditions,
-    { text: "SELF_COGNITION", about: [place] },
+    { text: "SELF_COGNITION", about: [place], at: 500 },
   ]);
   expect(view.observations).toEqual([]);
   expect(view.interpretations).toEqual(base.interpretations);
   expect(JSON.stringify(view)).not.toContain("OTHER_PRIVATE_CONDITION");
-  expect(base.conditions).toEqual([{ text: "SELF_DISPOSITION", about: [npc] }]);
+  expect(base.conditions).toEqual([
+    { text: "SELF_DISPOSITION", about: [npc], at: 0 },
+  ]);
 });
 
 test("既存の声を後から加わったNPCへ届け、発言や既存受容を繰り返さない", () => {

@@ -94,8 +94,8 @@ const model = new LlmClient(
       expect(JSON.stringify(user)).not.toContain("人間だけの記憶");
       expect(user.conditions).toEqual(
         expect.arrayContaining([
-          { text: "NPC_DISPOSITION", about: [npc] },
-          { text: "NPC_COGNITION", about: [npc] },
+          { text: "NPC_DISPOSITION", about: [npc], at: 0 },
+          { text: "NPC_COGNITION", about: [npc], at: 0 },
         ]),
       );
       expect(JSON.stringify(user.observations)).not.toMatch(

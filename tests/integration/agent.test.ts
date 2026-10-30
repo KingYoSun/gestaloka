@@ -330,8 +330,8 @@ test("本人の性質と認知条件を意図だけへ分離して渡し、知�
   expect(conditions).toHaveLength(2);
   expect(conditions).toEqual(
     expect.arrayContaining([
-      { text: disposition.text, about: [scene.actor.id] },
-      { text: cognition.text, about: [scene.actor.id] },
+      { text: disposition.text, about: [scene.actor.id], at: 0 },
+      { text: cognition.text, about: [scene.actor.id], at: 0 },
     ]),
   );
   expect(knowledge.interpretations).toContainEqual({

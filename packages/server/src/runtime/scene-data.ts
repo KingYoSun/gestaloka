@@ -253,7 +253,11 @@ export function sceneView(
       ...(base.conditions ?? []),
       ...background.facts
         .filter((fact) => fact.subjectId === base.observerId)
-        .map((fact) => ({ text: fact.text, about: fact.aboutIds })),
+        .map((fact) => ({
+          text: fact.text,
+          about: fact.aboutIds,
+          at: fact.at ?? base.at,
+        })),
     ],
     observations: [
       ...base.observations,
