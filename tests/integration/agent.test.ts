@@ -21,6 +21,10 @@ import {
   SupersededWorker,
   type WorldProposal,
 } from "@gestaloka/server/agent";
+import {
+  sceneAnchors,
+  type SceneBackground,
+} from "../../packages/server/src/runtime/scene-data.js";
 
 const databases = connectDatabases(),
   store = new WorldStore(databases.graph);
@@ -245,6 +249,104 @@ afterAll(async () => {
       { worldId },
     );
   await databases.close();
+});
+
+test("シーン中の状態終了を実際の時点で確定し、受容を再生成せず保持する", async () => {
+  const scene = await fixture(),
+    background: SceneBackground = {
+      type: "background",
+      synopsis: "状態の変化を確認する",
+      participants: [scene.actor.id],
+      facts: [
+        {
+          subjectId: scene.object.id,
+          text: "状態A",
+          aboutIds: [scene.place.id],
+        },
+      ],
+      perceptions: [],
+      beliefs: [],
+      creations: [],
+      unknowns: [],
+    },
+    occurred = {
+      id: randomUUID(),
+      actorId: scene.actor.id,
+      text: "対象の状態が変わった",
+      period: { from: 0, until: 8000 },
+      receipts: [
+        { observerId: scene.actor.id, text: "変わった状態を受容した" },
+      ],
+    },
+    anchors = sceneAnchors(background, [occurred], 0, randomUUID()),
+    state = anchors.edges.find(
+      (e) => e.kind === "status" && e.role === "content",
+    )!,
+    about = anchors.edges.find(
+      (e) => e.kind === "status" && e.role === "about",
+    )!,
+    next = node("script", "状態B"),
+    nextContent = {
+      ...edge("status", scene.object, next, undefined, "content"),
+      period: { from: 8000 },
+    },
+    delta = changes(
+      [next],
+      [
+        { ...state, period: { ...state.period, until: 8000 } },
+        nextContent,
+        {
+          ...edge("status", next, scene.place, undefined, "about"),
+          period: { from: 8000 },
+        },
+      ],
+    );
+  delta.endEdges = [about.id];
+  const transport = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        response(proposal(delta, { resolvedUntil: 35000 })),
+      ),
+    runtime = await agent(transport, { LLM_RESOLUTION_JUDGMENT: "combined" }),
+    context = store.context(scene.worldId),
+    prior = (await context.history(scene.actor.id, "see", "out", 0))[0]!;
+  const id = await runtime.create({
+    worldId: scene.worldId,
+    phase: "interaction",
+    at: 0,
+    until: 35000,
+    rootIds: [scene.actor.id, scene.object.id],
+    actionText: "保存済みシーンを反映する",
+    completedScene: { background, events: [occurred], anchors },
+  });
+  operations.push(id);
+  const result = await runtime.run(id);
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect(await runtime.model.ledger.summary()).toMatchObject({ calls: 1 });
+  for (const anchored of [state, about])
+    expect((await context.edge(anchored.id))?.period.until).toBe(8000);
+  for (const [at, expected] of [
+    [7999, state.id],
+    [8000, nextContent.id],
+    [20000, nextContent.id],
+    [35000, nextContent.id],
+  ] as const)
+    expect(
+      (await context.relations(scene.object.id, "status", "out", at))
+        .filter((e) => [state.id, nextContent.id].includes(e.id))
+        .map((e) => e.id),
+    ).toEqual([expected]);
+  expect(await context.edge(prior.id)).toEqual(prior);
+  const receipt = anchors.edges.find((e) => e.kind === "see")!;
+  expect(await context.edge(receipt.id)).toMatchObject({
+    text: receipt.text,
+    period: receipt.period,
+    target: occurred.id,
+  });
+  expect(result.changes.edges.filter((e) => e.id === state.id)).toHaveLength(1);
+  await runtime.run(id);
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect(await context.edge(prior.id)).toEqual(prior);
 });
 
 test("意図形成へ観測の側面を渡し、対象全体・未観測の秘密・管理文脈を渡さない", async () => {

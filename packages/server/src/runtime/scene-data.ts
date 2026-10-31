@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { InformationReference } from "@gestaloka/contracts";
 import { Change } from "../world/model.js";
@@ -384,11 +385,33 @@ export function mergeSceneChanges(
 ): Change {
   const nodes = new Set(anchors.nodes.map((n) => n.id)),
     edges = new Map(anchors.edges.map((e) => [e.id, e]));
-  if (
-    [...extra.nodes, ...extra.revisions].some((n) => nodes.has(n.id)) ||
-    extra.edges.some((e) => edges.has(e.id))
-  )
+  if ([...extra.nodes, ...extra.revisions].some((n) => nodes.has(n.id)))
     throw new Error("表示済みシーンの内容を改訂・再発行できません");
+  const precise = new Map<string, number>(),
+    additions: Change["edges"] = [];
+  for (const e of extra.edges) {
+    const original = edges.get(e.id);
+    if (!original) {
+      additions.push(e);
+      continue;
+    }
+    const until = e.period.until;
+    if (
+      original.kind !== "status" ||
+      original.period.until !== undefined ||
+      until === undefined ||
+      until > at ||
+      e.period.from !== original.period.from ||
+      !isDeepStrictEqual({ ...e, period: original.period }, original)
+    )
+      throw new Error("表示済みシーンの内容を改訂・再発行できません");
+    const script =
+        original.role === "content" ? original.target : original.source,
+      prior = precise.get(script);
+    if (prior !== undefined && prior !== until)
+      throw new Error("同じ状態へ異なる終了時点を指定できません");
+    precise.set(script, until);
+  }
   const ended = new Set<string>();
   for (const id of extra.endEdges) {
     const e = edges.get(id);
@@ -401,13 +424,20 @@ export function mergeSceneChanges(
     nodes: [...anchors.nodes, ...extra.nodes],
     revisions: extra.revisions,
     edges: [
-      ...anchors.edges.map((e) =>
-        e.kind === "status" &&
-        ended.has(e.role === "content" ? e.target : e.source)
-          ? { ...e, period: { ...e.period, until: at } }
-          : e,
-      ),
-      ...extra.edges,
+      ...anchors.edges.map((e) => {
+        if (e.kind !== "status") return e;
+        const script = e.role === "content" ? e.target : e.source,
+          until = precise.get(script) ?? (ended.has(script) ? at : undefined);
+        if (until === undefined) return e;
+        if (
+          precise.has(script) &&
+          e.period.until !== undefined &&
+          e.period.until !== until
+        )
+          throw new Error("既に終わった状態の時点を変更できません");
+        return { ...e, period: { ...e.period, until } };
+      }),
+      ...additions,
     ],
     endEdges: extra.endEdges.filter((id) => !edges.has(id)),
   });

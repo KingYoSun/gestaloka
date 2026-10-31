@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { randomUUID } from "node:crypto";
+import { Change } from "../../packages/server/src/world/model.js";
 import {
   mergeSceneChanges,
   sceneAgenda,
@@ -88,6 +89,141 @@ test("開始時の状態の終了と、表示済みの発言・受容の変更�
   expect(view.at).toBe(1000);
   expect(view.observations[0]?.period).toEqual({ from: 0, until: 1000 });
   expect(view.ownIntentions).toEqual(["本人の継続"]);
+});
+test("途中で変わった状態を実際の時点で閉じ、content/aboutと旧終了指定を同期する", () => {
+  const anchors = sceneAnchors(
+      {
+        ...bg,
+        facts: [{ subjectId: npc, text: "状態A", aboutIds: [place] }],
+      },
+      [],
+      0,
+      randomUUID(),
+    ),
+    original = structuredClone(anchors),
+    state = anchors.edges.find(
+      (e) => e.kind === "status" && e.role === "content",
+    )!,
+    about = anchors.edges.find(
+      (e) => e.kind === "status" && e.role === "about",
+    )!,
+    next = { id: randomUUID(), kind: "script" as const, text: "状態B" },
+    nextContent = {
+      ...state,
+      id: randomUUID(),
+      target: next.id,
+      period: { from: 500 },
+    },
+    nextAbout = {
+      ...about,
+      id: randomUUID(),
+      source: next.id,
+      period: { from: 500 },
+    };
+  const result = mergeSceneChanges(
+    anchors,
+    {
+      nodes: [next],
+      revisions: [],
+      edges: [
+        { ...state, period: { ...state.period, until: 500 } },
+        nextContent,
+        nextAbout,
+      ],
+      endEdges: [about.id],
+    },
+    1000,
+  );
+  const statesAt = (at: number) =>
+    result.edges
+      .filter(
+        (e) =>
+          e.kind === "status" &&
+          e.role === "content" &&
+          e.period.from <= at &&
+          (e.period.until === undefined || at < e.period.until),
+      )
+      .map((e) => e.target);
+  expect(statesAt(499)).toEqual([state.target]);
+  expect(statesAt(500)).toEqual([next.id]);
+  expect(statesAt(750)).toEqual([next.id]);
+  expect(result.edges.find((e) => e.id === about.id)?.period.until).toBe(500);
+  expect(result.edges).toHaveLength(anchors.edges.length + 2);
+  expect(new Set(result.edges.map((e) => e.id)).size).toBe(result.edges.length);
+  expect(result.endEdges).toEqual([]);
+  expect(anchors).toEqual(original);
+  const paired = mergeSceneChanges(
+    anchors,
+    {
+      nodes: [],
+      revisions: [],
+      edges: [state, about].map((e) => ({
+        ...e,
+        period: { ...e.period, until: 500 },
+      })),
+      endEdges: [],
+    },
+    1000,
+  );
+  expect(paired.edges.every((e) => e.period.until === 500)).toBe(true);
+});
+test("状態終了は属性の改変・未到達時点・相反する終点を受け付けない", () => {
+  const anchors = sceneAnchors(bg, events, 100, randomUUID()),
+    state = anchors.edges.find(
+      (e) => e.kind === "status" && e.role === "content",
+    )!,
+    about = anchors.edges.find(
+      (e) => e.kind === "status" && e.role === "about",
+    )!,
+    see = anchors.edges.find((e) => e.kind === "see")!,
+    ending = { ...state, period: { ...state.period, until: 500 } };
+  for (const changed of [
+    { ...ending, text: "別の内容" },
+    { ...ending, source: actor },
+    { ...ending, period: { from: 101, until: 500 } },
+    { ...ending, period: { ...state.period, until: 1001 } },
+    state,
+    { ...see, period: { ...see.period, until: 500 } },
+  ])
+    expect(() =>
+      mergeSceneChanges(
+        anchors,
+        { nodes: [], revisions: [], edges: [changed], endEdges: [] },
+        1000,
+      ),
+    ).toThrow("改訂");
+  expect(() =>
+    mergeSceneChanges(
+      anchors,
+      {
+        nodes: [],
+        revisions: [],
+        edges: [ending, { ...about, period: { ...about.period, until: 600 } }],
+        endEdges: [],
+      },
+      1000,
+    ),
+  ).toThrow("異なる終了時点");
+  const laterAbout = {
+    ...anchors,
+    edges: anchors.edges.map((e) =>
+      e.id === about.id ? { ...e, period: { from: 600 } } : e,
+    ),
+  };
+  expect(() =>
+    mergeSceneChanges(
+      laterAbout,
+      { nodes: [], revisions: [], edges: [ending], endEdges: [] },
+      1000,
+    ),
+  ).toThrow("終点");
+  expect(() =>
+    Change.parse({
+      nodes: [],
+      edges: [ending],
+      endEdges: [state.id],
+    }),
+  ).toThrow("重複");
 });
 test("時点を進めても元の活動・本人の返答待ち・未実施の判断を落とさず保持する", () => {
   const other = randomUUID(),
