@@ -346,10 +346,10 @@ export class WorldScenes {
       if (row.state !== "paused")
         throw new ConstructionStateError("保留中のシーンを指定してください");
       row.state = row.data.resumeState!;
-      if (
+      const workState =
         row.data.work &&
-        (await this.agent.model.ledger.state(row.data.work.id)) === "pending"
-      )
+        (await this.agent.model.ledger.state(row.data.work.id));
+      if (workState === "pending")
         throw new ConstructionStateError(
           "送信済み要求の結果が未確定です。自動では再送しません",
         );
@@ -360,6 +360,14 @@ export class WorldScenes {
         !(
           row.data.work.kind === "resolve" &&
           legacyCoverageFailure(row.data.error)
+        ) &&
+        !(
+          row.data.work.kind === "background" &&
+          workState === "complete" &&
+          row.data.events.some(
+            (event) =>
+              row.data.error === `背景情報の参照が取得できません: ${event.id}`,
+          )
         )
       ) {
         const rejected = (
@@ -625,7 +633,11 @@ export class WorldScenes {
         ...decision.perceptions.flatMap((p) => [p.observerId, ...p.sourceIds]),
       ]);
       for (const id of refs) {
-        const node = await context.node(id, d.at);
+        const node =
+          (await context.node(id, d.at)) ??
+          (d.events.some((event) => event.id === id)
+            ? { kind: "event" }
+            : null);
         if (creations.has(id)) {
           if (node) throw new Error("既存の同一性を作り直すことはできません");
         } else {

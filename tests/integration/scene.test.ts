@@ -33,6 +33,7 @@ let modelCalls = 0,
   captureLegacyResolve = false;
 let legacyResolveSnapshot:
   Awaited<ReturnType<WorldAccess["scenes"]["latest"]>> | undefined;
+let backgroundSnapshot: typeof legacyResolveSnapshot;
 const partialNpcAction =
   "問いの一部に返答し、選んだ活動を続けて相手の判断を待つ";
 const inputs: Record<string, unknown>[] = [],
@@ -51,6 +52,9 @@ const model = new LlmClient(
     if (user.needsContext) {
       expect(user.stagedScene.events).toHaveLength(1);
       expect(user.stagedScene.events[0].text).toBe("若者が挨拶した");
+      backgroundSnapshot = structuredClone(
+        (await access.scenes.latest(construction))!,
+      );
       content = {
         type: "context",
         participants: [],
@@ -61,7 +65,7 @@ const model = new LlmClient(
           {
             subjectId: place,
             text: "橋へ続く道が声をかけた場所から延びている",
-            aboutIds: [actor],
+            aboutIds: [actor, user.stagedScene.events[0].id],
           },
         ],
       };
@@ -985,6 +989,11 @@ test("背景不足があればfinishedでも発生済み部分を保持し、同
     );
     expect(row.data.choices.some((i) => i.actorId === npc)).toBe(false);
     expect(row.data.contextNeed).toBeUndefined();
+    const eventId = row.data.events[0]!.id;
+    expect(row.data.background!.facts.at(-1)?.aboutIds).toContain(eventId);
+    expect(
+      await agent.store.context(world).node(eventId, row.data.at),
+    ).toBeUndefined();
     expect(
       row.data
         .presentations!.filter((p) => p.kind === "response")
@@ -993,8 +1002,127 @@ test("背景不足があればfinishedでも発生済み部分を保持し、同
     const before = modelCalls;
     await access.scenes.tick(id);
     expect(modelCalls).toBe(before);
+
+    const paused = structuredClone(backgroundSnapshot!),
+      work = structuredClone(paused.data.work!),
+      callBefore = (
+        await d.postgres.query(
+          "SELECT state,request,response,charged_nano::text FROM llm_call WHERE id=$1",
+          [work.id],
+        )
+      ).rows[0];
+    expect(work.kind).toBe("background");
+    expect(callBefore.state).toBe("complete");
+    paused.data.resumeState = "acting";
+    paused.data.error = `背景情報の参照が取得できません: ${eventId}`;
+    const restore = async (state = "paused") =>
+      d.postgres.query(
+        "UPDATE world_scene SET state=$2,data=$3,claim=NULL WHERE id=$1",
+        [id, state, JSON.stringify(paused.data)],
+      );
+
+    await restore();
+    await d.postgres.query("UPDATE llm_call SET state='pending' WHERE id=$1", [
+      work.id,
+    ]);
+    const pendingCalls = modelCalls;
+    expect(
+      (await command({ requestId: randomUUID(), command: "resume" }))
+        .statusCode,
+    ).toBe(409);
+    expect(modelCalls).toBe(pendingCalls);
+    await d.postgres.query("UPDATE llm_call SET state='complete' WHERE id=$1", [
+      work.id,
+    ]);
+
+    await command({ requestId: randomUUID(), command: "resume" });
+    expect((await access.scenes.latest(construction))!.data.work).toEqual(work);
+    const contextCalls = inputs.filter((input) => input.needsContext).length;
+    await access.scenes.tick(id);
+    expect(inputs.filter((input) => input.needsContext)).toHaveLength(
+      contextCalls,
+    );
+    expect(
+      (await access.scenes.latest(construction))!.data.events,
+    ).toHaveLength(2);
+    expect(
+      (
+        await d.postgres.query(
+          "SELECT state,request,response,charged_nano::text FROM llm_call WHERE id=$1",
+          [work.id],
+        )
+      ).rows[0],
+    ).toEqual(callBefore);
+
+    const unknownId = randomUUID(),
+      answer = JSON.parse(callBefore.response.content);
+    for (const [value, error] of [
+      [
+        { ...answer, facts: [{ ...answer.facts[0], aboutIds: [unknownId] }] },
+        `背景情報の参照が取得できません: ${unknownId}`,
+      ],
+      [
+        { ...answer, creations: [{ id: eventId, text: "別の存在" }] },
+        "既存の同一性を作り直すことはできません",
+      ],
+    ] as const) {
+      await d.postgres.query("UPDATE llm_call SET response=$2 WHERE id=$1", [
+        work.id,
+        { ...callBefore.response, content: JSON.stringify(value) },
+      ]);
+      await restore("acting");
+      const calls = modelCalls;
+      await expect(access.scenes.tick(id)).rejects.toThrow(error);
+      const rejected = (await access.scenes.latest(construction))!;
+      expect(rejected.state).toBe("paused");
+      expect(rejected.data.error).toBe(error);
+      expect(rejected.data.events).toHaveLength(1);
+      expect(modelCalls).toBe(calls);
+    }
+
+    await d.postgres.query("UPDATE llm_call SET response=$2 WHERE id=$1", [
+      work.id,
+      {
+        ...callBefore.response,
+        content: JSON.stringify({
+          ...answer,
+          facts: [{ ...answer.facts[0], subjectId: eventId }],
+        }),
+      },
+    ]);
+    await restore("acting");
+    await access.scenes.tick(id);
+    const corrected = (
+      await d.postgres.query(
+        "SELECT request FROM llm_call WHERE budget_id=$1 AND request->>'role'='scene-background'",
+        [budget],
+      )
+    ).rows.flatMap((call) =>
+      call.request.sourceMessages
+        .filter((message: { role: string }) => message.role === "user")
+        .flatMap(
+          (message: { content: string }) =>
+            JSON.parse(message.content).validationErrors ?? [],
+        ),
+    );
+    expect(corrected).toContainEqual({
+      id: eventId,
+      actualKind: "event",
+      requiredKind: "existence",
+    });
+    await d.postgres.query("UPDATE llm_call SET response=$2 WHERE id=$1", [
+      work.id,
+      callBefore.response,
+    ]);
+    paused.data.error = `背景情報の参照が取得できません: ${unknownId}`;
+    await restore();
+    await command({ requestId: randomUUID(), command: "resume" });
+    const retry = (await access.scenes.latest(construction))!.data.work!;
+    expect(retry.id).not.toBe(work.id);
+    expect(retry.messages.at(-1)?.content).toContain(unknownId);
   } finally {
     await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
+    backgroundSnapshot = undefined;
     inputs.length = 0;
   }
 });
