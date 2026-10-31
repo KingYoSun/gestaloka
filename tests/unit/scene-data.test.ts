@@ -1,14 +1,14 @@
 import { expect, test } from "vitest";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
+import { Change } from "../../packages/server/src/world/model.js";
 import {
-  CheckedSceneStep,
   mergeSceneChanges,
   sceneAgenda,
   sceneContinuations,
   sceneAnchors,
   sceneView,
   sceneResponse,
+  legacyCoverageFailure,
   sceneArrivals,
   type SceneBackground,
 } from "../../packages/server/src/runtime/scene-data.js";
@@ -74,7 +74,13 @@ test("開始時の状態の終了と、表示済みの発言・受容の変更�
     ),
   ).toThrow("改訂");
   const view = sceneView(
-    { observerId: npc, at: 0, observations: [], interpretations: [] },
+    {
+      observerId: npc,
+      at: 0,
+      observations: [],
+      interpretations: [],
+      conditions: [],
+    },
     bg,
     events,
     ["本人の継続"],
@@ -83,6 +89,141 @@ test("開始時の状態の終了と、表示済みの発言・受容の変更�
   expect(view.at).toBe(1000);
   expect(view.observations[0]?.period).toEqual({ from: 0, until: 1000 });
   expect(view.ownIntentions).toEqual(["本人の継続"]);
+});
+test("途中で変わった状態を実際の時点で閉じ、content/aboutと旧終了指定を同期する", () => {
+  const anchors = sceneAnchors(
+      {
+        ...bg,
+        facts: [{ subjectId: npc, text: "状態A", aboutIds: [place] }],
+      },
+      [],
+      0,
+      randomUUID(),
+    ),
+    original = structuredClone(anchors),
+    state = anchors.edges.find(
+      (e) => e.kind === "status" && e.role === "content",
+    )!,
+    about = anchors.edges.find(
+      (e) => e.kind === "status" && e.role === "about",
+    )!,
+    next = { id: randomUUID(), kind: "script" as const, text: "状態B" },
+    nextContent = {
+      ...state,
+      id: randomUUID(),
+      target: next.id,
+      period: { from: 500 },
+    },
+    nextAbout = {
+      ...about,
+      id: randomUUID(),
+      source: next.id,
+      period: { from: 500 },
+    };
+  const result = mergeSceneChanges(
+    anchors,
+    {
+      nodes: [next],
+      revisions: [],
+      edges: [
+        { ...state, period: { ...state.period, until: 500 } },
+        nextContent,
+        nextAbout,
+      ],
+      endEdges: [about.id],
+    },
+    1000,
+  );
+  const statesAt = (at: number) =>
+    result.edges
+      .filter(
+        (e) =>
+          e.kind === "status" &&
+          e.role === "content" &&
+          e.period.from <= at &&
+          (e.period.until === undefined || at < e.period.until),
+      )
+      .map((e) => e.target);
+  expect(statesAt(499)).toEqual([state.target]);
+  expect(statesAt(500)).toEqual([next.id]);
+  expect(statesAt(750)).toEqual([next.id]);
+  expect(result.edges.find((e) => e.id === about.id)?.period.until).toBe(500);
+  expect(result.edges).toHaveLength(anchors.edges.length + 2);
+  expect(new Set(result.edges.map((e) => e.id)).size).toBe(result.edges.length);
+  expect(result.endEdges).toEqual([]);
+  expect(anchors).toEqual(original);
+  const paired = mergeSceneChanges(
+    anchors,
+    {
+      nodes: [],
+      revisions: [],
+      edges: [state, about].map((e) => ({
+        ...e,
+        period: { ...e.period, until: 500 },
+      })),
+      endEdges: [],
+    },
+    1000,
+  );
+  expect(paired.edges.every((e) => e.period.until === 500)).toBe(true);
+});
+test("状態終了は属性の改変・未到達時点・相反する終点を受け付けない", () => {
+  const anchors = sceneAnchors(bg, events, 100, randomUUID()),
+    state = anchors.edges.find(
+      (e) => e.kind === "status" && e.role === "content",
+    )!,
+    about = anchors.edges.find(
+      (e) => e.kind === "status" && e.role === "about",
+    )!,
+    see = anchors.edges.find((e) => e.kind === "see")!,
+    ending = { ...state, period: { ...state.period, until: 500 } };
+  for (const changed of [
+    { ...ending, text: "別の内容" },
+    { ...ending, source: actor },
+    { ...ending, period: { from: 101, until: 500 } },
+    { ...ending, period: { ...state.period, until: 1001 } },
+    state,
+    { ...see, period: { ...see.period, until: 500 } },
+  ])
+    expect(() =>
+      mergeSceneChanges(
+        anchors,
+        { nodes: [], revisions: [], edges: [changed], endEdges: [] },
+        1000,
+      ),
+    ).toThrow("改訂");
+  expect(() =>
+    mergeSceneChanges(
+      anchors,
+      {
+        nodes: [],
+        revisions: [],
+        edges: [ending, { ...about, period: { ...about.period, until: 600 } }],
+        endEdges: [],
+      },
+      1000,
+    ),
+  ).toThrow("異なる終了時点");
+  const laterAbout = {
+    ...anchors,
+    edges: anchors.edges.map((e) =>
+      e.id === about.id ? { ...e, period: { from: 600 } } : e,
+    ),
+  };
+  expect(() =>
+    mergeSceneChanges(
+      laterAbout,
+      { nodes: [], revisions: [], edges: [ending], endEdges: [] },
+      1000,
+    ),
+  ).toThrow("終点");
+  expect(() =>
+    Change.parse({
+      nodes: [],
+      edges: [ending],
+      endEdges: [state.id],
+    }),
+  ).toThrow("重複");
 });
 test("時点を進めても元の活動・本人の返答待ち・未実施の判断を落とさず保持する", () => {
   const other = randomUUID(),
@@ -224,166 +365,128 @@ test("登場NPCの選択済みの継続と新しい判断を引き継ぎ、人�
   });
 });
 
-test("説明の予告や複合質問の欠落があれば操作を返さず、発話者の次の判断を求める", () => {
-  const make = (
-    outcome: "delivered" | "declined" | "pending",
-    quote: string,
-  ) => ({
-    type: "scene",
-    events: [
-      {
-        actorId: npc,
-        text: quote,
-        receipts: [{ observerId: actor, text: quote }],
-      },
-    ],
-    decisions: { [actor]: "finished", [npc]: "finished" },
-    newDecisions: [actor],
-    elapsedMs: 0,
-    responseCoverage: [
-      {
-        requestPart: "手順と注意点を聞く",
-        outcome,
-        evidence: [{ eventIndex: 0, receiptIndex: 0, quote }],
-        explanation: "提示内容を照合",
-      },
-    ],
-  });
-  const deferred = sceneResponse(
-    make("pending", "注意点から話そう"),
-    actor,
-    "手順と注意点を聞く",
-  );
-  expect(deferred).toMatchObject({
-    decisions: { [actor]: "pending", [npc]: "decide" },
-    newDecisions: [],
-  });
-  for (const outcome of ["delivered", "declined"] as const) {
-    const complete = sceneResponse(
-      make(
-        outcome,
-        outcome === "delivered"
-          ? "籠を先に洗う。赤い葉には触らない"
-          : "今は患者の処置中なので説明できない",
-      ),
-      actor,
-      "手順と注意点を聞く",
-    );
-    expect(complete.type === "scene" && complete.decisions[actor]).toBe(
-      "finished",
-    );
-  }
-  const partial = make("delivered", "籠を洗う");
-  partial.responseCoverage.push({
-    requestPart: "注意点",
-    outcome: "pending",
-    evidence: [],
-    explanation: "注意点が届いていない",
-  });
-  expect(sceneResponse(partial, actor, "手順と注意点を聞く")).toMatchObject({
-    decisions: { [actor]: "pending" },
-  });
-  const asked = make("delivered", "質問は村人へ届いた");
-  asked.events[0]!.actorId = actor;
-  asked.events[0]!.receipts[0]!.observerId = npc;
-  asked.decisions[actor] = "pending";
-  asked.newDecisions = [npc];
-  asked.responseCoverage.push({
-    requestPart: "注意点",
-    outcome: "pending",
-    evidence: [],
-    explanation: "相手の返答を待っている",
-  });
-  Reflect.deleteProperty(asked.responseCoverage[0]!, "explanation");
-  expect(sceneResponse(asked, actor, "手順と注意点を聞く")).toMatchObject({
-    decisions: { [actor]: "pending" },
-    newDecisions: [npc],
-  });
-  const wrong = make("delivered", "本人へ返した内容");
-  wrong.events[0]!.receipts[0]!.observerId = npc;
-  expect(() => sceneResponse(wrong, actor, "手順と注意点を聞く")).toThrow(
-    "本人向け提示",
-  );
-  const legacy = make("delivered", "以前の提示");
-  const { responseCoverage: _coverage, ...old } = legacy;
-  void _coverage;
-  expect(() => sceneResponse(old, actor, "手順と注意点を聞く")).toThrow();
-  expect(sceneResponse(old, actor, "手順と注意点を聞く", false)).toMatchObject({
-    decisions: old.decisions,
-  });
-});
-
-test("同じ入力で前段に届いた説明を参照し、別入力の履歴を回答へ流用しない", () => {
-  const inputId = randomUUID(),
-    past = {
-      id: randomUUID(),
-      inputId,
-      actorId: npc,
-      text: "先に道具を伝えた",
-      period: { from: 0, until: 1 },
-      receipts: [{ observerId: actor, text: "木の籠を使ってください" }],
+test.each(["decide", "finished"] as const)(
+  "NPCの部分返答でもモデルが返した本人の%sとNPCの継続待ちを保持する",
+  (decision) => {
+    const value = {
+      type: "scene",
+      events: [
+        {
+          actorId: npc,
+          text: "問いの一部にだけ答えた",
+          receipts: [{ observerId: actor, text: "一つ目について話した" }],
+        },
+      ],
+      decisions: { [actor]: decision, [npc]: "pending" },
+      newDecisions: [],
+      arrivals: [],
+      elapsedMs: 0,
+      responseCoverage: [
+        {
+          requestPart: "一つ目の問い",
+          outcome: "delivered",
+          evidence: [{ eventIndex: 0, receiptIndex: 0 }],
+          explanation: "一つ目は返答した",
+        },
+        {
+          requestPart: "もう一つの問い",
+          outcome: "pending",
+          evidence: [],
+          explanation: "この部分には答えていない",
+        },
+      ],
     };
+    const original = structuredClone(value);
+    const { responseCoverage: _coverage, ...expected } = value;
+    void _coverage;
+    expect(sceneResponse(value)).toEqual(expected);
+    expect(value).toEqual(original);
+  },
+);
+
+test("旧保存出力の診断フィールドだけを捨て、出来事・到着受容・判断先は変えない", () => {
+  const obsolete = {
+    code: "invalid_type",
+    path: ["responseCoverage", 0, "explanation"],
+    message: "旧診断の説明がない",
+  };
+  expect(legacyCoverageFailure(JSON.stringify([obsolete]))).toBe(true);
+  expect(
+    legacyCoverageFailure(
+      JSON.stringify([
+        obsolete,
+        { ...obsolete, path: ["events", 0, "actorId"] },
+      ]),
+    ),
+  ).toBe(false);
+  expect(legacyCoverageFailure("行動主体が不正です")).toBe(false);
   const value = {
     type: "scene",
     events: [
       {
         actorId: npc,
-        text: "注意を伝えた",
-        receipts: [{ observerId: actor, text: "赤い葉には触れないでください" }],
+        text: "本人が選んだ発言",
+        receipts: [{ observerId: actor, text: "本人の発言が届いた" }],
       },
     ],
-    decisions: { [actor]: "finished", [npc]: "finished" },
-    newDecisions: [],
+    decisions: { [actor]: "decide", [npc]: "pending" },
+    newDecisions: [npc],
+    arrivals: [{ eventIndex: 0, observerId: npc, text: "前の声が届いた" }],
     elapsedMs: 0,
     responseCoverage: [
       {
-        requestPart: "使う道具",
-        outcome: "delivered",
-        evidence: [{ source: "history", eventIndex: 0, receiptIndex: 0 }],
-        explanation: "前段で聞いた道具",
-      },
-      {
-        requestPart: "扱いの注意",
-        outcome: "delivered",
-        evidence: [{ source: "events", eventIndex: 0, receiptIndex: 0 }],
-        explanation: "今回聞いた注意",
+        requestPart: "未回答の問い",
+        outcome: "pending",
+        evidence: [],
       },
     ],
   };
-  Reflect.deleteProperty(value.responseCoverage[0]!, "explanation");
   const original = structuredClone(value);
-  const providerSchema = z.toJSONSchema(CheckedSceneStep, { io: "input" });
-  expect(sceneResponse(value, actor, inputId, true, [past])).toMatchObject({
-    decisions: { [actor]: "finished" },
+  const { responseCoverage: _coverage, ...expected } = value;
+  void _coverage;
+  expect(sceneResponse(value)).toEqual(expected);
+  const { arrivals: _arrivals, ...withoutArrivals } = expected;
+  void _arrivals;
+  expect(sceneResponse(withoutArrivals)).toEqual({
+    ...withoutArrivals,
+    arrivals: [],
   });
   expect(value).toEqual(original);
-  expect(CheckedSceneStep.safeParse(value).success).toBe(false);
-  expect(z.toJSONSchema(CheckedSceneStep, { io: "input" })).toEqual(
-    providerSchema,
-  );
-  const missingOutcome = structuredClone(value);
-  Reflect.deleteProperty(missingOutcome.responseCoverage[0]!, "outcome");
+  expect(() => sceneResponse({ ...expected, elapsedMs: -1 })).toThrow();
   expect(() =>
-    sceneResponse(missingOutcome, actor, inputId, true, [past]),
+    sceneResponse({ ...expected, events: [{ actorId: "invalid" }] }),
   ).toThrow();
-  const invalidDiagnostic = structuredClone(value);
-  for (const explanation of [null, "", 1]) {
-    Reflect.set(
-      invalidDiagnostic.responseCoverage[0]!,
-      "explanation",
-      explanation,
-    );
-    expect(() =>
-      sceneResponse(invalidDiagnostic, actor, inputId, true, [past]),
-    ).toThrow();
-  }
-  expect(() => sceneResponse(value, actor, randomUUID(), true, [past])).toThrow(
-    "本人向け提示",
-  );
-  value.responseCoverage[1]!.evidence[0]!.eventIndex = 7;
-  expect(() => sceneResponse(value, actor, inputId, true, [past])).toThrow(
-    "本人向け提示",
-  );
+  expect(() =>
+    sceneResponse({ ...expected, decisions: { [actor]: "unknown" } }),
+  ).toThrow();
+});
+
+test("本人条件を観測や自己解釈と分離し、背景の他者条件を本人へ混ぜない", () => {
+  const base = {
+    observerId: npc,
+    at: 0,
+    conditions: [{ text: "SELF_DISPOSITION", about: [npc], at: 0 }],
+    observations: [],
+    interpretations: [{ text: "SELF_BELIEF", about: [place] }],
+  };
+  const background = {
+    ...bg,
+    facts: [
+      { subjectId: npc, text: "SELF_COGNITION", aboutIds: [place], at: 500 },
+      { subjectId: actor, text: "OTHER_PRIVATE_CONDITION", aboutIds: [] },
+    ],
+  };
+  const view = sceneView(base, background, [], [], 1000);
+  expect(view.conditions).toEqual([
+    ...base.conditions,
+    { text: "SELF_COGNITION", about: [place], at: 500 },
+  ]);
+  expect(view.observations).toEqual([]);
+  expect(view.interpretations).toEqual(base.interpretations);
+  expect(JSON.stringify(view)).not.toContain("OTHER_PRIVATE_CONDITION");
+  expect(base.conditions).toEqual([
+    { text: "SELF_DISPOSITION", about: [npc], at: 0 },
+  ]);
 });
 
 test("既存の声を後から加わったNPCへ届け、発言や既存受容を繰り返さない", () => {
@@ -408,7 +511,13 @@ test("既存の声を後から加わったNPCへ届け、発言や既存受容�
   expect(history).toHaveLength(1);
   expect(history[0]!.receipts[0]!.text).toBe("手順を尋ね、返事を待っている");
   const view = sceneView(
-    { observerId: npc, at: 0, observations: [], interpretations: [] },
+    {
+      observerId: npc,
+      at: 0,
+      observations: [],
+      interpretations: [],
+      conditions: [],
+    },
     bg,
     history,
     [],

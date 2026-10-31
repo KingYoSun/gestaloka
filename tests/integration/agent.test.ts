@@ -21,6 +21,10 @@ import {
   SupersededWorker,
   type WorldProposal,
 } from "@gestaloka/server/agent";
+import {
+  sceneAnchors,
+  type SceneBackground,
+} from "../../packages/server/src/runtime/scene-data.js";
 
 const databases = connectDatabases(),
   store = new WorldStore(databases.graph);
@@ -247,7 +251,105 @@ afterAll(async () => {
   await databases.close();
 });
 
-test("意図形成へ観測の側面だけを渡し、対象全体・未観測の秘密・管理文脈を渡さない", async () => {
+test("シーン中の状態終了を実際の時点で確定し、受容を再生成せず保持する", async () => {
+  const scene = await fixture(),
+    background: SceneBackground = {
+      type: "background",
+      synopsis: "状態の変化を確認する",
+      participants: [scene.actor.id],
+      facts: [
+        {
+          subjectId: scene.object.id,
+          text: "状態A",
+          aboutIds: [scene.place.id],
+        },
+      ],
+      perceptions: [],
+      beliefs: [],
+      creations: [],
+      unknowns: [],
+    },
+    occurred = {
+      id: randomUUID(),
+      actorId: scene.actor.id,
+      text: "対象の状態が変わった",
+      period: { from: 0, until: 8000 },
+      receipts: [
+        { observerId: scene.actor.id, text: "変わった状態を受容した" },
+      ],
+    },
+    anchors = sceneAnchors(background, [occurred], 0, randomUUID()),
+    state = anchors.edges.find(
+      (e) => e.kind === "status" && e.role === "content",
+    )!,
+    about = anchors.edges.find(
+      (e) => e.kind === "status" && e.role === "about",
+    )!,
+    next = node("script", "状態B"),
+    nextContent = {
+      ...edge("status", scene.object, next, undefined, "content"),
+      period: { from: 8000 },
+    },
+    delta = changes(
+      [next],
+      [
+        { ...state, period: { ...state.period, until: 8000 } },
+        nextContent,
+        {
+          ...edge("status", next, scene.place, undefined, "about"),
+          period: { from: 8000 },
+        },
+      ],
+    );
+  delta.endEdges = [about.id];
+  const transport = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        response(proposal(delta, { resolvedUntil: 35000 })),
+      ),
+    runtime = await agent(transport, { LLM_RESOLUTION_JUDGMENT: "combined" }),
+    context = store.context(scene.worldId),
+    prior = (await context.history(scene.actor.id, "see", "out", 0))[0]!;
+  const id = await runtime.create({
+    worldId: scene.worldId,
+    phase: "interaction",
+    at: 0,
+    until: 35000,
+    rootIds: [scene.actor.id, scene.object.id],
+    actionText: "保存済みシーンを反映する",
+    completedScene: { background, events: [occurred], anchors },
+  });
+  operations.push(id);
+  const result = await runtime.run(id);
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect(await runtime.model.ledger.summary()).toMatchObject({ calls: 1 });
+  for (const anchored of [state, about])
+    expect((await context.edge(anchored.id))?.period.until).toBe(8000);
+  for (const [at, expected] of [
+    [7999, state.id],
+    [8000, nextContent.id],
+    [20000, nextContent.id],
+    [35000, nextContent.id],
+  ] as const)
+    expect(
+      (await context.relations(scene.object.id, "status", "out", at))
+        .filter((e) => [state.id, nextContent.id].includes(e.id))
+        .map((e) => e.id),
+    ).toEqual([expected]);
+  expect(await context.edge(prior.id)).toEqual(prior);
+  const receipt = anchors.edges.find((e) => e.kind === "see")!;
+  expect(await context.edge(receipt.id)).toMatchObject({
+    text: receipt.text,
+    period: receipt.period,
+    target: occurred.id,
+  });
+  expect(result.changes.edges.filter((e) => e.id === state.id)).toHaveLength(1);
+  await runtime.run(id);
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect(await context.edge(prior.id)).toEqual(prior);
+});
+
+test("意図形成へ観測の側面を渡し、対象全体・未観測の秘密・管理文脈を渡さない", async () => {
   const scene = await fixture();
   let sent = "";
   const transport = vi
@@ -289,6 +391,72 @@ test("意図形成へ観測の側面だけを渡し、対象全体・未観測�
   expect(
     (await runtime.view(scene.worldId, scene.actor.id, 0)).observations,
   ).toHaveLength(2);
+});
+
+test("本人の性質と認知条件を意図だけへ分離して渡し、知識や他者の秘密へ広げない", async () => {
+  const scene = await fixture(),
+    disposition = node("script", "SELF_DISPOSITION"),
+    cognition = node("script", "SELF_COGNITION"),
+    belief = node("script", "SELF_BELIEF");
+  await store.commit(
+    await store.claim(scene.worldId, randomUUID()),
+    store.context(scene.worldId),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: changes(
+        [disposition, cognition, belief],
+        [
+          edge("status", scene.actor, disposition, undefined, "content"),
+          edge("status", disposition, scene.actor, undefined, "about"),
+          edge("status", scene.actor, cognition, undefined, "content"),
+          edge("status", cognition, scene.actor, undefined, "about"),
+          edge("interpret", scene.actor, belief, undefined, "content"),
+          edge("interpret", belief, scene.actor, undefined, "about"),
+        ],
+      ),
+    },
+  );
+  let sent: Record<string, unknown> | undefined;
+  const runtime = await agent(async (_url, options) => {
+    const body = JSON.parse(String(options?.body));
+    sent = JSON.parse(
+      body.messages.find((m: { role: string }) => m.role === "user").content,
+    );
+    return response({ actionText: "本人が次の行為を選ぶ" });
+  });
+  const knowledge = await runtime.view(scene.worldId, scene.actor.id, 0),
+    intentView = await runtime.intentView(scene.worldId, scene.actor.id, 0),
+    { conditions, ...intentKnowledge } = intentView;
+  expect(intentKnowledge).toEqual(knowledge);
+  expect(conditions).toHaveLength(2);
+  expect(conditions).toEqual(
+    expect.arrayContaining([
+      { text: disposition.text, about: [scene.actor.id], at: 0 },
+      { text: cognition.text, about: [scene.actor.id], at: 0 },
+    ]),
+  );
+  expect(knowledge.interpretations).toContainEqual({
+    text: belief.text,
+    about: [scene.actor.id],
+  });
+  expect(knowledge).not.toHaveProperty("conditions");
+  expect(JSON.stringify(knowledge)).not.toMatch(
+    /SELF_DISPOSITION|SELF_COGNITION|SECRET_FACT/,
+  );
+  expect(JSON.stringify(intentView)).not.toContain("SECRET_FACT");
+  await runtime.intent(scene.worldId, scene.actor.id, 0, randomUUID());
+  expect(sent).toMatchObject({
+    observerId: scene.actor.id,
+    conditions: expect.arrayContaining(conditions),
+  });
+  expect(sent?.conditions).toHaveLength(conditions.length);
+  expect(sent?.observations).toEqual(knowledge.observations);
+  expect(sent?.interpretations).toEqual(knowledge.interpretations);
+  expect(JSON.stringify(sent)).not.toContain("SECRET_FACT");
+  expect(await runtime.view(scene.worldId, scene.actor.id, 0)).toEqual(
+    knowledge,
+  );
 });
 
 test("照会・再評価・確定を共有し、進捗保存を失っても確定済みの過去を再生成しない", async () => {

@@ -35,8 +35,9 @@ import {
   SceneBackground,
   SceneContext,
   ContextNeed,
-  CheckedSceneStep,
+  SceneStep,
   sceneResponse,
+  legacyCoverageFailure,
   sceneArrivals,
   sceneAnchors,
   sceneAgenda,
@@ -64,11 +65,7 @@ const Narrative = z
   })
   .strict();
 async function scenePrompt(file: string, information = true) {
-  const files = [
-    file,
-    ...(file === "scene-play.md" ? ["response-coverage.md"] : []),
-    ...(information ? ["presentation-information.md"] : []),
-  ];
+  const files = [file, ...(information ? ["presentation-information.md"] : [])];
   return (
     await Promise.all(
       files.map((name) =>
@@ -81,7 +78,6 @@ async function scenePrompt(file: string, information = true) {
   ).join("\n\n");
 }
 type Work = {
-  coverageVersion?: 1;
   id: string;
   kind: "background" | "resolve" | "intent" | "result";
   messages: ChatMessage[];
@@ -350,14 +346,30 @@ export class WorldScenes {
       if (row.state !== "paused")
         throw new ConstructionStateError("保留中のシーンを指定してください");
       row.state = row.data.resumeState!;
-      if (
+      const workState =
         row.data.work &&
-        (await this.agent.model.ledger.state(row.data.work.id)) === "pending"
-      )
+        (await this.agent.model.ledger.state(row.data.work.id));
+      if (workState === "pending")
         throw new ConstructionStateError(
           "送信済み要求の結果が未確定です。自動では再送しません",
         );
-      if (row.data.work && !row.data.limitReached && !row.data.suspended) {
+      if (
+        row.data.work &&
+        !row.data.limitReached &&
+        !row.data.suspended &&
+        !(
+          row.data.work.kind === "resolve" &&
+          legacyCoverageFailure(row.data.error)
+        ) &&
+        !(
+          row.data.work.kind === "background" &&
+          workState === "complete" &&
+          row.data.events.some(
+            (event) =>
+              row.data.error === `背景情報の参照が取得できません: ${event.id}`,
+          )
+        )
+      ) {
         const rejected = (
           await this.pool.query(
             "SELECT response ? 'rejection' AS rejected FROM llm_call WHERE id=$1",
@@ -431,7 +443,6 @@ export class WorldScenes {
   ) {
     if (!row.data.work) {
       row.data.work = {
-        ...(kind === "resolve" ? { coverageVersion: 1 as const } : {}),
         id: randomUUID(),
         kind,
         target,
@@ -622,7 +633,11 @@ export class WorldScenes {
         ...decision.perceptions.flatMap((p) => [p.observerId, ...p.sourceIds]),
       ]);
       for (const id of refs) {
-        const node = await context.node(id, d.at);
+        const node =
+          (await context.node(id, d.at)) ??
+          (d.events.some((event) => event.id === id)
+            ? { kind: "event" }
+            : null);
         if (creations.has(id)) {
           if (node) throw new Error("既存の同一性を作り直すことはできません");
         } else {
@@ -681,8 +696,16 @@ export class WorldScenes {
       }
       for (const id of decision.participants)
         d.views[id] ??= creations.has(id)
-          ? { observerId: id, at: d.at, observations: [], interpretations: [] }
-          : await this.agent.view(d.worldId, id, d.at);
+          ? {
+              observerId: id,
+              at: d.at,
+              observations: [],
+              interpretations: [],
+              ...(id === row.actor_id ? {} : { conditions: [] }),
+            }
+          : id === row.actor_id
+            ? await this.agent.view(d.worldId, id, d.at)
+            : await this.agent.intentView(d.worldId, id, d.at);
       await this.agent.store.context(d.worldId, d.basis).validate();
       d.background = decision;
       delete d.work;
@@ -736,6 +759,10 @@ export class WorldScenes {
                 ...(w.actionText ? [w.actionText] : []),
               ]),
           ];
+        d.views[actor]!.conditions ??= bg.creations.some((c) => c.id === actor)
+          ? []
+          : (await this.agent.intentView(d.worldId, actor, d.startedAt))
+              .conditions;
         const value = await this.#ask(
           row,
           "intent",
@@ -780,17 +807,11 @@ export class WorldScenes {
               controlledActionText: action.text,
               intentions: intents,
             },
-            responseSchema: z.toJSONSchema(CheckedSceneStep, { io: "output" }),
+            responseSchema: z.toJSONSchema(SceneStep, { io: "output" }),
           },
           "resolution",
         ),
-        step = sceneResponse(
-          value.value,
-          row.actor_id,
-          action.id,
-          row.data.work?.coverageVersion === 1,
-          d.events,
-        );
+        step = sceneResponse(value.value);
       if (step.type === "boundary") break;
       if (step.needsContext && step.decisions[row.actor_id] === "finished")
         step.decisions[row.actor_id] = "pending";
