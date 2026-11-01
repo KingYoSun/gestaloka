@@ -777,6 +777,7 @@ export class WorldScenes {
               .filter((i) => i.actorId === actor)
               .map((i) => i.actionText),
           ),
+          "resolution",
         );
         const choice = {
           actorId: actor,

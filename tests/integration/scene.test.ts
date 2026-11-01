@@ -448,7 +448,7 @@ model.complete = async (id, role, messages, target = "default") => {
   const targets = new Map([
     ["scene-resolve", "resolution"],
     ["scene-background", "resolution"],
-    ["scene-intent", "default"],
+    ["scene-intent", "resolution"],
     ["scene-result", "default"],
   ]);
   if (targets.has(role)) expect(target).toBe(targets.get(role));
