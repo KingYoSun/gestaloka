@@ -184,7 +184,7 @@ export async function playerDeviceRoutes(
       return authPage(
         reply,
         "Museにプレイを許可する",
-        `<p>${escape(world.title || world.id)}</p><p>${escape(world.description)}</p><p>CLIの確認コードが <strong>${code}</strong> と一致することを確かめてください。</p><p>選んだ村民のプレイと本人が知る履歴の取得を許可します。新規参加の場合、生成する1人に限ります。</p><form method="post" action="/auth/player">${csrf}<input type="hidden" name="code" value="${code}">${choices.join("<br>")}${choices.length ? "<button>この村民のプレイを許可する</button>" : "<p>選択できる人物・参加設定がありません。</p>"}</form>${people.next ? `<a href="?code=${code}&before=${people.next}${presetsBefore ? `&presetsBefore=${presetsBefore}` : ""}">次の人物へ</a>` : ""}${presets.next ? `<a href="?code=${code}&presetsBefore=${presets.next}${before ? `&before=${before}` : ""}">次の参加設定へ</a>` : ""}`,
+        `<p>${escape(world.title || world.id)}</p><p>${escape(world.description)}</p><p>CLIの確認コードが <strong>${code}</strong> と一致することを確かめてください。</p><p>選んだ村民のプレイ・アイコン設定と、本人が知る履歴の取得を許可します。新規参加の場合、生成する1人に限ります。</p><form method="post" action="/auth/player">${csrf}<input type="hidden" name="code" value="${code}">${choices.join("<br>")}${choices.length ? "<button>この村民のプレイを許可する</button>" : "<p>選択できる人物・参加設定がありません。</p>"}</form>${people.next ? `<a href="?code=${code}&before=${people.next}${presetsBefore ? `&presetsBefore=${presetsBefore}` : ""}">次の人物へ</a>` : ""}${presets.next ? `<a href="?code=${code}&presetsBefore=${presets.next}${before ? `&before=${before}` : ""}">次の参加設定へ</a>` : ""}`,
       );
     },
   );

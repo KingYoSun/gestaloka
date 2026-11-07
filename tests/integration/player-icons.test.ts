@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
+import { readFile, writeFile } from "node:fs/promises";
+import { join as pathJoin } from "node:path";
+import { playerCli } from "../support/player-cli.js";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { WorldAccess } from "@gestaloka/server/access";
 import { createApp } from "../../apps/api/src/app.js";
@@ -394,3 +397,182 @@ test("不正画像で成立済みの参加と以前の画像を失わず、再�
   });
   expect(csrf.statusCode).toBe(403);
 });
+
+test("CLIから参加時の画像を復旧し、Webとの更新・解除と村民単位の認可を共有する", async () => {
+  const fixture = await playerCli(app),
+    { base, directory, run } = fixture;
+  const profiles = [
+    pathJoin(directory, "one.json"),
+    pathJoin(directory, "two.json"),
+  ];
+  const red = pathJoin(directory, "red.png"),
+    blue = pathJoin(directory, "blue.png"),
+    bad = pathJoin(directory, "bad.png");
+  await writeFile(red, Buffer.from(await picture("red"), "base64"));
+  await writeFile(blue, Buffer.from(await picture("blue"), "base64"));
+  await writeFile(bad, "not an image");
+  try {
+    const first = await run(
+        profiles[0]!,
+        "connect",
+        "--server",
+        base,
+        "--world",
+        world,
+      ),
+      second = await run(
+        profiles[1]!,
+        "connect",
+        "--server",
+        base,
+        "--world",
+        world,
+      );
+    expect(
+      (await fixture.approve(one.cookie, first.userCode, `preset:${preset}:1`))
+        .statusCode,
+    ).toBe(302);
+    expect(
+      (await fixture.approve(two.cookie, second.userCode, `preset:${preset}:1`))
+        .statusCode,
+    ).toBe(302);
+    fixture.dropNextResponse(`/api/worlds/${world}/players/${first.id}/icon`);
+    const lost = await run(profiles[0]!, "join", "--icon", red);
+    expect(lost.state).toBe("error");
+    expect(lost.requestId).not.toBe(first.id);
+    const recovered = await run(profiles[0]!, "recover");
+    expect(recovered.requestId).toBe(lost.requestId);
+    expect(recovered.state).toBe("joining");
+    const failed = await run(profiles[1]!, "join", "--icon", bad);
+    expect(failed.code).toBe("ICON_INVALID");
+    expect(
+      (await access.players.list(two.id, world, undefined, second.id)).items[0],
+    ).toMatchObject({ state: "joining", icon: null });
+    expect((await run(profiles[1]!, "icon", "--file", blue)).state).toBe(
+      "joining",
+    );
+    await access.players.tick(first.id);
+    await access.players.tick(second.id);
+    const web = (cookie: string, id: string) =>
+      app.inject({
+        url: `/api/worlds/${world}/players/${id}`,
+        headers: { cookie },
+      });
+    const firstPlayer = (await web(one.cookie, first.id)).json().player,
+      secondPlayer = (await web(two.cookie, second.id)).json().player;
+    expect(firstPlayer.icon).toBe(recovered.result.image);
+    expect(secondPlayer.icon).not.toBe(firstPlayer.icon);
+    expect(firstPlayer.actorId).not.toBe(secondPlayer.actorId);
+    expect((await run(profiles[0]!, "icon")).player).toEqual(firstPlayer);
+    const changed = await put(one.cookie, first.id, await picture("green"));
+    expect((await run(profiles[0]!, "icon")).player.icon).toBe(
+      changed.json().image,
+    );
+    const beforeBad = (await run(profiles[0]!, "icon")).player.icon;
+    expect((await run(profiles[0]!, "icon", "--file", bad)).code).toBe(
+      "ICON_INVALID",
+    );
+    expect((await web(one.cookie, first.id)).json().player.icon).toBe(
+      beforeBad,
+    );
+    const updated = await run(profiles[0]!, "icon", "--file", red);
+    expect((await web(one.cookie, first.id)).json().player.icon).toBe(
+      updated.result.image,
+    );
+    expect((await web(two.cookie, second.id)).json().player.icon).toBe(
+      secondPlayer.icon,
+    );
+    expect(
+      (await run(profiles[0]!, "icon", "--clear")).result.image,
+    ).toBeNull();
+    expect((await web(one.cookie, first.id)).json().player.icon).toBeNull();
+    const profile = JSON.parse(await readFile(profiles[0]!, "utf8")),
+      headers = {
+        authorization: `Bearer ${profile.secret}`,
+        "x-gestaloka-request": "1",
+      };
+    for (const id of [b.entry, second.id]) {
+      expect(
+        (
+          await app.inject({
+            url: `/api/worlds/${world}/players/${id}`,
+            headers,
+          })
+        ).statusCode,
+      ).toBe(403);
+      expect(
+        (
+          await app.inject({
+            method: "PUT",
+            url: `/api/worlds/${world}/players/${id}/icon`,
+            headers,
+            payload: { image: null },
+          })
+        ).statusCode,
+      ).toBe(403);
+    }
+    expect(
+      (
+        await app.inject({
+          url: `/api/worlds/${randomUUID()}/players`,
+          headers,
+        })
+      ).statusCode,
+    ).toBe(403);
+    const scoped = await app.inject({
+      url: `/api/worlds/${world}/players`,
+      headers,
+    });
+    expect(scoped.json().items.map((p: { id: string }) => p.id)).toEqual([
+      first.id,
+    ]);
+    const extra = pathJoin(directory, "existing.json"),
+      connection = await run(
+        extra,
+        "connect",
+        "--server",
+        base,
+        "--world",
+        world,
+      );
+    expect(
+      (
+        await fixture.approve(
+          one.cookie,
+          connection.userCode,
+          `actor:${b.actor}`,
+        )
+      ).statusCode,
+    ).toBe(302);
+    expect((await run(extra, "icon")).player.id).toBe(b.entry);
+    const legacy = await run(extra, "icon", "--file", blue);
+    expect((await web(one.cookie, b.entry)).json().player.icon).toBe(
+      legacy.result.image,
+    );
+    expect((await web(one.cookie, first.id)).json().player.icon).toBeNull();
+    const saved = JSON.parse(await readFile(profiles[0]!, "utf8"));
+    expect(saved.joinIconRequestId).toBeUndefined();
+    await access.devices.revoke(one.id, first.id);
+    expect((await run(profiles[0]!, "icon")).code).toBe("PLAYER_DEVICE_DENIED");
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url: `/api/worlds/${world}/players/${first.id}/icon`,
+          headers,
+          payload: { image: null },
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await isolated.databases.postgres.query(
+          "SELECT id FROM world_join WHERE id=ANY($1)",
+          [[first.id, second.id]],
+        )
+      ).rowCount,
+    ).toBe(2);
+  } finally {
+    await fixture.close();
+  }
+}, 120000);

@@ -32,6 +32,10 @@ export async function operationsRoutes(
 ) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
   const identities = new WeakMap<FastifyRequest, string>();
+  const devices = new WeakMap<
+    FastifyRequest,
+    { id: string; actor_id: string | null; preset_id: string | null }
+  >();
   app.addHook("onSend", async (request, reply, payload) => {
     const id = identities.get(request);
     if (id) reply.header("X-Gestaloka-Subject", id);
@@ -49,19 +53,55 @@ export async function operationsRoutes(
   const actor = async (request: FastifyRequest) => {
     service();
     if (request.headers.authorization) {
-      if (
-        !access ||
-        request.routeOptions.url !== "/api/operations" ||
-        request.method !== "POST"
-      )
+      const operation =
+        request.routeOptions.url === "/api/operations" &&
+        request.method === "POST";
+      const player =
+        (request.method === "GET" &&
+          [
+            "/api/worlds/:id/players",
+            "/api/worlds/:id/players/:playerId",
+          ].includes(request.routeOptions.url ?? "")) ||
+        (request.method === "PUT" &&
+          request.routeOptions.url ===
+            "/api/worlds/:id/players/:playerId/icon");
+      if (!access || (!operation && !player))
         throw new AccessError(
           403,
           "PLAYER_DEVICE_SCOPE",
           "許可されたプレイ操作を指定してください",
         );
+      const params = request.params as { id?: string; playerId?: string };
       const device = await access.devices.authorize(
         request.headers.authorization,
+        player ? params.id : undefined,
       );
+      if (player) {
+        if (params.playerId) {
+          const selected = (
+            await access.players.list(
+              device.user_id!,
+              device.world_id,
+              undefined,
+              params.playerId,
+            )
+          ).items[0];
+          if (
+            !selected ||
+            (device.preset_id
+              ? selected.id !== device.id
+              : selected.actorId !== device.actor_id)
+          )
+            throw new AccessError(
+              403,
+              "PLAYER_DEVICE_SCOPE",
+              "許可された村民を指定してください",
+            );
+        }
+        devices.set(request, device);
+        identities.set(request, device.user_id!);
+        return device.user_id!;
+      }
       const { requestId, command } = request.body as {
         requestId: string;
         command: z.infer<typeof Operation>;
@@ -240,10 +280,14 @@ export async function operationsRoutes(
           "MODEL_NOT_CONFIGURED",
           "参加処理を設定してください",
         );
+      const userId = await actor(request),
+        device = devices.get(request);
       return players.list(
-        await actor(request),
+        userId,
         request.params.id,
         request.query.before,
+        device?.preset_id ? device.id : undefined,
+        device?.actor_id ?? undefined,
       );
     },
   );

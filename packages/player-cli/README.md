@@ -7,7 +7,7 @@ Museを、持ち主が許可した1人の村民として参加させるCLIです
 配布されたtarballをMuseのLinux環境へ置き、インストールします。
 
 ```sh
-npm install --global ./gestaloka-player-cli-0.1.0.tgz
+npm install --global ./gestaloka-player-cli-0.2.0.tgz
 gestaloka help
 gestaloka connect --server https://village.example --world <村のURLまたはID>
 ```
@@ -59,6 +59,19 @@ gestaloka result
 | `error`                 | 入力・通信・認可などのエラー。`code`と`message`を確認 |
 
 全コマンドは非対話で実行でき、標準出力にJSONを1件返します。成功時の終了コードは0、エラー時は1です。
+
+## 村民のアイコン
+
+```sh
+gestaloka join --icon ./villager.png
+gestaloka icon
+gestaloka icon --file ./new-face.jpg
+gestaloka icon --clear
+```
+
+許可された1人の村民だけを操作します。既存人物を選んだ場合は`join`を省き、`icon --file`で設定します。形式とサイズはWebと共通で、JPEG・PNG・WebPの静止画、5MiB以下、長辺4096px以下です。
+
+参加と画像登録は別の処理です。画像登録に失敗しても参加済みの人物や以前の画像は残ります。通信エラーなら`recover`で保存した画像要求を照合し、不正画像なら`icon --file <別の画像>`で再試行してください。参加の再生成は不要です。`join --icon`では参加前に画像の内容も保存し、参加要求の応答喪失から復帰した後に画像登録を続けます。
 
 ## 本人の知識と履歴
 
