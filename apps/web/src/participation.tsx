@@ -8,6 +8,13 @@ import { usePending } from "./forms.js";
 import { Notice, Problem } from "./presentation.js";
 import { Button } from "./components/ui/button.js";
 import { Label } from "./components/ui/label.js";
+import {
+  CharacterBadge,
+  IconEditor,
+  IconPicker,
+  iconDraft,
+  iconDraftKey,
+} from "./player-icons.js";
 
 const Request = z.object({ requestId: z.uuid(), command: JoinWorld });
 function Pages({
@@ -90,6 +97,10 @@ export function Participation({ id }: { id: string }) {
     [presetBefore, setPresetBefore] = useState<string>(),
     [choice, setChoice] = useState("");
   const [pending, save] = usePending(pendingKey(id, "join"), Request);
+  const [image, setImage] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
+  const [preparing, setPreparing] = useState(false),
+    [imageError, setImageError] = useState<unknown>();
   const world = $api.useQuery("get", "/api/catalog/worlds/{id}", {
     params: { path: { id } },
   });
@@ -160,7 +171,15 @@ export function Participation({ id }: { id: string }) {
           <Problem error={players.error} />
         ) : (
           players.data?.items.map((p) => (
-            <article className="world-row" key={p.id}>
+            <article
+              className="world-row player-row"
+              key={p.id}
+              data-player-id={p.id}
+            >
+              <CharacterBadge
+                name={p.name ?? (p.actorId ? "参加済みの人物" : "生成中の人物")}
+                icon={p.icon ?? null}
+              />
               <p>
                 {p.state === "joining"
                   ? "人物を準備しています"
@@ -188,6 +207,12 @@ export function Participation({ id }: { id: string }) {
                       参加生成を再開する
                     </Button>
                   )}
+              {p.id !== pending?.requestId && (
+                <details className="player-settings">
+                  <summary>人物設定</summary>
+                  <IconEditor world={id} player={p.id} icon={p.icon} />
+                </details>
+              )}
             </article>
           ))
         )}
@@ -196,6 +221,9 @@ export function Participation({ id }: { id: string }) {
       {pending ? (
         <section className="form-panel">
           <h2>参加要求</h2>
+          {person && (
+            <IconEditor world={id} player={person.id} icon={person.icon} />
+          )}
           {person?.state === "ready" && person.actorId ? (
             <>
               {open(person.actorId, "この人物で始める")}
@@ -241,9 +269,9 @@ export function Participation({ id }: { id: string }) {
       ) : world.data?.canJoin ? (
         <form
           className="form-panel"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            if (!selected || join.isPending) return;
+            if (!selected || join.isPending || preparing || reading) return;
             const body = {
               requestId: crypto.randomUUID(),
               command: {
@@ -253,8 +281,18 @@ export function Participation({ id }: { id: string }) {
                 presetVersion: selected.version,
               },
             };
-            save(body);
-            join.mutate({ body });
+            setPreparing(true);
+            setImageError(undefined);
+            try {
+              if (image)
+                await iconDraft(iconDraftKey(id, body.requestId), image);
+              save(body);
+              join.mutate({ body });
+            } catch (error) {
+              setImageError(error);
+            } finally {
+              setPreparing(false);
+            }
           }}
         >
           <h2>新しく参加する</h2>
@@ -282,7 +320,16 @@ export function Participation({ id }: { id: string }) {
           {!presets.data?.items.length && (
             <Notice>プレイヤー設定はまだ用意されていません。</Notice>
           )}
-          <Button type="submit" disabled={!selected || join.isPending}>
+          <IconPicker
+            onChange={setImage}
+            onReading={setReading}
+            disabled={preparing || join.isPending}
+          />
+          {imageError !== undefined && <Problem error={imageError} />}
+          <Button
+            type="submit"
+            disabled={!selected || join.isPending || preparing || reading}
+          >
             この設定で参加する
           </Button>
         </form>

@@ -483,7 +483,7 @@ beforeAll(async () => {
     at: 0,
     changes: {
       nodes: [
-        { id: actor, kind: "existence", text: "PRIVATE_ACTOR" },
+        { id: actor, kind: "existence", text: "若者" },
         { id: npc, kind: "existence", text: "PRIVATE_NPC" },
         { id: place, kind: "existence", text: "PRIVATE_PLACE" },
         { id: secret, kind: "script", text: "NPCだけの秘密" },
@@ -834,7 +834,12 @@ test("長いシーンを50件ずつ前後に復元し、概要の転送量と他
     expect(legacy.messages).toHaveLength(
       events.filter((e) => e.receipts[0]!.observerId === actor).length,
     );
-    expect(legacy.actions).toEqual(actions);
+    expect(legacy.actions).toEqual(
+      actions.map((action) => ({
+        ...action,
+        characters: [{ actorId: actor, name: "若者", icon: null }],
+      })),
+    );
     for (const kind of ["events", "actions"] as const) {
       let before: string | undefined;
       const collected: string[] = [];

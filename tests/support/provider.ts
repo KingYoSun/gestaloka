@@ -157,7 +157,7 @@ export async function fixtureRuntime(
             changes: {
               ...empty(),
               nodes: [
-                { id: actor, kind: "existence", text: "PRIVATE_HUMAN" },
+                { id: actor, kind: "existence", text: "参加した村民" },
                 { id: state, kind: "script", text: "ここに暮らす" },
               ],
               edges: [
