@@ -173,6 +173,7 @@ export class WorldPlayers {
     worldId: string,
     before?: string,
     entryId?: string,
+    actorId?: string,
   ) {
     await requireMember(this.pool, userId);
     const rows = (
@@ -182,8 +183,8 @@ export class WorldPlayers {
       UNION ALL SELECT a.id,a.actor_id AS "actorId",'ready' AS state,c.at FROM world_access a JOIN world_subject s ON s.id=a.subject_id
         JOIN world_construction c ON c.id=a.construction_id WHERE s.user_id=$1 AND s.active AND a.role='player' AND a.construction_id=$2
         AND NOT EXISTS(SELECT 1 FROM world_join j WHERE j.id=a.id)
-      ) p WHERE ($3::uuid IS NULL OR p.id<$3) AND ($4::uuid IS NULL OR p.id=$4) ORDER BY p.id DESC LIMIT 51`,
-        [userId, worldId, before ?? null, entryId ?? null],
+      ) p WHERE ($3::uuid IS NULL OR p.id<$3) AND ($4::uuid IS NULL OR p.id=$4) AND ($5::uuid IS NULL OR p."actorId"=$5) ORDER BY p.id DESC LIMIT 51`,
+        [userId, worldId, before ?? null, entryId ?? null, actorId ?? null],
       )
     ).rows;
     if (!rows.length) return { items: [], next: null };

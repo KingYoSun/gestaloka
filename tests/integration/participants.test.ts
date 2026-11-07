@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { createServer } from "node:http";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { playerCli } from "../support/player-cli.js";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { WorldAccess } from "@gestaloka/server/access";
 import type { WorldProposal } from "@gestaloka/server/agent";
@@ -366,81 +363,16 @@ test("独立したシーンを保ちながら確定した作用を後続の参�
 });
 
 test("2つのCLIが認可・新規参加・応答喪失からの復帰と相互の確定履歴を引き継ぐ", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "gestaloka-cli-"));
-  if (
-    !resolve(directory).startsWith(resolve(tmpdir()) + "\\") &&
-    !resolve(directory).startsWith(resolve(tmpdir()) + "/")
-  )
-    throw new Error("試験用ディレクトリーの外側です");
+  const fixture = await playerCli(app);
+  const { directory, base, run: cli } = fixture;
   const profiles = [join(directory, "one.json"), join(directory, "two.json")];
-  const cli = async (profile: string, ...args: string[]) => {
-    try {
-      const { stdout } = await promisify(execFile)(process.execPath, [
-        resolve("packages/player-cli/dist/main.js"),
-        ...args,
-        "--profile",
-        profile,
-      ]);
-      return JSON.parse(stdout);
-    } catch (error) {
-      const failure = error as { stdout?: string };
-      if (failure.stdout) return JSON.parse(failure.stdout);
-      throw error;
-    }
-  };
-  let drop: string | undefined;
-  const server = createServer(async (request, response) => {
-    const chunks: Buffer[] = [];
-    for await (const chunk of request) chunks.push(Buffer.from(chunk));
-    const body = Buffer.concat(chunks).toString();
-    const result = await app.inject({
-      method: request.method as "GET" | "POST",
-      url: request.url!,
-      headers: request.headers,
-      ...(body ? { payload: body } : {}),
-    });
-    const sent = body ? JSON.parse(body) : {};
-    if (
-      drop &&
-      (sent.command === drop ||
-        sent.command?.operation === drop ||
-        request.url === drop)
-    ) {
-      drop = undefined;
-      response.destroy();
-    } else {
-      response.writeHead(result.statusCode, result.headers);
-      response.end(result.rawPayload);
-    }
-  });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const address = server.address() as { port: number },
-    base = `http://127.0.0.1:${address.port}`;
-  const permit = async (
+  const permit = (
     cookie: string,
     code: string,
     choice = `preset:${presetId}:1`,
-  ) => {
-    const page = await app.inject({
-      url: `/auth/player?code=${code}`,
-      headers: { cookie },
-    });
-    expect(page.statusCode, page.body).toBe(200);
-    expect(page.body).toContain(code);
-    const csrf = page.body.match(/name="csrf" value="([a-f0-9]+)"/)![1]!;
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/player",
-      headers: {
-        cookie: `${cookie}; gestaloka_player_form=${csrf}`,
-        "content-type": "application/x-www-form-urlencoded",
-      },
-      payload: new URLSearchParams({ csrf, code, choice }).toString(),
-    });
-    return response;
-  };
+  ) => fixture.approve(cookie, code, choice);
   try {
-    drop = "/api/player-devices";
+    fixture.dropNextResponse("/api/player-devices");
     const lostConnect = await cli(
       profiles[0]!,
       "connect",
@@ -469,7 +401,7 @@ test("2つのCLIが認可・新規参加・応答喪失からの復帰と相互�
     ).toBe(403);
     expect((await permit(oneCookie, connection.userCode)).statusCode).toBe(302);
     expect((await permit(twoCookie, second.userCode)).statusCode).toBe(302);
-    drop = "worlds.join";
+    fixture.dropNextResponse("worlds.join");
     const lostJoin = await cli(profiles[0]!, "join");
     expect(lostJoin.state).toBe("error");
     expect((await cli(profiles[0]!, "recover")).state).toBe("joining");
@@ -508,7 +440,7 @@ test("2つのCLIが認可・新規参加・応答喪失からの復帰と相互�
     await access.scenes.tick(y.scene.id);
     expect((await cli(profiles[0]!, "start")).state).toBe("waiting_input");
     expect((await cli(profiles[1]!, "start")).state).toBe("waiting_input");
-    drop = "act";
+    fixture.dropNextResponse("act");
     const lostAction = await cli(
       profiles[0]!,
       "act",
@@ -523,7 +455,7 @@ test("2つのCLIが認可・新規参加・応答喪失からの復帰と相互�
     expect(afterAct.scene.actions).toHaveLength(1);
     expect(afterAct.state).toBe("waiting_input");
     const known = await cli(profiles[0]!, "knowledge");
-    drop = "finish";
+    fixture.dropNextResponse("finish");
     expect((await cli(profiles[0]!, "finish")).state).toBe("error");
     const finishedRequest = await cli(profiles[0]!, "recover");
     await access.scenes.tick(x.scene.id);
@@ -708,9 +640,7 @@ test("2つのCLIが認可・新規参加・応答喪失からの復帰と相互�
     expect((await cli(extra, "status")).device.actorId).toBe(a);
   } finally {
     exchange = false;
-    server.closeAllConnections();
-    await new Promise<void>((done) => server.close(() => done()));
-    await rm(directory, { recursive: true, force: true });
+    await fixture.close();
   }
 }, 120000);
 

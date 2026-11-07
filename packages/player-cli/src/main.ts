@@ -13,13 +13,16 @@ import {
   KnowledgePage,
   SceneRecordPage,
   JoinWorld,
+  PlayerIconInput,
+  WorldPlayerPage,
 } from "@gestaloka/contracts";
 
 const help = `GESTALOKA プレイヤーCLI（Node.js 22.23.4以上）
 gestaloka connect --server <公開URL> --world <村のURLまたはID>
   表示する認可URLを持ち主に渡し、ブラウザーで確認コードと対象人物を確認して許可します。
 gestaloka status                         認可・参加・現在のシーンを照会
-gestaloka join                           許可された新規参加を開始
+gestaloka join [--icon <画像ファイル>]    許可された新規参加を開始
+gestaloka icon [--file <画像> | --clear]  許可された人物のアイコンを確認・更新・解除
 gestaloka prepare --purpose <目的>       シーンのあらすじを準備
 gestaloka start                          準備したシーンを開始
 gestaloka act --text <自由記述>           一手を送信（--file <UTF-8ファイル>も可）
@@ -41,12 +44,14 @@ const Profile = z.object({
   secret: z.string(),
   lastRequestId: z.uuid().optional(),
   knowledgeCheckpoint: z.uuid().optional(),
+  joinIconRequestId: z.uuid().optional(),
 });
 const Request = z.object({
   id: z.uuid(),
   path: z.string(),
   body: z.record(z.string(), z.unknown()),
   authenticated: z.boolean(),
+  method: z.enum(["POST", "PUT"]).default("POST"),
 });
 type Profile = z.infer<typeof Profile>;
 const parse = () =>
@@ -66,6 +71,8 @@ const parse = () =>
       kind: { type: "string" },
       request: { type: "string" },
       since: { type: "string" },
+      icon: { type: "string" },
+      clear: { type: "boolean" },
     },
   });
 let values: ReturnType<typeof parse>["values"];
@@ -85,9 +92,10 @@ async function http(
   path: string,
   body?: unknown,
   authenticated = true,
+  method = "POST",
 ) {
   const response = await fetch(new URL(path, profile.server), {
-    method: body === undefined ? "GET" : "POST",
+    method: body === undefined ? "GET" : method,
     redirect: "error",
     signal: AbortSignal.timeout(15000),
     headers: {
@@ -132,15 +140,23 @@ async function status(profile: Profile) {
     scene,
   };
 }
-async function send(profile: Profile, saved: z.infer<typeof Request>) {
+async function send(
+  profile: Profile,
+  saved: z.infer<typeof Request>,
+): Promise<Record<string, unknown>> {
   requestId = saved.id;
   const result = await http(
     profile,
     saved.path,
     saved.body,
     saved.authenticated,
+    saved.method,
   );
   await save(join(journal, `${saved.id}.json`), { ...saved, result });
+  if (profile.joinIconRequestId === saved.id) {
+    delete profile.joinIconRequestId;
+    await save(profilePath, profile);
+  }
   if (!saved.authenticated) {
     const code = PlayerDeviceCode.parse(result);
     return {
@@ -148,6 +164,29 @@ async function send(profile: Profile, saved: z.infer<typeof Request>) {
       requestId,
       ...code,
       verificationUrl: new URL(code.verificationPath, profile.server).href,
+    };
+  }
+  if (
+    saved.body.command &&
+    (saved.body.command as { operation?: string }).operation ===
+      "worlds.join" &&
+    profile.joinIconRequestId
+  ) {
+    profile.lastRequestId = profile.joinIconRequestId;
+    await save(profilePath, profile);
+    return {
+      joinRequestId: saved.id,
+      ...(await send(
+        profile,
+        Request.parse(
+          JSON.parse(
+            await readFile(
+              join(journal, `${profile.joinIconRequestId}.json`),
+              "utf8",
+            ),
+          ),
+        ),
+      )),
     };
   }
   return { requestId, result, ...(await status(profile)) };
@@ -158,9 +197,16 @@ async function submit(
   body: Record<string, unknown>,
   authenticated = true,
   id: string = randomUUID(),
+  method: "POST" | "PUT" = "POST",
 ) {
   requestId = id;
-  const saved = { id, path, body: { ...body, requestId: id }, authenticated };
+  const saved = {
+    id,
+    path,
+    body: method === "PUT" ? body : { ...body, requestId: id },
+    authenticated,
+    method,
+  };
   await save(join(journal, `${id}.json`), saved);
   await save(profilePath, { ...profile, lastRequestId: id });
   return send(profile, saved);
@@ -281,6 +327,30 @@ async function run() {
   const device = PlayerDeviceStatus.parse(
     await http(profile, "/api/player-device"),
   );
+  if (command === "icon") {
+    const player = WorldPlayerPage.parse(
+      await http(profile, `/api/worlds/${profile.worldId}/players`),
+    ).items[0];
+    if (!player)
+      throw new Error("参加要求または許可された人物を確認してください");
+    if (values.file && values.clear)
+      throw new Error("--fileと--clearはどちらか一方を指定してください");
+    if (!values.file && !values.clear) return { state: "icon", player };
+    const body = PlayerIconInput.parse({
+      image: values.clear
+        ? null
+        : (await readFile(values.file!)).toString("base64"),
+    });
+    delete profile.joinIconRequestId;
+    return submit(
+      profile,
+      `/api/worlds/${profile.worldId}/players/${player.id}/icon`,
+      body,
+      true,
+      randomUUID(),
+      "PUT",
+    );
+  }
   if (command === "join") {
     const joinCommand = JoinWorld.parse({
       operation: "worlds.join",
@@ -289,6 +359,19 @@ async function run() {
       presetVersion: device.presetVersion,
     });
     if (!device.joinId) throw new Error("新規参加が許可されていません");
+    if (values.icon) {
+      const icon = {
+        id: randomUUID(),
+        path: `/api/worlds/${profile.worldId}/players/${device.joinId}/icon`,
+        body: PlayerIconInput.parse({
+          image: (await readFile(values.icon)).toString("base64"),
+        }),
+        authenticated: true,
+        method: "PUT" as const,
+      };
+      await save(join(journal, `${icon.id}.json`), icon);
+      profile.joinIconRequestId = icon.id;
+    }
     return submit(
       profile,
       "/api/operations",
