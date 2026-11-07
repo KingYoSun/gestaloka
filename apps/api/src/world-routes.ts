@@ -57,7 +57,38 @@ export async function worldRoutes(
         "IDENTITY_NOT_CONFIGURED",
         "認証サービスを設定してください",
       );
-    const id = (await identity.session(request.headers.cookie)).userId;
+    let id: string;
+    if (request.headers.authorization) {
+      const allowed = [
+        "/api/worlds/:id/scene",
+        "/api/worlds/:id/scene/records",
+        "/api/worlds/:id/knowledge",
+      ];
+      if (
+        !allowed.includes(request.routeOptions.url ?? "") ||
+        !["GET", "POST"].includes(request.method)
+      )
+        throw new AccessError(
+          403,
+          "PLAYER_DEVICE_SCOPE",
+          "許可されたプレイ操作を指定してください",
+        );
+      const params = request.params as { id: string };
+      const query = request.query as { actorId?: string };
+      const device = await service().devices.authorize(
+        request.headers.authorization,
+        params.id,
+        query.actorId,
+      );
+      if (!device.actor_id)
+        throw new AccessError(
+          409,
+          "PLAYER_JOIN_REQUIRED",
+          "参加完了を確認してください",
+        );
+      query.actorId = device.actor_id;
+      id = device.user_id!;
+    } else id = (await identity.session(request.headers.cookie)).userId;
     await operations.authorize(id);
     identities.set(request, id);
     return id;

@@ -20,6 +20,7 @@ import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
 import { type Operations } from "@gestaloka/server/operations";
 import type { WorldPlayers } from "@gestaloka/server/players";
 import { AccessError } from "@gestaloka/server/access";
+import type { WorldAccess } from "@gestaloka/server/access";
 import { authPage, escapeHtml } from "./auth-page.js";
 
 export async function operationsRoutes(
@@ -27,6 +28,7 @@ export async function operationsRoutes(
   identity?: OryIdentity,
   operations?: Operations,
   players?: WorldPlayers,
+  access?: WorldAccess,
 ) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
   const identities = new WeakMap<FastifyRequest, string>();
@@ -46,6 +48,43 @@ export async function operationsRoutes(
   };
   const actor = async (request: FastifyRequest) => {
     service();
+    if (request.headers.authorization) {
+      if (
+        !access ||
+        request.routeOptions.url !== "/api/operations" ||
+        request.method !== "POST"
+      )
+        throw new AccessError(
+          403,
+          "PLAYER_DEVICE_SCOPE",
+          "許可されたプレイ操作を指定してください",
+        );
+      const device = await access.devices.authorize(
+        request.headers.authorization,
+      );
+      const { requestId, command } = request.body as {
+        requestId: string;
+        command: z.infer<typeof Operation>;
+      };
+      const joining =
+        command.operation === "worlds.join" &&
+        requestId === device.id &&
+        command.worldId === device.world_id &&
+        command.presetId === device.preset_id &&
+        command.presetVersion === device.preset_version;
+      const resuming =
+        command.operation === "worlds.resumeJoin" &&
+        command.joinId === device.id &&
+        !!device.preset_id;
+      if (!joining && !resuming)
+        throw new AccessError(
+          403,
+          "PLAYER_DEVICE_SCOPE",
+          "許可された参加要求を指定してください",
+        );
+      identities.set(request, device.user_id!);
+      return device.user_id!;
+    }
     const id = (await identity!.session(request.headers.cookie)).userId;
     identities.set(request, id);
     return id;
