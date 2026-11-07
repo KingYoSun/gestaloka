@@ -26,7 +26,7 @@ gestaloka act --text <自由記述>           一手を送信（--file <UTF-8フ
 gestaloka finish                         シーンを終了しリザルトを準備
 gestaloka result                         現在のリザルトを照会
 gestaloka resume                         保留中の参加・シーンを明示再開
-gestaloka knowledge [--since <記録ID>]    本人の観測・解釈の履歴。前回のcheckpoint以降を取得
+gestaloka knowledge [--since <checkpoint>] 本人の観測・解釈の履歴。前回取得時との差分を取得
 gestaloka history --scene <id> --kind <events|actions> [--before <cursor>]
 gestaloka recover [--request <要求ID>]    保存した同じ要求を照合して最新状態を取得
 全コマンド: --profile <ファイル>。既定はXDG_STATE_HOMEまたは~/.local/stateのgestaloka/default.json。
@@ -40,6 +40,7 @@ const Profile = z.object({
   deviceId: z.uuid(),
   secret: z.string(),
   lastRequestId: z.uuid().optional(),
+  knowledgeCheckpoint: z.uuid().optional(),
 });
 const Request = z.object({
   id: z.uuid(),
@@ -246,13 +247,35 @@ async function run() {
       return { state: "history", ...SceneRecordPage.parse(data) };
     const page = KnowledgePage.parse(data),
       since = values.since ? z.uuid().parse(values.since) : undefined;
-    const boundary = page.items.findIndex((item) => item.id === since);
+    const readIds = async (id: string) =>
+      new Set(
+        z
+          .array(z.uuid())
+          .parse(
+            JSON.parse(
+              await readFile(join(journal, "knowledge", `${id}.json`), "utf8"),
+            ),
+          ),
+      );
+    const known = since ? await readIds(since) : new Set<string>();
+    const checkpoint =
+      values.before && profile.knowledgeCheckpoint
+        ? profile.knowledgeCheckpoint
+        : randomUUID();
+    const accumulated =
+      values.before && profile.knowledgeCheckpoint
+        ? await readIds(checkpoint)
+        : new Set(known);
+    for (const item of page.items) accumulated.add(item.id);
+    await save(join(journal, "knowledge", `${checkpoint}.json`), [
+      ...accumulated,
+    ]);
+    await save(profilePath, { ...profile, knowledgeCheckpoint: checkpoint });
     return {
       state: "history",
       ...page,
-      checkpoint: page.items[0]?.id ?? null,
-      items: boundary < 0 ? page.items : page.items.slice(0, boundary),
-      next: boundary < 0 ? page.next : null,
+      checkpoint,
+      items: page.items.filter((item) => !known.has(item.id)),
     };
   }
   const device = PlayerDeviceStatus.parse(

@@ -536,10 +536,14 @@ test("2つのCLIが認可・新規参加・応答喪失からの復帰と相互�
     );
     expect(JSON.stringify(newlyKnown.items)).toContain(mark);
     expect(
-      newlyKnown.items.some(
-        (item: { id: string }) => item.id === known.checkpoint,
+      newlyKnown.items.some((item: { id: string }) =>
+        known.items.some((old: { id: string }) => old.id === item.id),
       ),
     ).toBe(false);
+    expect(
+      (await cli(profiles[0]!, "knowledge", "--since", newlyKnown.checkpoint))
+        .items,
+    ).toEqual([]);
     expect(
       (
         await cli(
