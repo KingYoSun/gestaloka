@@ -4,13 +4,16 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "baseUrl": ".",
-    "paths": { "@/*": ["apps/web/src/*"] }
+    "paths": {
+      "@/*": ["apps/web/src/*"]
+    }
   },
   "include": [
     "scripts/**/*.ts",
     "tests/**/*.ts",
     "tests/**/*.tsx",
     "*.config.ts",
-    "apps/web/src/assets.d.ts"
+    "apps/web/src/assets.d.ts",
+    "packages/player-cli/src/**/*.ts"
   ]
 }

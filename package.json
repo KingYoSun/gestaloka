@@ -24,7 +24,7 @@
     "world:build": "pnpm build:server && node --env-file=.env --env-file-if-exists=.env.ory --import tsx scripts/world-construction.ts",
     "dev": "pnpm build:server && pnpm --parallel --filter './apps/*' dev",
     "build:server": "tsc -b packages/contracts packages/server apps/api apps/worker",
-    "build": "pnpm build:server && pnpm --filter @gestaloka/web build && pnpm --filter @gestaloka/admin build",
+    "build": "pnpm build:server && pnpm build:player-cli && pnpm --filter @gestaloka/web build && pnpm --filter @gestaloka/admin build",
     "typecheck": "pnpm build:server && tsc -p apps/web/tsconfig.json && tsc -p apps/admin/tsconfig.json && tsc -p tsconfig.tools.json",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
@@ -32,12 +32,13 @@
     "generate": "pnpm build:server && tsx scripts/generate-contracts.ts",
     "generate:check": "pnpm build:server && tsx scripts/generate-contracts.ts --check",
     "test": "pnpm build:server && vitest run",
-    "test:integration": "pnpm build:server && node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --config vitest.integration.config.ts",
+    "test:integration": "pnpm build:server && pnpm build:player-cli && node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --config vitest.integration.config.ts",
     "test:e2e": "pnpm build:server && node --env-file-if-exists=.env node_modules/@playwright/test/cli.js test",
     "test:poc": "pnpm build:server && node --env-file-if-exists=.env --import tsx tests/poc/world-runtime.ts",
     "check": "pnpm generate:check && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build",
     "db:up": "docker compose up -d --wait",
-    "db:stop": "docker compose stop"
+    "db:stop": "docker compose stop",
+    "build:player-cli": "pnpm --filter @gestaloka/player-cli build"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -53,6 +54,7 @@
     "@types/pg": "8.23.1",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.2",
     "eslint": "10.13.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",

@@ -1,0 +1,20 @@
+{
+  "name": "@gestaloka/player-cli",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "GESTALOKAの村民として継続プレイするCLI",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1"
+  },
+  "bin": {
+    "gestaloka": "dist/main.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/main.js"
+  }
+}

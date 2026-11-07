@@ -282,6 +282,42 @@ export const JoinWorld = z
     presetVersion: z.number().int().positive().safe(),
   })
   .strict();
+export const PlayerDeviceRequest = z
+  .object({
+    requestId: z.uuid(),
+    worldId: z.uuid(),
+    secret: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+export const PlayerDeviceCode = z.object({
+  id: z.uuid(),
+  userCode: z.string(),
+  verificationPath: z.string(),
+});
+export const PlayerDeviceApproval = z.union([
+  z.object({ actorId: z.uuid() }).strict(),
+  z
+    .object({
+      presetId: z.uuid(),
+      presetVersion: z.number().int().positive().safe(),
+    })
+    .strict(),
+]);
+export const PlayerDeviceStatus = z.object({
+  id: z.uuid(),
+  worldId: z.uuid(),
+  actorId: z.uuid().nullable(),
+  joinId: z.uuid().nullable(),
+  presetId: z.uuid().nullable(),
+  presetVersion: z.number().int().positive().nullable(),
+  state: z.enum([
+    "authorization_pending",
+    "authorized",
+    "joining",
+    "paused",
+    "ready",
+  ]),
+});
 const quotaCount = z.number().int().positive().safe();
 export const ModelLimit = z
   .object({

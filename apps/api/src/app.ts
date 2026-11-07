@@ -15,6 +15,7 @@ import { authRoutes } from "./auth-routes.js";
 import type { Operations } from "@gestaloka/server/operations";
 import { operationsRoutes } from "./operations-routes.js";
 import { mcpRoutes } from "./mcp-routes.js";
+import { playerDeviceRoutes } from "./player-device-routes.js";
 
 export async function createApp(
   access?: WorldAccess,
@@ -44,7 +45,10 @@ export async function createApp(
   await worldRoutes(app, access, identity, operations);
   await mcpRoutes(app, operations, access);
   await app.register(async (scope) =>
-    operationsRoutes(scope, identity, operations, access?.players),
+    operationsRoutes(scope, identity, operations, access?.players, access),
+  );
+  await app.register(async (scope) =>
+    playerDeviceRoutes(scope, access, identity, operations),
   );
   if (identity)
     await app.register(async (scope) =>
