@@ -90,10 +90,28 @@ export const AdminPage = z.object({
   next: z.string().nullable(),
   previous: z.string().nullable(),
 });
+export const PlayerCharacter = z.object({
+  actorId: z.uuid(),
+  name: z.string(),
+  icon: z.string().nullable(),
+});
+export const PLAYER_ICON_MAX_BYTES = 5 * 1024 * 1024;
+export const PlayerIconInput = z
+  .object({
+    image: z
+      .string()
+      .max(4 * Math.ceil(PLAYER_ICON_MAX_BYTES / 3))
+      .nullable(),
+  })
+  .strict();
+export const PlayerIcon = PlayerIconInput.extend({
+  image: z.string().nullable(),
+});
 export const KnowledgeRecord = z.object({
   id: z.uuid(),
   kind: z.enum(["observation", "interpretation"]),
   text: z.string(),
+  characters: z.array(PlayerCharacter).optional(),
   from: z.number().int().nonnegative().safe(),
   until: z.number().int().nonnegative().safe().optional(),
 });
@@ -176,14 +194,23 @@ export const SceneStatus = z.object({
     "paused",
   ]),
   synopsis: z.string().nullable(),
+  synopsisCharacters: z.array(PlayerCharacter).optional(),
   result: z.string().nullable(),
+  resultCharacters: z.array(PlayerCharacter).optional(),
   error: z.string().nullable(),
-  messages: z.array(z.object({ id: z.uuid(), text: z.string() })),
+  messages: z.array(
+    z.object({
+      id: z.uuid(),
+      text: z.string(),
+      characters: z.array(PlayerCharacter).optional(),
+    }),
+  ),
   actions: z.array(
     z.object({
       id: z.uuid(),
       text: z.string(),
       state: z.enum(["running", "complete", "boundary"]),
+      characters: z.array(PlayerCharacter).optional(),
     }),
   ),
   recordIds: z.array(z.uuid()),
@@ -208,6 +235,7 @@ export const SceneRecordPage = z.object({
       text: z.string(),
       kind: z.enum(["message", "action"]),
       continuation: z.string().nullable(),
+      characters: z.array(PlayerCharacter).optional(),
     }),
   ),
   next: z.string().nullable(),
@@ -255,6 +283,8 @@ export const WorldPlayerPage = z.object({
       id: z.uuid(),
       actorId: z.uuid().nullable(),
       state: z.enum(["joining", "ready", "paused"]),
+      name: z.string().nullable().optional(),
+      icon: z.string().nullable().optional(),
       at: z.number().int().nonnegative().safe(),
     }),
   ),

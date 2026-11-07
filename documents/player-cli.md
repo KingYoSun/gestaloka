@@ -1,6 +1,6 @@
 # プレイヤーCLIの配布と試遊
 
-使い方は[同梱README](../packages/player-cli/README.md)、設計と受入条件は[ADR-031](adr/ADR-031-player-cli.md)を参照してください。
+使い方は[同梱README](../packages/player-cli/README.md)、設計と受入条件は[ADR-032](adr/ADR-032-player-cli.md)を参照してください。
 
 ## 配布物を作る
 

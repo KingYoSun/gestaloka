@@ -12,6 +12,7 @@ import { RichText } from "./RichText.js";
 import { Button } from "./components/ui/button.js";
 import { Label } from "./components/ui/label.js";
 import { Textarea } from "./components/ui/textarea.js";
+import { Characters } from "./player-icons.js";
 type State = z.infer<typeof SceneStatus>;
 const labels = {
   preparing: "背景情報をもとに、シーンのあらすじをまとめています。",
@@ -149,6 +150,7 @@ export function ScenePlayer({
         <section className="scene-panel" aria-label="シーンのあらすじ">
           <p className="record-meta">シーン開始時の背景情報</p>
           <h2>シーンのあらすじ</h2>
+          <Characters characters={scene.synopsisCharacters} />
           <RichText text={scene.synopsis} />
           {scene.state === "ready" && (
             <Button disabled={busy} onClick={() => simple("start")}>
@@ -160,6 +162,7 @@ export function ScenePlayer({
       {scene?.actions.at(-1) && (
         <div className="submitted-action">
           <p className="record-meta">送った行動</p>
+          <Characters characters={scene.actions.at(-1)!.characters} />
           <p className="plain-text">{scene.actions.at(-1)!.text}</p>
         </div>
       )}
@@ -204,6 +207,7 @@ export function ScenePlayer({
       {scene?.state === "result" && scene.result && (
         <section className="scene-panel scene-result" aria-label="リザルト">
           <h2>リザルト</h2>
+          <Characters characters={scene.resultCharacters} />
           <RichText text={scene.result} />
         </section>
       )}

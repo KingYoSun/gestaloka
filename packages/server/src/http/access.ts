@@ -26,7 +26,7 @@ import { WorldScenes, type SceneRow } from "../runtime/scene.js";
 import { sceneAnchors } from "../runtime/scene-data.js";
 import { requireMember } from "./operations.js";
 import { ExecutionBudget } from "../execution-budget.js";
-import { WorldPlayers } from "../runtime/players.js";
+import { WorldPlayers, type CharacterEvidence } from "../runtime/players.js";
 import {
   setupInitialPresentations,
   recordInitialPresentation,
@@ -34,7 +34,7 @@ import {
 
 export class AccessError extends Error {
   constructor(
-    readonly status: 401 | 403 | 404 | 409 | 503,
+    readonly status: 400 | 401 | 403 | 404 | 409 | 503,
     readonly code: string,
     message: string,
   ) {
@@ -385,9 +385,49 @@ export class WorldAccess {
           : ("ready" as const),
     };
   }
-  sceneData(row: SceneRow | null, compact = false) {
+  async sceneData(row: SceneRow | null, compact = false) {
     if (!row) return { scene: null };
     const d = row.data;
+    const messages = compact
+      ? []
+      : d.events.flatMap((e) =>
+          e.receipts
+            .filter((p) => p.observerId === row.actor_id)
+            .map((p) => ({
+              id: e.id,
+              text: p.text,
+              ids: (p.information ?? []).map((i) => i.id),
+            })),
+        );
+    const actions = compact ? d.actions.slice(-1) : d.actions;
+    const characters = await this.players.characters(
+      row.construction_id,
+      row.actor_id,
+      [
+        {
+          ids: [
+            ...(d.background?.synopsisInformation ?? []).map((i) => i.id),
+            ...(d.background?.perceptions ?? [])
+              .filter((p) => p.observerId === row.actor_id)
+              .flatMap((p) => p.sourceIds),
+          ],
+          text: d.background?.synopsis ?? "",
+        },
+        {
+          ids:
+            row.state === "result"
+              ? (d.resultInformation ?? []).map((i) => i.id)
+              : [],
+          text: row.state === "result" ? (d.result ?? "") : "",
+        },
+        ...messages,
+        ...actions.map((a) => ({
+          ids: [row.actor_id],
+          text: a.text,
+          own: true,
+        })),
+      ],
+    );
     return {
       scene: SceneStatus.parse({
         id: row.id,
@@ -396,21 +436,24 @@ export class WorldAccess {
         at: d.at,
         state: row.state,
         synopsis: d.background?.synopsis ?? null,
+        synopsisCharacters: characters[0],
         result: row.state === "result" ? (d.result ?? null) : null,
+        resultCharacters: characters[1],
         error:
           row.state === "paused"
             ? d.limitReached
               ? "応答生成のcall回数上限に達しました。管理者による上限の見直し後、保存したシーンから再開できます。"
               : "処理を保留しました。保存したシーンから再開できます。"
             : null,
-        messages: compact
-          ? []
-          : d.events.flatMap((e) =>
-              e.receipts
-                .filter((p) => p.observerId === row.actor_id)
-                .map((p) => ({ id: e.id, text: p.text })),
-            ),
-        actions: compact ? d.actions.slice(-1) : d.actions,
+        messages: messages.map((m, i) => ({
+          id: m.id,
+          text: m.text,
+          characters: characters[i + 2],
+        })),
+        actions: actions.map((a, i) => ({
+          ...a,
+          characters: characters[i + 2 + messages.length],
+        })),
         recordIds:
           !compact && d.background
             ? sceneAnchors(d.background, d.events, d.startedAt, row.id)
@@ -502,9 +545,32 @@ export class WorldAccess {
       Buffer.from(
         JSON.stringify({ sceneId: input.sceneId, kind: input.kind, index }),
       ).toString("base64url");
+    const evidence: CharacterEvidence[] = rows.map(({ item }) => ({
+      ids:
+        input.kind === "actions"
+          ? [grant.actor_id!]
+          : [
+              ...item.receipts
+                .filter((p) => p.observerId === grant.actor_id)
+                .flatMap((p) => (p.information ?? []).map((i) => i.id)),
+            ],
+      text:
+        input.kind === "actions"
+          ? item.text
+          : item.receipts
+              .filter((p) => p.observerId === grant.actor_id)
+              .map((p) => p.text)
+              .join("\n\n"),
+      own: input.kind === "actions",
+    }));
+    const characters = await this.players.characters(
+      id,
+      grant.actor_id!,
+      evidence,
+    );
     return SceneRecordPage.parse({
       viewerId: grant.actor_id,
-      items: rows.flatMap(({ item }) => {
+      items: rows.flatMap(({ item }, index) => {
         const text =
           input.kind === "actions"
             ? item.text
@@ -519,6 +585,7 @@ export class WorldAccess {
                 text,
                 at: input.kind === "events" ? item.period.from : null,
                 kind: input.kind === "events" ? "message" : "action",
+                characters: characters[index],
                 continuation:
                   item.state === "boundary" ? "続きは次のシーンで" : null,
               },
@@ -823,7 +890,8 @@ export class WorldAccess {
       );
     const edges = all.slice(0, 50);
     if (after) edges.reverse();
-    const items = [];
+    const items = [],
+      evidence: CharacterEvidence[] = [];
     const excluded = new Set(
       excludeScene
         ? (
@@ -861,6 +929,13 @@ export class WorldAccess {
           ? {}
           : { until: edge.period.until }),
       });
+      evidence.push({
+        ids:
+          edge.kind === "see"
+            ? [edge.target, ...(edge.observation?.sourceIds ?? [])]
+            : [],
+        text: items.at(-1)!.text,
+      });
     }
     await context.validate();
     const encode = (edge: (typeof edges)[number] | undefined) =>
@@ -869,10 +944,18 @@ export class WorldAccess {
             JSON.stringify({ from: edge.period.from, id: edge.id }),
           ).toString("base64url")
         : null;
+    const characters = await this.players.characters(
+      id,
+      grant.actor_id!,
+      evidence,
+    );
     const page = KnowledgePage.parse({
       viewerId: grant.actor_id,
       at: row.at,
-      items,
+      items: items.map((item, index) => ({
+        ...item,
+        characters: characters[index],
+      })),
       next: after || all.length > 50 ? encode(edges.at(-1)) : null,
       previous: (after ? all.length > 50 : !!before) ? encode(edges[0]) : null,
     });

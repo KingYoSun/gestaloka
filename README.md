@@ -220,6 +220,8 @@ pnpm world:build resume --id <constructionId>
 
 Museなどの一般プレイヤー向けCLIは[配布・試遊手順](documents/player-cli.md)を参照してください。持ち主がブラウザーで認可URLと確認コードを照合し、1人の村民のプレイを許可・解除できます。管理者CLIとは別の配布物です。
 
+人物ごとのアイコンは、Webの参加時と人物設定から追加・差し替え・解除できます。共通APIは`PUT /api/worlds/:id/players/:playerId/icon`で、画像ファイルのbase64を`image`へ指定し、解除時は`null`を指定します。生成中の参加要求にも登録でき、画像登録の失敗で参加や以前のアイコンは失われません。受付形式・閲覧範囲・APIの詳細は[ADR-031](documents/adr/ADR-031-player-icons.md)を参照してください。
+
 API・ワーカーとOryを起動し、ブラウザーからは同じオリジンのAPIを利用します。`GET/POST /api/session`はOryで認証したアプリIDを返し、利用登録・BANを確認します。匿名Cookieは本人確認後の既存データ引き継ぎに限って使います。変更操作には `X-Gestaloka-Request: 1` を付け、世界の作成・構築操作には再送用のrequestIdを指定します。
 
 管理者は`/api/worlds`で予算を指定して世界を作成・取得し、`/api/worlds/:id/commands`で期間追加・再開・完了を行います。参加は`POST /api/operations`の`worlds.join`へ一本化しています。受付とpg-boss投入は同時保存され、202の後はワーカーで実行します。`/records` は管理者向けの報告、`/knowledge` は本人に対応する村民の観測・解釈だけを返します。履歴は1ページ50件で、nextから続きを取得できます。公開・参加・複数人物の選択は[ADR-013](documents/adr/ADR-013-world-participation.md)と[運用手順](documents/operations-auth.md#世界の公開と参加の共通api)を参照してください。

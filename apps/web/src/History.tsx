@@ -16,6 +16,9 @@ import { api, expireSession, ScopeChanged } from "./api.js";
 import { worldTime, Problem } from "./presentation.js";
 import { RichText } from "./RichText.js";
 import { Button } from "./components/ui/button.js";
+import { Characters } from "./player-icons.js";
+import type { PlayerCharacter } from "@gestaloka/contracts";
+import type { z } from "zod";
 
 type Cursor = { before?: string; after?: string };
 type Entry = {
@@ -24,6 +27,7 @@ type Entry = {
   text: string;
   kind: "admin" | "observation" | "interpretation" | "message" | "action";
   continuation?: string | null;
+  characters?: z.infer<typeof PlayerCharacter>[] | undefined;
 };
 type Page = { items: Entry[]; next: string | null; previous: string | null };
 export type HistoryHandle = { updated: () => void };
@@ -128,6 +132,7 @@ export function History({
           at: item.from,
           text: item.text,
           kind: item.kind,
+          characters: item.characters,
         })),
       };
     },
@@ -332,6 +337,7 @@ export function History({
                       : `T + ${worldTime(entry.at)}`}
                     {entry.kind === "interpretation" ? " · 当時の解釈" : ""}
                   </p>
+                  <Characters characters={entry.characters} />
                   <RichText text={entry.text} />
                   {entry.continuation && (
                     <p className="continuation">継続中: {entry.continuation}</p>
