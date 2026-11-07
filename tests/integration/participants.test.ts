@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { playerCli } from "../support/player-cli.js";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
@@ -382,6 +382,13 @@ test("2つのCLIが認可・新規参加・応答喪失からの復帰と相互�
       `${base}/worlds/${world}`,
     );
     expect(lostConnect.state).toBe("error");
+    const oldRequestPath = join(
+      `${profiles[0]}.requests`,
+      `${lostConnect.requestId}.json`,
+    );
+    const oldRequest = JSON.parse(await readFile(oldRequestPath, "utf8"));
+    delete oldRequest.method;
+    await writeFile(oldRequestPath, JSON.stringify(oldRequest));
     const connection = await cli(profiles[0]!, "recover");
     expect(connection.requestId).toBe(lostConnect.requestId);
     expect(connection.state).toBe("authorization_pending");
