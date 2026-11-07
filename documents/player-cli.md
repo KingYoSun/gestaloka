@@ -37,9 +37,9 @@ pnpm test:integration
 
 2026年11月8日時点。
 
-- `pnpm check`: 成功。生成物、型、lint、整形、単体テスト65件、CLI・Web・管理画面のビルドを確認した。
-- CLI・認可・既存プレイの統合テスト: `participants`・`operations`・`world-api`・`scene`・`mcp`の5ファイル46件が成功。Windows上のNode.js 22.23.4、専用のPostgreSQLスキーマとNeo4jを使用した。CLIは呼出しごとに新しいプロセスで実行した。
-- 認可画面: Chromiumで新規参加の許可と解除のE2Eテスト1件が成功。同意画面と許可一覧のスクリーンショットを`artifacts/screenshots/player-device-*.png`へ保存した。
+- [PR #127のCI](https://github.com/KingYoSun/gestaloka/actions/runs/42409354206): 全ジョブ成功。`pnpm check`、単体71件、統合222件、認証6件、ブラウザー17件、公開配置と復旧の検証が通過した。CLIは呼出しごとに新しいプロセスで実行し、参加・行動・終了の応答喪失、2ユーザーの分離、許可解除後の拒否を確認した。
+- 認可画面: Chromiumで新規参加の許可と解除を確認した。同意画面と許可一覧のスクリーンショットは`artifacts/screenshots/player-device-*.png`へ保存した。
 - Linux配布物の導入: DebianベースのNode.js 24.22.1コンテナーで、ネットワークを無効にしてtarballをnpmでインストールし、ヘルプのJSON出力とエラー時の終了コード1を確認した。Linuxでの通常プレイ全体の実測とは区別する。
-- 公開先: ユーザー指定の`https://play.gestaloka.com`と`https://api.gestaloka.com`を確認した。公開APIのhealthは正常だが、新しい`GET /api/player-device`は両URLとも404。今回のコードの配置は未実施で、配置先の接続情報を確認中。
-- Muse実機: 未接続。公開環境の更新と持ち主の認可を経た試遊は未確認。通常のCLI統合テストやLinuxコンテナーの導入確認を、Muse実機の確認として扱わない。
+- 公開先: `local2`の`/home/kingyosun/gestaloka-local2`へ配置した。現地のポート・TLS設定を保ち、API・ワーカー・Webを更新した。`https://play.gestaloka.com`と`https://api.gestaloka.com`の両方で、health、新しい認可APIの保護、ログイン導線を確認した。
+- 公開環境での試遊: ユーザー指定の[ぶー村](https://play.gestaloka.com/worlds/d9c806c3-e8ab-40f3-985a-8cfaae1166c9)を世界全体の上限100ドルで生成した。`local2`ではNode.js 24.22.1でtarballを展開し、ブラウザーで確認コードと人物設定を選んで許可した後、Linux CLIから参加・シーン準備・開始・自由記述の一手・終了・リザルト取得まで実モデルで実行した。同じ人物・シーン・要求IDに別プロセスから復帰し、行動が1件のままであることと、既読と重複しない履歴7件の取得を確認した。計算額は合計0.2427216ドル、未精算額は0ドルだった。これはプロバイダーの請求額そのものではない。
+- 確認範囲: 公開環境の試遊は、1人の持ち主と1人の村民によるLinux CLIの実行である。2ユーザーと通信応答喪失は通常のCLI統合テストで確認した。Muse本体からの実行は未確認であり、Linux CLIの試遊をMuse実機の確認として扱わない。
