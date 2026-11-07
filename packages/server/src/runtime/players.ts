@@ -8,6 +8,15 @@ import { requireMember } from "../http/operations.js";
 import { ExecutionBudget } from "../execution-budget.js";
 import { SupersededWorker } from "./agent.js";
 import type { WorldConstruction } from "./construction.js";
+import { playerIcon } from "./player-icons.js";
+import type { PlayerCharacter } from "@gestaloka/contracts";
+import { z } from "zod";
+
+export type CharacterEvidence = {
+  ids: string[];
+  text: string;
+  own?: boolean;
+};
 
 type JoinRow = {
   id: string;
@@ -35,7 +44,10 @@ export class WorldPlayers {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS world_join (
       id uuid PRIMARY KEY,subject_id uuid NOT NULL,construction_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
       preset_id uuid NOT NULL,preset_version integer NOT NULL,operation_id uuid NOT NULL REFERENCES world_operation(id),
-      state text NOT NULL DEFAULT 'joining',actor_id uuid,at bigint NOT NULL,claim uuid,error text);`);
+      state text NOT NULL DEFAULT 'joining',actor_id uuid,at bigint NOT NULL,claim uuid,error text);
+      CREATE TABLE IF NOT EXISTS world_player_icon (
+      player_id uuid PRIMARY KEY, construction_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
+      image text NOT NULL);`);
     await this.construction.queue.createQueue(this.queueName, {
       retryLimit: 2,
       retryDelay: 5,
@@ -174,10 +186,146 @@ export class WorldPlayers {
         [userId, worldId, before ?? null, entryId ?? null],
       )
     ).rows;
+    if (!rows.length) return { items: [], next: null };
+    const world = await this.construction.get(worldId);
+    const context = world.world_id
+      ? this.construction.agent.store.context(world.world_id)
+      : undefined;
+    const icons = (
+      await this.pool.query<{ player_id: string; image: string }>(
+        "SELECT player_id,image FROM world_player_icon WHERE construction_id=$1 AND player_id=ANY($2::uuid[])",
+        [worldId, rows.slice(0, 50).map((r) => r.id)],
+      )
+    ).rows;
     return {
-      items: rows.slice(0, 50).map((r) => ({ ...r, at: Number(r.at) })),
+      items: await Promise.all(
+        rows.slice(0, 50).map(async (r) => ({
+          ...r,
+          at: Number(r.at),
+          name: r.actorId
+            ? ((await context?.node(r.actorId))?.text ?? null)
+            : null,
+          icon: icons.find((i) => i.player_id === r.id)?.image ?? null,
+        })),
+      ),
       next: rows.length > 50 ? rows[49]!.id : null,
     };
+  }
+  async setIcon(
+    userId: string,
+    worldId: string,
+    playerId: string,
+    image: string | null,
+  ) {
+    if (!(await this.list(userId, worldId, undefined, playerId)).items.length)
+      throw new AccessError(
+        404,
+        "PLAYER_NOT_FOUND",
+        "設定できる人物が見つかりません",
+      );
+    const normalized = image === null ? null : await playerIcon(image);
+    if (normalized === null)
+      await this.pool.query(
+        "DELETE FROM world_player_icon WHERE construction_id=$1 AND player_id=$2",
+        [worldId, playerId],
+      );
+    else
+      await this.pool.query(
+        "INSERT INTO world_player_icon(player_id,construction_id,image) VALUES($1,$2,$3) ON CONFLICT(player_id) DO UPDATE SET image=excluded.image",
+        [playerId, worldId, normalized],
+      );
+    return { image: normalized };
+  }
+  // Candidates must come from the caller's own displayed receipts, never from a world-wide name search.
+  async characters(
+    worldId: string,
+    viewerId: string,
+    evidence: CharacterEvidence[],
+  ) {
+    if (!evidence.some((e) => e.ids.length)) return evidence.map(() => []);
+    const world = await this.construction.get(worldId);
+    const context = this.construction.agent.store.context(world.world_id!);
+    const nodes = new Map<string, ReturnType<typeof context.node>>();
+    const node = (id: string) => {
+      const result = nodes.get(id) ?? context.node(id);
+      nodes.set(id, result);
+      return result;
+    };
+    const allIds = [
+      ...new Set(
+        evidence
+          .flatMap((e) => e.ids)
+          .filter((id) => z.uuid().safeParse(id).success),
+      ),
+    ];
+    const events = (await Promise.all(allIds.map(node)))
+      .filter((n) => n?.kind === "event")
+      .map((n) => n!.id);
+    const receipts = events.length
+      ? (
+          await this.pool.query<{
+            id: string;
+            information: { id: string }[] | null;
+          }>(
+            `SELECT e->>'id' AS id,p->'information' AS information FROM world_scene s
+       CROSS JOIN LATERAL jsonb_array_elements(s.data->'events') e
+       CROSS JOIN LATERAL jsonb_array_elements(e->'receipts') p
+       WHERE s.construction_id=$1 AND (s.actor_id=$2 OR s.state='result')
+       AND e->>'id'=ANY($3::text[]) AND p->>'observerId'=$2::text`,
+            [worldId, viewerId, events],
+          )
+        ).rows
+      : [];
+    const candidates = await Promise.all(
+      evidence.map(async (e) => {
+        const ids = new Set<string>();
+        for (const id of new Set(
+          e.ids.filter((id) => z.uuid().safeParse(id).success),
+        )) {
+          const source = await node(id);
+          if (source?.kind === "existence") ids.add(id);
+          if (source?.kind === "event")
+            for (const reference of receipts
+              .filter((r) => r.id === id)
+              .flatMap((r) => r.information ?? []))
+              if (
+                z.uuid().safeParse(reference.id).success &&
+                (await node(reference.id))?.kind === "existence"
+              )
+                ids.add(reference.id);
+        }
+        const named = [];
+        for (const actorId of ids) {
+          const person = await node(actorId);
+          if (
+            person?.text.trim() &&
+            (e.text.includes(person.text) || (e.own && actorId === viewerId))
+          )
+            named.push({ actorId, name: person.text });
+        }
+        return named;
+      }),
+    );
+    const rows = (
+      await this.pool.query<{ actor_id: string; image: string | null }>(
+        `SELECT DISTINCT a.actor_id,i.image FROM world_access a LEFT JOIN world_player_icon i ON i.player_id=a.id
+       WHERE a.construction_id=$1 AND a.role='player' AND a.actor_id=ANY($2::uuid[])`,
+        [worldId, [...new Set(candidates.flat().map((c) => c.actorId))]],
+      )
+    ).rows;
+    await context.validate();
+    return candidates.map((list) =>
+      list.flatMap((c) => {
+        const row = rows.find((r) => r.actor_id === c.actorId);
+        return row
+          ? [
+              { ...c, icon: row.image } satisfies z.infer<
+                typeof PlayerCharacter
+              >,
+            ]
+          : [];
+      }),
+    );
   }
   async #transaction<T>(fn: (db: pg.PoolClient) => Promise<T>) {
     const db = await this.pool.connect();

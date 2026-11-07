@@ -198,9 +198,11 @@ export class WorldScenes {
           compact
             ? `SELECT id,construction_id,actor_id,state,claim,jsonb_build_object(
               'commandId',data->'commandId','at',data->'at','startedAt',data->'startedAt',
-              'background',jsonb_build_object('synopsis',data#>'{background,synopsis}'),
+              'background',jsonb_build_object('synopsis',data#>'{background,synopsis}',
+                'synopsisInformation',data#>'{background,synopsisInformation}','perceptions',data#>'{background,perceptions}'),
               'events','[]'::jsonb,'actions',CASE WHEN jsonb_array_length(data->'actions')>0 THEN jsonb_build_array(data->'actions'->-1) ELSE '[]'::jsonb END,
-              'result',data->'result','nextPurpose',data->'nextPurpose','limitReached',data->'limitReached') AS data
+              'result',data->'result','resultInformation',data->'resultInformation',
+              'nextPurpose',data->'nextPurpose','limitReached',data->'limitReached') AS data
               FROM world_scene WHERE construction_id=$1 AND ($2::uuid IS NULL OR actor_id=$2) ORDER BY created_at DESC,id DESC LIMIT 1`
             : "SELECT * FROM world_scene WHERE construction_id=$1 AND ($2::uuid IS NULL OR actor_id=$2) ORDER BY created_at DESC,id DESC LIMIT 1",
           [world, actorId ?? null],

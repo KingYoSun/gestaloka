@@ -989,6 +989,12 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "observation" | "interpretation";
                                 text: string;
+                                characters?: {
+                                    /** Format: uuid */
+                                    actorId: string;
+                                    name: string;
+                                    icon: string | null;
+                                }[];
                                 from: number;
                                 until?: number;
                             }[];
@@ -1398,12 +1404,30 @@ export interface paths {
                                 /** @enum {string} */
                                 state: "preparing" | "ready" | "active" | "acting" | "reflecting" | "result" | "paused";
                                 synopsis: string | null;
+                                synopsisCharacters?: {
+                                    /** Format: uuid */
+                                    actorId: string;
+                                    name: string;
+                                    icon: string | null;
+                                }[];
                                 result: string | null;
+                                resultCharacters?: {
+                                    /** Format: uuid */
+                                    actorId: string;
+                                    name: string;
+                                    icon: string | null;
+                                }[];
                                 error: string | null;
                                 messages: {
                                     /** Format: uuid */
                                     id: string;
                                     text: string;
+                                    characters?: {
+                                        /** Format: uuid */
+                                        actorId: string;
+                                        name: string;
+                                        icon: string | null;
+                                    }[];
                                 }[];
                                 actions: {
                                     /** Format: uuid */
@@ -1411,6 +1435,12 @@ export interface paths {
                                     text: string;
                                     /** @enum {string} */
                                     state: "running" | "complete" | "boundary";
+                                    characters?: {
+                                        /** Format: uuid */
+                                        actorId: string;
+                                        name: string;
+                                        icon: string | null;
+                                    }[];
                                 }[];
                                 recordIds: string[];
                                 nextPurpose: string | null;
@@ -1558,12 +1588,30 @@ export interface paths {
                                 /** @enum {string} */
                                 state: "preparing" | "ready" | "active" | "acting" | "reflecting" | "result" | "paused";
                                 synopsis: string | null;
+                                synopsisCharacters?: {
+                                    /** Format: uuid */
+                                    actorId: string;
+                                    name: string;
+                                    icon: string | null;
+                                }[];
                                 result: string | null;
+                                resultCharacters?: {
+                                    /** Format: uuid */
+                                    actorId: string;
+                                    name: string;
+                                    icon: string | null;
+                                }[];
                                 error: string | null;
                                 messages: {
                                     /** Format: uuid */
                                     id: string;
                                     text: string;
+                                    characters?: {
+                                        /** Format: uuid */
+                                        actorId: string;
+                                        name: string;
+                                        icon: string | null;
+                                    }[];
                                 }[];
                                 actions: {
                                     /** Format: uuid */
@@ -1571,6 +1619,12 @@ export interface paths {
                                     text: string;
                                     /** @enum {string} */
                                     state: "running" | "complete" | "boundary";
+                                    characters?: {
+                                        /** Format: uuid */
+                                        actorId: string;
+                                        name: string;
+                                        icon: string | null;
+                                    }[];
                                 }[];
                                 recordIds: string[];
                                 nextPurpose: string | null;
@@ -1711,6 +1765,12 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "message" | "action";
                                 continuation: string | null;
+                                characters?: {
+                                    /** Format: uuid */
+                                    actorId: string;
+                                    name: string;
+                                    icon: string | null;
+                                }[];
                             }[];
                             next: string | null;
                             previous: string | null;
@@ -3757,6 +3817,8 @@ export interface paths {
                                 actorId: string | null;
                                 /** @enum {string} */
                                 state: "joining" | "ready" | "paused";
+                                name?: string | null;
+                                icon?: string | null;
                                 at: number;
                             }[];
                             /** Format: uuid */
@@ -3891,6 +3953,8 @@ export interface paths {
                                 actorId: string | null;
                                 /** @enum {string} */
                                 state: "joining" | "ready" | "paused";
+                                name?: string | null;
+                                icon?: string | null;
                                 at: number;
                             } | null;
                         };
@@ -3983,6 +4047,136 @@ export interface paths {
             };
         };
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worlds/{id}/players/{playerId}/icon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    playerId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        image: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            image: string | null;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;

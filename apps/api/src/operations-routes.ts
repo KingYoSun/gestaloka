@@ -11,6 +11,8 @@ import {
   WorldCatalogPage,
   PlayerPresetPage,
   WorldPlayerPage,
+  PlayerIconInput,
+  PlayerIcon,
   ResourceId,
   InspectionReadResult,
 } from "@gestaloka/contracts";
@@ -52,7 +54,7 @@ export async function operationsRoutes(
     reply.header("Cache-Control", "private, no-store");
     reply.header("Referrer-Policy", "no-referrer");
     if (
-      request.method === "POST" &&
+      !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
       request.url.startsWith("/api/") &&
       (request.headers["x-gestaloka-request"] !== "1" ||
         (request.headers.origin &&
@@ -233,6 +235,31 @@ export async function operationsRoutes(
         request.params.playerId,
       );
       return { player: page.items[0] ?? null };
+    },
+  );
+  app.put(
+    "/api/worlds/:id/players/:playerId/icon",
+    {
+      bodyLimit: 7 * 1024 * 1024,
+      schema: {
+        params: z.object({ id: z.uuid(), playerId: z.uuid() }),
+        body: PlayerIconInput,
+        response: { 200: PlayerIcon, ...errors },
+      },
+    },
+    async (request) => {
+      if (!players)
+        throw new AccessError(
+          503,
+          "MODEL_NOT_CONFIGURED",
+          "参加処理を設定してください",
+        );
+      return players.setIcon(
+        await actor(request),
+        request.params.id,
+        request.params.playerId,
+        request.body.image,
+      );
     },
   );
   app.get(
