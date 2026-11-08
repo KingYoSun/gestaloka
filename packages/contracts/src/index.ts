@@ -184,6 +184,22 @@ export const SceneCommand = z.discriminatedUnion("command", [
   z
     .object({
       requestId: z.uuid(),
+      command: z.literal("react"),
+      opportunityId: z.uuid(),
+      actionText: z.string().min(1).nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      requestId: z.uuid(),
+      command: z.literal("vote"),
+      proposalId: z.uuid(),
+      continue: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      requestId: z.uuid(),
       command: z.enum(["start", "finish", "resume", "leave"]),
     })
     .strict(),
@@ -233,6 +249,10 @@ export const SceneStatus = z.object({
       phase: z.enum(["selecting", "inviting", "settled"]),
       pending: z.number().int().nonnegative(),
       deadline: z.iso.datetime().nullable(),
+      rounds: z.number().int().nonnegative().optional(),
+      flow: z
+        .enum(["open", "manual", "voting", "rounds", "inactive", "closing"])
+        .optional(),
     })
     .optional(),
 });
@@ -251,6 +271,23 @@ export const SceneInboxQuery = z.object({
 });
 export const SceneInbox = z.object({
   viewerId: z.uuid(),
+  opportunities: z
+    .array(
+      z.object({
+        id: z.uuid(),
+        sceneId: z.uuid(),
+        sourceInputId: z.uuid(),
+        deadline: z.iso.datetime(),
+        seenEventIds: z.array(z.uuid()),
+        context: z.array(z.string()),
+      }),
+    )
+    .default([]),
+  proposals: z
+    .array(
+      z.object({ id: z.uuid(), sceneId: z.uuid(), deadline: z.iso.datetime() }),
+    )
+    .default([]),
   invitations: z.array(
     z.object({
       id: z.uuid(),
@@ -277,6 +314,9 @@ export const SceneInbox = z.object({
         "paused",
       ]),
       invitationId: z.uuid().optional(),
+      opportunityId: z.uuid().optional(),
+      sourceInputId: z.uuid().optional(),
+      proposalId: z.uuid().optional(),
       requestId: z.uuid().optional(),
       answer: z.enum(["accepted", "declined", "expired"]).optional(),
       deadline: z.iso.datetime().optional(),

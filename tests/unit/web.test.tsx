@@ -827,6 +827,189 @@ test("シーンIDを指定して元の終了操作を行い、確定待ちでも
   expect(screen.getByRole("link", { name: "現在のシーンへ戻る" })).toBeTruthy();
 });
 
+test("共有の生成中もWebから割り込む入力を受け付ける", async () => {
+  scene = {
+    ...sceneFixture("acting"),
+    shared: {
+      owner: true,
+      requestIds: [],
+      phase: "settled",
+      pending: 0,
+      deadline: null,
+      flow: "open",
+      rounds: 0,
+    },
+  };
+  server.use(
+    http.post("*/api/worlds/:id/scene", async ({ request }) => {
+      const body = (await request.json()) as {
+        requestId: string;
+        command: string;
+        actionText: string;
+      };
+      submitted = body;
+      scene = {
+        ...scene!,
+        requestId: body.requestId,
+        shared: { ...scene!.shared!, requestIds: [body.requestId] },
+      };
+      return json({ scene }, 202);
+    }),
+  );
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
+      )}
+    />,
+  );
+  fireEvent.change(await screen.findByLabelText("どう行動しますか"), {
+    target: { value: "相手が考えている間に声をかける" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "この行動を送る" }));
+  await waitFor(() =>
+    expect(submitted).toMatchObject({
+      command: "act",
+      actionText: "相手が考えている間に声をかける",
+    }),
+  );
+});
+
+test("反応なしを送信前に保存し、別のシーンを開いていても元の機会へ同じ回答を再送する", async () => {
+  const replies: {
+    target: string | null;
+    body: {
+      requestId: string;
+      command: string;
+      opportunityId: string;
+      actionText: null;
+    };
+  }[] = [];
+  scene = {
+    ...sceneFixture(),
+    shared: {
+      owner: false,
+      requestIds: [],
+      phase: "settled",
+      pending: 0,
+      deadline: null,
+    },
+  };
+  server.use(
+    http.get("*/api/worlds/:id/scene/inbox", () =>
+      json({
+        viewerId: V,
+        invitations: [],
+        items: [],
+        next: null,
+        proposals: [],
+        opportunities: replies.length
+          ? []
+          : [
+              {
+                id: A,
+                sceneId: B,
+                sourceInputId: A,
+                deadline: new Date(Date.now() + 60000).toISOString(),
+                seenEventIds: [A],
+                context: ["この問いまでに届いた内容"],
+              },
+            ],
+      }),
+    ),
+    http.post("*/api/worlds/:id/scene", async ({ request }) => {
+      replies.push({
+        target: new URL(request.url).searchParams.get("sceneId"),
+        body: (await request.json()) as (typeof replies)[number]["body"],
+      });
+      return replies.length === 1 ? HttpResponse.error() : json({ scene }, 202);
+    }),
+  );
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({
+          initialEntries: [`/worlds/${W}/play?sceneId=${W}`],
+        }),
+      )}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "反応しない" }));
+  const retry = await screen.findByRole("button", {
+    name: "同じ回答で確認する",
+  });
+  expect(Object.keys(localStorage).some((k) => k.includes("reaction"))).toBe(
+    true,
+  );
+  fireEvent.click(retry);
+  await waitFor(() => expect(replies).toHaveLength(2));
+  expect(replies[0]).toEqual(replies[1]);
+  expect(replies[0]).toMatchObject({
+    target: B,
+    body: { command: "react", opportunityId: A, actionText: null },
+  });
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "同じ回答で確認する" }),
+    ).toBeNull(),
+  );
+});
+
+test("終了提案は本人の選択でだけ終了・続行を回答する", async () => {
+  const votes: { command: string; continue: boolean }[] = [];
+  scene = {
+    ...sceneFixture(),
+    shared: {
+      owner: true,
+      requestIds: [],
+      phase: "settled",
+      pending: 0,
+      deadline: null,
+      flow: "voting",
+      rounds: 10,
+    },
+  };
+  server.use(
+    http.get("*/api/worlds/:id/scene/inbox", () =>
+      json({
+        viewerId: V,
+        invitations: [],
+        items: [],
+        next: null,
+        opportunities: [],
+        proposals: votes.length
+          ? []
+          : [
+              {
+                id: A,
+                sceneId: W,
+                deadline: new Date(Date.now() + 60000).toISOString(),
+              },
+            ],
+      }),
+    ),
+    http.post("*/api/worlds/:id/scene", async ({ request }) => {
+      votes.push((await request.json()) as (typeof votes)[number]);
+      scene = { ...scene!, shared: { ...scene!.shared!, flow: "open" } };
+      return json({ scene }, 202);
+    }),
+  );
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
+      )}
+    />,
+  );
+  const keepGoing = await screen.findByRole("button", {
+    name: "続ける",
+  });
+  expect(votes).toEqual([]);
+  fireEvent.click(keepGoing);
+  await waitFor(() => expect(votes).toHaveLength(1));
+  expect(votes[0]).toMatchObject({ command: "vote", continue: true });
+});
+
 test("SSEの重複を無視し、切断後は配信位置とスナップショットを取得し直す", async () => {
   let reads = 0,
     cursors = 0;

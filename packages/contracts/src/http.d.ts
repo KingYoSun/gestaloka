@@ -1455,6 +1455,9 @@ export interface paths {
                                     pending: number;
                                     /** Format: date-time */
                                     deadline: string | null;
+                                    rounds?: number;
+                                    /** @enum {string} */
+                                    flow?: "open" | "manual" | "voting" | "rounds" | "inactive" | "closing";
                                 };
                             } | null;
                         };
@@ -1588,6 +1591,22 @@ export interface paths {
                         /** Format: uuid */
                         requestId: string;
                         /** @enum {string} */
+                        command: "react";
+                        /** Format: uuid */
+                        opportunityId: string;
+                        actionText: string | null;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "vote";
+                        /** Format: uuid */
+                        proposalId: string;
+                        continue: boolean;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
                         command: "start" | "finish" | "resume" | "leave";
                     };
                 };
@@ -1661,6 +1680,9 @@ export interface paths {
                                     pending: number;
                                     /** Format: date-time */
                                     deadline: string | null;
+                                    rounds?: number;
+                                    /** @enum {string} */
+                                    flow?: "open" | "manual" | "voting" | "rounds" | "inactive" | "closing";
                                 };
                             } | null;
                         };
@@ -2076,6 +2098,28 @@ export interface paths {
                         "application/json": {
                             /** Format: uuid */
                             viewerId: string;
+                            /** @default [] */
+                            opportunities: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: uuid */
+                                sceneId: string;
+                                /** Format: uuid */
+                                sourceInputId: string;
+                                /** Format: date-time */
+                                deadline: string;
+                                seenEventIds: string[];
+                                context: string[];
+                            }[];
+                            /** @default [] */
+                            proposals: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: uuid */
+                                sceneId: string;
+                                /** Format: date-time */
+                                deadline: string;
+                            }[];
                             invitations: {
                                 /** Format: uuid */
                                 id: string;
@@ -2093,6 +2137,12 @@ export interface paths {
                                 kind: "invitation" | "invitation_closed" | "participation_settled" | "scene_ready" | "scene_started" | "participant_left" | "result" | "presence_inactive" | "opportunity" | "end_proposal" | "paused";
                                 /** Format: uuid */
                                 invitationId?: string;
+                                /** Format: uuid */
+                                opportunityId?: string;
+                                /** Format: uuid */
+                                sourceInputId?: string;
+                                /** Format: uuid */
+                                proposalId?: string;
                                 /** Format: uuid */
                                 requestId?: string;
                                 /** @enum {string} */

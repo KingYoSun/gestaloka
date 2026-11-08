@@ -671,6 +671,7 @@ export class WorldAccess {
     compact = false,
     actorId?: string,
     sceneId?: string,
+    kind: "human" | "bot" = "human",
   ) {
     await this.authorize(subject, id, "player", this.pool, actorId);
     return this.#accept(
@@ -701,6 +702,7 @@ export class WorldAccess {
               input.invitationId,
               input.accept,
               input.requestId,
+              kind,
             );
             return this.sceneData(
               await this.scenes.latest(id, client, false, grant.actor_id!),
@@ -717,6 +719,7 @@ export class WorldAccess {
                   input.requestId,
                   grant.actor_id!,
                   !!input.shared,
+                  kind,
                 )
               : await this.scenes.command(
                   id,
@@ -725,6 +728,7 @@ export class WorldAccess {
                   input,
                   grant.actor_id!,
                   sceneId,
+                  kind,
                 );
           await client.query(
             "UPDATE world_scene SET user_id=$2 WHERE id=$1 AND actor_id=$3",

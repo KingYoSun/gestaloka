@@ -4,6 +4,7 @@ import { z } from "zod";
 import { SceneInbox, ScenePresenceStatus } from "@gestaloka/contracts";
 import type { WorldConstruction } from "./construction.js";
 import { ConstructionStateError } from "./construction.js";
+import { SharedTurns } from "./shared-turns.js";
 
 export const SceneSelection = z
   .object({
@@ -32,6 +33,7 @@ type Member = {
   request_id: string;
   last_request_id: string | null;
   state: "reserved" | "joined" | "left" | "ended";
+  kind: "human" | "bot";
 };
 const conflict = (text: string) => new ConstructionStateError(text);
 
@@ -39,12 +41,16 @@ const conflict = (text: string) => new ConstructionStateError(text);
 export class SharedScenes {
   readonly deadlineQueue: string;
   readonly sceneQueue: string;
+  readonly turns: SharedTurns;
+  readonly invitationMs =
+    Number(process.env.SCENE_INVITATION_SECONDS ?? 60) * 1000;
   constructor(
     readonly construction: WorldConstruction,
     readonly now = () => new Date(),
   ) {
     this.sceneQueue = `${construction.queueName}-shared-scenes`;
     this.deadlineQueue = `${construction.queueName}-scene-deadlines`;
+    this.turns = new SharedTurns(this);
   }
   get pool() {
     return this.construction.pool;
@@ -69,6 +75,10 @@ export class SharedScenes {
       id bigserial PRIMARY KEY,world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,actor_id uuid NOT NULL,
       scene_id uuid REFERENCES world_scene(id) ON DELETE CASCADE,kind text NOT NULL,data jsonb NOT NULL);
       CREATE INDEX IF NOT EXISTS world_scene_notice_actor ON world_scene_notice(world_id,actor_id,id);`);
+    await this.pool.query(
+      "ALTER TABLE world_scene_member ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'human'",
+    );
+    await this.turns.setup();
     await this.construction.queue.createQueue(this.deadlineQueue, {
       retryLimit: 2,
       retryDelay: 1,
@@ -155,9 +165,13 @@ export class SharedScenes {
       [id, world, actor, user, device ?? null, kind, active, expires],
     );
     if (!result.rowCount) throw conflict("接続の対象が異なります");
-    if (active)
+    if (active) {
       await this.schedule(db, `presence:${id}`, { connectionId: id }, expires);
-    else await this.notice(db, world, actor, null, "presence_inactive");
+      await this.turns.available(db, world, actor);
+    } else {
+      await this.notice(db, world, actor, null, "presence_inactive");
+      await this.turns.unavailable(db, world, actor);
+    }
     return ScenePresenceStatus.parse({
       connectionId: id,
       active,
@@ -187,6 +201,7 @@ export class SharedScenes {
     scene: string,
     at: number,
     requestId: string,
+    kind: "human" | "bot" = "human",
   ) {
     const occupied = await db.query(
       "SELECT scene_id FROM world_scene_member WHERE world_id=$1 AND actor_id=$2 AND state IN ('reserved','joined')",
@@ -194,12 +209,12 @@ export class SharedScenes {
     );
     if (occupied.rowCount) throw conflict("この人物は別のシーンに参加中です");
     await db.query(
-      "INSERT INTO world_shared_scene(scene_id,world_id,owner_id,at) VALUES($1,$2,$3,$4)",
-      [scene, world, actor, at],
+      "INSERT INTO world_shared_scene(scene_id,world_id,owner_id,at,allowance) VALUES($1,$2,$3,$4,$5)",
+      [scene, world, actor, at, this.turns.botRounds],
     );
     await db.query(
-      "INSERT INTO world_scene_member(scene_id,world_id,actor_id,request_id,state) VALUES($1,$2,$3,$4,'reserved')",
-      [scene, world, actor, requestId],
+      "INSERT INTO world_scene_member(scene_id,world_id,actor_id,request_id,state,kind) VALUES($1,$2,$3,$4,'reserved',$5)",
+      [scene, world, actor, requestId, kind],
     );
   }
   async get(scene: string, db: Pick<pg.Pool, "query"> = this.pool) {
@@ -234,7 +249,7 @@ export class SharedScenes {
     context: string[],
   ) {
     if (!row.deadline) {
-      row.deadline = new Date(this.now().getTime() + 60000);
+      row.deadline = new Date(this.now().getTime() + this.invitationMs);
       await db.query(
         "UPDATE world_shared_scene SET deadline=$2 WHERE scene_id=$1",
         [row.scene_id, row.deadline],
@@ -421,6 +436,7 @@ export class SharedScenes {
     invitationId: string,
     accept: boolean,
     requestId: string,
+    kind: "human" | "bot" = "bot",
   ) {
     await this.lock(db, world);
     const invitation = (
@@ -473,8 +489,8 @@ export class SharedScenes {
       }
       const original = own?.request_id ?? requestId;
       await db.query(
-        "INSERT INTO world_scene_member(scene_id,world_id,actor_id,request_id,last_request_id,state) VALUES($1,$2,$3,$4,$5,'joined')",
-        [row.scene_id, world, actor, original, requestId],
+        "INSERT INTO world_scene_member(scene_id,world_id,actor_id,request_id,last_request_id,state,kind) VALUES($1,$2,$3,$4,$5,'joined',$6)",
+        [row.scene_id, world, actor, original, requestId, kind],
       );
     }
     if (accept)
@@ -504,6 +520,7 @@ export class SharedScenes {
       [scene],
     );
     return {
+      ...(await this.turns.control(scene)),
       requestIds: (await this.members(scene))
         .filter((m) => m.actor_id === actor)
         .flatMap((m) => [
@@ -557,6 +574,7 @@ export class SharedScenes {
       )
     ).rows;
     return SceneInbox.parse({
+      ...(await this.turns.inbox(world, actor)),
       viewerId: actor,
       invitations: invitations.map((i) => ({
         id: i.id,
@@ -581,7 +599,13 @@ export class SharedScenes {
         : (after ?? null),
     });
   }
-  async expire(data: { connectionId?: string; sceneId?: string }) {
+  async expire(data: {
+    connectionId?: string;
+    sceneId?: string;
+    waveId?: string;
+    proposalId?: string;
+  }) {
+    if (data.waveId || data.proposalId) return this.turns.expire(data);
     return this.transaction(async (db) => {
       if (data.connectionId) {
         const rows = (
@@ -590,7 +614,7 @@ export class SharedScenes {
             [data.connectionId, this.now()],
           )
         ).rows;
-        for (const row of rows)
+        for (const row of rows) {
           await this.notice(
             db,
             row.world_id,
@@ -598,6 +622,8 @@ export class SharedScenes {
             null,
             "presence_inactive",
           );
+          await this.turns.unavailable(db, row.world_id, row.actor_id);
+        }
       } else if (data.sceneId) {
         const row = await this.get(data.sceneId, db);
         if (row) {
@@ -612,6 +638,8 @@ export class SharedScenes {
     await this.construction.queue.work<{
       connectionId?: string;
       sceneId?: string;
+      waveId?: string;
+      proposalId?: string;
     }>(this.deadlineQueue, { pollingIntervalSeconds: 0.5 }, async (jobs) => {
       for (const job of jobs) await this.expire(job.data);
     });

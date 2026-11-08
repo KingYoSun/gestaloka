@@ -9,7 +9,11 @@ import { modelEnvironment, approvedTransport } from "./model.js";
 
 export async function fixtureRuntime(
   scope = process.env.E2E_SCOPE,
-  transform?: (content: unknown, user: Record<string, unknown>) => unknown,
+  transform?: (
+    content: unknown,
+    user: Record<string, unknown>,
+    messages: { role: string; content: string }[],
+  ) => unknown,
   supplied?: ReturnType<typeof connectDatabases>,
 ): Promise<{
   databases: ReturnType<typeof connectDatabases>;
@@ -88,23 +92,55 @@ export async function fixtureRuntime(
             s.properties?.type?.const === "selection",
         )
       ) {
-        content = {
-          type: "selection",
-          candidates: (user.controlledActorIds ?? []).filter(
-            (id: string) => id !== user.request.actorId,
-          ),
-          mergeInto: null,
-        };
+        const reads = input.messages
+            .filter((m: { role: string }) => m.role === "user")
+            .map((m: { content: string }) => JSON.parse(m.content)),
+          scripts = [
+            ...new Set<string>(
+              (user.initialContext ?? []).flatMap(
+                (c: {
+                  result?: {
+                    stateSubjects?: { role?: string; source: string }[];
+                  };
+                }) =>
+                  c.result?.stateSubjects
+                    ?.filter((e) => e.role === "about")
+                    .map((e) => e.source) ?? [],
+              ),
+            ),
+          ],
+          queried = reads.some((r: { requests?: { kind: string }[] }) =>
+            r.requests?.some((q) => q.kind === "node"),
+          );
+        content =
+          scripts.length && !queried
+            ? {
+                type: "query",
+                requests: scripts.map((id) => ({ kind: "node", id })),
+              }
+            : {
+                type: "selection",
+                candidates: [
+                  ...new Set<string>(
+                    reads.flatMap(
+                      (r: { controlledActorIds?: string[] }) =>
+                        r.controlledActorIds ?? [],
+                    ),
+                  ),
+                ].filter((id) => id !== user.request.actorId),
+                mergeInto: null,
+              };
       } else if (
         user.responseSchema?.oneOf?.some(
           (s: { properties?: { type?: { const?: string } } }) =>
             s.properties?.type?.const === "background",
         )
       ) {
+        const participants = user.acceptedPlayerIds ?? [user.request.actorId];
         content = {
           type: "background",
           synopsis: "村の道に出て、周囲を確かめられる場面です。",
-          participants: [user.request.actorId],
+          participants,
           facts: [
             {
               subjectId: user.request.actorId,
@@ -116,22 +152,24 @@ export async function fixtureRuntime(
               ],
             },
           ],
-          perceptions: [
-            {
-              observerId: user.request.actorId,
-              text: "道の先の様子が見える",
-              sourceIds: [
-                user.request.rootIds.find(
-                  (id: string) => id !== user.request.actorId,
-                ),
-              ],
-            },
-          ],
+          perceptions: participants.map((observerId: string) => ({
+            observerId,
+            text: "道の先の様子が見える",
+            sourceIds: [
+              user.request.rootIds.find(
+                (id: string) => id !== user.request.actorId,
+              ),
+            ],
+          })),
           unknowns: [],
         };
       } else if (user.background) {
         const actor = user.request.controlledActorId,
-          leaving = user.request.leavingActorIds?.includes(actor);
+          leaving = user.request.leavingActorIds?.includes(actor),
+          receivers = (user.request.playerActorIds ?? [actor]).filter(
+            (id: string) => !(user.request.departedActorIds ?? []).includes(id),
+          ),
+          text = `公開された経験 ${++sequence}`;
         content = {
           type: "scene",
           ...(leaving
@@ -141,9 +179,10 @@ export async function fixtureRuntime(
             {
               actorId: actor,
               text: leaving ? "本人が場を離れた" : "周囲を見渡して確かめた",
-              receipts: [
-                { observerId: actor, text: `公開された経験 ${++sequence}` },
-              ],
+              receipts: receivers.map((observerId: string) => ({
+                observerId,
+                text,
+              })),
             },
           ],
           decisions: { [actor]: "decide" },
@@ -263,7 +302,7 @@ export async function fixtureRuntime(
             })),
         };
       }
-      content = (await transform?.(content, user)) ?? content;
+      content = (await transform?.(content, user, input.messages)) ?? content;
       return new Response(
         JSON.stringify({
           id: randomUUID(),

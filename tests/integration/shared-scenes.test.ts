@@ -7,6 +7,8 @@ import type { WorldProposal } from "@gestaloka/server/agent";
 import {
   sceneAnchors,
   type SceneBackground,
+  type RecordedSceneEvent,
+  type SceneIntent,
 } from "../../packages/server/src/runtime/scene-data.js";
 import { createApp } from "../../apps/api/src/app.js";
 import { isolatedDatabases } from "../support/isolated-db.js";
@@ -22,6 +24,35 @@ const selections = new Map<
 >();
 let continuation: { actor: string; creation: string } | undefined;
 let denyDeparture = false;
+type PlayInput = {
+  background: SceneBackground;
+  sceneHistory: RecordedSceneEvent[];
+  request: {
+    controlledActorId: string;
+    controlledInputs: {
+      id: string;
+      actorId: string;
+      text: string;
+      seen: string[];
+    }[];
+    intentions: SceneIntent[];
+    reactionTo: {
+      inputId: string;
+      seenEventIds: Record<string, string[]>;
+    } | null;
+  };
+};
+let playback: ((input: PlayInput) => unknown) | undefined;
+let inventory:
+  | {
+      item: string;
+      state: string;
+      content: string;
+      about: string;
+      place: string;
+      remaining: number;
+    }
+  | undefined;
 let runtime: Awaited<ReturnType<typeof fixtureRuntime>>["runtime"],
   access: WorldAccess,
   auth: Awaited<ReturnType<typeof fixtureAuth>>,
@@ -31,17 +62,20 @@ let runtime: Awaited<ReturnType<typeof fixtureRuntime>>["runtime"],
   graph: string;
 const people: { id: string; cookie: string; actor: string; profile: string }[] =
   [];
+const connections = new Map<number, string>();
 beforeAll(async () => {
   await isolated.setup();
   ({ runtime } = await fixtureRuntime(
     scope,
-    (content, raw) => {
+    (content, raw, messages) => {
       const input = raw as {
         request?: {
           actorId: string;
           rootIds: string[];
           controlledActorId?: string;
           leavingActorIds?: string[];
+          completedScene?: unknown;
+          until?: number;
         };
         responseSchema?: unknown;
         acceptedPlayerIds?: string[];
@@ -49,6 +83,66 @@ beforeAll(async () => {
         confirmed?: { observations: { text: string }[] };
       };
       const proposal = content as WorldProposal;
+      if (
+        inventory &&
+        input.request?.completedScene &&
+        (content as { type?: string }).type === "propose"
+      ) {
+        if (
+          !messages.some(
+            (m) =>
+              m.role === "user" &&
+              m.content.includes('"results"') &&
+              m.content.includes(inventory!.content) &&
+              m.content.includes(inventory!.about),
+          )
+        )
+          return {
+            type: "query",
+            requests: [
+              { kind: "edge", id: inventory.content },
+              { kind: "edge", id: inventory.about },
+            ],
+          };
+        return {
+          ...proposal,
+          changes: {
+            ...proposal.changes,
+            nodes: [
+              ...proposal.changes.nodes,
+              {
+                id: inventory.state,
+                kind: "script",
+                text: JSON.stringify({ quantity: inventory.remaining }),
+              },
+            ],
+            edges: [
+              ...proposal.changes.edges,
+              {
+                id: randomUUID(),
+                kind: "status",
+                role: "content",
+                source: inventory.item,
+                target: inventory.state,
+                period: { from: input.request.until! },
+              },
+              {
+                id: randomUUID(),
+                kind: "status",
+                role: "about",
+                source: inventory.state,
+                target: inventory.place,
+                period: { from: input.request.until! },
+              },
+            ],
+            endEdges: [
+              ...proposal.changes.endEdges,
+              inventory.content,
+              inventory.about,
+            ],
+          },
+        };
+      }
       if (proposal.newParticipantId)
         return {
           ...proposal,
@@ -102,6 +196,8 @@ beforeAll(async () => {
           departures: denyDeparture ? [] : [{ actorId: actor, eventIndex: 0 }],
         };
       }
+      if (playback && (content as { type?: string }).type === "scene")
+        return playback(raw as PlayInput);
       if (
         (content as { type?: string }).type === "background" &&
         input.acceptedPlayerIds
@@ -245,7 +341,10 @@ afterAll(async () => {
 async function presence(index: number, active = true) {
   const p = people[index]!,
     saved = JSON.parse(await readFile(p.profile, "utf8")),
-    connectionId = randomUUID();
+    connectionId = active
+      ? randomUUID()
+      : (connections.get(index) ?? randomUUID());
+  if (active) connections.set(index, connectionId);
   const response = await app.inject({
     method: "POST",
     url: `/api/worlds/${world}/presence`,
@@ -740,6 +839,766 @@ test("開始者も退出後に共有を開始でき、全員退出で元のシ�
   expect((await cli.run(a.profile, "status")).scene.id).toBe(child);
   await end(0);
 }, 60000);
+
+async function sharedGame(owner = 0, web = true) {
+  await isolated.databases.postgres.query(
+    "UPDATE world_scene_presence SET active=false WHERE world_id=$1",
+    [world],
+  );
+  connections.clear();
+  for (const i of [0, 1, 2]) await presence(i);
+  const p = people[owner]!;
+  selections.set(p.actor, {
+    candidates: people.filter((_, i) => i !== owner).map((p) => p.actor),
+    mergeInto: null,
+  });
+  const id = await prepare(owner, web);
+  await access.scenes.tick(id);
+  for (const person of people.filter((_, i) => i !== owner)) {
+    const invitation = (
+      await cli.run(person.profile, "inbox")
+    ).invitations.find((v: { sceneId: string }) => v.sceneId === id);
+    expect(
+      (
+        await cli.run(
+          person.profile,
+          "invite",
+          "--invitation",
+          invitation.id,
+          "--accept",
+        )
+      ).state,
+    ).not.toBe("error");
+  }
+  await access.scenes.tick(id);
+  await cli.run(p.profile, "start");
+  return id;
+}
+async function humanAct(index: number, text: string) {
+  const p = people[index]!,
+    requestId = randomUUID();
+  const response = await app.inject({
+    method: "POST",
+    url: `/api/worlds/${world}/scene?actorId=${p.actor}`,
+    headers: { cookie: p.cookie, "x-gestaloka-request": "1" },
+    payload: { requestId, command: "act", actionText: text },
+  });
+  expect(response.statusCode, response.body).toBe(202);
+  return requestId;
+}
+function playStep(input: PlayInput, targets: string[] = []) {
+  const intents = input.request.intentions;
+  return {
+    type: "scene",
+    events: intents.map((i) => ({
+      actorId: i.actorId,
+      text: `EVENT-${i.actionText}`,
+      receipts: [...new Set([i.actorId, ...targets])].map((actor) => ({
+        observerId: actor,
+        text: `VIEW-${actor}-${i.actionText}`,
+      })),
+    })),
+    decisions: Object.fromEntries(intents.map((i) => [i.actorId, "finished"])),
+    newDecisions: targets.filter(
+      (id) => !intents.some((i) => i.actorId === id),
+    ),
+  };
+}
+
+async function humanPresence(
+  index: number,
+  active = true,
+  connectionId = randomUUID(),
+) {
+  const p = people[index]!;
+  const response = await app.inject({
+    method: "POST",
+    url: `/api/worlds/${world}/presence?actorId=${p.actor}`,
+    headers: { cookie: p.cookie, "x-gestaloka-request": "1" },
+    payload: { requestId: randomUUID(), connectionId, active },
+  });
+  expect(response.statusCode, response.body).toBe(200);
+  return connectionId;
+}
+async function replyRound(scene: string) {
+  let found = false;
+  for (const person of people) {
+    const opportunity = (
+      await cli.run(person.profile, "inbox")
+    ).opportunities.find((o: { sceneId: string }) => o.sceneId === scene);
+    if (!opportunity) continue;
+    const reply = await cli.run(
+      person.profile,
+      "react",
+      "--opportunity",
+      opportunity.id,
+      "--text",
+      "相手へ働きかける",
+    );
+    expect(reply.state, JSON.stringify(reply)).not.toBe("error");
+    await access.scenes.tick(scene);
+    found = true;
+    break;
+  }
+  expect(found).toBe(true);
+}
+function alternateBots(input: PlayInput) {
+  const actor = input.request.controlledActorId;
+  return playStep(input, [
+    actor === people[1]!.actor ? people[2]!.actor : people[1]!.actor,
+  ]);
+}
+
+test("Webの人間がいる場合は5往復で自動応答を止め、新規入力で計数を戻す", async () => {
+  const scene = await sharedGame(0, false);
+  await humanPresence(0);
+  playback = alternateBots;
+  try {
+    await cli.run(people[1]!.profile, "act", "--text", "相手に働きかける");
+    await access.scenes.tick(scene);
+    for (let i = 1; i <= 5; i++) {
+      await replyRound(scene);
+      expect((await access.scenes.shared.turns.control(scene)).rounds).toBe(i);
+    }
+    expect(
+      (await cli.run(people[0]!.profile, "status")).scene.shared.flow,
+    ).toBe("manual");
+    const calls = vi.spyOn(runtime.agent.model, "complete");
+    await access.scenes.tick(scene);
+    expect(calls).not.toHaveBeenCalled();
+    calls.mockRestore();
+    for (const person of people)
+      expect(
+        (await cli.run(person.profile, "inbox")).opportunities.filter(
+          (o: { sceneId: string }) => o.sceneId === scene,
+        ),
+      ).toEqual([]);
+    await humanAct(0, "ここから自分で働きかける");
+    expect((await access.scenes.shared.turns.control(scene)).rounds).toBe(0);
+    await access.scenes.tick(scene);
+    await cli.run(people[0]!.profile, "finish");
+    await access.scenes.tick(scene);
+    // End processes accepted reactions, without requiring another external response.
+    expect((await cli.run(people[0]!.profile, "status")).state).toBe(
+      "finished",
+    );
+  } finally {
+    playback = undefined;
+  }
+}, 120000);
+
+test.each(["end", "mixed", "timeout", "continue"] as const)(
+  "人間不在の10往復で終了提案し、%sを処理して投票中は進めない",
+  async (answer) => {
+    const scene = await sharedGame(0, false);
+    playback = alternateBots;
+    try {
+      await cli.run(people[1]!.profile, "act", "--text", "相手に働きかける");
+      await access.scenes.tick(scene);
+      for (let i = 0; i < 10; i++) await replyRound(scene);
+      expect(await access.scenes.shared.turns.control(scene)).toMatchObject({
+        rounds: 10,
+        flow: "voting",
+      });
+      const proposals = await Promise.all(
+        people.map((p) => cli.run(p.profile, "inbox")),
+      );
+      const proposal = proposals[0].proposals.find(
+        (p: { sceneId: string }) => p.sceneId === scene,
+      );
+      expect(proposal).toBeDefined();
+      expect(
+        proposals.every((p) =>
+          p.proposals.some((v: { id: string }) => v.id === proposal.id),
+        ),
+      ).toBe(true);
+      const calls = vi.spyOn(runtime.agent.model, "complete");
+      await access.scenes.tick(scene);
+      expect(calls).not.toHaveBeenCalled();
+      calls.mockRestore();
+      if (answer === "timeout") {
+        await cli.run(
+          people[0]!.profile,
+          "vote",
+          "--proposal",
+          proposal.id,
+          "--end",
+        );
+        const now = vi
+          .spyOn(access.scenes.shared, "now")
+          .mockImplementation(
+            () => new Date(Date.parse(proposal.deadline) + 1),
+          );
+        try {
+          await access.scenes.shared.expire({ proposalId: proposal.id });
+        } finally {
+          now.mockRestore();
+        }
+      } else {
+        for (let i = 0; i < people.length; i++) {
+          const result = await cli.run(
+            people[i]!.profile,
+            "vote",
+            "--proposal",
+            proposal.id,
+            answer === "continue" || (answer === "mixed" && i === 1)
+              ? "--continue"
+              : "--end",
+          );
+          if (answer === "mixed" && i === 2)
+            expect(result.code).toBe("STATE_CONFLICT");
+          else expect(result.state, JSON.stringify(result)).not.toBe("error");
+        }
+      }
+      await access.scenes.tick(scene);
+      if (answer === "continue") {
+        for (let i = 0; i < 10; i++) await replyRound(scene);
+        expect(
+          (await cli.run(people[0]!.profile, "status")).scene,
+        ).toMatchObject({
+          state: "paused",
+          shared: { rounds: 20, flow: "rounds" },
+        });
+        const stopped = vi.spyOn(runtime.agent.model, "complete");
+        await access.scenes.tick(scene);
+        expect(stopped).not.toHaveBeenCalled();
+        stopped.mockRestore();
+        await cli.run(people[0]!.profile, "resume");
+        await access.scenes.tick(scene);
+        expect(await access.scenes.shared.turns.control(scene)).toMatchObject({
+          rounds: 0,
+          flow: "open",
+        });
+        await cli.run(people[0]!.profile, "finish");
+        await access.scenes.tick(scene);
+      }
+      expect((await cli.run(people[0]!.profile, "result")).state).toBe(
+        "finished",
+      );
+      for (const person of people)
+        expect((await cli.run(person.profile, "result")).state).toBe(
+          "finished",
+        );
+    } finally {
+      playback = undefined;
+    }
+  },
+  120000,
+);
+
+test("並行の回答をまとめ、割り込みBの後もAの範囲へ回答し、反応なしから次の指名へ進める", async () => {
+  const [a, b, c] = people,
+    id = await sharedGame();
+  const resolved: PlayInput[] = [];
+  // Human input reaches each bot in its own view, without private observations of the other bot.
+  playback = (input) => {
+    resolved.push(structuredClone(input));
+    return playStep(
+      input,
+      input.request.reactionTo ? [a!.actor] : [b!.actor, c!.actor],
+    );
+  };
+  try {
+    const first = await humanAct(0, "A");
+    await access.scenes.tick(id);
+    const inboxB = await cli.run(b!.profile, "inbox"),
+      inboxC = await cli.run(c!.profile, "inbox");
+    const one = inboxB.opportunities.find(
+        (o: { sourceInputId: string }) => o.sourceInputId === first,
+      ),
+      two = inboxC.opportunities.find(
+        (o: { sourceInputId: string }) => o.sourceInputId === first,
+      );
+    expect(one.deadline).toBe(two.deadline);
+    expect(JSON.stringify(one.context)).not.toContain(`VIEW-${c!.actor}-`);
+    expect(JSON.stringify(two.context)).not.toContain(`VIEW-${b!.actor}-`);
+    const second = await humanAct(0, "B");
+    await access.scenes.tick(id);
+    expect(
+      (await cli.run(b!.profile, "inbox")).opportunities.find(
+        (o: { id: string }) => o.id === one.id,
+      ).deadline,
+    ).toBe(one.deadline);
+    const before = resolved.length;
+    const answer = await cli.run(
+      b!.profile,
+      "react",
+      "--opportunity",
+      one.id,
+      "--text",
+      "Aへの返答",
+    );
+    await access.scenes.tick(id);
+    expect(resolved).toHaveLength(before);
+    const none = await cli.run(
+      c!.profile,
+      "react",
+      "--opportunity",
+      two.id,
+      "--none",
+    );
+    expect(none.state).not.toBe("error");
+    await access.scenes.tick(id);
+    expect(resolved).toHaveLength(before + 1);
+    const reaction = resolved.at(-1)!;
+    expect(reaction.request.reactionTo!.inputId).toBe(first);
+    expect(reaction.request.reactionTo!.seenEventIds[b!.actor]).toEqual(
+      one.seenEventIds,
+    );
+    expect(reaction.request.controlledInputs.map((i) => i.text)).toEqual([
+      "Aへの返答",
+    ]);
+    const bEvent = reaction.sceneHistory.find((e) => e.inputId === second)!;
+    expect(one.seenEventIds).not.toContain(bEvent.id);
+    expect(
+      (await cli.run(b!.profile, "recover", "--request", answer.requestId))
+        .state,
+    ).not.toBe("error");
+    expect(
+      (await cli.run(b!.profile, "react", "--opportunity", one.id, "--none"))
+        .code,
+    ).toBe("STATE_CONFLICT");
+    const laterB = (await cli.run(b!.profile, "inbox")).opportunities.find(
+        (o: { sourceInputId: string }) => o.sourceInputId === second,
+      ),
+      laterC = (await cli.run(c!.profile, "inbox")).opportunities.find(
+        (o: { sourceInputId: string }) => o.sourceInputId === second,
+      );
+    await Promise.all([
+      cli.run(b!.profile, "react", "--opportunity", laterB.id, "--none"),
+      cli.run(
+        c!.profile,
+        "react",
+        "--opportunity",
+        laterC.id,
+        "--text",
+        "次の指名への返答",
+      ),
+    ]);
+    await access.scenes.tick(id);
+    expect(
+      resolved.at(-1)!.request.controlledInputs.map((i) => i.text),
+    ).toEqual(["次の指名への返答"]);
+    const input = await humanAct(0, "期限を過ぎる問い");
+    await access.scenes.tick(id);
+    const pending = (await cli.run(b!.profile, "inbox")).opportunities.find(
+      (o: { sourceInputId: string }) => o.sourceInputId === input,
+    );
+    const wave = (
+      await isolated.databases.postgres.query(
+        "SELECT wave_id FROM world_scene_reply WHERE id=$1",
+        [pending.id],
+      )
+    ).rows[0].wave_id;
+    const now = vi
+      .spyOn(access.scenes.shared, "now")
+      .mockImplementation(() => new Date(Date.parse(pending.deadline) + 1));
+    try {
+      await access.scenes.shared.expire({ waveId: wave });
+      expect(
+        (
+          await cli.run(
+            b!.profile,
+            "react",
+            "--opportunity",
+            pending.id,
+            "--text",
+            "遅延回答",
+          )
+        ).code,
+      ).toBe("STATE_CONFLICT");
+      const calls = resolved.length;
+      await access.scenes.tick(id);
+      expect(resolved).toHaveLength(calls);
+    } finally {
+      now.mockRestore();
+    }
+    await cli.run(a!.profile, "finish");
+    await access.scenes.tick(id);
+    expect((await cli.run(c!.profile, "result")).state).toBe("finished");
+  } finally {
+    playback = undefined;
+  }
+}, 120000);
+
+test("同じ品への意図は到着順を逆にしても両方を一度の解決へ渡し、資源を一度だけ反映する", async () => {
+  const store = runtime.agent.store;
+  try {
+    for (const order of [
+      [1, 2],
+      [2, 1],
+    ]) {
+      const at = (await runtime.get(world)).at,
+        place = (await runtime.get(world)).root_ids[0]!,
+        item = randomUUID(),
+        old = randomUUID(),
+        content = randomUUID(),
+        about = randomUUID(),
+        state = randomUUID();
+      inventory = { item, state, content, about, place, remaining: 1 };
+      await store.commit(
+        await store.claim(graph, randomUUID()),
+        store.context(graph),
+        {
+          commitId: randomUUID(),
+          at,
+          changes: {
+            nodes: [
+              { id: item, kind: "existence", text: "共有の消費資源" },
+              {
+                id: old,
+                kind: "script",
+                text: JSON.stringify({ quantity: 1 }),
+              },
+            ],
+            revisions: [],
+            endEdges: [],
+            edges: [
+              {
+                id: content,
+                kind: "status",
+                role: "content",
+                source: item,
+                target: old,
+                period: { from: at },
+              },
+              {
+                id: about,
+                kind: "status",
+                role: "about",
+                source: old,
+                target: place,
+                period: { from: at },
+              },
+            ],
+          },
+        },
+      );
+      const scene = await sharedGame();
+      const groups: PlayInput[] = [];
+      playback = (input) => {
+        if (!input.request.reactionTo)
+          return playStep(input, [people[1]!.actor, people[2]!.actor]);
+        groups.push(structuredClone(input));
+        inventory!.remaining = Math.max(0, inventory!.remaining - 1);
+        return playStep(input);
+      };
+      const origin = await humanAct(0, "同じ品について二人へ働きかける");
+      await access.scenes.tick(scene);
+      for (let i = 0; i < order.length; i++) {
+        const person = people[order[i]!]!,
+          opportunity = (
+            await cli.run(person.profile, "inbox")
+          ).opportunities.find(
+            (o: { sourceInputId: string }) => o.sourceInputId === origin,
+          );
+        await cli.run(
+          person.profile,
+          "react",
+          "--opportunity",
+          opportunity.id,
+          "--text",
+          "この品を一つ使う",
+        );
+        await access.scenes.tick(scene);
+        expect(groups).toHaveLength(i);
+      }
+      expect(groups).toHaveLength(1);
+      expect(
+        groups[0]!.request.controlledInputs.map((i) => ({
+          actorId: i.actorId,
+          text: i.text,
+        })),
+      ).toEqual(
+        people
+          .slice(1)
+          .map((p) => ({ actorId: p.actor, text: "この品を一つ使う" }))
+          .sort((a, b) => a.actorId.localeCompare(b.actorId)),
+      );
+      expect((await store.context(graph).node(old))!.text).toBe(
+        JSON.stringify({ quantity: 1 }),
+      );
+      expect(await store.context(graph).node(state)).toBeUndefined();
+      await cli.run(people[0]!.profile, "finish");
+      await access.scenes.tick(scene);
+      const row = (await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        people[0]!.actor,
+      ))!;
+      expect(row.state).toBe("result");
+      const active = await store
+        .context(graph)
+        .relations(item, "status", "out", row.data.at);
+      expect(active).toHaveLength(1);
+      expect(
+        JSON.parse((await store.context(graph).node(active[0]!.target))!.text),
+      ).toEqual({ quantity: 0 });
+      const op = (
+        await isolated.databases.postgres.query(
+          "SELECT commit_id FROM world_operation WHERE id=$1",
+          [row.data.operationId],
+        )
+      ).rows[0];
+      expect(
+        (await store.receipt(graph, op.commit_id))!.changes.nodes.filter(
+          (n) => n.id === state,
+        ),
+      ).toHaveLength(1);
+      await access.scenes.tick(scene);
+      expect(
+        (
+          await store
+            .context(graph)
+            .relations(item, "status", "out", row.data.at)
+        ).map((e) => e.id),
+      ).toEqual(active.map((e) => e.id));
+      playback = undefined;
+      inventory = undefined;
+    }
+  } finally {
+    playback = undefined;
+    inventory = undefined;
+  }
+}, 120000);
+
+test("旧版の共有シーンの保存済み入力は従来の進行で再開し重複させない", async () => {
+  const owner = people[0]!,
+    id = await sharedGame(0, false);
+  await isolated.databases.postgres.query(
+    "UPDATE world_scene SET data=data-'turns' WHERE id=$1",
+    [id],
+  );
+  const accepted = await cli.run(
+    owner.profile,
+    "act",
+    "--text",
+    "保存した入力を続ける",
+  );
+  const saved = (await access.scenes.latest(
+    world,
+    undefined,
+    false,
+    owner.actor,
+  ))!;
+  expect(saved.data.turn).toBeUndefined();
+  expect(saved.data.actions.map((a) => a.id)).toEqual([accepted.requestId]);
+  await access.scenes.tick(id);
+  expect(
+    (await cli.run(owner.profile, "recover", "--request", accepted.requestId))
+      .state,
+  ).toBe("waiting_input");
+  await cli.run(owner.profile, "finish");
+  await access.scenes.tick(id);
+  expect((await cli.run(owner.profile, "result")).state).toBe("finished");
+  expect(
+    (await access.scenes.latest(world, undefined, false, owner.actor))!.data
+      .actions,
+  ).toHaveLength(1);
+}, 60000);
+
+test.each([true, false])(
+  "開始者のWeb=%sでも、切断後は同席botの判断から終了し本人の記録へ復帰できる",
+  async (web) => {
+    const scene = await sharedGame(0, web),
+      owner = people[0]!,
+      peer = people[1]!;
+    const human = web ? await humanPresence(0) : undefined;
+    playback = (input) => ({
+      ...playStep(input, [owner.actor, peer.actor]),
+      ...(input.request.reactionTo ? { concluded: true } : {}),
+    });
+    try {
+      if (web) await humanAct(0, "相手へ働きかける");
+      else await cli.run(owner.profile, "act", "--text", "相手へ働きかける");
+      await access.scenes.tick(scene);
+      const pending = (await cli.run(peer.profile, "inbox")).opportunities.find(
+        (o: { sceneId: string }) => o.sceneId === scene,
+      );
+      expect(pending).toBeDefined();
+      await presence(0, false);
+      if (human) await humanPresence(0, false, human);
+      const snapshot = (await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        owner.actor,
+      ))!;
+      expect(snapshot.state).toBe("active");
+      expect(snapshot.data.departures).toBeUndefined();
+      await cli.run(
+        peer.profile,
+        "react",
+        "--opportunity",
+        pending.id,
+        "--text",
+        "本人が選んだ返答",
+      );
+      await access.scenes.tick(scene);
+      const result = (await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        owner.actor,
+      ))!;
+      expect(result.state).toBe("result");
+      expect(result.data.ending).toBe("concluded");
+      expect(
+        result.data.events.filter((e) => e.actorId === owner.actor),
+      ).toHaveLength(1);
+      const source = await access.scenes.resultSource(result, owner.actor);
+      expect(source.connectionAbsences).toEqual([{ from: 1, through: 2 }]);
+      const calls = vi.spyOn(runtime.agent.model, "complete"),
+        at = (await runtime.get(world)).at;
+      await presence(0);
+      expect((await cli.run(owner.profile, "result")).state).toBe("finished");
+      expect((await runtime.get(world)).at).toBe(at);
+      expect(calls).not.toHaveBeenCalled();
+      calls.mockRestore();
+    } finally {
+      playback = undefined;
+    }
+  },
+  120000,
+);
+
+test("全員切断は退出を作らず保存して休止し、同じ反応機会から再開できる", async () => {
+  const scene = await sharedGame(0, false),
+    owner = people[0]!,
+    peer = people[1]!;
+  playback = (input) => ({
+    ...playStep(input, [peer.actor]),
+    ...(input.request.reactionTo ? { concluded: true } : {}),
+  });
+  try {
+    await cli.run(owner.profile, "act", "--text", "返答を待つ");
+    await access.scenes.tick(scene);
+    const before = (await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        owner.actor,
+      ))!,
+      pending = (await cli.run(peer.profile, "inbox")).opportunities.find(
+        (o: { sceneId: string }) => o.sceneId === scene,
+      ),
+      at = (await runtime.get(world)).at;
+    const calls = vi.spyOn(runtime.agent.model, "complete");
+    for (let i = 0; i < people.length; i++) await presence(i, false);
+    const paused = (await access.scenes.latest(
+      world,
+      undefined,
+      false,
+      owner.actor,
+    ))!;
+    expect(paused.state).toBe("paused");
+    expect(paused.data.departures).toBeUndefined();
+    expect(paused.data.events).toEqual(before.data.events);
+    await access.scenes.tick(scene);
+    expect(calls).not.toHaveBeenCalled();
+    expect((await runtime.get(world)).at).toBe(at);
+    calls.mockRestore();
+    await presence(0);
+    await presence(1);
+    await cli.run(owner.profile, "resume");
+    await access.scenes.tick(scene);
+    expect(
+      (await cli.run(peer.profile, "inbox")).opportunities.some(
+        (o: { id: string }) => o.id === pending.id,
+      ),
+    ).toBe(true);
+    await cli.run(
+      peer.profile,
+      "react",
+      "--opportunity",
+      pending.id,
+      "--text",
+      "再接続後の返答",
+    );
+    await access.scenes.tick(scene);
+    expect((await cli.run(owner.profile, "result")).state).toBe("finished");
+  } finally {
+    playback = undefined;
+  }
+}, 120000);
+
+test("生成中も割り込みと終了を受理し、受理済み入力を処理してから一度だけ確定する", async () => {
+  const scene = await sharedGame(),
+    owner = people[0]!;
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+    started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+  const resolved: PlayInput[] = [];
+  playback = async (input) => {
+    resolved.push(input);
+    if (resolved.length === 1) {
+      entered();
+      await gate;
+    }
+    return playStep(input);
+  };
+  let running: Promise<void> | undefined;
+  try {
+    const first = await humanAct(0, "生成中の入力A");
+    running = access.scenes.tick(scene);
+    await started;
+    const later = humanAct(0, "割り込む入力B");
+    const second = await Promise.race([
+      later,
+      new Promise<undefined>((resolve) => setTimeout(resolve, 3000)),
+    ]);
+    if (!second) {
+      release();
+      await running;
+      await later;
+    }
+    expect(second).toBeTypeOf("string");
+    const finish = cli.run(owner.profile, "finish");
+    const accepted = await Promise.race([
+      finish,
+      new Promise<undefined>((resolve) => setTimeout(resolve, 3000)),
+    ]);
+    release();
+    await running;
+    expect(accepted).toBeDefined();
+    expect((await finish).state).not.toBe("error");
+    expect(
+      (await cli.run(owner.profile, "act", "--text", "終了後の入力C")).code,
+    ).toBe("STATE_CONFLICT");
+    await access.scenes.tick(scene);
+    const final = (await access.scenes.latest(
+      world,
+      undefined,
+      false,
+      owner.actor,
+    ))!;
+    expect(final.state).toBe("result");
+    expect(final.data.actions.map((a) => a.id)).toEqual([first, second]);
+    expect(final.data.events.map((e) => e.inputId)).toEqual([first, second]);
+    expect(resolved.map((r) => r.request.controlledInputs[0]!.text)).toEqual([
+      "生成中の入力A",
+      "割り込む入力B",
+    ]);
+    const count = (
+      await isolated.databases.postgres.query(
+        "SELECT count(*)::int AS count FROM construction_log WHERE operation_id=$1",
+        [final.data.operationId],
+      )
+    ).rows[0].count;
+    expect(count).toBe(1);
+    await access.scenes.tick(scene);
+    expect((await cli.run(owner.profile, "result")).state).toBe("finished");
+  } finally {
+    release();
+    await running;
+    playback = undefined;
+  }
+}, 120000);
 
 test("CLIの明示終了と90秒の失効を世界内の退出や新しい生成にしない", async () => {
   const a = people[0]!,

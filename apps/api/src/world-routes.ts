@@ -329,6 +329,7 @@ export async function worldRoutes(
             request.query.view === "compact",
             request.query.actorId,
             request.query.sceneId,
+            deviceIds.has(request) ? "bot" : "human",
           ),
         ),
   );
