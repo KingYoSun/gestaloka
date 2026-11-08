@@ -1,6 +1,7 @@
 import { RuntimeExecutions } from "./executions.js";
 import { SharedScenes, SceneSelection } from "./shared-scenes.js";
 import { SceneDrafts, type SceneDraft } from "./scene-drafts.js";
+import type { SharedTurn } from "./shared-turns.js";
 import {
   InformationReference,
   type Information,
@@ -50,6 +51,7 @@ import {
   type RecordedSceneEvent,
   type SceneIntent,
   type SceneView,
+  type SceneEnding,
 } from "./scene-data.js";
 
 const BackgroundDecision = z.discriminatedUnion("type", [
@@ -86,6 +88,9 @@ type Work = {
   target: "default" | "resolution";
 };
 export type SceneData = {
+  turns?: true;
+  turn?: SharedTurn;
+  ending?: SceneEnding;
   drafts?: SceneDraft[];
   departures?: Record<string, number>;
   waitingFor?: string[];
@@ -303,6 +308,7 @@ export class WorldScenes {
     requestId: string,
     actorId?: string,
     shared = false,
+    kind: "human" | "bot" = "human",
   ) {
     await RuntimeControl.check(client, {}, true);
     const c = await this.construction.get(world, client, true);
@@ -327,7 +333,7 @@ export class WorldScenes {
       state: "preparing",
       claim: null,
       data: {
-        ...(shared ? { shared: true as const } : {}),
+        ...(shared ? { shared: true as const, turns: true as const } : {}),
         recordingVersion: "inspection-record-v2",
         reflectionResponseId: sceneId(`${requestId}:reflection`),
         commandId: requestId,
@@ -379,6 +385,7 @@ export class WorldScenes {
         row.id,
         row.data.at,
         requestId,
+        kind,
       );
     await client.query(
       "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
@@ -389,11 +396,18 @@ export class WorldScenes {
   }
   async command(
     world: string,
-    command: "start" | "finish" | "resume" | "act" | "leave",
+    command: "start" | "finish" | "resume" | "act" | "leave" | "react" | "vote",
     client: pg.PoolClient,
-    input: { requestId: string; actionText?: string },
+    input: {
+      requestId: string;
+      actionText?: string | null;
+      opportunityId?: string;
+      proposalId?: string;
+      continue?: boolean;
+    },
     actorId?: string,
     sceneId?: string,
+    kind: "human" | "bot" = "human",
   ) {
     await RuntimeControl.check(client, {}, true);
     const c = await this.construction.get(world, client, true),
@@ -421,6 +435,24 @@ export class WorldScenes {
       throw new ConstructionStateError("開始者が操作してください");
     if (command === "leave" && !row.data.shared)
       throw new ConstructionStateError("共有シーンの退出を指定してください");
+    if (
+      row.data.turns &&
+      command !== "start" &&
+      !(
+        command === "resume" &&
+        !["rounds", "inactive"].includes(
+          (await this.shared.turns.control(row.id, client)).flow,
+        )
+      )
+    ) {
+      await this.shared.turns.submit(client, row, actor, kind, {
+        ...input,
+        command,
+      });
+      return (await this.latest(world, client, false, actor, row.id))!;
+    }
+    if (command === "react" || command === "vote")
+      throw new ConstructionStateError("共有シーンを指定してください");
     if (command === "start") {
       if (row.state !== "ready")
         throw new ConstructionStateError("あらすじの準備完了を待ってください");
@@ -530,7 +562,7 @@ export class WorldScenes {
     return row.state === "preparing"
       ? row.id
       : row.state === "acting"
-        ? row.data.actions.at(-1)!.id
+        ? (row.data.turn?.id ?? row.data.actions.at(-1)!.id)
         : sceneId(`${row.id}:reflection`);
   }
 
@@ -935,9 +967,16 @@ export class WorldScenes {
     }
   }
   async #action(row: SceneRow) {
+    if (row.data.turn && !row.data.turn.inputs.length)
+      return this.#completeTurn(row, []);
     const d = row.data,
-      action = d.actions.at(-1)!,
-      actor = action.actorId ?? row.actor_id;
+      action = (
+        d.turn
+          ? d.actions.find((a) => a.id === d.turn!.inputs[0]!.id)
+          : d.actions.at(-1)
+      )!,
+      actor = action.actorId ?? row.actor_id,
+      controlled = d.turn ? d.turn.inputs.map((i) => i.actorId) : [actor];
     for (;;) {
       if (d.contextNeed) await this.#background(row);
       const bg = d.background!;
@@ -958,7 +997,10 @@ export class WorldScenes {
         Object.assign(d.intentions, next.pending);
         d.nextDecisions.push(...next.nextDecisions);
       }
-      if (!d.pending[actor] && !d.nextDecisions.includes(actor)) {
+      if (
+        !controlled.some((id) => d.pending[id] || d.nextDecisions.includes(id))
+      ) {
+        if (d.turn) return this.#completeTurn(row, []);
         action.state = "complete";
         row.state = "active";
         await this.#save(row, undefined, row.claim!);
@@ -1026,6 +1068,22 @@ export class WorldScenes {
             request: {
               at: d.at,
               controlledActorId: actor,
+              ...(d.turn
+                ? {
+                    controlledActorIds: controlled,
+                    playerActorIds: d.externalActors,
+                    humanInput: d.turn.sourceKind === "human" && !d.turn.reply,
+                    controlledInputs: d.turn.inputs,
+                    reactionTo: d.turn.reply
+                      ? {
+                          inputId: d.turn.sourceId,
+                          seenEventIds: Object.fromEntries(
+                            d.turn.inputs.map((i) => [i.actorId, i.seen]),
+                          ),
+                        }
+                      : null,
+                  }
+                : {}),
               controlledInputId: action.id,
               controlledActionText: action.text,
               leavingActorIds: action.leave ? [actor] : [],
@@ -1038,17 +1096,21 @@ export class WorldScenes {
         ),
         step = sceneResponse(value.value);
       if (step.type === "boundary") break;
-      if (step.needsContext && step.decisions[actor] === "finished")
-        step.decisions[actor] = "pending";
+      if (step.needsContext)
+        for (const id of d.turn
+          ? Object.keys(step.needsContext.remainingActions)
+          : [actor])
+          if (step.decisions[id] === "finished") step.decisions[id] = "pending";
       const actors = new Set(intents.map((i) => i.actorId));
       if (
         Object.keys(step.decisions).sort().join() !== [...actors].sort().join()
       )
         throw new Error("シーンで未解決の意図が省略されています");
-      const returnsControl =
-        step.decisions[actor] === "finished" ||
-        step.decisions[actor] === "decide" ||
-        step.newDecisions.includes(actor);
+      const returnsControl = d.turn
+        ? controlled.every((id) => step.decisions[id] !== "pending")
+        : step.decisions[actor] === "finished" ||
+          step.decisions[actor] === "decide" ||
+          step.newDecisions.includes(actor);
       for (const e of step.events) {
         if (
           !actors.has(e.actorId) ||
@@ -1098,7 +1160,11 @@ export class WorldScenes {
       for (const e of step.events)
         d.events.push({
           ...e,
-          inputId: action.id,
+          inputId: d.turn
+            ? (d.actions.findLast(
+                (a) => (a.actorId ?? row.actor_id) === e.actorId,
+              )?.id ?? action.id)
+            : action.id,
           id: sceneId(`${row.id}:event:${d.events.length}`),
           period: { from: d.at, until: nextAt },
         });
@@ -1125,6 +1191,13 @@ export class WorldScenes {
       }
       delete d.work;
       if (step.departures.length) {
+        if (d.turn)
+          return this.#completeTurn(
+            row,
+            [],
+            !!step.concluded,
+            step.departures.map((e) => e.actorId),
+          );
         action.state = "complete";
         row.state = "active";
         const ended = await this.#transaction(async (db) => {
@@ -1179,10 +1252,54 @@ export class WorldScenes {
         await this.#save(row, undefined, row.claim!);
         continue;
       }
+      if (d.turn) {
+        const external = d.externalActors ?? [],
+          targets = [
+            ...new Set([
+              ...step.newDecisions,
+              ...Object.entries(step.decisions)
+                .filter(([, status]) => status === "decide")
+                .map(([id]) => id),
+            ]),
+          ].filter(
+            (id) =>
+              external.includes(id) &&
+              (!controlled.includes(id) ||
+                step.events.some(
+                  (e) =>
+                    e.actorId !== id &&
+                    e.receipts.some((p) => p.observerId === id),
+                ) ||
+                step.arrivals.some(
+                  (a) =>
+                    a.observerId === id &&
+                    d.events[a.eventIndex]?.actorId !== id,
+                )),
+          );
+        d.nextDecisions = d.nextDecisions.filter(
+          (id) => !external.includes(id),
+        );
+        if (
+          step.concluded ||
+          targets.length ||
+          controlled.every((id) => !d.pending[id]) ||
+          (await this.shared.turns.control(row.id)).flow === "inactive"
+        ) {
+          const recipients =
+            d.turn.sourceKind === "human" && !d.turn.reply
+              ? d.events
+                  .slice(d.turn.eventStart)
+                  .flatMap((e) => e.receipts.map((p) => p.observerId))
+                  .filter((id) => !controlled.includes(id))
+              : targets;
+          return this.#completeTurn(row, recipients, !!step.concluded);
+        }
+      }
       if (
-        step.decisions[actor] === "finished" ||
-        step.decisions[actor] === "decide" ||
-        step.newDecisions.includes(actor)
+        !d.turn &&
+        (step.decisions[actor] === "finished" ||
+          step.decisions[actor] === "decide" ||
+          step.newDecisions.includes(actor))
       ) {
         action.state = "complete";
         row.state = "active";
@@ -1199,12 +1316,64 @@ export class WorldScenes {
         break;
       await this.#save(row, undefined, row.claim!);
     }
+    if (d.turn) return this.#completeTurn(row, [], true);
     d.nextPurpose = action.text;
     action.state = "boundary";
     row.state = "reflecting";
     delete d.work;
     await this.#save(row, undefined, row.claim!);
     return true;
+  }
+  async #completeTurn(
+    row: SceneRow,
+    targets: string[],
+    concluded = false,
+    departures: string[] = [],
+  ) {
+    const d = row.data,
+      turn = d.turn!;
+    for (const input of turn.inputs) {
+      const action = d.actions.find((a) => a.id === input.id);
+      if (action) {
+        action.state = "complete";
+        action.completedAt = new Date().toISOString();
+      }
+    }
+    d.nextDecisions = d.nextDecisions.filter(
+      (id) => !(d.externalActors ?? []).includes(id),
+    );
+    await this.#transaction(async (db) => {
+      await this.shared.lock(db, row.construction_id);
+      if (departures.length) {
+        await db.query(
+          "UPDATE world_scene_member SET state='left' WHERE scene_id=$1 AND actor_id=ANY($2::uuid[])",
+          [row.id, departures],
+        );
+        await this.shared.turns.departed(db, row, departures);
+        for (const member of await this.shared.members(row.id, db))
+          await this.shared.notice(
+            db,
+            row.construction_id,
+            member.actor_id,
+            row.id,
+            "participant_left",
+          );
+      }
+      row.state = await this.shared.turns.complete(
+        db,
+        row,
+        turn,
+        targets,
+        concluded,
+      );
+      const control = await this.shared.turns.control(row.id, db);
+      if (control.end_reason) d.ending = control.end_reason;
+      delete d.turn;
+      if (row.state === "paused") d.resumeState = "active";
+      await this.#save(row, db, row.claim!);
+      if (row.state === "acting") await this.#enqueue(db, row.id, true);
+    });
+    return row.state === "reflecting";
   }
   async #reflect(row: SceneRow) {
     const d = row.data;
@@ -1242,6 +1411,7 @@ export class WorldScenes {
             background: d.background!,
             events: d.events,
             anchors: sceneAnchors(d.background!, d.events, d.startedAt, row.id),
+            ...(d.ending ? { ending: d.ending } : {}),
           },
         },
         row.id,
@@ -1391,6 +1561,28 @@ export class WorldScenes {
         });
     }
     return {
+      ...(d.ending ? { ending: d.ending } : {}),
+      ...(d.shared
+        ? {
+            connectionAbsences: (
+              await this.pool.query<{
+                from_event: number;
+                through_event: number | null;
+              }>(
+                "SELECT from_event,through_event FROM world_scene_absence WHERE scene_id=$1 AND actor_id=$2 ORDER BY from_event",
+                [row.id, viewer],
+              )
+            ).rows
+              .map((r) => ({
+                from: r.from_event,
+                through: Math.min(
+                  r.through_event ?? d.events.length,
+                  exit ?? d.events.length,
+                ),
+              }))
+              .filter((r) => r.through > r.from),
+          }
+        : {}),
       synopsis:
         viewer === row.actor_id
           ? d.background!.synopsis
@@ -1413,6 +1605,13 @@ export class WorldScenes {
   async #tick(id: string) {
     const claim = randomUUID(),
       row = await this.#transaction(async (client) => {
+        const subject = (
+          await client.query<{ construction_id: string }>(
+            "SELECT construction_id FROM world_scene WHERE id=$1",
+            [id],
+          )
+        ).rows[0];
+        if (subject) await this.shared.lock(client, subject.construction_id);
         const row = (
           await client.query<SceneRow>(
             "SELECT * FROM world_scene WHERE id=$1 FOR UPDATE",
@@ -1420,6 +1619,46 @@ export class WorldScenes {
           )
         ).rows[0];
         if (!row) throw new Error("シーンが見つかりません");
+        if (
+          row.data.turns &&
+          ["active", "acting"].includes(row.state) &&
+          !row.data.turn
+        ) {
+          const turn = await this.shared.turns.next(client, row);
+          if (turn) {
+            row.data.turn = turn;
+            row.state = "acting";
+            for (const input of turn.inputs) {
+              row.data.actions.push({
+                id: input.id,
+                actorId: input.actorId,
+                text: input.text,
+                state: "running",
+                ...(input.leave ? { leave: true as const } : {}),
+                submittedAt: new Date().toISOString(),
+              });
+              const intent = {
+                actorId: input.actorId,
+                actionText: input.text,
+                continuing: false,
+              };
+              row.data.pending[input.actorId] = intent;
+              row.data.intentions[input.actorId] = intent;
+              row.data.choices.push(intent);
+            }
+          } else {
+            const control = await this.shared.turns.control(row.id, client);
+            row.state =
+              control.flow === "closing"
+                ? "reflecting"
+                : ["inactive", "rounds"].includes(control.flow)
+                  ? "paused"
+                  : "active";
+            if (control.end_reason) row.data.ending = control.end_reason;
+            if (row.state === "paused") row.data.resumeState = "active";
+            await this.#save(row, client);
+          }
+        }
         if (!["preparing", "acting", "reflecting"].includes(row.state))
           return row;
         row.claim = claim;

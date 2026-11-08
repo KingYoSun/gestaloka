@@ -50,6 +50,11 @@ export function ScenePlayer({
     SceneCommand,
   );
   const [showInputs, setShowInputs] = useState(false);
+  const [responses, setResponses] = useState<Record<string, string>>({});
+  const [pendingControl, saveControl] = usePending(
+    pendingKey(`${id}:${viewer}`, "reaction"),
+    z.object({ sceneId: z.uuid(), body: SceneCommand }),
+  );
   const [pendingInvite, saveInvite] = usePending(
     pendingKey(`${id}:${viewer}`, "invite"),
     SceneCommand,
@@ -101,6 +106,31 @@ export function ScenePlayer({
       });
     },
   });
+  const control = $api.useMutation("post", "/api/worlds/{id}/scene", {
+    onSuccess: async () => {
+      saveControl(null);
+      await inbox.refetch();
+      await client.invalidateQueries({
+        predicate: (q) => worldQuery(q.queryKey, id, false),
+      });
+    },
+  });
+  function replyControl(
+    sceneId: string,
+    body: Extract<z.infer<typeof SceneCommand>, { command: "react" | "vote" }>,
+  ) {
+    if (control.isPending) return;
+    const saved = pendingControl ?? { sceneId, body };
+    if (saved.body.command !== "react" && saved.body.command !== "vote") return;
+    saveControl(saved);
+    control.mutate({
+      params: {
+        path: { id },
+        query: { view: "compact", actorId: viewer, sceneId: saved.sceneId },
+      },
+      body: saved.body,
+    });
+  }
   function replyInvitation(invitationId: string, accept: boolean) {
     const body =
       pendingInvite?.command === "invite"
@@ -189,7 +219,18 @@ export function ScenePlayer({
       scene.state === "result" ||
       !!scene.departed ||
       !!scene.waitingFor?.length,
-    active = scene?.state === "active" && !scene.departed,
+    active =
+      !!scene &&
+      (scene.state === "active" ||
+        (!!scene.shared && scene.state === "acting")) &&
+      !scene.departed &&
+      !["rounds", "inactive", "closing"].includes(scene.shared?.flow ?? "open"),
+    canFinish = scene?.shared
+      ? scene.shared.owner &&
+        scene.shared.flow !== "closing" &&
+        ["active", "acting", "paused"].includes(scene.state) &&
+        !scene.departed
+      : active,
     busy = mutate.isPending || !!pending;
   function submit() {
     const values = form.getValues();
@@ -253,6 +294,110 @@ export function ScenePlayer({
           {invite.error && <Problem error={invite.error} />}
         </section>
       )}
+      {(!!inbox.data?.opportunities?.length ||
+        !!inbox.data?.proposals?.length ||
+        !!pendingControl) && (
+        <section className="form-panel">
+          {inbox.data?.opportunities?.map((opportunity) => (
+            <article key={opportunity.id}>
+              <h2>返答を求められています</h2>
+              <details>
+                <summary>この返答で見聞きしていた範囲</summary>
+                {opportunity.context.map((text, index) => (
+                  <p key={index}>{text}</p>
+                ))}
+              </details>
+              <Label htmlFor={`reaction-${opportunity.id}`}>
+                返す発言や行動
+              </Label>
+              <Textarea
+                id={`reaction-${opportunity.id}`}
+                value={responses[opportunity.id] ?? ""}
+                onChange={(e) =>
+                  setResponses({
+                    ...responses,
+                    [opportunity.id]: e.currentTarget.value,
+                  })
+                }
+              />
+              <div className="action-footer">
+                <Button
+                  disabled={
+                    control.isPending ||
+                    !!pendingControl ||
+                    !responses[opportunity.id]?.trim()
+                  }
+                  onClick={() =>
+                    replyControl(opportunity.sceneId, {
+                      requestId: crypto.randomUUID(),
+                      command: "react",
+                      opportunityId: opportunity.id,
+                      actionText: responses[opportunity.id]!,
+                    })
+                  }
+                >
+                  この反応を返す
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={control.isPending || !!pendingControl}
+                  onClick={() =>
+                    replyControl(opportunity.sceneId, {
+                      requestId: crypto.randomUUID(),
+                      command: "react",
+                      opportunityId: opportunity.id,
+                      actionText: null,
+                    })
+                  }
+                >
+                  反応しない
+                </Button>
+              </div>
+            </article>
+          ))}
+          {inbox.data?.proposals?.map((proposal) => (
+            <article key={proposal.id}>
+              <h2>このシーンを続けますか</h2>
+              <p>
+                ここまでのやりとりで終了するか、もう少し続けるかを選んでください。
+              </p>
+              <div className="action-footer">
+                {[false, true].map((keepGoing) => (
+                  <Button
+                    key={String(keepGoing)}
+                    disabled={control.isPending || !!pendingControl}
+                    onClick={() =>
+                      replyControl(proposal.sceneId, {
+                        requestId: crypto.randomUUID(),
+                        command: "vote",
+                        proposalId: proposal.id,
+                        continue: keepGoing,
+                      })
+                    }
+                  >
+                    {keepGoing ? "続ける" : "このシーンを終える"}
+                  </Button>
+                ))}
+              </div>
+            </article>
+          ))}
+          {pendingControl &&
+            !control.isPending &&
+            (pendingControl.body.command === "react" ||
+              pendingControl.body.command === "vote") && (
+              <Button
+                onClick={() => {
+                  const body = pendingControl.body;
+                  if (body.command === "react" || body.command === "vote")
+                    replyControl(pendingControl.sceneId, body);
+                }}
+              >
+                同じ回答で確認する
+              </Button>
+            )}
+          {control.error && <Problem error={control.error} />}
+        </section>
+      )}
       <div className="play-heading">
         <div>
           <p className="eyebrow">LIVED STORIES</p>
@@ -265,16 +410,24 @@ export function ScenePlayer({
       )}
       {scene ? (
         <Notice>
-          {scene.departed
-            ? "退出しました。元のシーンの終了を待たず、次のシーンを始められます。"
-            : scene.waitingFor?.length
-              ? "シーンは終了しました。先行するシーンの確定後にリザルトを作成します。次のシーンは始められます。"
-              : scene.state === "preparing" &&
-                  scene.shared?.phase === "inviting"
-                ? "同席の返答を待っています。回答が揃うか、締切を迎えたらあらすじを準備します。"
-                : scene.state === "paused"
-                  ? (scene.error ?? labels.paused)
-                  : labels[scene.state]}
+          {scene.shared?.flow === "voting"
+            ? "終了・続行の回答を待っています。自動応答は止めています。"
+            : scene.shared?.flow === "manual"
+              ? "自動応答を止めています。次の行動を入力するか、シーンを終了できます。"
+              : scene.shared?.flow === "rounds"
+                ? "自動進行の上限で休止しています。開始者が再開・終了を選べます。"
+                : scene.shared?.flow === "inactive"
+                  ? "全員の接続がないため、シーンを保存して休止しています。"
+                  : scene.departed
+                    ? "退出しました。元のシーンの終了を待たず、次のシーンを始められます。"
+                    : scene.waitingFor?.length
+                      ? "シーンは終了しました。先行するシーンの確定後にリザルトを作成します。次のシーンは始められます。"
+                      : scene.state === "preparing" &&
+                          scene.shared?.phase === "inviting"
+                        ? "同席の返答を待っています。回答が揃うか、締切を迎えたらあらすじを準備します。"
+                        : scene.state === "paused"
+                          ? (scene.error ?? labels.paused)
+                          : labels[scene.state]}
         </Notice>
       ) : (
         <Notice>
@@ -338,7 +491,7 @@ export function ScenePlayer({
           続きの行動には新しい背景情報が必要です。リザルトのあと、次のシーンで続けられます。
         </Notice>
       )}
-      {scene?.state === "paused" && (
+      {scene?.state === "paused" && (!scene.shared || scene.shared.owner) && (
         <Button disabled={busy} onClick={() => simple("resume")}>
           保存したシーンから再開する
         </Button>
@@ -413,9 +566,9 @@ export function ScenePlayer({
           </div>
         </form>
       )}
-      {active && (
+      {scene && (active || canFinish) && (
         <div className="scene-end">
-          {scene.shared && (
+          {scene.shared && active && (
             <Button
               variant="outline"
               disabled={busy}
@@ -424,7 +577,7 @@ export function ScenePlayer({
               この場から退出する
             </Button>
           )}
-          {(!scene.shared || scene.shared.owner) && (
+          {canFinish && (
             <Button
               variant="outline"
               disabled={busy}

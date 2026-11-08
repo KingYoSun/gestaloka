@@ -29,6 +29,8 @@ gestaloka prepare --purpose <目的> [--shared] シーンのあらすじを準�
 gestaloka inbox [--after <cursor>]       自分への通知と未処理の参加要請を取得
 gestaloka listen [--once]                生存通知を送りながら待ち受け（JSON Lines）
 gestaloka invite --invitation <id> --accept|--reject  同席を承認・拒否
+gestaloka react --opportunity <id> --text <意図>|--none  届いた反応機会へ一度回答
+gestaloka vote --proposal <id> --continue|--end          終了提案へ回答
 gestaloka start                          準備したシーンを開始
 gestaloka act --text <自由記述>           一手を送信（--file <UTF-8ファイル>も可）
 gestaloka finish                         シーンを終了しリザルトを準備
@@ -85,6 +87,11 @@ const parse = () =>
       invitation: { type: "string" },
       accept: { type: "boolean" },
       reject: { type: "boolean" },
+      opportunity: { type: "string" },
+      proposal: { type: "string" },
+      none: { type: "boolean" },
+      continue: { type: "boolean" },
+      end: { type: "boolean" },
     },
   });
 let values: ReturnType<typeof parse>["values"];
@@ -143,15 +150,19 @@ async function status(profile: Profile) {
         ? "waiting_confirmation"
         : scene.departed && scene.state !== "result"
           ? "departed"
-          : scene.state === "active"
-            ? "waiting_input"
-            : scene.state === "result"
-              ? "finished"
-              : scene.state === "ready"
-                ? "prepared"
-                : scene.state === "paused"
-                  ? "paused"
-                  : "processing",
+          : scene.shared?.flow === "voting"
+            ? "waiting_vote"
+            : scene.shared?.flow === "manual"
+              ? "waiting_human"
+              : scene.state === "active"
+                ? "waiting_input"
+                : scene.state === "result"
+                  ? "finished"
+                  : scene.state === "ready"
+                    ? "prepared"
+                    : scene.state === "paused"
+                      ? "paused"
+                      : "processing",
     device,
     scene,
   };
@@ -474,6 +485,13 @@ async function run() {
     return submit(profile, "/api/operations", {
       command: { operation: "worlds.resumeJoin", joinId: device.joinId },
     });
+  if (
+    command === "react" &&
+    (values.none ? 1 : 0) + (values.text || values.file ? 1 : 0) !== 1
+  )
+    throw new Error("反応の内容か--noneのどちらかを指定してください");
+  if (command === "vote" && !!values.continue === !!values.end)
+    throw new Error("--continueか--endのどちらかを指定してください");
   const body = SceneCommand.parse({
     requestId: randomUUID(),
     command,
@@ -486,6 +504,19 @@ async function run() {
             ? await readFile(values.file, "utf8")
             : values.text,
         }
+      : {}),
+    ...(command === "react"
+      ? {
+          opportunityId: values.opportunity,
+          actionText: values.none
+            ? null
+            : values.file
+              ? await readFile(values.file, "utf8")
+              : values.text,
+        }
+      : {}),
+    ...(command === "vote"
+      ? { proposalId: values.proposal, continue: !!values.continue }
       : {}),
   });
   return submit(

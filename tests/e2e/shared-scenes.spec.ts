@@ -1,10 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import { test, expect } from "./fixtures.js";
+import type { Page } from "@playwright/test";
 
-test("Webでは共有を明示的に選び、参加者確定後もあらすじを読んでから開始する", async ({
-  page,
-}) => {
-  const headers = { "X-Gestaloka-Request": "1" };
+const headers = { "X-Gestaloka-Request": "1" };
+async function village(page: Page, count = 1) {
   const created = await page.request.post("/api/worlds", {
     headers,
     data: {
@@ -61,36 +60,51 @@ test("Webでは共有を明示的に選び、参加者確定後もあらすじ�
       })
     ).ok(),
   ).toBe(true);
-  const requestId = randomUUID();
-  expect(
-    (
-      await operate(
-        {
-          operation: "worlds.join",
-          worldId: world,
-          presetId,
-          presetVersion: 1,
-        },
-        requestId,
+  const actors: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const requestId = randomUUID();
+    expect(
+      (
+        await operate(
+          {
+            operation: "worlds.join",
+            worldId: world,
+            presetId,
+            presetVersion: 1,
+          },
+          requestId,
+        )
+      ).ok(),
+    ).toBe(true);
+    await expect
+      .poll(
+        async () =>
+          (
+            await (
+              await page.request.get(
+                `/api/worlds/${world}/players/${requestId}`,
+              )
+            ).json()
+          ).player?.state,
+        { timeout: 30000 },
       )
-    ).ok(),
-  ).toBe(true);
-  await expect
-    .poll(
-      async () =>
-        (
-          await (
-            await page.request.get(`/api/worlds/${world}/players/${requestId}`)
-          ).json()
-        ).player?.state,
-      { timeout: 30000 },
-    )
-    .toBe("ready");
-  const actor = (
-    await (
-      await page.request.get(`/api/worlds/${world}/players/${requestId}`)
-    ).json()
-  ).player.actorId;
+      .toBe("ready");
+    const actor = (
+      await (
+        await page.request.get(`/api/worlds/${world}/players/${requestId}`)
+      ).json()
+    ).player.actorId;
+
+    actors.push(actor);
+  }
+  return { world, actors };
+}
+
+test("Webでは共有を明示的に選び、参加者確定後もあらすじを読んでから開始する", async ({
+  page,
+}) => {
+  const { world, actors } = await village(page);
+  const actor = actors[0]!;
   await page.goto(`/worlds/${world}/play?actorId=${actor}`);
   const shared = page.getByLabel("共有シーンとして参加を求める");
   await expect(shared).not.toBeChecked();
@@ -125,4 +139,121 @@ test("Webでは共有を明示的に選び、参加者確定後もあらすじ�
     path: "artifacts/screenshots/shared-scene-departed.png",
     fullPage: true,
   });
+});
+
+test("同席botへの反応機会をWebでも確認し、反応なしを一度だけ回答できる", async ({
+  page,
+}) => {
+  test.setTimeout(120000);
+  const { world, actors } = await village(page, 2),
+    owner = actors[0]!,
+    bot = actors[1]!,
+    secret = randomBytes(32).toString("hex");
+  const created = await page.request.post("/api/player-devices", {
+    headers,
+    data: { requestId: randomUUID(), worldId: world, secret },
+  });
+  expect(created.ok()).toBe(true);
+  const code = (await created.json()).userCode;
+  const permit = await page.request.get(`/auth/player?code=${code}`),
+    csrf = (await permit.text()).match(/name="csrf" value="([a-f0-9]+)"/)![1]!;
+  expect(
+    (
+      await page.request.post("/auth/player", {
+        form: { csrf, code, choice: `actor:${bot}` },
+        maxRedirects: 0,
+      })
+    ).status(),
+  ).toBe(302);
+  const botHeaders = { ...headers, authorization: `Bearer ${secret}` };
+  const online = await page.request.post(
+    `/api/worlds/${world}/presence?actorId=${bot}`,
+    {
+      headers: botHeaders,
+      data: {
+        requestId: randomUUID(),
+        connectionId: randomUUID(),
+        active: true,
+      },
+    },
+  );
+  expect((await online.json()).kind).toBe("bot");
+  await page.goto(`/worlds/${world}/play?actorId=${owner}`);
+  await page.getByLabel("共有シーンとして参加を求める").check();
+  await page.getByLabel("次のシーンで何をしたいですか").fill("同席者と話す");
+  await page
+    .getByRole("button", { name: "シーンのあらすじを準備する" })
+    .click();
+  let invitation: { id: string } | undefined;
+  await expect
+    .poll(
+      async () => {
+        const inbox = await page.request.get(
+          `/api/worlds/${world}/scene/inbox?actorId=${bot}`,
+          { headers: botHeaders },
+        );
+        invitation = (await inbox.json()).invitations[0];
+        return !!invitation;
+      },
+      { timeout: 20000 },
+    )
+    .toBe(true);
+  expect(
+    (
+      await page.request.post(`/api/worlds/${world}/scene?actorId=${bot}`, {
+        headers: botHeaders,
+        data: {
+          requestId: randomUUID(),
+          command: "invite",
+          invitationId: invitation!.id,
+          accept: true,
+        },
+      })
+    ).ok(),
+  ).toBe(true);
+  await page.getByRole("button", { name: "シーンを始める" }).click();
+  await page.getByLabel("どう行動しますか").fill("同席者へ声をかける");
+  await page.getByRole("button", { name: "この行動を送る" }).click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await (
+            await page.request.get(
+              `/api/worlds/${world}/scene/inbox?actorId=${bot}`,
+              { headers: botHeaders },
+            )
+          ).json()
+        ).opportunities.length,
+    )
+    .toBe(1);
+  await page.goto(`/worlds/${world}/play?actorId=${bot}`);
+  await expect(
+    page.getByRole("heading", { name: "返答を求められています" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "artifacts/screenshots/shared-scene-reaction.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "反応しない", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "返答を求められています" }),
+  ).toHaveCount(0);
+  expect(
+    (
+      await (
+        await page.request.get(
+          `/api/worlds/${world}/scene/inbox?actorId=${bot}`,
+          { headers: botHeaders },
+        )
+      ).json()
+    ).opportunities,
+  ).toEqual([]);
+  await page.goto(`/worlds/${world}/play?actorId=${owner}`);
+  await page
+    .getByRole("button", { name: "シーンを終えてリザルトを見る" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "リザルト", exact: true }),
+  ).toBeVisible({ timeout: 20000 });
 });

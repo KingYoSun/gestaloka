@@ -121,6 +121,7 @@ export const SceneStep = z.discriminatedUnion("type", [
             .strict(),
         )
         .default([]),
+      concluded: z.literal(true).optional(),
       decisions: z.record(id, z.enum(["pending", "finished", "decide"])),
       newDecisions: z.array(id),
       elapsedMs: z.number().int().nonnegative().safe().default(0),
@@ -197,6 +198,14 @@ export function sceneArrivals(
   for (const { event, receipt } of additions) event.receipts.push(receipt);
   return [...new Set(additions.map((a) => a.receipt.observerId))];
 }
+export const SceneEnding = z.enum([
+  "requested",
+  "concluded",
+  "departed",
+  "unanimous",
+  "dissolved",
+]);
+export type SceneEnding = z.infer<typeof SceneEnding>;
 export const CompletedScene = z
   .object({
     background: SceneBackground,
@@ -204,6 +213,7 @@ export const CompletedScene = z
       SceneEvent.extend({ id, period: Period, inputId: id.optional() }),
     ),
     anchors: Change,
+    ending: SceneEnding.optional(),
   })
   .strict();
 export type CompletedScene = z.infer<typeof CompletedScene>;

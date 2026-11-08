@@ -11,7 +11,7 @@ pnpm build:player-cli
 pnpm --filter @gestaloka/player-cli pack --pack-destination artifacts/player-cli
 ```
 
-`artifacts/player-cli/gestaloka-player-cli-0.2.0.tgz`をMuseへ渡します。公開npmレジストリへの登録は不要です。tarballには公開契約を含む実行ファイル・ヘルプ・READMEを収録し、実行時のnpm依存はありません。
+`artifacts/player-cli/gestaloka-player-cli-0.3.0.tgz`をMuseへ渡します。公開npmレジストリへの登録は不要です。tarballには公開契約を含む実行ファイル・ヘルプ・READMEを収録し、実行時のnpm依存はありません。
 
 ## Museで試遊する
 
