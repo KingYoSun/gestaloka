@@ -4,12 +4,14 @@ import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
 import { Label } from "./components/ui/label.js";
 import { userApp } from "./surface.js";
+import { $api } from "./api.js";
 
 export function AiParticipationInvitation({
   invitation,
 }: {
   invitation: string;
 }) {
+  const release = $api.useQuery("get", "/api/player-cli/latest");
   const [worldPage, setWorldPage] = useState("");
   const [message, setMessage] = useState("");
   return (
@@ -25,7 +27,13 @@ export function AiParticipationInvitation({
                 /^\/worlds\/([^/]+)(?:\/|$)/,
               )?.[1],
             );
-          const url = new URL("/api/player-cli/join", userApp);
+          if (!release.data) return;
+          const url = new URL(
+            "join.md",
+            new URL(release.data.setupUrl, userApp),
+          );
+          if (url.origin !== new URL(userApp).origin)
+            throw new Error("参加案内の接続先を確認してください");
           url.searchParams.set("world", world);
           url.hash = new URLSearchParams({ invitation }).toString();
           await navigator.clipboard.writeText(
@@ -56,7 +64,13 @@ export function AiParticipationInvitation({
           setMessage("");
         }}
       />
-      <Button>AIに渡す参加案内をコピー</Button>
+      <Button disabled={!release.data}>AIに渡す参加案内をコピー</Button>
+      {release.isPending && <p role="status">案内の情報を確認しています。</p>}
+      {release.error && (
+        <p role="alert">
+          案内の情報を取得できませんでした。もう一度開いてください。
+        </p>
+      )}
       {message && <p role="status">{message}</p>}
     </form>
   );

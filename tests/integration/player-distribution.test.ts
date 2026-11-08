@@ -16,6 +16,7 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
     expect(latest.statusCode).toBe(200);
     expect(latest.headers["cache-control"]).toBe("no-store");
     const release = PlayerCliRelease.parse(latest.json());
+    expect(release.setupUrl).toContain(`/docs/${release.version}/setup.md`);
     const download = await app.inject(release.downloadUrl);
     expect(download.statusCode).toBe(200);
     expect(download.headers["content-type"]).toContain("application/gzip");
@@ -58,6 +59,13 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
     );
     const linked = await app.inject("/api/player-cli/setup.md");
     expect(linked.body).toBe(setup.body);
+    const old = await app.inject(
+      "/api/player-cli/docs/0.0.1/join.md?world=00000000-0000-4000-8000-000000000001",
+    );
+    expect(old.statusCode).toBe(302);
+    expect(old.headers.location).toBe(
+      `/api/player-cli/docs/${release.version}/join.md?world=00000000-0000-4000-8000-000000000001`,
+    );
     for (const file of [
       "README.md",
       "skills/gestaloka-player/SKILL.md",

@@ -1,11 +1,18 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
+import { z } from "zod";
 import type { ZodTypeProvider } from "@fastify/type-provider-zod";
 import { ApiError, PlayerCliRelease } from "@gestaloka/contracts";
 import { AccessError } from "@gestaloka/server/access";
 
 const root = new URL("../../../artifacts/player-cli/", import.meta.url);
+const sendGuide = async (reply: FastifyReply, name: string) =>
+  reply
+    .type("text/markdown; charset=utf-8")
+    .header("Cache-Control", "no-store")
+    .header("Referrer-Policy", "no-referrer")
+    .send(await readFile(new URL(name, root), "utf8"));
 async function release() {
   try {
     return PlayerCliRelease.parse(
@@ -27,15 +34,33 @@ export async function playerDistributionRoutes(instance: FastifyInstance) {
       app.get(
         `/api/player-cli/${path}`,
         { schema: { hide: true } },
-        async (_request, reply) =>
-          reply
-            .type("text/markdown; charset=utf-8")
-            .header("Cache-Control", "no-store")
-            .header("Referrer-Policy", "no-referrer")
-            .send(await readFile(new URL(`${name}.md`, root), "utf8")),
+        async (_request, reply) => sendGuide(reply, `${name}.md`),
       );
     }
   }
+  app.get(
+    "/api/player-cli/docs/:version/:guide",
+    {
+      schema: {
+        hide: true,
+        params: z.object({
+          version: z.string(),
+          guide: z.enum(["join.md", "setup.md"]),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const current = await release();
+      if (request.params.version !== current.version)
+        return reply
+          .header("Cache-Control", "no-store")
+          .header("Referrer-Policy", "no-referrer")
+          .redirect(
+            `/api/player-cli/docs/${current.version}/${request.params.guide}${new URL(request.url, "http://localhost").search}`,
+          );
+      return sendGuide(reply, request.params.guide);
+    },
+  );
   app.get(
     "/api/player-cli/latest",
     {

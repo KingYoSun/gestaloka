@@ -26,6 +26,8 @@ Muse・Grok Botで共有シーンを試遊する際は、[共通スキル](../pa
 
 `GET /api/player-cli/latest`は、公開中の`version`、対応するNode.jsの条件`node`、配布物の`downloadUrl`・`sha256`・`sizeBytes`、案内の`setupUrl`を返します。URLはこのAPIと同じoriginを基準にした相対URLです。最新版の照会はキャッシュを使わず、ログインやゲームサーバーのキーも要求しません。
 
+共有用の参加案内は、このAPIの資料URLを基準に作ります。資料のURLには公開中のバージョンを含め、以前の写しと区別します。古いバージョンの資料URLは、参加先の指定を保って現在の資料へ転送します。従来のバージョンなしURLも利用できます。
+
 `pnpm build:player-cli`は、CLIのビルド・tarballの作成・`artifacts/player-cli/latest.json`の生成をまとめて実行します。版番号と対応Node.jsの条件はパッケージ設定、照合値とサイズは実際のtarballから取得します。本番サーバーのイメージにもこの配布物が入るため、コンテナーの再作成後も公開を継続できます。
 
 `tests/integration/player-distribution.test.ts`では匿名の最新版照会から配布物を取得し、照合値・サイズ・展開後の版番号・実行・同梱案内の一致を確認します。

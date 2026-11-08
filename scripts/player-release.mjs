@@ -31,7 +31,7 @@ await writeFile(
       downloadUrl: `/api/player-cli/download/${filename}`,
       sha256: createHash("sha256").update(bytes).digest("hex"),
       sizeBytes: bytes.length,
-      setupUrl: "/api/player-cli/setup",
+      setupUrl: `/api/player-cli/docs/${pkg.version}/setup.md`,
     },
     null,
     2,
