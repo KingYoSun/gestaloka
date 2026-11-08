@@ -72,7 +72,14 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await monitor.stop();
-  for (const suffix of ["", "-play", "-scenes", "-joins"])
+  for (const suffix of [
+    "",
+    "-play",
+    "-scenes",
+    "-joins",
+    "-shared-scenes",
+    "-scene-deadlines",
+  ])
     await isolated.databases.queue.deleteQueue(`e2e-${scope}${suffix}`);
   await isolated.databases.queue.stop();
   await isolated.close();

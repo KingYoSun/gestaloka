@@ -163,6 +163,15 @@ export const SceneCommand = z.discriminatedUnion("command", [
       requestId: z.uuid(),
       command: z.literal("prepare"),
       purpose: z.string().min(1),
+      shared: z.literal(true).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      requestId: z.uuid(),
+      command: z.literal("invite"),
+      invitationId: z.uuid(),
+      accept: z.boolean(),
     })
     .strict(),
   z
@@ -215,6 +224,64 @@ export const SceneStatus = z.object({
   ),
   recordIds: z.array(z.uuid()),
   nextPurpose: z.string().nullable(),
+  shared: z
+    .object({
+      owner: z.boolean(),
+      requestIds: z.array(z.uuid()),
+      phase: z.enum(["selecting", "inviting", "settled"]),
+      pending: z.number().int().nonnegative(),
+      deadline: z.iso.datetime().nullable(),
+    })
+    .optional(),
+});
+export const ScenePresence = z
+  .object({ requestId: z.uuid(), connectionId: z.uuid(), active: z.boolean() })
+  .strict();
+export const ScenePresenceStatus = z.object({
+  connectionId: z.uuid(),
+  active: z.boolean(),
+  kind: z.enum(["human", "bot"]),
+  expiresAt: z.iso.datetime(),
+});
+export const SceneInboxQuery = z.object({
+  actorId: z.uuid().optional(),
+  after: z.string().optional(),
+});
+export const SceneInbox = z.object({
+  viewerId: z.uuid(),
+  invitations: z.array(
+    z.object({
+      id: z.uuid(),
+      sceneId: z.uuid(),
+      deadline: z.iso.datetime(),
+      context: z.array(z.string()),
+    }),
+  ),
+  items: z.array(
+    z.object({
+      id: z.string(),
+      sceneId: z.uuid().nullable(),
+      kind: z.enum([
+        "invitation",
+        "invitation_closed",
+        "participation_settled",
+        "scene_ready",
+        "scene_started",
+        "participant_left",
+        "result",
+        "presence_inactive",
+        "opportunity",
+        "end_proposal",
+        "paused",
+      ]),
+      invitationId: z.uuid().optional(),
+      requestId: z.uuid().optional(),
+      answer: z.enum(["accepted", "declined", "expired"]).optional(),
+      deadline: z.iso.datetime().optional(),
+      context: z.array(z.string()).optional(),
+    }),
+  ),
+  next: z.string().nullable(),
 });
 export const SceneResponse = z.object({ scene: SceneStatus.nullable() });
 export const SceneViewQuery = z.object({

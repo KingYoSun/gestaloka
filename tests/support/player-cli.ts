@@ -80,6 +80,18 @@ export async function playerCli(app: Awaited<ReturnType<typeof createApp>>) {
         payload: new URLSearchParams({ csrf, code, choice }).toString(),
       });
     },
+    async lines(profile: string, ...args: string[]) {
+      const { stdout } = await promisify(execFile)(process.execPath, [
+        resolve("packages/player-cli/dist/main.js"),
+        ...args,
+        "--profile",
+        profile,
+      ]);
+      return stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+    },
     async close() {
       server.closeAllConnections();
       await new Promise<void>((done) => server.close(() => done()));

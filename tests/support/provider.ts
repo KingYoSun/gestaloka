@@ -85,6 +85,19 @@ export async function fixtureRuntime(
       } else if (
         user.responseSchema?.oneOf?.some(
           (s: { properties?: { type?: { const?: string } } }) =>
+            s.properties?.type?.const === "selection",
+        )
+      ) {
+        content = {
+          type: "selection",
+          candidates: (user.controlledActorIds ?? []).filter(
+            (id: string) => id !== user.request.actorId,
+          ),
+          mergeInto: null,
+        };
+      } else if (
+        user.responseSchema?.oneOf?.some(
+          (s: { properties?: { type?: { const?: string } } }) =>
             s.properties?.type?.const === "background",
         )
       ) {

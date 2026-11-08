@@ -124,7 +124,14 @@ afterEach(async () => {
       "MATCH(n) WHERE n.worldId=$worldId DETACH DELETE n",
       { worldId: r.world_id },
     );
-  for (const suffix of ["", "-play", "-scenes", "-joins"])
+  for (const suffix of [
+    "",
+    "-play",
+    "-scenes",
+    "-joins",
+    "-shared-scenes",
+    "-scene-deadlines",
+  ])
     await d.queue.deleteQueue(`e2e-${scope}${suffix}`);
   await d.queue.stop();
   await isolated.close();

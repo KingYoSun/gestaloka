@@ -12,7 +12,14 @@ export default async function teardown() {
     ).rows
       .map((r) => r.world_id)
       .filter(Boolean);
-    for (const suffix of ["", "-play", "-scenes", "-joins"])
+    for (const suffix of [
+      "",
+      "-play",
+      "-scenes",
+      "-joins",
+      "-shared-scenes",
+      "-scene-deadlines",
+    ])
       await d.queue.deleteQueue(`e2e-${scope}${suffix}`);
     for (const worldId of worlds)
       await d.graph.executeQuery(

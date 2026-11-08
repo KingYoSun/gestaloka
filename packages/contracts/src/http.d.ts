@@ -1444,6 +1444,15 @@ export interface paths {
                                 }[];
                                 recordIds: string[];
                                 nextPurpose: string | null;
+                                shared?: {
+                                    owner: boolean;
+                                    requestIds: string[];
+                                    /** @enum {string} */
+                                    phase: "selecting" | "inviting" | "settled";
+                                    pending: number;
+                                    /** Format: date-time */
+                                    deadline: string | null;
+                                };
                             } | null;
                         };
                     };
@@ -1555,6 +1564,16 @@ export interface paths {
                         /** @enum {string} */
                         command: "prepare";
                         purpose: string;
+                        /** @enum {boolean} */
+                        shared?: true;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "invite";
+                        /** Format: uuid */
+                        invitationId: string;
+                        accept: boolean;
                     } | {
                         /** Format: uuid */
                         requestId: string;
@@ -1628,6 +1647,15 @@ export interface paths {
                                 }[];
                                 recordIds: string[];
                                 nextPurpose: string | null;
+                                shared?: {
+                                    owner: boolean;
+                                    requestIds: string[];
+                                    /** @enum {string} */
+                                    phase: "selecting" | "inviting" | "settled";
+                                    pending: number;
+                                    /** Format: date-time */
+                                    deadline: string | null;
+                                };
                             } | null;
                         };
                     };
@@ -1774,6 +1802,300 @@ export interface paths {
                             }[];
                             next: string | null;
                             previous: string | null;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worlds/{id}/presence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: {
+                    actorId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        connectionId: string;
+                        active: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            connectionId: string;
+                            active: boolean;
+                            /** @enum {string} */
+                            kind: "human" | "bot";
+                            /** Format: date-time */
+                            expiresAt: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worlds/{id}/scene/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    actorId?: string;
+                    after?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            viewerId: string;
+                            invitations: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: uuid */
+                                sceneId: string;
+                                /** Format: date-time */
+                                deadline: string;
+                                context: string[];
+                            }[];
+                            items: {
+                                id: string;
+                                /** Format: uuid */
+                                sceneId: string | null;
+                                /** @enum {string} */
+                                kind: "invitation" | "invitation_closed" | "participation_settled" | "scene_ready" | "scene_started" | "participant_left" | "result" | "presence_inactive" | "opportunity" | "end_proposal" | "paused";
+                                /** Format: uuid */
+                                invitationId?: string;
+                                /** Format: uuid */
+                                requestId?: string;
+                                /** @enum {string} */
+                                answer?: "accepted" | "declined" | "expired";
+                                /** Format: date-time */
+                                deadline?: string;
+                                context?: string[];
+                            }[];
+                            next: string | null;
                         };
                     };
                 };

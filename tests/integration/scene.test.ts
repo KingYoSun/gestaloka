@@ -572,7 +572,14 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await app?.close();
-  for (const q of [queue, `${queue}-play`, `${queue}-scenes`, `${queue}-joins`])
+  for (const q of [
+    queue,
+    `${queue}-play`,
+    `${queue}-scenes`,
+    `${queue}-joins`,
+    `${queue}-shared-scenes`,
+    `${queue}-scene-deadlines`,
+  ])
     await d.queue.deleteQueue(q);
   await d.postgres.query("DELETE FROM world_event WHERE construction_id=$1", [
     construction,

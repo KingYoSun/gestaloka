@@ -4,6 +4,7 @@ import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { parseArgs } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import {
   PlayerDeviceCode,
@@ -15,6 +16,7 @@ import {
   JoinWorld,
   PlayerIconInput,
   WorldPlayerPage,
+  SceneInbox,
 } from "@gestaloka/contracts";
 
 const help = `GESTALOKA プレイヤーCLI（Node.js 22.23.4以上）
@@ -23,7 +25,10 @@ gestaloka connect --server <公開URL> --world <村のURLまたはID>
 gestaloka status                         認可・参加・現在のシーンを照会
 gestaloka join [--icon <画像ファイル>]    許可された新規参加を開始
 gestaloka icon [--file <画像> | --clear]  許可された人物のアイコンを確認・更新・解除
-gestaloka prepare --purpose <目的>       シーンのあらすじを準備
+gestaloka prepare --purpose <目的> [--shared] シーンのあらすじを準備。共有は明示指定
+gestaloka inbox [--after <cursor>]       自分への通知と未処理の参加要請を取得
+gestaloka listen [--once]                生存通知を送りながら待ち受け（JSON Lines）
+gestaloka invite --invitation <id> --accept|--reject  同席を承認・拒否
 gestaloka start                          準備したシーンを開始
 gestaloka act --text <自由記述>           一手を送信（--file <UTF-8ファイル>も可）
 gestaloka finish                         シーンを終了しリザルトを準備
@@ -73,6 +78,11 @@ const parse = () =>
       since: { type: "string" },
       icon: { type: "string" },
       clear: { type: "boolean" },
+      shared: { type: "boolean" },
+      once: { type: "boolean" },
+      invitation: { type: "string" },
+      accept: { type: "boolean" },
+      reject: { type: "boolean" },
     },
   });
 let values: ReturnType<typeof parse>["values"];
@@ -211,6 +221,68 @@ async function submit(
   await save(profilePath, { ...profile, lastRequestId: id });
   return send(profile, saved);
 }
+async function inbox(profile: Profile, after?: string) {
+  return SceneInbox.parse(
+    await http(
+      profile,
+      `/api/worlds/${profile.worldId}/scene/inbox${after ? `?after=${encodeURIComponent(after)}` : ""}`,
+    ),
+  );
+}
+async function listen(profile: Profile) {
+  const connectionId = randomUUID();
+  const heartbeat = async (active: boolean) => {
+    const body = { requestId: randomUUID(), connectionId, active };
+    await save(`${profilePath}.connection.json`, body);
+    return http(profile, `/api/worlds/${profile.worldId}/presence`, body);
+  };
+  let stopped = false,
+    cursor = values.after;
+  if (!cursor)
+    try {
+      cursor = z
+        .string()
+        .parse(
+          JSON.parse(await readFile(`${profilePath}.inbox.json`, "utf8"))
+            .cursor,
+        );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  const stop = () => {
+    stopped = true;
+  };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  try {
+    await heartbeat(true);
+    let next = Date.now() + 30000,
+      first = true;
+    do {
+      const messages = await inbox(profile, cursor);
+      if (first || messages.items.length)
+        console.log(
+          JSON.stringify({ state: "listening", connectionId, ...messages }),
+        );
+      first = false;
+      if (messages.next) {
+        cursor = messages.next;
+        await save(`${profilePath}.inbox.json`, { cursor });
+      }
+      if (values.once || stopped) break;
+      if (Date.now() >= next) {
+        await heartbeat(true);
+        next = Date.now() + 30000;
+      }
+      await delay(1000);
+    } while (!stopped);
+  } finally {
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
+    await heartbeat(false);
+  }
+  return { state: "inactive", connectionId };
+}
 async function run() {
   const parsed = parse();
   values = parsed.values;
@@ -264,6 +336,18 @@ async function run() {
     );
   }
   const profile = await load();
+  if (command === "inbox")
+    return { state: "inbox", ...(await inbox(profile, values.after)) };
+  if (command === "listen") return listen(profile);
+  if (command === "invite") {
+    if (!!values.accept === !!values.reject)
+      throw new Error("--acceptか--rejectを一つ指定してください");
+    return submit(profile, `/api/worlds/${profile.worldId}/scene`, {
+      command: "invite",
+      invitationId: z.uuid().parse(values.invitation),
+      accept: !!values.accept,
+    });
+  }
   if (["status", "result"].includes(command)) return status(profile);
   if (command === "recover") {
     const id = z.uuid().parse(values.request ?? profile.lastRequestId);
@@ -387,7 +471,9 @@ async function run() {
   const body = SceneCommand.parse({
     requestId: randomUUID(),
     command,
-    ...(command === "prepare" ? { purpose: values.purpose } : {}),
+    ...(command === "prepare"
+      ? { purpose: values.purpose, ...(values.shared ? { shared: true } : {}) }
+      : {}),
     ...(command === "act"
       ? {
           actionText: values.file
