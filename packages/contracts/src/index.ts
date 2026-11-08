@@ -32,6 +32,7 @@ export const CreateWorld = z
   .object({
     requestId: z.uuid(),
     prompt: z.string().min(1),
+    playerSettings: z.string().optional(),
     budgetUsd: BudgetUsd,
   })
   .strict();
@@ -61,6 +62,7 @@ export const WorldCommand = z.discriminatedUnion("command", [
 export const WorldStatus = z.object({
   id: z.uuid(),
   prompt: z.string(),
+  playerSettings: z.string().optional(),
   createdAt: z.iso.datetime(),
   state: z.enum([
     "generating",
@@ -379,6 +381,7 @@ export const WorldCatalogPage = z.object({
       id: z.uuid(),
       title: z.string(),
       description: z.string(),
+      playerSettings: z.string().optional(),
       accepting: z.boolean(),
       canJoin: z.boolean(),
     }),
@@ -825,6 +828,7 @@ export const Operation = z.discriminatedUnion("operation", [
     .object({
       operation: z.literal("worlds.create"),
       prompt: z.string().min(1),
+      playerSettings: z.string().optional(),
       budgetUsd: BudgetUsd,
       reason: operationReason,
     })
@@ -994,6 +998,7 @@ export const Operation = z.discriminatedUnion("operation", [
       worldId: z.uuid(),
       title: z.string().trim().min(1),
       description: z.string(),
+      playerSettings: z.string().optional(),
       published: z.boolean(),
       accepting: z.boolean(),
       reason: operationReason,

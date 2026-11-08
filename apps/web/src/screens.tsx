@@ -55,6 +55,7 @@ export function Home() {
     resolver: zodResolver(PromptForm),
     defaultValues: {
       prompt: pending?.prompt ?? "",
+      playerSettings: pending?.playerSettings ?? "",
       ...(pending ? { budgetUsd: pending.budgetUsd } : {}),
     },
   });
@@ -90,10 +91,17 @@ export function Home() {
     const body = pending ?? {
       requestId: crypto.randomUUID(),
       prompt: value.prompt,
+      playerSettings: value.playerSettings ?? "",
       budgetUsd: value.budgetUsd,
     };
     save(body);
-    create.mutate({ body });
+    const { playerSettings, ...request } = body;
+    create.mutate({
+      body: {
+        ...request,
+        ...(playerSettings !== undefined ? { playerSettings } : {}),
+      },
+    });
   }
   return (
     <main className="page home">
@@ -116,6 +124,16 @@ export function Home() {
         />
         <p id="prompt-error" className="field-error">
           {form.formState.errors.prompt?.message}
+        </p>
+        <Label htmlFor="world-player-settings">参加者の基本設定</Label>
+        <Textarea
+          id="world-player-settings"
+          rows={3}
+          readOnly={!!pending || create.isPending}
+          {...form.register("playerSettings")}
+        />
+        <p>
+          参加する一人ひとりに適用します。ここに書いた人物や持ち物は、参加時に作られます。
         </p>
         <Label htmlFor="world-budget">この世界の予算上限（USD）</Label>
         <Input
@@ -325,7 +343,13 @@ export function Manage({ id }: { id: string }) {
           保存した状態から再開する
         </Button>
       )}
-      <Publication id={id} initial={world.publication} />
+      <Publication
+        id={id}
+        initial={{
+          ...world.publication,
+          playerSettings: world.playerSettings ?? "",
+        }}
+      />
       <WorldBudgetSettings id={id} />
       <History ref={history} id={id} role="admin" viewer="admin" />
     </main>

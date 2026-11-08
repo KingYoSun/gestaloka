@@ -5,6 +5,7 @@ import { requireMember } from "./operations.js";
 import type { z } from "zod";
 import { PlayerDeviceApproval, PlayerDeviceStatus } from "@gestaloka/contracts";
 import { playerIcon } from "../runtime/player-icons.js";
+import { playerSettings } from "../runtime/player-settings.js";
 
 type Device = {
   id: string;
@@ -54,12 +55,15 @@ export class PlayerDevices {
     icon?: string | null,
   ) {
     const image = icon ? await playerIcon(icon) : null;
-    const world = await this.pool.query(
-      "SELECT id FROM world_construction WHERE id=$1",
+    const world = await this.pool.query<{ player_settings: string }>(
+      "SELECT player_settings FROM world_construction WHERE id=$1",
       [worldId],
     );
     if (!world.rowCount)
       throw new AccessError(404, "WORLD_NOT_FOUND", "世界が見つかりません");
+    const settings = character
+      ? playerSettings(world.rows[0]!.player_settings, character)
+      : null;
     const row = (
       await this.pool.query<Device>(
         `INSERT INTO player_device(id,world_id,token_hash,user_code,character,icon)
@@ -69,7 +73,7 @@ export class PlayerDevices {
           worldId,
           hash(secret),
           randomBytes(5).toString("hex").toUpperCase(),
-          character ?? null,
+          settings,
           image,
         ],
       )
@@ -77,7 +81,7 @@ export class PlayerDevices {
     if (
       row.world_id !== worldId ||
       row.token_hash !== hash(secret) ||
-      row.character !== (character ?? null) ||
+      row.character !== settings ||
       row.icon !== image
     )
       throw denied();

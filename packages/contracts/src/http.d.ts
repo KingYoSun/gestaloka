@@ -395,6 +395,7 @@ export interface paths {
                         /** Format: uuid */
                         requestId: string;
                         prompt: string;
+                        playerSettings?: string;
                         budgetUsd: number;
                     };
                 };
@@ -410,6 +411,7 @@ export interface paths {
                             /** Format: uuid */
                             id: string;
                             prompt: string;
+                            playerSettings?: string;
                             /** Format: date-time */
                             createdAt: string;
                             /** @enum {string} */
@@ -547,6 +549,7 @@ export interface paths {
                             /** Format: uuid */
                             id: string;
                             prompt: string;
+                            playerSettings?: string;
                             /** Format: date-time */
                             createdAt: string;
                             /** @enum {string} */
@@ -704,6 +707,7 @@ export interface paths {
                             /** Format: uuid */
                             id: string;
                             prompt: string;
+                            playerSettings?: string;
                             /** Format: date-time */
                             createdAt: string;
                             /** @enum {string} */
@@ -3043,6 +3047,7 @@ export interface paths {
                             /** @enum {string} */
                             operation: "worlds.create";
                             prompt: string;
+                            playerSettings?: string;
                             budgetUsd: number;
                             reason: string;
                         } | {
@@ -3474,6 +3479,7 @@ export interface paths {
                             worldId: string;
                             title: string;
                             description: string;
+                            playerSettings?: string;
                             published: boolean;
                             accepting: boolean;
                             reason: string;
@@ -3857,6 +3863,7 @@ export interface paths {
                                 id: string;
                                 title: string;
                                 description: string;
+                                playerSettings?: string;
                                 accepting: boolean;
                                 canJoin: boolean;
                             }[];
@@ -3988,6 +3995,7 @@ export interface paths {
                             id: string;
                             title: string;
                             description: string;
+                            playerSettings?: string;
                             accepting: boolean;
                             canJoin: boolean;
                         };

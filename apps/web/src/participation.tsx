@@ -303,6 +303,12 @@ export function Participation({ id }: { id: string }) {
           }}
         >
           <h2>新しく参加する</h2>
+          {world.data.playerSettings && (
+            <section>
+              <h3>参加者の基本設定</h3>
+              <p className="plain-text">{world.data.playerSettings}</p>
+            </section>
+          )}
           <Label htmlFor="player-preset">プレイヤー設定</Label>
           <select
             id="player-preset"

@@ -235,6 +235,7 @@ export class WorldAccess {
     return WorldStatus.parse({
       id: row.id,
       prompt: row.initial_prompt,
+      playerSettings: row.player_settings,
       createdAt: row.created_at.toISOString(),
       state: row.state,
       at: row.at,
@@ -260,6 +261,7 @@ export class WorldAccess {
           input.prompt,
           input.budgetUsd,
           client,
+          input.playerSettings,
         );
         await client.query(
           "UPDATE world_construction SET user_id=$2,request_id=$3 WHERE id=$1",

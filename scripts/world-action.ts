@@ -39,7 +39,7 @@ try {
   if (!operationId) {
     const row = await databases.postgres.query<{
       world_id: string;
-      result: { playerId: string; rootIds: string[] } | null;
+      result: { playerId: string | null; rootIds: string[] } | null;
     }>("SELECT world_id,result FROM world_build WHERE run_id=$1", [
       values.build,
     ]);
@@ -55,6 +55,8 @@ try {
       phase === "interaction"
         ? (values.actor ?? build.result.playerId)
         : undefined;
+    if (phase === "interaction" && !actorId)
+      throw new Error("操作する存在を --actor <ID> で指定してください");
     const actionText = values.action
       ? await readFile(values.action, "utf8")
       : actorId

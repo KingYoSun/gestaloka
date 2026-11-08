@@ -52,6 +52,7 @@ export type Construction = {
   claim: string | null;
   error: string | null;
   initial_prompt: string;
+  player_settings: string;
   created_at: Date;
   budget_id?: string | null;
 };
@@ -93,6 +94,7 @@ export class WorldConstruction {
     await this.pool.query(`ALTER TABLE world_construction
       ADD COLUMN IF NOT EXISTS public_title text NOT NULL DEFAULT '',
       ADD COLUMN IF NOT EXISTS public_description text NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS player_settings text NOT NULL DEFAULT '',
       ADD COLUMN IF NOT EXISTS published boolean NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS accepting boolean NOT NULL DEFAULT false;`);
     for (const name of [this.queueName, `${this.queueName}-play`])
@@ -134,13 +136,18 @@ export class WorldConstruction {
     );
   }
 
-  async create(prompt: string, budgetUsd: number, existing?: pg.PoolClient) {
+  async create(
+    prompt: string,
+    budgetUsd: number,
+    existing?: pg.PoolClient,
+    playerSettings = "",
+  ) {
     z.string().min(1).parse(prompt);
     return this.#transaction(async (client) => {
       const id = await this.builder.create(prompt, budgetUsd, client);
       await client.query(
-        "INSERT INTO world_construction(id,state) VALUES($1,'generating')",
-        [id],
+        "INSERT INTO world_construction(id,state,player_settings) VALUES($1,'generating',$2)",
+        [id, playerSettings],
       );
       await this.#enqueue(client, id);
       return id;
@@ -709,15 +716,14 @@ export class WorldConstruction {
             row.actor_id = build.result!.playerId;
             row.root_ids = build.result!.rootIds;
             row.state = "ready";
-            row.agenda = [
-              { id: randomUUID(), at: 0, mode: "schedule" },
-              {
+            row.agenda = [{ id: randomUUID(), at: 0, mode: "schedule" }];
+            if (row.actor_id)
+              row.agenda.push({
                 id: randomUUID(),
                 at: 0,
                 mode: "intent",
                 actorId: row.actor_id,
-              },
-            ];
+              });
             await this.#save(row, this.pool, claim);
             return;
           }

@@ -103,9 +103,14 @@ export function Publication({
   initial,
 }: {
   id: string;
-  initial: z.infer<typeof WorldStatus>["publication"];
+  initial: z.infer<typeof WorldStatus>["publication"] & {
+    playerSettings?: string;
+  };
 }) {
-  const [value, set] = useState(initial);
+  const [value, set] = useState({
+    ...initial,
+    playerSettings: initial.playerSettings ?? "",
+  });
   const client = useQueryClient();
   const mutation = $api.useMutation("post", "/api/operations", {
     onSuccess: () =>
@@ -143,6 +148,15 @@ export function Publication({
         value={value.description}
         onChange={(e) => set({ ...value, description: e.target.value })}
       />
+      <Label htmlFor="public-player-settings">参加者の基本設定</Label>
+      <Textarea
+        id="public-player-settings"
+        value={value.playerSettings}
+        onChange={(e) => set({ ...value, playerSettings: e.target.value })}
+      />
+      <p>
+        これから参加する一人ひとりの個別設定と合わせて使います。参加済みの人物は変わりません。
+      </p>
       <Label>
         <input
           type="checkbox"

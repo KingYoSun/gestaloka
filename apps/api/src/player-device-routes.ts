@@ -199,6 +199,10 @@ export async function playerDeviceRoutes(
         choices.unshift(
           `<section><h2>AIが用意した人物</h2>${device.icon ? `<img src="${escape(device.icon)}" width="96" alt="AIが用意した人物のアイコン">` : ""}<p>${escape(device.character).replaceAll("\n", "<br>")}</p><label><input type="radio" name="choice" value="character" checked required>この人物を新しく作って参加する</label></section>`,
         );
+      if (!device.character && world.playerSettings && world.canJoin)
+        choices.unshift(
+          `<section><h2>参加者の基本設定</h2><p>${escape(world.playerSettings).replaceAll("\n", "<br>")}</p></section>`,
+        );
       return authPage(
         reply,
         "AIにプレイを許可する",
