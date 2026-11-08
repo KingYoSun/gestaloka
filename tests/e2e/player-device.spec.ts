@@ -82,7 +82,7 @@ test("持ち主が確認コードで新規参加を許可し、ブラウザー�
     fullPage: true,
   });
   await page
-    .getByRole("button", { name: "この村民のプレイを許可する" })
+    .getByRole("button", { name: "この人物のプレイを許可する" })
     .click();
   await expect(
     page.getByRole("heading", { name: "プレイを許可しました" }),

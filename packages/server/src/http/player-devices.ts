@@ -4,6 +4,7 @@ import { AccessError } from "./access.js";
 import { requireMember } from "./operations.js";
 import type { z } from "zod";
 import { PlayerDeviceApproval, PlayerDeviceStatus } from "@gestaloka/contracts";
+import { playerIcon } from "../runtime/player-icons.js";
 
 type Device = {
   id: string;
@@ -14,6 +15,9 @@ type Device = {
   actor_id: string | null;
   preset_id: string | null;
   preset_version: number | null;
+  character: string | null;
+  icon: string | null;
+  character_approved: boolean;
   revoked: boolean;
   join_state?: string;
 };
@@ -37,9 +41,19 @@ export class PlayerDevices {
       user_id uuid REFERENCES app_identity(id) ON DELETE CASCADE,actor_id uuid,preset_id uuid,preset_version integer,
       revoked boolean NOT NULL DEFAULT false);
       CREATE INDEX IF NOT EXISTS player_device_owner ON player_device(user_id,id);`);
+    await this.pool
+      .query(`ALTER TABLE player_device ADD COLUMN IF NOT EXISTS character text,
+      ADD COLUMN IF NOT EXISTS icon text, ADD COLUMN IF NOT EXISTS character_approved boolean NOT NULL DEFAULT false`);
   }
 
-  async begin(id: string, worldId: string, secret: string) {
+  async begin(
+    id: string,
+    worldId: string,
+    secret: string,
+    character?: string,
+    icon?: string | null,
+  ) {
+    const image = icon ? await playerIcon(icon) : null;
     const world = await this.pool.query(
       "SELECT id FROM world_construction WHERE id=$1",
       [worldId],
@@ -48,17 +62,24 @@ export class PlayerDevices {
       throw new AccessError(404, "WORLD_NOT_FOUND", "世界が見つかりません");
     const row = (
       await this.pool.query<Device>(
-        `INSERT INTO player_device(id,world_id,token_hash,user_code)
-       VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET id=excluded.id RETURNING *`,
+        `INSERT INTO player_device(id,world_id,token_hash,user_code,character,icon)
+       VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET id=excluded.id RETURNING *`,
         [
           id,
           worldId,
           hash(secret),
           randomBytes(5).toString("hex").toUpperCase(),
+          character ?? null,
+          image,
         ],
       )
     ).rows[0]!;
-    if (row.world_id !== worldId || row.token_hash !== hash(secret))
+    if (
+      row.world_id !== worldId ||
+      row.token_hash !== hash(secret) ||
+      row.character !== (character ?? null) ||
+      row.icon !== image
+    )
       throw denied();
     return {
       id,
@@ -88,9 +109,10 @@ export class PlayerDevices {
       id: row.id,
       worldId: row.world_id,
       actorId: row.actor_id,
-      joinId: row.preset_id ? row.id : null,
+      joinId: row.preset_id || row.character_approved ? row.id : null,
       presetId: row.preset_id,
       presetVersion: row.preset_version,
+      ...(row.character_approved ? { character: row.character! } : {}),
       state: !row.user_id
         ? "authorization_pending"
         : row.actor_id
@@ -147,7 +169,8 @@ export class PlayerDevices {
           row.actor_id !== ("actorId" in choice ? choice.actorId : null) ||
           row.preset_id !== ("presetId" in choice ? choice.presetId : null) ||
           row.preset_version !==
-            ("presetVersion" in choice ? choice.presetVersion : null)
+            ("presetVersion" in choice ? choice.presetVersion : null) ||
+          row.character_approved !== "character" in choice
         )
           throw denied();
       } else if ("actorId" in choice) {
@@ -157,6 +180,18 @@ export class PlayerDevices {
           [userId, row.world_id, choice.actorId],
         );
         if (!owned.rowCount) throw denied();
+      } else if ("character" in choice) {
+        if (!row.character) throw denied();
+        const world = await db.query(
+          "SELECT id FROM world_construction WHERE id=$1 AND published AND accepting AND world_id IS NOT NULL AND state IN ('finished','playing','play_paused')",
+          [row.world_id],
+        );
+        if (!world.rowCount)
+          throw new AccessError(
+            409,
+            "JOIN_CLOSED",
+            "現在は参加を受け付けていません",
+          );
       } else {
         const available = await db.query(
           `SELECT p.id FROM player_preset p,world_construction w
@@ -172,13 +207,14 @@ export class PlayerDevices {
           );
       }
       await db.query(
-        "UPDATE player_device SET user_id=$2,actor_id=$3,preset_id=$4,preset_version=$5 WHERE id=$1",
+        "UPDATE player_device SET user_id=$2,actor_id=$3,preset_id=$4,preset_version=$5,character_approved=$6 WHERE id=$1",
         [
           row.id,
           userId,
           "actorId" in choice ? choice.actorId : null,
           "presetId" in choice ? choice.presetId : null,
           "presetVersion" in choice ? choice.presetVersion : null,
+          "character" in choice,
         ],
       );
       await db.query("COMMIT");

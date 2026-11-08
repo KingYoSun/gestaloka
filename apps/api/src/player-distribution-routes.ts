@@ -22,23 +22,28 @@ async function release() {
 
 export async function playerDistributionRoutes(instance: FastifyInstance) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  app.get(
-    "/api/player-cli/setup",
-    { schema: { hide: true } },
-    async (_request, reply) =>
-      reply
-        .type("text/markdown; charset=utf-8")
-        .header("Cache-Control", "no-store")
-        .send(
-          await readFile(
-            new URL(
-              "../../../packages/player-cli/skills/gestaloka-player/references/setup.md",
-              import.meta.url,
+  for (const name of ["join", "setup"]) {
+    for (const path of [name, `${name}.md`]) {
+      app.get(
+        `/api/player-cli/${path}`,
+        { schema: { hide: true } },
+        async (_request, reply) =>
+          reply
+            .type("text/markdown; charset=utf-8")
+            .header("Cache-Control", "no-store")
+            .header("Referrer-Policy", "no-referrer")
+            .send(
+              await readFile(
+                new URL(
+                  `../../../packages/player-cli/skills/gestaloka-player/references/${name}.md`,
+                  import.meta.url,
+                ),
+                "utf8",
+              ),
             ),
-            "utf8",
-          ),
-        ),
-  );
+      );
+    }
+  }
   app.get(
     "/api/player-cli/latest",
     {

@@ -3459,8 +3459,9 @@ export interface paths {
                             /** Format: uuid */
                             worldId: string;
                             /** Format: uuid */
-                            presetId: string;
-                            presetVersion: number;
+                            presetId?: string;
+                            presetVersion?: number;
+                            character?: string;
                         } | {
                             /** @enum {string} */
                             operation: "worlds.resumeJoin";
@@ -4778,6 +4779,8 @@ export interface paths {
                         /** Format: uuid */
                         worldId: string;
                         secret: string;
+                        character?: string;
+                        icon?: string | null;
                     };
                 };
             };
@@ -4922,6 +4925,7 @@ export interface paths {
                             /** Format: uuid */
                             presetId: string | null;
                             presetVersion: number | null;
+                            character?: string;
                             /** @enum {string} */
                             state: "authorization_pending" | "authorized" | "joining" | "paused" | "ready";
                         };

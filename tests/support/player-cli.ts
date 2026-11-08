@@ -5,7 +5,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import type { createApp } from "../../apps/api/src/app.js";
-import { expect } from "vitest";
+import assert from "node:assert/strict";
 
 export async function playerCli(app: Awaited<ReturnType<typeof createApp>>) {
   const directory = await mkdtemp(join(tmpdir(), "gestaloka-cli-"));
@@ -67,8 +67,8 @@ export async function playerCli(app: Awaited<ReturnType<typeof createApp>>) {
         url: `/auth/player?code=${code}`,
         headers: { cookie },
       });
-      expect(page.statusCode, page.body).toBe(200);
-      expect(page.body).toContain(code);
+      assert.equal(page.statusCode, 200, page.body);
+      assert.ok(page.body.includes(code));
       const csrf = page.body.match(/name="csrf" value="([a-f0-9]+)"/)![1]!;
       return app.inject({
         method: "POST",

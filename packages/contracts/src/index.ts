@@ -426,15 +426,23 @@ export const JoinWorld = z
   .object({
     operation: z.literal("worlds.join"),
     worldId: z.uuid(),
-    presetId: z.uuid(),
-    presetVersion: z.number().int().positive().safe(),
+    presetId: z.uuid().optional(),
+    presetVersion: z.number().int().positive().safe().optional(),
+    character: z.string().min(1).optional(),
   })
-  .strict();
+  .strict()
+  .refine((v) =>
+    v.character !== undefined
+      ? v.presetId === undefined && v.presetVersion === undefined
+      : v.presetId !== undefined && v.presetVersion !== undefined,
+  );
 export const PlayerDeviceRequest = z
   .object({
     requestId: z.uuid(),
     worldId: z.uuid(),
     secret: z.string().regex(/^[a-f0-9]{64}$/),
+    character: z.string().min(1).optional(),
+    icon: PlayerIconInput.shape.image.optional(),
   })
   .strict();
 export const PlayerDeviceCode = z.object({
@@ -443,6 +451,7 @@ export const PlayerDeviceCode = z.object({
   verificationPath: z.string(),
 });
 export const PlayerDeviceApproval = z.union([
+  z.object({ character: z.literal(true) }).strict(),
   z.object({ actorId: z.uuid() }).strict(),
   z
     .object({
@@ -458,6 +467,7 @@ export const PlayerDeviceStatus = z.object({
   joinId: z.uuid().nullable(),
   presetId: z.uuid().nullable(),
   presetVersion: z.number().int().positive().nullable(),
+  character: z.string().optional(),
   state: z.enum([
     "authorization_pending",
     "authorized",

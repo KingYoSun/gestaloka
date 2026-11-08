@@ -47,10 +47,22 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
         "utf8",
       ),
     );
+    const entry = await app.inject("/api/player-cli/join");
+    expect(entry.statusCode).toBe(200);
+    expect(entry.headers["referrer-policy"]).toBe("no-referrer");
+    expect(entry.body).toBe(
+      await readFile(
+        join(folder, "package/skills/gestaloka-player/references/join.md"),
+        "utf8",
+      ),
+    );
+    const linked = await app.inject("/api/player-cli/setup.md");
+    expect(linked.body).toBe(setup.body);
     for (const file of [
       "README.md",
       "skills/gestaloka-player/SKILL.md",
       "skills/gestaloka-player/references/setup.md",
+      "skills/gestaloka-player/references/join.md",
       "skills/gestaloka-player/references/runtimes.md",
     ]) {
       const path = join(folder, "package", file);

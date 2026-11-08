@@ -17,7 +17,7 @@ export function authPage(
 ) {
   reply.header(
     "Content-Security-Policy",
-    `default-src 'none'; style-src 'self'; form-action ${formOrigin}; base-uri 'none'; frame-ancestors 'none'`,
+    `default-src 'none'; img-src data:; style-src 'self'; form-action ${formOrigin}; base-uri 'none'; frame-ancestors 'none'`,
   );
   return reply
     .type("text/html")
