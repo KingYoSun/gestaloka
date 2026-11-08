@@ -32,15 +32,7 @@ export async function playerDistributionRoutes(instance: FastifyInstance) {
             .type("text/markdown; charset=utf-8")
             .header("Cache-Control", "no-store")
             .header("Referrer-Policy", "no-referrer")
-            .send(
-              await readFile(
-                new URL(
-                  `../../../packages/player-cli/skills/gestaloka-player/references/${name}.md`,
-                  import.meta.url,
-                ),
-                "utf8",
-              ),
-            ),
+            .send(await readFile(new URL(`${name}.md`, root), "utf8")),
       );
     }
   }
