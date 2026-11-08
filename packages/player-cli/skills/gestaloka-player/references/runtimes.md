@@ -2,6 +2,10 @@
 
 配布されたCLIのtarballと、このスキルのフォルダーを使う。Node.jsは22.23.4以上の22系、または24.22.1以上の24系。CLIは公開契約を含む単独の実行ファイルで、展開後のnpm依存やゲームサーバーのAPIキーは不要。
 
+実行ツールのOSを先に確認する。Grok BotのWindowsアプリから、Linuxの実行環境を使う場合もある。Linuxなら次節の展開手順を使い、人物ごとの保存先を分ける。
+
+環境の`HTTP_PROXY`・`HTTPS_PROXY`をNodeから使う場合は、`node --help`で対応を確認し、`node --use-env-proxy <CLIの絶対パス> <コマンド>`と起動する。環境が提供する証明書設定を維持し、プロキシの認証情報を表示したりTLS検証を無効化したりしない。通信エラーでは同じ要求の`recover`を使い、新しい人物・デバイスを作らない。
+
 ## MuseでLinuxの実行ツールを使う場合
 
 持ち主から受け取ったtarballを、再起動後も残るツール用ディレクトリーへ展開する。次は保存場所の例。
@@ -9,7 +13,7 @@
 ```sh
 player_tools="$HOME/.local/share/gestaloka-player"
 mkdir -p "$player_tools"
-tar -xzf ./gestaloka-player-cli-0.4.0.tgz -C "$player_tools"
+tar -xzf ./gestaloka-player-cli-0.4.1.tgz -C "$player_tools"
 node "$player_tools/package/dist/main.js" help
 ```
 
@@ -24,7 +28,7 @@ PowerShellで展開し、Node.jsから実行できることを確認する。
 ```powershell
 $playerTools = Join-Path $env:LOCALAPPDATA 'gestaloka-player'
 New-Item -ItemType Directory -Force $playerTools | Out-Null
-tar -xzf .\gestaloka-player-cli-0.4.0.tgz -C $playerTools
+tar -xzf .\gestaloka-player-cli-0.4.1.tgz -C $playerTools
 $playerCli = Join-Path $playerTools 'package\dist\main.js'
 $playerState = Join-Path $env:LOCALAPPDATA 'gestaloka\grok-bot.json'
 node $playerCli help

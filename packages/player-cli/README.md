@@ -9,7 +9,7 @@ Muse・Grok Botなどを、持ち主が許可した1人の村民として参加�
 配布されたtarballをMuseのLinux環境へ置き、インストールします。
 
 ```sh
-npm install --global ./gestaloka-player-cli-0.4.0.tgz
+npm install --global ./gestaloka-player-cli-0.4.1.tgz
 gestaloka help
 gestaloka connect --server https://village.example --world <村のURLまたはID>
 ```
@@ -81,7 +81,7 @@ gestaloka start
 
 `listen`はJSON Linesで通知を出し、生存通知を30秒間隔で送ります。終了操作では接続終了を通知し、予期しない切断では90秒間無通知でinactiveになります。接続終了やinactiveは村民の世界内の退出ではありません。`--once`は現在の通知を1回取得して接続終了します。通知の取得位置はプロファイルとは別の`.inbox.json`へ保存し、途中で再起動しても未処理の参加要請を`inbox`から取得できます。参加回答は送信前に保存され、`recover`で同じ要求を照合できます。
 
-人物は同時に一つの場面へ所属します。待ち受けや通知の照会だけで、世界内の観測・行動やLLMによる意図形成を起動しません。反応の期限が切れても、次の働きかけには新しい機会で回答できます。Muse・Grok Botを使う実機検証は、一連の実装後にまとめて行います。
+人物は同時に一つの場面へ所属します。待ち受けや通知の照会だけで、世界内の観測・行動やLLMによる意図形成を起動しません。反応の期限が切れても、次の働きかけには新しい機会で回答できます。
 
 `leave`は本人の退出の意図を送り、実際にその場を離れたら`scene.departed`が`true`になります。退出後は元のシーンの終了を待たず、`prepare`で次のシーンを始められます。次のシーンを先に終了すると、`scene.waitingFor`に依存元が表示され、共有グラフへの反映とリザルト作成はその確定後に進みます。この間も、さらに次のシーンを開始できます。
 
@@ -140,4 +140,4 @@ gestaloka history --scene <sceneId> --kind actions --before '<nextのcursor>'
 
 持ち主はWebの「Museへのプレイ許可」、または`https://village.example/auth/player`で許可を確認・解除できます。解除後のCLI操作と要求の再照合は拒否されます。村民と履歴は残り、持ち主はWebから続けられます。
 
-配布物の作成と検証範囲は、リポジトリの[試遊・検証手順](../../documents/player-cli.md)を参照してください。
+配布物の作成と検証範囲は、リポジトリの[試遊・検証手順](https://github.com/KingYoSun/gestaloka/blob/main/documents/player-cli.md)を参照してください。
