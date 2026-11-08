@@ -224,9 +224,7 @@ export function ScenePlayer({
       (scene.state === "active" ||
         (!!scene.shared && scene.state === "acting")) &&
       !scene.departed &&
-      !["voting", "rounds", "inactive", "closing"].includes(
-        scene.shared?.flow ?? "open",
-      ),
+      !["rounds", "inactive", "closing"].includes(scene.shared?.flow ?? "open"),
     canFinish = scene?.shared
       ? scene.shared.owner &&
         scene.shared.flow !== "closing" &&

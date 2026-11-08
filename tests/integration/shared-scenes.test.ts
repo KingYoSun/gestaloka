@@ -920,12 +920,15 @@ async function humanPresence(
   expect(response.statusCode, response.body).toBe(200);
   return connectionId;
 }
-async function replyRound(scene: string) {
+async function replyRound(scene: string, except?: string) {
   let found = false;
   for (const person of people) {
     const opportunity = (
       await cli.run(person.profile, "inbox")
-    ).opportunities.find((o: { sceneId: string }) => o.sceneId === scene);
+    ).opportunities.find(
+      (o: { sceneId: string; sourceInputId: string }) =>
+        o.sceneId === scene && o.sourceInputId !== except,
+    );
     if (!opportunity) continue;
     const reply = await cli.run(
       person.profile,
@@ -987,15 +990,25 @@ test("Webの人間がいる場合は5往復で自動応答を止め、新規入�
   }
 }, 120000);
 
-test.each(["end", "mixed", "timeout", "continue"] as const)(
+test.each(["end", "mixed", "timeout", "continue", "interrupt"] as const)(
   "人間不在の10往復で終了提案し、%sを処理して投票中は進めない",
   async (answer) => {
     const scene = await sharedGame(0, false);
     playback = alternateBots;
     try {
+      const previous =
+        answer === "interrupt"
+          ? await humanAct(0, "Aへの反応機会を残す")
+          : undefined;
+      if (previous) await access.scenes.tick(scene);
+      const original = previous
+        ? (await cli.run(people[1]!.profile, "inbox")).opportunities.find(
+            (o: { sourceInputId: string }) => o.sourceInputId === previous,
+          )
+        : undefined;
       await cli.run(people[1]!.profile, "act", "--text", "相手に働きかける");
       await access.scenes.tick(scene);
-      for (let i = 0; i < 10; i++) await replyRound(scene);
+      for (let i = 0; i < 10; i++) await replyRound(scene, previous);
       expect(await access.scenes.shared.turns.control(scene)).toMatchObject({
         rounds: 10,
         flow: "voting",
@@ -1016,6 +1029,57 @@ test.each(["end", "mixed", "timeout", "continue"] as const)(
       await access.scenes.tick(scene);
       expect(calls).not.toHaveBeenCalled();
       calls.mockRestore();
+      if (answer === "interrupt") {
+        await humanPresence(0);
+        await humanAct(0, "投票中に人間が送る入力B");
+        expect(await access.scenes.shared.turns.control(scene)).toMatchObject({
+          rounds: 0,
+          flow: "open",
+        });
+        await access.scenes.tick(scene);
+        for (const person of people)
+          expect(
+            (await cli.run(person.profile, "inbox")).proposals.some(
+              (p: { id: string }) => p.id === proposal.id,
+            ),
+          ).toBe(false);
+        expect(
+          (await cli.run(people[1]!.profile, "inbox")).opportunities.find(
+            (o: { id: string }) => o.id === original.id,
+          ).deadline,
+        ).toBe(original.deadline);
+        expect(
+          (
+            await cli.run(
+              people[0]!.profile,
+              "vote",
+              "--proposal",
+              proposal.id,
+              "--end",
+            )
+          ).code,
+        ).toBe("STATE_CONFLICT");
+        const now = vi
+          .spyOn(access.scenes.shared, "now")
+          .mockImplementation(
+            () => new Date(Date.parse(proposal.deadline) + 1),
+          );
+        try {
+          await access.scenes.shared.expire({ proposalId: proposal.id });
+        } finally {
+          now.mockRestore();
+        }
+        expect(await access.scenes.shared.turns.control(scene)).toMatchObject({
+          rounds: 0,
+          flow: "open",
+        });
+        await cli.run(people[0]!.profile, "finish");
+        for (let i = 0; i < 3; i++) await access.scenes.tick(scene);
+        expect((await cli.run(people[0]!.profile, "result")).state).toBe(
+          "finished",
+        );
+        return;
+      }
       if (answer === "timeout") {
         await cli.run(
           people[0]!.profile,
@@ -1085,6 +1149,44 @@ test.each(["end", "mixed", "timeout", "continue"] as const)(
   },
   120000,
 );
+
+test("同じ時点の複数botの並行回答はまとめて1往復と数える", async () => {
+  const scene = await sharedGame(0, false);
+  playback = (input) =>
+    playStep(
+      input,
+      input.request.reactionTo ? [] : people.slice(1).map((p) => p.actor),
+    );
+  try {
+    await cli.run(people[0]!.profile, "act", "--text", "二人へ働きかける");
+    await access.scenes.tick(scene);
+    const replies = await Promise.all(
+      people.slice(1).map(async (person) => {
+        const o = (await cli.run(person.profile, "inbox")).opportunities.find(
+          (o: { sceneId: string }) => o.sceneId === scene,
+        );
+        return cli.run(
+          person.profile,
+          "react",
+          "--opportunity",
+          o.id,
+          "--text",
+          "本人が選んだ反応",
+        );
+      }),
+    );
+    expect(replies.every((r) => r.state !== "error")).toBe(true);
+    await access.scenes.tick(scene);
+    expect((await access.scenes.shared.turns.control(scene)).rounds).toBe(1);
+    await cli.run(people[0]!.profile, "finish");
+    await access.scenes.tick(scene);
+    expect((await cli.run(people[0]!.profile, "result")).state).toBe(
+      "finished",
+    );
+  } finally {
+    playback = undefined;
+  }
+}, 60000);
 
 test("並行の回答をまとめ、割り込みBの後もAの範囲へ回答し、反応なしから次の指名へ進める", async () => {
   const [a, b, c] = people,

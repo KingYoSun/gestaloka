@@ -1004,6 +1004,7 @@ test("終了提案は本人の選択でだけ終了・続行を回答する", as
   const keepGoing = await screen.findByRole("button", {
     name: "続ける",
   });
+  expect(screen.getByLabelText("どう行動しますか")).toBeTruthy();
   expect(votes).toEqual([]);
   fireEvent.click(keepGoing);
   await waitFor(() => expect(votes).toHaveLength(1));

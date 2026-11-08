@@ -246,7 +246,7 @@ export class SharedTurns {
         !["active", "acting"].includes(row.state) ||
         (input.command !== "leave" &&
           control.flow !== "open" &&
-          !(control.flow === "manual" && kind === "human"))
+          !(kind === "human" && ["manual", "voting"].includes(control.flow)))
       )
         throw fail("シーンが操作可能になるまで待ってください");
       if (
@@ -269,11 +269,16 @@ export class SharedTurns {
               : input.actionText!,
         },
       );
-      if (kind === "human" && input.command !== "leave")
+      if (kind === "human" && input.command !== "leave") {
+        await db.query(
+          "UPDATE world_scene_end_vote SET state='closed' WHERE scene_id=$1 AND state='pending'",
+          [row.id],
+        );
         await db.query(
           "UPDATE world_shared_scene SET rounds=0,flow='open',allowance=$2,continuation=NULL WHERE scene_id=$1",
           [row.id, this.botRounds],
         );
+      }
     }
     await db.query(
       "UPDATE world_scene_member SET last_request_id=$3 WHERE scene_id=$1 AND actor_id=$2",
