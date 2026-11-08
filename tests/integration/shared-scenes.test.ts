@@ -951,6 +951,35 @@ function alternateBots(input: PlayInput) {
     actor === people[1]!.actor ? people[2]!.actor : people[1]!.actor,
   ]);
 }
+async function pauseNotice(scene: string) {
+  const owner = people[0]!,
+    notice = (
+      await isolated.databases.postgres.query<{ id: string }>(
+        "SELECT id FROM world_scene_notice WHERE world_id=$1 AND actor_id=$2 AND scene_id=$3 AND kind='paused' ORDER BY id DESC LIMIT 1",
+        [world, owner.actor, scene],
+      )
+    ).rows[0];
+  expect(notice).toBeDefined();
+  const after = Buffer.from(
+    JSON.stringify({
+      world,
+      actor: owner.actor,
+      position: (BigInt(notice!.id) - 1n).toString(),
+    }),
+  ).toString("base64url");
+  const lines = await cli.lines(
+    owner.profile,
+    "listen",
+    "--once",
+    "--after",
+    after,
+  );
+  expect(lines[0].items).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ sceneId: scene, kind: "paused" }),
+    ]),
+  );
+}
 
 test("Webの人間がいる場合は5往復で自動応答を止め、新規入力で計数を戻す", async () => {
   const scene = await sharedGame(0, false);
@@ -966,6 +995,7 @@ test("Webの人間がいる場合は5往復で自動応答を止め、新規入�
     expect(
       (await cli.run(people[0]!.profile, "status")).scene.shared.flow,
     ).toBe("manual");
+    await pauseNotice(scene);
     const calls = vi.spyOn(runtime.agent.model, "complete");
     await access.scenes.tick(scene);
     expect(calls).not.toHaveBeenCalled();
@@ -1123,6 +1153,7 @@ test.each(["end", "mixed", "timeout", "continue", "interrupt"] as const)(
           state: "paused",
           shared: { rounds: 20, flow: "rounds" },
         });
+        await pauseNotice(scene);
         const stopped = vi.spyOn(runtime.agent.model, "complete");
         await access.scenes.tick(scene);
         expect(stopped).not.toHaveBeenCalled();

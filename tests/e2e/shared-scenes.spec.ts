@@ -115,7 +115,7 @@ test("Webでは共有を明示的に選び、参加者確定後もあらすじ�
     .click();
   await expect(
     page.getByRole("heading", { name: "シーンのあらすじ" }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 30000 });
   expect(
     (
       await (

@@ -444,6 +444,7 @@ export class SharedTurns {
       await this.#close(db, row.id, "departed");
     else if (finished) await this.#close(db, row.id, "concluded");
     let control = await this.control(row.id, db, true);
+    const priorFlow = control.flow;
     if (control.flow === "open") {
       const actors = (await this.shared.members(row.id, db))
           .filter((m) => m.state === "joined")
@@ -490,6 +491,18 @@ export class SharedTurns {
         );
     }
     control = await this.control(row.id, db);
+    if (
+      priorFlow !== control.flow &&
+      ["manual", "rounds"].includes(control.flow)
+    )
+      for (const member of await this.shared.members(row.id, db))
+        await this.shared.notice(
+          db,
+          row.construction_id,
+          member.actor_id,
+          row.id,
+          "paused",
+        );
     const queued = (
       await db.query(
         "SELECT id FROM world_scene_turn WHERE scene_id=$1 AND state='queued' LIMIT 1",
