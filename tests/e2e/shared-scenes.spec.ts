@@ -116,4 +116,13 @@ test("Webでは共有を明示的に選び、参加者確定後もあらすじ�
   });
   await page.getByRole("button", { name: "シーンを始める" }).click();
   await expect(page.getByLabel("どう行動しますか")).toBeVisible();
+  await page.getByRole("button", { name: "この場から退出する" }).click();
+  await expect(page.getByLabel("次のシーンで何をしたいですか")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "リザルト", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "artifacts/screenshots/shared-scene-departed.png",
+    fullPage: true,
+  });
 });

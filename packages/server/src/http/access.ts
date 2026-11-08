@@ -485,10 +485,18 @@ export class WorldAccess {
                 .map((e) => e.id)
             : [],
         nextPurpose: d.nextPurpose ?? null,
+        ...(d.departures?.[viewer] === undefined ? {} : { departed: true }),
+        ...(d.waitingFor?.length ? { waitingFor: d.waitingFor } : {}),
       }),
     };
   }
-  async scene(subject: string, id: string, compact = false, actorId?: string) {
+  async scene(
+    subject: string,
+    id: string,
+    compact = false,
+    actorId?: string,
+    sceneId?: string,
+  ) {
     const grant = await this.authorize(
         subject,
         id,
@@ -496,14 +504,26 @@ export class WorldAccess {
         this.pool,
         actorId,
       ),
-      row = await this.scenes.latest(id, this.pool, compact, grant.actor_id!);
+      row = await this.scenes.latest(
+        id,
+        this.pool,
+        compact,
+        grant.actor_id!,
+        sceneId,
+      );
+    if (sceneId && !row)
+      throw new AccessError(
+        404,
+        "SCENE_NOT_FOUND",
+        "利用できるシーンが見つかりません",
+      );
     if (
       row &&
       row.actor_id !== grant.actor_id &&
       !(
         row.data.shared &&
         (await this.scenes.shared.members(row.id)).some(
-          (m) => m.actor_id === grant.actor_id && m.state !== "left",
+          (m) => m.actor_id === grant.actor_id,
         )
       )
     )
@@ -650,12 +670,19 @@ export class WorldAccess {
     input: z.infer<typeof SceneCommand>,
     compact = false,
     actorId?: string,
+    sceneId?: string,
   ) {
     await this.authorize(subject, id, "player", this.pool, actorId);
     return this.#accept(
       subject,
       input.requestId,
-      { operation: "scene", id, ...input, ...(actorId ? { actorId } : {}) },
+      {
+        operation: "scene",
+        id,
+        ...input,
+        ...(actorId ? { actorId } : {}),
+        ...(sceneId ? { sceneId } : {}),
+      },
       "player",
       async (client) => {
         const grant = await this.authorize(
@@ -697,6 +724,7 @@ export class WorldAccess {
                   client,
                   input,
                   grant.actor_id!,
+                  sceneId,
                 );
           await client.query(
             "UPDATE world_scene SET user_id=$2 WHERE id=$1 AND actor_id=$3",

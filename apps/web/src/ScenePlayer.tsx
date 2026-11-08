@@ -28,11 +28,13 @@ export function ScenePlayer({
   viewer,
   at,
   scene,
+  selectedSceneId,
 }: {
   id: string;
   viewer: string;
   at: number;
   scene: State | null;
+  selectedSceneId?: string;
 }) {
   const client = useQueryClient(),
     history = useRef<HistoryHandle>(null),
@@ -41,7 +43,10 @@ export function ScenePlayer({
     composing = useRef(false),
     [showHistory, setShowHistory] = useState(!scene);
   const [pending, save] = usePending(
-    pendingKey(`${id}:${viewer}`, "scene"),
+    pendingKey(
+      `${id}:${viewer}${selectedSceneId ? `:${selectedSceneId}` : ""}`,
+      "scene",
+    ),
     SceneCommand,
   );
   const [showInputs, setShowInputs] = useState(false);
@@ -70,13 +75,15 @@ export function ScenePlayer({
     viewer,
   );
   const mutate = $api.useMutation("post", "/api/worlds/{id}/scene", {
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       save(null);
       form.setValue("actionText", "");
       actions.current?.updated();
       await client.invalidateQueries({
         predicate: (q) => worldQuery(q.queryKey, id, false),
       });
+      if (selectedSceneId && data.scene?.id !== selectedSceneId)
+        window.location.assign(`/worlds/${id}/play?actorId=${viewer}`);
     },
   });
   const inbox = $api.useQuery(
@@ -153,7 +160,16 @@ export function ScenePlayer({
     const body = pending ?? command;
     save(body);
     mutate.mutate({
-      params: { path: { id }, query: { view: "compact", actorId: viewer } },
+      params: {
+        path: { id },
+        query: {
+          view: "compact",
+          actorId: viewer,
+          ...(selectedSceneId && body.command !== "prepare"
+            ? { sceneId: selectedSceneId }
+            : {}),
+        },
+      },
       body:
         body.command === "prepare"
           ? {
@@ -165,11 +181,15 @@ export function ScenePlayer({
           : body,
     });
   }
-  function simple(command: "start" | "finish" | "resume") {
+  function simple(command: "start" | "finish" | "resume" | "leave") {
     send({ requestId: crypto.randomUUID(), command });
   }
-  const entry = !scene || scene.state === "result",
-    active = scene?.state === "active",
+  const entry =
+      !scene ||
+      scene.state === "result" ||
+      !!scene.departed ||
+      !!scene.waitingFor?.length,
+    active = scene?.state === "active" && !scene.departed,
     busy = mutate.isPending || !!pending;
   function submit() {
     const values = form.getValues();
@@ -245,11 +265,16 @@ export function ScenePlayer({
       )}
       {scene ? (
         <Notice>
-          {scene.state === "preparing" && scene.shared?.phase === "inviting"
-            ? "同席の返答を待っています。回答が揃うか、締切を迎えたらあらすじを準備します。"
-            : scene.state === "paused"
-              ? (scene.error ?? labels.paused)
-              : labels[scene.state]}
+          {scene.departed
+            ? "退出しました。元のシーンの終了を待たず、次のシーンを始められます。"
+            : scene.waitingFor?.length
+              ? "シーンは終了しました。先行するシーンの確定後にリザルトを作成します。次のシーンは始められます。"
+              : scene.state === "preparing" &&
+                  scene.shared?.phase === "inviting"
+                ? "同席の返答を待っています。回答が揃うか、締切を迎えたらあらすじを準備します。"
+                : scene.state === "paused"
+                  ? (scene.error ?? labels.paused)
+                  : labels[scene.state]}
         </Notice>
       ) : (
         <Notice>
@@ -390,14 +415,55 @@ export function ScenePlayer({
       )}
       {active && (
         <div className="scene-end">
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={() => simple("finish")}
-          >
-            シーンを終えてリザルトを見る
-          </Button>
+          {scene.shared && (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => simple("leave")}
+            >
+              この場から退出する
+            </Button>
+          )}
+          {(!scene.shared || scene.shared.owner) && (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => simple("finish")}
+            >
+              シーンを終えてリザルトを見る
+            </Button>
+          )}
         </div>
+      )}
+      {scene?.departed && scene.shared?.owner && scene.state === "active" && (
+        <Button disabled={busy} onClick={() => simple("finish")}>
+          元のシーンを終えてリザルトを見る
+        </Button>
+      )}
+      {selectedSceneId && (
+        <a href={`/worlds/${id}/play?actorId=${viewer}`}>現在のシーンへ戻る</a>
+      )}
+      {!!inbox.data?.items.some(
+        (n) => n.sceneId && n.sceneId !== scene?.id,
+      ) && (
+        <details>
+          <summary>シーンの通知と記録</summary>
+          {[
+            ...new Set(
+              inbox.data.items
+                .map((n) => n.sceneId)
+                .filter((n) => n && n !== scene?.id),
+            ),
+          ].map((sceneId) => (
+            <p key={sceneId}>
+              <a
+                href={`/worlds/${id}/play?actorId=${viewer}&sceneId=${sceneId}`}
+              >
+                別のシーンの記録を開く
+              </a>
+            </p>
+          ))}
+        </details>
       )}
       <div className="scene-history-toggle">
         <Button variant="ghost" onClick={() => setShowHistory(!showHistory)}>

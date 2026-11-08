@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { int, type Driver, type ManagedTransaction } from "neo4j-driver";
 import { z } from "zod";
 import {
@@ -24,6 +25,7 @@ export type Receipt = {
   at: number;
   committedAt: string;
   changes: Change;
+  versions?: Record<string, { before: number; after: number }>;
 };
 export class WorldConflict extends Error {}
 
@@ -65,6 +67,7 @@ export class WorldContext {
     readonly driver: Driver,
     readonly worldId: string,
     dependencies: readonly Dependency[] = [],
+    readonly drafts: readonly { at: number; changes: Change }[] = [],
   ) {
     z.uuid().parse(worldId);
     for (const dependency of dependencies)
@@ -115,7 +118,7 @@ export class WorldContext {
   async node(id: string, at?: number): Promise<WorldNode | undefined> {
     z.uuid().parse(id);
     if (at !== undefined) z.number().int().nonnegative().safe().parse(at);
-    return this.#read(nodeKey(id), async (tx) => {
+    const stored = await this.#read(nodeKey(id), async (tx) => {
       const result = await tx.run(
         `MATCH (n:WorldNode {worldId: $worldId, id: $id})
          WHERE $at IS NULL OR n.knownFrom <= $at RETURN n.data AS data
@@ -128,11 +131,18 @@ export class WorldContext {
         ? WorldNode.parse(JSON.parse(result.records[0].get("data")))
         : undefined;
     });
+    return (
+      stored ??
+      this.drafts
+        .filter((d) => at === undefined || d.at <= at)
+        .flatMap((d) => d.changes.nodes)
+        .find((n) => n.id === id)
+    );
   }
 
   async edge(id: string): Promise<WorldEdge | undefined> {
     z.uuid().parse(id);
-    return this.#read(edgeKey(id), async (tx) => {
+    const stored = await this.#read(edgeKey(id), async (tx) => {
       const result = await tx.run(
         "MATCH ()-[r {worldId: $worldId, id: $id}]->() RETURN r.data AS data",
         { worldId: this.worldId, id },
@@ -141,10 +151,14 @@ export class WorldContext {
         ? WorldEdge.parse(JSON.parse(result.records[0].get("data")))
         : undefined;
     });
+    return (
+      stored ??
+      this.drafts.flatMap((d) => d.changes.edges).find((e) => e.id === id)
+    );
   }
 
   async latestTime(id: string) {
-    return this.#read(nodeKey(id), async (tx) => {
+    const stored = await this.#read(nodeKey(id), async (tx) => {
       const result = await tx.run(
         "MATCH (n:WorldNode {worldId:$worldId,id:$id}) RETURN n.knownFrom AS at",
         { worldId: this.worldId, id },
@@ -153,6 +167,38 @@ export class WorldContext {
         ? Number(result.records[0].get("at"))
         : undefined;
     });
+    return (
+      stored ??
+      this.drafts.find((d) => d.changes.nodes.some((n) => n.id === id))?.at
+    );
+  }
+
+  #merge(
+    edges: WorldEdge[],
+    id: string,
+    kind: RelationKind,
+    direction: Direction,
+    accepts: (edge: WorldEdge) => boolean,
+    compare: (a: WorldEdge, b: WorldEdge) => number,
+    limit?: number,
+  ) {
+    return [
+      ...new Map(
+        [
+          ...this.drafts
+            .flatMap((d) => d.changes.edges)
+            .filter(
+              (e) =>
+                e.kind === kind &&
+                (direction === "out" ? e.source : e.target) === id &&
+                accepts(e),
+            ),
+          ...edges,
+        ].map((e) => [e.id, e]),
+      ).values(),
+    ]
+      .sort(compare)
+      .slice(0, limit);
   }
 
   async relations(
@@ -168,27 +214,42 @@ export class WorldContext {
     z.enum(["in", "out"]).parse(direction);
     z.number().int().nonnegative().safe().parse(at);
     z.number().int().min(at).safe().parse(through);
-    return this.#read(relationKey(id, kind, direction), async (tx) => {
-      const pattern =
-        direction === "out" ? `(n)-[r:${kind}]->()` : `(n)<-[r:${kind}]-()`;
-      const result = await tx.run(
-        `MATCH (n:WorldNode {worldId: $worldId, id: $id})
+    const stored = await this.#read(
+      relationKey(id, kind, direction),
+      async (tx) => {
+        const pattern =
+          direction === "out" ? `(n)-[r:${kind}]->()` : `(n)<-[r:${kind}]-()`;
+        const result = await tx.run(
+          `MATCH (n:WorldNode {worldId: $worldId, id: $id})
         MATCH ${pattern} WHERE r.worldId = $worldId AND r.validFrom <= $through
         AND (r.validTo IS NULL OR $at < r.validTo) AND ($after IS NULL OR r.id>$after)
         RETURN r.data AS data ORDER BY r.id ${page ? "LIMIT $limit" : ""}`,
-        {
-          worldId: this.worldId,
-          id,
-          at,
-          through,
-          after: page?.after ?? null,
-          limit: int(page?.limit ?? 51),
-        },
-      );
-      return result.records.map((row) =>
-        WorldEdge.parse(JSON.parse(row.get("data"))),
-      );
-    });
+          {
+            worldId: this.worldId,
+            id,
+            at,
+            through,
+            after: page?.after ?? null,
+            limit: int(page?.limit ?? 51),
+          },
+        );
+        return result.records.map((row) =>
+          WorldEdge.parse(JSON.parse(row.get("data"))),
+        );
+      },
+    );
+    return this.#merge(
+      stored,
+      id,
+      kind,
+      direction,
+      (e) =>
+        e.period.from <= through &&
+        (e.period.until === undefined || at < e.period.until) &&
+        (!page?.after || e.id > page.after),
+      (a, b) => a.id.localeCompare(b.id),
+      page?.limit,
+    );
   }
 
   async history(
@@ -204,28 +265,45 @@ export class WorldContext {
     z.enum(["in", "out"]).parse(direction);
     z.number().int().nonnegative().safe().parse(from);
     z.number().int().min(from).safe().parse(through);
-    return this.#read(relationKey(id, kind, direction), async (tx) => {
-      const pattern =
-        direction === "out" ? `(n)-[r:${kind}]->()` : `(n)<-[r:${kind}]-()`;
-      const result = await tx.run(
-        `MATCH(n:WorldNode {worldId:$worldId,id:$id}) MATCH ${pattern}
+    const stored = await this.#read(
+      relationKey(id, kind, direction),
+      async (tx) => {
+        const pattern =
+          direction === "out" ? `(n)-[r:${kind}]->()` : `(n)<-[r:${kind}]-()`;
+        const result = await tx.run(
+          `MATCH(n:WorldNode {worldId:$worldId,id:$id}) MATCH ${pattern}
         WHERE r.worldId=$worldId AND r.validFrom>=$from AND r.validFrom<=$through
         AND ($after IS NULL OR r.validFrom>$after OR (r.validFrom=$after AND r.id>$cursor))
         RETURN r.data AS data ORDER BY r.validFrom,r.id ${page ? "LIMIT $limit" : ""}`,
-        {
-          worldId: this.worldId,
-          id,
-          from,
-          through,
-          after: page?.after?.from ?? null,
-          cursor: page?.after?.id ?? null,
-          limit: int(page?.limit ?? 51),
-        },
-      );
-      return result.records.map((row) =>
-        WorldEdge.parse(JSON.parse(row.get("data"))),
-      );
-    });
+          {
+            worldId: this.worldId,
+            id,
+            from,
+            through,
+            after: page?.after?.from ?? null,
+            cursor: page?.after?.id ?? null,
+            limit: int(page?.limit ?? 51),
+          },
+        );
+        return result.records.map((row) =>
+          WorldEdge.parse(JSON.parse(row.get("data"))),
+        );
+      },
+    );
+    return this.#merge(
+      stored,
+      id,
+      kind,
+      direction,
+      (e) =>
+        e.period.from >= from &&
+        e.period.from <= through &&
+        (!page?.after ||
+          e.period.from > page.after.from ||
+          (e.period.from === page.after.from && e.id > page.after.id)),
+      (a, b) => a.period.from - b.period.from || a.id.localeCompare(b.id),
+      page?.limit,
+    );
   }
 
   async historyPage(
@@ -240,25 +318,46 @@ export class WorldContext {
     const cursor = after ?? before,
       order = after ? "ASC" : "DESC",
       compare = after ? ">" : "<";
-    return this.#read(relationKey(id, kind, "out"), async (tx) => {
-      const result = await tx.run(
-        `MATCH(n:WorldNode {worldId:$worldId,id:$id})-[r:${kind}]->()
+    const stored = await this.#read(
+      relationKey(id, kind, "out"),
+      async (tx) => {
+        const result = await tx.run(
+          `MATCH(n:WorldNode {worldId:$worldId,id:$id})-[r:${kind}]->()
          WHERE r.worldId=$worldId AND r.validFrom<=$through
          AND ($before IS NULL OR r.validFrom${compare}$before OR (r.validFrom=$before AND r.id${compare}$cursor))
          RETURN r.data AS data ORDER BY r.validFrom ${order},r.id ${order} LIMIT $limit`,
-        {
-          worldId: this.worldId,
-          id,
-          through,
-          before: cursor?.from ?? null,
-          cursor: cursor?.id ?? null,
-          limit: int(51),
-        },
-      );
-      return result.records.map((row) =>
-        WorldEdge.parse(JSON.parse(row.get("data"))),
-      );
-    });
+          {
+            worldId: this.worldId,
+            id,
+            through,
+            before: cursor?.from ?? null,
+            cursor: cursor?.id ?? null,
+            limit: int(51),
+          },
+        );
+        return result.records.map((row) =>
+          WorldEdge.parse(JSON.parse(row.get("data"))),
+        );
+      },
+    );
+    return this.#merge(
+      stored,
+      id,
+      kind,
+      "out",
+      (e) =>
+        e.period.from <= through &&
+        (!cursor ||
+          (after
+            ? e.period.from > cursor.from ||
+              (e.period.from === cursor.from && e.id > cursor.id)
+            : e.period.from < cursor.from ||
+              (e.period.from === cursor.from && e.id < cursor.id))),
+      (a, b) =>
+        (after ? 1 : -1) *
+        (a.period.from - b.period.from || a.id.localeCompare(b.id)),
+      51,
+    );
   }
 
   async observations(id: string, through: number) {
@@ -310,6 +409,10 @@ export class WorldContext {
 }
 
 export class WorldStore {
+  readonly #drafts = new AsyncLocalStorage<{
+    worldId: string;
+    drafts: readonly { at: number; changes: Change }[];
+  }>();
   constructor(readonly driver: Driver) {}
 
   async setup() {
@@ -332,7 +435,21 @@ export class WorldStore {
   }
 
   context(worldId: string, dependencies: readonly Dependency[] = []) {
-    return new WorldContext(this.driver, worldId, dependencies);
+    const scope = this.#drafts.getStore();
+    return new WorldContext(
+      this.driver,
+      worldId,
+      dependencies,
+      scope?.worldId === worldId ? scope.drafts : [],
+    );
+  }
+
+  withDrafts<T>(
+    worldId: string,
+    drafts: readonly { at: number; changes: Change }[],
+    work: () => Promise<T>,
+  ) {
+    return this.#drafts.run({ worldId, drafts }, work);
   }
 
   async claim(worldId: string, runId: string): Promise<Lease> {
@@ -718,6 +835,15 @@ export class WorldStore {
           at,
           committedAt: new Date().toISOString(),
           changes: { ...changes, edges: canonicalEdges },
+          versions: Object.fromEntries(
+            [...touched].map((key) => [
+              key,
+              {
+                before: versions.get(key)!,
+                after: versions.get(key)! + 1,
+              },
+            ]),
+          ),
           ...(parsed.management ? { management: parsed.management } : {}),
         };
         await tx.run(

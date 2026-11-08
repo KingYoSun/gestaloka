@@ -184,7 +184,7 @@ export const SceneCommand = z.discriminatedUnion("command", [
   z
     .object({
       requestId: z.uuid(),
-      command: z.enum(["start", "finish", "resume"]),
+      command: z.enum(["start", "finish", "resume", "leave"]),
     })
     .strict(),
 ]);
@@ -224,6 +224,8 @@ export const SceneStatus = z.object({
   ),
   recordIds: z.array(z.uuid()),
   nextPurpose: z.string().nullable(),
+  departed: z.boolean().optional(),
+  waitingFor: z.array(z.uuid()).optional(),
   shared: z
     .object({
       owner: z.boolean(),
@@ -286,6 +288,7 @@ export const SceneInbox = z.object({
 export const SceneResponse = z.object({ scene: SceneStatus.nullable() });
 export const SceneViewQuery = z.object({
   actorId: z.uuid().optional(),
+  sceneId: z.uuid().optional(),
   view: z.literal("compact").optional(),
 });
 export const SceneRecordQuery = PageQuery.safeExtend({

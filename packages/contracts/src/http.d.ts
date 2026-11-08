@@ -1376,6 +1376,7 @@ export interface paths {
             parameters: {
                 query?: {
                     actorId?: string;
+                    sceneId?: string;
                     view?: "compact";
                 };
                 header?: never;
@@ -1444,6 +1445,8 @@ export interface paths {
                                 }[];
                                 recordIds: string[];
                                 nextPurpose: string | null;
+                                departed?: boolean;
+                                waitingFor?: string[];
                                 shared?: {
                                     owner: boolean;
                                     requestIds: string[];
@@ -1548,6 +1551,7 @@ export interface paths {
             parameters: {
                 query?: {
                     actorId?: string;
+                    sceneId?: string;
                     view?: "compact";
                 };
                 header?: never;
@@ -1584,7 +1588,7 @@ export interface paths {
                         /** Format: uuid */
                         requestId: string;
                         /** @enum {string} */
-                        command: "start" | "finish" | "resume";
+                        command: "start" | "finish" | "resume" | "leave";
                     };
                 };
             };
@@ -1647,6 +1651,8 @@ export interface paths {
                                 }[];
                                 recordIds: string[];
                                 nextPurpose: string | null;
+                                departed?: boolean;
+                                waitingFor?: string[];
                                 shared?: {
                                     owner: boolean;
                                     requestIds: string[];

@@ -720,6 +720,113 @@ test("参加回答を送信前に保存し、応答喪失後は同じ要求で�
   ).toBeNull();
 });
 
+test("共有の退出後は次の準備欄を表示し、終了待ちのシーンにも戻れる", async () => {
+  const posts: { requestId: string; command: string }[] = [];
+  scene = {
+    ...sceneFixture(),
+    shared: {
+      owner: false,
+      requestIds: [],
+      phase: "settled",
+      pending: 0,
+      deadline: null,
+    },
+  };
+  server.use(
+    http.get("*/api/worlds/:id/scene/inbox", () =>
+      json({
+        viewerId: V,
+        invitations: [],
+        next: null,
+        items: [{ id: "1", sceneId: B, kind: "result" }],
+      }),
+    ),
+    http.post("*/api/worlds/:id/scene", async ({ request }) => {
+      const body = (await request.json()) as (typeof posts)[number];
+      posts.push(body);
+      scene = {
+        ...scene!,
+        requestId: body.requestId,
+        departed: true,
+        shared: { ...scene!.shared!, requestIds: [body.requestId] },
+      };
+      return json({ scene }, 202);
+    }),
+  );
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
+      )}
+    />,
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "この場から退出する" }),
+  );
+  await screen.findByLabelText("次のシーンで何をしたいですか");
+  expect(posts).toHaveLength(1);
+  expect(posts[0]!.command).toBe("leave");
+  expect(screen.queryByLabelText("どう行動しますか")).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "シーンを終えてリザルトを見る" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByText("シーンの通知と記録"));
+  expect(
+    screen
+      .getByRole("link", { name: "別のシーンの記録を開く" })
+      .getAttribute("href"),
+  ).toBe(`/worlds/${W}/play?actorId=${V}&sceneId=${B}`);
+});
+
+test("シーンIDを指定して元の終了操作を行い、確定待ちでも次を開始できる", async () => {
+  let target: string | null = null;
+  scene = {
+    ...sceneFixture(),
+    departed: true,
+    shared: {
+      owner: true,
+      requestIds: [],
+      phase: "settled",
+      pending: 0,
+      deadline: null,
+    },
+  };
+  server.use(
+    http.post("*/api/worlds/:id/scene", async ({ request }) => {
+      target = new URL(request.url).searchParams.get("sceneId");
+      const body = (await request.json()) as {
+        requestId: string;
+        command: string;
+      };
+      scene = {
+        ...scene!,
+        state: "reflecting",
+        requestId: body.requestId,
+        waitingFor: [B],
+        shared: { ...scene!.shared!, requestIds: [body.requestId] },
+      };
+      return json({ scene }, 202);
+    }),
+  );
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({
+          initialEntries: [`/worlds/${W}/play?sceneId=${W}`],
+        }),
+      )}
+    />,
+  );
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "元のシーンを終えてリザルトを見る",
+    }),
+  );
+  await waitFor(() => expect(target).toBe(W));
+  expect(screen.getByLabelText("次のシーンで何をしたいですか")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "現在のシーンへ戻る" })).toBeTruthy();
+});
+
 test("SSEの重複を無視し、切断後は配信位置とスナップショットを取得し直す", async () => {
   let reads = 0,
     cursors = 0;

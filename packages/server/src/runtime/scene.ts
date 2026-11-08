@@ -1,5 +1,6 @@
 import { RuntimeExecutions } from "./executions.js";
 import { SharedScenes, SceneSelection } from "./shared-scenes.js";
+import { SceneDrafts, type SceneDraft } from "./scene-drafts.js";
 import {
   InformationReference,
   type Information,
@@ -19,7 +20,7 @@ import { parseOutput } from "../llm/prompt.js";
 import { ExecutionLimit } from "../execution-budget.js";
 import type pg from "pg";
 import type { ChatMessage } from "../llm/client.js";
-import type { Dependency } from "../world/store.js";
+import { WorldConflict, type Dependency } from "../world/store.js";
 import {
   Query,
   IntentResult,
@@ -85,6 +86,9 @@ type Work = {
   target: "default" | "resolution";
 };
 export type SceneData = {
+  drafts?: SceneDraft[];
+  departures?: Record<string, number>;
+  waitingFor?: string[];
   shared?: true;
   externalActors?: string[];
   recordingVersion?: "inspection-record-v1" | "inspection-record-v2";
@@ -118,6 +122,7 @@ export type SceneData = {
   choices: SceneIntent[];
   actions: {
     actorId?: string;
+    leave?: true;
     id: string;
     text: string;
     state: "running" | "complete" | "boundary";
@@ -157,9 +162,11 @@ export type SceneRow = {
 export class WorldScenes {
   readonly queueName: string;
   readonly shared: SharedScenes;
+  readonly drafts: SceneDrafts;
   constructor(readonly construction: WorldConstruction) {
     this.queueName = `${construction.queueName}-scenes`;
     this.shared = new SharedScenes(construction);
+    this.drafts = new SceneDrafts(construction.pool, construction.agent.store);
   }
   get pool() {
     return this.construction.pool;
@@ -193,23 +200,27 @@ export class WorldScenes {
       heartbeatSeconds: 30,
     });
     await this.shared.setup();
+    await this.drafts.setup();
   }
   async latest(
     world: string,
     client: Pick<pg.Pool, "query"> = this.pool,
     compact = false,
     actorId?: string,
+    sceneId?: string,
   ) {
-    const current = actorId
-      ? (
-          await client.query<{ scene_id: string }>(
-            "SELECT scene_id FROM world_actor_scene WHERE world_id=$1 AND actor_id=$2",
-            [world, actorId],
-          )
-        ).rows[0]
-      : undefined;
+    const current = sceneId
+      ? { scene_id: sceneId }
+      : actorId
+        ? (
+            await client.query<{ scene_id: string }>(
+              "SELECT scene_id FROM world_actor_scene WHERE world_id=$1 AND actor_id=$2",
+              [world, actorId],
+            )
+          ).rows[0]
+        : undefined;
     const where = current
-      ? "id=$1 AND (actor_id=$2 OR EXISTS(SELECT 1 FROM world_scene_member m WHERE m.scene_id=world_scene.id AND m.actor_id=$2))"
+      ? "id=$1 AND construction_id=$3 AND (actor_id=$2 OR EXISTS(SELECT 1 FROM world_scene_member m WHERE m.scene_id=world_scene.id AND m.actor_id=$2))"
       : "construction_id=$1 AND ($2::uuid IS NULL OR actor_id=$2)";
     const fields = compact
       ? `id,construction_id,actor_id,state,claim,jsonb_build_object(
@@ -221,13 +232,16 @@ export class WorldScenes {
         ELSE CASE WHEN jsonb_array_length(data->'actions')>0 THEN jsonb_build_array(data->'actions'->-1) ELSE '[]'::jsonb END END,
       'result',data->'result','resultInformation',data->'resultInformation',
       'participantResults',CASE WHEN $2::uuid IS NOT NULL THEN jsonb_build_object($2::text,data->'participantResults'->$2::text) ELSE data->'participantResults' END,
+      'departures',data->'departures','waitingFor',data->'waitingFor',
       'nextPurpose',data->'nextPurpose','limitReached',data->'limitReached') AS data`
       : "*";
     return (
       (
         await client.query<SceneRow>(
           `SELECT ${fields} FROM world_scene WHERE ${where} ORDER BY created_at DESC,id DESC LIMIT 1`,
-          [current?.scene_id ?? world, actorId ?? null],
+          current
+            ? [current.scene_id, actorId ?? null, world]
+            : [world, actorId ?? null],
         )
       ).rows[0] ?? null
     );
@@ -257,7 +271,9 @@ export class WorldScenes {
   }
   async #save(row: SceneRow, client?: pg.PoolClient, expected?: string) {
     if (row.data.recordingVersion === "inspection-record-v2")
-      await captureSceneInformation(row, this.agent.store);
+      await this.drafts.run(row, () =>
+        captureSceneInformation(row, this.agent.store),
+      );
     recordPresentations(row);
     const save = async (c: pg.PoolClient) => {
       const result = await c.query(
@@ -291,11 +307,14 @@ export class WorldScenes {
     await RuntimeControl.check(client, {}, true);
     const c = await this.construction.get(world, client, true);
     const actor = actorId ?? c.participant_id;
-    const prior = actor ? await this.latest(world, client, true, actor) : null;
+    const prior = actor ? await this.latest(world, client, false, actor) : null;
     if (
       !["finished", "playing", "play_paused"].includes(c.state) ||
       !actor ||
-      (prior && prior.state !== "result") ||
+      (prior &&
+        prior.state !== "result" &&
+        prior.data.departures?.[actor] === undefined &&
+        !prior.data.waitingFor?.length) ||
       (actor === c.participant_id && c.state !== "finished")
     )
       throw new ConstructionStateError(
@@ -345,8 +364,22 @@ export class WorldScenes {
       "INSERT INTO world_actor_scene(world_id,actor_id,scene_id) VALUES($1,$2,$3) ON CONFLICT(world_id,actor_id) DO UPDATE SET scene_id=excluded.scene_id",
       [world, actor, row.id],
     );
+    if (prior && prior.state !== "result") {
+      await this.drafts.inherit(client, row, prior);
+      await client.query("UPDATE world_scene SET data=$2 WHERE id=$1", [
+        row.id,
+        JSON.stringify(row.data),
+      ]);
+    }
     if (shared)
-      await this.shared.open(client, world, actor, row.id, c.at, requestId);
+      await this.shared.open(
+        client,
+        world,
+        actor,
+        row.id,
+        row.data.at,
+        requestId,
+      );
     await client.query(
       "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
       [c.world_id, actor],
@@ -356,10 +389,11 @@ export class WorldScenes {
   }
   async command(
     world: string,
-    command: "start" | "finish" | "resume" | "act",
+    command: "start" | "finish" | "resume" | "act" | "leave",
     client: pg.PoolClient,
     input: { requestId: string; actionText?: string },
     actorId?: string,
+    sceneId?: string,
   ) {
     await RuntimeControl.check(client, {}, true);
     const c = await this.construction.get(world, client, true),
@@ -368,9 +402,25 @@ export class WorldScenes {
         client,
         false,
         actorId ?? c.participant_id ?? undefined,
+        sceneId,
       );
-    if (!row || (actorId && row.actor_id !== actorId))
+    const actor = actorId ?? row?.actor_id;
+    if (!row || !actor || (row.actor_id !== actor && !row.data.shared))
       throw new ConstructionStateError("現在のシーンを取得してください");
+    if (
+      !["finish", "resume"].includes(command) &&
+      row.data.departures?.[actor] !== undefined
+    )
+      throw new ConstructionStateError(
+        "退出済みです。次のシーンを準備できます",
+      );
+    if (
+      ["start", "finish", "resume"].includes(command) &&
+      row.actor_id !== actor
+    )
+      throw new ConstructionStateError("開始者が操作してください");
+    if (command === "leave" && !row.data.shared)
+      throw new ConstructionStateError("共有シーンの退出を指定してください");
     if (command === "start") {
       if (row.state !== "ready")
         throw new ConstructionStateError("あらすじの準備完了を待ってください");
@@ -436,19 +486,20 @@ export class WorldScenes {
       else {
         row.state = "acting";
         row.data.actions.push({
+          ...(row.data.shared ? { actorId: actor } : {}),
+          ...(command === "leave" ? { leave: true as const } : {}),
           id: input.requestId,
-          text: input.actionText!,
+          text: command === "leave" ? "この場から退出する" : input.actionText!,
           state: "running",
           submittedAt: new Date().toISOString(),
         });
         const intent = {
-          actorId: row.actor_id,
-          actionText: input.actionText!,
-          continuing:
-            row.data.pending[row.actor_id]?.actionText === input.actionText,
+          actorId: actor,
+          actionText: row.data.actions.at(-1)!.text,
+          continuing: row.data.pending[actor]?.actionText === input.actionText,
         };
-        row.data.pending[row.actor_id] = intent;
-        row.data.intentions[row.actor_id] = intent;
+        row.data.pending[actor] = intent;
+        row.data.intentions[actor] = intent;
         row.data.choices.push(intent);
       }
     }
@@ -653,6 +704,7 @@ export class WorldScenes {
             initialContext: context.initialContext,
             controlledActorIds: context.controlledActorIds,
             acceptedPlayerIds: d.externalActors ?? [row.actor_id],
+            ...(d.drafts?.length ? { priorScenes: d.drafts } : {}),
             ...(d.contextNeed
               ? {
                   needsContext: d.contextNeed,
@@ -884,7 +936,8 @@ export class WorldScenes {
   }
   async #action(row: SceneRow) {
     const d = row.data,
-      action = d.actions.at(-1)!;
+      action = d.actions.at(-1)!,
+      actor = action.actorId ?? row.actor_id;
     for (;;) {
       if (d.contextNeed) await this.#background(row);
       const bg = d.background!;
@@ -892,16 +945,20 @@ export class WorldScenes {
         const next = sceneContinuations(
           d.originalAgenda,
           bg.participants.filter(
-            (id) => !d.intentions[id] && !d.nextDecisions.includes(id),
+            (id) =>
+              !d.intentions[id] &&
+              !d.nextDecisions.includes(id) &&
+              !(d.externalActors ?? []).includes(id) &&
+              d.departures?.[id] === undefined,
           ),
-          row.actor_id,
+          actor,
           d.at,
         );
         Object.assign(d.pending, next.pending);
         Object.assign(d.intentions, next.pending);
         d.nextDecisions.push(...next.nextDecisions);
       }
-      if (!d.pending[row.actor_id] && !d.nextDecisions.includes(row.actor_id)) {
+      if (!d.pending[actor] && !d.nextDecisions.includes(actor)) {
         action.state = "complete";
         row.state = "active";
         await this.#save(row, undefined, row.claim!);
@@ -965,12 +1022,14 @@ export class WorldScenes {
           {
             background: bg,
             sceneHistory: d.events,
-            controlledView: d.views[row.actor_id],
+            controlledView: d.views[actor],
             request: {
               at: d.at,
-              controlledActorId: row.actor_id,
+              controlledActorId: actor,
               controlledInputId: action.id,
               controlledActionText: action.text,
+              leavingActorIds: action.leave ? [actor] : [],
+              departedActorIds: Object.keys(d.departures ?? {}),
               intentions: intents,
             },
             responseSchema: z.toJSONSchema(SceneStep, { io: "output" }),
@@ -979,28 +1038,36 @@ export class WorldScenes {
         ),
         step = sceneResponse(value.value);
       if (step.type === "boundary") break;
-      if (step.needsContext && step.decisions[row.actor_id] === "finished")
-        step.decisions[row.actor_id] = "pending";
+      if (step.needsContext && step.decisions[actor] === "finished")
+        step.decisions[actor] = "pending";
       const actors = new Set(intents.map((i) => i.actorId));
       if (
         Object.keys(step.decisions).sort().join() !== [...actors].sort().join()
       )
         throw new Error("シーンで未解決の意図が省略されています");
       const returnsControl =
-        step.decisions[row.actor_id] === "finished" ||
-        step.decisions[row.actor_id] === "decide" ||
-        step.newDecisions.includes(row.actor_id);
+        step.decisions[actor] === "finished" ||
+        step.decisions[actor] === "decide" ||
+        step.newDecisions.includes(actor);
       for (const e of step.events) {
         if (
           !actors.has(e.actorId) ||
-          e.receipts.some((p) => !bg.participants.includes(p.observerId)) ||
+          e.receipts.some(
+            (p) =>
+              !bg.participants.includes(p.observerId) ||
+              d.departures?.[p.observerId] !== undefined,
+          ) ||
           new Set(e.receipts.map((p) => p.observerId)).size !==
             e.receipts.length
         )
           throw new Error("シーンの行動主体または受容先が不正です");
       }
       for (const id of step.newDecisions)
-        if (!bg.participants.includes(id) || actors.has(id))
+        if (
+          !bg.participants.includes(id) ||
+          actors.has(id) ||
+          d.departures?.[id] !== undefined
+        )
           throw new Error("本人の判断の割当が不正です");
       const nextAt = d.at + step.elapsedMs;
       if (!Number.isSafeInteger(nextAt))
@@ -1009,13 +1076,25 @@ export class WorldScenes {
         d.events,
         step.arrivals,
         bg.participants,
-        row.actor_id,
+        actor,
         d.at,
       );
       for (const receiver of receivers)
         if (actors.has(receiver)) step.decisions[receiver] = "decide";
         else step.newDecisions.push(receiver);
       step.newDecisions = [...new Set(step.newDecisions)];
+      const departureOffset = d.events.length;
+      for (const exit of step.departures) {
+        if (
+          !action.leave ||
+          exit.actorId !== actor ||
+          !step.events[exit.eventIndex] ||
+          step.events
+            .slice(exit.eventIndex + 1)
+            .some((e) => e.receipts.some((p) => p.observerId === actor))
+        )
+          throw new Error("退出の本人・出来事・受容範囲が一致しません");
+      }
       for (const e of step.events)
         d.events.push({
           ...e,
@@ -1033,13 +1112,48 @@ export class WorldScenes {
         ...new Set([
           ...step.newDecisions,
           ...Object.entries(step.decisions)
-            .filter(
-              ([id, status]) => id !== row.actor_id && status === "decide",
-            )
+            .filter(([id, status]) => id !== actor && status === "decide")
             .map(([id]) => id),
         ]),
       ];
+      for (const exit of step.departures) {
+        (d.departures ??= {})[exit.actorId] =
+          departureOffset + exit.eventIndex + 1;
+        delete d.pending[exit.actorId];
+        delete d.intentions[exit.actorId];
+        d.nextDecisions = d.nextDecisions.filter((id) => id !== exit.actorId);
+      }
       delete d.work;
+      if (step.departures.length) {
+        action.state = "complete";
+        row.state = "active";
+        const ended = await this.#transaction(async (db) => {
+          await this.#save(row, db, row.claim!);
+          await db.query(
+            "UPDATE world_scene_member SET state='left' WHERE scene_id=$1 AND actor_id=ANY($2::uuid[])",
+            [row.id, step.departures.map((e) => e.actorId)],
+          );
+          for (const m of await this.shared.members(row.id, db))
+            await this.shared.notice(
+              db,
+              row.construction_id,
+              m.actor_id,
+              row.id,
+              "participant_left",
+            );
+          if (
+            !(await this.shared.members(row.id, db)).some(
+              (m) => m.state === "joined",
+            )
+          ) {
+            row.state = "reflecting";
+            await this.#save(row, db, row.claim!);
+            return true;
+          }
+          return false;
+        });
+        return ended;
+      }
       if (step.needsContext && !returnsControl) {
         const need = {
           ...step.needsContext,
@@ -1066,13 +1180,13 @@ export class WorldScenes {
         continue;
       }
       if (
-        step.decisions[row.actor_id] === "finished" ||
-        step.decisions[row.actor_id] === "decide" ||
-        step.newDecisions.includes(row.actor_id)
+        step.decisions[actor] === "finished" ||
+        step.decisions[actor] === "decide" ||
+        step.newDecisions.includes(actor)
       ) {
         action.state = "complete";
         row.state = "active";
-        d.nextDecisions = d.nextDecisions.filter((id) => id !== row.actor_id);
+        d.nextDecisions = d.nextDecisions.filter((id) => id !== actor);
         await this.#save(row, undefined, row.claim!);
         return false;
       }
@@ -1094,6 +1208,22 @@ export class WorldScenes {
   }
   async #reflect(row: SceneRow) {
     const d = row.data;
+    if (!d.operationId && d.drafts?.length) {
+      const confirmation = await this.drafts.confirmation(row);
+      d.basis = confirmation.basis;
+      d.waitingFor = confirmation.waiting;
+      if (confirmation.waiting.length) {
+        await this.#transaction(async (db) => {
+          await this.#save(row, db, row.claim!);
+          await db.query(
+            "UPDATE world_scene_member SET state='ended' WHERE scene_id=$1 AND state='joined'",
+            [row.id],
+          );
+        });
+        return;
+      }
+      delete d.waitingFor;
+    }
     if (!d.operationId) {
       d.operationId = await this.agent.create(
         {
@@ -1123,6 +1253,10 @@ export class WorldScenes {
     if (!d.projection) {
       d.projection = await this.agent.run(d.operationId);
       await this.#save(row, undefined, row.claim!);
+      await this.#transaction(async (db) => {
+        for (const child of await this.drafts.dependents(db, row.id))
+          await this.#enqueue(db, child.id, child.shared);
+      });
     }
     for (const viewer of [
       ...new Set([row.actor_id, ...(d.externalActors ?? [])]),
@@ -1212,8 +1346,27 @@ export class WorldScenes {
       ? await this.agent.store.receipt(d.worldId, operation.commit_id)
       : undefined;
     if (!receipt) throw new Error("世界への確定記録がまだありません");
+    const exit = d.departures?.[viewer];
+    const ownPrefix =
+      exit === undefined
+        ? null
+        : new Set(
+            sceneAnchors(
+              d.background!,
+              d.events.slice(0, exit),
+              d.startedAt,
+              row.id,
+            )
+              .edges.filter((e) => e.kind === "see" && e.source === viewer)
+              .map((e) => e.id),
+          );
     const observations = receipt.changes.edges
-      .filter((e) => e.kind === "see" && e.source === viewer)
+      .filter(
+        (e) =>
+          e.kind === "see" &&
+          e.source === viewer &&
+          (!ownPrefix || ownPrefix.has(e.id)),
+      )
       .map((e) => ({
         id: e.id,
         targetId: e.target,
@@ -1222,7 +1375,10 @@ export class WorldScenes {
     const interpretations = [];
     for (const e of receipt.changes.edges.filter(
       (e) =>
-        e.kind === "interpret" && e.role === "content" && e.source === viewer,
+        exit === undefined &&
+        e.kind === "interpret" &&
+        e.role === "content" &&
+        e.source === viewer,
     )) {
       const script =
         receipt.changes.nodes.find((n) => n.id === e.target) ??
@@ -1278,24 +1434,33 @@ export class WorldScenes {
         role: "user",
         actorId: row.actor_id,
       });
-      if (row.state === "preparing")
-        await this.agent.model.run(
-          this.#budget(row),
-          () => this.#background(row),
-          row.data.worldId,
-          row.user_id ?? undefined,
-          { role: "user", actorId: row.actor_id },
-        );
-      else if (row.state === "acting") {
-        if (
+      await this.drafts.run(row, async () => {
+        if (row.state === "preparing")
           await this.agent.model.run(
             this.#budget(row),
-            () => this.#action(row),
+            () => this.#background(row),
             row.data.worldId,
             row.user_id ?? undefined,
             { role: "user", actorId: row.actor_id },
+          );
+        else if (row.state === "acting") {
+          if (
+            await this.agent.model.run(
+              this.#budget(row),
+              () => this.#action(row),
+              row.data.worldId,
+              row.user_id ?? undefined,
+              { role: "user", actorId: row.actor_id },
+            )
           )
-        )
+            await this.agent.model.run(
+              this.#budget(row),
+              () => this.#reflect(row),
+              row.data.worldId,
+              row.user_id ?? undefined,
+              { role: "user", actorId: row.actor_id },
+            );
+        } else
           await this.agent.model.run(
             this.#budget(row),
             () => this.#reflect(row),
@@ -1303,16 +1468,36 @@ export class WorldScenes {
             row.user_id ?? undefined,
             { role: "user", actorId: row.actor_id },
           );
-      } else
-        await this.agent.model.run(
-          this.#budget(row),
-          () => this.#reflect(row),
-          row.data.worldId,
-          row.user_id ?? undefined,
-          { role: "user", actorId: row.actor_id },
-        );
+      });
     } catch (error) {
       if (error instanceof SupersededWorker) return;
+      if (error instanceof WorldConflict && row.data.drafts?.length) {
+        const saved = (
+          await this.pool.query<SceneRow>(
+            "SELECT * FROM world_scene WHERE id=$1",
+            [row.id],
+          )
+        ).rows[0]!;
+        const confirmation = await this.drafts
+          .confirmation(saved)
+          .catch((failure: unknown) => {
+            if (!(failure instanceof WorldConflict)) throw failure;
+            return null;
+          });
+        if (
+          confirmation &&
+          JSON.stringify(confirmation.basis) !==
+            JSON.stringify(saved.data.basis)
+        ) {
+          saved.data.basis = confirmation.basis;
+          saved.claim = null;
+          await this.#transaction(async (db) => {
+            await this.#save(saved, db, claim);
+            await this.#enqueue(db, saved.id, !!saved.data.shared);
+          });
+          return;
+        }
+      }
       row.data.resumeState = row.state;
       row.data.limitReached = error instanceof ExecutionLimit;
       row.data.suspended = error instanceof RuntimeStopped;

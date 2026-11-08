@@ -32,12 +32,14 @@ gestaloka invite --invitation <id> --accept|--reject  同席を承認・拒否
 gestaloka start                          準備したシーンを開始
 gestaloka act --text <自由記述>           一手を送信（--file <UTF-8ファイル>も可）
 gestaloka finish                         シーンを終了しリザルトを準備
+gestaloka leave                          共有シーンから退出を試み、帰結を確認
 gestaloka result                         現在のリザルトを照会
 gestaloka resume                         保留中の参加・シーンを明示再開
 gestaloka knowledge [--since <checkpoint>] 本人の観測・解釈の履歴。前回取得時との差分を取得
 gestaloka history --scene <id> --kind <events|actions> [--before <cursor>]
 gestaloka recover [--request <要求ID>]    保存した同じ要求を照合して最新状態を取得
 全コマンド: --profile <ファイル>。既定はXDG_STATE_HOMEまたは~/.local/stateのgestaloka/default.json。
+シーン照会・操作: --scene <id> で退出前のシーンも指定できます。
 出力はJSON、成功は終了コード0、エラーは1。照会では世界を進めません。
 応答喪失時は表示したrequestIdまたは最後の要求をrecoverで照合してください。
 許可の解除: 公開URLの/auth/player。サーバー・DB・モデルのAPIキーは不要です。
@@ -131,21 +133,25 @@ async function status(profile: Profile) {
   const { scene } = SceneResponse.parse(
     await http(
       profile,
-      `/api/worlds/${profile.worldId}/scene?actorId=${device.actorId}`,
+      `/api/worlds/${profile.worldId}/scene?actorId=${device.actorId}${values.scene ? `&sceneId=${z.uuid().parse(values.scene)}` : ""}`,
     ),
   );
   return {
     state: !scene
       ? "no_scene"
-      : scene.state === "active"
-        ? "waiting_input"
-        : scene.state === "result"
-          ? "finished"
-          : scene.state === "ready"
-            ? "prepared"
-            : scene.state === "paused"
-              ? "paused"
-              : "processing",
+      : scene.waitingFor?.length
+        ? "waiting_confirmation"
+        : scene.departed && scene.state !== "result"
+          ? "departed"
+          : scene.state === "active"
+            ? "waiting_input"
+            : scene.state === "result"
+              ? "finished"
+              : scene.state === "ready"
+                ? "prepared"
+                : scene.state === "paused"
+                  ? "paused"
+                  : "processing",
     device,
     scene,
   };
@@ -484,7 +490,7 @@ async function run() {
   });
   return submit(
     profile,
-    `/api/worlds/${profile.worldId}/scene`,
+    `/api/worlds/${profile.worldId}/scene${values.scene ? `?sceneId=${z.uuid().parse(values.scene)}` : ""}`,
     body,
     true,
     body.requestId,

@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { WorldAccess } from "@gestaloka/server/access";
 import type { WorldProposal } from "@gestaloka/server/agent";
-import type { SceneBackground } from "../../packages/server/src/runtime/scene-data.js";
+import {
+  sceneAnchors,
+  type SceneBackground,
+} from "../../packages/server/src/runtime/scene-data.js";
 import { createApp } from "../../apps/api/src/app.js";
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureRuntime } from "../support/provider.js";
@@ -17,6 +20,8 @@ const selections = new Map<
   string,
   { candidates: string[]; mergeInto: string | null }
 >();
+let continuation: { actor: string; creation: string } | undefined;
+let denyDeparture = false;
 let runtime: Awaited<ReturnType<typeof fixtureRuntime>>["runtime"],
   access: WorldAccess,
   auth: Awaited<ReturnType<typeof fixtureAuth>>,
@@ -32,9 +37,16 @@ beforeAll(async () => {
     scope,
     (content, raw) => {
       const input = raw as {
-        request?: { actorId: string; rootIds: string[] };
+        request?: {
+          actorId: string;
+          rootIds: string[];
+          controlledActorId?: string;
+          leavingActorIds?: string[];
+        };
         responseSchema?: unknown;
         acceptedPlayerIds?: string[];
+        priorScenes?: { background: SceneBackground }[];
+        confirmed?: { observations: { text: string }[] };
       };
       const proposal = content as WorldProposal;
       if (proposal.newParticipantId)
@@ -62,6 +74,34 @@ beforeAll(async () => {
             mergeInto: null,
           }),
         };
+      if (continuation && input.confirmed)
+        return {
+          text:
+            input.confirmed.observations.map((o) => o.text).join("\n") ||
+            "本人に追加の受容はありません",
+        };
+      if (
+        (content as { type?: string }).type === "scene" &&
+        input.request?.leavingActorIds?.length
+      ) {
+        const actor = input.request.leavingActorIds[0]!;
+        return {
+          ...(content as object),
+          events: [
+            {
+              actorId: actor,
+              text: denyDeparture ? "退出を試みた" : "場を離れた",
+              receipts: [
+                {
+                  observerId: actor,
+                  text: denyDeparture ? "通路はまだ通れない" : "EXIT-OWN",
+                },
+              ],
+            },
+          ],
+          departures: denyDeparture ? [] : [{ actorId: actor, eventIndex: 0 }],
+        };
+      }
       if (
         (content as { type?: string }).type === "background" &&
         input.acceptedPlayerIds
@@ -69,6 +109,32 @@ beforeAll(async () => {
         const background = content as SceneBackground;
         return {
           ...background,
+          ...(continuation && input.request!.actorId === continuation.actor
+            ? {
+                creations: [
+                  { id: continuation.creation, text: "場に現れた持ち運べる物" },
+                ],
+                facts: [
+                  ...background.facts,
+                  {
+                    subjectId: input.request!.actorId,
+                    text: "この物を見つけた",
+                    aboutIds: [continuation.creation],
+                  },
+                ],
+              }
+            : continuation && input.priorScenes?.length
+              ? {
+                  facts: [
+                    ...background.facts,
+                    {
+                      subjectId: input.request!.actorId,
+                      text: "前の場で見た物を改めて確かめる",
+                      aboutIds: [continuation!.creation],
+                    },
+                  ],
+                }
+              : {}),
           participants: input.acceptedPlayerIds,
           synopsis: `OWNER-${input.request!.actorId}`,
           perceptions: input.acceptedPlayerIds.map((actor) => ({
@@ -481,6 +547,200 @@ test("相互に訪ねる同時開始を先行する参加待ちシーンへ合�
   expect((await access.scenes.shared.get(y))!.phase).toBe("merged");
   await end(0);
 }, 60000);
+test("退出後は未確定の履歴から次々に開始でき、元の確定後に一度ずつ反映する", async () => {
+  const a = people[0]!,
+    b = people[1]!;
+  continuation = { actor: a.actor, creation: randomUUID() };
+  try {
+    await presence(1);
+    selections.set(a.actor, { candidates: [b.actor], mergeInto: null });
+    const parent = await prepare(0);
+    await access.scenes.tick(parent);
+    const invitation = (await cli.run(b.profile, "inbox")).invitations.find(
+      (i: { sceneId: string }) => i.sceneId === parent,
+    );
+    expect(
+      (
+        await cli.run(
+          b.profile,
+          "invite",
+          "--invitation",
+          invitation.id,
+          "--accept",
+        )
+      ).state,
+    ).not.toBe("error");
+    await access.scenes.tick(parent);
+    await cli.run(a.profile, "start");
+    denyDeparture = true;
+    const denied = await cli.run(b.profile, "leave");
+    expect(denied.state, JSON.stringify(denied)).toBe("processing");
+    await access.scenes.tick(parent);
+    expect((await cli.run(b.profile, "status")).scene.departed).toBeUndefined();
+    expect(
+      (await cli.run(b.profile, "prepare", "--purpose", "別の場へ")).code,
+    ).toBe("STATE_CONFLICT");
+    denyDeparture = false;
+    const leaving = await cli.run(b.profile, "leave");
+    expect(leaving.state).toBe("processing");
+    await access.scenes.tick(parent);
+    expect((await cli.run(b.profile, "status")).scene.departed).toBe(true);
+    expect(
+      (await cli.run(b.profile, "recover", "--request", leaving.requestId))
+        .scene.id,
+    ).toBe(parent);
+    const source = (await access.scenes.latest(
+      world,
+      undefined,
+      false,
+      a.actor,
+    ))!;
+    expect(
+      source.data.actions.filter((action) => action.id === denied.requestId),
+    ).toHaveLength(1);
+    const anchors = sceneAnchors(
+      source.data.background!,
+      source.data.events,
+      source.data.startedAt,
+      parent,
+    );
+    expect(
+      await runtime.agent.store.context(graph).node(continuation.creation),
+    ).toBeUndefined();
+    const prefix = source.data.events.length;
+    const first = await cli.run(
+      b.profile,
+      "prepare",
+      "--purpose",
+      "先ほど見た物を確かめる",
+    );
+    const child = first.scene.id;
+    await access.scenes.tick(child);
+    let next = (await access.scenes.latest(world, undefined, false, b.actor))!;
+    expect(next.state).toBe("ready");
+    expect(next.data.drafts?.[0]?.events).toHaveLength(prefix);
+    await access.scenes.drafts.run(next, async () => {
+      const context = runtime.agent.store.context(graph);
+      expect((await context.node(continuation!.creation))?.text).toBe(
+        "場に現れた持ち運べる物",
+      );
+      const own = anchors.edges.filter(
+        (e) => e.kind === "see" && e.source === b.actor,
+      );
+      const paged = await context.historyPage(b.actor, "see", next.data.at);
+      expect(paged.map((e) => e.id)).toEqual(
+        expect.arrayContaining(own.map((e) => e.id)),
+      );
+      expect(
+        (await context.history(b.actor, "see", "out", next.data.at)).map(
+          (e) => e.id,
+        ),
+      ).toEqual(expect.arrayContaining(own.map((e) => e.id)));
+    });
+    await cli.run(b.profile, "start");
+    await cli.run(b.profile, "act", "--text", "自分の範囲を確かめる");
+    await access.scenes.tick(child);
+    await cli.run(b.profile, "finish");
+    const waitingCalls = vi.spyOn(runtime.agent.model, "complete");
+    await access.scenes.tick(child);
+    expect(waitingCalls).not.toHaveBeenCalled();
+    waitingCalls.mockRestore();
+    expect((await cli.run(b.profile, "status")).scene.waitingFor).toEqual([
+      parent,
+    ]);
+    const third = (
+      await cli.run(b.profile, "prepare", "--purpose", "さらに別の場へ")
+    ).scene.id;
+    await access.scenes.tick(third);
+    next = (await access.scenes.latest(world, undefined, false, b.actor))!;
+    expect(next.state).toBe("ready");
+    expect(next.data.drafts?.map((d) => d.sceneId)).toEqual([parent, child]);
+    // Remaining participants continue; the frozen child prefix and the former member's receipts stay unchanged.
+    await cli.run(a.profile, "act", "--text", "退出後に周囲を確かめる");
+    await access.scenes.tick(parent);
+    expect(
+      (await access.scenes.latest(world, undefined, false, a.actor))!.data
+        .events.length,
+    ).toBeGreaterThan(prefix);
+    expect(
+      (await access.scenes.latest(world, undefined, false, b.actor))!.data
+        .drafts?.[0]?.events,
+    ).toHaveLength(prefix);
+    expect(
+      (await cli.run(b.profile, "status", "--scene", parent)).scene.messages,
+    ).toHaveLength(prefix);
+    expect(
+      (await cli.run(people[2]!.profile, "status", "--scene", parent)).code,
+    ).toBe("SCENE_NOT_FOUND");
+    await cli.run(a.profile, "finish", "--scene", parent);
+    await access.scenes.tick(parent);
+    await access.scenes.tick(child);
+    expect((await cli.run(b.profile, "result", "--scene", child)).state).toBe(
+      "finished",
+    );
+    const result = await cli.run(b.profile, "result", "--scene", parent);
+    expect(result.state).toBe("finished");
+    expect(result.scene.result).toContain("EXIT-OWN");
+    expect(result.scene.result).not.toContain("公開された経験");
+    expect((await cli.run(b.profile, "status")).scene.id).toBe(third);
+    expect(
+      (await cli.run(b.profile, "recover", "--request", leaving.requestId))
+        .scene.id,
+    ).toBe(third);
+    await cli.run(b.profile, "start");
+    await cli.run(b.profile, "finish");
+    await access.scenes.tick(third);
+    expect((await cli.run(b.profile, "result")).state).toBe("finished");
+    const after = (
+      await runtime.agent.store
+        .context(graph)
+        .history(b.actor, "see", "out", (await runtime.get(world)).at)
+    ).map((e) => e.id);
+    await access.scenes.tick(parent);
+    await access.scenes.tick(child);
+    expect(
+      (
+        await runtime.agent.store
+          .context(graph)
+          .history(b.actor, "see", "out", (await runtime.get(world)).at)
+      ).map((e) => e.id),
+    ).toEqual(after);
+  } finally {
+    continuation = undefined;
+    denyDeparture = false;
+  }
+}, 120000);
+
+test("開始者も退出後に共有を開始でき、全員退出で元のシーンだけを終了する", async () => {
+  const a = people[0]!,
+    b = people[1]!;
+  await presence(1);
+  selections.set(a.actor, { candidates: [b.actor], mergeInto: null });
+  const parent = await prepare(0);
+  await access.scenes.tick(parent);
+  const invite = (await cli.run(b.profile, "inbox")).invitations.find(
+    (i: { sceneId: string }) => i.sceneId === parent,
+  );
+  await cli.run(b.profile, "invite", "--invitation", invite.id, "--accept");
+  await access.scenes.tick(parent);
+  await cli.run(a.profile, "start");
+  await cli.run(a.profile, "leave");
+  await access.scenes.tick(parent);
+  selections.set(a.actor, { candidates: [], mergeInto: null });
+  const child = await prepare(0);
+  await access.scenes.tick(child);
+  expect((await cli.run(a.profile, "status")).state).toBe("prepared");
+  const leaving = await cli.run(b.profile, "leave", "--scene", parent);
+  expect(leaving.state).toBe("processing");
+  await access.scenes.tick(parent);
+  expect((await cli.run(b.profile, "result")).state).toBe("finished");
+  expect((await cli.run(a.profile, "result", "--scene", parent)).state).toBe(
+    "finished",
+  );
+  expect((await cli.run(a.profile, "status")).scene.id).toBe(child);
+  await end(0);
+}, 60000);
+
 test("CLIの明示終了と90秒の失効を世界内の退出や新しい生成にしない", async () => {
   const a = people[0]!,
     calls = vi.spyOn(runtime.agent.model, "complete"),

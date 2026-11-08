@@ -289,6 +289,7 @@ export async function worldRoutes(
         request.params.id,
         request.query.view === "compact",
         request.query.actorId,
+        request.query.sceneId,
       ),
   );
   app.get(
@@ -327,6 +328,7 @@ export async function worldRoutes(
             request.body,
             request.query.view === "compact",
             request.query.actorId,
+            request.query.sceneId,
           ),
         ),
   );

@@ -399,7 +399,7 @@ test.each(["decide", "finished"] as const)(
     const original = structuredClone(value);
     const { responseCoverage: _coverage, ...expected } = value;
     void _coverage;
-    expect(sceneResponse(value)).toEqual(expected);
+    expect(sceneResponse(value)).toEqual({ ...expected, departures: [] });
     expect(value).toEqual(original);
   },
 );
@@ -444,12 +444,13 @@ test("旧保存出力の診断フィールドだけを捨て、出来事・到�
   const original = structuredClone(value);
   const { responseCoverage: _coverage, ...expected } = value;
   void _coverage;
-  expect(sceneResponse(value)).toEqual(expected);
+  expect(sceneResponse(value)).toEqual({ ...expected, departures: [] });
   const { arrivals: _arrivals, ...withoutArrivals } = expected;
   void _arrivals;
   expect(sceneResponse(withoutArrivals)).toEqual({
     ...withoutArrivals,
     arrivals: [],
+    departures: [],
   });
   expect(value).toEqual(original);
   expect(() => sceneResponse({ ...expected, elapsedMs: -1 })).toThrow();

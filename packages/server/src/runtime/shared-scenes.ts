@@ -336,7 +336,7 @@ export class SharedScenes {
             sequence: string | null;
           }>(
             `SELECT s.id AS scene_id,h.phase,h.sequence FROM world_scene s
-          LEFT JOIN world_shared_scene h ON h.scene_id=s.id WHERE s.construction_id=$1 AND (EXISTS(SELECT 1 FROM world_actor_scene p WHERE p.world_id=$1 AND p.actor_id=$2 AND p.scene_id=s.id) OR (s.actor_id=$2 AND NOT EXISTS(SELECT 1 FROM world_actor_scene p WHERE p.world_id=$1 AND p.actor_id=$2))) AND s.state<>'result' 
+          LEFT JOIN world_shared_scene h ON h.scene_id=s.id WHERE s.construction_id=$1 AND (EXISTS(SELECT 1 FROM world_actor_scene p WHERE p.world_id=$1 AND p.actor_id=$2 AND p.scene_id=s.id) OR (s.actor_id=$2 AND NOT EXISTS(SELECT 1 FROM world_actor_scene p WHERE p.world_id=$1 AND p.actor_id=$2))) AND s.state<>'result' AND NOT coalesce(s.data->'departures','{}'::jsonb) ? $2::text AND coalesce(jsonb_array_length(s.data->'waitingFor'),0)=0
           AND coalesce(h.phase,'')<>'merged' ORDER BY s.created_at DESC,s.id DESC LIMIT 1`,
             [row.world_id, actor],
           )
@@ -440,7 +440,7 @@ export class SharedScenes {
       throw conflict("この参加要請は締め切られています");
     if (accept) {
       const legacy = await db.query(
-        `SELECT s.id FROM world_scene s WHERE s.construction_id=$1 AND (EXISTS(SELECT 1 FROM world_actor_scene p WHERE p.world_id=$1 AND p.actor_id=$2 AND p.scene_id=s.id) OR (s.actor_id=$2 AND NOT EXISTS(SELECT 1 FROM world_actor_scene p WHERE p.world_id=$1 AND p.actor_id=$2))) AND s.state<>'result' 
+        `SELECT s.id FROM world_scene s WHERE s.construction_id=$1 AND (EXISTS(SELECT 1 FROM world_actor_scene p WHERE p.world_id=$1 AND p.actor_id=$2 AND p.scene_id=s.id) OR (s.actor_id=$2 AND NOT EXISTS(SELECT 1 FROM world_actor_scene p WHERE p.world_id=$1 AND p.actor_id=$2))) AND s.state<>'result' AND NOT coalesce(s.data->'departures','{}'::jsonb) ? $2::text AND coalesce(jsonb_array_length(s.data->'waitingFor'),0)=0
         AND NOT EXISTS(SELECT 1 FROM world_shared_scene h WHERE h.scene_id=s.id) LIMIT 1`,
         [world, actor],
       );
