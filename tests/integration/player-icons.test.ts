@@ -119,7 +119,14 @@ beforeAll(async () => {
 }, 60000);
 afterAll(async () => {
   await app?.close();
-  for (const suffix of ["", "-play", "-scenes", "-joins"])
+  for (const suffix of [
+    "",
+    "-play",
+    "-scenes",
+    "-joins",
+    "-shared-scenes",
+    "-scene-deadlines",
+  ])
     await isolated.databases.queue.deleteQueue(`e2e-${scope}${suffix}`);
   if (graph)
     await isolated.databases.graph.executeQuery(

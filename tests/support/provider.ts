@@ -85,6 +85,19 @@ export async function fixtureRuntime(
       } else if (
         user.responseSchema?.oneOf?.some(
           (s: { properties?: { type?: { const?: string } } }) =>
+            s.properties?.type?.const === "selection",
+        )
+      ) {
+        content = {
+          type: "selection",
+          candidates: (user.controlledActorIds ?? []).filter(
+            (id: string) => id !== user.request.actorId,
+          ),
+          mergeInto: null,
+        };
+      } else if (
+        user.responseSchema?.oneOf?.some(
+          (s: { properties?: { type?: { const?: string } } }) =>
             s.properties?.type?.const === "background",
         )
       ) {
@@ -117,13 +130,17 @@ export async function fixtureRuntime(
           unknowns: [],
         };
       } else if (user.background) {
-        const actor = user.request.controlledActorId;
+        const actor = user.request.controlledActorId,
+          leaving = user.request.leavingActorIds?.includes(actor);
         content = {
           type: "scene",
+          ...(leaving
+            ? { departures: [{ actorId: actor, eventIndex: 0 }] }
+            : {}),
           events: [
             {
               actorId: actor,
-              text: "周囲を見渡して確かめた",
+              text: leaving ? "本人が場を離れた" : "周囲を見渡して確かめた",
               receipts: [
                 { observerId: actor, text: `公開された経験 ${++sequence}` },
               ],

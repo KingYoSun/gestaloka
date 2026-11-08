@@ -223,6 +223,8 @@ afterAll(async () => {
   await databases.queue.deleteQueue(`${queueName}-play`);
   await databases.queue.deleteQueue(`${queueName}-scenes`);
   await databases.queue.deleteQueue(`${queueName}-joins`);
+  await databases.queue.deleteQueue(`${queueName}-shared-scenes`);
+  await databases.queue.deleteQueue(`${queueName}-scene-deadlines`);
   await databases.postgres.query(
     "DELETE FROM world_event WHERE construction_id=ANY($1)",
     [ids],

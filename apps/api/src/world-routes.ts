@@ -27,6 +27,10 @@ import {
   SceneRecordPage,
   KnowledgeQuery,
   ActorQuery,
+  ScenePresence,
+  ScenePresenceStatus,
+  SceneInbox,
+  SceneInboxQuery,
 } from "@gestaloka/contracts";
 import { AccessError, type WorldAccess } from "@gestaloka/server/access";
 import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
@@ -50,6 +54,7 @@ export async function worldRoutes(
     return access;
   };
   const identities = new WeakMap<FastifyRequest, string>();
+  const deviceIds = new WeakMap<FastifyRequest, string>();
   const subject = async (request: FastifyRequest) => {
     if (!identity || !operations)
       throw new AccessError(
@@ -63,6 +68,8 @@ export async function worldRoutes(
         "/api/worlds/:id/scene",
         "/api/worlds/:id/scene/records",
         "/api/worlds/:id/knowledge",
+        "/api/worlds/:id/presence",
+        "/api/worlds/:id/scene/inbox",
       ];
       if (
         !allowed.includes(request.routeOptions.url ?? "") ||
@@ -87,6 +94,7 @@ export async function worldRoutes(
           "参加完了を確認してください",
         );
       query.actorId = device.actor_id;
+      deviceIds.set(request, device.id);
       id = device.user_id!;
     } else id = (await identity.session(request.headers.cookie)).userId;
     await operations.authorize(id);
@@ -281,6 +289,7 @@ export async function worldRoutes(
         request.params.id,
         request.query.view === "compact",
         request.query.actorId,
+        request.query.sceneId,
       ),
   );
   app.get(
@@ -319,8 +328,46 @@ export async function worldRoutes(
             request.body,
             request.query.view === "compact",
             request.query.actorId,
+            request.query.sceneId,
           ),
         ),
+  );
+  app.post(
+    "/api/worlds/:id/presence",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        body: ScenePresence,
+        response: { 200: ScenePresenceStatus, ...errors },
+      },
+    },
+    async (request) =>
+      service().presence(
+        await subject(request),
+        request.params.id,
+        request.body,
+        request.headers.authorization ? "bot" : "human",
+        request.query.actorId,
+        deviceIds.get(request),
+      ),
+  );
+  app.get(
+    "/api/worlds/:id/scene/inbox",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: SceneInboxQuery,
+        response: { 200: SceneInbox, ...errors },
+      },
+    },
+    async (request) =>
+      service().inbox(
+        await subject(request),
+        request.params.id,
+        request.query.actorId,
+        request.query.after,
+      ),
   );
   app.post(
     "/api/worlds/:id/actions",

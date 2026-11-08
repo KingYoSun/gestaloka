@@ -184,7 +184,10 @@ const routeTree = root.addChildren([
   createRoute({
     getParentRoute: () => root,
     path: "/worlds/$id/play",
-    validateSearch: z.object({ actorId: z.uuid().optional() }).parse,
+    validateSearch: z.object({
+      actorId: z.uuid().optional(),
+      sceneId: z.uuid().optional(),
+    }).parse,
     component: PlayerRoute,
   }),
 ]);

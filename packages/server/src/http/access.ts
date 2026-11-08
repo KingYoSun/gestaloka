@@ -17,6 +17,7 @@ import {
   SceneRecordPage,
   type SceneRecordQuery,
   type CreateWorld,
+  type ScenePresence,
 } from "@gestaloka/contracts";
 import {
   ConstructionStateError,
@@ -385,44 +386,66 @@ export class WorldAccess {
           : ("ready" as const),
     };
   }
-  async sceneData(row: SceneRow | null, compact = false) {
+  async sceneData(row: SceneRow | null, compact = false, viewerId?: string) {
     if (!row) return { scene: null };
+    const viewer = viewerId ?? row.actor_id;
     const d = row.data;
+    const synopsis =
+      viewer === row.actor_id
+        ? d.background?.synopsis
+        : d.background?.perceptions
+            .filter((p) => p.observerId === viewer)
+            .map((p) => p.text)
+            .join("\n\n");
+    const synopsisInformation =
+      viewer === row.actor_id ? d.background?.synopsisInformation : undefined;
+    const result =
+      viewer === row.actor_id ? d.result : d.participantResults?.[viewer]?.text;
+    const resultInformation =
+      viewer === row.actor_id
+        ? d.resultInformation
+        : d.participantResults?.[viewer]?.information;
+    const shared = d.shared
+      ? await this.scenes.shared.state(row.id, viewer)
+      : undefined;
     const messages = compact
       ? []
       : d.events.flatMap((e) =>
           e.receipts
-            .filter((p) => p.observerId === row.actor_id)
+            .filter((p) => p.observerId === viewer)
             .map((p) => ({
               id: e.id,
               text: p.text,
               ids: (p.information ?? []).map((i) => i.id),
             })),
         );
-    const actions = compact ? d.actions.slice(-1) : d.actions;
+    const ownActions = d.actions.filter(
+      (a) => (a.actorId ?? row.actor_id) === viewer,
+    );
+    const actions = compact ? ownActions.slice(-1) : ownActions;
     const characters = await this.players.characters(
       row.construction_id,
-      row.actor_id,
+      viewer,
       [
         {
           ids: [
-            ...(d.background?.synopsisInformation ?? []).map((i) => i.id),
+            ...(synopsisInformation ?? []).map((i) => i.id),
             ...(d.background?.perceptions ?? [])
-              .filter((p) => p.observerId === row.actor_id)
+              .filter((p) => p.observerId === viewer)
               .flatMap((p) => p.sourceIds),
           ],
-          text: d.background?.synopsis ?? "",
+          text: synopsis ?? "",
         },
         {
           ids:
             row.state === "result"
-              ? (d.resultInformation ?? []).map((i) => i.id)
+              ? (resultInformation ?? []).map((i) => i.id)
               : [],
-          text: row.state === "result" ? (d.result ?? "") : "",
+          text: row.state === "result" ? (result ?? "") : "",
         },
         ...messages,
         ...actions.map((a) => ({
-          ids: [row.actor_id],
+          ids: [viewer],
           text: a.text,
           own: true,
         })),
@@ -431,13 +454,14 @@ export class WorldAccess {
     return {
       scene: SceneStatus.parse({
         id: row.id,
-        requestId: d.commandId,
-        viewerId: row.actor_id,
+        requestId: shared?.requestIds.at(-1) ?? d.commandId,
+        shared,
+        viewerId: viewer,
         at: d.at,
         state: row.state,
-        synopsis: d.background?.synopsis ?? null,
+        synopsis: synopsis ?? null,
         synopsisCharacters: characters[0],
-        result: row.state === "result" ? (d.result ?? null) : null,
+        result: row.state === "result" ? (result ?? null) : null,
         resultCharacters: characters[1],
         error:
           row.state === "paused"
@@ -457,16 +481,22 @@ export class WorldAccess {
         recordIds:
           !compact && d.background
             ? sceneAnchors(d.background, d.events, d.startedAt, row.id)
-                .edges.filter(
-                  (e) => e.kind === "see" && e.source === row.actor_id,
-                )
+                .edges.filter((e) => e.kind === "see" && e.source === viewer)
                 .map((e) => e.id)
             : [],
         nextPurpose: d.nextPurpose ?? null,
+        ...(d.departures?.[viewer] === undefined ? {} : { departed: true }),
+        ...(d.waitingFor?.length ? { waitingFor: d.waitingFor } : {}),
       }),
     };
   }
-  async scene(subject: string, id: string, compact = false, actorId?: string) {
+  async scene(
+    subject: string,
+    id: string,
+    compact = false,
+    actorId?: string,
+    sceneId?: string,
+  ) {
     const grant = await this.authorize(
         subject,
         id,
@@ -474,14 +504,35 @@ export class WorldAccess {
         this.pool,
         actorId,
       ),
-      row = await this.scenes.latest(id, this.pool, compact, grant.actor_id!);
-    if (row && row.actor_id !== grant.actor_id)
+      row = await this.scenes.latest(
+        id,
+        this.pool,
+        compact,
+        grant.actor_id!,
+        sceneId,
+      );
+    if (sceneId && !row)
+      throw new AccessError(
+        404,
+        "SCENE_NOT_FOUND",
+        "利用できるシーンが見つかりません",
+      );
+    if (
+      row &&
+      row.actor_id !== grant.actor_id &&
+      !(
+        row.data.shared &&
+        (await this.scenes.shared.members(row.id)).some(
+          (m) => m.actor_id === grant.actor_id,
+        )
+      )
+    )
       throw new AccessError(
         403,
         "ACTOR_CHANGED",
         "操作対象を再取得してください",
       );
-    return this.sceneData(row, compact);
+    return this.sceneData(row, compact, grant.actor_id!);
   }
   async sceneRecords(
     subject: string,
@@ -496,8 +547,12 @@ export class WorldAccess {
       input.actorId,
     );
     const row = (
-      await this.pool.query<{ count: number }>(
-        "SELECT jsonb_array_length(data->$3) AS count FROM world_scene WHERE id=$1 AND construction_id=$2 AND actor_id=$4",
+      await this.pool.query<{
+        count: number;
+        actor_id: string;
+        shared: boolean;
+      }>(
+        "SELECT actor_id,data ? 'shared' AS shared,jsonb_array_length(data->$3) AS count FROM world_scene WHERE id=$1 AND construction_id=$2 AND (actor_id=$4 OR EXISTS(SELECT 1 FROM world_scene_member m WHERE m.scene_id=world_scene.id AND m.actor_id=$4))",
         [input.sceneId, id, input.kind, grant.actor_id],
       )
     ).rows[0];
@@ -516,9 +571,12 @@ export class WorldAccess {
             sceneId: z.literal(input.sceneId),
             kind: z.literal(input.kind),
             index: z.number().int().nonnegative().safe(),
+            actorId: z.uuid().optional(),
           })
           .parse(JSON.parse(Buffer.from(raw, "base64url").toString("utf8")));
         position = cursor.index;
+        if (row.shared && cursor.actorId !== grant.actor_id)
+          throw new Error("cursor scope");
       } catch {
         throw new AccessError(
           409,
@@ -543,9 +601,19 @@ export class WorldAccess {
     ).rows;
     const encode = (index: number) =>
       Buffer.from(
-        JSON.stringify({ sceneId: input.sceneId, kind: input.kind, index }),
+        JSON.stringify({
+          sceneId: input.sceneId,
+          kind: input.kind,
+          index,
+          ...(row.shared ? { actorId: grant.actor_id } : {}),
+        }),
       ).toString("base64url");
-    const evidence: CharacterEvidence[] = rows.map(({ item }) => ({
+    const ownRows = rows.filter(
+      ({ item }) =>
+        input.kind !== "actions" ||
+        (item.actorId ?? row.actor_id) === grant.actor_id,
+    );
+    const evidence: CharacterEvidence[] = ownRows.map(({ item }) => ({
       ids:
         input.kind === "actions"
           ? [grant.actor_id!]
@@ -570,7 +638,7 @@ export class WorldAccess {
     );
     return SceneRecordPage.parse({
       viewerId: grant.actor_id,
-      items: rows.flatMap(({ item }, index) => {
+      items: ownRows.flatMap(({ item }, index) => {
         const text =
           input.kind === "actions"
             ? item.text
@@ -602,12 +670,19 @@ export class WorldAccess {
     input: z.infer<typeof SceneCommand>,
     compact = false,
     actorId?: string,
+    sceneId?: string,
   ) {
     await this.authorize(subject, id, "player", this.pool, actorId);
     return this.#accept(
       subject,
       input.requestId,
-      { operation: "scene", id, ...input, ...(actorId ? { actorId } : {}) },
+      {
+        operation: "scene",
+        id,
+        ...input,
+        ...(actorId ? { actorId } : {}),
+        ...(sceneId ? { sceneId } : {}),
+      },
       "player",
       async (client) => {
         const grant = await this.authorize(
@@ -618,6 +693,21 @@ export class WorldAccess {
           actorId,
         );
         try {
+          if (input.command === "invite") {
+            await this.scenes.shared.respond(
+              client,
+              id,
+              grant.actor_id!,
+              input.invitationId,
+              input.accept,
+              input.requestId,
+            );
+            return this.sceneData(
+              await this.scenes.latest(id, client, false, grant.actor_id!),
+              compact,
+              grant.actor_id!,
+            );
+          }
           const row =
             input.command === "prepare"
               ? await this.scenes.open(
@@ -626,6 +716,7 @@ export class WorldAccess {
                   client,
                   input.requestId,
                   grant.actor_id!,
+                  !!input.shared,
                 )
               : await this.scenes.command(
                   id,
@@ -633,12 +724,13 @@ export class WorldAccess {
                   client,
                   input,
                   grant.actor_id!,
+                  sceneId,
                 );
-          await client.query("UPDATE world_scene SET user_id=$2 WHERE id=$1", [
-            row.id,
-            subject,
-          ]);
-          return this.sceneData(row, compact);
+          await client.query(
+            "UPDATE world_scene SET user_id=$2 WHERE id=$1 AND actor_id=$3",
+            [row.id, subject, grant.actor_id],
+          );
+          return this.sceneData(row, compact, grant.actor_id!);
         } catch (error) {
           if (error instanceof ConstructionStateError)
             throw new AccessError(409, "STATE_CONFLICT", error.message);
@@ -646,6 +738,63 @@ export class WorldAccess {
         }
       },
     );
+  }
+  async presence(
+    subject: string,
+    id: string,
+    input: z.infer<typeof ScenePresence>,
+    kind: "human" | "bot",
+    actorId?: string,
+    deviceId?: string,
+  ) {
+    await this.authorize(subject, id, "player", this.pool, actorId);
+    return this.#accept(
+      subject,
+      input.requestId,
+      { operation: "presence", id, ...input, actorId, kind, deviceId },
+      "player",
+      async (client) => {
+        const grant = await this.authorize(
+          subject,
+          id,
+          "player",
+          client,
+          actorId,
+        );
+        try {
+          return await this.scenes.shared.presence(
+            client,
+            id,
+            grant.actor_id!,
+            subject,
+            input.connectionId,
+            input.active,
+            kind,
+            deviceId,
+          );
+        } catch (error) {
+          if (error instanceof ConstructionStateError)
+            throw new AccessError(409, "STATE_CONFLICT", error.message);
+          throw error;
+        }
+      },
+    );
+  }
+  async inbox(subject: string, id: string, actorId?: string, after?: string) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    try {
+      return await this.scenes.shared.inbox(id, grant.actor_id!, after);
+    } catch (error) {
+      if (error instanceof ConstructionStateError)
+        throw new AccessError(409, "CURSOR_INVALID", error.message);
+      throw error;
+    }
   }
   async run(subject: string, id: string) {
     const row = (

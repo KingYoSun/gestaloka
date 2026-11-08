@@ -333,7 +333,7 @@ export function Manage({ id }: { id: string }) {
 }
 
 export function Player({ id }: { id: string }) {
-  const { actorId } = useSearch({ from: "/worlds/$id/play" });
+  const { actorId, sceneId } = useSearch({ from: "/worlds/$id/play" });
   const query = $api.useQuery("get", "/api/worlds/{id}/play", {
     params: { path: { id }, query: actorId ? { actorId } : {} },
   });
@@ -349,14 +349,33 @@ export function Player({ id }: { id: string }) {
         <Notice>村民の視点を読み込んでいます</Notice>
       </main>
     );
-  return <PlayerView key={query.data.viewerId} id={id} status={query.data} />;
+  return (
+    <PlayerView
+      key={query.data.viewerId}
+      id={id}
+      status={query.data}
+      {...(sceneId ? { sceneId } : {})}
+    />
+  );
 }
 type PlayerState = z.infer<typeof PlayerStatus>;
-function PlayerView({ id, status }: { id: string; status: PlayerState }) {
+function PlayerView({
+  id,
+  status,
+  sceneId,
+}: {
+  id: string;
+  status: PlayerState;
+  sceneId?: string;
+}) {
   const query = $api.useQuery("get", "/api/worlds/{id}/scene", {
     params: {
       path: { id },
-      query: { view: "compact", actorId: status.viewerId },
+      query: {
+        view: "compact",
+        actorId: status.viewerId,
+        ...(sceneId ? { sceneId } : {}),
+      },
     },
   });
   if (query.error)
@@ -387,6 +406,7 @@ function PlayerView({ id, status }: { id: string; status: PlayerState }) {
       viewer={status.viewerId}
       at={status.at}
       scene={scene}
+      {...(sceneId ? { selectedSceneId: sceneId } : {})}
     />
   );
 }

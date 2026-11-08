@@ -76,7 +76,14 @@ test.afterEach(async ({ page }) => {
         "MATCH(n) WHERE n.worldId=$id DETACH DELETE n",
         { id: r.world_id },
       );
-  for (const suffix of ["", "-play", "-scenes", "-joins"])
+  for (const suffix of [
+    "",
+    "-play",
+    "-scenes",
+    "-joins",
+    "-shared-scenes",
+    "-scene-deadlines",
+  ])
     await db.queue.deleteQueue(`e2e-${scope}${suffix}`);
   await db.queue.stop();
   await isolated.close();

@@ -218,7 +218,14 @@ afterAll(async () => {
     [graph],
   );
   await app?.close();
-  for (const suffix of ["", "-play", "-scenes", "-joins"])
+  for (const suffix of [
+    "",
+    "-play",
+    "-scenes",
+    "-joins",
+    "-shared-scenes",
+    "-scene-deadlines",
+  ])
     await db.queue.deleteQueue(`e2e-${scope}${suffix}`);
   await db.postgres.query("DELETE FROM world_event WHERE construction_id=$1", [
     world,

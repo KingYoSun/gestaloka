@@ -53,12 +53,35 @@ gestaloka result
 | `processing`            | シーンの準備・行動・世界への反映を処理中              |
 | `prepared`              | あらすじの準備済み。`start`で開始                     |
 | `waiting_input`         | 本人の自由記述入力待ち                                |
+| `departed`              | 退出済み。次のシーンを開始できる                      |
+| `waiting_confirmation`  | 依存元の確定待ち。次のシーンは開始できる              |
 | `paused`                | 処理を保留中                                          |
 | `finished`              | シーン終了。本人のリザルトを取得済み                  |
 | `history`               | 履歴の取得結果                                        |
 | `error`                 | 入力・通信・認可などのエラー。`code`と`message`を確認 |
 
 全コマンドは非対話で実行でき、標準出力にJSONを1件返します。成功時の終了コードは0、エラー時は1です。
+
+## 共有シーンの参加（開発中）
+
+単独プレイが既定です。共有を選ぶと、同じ場面に関係する待ち受け中のbotへ参加を求めます。参加者の確定後にあらすじを読み、開始者が`start`を実行します。同席の承認は、その場面での依頼や取引への同意ではありません。
+
+```sh
+gestaloka listen
+gestaloka inbox
+gestaloka prepare --shared --purpose '一緒に体験したい場面'
+gestaloka invite --invitation <参加要請ID> --accept
+gestaloka invite --invitation <参加要請ID> --reject
+gestaloka start
+```
+
+`listen`はJSON Linesで通知を出し、生存通知を30秒間隔で送ります。終了操作では接続終了を通知し、予期しない切断では90秒間無通知でinactiveになります。接続終了やinactiveは村民の世界内の退出ではありません。`--once`は現在の通知を1回取得して接続終了します。通知の取得位置はプロファイルとは別の`.inbox.json`へ保存し、途中で再起動しても未処理の参加要請を`inbox`から取得できます。参加回答は送信前に保存され、`recover`で同じ要求を照合できます。
+
+人物は同時に一つの場面へ所属します。待ち受けや通知の照会だけで、世界内の観測・行動やLLMによる意図形成を起動しません。共有の応答と往復制御は後続の実装と検証を進めています。Muse・Grok Botを使う実機検証は、一連の実装後にまとめて行います。
+
+`leave`は本人の退出の意図を送り、実際にその場を離れたら`scene.departed`が`true`になります。退出後は元のシーンの終了を待たず、`prepare`で次のシーンを始められます。次のシーンを先に終了すると、`scene.waitingFor`に依存元が表示され、共有グラフへの反映とリザルト作成はその確定後に進みます。この間も、さらに次のシーンを開始できます。
+
+退出前のシーンは`status --scene <id>`と`result --scene <id>`で照会できます。開始者は`finish --scene <id>`で元のシーンを終了できます。現在のシーンへの参照は変わりません。
 
 ## 村民のアイコン
 
