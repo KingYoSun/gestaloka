@@ -175,14 +175,14 @@ export async function playerDeviceRoutes(
       ).items[0];
       if (!world)
         throw new AccessError(404, "WORLD_NOT_FOUND", "世界が見つかりません");
-      const people = await service().players.list(
-        userId,
-        device.world_id,
-        before,
-      );
-      const presets = world.canJoin
-        ? await operations!.presets(userId, presetsBefore)
-        : { items: [], next: null };
+      const proposed = !!(device.character && world.canJoin);
+      const people = proposed
+        ? { items: [], next: null }
+        : await service().players.list(userId, device.world_id, before);
+      const presets =
+        world.canJoin && !proposed
+          ? await operations!.presets(userId, presetsBefore)
+          : { items: [], next: null };
       const choices = people.items
         .filter((p) => p.actorId)
         .map(
@@ -195,9 +195,9 @@ export async function playerDeviceRoutes(
               `<label><input type="radio" name="choice" value="preset:${p.id}:${p.version}" required>新規参加: ${escape(p.title)} — ${escape(p.description)}</label>`,
           ),
         );
-      if (device.character && world.canJoin)
+      if (proposed)
         choices.unshift(
-          `<section><h2>AIが用意した人物</h2>${device.icon ? `<img src="${escape(device.icon)}" width="96" alt="AIが用意した人物のアイコン">` : ""}<p>${escape(device.character).replaceAll("\n", "<br>")}</p><label><input type="radio" name="choice" value="character" checked required>この人物を新しく作って参加する</label></section>`,
+          `<section><h2>AIが用意した人物</h2>${device.icon ? `<img src="${escape(device.icon)}" width="96" alt="AIが用意した人物のアイコン">` : ""}<p>${escape(device.character!).replaceAll("\n", "<br>")}</p><input type="hidden" name="choice" value="character"></section>`,
         );
       if (!device.character && world.playerSettings && world.canJoin)
         choices.unshift(
@@ -206,7 +206,7 @@ export async function playerDeviceRoutes(
       return authPage(
         reply,
         "AIにプレイを許可する",
-        `<p>${escape(world.title || world.id)}</p><p>${escape(world.description)}</p><p>AIから届いた確認のことばが <strong>${code}</strong> と同じか確かめてください。</p><p>選んだ村民として遊び、顔の画像を変え、その村民が知っていることを読むのを許可します。新しく参加する場合は、その一人だけに許可します。</p><form method="post" action="/auth/player">${csrf}<input type="hidden" name="code" value="${code}">${choices.join("<br>")}${choices.length ? "<button>この人物のプレイを許可する</button>" : "<p>選択できる人物・参加設定がありません。</p>"}</form>${people.next ? `<a href="?code=${code}&before=${people.next}${presetsBefore ? `&presetsBefore=${presetsBefore}` : ""}">次の人物へ</a>` : ""}${presets.next ? `<a href="?code=${code}&presetsBefore=${presets.next}${before ? `&before=${before}` : ""}">次の参加設定へ</a>` : ""}`,
+        `<p>${escape(world.title || world.id)}</p><p>${escape(world.description)}</p><p>AIから届いた確認のことばが <strong>${code}</strong> と同じか確かめてください。</p><p>${proposed ? "表示されている人物として遊び、顔の画像を変え、その人物が知っていることを読むのを許可します。" : "選んだ村民として遊び、顔の画像を変え、その村民が知っていることを読むのを許可します。新しく参加する場合は、その一人だけに許可します。"}</p><form method="post" action="/auth/player">${csrf}<input type="hidden" name="code" value="${code}">${choices.join("<br>")}${choices.length ? "<button>この人物のプレイを許可する</button>" : "<p>選択できる人物・参加設定がありません。</p>"}</form>${people.next ? `<a href="?code=${code}&before=${people.next}${presetsBefore ? `&presetsBefore=${presetsBefore}` : ""}">次の人物へ</a>` : ""}${presets.next ? `<a href="?code=${code}&presetsBefore=${presets.next}${before ? `&before=${before}` : ""}">次の参加設定へ</a>` : ""}`,
       );
     },
   );
