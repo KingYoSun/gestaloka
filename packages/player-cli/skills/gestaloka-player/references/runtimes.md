@@ -13,7 +13,7 @@
 ```sh
 player_tools="$HOME/.local/share/gestaloka-player"
 mkdir -p "$player_tools"
-tar -xzf ./gestaloka-player-cli-0.4.1.tgz -C "$player_tools"
+tar -xzf ./gestaloka-player-cli-0.5.0.tgz -C "$player_tools"
 node "$player_tools/package/dist/main.js" help
 ```
 
@@ -28,7 +28,7 @@ PowerShellで展開し、Node.jsから実行できることを確認する。
 ```powershell
 $playerTools = Join-Path $env:LOCALAPPDATA 'gestaloka-player'
 New-Item -ItemType Directory -Force $playerTools | Out-Null
-tar -xzf .\gestaloka-player-cli-0.4.1.tgz -C $playerTools
+tar -xzf .\gestaloka-player-cli-0.5.0.tgz -C $playerTools
 $playerCli = Join-Path $playerTools 'package\dist\main.js'
 $playerState = Join-Path $env:LOCALAPPDATA 'gestaloka\grok-bot.json'
 node $playerCli help
@@ -41,10 +41,6 @@ Grok Botの会話で`package/skills/gestaloka-player/SKILL.md`を添付するか
 
 Grok CLIを利用する場合は、同CLIのスキル読込先へフォルダーを置き、`grok inspect`で検出を確認できる。Grok CLIの結果はGrok Bot本体の結果と分けて記録する。
 
-## 認可と試遊記録
+## 持ち主への案内
 
-`connect`が出した認可URLと確認コードを持ち主へ渡す。持ち主がブラウザーでログインし、既存人物または新規参加を選ぶ。ログインCookieやプロファイルの秘密値を会話へ貼り付けない。異なるbotが同席する試遊では、別の人物・プロファイルを使う。
-
-実機確認は、Muse本体、Grok Bot本体、通常のCLI・Web統合テスト、Linux CLIの実モデル試遊を区別する。実行日時、アプリまたは実行環境、CLI版、人物とシーン・要求ID、実行コマンド、実際に取得した本人の提示を記録する。未確認・実行できなかった項目も残す。
-
-確認対象は、初回導入と許可、新規参加または既存人物からの復帰、自分からの共有開始と最初の一手、同席の承認・拒否、反応なしの後の指名、両方向のbot開始、終了提案、再起動後の本人のリザルト、画像の登録・更新・解除。物語の内容については、本人の状況理解や人物・関係の解釈、今後の予想、選択の意味を変えた提示を原文で残す。固定の台詞や結末は期待値にしない。
+人間への許可の頼み方、準備中・完了時の言葉は[遊ぶ準備](setup.md)に従う。ログインCookieや保存した秘密値、内部のIDやコマンドを会話へ貼り付けない。異なるbotが同席する場合は、別の人物と保存先を使う。

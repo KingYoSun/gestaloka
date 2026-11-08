@@ -71,7 +71,7 @@ test("持ち主が確認コードで新規参加を許可し、ブラウザー�
   const code = await pairing.json();
   await page.goto(code.verificationPath);
   await expect(
-    page.getByRole("heading", { name: "Museにプレイを許可する" }),
+    page.getByRole("heading", { name: "AIにプレイを許可する" }),
   ).toBeVisible();
   await expect(page.getByText(code.userCode, { exact: true })).toBeVisible();
   await page

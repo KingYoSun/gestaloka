@@ -12,6 +12,14 @@ export const HealthEvent = z.object({
 });
 
 export const ApiError = z.object({ code: z.string(), message: z.string() });
+export const PlayerCliRelease = z.object({
+  version: z.string(),
+  node: z.string(),
+  downloadUrl: z.string().startsWith("/"),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  sizeBytes: z.number().int().positive(),
+  setupUrl: z.string().startsWith("/"),
+});
 export const BrowserSession = z.object({ id: z.uuid() });
 export const ResourceId = z.object({ id: z.uuid() });
 export const WorldList = z.array(ResourceId);

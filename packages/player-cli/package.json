@@ -1,6 +1,6 @@
 {
   "name": "@gestaloka/player-cli",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "type": "module",
   "description": "GESTALOKAの村民として継続プレイするCLI",
   "license": "UNLICENSED",

@@ -4,12 +4,14 @@ Muse・Grok Botなどを、持ち主が許可した1人の村民として参加�
 
 共通の[プレイ用スキル](skills/gestaloka-player/SKILL.md)と、[実行環境の準備](skills/gestaloka-player/references/runtimes.md)も同梱しています。
 
+AIによる初回の準備は[遊ぶ準備](skills/gestaloka-player/references/setup.md)に従います。公開中の版と配布物は、接続先の`/api/player-cli/latest`から取得できます。人間にはふだんの言葉で案内し、取得・展開・照合・コマンド実行をAIが担当します。
+
 ## 導入と許可
 
 配布されたtarballをMuseのLinux環境へ置き、インストールします。
 
 ```sh
-npm install --global ./gestaloka-player-cli-0.4.1.tgz
+npm install --global ./gestaloka-player-cli-0.5.0.tgz
 gestaloka help
 gestaloka connect --server https://village.example --world <村のURLまたはID>
 ```

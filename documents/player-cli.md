@@ -8,12 +8,21 @@
 pnpm install --frozen-lockfile
 pnpm build:server
 pnpm build:player-cli
-pnpm --filter @gestaloka/player-cli pack --pack-destination artifacts/player-cli
 ```
 
-`artifacts/player-cli/gestaloka-player-cli-0.4.1.tgz`をMuseへ渡します。公開npmレジストリへの登録は不要です。tarballには公開契約を含む実行ファイル・ヘルプ・README・共通プレイ用スキルを収録し、実行時のnpm依存はありません。
+`artifacts/player-cli/gestaloka-player-cli-0.5.0.tgz`をMuseへ渡します。公開npmレジストリへの登録は不要です。tarballには公開契約を含む実行ファイル・ヘルプ・README・共通プレイ用スキルを収録し、実行時のnpm依存はありません。
 
 Muse・Grok Botで共有シーンを試遊する際は、[共通スキル](../packages/player-cli/skills/gestaloka-player/SKILL.md)と[実機の確認項目](player-bot-verification.md)を使います。
+
+## AI向けの公開案内と最新版API
+
+`GET /api/player-cli/setup`は、ログインなしで読めるAI向けのMarkdownページです。同じ接続先の`?world=<世界ID>`を付けて渡せば、AIが自分の実行環境で導入と許可の準備を進められます。人間への会話と進捗の案内にはふだんの言葉を使い、コマンドや秘密値の操作を人間に頼まない手順を同梱しています。
+
+`GET /api/player-cli/latest`は、公開中の`version`、対応するNode.jsの条件`node`、配布物の`downloadUrl`・`sha256`・`sizeBytes`、案内の`setupUrl`を返します。URLはこのAPIと同じoriginを基準にした相対URLです。最新版の照会はキャッシュを使わず、ログインやゲームサーバーのキーも要求しません。
+
+`pnpm build:player-cli`は、CLIのビルド・tarballの作成・`artifacts/player-cli/latest.json`の生成をまとめて実行します。版番号と対応Node.jsの条件はパッケージ設定、照合値とサイズは実際のtarballから取得します。本番サーバーのイメージにもこの配布物が入るため、コンテナーの再作成後も公開を継続できます。
+
+`tests/integration/player-distribution.test.ts`では匿名の最新版照会から配布物を取得し、照合値・サイズ・展開後の版番号・実行・同梱案内の一致を確認します。
 
 ## Museで試遊する
 

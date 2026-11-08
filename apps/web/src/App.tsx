@@ -98,7 +98,7 @@ function Shell() {
         </Link>
         <nav>
           <Link to="/">世界一覧</Link>
-          {surface === "user" && <a href="/auth/player">Museへのプレイ許可</a>}
+          {surface === "user" && <a href="/auth/player">AIへのプレイ許可</a>}
           {surface === "admin" && (
             <Link to="/operations/$section" params={{ section: "users" }}>
               運用管理

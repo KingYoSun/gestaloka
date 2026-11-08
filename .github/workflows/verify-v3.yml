@@ -30,7 +30,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: node tests/production/tls.mjs
       - run: pnpm check
-      - run: pnpm --filter @gestaloka/player-cli pack --pack-destination artifacts/player-cli
       - uses: actions/upload-artifact@v4
         with:
           name: gestaloka-player-cli

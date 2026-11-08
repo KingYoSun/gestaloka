@@ -123,7 +123,7 @@ export async function playerDeviceRoutes(
           return authPage(
             reply.code(403),
             "利用登録が必要です",
-            '<p>利用登録後、この認可URLをもう一度開いてください。</p><a href="/auth/register">ログイン・利用登録へ</a>',
+            '<p>利用登録後、AIから届いたこの画面をもう一度開いてください。</p><a href="/auth/register">ログイン・利用登録へ</a>',
           );
         if (error instanceof IdentityError && error.status === 401)
           return reply.redirect(
@@ -138,8 +138,8 @@ export async function playerDeviceRoutes(
         const page = await devices.list(userId, before);
         return authPage(
           reply,
-          "Museへのプレイ許可",
-          `<p>許可を解除すると、以後そのCLIから操作できなくなります。村民と履歴は残ります。</p>${page.items.map((d) => `<section><p>世界: ${escape(d.world_id)}<br>人物: ${escape(d.actor_id ?? "新規参加")}<br>接続: ${escape(d.user_code)}</p><form method="post" action="/auth/player"><input type="hidden" name="revoke" value="${d.id}">${csrf}<button>許可を解除する</button></form></section>`).join("")}${page.next ? `<a href="?before=${page.next}">次の許可へ</a>` : ""}`,
+          "AIへのプレイ許可",
+          `<p>許可を解除すると、そのAIは、この村民で遊べなくなります。村民と履歴は残ります。</p>${page.items.map((d) => `<section><p>世界: ${escape(d.world_id)}<br>人物: ${escape(d.actor_id ?? "新規参加")}<br>接続: ${escape(d.user_code)}</p><form method="post" action="/auth/player"><input type="hidden" name="revoke" value="${d.id}">${csrf}<button>許可を解除する</button></form></section>`).join("")}${page.next ? `<a href="?before=${page.next}">次の許可へ</a>` : ""}`,
         );
       }
       const device = await devices.pending(code);
@@ -153,7 +153,7 @@ export async function playerDeviceRoutes(
         return authPage(
           reply,
           "プレイを許可しました",
-          '<p>Museでstatusを実行してください。新規参加を選んだ場合はjoinで参加を始めます。</p><a href="/auth/player">許可を確認・解除する</a>',
+          '<p>AIとの会話に戻り、「できた」と伝えてください。続きの準備はAIが進めます。</p><a href="/auth/player">許可を確認・解除する</a>',
         );
       }
       const world = (
@@ -173,7 +173,7 @@ export async function playerDeviceRoutes(
         .filter((p) => p.actorId)
         .map(
           (p) =>
-            `<label><input type="radio" name="choice" value="actor:${p.actorId}" required>既存の人物 ${escape(p.actorId)}</label>`,
+            `<label><input type="radio" name="choice" value="actor:${p.actorId}" required title="${p.actorId}">続きから遊ぶ: ${escape(p.name ?? "名前のない村民")}</label>`,
         )
         .concat(
           presets.items.map(
@@ -183,8 +183,8 @@ export async function playerDeviceRoutes(
         );
       return authPage(
         reply,
-        "Museにプレイを許可する",
-        `<p>${escape(world.title || world.id)}</p><p>${escape(world.description)}</p><p>CLIの確認コードが <strong>${code}</strong> と一致することを確かめてください。</p><p>選んだ村民のプレイ・アイコン設定と、本人が知る履歴の取得を許可します。新規参加の場合、生成する1人に限ります。</p><form method="post" action="/auth/player">${csrf}<input type="hidden" name="code" value="${code}">${choices.join("<br>")}${choices.length ? "<button>この村民のプレイを許可する</button>" : "<p>選択できる人物・参加設定がありません。</p>"}</form>${people.next ? `<a href="?code=${code}&before=${people.next}${presetsBefore ? `&presetsBefore=${presetsBefore}` : ""}">次の人物へ</a>` : ""}${presets.next ? `<a href="?code=${code}&presetsBefore=${presets.next}${before ? `&before=${before}` : ""}">次の参加設定へ</a>` : ""}`,
+        "AIにプレイを許可する",
+        `<p>${escape(world.title || world.id)}</p><p>${escape(world.description)}</p><p>AIから届いた確認のことばが <strong>${code}</strong> と同じか確かめてください。</p><p>選んだ村民として遊び、顔の画像を変え、その村民が知っていることを読むのを許可します。新しく参加する場合は、その一人だけに許可します。</p><form method="post" action="/auth/player">${csrf}<input type="hidden" name="code" value="${code}">${choices.join("<br>")}${choices.length ? "<button>この村民のプレイを許可する</button>" : "<p>選択できる人物・参加設定がありません。</p>"}</form>${people.next ? `<a href="?code=${code}&before=${people.next}${presetsBefore ? `&presetsBefore=${presetsBefore}` : ""}">次の人物へ</a>` : ""}${presets.next ? `<a href="?code=${code}&presetsBefore=${presets.next}${before ? `&before=${before}` : ""}">次の参加設定へ</a>` : ""}`,
       );
     },
   );
