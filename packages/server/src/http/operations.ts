@@ -138,7 +138,7 @@ export class Operations {
     await this.authorize(userId);
     const rows = (
       await this.pool.query(
-        `SELECT c.id,c.public_title AS title,c.public_description AS description,c.accepting,
+        `SELECT c.id,c.public_title AS title,c.public_description AS description,c.player_settings AS "playerSettings",c.accepting,
       c.accepting AND c.published AND c.world_id IS NOT NULL AND c.state IN ('finished','playing','play_paused') AS "canJoin"
       FROM world_construction c WHERE ($2::uuid IS NULL OR c.id<$2) AND ($3::uuid IS NULL OR c.id=$3)
       AND (c.published OR EXISTS (SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id
@@ -705,6 +705,7 @@ export class Operations {
         return this.#access(context).create(actor!, {
           requestId,
           prompt: input.prompt,
+          playerSettings: input.playerSettings,
           budgetUsd: input.budgetUsd,
         });
       case "worlds.command":
@@ -986,14 +987,15 @@ export class Operations {
       case "worlds.configure": {
         const row = (
           await db.query(
-            `UPDATE world_construction SET public_title=$2,public_description=$3,published=$4,accepting=$5 WHERE id=$1
-          RETURNING id,public_title AS title,public_description AS description,published,accepting`,
+            `UPDATE world_construction SET public_title=$2,public_description=$3,published=$4,accepting=$5,player_settings=coalesce($6,player_settings) WHERE id=$1
+          RETURNING id,public_title AS title,public_description AS description,player_settings AS "playerSettings",published,accepting`,
             [
               input.worldId,
               input.title,
               input.description,
               input.published,
               input.accepting,
+              input.playerSettings ?? null,
             ],
           )
         ).rows[0];

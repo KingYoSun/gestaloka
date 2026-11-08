@@ -20,7 +20,7 @@ import type { LlmClient, ChatMessage } from "../llm/client.js";
 const Proposal = z
   .object({
     changes: Change,
-    playerId: z.uuid(),
+    playerId: z.uuid().nullable().default(null),
     rootIds: z.array(z.uuid()).min(1),
     report: z.string(),
   })
@@ -68,7 +68,7 @@ const Proposal = z
         .map((node) => node.id),
     );
     if (
-      !existences.has(proposal.playerId) ||
+      (proposal.playerId !== null && !existences.has(proposal.playerId)) ||
       proposal.rootIds.some((id) => !existences.has(id))
     )
       context.addIssue({

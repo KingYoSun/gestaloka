@@ -141,6 +141,7 @@ export const labels: Record<string, string> = {
   dependencies: "依存した版",
   changes: "世界への差分",
   prompt: "世界の初期設定",
+  playerSettings: "参加者の基本設定（参加する一人ひとりに適用）",
   command: "進行操作",
   durationMs: "進める期間（ミリ秒）",
   title: "名称",
@@ -404,7 +405,13 @@ export function Fields({
             </option>
           ))}
         </select>
-      ) : ["reason", "prompt", "description", "settings"].includes(name) ? (
+      ) : [
+          "reason",
+          "prompt",
+          "playerSettings",
+          "description",
+          "settings",
+        ].includes(name) ? (
         <Textarea
           id={id}
           value={String(value ?? "")}

@@ -9,6 +9,7 @@ import { ExecutionBudget } from "../execution-budget.js";
 import { SupersededWorker } from "./agent.js";
 import type { WorldConstruction } from "./construction.js";
 import { playerIcon } from "./player-icons.js";
+import { playerSettings } from "./player-settings.js";
 import type { PlayerCharacter, JoinWorld } from "@gestaloka/contracts";
 import { z } from "zod";
 
@@ -82,6 +83,7 @@ export class WorldPlayers {
         published: boolean;
         accepting: boolean;
         state: string;
+        player_settings: string;
       }>("SELECT * FROM world_construction WHERE id=$1 FOR SHARE", [
         input.worldId,
       ])
@@ -120,6 +122,16 @@ export class WorldPlayers {
         "PRESET_CHANGED",
         "プリセットを選び直してください",
       );
+    const approved =
+      world.player_settings && input.character !== undefined
+        ? (
+            await db.query(
+              "SELECT id FROM player_device WHERE id=$1 AND user_id=$2 AND character_approved AND NOT revoked AND character=$3",
+              [id, userId, input.character],
+            )
+          ).rowCount
+        : false;
+    const settings = input.character ?? preset!.settings;
     await db.query(
       "INSERT INTO world_subject(id,user_id) VALUES($1,$1) ON CONFLICT DO NOTHING",
       [userId],
@@ -131,7 +143,9 @@ export class WorldPlayers {
         at: Number(world.at),
         until: Number(world.at),
         rootIds: world.root_ids,
-        actionText: input.character ?? preset!.settings,
+        actionText: approved
+          ? settings
+          : playerSettings(world.player_settings, settings),
       },
       id,
       db,
