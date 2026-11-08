@@ -9,7 +9,7 @@ import { ExecutionBudget } from "../execution-budget.js";
 import { SupersededWorker } from "./agent.js";
 import type { WorldConstruction } from "./construction.js";
 import { playerIcon } from "./player-icons.js";
-import type { PlayerCharacter } from "@gestaloka/contracts";
+import type { PlayerCharacter, JoinWorld } from "@gestaloka/contracts";
 import { z } from "zod";
 
 export type CharacterEvidence = {
@@ -22,8 +22,8 @@ type JoinRow = {
   id: string;
   subject_id: string;
   construction_id: string;
-  preset_id: string;
-  preset_version: number;
+  preset_id: string | null;
+  preset_version: number | null;
   operation_id: string;
   state: "joining" | "ready" | "paused";
   actor_id: string | null;
@@ -48,6 +48,9 @@ export class WorldPlayers {
       CREATE TABLE IF NOT EXISTS world_player_icon (
       player_id uuid PRIMARY KEY, construction_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
       image text NOT NULL);`);
+    await this.pool.query(
+      "ALTER TABLE world_join ALTER COLUMN preset_id DROP NOT NULL, ALTER COLUMN preset_version DROP NOT NULL",
+    );
     await this.construction.queue.createQueue(this.queueName, {
       retryLimit: 2,
       retryDelay: 5,
@@ -66,7 +69,7 @@ export class WorldPlayers {
   async join(
     userId: string,
     id: string,
-    input: { worldId: string; presetId: string; presetVersion: number },
+    input: Omit<z.infer<typeof JoinWorld>, "operation">,
     db: pg.PoolClient,
   ) {
     await requireMember(db, userId);
@@ -99,13 +102,19 @@ export class WorldPlayers {
         "JOIN_CLOSED",
         "現在は参加を受け付けていません",
       );
-    const preset = (
-      await db.query<{ settings: string; version: number }>(
-        "SELECT settings,version FROM player_preset WHERE id=$1 FOR SHARE",
-        [input.presetId],
-      )
-    ).rows[0];
-    if (!preset || preset.version !== input.presetVersion)
+    const preset =
+      input.character !== undefined
+        ? undefined
+        : (
+            await db.query<{ settings: string; version: number }>(
+              "SELECT settings,version FROM player_preset WHERE id=$1 FOR SHARE",
+              [input.presetId],
+            )
+          ).rows[0];
+    if (
+      input.character === undefined &&
+      (!preset || preset.version !== input.presetVersion)
+    )
       throw new AccessError(
         409,
         "PRESET_CHANGED",
@@ -122,7 +131,7 @@ export class WorldPlayers {
         at: Number(world.at),
         until: Number(world.at),
         rootIds: world.root_ids,
-        actionText: preset.settings,
+        actionText: input.character ?? preset!.settings,
       },
       id,
       db,
@@ -133,8 +142,8 @@ export class WorldPlayers {
         id,
         userId,
         input.worldId,
-        input.presetId,
-        preset.version,
+        input.presetId ?? null,
+        preset?.version ?? null,
         operationId,
         world.at,
       ],

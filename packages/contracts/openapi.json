@@ -5563,6 +5563,82 @@
         }
       }
     },
+    "/api/player-cli/latest": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "string"
+                    },
+                    "node": {
+                      "type": "string"
+                    },
+                    "downloadUrl": {
+                      "type": "string",
+                      "format": "starts_with",
+                      "pattern": "^\\/.*"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "sizeBytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991
+                    },
+                    "setupUrl": {
+                      "type": "string",
+                      "format": "starts_with",
+                      "pattern": "^\\/.*"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "node",
+                    "downloadUrl",
+                    "sha256",
+                    "sizeBytes",
+                    "setupUrl"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/account": {
       "get": {
         "responses": {
@@ -8407,13 +8483,15 @@
                             "minimum": 0,
                             "exclusiveMinimum": true,
                             "maximum": 9007199254740991
+                          },
+                          "character": {
+                            "type": "string",
+                            "minLength": 1
                           }
                         },
                         "required": [
                           "operation",
-                          "worldId",
-                          "presetId",
-                          "presetVersion"
+                          "worldId"
                         ],
                         "additionalProperties": false
                       },
@@ -11434,6 +11512,15 @@
                   "secret": {
                     "type": "string",
                     "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "character": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "icon": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 6990508
                   }
                 },
                 "required": [
@@ -11684,6 +11771,9 @@
                       "minimum": 0,
                       "exclusiveMinimum": true,
                       "maximum": 9007199254740991
+                    },
+                    "character": {
+                      "type": "string"
                     },
                     "state": {
                       "type": "string",

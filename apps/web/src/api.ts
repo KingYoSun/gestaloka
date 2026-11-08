@@ -53,7 +53,9 @@ export const api = createFetchClient<paths>({
   headers: { "X-Gestaloka-Request": "1" },
   fetch: async (request: Request) => {
     const epoch = session.epoch,
-      protectedPath = new URL(request.url).pathname !== "/api/health";
+      protectedPath = !["/api/health", "/api/player-cli/latest"].includes(
+        new URL(request.url).pathname,
+      );
     if (session.error && protectedPath) throw new ScopeChanged();
     const response = await fetch(request);
     if (epoch !== session.epoch) throw new ScopeChanged();

@@ -9,6 +9,7 @@ import { operate } from "./operations-client.js";
 import { Notice, Problem } from "./presentation.js";
 import { Button } from "./components/ui/button.js";
 import { Textarea } from "./components/ui/textarea.js";
+import { AiParticipationInvitation } from "./ai-participation.js";
 import {
   Fields,
   formShape,
@@ -208,9 +209,11 @@ function Costs({ value }: { value: unknown }) {
 }
 function Results({
   data,
+  operation,
   onUse,
 }: {
   data: Values;
+  operation: Name;
   onUse?: ((v: Values) => void) | undefined;
 }) {
   return (
@@ -226,6 +229,9 @@ function Results({
           結果をコピー
         </Button>
       </div>
+      {operation === "invites.create" && typeof data.token === "string" && (
+        <AiParticipationInvitation invitation={data.token} />
+      )}
       {data.kind === "inspection-history" ||
       (data.manifest && data.measurement) ? (
         <InspectionResults value={data} onUse={onUse} />
@@ -596,6 +602,7 @@ function OperationForm({
       {data && Object.keys(data).length > 0 && (
         <Results
           data={data}
+          operation={name}
           {...(editAfterRead[name] || name === "inspection.history"
             ? {
                 onUse: (v: Values) =>

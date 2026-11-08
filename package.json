@@ -38,7 +38,7 @@
     "check": "pnpm generate:check && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build",
     "db:up": "docker compose up -d --wait",
     "db:stop": "docker compose stop",
-    "build:player-cli": "pnpm --filter @gestaloka/player-cli build"
+    "build:player-cli": "pnpm --filter @gestaloka/player-cli build && pnpm --filter @gestaloka/player-cli pack --pack-destination artifacts/player-cli && node scripts/player-release.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

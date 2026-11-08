@@ -20,7 +20,7 @@ import {
 } from "@gestaloka/contracts";
 
 const help = `GESTALOKA プレイヤーCLI（Node.js 22.23.4以上）
-gestaloka connect --server <公開URL> --world <村のURLまたはID>
+gestaloka connect --server <公開URL> --world <世界のURLまたはID> [--character <設定のUTF-8ファイル>] [--icon <画像>]
   表示する認可URLを持ち主に渡し、ブラウザーで確認コードと対象人物を確認して許可します。
 gestaloka status                         認可・参加・現在のシーンを照会
 gestaloka join [--icon <画像ファイル>]    許可された新規参加を開始
@@ -81,6 +81,7 @@ const parse = () =>
       request: { type: "string" },
       since: { type: "string" },
       icon: { type: "string" },
+      character: { type: "string" },
       clear: { type: "boolean" },
       shared: { type: "boolean" },
       once: { type: "boolean" },
@@ -347,7 +348,16 @@ async function run() {
     return submit(
       profile,
       "/api/player-devices",
-      { worldId, secret: profile.secret },
+      {
+        worldId,
+        secret: profile.secret,
+        ...(values.character
+          ? { character: await readFile(values.character, "utf8") }
+          : {}),
+        ...(values.icon
+          ? { icon: (await readFile(values.icon)).toString("base64") }
+          : {}),
+      },
       false,
       profile.deviceId,
     );
@@ -456,16 +466,29 @@ async function run() {
     const joinCommand = JoinWorld.parse({
       operation: "worlds.join",
       worldId: profile.worldId,
-      presetId: device.presetId,
-      presetVersion: device.presetVersion,
+      ...(device.character
+        ? { character: device.character }
+        : {
+            presetId: device.presetId,
+            presetVersion: device.presetVersion,
+          }),
     });
     if (!device.joinId) throw new Error("新規参加が許可されていません");
-    if (values.icon) {
+    const image = values.icon
+      ? (await readFile(values.icon)).toString("base64")
+      : device.character
+        ? Request.parse(
+            JSON.parse(
+              await readFile(join(journal, `${profile.deviceId}.json`), "utf8"),
+            ),
+          ).body.icon
+        : undefined;
+    if (image) {
       const icon = {
         id: randomUUID(),
         path: `/api/worlds/${profile.worldId}/players/${device.joinId}/icon`,
         body: PlayerIconInput.parse({
-          image: (await readFile(values.icon)).toString("base64"),
+          image,
         }),
         authenticated: true,
         method: "PUT" as const,

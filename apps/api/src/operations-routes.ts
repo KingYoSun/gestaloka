@@ -34,7 +34,12 @@ export async function operationsRoutes(
   const identities = new WeakMap<FastifyRequest, string>();
   const devices = new WeakMap<
     FastifyRequest,
-    { id: string; actor_id: string | null; preset_id: string | null }
+    {
+      id: string;
+      actor_id: string | null;
+      preset_id: string | null;
+      character_approved: boolean;
+    }
   >();
   app.addHook("onSend", async (request, reply, payload) => {
     const id = identities.get(request);
@@ -88,7 +93,7 @@ export async function operationsRoutes(
           ).items[0];
           if (
             !selected ||
-            (device.preset_id
+            (device.preset_id || device.character_approved
               ? selected.id !== device.id
               : selected.actorId !== device.actor_id)
           )
@@ -110,12 +115,14 @@ export async function operationsRoutes(
         command.operation === "worlds.join" &&
         requestId === device.id &&
         command.worldId === device.world_id &&
-        command.presetId === device.preset_id &&
-        command.presetVersion === device.preset_version;
+        (device.character_approved
+          ? command.character === device.character
+          : command.presetId === device.preset_id &&
+            command.presetVersion === device.preset_version);
       const resuming =
         command.operation === "worlds.resumeJoin" &&
         command.joinId === device.id &&
-        !!device.preset_id;
+        !!(device.preset_id || device.character_approved);
       if (!joining && !resuming)
         throw new AccessError(
           403,
@@ -286,7 +293,9 @@ export async function operationsRoutes(
         userId,
         request.params.id,
         request.query.before,
-        device?.preset_id ? device.id : undefined,
+        device && (device.preset_id || device.character_approved)
+          ? device.id
+          : undefined,
         device?.actor_id ?? undefined,
       );
     },
@@ -389,17 +398,28 @@ export async function operationsRoutes(
     reply: Parameters<typeof authPage>[0],
     error = "",
   ) => {
+    const { player, invitation } = z
+      .object({
+        player: z
+          .string()
+          .regex(/^[A-F0-9]{10}$/)
+          .optional(),
+        invitation: z.string().optional(),
+      })
+      .parse(request.method === "POST" ? request.body : request.query);
     const userId = await actor(request);
     const state = await service().state(userId);
+    if (player && state.member && !state.member.banned)
+      return reply.redirect(`/auth/player?code=${player}`);
     const status = state.member?.banned
       ? "<p>利用が停止されています。</p>"
       : state.member
         ? `<p>${state.member.role === "admin" ? "管理者として" : ""}利用登録済みです。</p><a href="/auth/claim">このブラウザーのデータを引き継ぐ</a>`
-        : `${state.bootstrapAvailable ? "<p>最初に利用登録した1人が管理者になります。その後は招待制になります。</p>" : state.inviteRequired ? "<p>利用登録には招待トークンが必要です。</p>" : "<p>利用登録できます。</p>"}<form method="post">${fields(request, reply, "/auth/register")}${state.bootstrapAvailable || !state.inviteRequired ? "" : '<label>招待トークン <input name="invitation" autocomplete="off" required></label>'}<button>利用登録する</button></form>`;
+        : `${state.bootstrapAvailable ? "<p>最初に利用登録した1人が管理者になります。その後は招待制になります。</p>" : state.inviteRequired ? (player && invitation ? "<p>招待を受け取っています。下の「利用登録する」を押してください。</p>" : "<p>利用登録には招待トークンが必要です。</p>") : "<p>利用登録できます。</p>"}<form method="post">${fields(request, reply, "/auth/register")}${player ? `<input type="hidden" name="player" value="${player}">` : ""}${state.bootstrapAvailable || !state.inviteRequired ? "" : player && invitation ? `<input type="hidden" name="invitation" value="${escapeHtml(invitation)}">` : '<label>招待トークン <input name="invitation" autocomplete="off" required></label>'}<button>利用登録する</button></form>`;
     return authPage(
       reply,
       "利用登録",
-      `<p>アプリID: ${escapeHtml(userId)}</p>${error ? `<p>${escapeHtml(error)}</p>` : ""}${status}`,
+      `${player ? "" : `<p>アプリID: ${escapeHtml(userId)}</p>`}${error ? `<p>${escapeHtml(error)}</p>` : ""}${status}`,
     );
   };
   const claimForm = async (
@@ -441,7 +461,7 @@ export async function operationsRoutes(
       } catch (error) {
         if (error instanceof IdentityError && error.status === 401)
           return reply.redirect(
-            `/auth/login?return_to=${encodeURIComponent(`${request.protocol}://${request.headers.host}${path}`)}`,
+            `/auth/login?return_to=${encodeURIComponent(`${request.protocol}://${request.headers.host}${request.url}`)}`,
           );
         throw error;
       }
@@ -452,6 +472,7 @@ export async function operationsRoutes(
         requestId?: string;
         invitation?: string;
         version?: string;
+        player?: string;
       };
     }>(path, { schema: { hide: true } }, async (request, reply) => {
       const { csrf, requestId, invitation, version } = request.body,
@@ -489,10 +510,24 @@ export async function operationsRoutes(
         );
       } catch (error) {
         if (error instanceof AccessError)
-          return render(request, reply.code(error.status), error.message);
+          return render(
+            request,
+            reply.code(error.status),
+            request.body.player && error.code === "INVITATION_REQUIRED"
+              ? "この招待では登録できませんでした。招待を送った人に確認してください。"
+              : error.message,
+          );
         throw error;
       }
-      return reply.redirect(path);
+      const player = request.body.player;
+      return reply.redirect(
+        path === "/auth/register" && player
+          ? `/auth/player?code=${z
+              .string()
+              .regex(/^[A-F0-9]{10}$/)
+              .parse(player)}`
+          : path,
+      );
     });
   }
 }

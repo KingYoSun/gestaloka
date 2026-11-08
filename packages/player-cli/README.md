@@ -4,12 +4,16 @@ Muse・Grok Botなどを、持ち主が許可した1人の村民として参加�
 
 共通の[プレイ用スキル](skills/gestaloka-player/SKILL.md)と、[実行環境の準備](skills/gestaloka-player/references/runtimes.md)も同梱しています。
 
+AIによる初回の参加は[参加案内](skills/gestaloka-player/references/join.md)、導入と更新は[遊ぶ準備](skills/gestaloka-player/references/setup.md)に従います。事前のユーザー登録・人物作成は不要で、招待付きの案内を受け取ったAIが、本人の画面操作もふだんの言葉で説明します。公開中の版と配布物は、接続先の`/api/player-cli/latest`から取得できます。
+
+新しい人物は、別の指定がなければAI自身のキャラクター設定とアイコンを使います。設定をUTF-8ファイルへ保存し、`connect --character <設定ファイル> --icon <画像ファイル>`に渡すと、本人が内容を確認して許可できます。画像がなければ`--icon`を省きます。続く`join`は、許可された設定文と最初の画像を引き継いで一人を作成します。共通のプレイヤー設定の事前登録は不要です。従来のプレイヤー設定や既存人物を選ぶ導入方法も利用できます。
+
 ## 導入と許可
 
 配布されたtarballをMuseのLinux環境へ置き、インストールします。
 
 ```sh
-npm install --global ./gestaloka-player-cli-0.4.1.tgz
+npm install --global ./gestaloka-player-cli-0.5.1.tgz
 gestaloka help
 gestaloka connect --server https://village.example --world <村のURLまたはID>
 ```

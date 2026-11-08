@@ -16,7 +16,14 @@ import {
   iconDraftKey,
 } from "./player-icons.js";
 
-const Request = z.object({ requestId: z.uuid(), command: JoinWorld });
+const Request = z.object({
+  requestId: z.uuid(),
+  command: z
+    .object(JoinWorld.shape)
+    .required({ presetId: true, presetVersion: true })
+    .omit({ character: true })
+    .strict(),
+});
 function Pages({
   before,
   next,

@@ -20,7 +20,8 @@ import { setupServer } from "msw/node";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { Operation } from "@gestaloka/contracts";
 import { App, createAppRouter } from "../../apps/web/src/App.js";
-import { resetSession } from "../../apps/web/src/api.js";
+import { resetSession, getSession } from "../../apps/web/src/api.js";
+import { userApp } from "../../apps/web/src/surface.js";
 import { catalog, userOperations } from "../../apps/web/src/admin-catalog.js";
 const A = "00000000-0000-4000-8000-000000000001";
 const json = (value: Record<string, unknown>, status = 200) =>
@@ -62,6 +63,65 @@ test("共通操作一覧は全て管理画面または本人の画面に対応�
   expect([...Object.keys(catalog), ...userOperations].sort()).toEqual(
     Operation.options.map((s) => s.shape.operation.value).sort(),
   );
+});
+
+test("ログインを維持して、発行した招待と公開中の資料を一つのAI向け案内にまとめる", async () => {
+  const copy = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", { clipboard: { writeText: copy } });
+  server.use(
+    http.get("*/api/player-cli/latest", () =>
+      HttpResponse.json({
+        version: "0.7.0",
+        node: "^24.22.1",
+        sha256: "a".repeat(64),
+        sizeBytes: 1,
+        downloadUrl: "/api/player-cli/download/cli.tgz",
+        setupUrl: "/api/player-cli/docs/0.7.0/setup.md",
+      }),
+    ),
+    http.post("*/api/operations", async ({ request }) => {
+      const body = (await request.json()) as { command: { operation: string } };
+      return json({
+        result:
+          body.command.operation === "invites.create"
+            ? { token: "private-invitation" }
+            : {},
+      });
+    }),
+  );
+  show("invites");
+  await choose("invites.create");
+  fireEvent.change(screen.getByLabelText("有効期限"), {
+    target: { value: "2030-01-01T12:00" },
+  });
+  fireEvent.change(screen.getByLabelText("利用可能回数"), {
+    target: { value: "1" },
+  });
+  fireEvent.change(screen.getByLabelText("操作の理由"), {
+    target: { value: "参加を案内する" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "内容を確認する" }));
+  fireEvent.click(screen.getByRole("button", { name: "この内容で実行する" }));
+  const button = await screen.findByRole("button", {
+    name: "AIに渡す参加案内をコピー",
+  });
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  fireEvent.change(screen.getByLabelText("参加する世界のページ"), {
+    target: {
+      value: "https://example.test/worlds/00000000-0000-4000-8000-000000000001",
+    },
+  });
+  fireEvent.submit(button.closest("form")!);
+  await waitFor(() => expect(copy).toHaveBeenCalledOnce());
+  const url = new URL(String(copy.mock.calls[0]![0]).split("\n").at(-1)!);
+  expect(url.origin).toBe(new URL(userApp).origin);
+  expect(url.pathname).toBe("/api/player-cli/docs/0.7.0/join.md");
+  expect(url.searchParams.get("world")).toBe(A);
+  expect(url.searchParams.has("invitation")).toBe(false);
+  expect(new URLSearchParams(url.hash.slice(1)).get("invitation")).toBe(
+    "private-invitation",
+  );
+  expect(getSession().id).toBe(A);
 });
 test("キーの応答喪失後は要求IDから復帰し、値をブラウザーに保存せず二重送信しない", async () => {
   let posts = 0,

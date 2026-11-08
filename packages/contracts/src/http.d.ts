@@ -2654,6 +2654,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/player-cli/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            version: string;
+                            node: string;
+                            /** Format: starts_with */
+                            downloadUrl: string;
+                            sha256: string;
+                            sizeBytes: number;
+                            /** Format: starts_with */
+                            setupUrl: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/account": {
         parameters: {
             query?: never;
@@ -3403,8 +3459,9 @@ export interface paths {
                             /** Format: uuid */
                             worldId: string;
                             /** Format: uuid */
-                            presetId: string;
-                            presetVersion: number;
+                            presetId?: string;
+                            presetVersion?: number;
+                            character?: string;
                         } | {
                             /** @enum {string} */
                             operation: "worlds.resumeJoin";
@@ -4722,6 +4779,8 @@ export interface paths {
                         /** Format: uuid */
                         worldId: string;
                         secret: string;
+                        character?: string;
+                        icon?: string | null;
                     };
                 };
             };
@@ -4866,6 +4925,7 @@ export interface paths {
                             /** Format: uuid */
                             presetId: string | null;
                             presetVersion: number | null;
+                            character?: string;
                             /** @enum {string} */
                             state: "authorization_pending" | "authorized" | "joining" | "paused" | "ready";
                         };
