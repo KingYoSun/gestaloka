@@ -95,6 +95,17 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
         accepting: true,
         reason: "試験",
       });
+      const presetId = randomUUID();
+      if (base)
+        await auth.operations.execute(admin.id, randomUUID(), {
+          operation: "presets.put",
+          presetId,
+          title: "汎用の人物設定",
+          description: "",
+          settings: "Webから参加する別の人物",
+          expectedVersion: 0,
+          reason: "試験",
+        });
       const invitation = await auth.operations.execute(admin.id, randomUUID(), {
         operation: "invites.create",
         maxUses: 1,
@@ -176,9 +187,10 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
       expect(new URL(page.url()).searchParams.get("code")).toBe(
         initial.userCode,
       );
+      await expect(page.getByRole("radio")).toHaveCount(0);
       await expect(
-        page.getByLabel("この人物を新しく作って参加する"),
-      ).toBeChecked();
+        page.getByText("汎用の人物設定", { exact: false }),
+      ).toHaveCount(0);
       await expect(page.getByText(settings, { exact: !base })).toBeVisible();
       if (base) await expect(page.getByText(base)).toBeVisible();
       const portrait = page.getByRole("img", {
@@ -289,18 +301,8 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
             "SELECT count(*)::int AS n FROM player_preset",
           )
         ).rows[0].n,
-      ).toBe(0);
+      ).toBe(base ? 1 : 0);
       if (base) {
-        const presetId = randomUUID();
-        await auth.operations.execute(admin.id, randomUUID(), {
-          operation: "presets.put",
-          presetId,
-          title: "個別設定",
-          description: "",
-          settings: "Webから参加する別の人物",
-          expectedVersion: 0,
-          reason: "試験",
-        });
         const webJoin = randomUUID();
         await auth.operations.execute(
           person.id,
