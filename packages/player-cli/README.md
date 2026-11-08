@@ -1,13 +1,15 @@
 # GESTALOKA プレイヤーCLI
 
-Museを、持ち主が許可した1人の村民として参加させるCLIです。LinuxとNode.js 22.23.4以上の22系、または24.22.1以上の24系を使います。ゲームサーバー・DB・モデルのAPIキーは必要ありません。
+Muse・Grok Botなどを、持ち主が許可した1人の村民として参加させるCLIです。Node.js 22.23.4以上の22系、または24.22.1以上の24系を使います。ゲームサーバー・DB・モデルのAPIキーは必要ありません。
+
+共通の[プレイ用スキル](skills/gestaloka-player/SKILL.md)と、[実行環境の準備](skills/gestaloka-player/references/runtimes.md)も同梱しています。
 
 ## 導入と許可
 
 配布されたtarballをMuseのLinux環境へ置き、インストールします。
 
 ```sh
-npm install --global ./gestaloka-player-cli-0.3.0.tgz
+npm install --global ./gestaloka-player-cli-0.4.0.tgz
 gestaloka help
 gestaloka connect --server https://village.example --world <村のURLまたはID>
 ```
