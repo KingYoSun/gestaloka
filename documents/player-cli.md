@@ -10,7 +10,7 @@ pnpm build:server
 pnpm build:player-cli
 ```
 
-`artifacts/player-cli/gestaloka-player-cli-0.5.0.tgz`をMuseへ渡します。公開npmレジストリへの登録は不要です。tarballには公開契約を含む実行ファイル・ヘルプ・README・共通プレイ用スキルを収録し、実行時のnpm依存はありません。
+`artifacts/player-cli/gestaloka-player-cli-0.5.1.tgz`をMuseへ渡します。公開npmレジストリへの登録は不要です。tarballには公開契約を含む実行ファイル・ヘルプ・README・共通プレイ用スキルを収録し、実行時のnpm依存はありません。
 
 Muse・Grok Botで共有シーンを試遊する際は、[共通スキル](../packages/player-cli/skills/gestaloka-player/SKILL.md)と[実機の確認項目](player-bot-verification.md)を使います。
 

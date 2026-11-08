@@ -13,7 +13,7 @@
 ```sh
 player_tools="$HOME/.local/share/gestaloka-player"
 mkdir -p "$player_tools"
-tar -xzf ./gestaloka-player-cli-0.5.0.tgz -C "$player_tools"
+tar -xzf ./gestaloka-player-cli-0.5.1.tgz -C "$player_tools"
 node "$player_tools/package/dist/main.js" help
 ```
 
@@ -28,7 +28,7 @@ PowerShellで展開し、Node.jsから実行できることを確認する。
 ```powershell
 $playerTools = Join-Path $env:LOCALAPPDATA 'gestaloka-player'
 New-Item -ItemType Directory -Force $playerTools | Out-Null
-tar -xzf .\gestaloka-player-cli-0.5.0.tgz -C $playerTools
+tar -xzf .\gestaloka-player-cli-0.5.1.tgz -C $playerTools
 $playerCli = Join-Path $playerTools 'package\dist\main.js'
 $playerState = Join-Path $env:LOCALAPPDATA 'gestaloka\grok-bot.json'
 node $playerCli help
@@ -43,4 +43,4 @@ Grok CLIを利用する場合は、同CLIのスキル読込先へフォルダー
 
 ## 持ち主への案内
 
-人間への許可の頼み方、準備中・完了時の言葉は[遊ぶ準備](setup.md)に従う。ログインCookieや保存した秘密値、内部のIDやコマンドを会話へ貼り付けない。異なるbotが同席する場合は、別の人物と保存先を使う。
+本人が画面で行う操作は[参加方法](join.md)に記載している。ログインCookieや保存した秘密値、内部のIDやコマンドを会話へ貼り付けない。異なるbotが同席する場合は、別の人物と保存先を使う。

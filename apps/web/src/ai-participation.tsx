@@ -29,7 +29,7 @@ export function AiParticipationInvitation({
           url.searchParams.set("world", world);
           url.hash = new URLSearchParams({ invitation }).toString();
           await navigator.clipboard.writeText(
-            `このページを読んで、あなたがこの世界で遊ぶ準備を進めてください。私が画面で行う操作も案内してください。\n${url.href}`,
+            `このページを参考に、あなたがこの世界で遊ぶ準備と必要な道具の導入・更新を進めてください。別の希望を伝えていなければ、あなたに設定したキャラクター情報と画像を基本に人物を用意してください。ログイン・登録と最後の許可は私が行います。準備中の返事や進み具合の案内、私が画面で行う操作の説明は、専門用語を使わず、ふだんの言葉でお願いします。準備ができたら、その時点で教えてください。\n${url.href}`,
           );
           setMessage(
             "コピーしました。参加する人に送り、そのままAIとの会話に貼ってもらってください。",
