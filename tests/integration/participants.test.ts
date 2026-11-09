@@ -86,8 +86,10 @@ const setup = await fixtureRuntime(scope, (content, raw) => {
   }
   if ((content as { type?: string }).type === "background") {
     const background = content as SceneBackground;
-    if (forceOther && input.request?.actorId === a)
+    if (forceOther && input.request?.actorId === a) {
+      forceOther = false;
       return { ...background, participants: [a, b] };
+    }
     if (
       input.request?.actorId === b &&
       JSON.stringify(input.initialContext).includes(mark)
@@ -675,12 +677,19 @@ test("他プレイヤーをNPCの登場主体にせず新たな意図を代行�
   ).scene!;
   const calls = vi.spyOn(runtime.agent.model, "complete");
   try {
-    await expect(access.scenes.tick(scene.id)).rejects.toThrow(
-      "他プレイヤーをNPC",
-    );
+    await access.scenes.tick(scene.id);
     expect((await access.scene(one, world, false, a)).scene!.state).toBe(
-      "paused",
+      "ready",
     );
+    expect(
+      (await access.scenes.latest(world, undefined, false, a))!.data.background!
+        .participants,
+    ).not.toContain(b);
+    const backgrounds = calls.mock.calls.filter(
+      (call) => call[1] === "scene-background",
+    );
+    expect(backgrounds).toHaveLength(2);
+    expect(JSON.stringify(backgrounds[1]![2])).toContain("他プレイヤーをNPC");
     expect(
       calls.mock.calls.filter((call) => call[1] === "scene-intent"),
     ).toHaveLength(0);

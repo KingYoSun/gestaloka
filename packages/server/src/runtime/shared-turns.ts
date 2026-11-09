@@ -25,6 +25,8 @@ type Control = {
   scene_id: string;
   flow: Flow;
   rounds: number;
+  inactive_until: Date | null;
+  resume_flow: Flow | null;
   continuation: { turn: SharedTurn; targets: string[] } | null;
   end_reason: SceneEnding | null;
 };
@@ -60,6 +62,8 @@ export class SharedTurns {
       ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS rounds integer NOT NULL DEFAULT 0;
       ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS continuation jsonb;
       ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS end_reason text;
+      ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS inactive_until timestamptz,
+        ADD COLUMN IF NOT EXISTS resume_flow text;
       CREATE TABLE IF NOT EXISTS world_scene_turn (
       id uuid PRIMARY KEY,scene_id uuid NOT NULL REFERENCES world_scene(id) ON DELETE CASCADE,
       actor_id uuid NOT NULL,kind text NOT NULL,command text NOT NULL,data jsonb NOT NULL,
@@ -87,7 +91,7 @@ export class SharedTurns {
   async control(scene: string, db: Db = this.pool, lock = false) {
     return (
       await db.query<Control>(
-        `SELECT scene_id,flow,rounds,continuation,end_reason FROM world_shared_scene WHERE scene_id=$1 ${lock ? "FOR UPDATE" : ""}`,
+        `SELECT scene_id,flow,rounds,continuation,end_reason,inactive_until,resume_flow FROM world_shared_scene WHERE scene_id=$1 ${lock ? "FOR UPDATE" : ""}`,
         [scene],
       )
     ).rows[0]!;
@@ -133,7 +137,7 @@ export class SharedTurns {
     reason: SceneEnding = "requested",
   ) {
     await db.query(
-      "UPDATE world_shared_scene SET flow='closing',continuation=NULL,end_reason=coalesce(end_reason,$2) WHERE scene_id=$1",
+      "UPDATE world_shared_scene SET flow='closing',continuation=NULL,inactive_until=NULL,resume_flow=NULL,end_reason=coalesce(end_reason,$2) WHERE scene_id=$1",
       [scene, reason],
     );
     await db.query(
@@ -234,7 +238,7 @@ export class SharedTurns {
       )
         throw fail("開始者が休止中のシーンを再開してください");
       await db.query(
-        "UPDATE world_shared_scene SET flow='open',rounds=0 WHERE scene_id=$1",
+        "UPDATE world_shared_scene SET flow='open',rounds=0,inactive_until=NULL,resume_flow=NULL WHERE scene_id=$1",
         [row.id],
       );
       await this.#continue(db, row);
@@ -475,10 +479,7 @@ export class SharedTurns {
         !(await this.shared.active(row.construction_id, actors, "bot", db))
           .length
       )
-        await db.query(
-          "UPDATE world_shared_scene SET flow='inactive' WHERE scene_id=$1",
-          [row.id],
-        );
+        await this.inactivate(db, row.id);
     }
     control = await this.control(row.id, db);
     if (
@@ -553,7 +554,9 @@ export class SharedTurns {
     );
     if (!expired && answers.length && answers.every((a) => a === true)) {
       await db.query(
-        "UPDATE world_shared_scene SET flow='open',rounds=0 WHERE scene_id=$1",
+        `UPDATE world_shared_scene SET rounds=0,
+        resume_flow=CASE WHEN flow='inactive' THEN 'open' ELSE resume_flow END,
+        flow=CASE WHEN flow='inactive' THEN flow ELSE 'open' END WHERE scene_id=$1`,
         [scene],
       );
       const row = (
@@ -572,7 +575,9 @@ export class SharedTurns {
       );
   }
   async #continue(db: pg.PoolClient, row: SceneRow) {
-    const continuation = (await this.control(row.id, db)).continuation;
+    const control = await this.control(row.id, db),
+      continuation = control.continuation;
+    if (control.flow !== "open") return;
     if (!continuation) return;
     await db.query(
       "UPDATE world_shared_scene SET continuation=NULL WHERE scene_id=$1",
@@ -606,6 +611,22 @@ export class SharedTurns {
       await this.#vote(db, row.id, v.id);
   }
 
+  async inactivate(db: pg.PoolClient, scene: string) {
+    const control = await this.control(scene, db, true);
+    if (["closing", "rounds"].includes(control.flow) || control.inactive_until)
+      return;
+    const deadline = new Date(this.shared.now().getTime() + 10 * 60 * 1000);
+    await db.query(
+      "UPDATE world_shared_scene SET flow='inactive',inactive_until=$2,resume_flow=$3 WHERE scene_id=$1",
+      [scene, deadline, control.flow === "inactive" ? "open" : control.flow],
+    );
+    await this.shared.schedule(
+      db,
+      `inactive:${scene}`,
+      { inactiveSceneId: scene },
+      deadline,
+    );
+  }
   async unavailable(db: pg.PoolClient, world: string, actor: string) {
     await this.shared.lock(db, world);
     if (
@@ -633,11 +654,8 @@ export class SharedTurns {
       )
         continue;
       const control = await this.control(row.id, db, true);
-      if (control.flow === "closing" || control.flow === "rounds") continue;
-      await db.query(
-        "UPDATE world_shared_scene SET flow='inactive' WHERE scene_id=$1",
-        [row.id],
-      );
+      if (["closing", "rounds"].includes(control.flow)) continue;
+      await this.inactivate(db, row.id);
       await db.query(
         `UPDATE world_scene SET state='paused',claim=NULL,data=jsonb_set(data,'{resumeState}','"active"'::jsonb) WHERE id=$1 AND state='active'`,
         [row.id],
@@ -648,10 +666,60 @@ export class SharedTurns {
     }
   }
   async available(db: pg.PoolClient, world: string, actor: string) {
+    await this.shared.lock(db, world);
     await db.query(
       "UPDATE world_scene_absence a SET through_event=jsonb_array_length(s.data->'events') FROM world_scene s WHERE a.scene_id=s.id AND s.construction_id=$1 AND a.actor_id=$2 AND a.through_event IS NULL",
       [world, actor],
     );
+    for (const row of (
+      await db.query<SceneRow>(
+        `SELECT s.* FROM world_scene s JOIN world_shared_scene h ON h.scene_id=s.id
+      JOIN world_scene_member m ON m.scene_id=s.id WHERE m.world_id=$1 AND m.actor_id=$2 AND m.state='joined'
+      AND h.flow='inactive' AND s.state IN ('active','acting','paused')`,
+        [world, actor],
+      )
+    ).rows) {
+      if (await this.#endInactive(db, row.id)) continue;
+      await db.query(
+        "UPDATE world_shared_scene SET flow=coalesce(resume_flow,'open'),inactive_until=NULL,resume_flow=NULL WHERE scene_id=$1",
+        [row.id],
+      );
+      if (
+        row.data.error ||
+        (row.state === "paused" && row.data.resumeState !== "active")
+      )
+        continue;
+      await db.query(
+        "UPDATE world_scene SET state='acting',claim=NULL WHERE id=$1 AND state='paused'",
+        [row.id],
+      );
+      await this.#continue(db, row);
+      await this.shared.wake(db, row.id);
+    }
+  }
+  async expireInactivity(scene: string) {
+    const shared = await this.shared.get(scene);
+    if (!shared) return;
+    await this.shared.transaction(async (db) => {
+      await this.shared.lock(db, shared.world_id);
+      await this.#endInactive(db, scene);
+    });
+  }
+  async #endInactive(db: pg.PoolClient, scene: string) {
+    const control = await this.control(scene, db, true);
+    if (
+      control.flow !== "inactive" ||
+      !control.inactive_until ||
+      control.inactive_until > this.shared.now()
+    )
+      return false;
+    await this.#close(db, scene, "dissolved");
+    await db.query(
+      "UPDATE world_scene SET state='acting',claim=NULL WHERE id=$1 AND state IN ('active','paused') AND data->>'error' IS NULL",
+      [scene],
+    );
+    await this.shared.wake(db, scene);
+    return true;
   }
   async expire(data: { waveId?: string; proposalId?: string }) {
     const table = data.waveId ? "world_scene_wave" : "world_scene_end_vote",
@@ -674,7 +742,8 @@ export class SharedTurns {
       if (data.waveId) await this.#flush(db, item);
       else await this.#vote(db, item.scene_id, id, true);
       await db.query(
-        "UPDATE world_scene SET state='acting',claim=NULL WHERE id=$1 AND state='active'",
+        `UPDATE world_scene SET state='acting',claim=NULL WHERE id=$1 AND (state='active' OR
+        (state='paused' AND data->>'error' IS NULL AND EXISTS(SELECT 1 FROM world_shared_scene h WHERE h.scene_id=$1 AND h.flow='closing')))`,
         [item.scene_id],
       );
       await this.shared.wake(db, item.scene_id);

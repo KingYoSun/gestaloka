@@ -90,6 +90,15 @@ export class SharedScenes {
       expireInSeconds: 900,
       heartbeatSeconds: 30,
     });
+    for (const row of (
+      await this.pool.query<{ scene_id: string; world_id: string }>(
+        "SELECT scene_id,world_id FROM world_shared_scene WHERE flow='inactive' AND inactive_until IS NULL",
+      )
+    ).rows)
+      await this.transaction(async (db) => {
+        await this.lock(db, row.world_id);
+        await this.turns.inactivate(db, row.scene_id);
+      });
   }
   async transaction<T>(work: (db: pg.PoolClient) => Promise<T>) {
     const db = await this.pool.connect();
@@ -601,10 +610,13 @@ export class SharedScenes {
   }
   async expire(data: {
     connectionId?: string;
+    inactiveSceneId?: string;
     sceneId?: string;
     waveId?: string;
     proposalId?: string;
   }) {
+    if (data.inactiveSceneId)
+      return this.turns.expireInactivity(data.inactiveSceneId);
     if (data.waveId || data.proposalId) return this.turns.expire(data);
     return this.transaction(async (db) => {
       if (data.connectionId) {
@@ -637,6 +649,7 @@ export class SharedScenes {
   async work() {
     await this.construction.queue.work<{
       connectionId?: string;
+      inactiveSceneId?: string;
       sceneId?: string;
       waveId?: string;
       proposalId?: string;

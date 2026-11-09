@@ -983,7 +983,7 @@ async function pauseNotice(scene: string) {
 
 test("Webの人間がいる場合は5往復で自動応答を止め、新規入力で計数を戻す", async () => {
   const scene = await sharedGame(0, false);
-  await humanPresence(0);
+  const human = await humanPresence(0);
   playback = alternateBots;
   try {
     await cli.run(people[1]!.profile, "act", "--text", "相手に働きかける");
@@ -998,6 +998,14 @@ test("Webの人間がいる場合は5往復で自動応答を止め、新規入�
     await pauseNotice(scene);
     const calls = vi.spyOn(runtime.agent.model, "complete");
     await access.scenes.tick(scene);
+    await humanPresence(0, false, human);
+    for (let i = 0; i < people.length; i++) await presence(i, false);
+    await presence(1);
+    await access.scenes.tick(scene);
+    expect(await access.scenes.shared.turns.control(scene)).toMatchObject({
+      flow: "manual",
+      rounds: 5,
+    });
     expect(calls).not.toHaveBeenCalled();
     calls.mockRestore();
     for (const person of people)
@@ -1620,7 +1628,7 @@ test.each([true, false])(
   120000,
 );
 
-test("全員切断は退出を作らず保存して休止し、同じ反応機会から再開できる", async () => {
+test("全員切断は退出を作らず保存し、開始者以外の再接続で同じ反応機会へ自動復帰する", async () => {
   const scene = await sharedGame(0, false),
     owner = people[0]!,
     peer = people[1]!;
@@ -1656,10 +1664,11 @@ test("全員切断は退出を作らず保存して休止し、同じ反応機�
     expect(calls).not.toHaveBeenCalled();
     expect((await runtime.get(world)).at).toBe(at);
     calls.mockRestore();
-    await presence(0);
     await presence(1);
-    await cli.run(owner.profile, "resume");
+    await presence(1, false);
+    await presence(1);
     await access.scenes.tick(scene);
+    expect((await access.scenes.shared.turns.control(scene)).flow).toBe("open");
     expect(
       (await cli.run(peer.profile, "inbox")).opportunities.some(
         (o: { id: string }) => o.id === pending.id,
@@ -1677,6 +1686,125 @@ test("全員切断は退出を作らず保存して休止し、同じ反応機�
     expect((await cli.run(owner.profile, "result")).state).toBe("finished");
   } finally {
     playback = undefined;
+  }
+}, 120000);
+
+test.each(["deadline", "reconnect"])(
+  "全員切断の10分後は%sでも終了し、再接続前の期限では終了しない",
+  async (trigger) => {
+    const scene = await sharedGame(0, false),
+      owner = people[0]!,
+      peer = people[1]!,
+      start = access.scenes.shared.now().getTime(),
+      now = vi
+        .spyOn(access.scenes.shared, "now")
+        .mockReturnValue(new Date(start));
+    playback = (input) => playStep(input, [peer.actor]);
+    try {
+      await cli.run(owner.profile, "act", "--text", "返答を待つ");
+      await access.scenes.tick(scene);
+      const before = (await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        owner.actor,
+      ))!;
+      for (let i = 0; i < people.length; i++) await presence(i, false);
+      await isolated.databases.postgres.query(
+        "UPDATE world_shared_scene SET inactive_until=NULL,resume_flow=NULL WHERE scene_id=$1",
+        [scene],
+      );
+      await access.scenes.shared.setup();
+      const first = (await access.scenes.shared.turns.control(scene))
+        .inactive_until!;
+      expect(first.getTime()).toBe(start + 600000);
+      now.mockReturnValue(new Date(start + 300000));
+      await access.scenes.shared.setup();
+      expect(
+        (await access.scenes.shared.turns.control(scene)).inactive_until,
+      ).toEqual(first);
+      await presence(1);
+      await access.scenes.tick(scene);
+      expect(
+        (await access.scenes.shared.turns.control(scene)).inactive_until,
+      ).toBeNull();
+      await presence(1, false);
+      const second = (await access.scenes.shared.turns.control(scene))
+        .inactive_until!;
+      expect(second.getTime()).toBe(start + 900000);
+      const calls = vi.spyOn(runtime.agent.model, "complete");
+      for (const time of [first.getTime(), second.getTime() - 1]) {
+        now.mockReturnValue(new Date(time));
+        await access.scenes.shared.expire({ inactiveSceneId: scene });
+        await access.scenes.tick(scene);
+        expect((await access.scenes.shared.turns.control(scene)).flow).toBe(
+          "inactive",
+        );
+      }
+      expect(calls).not.toHaveBeenCalled();
+      calls.mockRestore();
+      now.mockReturnValue(second);
+      if (trigger === "deadline")
+        await access.scenes.shared.expire({ inactiveSceneId: scene });
+      else await presence(1);
+      await access.scenes.tick(scene);
+      const result = (await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        owner.actor,
+      ))!;
+      expect(result.state).toBe("result");
+      expect(result.data.ending).toBe("dissolved");
+      expect(result.data.events).toEqual(before.data.events);
+      expect(result.data.departures).toBeUndefined();
+      const callsAfter = vi.spyOn(runtime.agent.model, "complete");
+      await access.scenes.shared.expire({ inactiveSceneId: scene });
+      await presence(1);
+      await access.scenes.tick(scene);
+      expect(callsAfter).not.toHaveBeenCalled();
+      callsAfter.mockRestore();
+    } finally {
+      now.mockRestore();
+      playback = undefined;
+    }
+  },
+  120000,
+);
+
+test("再接続は接続の休止だけを解除し、別の理由で保留した生成を動かさない", async () => {
+  const scene = await sharedGame(0, false);
+  for (let i = 0; i < people.length; i++) await presence(i, false);
+  await isolated.databases.postgres.query(
+    `UPDATE world_scene SET data=data || '{"error":"呼出し上限","limitReached":true}'::jsonb WHERE id=$1`,
+    [scene],
+  );
+  const calls = vi.spyOn(runtime.agent.model, "complete");
+  try {
+    await presence(1);
+    await access.scenes.tick(scene);
+    const row = (await access.scenes.latest(
+      world,
+      undefined,
+      false,
+      people[0]!.actor,
+    ))!;
+    expect(row.state).toBe("paused");
+    expect(row.data.error).toBe("呼出し上限");
+    expect(row.data.limitReached).toBe(true);
+    expect(
+      (await access.scenes.shared.turns.control(scene)).inactive_until,
+    ).toBeNull();
+    expect(calls).not.toHaveBeenCalled();
+  } finally {
+    calls.mockRestore();
+    await isolated.databases.postgres.query(
+      "UPDATE world_scene SET data=data-'error'-'limitReached' WHERE id=$1",
+      [scene],
+    );
+    await cli.run(people[0]!.profile, "resume");
+    await cli.run(people[0]!.profile, "finish");
+    await access.scenes.tick(scene);
   }
 }, 120000);
 
