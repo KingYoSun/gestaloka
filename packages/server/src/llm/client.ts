@@ -529,7 +529,10 @@ export class LlmClient {
                 "initial-commit",
               ].includes(role),
             ["intent", "scene-intent"].includes(role),
-            provider === "anthropic",
+            provider === "anthropic" ||
+              (provider === "openai" &&
+                api === "responses" &&
+                ["scene-background", "world-update"].includes(role)),
           )
         : undefined;
     const rendered = prompt
