@@ -359,6 +359,57 @@ test("空の関係取得後の追加を検出し、古い文脈による確定�
   expect(await store.receipt(worldId, commitId)).toBeUndefined();
 });
 
+test("同じ履歴を観測と再利用しても区間を混同せず、追加後の読取と確定は競合する", async () => {
+  const { worldId, lease } = await world(),
+    actor = node("existence", "観測者"),
+    target = node("existence", "対象"),
+    sight = {
+      ...edge("see", actor, target),
+      text: "見えた範囲の記録",
+      period: { from: 1, until: 2 },
+    };
+  const receipt = await store.commit(lease, store.context(worldId), {
+    commitId: randomUUID(),
+    at: 1,
+    changes: changes([actor, target], [sight]),
+  });
+  const recorded = receipt.changes.edges[0]!;
+  const read = store.context(worldId);
+  expect((await read.observations(actor.id, 10)).map((o) => o.edge)).toEqual([
+    recorded,
+  ]);
+  expect(await read.history(actor.id, "see", "out", 10)).toEqual([recorded]);
+  expect(await read.history(actor.id, "see", "out", 10, 2)).toEqual([]);
+  expect(await read.history(actor.id, "see", "out", 0)).toEqual([]);
+  await store.commit(lease, store.context(worldId), {
+    commitId: randomUUID(),
+    at: 3,
+    changes: changes(
+      [],
+      [
+        {
+          ...edge("see", actor, target),
+          text: "別の時点の受容",
+          period: { from: 3 },
+        },
+      ],
+    ),
+  });
+  await expect(read.history(actor.id, "see", "out", 10)).rejects.toBeInstanceOf(
+    WorldConflict,
+  );
+  await expect(
+    store.commit(lease, read, {
+      commitId: randomUUID(),
+      at: 4,
+      changes: changes(),
+    }),
+  ).rejects.toBeInstanceOf(WorldConflict);
+  expect(
+    await store.context(worldId).history(actor.id, "see", "out", 10),
+  ).toHaveLength(2);
+});
+
 test("見つからなかったノードの追加と、同一文脈の異なる版の混在を検出する", async () => {
   const { worldId, lease } = await world();
   const missing = node("existence", "未記録だった人");

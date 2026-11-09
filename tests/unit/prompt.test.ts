@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { z } from "zod";
+import { expandPrompt } from "../support/expand-prompt.js";
 import {
   preparePrompt,
   compact,
@@ -85,27 +86,7 @@ test("重複したグラフと観測を参照へ置換し、期間・来歴・�
     values: Record<string, unknown>;
     context: unknown;
   };
-  const expand = (v: unknown): unknown => {
-    if (Array.isArray(v)) return v.map(expand);
-    if (v && typeof v === "object") {
-      if ("$ref" in v) {
-        const key = String(v.$ref);
-        const item = expand(packed.values[key]);
-        return item &&
-          typeof item === "object" &&
-          !Array.isArray(item) &&
-          "kind" in item &&
-          !("id" in item)
-          ? { id: key, ...item }
-          : item;
-      }
-      return Object.fromEntries(
-        Object.entries(v).map(([k, x]) => [k, expand(x)]),
-      );
-    }
-    return v;
-  };
-  expect(expand(packed.context)).toEqual(input);
+  expect(expandPrompt(packed.context, packed.values)).toEqual(input);
   expect(JSON.stringify(packed).length).toBeLessThan(
     JSON.stringify(input).length,
   );
@@ -176,31 +157,12 @@ test("キャッシュ境界で分割しても単一のJSONを復元でき、履�
     records: Record<string, unknown>;
     [key: string]: unknown;
   };
-  const expand = (v: unknown): unknown => {
-    if (Array.isArray(v)) return v.map(expand);
-    if (v && typeof v === "object") {
-      if ("$ref" in v) {
-        const key = String(v.$ref);
-        const item = expand(packet.records[key]);
-        return item &&
-          typeof item === "object" &&
-          !Array.isArray(item) &&
-          "kind" in item &&
-          !("id" in item)
-          ? { id: key, ...item }
-          : item;
-      }
-      return Object.fromEntries(
-        Object.entries(v).map(([k, x]) => [k, expand(x)]),
-      );
-    }
-    return v;
-  };
   expect(
-    expand(
+    expandPrompt(
       Object.fromEntries(
         Object.entries(packet).filter(([key]) => key !== "records"),
       ),
+      packet.records,
     ),
   ).toEqual(original);
   expect(

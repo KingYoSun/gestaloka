@@ -4,6 +4,8 @@ import { z } from "zod";
 import { connectDatabases } from "@gestaloka/server";
 import { BudgetUnavailable, llmApiKey } from "@gestaloka/server/llm";
 import { createCountedClient } from "../support/token-counting.js";
+import { expandPrompt } from "../support/expand-prompt.js";
+import { canonical } from "../../packages/server/src/llm/prompt.js";
 
 const databases = connectDatabases();
 const budgets: string[] = [];
@@ -38,6 +40,101 @@ const response = () =>
       },
     }),
   );
+
+test("OpenAI Responsesへ同じ記録を一度だけ送り、旧保存要求は再送せず再利用する", async () => {
+  const config = {
+    ...environment(),
+    LLM_PROVIDER: "openai",
+    LLM_MODEL: "gpt-6.1-terra",
+    LLM_API: "responses",
+    OPENAI_API_KEY: "unused",
+  };
+  const transport = vi.fn<typeof fetch>().mockImplementation(async () =>
+    Response.json({
+      id: randomUUID(),
+      model: config.LLM_MODEL,
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          content: [{ type: "output_text", text: '{"connected":true}' }],
+        },
+      ],
+      usage: { input_tokens: 20, output_tokens: 3 },
+    }),
+  );
+  const client = createCountedClient(databases.postgres, config, transport);
+  await client.ledger.setup();
+  const edge = {
+    id: randomUUID(),
+    kind: "see",
+    source: randomUUID(),
+    target: randomUUID(),
+    text: "受容した範囲を限定した長い記述。".repeat(100),
+    period: { from: 1, until: 4 },
+  };
+  const original = {
+    initialContext: [
+      { observations: [{ edge, sourceChanged: false, timeAdvanced: true }] },
+      { history: [edge] },
+    ],
+    request: { at: 5 },
+  };
+  const messages = [
+    { role: "system" as const, content: "JSONで返す" },
+    {
+      role: "user" as const,
+      content: JSON.stringify({
+        ...original,
+        responseSchema: z.toJSONSchema(
+          z.object({ connected: z.boolean() }).strict(),
+        ),
+      }),
+    },
+  ];
+  const id = randomUUID(),
+    completion = await client.complete(id, "scene-background", messages);
+  const request = JSON.parse(String(transport.mock.calls[0]![1]!.body));
+  const user = request.input.find((m: { role: string }) => m.role === "user");
+  const packet = JSON.parse(
+    Array.isArray(user.content)
+      ? user.content.map((b: { text: string }) => b.text).join("")
+      : user.content,
+  );
+  const { records, ...context } = packet;
+  expect(expandPrompt(context, records)).toEqual(original);
+  expect(
+    Object.values(records).filter(
+      (v: unknown) =>
+        v && typeof v === "object" && "id" in v && v.id === edge.id,
+    ),
+  ).toHaveLength(1);
+  const frozen = (await client.ledger.input(id)) as {
+    request: Record<string, unknown>;
+    sourceMessages: typeof messages;
+  };
+  const old = {
+    ...frozen,
+    request: {
+      ...frozen.request,
+      input: messages,
+    },
+  };
+  await databases.postgres.query(
+    "UPDATE llm_call SET request=$2,hash=$3 WHERE id=$1",
+    [id, old, createHash("sha256").update(canonical(old)).digest("hex")],
+  );
+  const calls = transport.mock.calls.length;
+  expect(
+    await createCountedClient(databases.postgres, config, transport).complete(
+      id,
+      "scene-background",
+      messages,
+    ),
+  ).toEqual(completion);
+  expect(transport).toHaveBeenCalledTimes(calls);
+  expect(await client.ledger.input(id)).toEqual(old);
+});
 
 test.each([
   "scene-result",

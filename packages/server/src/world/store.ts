@@ -63,6 +63,7 @@ async function lock(tx: ManagedTransaction, worldId: string, key: string) {
 
 export class WorldContext {
   readonly #dependencies = new Map<string, number>();
+  readonly #histories = new Map<string, WorldEdge[]>();
   constructor(
     readonly driver: Driver,
     readonly worldId: string,
@@ -265,9 +266,12 @@ export class WorldContext {
     z.enum(["in", "out"]).parse(direction);
     z.number().int().nonnegative().safe().parse(from);
     z.number().int().min(from).safe().parse(through);
+    const cacheKey = JSON.stringify([id, kind, direction, through, from, page]);
     const stored = await this.#read(
       relationKey(id, kind, direction),
       async (tx) => {
+        const cached = this.#histories.get(cacheKey);
+        if (cached) return cached;
         const pattern =
           direction === "out" ? `(n)-[r:${kind}]->()` : `(n)<-[r:${kind}]-()`;
         const result = await tx.run(
@@ -285,9 +289,11 @@ export class WorldContext {
             limit: int(page?.limit ?? 51),
           },
         );
-        return result.records.map((row) =>
+        const edges = result.records.map((row) =>
           WorldEdge.parse(JSON.parse(row.get("data"))),
         );
+        this.#histories.set(cacheKey, edges);
+        return edges;
       },
     );
     return this.#merge(
