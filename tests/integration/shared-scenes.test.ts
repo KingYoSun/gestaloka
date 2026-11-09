@@ -1146,24 +1146,48 @@ test.each(["end", "mixed", "timeout", "continue", "interrupt"] as const)(
       }
       await access.scenes.tick(scene);
       if (answer === "continue") {
-        for (let i = 0; i < 10; i++) await replyRound(scene);
+        let prior = proposal.id;
+        for (let cycle = 0; cycle < 2; cycle++) {
+          for (let i = 0; i < 10; i++) await replyRound(scene);
+          expect(
+            (await cli.run(people[0]!.profile, "status")).scene,
+          ).toMatchObject({
+            state: "active",
+            shared: { rounds: 10, flow: "voting" },
+          });
+          const next = (
+            await cli.run(people[0]!.profile, "inbox")
+          ).proposals.find((p: { sceneId: string }) => p.sceneId === scene);
+          expect(next.id).not.toBe(prior);
+          const stopped = vi.spyOn(runtime.agent.model, "complete");
+          await access.scenes.tick(scene);
+          expect(stopped).not.toHaveBeenCalled();
+          stopped.mockRestore();
+          for (const person of people)
+            await cli.run(
+              person.profile,
+              "vote",
+              "--proposal",
+              next.id,
+              "--continue",
+            );
+          await access.scenes.tick(scene);
+          expect(await access.scenes.shared.turns.control(scene)).toMatchObject(
+            {
+              rounds: 0,
+              flow: "open",
+            },
+          );
+          prior = next.id;
+        }
         expect(
-          (await cli.run(people[0]!.profile, "status")).scene,
-        ).toMatchObject({
-          state: "paused",
-          shared: { rounds: 20, flow: "rounds" },
-        });
-        await pauseNotice(scene);
-        const stopped = vi.spyOn(runtime.agent.model, "complete");
-        await access.scenes.tick(scene);
-        expect(stopped).not.toHaveBeenCalled();
-        stopped.mockRestore();
-        await cli.run(people[0]!.profile, "resume");
-        await access.scenes.tick(scene);
-        expect(await access.scenes.shared.turns.control(scene)).toMatchObject({
-          rounds: 0,
-          flow: "open",
-        });
+          (
+            await isolated.databases.postgres.query(
+              "SELECT id FROM world_scene_notice WHERE scene_id=$1 AND kind='paused'",
+              [scene],
+            )
+          ).rows,
+        ).toEqual([]);
         await cli.run(people[0]!.profile, "finish");
         await access.scenes.tick(scene);
       }

@@ -8,6 +8,8 @@ import type { WorldProposal } from "./agent.js";
 import type { Construction } from "./construction.js";
 import { randomUUID } from "node:crypto";
 
+export class SceneResponseError extends Error {}
+
 const id = z.uuid(),
   text = z.string().min(1);
 const Fact = z
@@ -189,7 +191,9 @@ export function sceneArrivals(
       receipt.observerId === actorId ||
       !participants.includes(receipt.observerId)
     )
-      throw new Error("到達の参照先・受容者・時点がシーンと一致しません");
+      throw new SceneResponseError(
+        "到達の参照先・受容者・時点がシーンと一致しません",
+      );
     const key = `${eventIndex}:${receipt.observerId}`;
     if (seen.has(key)) continue;
     seen.add(key);

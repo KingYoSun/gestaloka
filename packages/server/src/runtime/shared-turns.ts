@@ -25,7 +25,6 @@ type Control = {
   scene_id: string;
   flow: Flow;
   rounds: number;
-  allowance: number;
   continuation: { turn: SharedTurn; targets: string[] } | null;
   end_reason: SceneEnding | null;
 };
@@ -51,7 +50,6 @@ export class SharedTurns {
   readonly replyMs = Number(process.env.SCENE_REACTION_SECONDS ?? 60) * 1000;
   readonly humanRounds = Number(process.env.SCENE_HUMAN_ROUNDS ?? 5);
   readonly botRounds = Number(process.env.SCENE_BOT_ROUNDS ?? 10);
-  readonly extraRounds = Number(process.env.SCENE_EXTRA_ROUNDS ?? 10);
   constructor(readonly shared: SharedScenes) {}
   get pool() {
     return this.shared.pool;
@@ -60,7 +58,6 @@ export class SharedTurns {
     await this.pool
       .query(`ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS flow text NOT NULL DEFAULT 'open';
       ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS rounds integer NOT NULL DEFAULT 0;
-      ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS allowance integer NOT NULL DEFAULT 10;
       ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS continuation jsonb;
       ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS end_reason text;
       CREATE TABLE IF NOT EXISTS world_scene_turn (
@@ -90,7 +87,7 @@ export class SharedTurns {
   async control(scene: string, db: Db = this.pool, lock = false) {
     return (
       await db.query<Control>(
-        `SELECT scene_id,flow,rounds,allowance,continuation,end_reason FROM world_shared_scene WHERE scene_id=$1 ${lock ? "FOR UPDATE" : ""}`,
+        `SELECT scene_id,flow,rounds,continuation,end_reason FROM world_shared_scene WHERE scene_id=$1 ${lock ? "FOR UPDATE" : ""}`,
         [scene],
       )
     ).rows[0]!;
@@ -237,8 +234,8 @@ export class SharedTurns {
       )
         throw fail("開始者が休止中のシーンを再開してください");
       await db.query(
-        "UPDATE world_shared_scene SET flow='open',rounds=0,allowance=$2 WHERE scene_id=$1",
-        [row.id, this.botRounds],
+        "UPDATE world_shared_scene SET flow='open',rounds=0 WHERE scene_id=$1",
+        [row.id],
       );
       await this.#continue(db, row);
     } else {
@@ -275,8 +272,8 @@ export class SharedTurns {
           [row.id],
         );
         await db.query(
-          "UPDATE world_shared_scene SET rounds=0,flow='open',allowance=$2,continuation=NULL WHERE scene_id=$1",
-          [row.id, this.botRounds],
+          "UPDATE world_shared_scene SET rounds=0,flow='open',continuation=NULL WHERE scene_id=$1",
+          [row.id],
         );
       }
     }
@@ -301,8 +298,8 @@ export class SharedTurns {
     if (!task) return null;
     if (task.kind === "human" && task.command !== "reply")
       await db.query(
-        "UPDATE world_shared_scene SET rounds=0,allowance=$2 WHERE scene_id=$1",
-        [row.id, this.botRounds],
+        "UPDATE world_shared_scene SET rounds=0 WHERE scene_id=$1",
+        [row.id],
       );
     const inputs: SharedTurn["inputs"] =
       task.command === "reply"
@@ -457,21 +454,14 @@ export class SharedTurns {
           "UPDATE world_shared_scene SET flow='manual' WHERE scene_id=$1",
           [row.id],
         );
-      else if (!human && control.rounds >= control.allowance) {
-        if (control.allowance > this.botRounds)
-          await db.query(
-            "UPDATE world_shared_scene SET flow='rounds' WHERE scene_id=$1",
-            [row.id],
-          );
-        else
-          await this.#propose(
-            db,
-            row,
-            (await this.shared.members(row.id, db))
-              .filter((m) => m.state === "joined" && m.kind === "bot")
-              .map((m) => m.actor_id),
-          );
-      }
+      else if (!human && control.rounds >= this.botRounds)
+        await this.#propose(
+          db,
+          row,
+          (await this.shared.members(row.id, db))
+            .filter((m) => m.state === "joined" && m.kind === "bot")
+            .map((m) => m.actor_id),
+        );
       if ((await this.control(row.id, db)).flow !== "open")
         await db.query(
           "UPDATE world_shared_scene SET continuation=$2 WHERE scene_id=$1",
@@ -563,8 +553,8 @@ export class SharedTurns {
     );
     if (!expired && answers.length && answers.every((a) => a === true)) {
       await db.query(
-        "UPDATE world_shared_scene SET flow='open',allowance=$2 WHERE scene_id=$1",
-        [scene, this.botRounds + this.extraRounds],
+        "UPDATE world_shared_scene SET flow='open',rounds=0 WHERE scene_id=$1",
+        [scene],
       );
       const row = (
         await db.query<SceneRow>("SELECT * FROM world_scene WHERE id=$1", [

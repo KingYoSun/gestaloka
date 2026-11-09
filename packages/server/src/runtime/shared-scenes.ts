@@ -209,8 +209,8 @@ export class SharedScenes {
     );
     if (occupied.rowCount) throw conflict("この人物は別のシーンに参加中です");
     await db.query(
-      "INSERT INTO world_shared_scene(scene_id,world_id,owner_id,at,allowance) VALUES($1,$2,$3,$4,$5)",
-      [scene, world, actor, at, this.turns.botRounds],
+      "INSERT INTO world_shared_scene(scene_id,world_id,owner_id,at) VALUES($1,$2,$3,$4)",
+      [scene, world, actor, at],
     );
     await db.query(
       "INSERT INTO world_scene_member(scene_id,world_id,actor_id,request_id,state,kind) VALUES($1,$2,$3,$4,'reserved',$5)",
