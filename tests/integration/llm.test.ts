@@ -134,6 +134,29 @@ test("OpenAI Responsesへ同じ記録を一度だけ送り、旧保存要求は�
   ).toEqual(completion);
   expect(transport).toHaveBeenCalledTimes(calls);
   expect(await client.ledger.input(id)).toEqual(old);
+  const actionInput = {
+    background: { synopsis: "背景" },
+    sceneHistory: [],
+    request: { at: 5 },
+    responseSchema: z.toJSONSchema(
+      z.object({ connected: z.boolean() }).strict(),
+    ),
+  };
+  await client.complete(randomUUID(), "scene-resolve", [
+    { role: "system", content: "JSONで返す" },
+    { role: "user", content: JSON.stringify(actionInput) },
+  ]);
+  const actionRequest = JSON.parse(
+    String(transport.mock.calls.at(-1)![1]!.body),
+  );
+  const actionUser = actionRequest.input.find(
+    (m: { role: string }) => m.role === "user",
+  );
+  expect(
+    JSON.parse(
+      actionUser.content.map((b: { text: string }) => b.text).join(""),
+    ),
+  ).toEqual(actionInput);
 });
 
 test.each([
