@@ -39,6 +39,7 @@ import {
   SceneContext,
   ContextNeed,
   SceneStep,
+  SceneResponseError,
   sceneResponse,
   legacyCoverageFailure,
   sceneArrivals,
@@ -599,7 +600,7 @@ export class WorldScenes {
         work.target,
       );
     if (response.finishReason !== "stop")
-      throw new Error("シーンのモデル応答が未完了です");
+      throw new SceneResponseError("シーンのモデル応答が未完了です");
     return {
       content: response.content,
       value: presentationEvidence(parseOutput(response.content)),
@@ -800,7 +801,9 @@ export class WorldScenes {
       }
       if (d.contextNeed) {
         if (answer.type !== "context")
-          throw new Error("進行中の背景は追記として補ってください");
+          throw new SceneResponseError(
+            "進行中の背景は追記として補ってください",
+          );
         const prior = d.background!;
         decision = {
           ...prior,
@@ -826,14 +829,16 @@ export class WorldScenes {
           !answer.creations.length &&
           decision.participants.length === prior.participants.length
         )
-          throw new Error(
+          throw new SceneResponseError(
             "不足文脈を補う変更がありません。世界の条件を確認してください",
           );
       }
       if (decision.type !== "background")
-        throw new Error("開始時の背景が必要です");
+        throw new SceneResponseError("開始時の背景が必要です");
       if (!decision.participants.includes(row.actor_id))
-        throw new Error("背景情報に操作する本人が含まれていません");
+        throw new SceneResponseError(
+          "背景情報に操作する本人が含まれていません",
+        );
       const controlled = await this.agent.controlledActors(
         d.worldId,
         [
@@ -846,7 +851,7 @@ export class WorldScenes {
         ].filter((id) => !(d.externalActors ?? [row.actor_id]).includes(id)),
       );
       if (controlled.size)
-        throw new Error(
+        throw new SceneResponseError(
           "他プレイヤーをNPCの登場主体にできません。共有世界に確定済みの行動・返答は背景として参照してください",
         );
       const creations = new Set(decision.creations.map((n) => n.id)),
@@ -876,9 +881,15 @@ export class WorldScenes {
             ? { kind: "event" }
             : null);
         if (creations.has(id)) {
-          if (node) throw new Error("既存の同一性を作り直すことはできません");
+          if (node)
+            throw new SceneResponseError(
+              "既存の同一性を作り直すことはできません",
+            );
         } else {
-          if (!node) throw new Error(`背景情報の参照が取得できません: ${id}`);
+          if (!node)
+            throw new SceneResponseError(
+              `背景情報の参照が取得できません: ${id}`,
+            );
           known.add(id);
           if (subjects.has(id) && node.kind !== "existence")
             invalidSubjects.push({
@@ -888,26 +899,19 @@ export class WorldScenes {
             });
         }
       }
-      if (invalidSubjects.length) {
-        d.basis = context.dependencies;
-        d.backgroundMessages.push(
-          { role: "assistant", content: response.content },
-          {
-            role: "user",
-            content: JSON.stringify({
-              validationErrors: invalidSubjects,
-              instruction:
-                "登場主体・状態や解釈の所有者・観測者にはexistenceのIDを使います。eventは出来事であり物や人物ではありません。既存の対象のIDを照会し、まだ具体化されていない対象だけをcreationsで新しいIDとして具体化してください。既存IDの種類は変更しません。未提示の今回の背景だけを修正し、stagedSceneの記録を変更しません。",
-            }),
-          },
+      if (invalidSubjects.length)
+        throw new z.ZodError(
+          invalidSubjects.map((subject) => ({
+            code: "custom",
+            path: [subject.id],
+            params: subject,
+            message:
+              "登場主体・状態や解釈の所有者・観測者にはexistenceのIDを使います。既存の対象を照会し、未提示の背景だけを修正してください。既存IDの種類や表示済みの記録は変更しません。",
+          })),
         );
-        delete d.work;
-        await this.#save(row, undefined, row.claim!);
-        continue;
-      }
       for (const p of decision.perceptions)
         if (!decision.participants.includes(p.observerId))
-          throw new Error("観測主体が登場人物ではありません");
+          throw new SceneResponseError("観測主体が登場人物ではありません");
       const graph = sceneAnchors(decision, [], d.at, row.id),
         connected = new Set(known);
       for (let changed = true; changed;) {
@@ -921,7 +925,7 @@ export class WorldScenes {
           }
       }
       if (graph.nodes.some((n) => !connected.has(n.id)))
-        throw new Error("背景情報が既存世界に接続していません");
+        throw new SceneResponseError("背景情報が既存世界に接続していません");
       d.basis = context.dependencies;
       const actual = decision.participants.filter((id) => !creations.has(id));
       if (actual.length) {
@@ -1105,7 +1109,7 @@ export class WorldScenes {
       if (
         Object.keys(step.decisions).sort().join() !== [...actors].sort().join()
       )
-        throw new Error("シーンで未解決の意図が省略されています");
+        throw new SceneResponseError("シーンで未解決の意図が省略されています");
       const returnsControl = d.turn
         ? controlled.every((id) => step.decisions[id] !== "pending")
         : step.decisions[actor] === "finished" ||
@@ -1122,7 +1126,9 @@ export class WorldScenes {
           new Set(e.receipts.map((p) => p.observerId)).size !==
             e.receipts.length
         )
-          throw new Error("シーンの行動主体または受容先が不正です");
+          throw new SceneResponseError(
+            "シーンの行動主体または受容先が不正です",
+          );
       }
       for (const id of step.newDecisions)
         if (
@@ -1130,10 +1136,10 @@ export class WorldScenes {
           actors.has(id) ||
           d.departures?.[id] !== undefined
         )
-          throw new Error("本人の判断の割当が不正です");
+          throw new SceneResponseError("本人の判断の割当が不正です");
       const nextAt = d.at + step.elapsedMs;
       if (!Number.isSafeInteger(nextAt))
-        throw new Error("シーンの経過時点が不正です");
+        throw new SceneResponseError("シーンの経過時点が不正です");
       const receivers = sceneArrivals(
         d.events,
         step.arrivals,
@@ -1155,7 +1161,9 @@ export class WorldScenes {
             .slice(exit.eventIndex + 1)
             .some((e) => e.receipts.some((p) => p.observerId === actor))
         )
-          throw new Error("退出の本人・出来事・受容範囲が一致しません");
+          throw new SceneResponseError(
+            "退出の本人・出来事・受容範囲が一致しません",
+          );
       }
       for (const e of step.events)
         d.events.push({
@@ -1602,6 +1610,45 @@ export class WorldScenes {
       this.#tick(id),
     );
   }
+  async #repair(row: SceneRow, error: unknown) {
+    if (
+      !(error instanceof SceneResponseError) &&
+      !(error instanceof SyntaxError) &&
+      !(error instanceof z.ZodError)
+    )
+      return false;
+    // Resume from durable progress, discarding only the unaccepted response.
+    const saved = (
+      await this.pool.query<SceneRow>(
+        "SELECT * FROM world_scene WHERE id=$1 AND claim=$2",
+        [row.id, row.claim],
+      )
+    ).rows[0];
+    if (!saved?.data.work) return false;
+    const response = (
+      await this.pool.query<{ response: { content?: string } }>(
+        "SELECT response FROM llm_call WHERE id=$1 AND state='complete'",
+        [saved.data.work.id],
+      )
+    ).rows[0]?.response;
+    if (typeof response?.content !== "string") return false;
+    Object.assign(row, saved);
+    delete row.data.error;
+    const work = row.data.work!;
+    work.id = randomUUID();
+    work.messages.push(
+      { role: "assistant", content: response.content },
+      {
+        role: "user",
+        content: JSON.stringify({
+          validationErrors:
+            error instanceof z.ZodError ? error.issues : error.message,
+        }),
+      },
+    );
+    await this.#save(row, undefined, row.claim!);
+    return true;
+  }
   async #tick(id: string) {
     const claim = randomUUID(),
       row = await this.#transaction(async (client) => {
@@ -1666,32 +1713,41 @@ export class WorldScenes {
         return row;
       });
     if (row.claim !== claim) return;
-    try {
-      await RuntimeControl.check(this.pool, {
-        userId: row.user_id ?? undefined,
-        worldId: row.data.worldId,
-        role: "user",
-        actorId: row.actor_id,
-      });
-      await this.drafts.run(row, async () => {
-        if (row.state === "preparing")
-          await this.agent.model.run(
-            this.#budget(row),
-            () => this.#background(row),
-            row.data.worldId,
-            row.user_id ?? undefined,
-            { role: "user", actorId: row.actor_id },
-          );
-        else if (row.state === "acting") {
-          if (
+    for (;;)
+      try {
+        await RuntimeControl.check(this.pool, {
+          userId: row.user_id ?? undefined,
+          worldId: row.data.worldId,
+          role: "user",
+          actorId: row.actor_id,
+        });
+        await this.drafts.run(row, async () => {
+          if (row.state === "preparing")
             await this.agent.model.run(
               this.#budget(row),
-              () => this.#action(row),
+              () => this.#background(row),
               row.data.worldId,
               row.user_id ?? undefined,
               { role: "user", actorId: row.actor_id },
+            );
+          else if (row.state === "acting") {
+            if (
+              await this.agent.model.run(
+                this.#budget(row),
+                () => this.#action(row),
+                row.data.worldId,
+                row.user_id ?? undefined,
+                { role: "user", actorId: row.actor_id },
+              )
             )
-          )
+              await this.agent.model.run(
+                this.#budget(row),
+                () => this.#reflect(row),
+                row.data.worldId,
+                row.user_id ?? undefined,
+                { role: "user", actorId: row.actor_id },
+              );
+          } else
             await this.agent.model.run(
               this.#budget(row),
               () => this.#reflect(row),
@@ -1699,53 +1755,47 @@ export class WorldScenes {
               row.user_id ?? undefined,
               { role: "user", actorId: row.actor_id },
             );
-        } else
-          await this.agent.model.run(
-            this.#budget(row),
-            () => this.#reflect(row),
-            row.data.worldId,
-            row.user_id ?? undefined,
-            { role: "user", actorId: row.actor_id },
-          );
-      });
-    } catch (error) {
-      if (error instanceof SupersededWorker) return;
-      if (error instanceof WorldConflict && row.data.drafts?.length) {
-        const saved = (
-          await this.pool.query<SceneRow>(
-            "SELECT * FROM world_scene WHERE id=$1",
-            [row.id],
-          )
-        ).rows[0]!;
-        const confirmation = await this.drafts
-          .confirmation(saved)
-          .catch((failure: unknown) => {
-            if (!(failure instanceof WorldConflict)) throw failure;
-            return null;
-          });
-        if (
-          confirmation &&
-          JSON.stringify(confirmation.basis) !==
-            JSON.stringify(saved.data.basis)
-        ) {
-          saved.data.basis = confirmation.basis;
-          saved.claim = null;
-          await this.#transaction(async (db) => {
-            await this.#save(saved, db, claim);
-            await this.#enqueue(db, saved.id, !!saved.data.shared);
-          });
-          return;
+        });
+        return;
+      } catch (error) {
+        if (error instanceof SupersededWorker) return;
+        if (await this.#repair(row, error)) continue;
+        if (error instanceof WorldConflict && row.data.drafts?.length) {
+          const saved = (
+            await this.pool.query<SceneRow>(
+              "SELECT * FROM world_scene WHERE id=$1",
+              [row.id],
+            )
+          ).rows[0]!;
+          const confirmation = await this.drafts
+            .confirmation(saved)
+            .catch((failure: unknown) => {
+              if (!(failure instanceof WorldConflict)) throw failure;
+              return null;
+            });
+          if (
+            confirmation &&
+            JSON.stringify(confirmation.basis) !==
+              JSON.stringify(saved.data.basis)
+          ) {
+            saved.data.basis = confirmation.basis;
+            saved.claim = null;
+            await this.#transaction(async (db) => {
+              await this.#save(saved, db, claim);
+              await this.#enqueue(db, saved.id, !!saved.data.shared);
+            });
+            return;
+          }
         }
+        row.data.resumeState = row.state;
+        row.data.limitReached = error instanceof ExecutionLimit;
+        row.data.suspended = error instanceof RuntimeStopped;
+        row.data.error =
+          error instanceof Error ? error.message : "シーンを保留しました";
+        row.state = "paused";
+        await this.#save(row, undefined, claim);
+        throw error;
       }
-      row.data.resumeState = row.state;
-      row.data.limitReached = error instanceof ExecutionLimit;
-      row.data.suspended = error instanceof RuntimeStopped;
-      row.data.error =
-        error instanceof Error ? error.message : "シーンを保留しました";
-      row.state = "paused";
-      await this.#save(row, undefined, claim);
-      throw error;
-    }
   }
   async work() {
     await this.shared.work();
