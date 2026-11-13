@@ -411,11 +411,12 @@ export async function operationsRoutes(
     const state = await service().state(userId);
     if (player && state.member && !state.member.banned)
       return reply.redirect(`/auth/player?code=${player}`);
+    const suppliedInvite = invitation && (player || request.method === "GET");
     const status = state.member?.banned
       ? "<p>利用が停止されています。</p>"
       : state.member
         ? `<p>${state.member.role === "admin" ? "管理者として" : ""}利用登録済みです。</p><a href="/auth/claim">このブラウザーのデータを引き継ぐ</a>`
-        : `${state.bootstrapAvailable ? "<p>最初に利用登録した1人が管理者になります。その後は招待制になります。</p>" : state.inviteRequired ? (invitation ? "<p>招待を受け取っています。下の「利用登録する」を押してください。</p>" : "<p>利用登録には招待トークンが必要です。</p>") : "<p>利用登録できます。</p>"}<form method="post">${fields(request, reply, "/auth/register")}${player ? `<input type="hidden" name="player" value="${player}">` : ""}${state.bootstrapAvailable || !state.inviteRequired ? "" : invitation ? `<input type="hidden" name="invitation" value="${escapeHtml(invitation)}">` : '<label>招待トークン <input name="invitation" autocomplete="off" required></label>'}<button>利用登録する</button></form>`;
+        : `${state.bootstrapAvailable ? "<p>最初に利用登録した1人が管理者になります。その後は招待制になります。</p>" : state.inviteRequired ? (suppliedInvite ? "<p>招待を受け取っています。下の「利用登録する」を押してください。</p>" : "<p>利用登録には招待トークンが必要です。</p>") : "<p>利用登録できます。</p>"}<form method="post">${fields(request, reply, "/auth/register")}${player ? `<input type="hidden" name="player" value="${player}">` : ""}${state.bootstrapAvailable || !state.inviteRequired ? "" : suppliedInvite ? `<input type="hidden" name="invitation" value="${escapeHtml(invitation)}">` : '<label>招待トークン <input name="invitation" autocomplete="off" required></label>'}<button>利用登録する</button></form>`;
     return authPage(
       reply,
       "利用登録",
