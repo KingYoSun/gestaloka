@@ -13,6 +13,7 @@ import { Button } from "./components/ui/button.js";
 import { Label } from "./components/ui/label.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { Characters } from "./player-icons.js";
+import { GenerationStatus, InputPopover } from "./play-controls.js";
 type State = z.infer<typeof SceneStatus>;
 const labels = {
   preparing: "背景情報をもとに、シーンのあらすじをまとめています。",
@@ -40,7 +41,6 @@ export function ScenePlayer({
     history = useRef<HistoryHandle>(null),
     messages = useRef<HistoryHandle>(null),
     actions = useRef<HistoryHandle>(null),
-    composing = useRef(false),
     [showHistory, setShowHistory] = useState(!scene);
   const [pending, save] = usePending(
     pendingKey(
@@ -50,6 +50,7 @@ export function ScenePlayer({
     SceneCommand,
   );
   const [showInputs, setShowInputs] = useState(false);
+  const [inputOpen, setInputOpen] = useState(false);
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [pendingControl, saveControl] = usePending(
     pendingKey(`${id}:${viewer}`, "reaction"),
@@ -236,22 +237,30 @@ export function ScenePlayer({
   function submit() {
     const values = form.getValues();
     if (busy) return;
-    if (entry && values.purpose.trim())
+    if (entry && values.purpose.trim()) {
       send({
         requestId: crypto.randomUUID(),
         command: "prepare",
         purpose: values.purpose,
         ...(values.shared ? { shared: true as const } : {}),
       });
-    else if (active && values.actionText.trim())
+    } else if (active && values.actionText.trim()) {
       send({
         requestId: crypto.randomUUID(),
         command: "act",
         actionText: values.actionText,
       });
+    } else return;
+    setInputOpen(false);
   }
+  const phase = scene?.state;
+  const generating =
+    (phase === "preparing" && scene?.shared?.phase !== "inviting") ||
+    phase === "acting" ||
+    (phase === "reflecting" && !scene?.waitingFor?.length);
   return (
     <main className="page play">
+      {generating && <GenerationStatus phase={phase} />}
       {(!!inbox.data?.invitations.length ||
         pendingInvite?.command === "invite") && (
         <section className="form-panel">
@@ -504,69 +513,48 @@ export function ScenePlayer({
           <RichText text={scene.result} />
         </section>
       )}
-      {(entry || active) && (
-        <form
-          className="action-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!composing.current) submit();
-          }}
-        >
-          <Label htmlFor="scene-input">
-            {entry ? "次のシーンで何をしたいですか" : "どう行動しますか"}
+      <InputPopover
+        open={inputOpen}
+        onOpenChange={setInputOpen}
+        disabled={!entry && !active}
+        onSubmit={submit}
+      >
+        <Label htmlFor="scene-input">
+          {entry ? "次のシーンで何をしたいですか" : "どう行動しますか"}
+        </Label>
+        {entry && (
+          <Label>
+            <input type="checkbox" {...form.register("shared")} />
+            共有シーンとして参加を求める
           </Label>
-          {entry && (
-            <Label>
-              <input type="checkbox" {...form.register("shared")} />
-              共有シーンとして参加を求める
-            </Label>
-          )}
-          <Textarea
-            id="scene-input"
-            rows={4}
-            placeholder={
-              entry
-                ? "体験したい場面や目的を、自由に書いてください。"
-                : "行いたいことを、自由に書いてください。"
-            }
-            readOnly={busy}
-            {...form.register(entry ? "purpose" : "actionText")}
-            aria-describedby="scene-help"
-            onCompositionStart={() => {
-              composing.current = true;
-            }}
-            onCompositionEnd={() => {
-              composing.current = false;
-            }}
-            onKeyDown={(e) => {
-              if (
-                e.key === "Enter" &&
-                (e.ctrlKey || e.metaKey) &&
-                !e.nativeEvent.isComposing &&
-                !composing.current &&
-                e.keyCode !== 229
-              ) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-          />
-          <div className="action-footer">
-            <p id="scene-help" className="record-meta">
-              {entry
-                ? "実際の行動は、あらすじを読んでシーンを始めた後に入力します。"
-                : "Ctrl / ⌘ + Enter で送信"}
-            </p>
-            <Button type="submit" disabled={busy}>
-              {mutate.isPending
-                ? "受け付けています"
-                : entry
-                  ? "シーンのあらすじを準備する"
-                  : "この行動を送る"}
-            </Button>
-          </div>
-        </form>
-      )}
+        )}
+        <Textarea
+          id="scene-input"
+          rows={4}
+          placeholder={
+            entry
+              ? "体験したい場面や目的を、自由に書いてください。"
+              : "行いたいことを、自由に書いてください。"
+          }
+          readOnly={busy}
+          {...form.register(entry ? "purpose" : "actionText")}
+          aria-describedby="scene-help"
+        />
+        <div className="action-footer">
+          <p id="scene-help" className="record-meta">
+            {entry
+              ? "実際の行動は、あらすじを読んでシーンを始めた後に入力します。"
+              : "Ctrl / ⌘ + Enter で送信"}
+          </p>
+          <Button type="submit" disabled={busy}>
+            {mutate.isPending
+              ? "受け付けています"
+              : entry
+                ? "シーンのあらすじを準備する"
+                : "この行動を送る"}
+          </Button>
+        </div>
+      </InputPopover>
       {scene && (active || canFinish) && (
         <div className="scene-end">
           {scene.shared && active && (

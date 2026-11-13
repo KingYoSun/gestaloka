@@ -20,6 +20,7 @@ import { Textarea } from "./components/ui/textarea.js";
 import { Input } from "./components/ui/input.js";
 import { Label } from "./components/ui/label.js";
 import { ScenePlayer } from "./ScenePlayer.js";
+import { GenerationStatus, InputPopover } from "./play-controls.js";
 import { Publication, Presets, WorldBudgetSettings } from "./operations-ui.js";
 import { operate } from "./operations-client.js";
 
@@ -435,9 +436,9 @@ function PlayerView({
   );
 }
 function LegacyPlayerView({ id, status }: { id: string; status: PlayerState }) {
+  const [inputOpen, setInputOpen] = useState(false);
   const client = useQueryClient(),
-    history = useRef<HistoryHandle>(null),
-    composing = useRef(false);
+    history = useRef<HistoryHandle>(null);
   const connection = useUpdates(
     id,
     "player",
@@ -491,9 +492,11 @@ function LegacyPlayerView({ id, status }: { id: string; status: PlayerState }) {
     };
     save(body);
     act.mutate({ params: { path: { id } }, body });
+    setInputOpen(false);
   }
   return (
     <main className="page play">
+      {status.state === "running" && <GenerationStatus phase="acting" />}
       <div className="play-heading">
         <div>
           <p className="eyebrow">LIVED STORIES</p>
@@ -536,15 +539,10 @@ function LegacyPlayerView({ id, status }: { id: string; status: PlayerState }) {
         </Button>
       )}
       <History ref={history} id={id} role="player" viewer={status.viewerId} />
-      <form
-        className="action-form"
-        onSubmit={(event) => {
-          if (composing.current) {
-            event.preventDefault();
-            return;
-          }
-          void form.handleSubmit(submit)(event);
-        }}
+      <InputPopover
+        open={inputOpen}
+        onOpenChange={setInputOpen}
+        onSubmit={form.handleSubmit(submit)}
       >
         <Label htmlFor="action-text">どう行動しますか</Label>
         <Textarea
@@ -554,24 +552,6 @@ function LegacyPlayerView({ id, status }: { id: string; status: PlayerState }) {
           readOnly={busy || status.state === "paused" || !!pending}
           {...form.register("actionText")}
           aria-describedby="action-error action-help"
-          onCompositionStart={() => {
-            composing.current = true;
-          }}
-          onCompositionEnd={() => {
-            composing.current = false;
-          }}
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter" &&
-              (event.ctrlKey || event.metaKey) &&
-              !event.nativeEvent.isComposing &&
-              !composing.current &&
-              event.keyCode !== 229
-            ) {
-              event.preventDefault();
-              void form.handleSubmit(submit)();
-            }
-          }}
         />
         <div className="action-footer">
           <p id="action-help" className="record-meta">
@@ -588,7 +568,7 @@ function LegacyPlayerView({ id, status }: { id: string; status: PlayerState }) {
         <p id="action-error" className="field-error">
           {form.formState.errors.actionText?.message}
         </p>
-      </form>
+      </InputPopover>
     </main>
   );
 }

@@ -106,6 +106,7 @@ test("Webでは共有を明示的に選び、参加者確定後もあらすじ�
   const { world, actors } = await village(page);
   const actor = actors[0]!;
   await page.goto(`/worlds/${world}/play?actorId=${actor}`);
+  await page.getByRole("button", { name: "自由入力" }).click();
   const shared = page.getByLabel("共有シーンとして参加を求める");
   await expect(shared).not.toBeChecked();
   await shared.check();
@@ -129,12 +130,14 @@ test("Webでは共有を明示的に選び、参加者確定後もあらすじ�
     fullPage: true,
   });
   await page.getByRole("button", { name: "シーンを始める" }).click();
-  await expect(page.getByLabel("どう行動しますか")).toBeVisible();
+  await expect(page.getByRole("button", { name: "自由入力" })).toBeEnabled();
   await page.getByRole("button", { name: "この場から退出する" }).click();
-  await expect(page.getByLabel("次のシーンで何をしたいですか")).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "リザルト", exact: true }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "自由入力" }).click();
+  await expect(page.getByLabel("次のシーンで何をしたいですか")).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.screenshot({
     path: "artifacts/screenshots/shared-scene-departed.png",
     fullPage: true,
@@ -179,6 +182,7 @@ test("同席botへの反応機会をWebでも確認し、反応なしを一度�
   );
   expect((await online.json()).kind).toBe("bot");
   await page.goto(`/worlds/${world}/play?actorId=${owner}`);
+  await page.getByRole("button", { name: "自由入力" }).click();
   await page.getByLabel("共有シーンとして参加を求める").check();
   await page.getByLabel("次のシーンで何をしたいですか").fill("同席者と話す");
   await page
@@ -212,6 +216,7 @@ test("同席botへの反応機会をWebでも確認し、反応なしを一度�
     ).ok(),
   ).toBe(true);
   await page.getByRole("button", { name: "シーンを始める" }).click();
+  await page.getByRole("button", { name: "自由入力" }).click();
   await page.getByLabel("どう行動しますか").fill("同席者へ声をかける");
   await page.getByRole("button", { name: "この行動を送る" }).click();
   await expect

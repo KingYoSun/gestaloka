@@ -227,7 +227,7 @@ export function History({
   useImperativeHandle(ref, () => ({
     updated() {
       if (atTop.current) {
-        void latest();
+        void query.refetch();
       } else setNotice(true);
     },
   }));
@@ -360,7 +360,7 @@ export function History({
           古い記録を読む
         </Button>
       )}
-      {query.isFetching && !query.isPending && (
+      {(query.isFetchingNextPage || query.isFetchingPreviousPage) && (
         <p role="status" className="record-meta">
           記録を確認しています
         </p>

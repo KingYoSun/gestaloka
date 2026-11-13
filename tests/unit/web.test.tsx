@@ -317,6 +317,14 @@ afterEach(() => {
 });
 afterAll(() => server.close());
 
+async function openInput() {
+  const button = await screen.findByRole("button", { name: "自由入力" });
+  await waitFor(() =>
+    expect((button as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(button);
+}
+
 test("Reactを描画し、生成されたHTTPクライアント型を通信に使用できる", async () => {
   const { api } = await import("../../apps/web/src/api.js");
   render(
@@ -445,6 +453,7 @@ test("選択した人物をシーン・知識・配信の照会と送信へ引�
       )}
     />,
   );
+  await openInput();
   const input = await screen.findByLabelText("次のシーンで何をしたいですか");
   fireEvent.change(input, { target: { value: "道を歩く" } });
   fireEvent.click(
@@ -490,6 +499,7 @@ test("IMEの確定を送信にせず、本人の入力と公開知識だけを�
       )}
     />,
   );
+  await openInput();
   const field = await screen.findByLabelText("どう行動しますか");
   const text = "周囲を見渡す。\n返答を待つ。";
   fireEvent.change(field, { target: { value: text } });
@@ -531,6 +541,56 @@ test("応答の主体が変わった場合は旧キャッシュと画面を破�
   expect(screen.queryByRole("heading", { name: "村民として" })).toBeNull();
 });
 
+test("背景生成中の通知とシーンの記録は再取得中も表示を保つ", async () => {
+  scene = {
+    ...sceneFixture("preparing"),
+    messages: [{ id: A, text: "最初の記録" }],
+  };
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
+      )}
+    />,
+  );
+  const toast = await screen.findByText("背景情報を生成中...", {
+    selector: ".generation-toast *",
+  });
+  const history = await screen.findByRole("region", { name: "このシーン" });
+  await waitFor(() =>
+    expect(history.getAttribute("data-retained-records")).toBe("1"),
+  );
+  let release!: () => void;
+  const response = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  server.use(
+    http.get("*/api/worlds/:id/scene/records", async () => {
+      await response;
+      return json({ viewerId: V, items: [], previous: null, next: null });
+    }),
+  );
+  Source.instances.find((s) => !s.closed)!.update();
+  try {
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("記録の閲覧領域").getAttribute("aria-busy"),
+      ).toBe("true"),
+    );
+    expect(history.getAttribute("data-retained-records")).toBe("1");
+    expect(toast.isConnected).toBe(true);
+  } finally {
+    release();
+  }
+  await waitFor(() =>
+    expect(history.getAttribute("data-retained-records")).toBe("0"),
+  );
+  scene = { ...scene, state: "ready" };
+  Source.instances.find((s) => !s.closed)!.update("2");
+  await screen.findByRole("button", { name: "シーンを始める" });
+  expect(toast.isConnected).toBe(false);
+});
+
 test("あらすじを読んで開始し、確定後だけリザルトを表示する", async () => {
   render(
     <App
@@ -539,6 +599,7 @@ test("あらすじを読んで開始し、確定後だけリザルトを表示�
       )}
     />,
   );
+  await openInput();
   const purpose = await screen.findByLabelText("次のシーンで何をしたいですか");
   fireEvent.change(purpose, { target: { value: "道端で村人と話す" } });
   fireEvent.click(
@@ -548,11 +609,13 @@ test("あらすじを読んで開始し、確定後だけリザルトを表示�
   expect(screen.queryByLabelText("どう行動しますか")).toBeNull();
   expect(actionPosts).toBe(0);
   fireEvent.click(screen.getByRole("button", { name: "シーンを始める" }));
-  await screen.findByLabelText("どう行動しますか");
   fireEvent.click(
-    screen.getByRole("button", { name: "シーンを終えてリザルトを見る" }),
+    await screen.findByRole("button", { name: "シーンを終えてリザルトを見る" }),
   );
   await screen.findByText("このシーンが世界に残した影響をまとめています。");
+  await screen.findByText("リザルトを生成中...", {
+    selector: ".generation-toast *",
+  });
   expect(screen.queryByRole("heading", { name: "リザルト" })).toBeNull();
   scene = { ...scene!, state: "reflecting", result: "まだ表示できない候補" };
   Source.instances.find((s) => !s.closed)!.update("1");
@@ -567,6 +630,7 @@ test("あらすじを読んで開始し、確定後だけリザルトを表示�
   await screen.findByText(
     "1操作の処理上限に達しました。再開すると枠を追加します。",
   );
+  expect(screen.queryByText("リザルトを生成中...")).toBeNull();
   expect(
     screen.getByRole("button", { name: "保存したシーンから再開する" }),
   ).toBeTruthy();
@@ -628,6 +692,7 @@ test("共有は明示選択し、顔ぶれの確定後もあらすじを読ん�
       )}
     />,
   );
+  await openInput();
   const shared = (await screen.findByLabelText(
     "共有シーンとして参加を求める",
   )) as HTMLInputElement;
@@ -643,6 +708,7 @@ test("共有は明示選択し、顔ぶれの確定後もあらすじを読ん�
     "同席の返答を待っています。回答が揃うか、締切を迎えたらあらすじを準備します。",
   );
   expect(submitted).toMatchObject({ command: "prepare", shared: true });
+  expect(screen.queryByText("背景情報を生成中...")).toBeNull();
   expect(screen.queryByRole("button", { name: "シーンを始める" })).toBeNull();
   await waitFor(() => expect(heartbeats).toContain(true));
   scene = {
@@ -763,6 +829,8 @@ test("共有の退出後は次の準備欄を表示し、終了待ちのシー�
   fireEvent.click(
     await screen.findByRole("button", { name: "この場から退出する" }),
   );
+  await screen.findByText(/退出しました。/);
+  await openInput();
   await screen.findByLabelText("次のシーンで何をしたいですか");
   expect(posts).toHaveLength(1);
   expect(posts[0]!.command).toBe("leave");
@@ -823,6 +891,7 @@ test("シーンIDを指定して元の終了操作を行い、確定待ちでも
     }),
   );
   await waitFor(() => expect(target).toBe(W));
+  await openInput();
   expect(screen.getByLabelText("次のシーンで何をしたいですか")).toBeTruthy();
   expect(screen.getByRole("link", { name: "現在のシーンへ戻る" })).toBeTruthy();
 });
@@ -863,6 +932,11 @@ test("共有の生成中もWebから割り込む入力を受け付ける", async
       )}
     />,
   );
+  await screen.findByText("シーンの続きを生成中...", { selector: "main > p" });
+  await screen.findByText("シーンの続きを生成中...", {
+    selector: ".generation-toast *",
+  });
+  await openInput();
   fireEvent.change(await screen.findByLabelText("どう行動しますか"), {
     target: { value: "相手が考えている間に声をかける" },
   });
@@ -1004,6 +1078,7 @@ test("終了提案は本人の選択でだけ終了・続行を回答する", as
   const keepGoing = await screen.findByRole("button", {
     name: "続ける",
   });
+  await openInput();
   expect(screen.getByLabelText("どう行動しますか")).toBeTruthy();
   expect(votes).toEqual([]);
   fireEvent.click(keepGoing);

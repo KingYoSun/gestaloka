@@ -539,8 +539,45 @@ select {
   line-height: 1.7;
   margin: 0;
 }
-.action-form {
-  margin-top: 24px;
+.generation-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.play > .generation-status {
+  margin-bottom: 16px;
+}
+.generation-viewport {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  right: 16px;
+  z-index: 40;
+}
+.generation-toast,
+.scene-composer {
+  padding: 16px;
+  color: var(--popover-foreground);
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 8px rgb(0 0 0 / 14%);
+}
+.scene-pencil {
+  position: fixed;
+  z-index: 20;
+  right: max(20px, calc((100% - 620px) / 2));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  box-shadow: 0 4px 8px rgb(0 0 0 / 14%);
+}
+.scene-composer {
+  z-index: 30;
+  width: min(420px, var(--radix-popover-content-available-width));
+  max-height: var(--radix-popover-content-available-height);
+  overflow: auto;
 }
 .action-footer {
   display: flex;
