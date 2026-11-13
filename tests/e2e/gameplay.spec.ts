@@ -198,6 +198,7 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText("INTERNAL_GM_ONLY");
   await expect(page.locator("body")).not.toContainText("PRIVATE_");
+  await page.getByRole("button", { name: "自由入力" }).click();
   await page
     .getByLabel("次のシーンで何をしたいですか", { exact: true })
     .fill("村の道で周囲を確かめたい");
@@ -226,9 +227,16 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
     )
       posted++;
   });
+  const pencil = page.getByRole("button", { name: "自由入力" });
+  await pencil.click();
   const field = page.getByLabel("どう行動しますか", { exact: true });
+  await expect(field).toBeFocused();
   const input = "周囲を見渡す。\n見える範囲を確かめる。";
   await field.fill(input);
+  await field.press("Escape");
+  await expect(field).toBeHidden();
+  await pencil.click();
+  await expect(field).toHaveValue(input);
   await field.dispatchEvent("compositionstart");
   await field.dispatchEvent("keydown", {
     key: "Enter",
@@ -255,9 +263,7 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
   await page.reload();
   await expect(page.getByText(input, { exact: true })).toBeVisible();
   await expect(page.getByText(/公開された経験/)).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "この行動を送る", exact: true }),
-  ).toBeEnabled();
+  await expect(pencil).toBeEnabled();
   expect(posted).toBe(1);
   await expect(
     page.getByRole("heading", { name: "リザルト", exact: true }),
@@ -365,6 +371,7 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
     .click();
   await participate(page);
 
+  await page.getByRole("button", { name: "自由入力" }).click();
   await page
     .getByLabel("次のシーンで何をしたいですか")
     .fill("村で人々の話を聞く");
@@ -374,9 +381,7 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
   await page
     .getByRole("button", { name: "シーンを始める", exact: true })
     .click();
-  await expect(
-    page.getByLabel("どう行動しますか", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "自由入力" })).toBeEnabled();
   const id = new URL(page.url()).pathname.split("/")[2]!;
   const scene = (
     await (await page.request.get(`/api/worlds/${id}/scene`)).json()
@@ -490,6 +495,13 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
     fullPage: true,
   });
   await page.setViewportSize({ width: 375, height: 812 });
+  const pencil = page.getByRole("button", { name: "自由入力" });
+  await expect(pencil).toBeInViewport();
+  await pencil.click();
+  await expect(
+    page.getByRole("button", { name: "この行動を送る" }),
+  ).toBeInViewport();
+  await page.keyboard.press("Escape");
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
