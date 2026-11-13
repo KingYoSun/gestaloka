@@ -6,6 +6,8 @@ import {
   sceneAgenda,
   sceneContinuations,
   sceneAnchors,
+  remainingQuestions,
+  SceneContext,
   sceneView,
   sceneResponse,
   legacyCoverageFailure,
@@ -35,6 +37,22 @@ const events = [
     receipts: [{ observerId: npc, text: "質問を聞いた" }],
   },
 ];
+test("別の対象の状態では問いを閉じず、同じ対象の照会と回答がそろえば閉じる", () => {
+  const q = { question: "探している資料の署名は何か", targetId: place };
+  const background = { ...bg, unknowns: [q] };
+  const answer = SceneContext.parse({
+    type: "context",
+    participants: [],
+    facts: [{ subjectId: npc, aboutIds: [place], text: "署名は星形" }],
+    resolvedUnknowns: [{ question: q.question, factIndex: 0 }],
+  });
+  expect(remainingQuestions(background, answer, new Set([npc, place]))).toEqual(
+    [q],
+  );
+  answer.facts[0]!.subjectId = place;
+  expect(remainingQuestions(background, answer, new Set([npc]))).toEqual([q]);
+  expect(remainingQuestions(background, answer, new Set([place]))).toEqual([]);
+});
 test("開始時の状態の終了と、表示済みの発言・受容の変更禁止を区別する", () => {
   const anchors = sceneAnchors(bg, events, 0, randomUUID()),
     state = anchors.edges.find(
