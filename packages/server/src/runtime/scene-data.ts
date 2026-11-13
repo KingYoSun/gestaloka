@@ -20,6 +20,7 @@ const Fact = z
     at: z.number().int().nonnegative().safe().optional(),
   })
   .strict();
+const Question = z.object({ question: text, targetId: id.nullable() }).strict();
 export const SceneBackground = z
   .object({
     type: z.literal("background"),
@@ -32,12 +33,15 @@ export const SceneBackground = z
         .object({ observerId: id, text, sourceIds: z.array(id).min(1) })
         .strict(),
     ),
-    unknowns: z.array(text),
+    unknowns: z.array(z.union([Question, text])),
     creations: z.array(z.object({ id, text }).strict()).default([]),
     beliefs: z.array(Fact.extend({ aboutIds: z.array(id).min(1) })).default([]),
   })
   .strict();
 export type SceneBackground = z.infer<typeof SceneBackground>;
+export const OpeningBackground = SceneBackground.extend({
+  unknowns: z.array(Question),
+});
 export const SceneContext = SceneBackground.omit({
   synopsis: true,
   synopsisInformation: true,
@@ -46,10 +50,32 @@ export const SceneContext = SceneBackground.omit({
 }).extend({
   type: z.literal("context"),
   participants: z.array(id),
-  resolvedUnknowns: z.array(text),
+  resolvedUnknowns: z.array(
+    z
+      .object({ question: text, factIndex: z.number().int().nonnegative() })
+      .strict(),
+  ),
 });
+export function remainingQuestions(
+  background: SceneBackground,
+  context: z.infer<typeof SceneContext>,
+  inspected: ReadonlySet<string>,
+) {
+  return background.unknowns.filter(
+    (q) =>
+      typeof q === "string" ||
+      q.targetId === null ||
+      !inspected.has(q.targetId) ||
+      !context.resolvedUnknowns.some(
+        (r) =>
+          r.question === q.question &&
+          context.facts[r.factIndex]?.subjectId === q.targetId,
+      ),
+  );
+}
 export const ContextNeed = z
   .object({
+    evidence: z.enum(["observation", "world"]).default("observation"),
     reason: text,
     remainingActions: z.record(id, z.string()),
   })

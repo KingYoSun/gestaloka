@@ -9,6 +9,7 @@ import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldConstruction } from "@gestaloka/server/construction";
 import { WorldAccess } from "@gestaloka/server/access";
 import { createApp } from "../../apps/api/src/app.js";
+import { sceneAnchors } from "../../packages/server/src/runtime/scene-data.js";
 import { fixtureAuth } from "../support/auth.js";
 import { modelEnvironment, approvedTransport } from "../support/model.js";
 
@@ -50,7 +51,24 @@ const model = new LlmClient(
       );
     inputs.push(user);
     let content: unknown;
-    if (user.needsContext) {
+    if (user.needsContext?.evidence === "observation") {
+      expect(user.stagedScene.purpose).toBe("封印された箱の印を探す");
+      const corrected = body.messages.some((m: { content: string }) =>
+        m.content.includes("validationErrors"),
+      );
+      content = corrected
+        ? { type: "observation", limits: "手前の箱の表だけが見える" }
+        : {
+            type: "context",
+            participants: [],
+            facts: [
+              { subjectId: place, aboutIds: [], text: "どの箱にも印がない" },
+            ],
+            resolvedUnknowns: [
+              { question: "探す箱にどんな印があるか", factIndex: 0 },
+            ],
+          };
+    } else if (user.needsContext) {
       expect(user.stagedScene.events).toHaveLength(1);
       expect(user.stagedScene.events[0].text).toBe("若者が挨拶した");
       backgroundSnapshot = structuredClone(
@@ -93,7 +111,10 @@ const model = new LlmClient(
           { observerId: actor, text: "村人が見える", sourceIds: [npc] },
           { observerId: npc, text: "若者が見える", sourceIds: [actor] },
         ],
-        unknowns: [],
+        unknowns:
+          user.request.actionText === "封印された箱の印を探す"
+            ? [{ question: "探す箱にどんな印があるか", targetId: place }]
+            : [],
       };
     else if (user.observerId) {
       expect(user.observerId).toBe(npc);
@@ -132,7 +153,36 @@ const model = new LlmClient(
           actionText: string;
         }[],
         response = intentions.some((i) => i.actorId === npc);
-      if (intentions.some((i) => i.actionText === "前の返答を読み直す")) {
+      if (intentions.some((i) => i.actionText === "隣の箱を調べる")) {
+        content = user.observationLimits
+          ? {
+              type: "scene",
+              events: [
+                {
+                  actorId: actor,
+                  text: "隣の箱を調べた",
+                  receipts: [
+                    { observerId: actor, text: "手前の箱の表には印が見えない" },
+                  ],
+                },
+              ],
+              decisions: { [actor]: "finished" },
+              newDecisions: [],
+            }
+          : {
+              type: "scene",
+              events: [],
+              decisions: { [actor]: "pending" },
+              newDecisions: [],
+              needsContext: {
+                evidence: "observation",
+                reason: "調べた位置で確認できる範囲",
+                remainingActions: { [actor]: "隣の箱を調べる" },
+              },
+            };
+      } else if (
+        intentions.some((i) => i.actionText === "前の返答を読み直す")
+      ) {
         expect(user.sceneHistory).toEqual([]);
         expect(user.controlledView.observations).toContainEqual(
           expect.objectContaining({
@@ -179,6 +229,7 @@ const model = new LlmClient(
           newDecisions: [],
           elapsedMs: 1000,
           needsContext: {
+            evidence: "world",
             reason: "橋への道を確認する",
             remainingActions: {
               [actor]: "橋の方へ歩く",
@@ -1207,6 +1258,53 @@ test("行動の解決中に世界が更新されても、表示済みの出来�
     ).toBe("橋の方へ歩く");
   } finally {
     calls.mockRestore();
+    await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
+  }
+});
+
+test("別の箱を観察しても元の問いを保ち、見えなかった範囲は本人の受容に残る", async () => {
+  const opened = await command({
+    requestId: randomUUID(),
+    command: "prepare",
+    purpose: "封印された箱の印を探す",
+  });
+  const id = opened.json().scene.id;
+  try {
+    await access.scenes.tick(id);
+    const background = (await access.scenes.latest(construction))!.data
+      .background!;
+    await command({ requestId: randomUUID(), command: "start" });
+    await command({
+      requestId: randomUUID(),
+      command: "act",
+      actionText: "隣の箱を調べる",
+    });
+    await access.scenes.tick(id);
+    const row = (await access.scenes.latest(construction))!;
+    expect(row.state).toBe("active");
+    expect(row.data.background).toEqual(background);
+    expect(background.unknowns).toEqual([
+      { question: "探す箱にどんな印があるか", targetId: place },
+    ]);
+    const anchors = sceneAnchors(
+      row.data.background!,
+      row.data.events,
+      row.data.startedAt,
+      id,
+    );
+    expect(anchors.edges).toContainEqual(
+      expect.objectContaining({
+        kind: "see",
+        source: actor,
+        text: "手前の箱の表には印が見えない",
+      }),
+    );
+    expect(anchors.nodes.filter((n) => n.kind === "script")).toEqual(
+      sceneAnchors(background, [], row.data.startedAt, id).nodes.filter(
+        (n) => n.kind === "script",
+      ),
+    );
+  } finally {
     await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
   }
 });

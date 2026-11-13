@@ -36,6 +36,8 @@ import {
 } from "./construction.js";
 import {
   SceneBackground,
+  OpeningBackground,
+  remainingQuestions,
   SceneContext,
   ContextNeed,
   SceneStep,
@@ -55,13 +57,23 @@ import {
   type SceneEnding,
 } from "./scene-data.js";
 
-const BackgroundDecision = z.discriminatedUnion("type", [
-  SceneBackground,
-  SceneContext,
+const BackgroundChoices = [
   z
     .object({ type: z.literal("query"), requests: z.array(Query).min(1) })
     .strict(),
   z.object({ type: z.literal("pause"), reason: z.string() }).strict(),
+] as const;
+const BackgroundDecision = z.discriminatedUnion("type", [
+  OpeningBackground,
+  SceneContext,
+  ...BackgroundChoices,
+]);
+const ObservationContext = z
+  .object({ type: z.literal("observation"), limits: z.string().min(1) })
+  .strict();
+const ObservationDecision = z.discriminatedUnion("type", [
+  ObservationContext,
+  ...BackgroundChoices,
 ]);
 const Narrative = z
   .object({
@@ -129,6 +141,7 @@ export type SceneData = {
   backgroundMessages?: ChatMessage[];
   background?: SceneBackground;
   contextNeed?: z.infer<typeof ContextNeed> & { worldChanged?: true };
+  observationContext?: { inputId: string; limits: string };
   contextRequests?: {
     inputId: string;
     at: number;
@@ -813,6 +826,7 @@ export class WorldScenes {
       d.views = {};
     } else if (row.state === "acting") {
       d.contextNeed ??= {
+        evidence: "world",
         worldChanged: true,
         reason:
           "共有世界の更新後の状態を確認し、未実行の行動に必要な背景だけを補う。追加が不要なら空のcontextを返す。",
@@ -844,6 +858,23 @@ export class WorldScenes {
         ...this.#request(row),
         actionText: d.contextNeed?.reason ?? d.purpose,
       };
+    const observing =
+      d.contextNeed &&
+      (d.contextNeed.evidence ?? "observation") === "observation";
+    const schema = observing ? ObservationDecision : BackgroundDecision;
+    // An unfinished pre-upgrade request still advertises the old output contract.
+    if (
+      d.backgroundMessages &&
+      !JSON.parse(d.backgroundMessages[0]!.content).backgroundVersion
+    ) {
+      if (
+        d.work &&
+        (await this.agent.model.ledger.state(d.work.id)) === "pending"
+      )
+        throw new Error("送信済み要求の結果が未確定です。");
+      delete d.backgroundMessages;
+      delete d.work;
+    }
     if (!d.backgroundMessages) {
       const context = await this.agent.context(request, d.basis);
       d.basis = context.dependencies;
@@ -852,21 +883,27 @@ export class WorldScenes {
           role: "user",
           content: JSON.stringify({
             request,
+            backgroundVersion: 2,
             initialContext: context.initialContext,
             controlledActorIds: context.controlledActorIds,
             acceptedPlayerIds: d.externalActors ?? [row.actor_id],
             ...(d.drafts?.length ? { priorScenes: d.drafts } : {}),
             ...(d.contextNeed
               ? {
-                  needsContext: d.contextNeed,
+                  needsContext: {
+                    ...d.contextNeed,
+                    evidence: observing ? "observation" : "world",
+                  },
                   stagedScene: {
+                    purpose: d.purpose,
+                    input: d.actions.at(-1)?.text,
                     background: d.background,
                     events: d.events,
                     intentions: Object.values(d.pending),
                   },
                 }
               : {}),
-            responseSchema: z.toJSONSchema(BackgroundDecision, { io: "input" }),
+            responseSchema: z.toJSONSchema(schema, { io: "input" }),
           }),
         },
       ];
@@ -897,13 +934,12 @@ export class WorldScenes {
           "scene-background.md",
           {},
         ),
-        answer = BackgroundDecision.parse(response.value);
-      let decision = answer;
-      if (decision.type === "pause") throw new Error(decision.reason);
-      if (decision.type === "query") {
+        answer = schema.parse(response.value);
+      if (answer.type === "pause") throw new Error(answer.reason);
+      if (answer.type === "query") {
         const read = await this.agent.read(
           { request, dependencies: d.basis },
-          decision.requests,
+          answer.requests,
         );
         d.basis = read.dependencies;
         d.backgroundMessages.push(
@@ -911,7 +947,7 @@ export class WorldScenes {
           {
             role: "user",
             content: JSON.stringify({
-              requests: decision.requests,
+              requests: answer.requests,
               results: read.results,
               controlledActorIds: read.controlledActorIds,
             }),
@@ -921,12 +957,43 @@ export class WorldScenes {
         await this.#save(row, undefined, row.claim!);
         continue;
       }
+      if (answer.type === "observation") {
+        d.observationContext = {
+          inputId: d.turn?.id ?? d.actions.at(-1)!.id,
+          limits: answer.limits,
+        };
+        delete d.work;
+        delete d.backgroundMessages;
+        delete d.contextNeed;
+        await this.#save(row, undefined, row.claim!);
+        return;
+      }
+      let decision: SceneBackground;
       if (d.contextNeed) {
         if (answer.type !== "context")
           throw new SceneResponseError(
             "進行中の背景は追記として補ってください",
           );
         const prior = d.background!;
+        const inspected = new Set<string>();
+        for (const message of d.backgroundMessages) {
+          if (message.role !== "user") continue;
+          const page = JSON.parse(message.content);
+          const reads: {
+            request: z.infer<typeof Query>;
+            result: { node?: { id: string } } | null;
+          }[] =
+            page.initialContext ??
+            (page.requests ?? []).map(
+              (request: z.infer<typeof Query>, i: number) => ({
+                request,
+                result: page.results[i],
+              }),
+            );
+          for (const { request, result } of reads)
+            if (request.kind === "node" && result?.node?.id === request.id)
+              inspected.add(request.id);
+        }
         decision = {
           ...prior,
           participants: [
@@ -941,9 +1008,7 @@ export class WorldScenes {
             ...answer.beliefs.map((f) => ({ ...f, at: d.at })),
           ],
           creations: [...prior.creations, ...answer.creations],
-          unknowns: prior.unknowns.filter(
-            (u) => !answer.resolvedUnknowns.includes(u),
-          ),
+          unknowns: remainingQuestions(prior, answer, inspected),
         };
         if (
           !d.contextNeed.worldChanged &&
@@ -955,9 +1020,8 @@ export class WorldScenes {
           throw new SceneResponseError(
             "不足文脈を補う変更がありません。世界の条件を確認してください",
           );
-      }
-      if (decision.type !== "background")
-        throw new SceneResponseError("開始時の背景が必要です");
+      } else if (answer.type === "background") decision = answer;
+      else throw new SceneResponseError("開始時の背景が必要です");
       if (!decision.participants.includes(row.actor_id))
         throw new SceneResponseError(
           "背景情報に操作する本人が含まれていません",
@@ -982,6 +1046,9 @@ export class WorldScenes {
         known = new Set<string>();
       const subjects = new Set([
           ...decision.participants,
+          ...decision.unknowns.flatMap((q) =>
+            typeof q !== "string" && q.targetId ? [q.targetId] : [],
+          ),
           ...decision.facts.map((f) => f.subjectId),
           ...decision.beliefs.map((f) => f.subjectId),
           ...decision.perceptions.map((p) => p.observerId),
@@ -992,7 +1059,7 @@ export class WorldScenes {
           requiredKind: "existence";
         }[] = [];
       const refs = new Set([
-        ...decision.participants,
+        ...subjects,
         ...decision.facts.flatMap((f) => [f.subjectId, ...f.aboutIds]),
         ...decision.beliefs.flatMap((f) => [f.subjectId, ...f.aboutIds]),
         ...decision.perceptions.flatMap((p) => [p.observerId, ...p.sourceIds]),
@@ -1190,6 +1257,9 @@ export class WorldScenes {
           "scene-play.md",
           {
             background: bg,
+            ...(d.observationContext?.inputId === (d.turn?.id ?? action.id)
+              ? { observationLimits: d.observationContext.limits }
+              : {}),
             sceneHistory: d.events,
             controlledView: d.views[actor],
             request: {
