@@ -1378,6 +1378,33 @@ test("背景不足があればfinishedでも発生済み部分を保持し、同
     const retry = (await access.scenes.latest(construction))!.data.work!;
     expect(retry.id).not.toBe(work.id);
     expect(retry.messages.at(-1)?.content).toContain(unknownId);
+    paused.data.error = "状態の本文を確認できません";
+    await d.postgres.query("UPDATE llm_call SET response=$2 WHERE id=$1", [
+      work.id,
+      {
+        ...callBefore.response,
+        content: JSON.stringify({ type: "pause", reason: paused.data.error }),
+      },
+    ]);
+    await restore();
+    await command({ requestId: randomUUID(), command: "resume" });
+    const resumed = (await access.scenes.latest(construction))!;
+    expect(resumed.data.work).toBeUndefined();
+    expect(resumed.data.backgroundMessages).toBeUndefined();
+    await access.scenes.tick(id);
+    const continued = (await access.scenes.latest(construction))!;
+    expect(continued.state).toBe("active");
+    expect(continued.data.events.slice(0, 1)).toEqual(paused.data.events);
+    expect(
+      continued.data.presentations!.slice(0, paused.data.presentations!.length),
+    ).toEqual(paused.data.presentations);
+    expect(continued.data.actions).toMatchObject([
+      { id: inputId, text: paused.data.actions[0]!.text, state: "complete" },
+    ]);
+    expect(continued.data.events.map((e) => e.inputId)).toEqual([
+      inputId,
+      inputId,
+    ]);
   } finally {
     await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
     backgroundSnapshot = undefined;

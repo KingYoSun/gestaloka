@@ -88,6 +88,17 @@ type Work = {
   messages: ChatMessage[];
   target: "default" | "resolution";
 };
+function backgroundPaused(content?: string) {
+  if (!content) return false;
+  try {
+    return z
+      .object({ type: z.literal("pause") })
+      .safeParse(parseOutput(content)).success;
+  } catch (error) {
+    if (error instanceof SyntaxError) return false;
+    throw error;
+  }
+}
 export type SceneData = {
   turns?: true;
   turn?: SharedTurn;
@@ -486,13 +497,21 @@ export class WorldScenes {
           )
         )
       ) {
-        const rejected = (
-          await this.pool.query(
-            "SELECT response ? 'rejection' AS rejected FROM llm_call WHERE id=$1",
+        const previous = (
+          await client.query(
+            "SELECT response ? 'rejection' AS rejected,response->>'content' AS content FROM llm_call WHERE id=$1",
             [row.data.work.id],
           )
-        ).rows[0]?.rejected;
-        if (rejected) delete row.data.work;
+        ).rows[0];
+        if (
+          row.data.contextNeed &&
+          row.data.work.kind === "background" &&
+          backgroundPaused(previous?.content)
+        ) {
+          // Re-read the world for the outstanding action instead of replaying stale query results.
+          delete row.data.work;
+          delete row.data.backgroundMessages;
+        } else if (previous?.rejected) delete row.data.work;
         else
           row.data.work = {
             ...row.data.work,
@@ -1651,6 +1670,8 @@ export class WorldScenes {
     )
       return false;
     // Resume from durable progress, discarding only the unaccepted response.
+    const validationErrors =
+      error instanceof z.ZodError ? error.issues : error.message;
     const saved = (
       await this.pool.query<SceneRow>(
         "SELECT * FROM world_scene WHERE id=$1 AND claim=$2",
@@ -1684,10 +1705,7 @@ export class WorldScenes {
       { role: "assistant", content: response.content },
       {
         role: "user",
-        content: JSON.stringify({
-          validationErrors:
-            error instanceof z.ZodError ? error.issues : error.message,
-        }),
+        content: JSON.stringify({ validationErrors }),
       },
     );
     await this.#save(row, undefined, row.claim!);
