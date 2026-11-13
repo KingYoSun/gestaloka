@@ -1451,6 +1451,8 @@ export interface paths {
                                 nextPurpose: string | null;
                                 departed?: boolean;
                                 waitingFor?: string[];
+                                /** Format: uuid */
+                                soloProposal?: string;
                                 shared?: {
                                     owner: boolean;
                                     requestIds: string[];
@@ -1676,6 +1678,8 @@ export interface paths {
                                 nextPurpose: string | null;
                                 departed?: boolean;
                                 waitingFor?: string[];
+                                /** Format: uuid */
+                                soloProposal?: string;
                                 shared?: {
                                     owner: boolean;
                                     requestIds: string[];

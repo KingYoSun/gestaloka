@@ -252,6 +252,7 @@ export const SceneStatus = z.object({
   nextPurpose: z.string().nullable(),
   departed: z.boolean().optional(),
   waitingFor: z.array(z.uuid()).optional(),
+  soloProposal: z.uuid().optional(),
   shared: z
     .object({
       owner: z.boolean(),

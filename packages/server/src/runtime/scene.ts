@@ -101,6 +101,9 @@ function backgroundPaused(content?: string) {
 }
 export type SceneData = {
   turns?: true;
+  soloBot?: boolean;
+  soloProposal?: string;
+  deferredSoloAction?: { id: string; text: string; submittedAt: string };
   turn?: SharedTurn;
   ending?: SceneEnding;
   drafts?: SceneDraft[];
@@ -241,7 +244,7 @@ export class WorldScenes {
       : "construction_id=$1 AND ($2::uuid IS NULL OR actor_id=$2)";
     const fields = compact
       ? `id,construction_id,actor_id,state,claim,jsonb_build_object(
-      'commandId',data->'commandId','at',data->'at','startedAt',data->'startedAt','shared',data->'shared',
+      'commandId',data->'commandId','at',data->'at','startedAt',data->'startedAt','shared',data->'shared','soloProposal',data->'soloProposal',
       'background',jsonb_build_object('synopsis',data#>'{background,synopsis}', 'synopsisInformation',data#>'{background,synopsisInformation}',
         'perceptions',CASE WHEN $2::uuid IS NULL THEN data#>'{background,perceptions}' ELSE (SELECT coalesce(jsonb_agg(p),'[]') FROM jsonb_array_elements(coalesce(data#>'{background,perceptions}','[]')) p WHERE p->>'observerId'=$2::text) END),
       'events','[]'::jsonb,'actions',CASE WHEN data ? 'shared' THEN
@@ -345,7 +348,9 @@ export class WorldScenes {
       state: "preparing",
       claim: null,
       data: {
-        ...(shared ? { shared: true as const, turns: true as const } : {}),
+        ...(shared
+          ? { shared: true as const, turns: true as const }
+          : { soloBot: kind === "bot" }),
         recordingVersion: "inspection-record-v2",
         reflectionResponseId: sceneId(`${requestId}:reflection`),
         commandId: requestId,
@@ -463,7 +468,7 @@ export class WorldScenes {
       });
       return (await this.latest(world, client, false, actor, row.id))!;
     }
-    if (command === "react" || command === "vote")
+    if (command === "react" || (command === "vote" && !row.data.soloProposal))
       throw new ConstructionStateError("共有シーンを指定してください");
     if (command === "start") {
       if (row.state !== "ready")
@@ -534,25 +539,69 @@ export class WorldScenes {
           "シーンが操作可能になってから入力してください",
         );
       row.data.requestId = input.requestId;
-      if (command === "finish") row.state = "reflecting";
-      else {
-        row.state = "acting";
-        row.data.actions.push({
-          ...(row.data.shared ? { actorId: actor } : {}),
-          ...(command === "leave" ? { leave: true as const } : {}),
-          id: input.requestId,
-          text: command === "leave" ? "この場から退出する" : input.actionText!,
-          state: "running",
-          submittedAt: new Date().toISOString(),
-        });
-        const intent = {
-          actorId: actor,
-          actionText: row.data.actions.at(-1)!.text,
-          continuing: row.data.pending[actor]?.actionText === input.actionText,
-        };
-        row.data.pending[actor] = intent;
-        row.data.intentions[actor] = intent;
-        row.data.choices.push(intent);
+      const action =
+        command === "vote"
+          ? row.data.deferredSoloAction
+          : command === "act" || command === "leave"
+            ? {
+                id: input.requestId,
+                text:
+                  command === "leave"
+                    ? "この場から退出する"
+                    : input.actionText!,
+                submittedAt: new Date().toISOString(),
+              }
+            : undefined;
+      const proposal = row.data.soloProposal;
+      if (proposal) {
+        if (command !== "vote" && command !== "finish")
+          throw new ConstructionStateError("終了提案に回答してください");
+        if (command === "vote") {
+          await this.shared.turns.answer(
+            client,
+            row.id,
+            actor,
+            input.proposalId!,
+            input.continue!,
+          );
+          if (!input.continue) row.data.ending = "unanimous";
+        }
+        await client.query(
+          "UPDATE world_scene_end_vote SET state='closed' WHERE id=$1",
+          [proposal],
+        );
+        delete row.data.soloProposal;
+        delete row.data.deferredSoloAction;
+      }
+      if (command === "finish" || (command === "vote" && !input.continue))
+        row.state = "reflecting";
+      else if (action) {
+        const legacy =
+          row.data.soloBot === undefined && !row.data.shared && kind === "bot";
+        if (!row.data.shared)
+          row.data.soloBot = command === "vote" || kind === "bot";
+        if (legacy && (await this.#savedConclusion(client, row))) {
+          row.data.soloProposal = await this.shared.turns.propose(client, row, [
+            actor,
+          ]);
+          row.data.deferredSoloAction = action;
+        } else {
+          row.state = "acting";
+          row.data.actions.push({
+            ...(row.data.shared ? { actorId: actor } : {}),
+            ...(command === "leave" ? { leave: true as const } : {}),
+            ...action,
+            state: "running",
+          });
+          const intent = {
+            actorId: actor,
+            actionText: action.text,
+            continuing: row.data.pending[actor]?.actionText === action.text,
+          };
+          row.data.pending[actor] = intent;
+          row.data.intentions[actor] = intent;
+          row.data.choices.push(intent);
+        }
       }
     }
     row.data.commandId = input.requestId;
@@ -577,6 +626,27 @@ export class WorldScenes {
     if (!["active", "ready"].includes(row.state))
       await this.#enqueue(client, row.id, !!row.data.shared);
     return row;
+  }
+  async #savedConclusion(client: pg.PoolClient, row: SceneRow) {
+    const completed = row.data.actions
+      .filter((a) => a.state === "complete")
+      .map((a) => a.id);
+    const calls = await client.query<{ content: string }>(
+      `SELECT DISTINCT ON (response_id) response->>'content' AS content FROM llm_call
+       WHERE response_id=ANY($1::uuid[]) AND request->>'role'='scene-resolve' AND state='complete'
+       AND response->>'finishReason'='stop' ORDER BY response_id,created_at DESC,id DESC`,
+      [completed],
+    );
+    return calls.rows.some(({ content }) => {
+      try {
+        const step = sceneResponse(presentationEvidence(parseOutput(content)));
+        return step.type === "scene" && step.concluded === true;
+      } catch (error) {
+        if (error instanceof SyntaxError || error instanceof z.ZodError)
+          return false;
+        throw error;
+      }
+    });
   }
   #budget(row: SceneRow) {
     return row.state === "preparing"
@@ -1123,6 +1193,7 @@ export class WorldScenes {
             request: {
               at: d.at,
               controlledActorId: actor,
+              ...(d.soloBot ? { scenePurpose: d.purpose } : {}),
               ...(d.turn
                 ? {
                     controlledActorIds: controlled,
@@ -1363,7 +1434,13 @@ export class WorldScenes {
         action.state = "complete";
         row.state = "active";
         d.nextDecisions = d.nextDecisions.filter((id) => id !== actor);
-        await this.#save(row, undefined, row.claim!);
+        if (d.soloBot && step.concluded) {
+          await this.#transaction(async (db) => {
+            await this.shared.lock(db, row.construction_id);
+            d.soloProposal = await this.shared.turns.propose(db, row, [actor]);
+            await this.#save(row, db, row.claim!);
+          });
+        } else await this.#save(row, undefined, row.claim!);
         return false;
       }
       if (
