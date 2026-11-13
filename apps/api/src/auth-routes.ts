@@ -64,14 +64,8 @@ export async function authRoutes(
     { schema: { hide: true } },
     async (request, reply) => {
       const { requestUrl } = request.body as { requestUrl?: string };
-      const target =
-        requestUrl && URL.canParse(requestUrl)
-          ? new URL(requestUrl).searchParams.get("return_to")
-          : null;
-      const token =
-        target && URL.canParse(target)
-          ? new URL(target).searchParams.get("invitation")
-          : null;
+      const target = URL.parse(requestUrl ?? "")?.searchParams.get("return_to");
+      const token = URL.parse(target ?? "")?.searchParams.get("invitation");
       if (token && (await operations?.hasInvitation(token)))
         return reply.code(204).send();
       return reply.code(403).send({
@@ -121,29 +115,16 @@ export async function authRoutes(
       if (!flow) {
         const url = new URL(`${base}/self-service/${kind}/browser`);
         if (return_to) url.searchParams.set("return_to", return_to);
-        if (kind === "registration") {
+        if (kind === "registration" && request.query.invitation !== undefined) {
           const origin = `${request.protocol}://${request.headers.host}`;
-          const target =
-            return_to && URL.canParse(return_to)
-              ? new URL(return_to)
-              : new URL("/auth/register", origin);
-          if (
-            target.origin !== origin ||
-            !["/auth/player", "/auth/register"].includes(target.pathname)
-          )
-            return authPage(
-              reply.code(400),
-              "招待コードで登録",
-              "<p>招待の案内から開き直してください。</p>",
-            );
-          if (request.query.invitation)
-            target.searchParams.set("invitation", request.query.invitation);
-          if (!target.searchParams.get("invitation"))
+          const target = new URL("/auth/register", origin);
+          if (!request.query.invitation)
             return authPage(
               reply,
               "招待コードで登録",
-              `<form method="get"><input type="hidden" name="return_to" value="${escape(target.href)}"><label>招待コード<input name="invitation" required></label><button>次へ</button></form>`,
+              '<form method="get"><label>招待コード<input name="invitation" required></label><button>次へ</button></form>',
             );
+          target.searchParams.set("invitation", request.query.invitation);
           url.searchParams.set("return_to", target.href);
         }
         return reply.redirect(url.toString());
@@ -211,11 +192,11 @@ export async function authRoutes(
           `<label>ログインID<input name="${identifier}" value="${escape(id.attributes.value ?? "")}" autocomplete="username" required></label><label>${registering ? "パスワード（15文字以上）" : "パスワード"}<input type="password" name="password" autocomplete="${registering ? "new-password" : "current-password"}"${registering ? ' minlength="15"' : ""} required></label><button name="method" value="password">${registering ? "IDを作成する" : "IDでログイン"}</button>`,
         );
         if (!registering && !data.refresh) {
-          const query = new URLSearchParams({
-            return_to:
-              data.return_to ||
-              `${request.protocol}://${request.headers.host}/auth/register`,
-          });
+          const query = new URLSearchParams(
+            URL.parse(data.return_to ?? "")?.searchParams.has("invitation")
+              ? { return_to: data.return_to! }
+              : { invitation: "" },
+          );
           password += `<p><a href="/auth/registration?${escape(query.toString())}">招待コードで新しいIDを作る</a></p>`;
         }
       }

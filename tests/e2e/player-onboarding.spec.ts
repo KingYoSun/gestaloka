@@ -217,6 +217,11 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
         ).toBeVisible();
         await page.goto(origin + permit);
         await page.getByLabel("ログインID").fill(username);
+        await page.getByLabel("パスワード").fill(randomUUID());
+        await page.getByRole("button", { name: "IDでログイン" }).click();
+        await expect(
+          page.getByText("IDまたはパスワードを確認してください。"),
+        ).toBeVisible();
         await page.getByLabel("パスワード").fill(password);
         await page.getByRole("button", { name: "IDでログイン" }).click();
       }

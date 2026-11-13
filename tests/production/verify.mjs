@@ -83,7 +83,7 @@ const cli = (action, d) =>
     });
   });
 const storage = `gestaloka-recovery-s3-${suffix}`;
-const https = async (d, subdomain, path) =>
+const https = async (d, subdomain, path, method = "GET") =>
   new Promise((resolvePromise, reject) => {
     const host = `${subdomain}.${d.config.domain}`;
     const request = get(
@@ -92,6 +92,7 @@ const https = async (d, subdomain, path) =>
         servername: host,
         port: d.config.httpsPort,
         path,
+        method,
         headers: { host: `${host}:${d.config.httpsPort}` },
         rejectUnauthorized: false,
       },
@@ -165,6 +166,16 @@ try {
     );
     assert.equal(discovery.issuer, d.env.ORY_HYDRA_PUBLIC_URL);
     assert.equal((await https(d, "api", "/admin/identities")).status, 404);
+    assert.equal((await https(d, "api", "/internal/auth/attempt")).status, 404);
+    for (let i = 0; i < 30; i++)
+      assert.notEqual(
+        (await https(d, "api", "/self-service/login", "POST")).status,
+        429,
+      );
+    assert.equal(
+      (await https(d, "api", "/self-service/login", "POST")).status,
+      429,
+    );
     const containers = JSON.parse(
       (
         await command([
