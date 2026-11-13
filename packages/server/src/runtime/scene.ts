@@ -617,6 +617,7 @@ export class WorldScenes {
         `scene-${kind}`,
         work.messages,
         work.target,
+        kind === "background" ? "resolution" : work.target,
       );
     if (response.finishReason !== "stop")
       throw new SceneResponseError("シーンのモデル応答が未完了です");
@@ -803,7 +804,11 @@ export class WorldScenes {
         d.work = {
           id: randomUUID(),
           kind: "background",
-          target: "resolution",
+          target:
+            row.construction_id ===
+            process.env.SCENE_DEFAULT_BACKGROUND_WORLD_ID
+              ? "default"
+              : "resolution",
           messages: [
             {
               role: "system",
