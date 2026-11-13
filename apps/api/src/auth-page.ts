@@ -30,6 +30,9 @@ export const authStyle = `:root { --cream: #f2eadf; --paper: #f8f2e8; --navy: #0
 body { margin: 0; background: var(--cream); color: var(--navy); font: 16px/1.7 "Helvetica Neue", "Hiragino Sans", Arial, "Noto Sans JP", Meiryo, sans-serif; }
 main { max-width: 720px; margin: 48px auto; padding: 24px; }
 form { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 24px; }
+form:has(input[type=password]) { display: grid; max-width: 26rem; }
+form:has(input[type=password]) label { display: grid; }
+form:has(input[type=password]) input { box-sizing: border-box; min-width: 0; padding: 8px; font: inherit; }
 button { padding: 12px 24px; border: 1px solid var(--gold); border-radius: 8px; background: var(--paper); color: var(--navy); font: inherit; cursor: pointer; }
 button:first-of-type { background: var(--gold); }
 button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import sharp from "sharp";
 import { expect, test } from "@playwright/test";
 import { WorldAccess } from "@gestaloka/server/access";
+import { OryIdentity } from "@gestaloka/server/identity";
 import { createApp } from "../../apps/api/src/app.js";
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureRuntime } from "../support/provider.js";
@@ -54,20 +55,24 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
     await access.setup();
     const app = await createApp(
       access,
-      auth.identity,
+      base
+        ? auth.identity
+        : new OryIdentity(db.postgres, "http://127.0.0.1:24433"),
       undefined,
       auth.operations,
     );
     const cli = await playerCli(app);
-    const origin = await app.listen({ host: "127.0.0.1", port: 0 });
+    const origin = base
+      ? await app.listen({ host: "127.0.0.1", port: 0 })
+      : "http://127.0.0.1:3000";
+    if (!base) await app.listen({ host: "0.0.0.0", port: 3000 });
+    let oryId: string | undefined;
     let graph: string | undefined;
     try {
       const admin = await auth.person();
       await db.postgres.query(
         "UPDATE operation_state SET bootstrapped=true,invite_required=true",
       );
-      const person = await auth.person("user");
-      await db.postgres.query("DELETE FROM app_user WHERE id=$1", [person.id]);
       const world = (
         await access.create(admin.id, {
           requestId: randomUUID(),
@@ -154,21 +159,72 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
           "return_to",
         ),
       ).toBe(cli.base + permit);
-      const unregistered = await app.inject({
-        url: permit,
-        headers: { cookie: person.cookie },
-      });
-      expect(unregistered.statusCode).toBe(302);
-      await page.context().addCookies([
-        {
-          name: "test_ory",
-          value: person.id,
-          url: origin,
-          httpOnly: true,
-          sameSite: "Strict",
-        },
-      ]);
-      await page.goto(origin + permit);
+      let person: { id: string };
+      if (base) {
+        person = await auth.person("user");
+        await db.postgres.query("DELETE FROM app_user WHERE id=$1", [
+          person.id,
+        ]);
+        await page.context().addCookies([
+          {
+            name: "test_ory",
+            value: person.id,
+            url: origin,
+            httpOnly: true,
+            sameSite: "Strict",
+          },
+        ]);
+        await page.goto(origin + permit);
+      } else {
+        const username = `招待-${randomUUID()}`;
+        const password = randomUUID();
+        const begin = async (invitation: string) => {
+          await page.goto(
+            origin +
+              "/auth/player?" +
+              new URLSearchParams({ code: initial.userCode, invitation }),
+          );
+          await page
+            .getByRole("link", { name: "招待コードで新しいIDを作る" })
+            .click();
+          await page.getByLabel("ログインID").fill(username);
+          await page.getByLabel("パスワード").fill(password);
+          await page.getByRole("button", { name: "IDを作成する" }).click();
+        };
+        await begin("invalid-invitation");
+        await expect(
+          page.getByText(
+            "この招待では登録できません。招待を送った人に確認してください。",
+          ),
+        ).toBeVisible();
+        await begin(token);
+        await expect(
+          page.getByRole("button", { name: "利用登録する" }),
+        ).toBeVisible();
+        const session = await (
+          await page.request.get("http://127.0.0.1:24433/sessions/whoami")
+        ).json();
+        oryId = session.identity.id;
+        person = await (
+          await page.request.get(origin + "/auth/session")
+        ).json();
+        await page.context().clearCookies();
+        await begin(token);
+        await expect(
+          page.getByText(
+            "このIDはすでに使われています。別のIDを選んでください。",
+          ),
+        ).toBeVisible();
+        await page.goto(origin + permit);
+        await page.getByLabel("ログインID").fill(username);
+        await page.getByLabel("パスワード").fill(randomUUID());
+        await page.getByRole("button", { name: "IDでログイン" }).click();
+        await expect(
+          page.getByText("IDまたはパスワードを確認してください。"),
+        ).toBeVisible();
+        await page.getByLabel("パスワード").fill(password);
+        await page.getByRole("button", { name: "IDでログイン" }).click();
+      }
       await expect(
         page.getByRole("heading", { name: "利用登録", exact: true }),
       ).toBeVisible();
@@ -326,6 +382,10 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
         expect(webPerson.actorId).not.toBe(ready.device.actorId);
       }
     } finally {
+      if (oryId)
+        await fetch(`http://127.0.0.1:24434/admin/identities/${oryId}`, {
+          method: "DELETE",
+        });
       await cli.close();
       await app.close();
       for (const suffix of [
