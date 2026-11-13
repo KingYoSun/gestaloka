@@ -35,6 +35,7 @@ let modelCalls = 0,
 let legacyResolveSnapshot:
   Awaited<ReturnType<WorldAccess["scenes"]["latest"]>> | undefined;
 let backgroundSnapshot: typeof legacyResolveSnapshot;
+let observedSnapshot: typeof legacyResolveSnapshot;
 const partialNpcAction =
   "問いの一部に返答し、選んだ活動を続けて相手の判断を待つ";
 const inputs: Record<string, unknown>[] = [],
@@ -154,6 +155,10 @@ const model = new LlmClient(
         }[],
         response = intentions.some((i) => i.actorId === npc);
       if (intentions.some((i) => i.actionText === "隣の箱を調べる")) {
+        if (user.observationLimits && !observedSnapshot)
+          observedSnapshot = structuredClone(
+            (await access.scenes.latest(construction))!,
+          );
         content = user.observationLimits
           ? {
               type: "scene",
@@ -180,6 +185,24 @@ const model = new LlmClient(
                 remainingActions: { [actor]: "隣の箱を調べる" },
               },
             };
+        if (
+          user.observationLimits &&
+          !body.messages.some((m: { content: string }) =>
+            m.content.includes("validationErrors"),
+          )
+        ) {
+          content = {
+            type: "scene",
+            events: [],
+            decisions: { [actor]: "pending" },
+            newDecisions: [],
+            needsContext: {
+              evidence: "observation",
+              reason: "もう一度確認する",
+              remainingActions: { [actor]: "隣の箱を調べる" },
+            },
+          };
+        }
       } else if (
         intentions.some((i) => i.actionText === "前の返答を読み直す")
       ) {
@@ -1304,7 +1327,71 @@ test("別の箱を観察しても元の問いを保ち、見えなかった範�
         (n) => n.kind === "script",
       ),
     );
+    expect(row.data.contextRequests).toHaveLength(1);
+
+    // Restore the old loop at its second background call, with the first answer saved.
+    const saved = observedSnapshot!;
+    const input = saved.data.actions.at(-1)!;
+    const need = saved.data.contextRequests![0]!;
+    const uncertain = randomUUID();
+    saved.data.work = {
+      ...saved.data.work!,
+      id: uncertain,
+      kind: "background",
+    };
+    saved.data.contextNeed = {
+      reason: need.reason,
+      evidence: "observation",
+      remainingActions: need.remainingActions,
+    };
+    saved.data.contextRequests!.push({ ...need, reason: "同じ位置から再確認" });
+    saved.data.resumeState = "acting";
+    saved.data.error =
+      "LLM要求の結果を確定できません: HTTP 429。予約枠は保持します";
+    await d.postgres.query(
+      "INSERT INTO llm_call(id,budget_id,hash,reserved_nano,request,state,delivery,response_id) VALUES($1,$2,'pending-observation',123,'{}','pending','unknown',$3)",
+      [uncertain, budget, input.id],
+    );
+    await d.postgres.query(
+      "UPDATE world_scene SET state='paused',data=$2 WHERE id=$1",
+      [id, saved.data],
+    );
+    const calls = vi.spyOn(model, "complete");
+    try {
+      expect(
+        (await command({ requestId: randomUUID(), command: "resume" }))
+          .statusCode,
+      ).toBe(202);
+      await access.scenes.tick(id);
+      const resumed = (await access.scenes.latest(construction))!;
+      expect(resumed.state).toBe("active");
+      expect(resumed.data.actions).toMatchObject([
+        { id: input.id, text: input.text, state: "complete" },
+      ]);
+      expect(resumed.data.events).toHaveLength(1);
+      expect(calls.mock.calls.length).toBeGreaterThan(0);
+      expect(
+        calls.mock.calls.every(
+          ([call, role]) => call !== uncertain && role === "scene-resolve",
+        ),
+      ).toBe(true);
+      expect(
+        (
+          await d.postgres.query(
+            "SELECT state,delivery,reserved_nano FROM llm_call WHERE id=$1",
+            [uncertain],
+          )
+        ).rows[0],
+      ).toEqual({
+        state: "pending",
+        delivery: "unknown",
+        reserved_nano: "123",
+      });
+    } finally {
+      calls.mockRestore();
+    }
   } finally {
+    observedSnapshot = undefined;
     await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
   }
 });

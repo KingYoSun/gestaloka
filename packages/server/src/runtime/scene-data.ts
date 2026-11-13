@@ -158,6 +158,12 @@ export const SceneStep = z.discriminatedUnion("type", [
     .strict(),
   z.object({ type: z.literal("boundary"), reason: text }).strict(),
 ]);
+// After the observation lookup, resolve the observation before requesting other context.
+export const ObservedStep = SceneStep.options[0]
+  .omit({ needsContext: true })
+  .extend({
+    events: z.array(SceneEvent).min(1),
+  });
 export function sceneResponse(value: unknown) {
   // 保存済みworkの旧診断は、出来事や判断へ影響させない。
   const step =
