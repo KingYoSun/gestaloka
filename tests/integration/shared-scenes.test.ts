@@ -394,34 +394,40 @@ async function end(index: number) {
   await access.scenes.tick(r.scene.id);
   expect((await cli.run(p.profile, "result")).state).toBe("finished");
 }
-test("Webから対象0人で共有を準備し、確認してから開始する", async ({
-  onTestFinished,
-}) => {
-  vi.stubEnv("SCENE_DEFAULT_BACKGROUND_WORLD_ID", world);
-  const calls = vi.spyOn(runtime.agent.model, "complete");
-  onTestFinished(() => {
-    calls.mockRestore();
-    vi.unstubAllEnvs();
-  });
-  const [a, b, c] = people;
-  selections.set(a!.actor, {
-    candidates: [b!.actor, c!.actor],
-    mergeInto: null,
-  });
-  const id = await prepare(0, true);
-  await access.scenes.tick(id);
-  expect(
-    calls.mock.calls
-      .filter(([, role]) => role === "scene-background")
-      .map(([, , , target]) => target),
-  ).toEqual(["resolution", "default"]);
-  const state = await cli.run(a!.profile, "status");
-  expect(state.state).toBe("prepared");
-  expect(state.scene.shared.pending).toBe(0);
-  expect((await cli.run(b!.profile, "inbox")).invitations).toEqual([]);
-  expect((await cli.run(c!.profile, "inbox")).invitations).toEqual([]);
-  await end(0);
-}, 60000);
+test.for(["default", "resolution"] as const)(
+  "Webから対象0人で共有を準備し、参加者選択に%sを使う",
+  { timeout: 60000 },
+  async (target, { onTestFinished }) => {
+    vi.stubEnv("SCENE_DEFAULT_BACKGROUND_WORLD_ID", world);
+    vi.stubEnv(
+      "SCENE_DEFAULT_PARTICIPATION_WORLD_ID",
+      target === "default" ? world : randomUUID(),
+    );
+    const calls = vi.spyOn(runtime.agent.model, "complete");
+    onTestFinished(() => {
+      calls.mockRestore();
+      vi.unstubAllEnvs();
+    });
+    const [a, b, c] = people;
+    selections.set(a!.actor, {
+      candidates: [b!.actor, c!.actor],
+      mergeInto: null,
+    });
+    const id = await prepare(0, true);
+    await access.scenes.tick(id);
+    expect(
+      calls.mock.calls
+        .filter(([, role]) => role === "scene-background")
+        .map(([, , , target]) => target),
+    ).toEqual([target, "default"]);
+    const state = await cli.run(a!.profile, "status");
+    expect(state.state).toBe("prepared");
+    expect(state.scene.shared.pending).toBe(0);
+    expect((await cli.run(b!.profile, "inbox")).invitations).toEqual([]);
+    expect((await cli.run(c!.profile, "inbox")).invitations).toEqual([]);
+    await end(0);
+  },
+);
 test("2人へ並行して要請し、私的な情報を混ぜず全回答で早期確定する", async () => {
   const [a, b, c] = people;
   await presence(1);

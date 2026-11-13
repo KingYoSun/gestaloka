@@ -747,7 +747,9 @@ export class WorldScenes {
             { io: "input" },
           ),
         },
-        "resolution",
+        row.construction_id === process.env.SCENE_DEFAULT_PARTICIPATION_WORLD_ID
+          ? "default"
+          : "resolution",
       );
       const answer = z
         .discriminatedUnion("type", [

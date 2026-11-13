@@ -80,6 +80,7 @@ services:
     environment:
       <<: *app-env
       SCENE_DEFAULT_BACKGROUND_WORLD_ID: ${SCENE_DEFAULT_BACKGROUND_WORLD_ID:-}
+      SCENE_DEFAULT_PARTICIPATION_WORLD_ID: ${SCENE_DEFAULT_PARTICIPATION_WORLD_ID:-}
     command: [node, apps/worker/dist/main.js]
     depends_on:
       api: { condition: service_healthy }
