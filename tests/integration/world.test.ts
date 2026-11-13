@@ -99,6 +99,33 @@ test("statusの対象接続で場所・所属を表し、所有・現実・解�
   ]);
 });
 
+test("後から確定した状態の有効期間には当時の本文を返し、後の改訂を混ぜない", async () => {
+  const { worldId, lease, context } = await world();
+  const owner = node("existence", "物"),
+    script = node("script", "当時の状態");
+  const binding = {
+    ...edge("status", owner, script, "content"),
+    period: { from: 10, until: 20 },
+  };
+  await store.commit(lease, context, {
+    commitId: randomUUID(),
+    at: 30,
+    changes: changes([owner, script], [binding]),
+  });
+  const read = store.context(worldId);
+  expect(await read.node(script.id, 9)).toBeUndefined();
+  expect(await read.node(script.id, 10)).toEqual(script);
+  expect(await read.node(script.id, 20)).toBeUndefined();
+  await store.commit(lease, read, {
+    commitId: randomUUID(),
+    at: 40,
+    changes: { ...changes(), revisions: [{ ...script, text: "後の改訂" }] },
+  });
+  const revised = store.context(worldId);
+  expect(await revised.node(script.id, 15)).toEqual(script);
+  expect((await revised.node(script.id, 40))?.text).toBe("後の改訂");
+});
+
 test("発生・多段の作用・循環を保存でき、内部の読取は観測を追加しない", async () => {
   const { worldId, lease, context } = await world();
   const river = node("existence", "川"),

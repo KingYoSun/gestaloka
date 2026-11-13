@@ -134,6 +134,26 @@ export class WorldContext {
         ? WorldNode.parse(JSON.parse(result.records[0].get("data")))
         : undefined;
     });
+    // A scene can commit a status interval that starts before its script was stored.
+    // Resolve that interval to the original text, never a later revision.
+    if (
+      !stored &&
+      at !== undefined &&
+      (await this.relations(id, "status", "in", at)).some(
+        (edge) => edge.role === "content",
+      )
+    ) {
+      const original = await this.#read(nodeKey(id), async (tx) => {
+        const result = await tx.run(
+          `MATCH (n:WorldNode {worldId:$worldId,id:$id,kind:'script'})
+           OPTIONAL MATCH (r:WorldRevision {worldId:$worldId,nodeId:$id})
+           RETURN coalesce(r.data,n.data) AS data ORDER BY r.version LIMIT 1`,
+          { worldId: this.worldId, id },
+        );
+        return result.records[0]?.get("data") as string | undefined;
+      });
+      if (original) return WorldNode.parse(JSON.parse(original));
+    }
     return (
       stored ??
       this.drafts
