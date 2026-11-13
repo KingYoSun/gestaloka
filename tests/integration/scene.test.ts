@@ -1,7 +1,7 @@
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { WorldBudget } from "../../packages/server/src/llm/world-budget.js";
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { ExecutionBudget, ExecutionLimit } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
@@ -62,13 +62,15 @@ const model = new LlmClient(
         creations: [],
         beliefs: [],
         resolvedUnknowns: [],
-        facts: [
-          {
-            subjectId: place,
-            text: "橋へ続く道が声をかけた場所から延びている",
-            aboutIds: [actor, user.stagedScene.events[0].id],
-          },
-        ],
+        facts: user.needsContext.worldChanged
+          ? []
+          : [
+              {
+                subjectId: place,
+                text: "橋へ続く道が声をかけた場所から延びている",
+                aboutIds: [actor, user.stagedScene.events[0].id],
+              },
+            ],
       };
     } else if (
       user.responseSchema?.oneOf?.some(
@@ -726,6 +728,74 @@ test.each(["background", "intent", "resolve"])(
   },
 );
 
+async function addVillager(newcomer: string) {
+  await agent.store.commit(
+    await agent.store.claim(world, randomUUID()),
+    agent.store.context(world),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: [{ id: newcomer, kind: "existence", text: "新しい村人" }],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "has",
+            source: place,
+            target: newcomer,
+            period: { from: 0 },
+          },
+        ],
+        endEdges: [],
+      },
+    },
+  );
+}
+
+test.each(["自動", "旧版からの手動再開"])(
+  "初回の準備中に世界が変わっても最新の情報で開始できる（%s）",
+  async (mode) => {
+    const id = randomUUID(),
+      newcomer = randomUUID();
+    await command({ requestId: id, command: "prepare", purpose: "村を訪ねる" });
+    const calls = vi
+      .spyOn(model, "complete")
+      .mockImplementationOnce(async (...args) => {
+        const response = await complete(...args);
+        await addVillager(newcomer);
+        // Reproduce the durable pause left by the old worker after its model call.
+        if (mode === "旧版からの手動再開")
+          throw new Error("保存済みの文脈が変わりました");
+        return response;
+      });
+    try {
+      if (mode === "旧版からの手動再開") {
+        await expect(access.scenes.tick(id)).rejects.toThrow(
+          "保存済みの文脈が変わりました",
+        );
+        await access.scenes.tick(id);
+        expect((await status()).state).toBe("paused");
+        expect(calls).toHaveBeenCalledTimes(1);
+        expect(
+          (await command({ requestId: randomUUID(), command: "resume" }))
+            .statusCode,
+        ).toBe(202);
+      }
+      await access.scenes.tick(id);
+      expect(calls).toHaveBeenCalledTimes(2);
+      const [before, after] = calls.mock.calls;
+      expect(before![2][1]!.content).not.toContain(newcomer);
+      expect(after![2][1]!.content).toContain(newcomer);
+      expect((await status()).state).toBe("ready");
+      await command({ requestId: randomUUID(), command: "start" });
+      expect((await status()).state).toBe("active");
+    } finally {
+      calls.mockRestore();
+      await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
+    }
+  },
+);
+
 test("自動修正も元の呼出し上限を使い、上限後に送信や履歴を増やさない", async () => {
   await d.postgres.query(
     "UPDATE response_call_policy SET calls=3 WHERE singleton",
@@ -1072,6 +1142,60 @@ test("入力完了で操作を返し、NPCの判定待ちを次の入力へ渡�
   } finally {
     await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [scene.id]);
     inputs.length = 0;
+  }
+});
+
+test("行動の解決中に世界が更新されても、表示済みの出来事と入力を保って残りだけを続ける", async () => {
+  const id = randomUUID(),
+    inputId = randomUUID(),
+    newcomer = randomUUID();
+  await command({ requestId: id, command: "prepare", purpose: "橋へ向かう" });
+  await access.scenes.tick(id);
+  await command({ requestId: randomUUID(), command: "start" });
+  await command({
+    requestId: inputId,
+    command: "act",
+    actionText: "挨拶して橋を見に行く",
+  });
+  let prefix: typeof backgroundSnapshot;
+  const calls = vi
+    .spyOn(model, "complete")
+    .mockImplementation(async (...args) => {
+      const response = await complete(...args);
+      if (
+        !prefix &&
+        args[1] === "scene-resolve" &&
+        JSON.parse(args[2][1]!.content).sceneHistory.length
+      ) {
+        prefix = (await access.scenes.latest(construction))!;
+        await addVillager(newcomer);
+      }
+      return response;
+    });
+  try {
+    await access.scenes.tick(id);
+    const row = (await access.scenes.latest(construction))!;
+    expect(row.state).toBe("active");
+    expect(prefix!.data.events).toHaveLength(1);
+    expect(row.data.events.slice(0, 1)).toEqual(prefix!.data.events);
+    expect(
+      row.data.presentations!.slice(0, prefix!.data.presentations!.length),
+    ).toEqual(prefix!.data.presentations);
+    expect(row.data.actions).toMatchObject([
+      { ...prefix!.data.actions[0], state: "complete" },
+    ]);
+    expect(row.data.background).toEqual(prefix!.data.background);
+    expect(row.data.events.map((e) => e.inputId)).toEqual([inputId, inputId]);
+    const refresh = calls.mock.calls
+      .filter(([, role]) => role === "scene-background")
+      .at(-1)!;
+    expect(refresh[2][1]!.content).toContain(newcomer);
+    expect(
+      JSON.parse(refresh[2][1]!.content).needsContext.remainingActions[actor],
+    ).toBe("橋の方へ歩く");
+  } finally {
+    calls.mockRestore();
+    await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
   }
 });
 
@@ -1435,7 +1559,35 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
     { finish: "length" },
   ]);
   await command({ requestId: randomUUID(), command: "resume" });
-  await access.scenes.tick(scene.id);
+  // Invalidate the projection's world read after its first proposal.
+  const newcomer = randomUUID();
+  const projection = vi
+    .spyOn(model, "complete")
+    .mockImplementationOnce(async (...args) => {
+      expect(args[1]).toBe("world-update");
+      const response = await complete(...args);
+      await addVillager(newcomer);
+      return response;
+    });
+  try {
+    await access.scenes.tick(scene.id);
+    const updates = projection.mock.calls.filter(
+      ([, role]) => role === "world-update",
+    );
+    expect(updates).toHaveLength(2);
+    const latest = JSON.parse(updates[1]![2][1]!.content);
+    expect(JSON.stringify(latest.initialContext)).toContain(newcomer);
+    expect(latest.request.completedScene.events).toEqual(saved!.data.events);
+    const finished = (await access.scenes.latest(construction))!;
+    expect(finished.data.operationId).toBe(saved!.data.operationId);
+    expect(finished.data.events).toEqual(saved!.data.events);
+    expect(finished.data.actions).toEqual(saved!.data.actions);
+    expect(
+      finished.data.presentations!.slice(0, saved!.data.presentations!.length),
+    ).toEqual(saved!.data.presentations);
+  } finally {
+    projection.mockRestore();
+  }
   view = await status();
   expect(view.state).toBe("result");
   const recordedResult = (await access.scenes.latest(
