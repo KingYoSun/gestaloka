@@ -478,9 +478,12 @@ export class LlmClient {
     role: string,
     messages: ChatMessage[],
     target: LlmTarget = "default",
+    effortTarget: LlmTarget = target,
   ): Promise<SavedCompletion> {
     if (this.#configuration && configurationScope.getStore() === undefined)
-      return this.run(id, () => this.complete(id, role, messages, target));
+      return this.run(id, () =>
+        this.complete(id, role, messages, target, effortTarget),
+      );
     z.uuid().parse(id);
     const cachedInput = await this.ledger.savedInput(id);
     const previous = cachedInput?.request as StoredInput | undefined;
@@ -513,7 +516,11 @@ export class LlmClient {
       api = selected.api,
       maxOutput = selected.maxOutput;
     const effort =
-      role === "initial-generation" ? selected.initialEffort : selected.effort;
+      role === "initial-generation"
+        ? selected.initialEffort
+        : effortTarget !== target
+          ? this.settingsFor(effortTarget).effort
+          : selected.effort;
     const prompt =
       provider !== "deepseek"
         ? // The full world schema exceeds Anthropic's grammar limit; retain Zod validation.

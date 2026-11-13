@@ -457,15 +457,27 @@ const status = async () => {
   return r.json().scene;
 };
 const complete = model.complete.bind(model);
-model.complete = async (id, role, messages, target = "default") => {
+model.complete = async (
+  id,
+  role,
+  messages,
+  target = "default",
+  effortTarget,
+) => {
   const targets = new Map([
     ["scene-resolve", "resolution"],
-    ["scene-background", "resolution"],
+    [
+      "scene-background",
+      process.env.SCENE_DEFAULT_BACKGROUND_WORLD_ID === construction
+        ? "default"
+        : "resolution",
+    ],
     ["scene-intent", "resolution"],
     ["scene-result", "default"],
   ]);
   if (targets.has(role)) expect(target).toBe(targets.get(role));
-  return complete(id, role, messages, target);
+  if (role === "scene-background") expect(effortTarget).toBe("resolution");
+  return complete(id, role, messages, target, effortTarget);
 };
 
 beforeAll(async () => {
@@ -1200,6 +1212,7 @@ test("行動の解決中に世界が更新されても、表示済みの出来�
 });
 
 test("背景不足があればfinishedでも発生済み部分を保持し、同じ入力の残りだけ続ける", async () => {
+  vi.stubEnv("SCENE_DEFAULT_BACKGROUND_WORLD_ID", construction);
   const opened = await command({
     requestId: randomUUID(),
     command: "prepare",
@@ -1406,6 +1419,7 @@ test("背景不足があればfinishedでも発生済み部分を保持し、同
       inputId,
     ]);
   } finally {
+    vi.unstubAllEnvs();
     await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
     backgroundSnapshot = undefined;
     inputs.length = 0;
