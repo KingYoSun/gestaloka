@@ -918,6 +918,78 @@ function playStep(input: PlayInput, targets: string[] = []) {
   };
 }
 
+test.each(["end", "timeout"] as const)(
+  "AIの単独シーンでは一区切りで本人に提案し、%sで確定する",
+  async (ending) => {
+    const { profile } = people[0]!;
+    const scene = (await cli.run(profile, "prepare", "--purpose", "村を歩く"))
+      .scene.id;
+    await access.scenes.tick(scene);
+    await cli.run(profile, "start");
+    playback = (input) => ({ ...playStep(input), concluded: true });
+    try {
+      // Webからの一手は同じ人物・判定でも提案を作らない。
+      await humanAct(0, "道を見渡す");
+      await access.scenes.tick(scene);
+      expect((await cli.run(profile, "status")).state).toBe("waiting_input");
+      if (ending === "end") {
+        // 旧版でも行動の判定は保存済み。次の入力は続行回答まで実行しない。
+        await runtime.pool.query(
+          "UPDATE world_scene SET data=data-'soloBot' WHERE id=$1",
+          [scene],
+        );
+      }
+      const act = await cli.run(profile, "act", "--text", "戸口に戻る");
+      await access.scenes.tick(scene);
+      expect((await cli.run(profile, "status")).state).toBe("waiting_vote");
+      const proposal = (await cli.run(profile, "inbox")).proposals.find(
+        (p: { sceneId: string }) => p.sceneId === scene,
+      );
+      expect(proposal).toBeDefined();
+      expect((await cli.run(people[1]!.profile, "inbox")).proposals).toEqual(
+        [],
+      );
+      expect((await cli.run(profile, "act", "--text", "別の入力")).code).toBe(
+        "STATE_CONFLICT",
+      );
+      if (ending === "end") {
+        expect(act.state).toBe("waiting_vote");
+        playback = (input) => playStep(input);
+        await cli.run(profile, "vote", "--proposal", proposal.id, "--continue");
+        await access.scenes.tick(scene);
+        const continued = await cli.run(profile, "status");
+        expect(continued.state).toBe("waiting_input");
+        expect(
+          continued.scene.actions.filter(
+            (a: { id: string }) => a.id === act.requestId,
+          ),
+        ).toHaveLength(1);
+        playback = (input) => ({ ...playStep(input), concluded: true });
+        await cli.run(profile, "act", "--text", "家に入る");
+        await access.scenes.tick(scene);
+        const next = (await cli.run(profile, "inbox")).proposals[0];
+        expect(next.id).not.toBe(proposal.id);
+        await cli.run(profile, "vote", "--proposal", next.id, "--end");
+      } else {
+        const now = vi
+          .spyOn(access.scenes.shared, "now")
+          .mockReturnValue(new Date(Date.parse(proposal.deadline) + 1));
+        try {
+          await access.scenes.shared.expire({ proposalId: proposal.id });
+        } finally {
+          now.mockRestore();
+        }
+      }
+      await access.scenes.tick(scene);
+      expect((await cli.run(profile, "result")).state).toBe("finished");
+      expect((await cli.run(profile, "inbox")).proposals).toEqual([]);
+    } finally {
+      playback = undefined;
+    }
+  },
+  120000,
+);
+
 async function humanPresence(
   index: number,
   active = true,

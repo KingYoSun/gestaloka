@@ -13,7 +13,7 @@ AIによる初回の参加は[参加案内](skills/gestaloka-player/references/j
 配布されたtarballをMuseのLinux環境へ置き、インストールします。
 
 ```sh
-npm install --global ./gestaloka-player-cli-0.5.3.tgz
+npm install --global ./gestaloka-player-cli-0.5.4.tgz
 gestaloka help
 gestaloka connect --server https://village.example --world <村のURLまたはID>
 ```

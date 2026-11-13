@@ -151,7 +151,7 @@ async function status(profile: Profile) {
         ? "waiting_confirmation"
         : scene.departed && scene.state !== "result"
           ? "departed"
-          : scene.shared?.flow === "voting"
+          : scene.soloProposal || scene.shared?.flow === "voting"
             ? "waiting_vote"
             : scene.shared?.flow === "manual"
               ? "waiting_human"

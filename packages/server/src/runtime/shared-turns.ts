@@ -206,27 +206,7 @@ export class SharedTurns {
         ).rows[0]!,
       );
     } else if (input.command === "vote") {
-      const vote = (
-        await db.query<{ deadline: Date; state: string }>(
-          "SELECT deadline,state FROM world_scene_end_vote WHERE id=$1 AND scene_id=$2",
-          [input.proposalId, row.id],
-        )
-      ).rows[0];
-      if (
-        !vote ||
-        vote.state !== "pending" ||
-        vote.deadline <= this.shared.now()
-      )
-        throw fail("この終了提案は締め切られています");
-      if (
-        !(
-          await db.query(
-            "UPDATE world_scene_end_answer SET answer=$3 WHERE vote_id=$1 AND actor_id=$2 AND answer IS NULL RETURNING actor_id",
-            [input.proposalId, actor, input.continue],
-          )
-        ).rowCount
-      )
-        throw fail("この終了提案には回答できません");
+      await this.answer(db, row.id, actor, input.proposalId!, input.continue!);
       await this.#vote(db, row.id, input.proposalId!);
     } else if (input.command === "finish") {
       if (actor !== row.actor_id) throw fail("開始者が終了してください");
@@ -459,7 +439,7 @@ export class SharedTurns {
           [row.id],
         );
       else if (!human && control.rounds >= this.botRounds)
-        await this.#propose(
+        await this.propose(
           db,
           row,
           (await this.shared.members(row.id, db))
@@ -508,17 +488,18 @@ export class SharedTurns {
         ? ("acting" as const)
         : ("active" as const);
   }
-  async #propose(db: pg.PoolClient, row: SceneRow, actors: string[]) {
+  async propose(db: pg.PoolClient, row: SceneRow, actors: string[]) {
     const id = randomUUID(),
       deadline = new Date(this.shared.now().getTime() + this.replyMs);
     await db.query(
       "INSERT INTO world_scene_end_vote(id,scene_id,deadline) VALUES($1,$2,$3)",
       [id, row.id, deadline],
     );
-    await db.query(
-      "UPDATE world_shared_scene SET flow='voting' WHERE scene_id=$1",
-      [row.id],
-    );
+    if (row.data.shared)
+      await db.query(
+        "UPDATE world_shared_scene SET flow='voting' WHERE scene_id=$1",
+        [row.id],
+      );
     for (const actor of actors) {
       await db.query(
         "INSERT INTO world_scene_end_answer(vote_id,actor_id) VALUES($1,$2)",
@@ -534,6 +515,32 @@ export class SharedTurns {
       );
     }
     await this.shared.schedule(db, `vote:${id}`, { proposalId: id }, deadline);
+    return id;
+  }
+  async answer(
+    db: pg.PoolClient,
+    scene: string,
+    actor: string,
+    proposal: string,
+    keepGoing: boolean,
+  ) {
+    const vote = (
+      await db.query<{ deadline: Date; state: string }>(
+        "SELECT deadline,state FROM world_scene_end_vote WHERE id=$1 AND scene_id=$2",
+        [proposal, scene],
+      )
+    ).rows[0];
+    if (!vote || vote.state !== "pending" || vote.deadline <= this.shared.now())
+      throw fail("この終了提案は締め切られています");
+    if (
+      !(
+        await db.query(
+          "UPDATE world_scene_end_answer SET answer=$3 WHERE vote_id=$1 AND actor_id=$2 AND answer IS NULL RETURNING actor_id",
+          [proposal, actor, keepGoing],
+        )
+      ).rowCount
+    )
+      throw fail("この終了提案には回答できません");
   }
   async #vote(db: pg.PoolClient, scene: string, id: string, expired = false) {
     const answers = (
@@ -727,7 +734,7 @@ export class SharedTurns {
     if (!id) return;
     const found = (
       await this.pool.query<{ scene_id: string; world_id: string }>(
-        `SELECT t.scene_id,h.world_id FROM ${table} t JOIN world_shared_scene h ON h.scene_id=t.scene_id WHERE t.id=$1`,
+        `SELECT t.scene_id,s.construction_id AS world_id FROM ${table} t JOIN world_scene s ON s.id=t.scene_id WHERE t.id=$1`,
         [id],
       )
     ).rows[0];
@@ -739,6 +746,24 @@ export class SharedTurns {
         await db.query<Wave>(`SELECT * FROM ${table} WHERE id=$1`, [id])
       ).rows[0]!;
       if (item.state !== "pending" || item.deadline > this.shared.now()) return;
+      if (
+        data.proposalId &&
+        (
+          await db.query(
+            `UPDATE world_scene SET state='reflecting',claim=NULL,
+         data=(data-'soloProposal'-'deferredSoloAction') || '{"ending":"dissolved"}'::jsonb
+         WHERE id=$1 AND state='active' AND data->>'soloProposal'=$2`,
+            [item.scene_id, id],
+          )
+        ).rowCount
+      ) {
+        await db.query(
+          "UPDATE world_scene_end_vote SET state='closed' WHERE id=$1",
+          [id],
+        );
+        await this.shared.wake(db, item.scene_id);
+        return;
+      }
       if (data.waveId) await this.#flush(db, item);
       else await this.#vote(db, item.scene_id, id, true);
       await db.query(
@@ -761,7 +786,7 @@ export class SharedTurns {
     const proposals = (
       await this.pool.query(
         `SELECT v.id,v.scene_id AS "sceneId",v.deadline FROM world_scene_end_vote v JOIN world_scene_end_answer a ON a.vote_id=v.id
-      JOIN world_shared_scene h ON h.scene_id=v.scene_id WHERE h.world_id=$1 AND a.actor_id=$2 AND a.answer IS NULL AND v.state='pending' AND v.deadline>$3 ORDER BY v.deadline,v.id`,
+      JOIN world_scene s ON s.id=v.scene_id WHERE s.construction_id=$1 AND a.actor_id=$2 AND a.answer IS NULL AND v.state='pending' AND v.deadline>$3 ORDER BY v.deadline,v.id`,
         [world, actor, this.shared.now()],
       )
     ).rows.map((r) => ({ ...r, deadline: r.deadline.toISOString() }));
