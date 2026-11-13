@@ -43,6 +43,14 @@ const member = (row: UserRow) =>
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 type Database = Pick<pg.Pool, "query">;
+async function availableInvite(db: Database, token: string, lock = false) {
+  return (
+    await db.query<{ id: string }>(
+      `SELECT id FROM app_invite WHERE token_hash=$1 AND NOT revoked AND expires_at>now() AND uses<max_uses${lock ? " FOR UPDATE" : ""}`,
+      [hash(token)],
+    )
+  ).rows[0];
+}
 type Context = {
   continuation?: McpPermission | null;
   mcp?: McpPrincipal;
@@ -115,6 +123,9 @@ export class Operations {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS player_preset (
       id uuid PRIMARY KEY,title text NOT NULL,description text NOT NULL,settings text NOT NULL,
       version integer NOT NULL DEFAULT 1,updated_by uuid NOT NULL REFERENCES app_identity(id),updated_at timestamptz NOT NULL DEFAULT now());`);
+  }
+  async hasInvitation(token: string) {
+    return !!(await availableInvite(this.pool, token));
   }
   async state(userId: string) {
     const user = (
@@ -1094,12 +1105,7 @@ export class Operations {
         ).rows[0]!;
         let invite: string | undefined;
         if (state.bootstrapped && state.invite_required) {
-          const row = (
-            await db.query<{ id: string }>(
-              "SELECT id FROM app_invite WHERE token_hash=$1 AND NOT revoked AND expires_at>now() AND uses<max_uses FOR UPDATE",
-              [hash(input.invitation ?? "")],
-            )
-          ).rows[0];
+          const row = await availableInvite(db, input.invitation ?? "", true);
           if (!row)
             throw new AccessError(
               403,

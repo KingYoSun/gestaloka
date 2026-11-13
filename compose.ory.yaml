@@ -25,6 +25,8 @@ services:
 
   kratos:
     image: *kratos-image
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     user: ${ORY_CONFIG_UID:-1000}:${ORY_CONFIG_GID:-1000}
     command: serve --config /etc/generated/kratos.json --dev
     environment:

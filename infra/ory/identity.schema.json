@@ -6,7 +6,16 @@
     "traits": {
       "type": "object",
       "properties": {
-        "name": { "type": "string" }
+        "name": { "type": "string" },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "ログインID",
+          "ory.sh/kratos": {
+            "credentials": { "password": { "identifier": true } }
+          }
+        }
       },
       "additionalProperties": false
     }

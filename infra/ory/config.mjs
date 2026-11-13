@@ -32,6 +32,7 @@ export function oryConfiguration(env) {
         env.ORY_AUTH_URL,
       ],
       methods: {
+        password: { enabled: true, config: { min_password_length: 15 } },
         oidc: {
           enabled: configured.length > 0,
           config: { providers: configured },
@@ -41,9 +42,26 @@ export function oryConfiguration(env) {
         error: { ui_url: `${env.ORY_AUTH_URL}/error` },
         login: { ui_url: `${env.ORY_AUTH_URL}/login`, lifespan: "10m" },
         registration: {
+          style: "unified",
           ui_url: `${env.ORY_AUTH_URL}/registration`,
           lifespan: "10m",
-          after: { oidc: { hooks: [{ hook: "session" }] } },
+          after: {
+            oidc: { hooks: [{ hook: "session" }] },
+            password: {
+              hooks: [
+                {
+                  hook: "web_hook",
+                  config: {
+                    url: `${env.ORY_APP_INTERNAL_URL ?? "http://host.docker.internal:3000"}/internal/auth/invitation`,
+                    method: "POST",
+                    body: "file:///etc/config/invitation.jsonnet",
+                    response: { parse: true },
+                  },
+                },
+                { hook: "session" },
+              ],
+            },
+          },
         },
         settings: {
           ui_url: `${env.ORY_AUTH_URL}/settings`,
@@ -60,6 +78,10 @@ export function oryConfiguration(env) {
       schemas: [
         { id: "default", url: "file:///etc/config/identity.schema.json" },
       ],
+    },
+    hashers: {
+      algorithm: "argon2",
+      argon2: { memory: "64MB", iterations: 3, parallelism: 1 },
     },
     ciphers: { algorithm: "xchacha20-poly1305" },
     log: { level: "info", format: "json", leak_sensitive_values: false },
