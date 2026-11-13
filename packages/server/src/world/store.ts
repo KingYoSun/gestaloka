@@ -79,16 +79,18 @@ export class WorldContext {
   }
 
   async validate() {
+    if (!this.#dependencies.size) return;
     const session = this.driver.session();
     try {
       await session.executeRead(async (tx) => {
-        for (const dependency of this.dependencies) {
-          if (
-            (await version(tx, this.worldId, dependency.key)) !==
-            dependency.version
-          )
-            throw new WorldConflict("保存済みの文脈が変わりました");
-        }
+        const changed = await tx.run(
+          `UNWIND $dependencies AS d
+          OPTIONAL MATCH (g:WorldGuard {worldId:$worldId,key:d.key})
+          WITH d,g WHERE coalesce(g.version,0) <> d.version RETURN d.key LIMIT 1`,
+          { worldId: this.worldId, dependencies: this.dependencies },
+        );
+        if (changed.records.length)
+          throw new WorldConflict("保存済みの文脈が変わりました");
       });
     } finally {
       await session.close();

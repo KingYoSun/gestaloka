@@ -1,6 +1,5 @@
 import type pg from "pg";
-import type { WorldStore, Dependency, Receipt } from "../world/store.js";
-import { WorldConflict } from "../world/store.js";
+import type { WorldStore } from "../world/store.js";
 import {
   sceneAnchors,
   type SceneBackground,
@@ -70,7 +69,7 @@ export class SceneDrafts {
     );
   }
 
-  async confirmation(row: SceneRow) {
+  async waitingFor(row: SceneRow) {
     const parents = (
       await this.pool.query<{
         id: string;
@@ -82,30 +81,13 @@ export class SceneDrafts {
       )
     ).rows;
     const waiting: string[] = [];
-    const receipts: Receipt[] = [];
     for (const p of parents) {
       const receipt = p.commit_id
         ? await this.store.receipt(row.data.worldId, p.commit_id)
         : undefined;
-      if (receipt) receipts.push(receipt);
-      else waiting.push(p.id);
+      if (!receipt) waiting.push(p.id);
     }
-    const basis: Dependency[] = row.data.basis.map((d) => ({ ...d }));
-    for (const d of basis) {
-      const changes = receipts.flatMap((r) =>
-        r.versions?.[d.key] ? [r.versions[d.key]!] : [],
-      );
-      if (!changes.length || d.version === changes.at(-1)!.after) continue;
-      const first = changes.findIndex((c) => c.before === d.version);
-      if (first < 0)
-        throw new WorldConflict("依存元以外でも文脈が変わりました");
-      for (const change of changes.slice(first)) {
-        if (d.version !== change.before)
-          throw new WorldConflict("依存元以外でも文脈が変わりました");
-        d.version = change.after;
-      }
-    }
-    return { waiting, basis };
+    return waiting;
   }
 
   async dependents(db: pg.PoolClient, parent: string) {

@@ -903,11 +903,6 @@ export class WorldAgent {
               : "default",
           ),
       );
-      const query = task(
-        "world-query",
-        async (input: { row: Operation; requests: z.infer<typeof Query>[] }) =>
-          this.read(input.row, input.requests),
-      );
       const commit = async (input: {
         dependencies: Dependency[];
         candidate: WorldProposal;
@@ -1097,10 +1092,7 @@ export class WorldAgent {
               }
               try {
                 if (decision.type === "query") {
-                  const output = await query({
-                    row,
-                    requests: decision.requests,
-                  });
+                  const output = await this.read(row, decision.requests);
                   row.dependencies = output.dependencies;
                   row.messages.push({
                     role: "user",

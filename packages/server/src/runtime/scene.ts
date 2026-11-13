@@ -114,7 +114,7 @@ export type SceneData = {
   basis: Dependency[];
   backgroundMessages?: ChatMessage[];
   background?: SceneBackground;
-  contextNeed?: z.infer<typeof ContextNeed>;
+  contextNeed?: z.infer<typeof ContextNeed> & { worldChanged?: true };
   contextRequests?: {
     inputId: string;
     at: number;
@@ -601,6 +601,10 @@ export class WorldScenes {
       );
     if (response.finishReason !== "stop")
       throw new SceneResponseError("シーンのモデル応答が未完了です");
+    if (kind === "resolve" || kind === "intent")
+      await this.agent.store
+        .context(row.data.worldId, row.data.basis)
+        .validate();
     return {
       content: response.content,
       value: presentationEvidence(parseOutput(response.content)),
@@ -704,16 +708,38 @@ export class WorldScenes {
     row.data.externalActors = (await this.shared.members(row.id))
       .filter((m) => m.state === "joined")
       .map((m) => m.actor_id);
-    const latest = await this.construction.get(row.construction_id);
-    row.data.at = Math.max(row.data.at, latest.at);
-    row.data.startedAt = row.data.at;
-    row.data.originalAgenda = latest.agenda;
-    row.data.basis = [];
-    delete row.data.work;
-    await this.#save(row, undefined, row.claim!);
+    await this.#refreshContext(row);
     return true;
   }
+  async #refreshContext(row: SceneRow) {
+    const d = row.data;
+    if (row.state === "preparing") {
+      const latest = await this.construction.get(row.construction_id);
+      d.at = d.startedAt = Math.max(d.at, latest.at);
+      d.originalAgenda = latest.agenda;
+      d.roots = [...new Set([row.actor_id, ...latest.root_ids])];
+      d.views = {};
+    } else if (row.state === "acting") {
+      d.contextNeed ??= {
+        worldChanged: true,
+        reason:
+          "共有世界の更新後の状態を確認し、未実行の行動に必要な背景だけを補う。追加が不要なら空のcontextを返す。",
+        remainingActions: Object.fromEntries(
+          Object.values(d.pending).map((i) => [i.actorId, i.actionText]),
+        ),
+      };
+    }
+    d.basis = [];
+    delete d.backgroundMessages;
+    if (row.state !== "reflecting") delete d.work;
+    await this.#save(row, undefined, row.claim!);
+  }
   async #background(row: SceneRow) {
+    // An older worker may have paused with a completed call based on stale reads.
+    if (row.data.work && row.data.basis.length)
+      await this.agent.store
+        .context(row.data.worldId, row.data.basis)
+        .validate();
     if (
       row.data.shared &&
       !row.data.background &&
@@ -824,6 +850,7 @@ export class WorldScenes {
           ),
         };
         if (
+          !d.contextNeed.worldChanged &&
           !answer.facts.length &&
           !answer.beliefs.length &&
           !answer.creations.length &&
@@ -1386,10 +1413,8 @@ export class WorldScenes {
   async #reflect(row: SceneRow) {
     const d = row.data;
     if (!d.operationId && d.drafts?.length) {
-      const confirmation = await this.drafts.confirmation(row);
-      d.basis = confirmation.basis;
-      d.waitingFor = confirmation.waiting;
-      if (confirmation.waiting.length) {
+      d.waitingFor = await this.drafts.waitingFor(row);
+      if (d.waitingFor.length) {
         await this.#transaction(async (db) => {
           await this.#save(row, db, row.claim!);
           await db.query(
@@ -1402,34 +1427,41 @@ export class WorldScenes {
       delete d.waitingFor;
     }
     if (!d.operationId) {
-      d.operationId = await this.agent.create(
-        {
-          worldId: d.worldId,
-          phase: "resolution",
-          at: d.startedAt,
-          until: d.at,
-          rootIds: [...new Set([...d.roots, ...d.background!.participants])],
-          controlledActorId: row.actor_id,
-          actionText: "",
-          intentions: Object.values(d.intentions).map((i) => ({
-            ...i,
-            continuing: true,
-          })),
-          completedScene: {
-            background: d.background!,
-            events: d.events,
-            anchors: sceneAnchors(d.background!, d.events, d.startedAt, row.id),
-            ...(d.ending ? { ending: d.ending } : {}),
+      await this.#transaction(async (db) => {
+        d.operationId = await this.agent.create(
+          {
+            worldId: d.worldId,
+            phase: "resolution",
+            at: d.startedAt,
+            until: d.at,
+            rootIds: [...new Set([...d.roots, ...d.background!.participants])],
+            controlledActorId: row.actor_id,
+            actionText: "",
+            intentions: Object.values(d.intentions).map((i) => ({
+              ...i,
+              continuing: true,
+            })),
+            completedScene: {
+              background: d.background!,
+              events: d.events,
+              anchors: sceneAnchors(
+                d.background!,
+                d.events,
+                d.startedAt,
+                row.id,
+              ),
+              ...(d.ending ? { ending: d.ending } : {}),
+            },
           },
-        },
-        row.id,
-        this.pool,
-        d.basis,
-      );
-      await this.#save(row, undefined, row.claim!);
+          row.id,
+          db,
+          d.basis,
+        );
+        await this.#save(row, db, row.claim!);
+      });
     }
     if (!d.projection) {
-      d.projection = await this.agent.run(d.operationId);
+      d.projection = await this.agent.run(d.operationId!);
       await this.#save(row, undefined, row.claim!);
       await this.#transaction(async (db) => {
         for (const child of await this.drafts.dependents(db, row.id))
@@ -1612,6 +1644,7 @@ export class WorldScenes {
   }
   async #repair(row: SceneRow, error: unknown) {
     if (
+      !(error instanceof WorldConflict) &&
       !(error instanceof SceneResponseError) &&
       !(error instanceof SyntaxError) &&
       !(error instanceof z.ZodError)
@@ -1624,6 +1657,17 @@ export class WorldScenes {
         [row.id, row.claim],
       )
     ).rows[0];
+    if (error instanceof WorldConflict) {
+      if (!saved) throw new SupersededWorker("シーンの実行が引き継がれました");
+      Object.assign(row, saved);
+      if (
+        saved.data.work &&
+        (await this.agent.model.ledger.state(saved.data.work.id)) === "pending"
+      )
+        return false;
+      await this.#refreshContext(row);
+      return true;
+    }
     if (!saved?.data.work) return false;
     const response = (
       await this.pool.query<{ response: { content?: string } }>(
@@ -1760,33 +1804,6 @@ export class WorldScenes {
       } catch (error) {
         if (error instanceof SupersededWorker) return;
         if (await this.#repair(row, error)) continue;
-        if (error instanceof WorldConflict && row.data.drafts?.length) {
-          const saved = (
-            await this.pool.query<SceneRow>(
-              "SELECT * FROM world_scene WHERE id=$1",
-              [row.id],
-            )
-          ).rows[0]!;
-          const confirmation = await this.drafts
-            .confirmation(saved)
-            .catch((failure: unknown) => {
-              if (!(failure instanceof WorldConflict)) throw failure;
-              return null;
-            });
-          if (
-            confirmation &&
-            JSON.stringify(confirmation.basis) !==
-              JSON.stringify(saved.data.basis)
-          ) {
-            saved.data.basis = confirmation.basis;
-            saved.claim = null;
-            await this.#transaction(async (db) => {
-              await this.#save(saved, db, claim);
-              await this.#enqueue(db, saved.id, !!saved.data.shared);
-            });
-            return;
-          }
-        }
         row.data.resumeState = row.state;
         row.data.limitReached = error instanceof ExecutionLimit;
         row.data.suspended = error instanceof RuntimeStopped;
