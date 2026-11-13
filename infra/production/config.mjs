@@ -58,8 +58,19 @@ http://api.${config.domain}:80 {
 https://api.${config.domain} {
   ${tls}
   ${protect}
+  @internal path /internal/*
+  handle @internal {
+    respond 404
+  }
   @kratos path /self-service/* /sessions/* /schemas/*
   handle @kratos {
+    @attempt {
+      method POST
+      path /self-service/login /self-service/registration
+    }
+    forward_auth @attempt api:3000 {
+      uri /internal/auth/attempt
+    }
     reverse_proxy kratos:4433
   }
   @hydra path /oauth2/* /.well-known/openid-configuration /.well-known/oauth-authorization-server /.well-known/jwks.json /userinfo
@@ -118,7 +129,10 @@ export async function renderDeployment(directory) {
     "configuration/init",
   ])
     await mkdir(join(root, folder), { recursive: true, mode: 0o750 });
-  const { kratos, hydra } = oryConfiguration(env);
+  const { kratos, hydra } = oryConfiguration({
+    ...env,
+    ORY_APP_INTERNAL_URL: "http://api:3000",
+  });
   hydra.urls.identity_provider.publicUrl = api;
   for (const [name, value] of Object.entries({ kratos, hydra }))
     await writeFile(
@@ -126,7 +140,11 @@ export async function renderDeployment(directory) {
       JSON.stringify(value, null, 2) + "\n",
       { mode: 0o640 },
     );
-  for (const file of ["identity.schema.json", "social.jsonnet"])
+  for (const file of [
+    "identity.schema.json",
+    "social.jsonnet",
+    "invitation.jsonnet",
+  ])
     await copyFile(
       new URL(`../ory/${file}`, import.meta.url),
       join(root, "configuration/ory", file),
