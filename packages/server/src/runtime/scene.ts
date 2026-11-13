@@ -15,6 +15,7 @@ import {
 import { McpOrigin } from "../http/mcp-origin.js";
 import { RuntimeControl, RuntimeStopped } from "./control.js";
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { parseOutput } from "../llm/prompt.js";
@@ -41,6 +42,7 @@ import {
   SceneContext,
   ContextNeed,
   SceneStep,
+  ObservedStep,
   SceneResponseError,
   sceneResponse,
   legacyCoverageFailure,
@@ -145,6 +147,7 @@ export type SceneData = {
   contextRequests?: {
     inputId: string;
     at: number;
+    evidence?: "world" | "observation";
     reason: string;
     remainingActions: Record<string, string>;
   }[];
@@ -491,6 +494,36 @@ export class WorldScenes {
       if (row.state !== "paused")
         throw new ConstructionStateError("保留中のシーンを指定してください");
       row.state = row.data.resumeState!;
+      // Older scenes could request the same observation again without advancing.
+      // Detach that redundant read, preserving the original call and its reservation.
+      const d = row.data,
+        input = d.actions.at(-1);
+      const requests = d.contextRequests?.slice(-2) ?? [];
+      const inputId = d.turn?.id ?? input?.id;
+      if (
+        row.state === "acting" &&
+        d.work?.kind === "background" &&
+        input?.state === "running" &&
+        d.observationContext &&
+        d.observationContext.inputId === inputId &&
+        d.contextNeed?.evidence === "observation" &&
+        !d.contextNeed.worldChanged &&
+        requests.length === 2 &&
+        requests.every(
+          (r) =>
+            r.evidence === "observation" &&
+            r.inputId === (d.turn?.inputs[0]?.id ?? input.id) &&
+            r.at === d.at &&
+            isDeepStrictEqual(
+              r.remainingActions,
+              d.contextNeed!.remainingActions,
+            ),
+        )
+      ) {
+        delete d.work;
+        delete d.contextNeed;
+        delete d.backgroundMessages;
+      }
       const workState =
         row.data.work &&
         (await this.agent.model.ledger.state(row.data.work.id));
@@ -825,6 +858,7 @@ export class WorldScenes {
       d.roots = [...new Set([row.actor_id, ...latest.root_ids])];
       d.views = {};
     } else if (row.state === "acting") {
+      delete d.observationContext;
       d.contextNeed ??= {
         evidence: "world",
         worldChanged: true,
@@ -1250,6 +1284,10 @@ export class WorldScenes {
         await this.#save(row, undefined, row.claim!);
         continue;
       }
+      const observation =
+        d.observationContext?.inputId === (d.turn?.id ?? action.id)
+          ? d.observationContext
+          : undefined;
       const intents = Object.values(d.pending),
         value = await this.#ask(
           row,
@@ -1257,9 +1295,7 @@ export class WorldScenes {
           "scene-play.md",
           {
             background: bg,
-            ...(d.observationContext?.inputId === (d.turn?.id ?? action.id)
-              ? { observationLimits: d.observationContext.limits }
-              : {}),
+            ...(observation ? { observationLimits: observation.limits } : {}),
             sceneHistory: d.events,
             controlledView: d.views[actor],
             request: {
@@ -1288,12 +1324,33 @@ export class WorldScenes {
               departedActorIds: Object.keys(d.departures ?? {}),
               intentions: intents,
             },
-            responseSchema: z.toJSONSchema(SceneStep, { io: "output" }),
+            responseSchema: z.toJSONSchema(
+              observation ? ObservedStep : SceneStep,
+              { io: "output" },
+            ),
           },
           "resolution",
         ),
         step = sceneResponse(value.value);
-      if (step.type === "boundary") break;
+      if (step.type === "boundary") {
+        if (observation)
+          throw new SceneResponseError(
+            "取得済みの観測範囲で本人が知覚した結果を返してください。",
+          );
+        break;
+      }
+      if (observation) {
+        if (
+          step.needsContext ||
+          !step.events.some((e) =>
+            e.receipts.some((r) => controlled.includes(r.observerId)),
+          )
+        )
+          throw new SceneResponseError(
+            "照会済みの観測範囲から本人に届いた結果をreceiptsに返してください。識別できなかった場合もその範囲を示し、同じ観測を再照会しません。",
+          );
+        delete d.observationContext;
+      }
       if (step.needsContext)
         for (const id of d.turn
           ? Object.keys(step.needsContext.remainingActions)
