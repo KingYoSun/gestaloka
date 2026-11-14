@@ -88,6 +88,11 @@ beforeAll(async () => {
         priorScenes?: { background: SceneBackground }[];
         confirmed?: { observations: { text: string }[] };
       };
+      if (
+        raw.needsContext &&
+        (raw.needsContext as { evidence?: string }).evidence === "observation"
+      )
+        return { type: "observation", limits: "観測できる範囲" };
       const proposal = content as WorldProposal;
       if (
         inventory &&
@@ -2492,5 +2497,101 @@ test("共有中に離席した人物が、他の人物の一手からNPCとし�
   } finally {
     playback = undefined;
     await cli.run(guest.profile, "npc", "--return");
+  }
+}, 90000);
+
+test("共有ターンの外部入力が完了してもNPCの未実行部分を保存し、自動で続ける", async () => {
+  const scene = await sharedGame(),
+    owner = people[0]!,
+    peer = people[1]!;
+  const snapshot = async () =>
+    (await access.scenes.latest(world, undefined, false, owner.actor))!;
+  const calls = vi.spyOn(runtime.agent.model, "complete");
+  try {
+    playback = (input) => {
+      const step = playStep(input, [peer.actor]);
+      step.decisions[owner.actor] = "pending";
+      return step;
+    };
+    await cli.run(owner.profile, "npc", "--away");
+    await access.scenes.tick(scene);
+    const waiting = await snapshot();
+    expect(waiting.state).toBe("active");
+    expect(waiting.data.pending[owner.actor]?.continuing).toBe(true);
+    calls.mockClear();
+    await access.scenes.tick(scene);
+    expect(calls).not.toHaveBeenCalled();
+    const opportunity = (await cli.run(peer.profile, "inbox")).opportunities[0];
+    const wake = vi.spyOn(access.scenes.shared, "wake");
+    await cli.run(
+      peer.profile,
+      "react",
+      "--opportunity",
+      opportunity.id,
+      "--text",
+      "相手の一手",
+    );
+    wake.mockClear();
+    let sawLimits = false;
+    playback = (input) => {
+      const step = playStep(input);
+      step.decisions[owner.actor] = "pending";
+      if (input.request.intentions.some((i) => i.actorId === peer.actor)) {
+        return {
+          ...step,
+          needsContext: {
+            reason: "残りの行動で知覚できる範囲",
+            evidence: "observation",
+            remainingActions: { [owner.actor]: "既に選んだ行動の残り" },
+          },
+        };
+      }
+      sawLimits = !!(input as PlayInput & { observationLimits?: string })
+        .observationLimits;
+      return { ...step, elapsedMs: 500 };
+    };
+    await access.scenes.tick(scene);
+    const saved = await snapshot();
+    expect(sawLimits).toBe(true);
+    expect(saved.state).toBe("acting");
+    expect(saved.data.pending[owner.actor]).toMatchObject({
+      actionText: "既に選んだ行動の残り",
+      continuing: true,
+    });
+    expect(wake.mock.calls.map(([, id]) => id)).toEqual([scene]);
+    wake.mockRestore();
+    calls.mockClear();
+    const next: PlayInput[] = [];
+    playback = (input) => {
+      next.push(input);
+      return { ...playStep(input), elapsedMs: 1000 };
+    };
+    await access.scenes.tick(scene);
+    const done = await snapshot();
+    expect(next).toHaveLength(1);
+    expect(next[0]!.request.controlledInputs).toEqual([]);
+    expect(next[0]!.request.intentions).toContainEqual(
+      saved.data.pending[owner.actor],
+    );
+    expect(done.data.events.slice(0, saved.data.events.length)).toEqual(
+      saved.data.events,
+    );
+    expect(done.data.events.length).toBeGreaterThan(saved.data.events.length);
+    expect(done.data.at).toBe(saved.data.at + 1000);
+    expect(done.data.choices).toEqual(saved.data.choices);
+    expect(done.data.actions).toEqual(saved.data.actions);
+    expect(done.data.pending[owner.actor]).toBeUndefined();
+    expect(calls.mock.calls.some(([, role]) => role === "scene-intent")).toBe(
+      false,
+    );
+    calls.mockClear();
+    await access.scenes.tick(scene);
+    expect(calls).not.toHaveBeenCalled();
+  } finally {
+    playback = undefined;
+    calls.mockRestore();
+    await cli.run(owner.profile, "npc", "--return");
+    await cli.run(owner.profile, "finish");
+    await access.scenes.tick(scene);
   }
 }, 90000);
