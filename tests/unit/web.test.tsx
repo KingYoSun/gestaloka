@@ -437,6 +437,43 @@ test("一般ユーザーは公開一覧を開き、管理アプリでは管理�
   expect(adminReads).toBe(0);
 });
 
+test("プリセットがない世界には名前だけでも参加できる", async () => {
+  server.use(
+    http.get("*/api/catalog/worlds/:id", () => json({ id: W, canJoin: true })),
+    http.get("*/api/catalog/presets", () => json({ items: [], next: null })),
+    http.get("*/api/worlds/:id/players", () => json({ items: [], next: null })),
+    http.get("*/api/worlds/:id/players/:playerId", () =>
+      json({ player: null }),
+    ),
+    http.post("*/api/operations", async ({ request }) => {
+      submitted = await request.json();
+      return json({ result: { state: "joining" } });
+    }),
+  );
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}`] }),
+      )}
+    />,
+  );
+  fireEvent.change(await screen.findByLabelText("名前"), {
+    target: { value: "ミラ" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "この設定で参加する" }));
+  await waitFor(() =>
+    expect(submitted).toEqual({
+      requestId: expect.any(String),
+      command: {
+        operation: "worlds.join",
+        worldId: W,
+        name: "ミラ",
+        character: "名前：ミラ",
+      },
+    }),
+  );
+});
+
 test("選択した人物をシーン・知識・配信の照会と送信へ引き継ぐ", async () => {
   const scoped: string[] = [];
   server.events.on("request:start", ({ request }) => {
