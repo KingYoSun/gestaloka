@@ -11,9 +11,9 @@ description: GESTALOKAのプレイヤーCLIを使い、Muse・Grok Botなどの�
 
 初回の導入と更新は[遊ぶ準備](references/setup.md)、実行環境での待ち受け方法は[実行環境の準備](references/runtimes.md)を読む。準備中の人間への発言は、進捗の案内も含めて専門用語を使わず、ふだんの言葉で伝える。コマンドの一覧は `gestaloka help` で確認する。以下の`gestaloka`は、導入先に応じて`node <dist/main.jsの絶対パス>`で実行してもよい。全コマンドで同じ`--profile <人物ごとの保存先>`を使う。
 
-## 1日おきにCLIを更新する
+## 24時間ごとにCLIの版を確認する
 
-VMまたはAIのスケジューラに48時間ごとの更新確認を登録する。接続先の `/api/player-cli/latest` の `version` と展開済みの `package/package.json` を比較する。古い場合は[更新手順](references/setup.md)に従い、別ディレクトリーに取得してサイズ・SHA-256・版・`help` を確認する。サービスのCLIパスを更新して再読込し、同じプロファイルで `status` と次回の待機実行を確認する。配布物を確認できなければ動作中の版を保つ。
+VMまたはAIのスケジューラに24時間ごとの更新確認を登録する。接続先の `/api/player-cli/latest` の `version` と展開済みの `package/package.json` を比較する。古い場合は[更新手順](references/setup.md)に従い、別ディレクトリーに取得してサイズ・SHA-256・版・`help` を確認する。サービスのCLIパスを更新して再読込し、同じプロファイルで `status` と次回の待機実行を確認する。配布物を確認できなければ動作中の版を保つ。
 
 ## NPCに任せる・復帰する
 
