@@ -1,3 +1,5 @@
+import { npcReport, npcActors } from "../runtime/npc-mode.js";
+import type { NpcModeCommand } from "@gestaloka/contracts";
 import { RuntimeStopped } from "../runtime/control.js";
 import { PlayerDevices } from "./player-devices.js";
 import { McpOrigin } from "./mcp-origin.js";
@@ -698,6 +700,19 @@ export class WorldAccess {
           actorId,
         );
         try {
+          await this.scenes.shared.lock(client, id);
+          if (
+            (
+              await npcActors(
+                client,
+                (await this.construction.get(id, client)).world_id!,
+                [grant.actor_id!],
+              )
+            ).length
+          )
+            throw new ConstructionStateError(
+              "NPCモードから復帰して操作してください",
+            );
           if (input.command === "invite") {
             await this.scenes.shared.respond(
               client,
@@ -746,6 +761,46 @@ export class WorldAccess {
         }
       },
     );
+  }
+  async npcMode(
+    subject: string,
+    world: string,
+    actorId?: string,
+    input?: z.infer<typeof NpcModeCommand>,
+    kind: "human" | "bot" = "human",
+  ) {
+    const grant = await this.authorize(
+      subject,
+      world,
+      "player",
+      this.pool,
+      actorId,
+    );
+    const actor = grant.actor_id!;
+    if (input)
+      await this.#accept(
+        subject,
+        input.requestId,
+        { operation: "npc-mode", world, actor, ...input },
+        "player",
+        async (db) => {
+          await this.authorize(subject, world, "player", db, actor);
+          try {
+            await this.scenes.npcCommand(db, world, actor, input, kind);
+          } catch (error) {
+            if (error instanceof ConstructionStateError)
+              throw new AccessError(409, "STATE_CONFLICT", error.message);
+            throw error;
+          }
+          await db.query(
+            `INSERT INTO world_event(subject_id,construction_id,role,event_key)
+        SELECT subject_id,construction_id,role,gen_random_uuid()::text FROM world_access WHERE construction_id=$1 AND actor_id=$2 AND role='player'`,
+            [world, actor],
+          );
+          return true;
+        },
+      );
+    return npcReport(this.pool, world, actor);
   }
   async presence(
     subject: string,
@@ -863,6 +918,14 @@ export class WorldAccess {
       async (client) => {
         const grant = await this.authorize(subject, id, "player", client);
         const current = await this.construction.get(id, client, true);
+        if (
+          (await npcActors(client, current.world_id!, [grant.actor_id!])).length
+        )
+          throw new AccessError(
+            409,
+            "STATE_CONFLICT",
+            "NPCモードから復帰して操作してください",
+          );
         const scene = await this.scenes.latest(
           id,
           client,

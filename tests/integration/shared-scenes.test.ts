@@ -46,6 +46,7 @@ type PlayInput = {
     } | null;
   };
 };
+let npcGuest: string | undefined;
 let playback: ((input: PlayInput) => unknown) | undefined;
 let inventory:
   | {
@@ -235,9 +236,15 @@ beforeAll(async () => {
                   ],
                 }
               : {}),
-          participants: input.acceptedPlayerIds,
+          participants: [
+            ...input.acceptedPlayerIds,
+            ...(npcGuest ? [npcGuest] : []),
+          ],
           synopsis: `OWNER-${input.request!.actorId}`,
-          perceptions: input.acceptedPlayerIds.map((actor) => ({
+          perceptions: [
+            ...input.acceptedPlayerIds,
+            ...(npcGuest ? [npcGuest] : []),
+          ].map((actor) => ({
             observerId: actor,
             text: `VIEW-${actor}`,
             sourceIds: [
@@ -636,7 +643,14 @@ test("同じ人物への複数要請の同時承認でも所属を重複させ�
   ).toBe(1);
   const clock = vi
     .spyOn(access.scenes.shared, "now")
-    .mockImplementation(() => new Date(Date.now() + 61000));
+    .mockImplementation(
+      () =>
+        new Date(
+          Math.max(
+            ...invites.map((i: { deadline: string }) => Date.parse(i.deadline)),
+          ),
+        ),
+    );
   try {
     await access.scenes.tick(x);
     await access.scenes.tick(y);
@@ -2197,3 +2211,132 @@ test("CLIの明示終了と90秒の失効を世界内の退出や新しい生成
     calls.mockRestore();
   }
 }, 60000);
+
+test.each(["join", "decline"])(
+  "NPCとして登場した本人にログを返し、復帰時に%sできる",
+  async (choice) => {
+    const [owner, guest] = [people[0]!, people[1]!];
+    const standby = await cli.run(guest.profile, "standby");
+    expect(standby.state).toBe("standby");
+    expect((await cli.run(guest.profile, "standby")).connectionId).toBe(
+      standby.connectionId,
+    );
+    expect((await cli.run(guest.profile, "npc", "--away")).result.active).toBe(
+      true,
+    );
+    expect((await cli.run(guest.profile, "standby")).state).toBe("npc_mode");
+    expect(
+      await access.scenes.shared.active(world, [guest.actor], "bot"),
+    ).toEqual([]);
+    npcGuest = guest.actor;
+    try {
+      const scene = (
+        await cli.run(owner.profile, "prepare", "--purpose", "近くの人物と会う")
+      ).scene.id;
+      await access.scenes.tick(scene);
+      await cli.run(owner.profile, "start");
+      const back = await cli.run(guest.profile, "npc", "--return");
+      expect(back.result.scenes).toEqual([
+        expect.objectContaining({
+          sceneId: scene,
+          handoff: "available",
+          log: [{ kind: "observation", text: "VIEW-" + guest.actor }],
+        }),
+      ]);
+      expect(back.result.summary).toContain("VIEW-" + guest.actor);
+      const response = await cli.run(
+        guest.profile,
+        "npc",
+        choice === "join" ? "--accept" : "--reject",
+        "--scene",
+        scene,
+      );
+      expect(response.state, JSON.stringify(response)).not.toBe("error");
+      const row = await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        owner.actor,
+      );
+      if (choice === "join") {
+        expect(row?.data.externalActors).toContain(guest.actor);
+        expect((await cli.run(guest.profile, "status")).scene.id).toBe(scene);
+        playback = (input) => playStep(input);
+        await cli.run(guest.profile, "act", "--text", "自分の言葉で話す");
+        await access.scenes.tick(scene);
+      } else {
+        expect(row?.data.departures?.[guest.actor]).toBeDefined();
+        expect(row?.data.events.at(-1)?.text).toContain("その場を離れた");
+      }
+      await cli.run(owner.profile, "finish");
+      await access.scenes.tick(scene);
+    } finally {
+      npcGuest = undefined;
+      playback = undefined;
+      await cli.run(guest.profile, "npc", "--return");
+    }
+  },
+  90000,
+);
+
+test("進行中の単独シーンをNPCに任せ、本人の意図と見聞を復帰時に読む", async () => {
+  const { profile, actor } = people[0]!;
+  const scene = (await cli.run(profile, "prepare", "--purpose", "村で過ごす"))
+    .scene.id;
+  await access.scenes.tick(scene);
+  await cli.run(profile, "start");
+  await cli.run(profile, "npc", "--away");
+  let turns = 0;
+  playback = (input) => ({
+    ...playStep(input),
+    ...(++turns === 2 ? { concluded: true } : {}),
+  });
+  try {
+    await access.scenes.tick(scene);
+    expect((await cli.run(profile, "status")).scene.state).toBe("active");
+    await access.scenes.tick(scene);
+    expect((await cli.run(profile, "status")).scene.state).toBe("result");
+    const report = (await cli.run(profile, "npc", "--return")).result;
+    expect(report.scenes[0].log).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "intent" }),
+        expect.objectContaining({
+          kind: "observation",
+          text: expect.stringContaining(actor),
+        }),
+      ]),
+    );
+    expect(report.scenes[0].handoff).toBeNull();
+  } finally {
+    playback = undefined;
+    await cli.run(profile, "npc", "--return");
+  }
+}, 90000);
+
+test("共有中に離席した人物が、他の人物の一手からNPCとして行動し復帰できる", async () => {
+  const scene = await sharedGame(0, true),
+    guest = people[1]!;
+  await cli.run(guest.profile, "npc", "--away");
+  let steps = 0;
+  playback = (input) => playStep(input, steps++ === 0 ? [guest.actor] : []);
+  try {
+    await humanAct(0, "近くに声をかける");
+    await access.scenes.tick(scene);
+    const report = (await cli.run(guest.profile, "npc", "--return")).result;
+    expect(report.scenes[0].log).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "intent" })]),
+    );
+    expect((await cli.run(guest.profile, "inbox")).opportunities).toHaveLength(
+      0,
+    );
+    expect(
+      (await cli.run(guest.profile, "npc", "--accept", "--scene", scene)).result
+        .scenes[0].handoff,
+    ).toBeNull();
+    await cli.run(people[0]!.profile, "finish");
+    await access.scenes.tick(scene);
+  } finally {
+    playback = undefined;
+    await cli.run(guest.profile, "npc", "--return");
+  }
+}, 90000);

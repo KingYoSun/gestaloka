@@ -1,3 +1,4 @@
+import { NpcMode } from "./NpcMode.js";
 import { useEffect, useRef, useState } from "react";
 import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -375,12 +376,14 @@ export function Player({ id }: { id: string }) {
       </main>
     );
   return (
-    <PlayerView
-      key={query.data.viewerId}
-      id={id}
-      status={query.data}
-      {...(sceneId ? { sceneId } : {})}
-    />
+    <NpcMode key={query.data.viewerId} id={id} actorId={query.data.viewerId}>
+      <PlayerView
+        key={query.data.viewerId}
+        id={id}
+        status={query.data}
+        {...(sceneId ? { sceneId } : {})}
+      />
+    </NpcMode>
   );
 }
 type PlayerState = z.infer<typeof PlayerStatus>;

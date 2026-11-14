@@ -57,6 +57,24 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
         "utf8",
       ),
     );
+    const skill = await app.inject("/api/player-cli/SKILL.md");
+    expect(skill.statusCode).toBe(200);
+    expect(skill.body).toBe(
+      await readFile(
+        join(folder, "package/skills/gestaloka-player/SKILL.md"),
+        "utf8",
+      ),
+    );
+    for (const match of skill.body.matchAll(/\]\((references\/[^)]+)\)/g)) {
+      const reference = await app.inject("/api/player-cli/" + match[1]);
+      expect(reference.statusCode).toBe(200);
+      expect(reference.body).toBe(
+        await readFile(
+          join(folder, "package/skills/gestaloka-player", match[1]!),
+          "utf8",
+        ),
+      );
+    }
     const linked = await app.inject("/api/player-cli/setup.md");
     expect(linked.body).toBe(setup.body);
     const old = await app.inject(

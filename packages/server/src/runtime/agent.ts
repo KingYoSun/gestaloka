@@ -226,6 +226,9 @@ export class WorldAgent {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS world_controlled_actor (
       world_id uuid NOT NULL,actor_id uuid NOT NULL,PRIMARY KEY(world_id,actor_id));`);
     await this.pool.query(
+      "ALTER TABLE world_controlled_actor ADD COLUMN IF NOT EXISTS npc_active boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS npc_session uuid",
+    );
+    await this.pool.query(
       "ALTER TABLE world_operation ADD COLUMN IF NOT EXISTS approved boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false",
     );
     await this.pool.query(
@@ -383,6 +386,7 @@ export class WorldAgent {
   async read(
     row: Pick<Operation, "request" | "dependencies">,
     requests: z.infer<typeof Query>[],
+    inScene = false,
   ) {
     const context = this.store.context(row.request.worldId, row.dependencies);
     await context.validate();
@@ -498,7 +502,11 @@ export class WorldAgent {
         ) ?? [],
       ),
     ];
-    const controlled = await this.controlledActors(row.request.worldId, ids);
+    const controlled = await this.controlledActors(
+      row.request.worldId,
+      ids,
+      inScene,
+    );
     requests.forEach((q, index) => {
       const result = results[index];
       if (q.kind === "node" && result && typeof result === "object")
@@ -752,7 +760,11 @@ export class WorldAgent {
     return context.dependencies;
   }
 
-  async context(request: Interaction, dependencies: Dependency[] = []) {
+  async context(
+    request: Interaction,
+    dependencies: Dependency[] = [],
+    inScene = false,
+  ) {
     const requests: z.infer<typeof Query>[] = (
       request.triggerEdgeIds ?? []
     ).map((id) => ({ kind: "edge", id }));
@@ -804,7 +816,7 @@ export class WorldAgent {
         },
       );
     }
-    const seed = await this.read({ request, dependencies }, requests);
+    const seed = await this.read({ request, dependencies }, requests, inScene);
     return {
       initialContext: requests.map((request, index) => ({
         request,
@@ -846,12 +858,12 @@ export class WorldAgent {
       world?.world_id,
     );
   }
-  async controlledActors(worldId: string, ids: string[]) {
+  async controlledActors(worldId: string, ids: string[], inScene = false) {
     if (!ids.length) return new Set<string>();
     const rows = (
       await this.pool.query<{ actor_id: string }>(
-        "SELECT actor_id FROM world_controlled_actor WHERE world_id=$1 AND actor_id=ANY($2::uuid[])",
-        [worldId, ids],
+        "SELECT actor_id FROM world_controlled_actor WHERE world_id=$1 AND actor_id=ANY($2::uuid[]) AND (NOT $3::boolean OR NOT npc_active)",
+        [worldId, ids, inScene],
       )
     ).rows;
     return new Set(rows.map((r) => r.actor_id));
@@ -882,9 +894,11 @@ export class WorldAgent {
       }
     }
     candidates.delete(owner);
-    for (const actorId of await this.controlledActors(worldId, [
-      ...candidates,
-    ])) {
+    for (const actorId of await this.controlledActors(
+      worldId,
+      [...candidates],
+      true,
+    )) {
       const actor = await context.node(actorId, at);
       if (!actor) continue;
       const states = await this.#descriptions(context, actorId, at, "status");

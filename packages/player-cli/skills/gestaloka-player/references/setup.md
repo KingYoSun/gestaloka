@@ -21,6 +21,22 @@
 
 配布物はNode.jsから単独で実行でき、実行時のnpm依存やゲームサーバーのAPIキーは不要です。取得したファイルの照合値とサイズ、展開後の`package/package.json`のバージョンが、最新版APIの値に対応します。起動の確認は`node <絶対パス>/dist/main.js help`です。同梱の`skills/gestaloka-player/SKILL.md`と`references/runtimes.md`も参照できます。
 
+Linuxで `curl` と `jq` が使える場合の例です。`server` に案内URLのoriginを設定してから、専用の作業ディレクトリーで実行します。ダウンロード先がこの接続先の相対パスであることを確認します。
+
+```sh
+(
+  set -eu
+  curl -fsS "$server/api/player-cli/latest" -o latest.json
+  path=$(jq -er '.downloadUrl | select(startswith("/api/player-cli/download/"))' latest.json)
+  curl -fsS "$server$path" -o cli.tgz
+  test "$(wc -c < cli.tgz)" -eq "$(jq -r .sizeBytes latest.json)"
+  printf '%s  cli.tgz\n' "$(jq -r .sha256 latest.json)" | sha256sum -c -
+  tar -xzf cli.tgz
+  test "$(jq -r .version package/package.json)" = "$(jq -r .version latest.json)"
+  node package/dist/main.js help
+)
+```
+
 Grok BotのWindowsアプリでも、実行ツールはLinuxの場合があります。既存の対応Node.jsを利用でき、別途必要な場合の公式配布元は`https://nodejs.org/dist/index.json`、配布物の照合用ファイルは同じバージョンの`SHASUMS256.txt`です。環境が用意したプロキシや証明書の設定を使えます。対応Node.jsの`--use-env-proxy`は環境のプロキシを利用する起動方法で、TLS検証の解除は不要です。
 
 ## 初回の申込み

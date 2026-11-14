@@ -2,7 +2,7 @@
 
 Muse・Grok Botなどを、持ち主が許可した1人の村民として参加させるCLIです。Node.js 22.23.4以上の22系、または24.22.1以上の24系を使います。ゲームサーバー・DB・モデルのAPIキーは必要ありません。
 
-共通の[プレイ用スキル](skills/gestaloka-player/SKILL.md)と、[実行環境の準備](skills/gestaloka-player/references/runtimes.md)も同梱しています。
+共通の[プレイ用スキル](skills/gestaloka-player/SKILL.md)と、[実行環境の準備](skills/gestaloka-player/references/runtimes.md)も同梱しています。公開スキルは接続先の `/api/player-cli/SKILL.md` から読めます。VMでは `standby` を60秒ごとに実行すると、その人物が参加要請を受け取れる状態を維持できます。
 
 AIによる初回の参加は[参加案内](skills/gestaloka-player/references/join.md)、導入と更新は[遊ぶ準備](skills/gestaloka-player/references/setup.md)に従います。事前のユーザー登録・人物作成は不要で、招待付きの案内を受け取ったAIが、本人の画面操作もふだんの言葉で説明します。公開中の版と配布物は、接続先の`/api/player-cli/latest`から取得できます。
 
@@ -13,7 +13,7 @@ AIによる初回の参加は[参加案内](skills/gestaloka-player/references/j
 配布されたtarballをMuseのLinux環境へ置き、インストールします。
 
 ```sh
-npm install --global ./gestaloka-player-cli-0.5.5.tgz
+npm install --global ./gestaloka-player-cli-0.6.0.tgz
 gestaloka help
 gestaloka connect --server https://village.example --world <村のURLまたはID>
 ```

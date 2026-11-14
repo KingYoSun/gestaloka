@@ -27,6 +27,8 @@ import {
   SceneRecordPage,
   KnowledgeQuery,
   ActorQuery,
+  NpcModeCommand,
+  NpcReport,
   ScenePresence,
   ScenePresenceStatus,
   SceneInbox,
@@ -69,6 +71,7 @@ export async function worldRoutes(
         "/api/worlds/:id/scene/records",
         "/api/worlds/:id/knowledge",
         "/api/worlds/:id/presence",
+        "/api/worlds/:id/npc-mode",
         "/api/worlds/:id/scene/inbox",
       ];
       if (
@@ -332,6 +335,41 @@ export async function worldRoutes(
             deviceIds.has(request) ? "bot" : "human",
           ),
         ),
+  );
+  app.get(
+    "/api/worlds/:id/npc-mode",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        response: { 200: NpcReport, ...errors },
+      },
+    },
+    async (request) =>
+      service().npcMode(
+        await subject(request),
+        request.params.id,
+        request.query.actorId,
+      ),
+  );
+  app.post(
+    "/api/worlds/:id/npc-mode",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        body: NpcModeCommand,
+        response: { 200: NpcReport, ...errors },
+      },
+    },
+    async (request) =>
+      service().npcMode(
+        await subject(request),
+        request.params.id,
+        request.query.actorId,
+        request.body,
+        deviceIds.has(request) ? "bot" : "human",
+      ),
   );
   app.post(
     "/api/worlds/:id/presence",

@@ -1,3 +1,4 @@
+import { npcActors } from "./npc-mode.js";
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { ConstructionStateError } from "./construction.js";
@@ -49,7 +50,7 @@ const fail = (message: string) => new ConstructionStateError(message);
 
 /** Durable external decisions. No model calls, narrative generation, or world writes. */
 export class SharedTurns {
-  readonly replyMs = Number(process.env.SCENE_REACTION_SECONDS ?? 60) * 1000;
+  readonly replyMs = Number(process.env.SCENE_REACTION_SECONDS ?? 180) * 1000;
   readonly humanRounds = Number(process.env.SCENE_HUMAN_ROUNDS ?? 5);
   readonly botRounds = Number(process.env.SCENE_BOT_ROUNDS ?? 10);
   constructor(readonly shared: SharedScenes) {}
@@ -500,7 +501,8 @@ export class SharedTurns {
         "UPDATE world_shared_scene SET flow='voting' WHERE scene_id=$1",
         [row.id],
       );
-    for (const actor of actors) {
+    const away = new Set(await npcActors(db, row.data.worldId, actors));
+    for (const actor of actors.filter((id) => !away.has(id))) {
       await db.query(
         "INSERT INTO world_scene_end_answer(vote_id,actor_id) VALUES($1,$2)",
         [id, actor],

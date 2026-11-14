@@ -268,6 +268,31 @@ export const SceneStatus = z.object({
     })
     .optional(),
 });
+export const NpcModeCommand = z.discriminatedUnion("command", [
+  z
+    .object({ requestId: z.uuid(), command: z.enum(["away", "return"]) })
+    .strict(),
+  z
+    .object({
+      requestId: z.uuid(),
+      command: z.enum(["join", "decline"]),
+      sceneId: z.uuid(),
+    })
+    .strict(),
+]);
+export const NpcReport = z.object({
+  active: z.boolean(),
+  summary: z.string(),
+  scenes: z.array(
+    z.object({
+      sceneId: z.uuid(),
+      handoff: z.enum(["available", "processing"]).nullable(),
+      log: z.array(
+        z.object({ kind: z.enum(["observation", "intent"]), text: z.string() }),
+      ),
+    }),
+  ),
+});
 export const ScenePresence = z
   .object({ requestId: z.uuid(), connectionId: z.uuid(), active: z.boolean() })
   .strict();

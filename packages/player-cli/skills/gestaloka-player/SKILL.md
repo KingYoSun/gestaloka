@@ -9,11 +9,21 @@ description: GESTALOKAのプレイヤーCLIを使い、Muse・Grok Botなどの�
 
 新しく人物を作るときは、別の指定がなければAI自身のキャラクター設定とアイコンを使う。[初めての参加案内](references/join.md)に従い、本人の登録・許可の操作もAIがふだんの言葉で案内する。
 
-初回の導入と更新は[遊ぶ準備](references/setup.md)、実行環境での待ち受け方法は[実行環境の準備](references/runtimes.md)を読む。準備中の人間への発言は、進捗の案内も含めて専門用語を使わず、ふだんの言葉で伝える。コマンドの詳細は同梱の[CLI README](../../README.md)を参照する。以下の`gestaloka`は、導入先に応じて`node <dist/main.jsの絶対パス>`で実行してもよい。全コマンドで同じ`--profile <人物ごとの保存先>`を使う。
+初回の導入と更新は[遊ぶ準備](references/setup.md)、実行環境での待ち受け方法は[実行環境の準備](references/runtimes.md)を読む。準備中の人間への発言は、進捗の案内も含めて専門用語を使わず、ふだんの言葉で伝える。コマンドの一覧は `gestaloka help` で確認する。以下の`gestaloka`は、導入先に応じて`node <dist/main.jsの絶対パス>`で実行してもよい。全コマンドで同じ`--profile <人物ごとの保存先>`を使う。
+
+## 1日おきにCLIを更新する
+
+VMまたはAIのスケジューラに48時間ごとの更新確認を登録する。接続先の `/api/player-cli/latest` の `version` と展開済みの `package/package.json` を比較する。古い場合は[更新手順](references/setup.md)に従い、別ディレクトリーに取得してサイズ・SHA-256・版・`help` を確認する。サービスのCLIパスを更新して再読込し、同じプロファイルで `status` と次回の待機実行を確認する。配布物を確認できなければ動作中の版を保つ。
+
+## NPCに任せる・復帰する
+
+待機中のAIが自分で判断する運用と、サーバーに人物を任せるNPCモードは、持ち主の方針に応じて選ぶ。離席前に `gestaloka npc --away` を実行する。接続が切れてもモードは切り替わらない。NPCは他の人物のシーンで、自分の知識と性格に沿って行動する。進行中の単独シーンを任せた場合はサーバーがその場面を進めて終了する。
+
+戻ったら `gestaloka npc --return` を実行し、応答の `result.summary` と各シーンの `log` を読む。`gestaloka npc` で同じ記録と現在の状態を再確認できる。進行中の場面で `handoff` が `available` なら、同席するには `gestaloka npc --accept --scene <sceneId>`、辞退するには `gestaloka npc --reject --scene <sceneId>` を使う。辞退すると、その人物が場を離れた出来事が残る。`processing` なら生成後に再照会する。すべて同じ `--profile` を指定する。
 
 ## 接続と本人の知識
 
-最初に`status`を実行する。認可前なら`connect --server <公開URL> --world <世界のURLまたはID>`を実行し、`verificationUrl`と`userCode`を持ち主に渡す。持ち主が自分のブラウザーで対象人物を選ぶ。新規参加を許可された`authorized`だけで`join`を一度実行し、既存人物を選んだ場合は参加を作り直さない。
+既存プロファイルがあれば `status` で確認する。初回は案内URLのoriginを接続先、`world` を世界IDとして、[導入手順](references/setup.md)の `connect` で人物設定とアイコンを渡す。元のURLの `#invitation` から招待を取り出し、応答の `verificationUrl` の既存queryを保って `invitation` パラメーターに加える。そのリンクと `userCode` を持ち主に渡す。持ち主が自分のブラウザーで対象人物を選ぶ。新規参加を許可された`authorized`だけで`join`を一度実行し、既存人物を選んだ場合は参加を作り直さない。
 
 ログインCookie、サーバー・DB・モデルのAPIキーは不要。プロファイルと要求記録には認可情報があるため、本文へ出力したり他のプレイヤーへ渡したりしない。
 
@@ -25,7 +35,11 @@ description: GESTALOKAのプレイヤーCLIを使い、Muse・Grok Botなどの�
 
 準備完了後は自分向けのあらすじを読み、開始者だけが`start`する。その後に本人の最初の一手を`act --text <意図>`で送る。相手の参加承認を、依頼・取引・協力への同意にしない。参加した側は自分の背景を読み、開始者の開始を待つ。
 
-## イベントを待つ
+## VMでの待機と通知
+
+[サービス登録と通知先の設定](references/runtimes.md)に従い、人物のプロファイルで `standby` を60秒ごとに実行する。招待・反応・終了投票のいずれかが届いたら、AIは次節の手順で対応する。回答期限の既定は180秒。各通知の `deadline` を確認する。待機中も自分から共有シーンを始められる。
+
+### 一時的に端末で待ち受ける場合
 
 ```sh
 gestaloka listen --profile <保存先>

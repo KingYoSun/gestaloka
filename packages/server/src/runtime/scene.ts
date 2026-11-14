@@ -1,9 +1,11 @@
+import { npcActors, trackNpcScene } from "./npc-mode.js";
 import { RuntimeExecutions } from "./executions.js";
 import { sceneSources } from "./scene-sources.js";
 import { SharedScenes, SceneSelection } from "./shared-scenes.js";
 import { SceneDrafts, type SceneDraft } from "./scene-drafts.js";
 import type { SharedTurn } from "./shared-turns.js";
 import {
+  type NpcModeCommand,
   InformationReference,
   type Information,
   type Presentation,
@@ -134,6 +136,7 @@ function backgroundPaused(content?: string) {
 export type SceneData = {
   turns?: true;
   soloBot?: boolean;
+  npcSoloTurn?: string;
   soloProposal?: string;
   deferredSoloAction?: { id: string; text: string; submittedAt: string };
   turn?: SharedTurn;
@@ -258,6 +261,11 @@ export class WorldScenes {
       expireInSeconds: 900,
       heartbeatSeconds: 30,
     });
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS world_npc_scene (
+      session_id uuid NOT NULL,actor_id uuid NOT NULL,scene_id uuid NOT NULL REFERENCES world_scene(id) ON DELETE CASCADE,
+      event_start integer NOT NULL DEFAULT 0,choice_start integer NOT NULL DEFAULT 0,include_opening boolean NOT NULL DEFAULT true,
+      event_end integer,choice_end integer,handled boolean NOT NULL DEFAULT false,PRIMARY KEY(session_id,actor_id,scene_id));
+      CREATE INDEX IF NOT EXISTS world_npc_scene_by_scene ON world_npc_scene(scene_id);`);
     await this.shared.setup();
     await this.drafts.setup();
   }
@@ -347,6 +355,14 @@ export class WorldScenes {
       );
       if (result.rowCount !== 1)
         throw new SupersededWorker("シーンの実行が引き継がれました");
+      await trackNpcScene(c, row);
+      if (
+        !row.data.shared &&
+        !row.data.encounter &&
+        ["ready", "active"].includes(row.state) &&
+        (await npcActors(c, row.data.worldId, [row.actor_id])).length
+      )
+        await this.#enqueue(c, row.id);
       await c.query(
         `INSERT INTO world_event(subject_id,construction_id,role,event_key)
         SELECT subject_id,construction_id,role,gen_random_uuid()::text FROM world_access WHERE construction_id=$1`,
@@ -355,6 +371,197 @@ export class WorldScenes {
     };
     return client ? save(client) : this.#transaction(save);
   }
+  async npcCommand(
+    db: pg.PoolClient,
+    world: string,
+    actor: string,
+    input: z.infer<typeof NpcModeCommand>,
+    kind: "bot" | "human",
+  ) {
+    await this.shared.lock(db, world);
+    const c = await this.construction.get(world, db);
+    const current = await this.latest(world, db, false, actor);
+    if (input.command === "away" || input.command === "return") {
+      const active = input.command === "away";
+      const changed = await db.query(
+        `UPDATE world_controlled_actor SET npc_active=$3,npc_session=CASE WHEN $3 THEN $4 ELSE npc_session END
+        WHERE world_id=$1 AND actor_id=$2 AND npc_active<>$3 RETURNING npc_session`,
+        [c.world_id, actor, active, input.requestId],
+      );
+      if (!changed.rowCount) return;
+      if (active) {
+        await db.query(
+          "UPDATE world_scene_presence SET active=false WHERE world_id=$1 AND actor_id=$2 AND active",
+          [world, actor],
+        );
+        if (
+          current &&
+          current.state !== "result" &&
+          current.data.departures?.[actor] === undefined &&
+          !current.data.waitingFor?.length
+        ) {
+          await db.query(
+            `INSERT INTO world_npc_scene(session_id,actor_id,scene_id,event_start,choice_start,include_opening)
+            VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+            [
+              input.requestId,
+              actor,
+              current.id,
+              current.data.events.length,
+              current.data.choices.length,
+              !current.data.background,
+            ],
+          );
+          if (current.data.shared)
+            await this.shared.turns.departed(db, current, [actor]);
+          if (
+            !current.data.shared &&
+            ["ready", "active"].includes(current.state)
+          )
+            await this.#enqueue(db, current.id);
+        }
+      } else {
+        await db.query(
+          `UPDATE world_npc_scene n SET event_end=jsonb_array_length(s.data->'events'),choice_end=jsonb_array_length(s.data->'choices')
+          FROM world_scene s WHERE n.scene_id=s.id AND n.actor_id=$1 AND n.session_id=$2 AND s.state NOT IN ('preparing','acting') AND n.event_end IS NULL`,
+          [actor, changed.rows[0].npc_session],
+        );
+      }
+      return;
+    }
+    if (!("sceneId" in input))
+      throw new ConstructionStateError("シーンを指定してください");
+    const row = (
+      await db.query<SceneRow>(
+        `SELECT s.* FROM world_scene s JOIN world_npc_scene n ON s.id=n.scene_id
+      JOIN world_controlled_actor a ON a.actor_id=n.actor_id AND a.npc_session=n.session_id
+      WHERE s.id=$1 AND s.construction_id=$2 AND a.actor_id=$3 AND NOT a.npc_active AND NOT n.handled FOR UPDATE OF s`,
+        [input.sceneId, world, actor],
+      )
+    ).rows[0];
+    if (
+      !row ||
+      !["active", "ready"].includes(row.state) ||
+      row.data.encounter ||
+      row.data.soloProposal ||
+      row.data.departures?.[actor] !== undefined ||
+      !row.data.background?.participants.includes(actor)
+    )
+      throw new ConstructionStateError(
+        "登場中のシーンの状態を再取得してください",
+      );
+    const d = row.data;
+    if (input.command === "join") {
+      if (
+        current &&
+        current.id !== row.id &&
+        current.state !== "result" &&
+        !current.data.waitingFor?.length &&
+        current.data.departures?.[actor] === undefined
+      )
+        throw new ConstructionStateError(
+          "現在参加しているシーンから退出してください",
+        );
+      if (actor !== row.actor_id || d.shared) {
+        if (!d.shared) {
+          await this.shared.open(
+            db,
+            world,
+            row.actor_id,
+            row.id,
+            d.at,
+            d.commandId,
+            d.soloBot ? "bot" : "human",
+          );
+          await db.query(
+            "UPDATE world_shared_scene SET phase='settled' WHERE scene_id=$1",
+            [row.id],
+          );
+          await db.query(
+            "UPDATE world_scene_member SET state='joined' WHERE scene_id=$1",
+            [row.id],
+          );
+          d.shared = true;
+          d.turns = true;
+          delete d.peerConditions;
+        }
+        d.externalActors = [
+          ...new Set([...(d.externalActors ?? [row.actor_id]), actor]),
+        ];
+        await db.query(
+          `INSERT INTO world_scene_member(scene_id,world_id,actor_id,request_id,last_request_id,state,kind)
+           VALUES($1,$2,$3,$4,$4,'joined',$5) ON CONFLICT(scene_id,actor_id) DO UPDATE SET state='joined',kind=excluded.kind,last_request_id=excluded.last_request_id`,
+          [row.id, world, actor, input.requestId, kind],
+        );
+        await db.query(
+          `INSERT INTO world_actor_scene(world_id,actor_id,scene_id) VALUES($1,$2,$3) ON CONFLICT(world_id,actor_id) DO UPDATE SET scene_id=excluded.scene_id`,
+          [world, actor, row.id],
+        );
+        await this.shared.notice(
+          db,
+          world,
+          actor,
+          row.id,
+          "participation_settled",
+        );
+      }
+    } else {
+      const name =
+        (await this.agent.store.context(d.worldId).node(actor, d.at))?.text ??
+        "その人物";
+      const text = name + "はその場を離れた。";
+      const event = {
+        id: sceneId(input.requestId + ":departure"),
+        actorId: actor,
+        text,
+        period: { from: d.at, until: d.at },
+        receipts: [
+          ...new Set([row.actor_id, ...(d.externalActors ?? []), actor]),
+        ]
+          .filter((a) => d.departures?.[a] === undefined)
+          .map((observerId) => ({ observerId, text })),
+      };
+      d.events.push(event);
+      (d.departures ??= {})[actor] = d.events.length;
+      if (d.shared) await this.shared.turns.departed(db, row, [actor]);
+      await db.query(
+        "UPDATE world_scene_member SET state='left' WHERE scene_id=$1 AND actor_id=$2",
+        [row.id, actor],
+      );
+      if (row.actor_id === actor && !d.shared) {
+        row.state = "reflecting";
+        d.ending = "departed";
+        await this.#enqueue(db, row.id);
+      }
+      if (d.shared) {
+        for (const member of await this.shared.members(row.id, db))
+          await this.shared.notice(
+            db,
+            world,
+            member.actor_id,
+            row.id,
+            "participant_left",
+          );
+        if (
+          !(await this.shared.members(row.id, db)).some(
+            (m) => m.state === "joined",
+          )
+        ) {
+          row.state = "reflecting";
+          d.ending = "departed";
+          await this.#enqueue(db, row.id, true);
+        }
+      }
+    }
+    delete d.pending[actor];
+    d.nextDecisions = d.nextDecisions.filter((id) => id !== actor);
+    await db.query(
+      "UPDATE world_npc_scene SET handled=true WHERE actor_id=$1 AND scene_id=$2 AND session_id=(SELECT npc_session FROM world_controlled_actor WHERE world_id=$3 AND actor_id=$1)",
+      [actor, row.id, d.worldId],
+    );
+    await this.#save(row, db);
+  }
+
   async open(
     world: string,
     purpose: string,
@@ -723,7 +930,9 @@ export class WorldScenes {
     return row.state === "preparing"
       ? row.id
       : row.state === "acting"
-        ? (row.data.turn?.id ?? row.data.actions.at(-1)!.id)
+        ? (row.data.turn?.id ??
+          row.data.npcSoloTurn ??
+          row.data.actions.at(-1)!.id)
         : sceneId(`${row.id}:reflection`);
   }
 
@@ -789,7 +998,7 @@ export class WorldScenes {
     let plan = current.plan;
     if (!plan) {
       const request = { ...this.#request(row), actionText: row.data.purpose };
-      const context = await this.agent.context(request, row.data.basis);
+      const context = await this.agent.context(request, row.data.basis, true);
       row.data.basis = context.dependencies;
       const value = await this.#ask(
         row,
@@ -840,6 +1049,7 @@ export class WorldScenes {
         const read = await this.agent.read(
           { request, dependencies: row.data.basis },
           answer.requests,
+          true,
         );
         row.data.basis = read.dependencies;
         row.data.work!.messages.push(
@@ -948,7 +1158,7 @@ export class WorldScenes {
       delete d.work;
     }
     if (!d.backgroundMessages) {
-      const context = await this.agent.context(request, d.basis);
+      const context = await this.agent.context(request, d.basis, true);
       d.basis = context.dependencies;
       await this.#peerConditions(
         row,
@@ -1022,6 +1232,7 @@ export class WorldScenes {
         const read = await this.agent.read(
           { request, dependencies: d.basis },
           answer.requests,
+          true,
         );
         d.basis = read.dependencies;
         await this.#peerConditions(
@@ -1130,7 +1341,12 @@ export class WorldScenes {
             ...decision.beliefs.map((f) => f.subjectId),
             ...decision.perceptions.map((p) => p.observerId),
           ]),
-        ].filter((id) => !(d.externalActors ?? [row.actor_id]).includes(id)),
+        ].filter(
+          (id) =>
+            !(d.externalActors ?? [row.actor_id]).includes(id) &&
+            !d.background?.participants.includes(id),
+        ),
+        true,
       );
       if (controlled.size)
         throw new SceneResponseError(
@@ -1217,6 +1433,7 @@ export class WorldScenes {
         const context = await this.agent.context(
           { ...request, rootIds: actual },
           d.basis,
+          true,
         );
         d.basis = context.dependencies;
       }
@@ -1272,7 +1489,70 @@ export class WorldScenes {
     d.peerConditions = [...known.values()];
     d.basis = read.dependencies;
   }
+  async #chooseIntent(row: SceneRow, actor: string) {
+    const d = row.data,
+      bg = d.background!;
+    const own = [
+      ...(d.previous[actor] ? [d.previous[actor]!.actionText] : []),
+      ...d.originalAgenda
+        .filter((w) => w.actorId === actor)
+        .flatMap((w) => [
+          ...(w.previousActions ?? []),
+          ...(w.actionText ? [w.actionText] : []),
+        ]),
+    ];
+    d.views[actor]!.conditions ??= bg.creations.some((c) => c.id === actor)
+      ? []
+      : (await this.agent.intentView(d.worldId, actor, d.startedAt)).conditions;
+    const value = await this.#ask(
+      row,
+      "intent",
+      "actor-intent.md",
+      sceneView(
+        d.views[actor]!,
+        bg,
+        d.events,
+        own,
+        d.at,
+        d.choices.filter((i) => i.actorId === actor).map((i) => i.actionText),
+      ),
+      "resolution",
+    );
+    const choice = {
+      actorId: actor,
+      actionText: IntentResult.parse(value.value).actionText,
+      continuing: false,
+    };
+    d.pending[actor] = choice;
+    d.intentions[actor] = choice;
+    d.choices.push(choice);
+    delete d.work;
+    return choice.actionText;
+  }
   async #action(row: SceneRow) {
+    if (
+      row.data.npcSoloTurn &&
+      !row.data.actions.some((a) => a.id === row.data.npcSoloTurn)
+    ) {
+      const d = row.data,
+        actor = row.actor_id;
+      if (!(await npcActors(this.pool, d.worldId, [actor])).length) {
+        row.state = "active";
+        delete d.npcSoloTurn;
+        delete d.work;
+        await this.#save(row, undefined, row.claim!);
+        return false;
+      }
+      const text = await this.#chooseIntent(row, actor);
+      d.actions.push({
+        id: d.npcSoloTurn!,
+        actorId: actor,
+        text,
+        state: "running",
+      });
+      delete d.work;
+      await this.#save(row, undefined, row.claim!);
+    }
     if (row.data.turn && !row.data.turn.inputs.length)
       return this.#completeTurn(row, []);
     const d = row.data,
@@ -1286,11 +1566,27 @@ export class WorldScenes {
     for (;;) {
       if (d.contextNeed) await this.#background(row);
       if (!d.shared && !d.peerConditions) {
-        const seed = await this.agent.context(this.#request(row), d.basis);
+        const seed = await this.agent.context(
+          this.#request(row),
+          d.basis,
+          true,
+        );
         d.basis = seed.dependencies;
         await this.#peerConditions(row, seed.controlledActorIds, d.roots);
       }
       const bg = d.background!;
+      const away = new Set(
+        await npcActors(this.pool, d.worldId, bg.participants),
+      );
+      const external = (d.externalActors ?? []).filter((id) => !away.has(id));
+      if (d.peerConditions?.length) {
+        const peers = await this.agent.controlledActors(
+          d.worldId,
+          d.peerConditions.map((p) => p.actorId),
+          true,
+        );
+        d.peerConditions = d.peerConditions.filter((p) => peers.has(p.actorId));
+      }
       if (!d.work) {
         const next = sceneContinuations(
           d.originalAgenda,
@@ -1298,7 +1594,7 @@ export class WorldScenes {
             (id) =>
               !d.intentions[id] &&
               !d.nextDecisions.includes(id) &&
-              !(d.externalActors ?? []).includes(id) &&
+              !external.includes(id) &&
               d.departures?.[id] === undefined,
           ),
           actor,
@@ -1309,9 +1605,13 @@ export class WorldScenes {
         d.nextDecisions.push(...next.nextDecisions);
       }
       if (
-        !controlled.some((id) => d.pending[id] || d.nextDecisions.includes(id))
+        !controlled.some(
+          (id) => d.pending[id] || d.nextDecisions.includes(id),
+        ) &&
+        ![...away].some((id) => d.pending[id] || d.nextDecisions.includes(id))
       ) {
         if (d.turn) return this.#completeTurn(row, []);
+        delete d.npcSoloTurn;
         action.state = "complete";
         row.state = "active";
         await this.#save(row, undefined, row.claim!);
@@ -1320,50 +1620,23 @@ export class WorldScenes {
       if (d.nextDecisions.length) {
         if (
           (
-            await this.agent.controlledActors(d.worldId, [d.nextDecisions[0]!])
+            await this.agent.controlledActors(
+              d.worldId,
+              [d.nextDecisions[0]!],
+              true,
+            )
           ).has(d.nextDecisions[0]!)
-        )
-          break;
-        const actor = d.nextDecisions[0]!,
-          own = [
-            ...(d.previous[actor] ? [d.previous[actor]!.actionText] : []),
-            ...d.originalAgenda
-              .filter((w) => w.actorId === actor)
-              .flatMap((w) => [
-                ...(w.previousActions ?? []),
-                ...(w.actionText ? [w.actionText] : []),
-              ]),
-          ];
-        d.views[actor]!.conditions ??= bg.creations.some((c) => c.id === actor)
-          ? []
-          : (await this.agent.intentView(d.worldId, actor, d.startedAt))
-              .conditions;
-        const value = await this.#ask(
-          row,
-          "intent",
-          "actor-intent.md",
-          sceneView(
-            d.views[actor]!,
-            bg,
-            d.events,
-            own,
-            d.at,
-            d.choices
-              .filter((i) => i.actorId === actor)
-              .map((i) => i.actionText),
-          ),
-          "resolution",
-        );
-        const choice = {
-          actorId: actor,
-          actionText: IntentResult.parse(value.value).actionText,
-          continuing: false,
-        };
-        d.pending[actor] = choice;
-        d.intentions[actor] = choice;
-        d.choices.push(choice);
+        ) {
+          const returning = await this.pool.query(
+            "SELECT 1 FROM world_npc_scene WHERE scene_id=$1 AND actor_id=$2 AND NOT handled LIMIT 1",
+            [row.id, d.nextDecisions[0]],
+          );
+          if (!returning.rowCount) break;
+          d.nextDecisions.shift();
+          continue;
+        }
+        await this.#chooseIntent(row, d.nextDecisions[0]!);
         d.nextDecisions.shift();
-        delete d.work;
         await this.#save(row, undefined, row.claim!);
         continue;
       }
@@ -1387,11 +1660,13 @@ export class WorldScenes {
             request: {
               at: d.at,
               controlledActorId: actor,
-              ...(d.soloBot ? { scenePurpose: d.purpose } : {}),
+              ...(d.soloBot || d.npcSoloTurn
+                ? { scenePurpose: d.purpose }
+                : {}),
               ...(d.turn
                 ? {
                     controlledActorIds: controlled,
-                    playerActorIds: d.externalActors,
+                    playerActorIds: external,
                     humanInput: d.turn.sourceKind === "human" && !d.turn.reply,
                     controlledInputs: d.turn.inputs,
                     reactionTo: d.turn.reply
@@ -1637,36 +1912,35 @@ export class WorldScenes {
         continue;
       }
       if (d.turn) {
-        const external = d.externalActors ?? [],
-          targets = [
-            ...new Set([
-              ...step.newDecisions,
-              ...Object.entries(step.decisions)
-                .filter(([, status]) => status === "decide")
-                .map(([id]) => id),
-            ]),
-          ].filter(
-            (id) =>
-              external.includes(id) &&
-              (!controlled.includes(id) ||
-                step.events.some(
-                  (e) =>
-                    e.actorId !== id &&
-                    e.receipts.some((p) => p.observerId === id),
-                ) ||
-                step.arrivals.some(
-                  (a) =>
-                    a.observerId === id &&
-                    d.events[a.eventIndex]?.actorId !== id,
-                )),
-          );
+        const targets = [
+          ...new Set([
+            ...step.newDecisions,
+            ...Object.entries(step.decisions)
+              .filter(([, status]) => status === "decide")
+              .map(([id]) => id),
+          ]),
+        ].filter(
+          (id) =>
+            external.includes(id) &&
+            (!controlled.includes(id) ||
+              step.events.some(
+                (e) =>
+                  e.actorId !== id &&
+                  e.receipts.some((p) => p.observerId === id),
+              ) ||
+              step.arrivals.some(
+                (a) =>
+                  a.observerId === id && d.events[a.eventIndex]?.actorId !== id,
+              )),
+        );
         d.nextDecisions = d.nextDecisions.filter(
           (id) => !external.includes(id),
         );
         if (
           step.concluded ||
           targets.length ||
-          controlled.every((id) => !d.pending[id]) ||
+          (controlled.every((id) => !d.pending[id]) &&
+            !d.nextDecisions.some((id) => away.has(id))) ||
           (await this.shared.turns.control(row.id)).flow === "inactive"
         ) {
           const recipients =
@@ -1676,11 +1950,16 @@ export class WorldScenes {
                   .flatMap((e) => e.receipts.map((p) => p.observerId))
                   .filter((id) => !controlled.includes(id))
               : targets;
-          return this.#completeTurn(row, recipients, !!step.concluded);
+          return this.#completeTurn(
+            row,
+            recipients.filter((id) => !away.has(id)),
+            !!step.concluded,
+          );
         }
       }
       if (
         !d.turn &&
+        !d.nextDecisions.some((id) => away.has(id)) &&
         (step.decisions[actor] === "finished" ||
           step.decisions[actor] === "decide" ||
           step.newDecisions.includes(actor))
@@ -1688,6 +1967,14 @@ export class WorldScenes {
         action.state = "complete";
         row.state = "active";
         d.nextDecisions = d.nextDecisions.filter((id) => id !== actor);
+        const npcTurn = !!d.npcSoloTurn;
+        delete d.npcSoloTurn;
+        if (npcTurn && step.concluded) {
+          row.state = "reflecting";
+          d.ending = "concluded";
+          await this.#save(row, undefined, row.claim!);
+          return true;
+        }
         if (d.soloBot && step.concluded) {
           await this.#transaction(async (db) => {
             await this.shared.lock(db, row.construction_id);
@@ -2065,6 +2352,24 @@ export class WorldScenes {
           )
         ).rows[0];
         if (!row) throw new Error("シーンが見つかりません");
+        if (
+          !row.data.shared &&
+          !row.data.encounter &&
+          ["ready", "active"].includes(row.state) &&
+          (await npcActors(client, row.data.worldId, [row.actor_id])).length
+        ) {
+          if (row.data.soloProposal) {
+            await client.query(
+              "UPDATE world_scene_end_vote SET state='closed' WHERE id=$1",
+              [row.data.soloProposal],
+            );
+            delete row.data.soloProposal;
+            row.state = "reflecting";
+          } else {
+            row.data.npcSoloTurn = randomUUID();
+            row.state = "acting";
+          }
+        }
         if (row.data.encounter) {
           const encounter = row.data.encounter;
           const invitation = await this.shared.get(row.id, client);

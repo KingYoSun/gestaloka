@@ -10,12 +10,12 @@ const pkg = JSON.parse(
 );
 const filename = `gestaloka-player-cli-${pkg.version}.tgz`;
 const bytes = await readFile(new URL(filename, root));
-for (const name of ["join", "setup"]) {
+for (const name of ["join", "setup", "runtimes", "SKILL"]) {
   await writeFile(
     new URL(`${name}.md`, root),
     await readFile(
       new URL(
-        `../packages/player-cli/skills/gestaloka-player/references/${name}.md`,
+        `../packages/player-cli/skills/gestaloka-player/${name === "SKILL" ? "" : "references/"}${name}.md`,
         import.meta.url,
       ),
     ),
