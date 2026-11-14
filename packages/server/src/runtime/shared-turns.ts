@@ -10,6 +10,7 @@ type Db = Pick<pg.Pool, "query">;
 export type SharedTurn = {
   id: string;
   npcActor?: string;
+  continuingActor?: string;
   sourceId: string;
   sourceKind: "human" | "bot";
   eventStart: number;
@@ -304,7 +305,29 @@ export class SharedTurns {
         [row.id, control.flow === "closing" || control.flow === "open"],
       )
     ).rows[0];
-    if (!task) return null;
+    if (!task) {
+      const actor =
+        control.flow === "open" && (await this.continuingActor(db, row));
+      if (!actor) return null;
+      // Reuse the last turn's response budget when the worker resumes persisted work.
+      const previous = (
+        await db.query<{ id: string }>(
+          "SELECT id FROM world_scene_turn WHERE scene_id=$1 AND state='resolved' ORDER BY sequence DESC LIMIT 1",
+          [row.id],
+        )
+      ).rows[0];
+      const id =
+        previous?.id ?? row.data.actions.at(-1)?.id ?? row.data.commandId;
+      return {
+        id,
+        continuingActor: actor,
+        sourceId: id,
+        sourceKind: "bot",
+        eventStart: row.data.events.length,
+        reply: false,
+        inputs: [],
+      };
+    }
     if (task.kind === "human" && task.command !== "reply")
       await db.query(
         "UPDATE world_shared_scene SET rounds=0 WHERE scene_id=$1",
@@ -365,6 +388,23 @@ export class SharedTurns {
       reply: !!wave,
       inputs,
     };
+  }
+  private async continuingActor(db: pg.PoolClient, row: SceneRow) {
+    const candidates = Object.values(row.data.pending)
+      .filter(
+        (i) => i.continuing && row.data.departures?.[i.actorId] === undefined,
+      )
+      .map((i) => i.actorId);
+    if (!candidates.length) return;
+    // An outstanding response wave will wake the scene on reply or deadline.
+    return (
+      await db.query<{ actor: string }>(
+        `SELECT actor FROM unnest($2::uuid[]) AS actor
+      WHERE NOT EXISTS (SELECT 1 FROM world_controlled_actor WHERE world_id=$3 AND actor_id=actor AND NOT npc_active)
+      AND NOT EXISTS (SELECT 1 FROM world_scene_wave WHERE scene_id=$1 AND state='pending') LIMIT 1`,
+        [row.id, candidates, row.data.worldId],
+      )
+    ).rows[0]?.actor;
   }
   async publish(
     db: pg.PoolClient,
@@ -430,9 +470,11 @@ export class SharedTurns {
     targets: string[],
     finished = false,
   ) {
-    await db.query("UPDATE world_scene_turn SET state='resolved' WHERE id=$1", [
-      turn.id,
-    ]);
+    if (!turn.continuingActor)
+      await db.query(
+        "UPDATE world_scene_turn SET state='resolved' WHERE id=$1",
+        [turn.id],
+      );
     if (turn.reply)
       await db.query(
         "UPDATE world_scene_wave SET state='resolved' WHERE id=$1",
@@ -514,7 +556,8 @@ export class SharedTurns {
       return queued ? ("acting" as const) : ("reflecting" as const);
     return control.flow === "rounds" || control.flow === "inactive"
       ? ("paused" as const)
-      : queued && control.flow === "open"
+      : control.flow === "open" &&
+          (queued || (await this.continuingActor(db, row)))
         ? ("acting" as const)
         : ("active" as const);
   }
