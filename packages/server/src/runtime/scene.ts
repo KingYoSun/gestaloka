@@ -1796,7 +1796,7 @@ export class WorldScenes {
         const event = step.events[call.eventIndex];
         if (
           d.shared ||
-          event?.actorId !== row.actor_id ||
+          !event ||
           !d.peerConditions?.some(
             (p) =>
               p.actorId === call.observerId &&
@@ -1807,7 +1807,7 @@ export class WorldScenes {
           event.receipts.some((r) => r.observerId === call.observerId)
         )
           throw new SceneResponseError(
-            "参加要請には本人の呼びかけの出来事と、参照した他プレイヤー本人への到達が必要です",
+            "参加要請には呼びかけの出来事と、参照した他プレイヤー本人への到達が必要です",
           );
         const lines = contacts.get(call.observerId) ?? [];
         lines.push(call.text);
