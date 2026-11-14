@@ -770,6 +770,13 @@ export class WorldScenes {
         throw new ConstructionStateError(
           "送信済み要求の結果が未確定です。自動では再送しません",
         );
+      // Older shared turns kept the completed boundary call during reflection.
+      if (
+        row.state === "reflecting" &&
+        d.work?.kind === "resolve" &&
+        workState === "complete"
+      )
+        delete d.work;
       if (
         row.data.work &&
         !row.data.limitReached &&
@@ -2067,11 +2074,11 @@ export class WorldScenes {
         break;
       await this.#save(row, undefined, row.claim!);
     }
+    delete d.work;
     if (d.turn) return this.#completeTurn(row, [], true);
     d.nextPurpose = action.text;
     action.state = "boundary";
     row.state = "reflecting";
-    delete d.work;
     await this.#save(row, undefined, row.claim!);
     return true;
   }
