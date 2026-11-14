@@ -206,13 +206,13 @@ export class SharedScenes {
   async active(
     world: string,
     actors: string[],
-    kind: "human" | "bot",
+    kind?: "human" | "bot",
     db: Pick<pg.Pool, "query"> = this.pool,
   ) {
     return (
       await db.query<{ actor_id: string }>(
         `SELECT DISTINCT p.actor_id FROM world_scene_presence p JOIN app_user u ON u.id=p.user_id
-      LEFT JOIN player_device d ON d.id=p.device_id WHERE p.world_id=$1 AND p.actor_id=ANY($2::uuid[]) AND p.kind=$3
+      LEFT JOIN player_device d ON d.id=p.device_id WHERE p.world_id=$1 AND p.actor_id=ANY($2::uuid[]) AND ($3::text IS NULL OR p.kind=$3)
       AND p.active AND p.expires_at>$4 AND NOT u.banned AND (p.device_id IS NULL OR NOT d.revoked)`,
         [world, actors, kind, this.now()],
       )

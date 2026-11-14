@@ -25,6 +25,7 @@ const selections = new Map<
 let continuation: { actor: string; creation: string } | undefined;
 let denyDeparture = false;
 type PlayInput = {
+  sleepingPlayerIds: string[];
   otherPlayers?: {
     actorId: string;
     states: { text: string; relationId: string }[];
@@ -943,9 +944,13 @@ function playStep(input: PlayInput, targets: string[] = []) {
 }
 
 test.each(["accept", "reject", "timeout"] as const)(
-  "単独で届いた呼びかけを接続前から保存し、%s後も同じシーンを続ける",
+  "睡眠中の呼びかけでは待たず、待機再開後に届いた招待の%s後も同じシーンを続ける",
   async (answer) => {
     const [caller, peer] = people;
+    await isolated.databases.postgres.query(
+      "UPDATE world_scene_presence SET active=false WHERE world_id=$1 AND actor_id=$2",
+      [world, peer!.actor],
+    );
     const place = (await runtime.get(world)).root_ids[0]!,
       at = (await runtime.get(world)).at;
     const position = randomUUID(),
@@ -990,7 +995,9 @@ test.each(["accept", "reject", "timeout"] as const)(
     await access.scenes.tick(scene);
     await cli.run(caller!.profile, "start");
     try {
+      let sleeping = true;
       playback = (input) => {
+        expect(input.sleepingPlayerIds.includes(peer!.actor)).toBe(sleeping);
         const states = input.otherPlayers?.find(
           (p) => p.actorId === peer!.actor,
         )?.states;
@@ -1018,12 +1025,30 @@ test.each(["accept", "reject", "timeout"] as const)(
             : [],
         };
       };
-      await cli.run(caller!.profile, "act", "--text", "露台を見る");
+      const unheard = await cli.run(
+        caller!.profile,
+        "act",
+        "--text",
+        "声をかける",
+      );
       await access.scenes.tick(scene);
       expect((await cli.run(caller!.profile, "status")).state).toBe(
         "waiting_input",
       );
       expect((await cli.run(peer!.profile, "inbox")).invitations).toEqual([]);
+      const asleep = await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        caller!.actor,
+      );
+      expect(
+        asleep!.data.events
+          .filter((e) => e.inputId === unheard.requestId)
+          .flatMap((e) => e.receipts.map((r) => r.observerId)),
+      ).toEqual([caller!.actor]);
+      await presence(1);
+      sleeping = false;
       const call = await cli.run(
         caller!.profile,
         "act",
@@ -1111,6 +1136,7 @@ test.each(["accept", "reject", "timeout"] as const)(
       expect((await cli.run(caller!.profile, "result")).state).toBe("finished");
     } finally {
       playback = undefined;
+      await presence(1, false);
     }
   },
   120000,
@@ -1853,10 +1879,15 @@ test.each([true, false])(
       owner = people[0]!,
       peer = people[1]!;
     const human = web ? await humanPresence(0) : undefined;
-    playback = (input) => ({
-      ...playStep(input, [owner.actor, peer.actor]),
-      ...(input.request.reactionTo ? { concluded: true } : {}),
-    });
+    playback = (input) => {
+      expect(input.sleepingPlayerIds.includes(owner.actor)).toBe(
+        !!input.request.reactionTo,
+      );
+      return {
+        ...playStep(input, [owner.actor, peer.actor]),
+        ...(input.request.reactionTo ? { concluded: true } : {}),
+      };
+    };
     try {
       if (web) await humanAct(0, "相手へ働きかける");
       else await cli.run(owner.profile, "act", "--text", "相手へ働きかける");
@@ -1896,6 +1927,11 @@ test.each([true, false])(
         result.data.events.filter((e) => e.actorId === owner.actor),
       ).toHaveLength(1);
       const source = await access.scenes.resultSource(result, owner.actor);
+      expect(
+        result.data.events
+          .at(-1)!
+          .receipts.some((r) => r.observerId === owner.actor),
+      ).toBe(false);
       expect(source.connectionAbsences).toEqual([{ from: 1, through: 2 }]);
       const calls = vi.spyOn(runtime.agent.model, "complete"),
         at = (await runtime.get(world)).at;

@@ -1174,6 +1174,10 @@ export class WorldScenes {
             initialContext: context.initialContext,
             controlledActorIds: context.controlledActorIds,
             otherPlayers: d.peerConditions,
+            sleepingPlayerIds: await this.#sleepingPlayers(
+              row,
+              context.controlledActorIds,
+            ),
             acceptedPlayerIds: d.externalActors ?? [row.actor_id],
             ...(d.drafts?.length ? { priorScenes: d.drafts } : {}),
             ...(d.contextNeed
@@ -1249,6 +1253,10 @@ export class WorldScenes {
               results: read.results,
               controlledActorIds: read.controlledActorIds,
               otherPlayers: d.peerConditions,
+              sleepingPlayerIds: await this.#sleepingPlayers(
+                row,
+                read.controlledActorIds,
+              ),
             }),
           },
         );
@@ -1328,6 +1336,15 @@ export class WorldScenes {
           );
       } else if (answer.type === "background") decision = answer;
       else throw new SceneResponseError("開始時の背景が必要です");
+      if (!d.contextNeed) {
+        const sleeping = await this.#sleepingPlayers(
+          row,
+          decision.participants,
+        );
+        decision.perceptions = decision.perceptions.filter(
+          (p) => !sleeping.includes(p.observerId),
+        );
+      }
       if (!decision.participants.includes(row.actor_id))
         throw new SceneResponseError(
           "背景情報に操作する本人が含まれていません",
@@ -1475,7 +1492,6 @@ export class WorldScenes {
   }
   async #peerConditions(row: SceneRow, ids: string[], places: string[]) {
     const d = row.data;
-    if (d.shared) return;
     const known = new Map((d.peerConditions ?? []).map((p) => [p.actorId, p]));
     const read = await this.agent.playerConditions(
       d.worldId,
@@ -1488,6 +1504,29 @@ export class WorldScenes {
     for (const player of read.players) known.set(player.actorId, player);
     d.peerConditions = [...known.values()];
     d.basis = read.dependencies;
+  }
+  async #sleepingPlayers(row: SceneRow, ids: string[]) {
+    const d = row.data;
+    const acting = d.turn?.inputs.map((input) => input.actorId) ?? [
+      row.actor_id,
+    ];
+    const candidates = [
+      ...new Set([
+        ...ids,
+        ...(d.externalActors ?? []),
+        ...(d.peerConditions ?? []).map((p) => p.actorId),
+      ]),
+    ].filter((id) => !acting.includes(id));
+    if (!candidates.length) return [];
+    const players = await this.agent.controlledActors(
+      d.worldId,
+      candidates,
+      true,
+    );
+    const awake = new Set(
+      await this.shared.active(row.construction_id, [...players]),
+    );
+    return [...players].filter((id) => !awake.has(id));
   }
   async #chooseIntent(row: SceneRow, actor: string) {
     const d = row.data,
@@ -1565,7 +1604,7 @@ export class WorldScenes {
       controlled = d.turn ? d.turn.inputs.map((i) => i.actorId) : [actor];
     for (;;) {
       if (d.contextNeed) await this.#background(row);
-      if (!d.shared && !d.peerConditions) {
+      if (!d.peerConditions) {
         const seed = await this.agent.context(
           this.#request(row),
           d.basis,
@@ -1579,6 +1618,9 @@ export class WorldScenes {
         await npcActors(this.pool, d.worldId, bg.participants),
       );
       const external = (d.externalActors ?? []).filter((id) => !away.has(id));
+      const sleeping = new Set(
+        await this.#sleepingPlayers(row, bg.participants),
+      );
       if (d.peerConditions?.length) {
         const peers = await this.agent.controlledActors(
           d.worldId,
@@ -1595,6 +1637,7 @@ export class WorldScenes {
               !d.intentions[id] &&
               !d.nextDecisions.includes(id) &&
               !external.includes(id) &&
+              !sleeping.has(id) &&
               d.departures?.[id] === undefined,
           ),
           actor,
@@ -1617,6 +1660,7 @@ export class WorldScenes {
         await this.#save(row, undefined, row.claim!);
         return false;
       }
+      d.nextDecisions = d.nextDecisions.filter((id) => !sleeping.has(id));
       if (d.nextDecisions.length) {
         if (
           (
@@ -1644,16 +1688,19 @@ export class WorldScenes {
         d.observationContext?.inputId === (d.turn?.id ?? action.id)
           ? d.observationContext
           : undefined;
-      const intents = Object.values(d.pending),
+      const intents = Object.values(d.pending).filter(
+          (i) => !sleeping.has(i.actorId),
+        ),
         value = await this.#ask(
           row,
           "resolve",
           "scene-play.md",
           {
             background: bg,
-            ...(!d.shared && d.peerConditions?.length
+            ...(d.peerConditions?.length
               ? { otherPlayers: d.peerConditions }
               : {}),
+            sleepingPlayerIds: [...sleeping],
             ...(observation ? { observationLimits: observation.limits } : {}),
             sceneHistory: d.events,
             controlledView: d.views[actor],
@@ -1719,7 +1766,14 @@ export class WorldScenes {
           if (step.decisions[id] === "finished") step.decisions[id] = "pending";
       const actors = new Set(intents.map((i) => i.actorId));
       const contacts = new Map<string, string[]>();
+      for (const event of step.events)
+        event.receipts = event.receipts.filter(
+          (r) => !sleeping.has(r.observerId),
+        );
+      step.arrivals = step.arrivals.filter((a) => !sleeping.has(a.observerId));
+      step.newDecisions = step.newDecisions.filter((id) => !sleeping.has(id));
       for (const call of step.callsToPlayers ?? []) {
+        if (sleeping.has(call.observerId)) continue;
         const event = step.events[call.eventIndex];
         if (
           d.shared ||
@@ -1922,6 +1976,7 @@ export class WorldScenes {
         ].filter(
           (id) =>
             external.includes(id) &&
+            !sleeping.has(id) &&
             (!controlled.includes(id) ||
               step.events.some(
                 (e) =>
@@ -1952,7 +2007,7 @@ export class WorldScenes {
               : targets;
           return this.#completeTurn(
             row,
-            recipients.filter((id) => !away.has(id)),
+            recipients.filter((id) => !away.has(id) && !sleeping.has(id)),
             !!step.concluded,
           );
         }
