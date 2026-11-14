@@ -9,6 +9,7 @@ import type { SceneEnding } from "./scene-data.js";
 type Db = Pick<pg.Pool, "query">;
 export type SharedTurn = {
   id: string;
+  npcActor?: string;
   sourceId: string;
   sourceKind: "human" | "bot";
   eventStart: number;
@@ -35,7 +36,7 @@ type Task = {
   id: string;
   actor_id: string;
   kind: "human" | "bot";
-  command: "act" | "leave" | "reply";
+  command: "act" | "leave" | "reply" | "npc";
   data: { actionText?: string; waveId?: string };
 };
 type Wave = {
@@ -106,10 +107,33 @@ export class SharedTurns {
     command: Task["command"],
     data: Task["data"],
   ) {
-    await db.query(
+    return db.query(
       "INSERT INTO world_scene_turn(id,scene_id,actor_id,kind,command,data) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
       [id, scene, actor, kind, command, data],
     );
+  }
+  async handoff(
+    db: pg.PoolClient,
+    row: SceneRow,
+    actor: string,
+    session: string,
+  ) {
+    if (
+      !row.data.turns ||
+      !["active", "acting"].includes(row.state) ||
+      (await this.control(row.id, db, true)).flow !== "open"
+    )
+      return;
+    const queued = await this.#queue(
+      db,
+      row.id,
+      session,
+      actor,
+      "bot",
+      "npc",
+      {},
+    );
+    if (queued.rowCount) await this.shared.wake(db, row.id);
   }
   async #flush(db: pg.PoolClient, wave: Wave, forced = false) {
     if (wave.state !== "pending") return;
@@ -287,36 +311,38 @@ export class SharedTurns {
         [row.id],
       );
     const inputs: SharedTurn["inputs"] =
-      task.command === "reply"
-        ? (
-            await db.query<{
-              request_id: string;
-              actor_id: string;
-              text: string;
-              seen: string[];
-            }>(
-              "SELECT * FROM world_scene_reply WHERE wave_id=$1 AND state='answered' AND text IS NOT NULL ORDER BY actor_id",
-              [task.data.waveId],
-            )
-          ).rows.map((r) => ({
-            id: r.request_id,
-            actorId: r.actor_id,
-            text: r.text,
-            seen: r.seen,
-          }))
-        : [
-            {
-              id: task.id,
-              actorId: task.actor_id,
-              text: task.data.actionText!,
-              seen: row.data.events
-                .filter((e) =>
-                  e.receipts.some((p) => p.observerId === task.actor_id),
-                )
-                .map((e) => e.id),
-              ...(task.command === "leave" ? { leave: true as const } : {}),
-            },
-          ];
+      task.command === "npc"
+        ? []
+        : task.command === "reply"
+          ? (
+              await db.query<{
+                request_id: string;
+                actor_id: string;
+                text: string;
+                seen: string[];
+              }>(
+                "SELECT * FROM world_scene_reply WHERE wave_id=$1 AND state='answered' AND text IS NOT NULL ORDER BY actor_id",
+                [task.data.waveId],
+              )
+            ).rows.map((r) => ({
+              id: r.request_id,
+              actorId: r.actor_id,
+              text: r.text,
+              seen: r.seen,
+            }))
+          : [
+              {
+                id: task.id,
+                actorId: task.actor_id,
+                text: task.data.actionText!,
+                seen: row.data.events
+                  .filter((e) =>
+                    e.receipts.some((p) => p.observerId === task.actor_id),
+                  )
+                  .map((e) => e.id),
+                ...(task.command === "leave" ? { leave: true as const } : {}),
+              },
+            ];
     const wave =
       task.command === "reply"
         ? (
@@ -330,6 +356,9 @@ export class SharedTurns {
     ]);
     return {
       id: task.id,
+      ...(task.command === "npc" && control.flow === "open"
+        ? { npcActor: task.actor_id }
+        : {}),
       sourceId: wave?.source_id ?? task.id,
       sourceKind: wave?.source_kind ?? task.kind,
       eventStart: row.data.events.length,

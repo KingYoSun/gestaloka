@@ -412,8 +412,15 @@ export class WorldScenes {
               !current.data.background,
             ],
           );
-          if (current.data.shared)
+          if (current.data.shared) {
             await this.shared.turns.departed(db, current, [actor]);
+            await this.shared.turns.handoff(
+              db,
+              current,
+              actor,
+              input.requestId,
+            );
+          }
           if (
             !current.data.shared &&
             ["ready", "active"].includes(current.state)
@@ -1569,33 +1576,45 @@ export class WorldScenes {
     return choice.actionText;
   }
   async #action(row: SceneRow) {
-    if (
-      row.data.npcSoloTurn &&
-      !row.data.actions.some((a) => a.id === row.data.npcSoloTurn)
-    ) {
-      const d = row.data,
-        actor = row.actor_id;
-      if (!(await npcActors(this.pool, d.worldId, [actor])).length) {
+    const d = row.data,
+      turn = d.turn;
+    const npcTurnId = turn?.npcActor ? turn.id : d.npcSoloTurn;
+    if (npcTurnId && !d.actions.some((a) => a.id === npcTurnId)) {
+      const actor = turn?.npcActor ?? row.actor_id;
+      const active = turn
+        ? (
+            await this.pool.query(
+              "SELECT 1 FROM world_controlled_actor WHERE world_id=$1 AND actor_id=$2 AND npc_active AND npc_session=$3",
+              [d.worldId, actor, turn.id],
+            )
+          ).rowCount
+        : (await npcActors(this.pool, d.worldId, [actor])).length;
+      if (!active || d.departures?.[actor] !== undefined) {
+        delete d.work;
+        if (turn) return this.#completeTurn(row, []);
         row.state = "active";
         delete d.npcSoloTurn;
-        delete d.work;
         await this.#save(row, undefined, row.claim!);
         return false;
       }
       const text = await this.#chooseIntent(row, actor);
+      if (turn) {
+        const seen = d.events
+          .filter((e) => e.receipts.some((r) => r.observerId === actor))
+          .map((e) => e.id);
+        turn.inputs.push({ id: npcTurnId, actorId: actor, text, seen });
+      }
       d.actions.push({
-        id: d.npcSoloTurn!,
+        id: npcTurnId,
         actorId: actor,
         text,
         state: "running",
       });
-      delete d.work;
       await this.#save(row, undefined, row.claim!);
     }
     if (row.data.turn && !row.data.turn.inputs.length)
       return this.#completeTurn(row, []);
-    const d = row.data,
-      action = (
+    const action = (
         d.turn
           ? d.actions.find((a) => a.id === d.turn!.inputs[0]!.id)
           : d.actions.at(-1)
