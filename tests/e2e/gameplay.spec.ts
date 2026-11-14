@@ -417,15 +417,39 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
     scroll = section.getByLabel("記録の閲覧領域");
   await expect(section).toHaveAttribute("data-retained-records", "50");
   for (let i = 0; i < 4; i++) {
-    const fetched = page.waitForResponse(
-      (r) =>
-        new URL(r.url()).pathname.endsWith("/scene/records") &&
-        new URL(r.url()).searchParams.has("before"),
-    );
-    await scroll.evaluate((e) => {
-      e.scrollTop = e.scrollHeight;
-    });
-    await fetched;
+    // Measurements and background refetches can move the bottom while scrolling.
+    // Wait for this page's actual response before advancing to the next one.
+    let fetched = false;
+    const onResponse = (r: import("@playwright/test").Response) => {
+      const url = new URL(r.url());
+      if (
+        r.ok() &&
+        url.pathname.endsWith("/scene/records") &&
+        url.searchParams.get("kind") === "events" &&
+        url.searchParams.has("before")
+      )
+        fetched = true;
+    };
+    page.on("response", onResponse);
+    try {
+      await expect
+        .poll(async () => {
+          if (
+            !fetched &&
+            (await scroll.getAttribute("aria-busy")) === "false"
+          ) {
+            await scroll.evaluate(async (e) => {
+              e.scrollTop = Math.max(0, e.scrollHeight - e.clientHeight - 200);
+              await new Promise(requestAnimationFrame);
+              e.scrollTop = e.scrollHeight;
+            });
+          }
+          return fetched;
+        })
+        .toBe(true);
+    } finally {
+      page.off("response", onResponse);
+    }
     await expect(scroll).toHaveAttribute("aria-busy", "false");
     await expect(section).toHaveAttribute(
       "data-retained-records",

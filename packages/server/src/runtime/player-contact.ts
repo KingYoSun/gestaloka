@@ -184,6 +184,13 @@ export class PlayerContacts {
       )
     ).rows.map((r) => ({ ...r, deadline: r.deadline.toISOString() }));
   }
+  async #wakeWaiting(db: pg.PoolClient, source: string, target: string) {
+    const scenes = await db.query<{ id: string }>(
+      "SELECT id FROM world_scene WHERE id=ANY($1::uuid[]) AND state='active' AND data ? 'turns'",
+      [[source, target]],
+    );
+    for (const { id } of scenes.rows) await this.shared.wake(db, id);
+  }
   async answer(
     db: pg.PoolClient,
     row: SceneRow,
@@ -230,6 +237,7 @@ export class PlayerContacts {
           context: ["呼びかけは届きましたが、返答はありませんでした。"],
         },
       );
+    await this.#wakeWaiting(db, contact.source_scene, row.id);
     return queued || text === null ? "accepted" : "act";
   }
   async nextReply(db: pg.PoolClient, scene: string) {
@@ -253,7 +261,8 @@ export class PlayerContacts {
         [id, this.shared.now()],
       )
     ).rows[0];
-    if (r)
+    if (r) {
+      await this.#wakeWaiting(db, r.source_scene, r.target_scene);
       await this.shared.notice(
         db,
         r.world_id,
@@ -268,5 +277,6 @@ export class PlayerContacts {
           ],
         },
       );
+    }
   }
 }

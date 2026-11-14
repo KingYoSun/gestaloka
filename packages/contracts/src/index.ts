@@ -314,6 +314,7 @@ export const SceneInbox = z.object({
         id: z.uuid(),
         sceneId: z.uuid(),
         sourceInputId: z.uuid(),
+        nextInput: z.literal(true).optional(),
         deadline: z.iso.datetime(),
         seenEventIds: z.array(z.uuid()),
         context: z.array(z.string()),

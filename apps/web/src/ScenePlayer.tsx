@@ -349,7 +349,11 @@ export function ScenePlayer({
         <section className="form-panel">
           {inbox.data?.opportunities?.map((opportunity) => (
             <article key={opportunity.id}>
-              <h2>返答を求められています</h2>
+              <h2>
+                {opportunity.nextInput
+                  ? "次の一手を選んでください"
+                  : "返答を求められています"}
+              </h2>
               <details>
                 <summary>この返答で見聞きしていた範囲</summary>
                 {opportunity.context.map((text, index) => (
