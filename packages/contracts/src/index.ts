@@ -352,6 +352,9 @@ export const SceneInbox = z.object({
       ]),
       invitationId: z.uuid().optional(),
       contact: z.boolean().optional(),
+      contactOutcome: z
+        .enum(["delivered", "unreachable", "unanswered"])
+        .optional(),
       opportunityId: z.uuid().optional(),
       sourceInputId: z.uuid().optional(),
       proposalId: z.uuid().optional(),

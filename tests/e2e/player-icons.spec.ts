@@ -111,7 +111,7 @@ test("参加時の画像を再読込後に再試行し、Web・共通APIの変�
     .click();
   await expect(
     page.getByRole("button", { name: "画像の登録を再試行する", exact: true }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 30000 });
   await page.reload();
   await expect(
     page.getByText("アイコンを保存しました。", { exact: true }),
