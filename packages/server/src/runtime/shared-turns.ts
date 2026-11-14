@@ -128,7 +128,6 @@ export class SharedTurns {
       (await this.control(row.id, db, true)).flow !== "open"
     )
       return;
-    await this.#cancelIdleOffer(db, row.id);
     const queued = await this.#queue(
       db,
       row.id,
@@ -138,7 +137,10 @@ export class SharedTurns {
       "npc",
       {},
     );
-    if (queued.rowCount) await this.shared.wake(db, row.id);
+    if (queued.rowCount) {
+      await this.cancelIdleOffer(db, row.id);
+      await this.shared.wake(db, row.id);
+    }
   }
   async #flush(db: pg.PoolClient, wave: Wave, forced = false) {
     if (wave.state !== "pending") return;
@@ -166,7 +168,7 @@ export class SharedTurns {
     scene: string,
     reason: SceneEnding = "requested",
   ) {
-    await this.#cancelIdleOffer(db, scene);
+    await this.cancelIdleOffer(db, scene);
     await db.query(
       "UPDATE world_shared_scene SET flow='closing',continuation=NULL,inactive_until=NULL,resume_flow=NULL,end_reason=coalesce(end_reason,$2) WHERE scene_id=$1",
       [scene, reason],
@@ -267,7 +269,7 @@ export class SharedTurns {
         )
       )
         throw fail("参加中の本人を指定してください");
-      await this.#cancelIdleOffer(db, row.id);
+      await this.cancelIdleOffer(db, row.id);
       await this.#queue(
         db,
         row.id,
@@ -486,11 +488,12 @@ export class SharedTurns {
     }
     await this.shared.schedule(db, `wave:${id}`, { waveId: id }, deadline);
   }
-  async #cancelIdleOffer(db: pg.PoolClient, scene: string) {
+  async cancelIdleOffer(db: pg.PoolClient, scene: string, actors?: string[]) {
     // An accepted input supersedes the invitation to supply the next input.
     await db.query(
-      "UPDATE world_scene_wave SET state='closed' WHERE scene_id=$1 AND source_kind='idle' AND state='pending'",
-      [scene],
+      `UPDATE world_scene_wave w SET state='closed' WHERE scene_id=$1 AND source_kind='idle' AND state='pending'
+        AND ($2::uuid[] IS NULL OR EXISTS(SELECT 1 FROM world_scene_reply r WHERE r.wave_id=w.id AND r.actor_id=ANY($2::uuid[])))`,
+      [scene, actors ?? null],
     );
   }
   // Called under the world lock, only at a shared scene's input boundary.
@@ -745,6 +748,7 @@ export class SharedTurns {
   }
 
   async departed(db: pg.PoolClient, row: SceneRow, actors: string[]) {
+    await this.cancelIdleOffer(db, row.id, actors);
     await db.query(
       "UPDATE world_scene_reply r SET state='closed' FROM world_scene_wave w WHERE r.wave_id=w.id AND w.scene_id=$1 AND r.actor_id=ANY($2::uuid[]) AND r.state='pending'",
       [row.id, actors],

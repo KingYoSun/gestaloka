@@ -2332,6 +2332,7 @@ export class WorldScenes {
       );
       await this.#save(row, client, row.claim!);
       if (d.shared) {
+        await this.shared.turns.cancelIdleOffer(client, row.id);
         await client.query(
           "UPDATE world_scene_member SET state='ended' WHERE scene_id=$1",
           [row.id],

@@ -1948,6 +1948,12 @@ test("同じ品への意図は到着順を逆にしても両方を一度の解�
 test("旧版の共有シーンの保存済み入力は従来の進行で再開し重複させない", async () => {
   const owner = people[0]!,
     id = await sharedGame(0, false);
+  const originalOffer = (
+    await runtime.pool.query<{ id: string }>(
+      "SELECT id FROM world_scene_wave WHERE scene_id=$1 AND state='pending' AND source_kind='idle'",
+      [id],
+    )
+  ).rows[0]!;
   await isolated.databases.postgres.query(
     "UPDATE world_scene SET data=data-'turns' WHERE id=$1",
     [id],
@@ -1974,6 +1980,14 @@ test("旧版の共有シーンの保存済み入力は従来の進行で再開�
   await cli.run(owner.profile, "finish");
   await access.scenes.tick(id);
   expect((await cli.run(owner.profile, "result")).state).toBe("finished");
+  expect(
+    (
+      await runtime.pool.query(
+        "SELECT state FROM world_scene_wave WHERE id=$1",
+        [originalOffer.id],
+      )
+    ).rows[0].state,
+  ).toBe("closed");
   expect(
     (await access.scenes.latest(world, undefined, false, owner.actor))!.data
       .actions,
@@ -2545,15 +2559,22 @@ test.each([0, 1])(
   90000,
 );
 test("共有中に離席した人物が、他の人物の一手からNPCとして行動し復帰できる", async () => {
-  const scene = await sharedGame(0, true),
-    guest = people[1]!;
+  const scene = await sharedGame(0, true);
+  const firstOffer = (
+    await runtime.pool.query<{ actor_id: string }>(
+      "SELECT r.actor_id FROM world_scene_reply r JOIN world_scene_wave w ON w.id=r.wave_id WHERE w.scene_id=$1 AND w.source_kind='idle' AND w.state='pending'",
+      [scene],
+    )
+  ).rows[0]!;
+  const guest = people.find((p) => p.actor === firstOffer.actor_id)!;
+  const speaker = people.findIndex((p) => p.actor !== guest.actor);
   await cli.run(guest.profile, "npc", "--away");
   playback = (input) => playStep(input);
   await access.scenes.tick(scene);
   let steps = 0;
   playback = (input) => playStep(input, steps++ === 0 ? [guest.actor] : []);
   try {
-    await humanAct(0, "近くに声をかける");
+    await humanAct(speaker, "近くに声をかける");
     await access.scenes.tick(scene);
     const report = (await cli.run(guest.profile, "npc", "--return")).result;
     expect(report.scenes[0].log).toEqual(
