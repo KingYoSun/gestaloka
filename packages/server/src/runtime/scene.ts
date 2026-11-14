@@ -169,7 +169,11 @@ export type SceneData = {
   background?: SceneBackground;
   sources?: SceneSources;
   contextNeed?: z.infer<typeof ContextNeed> & { worldChanged?: true };
-  observationContext?: { inputId: string; limits: string };
+  observationContext?: {
+    inputId: string;
+    limits: string;
+    observers?: string[];
+  };
   contextRequests?: {
     inputId: string;
     at: number;
@@ -1202,7 +1206,9 @@ export class WorldScenes {
                   },
                   stagedScene: {
                     purpose: d.purpose,
-                    input: d.actions.at(-1)?.text,
+                    input: d.turn?.continuingActor
+                      ? d.pending[d.turn.continuingActor]?.actionText
+                      : d.actions.at(-1)?.text,
                     background: d.background,
                     events: d.events,
                     intentions: Object.values(d.pending),
@@ -1282,6 +1288,9 @@ export class WorldScenes {
         d.observationContext = {
           inputId: d.turn?.id ?? d.actions.at(-1)!.id,
           limits: answer.limits,
+          ...(Object.keys(d.contextNeed!.remainingActions).length
+            ? { observers: Object.keys(d.contextNeed!.remainingActions) }
+            : {}),
         };
         delete d.work;
         delete d.backgroundMessages;
@@ -1619,15 +1628,34 @@ export class WorldScenes {
       });
       await this.#save(row, undefined, row.claim!);
     }
-    if (row.data.turn && !row.data.turn.inputs.length)
+    const continuing = turn?.continuingActor;
+    if (turn && !turn.inputs.length && !continuing)
       return this.#completeTurn(row, []);
-    const action = (
-        d.turn
-          ? d.actions.find((a) => a.id === d.turn!.inputs[0]!.id)
-          : d.actions.at(-1)
-      )!,
+    if (
+      continuing &&
+      (!d.pending[continuing]?.continuing ||
+        (await this.agent.controlledActors(d.worldId, [continuing], true)).has(
+          continuing,
+        ))
+    )
+      return this.#completeTurn(row, []);
+    const action = continuing
+        ? {
+            id: turn!.id,
+            text: d.pending[continuing]!.actionText,
+            actorId: continuing,
+            leave: false,
+            state: "running",
+          }
+        : (d.turn
+            ? d.actions.find((a) => a.id === d.turn!.inputs[0]!.id)
+            : d.actions.at(-1))!,
       actor = action.actorId ?? row.actor_id,
-      controlled = d.turn ? d.turn.inputs.map((i) => i.actorId) : [actor];
+      controlled = continuing
+        ? [continuing]
+        : d.turn
+          ? d.turn.inputs.map((i) => i.actorId)
+          : [actor];
     for (;;) {
       if (d.contextNeed) await this.#background(row);
       if (!d.peerConditions) {
@@ -1777,7 +1805,9 @@ export class WorldScenes {
         if (
           step.needsContext ||
           !step.events.some((e) =>
-            e.receipts.some((r) => controlled.includes(r.observerId)),
+            e.receipts.some((r) =>
+              (observation.observers ?? controlled).includes(r.observerId),
+            ),
           )
         )
           throw new SceneResponseError(
@@ -1955,7 +1985,13 @@ export class WorldScenes {
         });
         return ended;
       }
-      if (step.needsContext && !returnsControl) {
+      if (
+        step.needsContext &&
+        (!returnsControl ||
+          Object.keys(step.needsContext.remainingActions).some(
+            (id) => away.has(id) && d.pending[id],
+          ))
+      ) {
         const need = {
           ...step.needsContext,
           remainingActions: Object.fromEntries(
@@ -2020,7 +2056,7 @@ export class WorldScenes {
         if (
           step.concluded ||
           targets.length ||
-          (controlled.every((id) => !d.pending[id]) &&
+          ((continuing || controlled.every((id) => !d.pending[id])) &&
             !d.nextDecisions.some((id) => away.has(id))) ||
           (await this.shared.turns.control(row.id)).flow === "inactive"
         ) {
