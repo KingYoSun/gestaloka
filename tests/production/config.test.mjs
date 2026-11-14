@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { appendFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -42,6 +42,42 @@ test("環境ごとに鍵を生成し、再描画では保持し、公開面と�
     assert.equal(ory.session.cookie.domain, "example.test");
     assert.equal(ory.selfservice.methods.oidc.enabled, false);
     assert(!JSON.stringify(ory).includes(a.env.KRATOS_COOKIE_SECRET));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+test("本番の公開URLを保ってCaddyの待受と証明書の発行元を選べる", async () => {
+  const root = await mkdtemp(join(tmpdir(), "gestaloka-ingress-"));
+  try {
+    const { env } = await initializeDeployment(root, {
+      name: "deployment-test",
+      domain: "example.test",
+      mode: "production",
+      httpPort: 80,
+      httpsPort: 443,
+      accessCidrs: "0.0.0.0/0",
+    });
+    const caddyfile = join(root, "configuration/public/Caddyfile");
+    const original = await readFile(caddyfile, "utf8");
+    assert.deepEqual(
+      [env.BIND_ADDRESS, env.HTTP_PORT, env.HTTPS_PORT],
+      ["0.0.0.0", "80", "443"],
+    );
+    assert.doesNotMatch(original, /tls internal/);
+    await appendFile(
+      join(root, "deployment.env"),
+      "CADDY_BIND_ADDRESS=127.0.0.1\nCADDY_HTTP_PORT=28080\nCADDY_HTTPS_PORT=28443\nCADDY_TLS_MODE=internal\n",
+    );
+    const updated = await renderDeployment(root);
+    assert.deepEqual(
+      [updated.env.BIND_ADDRESS, updated.env.HTTP_PORT, updated.env.HTTPS_PORT],
+      ["127.0.0.1", "28080", "28443"],
+    );
+    assert.equal(updated.env.ORY_KRATOS_PUBLIC_URL, "https://api.example.test");
+    const internal = await readFile(caddyfile, "utf8");
+    assert.equal(internal.match(/tls internal/g)?.length, 3);
+    assert.equal(internal.replaceAll("tls internal", ""), original);
+    assert.deepEqual((await renderDeployment(root)).env, updated.env);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
