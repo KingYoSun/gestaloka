@@ -413,6 +413,74 @@ async function end(index: number) {
   await access.scenes.tick(r.scene.id);
   expect((await cli.run(p.profile, "result")).state).toBe("finished");
 }
+test.each([false, true])(
+  "共有ターンの境界からリザルトを取得する（旧版の停止状態を再開=%s）",
+  async (legacy) => {
+    const owner = people[0]!;
+    selections.set(owner.actor, { candidates: [], mergeInto: null });
+    const scene = await prepare(0);
+    await access.scenes.tick(scene);
+    await cli.run(owner.profile, "start");
+    await cli.run(owner.profile, "act", "--text", "相手に声をかける");
+    playback = () => ({ type: "boundary", reason: "相手の判断を待つ" });
+    const calls = vi.spyOn(runtime.agent.model, "complete");
+    const resultSource = access.scenes.resultSource.bind(access.scenes);
+    const source = vi.spyOn(access.scenes, "resultSource");
+    try {
+      if (legacy) {
+        // 旧版は世界への反映後も、完了した行動判定の作業を保持していた。
+        source.mockImplementationOnce((row, viewer) => {
+          const [id, , messages] = calls.mock.calls.find(
+            ([, role]) => role === "scene-resolve",
+          )!;
+          row.data.work = {
+            id,
+            kind: "resolve",
+            target: "resolution",
+            messages,
+          };
+          return resultSource(row, viewer);
+        });
+        await expect(access.scenes.tick(scene)).rejects.toThrow(
+          "同じ呼出しIDに異なる要求を使用できません",
+        );
+        const stopped = (await access.scenes.latest(
+          world,
+          undefined,
+          false,
+          owner.actor,
+        ))!;
+        expect(stopped).toMatchObject({
+          state: "paused",
+          data: { resumeState: "reflecting", work: { kind: "resolve" } },
+        });
+        expect(stopped.data.projection).toBeDefined();
+        calls.mockClear();
+        expect((await cli.run(owner.profile, "resume")).state).toBe(
+          "processing",
+        );
+      }
+      await access.scenes.tick(scene);
+      expect((await cli.run(owner.profile, "result")).state).toBe("finished");
+      if (legacy)
+        expect(calls.mock.calls.map(([, role]) => role)).toEqual([
+          "scene-result",
+        ]);
+      const results = calls.mock.calls.filter(
+        ([, role]) => role === "scene-result",
+      );
+      expect(results).toHaveLength(1);
+      expect(JSON.parse(results[0]![2][1]!.content)).toHaveProperty(
+        "confirmed",
+      );
+    } finally {
+      source.mockRestore();
+      calls.mockRestore();
+      playback = undefined;
+    }
+  },
+  60000,
+);
 test.for(["default", "resolution"] as const)(
   "Webから対象0人で共有を準備し、参加者選択に%sを使う",
   { timeout: 60000 },
