@@ -909,7 +909,7 @@ export class WorldAgent {
       const actor = await context.node(actorId, at);
       if (!actor) continue;
       const states = await this.#descriptions(context, actorId, at, "status");
-      if (states.length) players.push({ actorId, name: actor.text, states });
+      players.push({ actorId, name: actor.text, states });
     }
     return { players, dependencies: context.dependencies };
   }
