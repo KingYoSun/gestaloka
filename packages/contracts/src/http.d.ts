@@ -2424,6 +2424,8 @@ export interface paths {
                                 /** Format: uuid */
                                 invitationId?: string;
                                 contact?: boolean;
+                                /** @enum {string} */
+                                contactOutcome?: "delivered" | "unreachable" | "unanswered";
                                 /** Format: uuid */
                                 opportunityId?: string;
                                 /** Format: uuid */

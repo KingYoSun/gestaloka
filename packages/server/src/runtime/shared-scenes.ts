@@ -5,6 +5,7 @@ import { SceneInbox, ScenePresenceStatus } from "@gestaloka/contracts";
 import type { WorldConstruction } from "./construction.js";
 import { ConstructionStateError } from "./construction.js";
 import { SharedTurns } from "./shared-turns.js";
+import { PlayerContacts } from "./player-contact.js";
 import type { SceneRow } from "./scene.js";
 
 export const SceneSelection = z
@@ -43,6 +44,7 @@ export class SharedScenes {
   readonly deadlineQueue: string;
   readonly sceneQueue: string;
   readonly turns: SharedTurns;
+  readonly contacts = new PlayerContacts(this);
   readonly invitationMs =
     Number(process.env.SCENE_INVITATION_SECONDS ?? 180) * 1000;
   constructor(
@@ -80,6 +82,7 @@ export class SharedScenes {
       "ALTER TABLE world_scene_member ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'human'",
     );
     await this.turns.setup();
+    await this.contacts.setup();
     await this.construction.queue.createQueue(this.deadlineQueue, {
       retryLimit: 2,
       retryDelay: 1,
@@ -642,8 +645,13 @@ export class SharedScenes {
         [world, actor, this.now()],
       )
     ).rows;
+    const turns = await this.turns.inbox(world, actor);
     return SceneInbox.parse({
-      ...(await this.turns.inbox(world, actor)),
+      ...turns,
+      opportunities: [
+        ...turns.opportunities,
+        ...(await this.contacts.opportunities(world, actor)),
+      ],
       viewerId: actor,
       invitations: invitations.map((i) => ({
         id: i.id,
@@ -669,12 +677,17 @@ export class SharedScenes {
     });
   }
   async expire(data: {
+    contactId?: string;
     connectionId?: string;
     inactiveSceneId?: string;
     sceneId?: string;
     waveId?: string;
     proposalId?: string;
   }) {
+    if (data.contactId)
+      return this.transaction((db) =>
+        this.contacts.expire(db, data.contactId!),
+      );
     if (data.inactiveSceneId)
       return this.turns.expireInactivity(data.inactiveSceneId);
     if (data.waveId || data.proposalId) return this.turns.expire(data);

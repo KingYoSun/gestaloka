@@ -2,6 +2,7 @@ import { npcActors, trackNpcScene } from "./npc-mode.js";
 import { RuntimeExecutions } from "./executions.js";
 import { sceneSources } from "./scene-sources.js";
 import { SharedScenes, SceneSelection } from "./shared-scenes.js";
+import { ContactChanged, type ContactDecision } from "./player-contact.js";
 import { SceneDrafts, type SceneDraft } from "./scene-drafts.js";
 import type { SharedTurn } from "./shared-turns.js";
 import {
@@ -230,6 +231,8 @@ export type SceneRow = {
     | "paused";
   claim: string | null;
   data: SceneData;
+  // Published in the same transaction as the next save of the source events.
+  contactDecisions?: ContactDecision[];
 };
 
 export class WorldScenes {
@@ -354,6 +357,10 @@ export class WorldScenes {
       );
     recordPresentations(row);
     const save = async (c: pg.PoolClient) => {
+      if (row.contactDecisions) {
+        await this.shared.lock(c, row.construction_id);
+        await this.shared.contacts.deliver(c, row, row.contactDecisions);
+      }
       if (
         row.data.turns &&
         row.state === "active" &&
@@ -380,6 +387,19 @@ export class WorldScenes {
         throw new SupersededWorker("シーンの実行が引き継がれました");
       await trackNpcScene(c, row);
       if (
+        !row.data.turns &&
+        row.state === "active" &&
+        !row.data.encounter &&
+        !row.data.soloProposal &&
+        (
+          await c.query(
+            "SELECT 1 FROM world_player_contact WHERE target_scene=$1 AND queued_text IS NOT NULL LIMIT 1",
+            [row.id],
+          )
+        ).rowCount
+      )
+        await this.#enqueue(c, row.id);
+      if (
         !row.data.shared &&
         !row.data.encounter &&
         ["ready", "active"].includes(row.state) &&
@@ -392,7 +412,9 @@ export class WorldScenes {
         [row.construction_id],
       );
     };
-    return client ? save(client) : this.#transaction(save);
+    if (client) await save(client);
+    else await this.#transaction(save);
+    delete row.contactDecisions;
   }
   async npcCommand(
     db: pg.PoolClient,
@@ -706,17 +728,35 @@ export class WorldScenes {
     kind: "human" | "bot" = "human",
   ) {
     await RuntimeControl.check(client, {}, true);
-    const c = await this.construction.get(world, client, true),
-      row = await this.latest(
-        world,
-        client,
-        false,
-        actorId ?? c.participant_id ?? undefined,
-        sceneId,
+    const c = await this.construction.get(world, client, true);
+    if (command === "react")
+      await client.query(
+        "SELECT s.id FROM world_player_contact c JOIN world_scene s ON s.id=c.target_scene WHERE c.id=$1 AND c.world_id=$2 AND c.listener=$3 FOR UPDATE OF s",
+        [input.opportunityId, world, actorId ?? c.participant_id],
       );
+    const row = await this.latest(
+      world,
+      client,
+      false,
+      actorId ?? c.participant_id ?? undefined,
+      sceneId,
+    );
     const actor = actorId ?? row?.actor_id;
     if (!row || !actor || (row.actor_id !== actor && !row.data.shared))
       throw new ConstructionStateError("現在のシーンを取得してください");
+    if (command === "react") {
+      const answer = await this.shared.contacts.answer(
+        client,
+        row,
+        actor,
+        input.opportunityId!,
+        input.requestId,
+        input.actionText ?? null,
+        kind,
+      );
+      if (answer === "accepted") return row;
+      if (answer === "act") command = "act";
+    }
     if (row.data.encounter)
       throw new ConstructionStateError("参加要請への回答を待っています");
     if (
@@ -903,23 +943,11 @@ export class WorldScenes {
             actor,
           ]);
           row.data.deferredSoloAction = action;
-        } else {
-          row.state = "acting";
-          row.data.actions.push({
-            ...(row.data.shared ? { actorId: actor } : {}),
-            ...(command === "leave" ? { leave: true as const } : {}),
+        } else
+          this.#startAction(row, actor, {
             ...action,
-            state: "running",
+            ...(command === "leave" ? { leave: true } : {}),
           });
-          const intent = {
-            actorId: actor,
-            actionText: action.text,
-            continuing: row.data.pending[actor]?.actionText === action.text,
-          };
-          row.data.pending[actor] = intent;
-          row.data.intentions[actor] = intent;
-          row.data.choices.push(intent);
-        }
       }
     }
     row.data.commandId = input.requestId;
@@ -945,6 +973,26 @@ export class WorldScenes {
       await this.#enqueue(client, row.id, !!row.data.shared);
     return row;
   }
+  #startAction(
+    row: SceneRow,
+    actor: string,
+    action: { id: string; text: string; submittedAt?: string; leave?: true },
+  ) {
+    row.state = "acting";
+    row.data.actions.push({
+      ...(row.data.shared ? { actorId: actor } : {}),
+      ...action,
+      state: "running",
+    });
+    const intent = {
+      actorId: actor,
+      actionText: action.text,
+      continuing: row.data.pending[actor]?.actionText === action.text,
+    };
+    row.data.pending[actor] = intent;
+    row.data.intentions[actor] = intent;
+    row.data.choices.push(intent);
+  }
   async #savedConclusion(client: pg.PoolClient, row: SceneRow) {
     const completed = row.data.actions
       .filter((a) => a.state === "complete")
@@ -958,7 +1006,11 @@ export class WorldScenes {
     return calls.rows.some(({ content }) => {
       try {
         const step = sceneResponse(presentationEvidence(parseOutput(content)));
-        return step.type === "scene" && step.concluded === true;
+        return (
+          step.type === "scene" &&
+          step.concluded === true &&
+          !step.liveContacts?.some((c) => c.receipt !== null)
+        );
       } catch (error) {
         if (error instanceof SyntaxError || error instanceof z.ZodError)
           return false;
@@ -1775,15 +1827,40 @@ export class WorldScenes {
         d.observationContext?.inputId === (d.turn?.id ?? action.id)
           ? d.observationContext
           : undefined;
+      // Replayed calls must use the same snapshot, including the originating contact.
+      const savedInput =
+          d.work?.kind === "resolve"
+            ? JSON.parse(d.work.messages[1]!.content)
+            : undefined,
+        received: Awaited<ReturnType<SharedScenes["contacts"]["received"]>> =
+          savedInput
+            ? (savedInput.receivedContacts ?? [])
+            : await this.shared.contacts.received(row.id, controlled);
+      for (const receipt of received) d.at = Math.max(d.at, receipt.at);
       const intents = Object.values(d.pending).filter(
           (i) => !sleeping.has(i.actorId),
         ),
+        livePlayers: ContactDecision["player"][] = savedInput
+          ? (savedInput.livePlayers ?? [])
+          : away.has(actor)
+            ? []
+            : await this.shared.contacts.states(
+                row,
+                [
+                  ...new Set([
+                    ...(d.peerConditions ?? []).map((p) => p.actorId),
+                    ...received.map((r) => r.speaker),
+                  ]),
+                ].filter((id) => !bg.participants.includes(id)),
+              ),
         value = await this.#ask(
           row,
           "resolve",
           "scene-play.md",
           {
             background: bg,
+            ...(livePlayers.length ? { livePlayers } : {}),
+            ...(received.length ? { receivedContacts: received } : {}),
             ...(d.peerConditions?.length
               ? { otherPlayers: d.peerConditions }
               : {}),
@@ -1830,7 +1907,7 @@ export class WorldScenes {
               { io: "output" },
             ),
           },
-          "resolution",
+          livePlayers.length ? "default" : "resolution",
         ),
         step = sceneResponse(value.value);
       if (step.type === "boundary") {
@@ -1861,17 +1938,53 @@ export class WorldScenes {
           if (step.decisions[id] === "finished") step.decisions[id] = "pending";
       const actors = new Set(intents.map((i) => i.actorId));
       const contacts = new Map<string, string[]>();
+      const live: ContactDecision[] = [];
       for (const event of step.events)
         event.receipts = event.receipts.filter(
           (r) => !sleeping.has(r.observerId),
         );
       step.arrivals = step.arrivals.filter((a) => !sleeping.has(a.observerId));
       step.newDecisions = step.newDecisions.filter((id) => !sleeping.has(id));
+      for (const call of step.liveContacts ?? []) {
+        const player = livePlayers.find((p) => p.actorId === call.observerId);
+        const event = step.events[call.eventIndex];
+        const eventId = sceneId(
+          `${row.id}:event:${d.events.length + call.eventIndex}`,
+        );
+        if (
+          !player ||
+          !event ||
+          !controlled.includes(event.actorId) ||
+          (call.receipt !== null && !player.available) ||
+          live.some(
+            (c) =>
+              c.player.actorId === call.observerId && c.eventId === eventId,
+          )
+        )
+          throw new SceneResponseError(
+            "接触を試みた本人の出来事、対象プレイヤーと到達の有無を照合してください",
+          );
+        live.push({
+          player,
+          eventId,
+          inputId:
+            d.turn?.inputs.find((i) => i.actorId === event.actorId)?.id ??
+            action.id,
+          speaker: event.actorId,
+          text: call.receipt,
+        });
+        if (call.receipt !== null)
+          event.receipts.push({
+            observerId: player.actorId,
+            text: call.receipt,
+          });
+      }
       for (const call of step.callsToPlayers ?? []) {
         if (sleeping.has(call.observerId)) continue;
         const event = step.events[call.eventIndex];
         if (
           d.shared ||
+          livePlayers.some((p) => p.actorId === call.observerId) ||
           !event ||
           !d.peerConditions?.some(
             (p) =>
@@ -1899,12 +2012,20 @@ export class WorldScenes {
         : step.decisions[actor] === "finished" ||
           step.decisions[actor] === "decide" ||
           step.newDecisions.includes(actor);
+      // Keep the scene open for a response to the delivered call.
+      if (live.some((c) => c.text !== null)) delete step.concluded;
       for (const e of step.events) {
         if (
           !actors.has(e.actorId) ||
           e.receipts.some(
             (p) =>
               (!bg.participants.includes(p.observerId) &&
+                !step.liveContacts?.some(
+                  (c) =>
+                    c.receipt !== null &&
+                    step.events[c.eventIndex] === e &&
+                    c.observerId === p.observerId,
+                ) &&
                 !(step.callsToPlayers ?? []).some(
                   (c) =>
                     step.events[c.eventIndex] === e &&
@@ -2004,6 +2125,7 @@ export class WorldScenes {
         d.nextDecisions = d.nextDecisions.filter((id) => id !== exit.actorId);
       }
       delete d.work;
+      if (live.length) row.contactDecisions = live;
       if (step.departures.length) {
         if (d.turn)
           return this.#completeTurn(
@@ -2294,6 +2416,7 @@ export class WorldScenes {
       const source = await this.resultSource(row, viewer);
       const value = await this.#ask(row, "result", "scene-result.md", {
         confirmed: source,
+        receivedContacts: await this.shared.contacts.received(row.id, [viewer]),
         presented: viewer === row.actor_id ? (d.presentations ?? []) : [],
         requestedInputs: d.actions
           .filter(
@@ -2461,6 +2584,7 @@ export class WorldScenes {
   }
   async #repair(row: SceneRow, error: unknown) {
     if (
+      !(error instanceof ContactChanged) &&
       !(error instanceof WorldConflict) &&
       !(error instanceof SceneResponseError) &&
       !(error instanceof SyntaxError) &&
@@ -2476,6 +2600,14 @@ export class WorldScenes {
         [row.id, row.claim],
       )
     ).rows[0];
+    if (error instanceof ContactChanged) {
+      if (!saved) throw new SupersededWorker("シーンの実行が引き継がれました");
+      delete row.contactDecisions;
+      Object.assign(row, saved);
+      delete row.data.work;
+      await this.#save(row, undefined, row.claim!);
+      return true;
+    }
     if (error instanceof WorldConflict) {
       if (!saved) throw new SupersededWorker("シーンの実行が引き継がれました");
       Object.assign(row, saved);
@@ -2526,6 +2658,23 @@ export class WorldScenes {
           )
         ).rows[0];
         if (!row) throw new Error("シーンが見つかりません");
+        if (
+          !row.data.turns &&
+          row.state === "active" &&
+          !row.data.encounter &&
+          !row.data.soloProposal &&
+          !(await npcActors(client, row.data.worldId, [row.actor_id])).length
+        ) {
+          const reply = await this.shared.contacts.nextReply(client, row.id);
+          if (reply) {
+            row.data.soloBot = reply.kind === "bot";
+            row.data.requestId = row.data.commandId = reply.requestId;
+            this.#startAction(row, reply.actor, {
+              id: reply.requestId,
+              text: reply.actionText,
+            });
+          }
+        }
         if (
           !row.data.shared &&
           !row.data.encounter &&
@@ -2698,6 +2847,15 @@ export class WorldScenes {
       } catch (error) {
         if (error instanceof SupersededWorker) return;
         if (await this.#repair(row, error)) continue;
+        if (row.contactDecisions) {
+          const prior = await this.pool.query<SceneRow>(
+            "SELECT * FROM world_scene WHERE id=$1 AND claim=$2",
+            [row.id, claim],
+          );
+          if (!prior.rows[0]) return;
+          delete row.contactDecisions;
+          Object.assign(row, prior.rows[0]);
+        }
         row.data.resumeState = row.state;
         row.data.limitReached = error instanceof ExecutionLimit;
         row.data.suspended = error instanceof RuntimeStopped;

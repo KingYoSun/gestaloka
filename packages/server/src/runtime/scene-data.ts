@@ -165,6 +165,18 @@ export const SceneStep = z.discriminatedUnion("type", [
             .strict(),
         )
         .optional(),
+      liveContacts: z
+        .array(
+          z
+            .object({
+              eventIndex: z.number().int().nonnegative(),
+              observerId: id,
+              // Null means the action occurred but the contact did not reach this player.
+              receipt: text.nullable(),
+            })
+            .strict(),
+        )
+        .optional(),
       elapsedMs: z.number().int().nonnegative().safe().default(0),
       needsContext: ContextNeed.nullable().optional(),
     })

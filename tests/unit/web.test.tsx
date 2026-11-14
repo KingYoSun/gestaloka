@@ -847,6 +847,13 @@ test("共有の退出後は次の準備欄を表示し、終了待ちのシー�
         items: [
           { id: "1", sceneId: B, kind: "result" },
           {
+            id: "3",
+            sceneId: W,
+            kind: "opportunity",
+            contactOutcome: "delivered",
+            context: ["呼びかけを届けました。"],
+          },
+          {
             id: "2",
             sceneId: W,
             kind: "invitation",
@@ -879,6 +886,9 @@ test("共有の退出後は次の準備欄を表示し、終了待ちのシー�
     await screen.findByRole("button", { name: "この場から退出する" }),
   );
   await screen.findByText(/退出しました。/);
+  expect(screen.getByText("呼びかけを届けました。").getAttribute("role")).toBe(
+    "status",
+  );
   await openInput();
   await screen.findByLabelText("次のシーンで何をしたいですか");
   expect(posts).toHaveLength(1);

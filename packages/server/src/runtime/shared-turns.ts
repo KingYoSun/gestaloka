@@ -502,7 +502,8 @@ export class SharedTurns {
     if (!["open", "manual"].includes(control.flow)) return;
     const busy = await db.query(
       `SELECT 1 WHERE EXISTS (SELECT 1 FROM world_scene_turn WHERE scene_id=$1 AND state IN ('queued','running'))
-      OR EXISTS (SELECT 1 FROM world_scene_wave WHERE scene_id=$1 AND state='pending')`,
+      OR EXISTS (SELECT 1 FROM world_scene_wave WHERE scene_id=$1 AND state='pending')
+      OR EXISTS (SELECT 1 FROM world_player_contact WHERE (target_scene=$1 OR source_scene=$1) AND state='pending')`,
       [row.id],
     );
     if (

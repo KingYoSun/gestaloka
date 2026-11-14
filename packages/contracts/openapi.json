@@ -5221,6 +5221,14 @@
                           "contact": {
                             "type": "boolean"
                           },
+                          "contactOutcome": {
+                            "type": "string",
+                            "enum": [
+                              "delivered",
+                              "unreachable",
+                              "unanswered"
+                            ]
+                          },
                           "opportunityId": {
                             "type": "string",
                             "format": "uuid",

@@ -25,6 +25,16 @@ const selections = new Map<
 let continuation: { actor: string; creation: string } | undefined;
 let denyDeparture = false;
 type PlayInput = {
+  livePlayers?: {
+    actorId: string;
+    actions: { text: string }[];
+    available: boolean;
+  }[];
+  receivedContacts?: {
+    speaker: string;
+    text: string;
+    replyInputId: string | null;
+  }[];
   sleepingPlayerIds: string[];
   otherPlayers?: {
     actorId: string;
@@ -1028,6 +1038,209 @@ function playStep(input: PlayInput, targets: string[] = []) {
     ),
   };
 }
+
+test("別シーンの呼びかけと返答を本人の最新の行動とともに一度で判定する", async () => {
+  const [a, b] = people;
+  async function inboxSinceNow(profile: string) {
+    let page = await cli.run(profile, "inbox");
+    while (page.items.length === 50)
+      page = await cli.run(profile, "inbox", "--after", page.next);
+    const cursor = page.next;
+    return () =>
+      cli.run(profile, "inbox", ...(cursor ? ["--after", cursor] : []));
+  }
+  const fromSpeaker = await inboxSinceNow(a!.profile);
+  const fromListener = await inboxSinceNow(b!.profile);
+  await presence(0);
+  await presence(1);
+  selections.set(a!.actor, { candidates: [], mergeInto: null });
+  const sender = await prepare(0);
+  const receiver = (
+    await cli.run(b!.profile, "prepare", "--purpose", "道を歩く")
+  ).scene.id;
+  for (const [scene, person] of [
+    [sender, a!],
+    [receiver, b!],
+  ] as const) {
+    await access.scenes.tick(scene);
+    await cli.run(person.profile, "start");
+  }
+  playback = (input) => playStep(input);
+  try {
+    await cli.run(b!.profile, "act", "--text", "道端へ歩く");
+    await access.scenes.tick(receiver);
+    let reaches = true;
+    playback = (input) => {
+      if (input.request.intentions.some((i) => i.actionText === "立ち止まる"))
+        return playStep(input);
+      const replying = input.request.controlledActorId === b!.actor;
+      const target = replying ? a!.actor : b!.actor;
+      const player = input.livePlayers?.find((p) => p.actorId === target);
+      expect(player?.available).toBe(true);
+      if (replying)
+        expect(input.receivedContacts).toContainEqual(
+          expect.objectContaining({
+            speaker: a!.actor,
+            text: "一緒に歩く？",
+            replyInputId: expect.any(String),
+          }),
+        );
+      else
+        expect(player?.actions.map((e) => e.text)).toContain(
+          "EVENT-道端へ歩く",
+        );
+      const step = playStep(input);
+      return {
+        ...step,
+        elapsedMs: 1000,
+        ...(reaches ? { concluded: true } : {}),
+        liveContacts: [
+          {
+            eventIndex: 0,
+            observerId: target,
+            receipt: reaches
+              ? replying
+                ? "一緒に行こう"
+                : "一緒に歩く？"
+              : null,
+          },
+        ],
+      };
+    };
+    const complete = runtime.agent.model.complete.bind(runtime.agent.model);
+    const calls = vi.spyOn(runtime.agent.model, "complete");
+    try {
+      await cli.run(a!.profile, "act", "--text", "一緒に歩く？");
+      await access.scenes.tick(sender);
+      const inbox = await cli.run(b!.profile, "inbox");
+      const offer = inbox.opportunities.find(
+        (o: { sceneId: string }) => o.sceneId === receiver,
+      );
+      expect(offer.context).toEqual(["一緒に歩く？"]);
+      expect(inbox.invitations).toEqual([]);
+      // A solo action is already running when the listener submits their reply.
+      await cli.run(b!.profile, "act", "--text", "立ち止まる");
+      await cli.run(
+        b!.profile,
+        "react",
+        "--scene",
+        receiver,
+        "--opportunity",
+        offer.id,
+        "--text",
+        "一緒に行こう",
+      );
+      await access.scenes.tick(receiver);
+      await access.scenes.tick(receiver);
+      const reply = (await cli.run(a!.profile, "inbox")).opportunities.find(
+        (o: { sceneId: string }) => o.sceneId === sender,
+      );
+      expect(reply.context).toEqual(["一緒に行こう"]);
+      const now = vi
+        .spyOn(access.scenes.shared, "now")
+        .mockReturnValue(new Date(Date.parse(reply.deadline) + 1));
+      try {
+        await access.scenes.shared.expire({ contactId: reply.id });
+      } finally {
+        now.mockRestore();
+      }
+      expect((await fromListener()).items).toContainEqual(
+        expect.objectContaining({
+          contactOutcome: "unanswered",
+          context: [
+            "呼びかけは届きましたが、期限までに返答はありませんでした。",
+          ],
+        }),
+      );
+      reaches = false;
+      await cli.run(
+        a!.profile,
+        "act",
+        "--text",
+        "角を曲がった相手にもう一度呼びかける",
+      );
+      await access.scenes.tick(sender);
+      expect((await fromSpeaker()).items).toContainEqual(
+        expect.objectContaining({
+          contactOutcome: "unreachable",
+          context: ["呼びかけは届きませんでした。"],
+        }),
+      );
+      expect((await cli.run(b!.profile, "inbox")).opportunities).toEqual([]);
+      expect(
+        calls.mock.calls.map(([, role, , target]) => [role, target]),
+      ).toEqual(Array(4).fill(["scene-resolve", "default"]));
+      // Move the listener after the judge has read their position but before publication.
+      playback = (input) => {
+        const step = playStep(input);
+        if (input.request.controlledActorId === b!.actor) return step;
+        const moved = input.livePlayers
+          ?.find((p) => p.actorId === b!.actor)
+          ?.actions.some((e) => e.text === "EVENT-道を離れる");
+        return {
+          ...step,
+          liveContacts: [
+            {
+              eventIndex: 0,
+              observerId: b!.actor,
+              receipt: moved ? null : "声が聞こえた",
+            },
+          ],
+        };
+      };
+      calls.mockImplementationOnce(async (...args) => {
+        const response = await complete(...args);
+        await cli.run(b!.profile, "act", "--text", "道を離れる");
+        await access.scenes.tick(receiver);
+        return response;
+      });
+      calls.mockClear();
+      await cli.run(a!.profile, "act", "--text", "道端の相手に呼びかける");
+      await access.scenes.tick(sender);
+      expect(calls.mock.calls.map(([, role]) => role)).toEqual(
+        Array(3).fill("scene-resolve"),
+      );
+      expect((await cli.run(b!.profile, "inbox")).opportunities).toEqual([]);
+      const saved = (await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        a!.actor,
+        sender,
+      ))!;
+      expect(
+        saved.data.events.at(-1)?.receipts.map((p) => p.observerId),
+      ).not.toContain(b!.actor);
+    } finally {
+      calls.mockRestore();
+    }
+    for (const [scene, person] of [
+      [receiver, b!],
+      [sender, a!],
+    ] as const) {
+      await cli.run(person.profile, "finish");
+      await access.scenes.tick(scene);
+      expect((await cli.run(person.profile, "result")).state).toBe("finished");
+    }
+    const contacts = await runtime.pool.query(
+      "SELECT source_scene,event_id,at::float8 AS at FROM world_player_contact WHERE source_scene=ANY($1::uuid[])",
+      [[receiver, sender]],
+    );
+    expect(contacts.rows).toHaveLength(2);
+    expect(
+      contacts.rows.find((c) => c.source_scene === receiver).at,
+    ).toBeGreaterThan(contacts.rows.find((c) => c.source_scene === sender).at);
+    for (const c of contacts.rows) {
+      const events = await runtime.agent.store.driver.executeQuery(
+        "MATCH (n:WorldNode {worldId:$world,id:$id}) RETURN n.id AS id",
+        { world: graph, id: c.event_id },
+      );
+      expect(events.records).toHaveLength(1);
+    }
+  } finally {
+    playback = undefined;
+  }
+}, 120000);
 
 test.each(["accept", "reject", "timeout", "NPC timeout"] as const)(
   "睡眠中の呼びかけでは待たず、待機再開後に届いた招待の%s後も同じシーンを続ける",
