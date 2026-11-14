@@ -29,6 +29,19 @@
 
 利用者画面は`https://play.example.com`、管理画面は`https://admin.example.com`、認証・API・MCPの入口は`https://api.example.com`となる。ブラウザー向けURLとOry内部接続先を分け、認証フローのフォーム・戻り先・発行者には公開HTTPS URLを使う。OryのCookieはこの環境の親ドメインに限定する。MCPクライアントの登録と権限は[管理MCP](mcp.md)を参照する。
 
+## 外部プロキシ経由の公開
+
+外部のリバースプロキシで公開HTTPSを受ける構成では、`profile.json` の `httpsPort` に利用者から見えるポートを指定します。Caddyを同じホストからだけ利用する場合は、配置先の `deployment.env` に次の値を設定し、通常の `render`・`build`・`up` で反映できます。
+
+```dotenv
+CADDY_BIND_ADDRESS=127.0.0.1
+CADDY_HTTP_PORT=28080
+CADDY_HTTPS_PORT=28443
+CADDY_TLS_MODE=internal
+```
+
+`CADDY_TLS_MODE=internal` ではCaddyの内部CAが証明書を発行します。前段のプロキシにはそのCAを信頼する設定が必要です。`auto` はCaddyの自動HTTPSを使います。未指定時は本番で `auto`、試験環境で `internal` です。待受の指定を省くと、ポートはプロファイルの値、アドレスは本番で `0.0.0.0`、試験環境で `127.0.0.1` になります。再描画で生成される `BIND_ADDRESS`・`HTTP_PORT`・`HTTPS_PORT` はComposeが読み取ります。
+
 ## 秘密情報
 
 生成した設定と制御用の永続ボリュームは管理者だけが読める場所に置く。設定ファイルをGitやイメージへ含めない。モデルのAPIキー、監視Webhook、バックアップ認証情報は保存時に暗号化し、通常の取得APIへ返さない。

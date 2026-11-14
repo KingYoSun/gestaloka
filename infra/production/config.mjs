@@ -27,7 +27,12 @@ export const keyNames = [
 ];
 
 function caddy(config, env) {
-  const tls = config.mode === "testing" ? "tls internal" : "";
+  const tlsMode = z
+    .enum(["auto", "internal"])
+    .parse(
+      env.CADDY_TLS_MODE ?? (config.mode === "testing" ? "internal" : "auto"),
+    );
+  const tls = tlsMode === "internal" ? "tls internal" : "";
   const protect = `@blocked not remote_ip ${config.accessCidrs}\n respond @blocked "公開準備中です" 503`;
   const frontend = (host, origin, root) => `http://${host}:80 {
   redir ${origin}{uri} 308
@@ -104,9 +109,11 @@ export async function renderDeployment(directory) {
   Object.assign(env, {
     STACK_NAME: config.name,
     DEPLOYMENT_MODE: config.mode,
-    BIND_ADDRESS: config.mode === "testing" ? "127.0.0.1" : "0.0.0.0",
-    HTTP_PORT: String(config.httpPort),
-    HTTPS_PORT: String(config.httpsPort),
+    BIND_ADDRESS:
+      env.CADDY_BIND_ADDRESS ??
+      (config.mode === "testing" ? "127.0.0.1" : "0.0.0.0"),
+    HTTP_PORT: env.CADDY_HTTP_PORT ?? String(config.httpPort),
+    HTTPS_PORT: env.CADDY_HTTPS_PORT ?? String(config.httpsPort),
     ISOLATED_NETWORK: String(config.mode === "testing"),
     CONFIG_ENV_FILE: join(root, "deployment.env").replaceAll("\\", "/"),
     ORY_APP_URL: `https://play.${config.domain}${port}`,
