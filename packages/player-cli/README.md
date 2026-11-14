@@ -1,6 +1,6 @@
 # GESTALOKA プレイヤーCLI
 
-Muse・Grok Botなどを、持ち主が許可した1人の村民として参加させるCLIです。Node.js 22.23.4以上の22系、または24.22.1以上の24系を使います。ゲームサーバー・DB・モデルのAPIキーは必要ありません。
+Muse・Grok Botなどを、持ち主が許可した人物として参加させるCLIです。Node.js 22.23.4以上の22系、または24.22.1以上の24系を使います。ゲームサーバー・DB・モデルのAPIキーは必要ありません。
 
 共通の[プレイ用スキル](skills/gestaloka-player/SKILL.md)と、[実行環境の準備](skills/gestaloka-player/references/runtimes.md)も同梱しています。公開スキルは接続先の `/api/player-cli/SKILL.md` から読めます。VMでは `standby` を60秒ごとに実行すると、その人物が参加要請を受け取れる状態を維持できます。
 
@@ -15,10 +15,10 @@ AIによる初回の参加は[参加案内](skills/gestaloka-player/references/j
 ```sh
 npm install --global ./gestaloka-player-cli-0.6.0.tgz
 gestaloka help
-gestaloka connect --server https://village.example --world <村のURLまたはID>
+gestaloka connect --server <招待URLのorigin> --world <世界のURLまたはID>
 ```
 
-出力の`verificationUrl`を持ち主のブラウザーで開きます。持ち主はログイン・利用登録を済ませ、CLIの`userCode`と画面の確認コードを照合して、新規参加の設定または所有する既存人物を選びます。村の参加受付やBANはWebと共通です。
+出力の`verificationUrl`を持ち主のブラウザーで開きます。持ち主はログイン・利用登録を済ませ、CLIの`userCode`と画面の確認コードを照合して、新規参加の設定または所有する既存人物を選びます。世界の参加受付やBANはWebと共通です。
 
 MuseにログインCookieを渡す必要はありません。新規参加を許可した場合は、続けて次を実行します。既存人物を選んだ場合は`join`を省きます。
 
@@ -33,7 +33,7 @@ gestaloka status
 ## 一手を実行し、再起動後に結果を取得する
 
 ```sh
-gestaloka prepare --purpose '村で今できることを確かめる'
+gestaloka prepare --purpose '今いる場所で何が起きているか確かめる'
 gestaloka status
 # preparedになってから開始する
 gestaloka start
@@ -84,7 +84,7 @@ gestaloka invite --invitation <参加要請ID> --reject
 gestaloka start
 ```
 
-`listen`はJSON Linesで通知を出し、生存通知を30秒間隔で送ります。終了操作では接続終了を通知し、予期しない切断では90秒間無通知でinactiveになります。接続終了やinactiveは村民の世界内の退出ではありません。`--once`は現在の通知を1回取得して接続終了します。通知の取得位置はプロファイルとは別の`.inbox.json`へ保存し、途中で再起動しても未処理の参加要請を`inbox`から取得できます。参加回答は送信前に保存され、`recover`で同じ要求を照合できます。
+`listen`はJSON Linesで通知を出し、生存通知を30秒間隔で送ります。終了操作では接続終了を通知し、予期しない切断では90秒間無通知でinactiveになります。接続終了やinactiveは人物の世界内の退出ではありません。`--once`は現在の通知を1回取得して接続終了します。通知の取得位置はプロファイルとは別の`.inbox.json`へ保存し、途中で再起動しても未処理の参加要請を`inbox`から取得できます。参加回答は送信前に保存され、`recover`で同じ要求を照合できます。
 
 人物は同時に一つの場面へ所属します。待ち受けや通知の照会だけで、世界内の観測・行動やLLMによる意図形成を起動しません。反応の期限が切れても、次の働きかけには新しい機会で回答できます。
 
@@ -107,16 +107,16 @@ gestaloka vote --scene <sceneId> --proposal <id> --end
 
 同じ時点の並行回答は、まとめて1往復と数えます。人間がWebで応答できれば、初期値5往復で自動応答が止まります。人間不在なら10往復で`inbox.proposals`に終了提案が届き、回答待ちでは新たな自動応答を起動しません。終了提案中に人間が新しく入力すると、提案を取り下げて計数をリセットします。全員が続行すれば計数を戻し、次の10往復後に再び終了提案が届きます。続行する限りこの投票を繰り返します。開始者が切断していても、場面がまとまれば終了して本人のリザルトを保存します。全員切断で未解決なら、退出を作らず保存して休止します。参加者が再接続すれば自動復帰し、全員の切断が10分続けば成立済みの内容で終了します。
 
-## 村民のアイコン
+## 人物のアイコン
 
 ```sh
-gestaloka join --icon ./villager.png
+gestaloka join --icon ./character.png
 gestaloka icon
 gestaloka icon --file ./new-face.jpg
 gestaloka icon --clear
 ```
 
-許可された1人の村民だけを操作します。既存人物を選んだ場合は`join`を省き、`icon --file`で設定します。形式とサイズはWebと共通で、JPEG・PNG・WebPの静止画、5MiB以下、長辺4096px以下です。
+許可された人物だけを操作します。既存人物を選んだ場合は`join`を省き、`icon --file`で設定します。形式とサイズはWebと共通で、JPEG・PNG・WebPの静止画、5MiB以下、長辺4096px以下です。
 
 参加と画像登録は別の処理です。画像登録に失敗しても参加済みの人物や以前の画像は残ります。通信エラーなら`recover`で保存した画像要求を照合し、不正画像なら`icon --file <別の画像>`で再試行してください。参加の再生成は不要です。`join --icon`では参加前に画像の内容も保存し、参加要求の応答喪失から復帰した後に画像登録を続けます。
 
@@ -141,8 +141,8 @@ gestaloka history --scene <sceneId> --kind actions --before '<nextのcursor>'
 
 接続情報は`$XDG_STATE_HOME/gestaloka/default.json`、未設定なら`~/.local/state/gestaloka/default.json`へ保存します。要求ごとの記録は同名の`.requests`ディレクトリーへ保存します。Linuxではディレクトリーを700、ファイルを600で作成します。認可の秘密値を含むため、持ち主への報告や共有リポジトリへ貼り付けないでください。
 
-別の村民を使う場合は、全コマンドに`--profile <別のファイル>`を指定します。同じプロファイルを保持すれば翌日も同じ村民で再開できます。
+別の人物を使う場合は、全コマンドに`--profile <別のファイル>`を指定します。同じプロファイルを保持すれば翌日も同じ人物で再開できます。
 
-持ち主はWebの「Museへのプレイ許可」、または`https://village.example/auth/player`で許可を確認・解除できます。解除後のCLI操作と要求の再照合は拒否されます。村民と履歴は残り、持ち主はWebから続けられます。
+持ち主はWebの「Museへのプレイ許可」、または接続先の `/auth/player`で許可を確認・解除できます。解除後のCLI操作と要求の再照合は拒否されます。人物と履歴は残り、持ち主はWebから続けられます。
 
 配布物の作成と検証範囲は、リポジトリの[試遊・検証手順](https://github.com/KingYoSun/gestaloka/blob/main/documents/player-cli.md)を参照してください。

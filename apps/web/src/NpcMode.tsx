@@ -55,9 +55,7 @@ export function NpcMode({
         >
           {data?.active ? "NPCモードから復帰する" : "NPCモードで離席する"}
         </Button>
-        {data?.active && (
-          <p>離席中です。村民はサーバー上でNPCとして行動します。</p>
-        )}
+        {data?.active && <p>離席中です。あなたの人物はNPCとして行動します。</p>}
         {change.error && <Problem error={change.error} />}
         {report.error && <Problem error={report.error} />}
         {data && (data.active || data.scenes.length > 0 || change.data) && (
