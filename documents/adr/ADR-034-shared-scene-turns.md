@@ -12,7 +12,7 @@ botからbotへの発話・行動の応答を一往復と数える。同じ時�
 
 新しく作る共有シーンに進行方式を記録する。旧版で保存済みのシーンは、既存の進行処理で続け、処理中だった入力を新しい受信記録へ重複登録しない。人物と同じ要求IDを保持して復帰でき、次に作る共有シーンから新しい反応機会を使う。
 
-反応期限は`SCENE_REACTION_SECONDS`、参加要請は`SCENE_INVITATION_SECONDS`で独立して設定する。初期値はともに60秒。往復数は`SCENE_HUMAN_ROUNDS=5`、`SCENE_BOT_ROUNDS=10`とし、productionの`deployment.env`でも指定できる。
+反応期限は`SCENE_REACTION_SECONDS`、参加要請は`SCENE_INVITATION_SECONDS`で独立して設定する。初期値はともに180秒。VM上のAIが60秒ごとに通知を確認した後も応答を考えられるようにした。終了投票にも反応期限を使う。往復数は`SCENE_HUMAN_ROUNDS=5`、`SCENE_BOT_ROUNDS=10`とし、productionの`deployment.env`でも指定できる。
 
 ## 完了の判定
 

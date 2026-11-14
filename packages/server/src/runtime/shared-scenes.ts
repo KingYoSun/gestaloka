@@ -44,7 +44,7 @@ export class SharedScenes {
   readonly sceneQueue: string;
   readonly turns: SharedTurns;
   readonly invitationMs =
-    Number(process.env.SCENE_INVITATION_SECONDS ?? 60) * 1000;
+    Number(process.env.SCENE_INVITATION_SECONDS ?? 180) * 1000;
   constructor(
     readonly construction: WorldConstruction,
     readonly now = () => new Date(),
@@ -166,6 +166,20 @@ export class SharedScenes {
     kind: "human" | "bot",
     device?: string,
   ) {
+    await this.lock(db, world);
+    if (active) {
+      const away = await db.query(
+        `SELECT 1 FROM world_controlled_actor a JOIN world_construction c ON c.world_id=a.world_id WHERE c.id=$1 AND a.actor_id=$2 AND a.npc_active`,
+        [world, actor],
+      );
+      if (away.rowCount)
+        return ScenePresenceStatus.parse({
+          connectionId: id,
+          kind,
+          active: false,
+          expiresAt: this.now().toISOString(),
+        });
+    }
     const expires = new Date(this.now().getTime() + (active ? 90000 : 0));
     const result = await db.query(
       `INSERT INTO world_scene_presence(id,world_id,actor_id,user_id,device_id,kind,active,expires_at)

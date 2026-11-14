@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { randomBytes, randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -17,6 +18,7 @@ import {
   PlayerIconInput,
   WorldPlayerPage,
   SceneInbox,
+  NpcReport,
 } from "@gestaloka/contracts";
 
 const help = `GESTALOKA プレイヤーCLI（Node.js 22.23.4以上）
@@ -26,8 +28,10 @@ gestaloka status                         認可・参加・現在のシーンを
 gestaloka join [--icon <画像ファイル>]    許可された新規参加を開始
 gestaloka icon [--file <画像> | --clear]  許可された人物のアイコンを確認・更新・解除
 gestaloka prepare --purpose <目的> [--shared] シーンのあらすじを準備。共有は明示指定
+gestaloka npc [--away | --return | --accept --scene <id> | --reject --scene <id>] NPCモードと離席中の記録
 gestaloka inbox [--after <cursor>]       自分への通知と未処理の参加要請を取得
 gestaloka listen [--once]                生存通知を送りながら待ち受け（JSON Lines）
+gestaloka standby [--notify <実行ファイル>] 在席を更新し未処理通知を確認。VMで60秒ごとに実行
 gestaloka invite --invitation <id> --accept|--reject  同席を承認・拒否
 gestaloka react --opportunity <id> --text <意図>|--none  届いた反応機会へ一度回答
 gestaloka vote --proposal <id> --continue|--end          終了提案へ回答
@@ -83,8 +87,11 @@ const parse = () =>
       icon: { type: "string" },
       character: { type: "string" },
       clear: { type: "boolean" },
+      away: { type: "boolean" },
+      return: { type: "boolean" },
       shared: { type: "boolean" },
       once: { type: "boolean" },
+      notify: { type: "string" },
       invitation: { type: "string" },
       accept: { type: "boolean" },
       reject: { type: "boolean" },
@@ -183,6 +190,8 @@ async function send(
     saved.method,
   );
   await save(join(journal, `${saved.id}.json`), { ...saved, result });
+  if (saved.path.endsWith("/npc-mode"))
+    return { state: "npc_mode", requestId, result: NpcReport.parse(result) };
   if (profile.joinIconRequestId === saved.id) {
     delete profile.joinIconRequestId;
     await save(profilePath, profile);
@@ -303,6 +312,44 @@ async function listen(profile: Profile) {
   }
   return { state: "inactive", connectionId };
 }
+async function standby(profile: Profile) {
+  const connectionId = profile.deviceId;
+  const presence = await http(
+    profile,
+    `/api/worlds/${profile.worldId}/presence`,
+    {
+      requestId: randomUUID(),
+      connectionId,
+      active: true,
+    },
+  );
+  if (!presence.active) return { state: "npc_mode", connectionId };
+  const { invitations, opportunities, proposals } = await inbox(profile);
+  const snapshot = {
+    state: "standby",
+    connectionId,
+    invitations,
+    opportunities,
+    proposals,
+  };
+  if (
+    values.notify &&
+    (invitations.length || opportunities.length || proposals.length)
+  ) {
+    const child = spawn(values.notify, [], {
+      stdio: ["pipe", "ignore", "inherit"],
+    });
+    await new Promise<void>((resolve, reject) => {
+      child.once("error", reject);
+      child.stdin.once("error", reject);
+      child.once("close", (code) =>
+        code === 0 ? resolve() : reject(new Error("AIへの通知に失敗しました")),
+      );
+      child.stdin.end(JSON.stringify(snapshot) + "\n");
+    });
+  }
+  return snapshot;
+}
 async function run() {
   const parsed = parse();
   values = parsed.values;
@@ -365,9 +412,35 @@ async function run() {
     );
   }
   const profile = await load();
+  if (command === "npc") {
+    const path = `/api/worlds/${profile.worldId}/npc-mode`;
+    const modes = [
+      values.away,
+      values.return,
+      values.accept,
+      values.reject,
+    ].filter(Boolean);
+    if (modes.length > 1)
+      throw new Error("NPCモードの操作は一つ指定してください");
+    if (!modes.length) return NpcReport.parse(await http(profile, path));
+    const command = values.away
+      ? "away"
+      : values.return
+        ? "return"
+        : values.accept
+          ? "join"
+          : "decline";
+    return submit(profile, path, {
+      command,
+      ...(values.accept || values.reject
+        ? { sceneId: z.uuid().parse(values.scene) }
+        : {}),
+    });
+  }
   if (command === "inbox")
     return { state: "inbox", ...(await inbox(profile, values.after)) };
   if (command === "listen") return listen(profile);
+  if (command === "standby") return standby(profile);
   if (command === "invite") {
     if (!!values.accept === !!values.reject)
       throw new Error("--acceptか--rejectを一つ指定してください");

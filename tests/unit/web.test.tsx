@@ -131,6 +131,9 @@ const server = setupServer(
       expiresAt: new Date(Date.now() + 90000).toISOString(),
     });
   }),
+  http.get("*/api/worlds/:id/npc-mode", () =>
+    json({ active: false, summary: "", scenes: [] }),
+  ),
   http.get("*/api/worlds/:id/scene/inbox", () =>
     json({ viewerId: V, items: [], invitations: [], next: null }),
   ),
@@ -1198,4 +1201,51 @@ test("構築期間は日数で入力し、端数を送信せず整数の日数�
     command: "advance",
     duration: WORLD_DAY_MS * 2,
   });
+});
+
+test("WebでNPCに任せて復帰した本人が見聞と参加の選択を読める", async () => {
+  let active = false,
+    visited = false;
+  const report = () => ({
+    active,
+    summary: visited ? "戸口で呼びかけを聞いた。" : "",
+    scenes: visited
+      ? [
+          {
+            sceneId: W,
+            handoff: active ? null : "available",
+            log: [{ kind: "observation", text: "扉が開いた。" }],
+          },
+        ]
+      : [],
+  });
+  server.use(
+    http.get("*/api/worlds/:id/npc-mode", () => json(report())),
+    http.post("*/api/worlds/:id/npc-mode", async ({ request }) => {
+      active =
+        ((await request.json()) as { command: string }).command === "away";
+      visited = true;
+      return json(report());
+    }),
+  );
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
+      )}
+    />,
+  );
+  const button = await screen.findByRole("button", {
+    name: "NPCモードで離席する",
+  });
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(button);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "NPCモードから復帰する" }),
+  );
+  expect(
+    await screen.findByRole("button", { name: "このシーンに参加する" }),
+  ).toBeTruthy();
+  expect(screen.getByText("戸口で呼びかけを聞いた。")).toBeTruthy();
+  expect(screen.getByText("扉が開いた。")).toBeTruthy();
 });
