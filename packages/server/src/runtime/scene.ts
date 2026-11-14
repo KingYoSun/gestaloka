@@ -354,6 +354,18 @@ export class WorldScenes {
       );
     recordPresentations(row);
     const save = async (c: pg.PoolClient) => {
+      if (
+        row.data.turns &&
+        row.state === "active" &&
+        !row.data.turn &&
+        !row.data.encounter
+      ) {
+        await this.shared.lock(c, row.construction_id);
+        if ((await this.shared.turns.routeIdle(c, row)) === "closing") {
+          row.state = "reflecting";
+          row.data.ending = "dissolved";
+        }
+      }
       const result = await c.query(
         "UPDATE world_scene SET state=$2,data=$3,claim=$4,inspection_revision=inspection_revision+1 WHERE id=$1 AND ($5::uuid IS NULL OR claim=$5)",
         [
@@ -577,7 +589,10 @@ export class WorldScenes {
       "UPDATE world_npc_scene SET handled=true WHERE actor_id=$1 AND scene_id=$2 AND session_id=(SELECT npc_session FROM world_controlled_actor WHERE world_id=$3 AND actor_id=$1)",
       [actor, row.id, d.worldId],
     );
+    const wasActive = row.state === "active";
     await this.#save(row, db);
+    if (wasActive && row.state === "reflecting")
+      await this.#enqueue(db, row.id, true);
   }
 
   async open(
@@ -1793,14 +1808,15 @@ export class WorldScenes {
                     playerActorIds: external,
                     humanInput: d.turn.sourceKind === "human" && !d.turn.reply,
                     controlledInputs: d.turn.inputs,
-                    reactionTo: d.turn.reply
-                      ? {
-                          inputId: d.turn.sourceId,
-                          seenEventIds: Object.fromEntries(
-                            d.turn.inputs.map((i) => [i.actorId, i.seen]),
-                          ),
-                        }
-                      : null,
+                    reactionTo:
+                      d.turn.reply && !d.turn.idleInput
+                        ? {
+                            inputId: d.turn.sourceId,
+                            seenEventIds: Object.fromEntries(
+                              d.turn.inputs.map((i) => [i.actorId, i.seen]),
+                            ),
+                          }
+                        : null,
                   }
                 : {}),
               controlledInputId: action.id,
@@ -2693,6 +2709,13 @@ export class WorldScenes {
   }
   async work() {
     await this.shared.work();
+    for (const { id } of (
+      await this.pool.query<{
+        id: string;
+      }>(`SELECT s.id FROM world_scene s JOIN world_shared_scene h ON h.scene_id=s.id
+      WHERE s.state='active' AND s.data ? 'turns' AND h.flow IN ('open','manual')`)
+    ).rows)
+      await this.shared.transaction((db) => this.shared.wake(db, id));
     const handleJobs = async (jobs: { id: string; data: { id: string } }[]) => {
       for (const job of jobs)
         try {

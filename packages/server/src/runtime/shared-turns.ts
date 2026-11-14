@@ -15,6 +15,7 @@ export type SharedTurn = {
   sourceKind: "human" | "bot";
   eventStart: number;
   reply: boolean;
+  idleInput?: true;
   inputs: {
     id: string;
     actorId: string;
@@ -32,6 +33,7 @@ type Control = {
   resume_flow: Flow | null;
   continuation: { turn: SharedTurn; targets: string[] } | null;
   end_reason: SceneEnding | null;
+  last_idle_actor: string | null;
 };
 type Task = {
   id: string;
@@ -44,7 +46,7 @@ type Wave = {
   id: string;
   scene_id: string;
   source_id: string;
-  source_kind: "human" | "bot";
+  source_kind: "human" | "bot" | "idle";
   deadline: Date;
   state: string;
 };
@@ -63,6 +65,7 @@ export class SharedTurns {
     await this.pool
       .query(`ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS flow text NOT NULL DEFAULT 'open';
       ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS rounds integer NOT NULL DEFAULT 0;
+      ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS last_idle_actor uuid;
       ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS continuation jsonb;
       ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS end_reason text;
       ALTER TABLE world_shared_scene ADD COLUMN IF NOT EXISTS inactive_until timestamptz,
@@ -94,7 +97,7 @@ export class SharedTurns {
   async control(scene: string, db: Db = this.pool, lock = false) {
     return (
       await db.query<Control>(
-        `SELECT scene_id,flow,rounds,continuation,end_reason,inactive_until,resume_flow FROM world_shared_scene WHERE scene_id=$1 ${lock ? "FOR UPDATE" : ""}`,
+        `SELECT scene_id,flow,rounds,continuation,end_reason,inactive_until,resume_flow,last_idle_actor FROM world_shared_scene WHERE scene_id=$1 ${lock ? "FOR UPDATE" : ""}`,
         [scene],
       )
     ).rows[0]!;
@@ -125,6 +128,7 @@ export class SharedTurns {
       (await this.control(row.id, db, true)).flow !== "open"
     )
       return;
+    await this.#cancelIdleOffer(db, row.id);
     const queued = await this.#queue(
       db,
       row.id,
@@ -162,6 +166,7 @@ export class SharedTurns {
     scene: string,
     reason: SceneEnding = "requested",
   ) {
+    await this.#cancelIdleOffer(db, scene);
     await db.query(
       "UPDATE world_shared_scene SET flow='closing',continuation=NULL,inactive_until=NULL,resume_flow=NULL,end_reason=coalesce(end_reason,$2) WHERE scene_id=$1",
       [scene, reason],
@@ -262,6 +267,7 @@ export class SharedTurns {
         )
       )
         throw fail("参加中の本人を指定してください");
+      await this.#cancelIdleOffer(db, row.id);
       await this.#queue(
         db,
         row.id,
@@ -383,7 +389,9 @@ export class SharedTurns {
         ? { npcActor: task.actor_id }
         : {}),
       sourceId: wave?.source_id ?? task.id,
-      sourceKind: wave?.source_kind ?? task.kind,
+      sourceKind:
+        wave?.source_kind === "idle" ? "bot" : (wave?.source_kind ?? task.kind),
+      ...(wave?.source_kind === "idle" ? { idleInput: true as const } : {}),
       eventStart: row.data.events.length,
       reply: !!wave,
       inputs,
@@ -418,12 +426,27 @@ export class SharedTurns {
         .filter((m) => m.state === "joined" && m.kind === "bot")
         .map((m) => m.actor_id),
       actors = targets.filter((a) => members.includes(a));
+    await this.#offer(
+      db,
+      row,
+      turn.id,
+      turn.reply ? "bot" : turn.sourceKind,
+      actors,
+    );
+  }
+  async #offer(
+    db: pg.PoolClient,
+    row: SceneRow,
+    source: string,
+    kind: Wave["source_kind"],
+    actors: string[],
+  ) {
     if (!actors.length) return;
     const id = randomUUID(),
       deadline = new Date(this.shared.now().getTime() + this.replyMs);
     await db.query(
       "INSERT INTO world_scene_wave(id,scene_id,source_id,source_kind,deadline) VALUES($1,$2,$3,$4,$5)",
-      [id, row.id, turn.id, turn.reply ? "bot" : turn.sourceKind, deadline],
+      [id, row.id, source, kind, deadline],
     );
     for (const actor of [...new Set(actors)]) {
       const events = row.data.events.filter((e) =>
@@ -456,12 +479,66 @@ export class SharedTurns {
         "opportunity",
         {
           opportunityId,
-          sourceInputId: turn.id,
+          sourceInputId: source,
           deadline: deadline.toISOString(),
         },
       );
     }
     await this.shared.schedule(db, `wave:${id}`, { waveId: id }, deadline);
+  }
+  async #cancelIdleOffer(db: pg.PoolClient, scene: string) {
+    // An accepted input supersedes the invitation to supply the next input.
+    await db.query(
+      "UPDATE world_scene_wave SET state='closed' WHERE scene_id=$1 AND source_kind='idle' AND state='pending'",
+      [scene],
+    );
+  }
+  // Called under the world lock, only at a shared scene's input boundary.
+  async routeIdle(db: pg.PoolClient, row: SceneRow) {
+    const control = await this.control(row.id, db, true);
+    if (!["open", "manual"].includes(control.flow)) return;
+    const busy = await db.query(
+      `SELECT 1 WHERE EXISTS (SELECT 1 FROM world_scene_turn WHERE scene_id=$1 AND state IN ('queued','running'))
+      OR EXISTS (SELECT 1 FROM world_scene_wave WHERE scene_id=$1 AND state='pending')`,
+      [row.id],
+    );
+    if (
+      busy.rowCount ||
+      Object.keys(row.data.pending).length ||
+      row.data.nextDecisions.length
+    )
+      return;
+    const members = (await this.shared.members(row.id, db))
+      .filter((m) => m.state === "joined")
+      .map((m) => m.actor_id);
+    if (
+      (await this.shared.active(row.construction_id, members, "human", db))
+        .length
+    )
+      return "waiting";
+    const bots = (
+      await this.shared.active(row.construction_id, members, "bot", db)
+    ).sort();
+    const actor =
+      bots.find(
+        (id) => !control.last_idle_actor || id > control.last_idle_actor,
+      ) ?? bots[0];
+    if (!actor) {
+      await this.#close(db, row.id, "dissolved");
+      return "closing";
+    }
+    await db.query(
+      "UPDATE world_shared_scene SET flow='open',continuation=NULL,last_idle_actor=$2 WHERE scene_id=$1",
+      [row.id, actor],
+    );
+    await this.#offer(
+      db,
+      row,
+      row.data.actions.at(-1)?.id ?? row.data.commandId,
+      "idle",
+      [actor],
+    );
+    return "waiting";
   }
   async complete(
     db: pg.PoolClient,
@@ -710,11 +787,8 @@ export class SharedTurns {
   }
   async unavailable(db: pg.PoolClient, world: string, actor: string) {
     await this.shared.lock(db, world);
-    if (
-      (await this.shared.active(world, [actor], "human", db)).length ||
-      (await this.shared.active(world, [actor], "bot", db)).length
-    )
-      return;
+    const stillPresent =
+      (await this.shared.active(world, [actor], undefined, db)).length > 0;
     const rows = (
       await db.query<SceneRow>(
         "SELECT s.* FROM world_scene s JOIN world_scene_member m ON m.scene_id=s.id WHERE m.world_id=$1 AND m.actor_id=$2 AND m.state='joined' AND s.data ? 'turns' AND s.state IN ('active','acting')",
@@ -722,10 +796,23 @@ export class SharedTurns {
       )
     ).rows;
     for (const row of rows) {
-      await db.query(
-        "INSERT INTO world_scene_absence(scene_id,actor_id,from_event) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
-        [row.id, actor, row.data.events.length],
-      );
+      if (!stillPresent)
+        await db.query(
+          "INSERT INTO world_scene_absence(scene_id,actor_id,from_event) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
+          [row.id, actor, row.data.events.length],
+        );
+      const routed = row.state === "active" && (await this.routeIdle(db, row));
+      if (routed) {
+        if (routed === "closing") {
+          await db.query(
+            "UPDATE world_scene SET state='reflecting',claim=NULL,data=jsonb_set(data,'{ending}',to_jsonb('dissolved'::text)) WHERE id=$1",
+            [row.id],
+          );
+          await this.shared.wake(db, row.id);
+        }
+        continue;
+      }
+      if (stillPresent) continue;
       const members = (await this.shared.members(row.id, db))
         .filter((m) => m.state === "joined")
         .map((m) => m.actor_id);
@@ -851,12 +938,16 @@ export class SharedTurns {
   async inbox(world: string, actor: string) {
     const opportunities = (
       await this.pool.query(
-        `SELECT r.id,w.scene_id AS "sceneId",w.source_id AS "sourceInputId",w.deadline,r.seen AS "seenEventIds",r.context
+        `SELECT r.id,w.scene_id AS "sceneId",w.source_id AS "sourceInputId",w.source_kind AS "sourceKind",w.deadline,r.seen AS "seenEventIds",r.context
       FROM world_scene_reply r JOIN world_scene_wave w ON w.id=r.wave_id JOIN world_shared_scene h ON h.scene_id=w.scene_id
       WHERE h.world_id=$1 AND r.actor_id=$2 AND r.state='pending' AND w.state='pending' AND w.deadline>$3 ORDER BY w.deadline,r.id`,
         [world, actor, this.shared.now()],
       )
-    ).rows.map((r) => ({ ...r, deadline: r.deadline.toISOString() }));
+    ).rows.map(({ sourceKind, ...r }) => ({
+      ...r,
+      ...(sourceKind === "idle" ? { nextInput: true as const } : {}),
+      deadline: r.deadline.toISOString(),
+    }));
     const proposals = (
       await this.pool.query(
         `SELECT v.id,v.scene_id AS "sceneId",v.deadline FROM world_scene_end_vote v JOIN world_scene_end_answer a ON a.vote_id=v.id

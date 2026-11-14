@@ -2390,6 +2390,8 @@ export interface paths {
                                 sceneId: string;
                                 /** Format: uuid */
                                 sourceInputId: string;
+                                /** @enum {boolean} */
+                                nextInput?: true;
                                 /** Format: date-time */
                                 deadline: string;
                                 seenEventIds: string[];

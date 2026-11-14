@@ -415,6 +415,7 @@ async function prepare(index: number, web = false) {
   return r.scene.id as string;
 }
 async function end(index: number) {
+  await presence(index);
   const p = people[index]!;
   expect((await cli.run(p.profile, "start")).state).toBe("waiting_input");
   const r = await cli.run(p.profile, "finish");
@@ -427,6 +428,7 @@ test.each([false, true])(
   async (legacy) => {
     const owner = people[0]!;
     selections.set(owner.actor, { candidates: [], mergeInto: null });
+    await presence(0);
     const scene = await prepare(0);
     await access.scenes.tick(scene);
     await cli.run(owner.profile, "start");
@@ -1419,21 +1421,16 @@ test("Webの人間がいる場合は5往復で自動応答を止め、新規入�
     const calls = vi.spyOn(runtime.agent.model, "complete");
     await access.scenes.tick(scene);
     await humanPresence(0, false, human);
-    for (let i = 0; i < people.length; i++) await presence(i, false);
-    await presence(1);
     await access.scenes.tick(scene);
-    expect(await access.scenes.shared.turns.control(scene)).toMatchObject({
-      flow: "manual",
-      rounds: 5,
-    });
+    expect((await access.scenes.shared.turns.control(scene)).flow).toBe("open");
     expect(calls).not.toHaveBeenCalled();
     calls.mockRestore();
-    for (const person of people)
-      expect(
-        (await cli.run(person.profile, "inbox")).opportunities.filter(
-          (o: { sceneId: string }) => o.sceneId === scene,
-        ),
-      ).toEqual([]);
+    const offers = await Promise.all(
+      people.map((p) => cli.run(p.profile, "inbox")),
+    );
+    expect(
+      offers.flatMap((r) => r.opportunities).filter((o) => o.sceneId === scene),
+    ).toHaveLength(1);
     await humanAct(0, "ここから自分で働きかける");
     expect((await access.scenes.shared.turns.control(scene)).rounds).toBe(0);
     await access.scenes.tick(scene);
@@ -2673,3 +2670,99 @@ test("共有ターンの外部入力が完了してもNPCの未実行部分を�
     await access.scenes.tick(scene);
   }
 }, 90000);
+
+test("入力待ちは在席する人間を優先し、不在になればAI一人ずつに巡回する", async () => {
+  const scene = await sharedGame(),
+    order = [...people].sort((a, b) => a.actor.localeCompare(b.actor));
+  const offers = async () =>
+    (
+      await Promise.all(
+        order.map(async (person) => ({
+          person,
+          items: (await cli.run(person.profile, "inbox")).opportunities.filter(
+            (o: { sceneId: string }) => o.sceneId === scene,
+          ),
+        })),
+      )
+    ).flatMap(({ person, items }) =>
+      items.map((item: { id: string; nextInput?: true }) => ({
+        person,
+        id: item.id,
+        nextInput: item.nextInput,
+      })),
+    );
+  try {
+    const first = await offers();
+    expect(first).toHaveLength(1);
+    expect(first[0]!.nextInput).toBe(true);
+    expect(first[0]!.person.actor).toBe(order[0]!.actor);
+    await access.scenes.tick(scene);
+    expect(await offers()).toEqual(first);
+    const seen: PlayInput[] = [];
+    playback = (input) => {
+      seen.push(input);
+      return playStep(input);
+    };
+    await cli.run(
+      order[0]!.profile,
+      "react",
+      "--opportunity",
+      first[0]!.id,
+      "--text",
+      "本人が次の一手を選ぶ",
+    );
+    await access.scenes.tick(scene);
+    expect(seen[0]!.request.reactionTo).toBeNull();
+    expect(seen[0]!.request.controlledInputs[0]!.text).toBe(
+      "本人が次の一手を選ぶ",
+    );
+    for (const idx of [1, 2]) {
+      const current = await offers();
+      expect(current).toHaveLength(1);
+      expect(current[0]!.person.actor).toBe(order[idx]!.actor);
+      await cli.run(
+        order[idx]!.profile,
+        "react",
+        "--opportunity",
+        current[0]!.id,
+        "--none",
+      );
+      await access.scenes.tick(scene);
+    }
+    expect((await offers())[0]!.person.actor).toBe(order[0]!.actor);
+    const human = await humanPresence(0);
+    await humanAct(0, "自分で入力する");
+    await access.scenes.tick(scene);
+    expect(await offers()).toEqual([]);
+    await access.scenes.tick(scene);
+    expect(await offers()).toEqual([]);
+    await humanPresence(0, false, human);
+    expect(await offers()).toHaveLength(1);
+  } finally {
+    playback = undefined;
+    await cli.run(people[0]!.profile, "finish");
+    await access.scenes.tick(scene);
+  }
+}, 90000);
+
+test("在席している最後の人間が入力待ちで離れると成立済みの内容で終了する", async () => {
+  const owner = people[0]!;
+  selections.set(owner.actor, { candidates: [], mergeInto: null });
+  const scene = await prepare(0, true);
+  await access.scenes.tick(scene);
+  await runtime.pool.query(
+    "UPDATE world_scene_presence SET active=false WHERE world_id=$1 AND actor_id=$2",
+    [world, owner.actor],
+  );
+  const human = await humanPresence(0);
+  await cli.run(owner.profile, "start");
+  expect((await cli.run(owner.profile, "status")).state).toBe("waiting_input");
+  await humanPresence(0, false, human);
+  await access.scenes.tick(scene);
+  const row = await access.scenes.latest(world, undefined, false, owner.actor);
+  expect(row).toMatchObject({
+    id: scene,
+    state: "result",
+    data: { ending: "dissolved", actions: [], events: [] },
+  });
+}, 60000);
