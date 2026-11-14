@@ -1,4 +1,5 @@
 import { RuntimeExecutions } from "./executions.js";
+import { sceneSources } from "./scene-sources.js";
 import { SharedScenes, SceneSelection } from "./shared-scenes.js";
 import { SceneDrafts, type SceneDraft } from "./scene-drafts.js";
 import type { SharedTurn } from "./shared-turns.js";
@@ -57,6 +58,7 @@ import {
   type SceneIntent,
   type SceneView,
   type SceneEnding,
+  type SceneSources,
 } from "./scene-data.js";
 
 const BackgroundChoices = [
@@ -65,11 +67,26 @@ const BackgroundChoices = [
     .strict(),
   z.object({ type: z.literal("pause"), reason: z.string() }).strict(),
 ] as const;
-const BackgroundDecision = z.discriminatedUnion("type", [
-  OpeningBackground,
-  SceneContext,
-  ...BackgroundChoices,
-]);
+function backgroundDecision(withSources: boolean) {
+  const fact = OpeningBackground.shape.facts.element.omit({
+    sourceRelationIds: true,
+  });
+  const belief = SceneBackground.shape.beliefs
+    .unwrap()
+    .element.omit({ sourceRelationIds: true });
+  const source = { sourceRelationIds: z.array(z.uuid()) };
+  const fields = {
+    facts: z.array(withSources ? fact.extend(source) : fact),
+    beliefs: z.array(withSources ? belief.extend(source) : belief).default([]),
+  };
+  return z.discriminatedUnion("type", [
+    OpeningBackground.extend(fields),
+    SceneContext.extend(fields),
+    ...BackgroundChoices,
+  ]);
+}
+const BackgroundDecision = backgroundDecision(false);
+const SourcedBackgroundDecision = backgroundDecision(true);
 const ObservationContext = z
   .object({ type: z.literal("observation"), limits: z.string().min(1) })
   .strict();
@@ -142,6 +159,7 @@ export type SceneData = {
   basis: Dependency[];
   backgroundMessages?: ChatMessage[];
   background?: SceneBackground;
+  sources?: SceneSources;
   contextNeed?: z.infer<typeof ContextNeed> & { worldChanged?: true };
   observationContext?: { inputId: string; limits: string };
   contextRequests?: {
@@ -734,6 +752,7 @@ export class WorldScenes {
         work.messages,
         work.target,
         kind === "background" ? "resolution" : work.target,
+        row.data.sources !== undefined && file === "scene-background.md",
       );
     if (response.finishReason !== "stop")
       throw new SceneResponseError("シーンのモデル応答が未完了です");
@@ -895,7 +914,18 @@ export class WorldScenes {
     const observing =
       d.contextNeed &&
       (d.contextNeed.evidence ?? "observation") === "observation";
-    const schema = observing ? ObservationDecision : BackgroundDecision;
+    if (
+      !d.background &&
+      !d.backgroundMessages &&
+      !d.work &&
+      row.construction_id === process.env.SCENE_HANDOFF_WORLD_ID
+    )
+      d.sources ??= {};
+    const schema = observing
+      ? ObservationDecision
+      : d.sources
+        ? SourcedBackgroundDecision
+        : BackgroundDecision;
     // An unfinished pre-upgrade request still advertises the old output contract.
     if (
       d.backgroundMessages &&
@@ -955,7 +985,11 @@ export class WorldScenes {
           messages: [
             {
               role: "system",
-              content: await scenePrompt("scene-background.md"),
+              content:
+                (await scenePrompt("scene-background.md")) +
+                (d.sources && !observing
+                  ? "\nfactsとbeliefsの各項目にsourceRelationIdsを付け、その記述を裏付ける照会済み関係のIDを列挙してください。既存状態を根拠にする場合はそのcontent関係を含めます。新しく具体化した内容に根拠を創作せず、該当がなければ空配列を返します。"
+                  : ""),
             },
             ...d.backgroundMessages,
           ],
@@ -1003,6 +1037,13 @@ export class WorldScenes {
         return;
       }
       let decision: SceneBackground;
+      const cited =
+        d.sources && (answer.type === "context" || answer.type === "background")
+          ? sceneSources(d.backgroundMessages, [
+              ...answer.facts,
+              ...answer.beliefs,
+            ])
+          : undefined;
       if (d.contextNeed) {
         if (answer.type !== "context")
           throw new SceneResponseError(
@@ -1173,6 +1214,7 @@ export class WorldScenes {
             : await this.agent.intentView(d.worldId, id, d.at);
       await this.agent.store.context(d.worldId, d.basis).validate();
       d.background = decision;
+      if (cited) Object.assign(d.sources!, cited);
       delete d.work;
       delete d.backgroundMessages;
       const extending = !!d.contextNeed;
@@ -1672,6 +1714,7 @@ export class WorldScenes {
               continuing: true,
             })),
             completedScene: {
+              ...(d.sources ? { sources: d.sources } : {}),
               background: d.background!,
               events: d.events,
               anchors: sceneAnchors(

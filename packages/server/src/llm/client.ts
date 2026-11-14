@@ -14,6 +14,7 @@ import {
 import { ModelLimits } from "./limits.js";
 import { responseDeadline } from "./response-deadline.js";
 import { preparePrompt, canonical, parseOutput } from "./prompt.js";
+import { shortIds } from "./short-ids.js";
 import { PromptCache, geminiCachePlan, renderCachedPrompt } from "./cache.js";
 import {
   settings,
@@ -479,10 +480,11 @@ export class LlmClient {
     messages: ChatMessage[],
     target: LlmTarget = "default",
     effortTarget: LlmTarget = target,
+    shorten = false,
   ): Promise<SavedCompletion> {
     if (this.#configuration && configurationScope.getStore() === undefined)
       return this.run(id, () =>
-        this.complete(id, role, messages, target, effortTarget),
+        this.complete(id, role, messages, target, effortTarget, shorten),
       );
     z.uuid().parse(id);
     const cachedInput = await this.ledger.savedInput(id);
@@ -521,11 +523,13 @@ export class LlmClient {
         : effortTarget !== target
           ? this.settingsFor(effortTarget).effort
           : selected.effort;
+    const codec = shorten ? shortIds(id, messages) : undefined;
+    const wire = codec?.messages ?? messages;
     const prompt =
       provider !== "deepseek"
         ? // The full world schema exceeds Anthropic's grammar limit; retain Zod validation.
           preparePrompt(
-            messages,
+            wire,
             (api === "messages" ||
               (provider === "gemini" && role === "narrative-inspection")) &&
               [
@@ -569,12 +573,12 @@ export class LlmClient {
             model,
             system:
               rendered?.system ??
-              messages
+              wire
                 .filter((m) => m.role === "system")
                 .map((m) => m.content)
                 .join("\n\n"),
             messages:
-              rendered?.messages ?? messages.filter((m) => m.role !== "system"),
+              rendered?.messages ?? wire.filter((m) => m.role !== "system"),
             max_tokens: maxOutput,
             thinking: { type: effort === "none" ? "disabled" : "adaptive" },
             output_config: {
@@ -597,7 +601,7 @@ export class LlmClient {
           : {
               model,
               ...rendered,
-              ...(!prompt ? { messages } : {}),
+              ...(!prompt ? { messages: wire } : {}),
               ...(cacheName && gemini
                 ? {
                     messages: gemini.tail,
@@ -651,7 +655,7 @@ export class LlmClient {
           }),
     };
     const stored = {
-      ...(prompt ? { sourceMessages: messages } : {}),
+      ...(prompt || codec ? { sourceMessages: messages } : {}),
       role,
       requestedVersion: selected.version,
       pricingDate: selected.pricingDate,
@@ -960,11 +964,11 @@ export class LlmClient {
               };
             }
             const usage = completion.usage;
-            if (prompt && completion.finishReason === "stop") {
+            if ((prompt || codec) && completion.finishReason === "stop") {
               try {
-                completion.content = JSON.stringify(
-                  parseOutput(completion.content),
-                );
+                completion.content = codec
+                  ? codec.expand(completion.content)
+                  : JSON.stringify(parseOutput(completion.content));
               } catch {
                 /* Persist the invalid response; the caller's existing validation handles it. */
               }

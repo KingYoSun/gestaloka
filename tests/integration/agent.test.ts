@@ -251,6 +251,86 @@ afterAll(async () => {
   await databases.close();
 });
 
+test("背景の根拠を引き継いで相手側の状態を調べ、短縮IDを戻して確定する", async () => {
+  const scene = await fixture(),
+    ctx = store.context(scene.worldId);
+  const relation = (
+    await ctx.relations(scene.object.id, "status", "out", 0)
+  )[0]!;
+  const about = edge("status", scene.secret, scene.actor, undefined, "about");
+  await store.commit(
+    await store.claim(scene.worldId, randomUUID()),
+    store.context(scene.worldId),
+    { commitId: randomUUID(), at: 0, changes: changes([], [about]) },
+  );
+  const transport = vi.fn<typeof fetch>(async (_url, options) => {
+    const packet = JSON.parse(fixtureBody(options).messages[1].content);
+    expect(JSON.stringify(packet)).not.toContain(relation.id);
+    if (packet.profiles) {
+      const other = packet.profiles.find(
+        (p: { name: string }) => p.name === scene.object.text,
+      );
+      const id = other.states[0].id;
+      expect(id).toMatch(/^~g\d+~$/);
+      return response({
+        type: "ready",
+        evidence: [
+          {
+            id,
+            note: "元の状態を確認",
+            expires: ["旧状態"],
+            retains: [],
+            uncertain: [],
+          },
+        ],
+        unknowns: [],
+      });
+    }
+    const ev = packet.initialContext[0].evidence[0];
+    expect(ev.expires).toEqual(["旧状態"]);
+    return response(proposal({ ...changes(), endEdges: [ev.id] }));
+  });
+  const runtime = await agent(transport, {
+    LLM_PROVIDER: "deepseek",
+    LLM_MODEL: "deepseek-flash",
+    DEEPSEEK_API_KEY: "unused",
+    LLM_RESOLUTION_JUDGMENT: "combined",
+  });
+  const op = await runtime.create({
+    worldId: scene.worldId,
+    at: 0,
+    until: 1000,
+    phase: "resolution",
+    rootIds: [scene.actor.id],
+    controlledActorId: scene.actor.id,
+    actionText: "",
+    completedScene: {
+      background: {
+        type: "background",
+        synopsis: "場面",
+        participants: [scene.actor.id],
+        facts: [],
+        perceptions: [],
+        beliefs: [],
+        unknowns: [],
+        creations: [],
+      },
+      anchors: changes(),
+      events: [],
+      sources: {
+        [relation.id]: { edge: relation, targetText: scene.secret.text },
+      },
+    },
+  });
+  const applied = await runtime.run(op);
+  expect(applied.changes.endEdges).toEqual([relation.id]);
+  expect(
+    (await store.context(scene.worldId).edge(relation.id))?.period.until,
+  ).toBe(1000);
+  expect(await runtime.run(op)).toEqual(applied);
+  expect(transport).toHaveBeenCalledTimes(2);
+});
+
 test("シーン中の状態終了を実際の時点で確定し、受容を再生成せず保持する", async () => {
   const scene = await fixture(),
     background: SceneBackground = {
