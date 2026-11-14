@@ -804,7 +804,16 @@ test("共有の退出後は次の準備欄を表示し、終了待ちのシー�
         viewerId: V,
         invitations: [],
         next: null,
-        items: [{ id: "1", sceneId: B, kind: "result" }],
+        items: [
+          { id: "1", sceneId: B, kind: "result" },
+          {
+            id: "2",
+            sceneId: W,
+            kind: "invitation",
+            contact: true,
+            context: ["露台から呼びかけが届いた"],
+          },
+        ],
       }),
     ),
     http.post("*/api/worlds/:id/scene", async ({ request }) => {
@@ -838,6 +847,10 @@ test("共有の退出後は次の準備欄を表示し、終了待ちのシー�
   expect(
     screen.queryByRole("button", { name: "シーンを終えてリザルトを見る" }),
   ).toBeNull();
+  fireEvent.click(screen.getByText("他のプレイヤーから届いた呼びかけ"));
+  expect(
+    screen.getByText("露台から呼びかけが届いた").closest("details")?.open,
+  ).toBe(true);
   fireEvent.click(screen.getByText("シーンの通知と記録"));
   expect(
     screen

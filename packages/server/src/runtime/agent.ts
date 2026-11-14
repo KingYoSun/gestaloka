@@ -856,6 +856,42 @@ export class WorldAgent {
     ).rows;
     return new Set(rows.map((r) => r.actor_id));
   }
+  async playerConditions(
+    worldId: string,
+    ids: string[],
+    places: string[],
+    owner: string,
+    at: number,
+    dependencies: Dependency[],
+  ) {
+    const context = this.store.context(worldId, dependencies);
+    const players = [];
+    const candidates = new Set(ids);
+    for (const place of new Set(places)) {
+      for (const edge of await context.relations(place, "has", "in", at))
+        candidates.add(edge.source);
+      for (const edge of await context.relations(place, "status", "in", at)) {
+        if (edge.role !== "about") continue;
+        for (const subject of await context.relations(
+          edge.source,
+          "status",
+          "in",
+          at,
+        ))
+          if (subject.role === "content") candidates.add(subject.source);
+      }
+    }
+    candidates.delete(owner);
+    for (const actorId of await this.controlledActors(worldId, [
+      ...candidates,
+    ])) {
+      const actor = await context.node(actorId, at);
+      if (!actor) continue;
+      const states = await this.#descriptions(context, actorId, at, "status");
+      if (states.length) players.push({ actorId, name: actor.text, states });
+    }
+    return { players, dependencies: context.dependencies };
+  }
 
   async #run(id: string, resumeInput?: string): Promise<WorldProposal> {
     z.uuid().parse(id);
@@ -1196,7 +1232,11 @@ export class WorldAgent {
     const view = await this.#view(context, observerId, at);
     const conditions = (
       await this.#descriptions(context, observerId, at, "status")
-    ).map((condition) => ({ ...condition, at }));
+    ).map((condition) => ({
+      text: condition.text,
+      about: condition.about,
+      at,
+    }));
     await context.validate();
     return { ...view, conditions };
   }
@@ -1219,6 +1259,8 @@ export class WorldAgent {
       if (content?.kind !== "script") continue;
       descriptions.push({
         text: content.text,
+        relationId: relation.id,
+        from: relation.period.from,
         about: (await context.relations(content.id, kind, "out", at))
           .filter((edge) => edge.role === "about")
           .map((edge) => edge.target),
@@ -1246,7 +1288,10 @@ export class WorldAgent {
         text: edge.text || edge.observation?.aspect || null,
         period: edge.period,
       })),
-      interpretations,
+      interpretations: interpretations.map(({ text, about }) => ({
+        text,
+        about,
+      })),
     };
   }
 

@@ -1451,6 +1451,7 @@ export interface paths {
                                 nextPurpose: string | null;
                                 departed?: boolean;
                                 waitingFor?: string[];
+                                waitingInvitation?: boolean;
                                 /** Format: uuid */
                                 soloProposal?: string;
                                 shared?: {
@@ -1678,6 +1679,7 @@ export interface paths {
                                 nextPurpose: string | null;
                                 departed?: boolean;
                                 waitingFor?: string[];
+                                waitingInvitation?: boolean;
                                 /** Format: uuid */
                                 soloProposal?: string;
                                 shared?: {
@@ -2145,6 +2147,7 @@ export interface paths {
                                 kind: "invitation" | "invitation_closed" | "participation_settled" | "scene_ready" | "scene_started" | "participant_left" | "result" | "presence_inactive" | "opportunity" | "end_proposal" | "paused";
                                 /** Format: uuid */
                                 invitationId?: string;
+                                contact?: boolean;
                                 /** Format: uuid */
                                 opportunityId?: string;
                                 /** Format: uuid */

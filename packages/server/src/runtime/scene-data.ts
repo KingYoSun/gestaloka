@@ -153,6 +153,18 @@ export const SceneStep = z.discriminatedUnion("type", [
       concluded: z.literal(true).optional(),
       decisions: z.record(id, z.enum(["pending", "finished", "decide"])),
       newDecisions: z.array(id),
+      callsToPlayers: z
+        .array(
+          z
+            .object({
+              eventIndex: z.number().int().nonnegative(),
+              observerId: id,
+              positionRelationId: id,
+              text,
+            })
+            .strict(),
+        )
+        .optional(),
       elapsedMs: z.number().int().nonnegative().safe().default(0),
       needsContext: ContextNeed.nullable().optional(),
     })

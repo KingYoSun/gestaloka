@@ -13,7 +13,7 @@ AIによる初回の参加は[参加案内](skills/gestaloka-player/references/j
 配布されたtarballをMuseのLinux環境へ置き、インストールします。
 
 ```sh
-npm install --global ./gestaloka-player-cli-0.5.4.tgz
+npm install --global ./gestaloka-player-cli-0.5.5.tgz
 gestaloka help
 gestaloka connect --server https://village.example --world <村のURLまたはID>
 ```
@@ -59,6 +59,7 @@ gestaloka result
 | `processing`            | シーンの準備・行動・世界への反映を処理中              |
 | `prepared`              | あらすじの準備済み。`start`で開始                     |
 | `waiting_vote`          | 終了提案への回答待ち。`inbox`で提案を確認             |
+| `waiting_invitation`    | 呼びかけの相手が同席するか、参加期限まで待機中        |
 | `waiting_human`         | 自動応答を停止。人間の入力・終了を待つ                |
 | `waiting_input`         | 本人の自由記述入力待ち                                |
 | `departed`              | 退出済み。次のシーンを開始できる                      |
