@@ -204,6 +204,8 @@ beforeAll(async () => {
       }
       if (playback && (content as { type?: string }).type === "scene")
         return playback(raw as PlayInput);
+      if (npcGuest && (raw as { observerId?: string }).observerId === npcGuest)
+        return { actionText: "柵のそばの人に挨拶する" };
       if (
         (content as { type?: string }).type === "background" &&
         input.acceptedPlayerIds
@@ -943,7 +945,7 @@ function playStep(input: PlayInput, targets: string[] = []) {
   };
 }
 
-test.each(["accept", "reject", "timeout"] as const)(
+test.each(["accept", "reject", "timeout", "NPC timeout"] as const)(
   "睡眠中の呼びかけでは待たず、待機再開後に届いた招待の%s後も同じシーンを続ける",
   async (answer) => {
     const [caller, peer] = people;
@@ -956,6 +958,7 @@ test.each(["accept", "reject", "timeout"] as const)(
     const position = randomUUID(),
       relation = randomUUID(),
       store = runtime.agent.store;
+    const npc = answer === "NPC timeout" ? randomUUID() : undefined;
     await store.commit(
       await store.claim(graph, randomUUID()),
       store.context(graph),
@@ -965,6 +968,9 @@ test.each(["accept", "reject", "timeout"] as const)(
         changes: {
           nodes: [
             { id: position, kind: "script", text: "露台の柵のそばに立つ" },
+            ...(npc
+              ? [{ id: npc, kind: "existence" as const, text: "案内人" }]
+              : []),
           ],
           edges: [
             {
@@ -989,12 +995,13 @@ test.each(["accept", "reject", "timeout"] as const)(
         },
       },
     );
-    const scene = (
-      await cli.run(caller!.profile, "prepare", "--purpose", "露台を訪ねる")
-    ).scene.id;
-    await access.scenes.tick(scene);
-    await cli.run(caller!.profile, "start");
+    npcGuest = npc;
     try {
+      const scene = (
+        await cli.run(caller!.profile, "prepare", "--purpose", "露台を訪ねる")
+      ).scene.id;
+      await access.scenes.tick(scene);
+      await cli.run(caller!.profile, "start");
       let sleeping = true;
       playback = (input) => {
         expect(input.sleepingPlayerIds.includes(peer!.actor)).toBe(sleeping);
@@ -1009,20 +1016,25 @@ test.each(["accept", "reject", "timeout"] as const)(
         );
         const step = playStep(input);
         step.events[0]!.receipts[0]!.text = "柵のそばに人影が見えた";
+        const speaker = npc ?? caller!.actor;
+        const eventIndex = step.events.findIndex((e) => e.actorId === speaker);
+        if (npc && eventIndex < 0)
+          return {
+            ...step,
+            decisions: { [caller!.actor]: "pending" },
+            newDecisions: [npc],
+          };
+        step.events[eventIndex]!.text = "柵のそばの人に挨拶した";
         return {
           ...step,
-          callsToPlayers: input.request.intentions.some(
-            (i) => i.actionText === "声をかける",
-          )
-            ? [
-                {
-                  eventIndex: 0,
-                  observerId: peer!.actor,
-                  positionRelationId: relation,
-                  text: "近くから挨拶が聞こえた",
-                },
-              ]
-            : [],
+          callsToPlayers: [
+            {
+              eventIndex,
+              observerId: peer!.actor,
+              positionRelationId: relation,
+              text: "近くから挨拶が聞こえた",
+            },
+          ],
         };
       };
       const unheard = await cli.run(
@@ -1046,9 +1058,10 @@ test.each(["accept", "reject", "timeout"] as const)(
         asleep!.data.events
           .filter((e) => e.inputId === unheard.requestId)
           .flatMap((e) => e.receipts.map((r) => r.observerId)),
-      ).toEqual([caller!.actor]);
+      ).toEqual(npc ? [caller!.actor, caller!.actor, npc] : [caller!.actor]);
       await presence(1);
       sleeping = false;
+      const beforeCall = Date.now();
       const call = await cli.run(
         caller!.profile,
         "act",
@@ -1070,11 +1083,19 @@ test.each(["accept", "reject", "timeout"] as const)(
       } finally {
         calls.mockRestore();
       }
-      if (answer === "timeout") {
+      if (answer === "timeout" || npc) {
+        const deadline = Date.parse(invite.deadline);
+        expect(deadline).toBeGreaterThanOrEqual(beforeCall + 180000);
+        expect(deadline).toBeLessThanOrEqual(Date.now() + 180000);
         const now = vi
           .spyOn(access.scenes.shared, "now")
-          .mockReturnValue(new Date(Date.parse(invite.deadline) + 1));
+          .mockReturnValue(new Date(deadline - 1));
         try {
+          await access.scenes.tick(scene);
+          expect((await cli.run(caller!.profile, "status")).state).toBe(
+            "waiting_invitation",
+          );
+          now.mockReturnValue(new Date(deadline));
           await access.scenes.shared.expire({ sceneId: scene });
         } finally {
           now.mockRestore();
@@ -1103,7 +1124,7 @@ test.each(["accept", "reject", "timeout"] as const)(
             e.inputId === call.requestId &&
             e.receipts.some((r) => r.observerId === peer!.actor),
         ),
-      ).toHaveLength(1);
+      ).toEqual([expect.objectContaining({ actorId: npc ?? caller!.actor })]);
       const received = await access.scenes.shared.inbox(world, peer!.actor);
       let page = received;
       const history = [...page.items];
@@ -1114,6 +1135,13 @@ test.each(["accept", "reject", "timeout"] as const)(
       expect(
         history.filter((i) => i.contact && i.invitationId === invite.id),
       ).toHaveLength(1);
+      if (answer === "timeout" || npc)
+        expect(history).toContainEqual(
+          expect.objectContaining({
+            invitationId: invite.id,
+            answer: "expired",
+          }),
+        );
       if (answer === "accept") {
         expect((await cli.run(peer!.profile, "status")).scene.id).toBe(scene);
         expect(received.opportunities[0]?.context).toContain(
@@ -1135,6 +1163,7 @@ test.each(["accept", "reject", "timeout"] as const)(
       await access.scenes.tick(scene);
       expect((await cli.run(caller!.profile, "result")).state).toBe("finished");
     } finally {
+      npcGuest = undefined;
       playback = undefined;
       await presence(1, false);
     }
