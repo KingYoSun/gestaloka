@@ -282,6 +282,13 @@ export function ScenePlayer({
     (phase === "reflecting" && !scene?.waitingFor?.length);
   return (
     <main className="page play">
+      {historyNotices
+        .filter((n) => n.sceneId === scene?.id && n.contactOutcome)
+        .map((n) => (
+          <p key={n.id} role="status">
+            {n.context?.join(" ")}
+          </p>
+        ))}
       {historyNotices.some((n) => n.contact) && (
         <details>
           <summary>他のプレイヤーから届いた呼びかけ</summary>
