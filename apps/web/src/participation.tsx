@@ -8,6 +8,8 @@ import { usePending } from "./forms.js";
 import { Notice, Problem } from "./presentation.js";
 import { Button } from "./components/ui/button.js";
 import { Label } from "./components/ui/label.js";
+import { Input } from "./components/ui/input.js";
+import { Textarea } from "./components/ui/textarea.js";
 import {
   CharacterBadge,
   IconEditor,
@@ -16,14 +18,69 @@ import {
   iconDraftKey,
 } from "./player-icons.js";
 
+const Join = z.strictObject(JoinWorld.shape);
 const Request = z.object({
   requestId: z.uuid(),
-  command: z
-    .object(JoinWorld.shape)
-    .required({ presetId: true, presetVersion: true })
-    .omit({ character: true })
-    .strict(),
+  command: z.union([
+    Join.omit({ character: true, name: true }).required(),
+    Join.omit({ presetId: true, presetVersion: true }).required(),
+  ]),
 });
+function characterSettings(form: HTMLFormElement) {
+  const data = new FormData(form);
+  const name = String(data.get("name")).trim();
+  const texts = data.getAll("text");
+  const settings = data
+    .getAll("field")
+    .map((field, i) => `${String(field).trim()}：${String(texts[i]).trim()}`);
+  return { name, character: [`名前：${name}`, ...settings].join("\n\n") };
+}
+function CharacterFields() {
+  const [fields, setFields] = useState<string[]>([]);
+  return (
+    <>
+      <Label htmlFor="player-name">名前</Label>
+      <Input id="player-name" name="name" required pattern={".*\\S.*"} />
+      {fields.map((key) => (
+        <fieldset key={key} className="character-field">
+          <Label htmlFor={key}>設定項目</Label>
+          <Input
+            id={key}
+            name="field"
+            required
+            pattern={".*\\S.*"}
+            placeholder="例：職業"
+          />
+          <Label htmlFor={`${key}-text`}>設定テキスト</Label>
+          <Textarea
+            id={`${key}-text`}
+            name="text"
+            required
+            onChange={(e) =>
+              e.target.setCustomValidity(
+                e.target.value.trim() ? "" : "設定テキストを入力してください。",
+              )
+            }
+          />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setFields(fields.filter((id) => id !== key))}
+          >
+            この項目を削除
+          </Button>
+        </fieldset>
+      ))}
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => setFields([...fields, crypto.randomUUID()])}
+      >
+        設定項目を追加
+      </Button>
+    </>
+  );
+}
 function Pages({
   before,
   next,
@@ -151,6 +208,7 @@ export function Participation({ id }: { id: string }) {
   const selected = presets.data?.items.find(
     (p) => p.id === (choice || presets.data.items[0]?.id),
   );
+  const custom = choice === "custom" || (!selected && !presets.isPending);
   const person = tracked.data?.player;
   const open = (actorId: string, label: string) => (
     <Link
@@ -278,14 +336,21 @@ export function Participation({ id }: { id: string }) {
           className="form-panel"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (!selected || join.isPending || preparing || reading) return;
+            if (
+              (!selected && !custom) ||
+              join.isPending ||
+              preparing ||
+              reading
+            )
+              return;
             const body = {
               requestId: crypto.randomUUID(),
               command: {
                 operation: "worlds.join" as const,
                 worldId: id,
-                presetId: selected.id,
-                presetVersion: selected.version,
+                ...(selected
+                  ? { presetId: selected.id, presetVersion: selected.version }
+                  : characterSettings(e.currentTarget)),
               },
             };
             setPreparing(true);
@@ -294,6 +359,7 @@ export function Participation({ id }: { id: string }) {
               if (image)
                 await iconDraft(iconDraftKey(id, body.requestId), image);
               save(body);
+              setImage(null);
               join.mutate({ body });
             } catch (error) {
               setImageError(error);
@@ -312,7 +378,7 @@ export function Participation({ id }: { id: string }) {
           <Label htmlFor="player-preset">プレイヤー設定</Label>
           <select
             id="player-preset"
-            value={selected?.id ?? ""}
+            value={selected?.id ?? "custom"}
             onChange={(e) => setChoice(e.target.value)}
           >
             {presets.data?.items.map((p) => (
@@ -320,6 +386,7 @@ export function Participation({ id }: { id: string }) {
                 {p.title}
               </option>
             ))}
+            <option value="custom">自分で設定する</option>
           </select>
           <p className="plain-text">{selected?.description}</p>
           <Pages
@@ -330,9 +397,7 @@ export function Participation({ id }: { id: string }) {
               setChoice("");
             }}
           />
-          {!presets.data?.items.length && (
-            <Notice>プレイヤー設定はまだ用意されていません。</Notice>
-          )}
+          {custom && <CharacterFields />}
           <IconPicker
             onChange={setImage}
             onReading={setReading}
@@ -341,7 +406,9 @@ export function Participation({ id }: { id: string }) {
           {imageError !== undefined && <Problem error={imageError} />}
           <Button
             type="submit"
-            disabled={!selected || join.isPending || preparing || reading}
+            disabled={
+              (!selected && !custom) || join.isPending || preparing || reading
+            }
           >
             この設定で参加する
           </Button>

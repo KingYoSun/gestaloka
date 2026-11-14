@@ -311,6 +311,15 @@ select {
 .form-panel textarea {
   background: var(--card);
 }
+.character-field {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+  min-width: 0;
+}
+.character-field button {
+  justify-self: start;
+}
 .field-error {
   font-size: 14px;
   color: var(--destructive);

@@ -76,6 +76,19 @@ test("参加時の画像を再読込後に再試行し、Web・共通APIの変�
   });
   await page.goto(`/worlds/${world}`);
   await page
+    .getByLabel("プレイヤー設定")
+    .selectOption({ label: "自分で設定する" });
+  await page.getByLabel("名前", { exact: true }).fill("ミラ");
+  const fields = [
+    ["職業", "地図を描く旅人"],
+    ["持ち物", "古い手帳\n青いインク"],
+  ] as const;
+  for (const [label, text] of fields) {
+    await page.getByRole("button", { name: "設定項目を追加" }).click();
+    await page.getByLabel("設定項目", { exact: true }).last().fill(label);
+    await page.getByLabel("設定テキスト").last().fill(text);
+  }
+  await page
     .getByLabel("人物のアイコン（任意）")
     .setInputFiles({ name: "red.png", mimeType: "image/png", buffer: red });
   let uploads = 0,
@@ -115,12 +128,14 @@ test("参加時の画像を再読込後に再試行し、Web・共通APIの変�
       await page.request.get(`/api/worlds/${world}/players/${entry}`)
     ).json()
   ).player;
+  expect(own.name).toBe("ミラ");
   expect(own.icon).toMatch(/^data:image\/webp;base64,/);
   await page
     .getByRole("link", { name: "この人物で始める →", exact: true })
     .click();
   await page.goto(`/worlds/${world}`);
   const row = page.locator(`[data-player-id="${entry}"]`);
+  await expect(row.getByText("ミラ", { exact: true })).toBeVisible();
   await row.getByText("人物設定", { exact: true }).click();
   await row
     .getByLabel("人物のアイコン（任意）")
@@ -174,6 +189,13 @@ test("参加時の画像を再読込後に再試行し、Web・共通APIの変�
   const db = connectDatabases(),
     second = await browser.newContext({ baseURL: baseURL! });
   try {
+    const { rows } = await db.postgres.query(
+      "SELECT request->>'actionText' AS settings FROM world_operation WHERE id=(SELECT operation_id FROM world_join WHERE id=$1)",
+      [entry],
+    );
+    expect(rows[0].settings).toBe(
+      "名前：ミラ\n\n職業：地図を描く旅人\n\n持ち物：古い手帳\n青いインク",
+    );
     const auth = await fixtureAuth(db.postgres),
       person = await auth.person("user");
     await db.postgres.query("INSERT INTO e2e_subject(scope,id) VALUES($1,$2)", [
