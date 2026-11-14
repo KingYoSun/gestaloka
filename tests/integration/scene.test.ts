@@ -58,7 +58,11 @@ const model = new LlmClient(
         m.content.includes("validationErrors"),
       );
       content = corrected
-        ? { type: "observation", limits: "手前の箱の表だけが見える" }
+        ? {
+            type: "observation",
+            limits: "手前の箱の表だけが見える",
+            afterObservation: { [actor]: null },
+          }
         : {
             type: "context",
             participants: [],

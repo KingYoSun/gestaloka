@@ -92,7 +92,16 @@ beforeAll(async () => {
         raw.needsContext &&
         (raw.needsContext as { evidence?: string }).evidence === "observation"
       )
-        return { type: "observation", limits: "観測できる範囲" };
+        return {
+          type: "observation",
+          limits: "観測できる範囲",
+          afterObservation: Object.fromEntries(
+            Object.keys(
+              (raw.needsContext as { remainingActions: Record<string, string> })
+                .remainingActions,
+            ).map((id) => [id, "書類を届ける"]),
+          ),
+        };
       const proposal = content as WorldProposal;
       if (
         inventory &&
@@ -2610,20 +2619,21 @@ test("共有ターンの外部入力が完了してもNPCの未実行部分を�
           needsContext: {
             reason: "残りの行動で知覚できる範囲",
             evidence: "observation",
-            remainingActions: { [owner.actor]: "既に選んだ行動の残り" },
+            remainingActions: { [owner.actor]: "印を確かめながら書類を届ける" },
           },
         };
       }
       sawLimits = !!(input as PlayInput & { observationLimits?: string })
         .observationLimits;
-      return { ...step, elapsedMs: 500 };
+      step.decisions[owner.actor] = "finished";
+      return { ...step, elapsedMs: 500, concluded: true };
     };
     await access.scenes.tick(scene);
     const saved = await snapshot();
     expect(sawLimits).toBe(true);
     expect(saved.state).toBe("acting");
     expect(saved.data.pending[owner.actor]).toMatchObject({
-      actionText: "既に選んだ行動の残り",
+      actionText: "書類を届ける",
       continuing: true,
     });
     expect(wake.mock.calls.map(([, id]) => id)).toEqual([scene]);

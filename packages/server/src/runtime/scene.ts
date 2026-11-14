@@ -91,7 +91,13 @@ function backgroundDecision(withSources: boolean) {
 const BackgroundDecision = backgroundDecision(false);
 const SourcedBackgroundDecision = backgroundDecision(true);
 const ObservationContext = z
-  .object({ type: z.literal("observation"), limits: z.string().min(1) })
+  .object({
+    type: z.literal("observation"),
+    limits: z.string().min(1),
+    afterObservation: z
+      .record(z.uuid(), z.string().trim().min(1).nullable())
+      .default({}),
+  })
   .strict();
 const ObservationDecision = z.discriminatedUnion("type", [
   ObservationContext,
@@ -173,6 +179,7 @@ export type SceneData = {
     inputId: string;
     limits: string;
     observers?: string[];
+    afterObservation?: Record<string, string | null>;
   };
   contextRequests?: {
     inputId: string;
@@ -1188,7 +1195,7 @@ export class WorldScenes {
           role: "user",
           content: JSON.stringify({
             request,
-            backgroundVersion: 2,
+            backgroundVersion: observing ? 3 : 2,
             initialContext: context.initialContext,
             controlledActorIds: context.controlledActorIds,
             otherPlayers: d.peerConditions,
@@ -1285,12 +1292,23 @@ export class WorldScenes {
         continue;
       }
       if (answer.type === "observation") {
+        const observers = Object.keys(d.contextNeed!.remainingActions);
+        if (
+          JSON.parse(d.backgroundMessages[0]!.content).backgroundVersion ===
+            3 &&
+          !isDeepStrictEqual(
+            Object.keys(answer.afterObservation).sort(),
+            [...observers].sort(),
+          )
+        )
+          throw new SceneResponseError(
+            "afterObservationにはremainingActionsの各主体について、観察後も残る本人の行動かnullを指定してください",
+          );
         d.observationContext = {
           inputId: d.turn?.id ?? d.actions.at(-1)!.id,
           limits: answer.limits,
-          ...(Object.keys(d.contextNeed!.remainingActions).length
-            ? { observers: Object.keys(d.contextNeed!.remainingActions) }
-            : {}),
+          ...(observers.length ? { observers } : {}),
+          afterObservation: answer.afterObservation,
         };
         delete d.work;
         delete d.backgroundMessages;
@@ -1755,7 +1773,12 @@ export class WorldScenes {
               ? { otherPlayers: d.peerConditions }
               : {}),
             sleepingPlayerIds: [...sleeping],
-            ...(observation ? { observationLimits: observation.limits } : {}),
+            ...(observation
+              ? {
+                  observationLimits: observation.limits,
+                  afterObservation: observation.afterObservation,
+                }
+              : {}),
             sceneHistory: d.events,
             controlledView: d.views[actor],
             request: {
@@ -1928,6 +1951,23 @@ export class WorldScenes {
         });
       d.at = nextAt;
       d.previous = { ...d.pending };
+      for (const [id, remaining] of Object.entries(
+        observation?.afterObservation ?? {},
+      )) {
+        if (
+          remaining === null ||
+          !actors.has(id) ||
+          step.departures.some((exit) => exit.actorId === id)
+        )
+          continue;
+        d.pending[id] = {
+          ...d.pending[id]!,
+          actionText: remaining,
+          continuing: true,
+        };
+        step.decisions[id] = "pending";
+        delete step.concluded;
+      }
       for (const [id, status] of Object.entries(step.decisions)) {
         if (status !== "pending") delete d.pending[id];
         else d.pending[id]!.continuing = true;
