@@ -3744,6 +3744,7 @@ export interface paths {
                             operation: "worlds.join";
                             /** Format: uuid */
                             worldId: string;
+                            name?: string;
                             /** Format: uuid */
                             presetId?: string;
                             presetVersion?: number;

@@ -457,6 +457,7 @@ export const JoinWorld = z
   .object({
     operation: z.literal("worlds.join"),
     worldId: z.uuid(),
+    name: z.string().trim().min(1).optional(),
     presetId: z.uuid().optional(),
     presetVersion: z.number().int().positive().safe().optional(),
     character: z.string().min(1).optional(),
@@ -465,7 +466,9 @@ export const JoinWorld = z
   .refine((v) =>
     v.character !== undefined
       ? v.presetId === undefined && v.presetVersion === undefined
-      : v.presetId !== undefined && v.presetVersion !== undefined,
+      : v.name === undefined &&
+        v.presetId !== undefined &&
+        v.presetVersion !== undefined,
   );
 export const PlayerDeviceRequest = z
   .object({

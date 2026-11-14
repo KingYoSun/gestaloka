@@ -46,6 +46,7 @@ export const Interaction = z
     rootIds: z.array(z.uuid()).min(1),
     actorId: z.uuid().optional(),
     controlledActorId: z.uuid().optional(),
+    participantName: z.string().optional(),
     controlledActionText: z.string().optional(),
     triggerEdgeIds: z.array(z.uuid()).optional(),
     actionText: z.string(),
@@ -827,7 +828,13 @@ export class WorldAgent {
     };
   }
 
-  #sceneProposal(row: Operation, proposal: WorldProposal) {
+  #prepareProposal(row: Operation, proposal: WorldProposal) {
+    if (row.request.phase === "participant" && row.request.participantName) {
+      const actor = proposal.changes.nodes.find(
+        (n) => n.id === proposal.newParticipantId,
+      );
+      if (actor) actor.text = row.request.participantName;
+    }
     if (!row.request.completedScene) return proposal;
     try {
       return {
@@ -1176,7 +1183,7 @@ export class WorldAgent {
                     }),
                   });
                 } else {
-                  decision = this.#sceneProposal(row, decision);
+                  decision = this.#prepareProposal(row, decision);
                   row.dependencies = await this.#validateProposal(
                     row,
                     decision,

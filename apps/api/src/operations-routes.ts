@@ -113,6 +113,7 @@ export async function operationsRoutes(
       };
       const joining =
         command.operation === "worlds.join" &&
+        command.name === undefined &&
         requestId === device.id &&
         command.worldId === device.world_id &&
         (device.character_approved

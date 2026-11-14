@@ -140,6 +140,7 @@ export class WorldPlayers {
       {
         worldId: world.world_id,
         phase: "participant",
+        ...(input.name && { participantName: input.name }),
         at: Number(world.at),
         until: Number(world.at),
         rootIds: world.root_ids,
