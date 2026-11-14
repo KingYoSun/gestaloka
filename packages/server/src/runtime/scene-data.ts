@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { InformationReference } from "@gestaloka/contracts";
-import { Change } from "../world/model.js";
+import { Change, WorldEdge } from "../world/model.js";
 import type { WorldAgent } from "./agent.js";
 import type { WorldProposal } from "./agent.js";
 import type { Construction } from "./construction.js";
@@ -17,6 +17,7 @@ const Fact = z
     subjectId: id,
     text,
     aboutIds: z.array(id),
+    sourceRelationIds: z.array(id).optional(),
     at: z.number().int().nonnegative().safe().optional(),
   })
   .strict();
@@ -242,6 +243,15 @@ export const SceneEnding = z.enum([
   "dissolved",
 ]);
 export type SceneEnding = z.infer<typeof SceneEnding>;
+export const SceneSources = z.record(
+  id,
+  z.object({
+    edge: WorldEdge,
+    sourceText: text.optional(),
+    targetText: text.optional(),
+  }),
+);
+export type SceneSources = z.infer<typeof SceneSources>;
 export const CompletedScene = z
   .object({
     background: SceneBackground,
@@ -249,6 +259,7 @@ export const CompletedScene = z
       SceneEvent.extend({ id, period: Period, inputId: id.optional() }),
     ),
     anchors: Change,
+    sources: SceneSources.optional(),
     ending: SceneEnding.optional(),
   })
   .strict();

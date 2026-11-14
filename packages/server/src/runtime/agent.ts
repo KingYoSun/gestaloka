@@ -24,6 +24,7 @@ import {
 } from "../world/model.js";
 import type { LlmClient, ChatMessage } from "../llm/client.js";
 import { CompletedScene, mergeSceneChanges } from "./scene-data.js";
+import { reviewSceneStates } from "./scene-handoff.js";
 
 const Time = z.number().int().nonnegative().safe();
 export const IntentResult = z
@@ -271,6 +272,9 @@ export class WorldAgent {
           )
           .join("\n");
     }
+    if (request.completedScene?.sources)
+      system +=
+        "\n初期資料には背景調査の根拠と状態の変更差分、本人と相手の現状を照合した結果があります。各候補の失効部分・残す部分・未確認部分を出来事と照合してください。元の関係を終了すると全文が失効します。部分失効のときは同じ持ち主の有効な状態に残る内容を保ち、既存の同等状態で足りる場合は重ねません。終了する既存関係はendEdgesに指定し、未確認を新たな現実や受容にしません。";
     await database.query(
       "INSERT INTO world_operation (id,run_id,commit_id,request,system_prompt,combined_judgment,dependencies) VALUES ($1,$2,$3,$4,$5,$6,$7)",
       [
@@ -901,6 +905,8 @@ export class WorldAgent {
             )
               ? "resolution"
               : "default",
+            undefined,
+            row.request.completedScene?.sources !== undefined,
           ),
       );
       const commit = async (input: {
@@ -954,7 +960,17 @@ export class WorldAgent {
                 .context(row.request.worldId, row.dependencies)
                 .validate();
               if (!row.messages) {
-                const seed = await this.context(row.request, row.dependencies);
+                const review = row.request.completedScene?.sources
+                  ? await reviewSceneStates(
+                      this,
+                      row.request,
+                      row.dependencies,
+                      callId(id, row.epoch, row.step),
+                    )
+                  : undefined;
+                const seed = review
+                  ? { ...review, initialContext: review.results }
+                  : await this.context(row.request, row.dependencies);
                 row.dependencies = seed.dependencies;
                 row.messages = [
                   { role: "system", content: row.system_prompt },
@@ -1092,7 +1108,15 @@ export class WorldAgent {
               }
               try {
                 if (decision.type === "query") {
-                  const output = await this.read(row, decision.requests);
+                  const output = row.request.completedScene?.sources
+                    ? await reviewSceneStates(
+                        this,
+                        row.request,
+                        row.dependencies,
+                        callId(id, row.epoch, row.step),
+                        decision.requests,
+                      )
+                    : await this.read(row, decision.requests);
                   row.dependencies = output.dependencies;
                   row.messages.push({
                     role: "user",
