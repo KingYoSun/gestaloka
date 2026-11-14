@@ -2349,10 +2349,99 @@ test("進行中の単独シーンをNPCに任せ、本人の意図と見聞を�
   }
 }, 90000);
 
+test.each([0, 1])(
+  "共有シーンの人物%sがNPCに切り替えると、その人の見聞から一手だけ引き継ぐ",
+  async (index) => {
+    const scene = await sharedGame(),
+      actor = people[index]!,
+      other = people[1 - index]!;
+    const calls = vi.spyOn(runtime.agent.model, "complete");
+    playback = (input) => playStep(input, [actor.actor]);
+    try {
+      await humanAct(1 - index, "直前の働きかけ");
+      await access.scenes.tick(scene);
+      const before = (await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        actor.actor,
+      ))!;
+      const transition = await cli.run(actor.profile, "npc", "--away");
+      await cli.run(
+        actor.profile,
+        "recover",
+        "--request",
+        transition.requestId,
+      );
+      calls.mockClear();
+      playback = (input) => playStep(input, [other.actor]);
+      await access.scenes.tick(scene);
+      await access.scenes.tick(scene);
+      const after = (await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        actor.actor,
+      ))!;
+      expect(after.data.events.slice(0, before.data.events.length)).toEqual(
+        before.data.events,
+      );
+      expect(after.data.actions.slice(before.data.actions.length)).toEqual([
+        expect.objectContaining({
+          id: transition.requestId,
+          actorId: actor.actor,
+          state: "complete",
+        }),
+      ]);
+      expect(after.data.choices.slice(before.data.choices.length)).toEqual([
+        expect.objectContaining({ actorId: actor.actor }),
+      ]);
+      const intents = calls.mock.calls.filter(
+        ([, role]) => role === "scene-intent",
+      );
+      expect(intents).toHaveLength(1);
+      const view = JSON.parse(
+        intents[0]![2].find((m) => m.role === "user")!.content,
+      );
+      expect(view.observerId).toBe(actor.actor);
+      expect(view.observations.map((o: { text: string }) => o.text)).toContain(
+        `VIEW-${actor.actor}-直前の働きかけ`,
+      );
+      expect(JSON.stringify(view)).not.toContain(
+        `VIEW-${other.actor}-直前の働きかけ`,
+      );
+      expect(
+        after.data.events
+          .slice(before.data.events.length)
+          .some((e) => e.actorId === actor.actor),
+      ).toBe(true);
+      if (index === 0)
+        expect((await cli.run(other.profile, "inbox")).opportunities).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ sourceInputId: transition.requestId }),
+          ]),
+        );
+      expect(
+        (await cli.run(actor.profile, "npc", "--return")).result.scenes[0].log,
+      ).toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: "intent" })]),
+      );
+      await cli.run(people[0]!.profile, "finish");
+      await access.scenes.tick(scene);
+    } finally {
+      calls.mockRestore();
+      playback = undefined;
+      await cli.run(actor.profile, "npc", "--return");
+    }
+  },
+  90000,
+);
 test("共有中に離席した人物が、他の人物の一手からNPCとして行動し復帰できる", async () => {
   const scene = await sharedGame(0, true),
     guest = people[1]!;
   await cli.run(guest.profile, "npc", "--away");
+  playback = (input) => playStep(input);
+  await access.scenes.tick(scene);
   let steps = 0;
   playback = (input) => playStep(input, steps++ === 0 ? [guest.actor] : []);
   try {
