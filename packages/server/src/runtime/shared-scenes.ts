@@ -5,6 +5,7 @@ import { SceneInbox, ScenePresenceStatus } from "@gestaloka/contracts";
 import type { WorldConstruction } from "./construction.js";
 import { ConstructionStateError } from "./construction.js";
 import { SharedTurns } from "./shared-turns.js";
+import type { SceneRow } from "./scene.js";
 
 export const SceneSelection = z
   .object({
@@ -246,7 +247,7 @@ export class SharedScenes {
     return (
       await this.pool.query(
         `SELECT h.scene_id AS id,h.owner_id AS "actorId",h.at,s.data->>'purpose' AS purpose FROM world_shared_scene h
-      JOIN world_scene s ON s.id=h.scene_id WHERE h.world_id=$1 AND h.owner_id=ANY($2::uuid[]) AND h.phase IN ('selecting','inviting') ORDER BY h.sequence`,
+      JOIN world_scene s ON s.id=h.scene_id WHERE h.world_id=$1 AND h.owner_id=ANY($2::uuid[]) AND s.state='preparing' AND h.phase IN ('selecting','inviting') ORDER BY h.sequence`,
         [world, actors],
       )
     ).rows;
@@ -256,6 +257,7 @@ export class SharedScenes {
     row: SharedRow,
     actor: string,
     context: string[],
+    contact = false,
   ) {
     if (!row.deadline) {
       row.deadline = new Date(this.now().getTime() + this.invitationMs);
@@ -274,6 +276,7 @@ export class SharedScenes {
         invitationId: id,
         deadline: row.deadline.toISOString(),
         context,
+        ...(contact ? { contact: true } : {}),
       });
     await this.schedule(
       db,
@@ -281,6 +284,37 @@ export class SharedScenes {
       { sceneId: row.scene_id },
       row.deadline,
     );
+  }
+  async contact(
+    db: pg.PoolClient,
+    scene: SceneRow,
+    contacts: Map<string, string[]>,
+  ) {
+    // The world lock and the staged call are saved in the caller's transaction.
+    const kind = scene.data.soloBot ? "bot" : "human";
+    await this.open(
+      db,
+      scene.construction_id,
+      scene.actor_id,
+      scene.id,
+      scene.data.at,
+      scene.data.commandId,
+      kind,
+    );
+    const row = (
+      await db.query<SharedRow>(
+        "UPDATE world_shared_scene SET phase='inviting' WHERE scene_id=$1 RETURNING *",
+        [scene.id],
+      )
+    ).rows[0]!;
+    // A later, distinct call in the same solo scene may invite a former recipient again.
+    for (const [actor, context] of contacts) {
+      await db.query(
+        "DELETE FROM world_scene_invitation WHERE scene_id=$1 AND actor_id=$2 AND state IN ('declined','expired')",
+        [scene.id, actor],
+      );
+      await this.invite(db, row, actor, context, true);
+    }
   }
   async select(scene: string, plan: Selection) {
     const original = await this.get(scene);
@@ -323,6 +357,12 @@ export class SharedScenes {
         if (
           target &&
           target.world_id === row.world_id &&
+          (
+            await db.query(
+              "SELECT id FROM world_scene WHERE id=$1 AND state='preparing'",
+              [target.scene_id],
+            )
+          ).rowCount &&
           target.at === row.at &&
           BigInt(target.sequence) < BigInt(row.sequence) &&
           ["selecting", "inviting"].includes(target.phase) &&
@@ -480,6 +520,12 @@ export class SharedScenes {
         const other = await this.get(own.scene_id, db);
         if (
           own.state !== "reserved" ||
+          (
+            await db.query(
+              "SELECT id FROM world_scene WHERE id=$1 AND state='acting'",
+              [own.scene_id],
+            )
+          ).rowCount ||
           !other ||
           BigInt(other.sequence) <= BigInt(row.sequence)
         )
@@ -566,7 +612,7 @@ export class SharedScenes {
         kind: string;
         data: object;
       }>(
-        "SELECT id::text,scene_id,kind,data FROM world_scene_notice WHERE world_id=$1 AND actor_id=$2 AND id>$3 ORDER BY id LIMIT 51",
+        "SELECT id::text,scene_id,kind,data FROM world_scene_notice WHERE world_id=$1 AND actor_id=$2 AND id>$3 ORDER BY world_scene_notice.id LIMIT 51",
         [world, actor, position],
       )
     ).rows;

@@ -426,7 +426,7 @@ function PlayerView({
     );
   return (
     <ScenePlayer
-      key={scene?.id ?? "entry"}
+      key={`${status.viewerId}:${scene?.id ?? "entry"}`}
       id={id}
       viewer={status.viewerId}
       at={status.at}

@@ -147,23 +147,25 @@ async function status(profile: Profile) {
   return {
     state: !scene
       ? "no_scene"
-      : scene.waitingFor?.length
-        ? "waiting_confirmation"
-        : scene.departed && scene.state !== "result"
-          ? "departed"
-          : scene.soloProposal || scene.shared?.flow === "voting"
-            ? "waiting_vote"
-            : scene.shared?.flow === "manual"
-              ? "waiting_human"
-              : scene.state === "active"
-                ? "waiting_input"
-                : scene.state === "result"
-                  ? "finished"
-                  : scene.state === "ready"
-                    ? "prepared"
-                    : scene.state === "paused"
-                      ? "paused"
-                      : "processing",
+      : scene.waitingInvitation
+        ? "waiting_invitation"
+        : scene.waitingFor?.length
+          ? "waiting_confirmation"
+          : scene.departed && scene.state !== "result"
+            ? "departed"
+            : scene.soloProposal || scene.shared?.flow === "voting"
+              ? "waiting_vote"
+              : scene.shared?.flow === "manual"
+                ? "waiting_human"
+                : scene.state === "active"
+                  ? "waiting_input"
+                  : scene.state === "result"
+                    ? "finished"
+                    : scene.state === "ready"
+                      ? "prepared"
+                      : scene.state === "paused"
+                        ? "paused"
+                        : "processing",
     device,
     scene,
   };

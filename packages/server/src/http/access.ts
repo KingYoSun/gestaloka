@@ -487,6 +487,7 @@ export class WorldAccess {
                 .map((e) => e.id)
             : [],
         nextPurpose: d.nextPurpose ?? null,
+        ...(d.encounter ? { waitingInvitation: true } : {}),
         ...(d.soloProposal ? { soloProposal: d.soloProposal } : {}),
         ...(d.departures?.[viewer] === undefined ? {} : { departed: true }),
         ...(d.waitingFor?.length ? { waitingFor: d.waitingFor } : {}),

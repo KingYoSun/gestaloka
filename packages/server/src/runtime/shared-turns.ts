@@ -339,7 +339,7 @@ export class SharedTurns {
   async publish(
     db: pg.PoolClient,
     row: SceneRow,
-    turn: SharedTurn,
+    turn: Pick<SharedTurn, "id" | "sourceKind" | "reply">,
     targets: string[],
   ) {
     const control = await this.control(row.id, db, true);

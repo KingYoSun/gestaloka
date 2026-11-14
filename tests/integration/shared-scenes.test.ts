@@ -25,6 +25,10 @@ const selections = new Map<
 let continuation: { actor: string; creation: string } | undefined;
 let denyDeparture = false;
 type PlayInput = {
+  otherPlayers?: {
+    actorId: string;
+    states: { text: string; relationId: string }[];
+  }[];
   background: SceneBackground;
   sceneHistory: RecordedSceneEvent[];
   request: {
@@ -923,6 +927,180 @@ function playStep(input: PlayInput, targets: string[] = []) {
     ),
   };
 }
+
+test.each(["accept", "reject", "timeout"] as const)(
+  "単独で届いた呼びかけを接続前から保存し、%s後も同じシーンを続ける",
+  async (answer) => {
+    const [caller, peer] = people;
+    const place = (await runtime.get(world)).root_ids[0]!,
+      at = (await runtime.get(world)).at;
+    const position = randomUUID(),
+      relation = randomUUID(),
+      store = runtime.agent.store;
+    await store.commit(
+      await store.claim(graph, randomUUID()),
+      store.context(graph),
+      {
+        commitId: randomUUID(),
+        at,
+        changes: {
+          nodes: [
+            { id: position, kind: "script", text: "露台の柵のそばに立つ" },
+          ],
+          edges: [
+            {
+              id: relation,
+              kind: "status",
+              role: "content",
+              source: peer!.actor,
+              target: position,
+              period: { from: at },
+            },
+            {
+              id: randomUUID(),
+              kind: "status",
+              role: "about",
+              source: position,
+              target: place,
+              period: { from: at },
+            },
+          ],
+          revisions: [],
+          endEdges: [],
+        },
+      },
+    );
+    const scene = (
+      await cli.run(caller!.profile, "prepare", "--purpose", "露台を訪ねる")
+    ).scene.id;
+    await access.scenes.tick(scene);
+    await cli.run(caller!.profile, "start");
+    try {
+      playback = (input) => {
+        const states = input.otherPlayers?.find(
+          (p) => p.actorId === peer!.actor,
+        )?.states;
+        expect(states).toContainEqual(
+          expect.objectContaining({
+            relationId: relation,
+            text: "露台の柵のそばに立つ",
+          }),
+        );
+        const step = playStep(input);
+        step.events[0]!.receipts[0]!.text = "柵のそばに人影が見えた";
+        return {
+          ...step,
+          callsToPlayers: input.request.intentions.some(
+            (i) => i.actionText === "声をかける",
+          )
+            ? [
+                {
+                  eventIndex: 0,
+                  observerId: peer!.actor,
+                  positionRelationId: relation,
+                  text: "近くから挨拶が聞こえた",
+                },
+              ]
+            : [],
+        };
+      };
+      await cli.run(caller!.profile, "act", "--text", "露台を見る");
+      await access.scenes.tick(scene);
+      expect((await cli.run(caller!.profile, "status")).state).toBe(
+        "waiting_input",
+      );
+      expect((await cli.run(peer!.profile, "inbox")).invitations).toEqual([]);
+      const call = await cli.run(
+        caller!.profile,
+        "act",
+        "--text",
+        "声をかける",
+      );
+      await access.scenes.tick(scene);
+      expect((await cli.run(caller!.profile, "status")).state).toBe(
+        "waiting_invitation",
+      );
+      const invite = (await cli.run(peer!.profile, "inbox")).invitations.find(
+        (i: { sceneId: string }) => i.sceneId === scene,
+      );
+      expect(invite.context).toEqual(["近くから挨拶が聞こえた"]);
+      const calls = vi.spyOn(runtime.agent.model, "complete");
+      try {
+        await access.scenes.tick(scene);
+        expect(calls).not.toHaveBeenCalled();
+      } finally {
+        calls.mockRestore();
+      }
+      if (answer === "timeout") {
+        const now = vi
+          .spyOn(access.scenes.shared, "now")
+          .mockReturnValue(new Date(Date.parse(invite.deadline) + 1));
+        try {
+          await access.scenes.shared.expire({ sceneId: scene });
+        } finally {
+          now.mockRestore();
+        }
+      } else
+        await cli.run(
+          peer!.profile,
+          "invite",
+          "--invitation",
+          invite.id,
+          answer === "accept" ? "--accept" : "--reject",
+        );
+      await access.scenes.tick(scene);
+      const resumed = await cli.run(caller!.profile, "status");
+      expect(resumed.state).toBe("waiting_input");
+      expect(!!resumed.scene.shared).toBe(answer === "accept");
+      const record = await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        caller!.actor,
+      );
+      expect(
+        record!.data.events.filter(
+          (e) =>
+            e.inputId === call.requestId &&
+            e.receipts.some((r) => r.observerId === peer!.actor),
+        ),
+      ).toHaveLength(1);
+      const received = await access.scenes.shared.inbox(world, peer!.actor);
+      let page = received;
+      const history = [...page.items];
+      while (page.next && page.items.length) {
+        page = await access.scenes.shared.inbox(world, peer!.actor, page.next);
+        history.push(...page.items);
+      }
+      expect(
+        history.filter((i) => i.contact && i.invitationId === invite.id),
+      ).toHaveLength(1);
+      if (answer === "accept") {
+        expect((await cli.run(peer!.profile, "status")).scene.id).toBe(scene);
+        expect(received.opportunities[0]?.context).toContain(
+          "近くから挨拶が聞こえた",
+        );
+        const reply = await cli.run(
+          peer!.profile,
+          "react",
+          "--opportunity",
+          received.opportunities[0]!.id,
+          "--text",
+          "挨拶を返す",
+        );
+        expect(reply.state).not.toBe("error");
+        playback = (input) => playStep(input);
+        await access.scenes.tick(scene);
+      }
+      await cli.run(caller!.profile, "finish");
+      await access.scenes.tick(scene);
+      expect((await cli.run(caller!.profile, "result")).state).toBe("finished");
+    } finally {
+      playback = undefined;
+    }
+  },
+  120000,
+);
 
 test.each(["end", "timeout"] as const)(
   "AIの単独シーンでは一区切りで本人に提案し、%sで確定する",

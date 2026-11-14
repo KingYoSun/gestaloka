@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { SceneCommand, type SceneStatus } from "@gestaloka/contracts";
 import { $api, api, pendingKey } from "./api.js";
@@ -92,12 +92,34 @@ export function ScenePlayer({
         window.location.assign(`/worlds/${id}/play?actorId=${viewer}`);
     },
   });
-  const inbox = $api.useQuery(
-    "get",
-    "/api/worlds/{id}/scene/inbox",
-    { params: { path: { id }, query: { actorId: viewer } } },
-    { refetchInterval: 1000, gcTime: 0 },
-  );
+  const inboxPath = "/api/worlds/{id}/scene/inbox";
+  const params = { path: { id }, query: { actorId: viewer } };
+  type Inbox = z.infer<typeof import("@gestaloka/contracts").SceneInbox>;
+  const inboxKey = ["get", inboxPath, { params }] as const;
+  const inbox = useQuery({
+    queryKey: inboxKey,
+    queryFn: async ({ signal }) => {
+      const prior = client.getQueryData<Inbox>(inboxKey);
+      const { data, error } = await api.GET(inboxPath, {
+        params: {
+          path: { id },
+          query: {
+            actorId: viewer,
+            ...(prior?.next ? { after: prior.next } : {}),
+          },
+        },
+        signal,
+      });
+      if (!data)
+        throw new Error(error?.message ?? "通知を取得できませんでした");
+      const items = new Map((prior?.items ?? []).map((n) => [n.id, n]));
+      for (const n of data.items) if (n.sceneId) items.set(n.id, n);
+      return { ...data, items: [...items.values()] };
+    },
+    refetchInterval: 1000,
+    gcTime: 0,
+  });
+  const historyNotices = inbox.data?.items ?? [];
   const invite = $api.useMutation("post", "/api/worlds/{id}/scene", {
     onSuccess: async () => {
       saveInvite(null);
@@ -256,10 +278,20 @@ export function ScenePlayer({
   const phase = scene?.state;
   const generating =
     (phase === "preparing" && scene?.shared?.phase !== "inviting") ||
-    phase === "acting" ||
+    (phase === "acting" && !scene?.waitingInvitation) ||
     (phase === "reflecting" && !scene?.waitingFor?.length);
   return (
     <main className="page play">
+      {historyNotices.some((n) => n.contact) && (
+        <details>
+          <summary>他のプレイヤーから届いた呼びかけ</summary>
+          {historyNotices
+            .filter((n) => n.contact)
+            .map((n) => (
+              <p key={n.id}>{n.context?.join(" ")}</p>
+            ))}
+        </details>
+      )}
       {generating && <GenerationStatus phase={phase} />}
       {(!!inbox.data?.invitations.length ||
         pendingInvite?.command === "invite") && (
@@ -420,24 +452,26 @@ export function ScenePlayer({
       )}
       {scene ? (
         <Notice>
-          {scene.shared?.flow === "voting"
-            ? "終了・続行の回答を待っています。自動応答は止めています。"
-            : scene.shared?.flow === "manual"
-              ? "自動応答を止めています。次の行動を入力するか、シーンを終了できます。"
-              : scene.shared?.flow === "rounds"
-                ? "自動進行の上限で休止しています。開始者が再開・終了を選べます。"
-                : scene.shared?.flow === "inactive"
-                  ? "全員の接続がないため、シーンを保存して休止しています。"
-                  : scene.departed
-                    ? "退出しました。元のシーンの終了を待たず、次のシーンを始められます。"
-                    : scene.waitingFor?.length
-                      ? "シーンは終了しました。先行するシーンの確定後にリザルトを作成します。次のシーンは始められます。"
-                      : scene.state === "preparing" &&
-                          scene.shared?.phase === "inviting"
-                        ? "同席の返答を待っています。回答が揃うか、締切を迎えたらあらすじを準備します。"
-                        : scene.state === "paused"
-                          ? (scene.error ?? labels.paused)
-                          : labels[scene.state]}
+          {scene.waitingInvitation
+            ? "呼びかけが届きました。同席の回答を待っています。"
+            : scene.shared?.flow === "voting"
+              ? "終了・続行の回答を待っています。自動応答は止めています。"
+              : scene.shared?.flow === "manual"
+                ? "自動応答を止めています。次の行動を入力するか、シーンを終了できます。"
+                : scene.shared?.flow === "rounds"
+                  ? "自動進行の上限で休止しています。開始者が再開・終了を選べます。"
+                  : scene.shared?.flow === "inactive"
+                    ? "全員の接続がないため、シーンを保存して休止しています。"
+                    : scene.departed
+                      ? "退出しました。元のシーンの終了を待たず、次のシーンを始められます。"
+                      : scene.waitingFor?.length
+                        ? "シーンは終了しました。先行するシーンの確定後にリザルトを作成します。次のシーンは始められます。"
+                        : scene.state === "preparing" &&
+                            scene.shared?.phase === "inviting"
+                          ? "同席の返答を待っています。回答が揃うか、締切を迎えたらあらすじを準備します。"
+                          : scene.state === "paused"
+                            ? (scene.error ?? labels.paused)
+                            : labels[scene.state]}
         </Notice>
       ) : (
         <Notice>
@@ -585,14 +619,12 @@ export function ScenePlayer({
       {selectedSceneId && (
         <a href={`/worlds/${id}/play?actorId=${viewer}`}>現在のシーンへ戻る</a>
       )}
-      {!!inbox.data?.items.some(
-        (n) => n.sceneId && n.sceneId !== scene?.id,
-      ) && (
+      {!!historyNotices.some((n) => n.sceneId && n.sceneId !== scene?.id) && (
         <details>
           <summary>シーンの通知と記録</summary>
           {[
             ...new Set(
-              inbox.data.items
+              historyNotices
                 .map((n) => n.sceneId)
                 .filter((n) => n && n !== scene?.id),
             ),

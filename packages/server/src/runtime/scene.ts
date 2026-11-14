@@ -30,6 +30,7 @@ import {
   type Interaction,
   SupersededWorker,
   type WorldProposal,
+  type WorldAgent,
 } from "./agent.js";
 import {
   ConstructionStateError,
@@ -142,6 +143,10 @@ export type SceneData = {
   waitingFor?: string[];
   shared?: true;
   externalActors?: string[];
+  peerConditions?: Awaited<
+    ReturnType<WorldAgent["playerConditions"]>
+  >["players"];
+  encounter?: { inputId: string };
   recordingVersion?: "inspection-record-v1" | "inspection-record-v2";
   informationBasis?: Record<string, Information>;
   presentations?: Presentation[];
@@ -286,7 +291,7 @@ export class WorldScenes {
         ELSE CASE WHEN jsonb_array_length(data->'actions')>0 THEN jsonb_build_array(data->'actions'->-1) ELSE '[]'::jsonb END END,
       'result',data->'result','resultInformation',data->'resultInformation',
       'participantResults',CASE WHEN $2::uuid IS NOT NULL THEN jsonb_build_object($2::text,data->'participantResults'->$2::text) ELSE data->'participantResults' END,
-      'departures',data->'departures','waitingFor',data->'waitingFor',
+      'departures',data->'departures','waitingFor',data->'waitingFor','encounter',data->'encounter',
       'nextPurpose',data->'nextPurpose','limitReached',data->'limitReached') AS data`
       : "*";
     return (
@@ -472,6 +477,8 @@ export class WorldScenes {
     const actor = actorId ?? row?.actor_id;
     if (!row || !actor || (row.actor_id !== actor && !row.data.shared))
       throw new ConstructionStateError("現在のシーンを取得してください");
+    if (row.data.encounter)
+      throw new ConstructionStateError("参加要請への回答を待っています");
     if (
       !["finish", "resume"].includes(command) &&
       row.data.departures?.[actor] !== undefined
@@ -889,6 +896,7 @@ export class WorldScenes {
       };
     }
     d.basis = [];
+    delete d.peerConditions;
     delete d.backgroundMessages;
     if (row.state !== "reflecting") delete d.work;
     await this.#save(row, undefined, row.claim!);
@@ -942,6 +950,11 @@ export class WorldScenes {
     if (!d.backgroundMessages) {
       const context = await this.agent.context(request, d.basis);
       d.basis = context.dependencies;
+      await this.#peerConditions(
+        row,
+        context.controlledActorIds,
+        request.rootIds,
+      );
       d.backgroundMessages = [
         {
           role: "user",
@@ -950,6 +963,7 @@ export class WorldScenes {
             backgroundVersion: 2,
             initialContext: context.initialContext,
             controlledActorIds: context.controlledActorIds,
+            otherPlayers: d.peerConditions,
             acceptedPlayerIds: d.externalActors ?? [row.actor_id],
             ...(d.drafts?.length ? { priorScenes: d.drafts } : {}),
             ...(d.contextNeed
@@ -1010,6 +1024,11 @@ export class WorldScenes {
           answer.requests,
         );
         d.basis = read.dependencies;
+        await this.#peerConditions(
+          row,
+          read.controlledActorIds,
+          answer.requests.flatMap((q) => (q.kind === "node" ? [q.id] : [])),
+        );
         d.backgroundMessages.push(
           { role: "assistant", content: response.content },
           {
@@ -1018,6 +1037,7 @@ export class WorldScenes {
               requests: answer.requests,
               results: read.results,
               controlledActorIds: read.controlledActorIds,
+              otherPlayers: d.peerConditions,
             }),
           },
         );
@@ -1236,6 +1256,22 @@ export class WorldScenes {
       return;
     }
   }
+  async #peerConditions(row: SceneRow, ids: string[], places: string[]) {
+    const d = row.data;
+    if (d.shared) return;
+    const known = new Map((d.peerConditions ?? []).map((p) => [p.actorId, p]));
+    const read = await this.agent.playerConditions(
+      d.worldId,
+      ids.filter((id) => id !== row.actor_id && !known.has(id)),
+      places,
+      row.actor_id,
+      d.at,
+      d.basis,
+    );
+    for (const player of read.players) known.set(player.actorId, player);
+    d.peerConditions = [...known.values()];
+    d.basis = read.dependencies;
+  }
   async #action(row: SceneRow) {
     if (row.data.turn && !row.data.turn.inputs.length)
       return this.#completeTurn(row, []);
@@ -1249,6 +1285,11 @@ export class WorldScenes {
       controlled = d.turn ? d.turn.inputs.map((i) => i.actorId) : [actor];
     for (;;) {
       if (d.contextNeed) await this.#background(row);
+      if (!d.shared && !d.peerConditions) {
+        const seed = await this.agent.context(this.#request(row), d.basis);
+        d.basis = seed.dependencies;
+        await this.#peerConditions(row, seed.controlledActorIds, d.roots);
+      }
       const bg = d.background!;
       if (!d.work) {
         const next = sceneContinuations(
@@ -1337,6 +1378,9 @@ export class WorldScenes {
           "scene-play.md",
           {
             background: bg,
+            ...(!d.shared && d.peerConditions?.length
+              ? { otherPlayers: d.peerConditions }
+              : {}),
             ...(observation ? { observationLimits: observation.limits } : {}),
             sceneHistory: d.events,
             controlledView: d.views[actor],
@@ -1399,6 +1443,29 @@ export class WorldScenes {
           : [actor])
           if (step.decisions[id] === "finished") step.decisions[id] = "pending";
       const actors = new Set(intents.map((i) => i.actorId));
+      const contacts = new Map<string, string[]>();
+      for (const call of step.callsToPlayers ?? []) {
+        const event = step.events[call.eventIndex];
+        if (
+          d.shared ||
+          event?.actorId !== row.actor_id ||
+          !d.peerConditions?.some(
+            (p) =>
+              p.actorId === call.observerId &&
+              p.states.some(
+                (state) => state.relationId === call.positionRelationId,
+              ),
+          ) ||
+          event.receipts.some((r) => r.observerId === call.observerId)
+        )
+          throw new SceneResponseError(
+            "参加要請には本人の呼びかけの出来事と、参照した他プレイヤー本人への到達が必要です",
+          );
+        const lines = contacts.get(call.observerId) ?? [];
+        lines.push(call.text);
+        contacts.set(call.observerId, lines);
+        event.receipts.push({ observerId: call.observerId, text: call.text });
+      }
       if (
         Object.keys(step.decisions).sort().join() !== [...actors].sort().join()
       )
@@ -1413,7 +1480,12 @@ export class WorldScenes {
           !actors.has(e.actorId) ||
           e.receipts.some(
             (p) =>
-              !bg.participants.includes(p.observerId) ||
+              (!bg.participants.includes(p.observerId) &&
+                !(step.callsToPlayers ?? []).some(
+                  (c) =>
+                    step.events[c.eventIndex] === e &&
+                    c.observerId === p.observerId,
+                )) ||
               d.departures?.[p.observerId] !== undefined,
           ) ||
           new Set(e.receipts.map((p) => p.observerId)).size !==
@@ -1550,6 +1622,17 @@ export class WorldScenes {
           at: d.at,
           ...need,
         });
+      }
+      if (contacts.size) {
+        d.encounter = { inputId: action.id };
+        await this.#transaction(async (db) => {
+          await this.shared.lock(db, row.construction_id);
+          await this.#save(row, db, row.claim!);
+          await this.shared.contact(db, row, contacts);
+        });
+        return false;
+      }
+      if (d.contextNeed) {
         await this.#save(row, undefined, row.claim!);
         continue;
       }
@@ -1982,6 +2065,66 @@ export class WorldScenes {
           )
         ).rows[0];
         if (!row) throw new Error("シーンが見つかりません");
+        if (row.data.encounter) {
+          const encounter = row.data.encounter;
+          const invitation = await this.shared.get(row.id, client);
+          // A deadline may run late; a wake can settle an expired invitation too.
+          if (
+            invitation?.phase === "inviting" &&
+            (await this.shared.settle(client, invitation)).phase === "inviting"
+          )
+            return row;
+          const joined = (await this.shared.members(row.id, client)).filter(
+            (m) => m.state === "joined" && m.actor_id !== row.actor_id,
+          );
+          if (joined.length) {
+            row.data.shared = true;
+            row.data.turns = true;
+            row.data.externalActors = [
+              row.actor_id,
+              ...joined.map((m) => m.actor_id),
+            ];
+            for (const member of joined) {
+              row.data.background!.participants.push(member.actor_id);
+              row.data.views[member.actor_id] = await this.agent.view(
+                row.data.worldId,
+                member.actor_id,
+                row.data.at,
+              );
+            }
+            const action = row.data.actions.find(
+              (a) => a.id === encounter.inputId,
+            )!;
+            await this.shared.turns.publish(
+              client,
+              row,
+              {
+                id: action.id,
+                sourceKind: row.data.soloBot ? "bot" : "human",
+                reply: false,
+              },
+              joined.map((m) => m.actor_id),
+            );
+            delete row.data.peerConditions;
+            action.state = "complete";
+            action.completedAt = new Date().toISOString();
+            row.state = "active";
+            row.data.nextDecisions = row.data.nextDecisions.filter(
+              (id) => id !== row.actor_id,
+            );
+          } else {
+            await client.query(
+              "DELETE FROM world_scene_member WHERE scene_id=$1",
+              [row.id],
+            );
+            await client.query(
+              "DELETE FROM world_shared_scene WHERE scene_id=$1",
+              [row.id],
+            );
+          }
+          delete row.data.encounter;
+          await this.#save(row, client);
+        }
         if (
           row.data.turns &&
           ["active", "acting"].includes(row.state) &&

@@ -252,6 +252,7 @@ export const SceneStatus = z.object({
   nextPurpose: z.string().nullable(),
   departed: z.boolean().optional(),
   waitingFor: z.array(z.uuid()).optional(),
+  waitingInvitation: z.boolean().optional(),
   soloProposal: z.uuid().optional(),
   shared: z
     .object({
@@ -325,6 +326,7 @@ export const SceneInbox = z.object({
         "paused",
       ]),
       invitationId: z.uuid().optional(),
+      contact: z.boolean().optional(),
       opportunityId: z.uuid().optional(),
       sourceInputId: z.uuid().optional(),
       proposalId: z.uuid().optional(),
