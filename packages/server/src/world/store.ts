@@ -12,11 +12,22 @@ import {
   validateBindings,
   normalizeChange,
   requestedChange,
+  BelongingRole,
+  derivedId,
+  summaryId,
+  summaryText,
 } from "./model.js";
 
-export { Change, RelationKind, WorldEdge, WorldNode } from "./model.js";
+export {
+  Change,
+  RelationKind,
+  WorldEdge,
+  WorldNode,
+  BelongingRole,
+  derivedId,
+} from "./model.js";
 type Direction = "in" | "out";
-type Lease = { worldId: string; runId: string; generation: number };
+export type Lease = { worldId: string; runId: string; generation: number };
 export type Dependency = { key: string; version: number };
 export type Receipt = {
   management?: { editorId: string; reason: string; requestHash: string };
@@ -737,11 +748,49 @@ export class WorldStore {
             throw new WorldConflict("終了対象の関係が有効ではありません");
           ended.push(edge);
         }
+        // 役割つきhasの集合か、その対象の本文が変わる主体は、同じ確定で要約を作り直す。
+        const summaries = new Map<
+          string,
+          { role: BelongingRole; edge: WorldEdge }
+        >();
+        const summarize = (subject: string, value: unknown) => {
+          const role = BelongingRole.safeParse(value).data;
+          if (!role) return;
+          const target = summaryId(subject, role);
+          summaries.set(target, {
+            role,
+            edge: {
+              id: derivedId(`${target}:has`),
+              kind: "has",
+              source: subject,
+              target,
+              role: "summary",
+              period: { from: at },
+            },
+          });
+        };
+        for (const edge of [...changes.edges, ...ended])
+          if (edge.kind === "has") summarize(edge.source, edge.role);
+        for (const node of changes.revisions) {
+          const key = relationKey(node.id, "has", "in");
+          dependencies.push({ key, version: await version(tx, worldId, key) });
+          const holders = await tx.run(
+            `MATCH(s:WorldNode)-[r:has {worldId:$worldId}]->(:WorldNode {worldId:$worldId,id:$id})
+            WHERE r.validTo IS NULL AND r.role IS NOT NULL RETURN s.id AS subject,r.role AS role`,
+            { worldId, id: node.id },
+          );
+          for (const row of holders.records)
+            summarize(row.get("subject"), row.get("role"));
+        }
         const touched = new Set([
           ...changes.nodes.map((node) => nodeKey(node.id)),
           ...changes.revisions.map((node) => nodeKey(node.id)),
           ...changes.edges.flatMap(edgeKeys),
           ...ended.flatMap(edgeKeys),
+          ...[...summaries.values()].flatMap(({ edge }) => [
+            nodeKey(edge.target),
+            ...edgeKeys(edge),
+          ]),
         ]);
         const sourceIds = new Set(
           [...changes.nodes, ...changes.revisions].map((node) => node.id),
@@ -803,8 +852,8 @@ export class WorldStore {
           if (versions.get(key) !== 0)
             throw new WorldConflict("同じ同一性を重複作成できません");
         }
-        for (const node of changes.nodes) {
-          await tx.run(
+        const createNode = (node: WorldNode) =>
+          tx.run(
             "CREATE (:WorldNode {worldId: $worldId, id: $id, kind: $kind, data: $data, knownFrom: $at, recordedAt: datetime()})",
             {
               worldId,
@@ -814,26 +863,46 @@ export class WorldStore {
               at,
             },
           );
-        }
-        for (const prior of revised) {
+        const reviseNode = async (
+          prior: { node: WorldNode; knownFrom: number },
+          node: WorldNode,
+          at: number,
+        ) => {
           await tx.run(
             "CREATE (:WorldRevision {worldId: $worldId, nodeId: $id, version: $version, data: $data, knownFrom: $from, knownUntil: $at, recordedAt: datetime()})",
             {
               worldId,
-              id: prior.node.id,
-              version: versions.get(nodeKey(prior.node.id)),
+              id: node.id,
+              version: versions.get(nodeKey(node.id)),
               data: JSON.stringify(prior.node),
               from: prior.knownFrom,
               at,
             },
           );
-        }
-        for (const node of changes.revisions) {
           await tx.run(
             "MATCH (n:WorldNode {worldId: $worldId, id: $id}) SET n.data = $data, n.knownFrom = $at",
             { worldId, id: node.id, data: JSON.stringify(node), at },
           );
-        }
+        };
+        const createEdge = (edge: WorldEdge) =>
+          tx.run(
+            `MATCH (s:WorldNode {worldId: $worldId, id: $source}), (t:WorldNode {worldId: $worldId, id: $target})
+            CREATE (s)-[r:${edge.kind} {worldId: $worldId, id: $id, data: $data, validFrom: $from}]->(t)
+            SET r.validTo = $until, r.role = $role`,
+            {
+              worldId,
+              source: edge.source,
+              target: edge.target,
+              id: edge.id,
+              data: JSON.stringify(edge),
+              from: edge.period.from,
+              until: edge.period.until ?? null,
+              role: edge.role ?? null,
+            },
+          );
+        for (const node of changes.nodes) await createNode(node);
+        for (const [index, node] of changes.revisions.entries())
+          await reviseNode(revised[index]!, node, at);
         const endpointIds = [
           ...new Set(
             changes.edges.flatMap((edge) => [
@@ -859,20 +928,7 @@ export class WorldStore {
           if (!source || !target)
             throw new Error("同じ世界の接続先が見つかりません");
           validateConnection(edge, source, target);
-          await tx.run(
-            `MATCH (s:WorldNode {worldId: $worldId, id: $source}), (t:WorldNode {worldId: $worldId, id: $target})
-            CREATE (s)-[r:${edge.kind} {worldId: $worldId, id: $id, data: $data, validFrom: $from}]->(t)
-            SET r.validTo = $until`,
-            {
-              worldId,
-              source: edge.source,
-              target: edge.target,
-              id: edge.id,
-              data: JSON.stringify(edge),
-              from: edge.period.from,
-              until: edge.period.until ?? null,
-            },
-          );
+          await createEdge(edge);
         }
         for (const edge of ended) {
           const data = JSON.stringify({
@@ -884,13 +940,64 @@ export class WorldStore {
             { worldId, id: edge.id, at, data },
           );
         }
+        for (const edge of changes.edges) {
+          if (edge.role !== "hold") continue;
+          const open = await tx.run(
+            `MATCH()-[r:has {worldId:$worldId,role:'hold'}]->(:WorldNode {worldId:$worldId,id:$id})
+            WHERE r.validTo IS NULL RETURN count(r) AS count`,
+            { worldId, id: edge.target },
+          );
+          if (Number(open.records[0]!.get("count")) > 1)
+            throw new Error("同じ物品の所在を同時に複数成立させられません");
+        }
+        const derived = { nodes: [], revisions: [], edges: [] } as Pick<
+          Change,
+          "nodes" | "revisions" | "edges"
+        >;
+        for (const [id, { role, edge }] of summaries) {
+          const targets = await tx.run(
+            `MATCH(:WorldNode {worldId:$worldId,id:$subject})-[r:has {worldId:$worldId,role:$role}]->(t:WorldNode)
+            WHERE r.validTo IS NULL RETURN t.data AS data ORDER BY r.validFrom,r.id`,
+            { worldId, subject: edge.source, role },
+          );
+          const node: WorldNode = {
+            id,
+            kind: "script",
+            text: summaryText(
+              role,
+              targets.records.map((row) =>
+                WorldNode.parse(JSON.parse(row.get("data"))),
+              ),
+            ),
+          };
+          const stored = await tx.run(
+            "MATCH (n:WorldNode {worldId: $worldId, id: $id}) RETURN n.data AS data, n.knownFrom AS knownFrom",
+            { worldId, id },
+          );
+          const row = stored.records[0];
+          if (!row) {
+            await createNode(node);
+            await createEdge(edge);
+            derived.nodes.push(node);
+            derived.edges.push(edge);
+            continue;
+          }
+          const prior = {
+            node: WorldNode.parse(JSON.parse(row.get("data"))),
+            knownFrom: Number(row.get("knownFrom")),
+          };
+          if (prior.node.text === node.text) continue;
+          // 要約は最新の確定状態を表す。以前より前の時点の確定でも記録時点は戻さない。
+          await reviseNode(prior, node, Math.max(at, prior.knownFrom));
+          derived.revisions.push(node);
+        }
         for (const key of touched) {
           await tx.run(
             "MATCH (g:WorldGuard {worldId: $worldId, key: $key}) SET g.version = g.version + 1",
             { worldId, key },
           );
         }
-        const canonicalEdges = [];
+        const canonicalEdges = [...derived.edges];
         for (const edge of changes.edges) {
           if (!edge.observation) {
             canonicalEdges.push(edge);
@@ -945,7 +1052,12 @@ export class WorldStore {
           runId,
           at,
           committedAt: new Date().toISOString(),
-          changes: { ...changes, edges: canonicalEdges },
+          changes: {
+            nodes: [...changes.nodes, ...derived.nodes],
+            revisions: [...changes.revisions, ...derived.revisions],
+            edges: canonicalEdges,
+            endEdges: changes.endEdges,
+          },
           versions: Object.fromEntries(
             [...touched].map((key) => [
               key,

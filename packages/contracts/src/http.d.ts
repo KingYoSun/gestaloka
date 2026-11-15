@@ -3476,8 +3476,11 @@ export interface paths {
                                     source: string;
                                     /** Format: uuid */
                                     target: string;
-                                    /** @enum {string} */
-                                    role?: "content" | "about";
+                                    /**
+                                     * @description status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する
+                                     * @enum {string}
+                                     */
+                                    role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
                                     /** @description 関係の内容。seeではその存在に提示できる受容内容の本文 */
                                     text?: string;
                                     period: {

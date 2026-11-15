@@ -1,10 +1,42 @@
-import { Change, WorldNode, WorldEdge } from "@gestaloka/contracts";
+import { createHash } from "node:crypto";
+import {
+  Change,
+  WorldNode,
+  WorldEdge,
+  BelongingRole,
+} from "@gestaloka/contracts";
 export {
   Change,
   WorldNode,
   WorldEdge,
   RelationKind,
+  BelongingRole,
 } from "@gestaloka/contracts";
+
+// 同じ入力から同じ同一性を導出する。再送や再構築で重複を作らないために使う。
+export const derivedId = (value: string) => {
+  const h = createHash("sha256").update(value).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
+};
+
+// 役割つきhasの現在の集合から導出する要約。正本は関係で、要約は確定時に作り直す。
+export const summaryId = (subject: string, role: BelongingRole) =>
+  derivedId(`summary:${subject}:${role}`);
+const summaryTitle = {
+  hold: "保持している物品",
+  use: "利用できる保管先",
+  skill: "技能",
+};
+export const summaryText = (
+  role: BelongingRole,
+  targets: readonly WorldNode[],
+) =>
+  [
+    summaryTitle[role],
+    ...(targets.length
+      ? targets.map((target) => `- ${target.text}〔${target.id}〕`)
+      : ["(なし)"]),
+  ].join("\n");
 
 export function normalizeChange(change: Change, at: number): Change {
   return {
@@ -59,7 +91,15 @@ export function validateConnection(
   const valid = (() => {
     switch (edge.kind) {
       case "has":
-        return source.kind === "existence" && target.kind !== "event";
+        return (
+          source.kind === "existence" &&
+          (edge.role === undefined
+            ? target.kind !== "event"
+            : target.kind ===
+              (edge.role === "hold" || edge.role === "use"
+                ? "existence"
+                : "script"))
+        );
       case "effect":
         return source.kind !== "script" && target.kind === "existence";
       case "happen":

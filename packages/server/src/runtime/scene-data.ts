@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { InformationReference } from "@gestaloka/contracts";
-import { Change, WorldEdge } from "../world/model.js";
+import { Change, WorldEdge, derivedId } from "../world/model.js";
 import type { WorldAgent } from "./agent.js";
 import type { WorldProposal } from "./agent.js";
 import type { Construction } from "./construction.js";
@@ -305,10 +304,7 @@ export type SceneIntent = {
   actionText: string;
   continuing: boolean;
 };
-export const sceneId = (value: string) => {
-  const h = createHash("sha256").update(value).digest("hex");
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
-};
+export const sceneId = derivedId;
 export function sceneContinuations(
   agenda: Construction["agenda"],
   participants: string[],

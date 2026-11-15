@@ -49,13 +49,21 @@ export const RelationKind = z.enum([
   "status",
 ]);
 export type RelationKind = z.infer<typeof RelationKind>;
+// hasの役割。holdは物品の所在、useは保管先の利用、skillは身につけた技能を表す。
+export const BelongingRole = z.enum(["hold", "use", "skill"]);
+export type BelongingRole = z.infer<typeof BelongingRole>;
 export const WorldEdge = z
   .object({
     id: z.uuid(),
     kind: RelationKind,
     source: z.uuid(),
     target: z.uuid(),
-    role: z.enum(["content", "about"]).optional(),
+    role: z
+      .enum(["content", "about", ...BelongingRole.options, "summary"])
+      .optional()
+      .describe(
+        "status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する",
+      ),
     text: z
       .string()
       .optional()
@@ -67,9 +75,12 @@ export const WorldEdge = z
   .refine(
     (edge) =>
       edge.kind === "status" || edge.kind === "interpret"
-        ? edge.role !== undefined
-        : edge.role === undefined,
-    "status/interpretだけがcontent/aboutの役割を持ちます",
+        ? edge.role === "content" || edge.role === "about"
+        : edge.role === undefined ||
+          (edge.kind === "has" &&
+            edge.role !== "content" &&
+            edge.role !== "about"),
+    "status/interpretはcontent/about、hasは所在・利用・技能・要約の役割だけを持てます",
   )
   .refine(
     (edge) => edge.observation === undefined || edge.kind === "see",

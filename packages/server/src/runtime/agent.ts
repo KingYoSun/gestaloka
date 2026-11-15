@@ -654,6 +654,14 @@ export class WorldAgent {
     const oldEndings = [];
     for (const id of proposal.changes.endEdges)
       oldEndings.push((await context.edge(id))!);
+    if (
+      [...proposal.changes.edges, ...oldEndings].some(
+        (edge) => edge.kind === "has" && edge.role,
+      )
+    )
+      throw new CandidateRejected(
+        "所在・保管先の利用・技能・要約を表す役割つきのhasは、実行側の内部関数だけが記録・終了します",
+      );
     for (const binding of bindingScripts([
       ...proposal.changes.edges,
       ...oldEndings,
