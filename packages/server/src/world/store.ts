@@ -455,13 +455,13 @@ export class WorldContext {
         RETURN r.id AS id,t.id AS target,r.validFrom AS at,r.data AS data
         UNION ALL
         UNWIND $drafts AS e
-        WITH e WHERE NOT EXISTS { MATCH ()-[r:see {worldId:$worldId,id:e.id}]->() }
+        WITH e WHERE NOT EXISTS { MATCH (:WorldNode {worldId:$worldId,id:$observer})-[r:see {id:e.id}]->() }
         RETURN e.id AS id,e.target AS target,e.at AS at,e.data AS data
       }
-      WITH id,target,at, size([term IN $terms WHERE toLower(data) CONTAINS term]) AS score
+      WITH data,id,target,at, size([term IN $terms WHERE toLower(data) CONTAINS term]) AS score
       ORDER BY score DESC, at DESC, id
       WITH target, CASE WHEN $target IS NULL THEN target ELSE id END AS groupId,
-           head(collect(id)) AS representative, max(score) AS relevance, min(at) AS firstAt,max(at) AS lastAt,count(*) AS count
+           head(collect(data)) AS representative, max(score) AS relevance, min(at) AS firstAt,max(at) AS lastAt,count(*) AS count
       RETURN target,representative,firstAt,lastAt,count ORDER BY relevance DESC,lastAt DESC,groupId SKIP $offset LIMIT $limit`,
           {
             worldId: this.worldId,
@@ -480,8 +480,7 @@ export class WorldContext {
     );
     const items = [];
     for (const row of rows.slice(0, pageSize)) {
-      const edge = await this.edge(row.get("representative"));
-      if (!edge) throw new WorldConflict("観測記録が更新されました");
+      const edge = WorldEdge.parse(JSON.parse(row.get("representative")));
       items.push({
         edge,
         count: Number(row.get("count")),

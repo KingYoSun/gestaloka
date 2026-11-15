@@ -1255,7 +1255,9 @@ export class WorldScenes {
       await this.#peerConditions(
         row,
         context.controlledActorIds,
-        request.rootIds,
+        context.initialContext.flatMap(({ request }) =>
+          request.kind === "node" ? [request.id] : [],
+        ),
       );
       d.backgroundMessages = [
         {
@@ -1751,7 +1753,13 @@ export class WorldScenes {
           true,
         );
         d.basis = seed.dependencies;
-        await this.#peerConditions(row, seed.controlledActorIds, d.roots);
+        await this.#peerConditions(
+          row,
+          seed.controlledActorIds,
+          seed.initialContext.flatMap(({ request }) =>
+            request.kind === "node" ? [request.id] : [],
+          ),
+        );
       }
       const bg = d.background!;
       const away = new Set(
