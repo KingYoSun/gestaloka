@@ -12,8 +12,13 @@ export function Partners({ id, viewer }: { id: string; viewer: string }) {
     { params: { path: { id }, query: { actorId: viewer } } },
     { staleTime: 0, refetchOnMount: "always", refetchInterval: 3000 },
   );
-  if (query.error) return <Problem error={query.error} />;
-  if (!query.data) return <Notice>相手を読み込んでいます</Notice>;
+  // 読み直しの失敗では表示済みの一覧を保ち、次の読み直しを待つ。
+  if (!query.data)
+    return query.error ? (
+      <Problem error={query.error} />
+    ) : (
+      <Notice>相手を読み込んでいます</Notice>
+    );
   const { players, npcs } = query.data;
   return (
     <Tabs.Root defaultValue="players">

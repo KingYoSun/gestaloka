@@ -1320,6 +1320,7 @@ test("出会える相手をプレイヤーとNPCのタブで示し、開いて�
     http.get("*/api/worlds/:id/partners", ({ request }) => {
       reads++;
       expect(new URL(request.url).searchParams.get("actorId")).toBe(V);
+      if (reads === 4) return json({ code: "X", message: "一時的な失敗" }, 500);
       return json({
         viewerId: V,
         players: [
@@ -1357,4 +1358,19 @@ test("出会える相手をプレイヤーとNPCのタブで示し、開いて�
   fireEvent.click(npcs);
   expect(await screen.findByText("村長")).toBeTruthy();
   expect(screen.queryByText("ミチコ")).toBeNull();
-}, 10000);
+  // 同じ内容の読み直しと一時的な失敗では、モーダルの表示を書き換えず、選んだタブも保つ。
+  const changes: MutationRecord[] = [];
+  const observer = new MutationObserver((records) => changes.push(...records));
+  observer.observe(screen.getByRole("dialog"), {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+  });
+  await waitFor(() => expect(reads).toBeGreaterThanOrEqual(5), {
+    timeout: 12000,
+  });
+  observer.disconnect();
+  expect(changes).toEqual([]);
+  expect(screen.getByText("村長")).toBeTruthy();
+}, 25000);
