@@ -171,6 +171,7 @@ export type SceneData = {
   observationContext?: {
     inputId: string;
     limits: string;
+    conditions?: unknown[];
     observers?: string[];
   };
   contextRequests?: {
@@ -1370,6 +1371,18 @@ export class WorldScenes {
         d.observationContext = {
           inputId: d.turn?.id ?? d.actions.at(-1)!.id,
           limits: answer.limits,
+          conditions: d.backgroundMessages
+            .filter((m) => m.role === "user")
+            .flatMap((m) => {
+              const page = JSON.parse(m.content);
+              return (
+                page.initialContext ??
+                (page.requests ?? []).map((request: unknown, i: number) => ({
+                  request,
+                  result: page.results[i],
+                }))
+              );
+            }),
           ...(observers.length ? { observers } : {}),
         };
         delete d.work;
@@ -1915,6 +1928,7 @@ export class WorldScenes {
             ...(observation
               ? {
                   observationLimits: observation.limits,
+                  observationConditions: observation.conditions ?? [],
                   observationObservers: observation.observers ?? controlled,
                 }
               : {}),
