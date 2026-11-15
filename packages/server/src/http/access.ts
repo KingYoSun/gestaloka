@@ -27,6 +27,7 @@ import {
 } from "../runtime/construction.js";
 import { WorldScenes, type SceneRow } from "../runtime/scene.js";
 import { sceneAnchors } from "../runtime/scene-data.js";
+import { readBelongings } from "../world/belongings.js";
 import { requireMember } from "./operations.js";
 import { ExecutionBudget } from "../execution-budget.js";
 import { WorldPlayers, type CharacterEvidence } from "../runtime/players.js";
@@ -1051,6 +1052,41 @@ export class WorldAccess {
           ? (page[0]?.id ?? "0")
           : null,
     });
+  }
+  // 関係を読むだけで、観測・出来事・世界内の時点を変えない。モデルも呼ばない。
+  async belongings(subject: string, id: string, actorId?: string) {
+    const viewerId = (
+        await this.authorize(subject, id, "player", this.pool, actorId)
+      ).actor_id!,
+      row = await this.construction.get(id),
+      known = await readBelongings(
+        this.construction.agent.store.context(row.world_id!),
+        viewerId,
+      );
+    const held = (items: (typeof known)["items"]) => {
+      const groups = new Map<
+        string,
+        { label: string; quantity: number; mine: boolean }
+      >();
+      for (const item of items) {
+        const mine = item.owners.some((owner) => owner.id === viewerId),
+          key = JSON.stringify([item.label, mine]),
+          group = groups.get(key) ?? { label: item.label, quantity: 0, mine };
+        group.quantity++;
+        groups.set(key, group);
+      }
+      return [...groups.values()];
+    };
+    return {
+      viewerId,
+      items: held(known.items),
+      storages: known.storages.map((storage) => ({
+        id: storage.id,
+        label: storage.label,
+        items: held(storage.items),
+      })),
+      skills: known.skills.map(({ id, text }) => ({ id, text })),
+    };
   }
   async knowledge(
     subject: string,

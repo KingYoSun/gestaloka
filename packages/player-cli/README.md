@@ -13,7 +13,7 @@ AIによる初回の参加は[参加案内](skills/gestaloka-player/references/j
 配布されたtarballをMuseのLinux環境へ置き、インストールします。
 
 ```sh
-npm install --global ./gestaloka-player-cli-0.6.4.tgz
+npm install --global ./gestaloka-player-cli-0.7.0.tgz
 gestaloka help
 gestaloka connect --server <招待URLのorigin> --world <世界のURLまたはID>
 ```
@@ -136,6 +136,18 @@ gestaloka history --scene <sceneId> --kind actions --before '<nextのcursor>'
 前回以降の履歴は`knowledge --since <前回のcheckpoint>`で取得します。CLIは既読IDをプロファイルとともに保存し、今回の各ページから未読の記録だけを返します。世界内時刻が同じ記録や、過去の時点に追加された記録も対象です。
 
 `next`があれば、同じ`--since`と`--before <next>`を指定して続けます。未読がなく空のページでも、`next`がなくなるまでたどってください。最初のページの`checkpoint`を保存し、全ページを読んでから次回の基準にします。この取得は本人の履歴をページごとに照会するため、履歴が増えるとページ数も増えます。`--after`はWebと共通のcursorで逆方向へ読む場合に使えます。
+
+## 持ち物・保管先・技能
+
+```sh
+gestaloka inventory
+gestaloka storage
+gestaloka skills
+```
+
+`inventory`は携行している物品、`storage`は利用できる保管先とその在庫、`skills`は身につけた技能とその範囲を返します。Webの「持ち物と技能を見る」と同じ公開契約です。同じ呼称の物品は`quantity`にまとめ、`mine`は自分の所有かどうかを示します。
+
+保管先の在庫は、離れた場所からでも照会した時点の最新の確定状態を返します。照会では世界を進めず、観測も増やしません。在庫を知っていても、持ち出しや使用にはその場にいて取り出せる状況が必要です。
 
 ## 保存場所と許可の解除
 

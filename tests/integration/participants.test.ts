@@ -5,6 +5,10 @@ import { playerCli } from "../support/player-cli.js";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { WorldAccess } from "@gestaloka/server/access";
 import type { WorldProposal } from "@gestaloka/server/agent";
+import {
+  changeBelongings,
+  type BelongingOp,
+} from "@gestaloka/server/belongings";
 import { createApp } from "../../apps/api/src/app.js";
 import { fixtureRuntime } from "../support/provider.js";
 import { fixtureAuth } from "../support/auth.js";
@@ -541,15 +545,123 @@ test("2つのCLIが認可・新規参加・応答喪失からの復帰と相互�
         )
       ).items,
     ).toHaveLength(1);
+    // 持ち物・保管先・技能は、WebとCLIが同じ本人向けAPIから読む。
+    const store = runtime.agent.store,
+      place = (text: string) => ({
+        id: randomUUID(),
+        kind: "existence" as const,
+        text,
+      }),
+      shed = place("共同倉庫"),
+      den = place("相手の私室"),
+      now = async () => Number((await runtime.get(world)).at);
+    await store.commit(
+      await store.claim(graph, randomUUID()),
+      store.context(graph),
+      {
+        commitId: randomUUID(),
+        at: await now(),
+        changes: { nodes: [shed, den], revisions: [], edges: [], endEdges: [] },
+      },
+    );
+    const change = async (ops: BelongingOp[]) =>
+      changeBelongings(store, await store.claim(graph, randomUUID()), {
+        commitId: randomUUID(),
+        at: await now(),
+        ops,
+      });
+    const nail: BelongingOp = {
+      type: "create",
+      label: "釘",
+      holder: a,
+      owner: a,
+      basis: "初期設定",
+    };
+    const rope = (
+      await change([
+        { ...nail, label: "縄", holder: shed.id, basis: "備え付け" },
+        nail,
+        nail,
+        { ...nail, label: "日記", holder: den.id, owner: b },
+        ...[a, b, oldActor].map((person): BelongingOp => ({
+          type: "grant",
+          person,
+          storage: shed.id,
+          basis: "村の取り決め",
+        })),
+        { type: "grant", person: b, storage: den.id, basis: "初期設定" },
+        { type: "learn", person: a, text: "縄を結べる", basis: "初期設定" },
+      ])
+    ).changes.nodes[0]!.id;
+    const web = async (actor: string) =>
+      (
+        await app.inject({
+          url: `/api/worlds/${world}/belongings?actorId=${actor}`,
+          headers: { cookie: oneCookie },
+        })
+      ).json();
+    const stock = (known: { storages: { id: string; items: unknown[] }[] }) =>
+      known.storages.find((storage) => storage.id === shed.id)!.items;
+    const observed = async () =>
+      (await store.context(graph).history(a, "see", "out", await now())).length;
     const state = await access.scene(one, world, false, a),
-      at = (await runtime.get(world)).at;
+      at = (await runtime.get(world)).at,
+      sights = await observed();
     const calls = vi.spyOn(runtime.agent.model, "complete");
     await cli(profiles[0]!, "status");
     await cli(profiles[0]!, "knowledge");
+    const inventory = await cli(profiles[0]!, "inventory"),
+      storage = await cli(profiles[0]!, "storage"),
+      skills = await cli(profiles[0]!, "skills"),
+      shown = await web(a),
+      others = await cli(profiles[1]!, "storage");
     expect(await access.scene(one, world, false, a)).toEqual(state);
     expect((await runtime.get(world)).at).toBe(at);
+    expect(await observed()).toBe(sights);
     expect(calls).not.toHaveBeenCalled();
     calls.mockRestore();
+    expect([inventory.items, storage.storages, skills.skills]).toEqual([
+      shown.items,
+      shown.storages,
+      shown.skills,
+    ]);
+    expect(shown).toMatchObject({
+      viewerId: a,
+      items: [{ label: "釘", quantity: 2, mine: true }],
+      storages: [
+        {
+          id: shed.id,
+          label: "共同倉庫",
+          items: [{ label: "縄", quantity: 1, mine: true }],
+        },
+      ],
+      skills: [{ text: "縄を結べる" }],
+    });
+    // 利用権のない保管先と、他人の持ち物・技能は返さない。
+    expect(JSON.stringify(shown)).not.toContain("日記");
+    expect(others.storages).toHaveLength(2);
+    expect(stock(others)).toEqual([{ label: "縄", quantity: 1, mine: false }]);
+    expect((await cli(profiles[1]!, "skills")).skills).toEqual([]);
+    expect(
+      (
+        await app.inject({
+          url: `/api/worlds/${world}/belongings?actorId=${b}`,
+          headers: { cookie: oneCookie },
+        })
+      ).statusCode,
+    ).toBe(404);
+    // 最後の一品が持ち出された直後は、閲覧済みの人物、初めて読む人物、持ち出した本人が同じ在庫を読む。
+    await change([
+      { type: "move", item: rope, from: shed.id, to: a, basis: "持ち出した" },
+    ]);
+    expect(stock(await cli(profiles[1]!, "storage"))).toEqual([]);
+    expect(stock(await web(oldActor))).toEqual([]);
+    expect(stock(await web(a))).toEqual([]);
+    expect((await cli(profiles[0]!, "inventory")).items).toContainEqual({
+      label: "縄",
+      quantity: 1,
+      mine: true,
+    });
     const saved = JSON.parse(await readFile(profiles[0]!, "utf8"));
     const headers = {
       authorization: `Bearer ${saved.secret}`,
@@ -558,6 +670,8 @@ test("2つのCLIが認可・新規参加・応答喪失からの復帰と相互�
     for (const url of [
       `/api/worlds/${world}/knowledge?actorId=${b}`,
       `/api/worlds/${world}/knowledge?actorId=${oldActor}`,
+      `/api/worlds/${world}/belongings?actorId=${b}`,
+      `/api/worlds/${world}/belongings?actorId=${oldActor}`,
       `/api/worlds/${randomUUID()}/scene`,
       `/api/worlds/${world}/records`,
       "/api/account",
@@ -647,6 +761,9 @@ test("2つのCLIが認可・新規参加・応答喪失からの復帰と相互�
     expect((await revoke(twoCookie)).statusCode).toBe(403);
     expect((await revoke(oneCookie)).statusCode).toBe(302);
     expect((await cli(profiles[0]!, "status")).code).toBe(
+      "PLAYER_DEVICE_DENIED",
+    );
+    expect((await cli(profiles[0]!, "inventory")).code).toBe(
       "PLAYER_DEVICE_DENIED",
     );
     expect(

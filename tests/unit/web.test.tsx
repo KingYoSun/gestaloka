@@ -1259,3 +1259,57 @@ test("WebでNPCに任せて復帰した本人が見聞と参加の選択を読�
   expect(screen.getByText("戸口で呼びかけを聞いた。")).toBeTruthy();
   expect(screen.getByText("扉が開いた。")).toBeTruthy();
 });
+
+test("シーンの外でも中でも、本人の持ち物・保管先の在庫・技能を開くたびに読み直す", async () => {
+  let reads = 0;
+  server.use(
+    http.get("*/api/worlds/:id/belongings", ({ request }) => {
+      reads++;
+      expect(new URL(request.url).searchParams.get("actorId")).toBe(V);
+      return json({
+        viewerId: V,
+        items: [{ label: "釘", quantity: 2, mine: true }],
+        storages: [
+          {
+            id: B,
+            label: "共同倉庫",
+            items: reads > 1 ? [] : [{ label: "縄", quantity: 1, mine: false }],
+          },
+        ],
+        skills: [{ id: A, text: "縄を結べる" }],
+      });
+    }),
+  );
+  const open = () =>
+    fireEvent.click(screen.getByRole("button", { name: "持ち物と技能を見る" }));
+  const view = render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
+      )}
+    />,
+  );
+  await screen.findByRole("button", { name: "持ち物と技能を見る" });
+  open();
+  expect(await screen.findByText("釘 × 2")).toBeTruthy();
+  expect(screen.getByText("共同倉庫")).toBeTruthy();
+  expect(screen.getByText("（自分の所有ではない）")).toBeTruthy();
+  expect(screen.getByText("縄を結べる")).toBeTruthy();
+  view.unmount();
+
+  scene = sceneFixture("active");
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
+      )}
+    />,
+  );
+  await screen.findByRole("button", { name: "持ち物と技能を見る" });
+  open();
+  await waitFor(() => expect(reads).toBe(2));
+  await waitFor(() =>
+    expect(screen.queryByText("（自分の所有ではない）")).toBeNull(),
+  );
+  expect(screen.getByText("釘 × 2")).toBeTruthy();
+});
