@@ -785,6 +785,11 @@ export class WorldScenes {
     if (command === "start") {
       if (row.state !== "ready")
         throw new ConstructionStateError("あらすじの準備完了を待ってください");
+      if (
+        row.data.turns &&
+        (await this.shared.turns.control(row.id, client)).flow === "closing"
+      )
+        throw new ConstructionStateError("シーンは終了処理中です");
       row.state = "active";
     } else if (command === "resume") {
       if (row.state !== "paused")
@@ -1208,6 +1213,7 @@ export class WorldScenes {
     )
       return;
     const d = row.data,
+      established = !d.contextNeed ? d.background : undefined,
       request = {
         ...this.#request(row),
         actionText: d.contextNeed?.reason ?? d.purpose,
@@ -1264,6 +1270,14 @@ export class WorldScenes {
               context.controlledActorIds,
             ),
             acceptedPlayerIds: d.externalActors ?? [row.actor_id],
+            ...(established
+              ? {
+                  establishedScene: {
+                    background: established,
+                    events: d.events,
+                  },
+                }
+              : {}),
             ...(d.drafts?.length ? { priorScenes: d.drafts } : {}),
             ...(d.contextNeed
               ? {
@@ -1423,20 +1437,59 @@ export class WorldScenes {
           throw new SceneResponseError(
             "不足文脈を補う変更がありません。世界の条件を確認してください",
           );
-      } else if (answer.type === "background") decision = answer;
-      else throw new SceneResponseError("開始時の背景が必要です");
+      } else if (answer.type === "background") {
+        decision = answer;
+        if (established) {
+          const added = new Set(
+            answer.participants.filter(
+              (id) => !established.participants.includes(id),
+            ),
+          );
+          decision = {
+            ...established,
+            participants: [...established.participants, ...added],
+            facts: [
+              ...established.facts,
+              ...answer.facts.filter((f) => added.has(f.subjectId)),
+            ],
+            beliefs: [
+              ...established.beliefs,
+              ...answer.beliefs.filter((f) => added.has(f.subjectId)),
+            ],
+            perceptions: [
+              ...established.perceptions,
+              ...answer.perceptions.filter((p) => added.has(p.observerId)),
+            ],
+            creations: [...established.creations, ...answer.creations],
+          };
+        }
+      } else throw new SceneResponseError("開始時の背景が必要です");
       if (!d.contextNeed) {
         const sleeping = await this.#sleepingPlayers(
           row,
           decision.participants,
         );
         decision.perceptions = decision.perceptions.filter(
-          (p) => !sleeping.includes(p.observerId),
+          (p) =>
+            !sleeping.includes(p.observerId) ||
+            established?.perceptions.includes(p),
         );
+        const missingViews = (d.externalActors ?? []).filter(
+          (id) =>
+            !sleeping.includes(id) &&
+            !decision.perceptions.some((p) => p.observerId === id),
+        );
+        if (missingViews.length)
+          throw new SceneResponseError(
+            `参加確定済みの人物の視点がありません: ${missingViews.join(", ")}`,
+          );
       }
-      if (!decision.participants.includes(row.actor_id))
+      const missing = (d.externalActors ?? [row.actor_id]).filter(
+        (id) => !decision.participants.includes(id),
+      );
+      if (missing.length)
         throw new SceneResponseError(
-          "背景情報に操作する本人が含まれていません",
+          `背景情報に参加確定済みの人物が含まれていません: ${missing.join(", ")}`,
         );
       const controlled = await this.agent.controlledActors(
         d.worldId,
@@ -1562,8 +1615,14 @@ export class WorldScenes {
       delete d.backgroundMessages;
       const extending = !!d.contextNeed;
       delete d.contextNeed;
-      if (!extending) row.state = "ready";
+      if (!extending && !established) row.state = "ready";
       await this.#save(row, undefined, row.claim!);
+      if (
+        d.turns &&
+        row.state === "ready" &&
+        (await this.shared.turns.control(row.id)).flow === "closing"
+      )
+        await this.#transaction((db) => this.shared.wake(db, row.id));
       if (row.data.shared && !extending)
         await this.shared.transaction(async (db) => {
           for (const member of await this.shared.members(row.id, db))
@@ -2747,7 +2806,10 @@ export class WorldScenes {
         }
         if (
           row.data.turns &&
-          ["active", "acting"].includes(row.state) &&
+          (["active", "acting"].includes(row.state) ||
+            (row.state === "ready" &&
+              (await this.shared.turns.control(row.id, client)).flow ===
+                "closing")) &&
           !row.data.turn
         ) {
           const turn = await this.shared.turns.next(client, row);
@@ -2801,6 +2863,20 @@ export class WorldScenes {
           actorId: row.actor_id,
         });
         await this.drafts.run(row, async () => {
+          if (
+            row.data.background &&
+            !row.data.operationId &&
+            row.data.externalActors?.some(
+              (id) => !row.data.background!.participants.includes(id),
+            )
+          )
+            await this.agent.model.run(
+              this.#budget(row),
+              () => this.#background(row),
+              row.data.worldId,
+              row.user_id ?? undefined,
+              { role: "user", actorId: row.actor_id },
+            );
           if (row.state === "preparing")
             await this.agent.model.run(
               this.#budget(row),
@@ -2864,7 +2940,8 @@ export class WorldScenes {
       await this.pool.query<{
         id: string;
       }>(`SELECT s.id FROM world_scene s JOIN world_shared_scene h ON h.scene_id=s.id
-      WHERE s.state='active' AND s.data ? 'turns' AND h.flow IN ('open','manual')`)
+      WHERE s.data ? 'turns' AND ((s.state='active' AND h.flow IN ('open','manual','closing'))
+        OR (s.state='ready' AND h.flow='closing'))`)
     ).rows)
       await this.shared.transaction((db) => this.shared.wake(db, id));
     const handleJobs = async (jobs: { id: string; data: { id: string } }[]) => {
