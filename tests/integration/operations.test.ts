@@ -420,6 +420,23 @@ test("監査は成功・拒否・再送・衝突を区別し、招待秘密値�
       )
     ).rows[0].details,
   ).toEqual({});
+  await db.postgres.query(
+    "INSERT INTO operation_audit(request_id,actor_id,operation,outcome,details) SELECT $1,$2,'users.list','accepted','{}' FROM generate_series(1,100)",
+    [request, admin.id],
+  );
+  const expected = (
+    await db.postgres.query<{ id: string }>(
+      "SELECT a.id::text FROM operation_audit a ORDER BY a.id DESC",
+    )
+  ).rows.map((r) => r.id);
+  const paged: string[] = [];
+  let before: string | undefined;
+  do {
+    const page = await run(admin.id, { operation: "audit.list", before });
+    paged.push(...(page.items as { id: string }[]).map((item) => item.id));
+    before = (page.next as string | null) ?? undefined;
+  } while (before);
+  expect(paged).toEqual(expected);
 });
 
 test("APIは本人セッションとCSRFを要求し、役割の自己申告・招待制の直接迂回を拒否する", async () => {

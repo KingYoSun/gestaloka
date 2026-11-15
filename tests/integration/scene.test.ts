@@ -1315,6 +1315,19 @@ test("別の箱を観察しても元の問いを保ち、見えなかった範�
     const row = (await access.scenes.latest(construction))!;
     expect(row.state).toBe("active");
     expect(row.data.background).toEqual(background);
+    const observation = inputs
+      .filter((input) => input.observationLimits)
+      .at(-1)!;
+    expect(observation.observationConditions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          request: { kind: "node", id: place },
+          result: expect.objectContaining({
+            node: expect.objectContaining({ id: place }),
+          }),
+        }),
+      ]),
+    );
     expect(background.unknowns).toEqual([
       { question: "探す箱にどんな印があるか", targetId: place },
     ]);

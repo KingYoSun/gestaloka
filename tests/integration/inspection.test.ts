@@ -270,6 +270,34 @@ const select = async () =>
     }),
   );
 
+test("プリセットを使わない人物の設定と既存のプリセット版を検品資料に保持する", async () => {
+  const original = await select();
+  expect(original.manifest.declaredContext!.character).toMatchObject({
+    presetId: fid("preset"),
+    version: 1,
+  });
+  const id = randomUUID();
+  await pool.query(
+    "INSERT INTO world_scene(id,construction_id,actor_id,state,data) SELECT $2,construction_id,actor_id,state,jsonb_set(data,'{character}',(data->'character') || '{\"presetId\":null,\"version\":null}'::jsonb) FROM world_scene WHERE id=$1",
+    [fid("scene"), id],
+  );
+  try {
+    const page = await InspectionStore.select(pool, {
+      ...selection,
+      endSceneId: id,
+      n: 1,
+    });
+    expect(page.manifest.declaredContext!.character).toEqual({
+      presetId: null,
+      version: null,
+      settings: "以前から村で暮らす成人",
+      registrationAt: 0,
+    });
+  } finally {
+    await pool.query("DELETE FROM world_scene WHERE id=$1", [id]);
+  }
+});
+
 test("初期提示の全ページを凍結し、他者とシーン開始後の取得を混ぜない", async () => {
   const worldId = randomUUID(),
     actorId = randomUUID(),
@@ -360,6 +388,70 @@ test("初期提示の全ページを凍結し、他者とシーン開始後の�
   expect(reread.manifest.id).toBe(selected.manifest.id);
   const page = await InspectionStore.read(pool, worldId, m.id);
   expect(page.items.filter((i) => i.section === "initial")).toHaveLength(2);
+});
+
+test("共有シーンの検品対象を固定し、入力ごとの行為者を記録する", async () => {
+  const worldId = randomUUID(),
+    actorId = randomUUID(),
+    sceneId = randomUUID(),
+    at = new Date().toISOString();
+  const actions = [
+    { actorId, id: randomUUID(), text: "扉を見る", state: "complete" },
+    {
+      actorId: randomUUID(),
+      id: randomUUID(),
+      text: "頷く",
+      state: "complete",
+    },
+    {
+      actorId,
+      leave: true,
+      id: randomUUID(),
+      text: "立ち去る",
+      state: "complete",
+      submittedAt: at,
+      completedAt: at,
+    },
+  ];
+  await pool.query(
+    "INSERT INTO world_scene(id,construction_id,actor_id,state,data) VALUES($1,$2,$3,'result',$4)",
+    [
+      sceneId,
+      worldId,
+      actorId,
+      {
+        shared: true,
+        actions,
+        events: [],
+        presentations: [],
+        recordingVersion: "inspection-record-v1",
+        basis: [],
+      },
+    ],
+  );
+  const selected = await InspectionStore.select(pool, {
+    worldId,
+    actorId,
+    userId: null,
+    endSceneId: sceneId,
+    n: 1,
+  });
+  const saved = await InspectionStore.manifest(
+    pool,
+    worldId,
+    selected.manifest.id,
+  );
+  expect(saved.scenes[0]!.inputs).toEqual(
+    actions.map((a) => ({
+      id: a.id,
+      actorId: a.actorId,
+      text: a.text,
+      state: a.state,
+      submittedAt: a.submittedAt ?? null,
+      completedAt: a.completedAt ?? null,
+    })),
+  );
+  expect(selected.measurement.total.inputCount).toBe(3);
 });
 
 test("APIと共通計測の値が一致し、全ページの取得・再取得は生成も世界更新もしない", async () => {

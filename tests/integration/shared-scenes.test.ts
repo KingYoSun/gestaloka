@@ -24,6 +24,8 @@ const selections = new Map<
 >();
 let continuation: { actor: string; creation: string } | undefined;
 let denyDeparture = false;
+const backgroundFaults: ("participant" | "perception")[] = [];
+let backgroundGate: (() => Promise<void>) | undefined;
 type PlayInput = {
   livePlayers?: {
     actorId: string;
@@ -83,7 +85,7 @@ beforeAll(async () => {
   await isolated.setup();
   ({ runtime } = await fixtureRuntime(
     scope,
-    (content, raw, messages) => {
+    async (content, raw, messages) => {
       const input = raw as {
         request?: {
           actorId: string;
@@ -225,8 +227,9 @@ beforeAll(async () => {
         (content as { type?: string }).type === "background" &&
         input.acceptedPlayerIds
       ) {
+        await backgroundGate?.();
         const background = content as SceneBackground;
-        return {
+        const result = {
           ...background,
           ...(continuation && input.request!.actorId === continuation.actor
             ? {
@@ -272,6 +275,17 @@ beforeAll(async () => {
             ],
           })),
         };
+        const omitted = input.acceptedPlayerIds.at(-1)!;
+        const fault = backgroundFaults.shift();
+        if (fault === "participant")
+          result.participants = result.participants.filter(
+            (id) => id !== omitted,
+          );
+        if (fault === "perception")
+          result.perceptions = result.perceptions.filter(
+            (p) => p.observerId !== omitted,
+          );
+        return result;
       }
       return content;
     },
@@ -424,6 +438,144 @@ async function end(index: number) {
   await access.scenes.tick(r.scene.id);
   expect((await cli.run(p.profile, "result")).state).toBe("finished");
 }
+
+test.each(["preparing", "ready", "legacy-closing"])(
+  "%sの共有シーンも終了要求を保持し、再送で二重確定しない",
+  async (state) => {
+    selections.set(people[0]!.actor, { candidates: [], mergeInto: null });
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let running: Promise<void> | undefined;
+    try {
+      const id = await prepare(0);
+      if (state === "preparing") {
+        backgroundGate = async () => {
+          entered();
+          await gate;
+        };
+        running = access.scenes.tick(id);
+        await started;
+      } else await access.scenes.tick(id);
+      if (state === "legacy-closing") {
+        await isolated.databases.postgres.query(
+          "UPDATE world_shared_scene SET flow='closing',end_reason='requested' WHERE scene_id=$1",
+          [id],
+        );
+        expect((await cli.run(people[0]!.profile, "start")).code).toBe(
+          "STATE_CONFLICT",
+        );
+        await isolated.databases.postgres.query(
+          "UPDATE world_scene SET state='active' WHERE id=$1",
+          [id],
+        );
+      } else {
+        expect((await cli.run(people[0]!.profile, "finish")).state).toBe(
+          "processing",
+        );
+      }
+      release();
+      await running;
+      backgroundGate = undefined;
+      await access.scenes.tick(id);
+      const row = (await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        people[0]!.actor,
+        id,
+      ))!;
+      expect(row.state).toBe("result");
+      expect(row.data.ending).toBe("requested");
+      expect(row.data.actions).toEqual([]);
+      expect(row.data.events).toEqual([]);
+      await access.scenes.tick(id);
+      expect(
+        (
+          await isolated.databases.postgres.query(
+            "SELECT count(*)::int AS count FROM construction_log WHERE operation_id=$1",
+            [row.data.operationId],
+          )
+        ).rows[0].count,
+      ).toBe(1);
+    } finally {
+      release();
+      await running;
+      backgroundGate = undefined;
+    }
+  },
+  60000,
+);
+
+test("承認済み参加者と視点の欠落を同じ背景要求内で修正し、旧保存状態も提示済み履歴を保って補う", async () => {
+  backgroundFaults.push("participant", "perception");
+  const id = await sharedGame();
+  expect(backgroundFaults).toEqual([]);
+  const before = (await access.scenes.latest(
+    world,
+    undefined,
+    false,
+    people[0]!.actor,
+    id,
+  ))!;
+  expect([...before.data.background!.participants].sort()).toEqual(
+    people.map((p) => p.actor).sort(),
+  );
+  expect(
+    before.data.background!.perceptions.map((p) => p.observerId).sort(),
+  ).toEqual(people.map((p) => p.actor).sort());
+  const saved = structuredClone(before.data);
+  saved.background!.participants = people.slice(0, 2).map((p) => p.actor);
+  saved.background!.perceptions = saved.background!.perceptions.filter(
+    (p) => p.observerId !== people[2]!.actor,
+  );
+  delete saved.views[people[2]!.actor];
+  await isolated.databases.postgres.query(
+    "UPDATE world_scene_presence SET active=false WHERE world_id=$1 AND actor_id=$2",
+    [world, people[1]!.actor],
+  );
+  await isolated.databases.postgres.query(
+    "UPDATE world_scene SET data=$2 WHERE id=$1",
+    [id, saved],
+  );
+  await cli.run(people[0]!.profile, "finish");
+  await access.scenes.tick(id);
+  const after = (await access.scenes.latest(
+    world,
+    undefined,
+    false,
+    people[0]!.actor,
+    id,
+  ))!;
+  expect(after.state).toBe("result");
+  expect([...after.data.background!.participants].sort()).toEqual(
+    people.map((p) => p.actor).sort(),
+  );
+  expect(after.data.background!.synopsis).toBe(
+    before.data.background!.synopsis,
+  );
+  expect(after.data.events).toEqual(before.data.events);
+  expect(after.data.background!.perceptions).toContainEqual(
+    before.data.background!.perceptions.find(
+      (p) => p.observerId === people[1]!.actor,
+    ),
+  );
+  expect(after.data.presentations!.filter((p) => p.kind !== "result")).toEqual(
+    before.data.presentations,
+  );
+  for (const p of people) expect(after.data.views[p.actor]).toBeDefined();
+  for (const p of people.slice(1)) {
+    const result = await access.scenes.resultSource(after, p.actor);
+    expect(result.synopsis).toBe(`VIEW-${p.actor}`);
+    expect(result.synopsis).not.toContain(people[0]!.actor);
+  }
+  await presence(1, false);
+  await presence(2, false);
+}, 60000);
 test.each([false, true])(
   "共有ターンの境界からリザルトを取得する（旧版の停止状態を再開=%s）",
   async (legacy) => {
