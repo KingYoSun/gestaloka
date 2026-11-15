@@ -309,16 +309,25 @@ test("シーンの行動で成立した変更をターンごとに確定し、�
   // 自称だけの入力では技能が増えず、根拠つきで習得した技能は次の判定へ渡る。
   await act("自分は鍛冶の達人だと名乗る");
   expect((await known()).skills).toHaveLength(1);
-  await act("研ぎ直しを教わりながら繰り返す", [
-    [
-      {
-        type: "learn",
-        person: a,
-        text: "欠けた刃を研ぎ直せる",
-        basis: "教わりながら三度研ぎ直しを仕上げた",
-      },
-    ],
-  ]);
+  const lesson: BelongingOp = {
+    type: "learn",
+    person: a,
+    text: "欠けた刃を研ぎ直せる",
+    basis: "教わりながら三度研ぎ直しを仕上げた",
+  };
+  await act("研ぎ直しを教わりながら繰り返す", [[lesson]]);
+  // 確定後に同じ入力を解決し直しても同じ確定として扱い、後の応答の操作を重ねない。
+  const { work: _work, ...unresolved } = snapshot!.data as { work: unknown };
+  void _work;
+  await db.postgres.query(
+    "UPDATE world_scene SET state=$2,data=$3 WHERE id=$1",
+    [scene, snapshot!.state, JSON.stringify(unresolved)],
+  );
+  replies = [[lesson]];
+  before = await calls();
+  await access.scenes.tick(scene);
+  expect(await calls()).toBeGreaterThan(before);
+  expect((await known()).skills).toHaveLength(2);
   await act("もう一度刃を確かめる");
   expect(resolved.at(-1)!.belongings![a]!.skills).toMatchObject([
     { text: "刃物を研げる" },

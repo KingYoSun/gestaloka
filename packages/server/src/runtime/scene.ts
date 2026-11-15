@@ -177,6 +177,7 @@ export type SceneData = {
   roots: string[];
   originalAgenda: Construction["agenda"];
   basis: Dependency[];
+  belongingCommits?: number;
   backgroundMessages?: ChatMessage[];
   background?: SceneBackground;
   sources?: SceneSources;
@@ -1074,7 +1075,7 @@ export class WorldScenes {
         row,
         await this.agent.store.receipt(
           row.data.worldId,
-          sceneId(`${work.id}:belongings`),
+          this.#belongingsCommit(row),
         ),
       );
     if (kind === "resolve" || kind === "intent")
@@ -1085,6 +1086,10 @@ export class WorldScenes {
       content: response.content,
       value: presentationEvidence(parseOutput(response.content)),
     };
+  }
+  // 保存済みの確定回数から識別を導く。確定後に同じ入力を解決し直しても、同じ確定として扱う。
+  #belongingsCommit(row: SceneRow) {
+    return sceneId(`${row.id}:belongings:${row.data.belongingCommits ?? 0}`);
   }
   // このシーン自身の物品・技能の確定で進んだ版を、シーンの依存へ引き継ぐ。
   #adopt(row: SceneRow, receipt?: Receipt) {
@@ -2124,12 +2129,13 @@ export class WorldScenes {
           );
           const receipt = await ExecutionBudget.commit(() =>
             changeBelongings(this.agent.store, lease, {
-              commitId: sceneId(`${d.work!.id}:belongings`),
+              commitId: this.#belongingsCommit(row),
               at: nextAt,
               ops: step.belongings,
             }),
           );
           this.#adopt(row, receipt);
+          d.belongingCommits = (d.belongingCommits ?? 0) + 1;
         } catch (error) {
           if (
             error instanceof WorldConflict ||
