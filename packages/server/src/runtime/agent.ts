@@ -23,8 +23,8 @@ import {
   type WorldEdge,
 } from "../world/model.js";
 import {
-  BelongingOp,
   BelongingRejected,
+  belongingOps,
   planBelongings,
 } from "../world/belongings.js";
 import type { LlmClient, ChatMessage } from "../llm/client.js";
@@ -167,7 +167,7 @@ const Proposal = z
   })
   .strict();
 export type WorldProposal = z.infer<typeof Proposal> & {
-  belongings?: BelongingOp[];
+  belongings?: string[];
 };
 // 参加者の生成だけが、採用した持ち物・保管先・技能を内部関数の操作として返せる。
 const decisionFor = (phase: Interaction["phase"]) =>
@@ -176,7 +176,7 @@ const decisionFor = (phase: Interaction["phase"]) =>
       .object({ type: z.literal("query"), requests: z.array(Query).min(1) })
       .strict(),
     phase === "participant"
-      ? Proposal.extend({ belongings: z.array(BelongingOp).default([]) })
+      ? Proposal.extend({ belongings: z.array(z.string()).default([]) })
       : Proposal,
     z.object({ type: z.literal("pause"), reason: z.string() }).strict(),
   ]);
@@ -1002,14 +1002,16 @@ export class WorldAgent {
 
   // 参加者が採用した持ち物・保管先・技能の操作を、提案と同じ確定に含める差分へ変える。
   async #plan(context: WorldContext, row: Operation, proposal: WorldProposal) {
-    const ops = proposal.belongings ?? [];
-    if (
-      ops.some((op) => !["create", "move", "grant", "learn"].includes(op.type))
-    )
-      throw new CandidateRejected(
-        "参加時のbelongingsには、物品の成立、所在の登録、保管先の利用、技能の習得だけを指定してください",
-      );
     try {
+      const ops = belongingOps(proposal.belongings ?? []);
+      if (
+        ops.some(
+          (op) => !["create", "move", "grant", "learn"].includes(op.type),
+        )
+      )
+        throw new BelongingRejected(
+          "参加時は、物品の成立、所在の登録、保管先の利用、技能の習得だけを指定してください",
+        );
       const planned = await planBelongings(
         context,
         row.commit_id,

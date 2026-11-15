@@ -33,6 +33,7 @@ import {
 } from "../world/store.js";
 import {
   BelongingRejected,
+  belongingOps,
   changeBelongings,
   readBelongings,
 } from "../world/belongings.js";
@@ -2131,7 +2132,7 @@ export class WorldScenes {
             changeBelongings(this.agent.store, lease, {
               commitId: this.#belongingsCommit(row),
               at: nextAt,
-              ops: step.belongings,
+              ops: belongingOps(step.belongings!),
             }),
           );
           this.#adopt(row, receipt);

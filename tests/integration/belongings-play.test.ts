@@ -77,20 +77,22 @@ const setup = await fixtureRuntime(scope, async (content, raw, messages) => {
           },
         ],
       },
-      belongings: [
-        tool,
-        { type: "grant", person: actor, storage: home, basis: "初期設定" },
-        {
-          type: "learn",
-          person: actor,
-          text: "刃物を研げる",
-          basis: "初期設定",
-        },
-        // 最初の応答は、参加時に認めない操作を混ぜる。
-        ...(errors.length
-          ? []
-          : [{ type: "remove" as const, id: proposal.changes.nodes[0]!.id }]),
-      ],
+      belongings: (
+        [
+          tool,
+          { type: "grant", person: actor, storage: home, basis: "初期設定" },
+          {
+            type: "learn",
+            person: actor,
+            text: "刃物を研げる",
+            basis: "初期設定",
+          },
+          // 最初の応答は、参加時に認めない操作を混ぜる。
+          ...(errors.length
+            ? []
+            : [{ type: "remove" as const, id: proposal.changes.nodes[0]!.id }]),
+        ] as BelongingOp[]
+      ).map((op) => JSON.stringify(op)),
     };
   }
   if (input.background && input.request?.controlledActorId === a) {
@@ -101,7 +103,11 @@ const setup = await fixtureRuntime(scope, async (content, raw, messages) => {
         [scene],
       )
     ).rows[0];
-    return { ...(content as Step), belongings: replies.shift() ?? [] };
+    // モデルは操作を1件ずつJSON文字列で返す。
+    return {
+      ...(content as Step),
+      belongings: (replies.shift() ?? []).map((op) => JSON.stringify(op)),
+    };
   }
   return content;
 });
@@ -235,7 +241,7 @@ test("参加時は基本設定と個別設定を照合する材料を渡し、�
     "発言・自称・希望や、入力文に書かれているだけ",
   );
   expect(joins).toHaveLength(2);
-  expect(joins[1]!.errors.join()).toContain("参加時のbelongings");
+  expect(joins[1]!.errors.join()).toContain("参加時は");
 
   expect(await known()).toMatchObject({
     items: [{ label: "工具", owners: [{ id: a }], basis: "初期設定" }],

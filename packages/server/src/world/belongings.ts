@@ -59,6 +59,19 @@ export const BelongingOp = z.discriminatedUnion("type", [
 ]);
 export type BelongingOp = z.infer<typeof BelongingOp>;
 export class BelongingRejected extends Error {}
+// モデルは操作を1件ずつJSON文字列で返す。操作の形を応答スキーマへ並べると、
+// 行動解決の構造化出力が文法の上限を超えるため、形は実行側で検証する。
+export function belongingOps(texts: readonly string[]) {
+  try {
+    return z
+      .array(BelongingOp)
+      .parse(texts.map((text) => JSON.parse(text) as unknown));
+  } catch (error) {
+    throw new BelongingRejected(
+      `操作の形式が不正です: ${error instanceof Error ? error.message : ""}`,
+    );
+  }
+}
 
 const LATEST = Number.MAX_SAFE_INTEGER;
 
