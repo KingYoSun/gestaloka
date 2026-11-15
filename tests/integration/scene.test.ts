@@ -61,7 +61,8 @@ const model = new LlmClient(
         ? {
             type: "observation",
             limits: "手前の箱の表だけが見える",
-            afterObservation: { [actor]: null },
+            // A saved background reply could predict a follow-up before the actor saw the box.
+            afterObservation: { [actor]: "印があればその意味を調べる" },
           }
         : {
             type: "context",
@@ -159,6 +160,10 @@ const model = new LlmClient(
         }[],
         response = intentions.some((i) => i.actorId === npc);
       if (intentions.some((i) => i.actionText === "隣の箱を調べる")) {
+        if (user.observationLimits) {
+          expect(user.observationObservers).toEqual([actor]);
+          expect(user).not.toHaveProperty("afterObservation");
+        }
         if (user.observationLimits && !observedSnapshot)
           observedSnapshot = structuredClone(
             (await access.scenes.latest(construction))!,
@@ -175,7 +180,7 @@ const model = new LlmClient(
                   ],
                 },
               ],
-              decisions: { [actor]: "finished" },
+              decisions: { [actor]: "decide" },
               newDecisions: [],
             }
           : {

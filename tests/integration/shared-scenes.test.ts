@@ -102,16 +102,7 @@ beforeAll(async () => {
         raw.needsContext &&
         (raw.needsContext as { evidence?: string }).evidence === "observation"
       )
-        return {
-          type: "observation",
-          limits: "観測できる範囲",
-          afterObservation: Object.fromEntries(
-            Object.keys(
-              (raw.needsContext as { remainingActions: Record<string, string> })
-                .remainingActions,
-            ).map((id) => [id, "書類を届ける"]),
-          ),
-        };
+        return { type: "observation", limits: "観測できる範囲" };
       const proposal = content as WorldProposal;
       if (
         inventory &&
@@ -2856,8 +2847,12 @@ test("共有ターンの外部入力が完了してもNPCの未実行部分を�
       }
       sawLimits = !!(input as PlayInput & { observationLimits?: string })
         .observationLimits;
-      step.decisions[owner.actor] = "finished";
-      return { ...step, elapsedMs: 500, concluded: true };
+      return {
+        ...step,
+        decisions: { [owner.actor]: { pending: "書類を届ける" } },
+        elapsedMs: 500,
+        concluded: true,
+      };
     };
     await access.scenes.tick(scene);
     const saved = await snapshot();

@@ -188,8 +188,15 @@ export const ObservedStep = SceneStep.options[0]
   .omit({ needsContext: true })
   .extend({
     events: z.array(SceneEvent).min(1),
+    decisions: z.record(
+      id,
+      z.union([
+        z.enum(["finished", "decide"]),
+        z.object({ pending: z.string().trim().min(1) }).strict(),
+      ]),
+    ),
   });
-export function sceneResponse(value: unknown) {
+export function sceneResponse(value: unknown, observed = false) {
   // 保存済みworkの旧診断は、出来事や判断へ影響させない。
   const step =
     value && typeof value === "object"
@@ -197,7 +204,9 @@ export function sceneResponse(value: unknown) {
           Object.entries(value).filter(([key]) => key !== "responseCoverage"),
         )
       : value;
-  return SceneStep.parse(step);
+  return observed
+    ? { ...ObservedStep.parse(step), needsContext: undefined }
+    : SceneStep.parse(step);
 }
 
 export function legacyCoverageFailure(message?: string) {
