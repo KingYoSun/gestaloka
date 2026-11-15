@@ -81,7 +81,7 @@ const BackgroundChoices = [
     .strict(),
   z.object({ type: z.literal("pause"), reason: z.string() }).strict(),
 ] as const;
-function backgroundDecision(withSources: boolean) {
+function backgroundDecision(withSources: boolean, observing: boolean) {
   const fact = OpeningBackground.shape.facts.element.omit({
     sourceRelationIds: true,
   });
@@ -94,18 +94,13 @@ function backgroundDecision(withSources: boolean) {
     beliefs: z.array(withSources ? belief.extend(source) : belief).default([]),
   };
   return z.discriminatedUnion("type", [
-    OpeningBackground.extend(fields),
+    observing
+      ? z.object({ type: z.literal("observation"), limits: z.string().min(1) })
+      : OpeningBackground.extend(fields),
     SceneContext.extend(fields),
     ...BackgroundChoices,
   ]);
 }
-const BackgroundDecision = backgroundDecision(false);
-const SourcedBackgroundDecision = backgroundDecision(true);
-const ObservationDecision = z.discriminatedUnion("type", [
-  // Ignore extra fields in background replies saved by an older worker.
-  z.object({ type: z.literal("observation"), limits: z.string().min(1) }),
-  ...BackgroundChoices,
-]);
 const Narrative = z
   .object({
     text: z.string().min(1),
@@ -1270,7 +1265,7 @@ export class WorldScenes {
         actionText: d.contextNeed?.reason ?? d.purpose,
       };
     const observing =
-      d.contextNeed &&
+      !!d.contextNeed &&
       (d.contextNeed.evidence ?? "observation") === "observation";
     if (
       !d.background &&
@@ -1279,11 +1274,7 @@ export class WorldScenes {
       row.construction_id === process.env.SCENE_HANDOFF_WORLD_ID
     )
       d.sources ??= {};
-    const schema = observing
-      ? ObservationDecision
-      : d.sources
-        ? SourcedBackgroundDecision
-        : BackgroundDecision;
+    const schema = backgroundDecision(!!d.sources, observing);
     // An unfinished pre-upgrade request still advertises the old output contract.
     if (
       d.backgroundMessages &&
@@ -1367,7 +1358,7 @@ export class WorldScenes {
               role: "system",
               content:
                 (await scenePrompt("scene-background.md")) +
-                (d.sources && !observing
+                (d.sources
                   ? "\nfactsとbeliefsの各項目にsourceRelationIdsを付け、その記述を裏付ける照会済み関係のIDを列挙してください。既存状態を根拠にする場合はそのcontent関係を含めます。新しく具体化した内容に根拠を創作せず、該当がなければ空配列を返します。"
                   : ""),
             },
