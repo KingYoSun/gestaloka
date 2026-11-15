@@ -36,6 +36,7 @@ let legacyResolveSnapshot:
   Awaited<ReturnType<WorldAccess["scenes"]["latest"]>> | undefined;
 let backgroundSnapshot: typeof legacyResolveSnapshot;
 let observedSnapshot: typeof legacyResolveSnapshot;
+let exploration: { id: string; sourced: boolean } | undefined;
 const partialNpcAction =
   "問いの一部に返答し、選んだ活動を続けて相手の判断を待つ";
 const inputs: Record<string, unknown>[] = [],
@@ -52,28 +53,116 @@ const model = new LlmClient(
       );
     inputs.push(user);
     let content: unknown;
-    if (user.needsContext?.evidence === "observation") {
-      expect(user.stagedScene.purpose).toBe("封印された箱の印を探す");
-      const corrected = body.messages.some((m: { content: string }) =>
-        m.content.includes("validationErrors"),
+    if (exploration && user.needsContext?.evidence === "observation") {
+      expect(user.responseSchema.oneOf).toContainEqual(
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            type: expect.objectContaining({ const: "context" }),
+            creations: expect.anything(),
+          }),
+        }),
       );
-      content = corrected
-        ? {
-            type: "observation",
-            limits: "手前の箱の表だけが見える",
-            // A saved background reply could predict a follow-up before the actor saw the box.
-            afterObservation: { [actor]: "印があればその意味を調べる" },
-          }
-        : {
-            type: "context",
-            participants: [],
-            facts: [
-              { subjectId: place, aboutIds: [], text: "どの箱にも印がない" },
-            ],
-            resolvedUnknowns: [
-              { question: "探す箱にどんな印があるか", factIndex: 0 },
-            ],
-          };
+      content = {
+        type: "context",
+        participants: [exploration.id],
+        creations: [{ id: exploration.id, text: "探索で具体化した存在" }],
+        facts: [
+          {
+            subjectId: exploration.id,
+            text: "NEW_ACTOR_CONDITION",
+            aboutIds: [place],
+            ...(exploration.sourced ? { sourceRelationIds: [] } : {}),
+          },
+        ],
+        beliefs: [
+          {
+            subjectId: exploration.id,
+            text: "NEW_ACTOR_PURPOSE",
+            aboutIds: [exploration.id],
+            ...(exploration.sourced ? { sourceRelationIds: [] } : {}),
+          },
+        ],
+        resolvedUnknowns: [],
+      };
+    } else if (exploration && user.observerId === exploration.id) {
+      expect(user.conditions).toContainEqual(
+        expect.objectContaining({ text: "NEW_ACTOR_CONDITION" }),
+      );
+      expect(JSON.stringify(user.interpretations)).toContain(
+        "NEW_ACTOR_PURPOSE",
+      );
+      expect(JSON.stringify(user.observations)).toContain("呼びかけが聞こえた");
+      expect(JSON.stringify(user.observations)).not.toContain(
+        "NEW_ACTOR_CONDITION",
+      );
+      content = { actionText: "今は取り込み中だと伝える" };
+    } else if (
+      exploration &&
+      user.request?.controlledActionText === "作業の気配を探して声をかける"
+    ) {
+      const person = exploration.id;
+      const decisions = Object.fromEntries(
+        user.request.intentions.map((i: { actorId: string }) => [
+          i.actorId,
+          "finished",
+        ]),
+      );
+      if (
+        !user.background.creations.some((n: { id: string }) => n.id === person)
+      ) {
+        content = {
+          type: "scene",
+          events: [
+            {
+              actorId: actor,
+              text: "入口まで歩いた",
+              receipts: [{ observerId: actor, text: "入口に着いた" }],
+            },
+          ],
+          elapsedMs: 1000,
+          decisions: { ...decisions, [actor]: "pending" },
+          newDecisions: [],
+          needsContext: {
+            evidence: "observation",
+            reason: "作業の気配を確かめる",
+            remainingActions: { [actor]: "作業の気配を探して声をかける" },
+          },
+        };
+      } else {
+        expect(user.background.participants).toContain(person);
+        expect(JSON.stringify(user.controlledView)).not.toMatch(
+          /NEW_ACTOR_CONDITION|NEW_ACTOR_PURPOSE/,
+        );
+        const chosen = user.request.intentions.find(
+          (i: { actorId: string }) => i.actorId === person,
+        );
+        content = {
+          type: "scene",
+          events: [
+            {
+              actorId: chosen ? person : actor,
+              text: chosen ? chosen.actionText : "姿を認めて声をかけた",
+              receipts: chosen
+                ? [{ observerId: actor, text: "今は取り込み中だと聞いた" }]
+                : [
+                    { observerId: actor, text: "作業する姿が見えた" },
+                    { observerId: person, text: "呼びかけが聞こえた" },
+                  ],
+            },
+          ],
+          elapsedMs: 1000,
+          decisions: { ...decisions, [actor]: chosen ? "decide" : "pending" },
+          newDecisions: chosen ? [] : [person],
+        };
+      }
+    } else if (user.needsContext?.evidence === "observation") {
+      expect(user.stagedScene.purpose).toBe("封印された箱の印を探す");
+      content = {
+        type: "observation",
+        limits: "手前の箱の表だけが見える",
+        // A saved background reply could predict a follow-up before the actor saw the box.
+        afterObservation: { [actor]: "印があればその意味を調べる" },
+      };
     } else if (user.needsContext) {
       expect(user.stagedScene.events).toHaveLength(1);
       expect(user.stagedScene.events[0].text).toBe("若者が挨拶した");
@@ -1293,6 +1382,80 @@ test("行動の解決中に世界が更新されても、表示済みの出来�
     await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
   }
 });
+
+test.each([false, true])(
+  "観察中に未記録の主体を具体化し、受容・本人判断へ引き継ぐ（根拠参照=%s）",
+  async (sourced) => {
+    const id = randomUUID(),
+      person = randomUUID();
+    await command({
+      requestId: id,
+      command: "prepare",
+      purpose: "作業の様子を知る",
+    });
+    try {
+      await access.scenes.tick(id);
+      await command({ requestId: randomUUID(), command: "start" });
+      if (sourced)
+        await d.postgres.query(
+          "UPDATE world_scene SET data=jsonb_set(data,'{sources}','{}'::jsonb) WHERE id=$1",
+          [id],
+        );
+      const initial = (await access.scenes.latest(construction))!.data
+        .background!;
+      exploration = { id: person, sourced };
+      const inputId = randomUUID();
+      await command({
+        requestId: inputId,
+        command: "act",
+        actionText: "作業の気配を探して声をかける",
+      });
+      await access.scenes.tick(id);
+      const row = (await access.scenes.latest(construction))!;
+      expect(row.state).toBe("active");
+      expect(row.data.actions.at(-1)).toMatchObject({
+        id: inputId,
+        state: "complete",
+      });
+      expect(row.data.contextRequests).toHaveLength(1);
+      expect(row.data.background!.facts.slice(0, initial.facts.length)).toEqual(
+        initial.facts,
+      );
+      expect(row.data.background!.perceptions).toEqual(initial.perceptions);
+      expect(row.data.events.map((e) => e.text)).toEqual([
+        "入口まで歩いた",
+        "姿を認めて声をかけた",
+        "今は取り込み中だと伝える",
+      ]);
+      expect(row.data.events.every((e) => e.inputId === inputId)).toBe(true);
+      expect(row.data.choices.filter((c) => c.actorId === person)).toHaveLength(
+        1,
+      );
+      expect(await agent.store.context(world).node(person)).toBeUndefined();
+      const anchors = sceneAnchors(
+        row.data.background!,
+        row.data.events,
+        row.data.startedAt,
+        id,
+      );
+      expect(anchors.nodes).toContainEqual({
+        id: person,
+        kind: "existence",
+        text: "探索で具体化した存在",
+      });
+      expect(anchors.edges).toContainEqual(
+        expect.objectContaining({
+          kind: "see",
+          source: actor,
+          text: "今は取り込み中だと聞いた",
+        }),
+      );
+    } finally {
+      exploration = undefined;
+      await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
+    }
+  },
+);
 
 test("別の箱を観察しても元の問いを保ち、見えなかった範囲は本人の受容に残る", async () => {
   const opened = await command({
