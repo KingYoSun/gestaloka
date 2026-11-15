@@ -134,8 +134,8 @@ export const InspectionManifest = z
       .object({
         character: z
           .object({
-            presetId: z.uuid(),
-            version: count,
+            presetId: z.uuid().nullable(),
+            version: count.nullable(),
             settings: z.string(),
             registrationAt: count,
           })

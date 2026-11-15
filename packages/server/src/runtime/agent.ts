@@ -452,6 +452,7 @@ export class WorldAgent {
           }
           results.push({
             currentStates,
+            relatedStates: await this.#relatedStates(context, query.id, at),
             node: (await context.node(query.id, at)) ?? null,
             knownAt: await context.latestTime(query.id),
             stateSubjects: await context.history(query.id, "status", "in", at),
@@ -890,12 +891,27 @@ export class WorldAgent {
             edge,
             source: await context.node(edge.source, request.at),
           });
-        ids.push(node.id, ...possessions.map((edge) => edge.target));
+        const relatedStates = await this.#relatedStates(
+          context,
+          node.id,
+          request.at,
+          stateSubjects,
+        );
+        ids.push(
+          node.id,
+          ...possessions.map((edge) => edge.target),
+          ...relatedStates.flatMap((state) =>
+            state.subjects.flatMap((subject) =>
+              subject.node ? [subject.node.id] : [],
+            ),
+          ),
+        );
         initialContext.push({
           request: { kind: "node", id: node.id },
           result: {
             node,
             stateSubjects,
+            relatedStates,
             possessions,
             effects,
             ...(node.id === actor ? { states } : {}),
@@ -1423,6 +1439,38 @@ export class WorldAgent {
     }));
     await context.validate();
     return { ...view, conditions };
+  }
+
+  async #relatedStates(
+    context: WorldContext,
+    id: string,
+    at: number,
+    edges?: WorldEdge[],
+  ) {
+    const result = [];
+    for (const edge of edges ??
+      (await context.relations(id, "status", "in", at))) {
+      if (edge.role !== "about") continue;
+      const subjects = [];
+      for (const content of await context.relations(
+        edge.source,
+        "status",
+        "in",
+        at,
+      ))
+        if (content.role === "content")
+          subjects.push({
+            edge: content,
+            node: await context.node(content.source, at),
+          });
+      if (subjects.length)
+        result.push({
+          edge,
+          script: await context.node(edge.source, at),
+          subjects,
+        });
+    }
+    return result;
   }
 
   async #descriptions(

@@ -270,6 +270,34 @@ const select = async () =>
     }),
   );
 
+test("プリセットを使わない人物の設定と既存のプリセット版を検品資料に保持する", async () => {
+  const original = await select();
+  expect(original.manifest.declaredContext!.character).toMatchObject({
+    presetId: fid("preset"),
+    version: 1,
+  });
+  const id = randomUUID();
+  await pool.query(
+    "INSERT INTO world_scene(id,construction_id,actor_id,state,data) SELECT $2,construction_id,actor_id,state,jsonb_set(data,'{character}',(data->'character') || '{\"presetId\":null,\"version\":null}'::jsonb) FROM world_scene WHERE id=$1",
+    [fid("scene"), id],
+  );
+  try {
+    const page = await InspectionStore.select(pool, {
+      ...selection,
+      endSceneId: id,
+      n: 1,
+    });
+    expect(page.manifest.declaredContext!.character).toEqual({
+      presetId: null,
+      version: null,
+      settings: "以前から村で暮らす成人",
+      registrationAt: 0,
+    });
+  } finally {
+    await pool.query("DELETE FROM world_scene WHERE id=$1", [id]);
+  }
+});
+
 test("初期提示の全ページを凍結し、他者とシーン開始後の取得を混ぜない", async () => {
   const worldId = randomUUID(),
     actorId = randomUUID(),
