@@ -28,6 +28,7 @@ import {
   KnowledgeQuery,
   ActorQuery,
   Belongings,
+  SessionPartners,
   NpcModeCommand,
   NpcReport,
   ScenePresence,
@@ -72,6 +73,7 @@ export async function worldRoutes(
         "/api/worlds/:id/scene/records",
         "/api/worlds/:id/knowledge",
         "/api/worlds/:id/belongings",
+        "/api/worlds/:id/partners",
         "/api/worlds/:id/presence",
         "/api/worlds/:id/npc-mode",
         "/api/worlds/:id/scene/inbox",
@@ -269,6 +271,22 @@ export async function worldRoutes(
     },
     async (request) =>
       service().belongings(
+        await subject(request),
+        request.params.id,
+        request.query.actorId,
+      ),
+  );
+  app.get(
+    "/api/worlds/:id/partners",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        response: { 200: SessionPartners, ...errors },
+      },
+    },
+    async (request) =>
+      service().partners(
         await subject(request),
         request.params.id,
         request.query.actorId,

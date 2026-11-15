@@ -574,6 +574,19 @@ export class WorldStore {
     return this.#drafts.run({ worldId, drafts }, work);
   }
 
+  // 自分の観測か解釈を持つ存在。見聞きし判断する主体を、種別の登録なしに関係から導く。
+  async observers(worldId: string): Promise<WorldNode[]> {
+    const result = await this.driver.executeQuery(
+      `MATCH (n:WorldNode {worldId:$worldId,kind:'existence'})
+       WHERE EXISTS { (n)-[r:see|interpret]->() WHERE r.worldId=$worldId }
+       RETURN n.data AS data`,
+      { worldId },
+    );
+    return result.records.map((row) =>
+      WorldNode.parse(JSON.parse(row.get("data"))),
+    );
+  }
+
   async claim(worldId: string, runId: string): Promise<Lease> {
     z.uuid().parse(worldId);
     z.uuid().parse(runId);

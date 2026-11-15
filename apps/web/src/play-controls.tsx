@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from "react";
-import { LoaderCircle, Pencil } from "lucide-react";
-import { Popover, Toast } from "radix-ui";
+import { LoaderCircle, Pencil, X } from "lucide-react";
+import { Dialog, Popover, Toast } from "radix-ui";
 import { Button } from "./components/ui/button.js";
 
 const generationLabels = {
@@ -39,6 +39,46 @@ export function GenerationStatus({
   );
 }
 
+// 開いている間だけ中身を描画する。開くたびに中身が最新の状態を読み直す。
+export function ToolDialog({
+  label,
+  icon,
+  children,
+}: {
+  label: string;
+  icon: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Dialog.Root>
+      <Dialog.Trigger asChild>
+        <Button
+          variant="outline"
+          className="scene-tool"
+          aria-label={label}
+          title={label}
+        >
+          {icon}
+        </Button>
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="tool-overlay" />
+        <Dialog.Content className="tool-dialog" aria-describedby={undefined}>
+          <div className="tool-heading">
+            <Dialog.Title>{label}</Dialog.Title>
+            <Dialog.Close asChild>
+              <Button variant="ghost" aria-label="閉じる" title="閉じる">
+                <X className="size-5" aria-hidden="true" />
+              </Button>
+            </Dialog.Close>
+          </div>
+          {children}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 export function InputPopover({
   open,
   onOpenChange,
@@ -57,7 +97,7 @@ export function InputPopover({
     <Popover.Root open={open && !disabled} onOpenChange={onOpenChange}>
       <Popover.Trigger asChild>
         <Button
-          className="scene-pencil"
+          className="scene-tool"
           aria-label="自由入力"
           title="自由入力"
           disabled={disabled}

@@ -1088,6 +1088,53 @@ export class WorldAccess {
       skills: known.skills.map(({ id, text }) => ({ id, text })),
     };
   }
+  // 出会える相手を保存済みの状態だけから導く。照会では世界を進めず、モデルも呼ばない。
+  async partners(subject: string, id: string, actorId?: string) {
+    const viewerId = (
+        await this.authorize(subject, id, "player", this.pool, actorId)
+      ).actor_id!,
+      world = (await this.construction.get(id)).world_id!,
+      store = this.construction.agent.store,
+      controlled = (
+        await this.pool.query<{ actor_id: string; npc_active: boolean }>(
+          "SELECT actor_id,npc_active FROM world_controlled_actor WHERE world_id=$1",
+          [world],
+        )
+      ).rows,
+      awake = new Set(
+        await this.scenes.shared.active(
+          id,
+          controlled.map((player) => player.actor_id),
+        ),
+      ),
+      operated = new Set(controlled.map((player) => player.actor_id)),
+      byName = <T extends { actorId: string; name: string }>(list: T[]) =>
+        list.sort(
+          (a, b) =>
+            a.name.localeCompare(b.name, "ja") ||
+            a.actorId.localeCompare(b.actorId),
+        ),
+      players = [];
+    for (const player of controlled)
+      if (
+        player.actor_id !== viewerId &&
+        (player.npc_active || awake.has(player.actor_id))
+      )
+        players.push({
+          actorId: player.actor_id,
+          name: (await store.context(world).node(player.actor_id))?.text ?? "",
+          mode: player.npc_active ? ("npc" as const) : ("standby" as const),
+        });
+    return {
+      viewerId,
+      players: byName(players),
+      npcs: byName(
+        (await store.observers(world))
+          .filter((node) => !operated.has(node.id))
+          .map((node) => ({ actorId: node.id, name: node.text })),
+      ),
+    };
+  }
   async knowledge(
     subject: string,
     id: string,

@@ -574,15 +574,64 @@ select {
   border-radius: var(--radius);
   box-shadow: 0 4px 8px rgb(0 0 0 / 14%);
 }
-.scene-pencil {
+.scene-tools {
   position: fixed;
   z-index: 20;
   right: max(20px, calc((100% - 620px) / 2));
   bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  gap: 12px;
+}
+.scene-tool {
   width: 56px;
   height: 56px;
   border-radius: 50%;
   box-shadow: 0 4px 8px rgb(0 0 0 / 14%);
+}
+.tool-overlay {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  background: rgb(11 32 52 / 40%);
+}
+.tool-dialog {
+  position: fixed;
+  z-index: 50;
+  top: 50%;
+  left: 50%;
+  width: min(480px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  padding: 24px;
+  color: var(--popover-foreground);
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 8px rgb(0 0 0 / 14%);
+}
+.tool-heading,
+.tool-tabs {
+  display: flex;
+  gap: 12px;
+}
+.tool-heading {
+  justify-content: space-between;
+  align-items: center;
+}
+.tool-heading h2 {
+  margin: 0;
+}
+.tool-tabs {
+  margin: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+.tool-tabs button {
+  padding: 8px 4px;
+  border-bottom: 2px solid transparent;
+}
+.tool-tabs button[data-state="active"] {
+  border-bottom-color: var(--primary);
 }
 .scene-composer {
   z-index: 30;

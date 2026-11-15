@@ -2726,6 +2726,82 @@ test("CLIの明示終了と90秒の失効を世界内の退出や新しい生成
   }
 }, 60000);
 
+test("待機中・NPCモードのプレイヤーとNPCを、WebとCLIへ同じ内容で世界を進めずに返す", async () => {
+  const [viewer, guest] = [people[0]!, people[1]!],
+    store = runtime.agent.store,
+    at = (await runtime.get(world)).at,
+    npc = randomUUID(),
+    place = randomUUID();
+  await store.commit(
+    await store.claim(graph, randomUUID()),
+    store.context(graph),
+    {
+      commitId: randomUUID(),
+      at,
+      changes: {
+        nodes: [
+          { id: npc, kind: "existence", text: "見張り番" },
+          { id: place, kind: "existence", text: "見張り台" },
+        ],
+        revisions: [],
+        endEdges: [],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "see",
+            source: npc,
+            target: place,
+            text: "見張り台が見える",
+            period: { from: at },
+          },
+        ],
+      },
+    },
+  );
+  await isolated.databases.postgres.query(
+    "UPDATE world_scene_presence SET active=false WHERE world_id=$1",
+    [world],
+  );
+  const web = async (actor = viewer.actor) =>
+    app.inject({
+      url: `/api/worlds/${world}/partners?actorId=${actor}`,
+      headers: { cookie: viewer.cookie },
+    });
+  const players = async () => (await web()).json().players;
+  const calls = vi.spyOn(runtime.agent.model, "complete");
+  try {
+    // 待機接続もNPCモードもない人物は載せない。
+    expect(await players()).toEqual([]);
+    await cli.run(guest.profile, "standby");
+    expect(await players()).toEqual([
+      { actorId: guest.actor, name: expect.any(String), mode: "standby" },
+    ]);
+    await cli.run(guest.profile, "npc", "--away");
+    expect(await players()).toEqual([
+      { actorId: guest.actor, name: expect.any(String), mode: "npc" },
+    ]);
+    const shown = (await web()).json();
+    expect(shown.viewerId).toBe(viewer.actor);
+    // 観測を持つ存在のうち、プレイヤーが操作していない人物だけがNPC。
+    expect(shown.npcs).toContainEqual({ actorId: npc, name: "見張り番" });
+    const ids = shown.npcs.map((n: { actorId: string }) => n.actorId);
+    expect(ids).not.toContain(place);
+    for (const person of people) expect(ids).not.toContain(person.actor);
+    expect((await cli.run(viewer.profile, "players")).players).toEqual(
+      shown.players,
+    );
+    expect((await cli.run(viewer.profile, "npcs")).npcs).toEqual(shown.npcs);
+    expect((await web()).json()).toEqual(shown);
+    expect((await web(guest.actor)).statusCode).toBe(404);
+    expect((await runtime.get(world)).at).toBe(at);
+    expect(calls).not.toHaveBeenCalled();
+  } finally {
+    calls.mockRestore();
+    await cli.run(guest.profile, "npc", "--return");
+  }
+  expect(await players()).toEqual([]);
+}, 60000);
+
 test.each(["join", "decline"])(
   "NPCとして登場した本人にログを返し、復帰時に%sできる",
   async (choice) => {

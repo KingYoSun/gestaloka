@@ -7,14 +7,16 @@ import { $api, api, pendingKey } from "./api.js";
 import { usePending } from "./forms.js";
 import { useUpdates, worldQuery } from "./updates.js";
 import { History, type HistoryHandle } from "./History.js";
+import { PackageSearch, UserRoundSearch } from "lucide-react";
 import { Belongings } from "./Belongings.js";
+import { Partners } from "./Partners.js";
 import { Notice, Problem, worldTime } from "./presentation.js";
 import { RichText } from "./RichText.js";
 import { Button } from "./components/ui/button.js";
 import { Label } from "./components/ui/label.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { Characters } from "./player-icons.js";
-import { GenerationStatus, InputPopover } from "./play-controls.js";
+import { GenerationStatus, InputPopover, ToolDialog } from "./play-controls.js";
 type State = z.infer<typeof SceneStatus>;
 const labels = {
   preparing: "背景情報をもとに、シーンのあらすじをまとめています。",
@@ -42,8 +44,7 @@ export function ScenePlayer({
     history = useRef<HistoryHandle>(null),
     messages = useRef<HistoryHandle>(null),
     actions = useRef<HistoryHandle>(null),
-    [showHistory, setShowHistory] = useState(!scene),
-    [showBelongings, setShowBelongings] = useState(false);
+    [showHistory, setShowHistory] = useState(!scene);
   const [pending, save] = usePending(
     pendingKey(
       `${id}:${viewer}${selectedSceneId ? `:${selectedSceneId}` : ""}`,
@@ -560,48 +561,62 @@ export function ScenePlayer({
           <RichText text={scene.result} />
         </section>
       )}
-      <InputPopover
-        open={inputOpen}
-        onOpenChange={setInputOpen}
-        disabled={!entry && !active}
-        onSubmit={submit}
-      >
-        <Label htmlFor="scene-input">
-          {entry ? "次のシーンで何をしたいですか" : "どう行動しますか"}
-        </Label>
-        {entry && (
-          <Label>
-            <input type="checkbox" {...form.register("shared")} />
-            共有シーンとして参加を求める
+      <div className="scene-tools">
+        <ToolDialog
+          label="セッションできる相手"
+          icon={<UserRoundSearch className="size-6" aria-hidden="true" />}
+        >
+          <Partners id={id} viewer={viewer} />
+        </ToolDialog>
+        <ToolDialog
+          label="持ち物と技能"
+          icon={<PackageSearch className="size-6" aria-hidden="true" />}
+        >
+          <Belongings id={id} viewer={viewer} />
+        </ToolDialog>
+        <InputPopover
+          open={inputOpen}
+          onOpenChange={setInputOpen}
+          disabled={!entry && !active}
+          onSubmit={submit}
+        >
+          <Label htmlFor="scene-input">
+            {entry ? "次のシーンで何をしたいですか" : "どう行動しますか"}
           </Label>
-        )}
-        <Textarea
-          id="scene-input"
-          rows={4}
-          placeholder={
-            entry
-              ? "体験したい場面や目的を、自由に書いてください。"
-              : "行いたいことを、自由に書いてください。"
-          }
-          readOnly={busy}
-          {...form.register(entry ? "purpose" : "actionText")}
-          aria-describedby="scene-help"
-        />
-        <div className="action-footer">
-          <p id="scene-help" className="record-meta">
-            {entry
-              ? "実際の行動は、あらすじを読んでシーンを始めた後に入力します。"
-              : "Ctrl / ⌘ + Enter で送信"}
-          </p>
-          <Button type="submit" disabled={busy}>
-            {mutate.isPending
-              ? "受け付けています"
-              : entry
-                ? "シーンのあらすじを準備する"
-                : "この行動を送る"}
-          </Button>
-        </div>
-      </InputPopover>
+          {entry && (
+            <Label>
+              <input type="checkbox" {...form.register("shared")} />
+              共有シーンとして参加を求める
+            </Label>
+          )}
+          <Textarea
+            id="scene-input"
+            rows={4}
+            placeholder={
+              entry
+                ? "体験したい場面や目的を、自由に書いてください。"
+                : "行いたいことを、自由に書いてください。"
+            }
+            readOnly={busy}
+            {...form.register(entry ? "purpose" : "actionText")}
+            aria-describedby="scene-help"
+          />
+          <div className="action-footer">
+            <p id="scene-help" className="record-meta">
+              {entry
+                ? "実際の行動は、あらすじを読んでシーンを始めた後に入力します。"
+                : "Ctrl / ⌘ + Enter で送信"}
+            </p>
+            <Button type="submit" disabled={busy}>
+              {mutate.isPending
+                ? "受け付けています"
+                : entry
+                  ? "シーンのあらすじを準備する"
+                  : "この行動を送る"}
+            </Button>
+          </div>
+        </InputPopover>
+      </div>
       {scene && (active || canFinish) && (
         <div className="scene-end">
           {scene.shared && active && (
@@ -652,15 +667,6 @@ export function ScenePlayer({
           ))}
         </details>
       )}
-      <div className="scene-history-toggle">
-        <Button
-          variant="ghost"
-          onClick={() => setShowBelongings(!showBelongings)}
-        >
-          {showBelongings ? "持ち物と技能を閉じる" : "持ち物と技能を見る"}
-        </Button>
-      </div>
-      {showBelongings && <Belongings id={id} viewer={viewer} />}
       <div className="scene-history-toggle">
         <Button variant="ghost" onClick={() => setShowHistory(!showHistory)}>
           {showHistory ? "これまでの記録を閉じる" : "これまでの記録を読む"}
