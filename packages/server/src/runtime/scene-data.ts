@@ -421,23 +421,17 @@ export function sceneAnchors(
             at: e.period.until,
             key: `${e.id}:location:${i}`,
           });
-    for (const f of facts) {
+    facts.sort((a, b) => (a.at ?? at) - (b.at ?? at));
+    for (const [i, f] of facts.entries()) {
       const script = sceneId(f.key),
         from = f.at ?? at,
-        until =
+        next =
           kind === "status" && f.location
-            ? Math.min(
-                ...facts
-                  .filter(
-                    (next) =>
-                      next.location &&
-                      next.subjectId === f.subjectId &&
-                      (next.at ?? at) > from,
-                  )
-                  .map((next) => next.at ?? at),
-              )
-            : Infinity,
-        period = { from, ...(Number.isFinite(until) ? { until } : {}) };
+            ? facts
+                .slice(i + 1)
+                .find((next) => next.location && next.subjectId === f.subjectId)
+            : undefined,
+        period = { from, ...(next ? { until: next.at ?? at } : {}) };
       nodes.push({ id: script, kind: "script", text: f.text });
       edges.push({
         id: sceneId(`${script}:content`),

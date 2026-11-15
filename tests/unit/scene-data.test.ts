@@ -102,6 +102,24 @@ test("背景と移動結果の所在を明示し、次の所在が成立した�
     extended.edges.find((e) => e.period.from === 1000 && e.text === "location")
       ?.id,
   ).toBe(locations[1]!.id);
+  const back = {
+      ...moves[1]!,
+      id: randomUUID(),
+      locations: [
+        { subjectId: actor, text: "戸口へ戻った", aboutIds: [place] },
+      ],
+    },
+    sameTime = sceneAnchors(
+      background,
+      [...moves, back],
+      0,
+      randomUUID(),
+    ).edges.filter((e) => e.text === "location");
+  expect(sameTime.map((e) => e.period)).toEqual([
+    { from: 0, until: 1000 },
+    { from: 1000, until: 1000 },
+    { from: 1000 },
+  ]);
 });
 test("開始時の状態の終了と、表示済みの発言・受容の変更禁止を区別する", () => {
   const anchors = sceneAnchors(bg, events, 0, randomUUID()),
