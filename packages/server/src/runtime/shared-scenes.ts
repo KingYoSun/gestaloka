@@ -119,9 +119,11 @@ export class SharedScenes {
     }
   }
   async lock(db: pg.PoolClient, world: string) {
-    await db.query("SELECT id FROM world_construction WHERE id=$1 FOR UPDATE", [
-      world,
-    ]);
+    // Serialize scene changes while allowing event notifications to reference this world.
+    await db.query(
+      "SELECT id FROM world_construction WHERE id=$1 FOR NO KEY UPDATE",
+      [world],
+    );
   }
   async wake(db: pg.PoolClient, sceneId: string) {
     await this.construction.queue.send(
