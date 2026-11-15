@@ -429,6 +429,90 @@ test("シーン中の状態終了を実際の時点で確定し、受容を再�
   expect(await context.edge(prior.id)).toEqual(prior);
 });
 
+test("シーンの初期文脈は対象別の観測を一ページだけ渡し、過去の原文も照会できる", async () => {
+  const scene = await fixture();
+  const others = Array.from({ length: 13 }, (_, i) =>
+    node("existence", `対象${i}`),
+  );
+  const old = edge("see", scene.actor, scene.object, "別の観測");
+  await store.commit(
+    await store.claim(scene.worldId, randomUUID()),
+    store.context(scene.worldId),
+    {
+      commitId: randomUUID(),
+      at: 10,
+      changes: changes(others, [
+        old,
+        ...others.map((n) => ({
+          ...edge("see", scene.actor, n, "別の観測"),
+          period: { from: 10 },
+        })),
+      ]),
+    },
+  );
+  const runtime = await agent(vi.fn());
+  const request: Parameters<WorldAgent["context"]>[0] = {
+    worldId: scene.worldId,
+    at: 10,
+    phase: "observation",
+    rootIds: [scene.actor.id, scene.place.id],
+    actorId: scene.actor.id,
+    actionText: "箱の表面を確認する",
+  };
+  const seed = await runtime.context(request, [], true);
+  const pages = seed.initialContext.filter(
+    (item) => item.request.kind === "observations",
+  );
+  expect(pages).toHaveLength(1);
+  expect(
+    seed.initialContext.some((item) => item.request.kind === "history"),
+  ).toBe(false);
+  expect(pages[0]!.result).toMatchObject({
+    items: expect.arrayContaining([
+      expect.objectContaining({
+        edge: expect.objectContaining({
+          target: scene.object.id,
+          text: expect.stringContaining("箱の表面"),
+        }),
+        count: 2,
+        firstAt: 0,
+        lastAt: 0,
+      }),
+    ]),
+    next: 12,
+  });
+  const read = await runtime.read(
+    { request, dependencies: seed.dependencies },
+    [
+      { kind: "observations", id: scene.actor.id, offset: 12 },
+      { kind: "observations", id: scene.actor.id, target: scene.object.id },
+      { kind: "edge", id: old.id },
+    ],
+    true,
+  );
+  expect(read.results[0]).toMatchObject({
+    items: [expect.anything(), expect.anything()],
+    next: null,
+  });
+  expect(read.results[1]).toMatchObject({
+    items: expect.arrayContaining([
+      expect.objectContaining({
+        edge: expect.objectContaining({ id: old.id }),
+      }),
+    ]),
+  });
+  expect(read.results[2]).toMatchObject(old);
+  const view = await runtime.view(
+    scene.worldId,
+    scene.actor.id,
+    10,
+    request.actionText,
+  );
+  expect(
+    view.observations.filter((o) => o.target === scene.object.id),
+  ).toHaveLength(1);
+});
+
 test("意図形成へ観測の側面を渡し、対象全体・未観測の秘密・管理文脈を渡さない", async () => {
   const scene = await fixture();
   let sent = "";

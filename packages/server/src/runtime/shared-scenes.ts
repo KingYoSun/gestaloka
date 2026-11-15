@@ -119,9 +119,11 @@ export class SharedScenes {
     }
   }
   async lock(db: pg.PoolClient, world: string) {
-    await db.query("SELECT id FROM world_construction WHERE id=$1 FOR UPDATE", [
-      world,
-    ]);
+    // Serialize scene changes while allowing event notifications to reference this world.
+    await db.query(
+      "SELECT id FROM world_construction WHERE id=$1 FOR NO KEY UPDATE",
+      [world],
+    );
   }
   async wake(db: pg.PoolClient, sceneId: string) {
     await this.construction.queue.send(
@@ -333,7 +335,7 @@ export class SharedScenes {
       await this.invite(db, row, actor, context, true);
     }
   }
-  async select(scene: string, plan: Selection) {
+  async select(scene: string, plan: Selection, purpose: string) {
     const original = await this.get(scene);
     if (!original) throw conflict("共有シーンが見つかりません");
     const candidates = await this.active(
@@ -348,6 +350,7 @@ export class SharedScenes {
         world.world_id!,
         actor,
         Number(original.at),
+        purpose,
       );
       views.set(actor, [
         ...view.observations.flatMap((o) => (o.text ? [o.text] : [])),

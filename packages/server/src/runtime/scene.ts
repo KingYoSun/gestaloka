@@ -1165,7 +1165,7 @@ export class WorldScenes {
       }
       plan = answer;
     }
-    const state = await this.shared.select(row.id, plan);
+    const state = await this.shared.select(row.id, plan, row.data.purpose);
     if (state.phase !== "settled") {
       delete row.data.work;
       await this.#save(row, undefined, row.claim!);
@@ -1255,7 +1255,9 @@ export class WorldScenes {
       await this.#peerConditions(
         row,
         context.controlledActorIds,
-        request.rootIds,
+        context.initialContext.flatMap(({ request }) =>
+          request.kind === "node" ? [request.id] : [],
+        ),
       );
       d.backgroundMessages = [
         {
@@ -1572,8 +1574,8 @@ export class WorldScenes {
               ...(id === row.actor_id ? {} : { conditions: [] }),
             }
           : id === row.actor_id
-            ? await this.agent.view(d.worldId, id, d.at)
-            : await this.agent.intentView(d.worldId, id, d.at);
+            ? await this.agent.view(d.worldId, id, d.at, d.purpose)
+            : await this.agent.intentView(d.worldId, id, d.at, d.purpose);
       await this.agent.store.context(d.worldId, d.basis).validate();
       d.background = decision;
       if (cited) Object.assign(d.sources!, cited);
@@ -1650,7 +1652,8 @@ export class WorldScenes {
     ];
     d.views[actor]!.conditions ??= bg.creations.some((c) => c.id === actor)
       ? []
-      : (await this.agent.intentView(d.worldId, actor, d.startedAt)).conditions;
+      : (await this.agent.intentView(d.worldId, actor, d.startedAt, d.purpose))
+          .conditions;
     const value = await this.#ask(
       row,
       "intent",
@@ -1750,7 +1753,13 @@ export class WorldScenes {
           true,
         );
         d.basis = seed.dependencies;
-        await this.#peerConditions(row, seed.controlledActorIds, d.roots);
+        await this.#peerConditions(
+          row,
+          seed.controlledActorIds,
+          seed.initialContext.flatMap(({ request }) =>
+            request.kind === "node" ? [request.id] : [],
+          ),
+        );
       }
       const bg = d.background!;
       const away = new Set(
@@ -2718,6 +2727,7 @@ export class WorldScenes {
                 row.data.worldId,
                 member.actor_id,
                 row.data.at,
+                row.data.purpose,
               );
             }
             const action = row.data.actions.find(
