@@ -362,7 +362,7 @@ test("初期提示の全ページを凍結し、他者とシーン開始後の�
   expect(page.items.filter((i) => i.section === "initial")).toHaveLength(2);
 });
 
-test("共有シーンの入力に付く行為者と退出の印があっても検品対象を固定できる", async () => {
+test("共有シーンの検品対象を固定し、入力ごとの行為者を記録する", async () => {
   const worldId = randomUUID(),
     actorId = randomUUID(),
     sceneId = randomUUID(),
@@ -416,6 +416,7 @@ test("共有シーンの入力に付く行為者と退出の印があっても�
   expect(saved.scenes[0]!.inputs).toEqual(
     actions.map((a) => ({
       id: a.id,
+      actorId: a.actorId,
       text: a.text,
       state: a.state,
       submittedAt: a.submittedAt ?? null,

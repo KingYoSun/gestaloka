@@ -91,6 +91,7 @@ export class InspectionStore {
         purpose: d.purpose,
         inputs: d.actions.map((a) => ({
           id: a.id,
+          actorId: a.actorId,
           text: a.text,
           state: a.state,
           submittedAt: a.submittedAt ?? null,
