@@ -1005,7 +1005,7 @@ export class WorldAccess {
           changes: { nodes: unknown[]; edges: unknown[] };
         };
       }>(
-        `SELECT id::text,at::text,result FROM construction_log WHERE construction_id=$1 AND ($2::bigint IS NULL OR id${after ? ">" : "<"}$2) ORDER BY id ${after ? "ASC" : "DESC"} LIMIT 51`,
+        `SELECT id::text,at::text,result FROM construction_log WHERE construction_id=$1 AND ($2::bigint IS NULL OR id${after ? ">" : "<"}$2) ORDER BY construction_log.id ${after ? "ASC" : "DESC"} LIMIT 51`,
         [id, after || before || null],
       )
     ).rows;

@@ -1298,7 +1298,7 @@ export class Operations {
       case "audit.list": {
         const rows = (
           await db.query(
-            "SELECT id::text,request_id,actor_id,operation,outcome,details,created_at FROM operation_audit WHERE ($1::bigint IS NULL OR id<$1) ORDER BY id DESC LIMIT 51",
+            "SELECT id::text,request_id,actor_id,operation,outcome,details,created_at FROM operation_audit WHERE ($1::bigint IS NULL OR id<$1) ORDER BY operation_audit.id DESC LIMIT 51",
             [input.before ?? null],
           )
         ).rows;
