@@ -59,16 +59,32 @@ export const BelongingOp = z.discriminatedUnion("type", [
 ]);
 export type BelongingOp = z.infer<typeof BelongingOp>;
 export class BelongingRejected extends Error {}
+// モデルは操作を1件ずつJSON文字列で返す。操作の形を応答スキーマへ並べると、
+// 行動解決の構造化出力が文法の上限を超えるため、形は実行側で検証する。
+export function belongingOps(texts: readonly string[]) {
+  try {
+    return z
+      .array(BelongingOp)
+      .parse(texts.map((text) => JSON.parse(text) as unknown));
+  } catch (error) {
+    throw new BelongingRejected(
+      `操作の形式が不正です: ${error instanceof Error ? error.message : ""}`,
+    );
+  }
+}
 
 const LATEST = Number.MAX_SAFE_INTEGER;
 
-async function plan(
+// 操作を差分へ変える。進行中のシーンは世界内の時点が互いにずれるため、終了・改訂する
+// 記録より前の時点を指定された場合は、その記録の時点まで確定時点を進める。
+export async function planBelongings(
   context: WorldContext,
   commitId: string,
-  at: number,
+  requestedAt: number,
   ops: readonly BelongingOp[],
 ) {
   const change: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  let at = requestedAt;
   const incoming = (target: string) =>
     context.relations(target, "has", "in", LATEST);
   for (const [index, op] of ops.entries()) {
@@ -86,10 +102,12 @@ async function plan(
         target,
         ...(role ? { role } : {}),
         ...(text ? { text } : {}),
-        period: { from: at },
+        period: { from: requestedAt },
       });
-    const end = (edges: WorldEdge[]) =>
+    const end = (edges: WorldEdge[]) => {
+      at = Math.max(at, ...edges.map((edge) => edge.period.from));
       change.endEdges.push(...edges.map((edge) => edge.id));
+    };
     switch (op.type) {
       case "create":
       case "learn": {
@@ -135,6 +153,7 @@ async function plan(
           );
         if (!node || !facts.length)
           throw new BelongingRejected("物品または技能が見つかりません");
+        at = Math.max(at, (await context.latestTime(op.id)) ?? 0);
         change.revisions.push({ ...node, text: op.text });
         if (!op.basis) break;
         const skills = facts.filter((edge) => edge.role === "skill");
@@ -147,7 +166,8 @@ async function plan(
         end((await incoming(op.id)).filter((edge) => edge.role !== "summary"));
     }
   }
-  return change;
+  for (const edge of change.edges) edge.period = { from: at };
+  return { at, changes: change };
 }
 
 // 同じcommitIdの再送には保存済みの結果を返す。競合はWorldConflictとして呼出し側へ返る。
@@ -162,8 +182,7 @@ export async function changeBelongings(
   const context = store.context(lease.worldId);
   return store.commit(lease, context, {
     commitId: input.commitId,
-    at: input.at,
-    changes: await plan(context, input.commitId, input.at, ops),
+    ...(await planBelongings(context, input.commitId, input.at, ops)),
   });
 }
 
@@ -175,9 +194,12 @@ export async function readBelongings(
 ) {
   const text = async (id: string) => (await context.node(id, at))?.text ?? "";
   const facts = async (holder: string, role: WorldEdge["role"]) =>
-    (await context.relations(holder, "has", "out", at)).filter(
-      (edge) => edge.role === role,
-    );
+    (await context.relations(holder, "has", "out", at))
+      .filter((edge) => edge.role === role)
+      // 要約と同じく、成立した順に並べる。
+      .sort(
+        (x, y) => x.period.from - y.period.from || x.id.localeCompare(y.id),
+      );
   const items = async (holder: string) => {
     const held = [];
     for (const edge of await facts(holder, "hold")) {

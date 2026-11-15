@@ -178,6 +178,12 @@ export const SceneStep = z.discriminatedUnion("type", [
         .optional(),
       elapsedMs: z.number().int().nonnegative().safe().default(0),
       needsContext: ContextNeed.nullable().optional(),
+      belongings: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "今回成立した出来事による物品・保管先・技能の操作。1件の操作を表すJSONを1要素に書く",
+        ),
     })
     .strict(),
   z.object({ type: z.literal("boundary"), reason: text }).strict(),
