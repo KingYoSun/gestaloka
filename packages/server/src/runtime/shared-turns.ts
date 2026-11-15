@@ -300,7 +300,7 @@ export class SharedTurns {
       [row.id, actor, input.requestId],
     );
     await db.query(
-      "UPDATE world_scene SET state='acting',claim=NULL WHERE id=$1 AND state IN ('active','paused')",
+      "UPDATE world_scene SET state='acting',claim=NULL WHERE id=$1 AND state IN ('ready','active','paused')",
       [row.id],
     );
     await this.shared.wake(db, row.id);

@@ -4062,8 +4062,8 @@ export interface paths {
                                     declaredContext?: {
                                         character: {
                                             /** Format: uuid */
-                                            presetId: string;
-                                            version: number;
+                                            presetId: string | null;
+                                            version: number | null;
                                             settings: string;
                                             registrationAt: number;
                                         } | null;

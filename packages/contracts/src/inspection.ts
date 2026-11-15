@@ -95,6 +95,7 @@ export const InspectionScene = z
       z
         .object({
           id: z.uuid(),
+          actorId: z.uuid().optional(),
           text: z.string(),
           state: text,
           submittedAt: z.iso.datetime().nullable(),
@@ -133,8 +134,8 @@ export const InspectionManifest = z
       .object({
         character: z
           .object({
-            presetId: z.uuid(),
-            version: count,
+            presetId: z.uuid().nullable(),
+            version: count.nullable(),
             settings: z.string(),
             registrationAt: count,
           })

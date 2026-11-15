@@ -139,6 +139,75 @@ async function agent(
   await runtime.setup();
   return runtime;
 }
+
+test.each([
+  ["庭", "庭師", "庭の端で苗の土を確かめている。"],
+  [
+    "通信中継域",
+    "無人中継機",
+    "通信中継域の低い軌道を巡回し、暗号信号だけを受信する。",
+  ],
+])(
+  "%sへの状態参照から持ち主を取得し、過去の状態・解釈や本人の知識と区別する",
+  async (label, subjectLabel, text) => {
+    const scene = await fixture();
+    const place = node("existence", label),
+      subject = node("existence", subjectLabel),
+      former = node("existence", "既に離れた存在"),
+      state = node("script", text),
+      old = node("script", "以前ここにいた。"),
+      belief = node("script", "相手は不在だと思う。");
+    await store.commit(
+      await store.claim(scene.worldId, randomUUID()),
+      store.context(scene.worldId),
+      {
+        commitId: randomUUID(),
+        at: 0,
+        changes: changes(
+          [place, subject, former, state, old, belief],
+          [
+            edge("status", subject, state, undefined, "content"),
+            edge("status", state, place, undefined, "about"),
+            ...[
+              edge("status", former, old, undefined, "content"),
+              edge("status", old, place, undefined, "about"),
+            ].map((e) => ({ ...e, period: { from: 0, until: 10 } })),
+            edge("interpret", scene.actor, belief, undefined, "content"),
+            edge("interpret", belief, place, undefined, "about"),
+          ],
+        ),
+      },
+    );
+    const transport = vi.fn<typeof fetch>();
+    const runtime = await agent(transport);
+    const request = {
+      worldId: scene.worldId,
+      phase: "observation" as const,
+      actorId: scene.actor.id,
+      rootIds: [place.id],
+      at: 10,
+      until: 10,
+      actionText: "周囲を調べる",
+    };
+    const expected = [{ script: state, subjects: [{ node: subject }] }];
+    const read = await runtime.read(
+      { request, dependencies: [] },
+      [{ kind: "node", id: place.id }],
+      true,
+    );
+    expect(read.results[0]).toMatchObject({ relatedStates: expected });
+    const packet = await runtime.context(request, [], true);
+    expect(
+      packet.initialContext.find(
+        (v) => v.request.kind === "node" && v.request.id === place.id,
+      )?.result,
+    ).toMatchObject({ relatedStates: expected });
+    expect(
+      JSON.stringify(await runtime.view(scene.worldId, scene.actor.id, 10)),
+    ).not.toContain(text);
+    expect(transport).not.toHaveBeenCalled();
+  },
+);
 test.each(
   ["separate", "combined"].flatMap((judgment) =>
     ["openai", "deepseek"].map((provider) => ({ judgment, provider })),
