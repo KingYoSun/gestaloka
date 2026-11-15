@@ -559,8 +559,10 @@ select {
 }
 .generation-viewport {
   position: fixed;
-  top: max(16px, env(safe-area-inset-top));
-  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  inset-inline: 84px; /* 自由入力ボタンの幅 56px、端の余白 20px、間隔 8px */
+  width: fit-content;
+  margin-inline: auto;
   z-index: 40;
 }
 .generation-toast,
