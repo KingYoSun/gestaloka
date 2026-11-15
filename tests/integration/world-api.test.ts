@@ -1180,6 +1180,53 @@ test("管理記録と村民の知識を分離し、全件を省略せずペー�
         .history(row.participant_id!, "see", "out", 0)
     ).length,
   ).toBe(beforeReads);
+  // 桁数の境界をまたぐIDで、文字列順ではなく数値順に並ぶことを確かめる
+  const operations = Array.from({ length: 120 }, () => randomUUID());
+  await databases.postgres.query(
+    "INSERT INTO world_operation(id,run_id,commit_id,request,system_prompt) SELECT id,$2,gen_random_uuid(),$3,'' FROM unnest($1::uuid[]) id",
+    [operations, scene.id, { worldId: row.world_id }],
+  );
+  const logIds = (
+    await databases.postgres.query<{ id: string }>(
+      `INSERT INTO construction_log(id,construction_id,operation_id,at,result)
+       SELECT base+n-60,$2,o.id,0,$3 FROM unnest($1::uuid[]) WITH ORDINALITY o(id,n),
+         (SELECT power(10,length(coalesce(max(id),0)::text)+2)::bigint AS base FROM construction_log) b
+       RETURNING id::text`,
+      [
+        operations,
+        scene.id,
+        { summary: "追加の構築記録", changes: { nodes: [], edges: [] } },
+      ],
+    )
+  ).rows
+    .map((item) => item.id)
+    .sort((a, b) => Number(b) - Number(a));
+  const logs: string[] = [],
+    pages: { items: { id: string }[]; previous: string | null }[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = (
+      await app.inject({
+        url: `/api/worlds/${scene.id}/records${cursor ? `?before=${cursor}` : ""}`,
+        headers: headers(scene.cookie),
+      })
+    ).json();
+    pages.push(page);
+    logs.push(...page.items.map((item: { id: string }) => item.id));
+    cursor = page.next;
+  } while (cursor);
+  expect(logs.slice(0, 120)).toEqual(logIds);
+  expect(new Set(logs).size).toBe(logs.length);
+  expect(
+    (
+      await app.inject({
+        url: `/api/worlds/${scene.id}/records?after=${pages[1]!.previous}`,
+        headers: headers(scene.cookie),
+      })
+    )
+      .json()
+      .items.map((item: { id: string }) => item.id),
+  ).toEqual(logIds.slice(0, 50));
 });
 
 test("SSEを保存済みIDから再送し、他の世界のcursorと権限失効を拒否する", async () => {
