@@ -13,6 +13,7 @@ import {
   SceneResponse,
   SceneCommand,
   KnowledgePage,
+  Belongings,
   SceneRecordPage,
   JoinWorld,
   PlayerIconInput,
@@ -43,6 +44,9 @@ gestaloka result                         現在のリザルトを照会
 gestaloka resume                         保留中の参加・シーンを明示再開
 gestaloka knowledge [--since <checkpoint>] 本人の観測・解釈の履歴。前回取得時との差分を取得
 gestaloka history --scene <id> --kind <events|actions> [--before <cursor>]
+gestaloka inventory                      携行している物品と数量
+gestaloka storage                        利用できる保管先と、照会時点の最新の在庫
+gestaloka skills                         身につけた技能とその範囲
 gestaloka recover [--request <要求ID>]    保存した同じ要求を照合して最新状態を取得
 全コマンド: --profile <ファイル>。既定はXDG_STATE_HOMEまたは~/.local/stateのgestaloka/default.json。
 シーン照会・操作: --scene <id> で退出前のシーンも指定できます。
@@ -459,6 +463,20 @@ async function run() {
         JSON.parse(await readFile(join(journal, `${id}.json`), "utf8")),
       ),
     );
+  }
+  if (
+    command === "inventory" ||
+    command === "storage" ||
+    command === "skills"
+  ) {
+    const known = Belongings.parse(
+      await http(profile, `/api/worlds/${profile.worldId}/belongings`),
+    );
+    return command === "inventory"
+      ? { state: command, items: known.items }
+      : command === "storage"
+        ? { state: command, storages: known.storages }
+        : { state: command, skills: known.skills };
   }
   if (command === "knowledge" || command === "history") {
     const query = new URLSearchParams();

@@ -7,6 +7,7 @@ import { $api, api, pendingKey } from "./api.js";
 import { usePending } from "./forms.js";
 import { useUpdates, worldQuery } from "./updates.js";
 import { History, type HistoryHandle } from "./History.js";
+import { Belongings } from "./Belongings.js";
 import { Notice, Problem, worldTime } from "./presentation.js";
 import { RichText } from "./RichText.js";
 import { Button } from "./components/ui/button.js";
@@ -41,7 +42,8 @@ export function ScenePlayer({
     history = useRef<HistoryHandle>(null),
     messages = useRef<HistoryHandle>(null),
     actions = useRef<HistoryHandle>(null),
-    [showHistory, setShowHistory] = useState(!scene);
+    [showHistory, setShowHistory] = useState(!scene),
+    [showBelongings, setShowBelongings] = useState(false);
   const [pending, save] = usePending(
     pendingKey(
       `${id}:${viewer}${selectedSceneId ? `:${selectedSceneId}` : ""}`,
@@ -650,6 +652,15 @@ export function ScenePlayer({
           ))}
         </details>
       )}
+      <div className="scene-history-toggle">
+        <Button
+          variant="ghost"
+          onClick={() => setShowBelongings(!showBelongings)}
+        >
+          {showBelongings ? "持ち物と技能を閉じる" : "持ち物と技能を見る"}
+        </Button>
+      </div>
+      {showBelongings && <Belongings id={id} viewer={viewer} />}
       <div className="scene-history-toggle">
         <Button variant="ghost" onClick={() => setShowHistory(!showHistory)}>
           {showHistory ? "これまでの記録を閉じる" : "これまでの記録を読む"}

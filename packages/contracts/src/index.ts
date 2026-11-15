@@ -138,6 +138,20 @@ export const KnowledgePage = z.object({
   next: z.string().nullable(),
   previous: z.string().nullable(),
 });
+const HeldItem = z.object({
+  label: z.string(),
+  quantity: z.number().int().positive().safe(),
+  mine: z.boolean(),
+});
+// 本人の携行品、利用できる保管先の最新の在庫、技能。同じ呼称の物品は数量にまとめる。
+export const Belongings = z.object({
+  viewerId: z.uuid(),
+  items: z.array(HeldItem),
+  storages: z.array(
+    z.object({ id: z.uuid(), label: z.string(), items: z.array(HeldItem) }),
+  ),
+  skills: z.array(z.object({ id: z.uuid(), text: z.string() })),
+});
 export const EventQuery = z.object({
   actorId: z.uuid().optional(),
   role: z.enum(["admin", "player"]),
