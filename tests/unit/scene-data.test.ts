@@ -53,6 +53,74 @@ test("別の対象の状態では問いを閉じず、同じ対象の照会と�
   expect(remainingQuestions(background, answer, new Set([npc]))).toEqual([q]);
   expect(remainingQuestions(background, answer, new Set([place]))).toEqual([]);
 });
+test("背景と移動結果の所在を明示し、次の所在が成立した時点で旧所在を閉じる", () => {
+  const background = {
+      ...bg,
+      facts: [
+        {
+          subjectId: actor,
+          text: "戸口にいる",
+          aboutIds: [place],
+          location: true,
+        },
+        ...bg.facts,
+      ],
+    },
+    moves = [
+      ...events,
+      {
+        ...events[0]!,
+        id: randomUUID(),
+        locations: [
+          { subjectId: actor, text: "室内にいる", aboutIds: [place] },
+        ],
+      },
+    ],
+    anchors = sceneAnchors(background, moves, 0, randomUUID()),
+    locations = anchors.edges.filter((e) => e.text === "location");
+  expect(locations).toHaveLength(2);
+  expect(locations.map((e) => e.period)).toEqual([
+    { from: 0, until: 1000 },
+    { from: 1000 },
+  ]);
+  expect(
+    locations.map((e) => anchors.nodes.find((n) => n.id === e.target)?.text),
+  ).toEqual(["戸口にいる", "室内にいる"]);
+  expect(
+    anchors.edges.filter(
+      (e) => e.role === "about" && e.source === locations[0]!.target,
+    )[0]!.period,
+  ).toEqual({ from: 0, until: 1000 });
+  // 過去の背景に状態が追加されても出来事の所在IDは変わらない。
+  const extended = sceneAnchors(
+    { ...background, facts: [...background.facts, bg.facts[0]!] },
+    moves,
+    0,
+    randomUUID(),
+  );
+  expect(
+    extended.edges.find((e) => e.period.from === 1000 && e.text === "location")
+      ?.id,
+  ).toBe(locations[1]!.id);
+  const back = {
+      ...moves[1]!,
+      id: randomUUID(),
+      locations: [
+        { subjectId: actor, text: "戸口へ戻った", aboutIds: [place] },
+      ],
+    },
+    sameTime = sceneAnchors(
+      background,
+      [...moves, back],
+      0,
+      randomUUID(),
+    ).edges.filter((e) => e.text === "location");
+  expect(sameTime.map((e) => e.period)).toEqual([
+    { from: 0, until: 1000 },
+    { from: 1000, until: 1000 },
+    { from: 1000 },
+  ]);
+});
 test("開始時の状態の終了と、表示済みの発言・受容の変更禁止を区別する", () => {
   const anchors = sceneAnchors(bg, events, 0, randomUUID()),
     state = anchors.edges.find(

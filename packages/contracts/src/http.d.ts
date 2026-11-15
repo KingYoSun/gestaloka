@@ -1282,11 +1282,15 @@ export interface paths {
                                 name: string;
                                 /** @enum {string} */
                                 mode: "standby" | "npc";
+                                /** @default [] */
+                                locations: string[];
                             }[];
                             npcs: {
                                 /** Format: uuid */
                                 actorId: string;
                                 name: string;
+                                /** @default [] */
+                                locations: string[];
                             }[];
                         };
                     };
@@ -3765,7 +3769,7 @@ export interface paths {
                                      * @enum {string}
                                      */
                                     role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
-                                    /** @description 関係の内容。seeではその存在に提示できる受容内容の本文 */
+                                    /** @description 関係の内容。seeでは受容本文。status/contentでtext=locationは主体の現在の所在専用のscriptを示し、status/aboutで場所を参照する */
                                     text?: string;
                                     period: {
                                         from: number;
