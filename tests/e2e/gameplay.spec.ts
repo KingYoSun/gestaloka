@@ -198,6 +198,15 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText("INTERNAL_GM_ONLY");
   await expect(page.locator("body")).not.toContainText("PRIVATE_");
+  for (const [name, text] of [
+    ["セッションできる相手", "待機中またはNPCモードのプレイヤーはいません"],
+    ["持ち物と技能", "保管先"],
+  ] as const) {
+    await page.getByRole("button", { name, exact: true }).click();
+    const dialog = page.getByRole("dialog", { name, exact: true });
+    await expect(dialog.getByText(text, { exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: "閉じる" }).click();
+  }
   await page.getByRole("button", { name: "自由入力" }).click();
   await page
     .getByLabel("次のシーンで何をしたいですか", { exact: true })

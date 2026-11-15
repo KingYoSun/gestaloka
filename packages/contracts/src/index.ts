@@ -152,6 +152,18 @@ export const Belongings = z.object({
   ),
   skills: z.array(z.object({ id: z.uuid(), text: z.string() })),
 });
+// いまシーンで出会える相手。プレイヤーは待機接続があるかNPCモードの人物、NPCはプレイヤーが操作していない人物。
+export const SessionPartners = z.object({
+  viewerId: z.uuid(),
+  players: z.array(
+    z.object({
+      actorId: z.uuid(),
+      name: z.string(),
+      mode: z.enum(["standby", "npc"]),
+    }),
+  ),
+  npcs: z.array(z.object({ actorId: z.uuid(), name: z.string() })),
+});
 export const EventQuery = z.object({
   actorId: z.uuid().optional(),
   role: z.enum(["admin", "player"]),

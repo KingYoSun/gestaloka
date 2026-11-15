@@ -1281,7 +1281,7 @@ test("シーンの外でも中でも、本人の持ち物・保管先の在庫�
     }),
   );
   const open = () =>
-    fireEvent.click(screen.getByRole("button", { name: "持ち物と技能を見る" }));
+    fireEvent.click(screen.getByRole("button", { name: "持ち物と技能" }));
   const view = render(
     <App
       navigation={createAppRouter(
@@ -1289,7 +1289,7 @@ test("シーンの外でも中でも、本人の持ち物・保管先の在庫�
       )}
     />,
   );
-  await screen.findByRole("button", { name: "持ち物と技能を見る" });
+  await screen.findByRole("button", { name: "持ち物と技能" });
   open();
   expect(await screen.findByText("釘 × 2")).toBeTruthy();
   expect(screen.getByText("共同倉庫")).toBeTruthy();
@@ -1305,7 +1305,7 @@ test("シーンの外でも中でも、本人の持ち物・保管先の在庫�
       )}
     />,
   );
-  await screen.findByRole("button", { name: "持ち物と技能を見る" });
+  await screen.findByRole("button", { name: "持ち物と技能" });
   open();
   await waitFor(() => expect(reads).toBe(2));
   await waitFor(() =>
@@ -1313,3 +1313,64 @@ test("シーンの外でも中でも、本人の持ち物・保管先の在庫�
   );
   expect(screen.getByText("釘 × 2")).toBeTruthy();
 });
+
+test("出会える相手をプレイヤーとNPCのタブで示し、開いている間は読み直す", async () => {
+  let reads = 0;
+  server.use(
+    http.get("*/api/worlds/:id/partners", ({ request }) => {
+      reads++;
+      expect(new URL(request.url).searchParams.get("actorId")).toBe(V);
+      if (reads === 4) return json({ code: "X", message: "一時的な失敗" }, 500);
+      return json({
+        viewerId: V,
+        players: [
+          { actorId: A, name: "ミチコ", mode: "standby" },
+          ...(reads > 1
+            ? [{ actorId: B, name: "ジョニー", mode: "npc" as const }]
+            : []),
+        ],
+        npcs: [{ actorId: W, name: "村長" }],
+      });
+    }),
+  );
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
+      )}
+    />,
+  );
+  // 鉛筆の左に持ち物、その左に相手の一覧を置く。
+  const tools = (await screen.findByRole("button", { name: "自由入力" }))
+    .parentElement!;
+  expect(
+    [...tools.querySelectorAll("button")].map((b) => b.getAttribute("title")),
+  ).toEqual(["セッションできる相手", "持ち物と技能", "自由入力"]);
+  fireEvent.click(screen.getByRole("button", { name: "セッションできる相手" }));
+  expect(await screen.findByText("ミチコ")).toBeTruthy();
+  expect(screen.getByText("（待機中）")).toBeTruthy();
+  expect(screen.queryByText("村長")).toBeNull();
+  expect(
+    await screen.findByText("（NPCモード）", {}, { timeout: 5000 }),
+  ).toBeTruthy();
+  const npcs = screen.getByRole("tab", { name: "NPC（1）" });
+  fireEvent.mouseDown(npcs);
+  fireEvent.click(npcs);
+  expect(await screen.findByText("村長")).toBeTruthy();
+  expect(screen.queryByText("ミチコ")).toBeNull();
+  // 同じ内容の読み直しと一時的な失敗では、モーダルの表示を書き換えず、選んだタブも保つ。
+  const changes: MutationRecord[] = [];
+  const observer = new MutationObserver((records) => changes.push(...records));
+  observer.observe(screen.getByRole("dialog"), {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+  });
+  await waitFor(() => expect(reads).toBeGreaterThanOrEqual(5), {
+    timeout: 12000,
+  });
+  observer.disconnect();
+  expect(changes).toEqual([]);
+  expect(screen.getByText("村長")).toBeTruthy();
+}, 25000);
