@@ -329,13 +329,18 @@ test("シーンの行動で成立した変更をターンごとに確定し、�
   expect(await calls()).toBeGreaterThan(before);
   expect((await known()).skills).toHaveLength(2);
   await act("もう一度刃を確かめる");
-  expect(resolved.at(-1)!.belongings![a]!.skills).toMatchObject([
-    { text: "刃物を研げる" },
-    {
-      text: "欠けた刃を研ぎ直せる",
-      basis: "教わりながら三度研ぎ直しを仕上げた",
-    },
-  ]);
+  // 同じ時点に成立した技能の並びは関係のIDで決まるため、順序は確かめない。
+  const passed = resolved.at(-1)!.belongings![a]!.skills;
+  expect(passed).toHaveLength(2);
+  expect(passed).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ text: "刃物を研げる" }),
+      expect.objectContaining({
+        text: "欠けた刃を研ぎ直せる",
+        basis: "教わりながら三度研ぎ直しを仕上げた",
+      }),
+    ]),
+  );
 
   // シーン終了の反映は、進行中に確定した記録をそのまま引き継ぐ。
   const settled = await known();
