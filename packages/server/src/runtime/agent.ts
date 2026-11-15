@@ -869,6 +869,19 @@ export class WorldAgent {
           request.at,
           { limit: 12 },
         );
+        const effects = [];
+        for (const edge of await context.relations(
+          node.id,
+          "effect",
+          "in",
+          request.at,
+          request.at,
+          { limit: 12 },
+        ))
+          effects.push({
+            edge,
+            source: await context.node(edge.source, request.at),
+          });
         ids.push(node.id, ...possessions.map((edge) => edge.target));
         initialContext.push({
           request: { kind: "node", id: node.id },
@@ -876,6 +889,7 @@ export class WorldAgent {
             node,
             stateSubjects,
             possessions,
+            effects,
             ...(node.id === actor ? { states } : {}),
           },
         });
