@@ -391,22 +391,106 @@ export class WorldContext {
   async observations(id: string, through: number) {
     const records = [];
     for (const edge of await this.history(id, "see", "out", through)) {
-      const basis = edge.observation;
-      let sourceChanged: boolean | null = basis?.versions ? false : null;
-      for (const [key, old] of Object.entries(basis?.versions ?? {})) {
-        const current = await this.#read(
-          key,
-          async (_tx, revision) => revision,
-        );
-        if (current !== old) sourceChanged = true;
-      }
-      records.push({
-        edge,
-        sourceChanged,
-        timeAdvanced: basis === undefined || through > basis.through,
-      });
+      records.push({ edge, ...(await this.observationState(edge, through)) });
     }
     return records;
+  }
+  private async observationState(edge: WorldEdge, through: number) {
+    const basis = edge.observation;
+    let sourceChanged: boolean | null = basis?.versions ? false : null;
+    for (const [key, old] of Object.entries(basis?.versions ?? {})) {
+      const current = await this.#read(key, async (_tx, revision) => revision);
+      if (current !== old) sourceChanged = true;
+    }
+    return {
+      sourceChanged,
+      timeAdvanced: basis === undefined || through > basis.through,
+    };
+  }
+  // One excerpt per observed target. Raw records remain addressable by edge ID;
+  // specifying a target pages its evidence rather than unfolding every target.
+  async sceneObservations(
+    observer: string,
+    through: number,
+    purpose: string,
+    offset = 0,
+    target?: string,
+    from = 0,
+  ) {
+    const terms = [
+      ...new Set(
+        [
+          ...new Intl.Segmenter(undefined, { granularity: "word" }).segment(
+            purpose.toLowerCase(),
+          ),
+        ]
+          .filter((word) => word.isWordLike && word.segment.length > 1)
+          .map((word) => word.segment),
+      ),
+    ];
+    const drafts = this.drafts
+      .flatMap((d) => d.changes.edges)
+      .filter(
+        (e) =>
+          e.kind === "see" &&
+          e.source === observer &&
+          e.period.from >= from &&
+          e.period.from <= through &&
+          (!target || e.target === target),
+      )
+      .map((e) => ({
+        id: e.id,
+        target: e.target,
+        at: e.period.from,
+        data: JSON.stringify(e),
+      }));
+    const pageSize = 12;
+    const rows = await this.#read(
+      relationKey(observer, "see", "out"),
+      async (tx) => {
+        const r = await tx.run(
+          `CALL () {
+        MATCH (:WorldNode {worldId:$worldId,id:$observer})-[r:see]->(t)
+        WHERE r.validFrom >= $from AND r.validFrom <= $through AND ($target IS NULL OR t.id=$target)
+        RETURN r.id AS id,t.id AS target,r.validFrom AS at,r.data AS data
+        UNION ALL
+        UNWIND $drafts AS e
+        WITH e WHERE NOT EXISTS { MATCH ()-[r:see {worldId:$worldId,id:e.id}]->() }
+        RETURN e.id AS id,e.target AS target,e.at AS at,e.data AS data
+      }
+      WITH id,target,at, size([term IN $terms WHERE toLower(data) CONTAINS term]) AS score
+      ORDER BY score DESC, at DESC, id
+      WITH target, CASE WHEN $target IS NULL THEN target ELSE id END AS groupId,
+           head(collect(id)) AS representative, max(score) AS relevance, min(at) AS firstAt,max(at) AS lastAt,count(*) AS count
+      RETURN target,representative,firstAt,lastAt,count ORDER BY relevance DESC,lastAt DESC,groupId SKIP $offset LIMIT $limit`,
+          {
+            worldId: this.worldId,
+            observer,
+            through,
+            from,
+            target: target ?? null,
+            drafts,
+            terms,
+            offset: int(offset),
+            limit: int(pageSize + 1),
+          },
+        );
+        return r.records;
+      },
+    );
+    const items = [];
+    for (const row of rows.slice(0, pageSize)) {
+      const edge = await this.edge(row.get("representative"));
+      if (!edge) throw new WorldConflict("観測記録が更新されました");
+      items.push({
+        edge,
+        count: Number(row.get("count")),
+        firstAt: Number(row.get("firstAt")),
+        lastAt: Number(row.get("lastAt")),
+        ...(await this.observationState(edge, through)),
+      });
+    }
+    return { items, next: rows.length > pageSize ? offset + pageSize : null };
   }
 
   async effects(id: string, from: number, through: number) {

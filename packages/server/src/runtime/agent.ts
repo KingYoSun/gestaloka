@@ -92,6 +92,8 @@ export const Query = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("observations"),
       id: z.uuid(),
+      target: z.uuid().optional(),
+      offset: Time.optional(),
       through: Time.optional(),
     })
     .strict(),
@@ -112,6 +114,7 @@ export const Query = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("relations"),
+      after: z.uuid().optional(),
       id: z.uuid(),
       relation: RelationKind,
       direction: z.enum(["in", "out"]),
@@ -403,7 +406,20 @@ export class WorldAgent {
         throw new CandidateRejected("要求区間より後の時点は照会できません");
       switch (query.kind) {
         case "observations":
-          results.push(await context.observations(query.id, through));
+          results.push(
+            inScene ||
+              row.request.completedScene ||
+              query.target ||
+              query.offset !== undefined
+              ? await context.sceneObservations(
+                  query.id,
+                  through,
+                  row.request.actionText,
+                  query.offset,
+                  query.target,
+                )
+              : await context.observations(query.id, through),
+          );
           break;
         case "edge":
           results.push((await context.edge(query.id)) ?? null);
@@ -449,6 +465,23 @@ export class WorldAgent {
           break;
         }
         case "history": {
+          if (
+            (inScene || row.request.completedScene) &&
+            query.relation === "see" &&
+            query.direction === "out"
+          ) {
+            results.push(
+              await context.sceneObservations(
+                query.id,
+                through,
+                row.request.actionText,
+                0,
+                undefined,
+                query.from,
+              ),
+            );
+            break;
+          }
           const history = await context.history(
             query.id,
             query.relation,
@@ -467,14 +500,25 @@ export class WorldAgent {
           break;
         }
         case "relations": {
+          const paged =
+            inScene ||
+            !!row.request.completedScene ||
+            query.after !== undefined;
+          const edges = await context.relations(
+            query.id,
+            query.relation,
+            query.direction,
+            at,
+            through,
+            paged ? { after: query.after, limit: 13 } : undefined,
+          );
           results.push(
-            await context.relations(
-              query.id,
-              query.relation,
-              query.direction,
-              at,
-              through,
-            ),
+            paged
+              ? {
+                  edges: edges.slice(0, 12),
+                  next: edges.length > 12 ? edges[11]!.id : null,
+                }
+              : edges,
           );
           break;
         }
@@ -769,12 +813,99 @@ export class WorldAgent {
     const requests: z.infer<typeof Query>[] = (
       request.triggerEdgeIds ?? []
     ).map((id) => ({ kind: "edge", id }));
-    for (const root of new Set([
+    const roots = new Set([
       ...request.rootIds,
       ...(request.actorId ? [request.actorId] : []),
       ...(request.controlledActorId ? [request.controlledActorId] : []),
       ...(request.intentions ?? []).map((item) => item.actorId),
-    ])) {
+    ]);
+    if (inScene || request.completedScene) {
+      const context = this.store.context(request.worldId, dependencies);
+      const actor = request.actorId ?? request.controlledActorId;
+      const states = actor
+        ? await this.#descriptions(context, actor, request.at, "status")
+        : [];
+      const linked = new Set(states.flatMap((state) => state.about));
+      if (actor)
+        for (const edge of await context.relations(
+          actor,
+          "has",
+          "in",
+          request.at,
+        ))
+          linked.add(edge.source);
+      for (const id of linked) roots.add(id);
+      const candidates = [];
+      for (const id of roots) {
+        const node = await context.node(id, request.at);
+        if (node)
+          candidates.push({
+            node,
+            priority:
+              Number(id === actor) * 4 +
+              Number(request.actionText.includes(node.text)) * 2 +
+              Number(linked.has(id)),
+          });
+      }
+      const selected = candidates
+        .sort((a, b) => b.priority - a.priority)
+        .slice(0, 12);
+      const initialContext = [];
+      const ids: string[] = [];
+      for (const { node } of selected) {
+        const stateSubjects = await context.relations(
+          node.id,
+          "status",
+          "in",
+          request.at,
+          request.at,
+          { limit: 12 },
+        );
+        const possessions = await context.relations(
+          node.id,
+          "has",
+          "out",
+          request.at,
+          request.at,
+          { limit: 12 },
+        );
+        ids.push(node.id, ...possessions.map((edge) => edge.target));
+        initialContext.push({
+          request: { kind: "node", id: node.id },
+          result: {
+            node,
+            stateSubjects,
+            possessions,
+            ...(node.id === actor ? { states } : {}),
+          },
+        });
+      }
+      if (actor) requests.push({ kind: "observations", id: actor });
+      const seed = await this.read(
+        { request, dependencies: context.dependencies },
+        requests,
+        inScene,
+      );
+      const controlled = await this.controlledActors(
+        request.worldId,
+        ids,
+        inScene,
+      );
+      return {
+        initialContext: [
+          ...initialContext,
+          ...requests.map((request, i) => ({
+            request,
+            result: seed.results[i],
+          })),
+        ],
+        dependencies: seed.dependencies,
+        controlledActorIds: [
+          ...new Set([...controlled, ...seed.controlledActorIds]),
+        ],
+      };
+    }
+    for (const root of roots) {
       requests.push(
         { kind: "node", id: root },
         {
@@ -1241,16 +1372,26 @@ export class WorldAgent {
     }
   }
 
-  async view(worldId: string, observerId: string, at: number) {
+  async view(
+    worldId: string,
+    observerId: string,
+    at: number,
+    purpose?: string,
+  ) {
     const context = this.store.context(worldId);
-    const view = await this.#view(context, observerId, at);
+    const view = await this.#view(context, observerId, at, purpose);
     await context.validate();
     return view;
   }
 
-  async intentView(worldId: string, observerId: string, at: number) {
+  async intentView(
+    worldId: string,
+    observerId: string,
+    at: number,
+    purpose?: string,
+  ) {
     const context = this.store.context(worldId);
-    const view = await this.#view(context, observerId, at);
+    const view = await this.#view(context, observerId, at, purpose);
     const conditions = (
       await this.#descriptions(context, observerId, at, "status")
     ).map((condition) => ({
@@ -1290,10 +1431,34 @@ export class WorldAgent {
     return descriptions;
   }
 
-  async #view(context: WorldContext, observerId: string, at: number) {
+  async #view(
+    context: WorldContext,
+    observerId: string,
+    at: number,
+    purpose?: string,
+  ) {
     if ((await context.node(observerId, at))?.kind !== "existence")
       throw new Error("観測主体が見つかりません");
-    const observations = await context.history(observerId, "see", "out", at);
+    const records =
+      purpose === undefined
+        ? (await context.history(observerId, "see", "out", at)).map((edge) => ({
+            edge,
+          }))
+        : (await context.sceneObservations(observerId, at, purpose)).items.map(
+            ({ edge, count, firstAt, lastAt }) => ({
+              edge,
+              count,
+              firstAt,
+              lastAt,
+            }),
+          );
+    const observations = records.map(({ edge, ...summary }) => ({
+      id: edge.id,
+      target: edge.target,
+      text: edge.text || edge.observation?.aspect || null,
+      period: edge.period,
+      ...summary,
+    }));
     const interpretations = await this.#descriptions(
       context,
       observerId,
@@ -1303,12 +1468,7 @@ export class WorldAgent {
     return {
       observerId,
       at,
-      observations: observations.map((edge) => ({
-        id: edge.id,
-        target: edge.target,
-        text: edge.text || edge.observation?.aspect || null,
-        period: edge.period,
-      })),
+      observations,
       interpretations: interpretations.map(({ text, about }) => ({
         text,
         about,

@@ -333,7 +333,7 @@ export class SharedScenes {
       await this.invite(db, row, actor, context, true);
     }
   }
-  async select(scene: string, plan: Selection) {
+  async select(scene: string, plan: Selection, purpose: string) {
     const original = await this.get(scene);
     if (!original) throw conflict("共有シーンが見つかりません");
     const candidates = await this.active(
@@ -348,6 +348,7 @@ export class SharedScenes {
         world.world_id!,
         actor,
         Number(original.at),
+        purpose,
       );
       views.set(actor, [
         ...view.observations.flatMap((o) => (o.text ? [o.text] : [])),
