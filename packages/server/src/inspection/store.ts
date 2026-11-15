@@ -90,7 +90,9 @@ export class InspectionStore {
         createdAt: new Date(row.created_at).toISOString(),
         purpose: d.purpose,
         inputs: d.actions.map((a) => ({
-          ...a,
+          id: a.id,
+          text: a.text,
+          state: a.state,
           submittedAt: a.submittedAt ?? null,
           completedAt: a.completedAt ?? null,
         })),
