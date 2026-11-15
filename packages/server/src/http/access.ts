@@ -28,6 +28,7 @@ import {
 import { WorldScenes, type SceneRow } from "../runtime/scene.js";
 import { sceneAnchors } from "../runtime/scene-data.js";
 import { readBelongings } from "../world/belongings.js";
+import { readLocations } from "../world/locations.js";
 import { requireMember } from "./operations.js";
 import { ExecutionBudget } from "../execution-budget.js";
 import { WorldPlayers, type CharacterEvidence } from "../runtime/players.js";
@@ -1093,7 +1094,8 @@ export class WorldAccess {
     const viewerId = (
         await this.authorize(subject, id, "player", this.pool, actorId)
       ).actor_id!,
-      world = (await this.construction.get(id)).world_id!,
+      row = await this.construction.get(id),
+      world = row.world_id!,
       store = this.construction.agent.store,
       controlled = (
         await this.pool.query<{ actor_id: string; npc_active: boolean }>(
@@ -1114,7 +1116,8 @@ export class WorldAccess {
             a.name.localeCompare(b.name, "ja") ||
             a.actorId.localeCompare(b.actorId),
         ),
-      players = [];
+      players: { actorId: string; name: string; mode: "npc" | "standby" }[] =
+        [];
     for (const player of controlled)
       if (
         player.actor_id !== viewerId &&
@@ -1125,15 +1128,43 @@ export class WorldAccess {
           name: (await store.context(world).node(player.actor_id))?.text ?? "",
           mode: player.npc_active ? ("npc" as const) : ("standby" as const),
         });
-    return {
-      viewerId,
-      players: byName(players),
-      npcs: byName(
-        (await store.observers(world))
-          .filter((node) => !operated.has(node.id))
-          .map((node) => ({ actorId: node.id, name: node.text })),
-      ),
-    };
+    const scenes = (
+        await this.pool.query<SceneRow>(
+          "SELECT * FROM world_scene WHERE construction_id=$1 AND state<>'result' AND data->'background' IS NOT NULL",
+          [id],
+        )
+      ).rows,
+      at = Math.max(row.at, ...scenes.map((scene) => scene.data.at));
+    return store.withDrafts(
+      world,
+      scenes.map((scene) => ({
+        at: scene.data.at,
+        changes: sceneAnchors(
+          scene.data.background!,
+          scene.data.events,
+          scene.data.startedAt,
+          scene.id,
+        ),
+      })),
+      async () => {
+        const context = store.context(world),
+          locate = async <T extends { actorId: string }>(person: T) => ({
+            ...person,
+            locations: await readLocations(context, person.actorId, at),
+          });
+        return {
+          viewerId,
+          players: await Promise.all(byName(players).map(locate)),
+          npcs: await Promise.all(
+            byName(
+              (await store.observers(world))
+                .filter((node) => !operated.has(node.id))
+                .map((node) => ({ actorId: node.id, name: node.text })),
+            ).map(locate),
+          ),
+        };
+      },
+    );
   }
   async knowledge(
     subject: string,

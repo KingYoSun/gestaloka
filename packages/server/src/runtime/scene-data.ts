@@ -16,6 +16,7 @@ const Fact = z
     subjectId: id,
     text,
     aboutIds: z.array(id),
+    location: z.boolean().optional(),
     sourceRelationIds: z.array(id).optional(),
     at: z.number().int().nonnegative().safe().optional(),
   })
@@ -104,6 +105,9 @@ export const SceneEvent = z
   .object({
     actorId: id,
     text,
+    locations: z
+      .array(Fact.omit({ sourceRelationIds: true, at: true, location: true }))
+      .optional(),
     receipts: z.array(
       z
         .object({
@@ -402,9 +406,38 @@ export function sceneAnchors(
     })),
     edges: Change["edges"] = [];
   for (const kind of ["status", "interpret"] as const) {
-    const facts = kind === "status" ? background.facts : background.beliefs;
-    for (const [i, f] of facts.entries()) {
-      const script = sceneId(`${id}:${kind}:${i}`);
+    const facts = (
+      kind === "status" ? background.facts : background.beliefs
+    ).map((f, i) => ({
+      ...f,
+      key: `${id}:${kind}:${i}`,
+    }));
+    if (kind === "status")
+      for (const e of events)
+        for (const [i, f] of (e.locations ?? []).entries())
+          facts.push({
+            ...f,
+            location: true,
+            at: e.period.until,
+            key: `${e.id}:location:${i}`,
+          });
+    for (const f of facts) {
+      const script = sceneId(f.key),
+        from = f.at ?? at,
+        until =
+          kind === "status" && f.location
+            ? Math.min(
+                ...facts
+                  .filter(
+                    (next) =>
+                      next.location &&
+                      next.subjectId === f.subjectId &&
+                      (next.at ?? at) > from,
+                  )
+                  .map((next) => next.at ?? at),
+              )
+            : Infinity,
+        period = { from, ...(Number.isFinite(until) ? { until } : {}) };
       nodes.push({ id: script, kind: "script", text: f.text });
       edges.push({
         id: sceneId(`${script}:content`),
@@ -412,7 +445,8 @@ export function sceneAnchors(
         role: "content",
         source: f.subjectId,
         target: script,
-        period: { from: f.at ?? at },
+        ...(kind === "status" && f.location ? { text: "location" } : {}),
+        period,
       });
       for (const target of f.aboutIds)
         edges.push({
@@ -421,7 +455,7 @@ export function sceneAnchors(
           role: "about",
           source: script,
           target,
-          period: { from: f.at ?? at },
+          period,
         });
     }
   }

@@ -1324,12 +1324,17 @@ test("出会える相手をプレイヤーとNPCのタブで示し、開いて�
       return json({
         viewerId: V,
         players: [
-          { actorId: A, name: "ミチコ", mode: "standby" },
+          {
+            actorId: A,
+            name: "ミチコ",
+            mode: "standby",
+            locations: ["川沿いの畑の脇"],
+          },
           ...(reads > 1
             ? [{ actorId: B, name: "ジョニー", mode: "npc" as const }]
             : []),
         ],
-        npcs: [{ actorId: W, name: "村長" }],
+        npcs: [{ actorId: W, name: "村長", locations: ["共同炉への道の入口"] }],
       });
     }),
   );
@@ -1349,14 +1354,17 @@ test("出会える相手をプレイヤーとNPCのタブで示し、開いて�
   fireEvent.click(screen.getByRole("button", { name: "セッションできる相手" }));
   expect(await screen.findByText("ミチコ")).toBeTruthy();
   expect(screen.getByText("（待機中）")).toBeTruthy();
+  expect(screen.getByText("場所：川沿いの畑の脇")).toBeTruthy();
   expect(screen.queryByText("村長")).toBeNull();
   expect(
     await screen.findByText("（NPCモード）", {}, { timeout: 5000 }),
   ).toBeTruthy();
+  expect(screen.getByText("場所：不明")).toBeTruthy();
   const npcs = screen.getByRole("tab", { name: "NPC（1）" });
   fireEvent.mouseDown(npcs);
   fireEvent.click(npcs);
   expect(await screen.findByText("村長")).toBeTruthy();
+  expect(screen.getByText("場所：共同炉への道の入口")).toBeTruthy();
   expect(screen.queryByText("ミチコ")).toBeNull();
   // 同じ内容の読み直しと一時的な失敗では、モーダルの表示を書き換えず、選んだタブも保つ。
   const changes: MutationRecord[] = [];

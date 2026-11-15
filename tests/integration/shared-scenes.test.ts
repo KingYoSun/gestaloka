@@ -2732,6 +2732,31 @@ test("待機中・NPCモードのプレイヤーとNPCを、WebとCLIへ同じ�
     at = (await runtime.get(world)).at,
     npc = randomUUID(),
     place = randomUUID();
+  const locationBackground: SceneBackground = {
+      type: "background",
+      synopsis: "所在の記録",
+      participants: [npc, guest.actor],
+      facts: [
+        {
+          subjectId: npc,
+          text: "見張り台の上にいる",
+          aboutIds: [place],
+          location: true,
+        },
+        {
+          subjectId: guest.actor,
+          text: "見張り台の入口にいる",
+          aboutIds: [place],
+          location: true,
+        },
+        { subjectId: npc, text: "秘密の任務を気にしている", aboutIds: [place] },
+      ],
+      perceptions: [],
+      beliefs: [],
+      creations: [],
+      unknowns: [],
+    },
+    anchors = sceneAnchors(locationBackground, [], at, randomUUID());
   await store.commit(
     await store.claim(graph, randomUUID()),
     store.context(graph),
@@ -2742,10 +2767,12 @@ test("待機中・NPCモードのプレイヤーとNPCを、WebとCLIへ同じ�
         nodes: [
           { id: npc, kind: "existence", text: "見張り番" },
           { id: place, kind: "existence", text: "見張り台" },
+          ...anchors.nodes,
         ],
         revisions: [],
         endEdges: [],
         edges: [
+          ...anchors.edges,
           {
             id: randomUUID(),
             kind: "see",
@@ -2774,16 +2801,30 @@ test("待機中・NPCモードのプレイヤーとNPCを、WebとCLIへ同じ�
     expect(await players()).toEqual([]);
     await cli.run(guest.profile, "standby");
     expect(await players()).toEqual([
-      { actorId: guest.actor, name: expect.any(String), mode: "standby" },
+      {
+        actorId: guest.actor,
+        name: expect.any(String),
+        mode: "standby",
+        locations: ["見張り台の入口にいる"],
+      },
     ]);
     await cli.run(guest.profile, "npc", "--away");
     expect(await players()).toEqual([
-      { actorId: guest.actor, name: expect.any(String), mode: "npc" },
+      {
+        actorId: guest.actor,
+        name: expect.any(String),
+        mode: "npc",
+        locations: ["見張り台の入口にいる"],
+      },
     ]);
     const shown = (await web()).json();
     expect(shown.viewerId).toBe(viewer.actor);
     // 観測を持つ存在のうち、プレイヤーが操作していない人物だけがNPC。
-    expect(shown.npcs).toContainEqual({ actorId: npc, name: "見張り番" });
+    expect(shown.npcs).toContainEqual({
+      actorId: npc,
+      name: "見張り番",
+      locations: ["見張り台の上にいる"],
+    });
     const ids = shown.npcs.map((n: { actorId: string }) => n.actorId);
     expect(ids).not.toContain(place);
     for (const person of people) expect(ids).not.toContain(person.actor);
@@ -2792,6 +2833,50 @@ test("待機中・NPCモードのプレイヤーとNPCを、WebとCLIへ同じ�
     );
     expect((await cli.run(viewer.profile, "npcs")).npcs).toEqual(shown.npcs);
     expect((await web()).json()).toEqual(shown);
+    const sceneId = randomUUID();
+    await isolated.databases.postgres.query(
+      "INSERT INTO world_scene(id,construction_id,actor_id,state,data) VALUES($1,$2,$3,'active',$4)",
+      [
+        sceneId,
+        world,
+        viewer.actor,
+        {
+          at: at + 1000,
+          startedAt: at,
+          background: locationBackground,
+          events: [
+            {
+              id: randomUUID(),
+              actorId: npc,
+              text: "台を降りた",
+              receipts: [],
+              period: { from: at, until: at + 1000 },
+              locations: [
+                {
+                  subjectId: npc,
+                  text: "見張り台の下にいる",
+                  aboutIds: [place],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    );
+    try {
+      const moved = (await web()).json();
+      expect(
+        moved.npcs.find((n: { actorId: string }) => n.actorId === npc)
+          .locations,
+      ).toEqual(["見張り台の下にいる"]);
+      expect((await cli.run(viewer.profile, "npcs")).npcs).toEqual(moved.npcs);
+      expect(JSON.stringify(moved)).not.toContain("秘密の任務");
+    } finally {
+      await isolated.databases.postgres.query(
+        "DELETE FROM world_scene WHERE id=$1",
+        [sceneId],
+      );
+    }
     expect((await web(guest.actor)).statusCode).toBe(404);
     expect((await runtime.get(world)).at).toBe(at);
     expect(calls).not.toHaveBeenCalled();

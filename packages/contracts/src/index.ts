@@ -160,9 +160,16 @@ export const SessionPartners = z.object({
       actorId: z.uuid(),
       name: z.string(),
       mode: z.enum(["standby", "npc"]),
+      locations: z.array(z.string()).default([]),
     }),
   ),
-  npcs: z.array(z.object({ actorId: z.uuid(), name: z.string() })),
+  npcs: z.array(
+    z.object({
+      actorId: z.uuid(),
+      name: z.string(),
+      locations: z.array(z.string()).default([]),
+    }),
+  ),
 });
 export const EventQuery = z.object({
   actorId: z.uuid().optional(),

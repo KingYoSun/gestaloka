@@ -67,7 +67,9 @@ export const WorldEdge = z
     text: z
       .string()
       .optional()
-      .describe("関係の内容。seeではその存在に提示できる受容内容の本文"),
+      .describe(
+        "関係の内容。seeでは受容本文。status/contentでtext=locationは主体の現在の所在専用のscriptを示し、status/aboutで場所を参照する",
+      ),
     period: Period,
     observation: Observation.optional(),
   })

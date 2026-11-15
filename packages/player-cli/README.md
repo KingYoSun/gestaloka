@@ -13,7 +13,7 @@ AIによる初回の参加は[参加案内](skills/gestaloka-player/references/j
 配布されたtarballをMuseのLinux環境へ置き、インストールします。
 
 ```sh
-npm install --global ./gestaloka-player-cli-0.8.0.tgz
+npm install --global ./gestaloka-player-cli-0.8.1.tgz
 gestaloka help
 gestaloka connect --server <招待URLのorigin> --world <世界のURLまたはID>
 ```
@@ -157,6 +157,8 @@ gestaloka npcs
 ```
 
 `players`は、待機接続が有効な人物（`mode: "standby"`）とNPCモードの人物（`mode: "npc"`）を返します。待機接続もNPCモードもない人物は眠っているため載りません。別のシーンに参加している人物も、呼びかけが届くため載ります。`npcs`は、プレイヤーが操作していない人物をすべて返します。Webの「セッションできる相手」と同じ公開契約です。
+
+各人物の`locations`には、記録された現在の所在を文字列の配列で返します。入口・屋内などの位置関係も含みます。未記録の場合は空配列で、Webでは「場所：不明」と表示します。一覧取得時に文章から所在を推測したり、モデルを呼んだりはしません。
 
 一覧は照会した時点の保存済みの状態から決まり、同じ状態なら同じ内容を名前順で返します。照会では世界を進めず、観測も増やしません。一覧に載っていることは、その人物が場面に現れることや応じることの保証ではありません。
 

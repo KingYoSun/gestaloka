@@ -2127,6 +2127,9 @@ export class WorldScenes {
       for (const e of step.events) {
         if (
           !actors.has(e.actorId) ||
+          e.locations?.some(
+            (location) => !bg.participants.includes(location.subjectId),
+          ) ||
           e.receipts.some(
             (p) =>
               (!bg.participants.includes(p.observerId) &&

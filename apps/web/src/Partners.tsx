@@ -35,6 +35,9 @@ export function Partners({ id, viewer }: { id: string; viewer: string }) {
               <li key={player.actorId}>
                 {player.name}
                 <span className="muted">（{modes[player.mode]}）</span>
+                <div className="muted">
+                  場所：{player.locations?.join("／") || "不明"}
+                </div>
               </li>
             ))}
           </ul>
@@ -46,7 +49,12 @@ export function Partners({ id, viewer }: { id: string; viewer: string }) {
         {npcs.length ? (
           <ul>
             {npcs.map((npc) => (
-              <li key={npc.actorId}>{npc.name}</li>
+              <li key={npc.actorId}>
+                {npc.name}
+                <div className="muted">
+                  場所：{npc.locations?.join("／") || "不明"}
+                </div>
+              </li>
             ))}
           </ul>
         ) : (

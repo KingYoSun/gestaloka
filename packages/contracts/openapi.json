@@ -2465,12 +2465,20 @@
                               "standby",
                               "npc"
                             ]
+                          },
+                          "locations": {
+                            "default": [],
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
                           }
                         },
                         "required": [
                           "actorId",
                           "name",
-                          "mode"
+                          "mode",
+                          "locations"
                         ],
                         "additionalProperties": false
                       }
@@ -2487,11 +2495,19 @@
                           },
                           "name": {
                             "type": "string"
+                          },
+                          "locations": {
+                            "default": [],
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
                           }
                         },
                         "required": [
                           "actorId",
-                          "name"
+                          "name",
+                          "locations"
                         ],
                         "additionalProperties": false
                       }
@@ -8458,7 +8474,7 @@
                                       ]
                                     },
                                     "text": {
-                                      "description": "関係の内容。seeではその存在に提示できる受容内容の本文",
+                                      "description": "関係の内容。seeでは受容本文。status/contentでtext=locationは主体の現在の所在専用のscriptを示し、status/aboutで場所を参照する",
                                       "type": "string"
                                     },
                                     "period": {
