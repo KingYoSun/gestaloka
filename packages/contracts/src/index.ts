@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { Change, RelationKind } from "./world.js";
-export { Change, WorldNode, WorldEdge, RelationKind } from "./world.js";
+export {
+  Change,
+  WorldNode,
+  WorldEdge,
+  RelationKind,
+  BelongingRole,
+} from "./world.js";
 
 export const Health = z.object({
   service: z.literal("gestaloka"),
