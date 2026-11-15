@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { InformationReference } from "@gestaloka/contracts";
 import { Change, WorldEdge, derivedId } from "../world/model.js";
+import { BelongingOp } from "../world/belongings.js";
 import type { WorldAgent } from "./agent.js";
 import type { WorldProposal } from "./agent.js";
 import type { Construction } from "./construction.js";
@@ -178,6 +179,10 @@ export const SceneStep = z.discriminatedUnion("type", [
         .optional(),
       elapsedMs: z.number().int().nonnegative().safe().default(0),
       needsContext: ContextNeed.nullable().optional(),
+      belongings: z
+        .array(BelongingOp)
+        .optional()
+        .describe("今回成立した出来事による物品・保管先・技能の変更"),
     })
     .strict(),
   z.object({ type: z.literal("boundary"), reason: text }).strict(),

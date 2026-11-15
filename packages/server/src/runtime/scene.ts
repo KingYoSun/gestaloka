@@ -23,10 +23,19 @@ import { isDeepStrictEqual } from "node:util";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { parseOutput } from "../llm/prompt.js";
-import { ExecutionLimit } from "../execution-budget.js";
+import { ExecutionBudget, ExecutionLimit } from "../execution-budget.js";
 import type pg from "pg";
 import type { ChatMessage } from "../llm/client.js";
-import { WorldConflict, type Dependency } from "../world/store.js";
+import {
+  WorldConflict,
+  type Dependency,
+  type Receipt,
+} from "../world/store.js";
+import {
+  BelongingRejected,
+  changeBelongings,
+  readBelongings,
+} from "../world/belongings.js";
 import {
   Query,
   IntentResult,
@@ -103,7 +112,11 @@ const Narrative = z
   })
   .strict();
 async function scenePrompt(file: string, information = true) {
-  const files = [file, ...(information ? ["presentation-information.md"] : [])];
+  const files = [
+    file,
+    ...(file === "scene-play.md" ? ["skills/belongings.md"] : []),
+    ...(information ? ["presentation-information.md"] : []),
+  ];
   return (
     await Promise.all(
       files.map((name) =>
@@ -1055,6 +1068,15 @@ export class WorldScenes {
       );
     if (response.finishReason !== "stop")
       throw new SceneResponseError("シーンのモデル応答が未完了です");
+    // 確定後・保存前に止まった行動解決の再開では、確定済みの変更を文脈の変化と見なさない。
+    if (kind === "resolve")
+      this.#adopt(
+        row,
+        await this.agent.store.receipt(
+          row.data.worldId,
+          sceneId(`${work.id}:belongings`),
+        ),
+      );
     if (kind === "resolve" || kind === "intent")
       await this.agent.store
         .context(row.data.worldId, row.data.basis)
@@ -1063,6 +1085,28 @@ export class WorldScenes {
       content: response.content,
       value: presentationEvidence(parseOutput(response.content)),
     };
+  }
+  // このシーン自身の物品・技能の確定で進んだ版を、シーンの依存へ引き継ぐ。
+  #adopt(row: SceneRow, receipt?: Receipt) {
+    for (const dependency of row.data.basis) {
+      const moved = receipt?.versions?.[dependency.key];
+      if (moved?.before === dependency.version)
+        dependency.version = moved.after;
+    }
+  }
+  // 行動の解決へ渡す、登場人物の確定済みの携行品・保管先の在庫・技能。観測には加えない。
+  async #belongings(row: SceneRow) {
+    const context = this.agent.store.context(row.data.worldId),
+      belongings: Record<
+        string,
+        Awaited<ReturnType<typeof readBelongings>>
+      > = {};
+    for (const id of row.data.background!.participants) {
+      const known = await readBelongings(context, id);
+      if (known.items.length || known.storages.length || known.skills.length)
+        belongings[id] = known;
+    }
+    return Object.keys(belongings).length ? { belongings } : {};
   }
   #request(row: SceneRow): z.infer<typeof Interaction> {
     return {
@@ -1861,6 +1905,7 @@ export class WorldScenes {
               : {}),
             sceneHistory: d.events,
             controlledView: d.views[actor],
+            ...(await this.#belongings(row)),
             request: {
               at: d.at,
               controlledActorId: actor,
@@ -2070,6 +2115,33 @@ export class WorldScenes {
             "退出の本人・出来事・受容範囲が一致しません",
           );
       }
+      // 表示する出来事を保存する前に確定する。競合すれば出来事ごと最新の状態から解決し直す。
+      if (step.belongings?.length)
+        try {
+          const lease = await this.agent.store.claim(
+            d.worldId,
+            sceneId(`${row.id}:belongings`),
+          );
+          const receipt = await ExecutionBudget.commit(() =>
+            changeBelongings(this.agent.store, lease, {
+              commitId: sceneId(`${d.work!.id}:belongings`),
+              at: nextAt,
+              ops: step.belongings,
+            }),
+          );
+          this.#adopt(row, receipt);
+        } catch (error) {
+          if (
+            error instanceof WorldConflict ||
+            !(error instanceof Error) ||
+            (!(error instanceof BelongingRejected) &&
+              error.constructor !== Error)
+          )
+            throw error;
+          throw new SceneResponseError(
+            `belongingsを確定できません: ${error.message}`,
+          );
+        }
       for (const e of step.events)
         d.events.push({
           ...e,

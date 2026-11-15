@@ -22,6 +22,11 @@ import {
   validateConnection,
   type WorldEdge,
 } from "../world/model.js";
+import {
+  BelongingOp,
+  BelongingRejected,
+  planBelongings,
+} from "../world/belongings.js";
 import type { LlmClient, ChatMessage } from "../llm/client.js";
 import { CompletedScene, mergeSceneChanges } from "./scene-data.js";
 import { reviewSceneStates } from "./scene-handoff.js";
@@ -161,14 +166,20 @@ const Proposal = z
     ),
   })
   .strict();
-export type WorldProposal = z.infer<typeof Proposal>;
-const Decision = z.discriminatedUnion("type", [
-  z
-    .object({ type: z.literal("query"), requests: z.array(Query).min(1) })
-    .strict(),
-  Proposal,
-  z.object({ type: z.literal("pause"), reason: z.string() }).strict(),
-]);
+export type WorldProposal = z.infer<typeof Proposal> & {
+  belongings?: BelongingOp[];
+};
+// 参加者の生成だけが、採用した持ち物・保管先・技能を内部関数の操作として返せる。
+const decisionFor = (phase: Interaction["phase"]) =>
+  z.discriminatedUnion("type", [
+    z
+      .object({ type: z.literal("query"), requests: z.array(Query).min(1) })
+      .strict(),
+    phase === "participant"
+      ? Proposal.extend({ belongings: z.array(BelongingOp).default([]) })
+      : Proposal,
+    z.object({ type: z.literal("pause"), reason: z.string() }).strict(),
+  ]);
 const CommitDecision = z
   .object({
     type: z.enum(["commit", "revise", "pause"]),
@@ -279,6 +290,13 @@ export class WorldAgent {
           )
           .join("\n");
     }
+    if (input.phase === "participant")
+      system +=
+        "\n\n" +
+        (await readFile(
+          new URL("../../../../prompts/skills/belongings.md", import.meta.url),
+          "utf8",
+        ));
     if (request.completedScene?.sources)
       system +=
         "\n初期資料には背景調査の根拠と状態の変更差分、本人と相手の現状を照合した結果があります。各候補の失効部分・残す部分・未確認部分を出来事と照合してください。元の関係を終了すると全文が失効します。部分失効のときは同じ持ち主の有効な状態に残る内容を保ち、既存の同等状態で足りる場合は重ねません。終了する既存関係はendEdgesに指定し、未確認を新たな現実や受容にしません。";
@@ -662,6 +680,7 @@ export class WorldAgent {
       throw new CandidateRejected(
         "所在・保管先の利用・技能・要約を表す役割つきのhasは、実行側の内部関数だけが記録・終了します",
       );
+    const planned = await this.#plan(context, row, proposal);
     for (const binding of bindingScripts([
       ...proposal.changes.edges,
       ...oldEndings,
@@ -702,9 +721,9 @@ export class WorldAgent {
         );
       }
     }
-    const nodes = new Map(
-      proposal.changes.nodes.map((node) => [node.id, node]),
-    );
+    const created = [...proposal.changes.nodes, ...planned.nodes],
+      edges = [...proposal.changes.edges, ...planned.edges];
+    const nodes = new Map(created.map((node) => [node.id, node]));
     const anchors = new Set<string>();
     for (const node of proposal.changes.nodes) {
       if (await context.node(node.id))
@@ -719,7 +738,7 @@ export class WorldAgent {
         );
     }
     for (const id of new Set(
-      proposal.changes.edges.flatMap((edge) => [edge.source, edge.target]),
+      edges.flatMap((edge) => [edge.source, edge.target]),
     )) {
       if (!nodes.has(id)) {
         const existing = await context.node(id, proposal.resolvedUntil);
@@ -729,7 +748,7 @@ export class WorldAgent {
         anchors.add(id);
       }
     }
-    for (const edge of proposal.changes.edges) {
+    for (const edge of edges) {
       try {
         validateConnection(
           edge,
@@ -745,7 +764,7 @@ export class WorldAgent {
     const connected = new Set(anchors);
     for (let changed = true; changed;) {
       changed = false;
-      for (const edge of proposal.changes.edges) {
+      for (const edge of edges) {
         if (connected.has(edge.source) || connected.has(edge.target)) {
           if (!connected.has(edge.source) || !connected.has(edge.target))
             changed = true;
@@ -754,7 +773,7 @@ export class WorldAgent {
         }
       }
     }
-    if (proposal.changes.nodes.some((node) => !connected.has(node.id)))
+    if (created.some((node) => !connected.has(node.id)))
       throw new CandidateRejected(
         "新しいノード集合が既存世界へ接続していません",
       );
@@ -981,6 +1000,33 @@ export class WorldAgent {
     };
   }
 
+  // 参加者が採用した持ち物・保管先・技能の操作を、提案と同じ確定に含める差分へ変える。
+  async #plan(context: WorldContext, row: Operation, proposal: WorldProposal) {
+    const ops = proposal.belongings ?? [];
+    if (
+      ops.some((op) => !["create", "move", "grant", "learn"].includes(op.type))
+    )
+      throw new CandidateRejected(
+        "参加時のbelongingsには、物品の成立、所在の登録、保管先の利用、技能の習得だけを指定してください",
+      );
+    try {
+      const planned = await planBelongings(
+        context,
+        row.commit_id,
+        proposal.resolvedUntil,
+        ops,
+      );
+      if (planned.at !== proposal.resolvedUntil)
+        throw new BelongingRejected(
+          "既存の所在はこの参加より後の時点に記録されています",
+        );
+      return planned.changes;
+    } catch (error) {
+      if (!(error instanceof BelongingRejected)) throw error;
+      throw new CandidateRejected(`belongings: ${error.message}`);
+    }
+  }
+
   #prepareProposal(row: Operation, proposal: WorldProposal) {
     if (row.request.phase === "participant" && row.request.participantName) {
       const actor = proposal.changes.nodes.find(
@@ -1131,16 +1177,31 @@ export class WorldAgent {
             "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
             [row.request.worldId, input.candidate.newParticipantId],
           );
-        return ExecutionBudget.commit(() =>
-          this.store.commit(
-            lease,
-            this.store.context(row.request.worldId, input.dependencies),
-            {
-              commitId: row.commit_id,
-              at: input.candidate.resolvedUntil,
-              changes: input.candidate.changes,
-            },
+        const context = this.store.context(
+            row.request.worldId,
+            input.dependencies,
           ),
+          changes = input.candidate.changes;
+        let planned;
+        try {
+          planned = await this.#plan(context, row, input.candidate);
+        } catch (error) {
+          // 検証後に所在が変わった。最新の状態から評価し直す。
+          if (error instanceof CandidateRejected)
+            throw new WorldConflict(error.message);
+          throw error;
+        }
+        return ExecutionBudget.commit(() =>
+          this.store.commit(lease, context, {
+            commitId: row.commit_id,
+            at: input.candidate.resolvedUntil,
+            changes: {
+              nodes: [...changes.nodes, ...planned.nodes],
+              revisions: changes.revisions,
+              edges: [...changes.edges, ...planned.edges],
+              endEdges: [...changes.endEdges, ...planned.endEdges],
+            },
+          }),
         );
       };
       const commitTask = task(
@@ -1190,7 +1251,10 @@ export class WorldAgent {
                       request: row.request,
                       initialContext: seed.initialContext,
                       controlledActorIds: seed.controlledActorIds,
-                      responseSchema: z.toJSONSchema(Decision, { io: "input" }),
+                      responseSchema: z.toJSONSchema(
+                        decisionFor(row.request.phase),
+                        { io: "input" },
+                      ),
                     }),
                   },
                 ];
@@ -1298,7 +1362,9 @@ export class WorldAgent {
               row.step++;
               let decision;
               try {
-                decision = Decision.parse(parseOutput(response.content));
+                decision = decisionFor(row.request.phase).parse(
+                  parseOutput(response.content),
+                );
               } catch (error) {
                 row.messages.push({
                   role: "user",
