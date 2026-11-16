@@ -20,6 +20,7 @@ import {
   PlayerIconInput,
   WorldPlayerPage,
   SceneInbox,
+  ScenePresenceStatus,
   NpcReport,
 } from "@gestaloka/contracts";
 
@@ -203,6 +204,14 @@ async function send(
     saved.method,
   );
   await save(join(journal, `${saved.id}.json`), { ...saved, result });
+  if (saved.path.endsWith("/presence")) {
+    const presence = ScenePresenceStatus.parse(result);
+    return {
+      requestId,
+      state: presence.active ? "standby" : "inactive",
+      result: presence,
+    };
+  }
   if (saved.path.endsWith("/npc-mode"))
     return { state: "npc_mode", requestId, result: NpcReport.parse(result) };
   if (profile.joinIconRequestId === saved.id) {

@@ -41,7 +41,7 @@ const response = () =>
     }),
   );
 
-test.each(["missing", "json", "schema"])(
+test.each(["missing", "missing-envelope", "json", "schema", "envelope"])(
   "形式エラー%sを保存し、上位モデルへ引き継いで再送を重複させない",
   async (fault) => {
     const models: string[] = [];
@@ -50,8 +50,11 @@ test.each(["missing", "json", "schema"])(
       .mockImplementation(async (_url, init) => {
         const request = JSON.parse(String(init?.body));
         models.push(request.model);
-        const fail =
-          fault === "missing" ? models.length === 1 : models.length <= 3;
+        const fail = fault.startsWith("missing")
+          ? models.length === 1
+          : models.length <= 3;
+        if (fault === "missing-envelope" && fail)
+          return Response.json({ id: randomUUID(), model: request.model });
         return Response.json({
           id: randomUUID(),
           model: request.model,
@@ -68,7 +71,15 @@ test.each(["missing", "json", "schema"])(
                 : { content: '{"connected":true}' },
             },
           ],
-          usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 },
+          ...(fault === "envelope" && fail
+            ? {}
+            : {
+                usage: {
+                  prompt_tokens: 30,
+                  completion_tokens: 20,
+                  total_tokens: 50,
+                },
+              }),
         });
       });
     const client = createCountedClient(
@@ -103,7 +114,7 @@ test.each(["missing", "json", "schema"])(
     );
     expect(JSON.parse(result.content)).toEqual({ connected: true });
     expect(models).toEqual(
-      fault === "missing"
+      fault.startsWith("missing")
         ? ["deepseek-flash", "gpt-6-luna"]
         : ["deepseek-flash", "deepseek-flash", "deepseek-flash", "gpt-6-luna"],
     );
@@ -126,9 +137,13 @@ test.each(["missing", "json", "schema"])(
         [id],
       )
     ).rows[0];
-    expect(saved.state).toBe("complete");
+    expect(saved.state).toBe(
+      fault.includes("envelope") ? "pending" : "complete",
+    );
     if (fault === "missing")
       expect(saved.response.rawResponse.choices[0].message).toEqual({});
+    else if (fault.includes("envelope"))
+      expect(saved.response.diagnostic.type).toBe("format");
     else
       expect(saved.response.content).toBe(
         fault === "schema" ? '{"wrong":true}' : "INVALID JSON",

@@ -519,7 +519,7 @@ export class LlmClient {
                 content:
                   typeof previous.raw === "string"
                     ? previous.raw
-                    : JSON.stringify(previous.raw),
+                    : canonical(previous.raw),
               },
               {
                 role: "user",
@@ -1111,8 +1111,51 @@ export class LlmClient {
             );
             return completion;
           } catch (error) {
-            if (error instanceof z.ZodError && received !== undefined)
-              throw new ResponseFormatError(received, false, error.message);
+            if (error instanceof z.ZodError && received !== undefined) {
+              let text: string | null | undefined;
+              if (api === "chat-completions") {
+                const body = z
+                  .object({
+                    choices: z
+                      .array(
+                        z.object({
+                          message: z.object({ content: z.string().nullish() }),
+                        }),
+                      )
+                      .default([]),
+                  })
+                  .safeParse(received);
+                text = body.success
+                  ? body.data.choices[0]?.message.content
+                  : undefined;
+              } else if (api === "messages") {
+                const body = MessageResponse.pick({ content: true }).safeParse(
+                  received,
+                );
+                text = body.success
+                  ? body.data.content
+                      .filter((c) => c.type === "text")
+                      .map((c) => c.text ?? "")
+                      .join("")
+                  : undefined;
+              } else {
+                const body = ResponsesResponse.pick({ output: true }).safeParse(
+                  received,
+                );
+                text = body.success
+                  ? body.data.output
+                      .flatMap((o) => o.content ?? [])
+                      .filter((c) => c.type === "output_text")
+                      .map((c) => c.text ?? "")
+                      .join("")
+                  : undefined;
+              }
+              throw new ResponseFormatError(
+                received,
+                !text?.trim(),
+                error.message,
+              );
+            }
             if (
               deadline.signal.aborted &&
               !(error instanceof UncertainResponse)

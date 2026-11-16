@@ -108,6 +108,9 @@ export function ScenePlayer({
       });
     },
   });
+  const presence = $api.useMutation("post", "/api/worlds/{id}/presence", {
+    onSuccess: () => setWaitingEnded(true),
+  });
   function finishScene() {
     const requestId = pendingEnd ?? crypto.randomUUID();
     saveEnd(requestId);
@@ -220,14 +223,13 @@ export function ScenePlayer({
       clearInterval(interval);
     };
   }, [id, viewer, waitingEnded]);
-  async function endWaiting() {
+  function endWaiting() {
     const key = `presence:${id}:${viewer}`;
     const connectionId = localStorage.getItem(key) ?? crypto.randomUUID();
-    await api.POST("/api/worlds/{id}/presence", {
+    presence.mutate({
       params: { path: { id }, query: { actorId: viewer } },
       body: { requestId: crypto.randomUUID(), connectionId, active: false },
     });
-    setWaitingEnded(true);
   }
   useEffect(() => {
     if (
@@ -293,8 +295,7 @@ export function ScenePlayer({
       !!scene &&
       (!scene.shared || scene.shared.owner) &&
       scene.shared?.flow !== "closing" &&
-      !["result", "reflecting"].includes(scene.state) &&
-      !scene.departed,
+      !["result", "reflecting"].includes(scene.state),
     busy = mutate.isPending || !!pending;
   function submit() {
     const values = form.getValues();
@@ -323,6 +324,7 @@ export function ScenePlayer({
     <main className="page play">
       <Button
         variant="outline"
+        disabled={presence.isPending}
         onClick={() =>
           waitingEnded ? setWaitingEnded(false) : void endWaiting()
         }
@@ -555,6 +557,7 @@ export function ScenePlayer({
       )}
       {mutate.error && <Problem error={mutate.error} />}
       {ending.error && <Problem error={ending.error} />}
+      {presence.error && <Problem error={presence.error} />}
       {pending && !mutate.isPending && (
         <Button onClick={() => send(pending)}>同じ操作で確認する</Button>
       )}
@@ -690,15 +693,12 @@ export function ScenePlayer({
               disabled={ending.isPending}
               onClick={finishScene}
             >
-              シーンを終えてリザルトを見る
+              {scene?.departed
+                ? "元のシーンを終えてリザルトを見る"
+                : "シーンを終えてリザルトを見る"}
             </Button>
           )}
         </div>
-      )}
-      {scene?.departed && scene.shared?.owner && scene.state === "active" && (
-        <Button disabled={ending.isPending} onClick={finishScene}>
-          元のシーンを終えてリザルトを見る
-        </Button>
       )}
       {selectedSceneId && (
         <a href={`/worlds/${id}/play?actorId=${viewer}`}>現在のシーンへ戻る</a>
