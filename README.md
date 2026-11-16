@@ -56,6 +56,8 @@ API・ワーカー・Web・管理画面は、それぞれ `pnpm --filter @gestal
 
 下位モデルにはOpenRouterのMuse Ember／lowを採用します。上位モデルと既存の上位引継ぎは各運用環境の設定を維持します。[4試行のシーン比較](documents/evaluations/ember-flash-scenes-2026-11-17.md)と[ADR-044](documents/adr/ADR-044-ember-lower-model.md)に根拠と限界を記録しています。`.env.example`の上位Sonnet 5.5／medium、確定判断`combined`、最大出力65,536トークンは従来の例を保持しています。
 
+背景準備・参加選択の推論量は既存ルールどおり上位側のeffortを使います。defaultのlowと、各工程へ実際に送る推論量を区別してください。
+
 初回設定には`.env.example`のLLM設定を使い、`OPENROUTER_API_KEY`と例の上位用の`ANTHROPIC_API_KEY`をローカルで設定してください。既存DBでは管理画面のモデル設定で下位を更新し、上位の設定を保持します。環境変数だけでは保存済み設定を上書きしません。新しい応答から新設定を使い、再開中の応答は取得済みの設定版を保持します。旧要求に必要なプロバイダーのキーも保持してください。
 
 `.env` の `LLM_MODEL` で基本モデルを、`LLM_RESOLUTION_MODEL` で結果提案・確定判断を担当する上位モデルを指定します。モデルIDは固定リストに制限しません。各サービスが返す利用可能なIDを指定してください。キーの値はチャットへ送らず、ローカルの `.env` に記入します。

@@ -8,6 +8,8 @@
 
 新しい応答のdefaultをOpenRouterの `meta/muse-ember` / lowへ変更する。resolutionのモデル・API形式・推論量・単価、判定方式、形式修復後の上位引継ぎ、予算と呼出し上限は変更しない。新しいプロンプトや検品ループも追加しない。
 
+lowはdefault設定の値である。背景準備・参加選択がresolutionの推論量を使う既存ルールも保持するため、本番のそれらのEmber要求はmediumとなる。両群の上位をFlash / lowに揃えた比較時の背景lowとは区別する。行動・結果要約のlowと、背景のmediumを結合試験で確認する。
+
 本番の変更前は設定版1で、下位がGemini 3.8 Flash / low、上位がGPT-6.1 Terra / medium / Responses、judgment=combined、応答呼出し上限128（版6）である。運用変更は共通のcredentials.putとmodels.putを使い、上位を元オブジェクトのまま保持してdefaultだけを完全な新設定へ置換する。Emberの通常入力/cache読取/出力単価は0.10 / 0.004 / 0.50 USD / 100万token。Flashのcache保存料や単価を引き継がない。
 
 既存のModelSettingsによる応答ID単位の版固定を使う。保存済みの設定・要求・単価・Work.target・旧プロバイダー資格情報を削除・上書きせず、取得済みの旧応答はその設定版で続ける。切替後の新しい応答だけがEmberを使う。DBの自動一括移行や開始済みシーンのモデル差替えは行わない。

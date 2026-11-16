@@ -213,6 +213,16 @@ test("OpenRouterのシーン要求はlowと現行スキーマを送り、独立�
     restarted.complete(callId, "scene-resolve", messages),
   );
   expect(transport).toHaveBeenCalledTimes(before);
+  await restarted.complete(
+    randomUUID(),
+    "scene-background",
+    messages,
+    "default",
+    "resolution",
+  );
+  expect(requests.at(-1)).toMatchObject({
+    body: { model: ember.model, reasoning: { effort: "medium" } },
+  });
   const repaired = await restarted.complete(randomUUID(), "scene-resolve", [
     { role: "user", content: "force-format-repair" },
   ]);
