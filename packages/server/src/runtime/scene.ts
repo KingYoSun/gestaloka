@@ -36,7 +36,9 @@ import {
   belongingOps,
   changeBelongings,
   readBelongings,
+  type BelongingOp,
 } from "../world/belongings.js";
+import { locationRecords } from "../world/locations.js";
 import {
   Query,
   IntentResult,
@@ -850,8 +852,21 @@ export class WorldScenes {
         workState === "complete"
       )
         delete d.work;
+      const committedState =
+        d.work?.kind === "background"
+          ? await this.agent.store.receipt(
+              d.worldId,
+              this.#initializationCommit(row),
+            )
+          : d.work?.kind === "resolve"
+            ? await this.agent.store.receipt(
+                d.worldId,
+                this.#belongingsCommit(row),
+              )
+            : undefined;
       if (
         row.data.work &&
+        !committedState &&
         !row.data.limitReached &&
         !row.data.suspended &&
         !(
@@ -1093,6 +1108,9 @@ export class WorldScenes {
   #belongingsCommit(row: SceneRow) {
     return sceneId(`${row.id}:belongings:${row.data.belongingCommits ?? 0}`);
   }
+  #initializationCommit(row: SceneRow) {
+    return sceneId(`${row.id}:locations:${row.data.work!.id}`);
+  }
   // このシーン自身の物品・技能の確定で進んだ版を、シーンの依存へ引き継ぐ。
   #adopt(row: SceneRow, receipt?: Receipt) {
     for (const dependency of row.data.basis) {
@@ -1101,6 +1119,114 @@ export class WorldScenes {
         dependency.version = moved.after;
     }
   }
+  async #locations(
+    row: SceneRow,
+    actors = row.data.background?.participants ?? [
+      row.actor_id,
+      ...(row.data.externalActors ?? []),
+    ],
+  ) {
+    this.#adopt(
+      row,
+      await this.agent.store.receipt(
+        row.data.worldId,
+        this.#belongingsCommit(row),
+      ),
+    );
+    if (row.data.work?.kind === "background")
+      this.#adopt(
+        row,
+        await this.agent.store.receipt(
+          row.data.worldId,
+          this.#initializationCommit(row),
+        ),
+      );
+    const d = row.data,
+      context = this.agent.store.context(d.worldId, d.basis),
+      locations: Record<
+        string,
+        Awaited<ReturnType<typeof locationRecords>>
+      > = {};
+    d.at = Math.max(
+      d.at,
+      (await this.construction.get(row.construction_id)).at,
+    );
+    for (const actor of actors) {
+      locations[actor] = await locationRecords(context, actor);
+      d.at = Math.max(d.at, ...locations[actor].map((r) => r.at));
+    }
+    d.basis = context.dependencies;
+    if (row.state === "preparing" && !d.background) d.startedAt = d.at;
+    return locations;
+  }
+  async #state(
+    row: SceneRow,
+    at: number,
+    ops: BelongingOp[],
+    initialization = false,
+  ) {
+    const d = row.data,
+      context = this.agent.store.context(d.worldId, d.basis),
+      nodes: { id: string; text: string; kind: "existence" }[] = [];
+    const references = new Set(
+      ops.flatMap((op) =>
+        Object.entries(op)
+          .filter(([key]) => !["type", "text", "label", "basis"].includes(key))
+          .flatMap(([, value]) => value),
+      ),
+    );
+    for (const node of d.background!.creations)
+      if (references.has(node.id) && !(await context.node(node.id)))
+        nodes.push({ ...node, kind: "existence" as const });
+    const commitId = initialization
+        ? this.#initializationCommit(row)
+        : this.#belongingsCommit(row),
+      prior = await this.agent.store.receipt(d.worldId, commitId);
+    if (!ops.length && !nodes.length && !prior) return at;
+    const receipt =
+      prior ??
+      (await ExecutionBudget.commit(async () =>
+        changeBelongings(
+          this.agent.store,
+          await this.agent.store.claim(
+            d.worldId,
+            sceneId(`${row.id}:belongings`),
+          ),
+          {
+            commitId,
+            at,
+            ops,
+            nodes,
+            dependencies: context.dependencies,
+          },
+        ),
+      ));
+    this.#adopt(row, receipt);
+    if (!initialization) d.belongingCommits = (d.belongingCommits ?? 0) + 1;
+    return Math.max(at, receipt.at);
+  }
+  async #initializeLocations(row: SceneRow) {
+    const locations = await this.#locations(row),
+      facts = new Map(
+        row.data
+          .background!.facts.filter(
+            (f) =>
+              f.location &&
+              row.data.background!.participants.includes(f.subjectId),
+          )
+          .map((f) => [f.subjectId, f]),
+      );
+    const ops: BelongingOp[] = [...facts.values()]
+      .filter((f) => !locations[f.subjectId]?.length)
+      .map((f) => ({
+        type: "locate",
+        subjectId: f.subjectId,
+        text: f.text,
+        aboutIds: f.aboutIds,
+      }));
+    row.data.at = await this.#state(row, row.data.at, ops, true);
+  }
+
   // 行動の解決へ渡す、登場人物の確定済みの携行品・保管先の在庫・技能。観測には加えない。
   async #belongings(row: SceneRow) {
     const context = this.agent.store.context(row.data.worldId),
@@ -1246,6 +1372,7 @@ export class WorldScenes {
     await this.#save(row, undefined, row.claim!);
   }
   async #background(row: SceneRow) {
+    await this.#locations(row);
     // An older worker may have paused with a completed call based on stale reads.
     if (row.data.work && row.data.basis.length)
       await this.agent.store
@@ -1298,11 +1425,12 @@ export class WorldScenes {
           request.kind === "node" ? [request.id] : [],
         ),
       );
+      request.at = d.at;
       d.backgroundMessages = [
         {
           role: "user",
           content: JSON.stringify({
-            request,
+            request: { ...request, at: d.at },
             backgroundVersion: 2,
             initialContext: context.initialContext,
             controlledActorIds: context.controlledActorIds,
@@ -1387,6 +1515,7 @@ export class WorldScenes {
           read.controlledActorIds,
           answer.requests.flatMap((q) => (q.kind === "node" ? [q.id] : [])),
         );
+        request.at = d.at;
         d.backgroundMessages.push(
           { role: "assistant", content: response.content },
           {
@@ -1394,6 +1523,7 @@ export class WorldScenes {
             content: JSON.stringify({
               requests: answer.requests,
               results: read.results,
+              currentAt: d.at,
               controlledActorIds: read.controlledActorIds,
               otherPlayers: d.peerConditions,
               sleepingPlayerIds: await this.#sleepingPlayers(
@@ -1565,6 +1695,15 @@ export class WorldScenes {
         throw new SceneResponseError(
           "他プレイヤーをNPCの登場主体にできません。共有世界に確定済みの行動・返答は背景として参照してください",
         );
+      const initialized = await this.agent.store.receipt(
+        d.worldId,
+        this.#initializationCommit(row),
+      );
+      const initializedIds = new Set(
+        initialized?.changes.nodes
+          .filter((n) => n.kind === "existence")
+          .map((n) => n.id),
+      );
       const creations = new Set(decision.creations.map((n) => n.id)),
         context = this.agent.store.context(d.worldId, d.basis),
         known = new Set<string>();
@@ -1595,10 +1734,15 @@ export class WorldScenes {
             ? { kind: "event" }
             : null);
         if (creations.has(id)) {
-          if (node)
+          if (
+            node &&
+            !d.background?.creations.some((n) => n.id === id) &&
+            !initializedIds.has(id)
+          )
             throw new SceneResponseError(
               "既存の同一性を作り直すことはできません",
             );
+          if (node) known.add(id);
         } else {
           if (!node)
             throw new SceneResponseError(
@@ -1664,6 +1808,7 @@ export class WorldScenes {
             : await this.agent.intentView(d.worldId, id, d.at, d.purpose);
       await this.agent.store.context(d.worldId, d.basis).validate();
       d.background = decision;
+      await this.#initializeLocations(row);
       if (cited) Object.assign(d.sources!, cited);
       delete d.work;
       delete d.backgroundMessages;
@@ -1705,6 +1850,13 @@ export class WorldScenes {
     );
     for (const player of read.players) known.set(player.actorId, player);
     d.peerConditions = [...known.values()];
+    d.at = Math.max(
+      d.at,
+      ...d.peerConditions.flatMap((p) =>
+        p.locations.map((location) => location.at),
+      ),
+    );
+    if (row.state === "preparing" && !d.background) d.startedAt = d.at;
     d.basis = read.dependencies;
   }
   async #sleepingPlayers(row: SceneRow, ids: string[]) {
@@ -1746,18 +1898,27 @@ export class WorldScenes {
       ? []
       : (await this.agent.intentView(d.worldId, actor, d.startedAt, d.purpose))
           .conditions;
-    const value = await this.#ask(
-      row,
-      "intent",
-      "actor-intent.md",
-      sceneView(
+    const locations = await this.#locations(row, [actor]),
+      view = sceneView(
         d.views[actor]!,
         bg,
         d.events,
         own,
         d.at,
         d.choices.filter((i) => i.actorId === actor).map((i) => i.actionText),
-      ),
+      );
+    view.conditions.push(
+      ...locations[actor]!.map((location) => ({
+        text: location.text,
+        about: location.aboutIds,
+        at: location.at,
+      })),
+    );
+    const value = await this.#ask(
+      row,
+      "intent",
+      "actor-intent.md",
+      view,
       "resolution",
     );
     const choice = {
@@ -1933,6 +2094,8 @@ export class WorldScenes {
           d.work?.kind === "resolve"
             ? JSON.parse(d.work.messages[1]!.content)
             : undefined,
+        currentLocations =
+          savedInput?.currentLocations ?? (await this.#locations(row)),
         received: Awaited<ReturnType<SharedScenes["contacts"]["received"]>> =
           savedInput
             ? (savedInput.receivedContacts ?? [])
@@ -1953,13 +2116,15 @@ export class WorldScenes {
                     ...received.map((r) => r.speaker),
                   ]),
                 ].filter((id) => !bg.participants.includes(id)),
-              ),
-        value = await this.#ask(
+              );
+      d.at = Math.max(d.at, ...livePlayers.map((p) => p.at));
+      const value = await this.#ask(
           row,
           "resolve",
           "scene-play.md",
           {
             background: bg,
+            currentLocations,
             ...(livePlayers.length ? { livePlayers } : {}),
             ...(received.length ? { receivedContacts: received } : {}),
             ...(d.peerConditions?.length
@@ -2160,7 +2325,7 @@ export class WorldScenes {
           d.departures?.[id] !== undefined
         )
           throw new SceneResponseError("本人の判断の割当が不正です");
-      const nextAt = d.at + step.elapsedMs;
+      let nextAt = d.at + step.elapsedMs;
       if (!Number.isSafeInteger(nextAt))
         throw new SceneResponseError("シーンの経過時点が不正です");
       const receivers = sceneArrivals(
@@ -2168,7 +2333,7 @@ export class WorldScenes {
         step.arrivals,
         bg.participants,
         actor,
-        d.at,
+        d.events.at(-1)?.period.until ?? d.at,
       );
       for (const receiver of receivers)
         if (actors.has(receiver)) step.decisions[receiver] = "decide";
@@ -2189,21 +2354,22 @@ export class WorldScenes {
           );
       }
       // 表示する出来事を保存する前に確定する。競合すれば出来事ごと最新の状態から解決し直す。
-      if (step.belongings?.length)
+      {
         try {
-          const lease = await this.agent.store.claim(
-            d.worldId,
-            sceneId(`${row.id}:belongings`),
+          const positions = new Map(
+            step.events.flatMap((e) =>
+              e.locations.map(
+                (location) => [location.subjectId, location] as const,
+              ),
+            ),
           );
-          const receipt = await ExecutionBudget.commit(() =>
-            changeBelongings(this.agent.store, lease, {
-              commitId: this.#belongingsCommit(row),
-              at: nextAt,
-              ops: belongingOps(step.belongings!),
-            }),
-          );
-          this.#adopt(row, receipt);
-          d.belongingCommits = (d.belongingCommits ?? 0) + 1;
+          nextAt = await this.#state(row, nextAt, [
+            ...belongingOps(step.belongings ?? []),
+            ...[...positions.values()].map((location) => ({
+              type: "locate" as const,
+              ...location,
+            })),
+          ]);
         } catch (error) {
           if (
             error instanceof WorldConflict ||
@@ -2213,9 +2379,10 @@ export class WorldScenes {
           )
             throw error;
           throw new SceneResponseError(
-            `belongingsを確定できません: ${error.message}`,
+            `状態更新を確定できません: ${error.message}`,
           );
         }
+      }
       for (const e of step.events)
         d.events.push({
           ...e,
@@ -2501,6 +2668,38 @@ export class WorldScenes {
       delete d.waitingFor;
     }
     if (!d.operationId) {
+      await this.#locations(row);
+      const anchors = sceneAnchors(
+          d.background!,
+          d.events,
+          d.startedAt,
+          row.id,
+          true,
+        ),
+        context = this.agent.store.context(d.worldId, d.basis);
+      const nodes: typeof anchors.nodes = [];
+      for (const node of anchors.nodes)
+        if (node.kind !== "existence" || !(await context.node(node.id)))
+          nodes.push(node);
+      anchors.nodes = nodes;
+      d.basis = context.dependencies;
+      const locationScripts = new Set(
+        Object.values(d.sources ?? {})
+          .filter(
+            (s) =>
+              s.edge.kind === "status" &&
+              s.edge.role === "content" &&
+              s.edge.text === "location",
+          )
+          .map((s) => s.edge.target),
+      );
+      const sources = Object.fromEntries(
+        Object.entries(d.sources ?? {}).filter(
+          ([, s]) =>
+            s.edge.kind !== "status" ||
+            (s.edge.text !== "location" && !locationScripts.has(s.edge.source)),
+        ),
+      );
       await this.#transaction(async (db) => {
         d.operationId = await this.agent.create(
           {
@@ -2516,15 +2715,10 @@ export class WorldScenes {
               continuing: true,
             })),
             completedScene: {
-              ...(d.sources ? { sources: d.sources } : {}),
+              ...(d.sources ? { sources } : {}),
               background: d.background!,
               events: d.events,
-              anchors: sceneAnchors(
-                d.background!,
-                d.events,
-                d.startedAt,
-                row.id,
-              ),
+              anchors,
               ...(d.ending ? { ending: d.ending } : {}),
             },
           },

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { WorldAccess } from "@gestaloka/server/access";
+import { changeBelongings } from "@gestaloka/server/belongings";
 import type { WorldProposal } from "@gestaloka/server/agent";
 import {
   sceneAnchors,
@@ -928,6 +929,7 @@ test("退出後は未確定の履歴から次々に開始でき、元の確定�
     b = people[1]!;
   continuation = { actor: a.actor, creation: randomUUID() };
   try {
+    await presence(0);
     await presence(1);
     selections.set(a.actor, { candidates: [b.actor], mergeInto: null });
     const parent = await prepare(0);
@@ -2795,6 +2797,18 @@ test("待機中・NPCモードのプレイヤーとNPCを、WebとCLIへ同じ�
       },
     },
   );
+  await changeBelongings(store, await store.claim(graph, randomUUID()), {
+    commitId: randomUUID(),
+    at,
+    ops: locationBackground.facts
+      .filter((f) => f.location)
+      .map((f) => ({
+        type: "locate",
+        subjectId: f.subjectId,
+        text: f.text,
+        aboutIds: f.aboutIds,
+      })),
+  });
   await isolated.databases.postgres.query(
     "UPDATE world_scene_presence SET active=false WHERE world_id=$1",
     [world],
@@ -2843,6 +2857,18 @@ test("待機中・NPCモードのプレイヤーとNPCを、WebとCLIへ同じ�
     );
     expect((await cli.run(viewer.profile, "npcs")).npcs).toEqual(shown.npcs);
     expect((await web()).json()).toEqual(shown);
+    await changeBelongings(store, await store.claim(graph, randomUUID()), {
+      commitId: randomUUID(),
+      at: Math.max(0, at - 1000),
+      ops: [
+        {
+          type: "locate",
+          subjectId: npc,
+          text: "見張り台の下にいる",
+          aboutIds: [place],
+        },
+      ],
+    });
     const sceneId = randomUUID();
     await isolated.databases.postgres.query(
       "INSERT INTO world_scene(id,construction_id,actor_id,state,data) VALUES($1,$2,$3,'active',$4)",
@@ -2851,7 +2877,7 @@ test("待機中・NPCモードのプレイヤーとNPCを、WebとCLIへ同じ�
         world,
         viewer.actor,
         {
-          at: at + 1000,
+          at: Math.max(0, at - 1000),
           startedAt: at,
           background: locationBackground,
           events: [
@@ -2895,6 +2921,95 @@ test("待機中・NPCモードのプレイヤーとNPCを、WebとCLIへ同じ�
     await cli.run(guest.profile, "npc", "--return");
   }
   expect(await players()).toEqual([]);
+}, 60000);
+
+test("一覧と別シーンの接触文脈が、古い背景より最新の確定所在地を共用する", async () => {
+  const [viewer, guest] = [people[0]!, people[1]!],
+    store = runtime.agent.store,
+    at = (await runtime.get(world)).at + 1000,
+    place = randomUUID(),
+    scene = randomUUID();
+  await cli.run(guest.profile, "standby");
+  await changeBelongings(store, await store.claim(graph, randomUUID()), {
+    commitId: randomUUID(),
+    at,
+    nodes: [{ id: place, kind: "existence", text: "灯台" }],
+    ops: [
+      {
+        type: "locate",
+        subjectId: guest.actor,
+        text: "灯台の門前",
+        aboutIds: [place],
+      },
+    ],
+  });
+  const previous = (
+    await isolated.databases.postgres.query(
+      "SELECT scene_id FROM world_actor_scene WHERE world_id=$1 AND actor_id=$2",
+      [world, guest.actor],
+    )
+  ).rows[0];
+  await isolated.databases.postgres.query(
+    "INSERT INTO world_scene(id,construction_id,actor_id,state,data) VALUES($1,$2,$3,'active',$4)",
+    [
+      scene,
+      world,
+      guest.actor,
+      {
+        worldId: graph,
+        at: 0,
+        startedAt: 0,
+        background: {
+          facts: [
+            {
+              subjectId: guest.actor,
+              text: "古い家の前",
+              aboutIds: [],
+              location: true,
+            },
+          ],
+        },
+        events: [],
+      },
+    ],
+  );
+  await isolated.databases.postgres.query(
+    "INSERT INTO world_actor_scene(world_id,actor_id,scene_id) VALUES($1,$2,$3) ON CONFLICT(world_id,actor_id) DO UPDATE SET scene_id=excluded.scene_id",
+    [world, guest.actor, scene],
+  );
+  try {
+    const listed = (
+      await access.partners(viewer.id, world, viewer.actor)
+    ).players.find((p) => p.actorId === guest.actor)!;
+    const source = {
+      id: randomUUID(),
+      construction_id: world,
+      data: { worldId: graph },
+    } as Parameters<typeof access.scenes.shared.contacts.states>[0];
+    const [contact] = await access.scenes.shared.contacts.states(source, [
+      guest.actor,
+    ]);
+    expect(listed.locations).toEqual(["灯台の門前"]);
+    expect(contact!.locations.map((r) => r.text)).toEqual(listed.locations);
+    expect(contact!.locations[0]!.aboutIds).toEqual([place]);
+    expect(contact!.at).toBe(at);
+    expect(contact!.facts[0]!.text).toBe("古い家の前");
+  } finally {
+    if (previous)
+      await isolated.databases.postgres.query(
+        "UPDATE world_actor_scene SET scene_id=$3 WHERE world_id=$1 AND actor_id=$2",
+        [world, guest.actor, previous.scene_id],
+      );
+    else
+      await isolated.databases.postgres.query(
+        "DELETE FROM world_actor_scene WHERE world_id=$1 AND actor_id=$2",
+        [world, guest.actor],
+      );
+    await isolated.databases.postgres.query(
+      "DELETE FROM world_scene WHERE id=$1",
+      [scene],
+    );
+  }
 }, 60000);
 
 test.each(["join", "decline"])(

@@ -7,6 +7,10 @@ import {
   readBelongings,
   type BelongingOp,
 } from "@gestaloka/server/belongings";
+import {
+  readLocations,
+  locationRecords,
+} from "../../packages/server/src/world/locations.js";
 
 const databases = connectDatabases();
 const store = new WorldStore(databases.graph);
@@ -65,6 +69,69 @@ const summaries = async (worldId: string) =>
 beforeAll(async () => {
   await databases.verify();
   await store.setup();
+});
+test("所在地は古いシーン時刻を補正し、旧所在地と参照を閉じて再送でも増やさない", async () => {
+  const { worldId, ids, apply } = await world("人物", "室内", "門前"),
+    [person, inside, gate] = ids as [string, string, string];
+  await apply(100, [
+    { type: "locate", subjectId: person, text: "室内", aboutIds: [inside] },
+  ]);
+  const commit = randomUUID(),
+    moved = await apply(
+      10,
+      [{ type: "locate", subjectId: person, text: "門前", aboutIds: [gate] }],
+      commit,
+    );
+  expect(moved.at).toBe(100);
+  expect(await readLocations(store.context(worldId), person)).toEqual(["門前"]);
+  expect(
+    await apply(
+      10,
+      [{ type: "locate", subjectId: person, text: "門前", aboutIds: [gate] }],
+      commit,
+    ),
+  ).toEqual(moved);
+  const history = (
+    await store
+      .context(worldId)
+      .history(person, "status", "out", Number.MAX_SAFE_INTEGER)
+  ).filter((e) => e.text === "location");
+  expect(history).toHaveLength(2);
+  const old = history.find((e) => e.period.until !== undefined)!;
+  expect(
+    (
+      await store
+        .context(worldId)
+        .history(old.target, "status", "out", Number.MAX_SAFE_INTEGER)
+    ).every((e) => e.period.until === 100),
+  ).toBe(true);
+  expect(await locationRecords(store.context(worldId), person)).toMatchObject([
+    { text: "門前", at: 100, aboutIds: [gate] },
+  ]);
+});
+test("同じ所在地の版からの同時更新は一方だけを確定する", async () => {
+  const { worldId, ids, apply } = await world("人物", "場所"),
+    [person, place] = ids as [string, string];
+  await apply(100, [
+    { type: "locate", subjectId: person, text: "入口", aboutIds: [place] },
+  ]);
+  const context = store.context(worldId);
+  await locationRecords(context, person);
+  const results = await Promise.allSettled(
+    ["窓際", "奥"].map(async (text) =>
+      changeBelongings(store, await store.claim(worldId, randomUUID()), {
+        commitId: randomUUID(),
+        at: 20,
+        dependencies: context.dependencies,
+        ops: [{ type: "locate", subjectId: person, text, aboutIds: [place] }],
+      }),
+    ),
+  );
+  expect(results.map((r) => r.status).sort()).toEqual([
+    "fulfilled",
+    "rejected",
+  ]);
+  expect(await locationRecords(store.context(worldId), person)).toHaveLength(1);
 });
 afterAll(async () => {
   for (const worldId of worlds)

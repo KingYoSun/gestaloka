@@ -6,6 +6,7 @@ import type { WorldAgent } from "./agent.js";
 import type { WorldProposal } from "./agent.js";
 import type { Construction } from "./construction.js";
 import { randomUUID } from "node:crypto";
+import { LocationOp } from "../world/locations.js";
 
 export class SceneResponseError extends Error {}
 
@@ -134,7 +135,14 @@ export const SceneStep = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("scene"),
-      events: z.array(SceneEvent),
+      events: z.array(
+        SceneEvent.extend({
+          locations: z.array(LocationOp.omit({ type: true })).min(1),
+        }).refine((e) => e.locations.some((p) => p.subjectId === e.actorId), {
+          path: ["locations"],
+          message: "行動主体の結果時点の所在地が必要です",
+        }),
+      ),
       arrivals: z
         .array(
           z
@@ -196,7 +204,7 @@ export const SceneStep = z.discriminatedUnion("type", [
 export const ObservedStep = SceneStep.options[0]
   .omit({ needsContext: true })
   .extend({
-    events: z.array(SceneEvent).min(1),
+    events: z.array(SceneStep.options[0].shape.events.element).min(1),
     decisions: z.record(
       id,
       z.union([
@@ -399,6 +407,7 @@ export function sceneAnchors(
   events: RecordedSceneEvent[],
   at: number,
   id: string,
+  locationsCommitted = false,
 ): Change {
   const nodes: Change["nodes"] = background.creations.map((n) => ({
       ...n,
@@ -406,32 +415,11 @@ export function sceneAnchors(
     })),
     edges: Change["edges"] = [];
   for (const kind of ["status", "interpret"] as const) {
-    const facts = (
-      kind === "status" ? background.facts : background.beliefs
-    ).map((f, i) => ({
-      ...f,
-      key: `${id}:${kind}:${i}`,
-    }));
-    if (kind === "status")
-      for (const e of events)
-        for (const [i, f] of (e.locations ?? []).entries())
-          facts.push({
-            ...f,
-            location: true,
-            at: e.period.until,
-            key: `${e.id}:location:${i}`,
-          });
-    facts.sort((a, b) => (a.at ?? at) - (b.at ?? at));
+    const facts = kind === "status" ? background.facts : background.beliefs;
     for (const [i, f] of facts.entries()) {
-      const script = sceneId(f.key),
-        from = f.at ?? at,
-        next =
-          kind === "status" && f.location
-            ? facts
-                .slice(i + 1)
-                .find((next) => next.location && next.subjectId === f.subjectId)
-            : undefined,
-        period = { from, ...(next ? { until: next.at ?? at } : {}) };
+      if (locationsCommitted && kind === "status" && f.location) continue;
+      const script = sceneId(`${id}:${kind}:${i}`),
+        period = { from: f.at ?? at };
       nodes.push({ id: script, kind: "script", text: f.text });
       edges.push({
         id: sceneId(`${script}:content`),
@@ -439,7 +427,6 @@ export function sceneAnchors(
         role: "content",
         source: f.subjectId,
         target: script,
-        ...(kind === "status" && f.location ? { text: "location" } : {}),
         period,
       });
       for (const target of f.aboutIds)

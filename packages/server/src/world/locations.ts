@@ -1,23 +1,51 @@
 import type { WorldContext } from "./store.js";
+import { z } from "zod";
+type Context = Pick<WorldContext, "history" | "node" | "relations">;
 
-// 所在は明示されたstatusだけから読む。自由記述やabout先の種類では判定しない。
-export async function readLocations(
-  context: WorldContext,
+export const LocationOp = z
+  .object({
+    type: z.literal("locate"),
+    subjectId: z.uuid(),
+    text: z.string().trim().min(1),
+    aboutIds: z.array(z.uuid()),
+  })
+  .strict();
+
+export async function locationRecords(
+  context: Context,
   actor: string,
-  at: number,
+  at = Number.MAX_SAFE_INTEGER,
 ) {
   const records = (await context.history(actor, "status", "out", at)).filter(
       (e) => e.role === "content" && e.text === "location",
     ),
-    latest = Math.max(...records.map((e) => e.period.from)),
-    texts = await Promise.all(
-      records
-        .filter(
-          (e) =>
-            e.period.from === latest &&
-            (e.period.until === undefined || at < e.period.until),
-        )
-        .map(async (e) => (await context.node(e.target, at))?.text),
-    );
-  return [...new Set(texts.filter((t): t is string => t !== undefined))].sort();
+    latest = Math.max(...records.map((e) => e.period.from));
+  return Promise.all(
+    records
+      .filter(
+        (e) =>
+          e.period.from === latest &&
+          (e.period.until === undefined || at < e.period.until),
+      )
+      .map(async (e) => ({
+        id: e.id,
+        at: e.period.from,
+        text: (await context.node(e.target, at))!.text,
+        aboutIds: (await context.relations(e.target, "status", "out", at))
+          .filter((a) => a.role === "about")
+          .map((a) => a.target)
+          .sort(),
+      })),
+  );
+}
+
+// 所在は明示されたstatusだけから読む。自由記述やabout先の種類では判定しない。
+export async function readLocations(
+  context: Context,
+  actor: string,
+  at = Number.MAX_SAFE_INTEGER,
+) {
+  return [
+    ...new Set((await locationRecords(context, actor, at)).map((r) => r.text)),
+  ].sort();
 }

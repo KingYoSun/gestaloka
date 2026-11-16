@@ -14,6 +14,7 @@ test("終了した最新の所在から古い所在へ戻らず、別の状態�
       },
       { role: "content", target: "private", period: { from: 30 } },
     ],
+    relations: async () => [],
     node: async (id: string) => ({
       text: id === "new" ? "入口の外" : "私的な状態",
     }),
