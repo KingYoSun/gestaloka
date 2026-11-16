@@ -139,7 +139,12 @@ export async function resumeJob(
     );
   if (
     !["paused", "play_paused"].includes(found.state) &&
-    found.executionState !== "interrupted"
+    found.executionState !== "interrupted" &&
+    !(
+      kind === "scene" &&
+      found.executionState === "paused" &&
+      ["preparing", "acting", "reflecting"].includes(found.state)
+    )
   )
     throw new AccessError(
       409,
