@@ -840,90 +840,106 @@ test("シーン前に本人へ返した初期知識だけを保存し、再取�
   expect(modelCalls).toBe(before);
 });
 
-test("形式修復・保存後の再開でも継続判断を反転させず、履歴を一度だけ表示する", async () => {
-  const id = randomUUID();
-  await command({
-    requestId: id,
-    command: "prepare",
-    purpose: "箱の印を調べる",
-  });
-  await access.scenes.tick(id);
-  await command({ requestId: randomUUID(), command: "start" });
-  const response = {
-    type: "scene",
-    concluded: false,
-    events: [
-      {
-        actorId: actor,
-        text: "箱の表を調べた",
-        locations: [{ subjectId: actor, text: "道端", aboutIds: [place] }],
-        receipts: [{ observerId: actor, text: "箱の表に青い印が見える" }],
-      },
-    ],
-    decisions: { [actor]: "decide" },
-  };
-  faults.set("resolve", [
-    {
-      content: JSON.stringify({
-        ...response,
-        events: [{ ...response.events[0], locations: [] }],
-      }),
-    },
-    { content: JSON.stringify({ ...response, concluded: true }) },
-    { content: JSON.stringify(response) },
-  ]);
-  let stopped = false;
-  const calls = vi
-    .spyOn(model, "complete")
-    .mockImplementation(async (...args) => {
-      if (
-        args[1] === "scene-resolve" &&
-        args[2].some(
-          (m) =>
-            m.role === "user" &&
-            m.content.includes('"preserveConclusion":false'),
-        )
-      ) {
-        const repair = JSON.parse(args[2].at(-1)!.content);
-        expect(repair.preserveConclusion).toBe(false);
-        expect(repair.responseSchema.oneOf[0].properties.concluded.const).toBe(
-          false,
-        );
-        if (!stopped) {
-          stopped = true;
-          throw new SupersededWorker("修復要求を保存して停止");
-        }
-      }
-      return complete(...args);
-    });
-  try {
+test.each([false, true])(
+  "形式修復・保存後の再開でも継続判断を反転させず、履歴を一度だけ表示する（API形式修復: %s）",
+  async (providerRepair) => {
+    const id = randomUUID();
     await command({
-      requestId: randomUUID(),
-      command: "act",
-      actionText: "隣の箱を調べる",
+      requestId: id,
+      command: "prepare",
+      purpose: "箱の印を調べる",
     });
     await access.scenes.tick(id);
-    expect(stopped).toBe(true);
-    expect((await access.scenes.latest(construction))!.data.events).toEqual([]);
-    await new WorldAccess(runtime).scenes.tick(id);
-    const row = (await access.scenes.latest(construction))!;
-    expect(row.state).toBe("active");
-    expect(row.data.result).toBeUndefined();
-    expect(row.data.events).toHaveLength(1);
-    expect(row.data.events[0]!.receipts[0]!.text).toBe(
-      "箱の表に青い印が見える",
-    );
-    expect(faults.get("resolve")).toEqual([]);
-    const count = modelCalls;
-    await access.scenes.tick(id);
-    expect(modelCalls).toBe(count);
-  } finally {
-    calls.mockRestore();
-    faults.clear();
-    await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
-    inputs.length = 0;
-  }
-});
+    await command({ requestId: randomUUID(), command: "start" });
+    const response = {
+      type: "scene",
+      concluded: false,
+      events: [
+        {
+          actorId: actor,
+          text: "箱の表を調べた",
+          locations: [{ subjectId: actor, text: "道端", aboutIds: [place] }],
+          receipts: [{ observerId: actor, text: "箱の表に青い印が見える" }],
+        },
+      ],
+      decisions: { [actor]: "decide" },
+    };
+    faults.set("resolve", [
+      {
+        content: JSON.stringify({
+          ...response,
+          events: [{ ...response.events[0], locations: [] }],
+        }),
+      },
+      { content: JSON.stringify({ ...response, concluded: true }) },
+      { content: JSON.stringify(response) },
+    ]);
+    let stopped = false;
+    const calls = vi
+      .spyOn(model, "complete")
+      .mockImplementation(async (...args) => {
+        if (
+          args[1] === "scene-resolve" &&
+          args[2].some(
+            (m) =>
+              m.role === "user" &&
+              m.content.includes('"preserveConclusion":false'),
+          )
+        ) {
+          const repair = JSON.parse(args[2].at(-1)!.content);
+          expect(repair.preserveConclusion).toBe(false);
+          expect(
+            repair.responseSchema.oneOf[0].properties.concluded.const,
+          ).toBe(false);
+          if (!stopped) {
+            stopped = true;
+            throw new SupersededWorker("修復要求を保存して停止");
+          }
+        }
+        const result = await complete(...args);
+        if (providerRepair && args[1] === "scene-resolve" && !args[6])
+          return {
+            ...result,
+            formatAttempts: 1,
+            formatHistory: [result.content],
+            content: JSON.stringify({
+              ...JSON.parse(result.content),
+              concluded: true,
+            }),
+          };
+        return result;
+      });
+    try {
+      await command({
+        requestId: randomUUID(),
+        command: "act",
+        actionText: "隣の箱を調べる",
+      });
+      await access.scenes.tick(id);
+      expect(stopped).toBe(true);
+      expect((await access.scenes.latest(construction))!.data.events).toEqual(
+        [],
+      );
+      await new WorldAccess(runtime).scenes.tick(id);
+      const row = (await access.scenes.latest(construction))!;
+      expect(row.state).toBe("active");
+      expect(row.data.result).toBeUndefined();
+      expect(row.data.events).toHaveLength(1);
+      expect(row.data.events[0]!.receipts[0]!.text).toBe(
+        "箱の表に青い印が見える",
+      );
+      expect(faults.get("resolve")).toEqual([]);
+      const count = modelCalls;
+      await access.scenes.tick(id);
+      expect(modelCalls).toBe(count);
+    } finally {
+      calls.mockRestore();
+      faults.clear();
+      await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
+      inputs.length = 0;
+    }
+  },
+);
 
 test.each(["background", "intent", "resolve"])(
   "%sのJSON・型・未完了応答を同じ要求内で修正し、確定前の履歴を重複させない",

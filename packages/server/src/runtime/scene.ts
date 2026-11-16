@@ -1137,8 +1137,8 @@ export class WorldScenes {
     if (response.finishReason !== "stop")
       throw new SceneResponseError("シーンのモデル応答が未完了です");
     if (response.formatAttempts || response.upperModel) {
-      if (response.formatHistory?.length)
-        work.repairConclusion ??=
+      if (response.formatHistory?.length) {
+        const conclusion =
           workConclusion(work) ??
           sceneRepairConclusion(
             response.formatHistory.map((content): ChatMessage => ({
@@ -1146,6 +1146,8 @@ export class WorldScenes {
               content,
             })),
           );
+        if (conclusion !== undefined) work.repairConclusion = conclusion;
+      }
       work.formatAttempts =
         (work.formatAttempts ?? 0) + (response.formatAttempts ?? 0);
       if (response.upperModel) work.target = "resolution";
