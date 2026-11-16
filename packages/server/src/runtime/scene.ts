@@ -3119,9 +3119,11 @@ export class WorldScenes {
             "closing" &&
           (row.state === "paused" ||
             row.state === "preparing" ||
+            (row.state === "reflecting" && !row.data.background) ||
             (row.state === "acting" && row.data.resumeState))
         ) {
-          if (row.data.resumeState === "reflecting") row.state = "reflecting";
+          if (row.data.resumeState === "reflecting" && row.data.background)
+            row.state = "reflecting";
           else await this.#finishProgress(row, client);
         }
         if (row.data.playVersion !== 4) {
