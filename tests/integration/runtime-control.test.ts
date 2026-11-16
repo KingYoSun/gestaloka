@@ -107,7 +107,14 @@ beforeEach(async () => {
   transform = undefined;
   ({ runtime } = await fixtureRuntime(
     scope,
-    (c, u) => transform?.(c, u) ?? c,
+    (c, u) => {
+      // 権限・実行制御の検証には、参加時の大量の過去観測を使わない。
+      if (
+        (u.request as { phase?: string } | undefined)?.phase === "participant"
+      )
+        (c as { changes: { edges: unknown[] } }).changes.edges.splice(3);
+      return transform?.(c, u) ?? c;
+    },
     isolated.databases,
   ));
   auth = await fixtureAuth(isolated.databases.postgres);
@@ -339,6 +346,135 @@ test("未開始の参加生成をBANで止め、解除後に同じ参加要求�
   await resume("join", id);
   await access.players.tick(id);
   expect((await access.players.list(user, world)).items).toHaveLength(1);
+});
+
+test("同じシーンの重複配信は受信中の応答を奪わず、先行処理の完了後に続行する", async () => {
+  const { world, id } = await prepareJoin();
+  await access.players.tick(id);
+  const actor = (await access.players.list(user, world)).items[0]!.actorId!;
+  const scene = (
+    await access.sceneCommand(
+      user,
+      world,
+      {
+        requestId: randomUUID(),
+        command: "prepare",
+        purpose: "周囲を確かめる",
+      },
+      false,
+      actor,
+    )
+  ).scene!;
+  const pool = isolated.databases.postgres,
+    sent = gate(),
+    waiting = gate();
+  let proposals = 0;
+  transform = async (content) => {
+    if ((content as { type?: string }).type === "background") {
+      proposals++;
+      sent.release();
+      await waiting.ready;
+    }
+    return content;
+  };
+  const jobs = [randomUUID(), randomUUID()];
+  for (const job of jobs)
+    await pool.query(
+      "INSERT INTO pgboss.job(id,name,state,data) VALUES($1,$2,'active',$3)",
+      [job, `e2e-${scope}-scenes`, { id: scene.id }],
+    );
+  const first = access.scenes.tick(scene.id, jobs[0]);
+  let duplicate: Promise<unknown> | undefined;
+  try {
+    await sent.wait();
+    const calls = (await runtime.agent.model.ledger.summary()).calls;
+    duplicate = access.scenes.tick(scene.id, jobs[1]).catch((error) => error);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(
+      (
+        await pool.query(
+          "SELECT job_id FROM runtime_execution WHERE kind='scene' AND id=$1",
+          [scene.id],
+        )
+      ).rows[0].job_id,
+    ).toBe(jobs[0]);
+    expect(proposals).toBe(1);
+    waiting.release();
+    expect(await Promise.all([first, duplicate])).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect((await access.scene(user, world, false, actor)).scene?.state).toBe(
+      "ready",
+    );
+    expect((await runtime.agent.model.ledger.summary()).calls).toBe(calls);
+    expect((await runtime.agent.model.ledger.summary()).unsettled).toBe(0);
+  } finally {
+    waiting.release();
+    await Promise.allSettled([first, ...(duplicate ? [duplicate] : [])]);
+  }
+});
+
+test("背景準備中に終了した旧保存シーンを再開し、未確定予約を保持してリザルトへ進める", async () => {
+  const { world, id } = await prepareJoin();
+  await access.players.tick(id);
+  const actor = (await access.players.list(user, world)).items[0]!.actorId!;
+  const scene = (
+    await access.sceneCommand(
+      user,
+      world,
+      {
+        requestId: randomUUID(),
+        command: "prepare",
+        purpose: "準備中の終了を確認する",
+      },
+      true,
+      actor,
+    )
+  ).scene!;
+  const model = runtime.agent.model,
+    workId = randomUUID(),
+    pool = isolated.databases.postgres;
+  await model.run(scene.id, () =>
+    model.ledger.reserve(workId, "pending-background", 200, {}),
+  );
+  await pool.query(
+    "UPDATE world_scene SET state='paused',data=data||$2::jsonb WHERE id=$1",
+    [
+      scene.id,
+      {
+        resumeState: "reflecting",
+        ending: "requested",
+        work: {
+          id: workId,
+          kind: "background",
+          target: "default",
+          messages: [],
+        },
+      },
+    ],
+  );
+  await pool.query(
+    "UPDATE world_shared_scene SET flow='closing',end_reason='requested' WHERE scene_id=$1",
+    [scene.id],
+  );
+  await resume("scene", scene.id);
+  await access.scenes.tick(scene.id);
+  const row = await access.scenes.latest(world, undefined, false, actor);
+  expect(row?.state).toBe("result");
+  expect(row?.data.events).toEqual([]);
+  expect(row?.data.background?.creations).toEqual([]);
+  expect(
+    (
+      await pool.query(
+        "SELECT state,reserved_nano,charged_nano FROM llm_call WHERE id=$1",
+        [workId],
+      )
+    ).rows[0],
+  ).toEqual({ state: "pending", reserved_nano: "200", charged_nano: null });
+  const calls = (await model.ledger.summary()).calls;
+  await access.scenes.tick(scene.id);
+  expect((await model.ledger.summary()).calls).toBe(calls);
 });
 
 test("古いワーカーからの新たな送信を拒否し、現行実行の状態を上書きしない", async () => {
