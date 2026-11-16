@@ -53,6 +53,20 @@ export function approvedTransport(transport: typeof fetch): typeof fetch {
       } catch {
         continue;
       }
+      if (content.type === "scene") {
+        for (const event of content.events ?? [])
+          event.locations ??= [
+            {
+              subjectId: event.actorId,
+              text:
+                input.currentLocations?.[event.actorId]?.[0]?.text ??
+                "試験の場",
+              aboutIds:
+                input.currentLocations?.[event.actorId]?.[0]?.aboutIds ?? [],
+            },
+          ];
+        choice.message.content = JSON.stringify(content);
+      }
       if (
         content.type !== "scene" ||
         content.responseCoverage ||

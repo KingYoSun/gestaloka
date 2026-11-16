@@ -28,6 +28,7 @@ import {
   planBelongings,
 } from "../world/belongings.js";
 import type { LlmClient, ChatMessage } from "../llm/client.js";
+import { locationRecords } from "../world/locations.js";
 import { CompletedScene, mergeSceneChanges } from "./scene-data.js";
 import { reviewSceneStates } from "./scene-handoff.js";
 
@@ -167,19 +168,16 @@ const Proposal = z
   })
   .strict();
 export type WorldProposal = z.infer<typeof Proposal> & {
-  belongings?: string[];
+  belongings?: string[] | undefined;
 };
-// 参加者の生成だけが、採用した持ち物・保管先・技能を内部関数の操作として返せる。
-const decisionFor = (phase: Interaction["phase"]) =>
-  z.discriminatedUnion("type", [
-    z
-      .object({ type: z.literal("query"), requests: z.array(Query).min(1) })
-      .strict(),
-    phase === "participant"
-      ? Proposal.extend({ belongings: z.array(z.string()).default([]) })
-      : Proposal,
-    z.object({ type: z.literal("pause"), reason: z.string() }).strict(),
-  ]);
+// 所在地の更新と、参加時の物品・技能は内部関数の操作として返す。
+const Decision = z.discriminatedUnion("type", [
+  z
+    .object({ type: z.literal("query"), requests: z.array(Query).min(1) })
+    .strict(),
+  Proposal.extend({ belongings: z.array(z.string()).optional() }),
+  z.object({ type: z.literal("pause"), reason: z.string() }).strict(),
+]);
 const CommitDecision = z
   .object({
     type: z.enum(["commit", "revise", "pause"]),
@@ -675,12 +673,30 @@ export class WorldAgent {
       oldEndings.push((await context.edge(id))!);
     if (
       [...proposal.changes.edges, ...oldEndings].some(
-        (edge) => edge.kind === "has" && edge.role,
+        (edge) =>
+          (edge.kind === "has" && edge.role) ||
+          (edge.kind === "status" &&
+            edge.role === "content" &&
+            edge.text === "location"),
       )
     )
       throw new CandidateRejected(
-        "所在・保管先の利用・技能・要約を表す役割つきのhasは、実行側の内部関数だけが記録・終了します",
+        "所在地、および物品の所在・保管先の利用・技能・要約を表す役割つきのhasは、実行側の内部関数だけが記録・終了します",
       );
+    for (const node of proposal.changes.revisions)
+      if (
+        (
+          await context.history(
+            node.id,
+            "status",
+            "in",
+            Number.MAX_SAFE_INTEGER,
+          )
+        ).some((edge) => edge.role === "content" && edge.text === "location")
+      )
+        throw new CandidateRejected(
+          "所在地の本文はlocate操作で更新してください",
+        );
     const planned = await this.#plan(context, row, proposal);
     for (const binding of bindingScripts([
       ...proposal.changes.edges,
@@ -700,6 +716,17 @@ export class WorldAgent {
           Number.MAX_SAFE_INTEGER,
         )),
       ];
+      if (
+        old.some(
+          (edge) =>
+            edge.kind === "status" &&
+            edge.role === "content" &&
+            edge.text === "location",
+        )
+      )
+        throw new CandidateRejected(
+          "所在地の関係はlocate操作で更新してください",
+        );
       const edges = [
         ...new Map(
           old.map((edge) => [
@@ -1016,17 +1043,26 @@ export class WorldAgent {
     };
   }
 
-  // 参加者が採用した持ち物・保管先・技能の操作を、提案と同じ確定に含める差分へ変える。
+  // 所在地と参加時の物品・技能の操作を、提案と同じ確定に含める。
   async #plan(context: WorldContext, row: Operation, proposal: WorldProposal) {
     try {
       const ops = belongingOps(proposal.belongings ?? []);
       if (
         ops.some(
-          (op) => !["create", "move", "grant", "learn"].includes(op.type),
+          (op) =>
+            !(
+              row.request.phase === "participant"
+                ? ["create", "move", "grant", "learn", "locate"]
+                : row.request.completedScene
+                  ? []
+                  : ["locate"]
+            ).includes(op.type),
         )
       )
         throw new BelongingRejected(
-          "参加時は、物品の成立、所在の登録、保管先の利用、技能の習得だけを指定してください",
+          row.request.phase === "participant"
+            ? "参加時は、物品の成立、所在地の登録、保管先の利用、技能の習得だけを指定してください"
+            : "この段階では所在地のlocate操作だけを指定してください",
         );
       const planned = await planBelongings(
         context,
@@ -1126,7 +1162,12 @@ export class WorldAgent {
       const actor = await context.node(actorId, at);
       if (!actor) continue;
       const states = await this.#descriptions(context, actorId, at, "status");
-      players.push({ actorId, name: actor.text, states });
+      players.push({
+        actorId,
+        name: actor.text,
+        states,
+        locations: await locationRecords(context, actorId),
+      });
     }
     return { players, dependencies: context.dependencies };
   }
@@ -1269,10 +1310,9 @@ export class WorldAgent {
                       request: row.request,
                       initialContext: seed.initialContext,
                       controlledActorIds: seed.controlledActorIds,
-                      responseSchema: z.toJSONSchema(
-                        decisionFor(row.request.phase),
-                        { io: "input" },
-                      ),
+                      responseSchema: z.toJSONSchema(Decision, {
+                        io: "input",
+                      }),
                     }),
                   },
                 ];
@@ -1380,9 +1420,7 @@ export class WorldAgent {
               row.step++;
               let decision;
               try {
-                decision = decisionFor(row.request.phase).parse(
-                  parseOutput(response.content),
-                );
+                decision = Decision.parse(parseOutput(response.content));
               } catch (error) {
                 row.messages.push({
                   role: "user",

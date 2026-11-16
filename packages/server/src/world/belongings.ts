@@ -1,15 +1,19 @@
 import { z } from "zod";
 import { derivedId, type Change, type WorldEdge } from "./model.js";
 import type { Lease, WorldContext, WorldStore } from "./store.js";
+import { LocationOp } from "./locations.js";
+import type { Dependency } from "./store.js";
 
 // 物品・保管先・技能の事実は、hasの役割で表す。役割なしは所有、holdは所在、
 // useは保管先の利用、skillは技能。要約と所在の一意性は確定処理が保つ。
+// 所在地はlocate操作で同じ原子的確定を使い、statusのlocation記録として保存する。
 const id = z.uuid(),
   text = z.string().trim().min(1),
   basis = text.describe(
     "この事実が成立した根拠。初期設定、または成立した出来事の内容",
   );
 export const BelongingOp = z.discriminatedUnion("type", [
+  LocationOp,
   z
     .object({
       type: z.literal("create"),
@@ -88,6 +92,15 @@ export async function planBelongings(
   const incoming = (target: string) =>
     context.relations(target, "has", "in", LATEST);
   for (const [index, op] of ops.entries()) {
+    if (
+      op.type === "locate" &&
+      ops
+        .slice(index + 1)
+        .some(
+          (next) => next.type === "locate" && next.subjectId === op.subjectId,
+        )
+    )
+      continue;
     const has = (
       key: string,
       source: string,
@@ -109,6 +122,63 @@ export async function planBelongings(
       change.endEdges.push(...edges.map((edge) => edge.id));
     };
     switch (op.type) {
+      case "locate": {
+        const history = (
+          await context.history(op.subjectId, "status", "out", LATEST)
+        ).filter((e) => e.role === "content" && e.text === "location");
+        const active = history.filter((e) => e.period.until === undefined);
+        at = Math.max(
+          at,
+          ...history.flatMap((e) => [e.period.from, e.period.until ?? 0]),
+        );
+        if (
+          active.length === 1 &&
+          active[0]!.period.from ===
+            Math.max(...history.map((e) => e.period.from)) &&
+          (await context.node(active[0]!.target))?.text === op.text
+        ) {
+          const about = (
+            await context.relations(active[0]!.target, "status", "out", LATEST)
+          )
+            .filter((e) => e.role === "about")
+            .map((e) => e.target)
+            .sort();
+          if (
+            JSON.stringify(about) ===
+            JSON.stringify([...new Set(op.aboutIds)].sort())
+          )
+            break;
+        }
+        for (const edge of active) {
+          end([edge]);
+          end(
+            (
+              await context.relations(edge.target, "status", "out", LATEST)
+            ).filter((e) => e.role === "about"),
+          );
+        }
+        const node = derivedId(`${commitId}:${index}:node`);
+        change.nodes.push({ id: node, kind: "script", text: op.text });
+        change.edges.push({
+          id: derivedId(`${node}:content`),
+          kind: "status",
+          role: "content",
+          source: op.subjectId,
+          target: node,
+          text: "location",
+          period: { from: at },
+        });
+        for (const target of new Set(op.aboutIds))
+          change.edges.push({
+            id: derivedId(`${node}:${target}`),
+            kind: "status",
+            role: "about",
+            source: node,
+            target,
+            period: { from: at },
+          });
+        break;
+      }
       case "create":
       case "learn": {
         const node = derivedId(`${commitId}:${index}:node`);
@@ -174,15 +244,23 @@ export async function planBelongings(
 export async function changeBelongings(
   store: WorldStore,
   lease: Lease,
-  input: { commitId: string; at: number; ops: unknown },
+  input: {
+    commitId: string;
+    at: number;
+    ops: unknown;
+    nodes?: Change["nodes"];
+    dependencies?: readonly Dependency[];
+  },
 ) {
   const ops = z.array(BelongingOp).min(1).parse(input.ops);
   const prior = await store.receipt(lease.worldId, input.commitId);
   if (prior) return prior;
-  const context = store.context(lease.worldId);
+  const context = store.context(lease.worldId, input.dependencies),
+    planned = await planBelongings(context, input.commitId, input.at, ops);
+  planned.changes.nodes.unshift(...(input.nodes ?? []));
   return store.commit(lease, context, {
     commitId: input.commitId,
-    ...(await planBelongings(context, input.commitId, input.at, ops)),
+    ...planned,
   });
 }
 

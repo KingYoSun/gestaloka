@@ -1094,8 +1094,7 @@ export class WorldAccess {
     const viewerId = (
         await this.authorize(subject, id, "player", this.pool, actorId)
       ).actor_id!,
-      row = await this.construction.get(id),
-      world = row.world_id!,
+      world = (await this.construction.get(id)).world_id!,
       store = this.construction.agent.store,
       controlled = (
         await this.pool.query<{ actor_id: string; npc_active: boolean }>(
@@ -1128,44 +1127,24 @@ export class WorldAccess {
           name: (await store.context(world).node(player.actor_id))?.text ?? "",
           mode: player.npc_active ? ("npc" as const) : ("standby" as const),
         });
-    const scenes = (
-        await this.pool.query<SceneRow>(
-          "SELECT * FROM world_scene WHERE construction_id=$1 AND state<>'result' AND data->'background' IS NOT NULL",
-          [id],
-        )
-      ).rows,
-      at = Math.max(row.at, ...scenes.map((scene) => scene.data.at));
-    return store.withDrafts(
-      world,
-      scenes.map((scene) => ({
-        at: scene.data.at,
-        changes: sceneAnchors(
-          scene.data.background!,
-          scene.data.events,
-          scene.data.startedAt,
-          scene.id,
-        ),
-      })),
-      async () => {
-        const context = store.context(world),
-          locate = async <T extends { actorId: string }>(person: T) => ({
-            ...person,
-            locations: await readLocations(context, person.actorId, at),
-          });
-        return {
-          viewerId,
-          players: await Promise.all(byName(players).map(locate)),
-          npcs: await Promise.all(
-            byName(
-              (await store.observers(world))
-                .filter((node) => !operated.has(node.id))
-                .map((node) => ({ actorId: node.id, name: node.text })),
-            ).map(locate),
-          ),
-        };
-      },
-    );
+    const context = store.context(world),
+      locate = async <T extends { actorId: string }>(person: T) => ({
+        ...person,
+        locations: await readLocations(context, person.actorId),
+      });
+    return {
+      viewerId,
+      players: await Promise.all(byName(players).map(locate)),
+      npcs: await Promise.all(
+        byName(
+          (await store.observers(world))
+            .filter((node) => !operated.has(node.id))
+            .map((node) => ({ actorId: node.id, name: node.text })),
+        ).map(locate),
+      ),
+    };
   }
+
   async knowledge(
     subject: string,
     id: string,

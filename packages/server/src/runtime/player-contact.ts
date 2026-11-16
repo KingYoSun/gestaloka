@@ -4,6 +4,7 @@ import type { SharedScenes } from "./shared-scenes.js";
 import type { SceneRow } from "./scene.js";
 import { ConstructionStateError } from "./construction.js";
 import { sceneId } from "./scene-data.js";
+import { locationRecords } from "../world/locations.js";
 
 type Db = Pick<pg.Pool, "query">;
 type PlayerState = {
@@ -14,6 +15,7 @@ type PlayerState = {
   facts: { text: string; aboutIds: string[]; at: number }[];
   actions: { text: string; period: { from: number; until: number } }[];
   available: boolean;
+  locations: Awaited<ReturnType<typeof locationRecords>>;
 };
 export class ContactChanged extends Error {
   override readonly name = "ContactChanged";
@@ -47,7 +49,9 @@ export class PlayerContacts {
   ) {
     if (!actors.length) return [];
     const rows = (
-      await db.query<Omit<PlayerState, "available"> & { canRespond: boolean }>(
+      await db.query<
+        Omit<PlayerState, "available" | "locations"> & { canRespond: boolean }
+      >(
         `SELECT p.actor_id AS "actorId",s.id AS "sceneId",(s.data->>'startedAt')::float8 AS "startedAt",
        (s.data->>'at')::float8 AS at,s.state IN ('active','acting') AND NOT (s.data ? 'encounter' OR s.data ? 'soloProposal')
        AND coalesce(h.flow,'open')='open' AS "canRespond",
@@ -73,10 +77,20 @@ export class PlayerContacts {
       db,
     );
     const available = new Set(awake);
-    return rows.map(({ canRespond, ...p }) => ({
-      ...p,
-      available: canRespond && available.has(p.actorId),
-    }));
+    return Promise.all(
+      rows.map(async ({ canRespond, ...p }) => {
+        const locations = await locationRecords(
+          this.shared.construction.agent.store.context(row.data.worldId),
+          p.actorId,
+        );
+        return {
+          ...p,
+          at: Math.max(p.at, ...locations.map((r) => r.at)),
+          locations,
+          available: canRespond && available.has(p.actorId),
+        };
+      }),
+    );
   }
   async received(scene: string, actors: string[]) {
     return (

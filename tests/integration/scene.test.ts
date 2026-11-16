@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { ExecutionBudget, ExecutionLimit } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
-import { WorldAgent } from "@gestaloka/server/agent";
+import { WorldAgent, SupersededWorker } from "@gestaloka/server/agent";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldConstruction } from "@gestaloka/server/construction";
 import { WorldAccess } from "@gestaloka/server/access";
@@ -71,6 +71,13 @@ const model = new LlmClient(
             subjectId: exploration.id,
             text: "NEW_ACTOR_CONDITION",
             aboutIds: [place],
+            ...(exploration.sourced ? { sourceRelationIds: [] } : {}),
+          },
+          {
+            subjectId: exploration.id,
+            text: "奥の作業場",
+            aboutIds: [place],
+            location: true,
             ...(exploration.sourced ? { sourceRelationIds: [] } : {}),
           },
         ],
@@ -215,10 +222,12 @@ const model = new LlmClient(
       expect(user.observerId).toBe(npc);
       expect(JSON.stringify(user)).toContain("NPCだけの秘密");
       expect(JSON.stringify(user)).not.toContain("人間だけの記憶");
+      const startedAt = (await access.scenes.latest(construction))!.data
+        .startedAt;
       expect(user.conditions).toEqual(
         expect.arrayContaining([
-          { text: "NPC_DISPOSITION", about: [npc], at: 0 },
-          { text: "NPC_COGNITION", about: [npc], at: 0 },
+          { text: "NPC_DISPOSITION", about: [npc], at: startedAt },
+          { text: "NPC_COGNITION", about: [npc], at: startedAt },
         ]),
       );
       expect(JSON.stringify(user.observations)).not.toMatch(
@@ -359,7 +368,9 @@ const model = new LlmClient(
           },
         };
       else if (intentions.some((i) => i.actionText === "橋の方へ歩く")) {
-        expect(user.background.facts.at(-1)).toMatchObject({ at: 1000 });
+        expect(user.background.facts.at(-1)).toMatchObject({
+          at: user.sceneHistory.at(-1).period.until,
+        });
         expect(user.background.perceptions).toHaveLength(2);
         content = {
           type: "scene",
@@ -1393,6 +1404,37 @@ test.each([false, true])(
       command: "prepare",
       purpose: "作業の様子を知る",
     });
+    let initializationStopped = false;
+    const commit = agent.store.commit.bind(agent.store);
+    const interruption = sourced
+      ? vi.spyOn(agent.store, "commit").mockImplementation(async (...args) => {
+          if (
+            !initializationStopped &&
+            (args[2].changes as { nodes: { id: string }[] }).nodes.some(
+              (n) => n.id === person,
+            )
+          ) {
+            const checkpoint = structuredClone(
+              (await access.scenes.latest(construction))!,
+            );
+            await commit(...args);
+            initializationStopped = true;
+            await d.postgres.query(
+              "UPDATE world_scene SET state='paused',data=$2 WHERE id=$1",
+              [
+                id,
+                {
+                  ...checkpoint.data,
+                  resumeState: "acting",
+                  error: "初期登録の確定後に停止",
+                },
+              ],
+            );
+            throw new SupersededWorker("初期登録の確定後に停止");
+          }
+          return commit(...args);
+        })
+      : undefined;
     try {
       await access.scenes.tick(id);
       await command({ requestId: randomUUID(), command: "start" });
@@ -1411,6 +1453,14 @@ test.each([false, true])(
         actionText: "作業の気配を探して声をかける",
       });
       await access.scenes.tick(id);
+      expect(initializationStopped).toBe(sourced);
+      if (initializationStopped) {
+        expect((await access.scenes.latest(construction))!.state).toBe(
+          "paused",
+        );
+        await command({ requestId: randomUUID(), command: "resume" });
+        await access.scenes.tick(id);
+      }
       const row = (await access.scenes.latest(construction))!;
       expect(row.state).toBe("active");
       expect(row.data.actions.at(-1)).toMatchObject({
@@ -1431,7 +1481,13 @@ test.each([false, true])(
       expect(row.data.choices.filter((c) => c.actorId === person)).toHaveLength(
         1,
       );
-      expect(await agent.store.context(world).node(person)).toBeUndefined();
+      expect(await agent.store.context(world).node(person)).toMatchObject({
+        kind: "existence",
+        text: "探索で具体化した存在",
+      });
+      expect(
+        await agent.store.context(world).node(row.data.events[0]!.id),
+      ).toBeUndefined();
       const anchors = sceneAnchors(
         row.data.background!,
         row.data.events,
@@ -1451,6 +1507,7 @@ test.each([false, true])(
         }),
       );
     } finally {
+      interruption?.mockRestore();
       exploration = undefined;
       await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
     }
@@ -1609,8 +1666,8 @@ test("背景不足があればfinishedでも発生済み部分を保持し、同
       "若者が道を歩いた",
     ]);
     expect(row.data.events.map((e) => e.period)).toEqual([
-      { from: 0, until: 1000 },
-      { from: 1000, until: 2000 },
+      { from: row.data.startedAt, until: row.data.startedAt + 1000 },
+      { from: row.data.startedAt + 1000, until: row.data.startedAt + 2000 },
     ]);
     expect(new Set(row.data.events.map((e) => e.inputId))).toEqual(
       new Set([inputId]),
@@ -1815,14 +1872,18 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
       })
     ).json(),
   ).toEqual(opened.json());
-  const original = (
-    await d.graph.executeQuery(
-      "MATCH(n:WorldNode {worldId:$world}) RETURN count(n) AS count",
-      { world },
-    )
-  ).records[0]!.get("count").toNumber();
+  const original = new Set(
+    (
+      await d.graph.executeQuery(
+        "MATCH(n:WorldNode {worldId:$world}) RETURN n.id AS id",
+        { world },
+      )
+    ).records.map((r) => r.get("id")),
+  );
+
   await access.scenes.tick(scene.id);
   let view = await status();
+  const beganAt = view.at;
   expect(view.state).toBe("ready");
   expect(view.synopsis).toContain("話しかけられる");
   expect(JSON.stringify(view)).not.toMatch(/PRIVATE_|NPCだけの秘密/);
@@ -1896,13 +1957,13 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
         [requestId],
       )
     ).rows[0],
-  ).toEqual({ llm_used: 69, llm_limit: 128 });
+  ).toEqual({ llm_used: 64 + modelCalls - beforeLimit, llm_limit: 128 });
   await d.postgres.query(
     "UPDATE response_call_policy SET calls=64 WHERE singleton",
   );
   view = await status();
   expect(view.state).toBe("active");
-  expect(view.at).toBe(1000);
+  expect(view.at).toBe(beganAt + 1000);
   expect((await access.scenes.latest(construction))!.data.events).toHaveLength(
     2,
   );
@@ -1910,14 +1971,21 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
     "明日の手伝いはこれから相談しようと聞いた",
   );
   expect(resultCalls).toBe(0);
-  expect(
-    (
-      await d.graph.executeQuery(
-        "MATCH(n:WorldNode {worldId:$world}) RETURN count(n) AS count",
-        { world },
-      )
-    ).records[0]!.get("count").toNumber(),
-  ).toBe(original);
+  const stagedNodes = (
+    await d.graph.executeQuery(
+      "MATCH(n:WorldNode {worldId:$world}) RETURN n.id AS id",
+      { world },
+    )
+  ).records.filter((r) => !original.has(r.get("id")));
+  for (const node of stagedNodes)
+    expect(
+      (
+        await agent.store
+          .context(world)
+          .relations(node.get("id"), "status", "in", Number.MAX_SAFE_INTEGER)
+      ).some((e) => e.role === "content" && e.text === "location"),
+    ).toBe(true);
+
   const count = modelCalls;
   await command({
     requestId,
@@ -1933,7 +2001,7 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
   });
   await access.scenes.tick(scene.id);
   view = await status();
-  expect(view.at).toBe(2000);
+  expect(view.at).toBe(beganAt + 2000);
   expect((await runtime.get(construction)).at).toBe(0);
   const outsider = await auth.person("user");
   const hidden = await app.inject({
@@ -2045,7 +2113,7 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
         w.actorId === npc && w.deferred && w.actionText?.includes("返事を待つ"),
     ),
   ).toBe(true);
-  expect(row.at).toBe(2000);
+  expect(row.at).toBe(view.at);
   expect(row.agenda.some((w) => w.actorId === actor && w.deferred)).toBe(true);
   const movement = (await agent.view(world, actor, 2000)).observations.find(
     (o) => o.text === "一歩近づいた",
