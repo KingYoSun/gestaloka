@@ -161,7 +161,7 @@ export class WorldConstruction {
   ) {
     z.uuid().parse(id);
     const result = await client.query<Construction>(
-      `SELECT c.*,b.initial_prompt,b.created_at FROM world_construction c JOIN world_build b ON b.run_id=c.id WHERE c.id=$1${lock ? " FOR UPDATE OF c" : ""}`,
+      `SELECT c.*,b.initial_prompt,b.created_at FROM world_construction c JOIN world_build b ON b.run_id=c.id WHERE c.id=$1${lock ? " FOR NO KEY UPDATE OF c" : ""}`,
       [id],
     );
     const row = result.rows[0];

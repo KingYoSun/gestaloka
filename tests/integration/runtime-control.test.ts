@@ -380,7 +380,7 @@ test("同じシーンの重複配信は受信中の応答を奪わず、先行�
   const jobs = [randomUUID(), randomUUID()];
   for (const job of jobs)
     await pool.query(
-      "INSERT INTO pgboss.job(id,name,state,data) VALUES($1,$2,'active',$3)",
+      "INSERT INTO pgboss.job(id,name,state,data,started_on) VALUES($1,$2,'active',$3,clock_timestamp())",
       [job, `e2e-${scope}-scenes`, { id: scene.id }],
     );
   const first = access.scenes.tick(scene.id, jobs[0]);
@@ -459,8 +459,41 @@ test("背景準備中に終了した旧保存シーンを再開し、未確定�
     [scene.id],
   );
   await resume("scene", scene.id);
-  await access.scenes.tick(scene.id);
-  const row = await access.scenes.latest(world, undefined, false, actor);
+  const observer = await pool.connect();
+  await observer.query("BEGIN");
+  await observer.query(
+    "SELECT id FROM world_construction WHERE id=$1 FOR KEY SHARE",
+    [world],
+  );
+  let finished = false;
+  const closing = access.scenes.tick(scene.id).then(async () => {
+    await access.sceneCommand(
+      user,
+      world,
+      {
+        requestId: randomUUID(),
+        command: "prepare",
+        purpose: "次の場面を準備する",
+      },
+      true,
+      actor,
+    );
+    finished = true;
+  });
+  try {
+    await vi.waitFor(() => expect(finished).toBe(true), { timeout: 5000 });
+  } finally {
+    await observer.query("ROLLBACK");
+    observer.release();
+    await closing;
+  }
+  const row = await access.scenes.latest(
+    world,
+    undefined,
+    false,
+    actor,
+    scene.id,
+  );
   expect(row?.state).toBe("result");
   expect(row?.data.events).toEqual([]);
   expect(row?.data.background?.creations).toEqual([]);
@@ -477,45 +510,56 @@ test("背景準備中に終了した旧保存シーンを再開し、未確定�
   expect((await model.ledger.summary()).calls).toBe(calls);
 });
 
-test("古いワーカーからの新たな送信を拒否し、現行実行の状態を上書きしない", async () => {
-  const pool = isolated.databases.postgres,
-    id = randomUUID(),
-    old = gate(),
-    started = gate();
-  let invoked = false;
-  const running = RuntimeExecutions.run(
-    pool,
-    "construction",
-    id,
-    undefined,
-    () =>
+test.each(["construction", "scene"] as const)(
+  "再配信後は古い%sワーカーからの新たな送信を拒否し、現行実行の状態を上書きしない",
+  async (kind) => {
+    const pool = isolated.databases.postgres,
+      id = randomUUID(),
+      old = gate(),
+      started = gate(),
+      jobId = kind === "scene" ? randomUUID() : undefined;
+    if (jobId)
+      await pool.query(
+        "INSERT INTO pgboss.job(id,name,state,data,started_on) VALUES($1,$2,'active',$3,clock_timestamp())",
+        [jobId, `e2e-${scope}-scenes`, { id }],
+      );
+    let invoked = false;
+    const running = RuntimeExecutions.run(pool, kind, id, jobId, () =>
       ExecutionBudget.run(pool, randomUUID(), async () => {
         started.release();
         await old.ready;
         await ExecutionBudget.check();
         invoked = true;
       }),
-  ).catch((e) => e);
-  await started.wait();
-  await RuntimeExecutions.run(
-    pool,
-    "construction",
-    id,
-    undefined,
-    async () => {},
-  );
-  old.release();
-  expect(await running).toMatchObject({ code: "SUPERSEDED" });
-  expect(invoked).toBe(false);
-  expect(
-    (
+    ).catch((e) => e);
+    await started.wait();
+    if (jobId)
       await pool.query(
-        "SELECT state,deliveries FROM runtime_execution WHERE id=$1",
-        [id],
-      )
-    ).rows[0],
-  ).toMatchObject({ state: "finished", deliveries: 2 });
-});
+        "UPDATE pgboss.job SET started_on=clock_timestamp() WHERE id=$1",
+        [jobId],
+      );
+    let acquired = false;
+    const resumed = RuntimeExecutions.run(pool, kind, id, jobId, async () => {
+      acquired = true;
+    });
+    try {
+      await vi.waitFor(() => expect(acquired).toBe(true));
+    } finally {
+      old.release();
+      await Promise.allSettled([running, resumed]);
+    }
+    expect(await running).toMatchObject({ code: "SUPERSEDED" });
+    expect(invoked).toBe(false);
+    expect(
+      (
+        await pool.query(
+          "SELECT state,deliveries FROM runtime_execution WHERE id=$1",
+          [id],
+        )
+      ).rows[0],
+    ).toMatchObject({ state: "finished", deliveries: 2 });
+  },
+);
 
 test("明示した共有処理枠で待機し、解放後に続行する", async () => {
   const pool = isolated.databases.postgres,

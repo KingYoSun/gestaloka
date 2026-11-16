@@ -54,7 +54,8 @@ export class RuntimeExecutions {
           started_at=CASE WHEN runtime_execution.token=$3 THEN runtime_execution.started_at ELSE now() END,finished_at=NULL,error_code=NULL
           WHERE runtime_execution.token=$3 OR ($6::boolean AND NOT (
             runtime_execution.kind='scene' AND runtime_execution.state IN ('running','waiting') AND (runtime_execution.job_id IS NULL OR
-              EXISTS(SELECT 1 FROM pgboss.job j WHERE j.id=runtime_execution.job_id AND j.state='active')))) RETURNING id`,
+              EXISTS(SELECT 1 FROM pgboss.job j WHERE j.id=runtime_execution.job_id AND j.state='active'
+                AND j.started_on<=runtime_execution.started_at)))) RETURNING id`,
           [
             kind,
             id,
