@@ -874,6 +874,22 @@ export class WorldAgent {
       ...(request.controlledActorId ? [request.controlledActorId] : []),
       ...(request.intentions ?? []).map((item) => item.actorId),
     ]);
+    if (request.phase === "participant") {
+      const context = this.store.context(request.worldId, dependencies);
+      const initialContext = [];
+      for (const id of roots)
+        initialContext.push({
+          request: { kind: "node" as const, id },
+          result: { node: (await context.node(id, request.at)) ?? null },
+        });
+      return {
+        initialContext,
+        dependencies: context.dependencies,
+        controlledActorIds: [
+          ...(await this.controlledActors(request.worldId, [...roots])),
+        ],
+      };
+    }
     if (inScene || request.completedScene) {
       const context = this.store.context(request.worldId, dependencies);
       const actor = request.actorId ?? request.controlledActorId;
