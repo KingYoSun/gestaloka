@@ -442,6 +442,54 @@ test.each([
   },
 );
 
+test.each(["stop", "length"])(
+  "本文が欠落しても使用量と終了理由（%s）を保存・精算し、再開時に再送しない",
+  async (finish) => {
+    const config = {
+      ...environment(),
+      LLM_MODEL: "gemini-3.8-flash",
+      GEMINI_API_KEY: "unused",
+      LLM_INPUT_USD_PER_MILLION: "2",
+      LLM_CACHED_INPUT_USD_PER_MILLION: "0.1",
+      LLM_OUTPUT_USD_PER_MILLION: "10",
+    };
+    const transport = vi.fn<typeof fetch>().mockImplementation(async () =>
+      Response.json({
+        id: randomUUID(),
+        model: config.LLM_MODEL,
+        choices: [{ finish_reason: finish, message: {} }],
+        usage: { prompt_tokens: 20, completion_tokens: 4, total_tokens: 24 },
+      }),
+    );
+    const client = createCountedClient(databases.postgres, config, transport);
+    await client.ledger.setup();
+    const id = randomUUID(),
+      completion = await client.complete(id, "scene-background", []);
+    expect(completion).toMatchObject({ content: "", finishReason: finish });
+    expect(
+      (
+        await databases.postgres.query(
+          "SELECT state,charged_nano,response FROM llm_call WHERE id=$1",
+          [id],
+        )
+      ).rows[0],
+    ).toEqual({
+      state: "complete",
+      charged_nano: "80000",
+      response: completion,
+    });
+    expect((await client.ledger.summary()).unsettled).toBe(0);
+    expect(
+      await createCountedClient(databases.postgres, config, transport).complete(
+        id,
+        "scene-background",
+        [],
+      ),
+    ).toEqual(completion);
+    expect(transport).toHaveBeenCalledTimes(1);
+  },
+);
+
 test("未完了出力はJSONとして補完せず、使用量だけ精算し再開時も自動再送しない", async () => {
   const transport = vi.fn<typeof fetch>().mockImplementation(async () =>
     Response.json({
@@ -683,6 +731,16 @@ test.each([
         [{ error: { code: 500, message: "failure", status: "INTERNAL" } }],
         { status: 400 },
       ),
+  },
+  {
+    name: "Geminiの本文欠落と使用量不明",
+    model: "gemini-3.8-flash",
+    reply: () =>
+      Response.json({
+        id: randomUUID(),
+        model: "gemini-3.8-flash",
+        choices: [{ finish_reason: "stop", message: {} }],
+      }),
   },
 ])("$name: 予約を保持し、同じ呼出しを再送しない", async (failure) => {
   const { model, reply } = failure;
