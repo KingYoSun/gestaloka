@@ -440,33 +440,8 @@ export class WorldAgent {
           results.push((await context.edge(query.id)) ?? null);
           break;
         case "node": {
-          const currentStates = [];
-          for (const edge of await context.relations(
-            query.id,
-            "status",
-            "out",
-            at,
-          )) {
-            if (edge.role !== "content") continue;
-            const about = await context.relations(
-              edge.target,
-              "status",
-              "out",
-              at,
-            );
-            const targets = [];
-            for (const relation of about)
-              if (relation.role === "about")
-                targets.push(await context.node(relation.target, at));
-            currentStates.push({
-              edge,
-              script: await context.node(edge.target, at),
-              about,
-              targets,
-            });
-          }
           results.push({
-            currentStates,
+            currentStates: await this.#stateRecords(context, query.id, at),
             relatedStates: await this.#relatedStates(context, query.id, at),
             node: (await context.node(query.id, at)) ?? null,
             knownAt: await context.latestTime(query.id),
@@ -873,6 +848,71 @@ export class WorldAgent {
       ...(request.controlledActorId ? [request.controlledActorId] : []),
       ...(request.intentions ?? []).map((item) => item.actorId),
     ]);
+    if (request.completedScene) {
+      const scene = request.completedScene,
+        at = request.until ?? request.at,
+        context = this.store.context(request.worldId, dependencies),
+        subjects = new Set([
+          ...scene.background.participants,
+          ...scene.background.facts.map((fact) => fact.subjectId),
+          ...scene.background.beliefs.map((belief) => belief.subjectId),
+          ...scene.events.flatMap((event) => [
+            event.actorId,
+            ...event.receipts.map((receipt) => receipt.observerId),
+          ]),
+          ...(request.intentions ?? []).map((intent) => intent.actorId),
+          ...(request.controlledActorId ? [request.controlledActorId] : []),
+        ]),
+        initialContext = [];
+      for (const [id, source] of Object.entries(scene.sources ?? {})) {
+        initialContext.push({
+          request: { kind: "edge" as const, id },
+          result: (await context.edge(id)) ?? null,
+        });
+        subjects.add(source.edge.source);
+      }
+      const created = new Set(scene.anchors.nodes.map((node) => node.id));
+      for (const id of subjects) {
+        if (created.has(id)) continue;
+        const node = await context.node(id, at);
+        if (!node) continue;
+        initialContext.push({
+          request: { kind: "node" as const, id, at },
+          result: {
+            node,
+            currentStates: await this.#stateRecords(context, id, at),
+            interpretations: await this.#stateRecords(
+              context,
+              id,
+              at,
+              "interpret",
+            ),
+            effects: await context.effects(id, request.at, at),
+          },
+        });
+      }
+      const references = new Set(
+        JSON.stringify([request, initialContext]).match(
+          /[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}/gi,
+        ) ?? [],
+      );
+      for (const id of references) {
+        if (subjects.has(id) || created.has(id)) continue;
+        const node = await context.node(id, at);
+        if (node)
+          initialContext.push({
+            request: { kind: "node" as const, id, at },
+            result: { node },
+          });
+      }
+      return {
+        initialContext,
+        dependencies: context.dependencies,
+        controlledActorIds: [
+          ...(await this.controlledActors(request.worldId, [...references])),
+        ],
+      };
+    }
     if (request.phase === "participant") {
       const context = this.store.context(request.worldId, dependencies);
       const initialContext = [];
@@ -1544,6 +1584,29 @@ export class WorldAgent {
     return { ...view, conditions };
   }
 
+  async #stateRecords(
+    context: WorldContext,
+    id: string,
+    at: number,
+    kind: "status" | "interpret" = "status",
+  ) {
+    const records = [];
+    for (const edge of await context.relations(id, kind, "out", at)) {
+      if (edge.role !== "content") continue;
+      const about = await context.relations(edge.target, kind, "out", at),
+        targets = [];
+      for (const relation of about)
+        if (relation.role === "about")
+          targets.push(await context.node(relation.target, at));
+      records.push({
+        edge,
+        script: await context.node(edge.target, at),
+        about,
+        targets,
+      });
+    }
+    return records;
+  }
   async #relatedStates(
     context: WorldContext,
     id: string,
