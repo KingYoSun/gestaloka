@@ -54,7 +54,7 @@ const fail = (message: string) => new ConstructionStateError(message);
 
 /** Durable external decisions. No model calls, narrative generation, or world writes. */
 export class SharedTurns {
-  readonly replyMs = Number(process.env.SCENE_REACTION_SECONDS ?? 180) * 1000;
+  readonly replyMs = Number(process.env.SCENE_REACTION_SECONDS ?? 600) * 1000;
   readonly humanRounds = Number(process.env.SCENE_HUMAN_ROUNDS ?? 5);
   readonly botRounds = Number(process.env.SCENE_BOT_ROUNDS ?? 10);
   constructor(readonly shared: SharedScenes) {}

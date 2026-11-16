@@ -46,7 +46,7 @@ export class SharedScenes {
   readonly turns: SharedTurns;
   readonly contacts = new PlayerContacts(this);
   readonly invitationMs =
-    Number(process.env.SCENE_INVITATION_SECONDS ?? 180) * 1000;
+    Number(process.env.SCENE_INVITATION_SECONDS ?? 600) * 1000;
   constructor(
     readonly construction: WorldConstruction,
     readonly now = () => new Date(),
