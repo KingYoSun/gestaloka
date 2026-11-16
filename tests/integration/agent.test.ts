@@ -294,6 +294,10 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await databases.postgres.query(
+    "DELETE FROM world_controlled_actor WHERE world_id=ANY($1::uuid[])",
+    [worlds],
+  );
+  await databases.postgres.query(
     "DELETE FROM world_budget WHERE world_id=ANY($1)",
     [worlds],
   );
@@ -398,6 +402,230 @@ test("背景の根拠を通常の照会へ引き継ぎ、短縮IDを戻して確
   expect(await runtime.run(op)).toEqual(applied);
   expect(transport).toHaveBeenCalledTimes(2);
 });
+
+test.each([
+  ["庭の設備", "苗の区画", "覆いが閉じ、札の文字と青い塗装は残っている。"],
+  ["通信中継域", "信号蓄積器", "受信を止め、識別符号と暗号鍵は保持している。"],
+])(
+  "%sの終了反映は現在状態と参照先を保持し、未提示の状態・履歴を照会できる",
+  async (label, target, text) => {
+    const scene = await fixture(),
+      reference = node("existence", target),
+      receivedReference = node("existence", "受容本文から参照された対象"),
+      states = Array.from({ length: 16 }, (_, i) =>
+        node("script", `${text} ${i}`),
+      ),
+      belief = node("script", "本人は相手の返答を待っていると思っている。"),
+      unrelated = node("script", "UNRELATED_CURRENT_STATE"),
+      archived: WorldNode = {
+        id: randomUUID(),
+        kind: "event",
+        text: "ARCHIVED_OCCURRENCE",
+        period: { from: 0, until: 1 },
+      },
+      source = edge("status", scene.object, states[0]!, undefined, "content"),
+      active = states.map((state, i) => ({
+        ...edge("status", scene.object, state, undefined, "content"),
+        ...(i === 0 ? { id: source.id } : {}),
+        period: { from: 5 },
+      }));
+    await store.commit(
+      await store.claim(scene.worldId, randomUUID()),
+      store.context(scene.worldId),
+      {
+        commitId: randomUUID(),
+        at: 5,
+        changes: changes(
+          [
+            reference,
+            receivedReference,
+            ...states,
+            belief,
+            unrelated,
+            archived,
+          ],
+          [
+            ...active,
+            ...states.map((state) =>
+              edge("status", state, reference, undefined, "about"),
+            ),
+            edge("interpret", scene.actor, belief, undefined, "content"),
+            edge("interpret", belief, reference, undefined, "about"),
+            edge("status", scene.place, unrelated, undefined, "content"),
+            {
+              ...edge("happen", scene.actor, archived),
+              period: { from: 0, until: 1 },
+            },
+          ],
+        ),
+      },
+    );
+    const transport = vi.fn<typeof fetch>(),
+      runtime = await agent(transport);
+    await databases.postgres.query(
+      "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2)",
+      [scene.worldId, reference.id],
+    );
+    const background: SceneBackground = {
+        type: "background",
+        synopsis: label,
+        participants: [scene.actor.id],
+        facts: [{ subjectId: scene.object.id, text, aboutIds: [reference.id] }],
+        perceptions: [
+          {
+            observerId: scene.actor.id,
+            text: "対象の様子を受け取った。",
+            sourceIds: [receivedReference.id],
+          },
+        ],
+        beliefs: [],
+        unknowns: [],
+        creations: [],
+      },
+      request: Parameters<WorldAgent["context"]>[0] = {
+        worldId: scene.worldId,
+        phase: "resolution",
+        rootIds: [scene.place.id],
+        controlledActorId: scene.actor.id,
+        at: 0,
+        until: 10,
+        actionText: "",
+        intentions: [
+          {
+            actorId: scene.actor.id,
+            actionText: "選んだ行動",
+            continuing: true,
+          },
+        ],
+        completedScene: {
+          background,
+          anchors: changes(),
+          events: [],
+          sources: {
+            [source.id]: { edge: source, targetText: states[0]!.text },
+          },
+        },
+      };
+    const seed = await runtime.context(request),
+      packet = seed.initialContext.find(
+        (entry) =>
+          entry.request.kind === "node" && entry.request.id === scene.object.id,
+      )?.result;
+    expect(packet).toMatchObject({
+      node: scene.object,
+      currentStates: expect.arrayContaining(
+        states.map((script, i) => ({
+          edge: active[i],
+          script,
+          about: [
+            expect.objectContaining({
+              kind: "status",
+              source: script.id,
+              target: reference.id,
+              role: "about",
+            }),
+          ],
+          targets: [reference],
+        })),
+      ),
+    });
+    expect(
+      seed.initialContext.find(
+        (entry) =>
+          entry.request.kind === "node" && entry.request.id === reference.id,
+      )?.result,
+    ).toEqual({ node: reference });
+    expect(
+      seed.initialContext.find(
+        (entry) =>
+          entry.request.kind === "node" &&
+          entry.request.id === receivedReference.id,
+      )?.result,
+    ).toEqual({ node: receivedReference });
+    expect(
+      seed.initialContext.find(
+        (entry) =>
+          entry.request.kind === "node" && entry.request.id === scene.actor.id,
+      )?.result,
+    ).toMatchObject({
+      interpretations: [
+        {
+          script: belief,
+          edge: expect.objectContaining({ kind: "interpret" }),
+        },
+      ],
+    });
+    expect(
+      seed.initialContext.find(
+        (entry) =>
+          entry.request.kind === "edge" && entry.request.id === source.id,
+      )?.result,
+    ).toEqual(active[0]);
+    expect(seed.controlledActorIds).toContain(reference.id);
+    expect(JSON.stringify(seed.initialContext)).not.toMatch(
+      /UNRELATED_CURRENT_STATE|ARCHIVED_OCCURRENCE/,
+    );
+    const read = await runtime.read(
+      { request, dependencies: seed.dependencies },
+      [
+        { kind: "node", id: scene.place.id },
+        {
+          kind: "history",
+          id: scene.actor.id,
+          relation: "happen",
+          direction: "out",
+        },
+        {
+          kind: "relations",
+          id: scene.object.id,
+          relation: "status",
+          direction: "out",
+        },
+      ],
+    );
+    expect(read.results[0]).toMatchObject({
+      currentStates: [{ script: unrelated }],
+    });
+    expect(read.results[1]).toMatchObject({ peers: [archived] });
+    const first = read.results[2] as { edges: WorldEdge[]; next: string };
+    expect(first.edges).toHaveLength(12);
+    const next = await runtime.read(
+      { request, dependencies: read.dependencies },
+      [
+        {
+          kind: "relations",
+          id: scene.object.id,
+          relation: "status",
+          direction: "out",
+          after: first.next,
+        },
+      ],
+    );
+    expect(next.results[0]).toMatchObject({
+      edges: expect.any(Array),
+      next: null,
+    });
+    const all = [
+      ...first.edges,
+      ...(next.results[0] as { edges: WorldEdge[] }).edges,
+    ];
+    expect(all).toHaveLength(17);
+    expect(all).toEqual(expect.arrayContaining(active));
+    expect(transport).not.toHaveBeenCalled();
+    await store.commit(
+      await store.claim(scene.worldId, randomUUID()),
+      store.context(scene.worldId),
+      {
+        commitId: randomUUID(),
+        at: 10,
+        changes: { ...changes(), endEdges: [source.id] },
+      },
+    );
+    await expect(
+      store.context(scene.worldId, seed.dependencies).validate(),
+    ).rejects.toThrow();
+  },
+);
 
 test("シーン中の状態終了を実際の時点で確定し、受容を再生成せず保持する", async () => {
   const scene = await fixture(),

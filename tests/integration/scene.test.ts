@@ -37,7 +37,10 @@ const partialNpcAction =
   "問いの一部に返答し、選んだ活動を続けて相手の判断を待つ";
 const inputs: Record<string, unknown>[] = [],
   ids: string[] = [];
-const faults = new Map<string, { content?: string; finish?: string }[]>();
+const faults = new Map<
+  string,
+  { content?: string | null; finish?: string }[]
+>();
 const model = new LlmClient(
   d.postgres,
   { ...modelEnvironment(budget), LLM_RESOLUTION_JUDGMENT: "combined" },
@@ -574,7 +577,10 @@ const model = new LlmClient(
         choices: [
           {
             finish_reason: fault?.finish ?? "stop",
-            message: { content: fault?.content ?? JSON.stringify(content) },
+            message:
+              fault?.content === null
+                ? {}
+                : { content: fault?.content ?? JSON.stringify(content) },
           },
         ],
         usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
@@ -942,11 +948,12 @@ test.each([false, true])(
 );
 
 test.each(["background", "intent", "resolve"])(
-  "%sのJSON・型・未完了応答を同じ要求内で修正し、確定前の履歴を重複させない",
+  "%sのJSON・型・本文欠落・未完了応答を同じ要求内で修正し、確定前の履歴を重複させない",
   async (stage) => {
     faults.set(stage, [
       { content: "{" },
       { content: "{}" },
+      { content: null },
       { finish: "length" },
     ]);
     const opened = await command({
@@ -985,12 +992,13 @@ test.each(["background", "intent", "resolve"])(
       );
       const counted = (
         await d.postgres.query(
-          "SELECT b.llm_used,(SELECT count(*)::int FROM llm_call c WHERE c.response_id=b.id) AS calls FROM execution_budget b WHERE id=$1",
+          "SELECT b.llm_used,(SELECT count(*)::int FROM llm_call c WHERE c.response_id=b.id) AS calls,(SELECT count(*)::int FROM llm_call c WHERE c.response_id=b.id AND c.state<>'complete') AS unsettled FROM execution_budget b WHERE id=$1",
           [stage === "background" ? id : requestId],
         )
       ).rows[0];
       expect(counted.llm_used).toBe(counted.calls);
-      expect(counted.calls).toBeGreaterThanOrEqual(4);
+      expect(counted.calls).toBeGreaterThanOrEqual(5);
+      expect(counted.unsettled).toBe(0);
     } finally {
       faults.clear();
       partialReply = false;
@@ -1023,11 +1031,13 @@ async function addVillager(newcomer: string) {
   );
 }
 
-test.each(["自動", "旧版からの手動再開"])(
+test.each(["自動", "本文欠落後の世界更新", "旧版からの手動再開"])(
   "初回の準備中に世界が変わっても最新の情報で開始できる（%s）",
   async (mode) => {
     const id = randomUUID(),
       newcomer = randomUUID();
+    if (mode === "本文欠落後の世界更新")
+      faults.set("background", [{ content: null }]);
     await command({ requestId: id, command: "prepare", purpose: "村を訪ねる" });
     const calls = vi
       .spyOn(model, "complete")
@@ -1063,6 +1073,7 @@ test.each(["自動", "旧版からの手動再開"])(
       expect((await status()).state).toBe("active");
     } finally {
       calls.mockRestore();
+      faults.clear();
       await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
     }
   },
@@ -1700,6 +1711,7 @@ test("返答の受容から本人へ戻り、終了・再開でも履歴・未�
   faults.set("result", [
     { content: "{" },
     { content: "{}" },
+    { content: null },
     { finish: "length" },
   ]);
   await command({ requestId: randomUUID(), command: "resume" });
@@ -1720,7 +1732,12 @@ test("返答の受容から本人へ戻り、終了・再開でも履歴・未�
     );
     expect(updates).toHaveLength(2);
     const latest = JSON.parse(updates[1]![2][1]!.content);
-    expect(JSON.stringify(latest.initialContext)).toContain(newcomer);
+    expect(JSON.stringify(latest.initialContext)).not.toContain(newcomer);
+    const refreshed = await agent.read(
+      { request: latest.request, dependencies: [] },
+      [{ kind: "relations", id: place, relation: "has", direction: "out" }],
+    );
+    expect(JSON.stringify(refreshed.results)).toContain(newcomer);
     expect(latest.request.completedScene.events).toEqual(saved!.data.events);
     const finished = (await access.scenes.latest(construction))!;
     expect(finished.data.operationId).toBe(saved!.data.operationId);
@@ -1749,7 +1766,7 @@ test("返答の受容から本人へ戻り、終了・再開でも履歴・未�
   ]);
   expect(view.result).toContain("まだ決まっておらず");
   expect(JSON.stringify(view)).not.toMatch(/PRIVATE_|NPCだけの秘密/);
-  expect(resultCalls).toBe(4);
+  expect(resultCalls).toBe(5);
   expect(faults.get("result")).toEqual([]);
   faults.clear();
   const restored = await new WorldAccess(runtime).scene(subject, construction);
