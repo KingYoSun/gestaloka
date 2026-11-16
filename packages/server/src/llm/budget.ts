@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { z } from "zod";
 import { ExecutionBudget } from "../execution-budget.js";
 import { ModelLimits } from "./limits.js";
 import { WorldBudget } from "./world-budget.js";
@@ -55,7 +56,13 @@ export type SavedCompletion = {
 };
 type SavedResponse =
   | SavedCompletion
-  | { error: string; rejection?: unknown; diagnostic?: unknown };
+  | {
+      error: string;
+      rejection?: unknown;
+      diagnostic?: unknown;
+      httpStatus?: number;
+      retryAfter?: string;
+    };
 
 export class BudgetLedger {
   constructor(
@@ -373,6 +380,57 @@ export class BudgetLedger {
     }
   }
 
+  async reject(
+    id: string,
+    provider: string,
+    response: Response,
+    elapsedMs: number,
+  ) {
+    if (!(
+      (provider === "gemini" && [400, 429].includes(response.status)) ||
+      (provider === "anthropic" && response.status === 400)
+    ))
+      return;
+    const raw: unknown = await response.json().catch(() => null);
+    const gemini = z.object({
+      error: z.object({
+        code: z.literal(response.status),
+        message: z.string(),
+        status:
+          response.status === 429
+            ? z.literal("RESOURCE_EXHAUSTED")
+            : z.string().min(1),
+      }),
+    });
+    const rejected = (
+      provider === "gemini"
+        ? z.union([gemini, z.tuple([gemini])])
+        : z.object({
+            type: z.literal("error"),
+            error: z.object({
+              type: z.literal("invalid_request_error"),
+              message: z.string(),
+            }),
+            request_id: z.string(),
+          })
+    ).safeParse(raw);
+    if (!rejected.success) return;
+    const error = `LLM要求がHTTP ${response.status}で拒否されました。予約枠を解除しました`;
+    const retryAfter = response.headers.get("retry-after");
+    await this.settle(
+      id,
+      0,
+      {
+        error,
+        rejection: raw,
+        httpStatus: response.status,
+        ...(retryAfter ? { retryAfter } : {}),
+      },
+      elapsedMs,
+    );
+    return error;
+  }
+
   async hasPendingOperation(id: string) {
     return !!(
       await this.pool.query(
@@ -383,7 +441,7 @@ export class BudgetLedger {
   }
   async state(id: string) {
     const result = await this.pool.query<{ state: string }>(
-      "SELECT state FROM llm_call WHERE id=$1 AND budget_id=$2",
+      "SELECT CASE WHEN state='complete' AND response ? 'rejection' THEN 'rejected' ELSE state END AS state FROM llm_call WHERE id=$1 AND budget_id=$2",
       [id, this.budgetId],
     );
     return result.rows[0]?.state;

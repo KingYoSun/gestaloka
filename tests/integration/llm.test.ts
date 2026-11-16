@@ -769,6 +769,71 @@ test("応答喪失後は予約を維持し、同じ呼出しを自動再送し�
   expect(transport).toHaveBeenCalledTimes(1);
 });
 
+test.each(["object", "array"])(
+  "Geminiの429拒否（%s）を保存し、新しい要求で再開できる",
+  async (shape) => {
+    const config = {
+      ...environment(),
+      LLM_MODEL: "gemini-3.8-flash",
+      GEMINI_API_KEY: "unused",
+    };
+    const rejection = {
+      error: {
+        code: 429,
+        status: "RESOURCE_EXHAUSTED",
+        message: "quota exceeded",
+      },
+    };
+    const raw = shape === "array" ? [rejection] : rejection;
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(raw, { status: 429, headers: { "retry-after": "60" } }),
+      )
+      .mockImplementation(async () =>
+        Response.json({
+          id: randomUUID(),
+          model: "gemini-3.8-flash",
+          choices: [
+            {
+              finish_reason: "stop",
+              message: { content: '{"connected":true}' },
+            },
+          ],
+          usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 },
+        }),
+      );
+    const client = createCountedClient(databases.postgres, config, transport);
+    await client.ledger.setup();
+    const id = randomUUID();
+    await expect(client.complete(id, "scene-result", [])).rejects.toThrow(
+      "HTTP 429で拒否",
+    );
+    expect(await client.ledger.state(id)).toBe("rejected");
+    expect(await client.ledger.summary()).toMatchObject({
+      unsettled: 0,
+      upperCostUsd: 0,
+    });
+    expect(
+      (
+        await databases.postgres.query(
+          "SELECT response FROM llm_call WHERE id=$1",
+          [id],
+        )
+      ).rows[0].response,
+    ).toMatchObject({ rejection: raw, httpStatus: 429, retryAfter: "60" });
+    const resumed = createCountedClient(databases.postgres, config, transport);
+    await expect(resumed.complete(id, "scene-result", [])).rejects.toThrow(
+      "HTTP 429で拒否",
+    );
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(
+      (await resumed.complete(randomUUID(), "scene-result", [])).content,
+    ).toBe('{"connected":true}');
+    expect(transport).toHaveBeenCalledTimes(2);
+  },
+);
+
 test.each([
   {
     name: "タイムアウト",
@@ -854,6 +919,11 @@ test.each([
         [{ error: { code: 500, message: "failure", status: "INTERNAL" } }],
         { status: 400 },
       ),
+  },
+  {
+    name: "Geminiの本文を確認できないHTTP 429",
+    model: "gemini-3.8-flash",
+    reply: () => new Response("not JSON", { status: 429 }),
   },
   {
     name: "Geminiの本文欠落と使用量不明",

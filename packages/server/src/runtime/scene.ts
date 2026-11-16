@@ -2844,13 +2844,15 @@ export class WorldScenes {
         d.intentions,
         d.nextDecisions,
       );
-      await this.#save(row, client, row.claim!);
       if (d.shared) {
         await this.shared.turns.cancelIdleOffer(client, row.id);
         await client.query(
           "UPDATE world_scene_member SET state='ended' WHERE scene_id=$1",
           [row.id],
         );
+      }
+      await this.#save(row, client, row.claim!);
+      if (d.shared) {
         for (const member of await this.shared.members(row.id, client))
           await this.shared.notice(
             client,
@@ -3370,6 +3372,8 @@ export class WorldScenes {
         return;
       } catch (error) {
         if (error instanceof SupersededWorker) return;
+        // The result transaction rolled back; recovery still starts at reflection.
+        if (row.state === "result") row.state = "reflecting";
         if (
           row.state !== "reflecting" &&
           (await this.shared.turns.control(row.id)).flow === "closing"
