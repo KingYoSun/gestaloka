@@ -3596,6 +3596,11 @@ test("開始背景の移動を確定し、追記で戻さず、場所から取�
             text: "近くから声をかけられた",
           },
         ],
+        needsContext: {
+          evidence: "world",
+          reason: "相手をNPCとして返答させるための文脈が必要",
+          remainingActions: { [caller.actor]: "相手の返答を待つ" },
+        },
       };
     };
     await cli.run(caller.profile, "act", "--text", "作業室に入って声をかける");
@@ -3617,6 +3622,7 @@ test("開始背景の移動を確定し、追記で戻さず、場所から取�
       caller.actor,
     ))!;
     expect(row.data.events.every((e) => e.actorId === caller.actor)).toBe(true);
+    expect(row.data.contextNeed).toBeUndefined();
     const invitation = (await cli.run(peer.profile, "inbox")).invitations.find(
       (i: { sceneId: string }) => i.sceneId === id,
     );

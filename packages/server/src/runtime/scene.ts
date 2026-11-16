@@ -2480,6 +2480,10 @@ export class WorldScenes {
         });
         return ended;
       }
+      // 他プレイヤーの入力へ引き継いだ後の不足条件は、その入力を受けて判断し直す。
+      // 同じ応答の背景要求を持ち越して、相手の返答をNPCとして生成しない。
+      if (contacts.size || live.some((c) => c.text !== null))
+        delete step.needsContext;
       if (
         step.needsContext &&
         (!returnsControl ||
