@@ -1893,6 +1893,7 @@ export class WorldScenes {
     const d = row.data,
       bg = d.background!;
     const own = [
+      ...(d.pending[actor] ? [d.pending[actor]!.actionText] : []),
       ...(d.previous[actor] ? [d.previous[actor]!.actionText] : []),
       ...d.originalAgenda
         .filter((w) => w.actorId === actor)
@@ -1905,6 +1906,8 @@ export class WorldScenes {
       ? []
       : (await this.agent.intentView(d.worldId, actor, d.startedAt, d.purpose))
           .conditions;
+    const received = await this.shared.contacts.received(row.id, [actor]);
+    for (const receipt of received) d.at = Math.max(d.at, receipt.at);
     const locations = await this.#locations(row, [actor]),
       view = sceneView(
         d.views[actor]!,
@@ -1914,6 +1917,14 @@ export class WorldScenes {
         d.at,
         d.choices.filter((i) => i.actorId === actor).map((i) => i.actionText),
       );
+    view.observations.push(
+      ...received.map((r) => ({
+        id: sceneId(`contact:${actor}:${r.eventId}`),
+        target: r.eventId,
+        text: r.text,
+        period: { from: r.at },
+      })),
+    );
     view.conditions.push(
       ...locations[actor]!.map((location) => ({
         text: location.text,
@@ -2016,6 +2027,13 @@ export class WorldScenes {
           ? d.turn.inputs.map((i) => i.actorId)
           : [actor];
     for (;;) {
+      for (const intent of Object.values(d.pending))
+        if (
+          intent.replyWait &&
+          (await this.shared.contacts.ready(row.id, intent)) &&
+          !d.nextDecisions.includes(intent.actorId)
+        )
+          d.nextDecisions.push(intent.actorId);
       let initialContext:
         | Awaited<ReturnType<WorldAgent["context"]>>["initialContext"]
         | undefined;
@@ -2096,12 +2114,18 @@ export class WorldScenes {
       }
       if (
         !controlled.some(
-          (id) => d.pending[id] || d.nextDecisions.includes(id),
+          (id) =>
+            (d.pending[id] && !d.pending[id]!.replyWait) ||
+            d.nextDecisions.includes(id),
         ) &&
         ![...away].some(
-          (id) => d.pending[id] || d.nextDecisions.includes(id),
+          (id) =>
+            (d.pending[id] && !d.pending[id]!.replyWait) ||
+            d.nextDecisions.includes(id),
         ) &&
-        !Object.keys(d.pending).some((id) => !external.includes(id)) &&
+        !Object.values(d.pending).some(
+          (i) => !i.replyWait && !external.includes(i.actorId),
+        ) &&
         !d.nextDecisions.some((id) => !external.includes(id))
       ) {
         if (d.turn) return this.#completeTurn(row, []);
@@ -2169,10 +2193,13 @@ export class WorldScenes {
         received: Awaited<ReturnType<SharedScenes["contacts"]["received"]>> =
           savedInput
             ? (savedInput.receivedContacts ?? [])
-            : await this.shared.contacts.received(row.id, controlled);
+            : await this.shared.contacts.received(
+                row.id,
+                Object.keys(d.pending),
+              );
       for (const receipt of received) d.at = Math.max(d.at, receipt.at);
       const intents = Object.values(d.pending).filter(
-        (i) => !sleeping.has(i.actorId),
+        (i) => !i.replyWait && !sleeping.has(i.actorId),
       );
       const value = await this.#ask(
         row,
@@ -2356,6 +2383,16 @@ export class WorldScenes {
         delivered.map((r) => r.observerId),
         true,
       );
+      const remoteWaiters = new Set(
+        (
+          await this.pool.query<{ actor_id: string }>(
+            `SELECT p.actor_id FROM world_actor_scene p JOIN world_scene s ON s.id=p.scene_id
+        WHERE p.world_id=$1 AND s.id<>$2 AND p.actor_id=ANY($3::uuid[])
+        AND s.state IN ('active','acting','paused') AND (s.data->'pending'->(p.actor_id::text)) ? 'replyWait'`,
+            [row.construction_id, row.id, delivered.map((r) => r.observerId)],
+          )
+        ).rows.map((r) => r.actor_id),
+      );
       for (const reception of delivered) {
         if (
           !known.includes(reception.observerId) ||
@@ -2365,8 +2402,9 @@ export class WorldScenes {
             "受容先の同一性を確認してください。未具体化の人物は局所状況として定義します",
           );
         if (
-          players.has(reception.observerId) &&
-          !bg.participants.includes(reception.observerId)
+          (players.has(reception.observerId) &&
+            !bg.participants.includes(reception.observerId)) ||
+          remoteWaiters.has(reception.observerId)
         )
           live.push({
             eventId: reception.eventId,
@@ -2396,6 +2434,29 @@ export class WorldScenes {
         Object.keys(step.decisions).sort().join() !== [...actors].sort().join()
       )
         throw new SceneResponseError("シーンで未解決の意図が省略されています");
+      for (const [id, status] of Object.entries(step.decisions))
+        if (
+          typeof status === "object" &&
+          status.waitingFor?.some(
+            (target) =>
+              target === id ||
+              ![
+                ...delivered,
+                ...d.events.flatMap((event) =>
+                  event.receipts.map((receipt) => ({
+                    speaker: event.actorId,
+                    ...receipt,
+                  })),
+                ),
+              ].some(
+                (receipt) =>
+                  receipt.speaker === id && receipt.observerId === target,
+              ),
+          )
+        )
+          throw new SceneResponseError(
+            "返答待ちには、問いや働きかけを実際に受容した相手を指定してください",
+          );
       // Keep the scene open for a response to the delivered call.
       if (live.length) delete step.concluded;
       for (const e of step.events) {
@@ -2521,9 +2582,19 @@ export class WorldScenes {
             actionText: remaining,
             continuing: true,
           };
+          delete d.pending[id]!.replyWait;
+          if (typeof status === "object" && status.waitingFor.length)
+            d.pending[id]!.replyWait = {
+              actors: status.waitingFor,
+              seenEventIds: received
+                .filter((r) => r.listener === id)
+                .map((r) => r.eventId),
+            };
           delete step.concluded;
         } else delete d.pending[id];
       }
+      if (Object.values(d.pending).some((intent) => intent.replyWait))
+        delete step.concluded;
       d.nextDecisions = [
         ...new Set([
           ...step.newDecisions,
@@ -2592,7 +2663,9 @@ export class WorldScenes {
       if (
         live.length &&
         !d.nextDecisions.some((id) => !external.includes(id)) &&
-        !Object.keys(d.pending).some((id) => !external.includes(id))
+        !Object.values(d.pending).some(
+          (i) => !i.replyWait && !external.includes(i.actorId),
+        )
       ) {
         return this.#completeTurn(row, []);
       }
@@ -2629,7 +2702,10 @@ export class WorldScenes {
           (d.turn.sourceKind === "human" &&
             controlled.some((id) => d.awaiting?.includes(id)) &&
             !d.nextDecisions.some((id) => !controllers.has(id))) ||
-          ((continuing || controlled.every((id) => !d.pending[id])) &&
+          ((continuing ||
+            controlled.every(
+              (id) => !d.pending[id] || d.pending[id]!.replyWait,
+            )) &&
             !d.nextDecisions.some(
               (id) => !controllers.has(id) || away.has(id),
             )) ||

@@ -2,7 +2,7 @@ import type pg from "pg";
 import type { SharedScenes } from "./shared-scenes.js";
 import type { SceneRow } from "./scene.js";
 import { ConstructionStateError } from "./construction.js";
-import { sceneId } from "./scene-data.js";
+import { sceneId, type SceneIntent } from "./scene-data.js";
 
 export type ContactDecision = {
   listener: string;
@@ -25,9 +25,13 @@ export class PlayerContacts {
       CREATE INDEX IF NOT EXISTS world_contact_listener ON world_player_contact(target_scene,listener,at);
       CREATE INDEX IF NOT EXISTS world_contact_pending ON world_player_contact(world_id,listener) WHERE state='pending';`);
   }
-  async received(scene: string, actors: string[]) {
+  async received(
+    scene: string,
+    actors: string[],
+    db: Pick<pg.Pool, "query"> = this.shared.pool,
+  ) {
     return (
-      await this.shared.pool.query<{
+      await db.query<{
         eventId: string;
         speaker: string;
         listener: string;
@@ -40,6 +44,21 @@ export class PlayerContacts {
         [scene, actors],
       )
     ).rows;
+  }
+  async ready(
+    scene: string,
+    intent: SceneIntent,
+    db: Pick<pg.Pool, "query"> = this.shared.pool,
+  ) {
+    const wait = intent.replyWait;
+    return (
+      !wait ||
+      (await this.received(scene, [intent.actorId], db)).some(
+        (r) =>
+          wait.actors.includes(r.speaker) &&
+          !wait.seenEventIds.includes(r.eventId),
+      )
+    );
   }
   async deliver(
     db: pg.PoolClient,
@@ -83,6 +102,7 @@ export class PlayerContacts {
         ],
       );
       if (!inserted.rowCount) continue;
+      await this.shared.wake(db, target.id);
       await this.shared.notice(
         db,
         row.construction_id,

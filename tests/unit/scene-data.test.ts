@@ -546,6 +546,7 @@ test("旧保存出力は境界で受容契約へ変換し、新しいモデル�
   ]);
   expect(parsed.decisions[actor]).toEqual({
     pending: "選んだ行為の未実行部分を続ける",
+    waitingFor: [],
   });
   expect(() => sceneResponse(legacy)).toThrow();
   expect(legacy.callsToPlayers).toHaveLength(1);

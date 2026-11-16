@@ -168,7 +168,12 @@ export const SceneStep = z.discriminatedUnion("type", [
         id,
         z.union([
           z.enum(["finished", "decide"]),
-          z.object({ pending: text }).strict(),
+          z
+            .object({
+              pending: text,
+              waitingFor: z.array(id).default([]),
+            })
+            .strict(),
         ]),
       ),
       elapsedMs: z.number().int().nonnegative().safe().default(0),
@@ -397,6 +402,7 @@ export type SceneIntent = {
   actorId: string;
   actionText: string;
   continuing: boolean;
+  replyWait?: { actors: string[]; seenEventIds: string[] };
 };
 export const sceneId = derivedId;
 export function sceneContinuations(
