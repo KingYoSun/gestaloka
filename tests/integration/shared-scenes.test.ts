@@ -1722,7 +1722,7 @@ test("Webの人間がいる場合は5往復で自動応答を止め、新規入�
   }
 }, 120000);
 
-test.each(["end", "mixed", "timeout", "continue", "interrupt"] as const)(
+test.each(["end", "timeout", "continue", "interrupt"] as const)(
   "人間不在の10往復で終了提案し、%sを処理して投票中は進めない",
   async (answer) => {
     const scene = await sharedGame(0, false);
@@ -1840,13 +1840,9 @@ test.each(["end", "mixed", "timeout", "continue", "interrupt"] as const)(
             "vote",
             "--proposal",
             proposal.id,
-            answer === "continue" || (answer === "mixed" && i === 1)
-              ? "--continue"
-              : "--end",
+            answer === "continue" ? "--continue" : "--end",
           );
-          if (answer === "mixed" && i === 2)
-            expect(result.code).toBe("STATE_CONFLICT");
-          else expect(result.state, JSON.stringify(result)).not.toBe("error");
+          expect(result.state, JSON.stringify(result)).not.toBe("error");
         }
       }
       await access.scenes.tick(scene);
@@ -1905,6 +1901,221 @@ test.each(["end", "mixed", "timeout", "continue", "interrupt"] as const)(
         );
     } finally {
       playback = undefined;
+    }
+  },
+  120000,
+);
+
+test.each([false, true])(
+  "投票が割れたら終了票だけを退出させ、NPCの未実行部分と続行側の入力を保つ（開始者が終了=%s）",
+  async (ownerEnds) => {
+    const scene = await sharedGame(0, false),
+      ender = people[ownerEnds ? 0 : 1]!,
+      continuer = people[ownerEnds ? 1 : 0]!,
+      speaker = people[2]!,
+      npc = randomUUID(),
+      condition = randomUUID();
+    let child: string | undefined;
+    const pending = {
+      actorId: npc,
+      actionText: "読みかけの資料を調べ、分かった範囲を伝える",
+      continuing: true,
+    };
+    try {
+      playback = (input) => playStep(input, [ender.actor, continuer.actor]);
+      await humanAct(2, "二人に問いかける");
+      await access.scenes.tick(scene);
+      const reply = async (person: typeof ender, text: string) => {
+        const offer = (
+          await cli.run(person.profile, "inbox")
+        ).opportunities.find((o: { sceneId: string }) => o.sceneId === scene);
+        const result = await cli.run(
+          person.profile,
+          "react",
+          "--opportunity",
+          offer.id,
+          "--text",
+          text,
+        );
+        expect(result.state, JSON.stringify(result)).not.toBe("error");
+        return result.requestId as string;
+      };
+      const endedInput = await reply(ender, "終了前に選んでいた返答"),
+        continuedInput = await reply(continuer, "続きを確かめる返答");
+      await runtime.agent.store.commit(
+        await runtime.agent.store.claim(graph, randomUUID()),
+        runtime.agent.store.context(graph),
+        {
+          commitId: randomUUID(),
+          at: 0,
+          changes: {
+            nodes: [
+              { id: npc, kind: "existence", text: "資料を調べている存在" },
+              {
+                id: condition,
+                kind: "script",
+                text: "自分の資料から確かめたことだけを伝える",
+              },
+            ],
+            edges: [
+              {
+                id: randomUUID(),
+                kind: "status",
+                role: "content",
+                source: npc,
+                target: condition,
+                period: { from: 0 },
+              },
+            ],
+            endEdges: [],
+          },
+        },
+      );
+      const before = (await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        people[0]!.actor,
+        scene,
+      ))!;
+      before.data.background!.participants.push(npc);
+      before.data.views[npc] = await runtime.agent.intentView(
+        graph,
+        npc,
+        before.data.at,
+      );
+      before.data.pending[npc] = pending;
+      before.data.intentions[npc] = pending;
+      await runtime.pool.query(
+        "UPDATE world_scene SET data=$2,state='active' WHERE id=$1",
+        [scene, before.data],
+      );
+      const proposal = await access.scenes.shared.transaction(async (db) => {
+        await access.scenes.shared.lock(db, world);
+        await db.query(
+          "UPDATE world_shared_scene SET rounds=10,continuation=$2 WHERE scene_id=$1",
+          [
+            scene,
+            {
+              turn: {
+                id: before.data.actions[0]!.id,
+                sourceKind: "bot",
+                reply: true,
+              },
+              targets: [ender.actor, continuer.actor],
+            },
+          ],
+        );
+        return access.scenes.shared.turns.propose(
+          db,
+          before,
+          people.map((p) => p.actor),
+        );
+      });
+      await cli.run(ender.profile, "vote", "--proposal", proposal, "--end");
+      await cli.run(
+        continuer.profile,
+        "vote",
+        "--proposal",
+        proposal,
+        "--continue",
+      );
+      expect((await access.scenes.shared.turns.control(scene)).flow).toBe(
+        "voting",
+      );
+      const result = await cli.run(
+        speaker.profile,
+        "vote",
+        "--proposal",
+        proposal,
+        "--continue",
+      );
+      expect(result.state).not.toBe("error");
+      const split = (await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        people[0]!.actor,
+        scene,
+      ))!;
+      expect(split.data.events).toEqual(before.data.events);
+      expect(split.data.pending[npc]).toEqual(pending);
+      expect(split.data.departures?.[ender.actor]).toBe(
+        before.data.events.length,
+      );
+      expect(split.data.departures?.[continuer.actor]).toBeUndefined();
+      expect(await access.scenes.shared.turns.control(scene)).toMatchObject({
+        flow: "open",
+        rounds: 0,
+        end_reason: null,
+      });
+      expect(
+        (await cli.run(ender.profile, "status", "--scene", scene)).state,
+      ).toBe("departed");
+      expect(
+        (
+          await cli.run(
+            ender.profile,
+            "act",
+            "--scene",
+            scene,
+            "--text",
+            "退出後の入力",
+          )
+        ).code,
+      ).toBe("STATE_CONFLICT");
+      for (const offer of (await cli.run(ender.profile, "inbox")).opportunities)
+        expect(offer.sceneId).not.toBe(scene);
+      const inputs: PlayInput[] = [];
+      playback = (input) => {
+        inputs.push(input);
+        return {
+          ...playStep(input),
+          decisions: {
+            [continuer.actor]: "decide",
+            [npc]: { pending: pending.actionText },
+          },
+        };
+      };
+      await access.scenes.tick(scene);
+      const after = (await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        people[0]!.actor,
+        scene,
+      ))!;
+      expect(inputs).toHaveLength(1);
+      expect(inputs[0]!.request.controlledInputs.map((i) => i.id)).toEqual([
+        continuedInput,
+      ]);
+      expect(inputs[0]!.request.intentions).toContainEqual(pending);
+      expect(after.data.pending[npc]).toEqual(pending);
+      expect(after.state).toBe("active");
+      expect(after.data.result).toBeUndefined();
+      expect(after.data.actions.some((a) => a.id === endedInput)).toBe(false);
+      expect(after.data.events.slice(0, before.data.events.length)).toEqual(
+        before.data.events,
+      );
+      expect(
+        (
+          await access.sceneRecords(ender.id, world, {
+            sceneId: scene,
+            kind: "events",
+            actorId: ender.actor,
+          })
+        ).items,
+      ).toHaveLength(before.data.events.length);
+      child = (
+        await cli.run(ender.profile, "prepare", "--purpose", "別の場面へ進む")
+      ).scene.id;
+    } finally {
+      playback = undefined;
+      if (child)
+        await runtime.pool.query("DELETE FROM world_scene WHERE id=$1", [
+          child,
+        ]);
+      await runtime.pool.query("DELETE FROM world_scene WHERE id=$1", [scene]);
     }
   },
   120000,
