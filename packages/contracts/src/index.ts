@@ -574,12 +574,13 @@ export const ModelLimit = z
   .refine((value) => Object.keys(value).length > 0);
 export const ModelLimitName = z
   .string()
-  .regex(/^(deepseek|gemini|openai|anthropic):.+$/);
+  .regex(/^(deepseek|gemini|openai|anthropic|openrouter):.+$/);
 export const ModelProvider = z.enum([
   "deepseek",
   "gemini",
   "openai",
   "anthropic",
+  "openrouter",
 ]);
 export const ModelSetting = z
   .object({

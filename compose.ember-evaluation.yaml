@@ -1,0 +1,27 @@
+name: gestaloka-ember-evaluation
+services:
+  postgres:
+    image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    environment:
+      POSTGRES_DB: gestaloka
+      POSTGRES_USER: gestaloka
+      POSTGRES_PASSWORD: evaluation-only
+    ports:
+      - "127.0.0.1:25434:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "gestaloka", "-d", "gestaloka"]
+      interval: 2s
+      retries: 30
+  neo4j:
+    image: neo4j:5.26-community@sha256:0a6e7aedf54a531f76286032d4365ead65b11cca05e4a15cdf23b8e53d6db02b
+    environment:
+      NEO4J_AUTH: none
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 128m
+    ports:
+      - "127.0.0.1:29687:7687"
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell 'RETURN 1'"]
+      interval: 2s
+      retries: 40

@@ -11,6 +11,7 @@ const endpoints: Record<Provider, string> = {
   gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
   openai: "https://api.openai.com/v1",
   anthropic: "https://api.anthropic.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
 };
 export const profiles: Record<
   string,
@@ -28,6 +29,16 @@ export const profiles: Record<
     cacheStorage?: number;
   }
 > = {
+  "meta/muse-ember": {
+    provider: "openrouter",
+    version: "meta/muse-ember-20261109",
+    context: 1048576,
+    maxOutput: 943718,
+    inputMiss: 100,
+    inputHit: 4,
+    output: 500,
+    pricingDate: "2026-11-17",
+  },
   "deepseek-flash": {
     provider: "deepseek",
     version: MODEL_VERSION,
@@ -199,6 +210,7 @@ export function settings(
   if (
     (provider === "anthropic" && api !== "messages") ||
     (provider !== "anthropic" && api === "messages") ||
+    (provider === "openrouter" && api !== "chat-completions") ||
     (api === "responses" && provider !== "openai")
   )
     throw new Error("プロバイダーとAPI形式が対応していません");

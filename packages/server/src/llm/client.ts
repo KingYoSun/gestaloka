@@ -741,7 +741,12 @@ export class LlmClient {
                     },
                     ...(effort === "none" ? {} : { reasoning_effort: effort }),
                   }
-                : { reasoning_effort: effort }),
+                : provider === "openrouter"
+                  ? {
+                      reasoning: { effort },
+                      provider: { require_parameters: true },
+                    }
+                  : { reasoning_effort: effort }),
               ...(provider === "openai"
                 ? { max_completion_tokens: maxOutput }
                 : { max_tokens: maxOutput }),
