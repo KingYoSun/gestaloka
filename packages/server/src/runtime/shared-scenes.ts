@@ -93,6 +93,22 @@ export class SharedScenes {
       expireInSeconds: 900,
       heartbeatSeconds: 30,
     });
+    await this.transaction(async (db) => {
+      await db.query(
+        "SELECT id FROM pgboss.job WHERE name=$1 AND state='created' AND singleton_key IS NOT NULL ORDER BY created_on,id FOR UPDATE",
+        [this.sceneQueue],
+      );
+      await db.query(
+        `WITH pending AS (SELECT id,row_number() OVER(PARTITION BY singleton_key ORDER BY created_on,id) AS position
+        FROM pgboss.job WHERE name=$1 AND state='created' AND singleton_key IS NOT NULL)
+        UPDATE pgboss.job SET state='cancelled',completed_on=now() WHERE name=$1 AND id IN (SELECT id FROM pending WHERE position>1)`,
+        [this.sceneQueue],
+      );
+      await db.query(
+        "UPDATE pgboss.job SET upsert_by_key=true WHERE name=$1 AND state='created' AND singleton_key IS NOT NULL AND upsert_by_key IS DISTINCT FROM true",
+        [this.sceneQueue],
+      );
+    });
     for (const row of (
       await this.pool.query<{ scene_id: string; world_id: string }>(
         "SELECT scene_id,world_id FROM world_shared_scene WHERE flow='inactive' AND inactive_until IS NULL",
@@ -125,11 +141,12 @@ export class SharedScenes {
     );
   }
   async wake(db: pg.PoolClient, sceneId: string) {
-    await this.construction.queue.send(
+    await this.construction.queue.upsert(
       this.sceneQueue,
       { id: sceneId },
       {
         singletonKey: sceneId,
+        match: "oldest",
         db: { executeSql: (text, values) => db.query(text, values) },
       },
     );
