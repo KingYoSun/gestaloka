@@ -170,7 +170,9 @@ export const SceneStep = z.discriminatedUnion("type", [
             .object({
               eventIndex: z.number().int().nonnegative(),
               observerId: id,
-              positionRelationId: id,
+              positionRelationId: id.describe(
+                "対象本人のotherPlayers.locationsにある最新所在地のid",
+              ),
               text,
             })
             .strict(),

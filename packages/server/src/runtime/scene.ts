@@ -2032,6 +2032,12 @@ export class WorldScenes {
         d.peerConditions = d.peerConditions.filter((p) => peers.has(p.actorId));
       }
       if (!d.work) {
+        const locations = await this.#locations(
+          row,
+          (d.peerConditions ?? []).map((p) => p.actorId),
+        );
+        for (const peer of d.peerConditions ?? [])
+          peer.locations = locations[peer.actorId]!;
         const next = sceneContinuations(
           d.originalAgenda,
           bg.participants.filter(
@@ -2273,14 +2279,14 @@ export class WorldScenes {
           !d.peerConditions?.some(
             (p) =>
               p.actorId === call.observerId &&
-              p.states.some(
-                (state) => state.relationId === call.positionRelationId,
+              p.locations.some(
+                (location) => location.id === call.positionRelationId,
               ),
           ) ||
           event.receipts.some((r) => r.observerId === call.observerId)
         )
           throw new SceneResponseError(
-            "参加要請には呼びかけの出来事と、参照した他プレイヤー本人への到達が必要です",
+            "参加要請には呼びかけの出来事と、otherPlayers.locationsにある対象本人の最新所在地idが必要です。statesのrelationIdや過去の所在地idは使えません",
           );
         const lines = contacts.get(call.observerId) ?? [];
         lines.push(call.text);
