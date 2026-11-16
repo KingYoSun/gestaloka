@@ -49,7 +49,9 @@ const model = new LlmClient(
       );
     inputs.push(user);
     let content: unknown;
-    if (
+    if (user.pendingScenes) {
+      content = { type: "selection", candidates: [], mergeInto: null };
+    } else if (
       exploration &&
       user.background &&
       !user.background.creations.some(
@@ -613,6 +615,8 @@ model.complete = async (
   messages,
   target = "default",
   effortTarget,
+  shorten,
+  formatAttempts = 0,
 ) => {
   const targets = new Map([
     ["scene-resolve", "default"],
@@ -620,9 +624,18 @@ model.complete = async (
     ["scene-intent", "resolution"],
     ["scene-result", "default"],
   ]);
-  if (targets.has(role)) expect(target).toBe(targets.get(role));
+  if (targets.has(role) && !formatAttempts)
+    expect(target).toBe(targets.get(role));
   if (role === "scene-background") expect(effortTarget).toBe("resolution");
-  return complete(id, role, messages, target, effortTarget);
+  return complete(
+    id,
+    role,
+    messages,
+    target,
+    effortTarget,
+    shorten,
+    formatAttempts,
+  );
 };
 
 beforeAll(async () => {
@@ -939,8 +952,9 @@ test.each(["自動", "旧版からの手動再開"])(
         ).toBe(202);
       }
       await access.scenes.tick(id);
-      expect(calls).toHaveBeenCalledTimes(2);
-      const [before, after] = calls.mock.calls;
+      expect(calls).toHaveBeenCalledTimes(mode === "自動" ? 2 : 3);
+      const [before] = calls.mock.calls;
+      const after = calls.mock.calls.at(-1);
       expect(before![2][1]!.content).not.toContain(newcomer);
       expect(after![2][1]!.content).toContain(newcomer);
       expect((await status()).state).toBe("ready");
@@ -973,7 +987,7 @@ test("自動修正も元の呼出し上限を使い、上限後に送信や履�
     expect(row.state).toBe("paused");
     expect(row.data.limitReached).toBe(true);
     expect(row.data.events).toEqual([]);
-    expect(faults.get("background")).toHaveLength(1);
+    expect(faults.get("background")).toHaveLength(2);
     expect(
       (
         await d.postgres.query(

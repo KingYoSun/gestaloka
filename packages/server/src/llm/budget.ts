@@ -13,7 +13,19 @@ export class UncertainResponse extends Error {
     super(message);
   }
 }
+export class ResponseFormatError extends UncertainResponse {
+  constructor(
+    readonly raw: unknown,
+    readonly missingBody: boolean,
+    message = "受信したLLM応答の形式を確認できません",
+  ) {
+    super({ type: "format", raw, missingBody }, message);
+  }
+}
 export type SavedCompletion = {
+  rawResponse?: unknown;
+  formatAttempts?: number;
+  upperModel?: boolean;
   id: string;
   model: string;
   content: string;
@@ -117,10 +129,27 @@ export class BudgetLedger {
           prior.rows[0].budget_id !== this.budgetId
         )
           throw new Error("同じ呼出しIDに異なる要求は対応させられません");
-        if (prior.rows[0].state !== "complete")
+        if (prior.rows[0].state !== "complete") {
+          const diagnostic =
+            prior.rows[0].response && "diagnostic" in prior.rows[0].response
+              ? prior.rows[0].response.diagnostic
+              : undefined;
+          if (
+            diagnostic &&
+            typeof diagnostic === "object" &&
+            "type" in diagnostic &&
+            diagnostic.type === "format" &&
+            "raw" in diagnostic &&
+            "missingBody" in diagnostic
+          )
+            throw new ResponseFormatError(
+              diagnostic.raw,
+              diagnostic.missingBody === true,
+            );
           throw new BudgetUnavailable(
             "送信済み要求の結果が未確定です。自動では再送しません",
           );
+        }
         if ("error" in prior.rows[0].response)
           throw new Error(prior.rows[0].response.error);
         await client.query("COMMIT");
@@ -333,7 +362,7 @@ export class BudgetLedger {
   async hasPendingOperation(id: string) {
     return !!(
       await this.pool.query(
-        "SELECT id FROM llm_call WHERE state='pending' AND (operation_id=$1 OR request->>'operationId'=$1::text) LIMIT 1",
+        "SELECT id FROM llm_call WHERE state='pending' AND coalesce(response#>>'{diagnostic,type}','')<>'format' AND (operation_id=$1 OR request->>'operationId'=$1::text) LIMIT 1",
         [id],
       )
     ).rowCount;

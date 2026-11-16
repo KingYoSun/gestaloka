@@ -26,7 +26,7 @@ import {
   type WorldConstruction,
 } from "../runtime/construction.js";
 import { WorldScenes, type SceneRow } from "../runtime/scene.js";
-import { sceneAnchors } from "../runtime/scene-data.js";
+import { sceneAnchors, sceneId as presenceId } from "../runtime/scene-data.js";
 import { readBelongings } from "../world/belongings.js";
 import { readLocations } from "../world/locations.js";
 import { requireMember } from "./operations.js";
@@ -462,6 +462,7 @@ export class WorldAccess {
         id: row.id,
         requestId: shared?.requestIds.at(-1) ?? d.commandId,
         shared,
+        waiting: await this.scenes.shared.waiting(row.id),
         viewerId: viewer,
         at: d.at,
         state: row.state,
@@ -680,6 +681,7 @@ export class WorldAccess {
     actorId?: string,
     sceneId?: string,
     kind: "human" | "bot" = "human",
+    deviceId?: string,
   ) {
     await this.authorize(subject, id, "player", this.pool, actorId);
     return this.#accept(
@@ -703,6 +705,17 @@ export class WorldAccess {
         );
         try {
           await this.scenes.shared.lock(client, id);
+          await this.scenes.shared.presence(
+            client,
+            id,
+            grant.actor_id!,
+            subject,
+            deviceId ??
+              presenceId(`presence:${subject}:${id}:${grant.actor_id}`),
+            true,
+            kind,
+            deviceId,
+          );
           if (
             (
               await npcActors(

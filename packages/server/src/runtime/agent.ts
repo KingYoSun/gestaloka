@@ -1237,6 +1237,8 @@ export class WorldAgent {
               : "default",
             undefined,
             row.request.completedScene?.sources !== undefined,
+            0,
+            (content) => Decision.parse(parseOutput(content)),
           ),
       );
       const commit = async (input: {
@@ -1379,6 +1381,10 @@ export class WorldAgent {
                       },
                     ],
                     "resolution",
+                    undefined,
+                    false,
+                    0,
+                    (content) => CommitDecision.parse(parseOutput(content)),
                   );
                   if (review.finishReason !== "stop")
                     throw new OperationPaused("確定判断の応答が未完了です");
@@ -1727,13 +1733,22 @@ export class WorldAgent {
       throw new Error("同じ意図形成IDを別の主体・時点に使用できません");
     const { view, system_prompt: system } = record.rows[0];
     const ask = task("actor-intent", async () =>
-      this.model.complete(id, "intent", [
-        { role: "system", content: system },
-        {
-          role: "user",
-          content: JSON.stringify(view),
-        },
-      ]),
+      this.model.complete(
+        id,
+        "intent",
+        [
+          { role: "system", content: system },
+          {
+            role: "user",
+            content: JSON.stringify(view),
+          },
+        ],
+        undefined,
+        undefined,
+        false,
+        0,
+        (content) => IntentResult.parse(parseOutput(content)),
+      ),
     );
     const workflow = entrypoint(
       { name: "actor-intent", checkpointer: this.checkpointer },

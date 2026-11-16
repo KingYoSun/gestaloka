@@ -45,7 +45,7 @@ export class SharedScenes {
   readonly turns: SharedTurns;
   readonly contacts = new PlayerContacts(this);
   readonly invitationMs =
-    Number(process.env.SCENE_INVITATION_SECONDS ?? 600) * 1000;
+    Number(process.env.SCENE_INVITATION_SECONDS ?? 300) * 1000;
   constructor(
     readonly construction: WorldConstruction,
     readonly now = () => new Date(),
@@ -184,7 +184,7 @@ export class SharedScenes {
           expiresAt: this.now().toISOString(),
         });
     }
-    const expires = new Date(this.now().getTime() + (active ? 90000 : 0));
+    const expires = new Date(this.now().getTime() + (active ? 600000 : 0));
     const result = await db.query(
       `INSERT INTO world_scene_presence(id,world_id,actor_id,user_id,device_id,kind,active,expires_at)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET active=$7,expires_at=$8
@@ -197,6 +197,10 @@ export class SharedScenes {
       await this.schedule(db, `presence:${id}`, { connectionId: id }, expires);
       await this.turns.available(db, world, actor);
     } else {
+      await db.query(
+        "UPDATE world_scene_presence SET active=false,expires_at=$4 WHERE world_id=$1 AND actor_id=$2 AND user_id=$3 AND kind=$5 AND device_id IS NOT DISTINCT FROM $6::uuid AND active",
+        [world, actor, user, expires, kind, device ?? null],
+      );
       await this.notice(db, world, actor, null, "presence_inactive");
       await this.turns.unavailable(db, world, actor);
     }
@@ -575,6 +579,107 @@ export class SharedScenes {
       pending: pending.rowCount ?? 0,
       deadline: row.deadline?.toISOString() ?? null,
     };
+  }
+  async waiting(scene: string) {
+    const row = (
+      await this.pool.query<{
+        state: string;
+        actor_id: string;
+        construction_id: string;
+        data: {
+          worldId: string;
+          at: number;
+          work?: { kind: string; actorId?: string };
+          awaiting?: string[];
+        };
+      }>(
+        "SELECT state,actor_id,construction_id,jsonb_build_object('worldId',data->'worldId','at',data->'at','work',data->'work','awaiting',data->'awaiting') AS data FROM world_scene WHERE id=$1",
+        [scene],
+      )
+    ).rows[0];
+    if (!row || row.state === "result") return [];
+    if ((await this.turns.control(scene))?.flow === "closing")
+      return [
+        {
+          kind: "system" as const,
+          actors: [],
+          reason:
+            row.state === "paused"
+              ? "終了要求は保存されています。終了処理を保留しています"
+              : "終了要求を受け付けました。受理済みの処理を整理しています",
+          deadline: null,
+        },
+      ];
+    const answers = (
+      await this.pool.query<{ actor: string; deadline: Date }>(
+        `
+      SELECT r.actor_id AS actor,w.deadline FROM world_scene_wave w JOIN world_scene_reply r ON r.wave_id=w.id
+      WHERE w.scene_id=$1 AND w.state='pending' AND r.state='pending'
+      UNION ALL SELECT actor_id,deadline FROM world_scene_invitation WHERE scene_id=$1 AND state='pending'
+      UNION ALL SELECT listener,deadline FROM world_player_contact WHERE source_scene=$1 AND state='pending'
+      UNION ALL SELECT a.actor_id,v.deadline FROM world_scene_end_vote v JOIN world_scene_end_answer a ON a.vote_id=v.id
+      WHERE v.scene_id=$1 AND v.state='pending' AND a.answer IS NULL`,
+        [scene],
+      )
+    ).rows;
+    const context = this.construction.agent.store.context(row.data.worldId);
+    const actors = async (ids: string[]) =>
+      Promise.all(
+        [...new Set(ids)].map(async (id) => ({
+          id,
+          name: (await context.node(id, row.data.at))?.text ?? "参加者",
+        })),
+      );
+    const waiting: {
+      kind: "participants" | "npc" | "system";
+      actors: { id: string; name: string }[];
+      reason: string;
+      deadline: string | null;
+    }[] = [];
+    if (answers.length)
+      waiting.push({
+        kind: "participants",
+        actors: await actors(answers.map((a) => a.actor)),
+        reason: "回答を待っています",
+        deadline: new Date(
+          Math.min(...answers.map((a) => a.deadline.getTime())),
+        ).toISOString(),
+      });
+    if (["preparing", "acting", "reflecting", "paused"].includes(row.state)) {
+      const npc = row.data.work?.kind === "intent" && row.data.work.actorId;
+      waiting.push({
+        kind: npc ? "npc" : "system",
+        actors: npc ? await actors([npc]) : [],
+        reason:
+          row.state === "reflecting"
+            ? "リザルトを生成しています"
+            : row.state === "paused"
+              ? "処理を保留しています"
+              : row.state === "preparing"
+                ? "場面を準備しています"
+                : npc
+                  ? "次の判断を生成しています"
+                  : "行動の結果を生成しています",
+        deadline: null,
+      });
+    } else {
+      const human = await this.active(
+        row.construction_id,
+        row.data.awaiting ?? [],
+        "human",
+      );
+      if (!waiting.length || human.length)
+        waiting.push({
+          kind: "participants",
+          actors: await actors(human.length ? human : [row.actor_id]),
+          reason:
+            row.state === "ready"
+              ? "シーンの開始を待っています"
+              : "次の入力を待っています",
+          deadline: null,
+        });
+    }
+    return waiting;
   }
   async inbox(world: string, actor: string, after?: string) {
     let position = "0";

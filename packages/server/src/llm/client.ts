@@ -9,12 +9,14 @@ import {
   BudgetLedger,
   NANO_USD,
   UncertainResponse,
+  ResponseFormatError,
   type SavedCompletion,
 } from "./budget.js";
 import { ModelLimits } from "./limits.js";
 import { responseDeadline } from "./response-deadline.js";
 import { preparePrompt, canonical, parseOutput } from "./prompt.js";
 import { shortIds } from "./short-ids.js";
+import { derivedId } from "../world/model.js";
 import { PromptCache, geminiCachePlan, renderCachedPrompt } from "./cache.js";
 import {
   settings,
@@ -23,7 +25,11 @@ import {
   type Api,
   type LlmTarget,
 } from "./config.js";
-export { BudgetLedger, BudgetUnavailable } from "./budget.js";
+export {
+  BudgetLedger,
+  BudgetUnavailable,
+  ResponseFormatError,
+} from "./budget.js";
 export { MODEL_VERSION, llmApiKey, type LlmTarget } from "./config.js";
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -102,7 +108,7 @@ const ChatResponse = z.object({
     .array(
       z.object({
         finish_reason: z.string(),
-        message: z.object({ content: z.string().nullable() }),
+        message: z.object({ content: z.string().nullish() }),
       }),
     )
     .length(1),
@@ -481,11 +487,111 @@ export class LlmClient {
     target: LlmTarget = "default",
     effortTarget: LlmTarget = target,
     shorten = false,
+    formatAttempts = 0,
+    validate?: (content: string) => unknown,
   ): Promise<SavedCompletion> {
     if (this.#configuration && configurationScope.getStore() === undefined)
       return this.run(id, () =>
-        this.complete(id, role, messages, target, effortTarget, shorten),
+        this.complete(
+          id,
+          role,
+          messages,
+          target,
+          effortTarget,
+          shorten,
+          formatAttempts,
+          validate,
+        ),
       );
+    let upper = false,
+      previous: ResponseFormatError | undefined;
+    const structured =
+      /^(scene-|world-|initial-|narrative-inspection$|intent$)/.test(role);
+    for (let attempt = formatAttempts; attempt < 4; attempt++) {
+      const repair = attempt === 3;
+      if (repair || previous?.missingBody) upper = true;
+      const input: ChatMessage[] =
+        previous && !previous.missingBody
+          ? [
+              ...messages,
+              {
+                role: "assistant",
+                content:
+                  typeof previous.raw === "string"
+                    ? previous.raw
+                    : JSON.stringify(previous.raw),
+              },
+              {
+                role: "user",
+                content: repair
+                  ? "直前の未表示の応答を、元の入力と出力形式に沿って再解釈してください。意味の評価や改善は行わず、指定のJSONだけを返してください。"
+                  : "直前の未表示の応答は形式が不正です。元の入力と出力形式に沿ってJSONを返してください。",
+              },
+            ]
+          : messages;
+      try {
+        const response = await this.#complete(
+          attempt > formatAttempts ? derivedId(`${id}:format:${attempt}`) : id,
+          role,
+          input,
+          upper ? "resolution" : target,
+          upper ? "resolution" : effortTarget,
+          shorten,
+        );
+        if (!response.content.trim())
+          throw new ResponseFormatError(
+            response.rawResponse ?? response.content,
+            true,
+            "LLM応答に本文がありません",
+          );
+        if (structured && response.finishReason === "stop") {
+          try {
+            parseOutput(response.content);
+          } catch {
+            throw new ResponseFormatError(
+              response.content,
+              false,
+              "LLM応答がJSONではありません",
+            );
+          }
+        }
+        if (validate && response.finishReason === "stop") {
+          try {
+            validate(response.content);
+          } catch (error) {
+            if (
+              !(error instanceof z.ZodError) &&
+              !(error instanceof SyntaxError)
+            )
+              throw error;
+            throw new ResponseFormatError(
+              response.content,
+              false,
+              error.message,
+            );
+          }
+        }
+        return {
+          ...response,
+          ...(attempt > formatAttempts || upper
+            ? { formatAttempts: attempt - formatAttempts, upperModel: upper }
+            : {}),
+        };
+      } catch (error) {
+        if (!(error instanceof ResponseFormatError) || repair) throw error;
+        previous = error;
+      }
+    }
+    throw previous!;
+  }
+  async #complete(
+    id: string,
+    role: string,
+    messages: ChatMessage[],
+    target: LlmTarget = "default",
+    effortTarget: LlmTarget = target,
+    shorten = false,
+  ): Promise<SavedCompletion> {
     z.uuid().parse(id);
     const cachedInput = await this.ledger.savedInput(id);
     const previous = cachedInput?.request as StoredInput | undefined;
@@ -784,6 +890,7 @@ export class LlmClient {
                 : "chat/completions";
           quota.sent();
           const deadline = responseDeadline(api === "messages");
+          let received: unknown;
           try {
             const response = await this.transport(
               `${connection.baseUrl}/${path}`,
@@ -850,8 +957,19 @@ export class LlmClient {
                 .get("content-type")
                 ?.includes("text/event-stream")
                 ? streamedMessage(response, deadline.touch)
-                : response.json()
+                : response.text().then((text) => {
+                    try {
+                      return JSON.parse(text) as unknown;
+                    } catch {
+                      throw new ResponseFormatError(
+                        text,
+                        !text.trim(),
+                        "LLM応答の受信本文がJSONではありません",
+                      );
+                    }
+                  })
             ).catch((error: unknown) => {
+              if (error instanceof ResponseFormatError) throw error;
               if (error instanceof Error && error.message.includes("予約枠"))
                 throw error;
               throw new UncertainResponse(
@@ -875,6 +993,7 @@ export class LlmClient {
                   : undefined,
               );
             });
+            received = raw;
             let completion: SavedCompletion;
             if (api === "messages") {
               const result = MessageResponse.parse(raw);
@@ -964,6 +1083,7 @@ export class LlmClient {
               };
             }
             const usage = completion.usage;
+            if (!completion.content.trim()) completion.rawResponse = raw;
             if ((prompt || codec) && completion.finishReason === "stop") {
               try {
                 completion.content = codec
@@ -991,6 +1111,8 @@ export class LlmClient {
             );
             return completion;
           } catch (error) {
+            if (error instanceof z.ZodError && received !== undefined)
+              throw new ResponseFormatError(received, false, error.message);
             if (
               deadline.signal.aborted &&
               !(error instanceof UncertainResponse)

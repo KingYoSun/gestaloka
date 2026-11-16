@@ -10,6 +10,7 @@ type Db = Pick<pg.Pool, "query">;
 export type SharedTurn = {
   id: string;
   npcActor?: string;
+  npcSession?: string;
   continuingActor?: string;
   sourceId: string;
   sourceKind: "human" | "bot";
@@ -40,7 +41,7 @@ type Task = {
   actor_id: string;
   kind: "human" | "bot";
   command: "act" | "leave" | "reply" | "npc";
-  data: { actionText?: string; waveId?: string };
+  data: { actionText?: string; waveId?: string; npcSession?: string };
 };
 type Wave = {
   id: string;
@@ -54,7 +55,7 @@ const fail = (message: string) => new ConstructionStateError(message);
 
 /** Durable external decisions. No model calls, narrative generation, or world writes. */
 export class SharedTurns {
-  readonly replyMs = Number(process.env.SCENE_REACTION_SECONDS ?? 600) * 1000;
+  readonly replyMs = Number(process.env.SCENE_REACTION_SECONDS ?? 300) * 1000;
   readonly humanRounds = Number(process.env.SCENE_HUMAN_ROUNDS ?? 5);
   readonly botRounds = Number(process.env.SCENE_BOT_ROUNDS ?? 10);
   constructor(readonly shared: SharedScenes) {}
@@ -188,6 +189,32 @@ export class SharedTurns {
     reason: SceneEnding = "requested",
   ) {
     await this.cancelIdleOffer(db, scene);
+    await db.query(
+      "UPDATE world_scene_turn SET state='resolved' WHERE scene_id=$1 AND state='held'",
+      [scene],
+    );
+    const invitations = await db.query<{ id: string; actor_id: string }>(
+      "UPDATE world_scene_invitation SET state='closed' WHERE scene_id=$1 AND state='pending' RETURNING id,actor_id",
+      [scene],
+    );
+    const shared = await this.shared.get(scene, db);
+    for (const invitation of invitations.rows)
+      await this.shared.notice(
+        db,
+        shared!.world_id,
+        invitation.actor_id,
+        scene,
+        "invitation_closed",
+        { invitationId: invitation.id },
+      );
+    await db.query(
+      "UPDATE world_shared_scene SET phase='settled' WHERE scene_id=$1 AND phase IN ('selecting','inviting')",
+      [scene],
+    );
+    await db.query(
+      "UPDATE world_scene_member SET state='joined' WHERE scene_id=$1 AND state='reserved'",
+      [scene],
+    );
     await db.query(
       "UPDATE world_shared_scene SET flow='closing',continuation=NULL,inactive_until=NULL,resume_flow=NULL,end_reason=coalesce(end_reason,$2) WHERE scene_id=$1",
       [scene, reason],
@@ -393,6 +420,9 @@ export class SharedTurns {
                 ...(task.command === "leave" ? { leave: true as const } : {}),
               },
             ];
+    row.data.awaiting = (row.data.awaiting ?? []).filter(
+      (id) => !inputs.some((input) => input.actorId === id),
+    );
     const wave =
       task.command === "reply"
         ? (
@@ -407,7 +437,10 @@ export class SharedTurns {
     return {
       id: task.id,
       ...(task.command === "npc" && control.flow === "open"
-        ? { npcActor: task.actor_id }
+        ? {
+            npcActor: task.actor_id,
+            npcSession: task.data.npcSession ?? task.id,
+          }
         : {}),
       sourceId: wave?.source_id ?? task.id,
       sourceKind:
@@ -419,11 +452,28 @@ export class SharedTurns {
     };
   }
   private async continuingActor(db: pg.PoolClient, row: SceneRow) {
-    const candidates = Object.values(row.data.pending)
-      .filter(
-        (i) => i.continuing && row.data.departures?.[i.actorId] === undefined,
-      )
-      .map((i) => i.actorId);
+    if (
+      (
+        await this.shared.active(
+          row.construction_id,
+          row.data.awaiting ?? [],
+          "human",
+          db,
+        )
+      ).length
+    )
+      return;
+    const candidates = [
+      ...new Set([
+        ...Object.values(row.data.pending)
+          .filter(
+            (i) =>
+              i.continuing && row.data.departures?.[i.actorId] === undefined,
+          )
+          .map((i) => i.actorId),
+        ...row.data.nextDecisions,
+      ]),
+    ];
     if (!candidates.length) return;
     // An outstanding response wave will wake the scene on reply or deadline.
     return (
@@ -547,6 +597,27 @@ export class SharedTurns {
         (id) => !control.last_idle_actor || id > control.last_idle_actor,
       ) ?? bots[0];
     if (!actor) {
+      const npcs = (await npcActors(db, row.data.worldId, members)).sort();
+      const npc =
+        npcs.find(
+          (id) => !control.last_idle_actor || id > control.last_idle_actor,
+        ) ?? npcs[0];
+      if (npc) {
+        const session = (
+          await db.query<{ npc_session: string }>(
+            "SELECT npc_session FROM world_controlled_actor WHERE world_id=$1 AND actor_id=$2",
+            [row.data.worldId, npc],
+          )
+        ).rows[0]!;
+        await this.#queue(db, row.id, randomUUID(), npc, "bot", "npc", {
+          npcSession: session.npc_session,
+        });
+        await db.query(
+          "UPDATE world_shared_scene SET last_idle_actor=$2 WHERE scene_id=$1",
+          [row.id, npc],
+        );
+        return "acting";
+      }
       await this.#close(db, row.id, "dissolved");
       return "closing";
     }
@@ -733,6 +804,10 @@ export class SharedTurns {
       "UPDATE world_scene_end_vote SET state='closed' WHERE id=$1",
       [id],
     );
+    await db.query(
+      "UPDATE world_scene_turn SET state=$2 WHERE scene_id=$1 AND state='held'",
+      [scene, answers.every((a) => a === true) ? "queued" : "resolved"],
+    );
     if (!expired && answers.length && answers.every((a) => a === true)) {
       await db.query(
         `UPDATE world_shared_scene SET rounds=0,
@@ -827,6 +902,13 @@ export class SharedTurns {
         );
       const routed = row.state === "active" && (await this.routeIdle(db, row));
       if (routed) {
+        if (routed === "acting") {
+          await db.query(
+            "UPDATE world_scene SET state='acting',claim=NULL WHERE id=$1",
+            [row.id],
+          );
+          await this.shared.wake(db, row.id);
+        }
         if (routed === "closing") {
           await db.query(
             "UPDATE world_scene SET state='reflecting',claim=NULL,data=jsonb_set(data,'{ending}',to_jsonb('dissolved'::text)) WHERE id=$1",

@@ -41,6 +41,101 @@ const response = () =>
     }),
   );
 
+test.each(["missing", "json", "schema"])(
+  "形式エラー%sを保存し、上位モデルへ引き継いで再送を重複させない",
+  async (fault) => {
+    const models: string[] = [];
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (_url, init) => {
+        const request = JSON.parse(String(init?.body));
+        models.push(request.model);
+        const fail =
+          fault === "missing" ? models.length === 1 : models.length <= 3;
+        return Response.json({
+          id: randomUUID(),
+          model: request.model,
+          choices: [
+            {
+              finish_reason: "stop",
+              message: fail
+                ? fault === "missing"
+                  ? {}
+                  : {
+                      content:
+                        fault === "schema" ? '{"wrong":true}' : "INVALID JSON",
+                    }
+                : { content: '{"connected":true}' },
+            },
+          ],
+          usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 },
+        });
+      });
+    const client = createCountedClient(
+      databases.postgres,
+      {
+        ...environment(),
+        LLM_PROVIDER: "deepseek",
+        LLM_MODEL: "deepseek-flash",
+        LLM_RESOLUTION_PROVIDER: "openai",
+        LLM_RESOLUTION_API: "chat-completions",
+        LLM_RESOLUTION_MODEL: "gpt-6-luna",
+        OPENAI_API_KEY: "unused",
+      },
+      transport,
+    );
+    await client.ledger.setup();
+    const id = randomUUID(),
+      messages = [
+        { role: "user" as const, content: "指定のJSONで返してください" },
+      ];
+    const validate = (content: string) =>
+      z.object({ connected: z.boolean() }).parse(JSON.parse(content));
+    const result = await client.complete(
+      id,
+      "scene-result",
+      messages,
+      undefined,
+      undefined,
+      false,
+      0,
+      validate,
+    );
+    expect(JSON.parse(result.content)).toEqual({ connected: true });
+    expect(models).toEqual(
+      fault === "missing"
+        ? ["deepseek-flash", "gpt-6-luna"]
+        : ["deepseek-flash", "deepseek-flash", "deepseek-flash", "gpt-6-luna"],
+    );
+    expect(
+      await client.complete(
+        id,
+        "scene-result",
+        messages,
+        undefined,
+        undefined,
+        false,
+        0,
+        validate,
+      ),
+    ).toEqual(result);
+    expect(transport).toHaveBeenCalledTimes(models.length);
+    const saved = (
+      await databases.postgres.query(
+        "SELECT state,response FROM llm_call WHERE id=$1",
+        [id],
+      )
+    ).rows[0];
+    expect(saved.state).toBe("complete");
+    if (fault === "missing")
+      expect(saved.response.rawResponse.choices[0].message).toEqual({});
+    else
+      expect(saved.response.content).toBe(
+        fault === "schema" ? '{"wrong":true}' : "INVALID JSON",
+      );
+  },
+);
+
 test("OpenAI Responsesへ同じ記録を一度だけ送り、旧保存要求は再送せず再利用する", async () => {
   const config = {
     ...environment(),

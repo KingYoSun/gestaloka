@@ -73,6 +73,53 @@ const sceneFixture = (
   recordIds: [],
   nextPurpose: null,
 });
+
+test.each(["preparing", "ready", "acting", "paused"] as const)(
+  "%sでも終了を受け付け、待ち相手を表示する",
+  async (state) => {
+    scene = {
+      ...sceneFixture(state),
+      waiting: [
+        {
+          kind: "participants",
+          actors: [{ id: A, name: "相手の人物" }],
+          reason: "回答を待っています",
+          deadline: "2026-11-17T00:05:00Z",
+        },
+      ],
+    };
+    const heartbeats: boolean[] = [];
+    server.use(
+      http.post("*/api/worlds/:id/presence", async ({ request }) => {
+        const body = (await request.json()) as { active: boolean };
+        heartbeats.push(body.active);
+        return json({
+          ...body,
+          connectionId: W,
+          kind: "human",
+          expiresAt: new Date(Date.now() + 600000).toISOString(),
+        });
+      }),
+    );
+    const view = render(
+      <App
+        navigation={createAppRouter(
+          createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
+        )}
+      />,
+    );
+    await screen.findByText(/参加者：相手の人物：回答を待っています/);
+    const finish = await screen.findByRole("button", {
+      name: "シーンを終えてリザルトを見る",
+    });
+    expect((finish as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() => expect(heartbeats).toContain(true));
+    fireEvent.click(finish);
+    await waitFor(() => expect(submitted).toMatchObject({ command: "finish" }));
+    view.unmount();
+    expect(heartbeats).not.toContain(false);
+  },
+);
 const json = (body: Parameters<typeof HttpResponse.json>[0], status = 200) =>
   HttpResponse.json(body, {
     status,
@@ -733,11 +780,7 @@ test("共有は明示選択し、顔ぶれの確定後もあらすじを読ん�
     />,
   );
   await openInput();
-  const shared = (await screen.findByLabelText(
-    "共有シーンとして参加を求める",
-  )) as HTMLInputElement;
-  expect(shared.checked).toBe(false);
-  fireEvent.click(shared);
+  expect(screen.queryByLabelText("共有シーンとして参加を求める")).toBeNull();
   fireEvent.change(screen.getByLabelText("次のシーンで何をしたいですか"), {
     target: { value: "近くの相手と話す" },
   });
@@ -747,7 +790,7 @@ test("共有は明示選択し、顔ぶれの確定後もあらすじを読ん�
   await screen.findByText(
     "同席の返答を待っています。回答が揃うか、締切を迎えたらあらすじを準備します。",
   );
-  expect(submitted).toMatchObject({ command: "prepare", shared: true });
+  expect(submitted).toMatchObject({ command: "prepare" });
   expect(screen.queryByText("背景情報を生成中...")).toBeNull();
   expect(screen.queryByRole("button", { name: "シーンを始める" })).toBeNull();
   await waitFor(() => expect(heartbeats).toContain(true));
@@ -761,7 +804,7 @@ test("共有は明示選択し、顔ぶれの確定後もあらすじを読ん�
   await screen.findByRole("button", { name: "シーンを始める" });
   expect(screen.queryByLabelText("どう行動しますか")).toBeNull();
   view.unmount();
-  await waitFor(() => expect(heartbeats).toContain(false));
+  expect(heartbeats).not.toContain(false);
 });
 
 test("参加回答を送信前に保存し、応答喪失後は同じ要求で照合する", async () => {

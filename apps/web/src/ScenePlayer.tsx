@@ -53,6 +53,11 @@ export function ScenePlayer({
     SceneCommand,
   );
   const [showInputs, setShowInputs] = useState(false);
+  const [waitingEnded, setWaitingEnded] = useState(false);
+  const [pendingEnd, saveEnd] = usePending(
+    pendingKey(`${id}:${viewer}:${scene?.id ?? ""}`, "finish"),
+    z.uuid(),
+  );
   const [inputOpen, setInputOpen] = useState(false);
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [pendingControl, saveControl] = usePending(
@@ -70,7 +75,6 @@ export function ScenePlayer({
           ? pending.purpose
           : (scene?.nextPurpose ?? ""),
       actionText: pending?.command === "act" ? pending.actionText : "",
-      shared: pending?.command === "prepare" ? !!pending.shared : false,
     },
   });
   const connection = useUpdates(
@@ -96,6 +100,29 @@ export function ScenePlayer({
     },
   });
   const inboxPath = "/api/worlds/{id}/scene/inbox";
+  const ending = $api.useMutation("post", "/api/worlds/{id}/scene", {
+    onSuccess: async () => {
+      saveEnd(null);
+      await client.invalidateQueries({
+        predicate: (q) => worldQuery(q.queryKey, id, false),
+      });
+    },
+  });
+  function finishScene() {
+    const requestId = pendingEnd ?? crypto.randomUUID();
+    saveEnd(requestId);
+    ending.mutate({
+      params: {
+        path: { id },
+        query: {
+          view: "compact",
+          actorId: viewer,
+          ...(scene ? { sceneId: scene.id } : {}),
+        },
+      },
+      body: { requestId, command: "finish" },
+    });
+  }
   const params = { path: { id }, query: { actorId: viewer } };
   type Inbox = z.infer<typeof import("@gestaloka/contracts").SceneInbox>;
   const inboxKey = ["get", inboxPath, { params }] as const;
@@ -173,10 +200,11 @@ export function ScenePlayer({
       body,
     });
   }
-  const sharedScene = !!scene?.shared;
   useEffect(() => {
-    if (!sharedScene) return;
-    const connectionId = crypto.randomUUID();
+    if (waitingEnded) return;
+    const key = `presence:${id}:${viewer}`;
+    const connectionId = localStorage.getItem(key) ?? crypto.randomUUID();
+    localStorage.setItem(key, connectionId);
     const heartbeat = (active: boolean) =>
       api
         .POST("/api/worlds/{id}/presence", {
@@ -190,9 +218,17 @@ export function ScenePlayer({
     }, 30000);
     return () => {
       clearInterval(interval);
-      void heartbeat(false);
     };
-  }, [id, viewer, sharedScene]);
+  }, [id, viewer, waitingEnded]);
+  async function endWaiting() {
+    const key = `presence:${id}:${viewer}`;
+    const connectionId = localStorage.getItem(key) ?? crypto.randomUUID();
+    await api.POST("/api/worlds/{id}/presence", {
+      params: { path: { id }, query: { actorId: viewer } },
+      body: { requestId: crypto.randomUUID(), connectionId, active: false },
+    });
+    setWaitingEnded(true);
+  }
   useEffect(() => {
     if (
       pending &&
@@ -213,6 +249,7 @@ export function ScenePlayer({
   }, [scene?.state, scene?.nextPurpose, form]);
   function send(command: z.infer<typeof SceneCommand>) {
     if (mutate.isPending) return;
+    setWaitingEnded(false);
     const body = pending ?? command;
     save(body);
     mutate.mutate({
@@ -252,12 +289,12 @@ export function ScenePlayer({
       !scene.departed &&
       !scene.soloProposal &&
       !["rounds", "inactive", "closing"].includes(scene.shared?.flow ?? "open"),
-    canFinish = scene?.shared
-      ? scene.shared.owner &&
-        scene.shared.flow !== "closing" &&
-        ["active", "acting", "paused"].includes(scene.state) &&
-        !scene.departed
-      : active,
+    canFinish =
+      !!scene &&
+      (!scene.shared || scene.shared.owner) &&
+      scene.shared?.flow !== "closing" &&
+      !["result", "reflecting"].includes(scene.state) &&
+      !scene.departed,
     busy = mutate.isPending || !!pending;
   function submit() {
     const values = form.getValues();
@@ -267,7 +304,6 @@ export function ScenePlayer({
         requestId: crypto.randomUUID(),
         command: "prepare",
         purpose: values.purpose,
-        ...(values.shared ? { shared: true as const } : {}),
       });
     } else if (active && values.actionText.trim()) {
       send({
@@ -285,6 +321,24 @@ export function ScenePlayer({
     (phase === "reflecting" && !scene?.waitingFor?.length);
   return (
     <main className="page play">
+      <Button
+        variant="outline"
+        onClick={() =>
+          waitingEnded ? setWaitingEnded(false) : void endWaiting()
+        }
+      >
+        {waitingEnded ? "待機を再開する" : "待機を終了する"}
+      </Button>
+      {scene?.waiting?.map((wait, index) => (
+        <p role="status" key={index}>
+          {wait.kind === "system"
+            ? "システム"
+            : `${wait.kind === "npc" ? "NPC" : "参加者"}：${wait.actors.map((a) => a.name).join("、")}`}
+          ：{wait.reason}
+          {wait.deadline &&
+            `（締切 ${new Date(wait.deadline).toLocaleTimeString()}）`}
+        </p>
+      ))}
       {historyNotices
         .filter((n) => n.sceneId === scene?.id && n.contactOutcome)
         .map((n) => (
@@ -500,6 +554,7 @@ export function ScenePlayer({
         </Notice>
       )}
       {mutate.error && <Problem error={mutate.error} />}
+      {ending.error && <Problem error={ending.error} />}
       {pending && !mutate.isPending && (
         <Button onClick={() => send(pending)}>同じ操作で確認する</Button>
       )}
@@ -590,12 +645,6 @@ export function ScenePlayer({
           <Label htmlFor="scene-input">
             {entry ? "次のシーンで何をしたいですか" : "どう行動しますか"}
           </Label>
-          {entry && (
-            <Label>
-              <input type="checkbox" {...form.register("shared")} />
-              共有シーンとして参加を求める
-            </Label>
-          )}
           <Textarea
             id="scene-input"
             rows={4}
@@ -638,8 +687,8 @@ export function ScenePlayer({
           {canFinish && (
             <Button
               variant="outline"
-              disabled={busy}
-              onClick={() => simple("finish")}
+              disabled={ending.isPending}
+              onClick={finishScene}
             >
               シーンを終えてリザルトを見る
             </Button>
@@ -647,7 +696,7 @@ export function ScenePlayer({
         </div>
       )}
       {scene?.departed && scene.shared?.owner && scene.state === "active" && (
-        <Button disabled={busy} onClick={() => simple("finish")}>
+        <Button disabled={ending.isPending} onClick={finishScene}>
           元のシーンを終えてリザルトを見る
         </Button>
       )}

@@ -100,16 +100,14 @@ async function village(page: Page, count = 1) {
   return { world, actors };
 }
 
-test("Webでは共有を明示的に選び、参加者確定後もあらすじを読んでから開始する", async ({
+test("Webは共通のシーンを準備し、参加者確定後もあらすじを読んでから開始する", async ({
   page,
 }) => {
   const { world, actors } = await village(page);
   const actor = actors[0]!;
   await page.goto(`/worlds/${world}/play?actorId=${actor}`);
   await page.getByRole("button", { name: "自由入力" }).click();
-  const shared = page.getByLabel("共有シーンとして参加を求める");
-  await expect(shared).not.toBeChecked();
-  await shared.check();
+  await expect(page.getByLabel("共有シーンとして参加を求める")).toHaveCount(0);
   await page.getByLabel("次のシーンで何をしたいですか").fill("周囲を確かめる");
   await page
     .getByRole("button", { name: "シーンのあらすじを準備する" })
