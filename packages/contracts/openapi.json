@@ -9193,7 +9193,8 @@
                                   "deepseek",
                                   "gemini",
                                   "openai",
-                                  "anthropic"
+                                  "anthropic",
+                                  "openrouter"
                                 ]
                               },
                               "model": {
@@ -9303,7 +9304,8 @@
                                       "deepseek",
                                       "gemini",
                                       "openai",
-                                      "anthropic"
+                                      "anthropic",
+                                      "openrouter"
                                     ]
                                   },
                                   "model": {
@@ -9421,7 +9423,8 @@
                                       "deepseek",
                                       "gemini",
                                       "openai",
-                                      "anthropic"
+                                      "anthropic",
+                                      "openrouter"
                                     ]
                                   },
                                   "model": {
@@ -9578,7 +9581,8 @@
                               "deepseek",
                               "gemini",
                               "openai",
-                              "anthropic"
+                              "anthropic",
+                              "openrouter"
                             ]
                           },
                           "value": {
@@ -9723,7 +9727,7 @@
                           },
                           "name": {
                             "type": "string",
-                            "pattern": "^(deepseek|gemini|openai|anthropic):.+$"
+                            "pattern": "^(deepseek|gemini|openai|anthropic|openrouter):.+$"
                           }
                         },
                         "required": [
@@ -9743,7 +9747,7 @@
                           },
                           "name": {
                             "type": "string",
-                            "pattern": "^(deepseek|gemini|openai|anthropic):.+$"
+                            "pattern": "^(deepseek|gemini|openai|anthropic|openrouter):.+$"
                           },
                           "limits": {
                             "nullable": true,

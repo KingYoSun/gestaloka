@@ -3929,7 +3929,7 @@ export interface paths {
                                 /** Format: date-time */
                                 to: string;
                                 /** @enum {string|null} */
-                                provider?: "deepseek" | "gemini" | "openai" | "anthropic" | null;
+                                provider?: "deepseek" | "gemini" | "openai" | "anthropic" | "openrouter" | null;
                                 model?: string;
                                 /** Format: uuid */
                                 worldId?: string | null;
@@ -3960,7 +3960,7 @@ export interface paths {
                             configuration: {
                                 default: {
                                     /** @enum {string} */
-                                    provider: "deepseek" | "gemini" | "openai" | "anthropic";
+                                    provider: "deepseek" | "gemini" | "openai" | "anthropic" | "openrouter";
                                     model: string;
                                     /** Format: uri */
                                     baseUrl: string;
@@ -3985,7 +3985,7 @@ export interface paths {
                                 };
                                 resolution: {
                                     /** @enum {string} */
-                                    provider: "deepseek" | "gemini" | "openai" | "anthropic";
+                                    provider: "deepseek" | "gemini" | "openai" | "anthropic" | "openrouter";
                                     model: string;
                                     /** Format: uri */
                                     baseUrl: string;
@@ -4017,7 +4017,7 @@ export interface paths {
                             /** @enum {string} */
                             operation: "credentials.put";
                             /** @enum {string} */
-                            provider: "deepseek" | "gemini" | "openai" | "anthropic";
+                            provider: "deepseek" | "gemini" | "openai" | "anthropic" | "openrouter";
                             value: string;
                             expectedVersion: number;
                             reason: string;
