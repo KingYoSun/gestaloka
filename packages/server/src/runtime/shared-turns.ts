@@ -892,6 +892,9 @@ export class SharedTurns {
     row.data.nextDecisions = row.data.nextDecisions.filter(
       (id) => !actors.includes(id),
     );
+    row.data.awaiting = (row.data.awaiting ?? []).filter(
+      (id) => !actors.includes(id),
+    );
     await db.query(
       "UPDATE world_scene_member SET state='left' WHERE scene_id=$1 AND actor_id=ANY($2::uuid[])",
       [row.id, actors],
