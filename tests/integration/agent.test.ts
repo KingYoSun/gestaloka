@@ -833,7 +833,7 @@ test("未記録の同じ住人を同時に具体化すると、競合側は読�
   expect(transport).toHaveBeenCalledTimes(4);
 });
 
-test("人間用には別の村民を生成し、試遊村民とその観測を保持したまま分離する", async () => {
+test("新規参加は同一性から始め、追加照会で状態と履歴を取得して別の人物を確定する", async () => {
   const scene = await fixture();
   const newcomer = node("existence", "新しい村民"),
     membership = node("script", "この村の村民である");
@@ -848,19 +848,75 @@ test("人間用には別の村民を生成し、試遊村民とその観測を�
     ),
     { newParticipantId: newcomer.id },
   );
-  const runtime = await agent(
-    vi.fn<typeof fetch>().mockImplementation(async () => response(candidate)),
-  );
+  const inputs: Record<string, unknown>[] = [];
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async (_url, options) => {
+      const body = fixtureBody(options),
+        messages = body.messages.filter(
+          (m: { role: string }) => m.role === "user",
+        ),
+        initial = JSON.parse(messages[0].content),
+        latest = JSON.parse(messages.at(-1).content);
+      inputs.push(latest);
+      if (inputs.length === 1) {
+        expect(initial.initialContext).toEqual(
+          [scene.place, scene.actor, scene.object].map((node) => ({
+            request: { kind: "node", id: node.id },
+            result: { node },
+          })),
+        );
+        expect(JSON.stringify(initial)).not.toContain(scene.secret.text);
+        expect(JSON.stringify(initial)).not.toContain("箱の表面が見える");
+        return response({
+          type: "query",
+          requests: [
+            { kind: "node", id: scene.object.id },
+            {
+              kind: "history",
+              id: scene.actor.id,
+              relation: "see",
+              direction: "out",
+            },
+          ],
+        });
+      }
+      expect(latest.results[0]).toMatchObject({
+        currentStates: [{ script: scene.secret }],
+      });
+      expect(latest.results[1]).toMatchObject({
+        history: [
+          expect.objectContaining({
+            text: "箱の表面が見える。外側に浅い傷がある。",
+          }),
+        ],
+      });
+      return response(candidate);
+    });
+  const runtime = await agent(transport);
   const id = await runtime.create({
     worldId: scene.worldId,
     phase: "participant",
     at: 0,
     until: 1000,
-    rootIds: [scene.place.id],
+    rootIds: [scene.place.id, scene.actor.id, scene.object.id],
     actionText: "別の村民として参加する",
   });
   operations.push(id);
   expect((await runtime.run(id)).newParticipantId).toBe(newcomer.id);
+  expect(transport).toHaveBeenCalledTimes(2);
+  const calls = (
+    await databases.postgres.query(
+      "SELECT request FROM llm_call WHERE operation_id=$1 ORDER BY created_at,id",
+      [id],
+    )
+  ).rows;
+  expect(calls).toHaveLength(3);
+  expect(JSON.stringify(calls[2]!.request)).toContain(scene.secret.text);
+  expect(await runtime.run(id)).toMatchObject({
+    newParticipantId: newcomer.id,
+  });
+  expect(transport).toHaveBeenCalledTimes(2);
   const view = await runtime.view(scene.worldId, newcomer.id, 1000);
   expect(view.observations).toHaveLength(1);
   expect(view.observations[0]?.text).toBe("広場が見える");

@@ -3088,38 +3088,16 @@ test("共有ターンの外部入力が完了してもNPCの未実行部分を�
       "相手の一手",
     );
     wake.mockClear();
-    let sawRemaining = false;
     playback = (input) => {
       const step = playStep(input);
-      step.decisions[owner.actor] = "pending";
-      if (input.request.intentions.some((i) => i.actorId === peer.actor)) {
-        return {
-          ...step,
-          needsContext: {
-            reason: "残りの行動で知覚できる範囲",
-            evidence: "observation",
-            remainingActions: { [owner.actor]: "印を確かめながら書類を届ける" },
-          },
-        };
-      }
-      sawRemaining = input.request.intentions.some(
-        (i) =>
-          i.actorId === owner.actor &&
-          i.actionText === "印を確かめながら書類を届ける",
-      );
-      return {
-        ...step,
-        decisions: { [owner.actor]: { pending: "書類を届ける" } },
-        elapsedMs: 500,
-        concluded: true,
-      };
+      step.decisions[owner.actor] = { pending: "印を確かめながら書類を届ける" };
+      return step;
     };
     await access.scenes.tick(scene);
     const saved = await snapshot();
-    expect(sawRemaining).toBe(true);
     expect(saved.state).toBe("acting");
     expect(saved.data.pending[owner.actor]).toMatchObject({
-      actionText: "書類を届ける",
+      actionText: "印を確かめながら書類を届ける",
       continuing: true,
     });
     expect(wake.mock.calls.map(([, id]) => id)).toEqual([scene]);
