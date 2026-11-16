@@ -102,7 +102,7 @@ const ChatResponse = z.object({
     .array(
       z.object({
         finish_reason: z.string(),
-        message: z.object({ content: z.string().nullable() }),
+        message: z.object({ content: z.string().nullish() }),
       }),
     )
     .length(1),
