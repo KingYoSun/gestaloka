@@ -1037,6 +1037,11 @@ export class WorldScenes {
       if (row.state !== "paused")
         throw new ConstructionStateError("保留中のシーンを指定してください");
       row.state = row.data.resumeState!;
+      if (
+        row.data.work &&
+        (await this.agent.model.ledger.state(row.data.work.id)) === "pending"
+      )
+        row.data.work.id = randomUUID();
       if (row.data.work?.formatAttempts === 3) {
         row.data.work.id = randomUUID();
         row.data.work.formatAttempts = 0;
