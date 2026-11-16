@@ -60,6 +60,7 @@ import {
   SceneStep,
   SceneResponseError,
   sceneResponse,
+  sceneRepairConclusion,
   sceneArrivals,
   sceneAnchors,
   sceneAgenda,
@@ -2160,6 +2161,7 @@ export class WorldScenes {
         },
         "default",
       );
+      const conclusion = sceneRepairConclusion(d.work!.messages);
       if (
         value.value &&
         typeof value.value === "object" &&
@@ -2196,6 +2198,10 @@ export class WorldScenes {
           continue;
         }
         if (value.value.type === "context") {
+          if (conclusion !== undefined)
+            throw new SceneResponseError(
+              "形式修復では局所状況を再生成せず元のシーン応答を修正してください",
+            );
           const context = SceneContext.parse(value.value);
           if (
             !context.facts.length &&
@@ -2215,6 +2221,7 @@ export class WorldScenes {
         !!savedInput && !savedInput.playVersion,
         d.events,
         Object.values(d.pending),
+        conclusion,
       );
       if (step.type === "boundary") break;
       const actors = new Set(intents.map((i) => i.actorId)),
@@ -2969,13 +2976,31 @@ export class WorldScenes {
     delete row.data.error;
     const work = row.data.work!;
     work.id = randomUUID();
-    work.messages.push(
-      { role: "assistant", content: response.content },
-      {
-        role: "user",
-        content: JSON.stringify({ validationErrors }),
-      },
-    );
+    work.messages.push({ role: "assistant", content: response.content });
+    const conclusion =
+      work.kind === "resolve"
+        ? sceneRepairConclusion(work.messages)
+        : undefined;
+    work.messages.push({
+      role: "user",
+      content: JSON.stringify({
+        validationErrors,
+        ...(conclusion === undefined
+          ? {}
+          : {
+              preserveConclusion: conclusion,
+              responseSchema: z.toJSONSchema(
+                z.discriminatedUnion("type", [
+                  SceneStep.options[0].extend({
+                    concluded: z.literal(conclusion),
+                  }),
+                  BackgroundChoices[0],
+                ]),
+                { io: "output" },
+              ),
+            }),
+      }),
+    });
     await this.#save(row, undefined, row.claim!);
     return true;
   }
