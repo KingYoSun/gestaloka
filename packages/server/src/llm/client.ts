@@ -914,47 +914,15 @@ export class LlmClient {
               },
             );
             if (!response.ok) {
-              if (
-                response.status === 400 &&
-                (provider === "anthropic" || provider === "gemini")
-              ) {
-                const raw: unknown = await response.json().catch(() => null);
-                const rejected = (
-                  provider === "anthropic"
-                    ? z.object({
-                        type: z.literal("error"),
-                        error: z.object({
-                          type: z.literal("invalid_request_error"),
-                          message: z.string(),
-                        }),
-                        request_id: z.string(),
-                      })
-                    : z.tuple([
-                        z.object({
-                          error: z.object({
-                            code: z.literal(400),
-                            message: z.string(),
-                            status: z.string().min(1),
-                          }),
-                        }),
-                      ])
-                ).safeParse(raw);
-                if (rejected.success) {
-                  // Failed API calls are not billed; timeouts remain uncertain.
-                  // https://support.claude.com/en/articles/8977456
-                  // Gemini still counts the request against quota:
-                  // https://ai.google.dev/gemini-api/docs/billing#faq
-                  const error =
-                    "LLM要求がHTTP 400で拒否されました。予約枠を解除しました";
-                  await this.ledger.settle(
-                    id,
-                    0,
-                    { error, rejection: raw },
-                    Math.round(performance.now() - started),
-                  );
-                  quota.used(0);
-                  throw new Error(error);
-                }
+              const rejection = await this.ledger.reject(
+                id,
+                provider,
+                response,
+                Math.round(performance.now() - started),
+              );
+              if (rejection) {
+                quota.used(0);
+                throw new Error(rejection);
               }
               throw new Error(
                 `LLM要求の結果を確定できません: HTTP ${response.status}。予約枠は保持します`,

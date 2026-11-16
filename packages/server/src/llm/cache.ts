@@ -280,29 +280,16 @@ export class PromptCache {
               request,
             );
             if (!response.ok) {
-              if (response.status === 400) {
-                const rejection = z
-                  .object({
-                    error: z.object({
-                      code: z.literal(400),
-                      status: z.string(),
-                      message: z.string(),
-                    }),
-                  })
-                  .safeParse(await response.json());
-                if (rejection.success) {
-                  await this.ledger.settle(
-                    id,
-                    0,
-                    {
-                      error: "キャッシュ作成が拒否されました",
-                      rejection: rejection.data,
-                    },
-                    Math.round(performance.now() - started),
-                  );
-                  quota.used(0);
-                  return undefined;
-                }
+              const rejection = await this.ledger.reject(
+                id,
+                "gemini",
+                response,
+                Math.round(performance.now() - started),
+              );
+              if (rejection) {
+                quota.used(0);
+                if (response.status === 400) return undefined;
+                throw new Error(rejection);
               }
               throw new Error(
                 `キャッシュ作成の結果を確認できません: HTTP ${response.status}。予約枠は保持します`,
