@@ -11,6 +11,14 @@ export type ContactDecision = {
   speaker: string;
   text: string;
 };
+export type ReceivedContact = {
+  eventId: string;
+  speaker: string;
+  listener: string;
+  at: number;
+  text: string;
+  replyInputId: string | null;
+};
 
 /** Delivery of a recorded reception; participation and world-path calculation are not prerequisites. */
 export class PlayerContacts {
@@ -31,14 +39,7 @@ export class PlayerContacts {
     db: Pick<pg.Pool, "query"> = this.shared.pool,
   ) {
     return (
-      await db.query<{
-        eventId: string;
-        speaker: string;
-        listener: string;
-        at: number;
-        text: string;
-        replyInputId: string | null;
-      }>(
+      await db.query<ReceivedContact>(
         `SELECT event_id AS "eventId",speaker,listener,at::float8,text,reply_id AS "replyInputId"
       FROM world_player_contact WHERE target_scene=$1 AND listener=ANY($2::uuid[]) ORDER BY at,id`,
         [scene, actors],

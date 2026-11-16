@@ -59,7 +59,12 @@ type PlayInput = {
   };
 };
 let npcGuest: string | undefined;
-let playback: ((input: PlayInput) => unknown) | undefined;
+let playback:
+  | ((
+      input: PlayInput,
+      messages: { role: string; content: string }[],
+    ) => unknown)
+  | undefined;
 let npcChoice: string | undefined;
 let inventory:
   | {
@@ -217,7 +222,7 @@ beforeAll(async () => {
         };
       }
       if (playback && (content as { type?: string }).type === "scene")
-        return playback(raw as PlayInput);
+        return playback(raw as PlayInput, messages);
       if (npcGuest && (raw as { observerId?: string }).observerId === npcGuest)
         return { actionText: "柵のそばの人に挨拶する" };
       if (
@@ -1434,6 +1439,139 @@ function playStep(input: PlayInput, targets: string[] = []) {
     ),
   };
 }
+
+test("省いた進行履歴と配送本文を照会し、新着と再開をまたいでも同じ原文を読む", async () => {
+  const id = await sharedGame(0, true),
+    owner = people[0]!,
+    peer = people[1]!;
+  const old = randomUUID(),
+    recent = randomUUID(),
+    fresh = randomUUID();
+  const snapshot = (await access.scenes.latest(
+    world,
+    undefined,
+    false,
+    owner.actor,
+  ))!;
+  const history = Array.from({ length: 18 }, (_, n) => ({
+    id: randomUUID(),
+    actorId: owner.actor,
+    inputId: randomUUID(),
+    text:
+      n === 0
+        ? "明朝９時に入口で会う約束。作業はまだ未着手"
+        : `別のやり取り${n}`,
+    period: { from: snapshot.data.at, until: snapshot.data.at },
+    receipts: [
+      {
+        observerId: owner.actor,
+        text: `本人への受容${n}`,
+        at: snapshot.data.at,
+      },
+    ],
+  }));
+  await runtime.pool.query(
+    "UPDATE world_scene SET data=jsonb_set(data,'{events}',$2::jsonb) WHERE id=$1",
+    [id, JSON.stringify(history)],
+  );
+  let deliveryTime = snapshot.data.at;
+  const deliver = (event: string, text: string) =>
+    runtime.pool.query(
+      `INSERT INTO world_player_contact(id,world_id,source_scene,target_scene,speaker,listener,event_id,input_id,at,text,deadline)
+     VALUES($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,now()+interval '5 minutes')`,
+      [
+        randomUUID(),
+        world,
+        id,
+        peer.actor,
+        owner.actor,
+        event,
+        randomUUID(),
+        ++deliveryTime,
+        text,
+      ],
+    );
+  await deliver(old, "照会検証:承諾はまだ。条件を確認したい");
+  await deliver(recent, "照会検証:別の最近の話題");
+  let resolveCalls = 0;
+  const complete = runtime.agent.model.complete.bind(runtime.agent.model);
+  const gate = vi
+    .spyOn(runtime.agent.model, "complete")
+    .mockImplementation(async (...args) => {
+      if (args[1] === "scene-resolve" && ++resolveCalls === 2)
+        throw new Error("照会後にワーカーを中断");
+      return complete(...args);
+    });
+  try {
+    playback = (input, messages) => {
+      const read = messages
+        .filter((m) => m.role === "user")
+        .map((m) => JSON.parse(m.content))
+        .at(-1);
+      if (!read.results) {
+        expect(JSON.stringify(input.sceneHistory)).not.toContain(
+          "入口で会う約束",
+        );
+        expect(JSON.stringify(input.receivedContacts)).not.toContain(
+          "承諾はまだ",
+        );
+        return {
+          type: "query",
+          requests: [
+            { kind: "scene-records", source: "history", text: "朝9時 入口" },
+            {
+              kind: "scene-records",
+              source: "contacts",
+              actorId: peer.actor,
+              text: "照会検証",
+            },
+            { kind: "node", id: owner.actor },
+          ],
+        };
+      }
+      expect(read.results[0].items).toEqual([history[0]]);
+      expect(read.results[1].items).toHaveLength(2);
+      expect(
+        read.results[1].items.some(
+          (r: { text: string }) =>
+            r.text === "照会検証:承諾はまだ。条件を確認したい",
+        ),
+      ).toBe(true);
+      expect(JSON.stringify(read.results)).not.toContain("生成途中の新着");
+      expect(read.results[2].node.id).toBe(owner.actor);
+      return playStep(input);
+    };
+    // Inject after the first request snapshot has been saved, before it is resumed.
+    await humanAct(0, "以前の約束と返答を確かめる");
+    await expect(access.scenes.tick(id)).rejects.toThrow(
+      "照会後にワーカーを中断",
+    );
+    await deliver(fresh, "照会検証:生成途中の新着");
+    await cli.run(owner.profile, "resume");
+    await access.scenes.tick(id);
+    const after = (await access.scenes.latest(
+      world,
+      undefined,
+      false,
+      owner.actor,
+    ))!;
+    expect(after.state).toBe("active");
+    expect(after.data.events.slice(0, history.length)).toEqual(history);
+    expect(after.data.events.at(-1)!.text).toContain(
+      "以前の約束と返答を確かめる",
+    );
+    expect(after.data.work).toBeUndefined();
+  } finally {
+    gate.mockRestore();
+    playback = undefined;
+    await runtime.pool.query(
+      "DELETE FROM world_player_contact WHERE source_scene=$1 AND event_id=ANY($2::uuid[])",
+      [id, [old, recent, fresh]],
+    );
+    await cli.run(owner.profile, "finish");
+    await access.scenes.tick(id);
+  }
+}, 90000);
 
 test.each(["standby", "separate", "same"] as const)(
   "受容から%sの相手へ承認なしで届け、本人の入力だけを返答として扱う",
