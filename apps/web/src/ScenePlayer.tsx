@@ -420,6 +420,9 @@ export function ScenePlayer({
           ))}
           {inbox.data?.proposals?.map((proposal) => (
             <article key={proposal.id}>
+              <p>
+                回答が揃って続行と終了に分かれた場合、終了を選んだ人だけが退出します。
+              </p>
               <h2>このシーンを続けますか</h2>
               <p>
                 ここまでのやりとりで終了するか、もう少し続けるかを選んでください。
@@ -438,7 +441,7 @@ export function ScenePlayer({
                       })
                     }
                   >
-                    {keepGoing ? "続ける" : "このシーンを終える"}
+                    {keepGoing ? "続ける" : "自分は終える"}
                   </Button>
                 ))}
               </div>

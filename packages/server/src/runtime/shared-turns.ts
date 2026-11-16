@@ -404,9 +404,16 @@ export class SharedTurns {
     await db.query("UPDATE world_scene_turn SET state='running' WHERE id=$1", [
       task.id,
     ]);
+    const joined = new Set(
+      (await this.shared.members(row.id, db))
+        .filter((m) => m.state === "joined")
+        .map((m) => m.actor_id),
+    );
     return {
       id: task.id,
-      ...(task.command === "npc" && control.flow === "open"
+      ...(task.command === "npc" &&
+      control.flow === "open" &&
+      joined.has(task.actor_id)
         ? { npcActor: task.actor_id }
         : {}),
       sourceId: wave?.source_id ?? task.id,
@@ -415,7 +422,7 @@ export class SharedTurns {
       ...(wave?.source_kind === "idle" ? { idleInput: true as const } : {}),
       eventStart: row.data.events.length,
       reply: !!wave,
-      inputs,
+      inputs: inputs.filter((i) => joined.has(i.actorId)),
     };
   }
   private async continuingActor(db: pg.PoolClient, row: SceneRow) {
@@ -717,34 +724,40 @@ export class SharedTurns {
       throw fail("この終了提案には回答できません");
   }
   async #vote(db: pg.PoolClient, scene: string, id: string, expired = false) {
-    const answers = (
-      await db.query<{ answer: boolean | null }>(
-        "SELECT answer FROM world_scene_end_answer WHERE vote_id=$1",
-        [id],
-      )
-    ).rows.map((r) => r.answer);
-    if (
-      !expired &&
-      answers.includes(null) &&
-      !(answers.includes(true) && answers.includes(false))
-    )
-      return;
+    const voters = (
+        await db.query<{ actor_id: string; answer: boolean | null }>(
+          "SELECT actor_id,answer FROM world_scene_end_answer WHERE vote_id=$1",
+          [id],
+        )
+      ).rows,
+      answers = voters.map((v) => v.answer);
+    if (!expired && answers.includes(null)) return;
     await db.query(
       "UPDATE world_scene_end_vote SET state='closed' WHERE id=$1",
       [id],
     );
-    if (!expired && answers.length && answers.every((a) => a === true)) {
+    if (!expired && answers.includes(true)) {
+      const row = (
+        await db.query<SceneRow>("SELECT * FROM world_scene WHERE id=$1", [
+          scene,
+        ])
+      ).rows[0]!;
+      const leaving = voters
+        .filter((v) => v.answer === false)
+        .map((v) => v.actor_id);
+      if (leaving.length) {
+        await this.leave(db, row, leaving);
+        await db.query(
+          "UPDATE world_scene SET data=$2,claim=NULL,inspection_revision=inspection_revision+1 WHERE id=$1",
+          [scene, JSON.stringify(row.data)],
+        );
+      }
       await db.query(
         `UPDATE world_shared_scene SET rounds=0,
         resume_flow=CASE WHEN flow='inactive' THEN 'open' ELSE resume_flow END,
         flow=CASE WHEN flow='inactive' THEN flow ELSE 'open' END WHERE scene_id=$1`,
         [scene],
       );
-      const row = (
-        await db.query<SceneRow>("SELECT * FROM world_scene WHERE id=$1", [
-          scene,
-        ])
-      ).rows[0]!;
       await this.#continue(db, row);
     } else
       await this.#close(
@@ -791,6 +804,31 @@ export class SharedTurns {
       )
     ).rows)
       await this.#vote(db, row.id, v.id);
+  }
+
+  /** End participation at the current history boundary without inventing world movement. */
+  async leave(db: pg.PoolClient, row: SceneRow, actors: string[]) {
+    for (const actor of actors) {
+      (row.data.departures ??= {})[actor] ??= row.data.events.length;
+      delete row.data.pending[actor];
+      delete row.data.intentions[actor];
+    }
+    row.data.nextDecisions = row.data.nextDecisions.filter(
+      (id) => !actors.includes(id),
+    );
+    await db.query(
+      "UPDATE world_scene_member SET state='left' WHERE scene_id=$1 AND actor_id=ANY($2::uuid[])",
+      [row.id, actors],
+    );
+    await this.departed(db, row, actors);
+    for (const member of await this.shared.members(row.id, db))
+      await this.shared.notice(
+        db,
+        row.construction_id,
+        member.actor_id,
+        row.id,
+        "participant_left",
+      );
   }
 
   async inactivate(db: pg.PoolClient, scene: string) {

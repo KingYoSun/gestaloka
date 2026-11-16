@@ -1092,62 +1092,73 @@ test("反応なしを送信前に保存し、別のシーンを開いていて�
   );
 });
 
-test("終了提案は本人の選択でだけ終了・続行を回答する", async () => {
-  const votes: { command: string; continue: boolean }[] = [];
-  scene = {
-    ...sceneFixture(),
-    shared: {
-      owner: true,
-      requestIds: [],
-      phase: "settled",
-      pending: 0,
-      deadline: null,
-      flow: "voting",
-      rounds: 10,
-    },
-  };
-  server.use(
-    http.get("*/api/worlds/:id/scene/inbox", () =>
-      json({
-        viewerId: V,
-        invitations: [],
-        items: [],
-        next: null,
-        opportunities: [],
-        proposals: votes.length
-          ? []
-          : [
-              {
-                id: A,
-                sceneId: W,
-                deadline: new Date(Date.now() + 60000).toISOString(),
-              },
-            ],
+test.each([true, false])(
+  "終了提案は本人の選択でだけ続行=%sを回答する",
+  async (continueScene) => {
+    const votes: { command: string; continue: boolean }[] = [];
+    scene = {
+      ...sceneFixture(),
+      shared: {
+        owner: true,
+        requestIds: [],
+        phase: "settled",
+        pending: 0,
+        deadline: null,
+        flow: "voting",
+        rounds: 10,
+      },
+    };
+    server.use(
+      http.get("*/api/worlds/:id/scene/inbox", () =>
+        json({
+          viewerId: V,
+          invitations: [],
+          items: [],
+          next: null,
+          opportunities: [],
+          proposals: votes.length
+            ? []
+            : [
+                {
+                  id: A,
+                  sceneId: W,
+                  deadline: new Date(Date.now() + 60000).toISOString(),
+                },
+              ],
+        }),
+      ),
+      http.post("*/api/worlds/:id/scene", async ({ request }) => {
+        votes.push((await request.json()) as (typeof votes)[number]);
+        scene = { ...scene!, shared: { ...scene!.shared!, flow: "open" } };
+        return json({ scene }, 202);
       }),
-    ),
-    http.post("*/api/worlds/:id/scene", async ({ request }) => {
-      votes.push((await request.json()) as (typeof votes)[number]);
-      scene = { ...scene!, shared: { ...scene!.shared!, flow: "open" } };
-      return json({ scene }, 202);
-    }),
-  );
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-      )}
-    />,
-  );
-  const keepGoing = await screen.findByRole("button", {
-    name: "続ける",
-  });
-  await openInput();
-  expect(screen.getByLabelText("どう行動しますか")).toBeTruthy();
-  expect(votes).toEqual([]);
-  fireEvent.click(keepGoing);
-  await waitFor(() => expect(votes).toHaveLength(1));
-  expect(votes[0]).toMatchObject({ command: "vote", continue: true });
-});
+    );
+    render(
+      <App
+        navigation={createAppRouter(
+          createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
+        )}
+      />,
+    );
+    const choice = await screen.findByRole("button", {
+      name: continueScene ? "続ける" : "自分は終える",
+    });
+    expect(
+      screen.getByText(
+        "回答が揃って続行と終了に分かれた場合、終了を選んだ人だけが退出します。",
+      ),
+    ).toBeTruthy();
+    await openInput();
+    expect(screen.getByLabelText("どう行動しますか")).toBeTruthy();
+    expect(votes).toEqual([]);
+    fireEvent.click(choice);
+    await waitFor(() => expect(votes).toHaveLength(1));
+    expect(votes[0]).toMatchObject({
+      command: "vote",
+      continue: continueScene,
+    });
+  },
+);
 
 test("SSEの重複を無視し、切断後は配信位置とスナップショットを取得し直す", async () => {
   let reads = 0,
