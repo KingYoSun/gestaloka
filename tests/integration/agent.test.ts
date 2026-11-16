@@ -320,7 +320,7 @@ afterAll(async () => {
   await databases.close();
 });
 
-test("背景の根拠を引き継いで相手側の状態を調べ、短縮IDを戻して確定する", async () => {
+test("背景の根拠を通常の照会へ引き継ぎ、短縮IDを戻して確定する", async () => {
   const scene = await fixture(),
     ctx = store.context(scene.worldId);
   const relation = (
@@ -333,31 +333,30 @@ test("背景の根拠を引き継いで相手側の状態を調べ、短縮IDを
     { commitId: randomUUID(), at: 0, changes: changes([], [about]) },
   );
   const transport = vi.fn<typeof fetch>(async (_url, options) => {
-    const packet = JSON.parse(fixtureBody(options).messages[1].content);
-    expect(JSON.stringify(packet)).not.toContain(relation.id);
-    if (packet.profiles) {
-      const other = packet.profiles.find(
-        (p: { name: string }) => p.name === scene.object.text,
+    const messages = fixtureBody(options).messages,
+      packet = JSON.parse(messages[1].content),
+      latest = JSON.parse(
+        messages.filter((m: { role: string }) => m.role === "user").at(-1)
+          .content,
       );
-      const id = other.states[0].id;
-      expect(id).toMatch(/^~g\d+~$/);
+    expect(JSON.stringify(packet)).not.toContain(relation.id);
+    expect(packet).not.toHaveProperty("profiles");
+    const source = Object.values(packet.request.completedScene.sources)[0] as {
+      edge: { id: string; source: string };
+    };
+    expect(source.edge.id).toMatch(/^~g\d+~$/);
+    if (!latest.results) {
       return response({
-        type: "ready",
-        evidence: [
-          {
-            id,
-            note: "元の状態を確認",
-            expires: ["旧状態"],
-            retains: [],
-            uncertain: [],
-          },
-        ],
-        unknowns: [],
+        type: "query",
+        requests: [{ kind: "node", id: source.edge.source }],
       });
     }
-    const ev = packet.initialContext[0].evidence[0];
-    expect(ev.expires).toEqual(["旧状態"]);
-    return response(proposal({ ...changes(), endEdges: [ev.id] }));
+    expect(
+      latest.results[0].currentStates.some(
+        (s: { edge: { id: string } }) => s.edge.id === source.edge.id,
+      ),
+    ).toBe(true);
+    return response(proposal({ ...changes(), endEdges: [source.edge.id] }));
   });
   const runtime = await agent(transport, {
     LLM_PROVIDER: "deepseek",

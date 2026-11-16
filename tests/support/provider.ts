@@ -166,7 +166,21 @@ export async function fixtureRuntime(
       } else if (user.background) {
         const actor = user.request.controlledActorId,
           leaving = user.request.leavingActorIds?.includes(actor),
-          receivers = (user.request.playerActorIds ?? [actor]).filter(
+          receivers = [
+            ...new Set<string>([
+              ...(user.request.playerActorIds ?? [actor]),
+              ...(user.request.intentions.some(
+                (i: { actionText: string }) =>
+                  i.actionText === "同席者へ声をかける",
+              )
+                ? (user.otherPlayers ?? [])
+                    .map((p: { actorId: string }) => p.actorId)
+                    .filter(
+                      (id: string) => !user.sleepingPlayerIds.includes(id),
+                    )
+                : []),
+            ]),
+          ].filter(
             (id: string) => !(user.request.departedActorIds ?? []).includes(id),
           ),
           text = `公開された経験 ${++sequence}`;
@@ -326,6 +340,11 @@ export async function fixtureRuntime(
       );
     }),
   );
+  // Semantic fixtures compare their seeded identities. Encoding round-trips have dedicated tests;
+  // real-model scene verification still uses the production encoding path.
+  const complete = model.complete.bind(model);
+  model.complete = (id, role, messages, target, effortTarget) =>
+    complete(id, role, messages, target, effortTarget, false);
   const runtime = new WorldConstruction(
     new WorldBuilder(
       databases.postgres,

@@ -30,7 +30,6 @@ import {
 import type { LlmClient, ChatMessage } from "../llm/client.js";
 import { locationRecords } from "../world/locations.js";
 import { CompletedScene, mergeSceneChanges } from "./scene-data.js";
-import { reviewSceneStates } from "./scene-handoff.js";
 
 const Time = z.number().int().nonnegative().safe();
 export const IntentResult = z
@@ -874,7 +873,7 @@ export class WorldAgent {
       ...(request.controlledActorId ? [request.controlledActorId] : []),
       ...(request.intentions ?? []).map((item) => item.actorId),
     ]);
-    if (inScene || request.completedScene) {
+    if (inScene) {
       const context = this.store.context(request.worldId, dependencies);
       const actor = request.actorId ?? request.controlledActorId;
       const states = actor
@@ -1290,17 +1289,7 @@ export class WorldAgent {
                 .context(row.request.worldId, row.dependencies)
                 .validate();
               if (!row.messages) {
-                const review = row.request.completedScene?.sources
-                  ? await reviewSceneStates(
-                      this,
-                      row.request,
-                      row.dependencies,
-                      callId(id, row.epoch, row.step),
-                    )
-                  : undefined;
-                const seed = review
-                  ? { ...review, initialContext: review.results }
-                  : await this.context(row.request, row.dependencies);
+                const seed = await this.context(row.request, row.dependencies);
                 row.dependencies = seed.dependencies;
                 row.messages = [
                   { role: "system", content: row.system_prompt },
@@ -1440,15 +1429,7 @@ export class WorldAgent {
               }
               try {
                 if (decision.type === "query") {
-                  const output = row.request.completedScene?.sources
-                    ? await reviewSceneStates(
-                        this,
-                        row.request,
-                        row.dependencies,
-                        callId(id, row.epoch, row.step),
-                        decision.requests,
-                      )
-                    : await this.read(row, decision.requests);
+                  const output = await this.read(row, decision.requests);
                   row.dependencies = output.dependencies;
                   row.messages.push({
                     role: "user",

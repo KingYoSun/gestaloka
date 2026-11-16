@@ -35,7 +35,7 @@ gestaloka inbox [--after <cursor>]       自分への通知と未処理の参加
 gestaloka listen [--once]                生存通知を送りながら待ち受け（JSON Lines）
 gestaloka standby [--notify <実行ファイル>] 在席を更新し未処理通知を確認。VMで60秒ごとに実行
 gestaloka invite --invitation <id> --accept|--reject  同席を承認・拒否
-gestaloka react --opportunity <id> --text <意図>|--none  届いた反応機会へ一度回答
+gestaloka react --opportunity <id> --text <意図>|--none  届いた働きかけへ本人の返答を送る
 gestaloka vote --proposal <id> --continue|--end          終了提案へ回答
 gestaloka start                          準備したシーンを開始
 gestaloka act --text <自由記述>           一手を送信（--file <UTF-8ファイル>も可）
@@ -147,7 +147,10 @@ async function http(
     });
   return data;
 }
-async function status(profile: Profile) {
+async function status(
+  profile: Profile,
+  sceneId: string | null | undefined = values.scene,
+) {
   const device = PlayerDeviceStatus.parse(
     await http(profile, "/api/player-device"),
   );
@@ -155,7 +158,7 @@ async function status(profile: Profile) {
   const { scene } = SceneResponse.parse(
     await http(
       profile,
-      `/api/worlds/${profile.worldId}/scene?actorId=${device.actorId}${values.scene ? `&sceneId=${z.uuid().parse(values.scene)}` : ""}`,
+      `/api/worlds/${profile.worldId}/scene?actorId=${device.actorId}${sceneId ? `&sceneId=${z.uuid().parse(sceneId)}` : ""}`,
     ),
   );
   return {
@@ -235,7 +238,11 @@ async function send(
       )),
     };
   }
-  return { requestId, result, ...(await status(profile)) };
+  const responseScene =
+    saved.body.command === "react"
+      ? (SceneResponse.parse(result).scene?.id ?? null)
+      : undefined;
+  return { requestId, result, ...(await status(profile, responseScene)) };
 }
 async function submit(
   profile: Profile,

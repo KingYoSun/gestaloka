@@ -116,6 +116,25 @@ export class SharedTurns {
       [id, scene, actor, kind, command, data],
     );
   }
+  /** An external reply is an already-selected input, queued under the same scene policy. */
+  async receiveChoice(
+    db: pg.PoolClient,
+    row: SceneRow,
+    actor: string,
+    kind: "human" | "bot",
+    id: string,
+    text: string,
+  ) {
+    await this.#queue(db, row.id, id, actor, kind, "act", { actionText: text });
+    await this.cancelIdleOffer(db, row.id);
+    const control = await this.control(row.id, db);
+    if (["open", "closing"].includes(control.flow))
+      await db.query(
+        "UPDATE world_scene SET state='acting',claim=NULL WHERE id=$1 AND state IN ('ready','active')",
+        [row.id],
+      );
+    await this.shared.wake(db, row.id);
+  }
   async handoff(
     db: pg.PoolClient,
     row: SceneRow,

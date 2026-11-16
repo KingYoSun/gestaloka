@@ -224,7 +224,7 @@ export function recordPresentations(
           "response",
           p.text,
           e.inputId ?? null,
-          e.period.until,
+          p.at ?? e.period.until,
           p.information?.map((r) => resolve(r, row, e.id)),
         );
   if (row.state === "result" && d.result)

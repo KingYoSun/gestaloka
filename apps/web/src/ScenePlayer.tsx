@@ -355,14 +355,21 @@ export function ScenePlayer({
               <h2>
                 {opportunity.nextInput
                   ? "次の一手を選んでください"
-                  : "返答を求められています"}
+                  : "届いた働きかけに返答できます"}
               </h2>
-              <details>
-                <summary>この返答で見聞きしていた範囲</summary>
-                {opportunity.context.map((text, index) => (
-                  <p key={index}>{text}</p>
-                ))}
-              </details>
+              {opportunity.context.length === 1 ? (
+                <p>{opportunity.context[0]}</p>
+              ) : (
+                <>
+                  <p>{opportunity.context.at(-1)}</p>
+                  <details>
+                    <summary>これまでに見聞きした内容</summary>
+                    {opportunity.context.map((text, index) => (
+                      <p key={index}>{text}</p>
+                    ))}
+                  </details>
+                </>
+              )}
               <Label htmlFor={`reaction-${opportunity.id}`}>
                 返す発言や行動
               </Label>

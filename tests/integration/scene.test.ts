@@ -30,12 +30,8 @@ let backgroundCalls = 0;
 let modelCalls = 0,
   worldPaused = false,
   resultCalls = 0,
-  partialReply = false,
-  captureLegacyResolve = false;
-let legacyResolveSnapshot:
-  Awaited<ReturnType<WorldAccess["scenes"]["latest"]>> | undefined;
-let backgroundSnapshot: typeof legacyResolveSnapshot;
-let observedSnapshot: typeof legacyResolveSnapshot;
+  partialReply = false;
+type SceneSnapshot = Awaited<ReturnType<WorldAccess["scenes"]["latest"]>>;
 let exploration: { id: string; sourced: boolean } | undefined;
 const partialNpcAction =
   "問いの一部に返答し、選んだ活動を続けて相手の判断を待つ";
@@ -53,7 +49,13 @@ const model = new LlmClient(
       );
     inputs.push(user);
     let content: unknown;
-    if (exploration && user.needsContext?.evidence === "observation") {
+    if (
+      exploration &&
+      user.background &&
+      !user.background.creations.some(
+        (n: { id: string }) => n.id === exploration!.id,
+      )
+    ) {
       expect(user.responseSchema.oneOf).toContainEqual(
         expect.objectContaining({
           properties: expect.objectContaining({
@@ -162,36 +164,6 @@ const model = new LlmClient(
           newDecisions: chosen ? [] : [person],
         };
       }
-    } else if (user.needsContext?.evidence === "observation") {
-      expect(user.stagedScene.purpose).toBe("封印された箱の印を探す");
-      content = {
-        type: "observation",
-        limits: "手前の箱の表だけが見える",
-        // A saved background reply could predict a follow-up before the actor saw the box.
-        afterObservation: { [actor]: "印があればその意味を調べる" },
-      };
-    } else if (user.needsContext) {
-      expect(user.stagedScene.events).toHaveLength(1);
-      expect(user.stagedScene.events[0].text).toBe("若者が挨拶した");
-      backgroundSnapshot = structuredClone(
-        (await access.scenes.latest(construction))!,
-      );
-      content = {
-        type: "context",
-        participants: [],
-        creations: [],
-        beliefs: [],
-        resolvedUnknowns: [],
-        facts: user.needsContext.worldChanged
-          ? []
-          : [
-              {
-                subjectId: place,
-                text: "橋へ続く道が声をかけた場所から延びている",
-                aboutIds: [actor, user.stagedScene.events[0].id],
-              },
-            ],
-      };
     } else if (
       user.responseSchema?.oneOf?.some(
         (s: { properties?: { type?: { const?: string } } }) =>
@@ -258,58 +230,20 @@ const model = new LlmClient(
         }[],
         response = intentions.some((i) => i.actorId === npc);
       if (intentions.some((i) => i.actionText === "隣の箱を調べる")) {
-        if (user.observationLimits) {
-          expect(user.observationObservers).toEqual([actor]);
-          expect(user).not.toHaveProperty("afterObservation");
-        }
-        if (user.observationLimits && !observedSnapshot)
-          observedSnapshot = structuredClone(
-            (await access.scenes.latest(construction))!,
-          );
-        content = user.observationLimits
-          ? {
-              type: "scene",
-              events: [
-                {
-                  actorId: actor,
-                  text: "隣の箱を調べた",
-                  receipts: [
-                    { observerId: actor, text: "手前の箱の表には印が見えない" },
-                  ],
-                },
+        content = {
+          type: "scene",
+          events: [
+            {
+              actorId: actor,
+              text: "隣の箱を調べた",
+              receipts: [
+                { observerId: actor, text: "手前の箱の表には印が見えない" },
               ],
-              decisions: { [actor]: "decide" },
-              newDecisions: [],
-            }
-          : {
-              type: "scene",
-              events: [],
-              decisions: { [actor]: "pending" },
-              newDecisions: [],
-              needsContext: {
-                evidence: "observation",
-                reason: "調べた位置で確認できる範囲",
-                remainingActions: { [actor]: "隣の箱を調べる" },
-              },
-            };
-        if (
-          user.observationLimits &&
-          !body.messages.some((m: { content: string }) =>
-            m.content.includes("validationErrors"),
-          )
-        ) {
-          content = {
-            type: "scene",
-            events: [],
-            decisions: { [actor]: "pending" },
-            newDecisions: [],
-            needsContext: {
-              evidence: "observation",
-              reason: "もう一度確認する",
-              remainingActions: { [actor]: "隣の箱を調べる" },
             },
-          };
-        }
+          ],
+          decisions: { [actor]: "decide" },
+          newDecisions: [],
+        };
       } else if (
         intentions.some((i) => i.actionText === "前の返答を読み直す")
       ) {
@@ -368,33 +302,61 @@ const model = new LlmClient(
           },
         };
       else if (intentions.some((i) => i.actionText === "橋の方へ歩く")) {
-        expect(user.background.facts.at(-1)).toMatchObject({
-          at: user.sceneHistory.at(-1).period.until,
-        });
-        expect(user.background.perceptions).toHaveLength(2);
-        content = {
-          type: "scene",
-          events: [
-            {
-              actorId: actor,
-              text: "若者が道を歩いた",
-              receipts: [
-                {
-                  observerId: actor,
-                  text: "道を進んだ",
-                  information: [{ id: "$event" }, { id: "$receipt" }],
-                },
-              ],
+        if (
+          !user.background.facts.some(
+            (f: { text: string }) =>
+              f.text === "橋へ続く道が声をかけた場所から延びている",
+          )
+        ) {
+          const queried = body.messages.some(
+            (m: { role: string; content: string }) =>
+              m.role === "user" && m.content.includes('"results"'),
+          );
+          content = queried
+            ? {
+                type: "context",
+                participants: [],
+                creations: [],
+                beliefs: [],
+                resolvedUnknowns: [],
+                facts: [
+                  {
+                    subjectId: place,
+                    text: "橋へ続く道が声をかけた場所から延びている",
+                    aboutIds: [actor, user.sceneHistory[0].id],
+                  },
+                ],
+              }
+            : { type: "query", requests: [{ kind: "node", id: place }] };
+        } else {
+          expect(user.background.facts.at(-1)).toMatchObject({
+            at: user.sceneHistory.at(-1).period.until,
+          });
+          expect(user.background.perceptions).toHaveLength(2);
+          content = {
+            type: "scene",
+            events: [
+              {
+                actorId: actor,
+                text: "若者が道を歩いた",
+                receipts: [
+                  {
+                    observerId: actor,
+                    text: "道を進んだ",
+                    information: [{ id: "$event" }, { id: "$receipt" }],
+                  },
+                ],
+              },
+            ],
+            decisions: { [actor]: "decide" },
+            newDecisions: [],
+            elapsedMs: 1000,
+            needsContext: {
+              reason: "橋の先は本人の次の選択を待つ",
+              remainingActions: { [actor]: "" },
             },
-          ],
-          decisions: { [actor]: "decide" },
-          newDecisions: [],
-          elapsedMs: 1000,
-          needsContext: {
-            reason: "橋の先は本人の次の選択を待つ",
-            remainingActions: { [actor]: "" },
-          },
-        };
+          };
+        }
       } else if (intentions.some((i) => i.actionText === "礼だけを伝える"))
         content = {
           type: "scene",
@@ -415,9 +377,20 @@ const model = new LlmClient(
       else if (intentions.some((i) => i.actionText === "別の場所へ向かう"))
         content = {
           type: "scene",
-          events: [],
+          events: [
+            {
+              actorId: actor,
+              text: "若者が道へ出た",
+              receipts: [
+                { observerId: actor, text: "道へ出て、次の行き先を選べる" },
+              ],
+            },
+          ],
           decisions: Object.fromEntries(
-            intentions.map((i) => [i.actorId, "pending"]),
+            intentions.map((i) => [
+              i.actorId,
+              i.actorId === actor ? "decide" : "pending",
+            ]),
           ),
           newDecisions: [],
           elapsedMs: 0,
@@ -468,17 +441,6 @@ const model = new LlmClient(
               newDecisions: [npc],
               elapsedMs: 0,
             };
-        if (response && captureLegacyResolve) {
-          Reflect.deleteProperty(
-            (content as { responseCoverage: Record<string, unknown>[] })
-              .responseCoverage[0]!,
-            "explanation",
-          );
-          legacyResolveSnapshot = structuredClone(
-            (await access.scenes.latest(construction))!,
-          );
-          captureLegacyResolve = false;
-        }
       } else if (!response && user.sceneHistory.length) {
         // 返答待ちには新たな判断主体がなくても、同じ意図で時間が進む。
         expect(intentions).toEqual([
@@ -531,7 +493,12 @@ const model = new LlmClient(
             },
           ],
           decisions: response
-            ? { [actor]: "decide", [npc]: "pending" }
+            ? {
+                ...(intentions.some((i) => i.actorId === actor)
+                  ? { [actor]: "decide" }
+                  : {}),
+                [npc]: "pending",
+              }
             : { [actor]: "pending" },
           newDecisions: [],
         };
@@ -648,13 +615,8 @@ model.complete = async (
   effortTarget,
 ) => {
   const targets = new Map([
-    ["scene-resolve", "resolution"],
-    [
-      "scene-background",
-      process.env.SCENE_DEFAULT_BACKGROUND_WORLD_ID === construction
-        ? "default"
-        : "resolution",
-    ],
+    ["scene-resolve", "default"],
+    ["scene-background", "default"],
     ["scene-intent", "resolution"],
     ["scene-result", "default"],
   ]);
@@ -1084,83 +1046,6 @@ test("NPCの部分返答で本人へ判断を返し、NPCの継続を再判断�
   }
 });
 
-test("旧診断だけで停止したresolveを公開resumeしても、同じ完成済み出力を再送せず読む", async () => {
-  const opened = await command({
-    requestId: randomUUID(),
-    command: "prepare",
-    purpose: "相手に二つのことを尋ねる",
-  });
-  const id = opened.json().scene.id;
-  try {
-    await access.scenes.tick(id);
-    await command({ requestId: randomUUID(), command: "start" });
-    partialReply = true;
-    captureLegacyResolve = true;
-    await command({
-      requestId: randomUUID(),
-      command: "act",
-      actionText: "二つのことを尋ねて、相手の返答を待つ",
-    });
-    await access.scenes.tick(id);
-    expect(legacyResolveSnapshot?.data.work?.kind).toBe("resolve");
-    const paused = structuredClone(legacyResolveSnapshot!),
-      work = structuredClone(paused.data.work!);
-    const callBefore = (
-      await d.postgres.query(
-        "SELECT state,request,response,charged_nano::text FROM llm_call WHERE id=$1",
-        [work.id],
-      )
-    ).rows[0];
-    expect(callBefore.state).toBe("complete");
-    expect(
-      JSON.parse(callBefore.response.content).responseCoverage[0],
-    ).not.toHaveProperty("explanation");
-    paused.data.resumeState = "acting";
-    paused.data.error = JSON.stringify([
-      {
-        code: "invalid_type",
-        path: ["responseCoverage", 0, "explanation"],
-        message: "旧診断の説明がない",
-      },
-    ]);
-    paused.data.limitReached = false;
-    paused.data.suspended = false;
-    await d.postgres.query(
-      "UPDATE world_scene SET state='paused',data=$2,claim=NULL WHERE id=$1",
-      [id, JSON.stringify(paused.data)],
-    );
-    const before = modelCalls;
-    await command({ requestId: randomUUID(), command: "resume" });
-    const resumed = (await access.scenes.latest(construction))!;
-    expect(resumed.data.work?.id).toBe(work.id);
-    expect(resumed.data.work?.messages).toEqual(work.messages);
-    await access.scenes.tick(id);
-    expect(modelCalls).toBe(before);
-    const row = (await access.scenes.latest(construction))!;
-    expect(row.state).toBe("active");
-    expect(row.data.actions.at(-1)?.state).toBe("complete");
-    expect(row.data.events).toHaveLength(2);
-    expect(row.data.pending[npc]).toMatchObject({
-      actionText: partialNpcAction,
-      continuing: true,
-    });
-    expect(
-      (
-        await d.postgres.query(
-          "SELECT state,request,response,charged_nano::text FROM llm_call WHERE id=$1",
-          [work.id],
-        )
-      ).rows[0],
-    ).toEqual(callBefore);
-  } finally {
-    partialReply = false;
-    captureLegacyResolve = false;
-    legacyResolveSnapshot = undefined;
-    inputs.length = 0;
-    await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
-  }
-});
-
 test("長いシーンを50件ずつ前後に復元し、概要の転送量と他者の受容を抑える", async () => {
   const sceneId = randomUUID();
   const events = Array.from({ length: 261 }, (_, i) => ({
@@ -1265,7 +1150,7 @@ test("長いシーンを50件ずつ前後に復元し、概要の転送量と他
     await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [sceneId]);
   }
 });
-test("入力完了で操作を返し、NPCの判定待ちを次の入力へ渡して、再送では進めない", async () => {
+test("未同席の既存NPCへの受容も本人判断へ渡し、再送では判断や履歴を増やさない", async () => {
   const opened = await command({
     requestId: randomUUID(),
     command: "prepare",
@@ -1291,6 +1176,10 @@ test("入力完了で操作を返し、NPCの判定待ちを次の入力へ渡�
       ],
     );
     await access.scenes.tick(scene.id);
+    await d.postgres.query(
+      "UPDATE world_scene SET data=jsonb_set(jsonb_set(data,'{background,participants}',$2::jsonb),'{views}',(data->'views')-$3::text) WHERE id=$1",
+      [scene.id, JSON.stringify([actor]), npc],
+    );
     await command({ requestId: randomUUID(), command: "start" });
     const requestId = randomUUID(),
       before = modelCalls;
@@ -1300,13 +1189,13 @@ test("入力完了で操作を返し、NPCの判定待ちを次の入力へ渡�
       actionText: "礼だけを伝える",
     });
     await access.scenes.tick(scene.id);
-    expect(modelCalls).toBe(before + 1);
+    expect(modelCalls).toBe(before + 3);
     const row = (await access.scenes.latest(construction))!;
     expect(row.state).toBe("active");
     expect(row.data.actions.at(-1)?.state).toBe("complete");
-    expect(row.data.nextDecisions).toEqual([npc]);
-    expect(row.data.events).toHaveLength(1);
-    expect(row.data.choices.filter((c) => c.actorId === npc)).toEqual([]);
+    expect(row.data.nextDecisions).toEqual([]);
+    expect(row.data.events).toHaveLength(2);
+    expect(row.data.choices.filter((c) => c.actorId === npc)).toHaveLength(1);
     const count = modelCalls;
     expect(
       (
@@ -1319,20 +1208,10 @@ test("入力完了で操作を返し、NPCの判定待ちを次の入力へ渡�
     ).toEqual(first.json());
     await access.scenes.tick(scene.id);
     expect(modelCalls).toBe(count);
-    await command({
-      requestId: randomUUID(),
-      command: "act",
-      actionText: "村人の反応を待つ",
-    });
-    await access.scenes.tick(scene.id);
-    const next = (await access.scenes.latest(construction))!;
-    expect(next.state).toBe("active");
-    expect(next.data.events).toHaveLength(2);
     expect(
-      next.data.events.at(-1)?.receipts.some((r) => r.observerId === actor),
+      row.data.events.at(-1)?.receipts.some((r) => r.observerId === actor),
     ).toBe(true);
-    expect(next.data.pending[npc]?.continuing).toBe(true);
-    expect(next.data.choices.filter((c) => c.actorId === npc)).toHaveLength(1);
+    expect(row.data.pending[npc]?.continuing).toBe(true);
     expect(resultCalls).toBe(0);
   } finally {
     await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [scene.id]);
@@ -1352,7 +1231,7 @@ test("行動の解決中に世界が更新されても、表示済みの出来�
     command: "act",
     actionText: "挨拶して橋を見に行く",
   });
-  let prefix: typeof backgroundSnapshot;
+  let prefix: SceneSnapshot;
   const calls = vi
     .spyOn(model, "complete")
     .mockImplementation(async (...args) => {
@@ -1379,14 +1258,24 @@ test("行動の解決中に世界が更新されても、表示済みの出来�
     expect(row.data.actions).toMatchObject([
       { ...prefix!.data.actions[0], state: "complete" },
     ]);
-    expect(row.data.background).toEqual(prefix!.data.background);
+    expect(
+      row.data.background!.facts.slice(
+        0,
+        prefix!.data.background!.facts.length,
+      ),
+    ).toEqual(prefix!.data.background!.facts);
+    expect(row.data.background!.perceptions).toEqual(
+      prefix!.data.background!.perceptions,
+    );
     expect(row.data.events.map((e) => e.inputId)).toEqual([inputId, inputId]);
     const refresh = calls.mock.calls
-      .filter(([, role]) => role === "scene-background")
+      .filter(([, role]) => role === "scene-resolve")
       .at(-1)!;
     expect(refresh[2][1]!.content).toContain(newcomer);
     expect(
-      JSON.parse(refresh[2][1]!.content).needsContext.remainingActions[actor],
+      JSON.parse(refresh[2][1]!.content).request.intentions.find(
+        (i: { actorId: string }) => i.actorId === actor,
+      ).actionText,
     ).toBe("橋の方へ歩く");
   } finally {
     calls.mockRestore();
@@ -1467,13 +1356,12 @@ test.each([false, true])(
         id: inputId,
         state: "complete",
       });
-      expect(row.data.contextRequests).toHaveLength(1);
+      expect(row.data.contextNeed).toBeUndefined();
       expect(row.data.background!.facts.slice(0, initial.facts.length)).toEqual(
         initial.facts,
       );
       expect(row.data.background!.perceptions).toEqual(initial.perceptions);
       expect(row.data.events.map((e) => e.text)).toEqual([
-        "入口まで歩いた",
         "姿を認めて声をかけた",
         "今は取り込み中だと伝える",
       ]);
@@ -1514,346 +1402,7 @@ test.each([false, true])(
   },
 );
 
-test("別の箱を観察しても元の問いを保ち、見えなかった範囲は本人の受容に残る", async () => {
-  const opened = await command({
-    requestId: randomUUID(),
-    command: "prepare",
-    purpose: "封印された箱の印を探す",
-  });
-  const id = opened.json().scene.id;
-  try {
-    await access.scenes.tick(id);
-    const background = (await access.scenes.latest(construction))!.data
-      .background!;
-    await command({ requestId: randomUUID(), command: "start" });
-    await command({
-      requestId: randomUUID(),
-      command: "act",
-      actionText: "隣の箱を調べる",
-    });
-    await access.scenes.tick(id);
-    const row = (await access.scenes.latest(construction))!;
-    expect(row.state).toBe("active");
-    expect(row.data.background).toEqual(background);
-    const observation = inputs
-      .filter((input) => input.observationLimits)
-      .at(-1)!;
-    expect(observation.observationConditions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          request: { kind: "node", id: place },
-          result: expect.objectContaining({
-            node: expect.objectContaining({ id: place }),
-          }),
-        }),
-      ]),
-    );
-    expect(background.unknowns).toEqual([
-      { question: "探す箱にどんな印があるか", targetId: place },
-    ]);
-    const anchors = sceneAnchors(
-      row.data.background!,
-      row.data.events,
-      row.data.startedAt,
-      id,
-    );
-    expect(anchors.edges).toContainEqual(
-      expect.objectContaining({
-        kind: "see",
-        source: actor,
-        text: "手前の箱の表には印が見えない",
-      }),
-    );
-    expect(anchors.nodes.filter((n) => n.kind === "script")).toEqual(
-      sceneAnchors(background, [], row.data.startedAt, id).nodes.filter(
-        (n) => n.kind === "script",
-      ),
-    );
-    expect(row.data.contextRequests).toHaveLength(1);
-
-    // Restore the old loop at its second background call, with the first answer saved.
-    const saved = observedSnapshot!;
-    const input = saved.data.actions.at(-1)!;
-    const need = saved.data.contextRequests![0]!;
-    const uncertain = randomUUID();
-    saved.data.work = {
-      ...saved.data.work!,
-      id: uncertain,
-      kind: "background",
-    };
-    saved.data.contextNeed = {
-      reason: need.reason,
-      evidence: "observation",
-      remainingActions: need.remainingActions,
-    };
-    saved.data.contextRequests!.push({ ...need, reason: "同じ位置から再確認" });
-    saved.data.resumeState = "acting";
-    saved.data.error =
-      "LLM要求の結果を確定できません: HTTP 429。予約枠は保持します";
-    await d.postgres.query(
-      "INSERT INTO llm_call(id,budget_id,hash,reserved_nano,request,state,delivery,response_id) VALUES($1,$2,'pending-observation',123,'{}','pending','unknown',$3)",
-      [uncertain, budget, input.id],
-    );
-    await d.postgres.query(
-      "UPDATE world_scene SET state='paused',data=$2 WHERE id=$1",
-      [id, saved.data],
-    );
-    const calls = vi.spyOn(model, "complete");
-    try {
-      expect(
-        (await command({ requestId: randomUUID(), command: "resume" }))
-          .statusCode,
-      ).toBe(202);
-      await access.scenes.tick(id);
-      const resumed = (await access.scenes.latest(construction))!;
-      expect(resumed.state).toBe("active");
-      expect(resumed.data.actions).toMatchObject([
-        { id: input.id, text: input.text, state: "complete" },
-      ]);
-      expect(resumed.data.events).toHaveLength(1);
-      expect(calls.mock.calls.length).toBeGreaterThan(0);
-      expect(
-        calls.mock.calls.every(
-          ([call, role]) => call !== uncertain && role === "scene-resolve",
-        ),
-      ).toBe(true);
-      expect(
-        (
-          await d.postgres.query(
-            "SELECT state,delivery,reserved_nano FROM llm_call WHERE id=$1",
-            [uncertain],
-          )
-        ).rows[0],
-      ).toEqual({
-        state: "pending",
-        delivery: "unknown",
-        reserved_nano: "123",
-      });
-    } finally {
-      calls.mockRestore();
-    }
-  } finally {
-    observedSnapshot = undefined;
-    await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
-  }
-});
-
-test("背景不足があればfinishedでも発生済み部分を保持し、同じ入力の残りだけ続ける", async () => {
-  vi.stubEnv("SCENE_DEFAULT_BACKGROUND_WORLD_ID", construction);
-  const opened = await command({
-    requestId: randomUUID(),
-    command: "prepare",
-    purpose: "橋へ向かう",
-  });
-  const id = opened.json().scene.id;
-  try {
-    await access.scenes.tick(id);
-    await command({ requestId: randomUUID(), command: "start" });
-    const inputId = randomUUID();
-    await command({
-      requestId: inputId,
-      command: "act",
-      actionText: "挨拶して橋を見に行く",
-    });
-    await access.scenes.tick(id);
-    const row = (await access.scenes.latest(construction))!;
-    expect(row.state).toBe("active");
-    expect(row.data.actions).toMatchObject([
-      { id: inputId, state: "complete" },
-    ]);
-    expect(row.data.events.map((e) => e.text)).toEqual([
-      "若者が挨拶した",
-      "若者が道を歩いた",
-    ]);
-    expect(row.data.events.map((e) => e.period)).toEqual([
-      { from: row.data.startedAt, until: row.data.startedAt + 1000 },
-      { from: row.data.startedAt + 1000, until: row.data.startedAt + 2000 },
-    ]);
-    expect(new Set(row.data.events.map((e) => e.inputId))).toEqual(
-      new Set([inputId]),
-    );
-    expect(row.data.choices.filter((i) => i.actorId === actor)).toHaveLength(1);
-    expect(row.data.contextRequests).toHaveLength(1);
-    expect(Object.keys(row.data.contextRequests![0]!.remainingActions)).toEqual(
-      [actor],
-    );
-    expect(row.data.choices.some((i) => i.actorId === npc)).toBe(false);
-    expect(row.data.contextNeed).toBeUndefined();
-    const eventId = row.data.events[0]!.id;
-    expect(row.data.background!.facts.at(-1)?.aboutIds).toContain(eventId);
-    expect(
-      await agent.store.context(world).node(eventId, row.data.at),
-    ).toBeUndefined();
-    expect(
-      row.data
-        .presentations!.filter((p) => p.kind === "response")
-        .every((p) => p.information?.every((r) => r.canonical)),
-    ).toBe(true);
-    const before = modelCalls;
-    await access.scenes.tick(id);
-    expect(modelCalls).toBe(before);
-
-    const paused = structuredClone(backgroundSnapshot!),
-      work = structuredClone(paused.data.work!),
-      callBefore = (
-        await d.postgres.query(
-          "SELECT state,request,response,charged_nano::text FROM llm_call WHERE id=$1",
-          [work.id],
-        )
-      ).rows[0];
-    expect(work.kind).toBe("background");
-    expect(callBefore.state).toBe("complete");
-    paused.data.resumeState = "acting";
-    paused.data.error = `背景情報の参照が取得できません: ${eventId}`;
-    const restore = async (state = "paused") =>
-      d.postgres.query(
-        "UPDATE world_scene SET state=$2,data=$3,claim=NULL WHERE id=$1",
-        [id, state, JSON.stringify(paused.data)],
-      );
-
-    await restore();
-    await d.postgres.query("UPDATE llm_call SET state='pending' WHERE id=$1", [
-      work.id,
-    ]);
-    const pendingCalls = modelCalls;
-    expect(
-      (await command({ requestId: randomUUID(), command: "resume" }))
-        .statusCode,
-    ).toBe(409);
-    expect(modelCalls).toBe(pendingCalls);
-    await d.postgres.query("UPDATE llm_call SET state='complete' WHERE id=$1", [
-      work.id,
-    ]);
-
-    await command({ requestId: randomUUID(), command: "resume" });
-    expect((await access.scenes.latest(construction))!.data.work).toEqual(work);
-    const contextCalls = inputs.filter((input) => input.needsContext).length;
-    await access.scenes.tick(id);
-    expect(inputs.filter((input) => input.needsContext)).toHaveLength(
-      contextCalls,
-    );
-    expect(
-      (await access.scenes.latest(construction))!.data.events,
-    ).toHaveLength(2);
-    expect(
-      (
-        await d.postgres.query(
-          "SELECT state,request,response,charged_nano::text FROM llm_call WHERE id=$1",
-          [work.id],
-        )
-      ).rows[0],
-    ).toEqual(callBefore);
-
-    const unknownId = randomUUID(),
-      answer = JSON.parse(callBefore.response.content);
-    for (const [value, error] of [
-      [
-        { ...answer, facts: [{ ...answer.facts[0], aboutIds: [unknownId] }] },
-        `背景情報の参照が取得できません: ${unknownId}`,
-      ],
-      [
-        { ...answer, creations: [{ id: eventId, text: "別の存在" }] },
-        "既存の同一性を作り直すことはできません",
-      ],
-    ] as const) {
-      await d.postgres.query("UPDATE llm_call SET response=$2 WHERE id=$1", [
-        work.id,
-        { ...callBefore.response, content: JSON.stringify(value) },
-      ]);
-      await restore("acting");
-      const calls = modelCalls;
-      await access.scenes.tick(id);
-      const corrected = (await access.scenes.latest(construction))!;
-      expect(corrected.state).toBe("active");
-      expect(corrected.data.error).toBeUndefined();
-      expect(corrected.data.events).toHaveLength(2);
-      expect(modelCalls).toBeGreaterThan(calls);
-      const repair = (
-        await d.postgres.query(
-          "SELECT request FROM llm_call WHERE budget_id=$1 AND request->>'role'='scene-background' ORDER BY created_at DESC LIMIT 1",
-          [budget],
-        )
-      ).rows[0].request.sourceMessages;
-      expect(JSON.stringify(repair)).toContain(error);
-    }
-
-    await d.postgres.query("UPDATE llm_call SET response=$2 WHERE id=$1", [
-      work.id,
-      {
-        ...callBefore.response,
-        content: JSON.stringify({
-          ...answer,
-          facts: [{ ...answer.facts[0], subjectId: eventId }],
-        }),
-      },
-    ]);
-    await restore("acting");
-    await access.scenes.tick(id);
-    const corrected = (
-      await d.postgres.query(
-        "SELECT request FROM llm_call WHERE budget_id=$1 AND request->>'role'='scene-background'",
-        [budget],
-      )
-    ).rows.flatMap((call) =>
-      call.request.sourceMessages
-        .filter((message: { role: string }) => message.role === "user")
-        .flatMap(
-          (message: { content: string }) =>
-            JSON.parse(message.content).validationErrors ?? [],
-        ),
-    );
-    expect(corrected).toContainEqual(
-      expect.objectContaining({
-        code: "custom",
-        params: { id: eventId, actualKind: "event", requiredKind: "existence" },
-      }),
-    );
-    await d.postgres.query("UPDATE llm_call SET response=$2 WHERE id=$1", [
-      work.id,
-      callBefore.response,
-    ]);
-    paused.data.error = `背景情報の参照が取得できません: ${unknownId}`;
-    await restore();
-    await command({ requestId: randomUUID(), command: "resume" });
-    const retry = (await access.scenes.latest(construction))!.data.work!;
-    expect(retry.id).not.toBe(work.id);
-    expect(retry.messages.at(-1)?.content).toContain(unknownId);
-    paused.data.error = "状態の本文を確認できません";
-    await d.postgres.query("UPDATE llm_call SET response=$2 WHERE id=$1", [
-      work.id,
-      {
-        ...callBefore.response,
-        content: JSON.stringify({ type: "pause", reason: paused.data.error }),
-      },
-    ]);
-    await restore();
-    await command({ requestId: randomUUID(), command: "resume" });
-    const resumed = (await access.scenes.latest(construction))!;
-    expect(resumed.data.work).toBeUndefined();
-    expect(resumed.data.backgroundMessages).toBeUndefined();
-    await access.scenes.tick(id);
-    const continued = (await access.scenes.latest(construction))!;
-    expect(continued.state).toBe("active");
-    expect(continued.data.events.slice(0, 1)).toEqual(paused.data.events);
-    expect(
-      continued.data.presentations!.slice(0, paused.data.presentations!.length),
-    ).toEqual(paused.data.presentations);
-    expect(continued.data.actions).toMatchObject([
-      { id: inputId, text: paused.data.actions[0]!.text, state: "complete" },
-    ]);
-    expect(continued.data.events.map((e) => e.inputId)).toEqual([
-      inputId,
-      inputId,
-    ]);
-  } finally {
-    vi.unstubAllEnvs();
-    await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
-    backgroundSnapshot = undefined;
-    inputs.length = 0;
-  }
-});
-
-test("返答待ちでも進行し、進展のない応答は場面の区切りにして、履歴・未完了の意図・再送を維持する", async () => {
+test("返答の受容から本人へ戻り、終了・再開でも履歴・未完了の意図・再送を維持する", async () => {
   const prepareId = randomUUID(),
     opened = await command({
       requestId: prepareId,
@@ -1963,7 +1512,7 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
   );
   view = await status();
   expect(view.state).toBe("active");
-  expect(view.at).toBe(beganAt + 1000);
+  expect(view.at).toBe(beganAt);
   expect((await access.scenes.latest(construction))!.data.events).toHaveLength(
     2,
   );
@@ -2001,7 +1550,7 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
   });
   await access.scenes.tick(scene.id);
   view = await status();
-  expect(view.at).toBe(beganAt + 2000);
+  expect(view.at).toBe(beganAt + 1000);
   expect((await runtime.get(construction)).at).toBe(0);
   const outsider = await auth.person("user");
   const hidden = await app.inject({
@@ -2009,12 +1558,14 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
     headers: { cookie: outsider.cookie },
   });
   expect(hidden.statusCode).toBe(404);
-  worldPaused = true;
   await command({
     requestId: randomUUID(),
     command: "act",
     actionText: "別の場所へ向かう",
   });
+  await access.scenes.tick(scene.id);
+  worldPaused = true;
+  await command({ requestId: randomUUID(), command: "finish" });
   await expect(access.scenes.tick(scene.id)).rejects.toThrow("世界への確定");
   view = await status();
   expect(view.state).toBe("paused");
@@ -2027,9 +1578,8 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
   expect((await runtime.get(construction)).state).toBe("finished");
   expect(await access.scenes.latest(construction)).toEqual(saved);
   expect(view.result).toBeNull();
-  expect(view.nextPurpose).toBe("別の場所へ向かう");
-  expect(view.actions.at(-1)?.state).toBe("boundary");
-  expect(view.messages).toHaveLength(2);
+  expect(view.actions.at(-1)?.state).toBe("complete");
+  expect(view.messages).toHaveLength(3);
   expect(resultCalls).toBe(0);
   worldPaused = false;
   faults.set("result", [
@@ -2118,11 +1668,10 @@ test("返答待ちでも進行し、進展のない応答は場面の区切り�
   const movement = (await agent.view(world, actor, 2000)).observations.find(
     (o) => o.text === "一歩近づいた",
   );
-  expect(movement?.period).toEqual({ from: 1000, until: 2000 });
+  expect(movement?.period).toEqual({ from: beganAt, until: beganAt + 1000 });
   const finalCount = modelCalls;
   await access.scenes.tick(scene.id);
   expect(modelCalls).toBe(finalCount);
-  expect(inputs.filter((i) => "observerId" in i)).toHaveLength(1);
   expect(backgroundCalls).toBeGreaterThan(1);
 });
 
