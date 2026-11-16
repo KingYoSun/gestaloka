@@ -52,7 +52,9 @@ const model = new LlmClient(
       );
     inputs.push(user);
     let content: unknown;
-    if (
+    if (user.pendingScenes) {
+      content = { type: "selection", candidates: [], mergeInto: null };
+    } else if (
       exploration &&
       user.background &&
       !user.background.creations.some(
@@ -619,6 +621,8 @@ model.complete = async (
   messages,
   target = "default",
   effortTarget,
+  shorten,
+  formatAttempts = 0,
 ) => {
   const targets = new Map([
     ["scene-resolve", "default"],
@@ -626,9 +630,18 @@ model.complete = async (
     ["scene-intent", "resolution"],
     ["scene-result", "default"],
   ]);
-  if (targets.has(role)) expect(target).toBe(targets.get(role));
+  if (targets.has(role) && !formatAttempts)
+    expect(target).toBe(targets.get(role));
   if (role === "scene-background") expect(effortTarget).toBe("resolution");
-  return complete(id, role, messages, target, effortTarget);
+  return complete(
+    id,
+    role,
+    messages,
+    target,
+    effortTarget,
+    shorten,
+    formatAttempts,
+  );
 };
 
 beforeAll(async () => {
@@ -833,97 +846,112 @@ test("シーン前に本人へ返した初期知識だけを保存し、再取�
   expect(modelCalls).toBe(before);
 });
 
-test("形式修復・保存後の再開でも継続判断を反転させず、履歴を一度だけ表示する", async () => {
-  const id = randomUUID();
-  await command({
-    requestId: id,
-    command: "prepare",
-    purpose: "箱の印を調べる",
-  });
-  await access.scenes.tick(id);
-  await command({ requestId: randomUUID(), command: "start" });
-  const response = {
-    type: "scene",
-    concluded: false,
-    events: [
-      {
-        actorId: actor,
-        text: "箱の表を調べた",
-        locations: [{ subjectId: actor, text: "道端", aboutIds: [place] }],
-        receipts: [{ observerId: actor, text: "箱の表に青い印が見える" }],
-      },
-    ],
-    decisions: { [actor]: "decide" },
-  };
-  faults.set("resolve", [
-    {
-      content: JSON.stringify({
-        ...response,
-        events: [{ ...response.events[0], locations: [] }],
-      }),
-    },
-    { content: JSON.stringify({ ...response, concluded: true }) },
-    { content: JSON.stringify(response) },
-  ]);
-  let stopped = false;
-  const calls = vi
-    .spyOn(model, "complete")
-    .mockImplementation(async (...args) => {
-      if (
-        args[1] === "scene-resolve" &&
-        args[2].some(
-          (m) =>
-            m.role === "user" &&
-            m.content.includes('"preserveConclusion":false'),
-        )
-      ) {
-        const repair = JSON.parse(args[2].at(-1)!.content);
-        expect(repair.preserveConclusion).toBe(false);
-        expect(repair.responseSchema.oneOf[0].properties.concluded.const).toBe(
-          false,
-        );
-        if (!stopped) {
-          stopped = true;
-          throw new SupersededWorker("修復要求を保存して停止");
-        }
-      }
-      return complete(...args);
-    });
-  try {
+test.each([false, true])(
+  "形式修復・保存後の再開でも継続判断を反転させず、履歴を一度だけ表示する（API形式修復: %s）",
+  async (providerRepair) => {
+    const id = randomUUID();
     await command({
-      requestId: randomUUID(),
-      command: "act",
-      actionText: "隣の箱を調べる",
+      requestId: id,
+      command: "prepare",
+      purpose: "箱の印を調べる",
     });
     await access.scenes.tick(id);
-    expect(stopped).toBe(true);
-    expect((await access.scenes.latest(construction))!.data.events).toEqual([]);
-    await new WorldAccess(runtime).scenes.tick(id);
-    const row = (await access.scenes.latest(construction))!;
-    expect(row.state).toBe("active");
-    expect(row.data.result).toBeUndefined();
-    expect(row.data.events).toHaveLength(1);
-    expect(row.data.events[0]!.receipts[0]!.text).toBe(
-      "箱の表に青い印が見える",
-    );
-    expect(faults.get("resolve")).toEqual([]);
-    const count = modelCalls;
-    await access.scenes.tick(id);
-    expect(modelCalls).toBe(count);
-  } finally {
-    calls.mockRestore();
-    faults.clear();
-    await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
-    inputs.length = 0;
-  }
-});
+    await command({ requestId: randomUUID(), command: "start" });
+    const response = {
+      type: "scene",
+      concluded: false,
+      events: [
+        {
+          actorId: actor,
+          text: "箱の表を調べた",
+          locations: [{ subjectId: actor, text: "道端", aboutIds: [place] }],
+          receipts: [{ observerId: actor, text: "箱の表に青い印が見える" }],
+        },
+      ],
+      decisions: { [actor]: "decide" },
+    };
+    faults.set("resolve", [
+      {
+        content: JSON.stringify({
+          ...response,
+          events: [{ ...response.events[0], locations: [] }],
+        }),
+      },
+      { content: JSON.stringify({ ...response, concluded: true }) },
+      { content: JSON.stringify(response) },
+    ]);
+    let stopped = false;
+    const calls = vi
+      .spyOn(model, "complete")
+      .mockImplementation(async (...args) => {
+        if (
+          args[1] === "scene-resolve" &&
+          args[2].some(
+            (m) =>
+              m.role === "user" &&
+              m.content.includes('"preserveConclusion":false'),
+          )
+        ) {
+          const repair = JSON.parse(args[2].at(-1)!.content);
+          expect(repair.preserveConclusion).toBe(false);
+          expect(
+            repair.responseSchema.oneOf[0].properties.concluded.const,
+          ).toBe(false);
+          if (!stopped) {
+            stopped = true;
+            throw new SupersededWorker("修復要求を保存して停止");
+          }
+        }
+        const result = await complete(...args);
+        if (providerRepair && args[1] === "scene-resolve" && !args[6])
+          return {
+            ...result,
+            formatAttempts: 1,
+            formatHistory: [result.content],
+            content: JSON.stringify({
+              ...JSON.parse(result.content),
+              concluded: true,
+            }),
+          };
+        return result;
+      });
+    try {
+      await command({
+        requestId: randomUUID(),
+        command: "act",
+        actionText: "隣の箱を調べる",
+      });
+      await access.scenes.tick(id);
+      expect(stopped).toBe(true);
+      expect((await access.scenes.latest(construction))!.data.events).toEqual(
+        [],
+      );
+      await new WorldAccess(runtime).scenes.tick(id);
+      const row = (await access.scenes.latest(construction))!;
+      expect(row.state).toBe("active");
+      expect(row.data.result).toBeUndefined();
+      expect(row.data.events).toHaveLength(1);
+      expect(row.data.events[0]!.receipts[0]!.text).toBe(
+        "箱の表に青い印が見える",
+      );
+      expect(faults.get("resolve")).toEqual([]);
+      const count = modelCalls;
+      await access.scenes.tick(id);
+      expect(modelCalls).toBe(count);
+    } finally {
+      calls.mockRestore();
+      faults.clear();
+      await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
+      inputs.length = 0;
+    }
+  },
+);
 
 test.each(["background", "intent", "resolve"])(
-  "%sのJSON・型・本文欠落・未完了応答を同じ要求内で修正し、確定前の履歴を重複させない",
+  "%sのJSON・本文欠落・未完了応答を同じ要求内で修正し、確定前の履歴を重複させない",
   async (stage) => {
     faults.set(stage, [
       { content: "{" },
-      { content: "{}" },
       { content: null },
       { finish: "length" },
     ]);
@@ -968,7 +996,7 @@ test.each(["background", "intent", "resolve"])(
         )
       ).rows[0];
       expect(counted.llm_used).toBe(counted.calls);
-      expect(counted.calls).toBeGreaterThanOrEqual(5);
+      expect(counted.calls).toBeGreaterThanOrEqual(4);
       expect(counted.unsettled).toBe(0);
     } finally {
       faults.clear();
@@ -1034,8 +1062,11 @@ test.each(["自動", "本文欠落後の世界更新", "旧版からの手動再
         ).toBe(202);
       }
       await access.scenes.tick(id);
-      expect(calls).toHaveBeenCalledTimes(2);
-      const [before, after] = calls.mock.calls;
+      expect(calls).toHaveBeenCalledTimes(
+        mode === "旧版からの手動再開" ? 3 : 2,
+      );
+      const [before] = calls.mock.calls;
+      const after = calls.mock.calls.at(-1);
       expect(before![2][1]!.content).not.toContain(newcomer);
       expect(after![2][1]!.content).toContain(newcomer);
       expect((await status()).state).toBe("ready");
@@ -1069,7 +1100,7 @@ test("自動修正も元の呼出し上限を使い、上限後に送信や履�
     expect(row.state).toBe("paused");
     expect(row.data.limitReached).toBe(true);
     expect(row.data.events).toEqual([]);
-    expect(faults.get("background")).toHaveLength(1);
+    expect(faults.get("background")).toHaveLength(2);
     expect(
       (
         await d.postgres.query(
@@ -1680,7 +1711,6 @@ test("返答の受容から本人へ戻り、終了・再開でも履歴・未�
   worldPaused = false;
   faults.set("result", [
     { content: "{" },
-    { content: "{}" },
     { content: null },
     { finish: "length" },
   ]);
@@ -1736,7 +1766,7 @@ test("返答の受容から本人へ戻り、終了・再開でも履歴・未�
   ]);
   expect(view.result).toContain("まだ決まっておらず");
   expect(JSON.stringify(view)).not.toMatch(/PRIVATE_|NPCだけの秘密/);
-  expect(resultCalls).toBe(5);
+  expect(resultCalls).toBe(4);
   expect(faults.get("result")).toEqual([]);
   faults.clear();
   const restored = await new WorldAccess(runtime).scene(subject, construction);

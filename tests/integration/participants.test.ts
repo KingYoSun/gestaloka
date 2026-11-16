@@ -50,6 +50,8 @@ type Input = {
 };
 const setup = await fixtureRuntime(scope, (content, raw) => {
   const input = raw as Input;
+  if ((content as { type?: string }).type === "selection")
+    return { type: "selection", candidates: [], mergeInto: null };
   if (input.request?.phase === "participant") {
     const proposal = content as WorldProposal;
     return {
@@ -404,7 +406,7 @@ test("2つのCLIが認可・新規参加・応答喪失からの復帰と相互�
     await writeFile(oldRequestPath, JSON.stringify(oldRequest));
     const connection = await cli(profiles[0]!, "recover");
     expect(connection.requestId).toBe(lostConnect.requestId);
-    expect(connection.state).toBe("authorization_pending");
+    expect(connection.state, connection.message).toBe("authorization_pending");
     const second = await cli(
       profiles[1]!,
       "connect",
@@ -458,7 +460,8 @@ test("2つのCLIが認可・新規参加・応答喪失からの復帰と相互�
       y = await cli(profiles[1]!, "prepare", "--purpose", "周囲を確かめる");
     await access.scenes.tick(x.scene.id);
     await access.scenes.tick(y.scene.id);
-    expect((await cli(profiles[0]!, "start")).state).toBe("waiting_input");
+    const started = await cli(profiles[0]!, "start");
+    expect(started.state, started.message).toBe("waiting_input");
     expect((await cli(profiles[1]!, "start")).state).toBe("waiting_input");
     fixture.dropNextResponse("act");
     const lostAction = await cli(
@@ -803,7 +806,12 @@ test("他プレイヤーをNPCの登場主体にせず新たな意図を代行�
         .participants,
     ).not.toContain(b);
     const backgrounds = calls.mock.calls.filter(
-      (call) => call[1] === "scene-background",
+      (call) =>
+        call[1] === "scene-background" &&
+        call[2].some(
+          (m) =>
+            m.role === "user" && m.content.includes('"const":"background"'),
+        ),
     );
     expect(backgrounds).toHaveLength(2);
     expect(JSON.stringify(backgrounds[1]![2])).toContain("他プレイヤーをNPC");

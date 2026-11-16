@@ -100,16 +100,14 @@ async function village(page: Page, count = 1) {
   return { world, actors };
 }
 
-test("Webでは共有を明示的に選び、参加者確定後もあらすじを読んでから開始する", async ({
+test("Webは共通のシーンを準備し、参加者確定後もあらすじを読んでから開始する", async ({
   page,
 }) => {
   const { world, actors } = await village(page);
   const actor = actors[0]!;
   await page.goto(`/worlds/${world}/play?actorId=${actor}`);
   await page.getByRole("button", { name: "自由入力" }).click();
-  const shared = page.getByLabel("共有シーンとして参加を求める");
-  await expect(shared).not.toBeChecked();
-  await shared.check();
+  await expect(page.getByLabel("共有シーンとして参加を求める")).toHaveCount(0);
   await page.getByLabel("次のシーンで何をしたいですか").fill("周囲を確かめる");
   await page
     .getByRole("button", { name: "シーンのあらすじを準備する" })
@@ -169,6 +167,13 @@ test("参加承認なしに届いた働きかけをWebで読み、反応なし�
     ).status(),
   ).toBe(302);
   const botHeaders = { ...headers, authorization: `Bearer ${secret}` };
+  await page.goto(`/worlds/${world}/play?actorId=${owner}`);
+  await page.getByRole("button", { name: "自由入力" }).click();
+  await page.getByLabel("次のシーンで何をしたいですか").fill("同席者と話す");
+  await page
+    .getByRole("button", { name: "シーンのあらすじを準備する" })
+    .click();
+  await page.getByRole("button", { name: "シーンを始める" }).click();
   const online = await page.request.post(
     `/api/worlds/${world}/presence?actorId=${bot}`,
     {
@@ -181,13 +186,6 @@ test("参加承認なしに届いた働きかけをWebで読み、反応なし�
     },
   );
   expect((await online.json()).kind).toBe("bot");
-  await page.goto(`/worlds/${world}/play?actorId=${owner}`);
-  await page.getByRole("button", { name: "自由入力" }).click();
-  await page.getByLabel("次のシーンで何をしたいですか").fill("同席者と話す");
-  await page
-    .getByRole("button", { name: "シーンのあらすじを準備する" })
-    .click();
-  await page.getByRole("button", { name: "シーンを始める" }).click();
   await page.getByRole("button", { name: "自由入力" }).click();
   await page.getByLabel("どう行動しますか").fill("同席者へ声をかける");
   await page.getByRole("button", { name: "この行動を送る" }).click();

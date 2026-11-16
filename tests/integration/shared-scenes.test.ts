@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { WorldAccess } from "@gestaloka/server/access";
 import { changeBelongings } from "@gestaloka/server/belongings";
 import { locationRecords } from "../../packages/server/src/world/locations.js";
@@ -80,6 +80,7 @@ let runtime: Awaited<ReturnType<typeof fixtureRuntime>>["runtime"],
 const people: { id: string; cookie: string; actor: string; profile: string }[] =
   [];
 const connections = new Map<number, string>();
+beforeEach(() => selections.clear());
 beforeAll(async () => {
   await isolated.setup();
   ({ runtime } = await fixtureRuntime(
@@ -423,6 +424,157 @@ async function prepare(index: number, web = false) {
   expect(r.state).toBe("processing");
   return r.scene.id as string;
 }
+
+test("在席は最後の操作から10分維持し、待受終了では切断せず明示終了で解除する", async () => {
+  const owner = people[0]!;
+  selections.set(owner.actor, { candidates: [], mergeInto: null });
+  await presence(0, false);
+  const started = Date.now();
+  const prepared = await cli.run(
+    owner.profile,
+    "prepare",
+    "--purpose",
+    "周囲を確かめる",
+  );
+  const id = prepared.scene.id;
+  expect(
+    (await access.scenes.latest(world, undefined, false, owner.actor))!.data
+      .turns,
+  ).toBe(true);
+  const clock = vi.spyOn(access.scenes.shared, "now");
+  try {
+    clock.mockReturnValue(new Date(started + 599000));
+    expect(await access.scenes.shared.active(world, [owner.actor])).toContain(
+      owner.actor,
+    );
+    clock.mockReturnValue(new Date(Date.now() + 601000));
+    expect(await access.scenes.shared.active(world, [owner.actor])).toEqual([]);
+  } finally {
+    clock.mockRestore();
+  }
+  const lines = await cli.lines(owner.profile, "listen", "--once");
+  expect(lines.at(-1).state).toBe("waiting_stopped");
+  expect(await access.scenes.shared.active(world, [owner.actor])).toContain(
+    owner.actor,
+  );
+  await cli.run(owner.profile, "disconnect");
+  expect(await access.scenes.shared.active(world, [owner.actor])).toEqual([]);
+  expect((await cli.run(owner.profile, "standby")).state).toBe("inactive");
+  expect((await cli.run(owner.profile, "standby", "--resume")).state).toBe(
+    "standby",
+  );
+  await cli.run(owner.profile, "finish");
+  await access.scenes.tick(id);
+  expect((await cli.run(owner.profile, "result")).state).toBe("finished");
+}, 60000);
+
+test("形式修復の上限で保留しても終了要求から保存済みの内容でリザルトに進む", async () => {
+  const owner = people[0]!;
+  const id = (
+    await cli.run(owner.profile, "prepare", "--purpose", "周囲を見渡す")
+  ).scene.id;
+  const calls = vi.spyOn(runtime.agent.model, "complete");
+  backgroundFaults.push("perception", "perception", "perception", "perception");
+  try {
+    await expect(access.scenes.tick(id)).rejects.toThrow();
+    expect((await cli.run(owner.profile, "status")).state).toBe("paused");
+    expect(
+      calls.mock.calls.filter(
+        ([, role, messages]) =>
+          role === "scene-background" &&
+          messages.some((m) => m.content.includes('"backgroundVersion"')),
+      ),
+    ).toHaveLength(4);
+    const before = calls.mock.calls.length;
+    expect((await cli.run(owner.profile, "finish")).scene.shared.flow).toBe(
+      "closing",
+    );
+    await access.scenes.tick(id);
+    expect((await cli.run(owner.profile, "result")).state).toBe("finished");
+    expect(
+      calls.mock.calls
+        .slice(before)
+        .some(([, role]) => role === "scene-background"),
+    ).toBe(false);
+  } finally {
+    backgroundFaults.length = 0;
+    calls.mockRestore();
+  }
+}, 60000);
+
+test("回答済みの発言を5分でまとめ、未回答者をWebとCLIの共通状態に示す", async () => {
+  const id = await sharedGame(0, true),
+    owner = people[0]!,
+    first = people[1]!,
+    last = people[2]!;
+  playback = (input) =>
+    playStep(
+      input,
+      input.request.controlledActorId === owner.actor
+        ? [first.actor, last.actor]
+        : [],
+    );
+  try {
+    const before = Date.now();
+    const input = await humanAct(0, "二人に声をかける");
+    await access.scenes.tick(id);
+    const offer = (await cli.run(first.profile, "inbox")).opportunities.find(
+      (o: { sourceInputId: string }) => o.sourceInputId === input,
+    );
+    expect(Date.parse(offer.deadline) - before).toBeGreaterThanOrEqual(300000);
+    expect(Date.parse(offer.deadline) - Date.now()).toBeLessThanOrEqual(300000);
+    await cli.run(
+      first.profile,
+      "react",
+      "--opportunity",
+      offer.id,
+      "--text",
+      "自分の知ることを伝える",
+    );
+    const wave = (
+      await runtime.pool.query(
+        "SELECT w.id,w.state FROM world_scene_wave w JOIN world_scene_reply r ON r.wave_id=w.id WHERE r.id=$1",
+        [offer.id],
+      )
+    ).rows[0];
+    expect(wave.state).toBe("pending");
+    const status = await cli.run(owner.profile, "status");
+    expect(status.scene.waiting).toContainEqual(
+      expect.objectContaining({
+        kind: "participants",
+        actors: [expect.objectContaining({ id: last.actor })],
+        deadline: offer.deadline,
+      }),
+    );
+    const clock = vi
+      .spyOn(access.scenes.shared, "now")
+      .mockReturnValue(new Date(Date.parse(offer.deadline) + 1));
+    try {
+      await access.scenes.shared.expire({ waveId: wave.id });
+    } finally {
+      clock.mockRestore();
+    }
+    await access.scenes.tick(id);
+    const saved = (await access.scenes.latest(
+      world,
+      undefined,
+      false,
+      owner.actor,
+    ))!;
+    expect(saved.data.actions).toContainEqual(
+      expect.objectContaining({
+        actorId: first.actor,
+        text: "自分の知ることを伝える",
+        state: "complete",
+      }),
+    );
+    expect(saved.data.events.some((e) => e.actorId === last.actor)).toBe(false);
+    await cli.run(owner.profile, "finish");
+    await access.scenes.tick(id);
+  } finally {
+    playback = undefined;
+  }
+}, 60000);
 async function end(index: number) {
   await presence(index);
   const p = people[index]!;
@@ -1101,7 +1253,7 @@ test("開始者も退出後に共有を開始でき、全員退出で元のシ�
   await end(0);
 }, 60000);
 
-async function sharedGame(owner = 0, web = true) {
+async function sharedGame(owner = 0, web = false) {
   await isolated.databases.postgres.query(
     "UPDATE world_scene_presence SET active=false WHERE world_id=$1",
     [world],
@@ -1249,7 +1401,11 @@ test.each(["standby", "separate", "same"] as const)(
       await access.scenes.tick(source);
       expect((await cli.run(peer.profile, "inbox")).invitations).toEqual([]);
       const inbox = await cli.run(peer.profile, "inbox"),
-        offer = inbox.opportunities[0];
+        offer = inbox.opportunities.find((o: { context: string[] }) =>
+          o.context.some((text) =>
+            text.includes("知っている範囲を尋ねる声が届いた"),
+          ),
+        );
       expect(offer.context.join(" ")).toContain(
         "知っている範囲を尋ねる声が届いた",
       );
@@ -1448,82 +1604,6 @@ test.each(["decline", "timeout"] as const)(
   60000,
 );
 
-test.each(["end", "timeout"] as const)(
-  "AIの単独シーンでは一区切りで本人に提案し、%sで確定する",
-  async (ending) => {
-    const { profile } = people[0]!;
-    const scene = (await cli.run(profile, "prepare", "--purpose", "村を歩く"))
-      .scene.id;
-    await access.scenes.tick(scene);
-    await cli.run(profile, "start");
-    playback = (input) => ({ ...playStep(input), concluded: true });
-    try {
-      // Webからの一手は同じ人物・判定でも提案を作らない。
-      await humanAct(0, "道を見渡す");
-      await access.scenes.tick(scene);
-      expect((await cli.run(profile, "status")).state).toBe("waiting_input");
-      if (ending === "end") {
-        // 旧版でも行動の判定は保存済み。次の入力は続行回答まで実行しない。
-        await runtime.pool.query(
-          "UPDATE world_scene SET data=data-'soloBot' WHERE id=$1",
-          [scene],
-        );
-      }
-      const beforeAct = Date.now();
-      const act = await cli.run(profile, "act", "--text", "戸口に戻る");
-      await access.scenes.tick(scene);
-      expect((await cli.run(profile, "status")).state).toBe("waiting_vote");
-      const proposal = (await cli.run(profile, "inbox")).proposals.find(
-        (p: { sceneId: string }) => p.sceneId === scene,
-      );
-      expect(Date.parse(proposal.deadline)).toBeGreaterThanOrEqual(
-        beforeAct + 600000,
-      );
-      expect(Date.parse(proposal.deadline)).toBeLessThanOrEqual(
-        Date.now() + 600000,
-      );
-      expect(proposal).toBeDefined();
-      expect((await cli.run(people[1]!.profile, "inbox")).proposals).toEqual(
-        [],
-      );
-      if (ending === "end") {
-        expect(act.state).toBe("processing");
-        playback = (input) => playStep(input);
-        await cli.run(profile, "vote", "--proposal", proposal.id, "--continue");
-        await access.scenes.tick(scene);
-        const continued = await cli.run(profile, "status");
-        expect(continued.state).toBe("waiting_input");
-        expect(
-          continued.scene.actions.filter(
-            (a: { id: string }) => a.id === act.requestId,
-          ),
-        ).toHaveLength(1);
-        playback = (input) => ({ ...playStep(input), concluded: true });
-        await cli.run(profile, "act", "--text", "家に入る");
-        await access.scenes.tick(scene);
-        const next = (await cli.run(profile, "inbox")).proposals[0];
-        expect(next.id).not.toBe(proposal.id);
-        await cli.run(profile, "vote", "--proposal", next.id, "--end");
-      } else {
-        const now = vi
-          .spyOn(access.scenes.shared, "now")
-          .mockReturnValue(new Date(Date.parse(proposal.deadline) + 1));
-        try {
-          await access.scenes.shared.expire({ proposalId: proposal.id });
-        } finally {
-          now.mockRestore();
-        }
-      }
-      await access.scenes.tick(scene);
-      expect((await cli.run(profile, "result")).state).toBe("finished");
-      expect((await cli.run(profile, "inbox")).proposals).toEqual([]);
-    } finally {
-      playback = undefined;
-    }
-  },
-  120000,
-);
-
 async function humanPresence(
   index: number,
   active = true,
@@ -1652,7 +1732,10 @@ test.each(["end", "mixed", "timeout", "continue", "interrupt"] as const)(
         answer === "interrupt"
           ? await humanAct(0, "Aへの反応機会を残す")
           : undefined;
-      if (previous) await access.scenes.tick(scene);
+      if (previous) {
+        await access.scenes.tick(scene);
+        await humanPresence(0, false);
+      }
       const original = previous
         ? (await cli.run(people[1]!.profile, "inbox")).opportunities.find(
             (o: { sourceInputId: string }) => o.sourceInputId === previous,
@@ -1890,8 +1973,8 @@ test("並行の回答をまとめ、割り込みBの後もAの範囲へ回答し
         (o: { sourceInputId: string }) => o.sourceInputId === first,
       );
     expect(one.deadline).toBe(two.deadline);
-    expect(Date.parse(one.deadline)).toBeGreaterThanOrEqual(beforeAct + 600000);
-    expect(Date.parse(one.deadline)).toBeLessThanOrEqual(Date.now() + 600000);
+    expect(Date.parse(one.deadline)).toBeGreaterThanOrEqual(beforeAct + 300000);
+    expect(Date.parse(one.deadline)).toBeLessThanOrEqual(Date.now() + 300000);
     expect(JSON.stringify(one.context)).not.toContain(`VIEW-${c!.actor}-`);
     expect(JSON.stringify(two.context)).not.toContain(`VIEW-${b!.actor}-`);
     const second = await humanAct(0, "B");
@@ -1996,7 +2079,13 @@ test("並行の回答をまとめ、割り込みBの後もAの範囲へ回答し
       now.mockRestore();
     }
     await cli.run(a!.profile, "finish");
-    await access.scenes.tick(id);
+    const queued = (
+      await runtime.pool.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM world_scene_turn WHERE scene_id=$1 AND state='queued'",
+        [id],
+      )
+    ).rows[0]!.count;
+    for (let i = 0; i <= queued; i++) await access.scenes.tick(id);
     expect((await cli.run(c!.profile, "result")).state).toBe("finished");
   } finally {
     playback = undefined;
@@ -2145,7 +2234,7 @@ test("同じ品への意図は到着順を逆にしても両方を一度の解�
   }
 }, 120000);
 
-test("旧版の共有シーンの保存済み入力は従来の進行で再開し重複させない", async () => {
+test("旧版のシーンも共通の入力キューへ引き継ぎ、再送で重複させない", async () => {
   const owner = people[0]!,
     id = await sharedGame(0, false);
   const originalOffer = (
@@ -2171,8 +2260,17 @@ test("旧版の共有シーンの保存済み入力は従来の進行で再開�
     owner.actor,
   ))!;
   expect(saved.data.turn).toBeUndefined();
-  expect(saved.data.actions.map((a) => a.id)).toEqual([accepted.requestId]);
+  expect(saved.data.actions).toEqual([]);
+  expect(saved.data.turns).toBe(true);
   await access.scenes.tick(id);
+  expect(
+    (await access.scenes.latest(
+      world,
+      undefined,
+      false,
+      owner.actor,
+    ))!.data.actions.map((a) => a.id),
+  ).toEqual([accepted.requestId]);
   expect(
     (await cli.run(owner.profile, "recover", "--request", accepted.requestId))
       .state,
@@ -2526,26 +2624,26 @@ test("生成中も割り込みと終了を受理し、受理済み入力を処�
   }
 }, 120000);
 
-test("CLIの明示終了と90秒の失効を世界内の退出や新しい生成にしない", async () => {
+test("CLIの待受停止と明示終了・10分の失効を世界内の退出や新しい生成にしない", async () => {
   const a = people[0]!,
     calls = vi.spyOn(runtime.agent.model, "complete"),
     before = (await runtime.get(world)).at;
   try {
     const lines = await cli.lines(a.profile, "listen", "--once");
     expect(lines[0].state).toBe("listening");
-    expect(lines.at(-1).state).toBe("inactive");
-    const lease = (
-      await isolated.databases.postgres.query(
-        "SELECT active FROM world_scene_presence WHERE id=$1",
-        [lines[0].connectionId],
-      )
-    ).rows[0];
-    expect(lease.active).toBe(false);
+    expect(lines.at(-1).state).toBe("waiting_stopped");
+    expect(
+      await access.scenes.shared.active(world, [a.actor], "bot"),
+    ).toContain(a.actor);
+    await cli.run(a.profile, "disconnect");
+    expect(await access.scenes.shared.active(world, [a.actor], "bot")).toEqual(
+      [],
+    );
     const connectionId = await presence(0),
       start = Date.now();
     const clock = vi
       .spyOn(access.scenes.shared, "now")
-      .mockImplementation(() => new Date(start + 90000));
+      .mockImplementation(() => new Date(start + 600000));
     try {
       expect(
         await access.scenes.shared.active(world, [a.actor], "bot"),
@@ -2903,7 +3001,7 @@ test.each(["join", "decline"])(
   90000,
 );
 
-test("進行中の単独シーンをNPCに任せ、本人の意図と見聞を復帰時に読む", async () => {
+test("一人のシーンも共通キューでNPCへ任せ、本人の意図と見聞を復帰時に読む", async () => {
   const { profile, actor } = people[0]!;
   const scene = (await cli.run(profile, "prepare", "--purpose", "村で過ごす"))
     .scene.id;
@@ -2917,7 +3015,7 @@ test("進行中の単独シーンをNPCに任せ、本人の意図と見聞を�
   });
   try {
     await access.scenes.tick(scene);
-    expect((await cli.run(profile, "status")).scene.state).toBe("active");
+    expect((await cli.run(profile, "status")).scene.state).toBe("acting");
     await access.scenes.tick(scene);
     expect((await cli.run(profile, "status")).scene.state).toBe("result");
     const report = (await cli.run(profile, "npc", "--return")).result;
@@ -3025,7 +3123,7 @@ test.each([0, 1])(
   90000,
 );
 test("共有中に離席した人物が、他の人物の一手からNPCとして行動し復帰できる", async () => {
-  const scene = await sharedGame(0, true);
+  const scene = await sharedGame(0, false);
   const firstOffer = (
     await runtime.pool.query<{ actor_id: string }>(
       "SELECT r.actor_id FROM world_scene_reply r JOIN world_scene_wave w ON w.id=r.wave_id WHERE w.scene_id=$1 AND w.source_kind='idle' AND w.state='pending'",
@@ -3232,7 +3330,13 @@ test("在席している最後の人間が入力待ちで離れると成立済�
     [world, owner.actor],
   );
   const human = await humanPresence(0);
-  await cli.run(owner.profile, "start");
+  await access.sceneCommand(
+    owner.id,
+    world,
+    { requestId: randomUUID(), command: "start" },
+    false,
+    owner.actor,
+  );
   expect((await cli.run(owner.profile, "status")).state).toBe("waiting_input");
   await humanPresence(0, false, human);
   await access.scenes.tick(scene);

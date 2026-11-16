@@ -2,7 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { connectDatabases } from "@gestaloka/server";
-import { BudgetUnavailable, llmApiKey } from "@gestaloka/server/llm";
+import {
+  BudgetUnavailable,
+  ResponseFormatError,
+  llmApiKey,
+} from "@gestaloka/server/llm";
 import { createCountedClient } from "../support/token-counting.js";
 import { expandPrompt } from "../support/expand-prompt.js";
 import { canonical } from "../../packages/server/src/llm/prompt.js";
@@ -40,6 +44,124 @@ const response = () =>
       },
     }),
   );
+
+test.each(["missing", "missing-envelope", "json", "schema", "envelope"])(
+  "形式エラー%sを保存し、上位モデルへ引き継いで再送を重複させない",
+  async (fault) => {
+    const models: string[] = [];
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (_url, init) => {
+        const request = JSON.parse(String(init?.body));
+        models.push(request.model);
+        const fail = fault.startsWith("missing")
+          ? models.length === 1
+          : models.length <= 3;
+        if (fault === "missing-envelope" && fail)
+          return Response.json({ id: randomUUID(), model: request.model });
+        return Response.json({
+          id: randomUUID(),
+          model: request.model,
+          choices: [
+            {
+              finish_reason: "stop",
+              message: fail
+                ? fault === "missing"
+                  ? {}
+                  : {
+                      content:
+                        fault === "schema"
+                          ? '{"wrong":true}'
+                          : fault === "envelope"
+                            ? '{"concluded":false,"narrative":"本文"}'
+                            : "INVALID JSON",
+                    }
+                : { content: '{"connected":true}' },
+            },
+          ],
+          ...(fault === "envelope" && fail
+            ? {}
+            : {
+                usage: {
+                  prompt_tokens: 30,
+                  completion_tokens: 20,
+                  total_tokens: 50,
+                },
+              }),
+        });
+      });
+    const client = createCountedClient(
+      databases.postgres,
+      {
+        ...environment(),
+        LLM_PROVIDER: "deepseek",
+        LLM_MODEL: "deepseek-flash",
+        LLM_RESOLUTION_PROVIDER: "openai",
+        LLM_RESOLUTION_API: "chat-completions",
+        LLM_RESOLUTION_MODEL: "gpt-6-luna",
+        OPENAI_API_KEY: "unused",
+      },
+      transport,
+    );
+    await client.ledger.setup();
+    const id = randomUUID(),
+      messages = [
+        { role: "user" as const, content: "指定のJSONで返してください" },
+      ];
+    const validate = (content: string) =>
+      z.object({ connected: z.boolean() }).parse(JSON.parse(content));
+    const result = await client.complete(
+      id,
+      "scene-result",
+      messages,
+      undefined,
+      undefined,
+      false,
+      0,
+      validate,
+    );
+    expect(JSON.parse(result.content)).toEqual({ connected: true });
+    if (fault === "envelope")
+      expect(result.formatHistory).toEqual(
+        Array(3).fill('{"concluded":false,"narrative":"本文"}'),
+      );
+    expect(models).toEqual(
+      fault.startsWith("missing")
+        ? ["deepseek-flash", "gpt-6-luna"]
+        : ["deepseek-flash", "deepseek-flash", "deepseek-flash", "gpt-6-luna"],
+    );
+    expect(
+      await client.complete(
+        id,
+        "scene-result",
+        messages,
+        undefined,
+        undefined,
+        false,
+        0,
+        validate,
+      ),
+    ).toEqual(result);
+    expect(transport).toHaveBeenCalledTimes(models.length);
+    const saved = (
+      await databases.postgres.query(
+        "SELECT state,response FROM llm_call WHERE id=$1",
+        [id],
+      )
+    ).rows[0];
+    expect(saved.state).toBe(
+      fault.includes("envelope") ? "pending" : "complete",
+    );
+    if (fault === "missing")
+      expect(saved.response.rawResponse.choices[0].message).toEqual({});
+    else if (fault.includes("envelope"))
+      expect(saved.response.diagnostic.type).toBe("format");
+    else
+      expect(saved.response.content).toBe(
+        fault === "schema" ? '{"wrong":true}' : "INVALID JSON",
+      );
+  },
+);
 
 test("OpenAI Responsesへ同じ記録を一度だけ送り、旧保存要求は再送せず再利用する", async () => {
   const config = {
@@ -463,9 +585,10 @@ test.each(["stop", "length"])(
     );
     const client = createCountedClient(databases.postgres, config, transport);
     await client.ledger.setup();
-    const id = randomUUID(),
-      completion = await client.complete(id, "scene-background", []);
-    expect(completion).toMatchObject({ content: "", finishReason: finish });
+    const id = randomUUID();
+    await expect(client.complete(id, "scene-background", [])).rejects.toThrow(
+      "本文",
+    );
     expect(
       (
         await databases.postgres.query(
@@ -473,20 +596,20 @@ test.each(["stop", "length"])(
           [id],
         )
       ).rows[0],
-    ).toEqual({
+    ).toMatchObject({
       state: "complete",
       charged_nano: "80000",
-      response: completion,
+      response: { content: "", finishReason: finish },
     });
     expect((await client.ledger.summary()).unsettled).toBe(0);
-    expect(
-      await createCountedClient(databases.postgres, config, transport).complete(
+    await expect(
+      createCountedClient(databases.postgres, config, transport).complete(
         id,
         "scene-background",
         [],
       ),
-    ).toEqual(completion);
-    expect(transport).toHaveBeenCalledTimes(1);
+    ).rejects.toThrow("本文");
+    expect(transport).toHaveBeenCalledTimes(4);
   },
 );
 
@@ -734,6 +857,7 @@ test.each([
   },
   {
     name: "Geminiの本文欠落と使用量不明",
+    format: true,
     model: "gemini-3.8-flash",
     reply: () =>
       Response.json({
@@ -765,7 +889,8 @@ test.each([
   const id = randomUUID();
   await expect(client.complete(id, "probe", [])).rejects.toThrow();
   const before = await client.ledger.summary();
-  expect(before.unsettled).toBe(1);
+  const format = "format" in failure;
+  expect(before.unsettled).toBe(format ? 4 : 1);
   expect(before.upperCostUsd).toBeGreaterThan(0);
   expect(
     (
@@ -778,13 +903,20 @@ test.each([
     state: "pending",
     delivery: "unknown",
     charged_nano: null,
-    response: null,
+    response: format
+      ? expect.objectContaining({
+          diagnostic: expect.objectContaining({
+            type: "format",
+            missingBody: true,
+          }),
+        })
+      : null,
   });
   const reopened = createCountedClient(databases.postgres, config, transport);
   await expect(reopened.complete(id, "probe", [])).rejects.toBeInstanceOf(
-    BudgetUnavailable,
+    format ? ResponseFormatError : BudgetUnavailable,
   );
-  expect(transport).toHaveBeenCalledTimes(1);
+  expect(transport).toHaveBeenCalledTimes(format ? 4 : 1);
   expect(await client.ledger.summary()).toEqual(before);
 });
 

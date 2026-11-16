@@ -20,6 +20,7 @@ import {
   PlayerIconInput,
   WorldPlayerPage,
   SceneInbox,
+  ScenePresenceStatus,
   NpcReport,
 } from "@gestaloka/contracts";
 
@@ -29,11 +30,12 @@ gestaloka connect --server <公開URL> --world <世界のURLまたはID> [--char
 gestaloka status                         認可・参加・現在のシーンを照会
 gestaloka join [--icon <画像ファイル>]    許可された新規参加を開始
 gestaloka icon [--file <画像> | --clear]  許可された人物のアイコンを確認・更新・解除
-gestaloka prepare --purpose <目的> [--shared] シーンのあらすじを準備。共有は明示指定
+gestaloka prepare --purpose <目的>        シーンのあらすじを準備
 gestaloka npc [--away | --return | --accept --scene <id> | --reject --scene <id>] NPCモードと離席中の記録
 gestaloka inbox [--after <cursor>]       自分への通知と未処理の参加要請を取得
 gestaloka listen [--once]                生存通知を送りながら待ち受け（JSON Lines）
-gestaloka standby [--notify <実行ファイル>] 在席を更新し未処理通知を確認。VMで60秒ごとに実行
+gestaloka standby [--resume] [--notify <実行ファイル>] 在席を更新し未処理通知を確認
+gestaloka disconnect                     待機を明示的に終了。standby --resumeで再開
 gestaloka invite --invitation <id> --accept|--reject  同席を承認・拒否
 gestaloka react --opportunity <id> --text <意図>|--none  届いた働きかけへ本人の返答を送る
 gestaloka vote --proposal <id> --continue|--end          終了提案へ回答
@@ -65,6 +67,7 @@ const Profile = z.object({
   lastRequestId: z.uuid().optional(),
   knowledgeCheckpoint: z.uuid().optional(),
   joinIconRequestId: z.uuid().optional(),
+  waitingEnded: z.boolean().optional(),
 });
 const Request = z.object({
   id: z.uuid(),
@@ -97,6 +100,7 @@ const parse = () =>
       away: { type: "boolean" },
       return: { type: "boolean" },
       shared: { type: "boolean" },
+      resume: { type: "boolean" },
       once: { type: "boolean" },
       notify: { type: "string" },
       invitation: { type: "string" },
@@ -200,6 +204,14 @@ async function send(
     saved.method,
   );
   await save(join(journal, `${saved.id}.json`), { ...saved, result });
+  if (saved.path.endsWith("/presence")) {
+    const presence = ScenePresenceStatus.parse(result);
+    return {
+      requestId,
+      state: presence.active ? "standby" : "inactive",
+      result: presence,
+    };
+  }
   if (saved.path.endsWith("/npc-mode"))
     return { state: "npc_mode", requestId, result: NpcReport.parse(result) };
   if (profile.joinIconRequestId === saved.id) {
@@ -252,6 +264,7 @@ async function submit(
   id: string = randomUUID(),
   method: "POST" | "PUT" = "POST",
 ) {
+  if (path.endsWith("/scene")) profile.waitingEnded = false;
   requestId = id;
   const saved = {
     id,
@@ -273,7 +286,9 @@ async function inbox(profile: Profile, after?: string) {
   );
 }
 async function listen(profile: Profile) {
-  const connectionId = randomUUID();
+  const connectionId = profile.deviceId;
+  profile.waitingEnded = false;
+  await save(profilePath, profile);
   const heartbeat = async (active: boolean) => {
     const body = { requestId: randomUUID(), connectionId, active };
     await save(`${profilePath}.connection.json`, body);
@@ -322,12 +337,16 @@ async function listen(profile: Profile) {
   } finally {
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
-    await heartbeat(false);
   }
-  return { state: "inactive", connectionId };
+  return { state: "waiting_stopped", connectionId };
 }
 async function standby(profile: Profile) {
   const connectionId = profile.deviceId;
+  if (values.resume) {
+    profile.waitingEnded = false;
+    await save(profilePath, profile);
+  }
+  if (profile.waitingEnded) return { state: "inactive", connectionId };
   const presence = await http(
     profile,
     `/api/worlds/${profile.worldId}/presence`,
@@ -426,6 +445,14 @@ async function run() {
     );
   }
   const profile = await load();
+  if (command === "disconnect") {
+    profile.waitingEnded = true;
+    await save(profilePath, profile);
+    return submit(profile, `/api/worlds/${profile.worldId}/presence`, {
+      connectionId: profile.deviceId,
+      active: false,
+    });
+  }
   if (command === "npc") {
     const path = `/api/worlds/${profile.worldId}/npc-mode`;
     const modes = [
@@ -627,9 +654,7 @@ async function run() {
   const body = SceneCommand.parse({
     requestId: randomUUID(),
     command,
-    ...(command === "prepare"
-      ? { purpose: values.purpose, ...(values.shared ? { shared: true } : {}) }
-      : {}),
+    ...(command === "prepare" ? { purpose: values.purpose } : {}),
     ...(command === "act"
       ? {
           actionText: values.file

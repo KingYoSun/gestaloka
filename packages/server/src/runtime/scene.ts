@@ -24,7 +24,7 @@ import { z } from "zod";
 import { parseOutput } from "../llm/prompt.js";
 import { ExecutionBudget, ExecutionLimit } from "../execution-budget.js";
 import type pg from "pg";
-import type { ChatMessage } from "../llm/client.js";
+import { ResponseFormatError, type ChatMessage } from "../llm/client.js";
 import {
   WorldConflict,
   type Dependency,
@@ -117,13 +117,20 @@ async function scenePrompt(file: string, information = true) {
 }
 type Work = {
   id: string;
+  actorId?: string;
+  formatAttempts?: number;
+  repairConclusion?: boolean;
   kind: "background" | "resolve" | "intent" | "result";
   messages: ChatMessage[];
   target: "default" | "resolution";
 };
+function workConclusion(work: Work) {
+  return work.repairConclusion ?? sceneRepairConclusion(work.messages);
+}
 export type SceneData = {
   playVersion?: 4;
   turns?: true;
+  awaiting?: string[];
   soloBot?: boolean;
   npcSoloTurn?: string;
   soloProposal?: string;
@@ -351,7 +358,11 @@ export class WorldScenes {
         !row.data.encounter
       ) {
         await this.shared.lock(c, row.construction_id);
-        if ((await this.shared.turns.routeIdle(c, row)) === "closing") {
+        const routed = await this.shared.turns.routeIdle(c, row);
+        if (routed === "acting") {
+          row.state = "acting";
+          await this.shared.wake(c, row.id);
+        } else if (routed === "closing") {
           row.state = "reflecting";
           row.data.ending = "dissolved";
         }
@@ -414,25 +425,16 @@ export class WorldScenes {
       }
       await trackNpcScene(c, row);
       if (
-        !row.data.turns &&
-        ["ready", "active"].includes(row.state) &&
-        !row.data.encounter &&
-        !row.data.soloProposal &&
+        row.data.turns &&
+        row.state === "ready" &&
         (
           await c.query(
-            "SELECT 1 FROM world_player_contact WHERE target_scene=$1 AND queued_text IS NOT NULL LIMIT 1",
+            "SELECT 1 FROM world_scene_turn WHERE scene_id=$1 AND state='queued' LIMIT 1",
             [row.id],
           )
         ).rowCount
       )
-        await this.#enqueue(c, row.id);
-      if (
-        !row.data.shared &&
-        !row.data.encounter &&
-        ["ready", "active"].includes(row.state) &&
-        (await npcActors(c, row.data.worldId, [row.actor_id])).length
-      )
-        await this.#enqueue(c, row.id);
+        await this.shared.wake(c, row.id);
       await c.query(
         `INSERT INTO world_event(subject_id,construction_id,role,event_key)
         SELECT subject_id,construction_id,role,gen_random_uuid()::text FROM world_access WHERE construction_id=$1`,
@@ -650,9 +652,12 @@ export class WorldScenes {
     client: pg.PoolClient,
     requestId: string,
     actorId?: string,
-    shared = false,
+    shared = true,
     kind: "human" | "bot" = "human",
-  ) {
+  ): Promise<SceneRow> {
+    // Normalize the retained legacy argument at the API boundary.
+    if (!shared)
+      return this.open(world, purpose, client, requestId, actorId, true, kind);
     await RuntimeControl.check(client, {}, true);
     const c = await this.construction.get(world, client, true);
     const actor = actorId ?? c.participant_id;
@@ -676,9 +681,8 @@ export class WorldScenes {
       state: "preparing",
       claim: null,
       data: {
-        ...(shared
-          ? { shared: true as const, turns: true as const }
-          : { soloBot: kind === "bot" }),
+        shared: true,
+        turns: true,
         playVersion: 4,
         sources: {},
         recordingVersion: "inspection-record-v2",
@@ -724,22 +728,105 @@ export class WorldScenes {
         JSON.stringify(row.data),
       ]);
     }
-    if (shared)
-      await this.shared.open(
-        client,
-        world,
-        actor,
-        row.id,
-        row.data.at,
-        requestId,
-        kind,
-      );
+    await this.shared.open(
+      client,
+      world,
+      actor,
+      row.id,
+      row.data.at,
+      requestId,
+      kind,
+    );
     await client.query(
       "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
       [c.world_id, actor],
     );
-    await this.#enqueue(client, row.id, shared);
+    await this.#enqueue(client, row.id, true);
     return row;
+  }
+  /** Saved single-person scenes enter the same turn policy without replaying history. */
+  async #unify(row: SceneRow, db: pg.PoolClient) {
+    if (row.data.turns || row.state === "result") return;
+    const d = row.data;
+    await db.query(
+      "INSERT INTO world_shared_scene(scene_id,world_id,owner_id,at,phase) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+      [
+        row.id,
+        row.construction_id,
+        row.actor_id,
+        d.at,
+        row.state === "preparing" ? "selecting" : "settled",
+      ],
+    );
+    await db.query(
+      "INSERT INTO world_scene_member(scene_id,world_id,actor_id,request_id,state,kind) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
+      [
+        row.id,
+        row.construction_id,
+        row.actor_id,
+        d.requestId,
+        row.state === "reflecting" ? "ended" : "joined",
+        d.soloBot ? "bot" : "human",
+      ],
+    );
+    d.shared = d.turns = true;
+    d.externalActors ??= [row.actor_id];
+    const action = d.actions.at(-1);
+    if (row.state === "acting" && action?.state === "running") {
+      const actor = action.actorId ?? row.actor_id;
+      d.turn = {
+        id: action.id,
+        sourceId: action.id,
+        sourceKind: d.soloBot ? "bot" : "human",
+        reply: false,
+        eventStart: d.events.length,
+        inputs: [
+          {
+            id: action.id,
+            actorId: actor,
+            text: action.text,
+            seen: d.events
+              .filter((e) => e.receipts.some((r) => r.observerId === actor))
+              .map((e) => e.id),
+          },
+        ],
+      };
+      await db.query(
+        "INSERT INTO world_scene_turn(id,scene_id,actor_id,kind,command,data,state) VALUES($1,$2,$3,$4,'act',$5,'running') ON CONFLICT DO NOTHING",
+        [
+          action.id,
+          row.id,
+          actor,
+          d.turn.sourceKind,
+          JSON.stringify({ actionText: action.text }),
+        ],
+      );
+    }
+    if (d.soloProposal) {
+      if (d.deferredSoloAction) {
+        await db.query(
+          "INSERT INTO world_scene_turn(id,scene_id,actor_id,kind,command,data,state) VALUES($1,$2,$3,'bot','act',$4,'held') ON CONFLICT DO NOTHING",
+          [
+            d.deferredSoloAction.id,
+            row.id,
+            row.actor_id,
+            JSON.stringify({ actionText: d.deferredSoloAction.text }),
+          ],
+        );
+        delete d.deferredSoloAction;
+      }
+      await db.query(
+        "UPDATE world_shared_scene SET flow='voting' WHERE scene_id=$1",
+        [row.id],
+      );
+      delete d.soloProposal;
+    }
+    delete d.soloBot;
+    delete d.npcSoloTurn;
+    await db.query("UPDATE world_scene SET data=$2 WHERE id=$1", [
+      row.id,
+      JSON.stringify(d),
+    ]);
   }
   /** A reception can open context, but never chooses an action for its owner. */
   async reception(
@@ -858,7 +945,7 @@ export class WorldScenes {
     sceneId?: string,
     kind: "human" | "bot" = "human",
   ) {
-    await RuntimeControl.check(client, {}, true);
+    if (command !== "finish") await RuntimeControl.check(client, {}, true);
     const c = await this.construction.get(world, client, true);
     if (command === "react")
       await client.query(
@@ -875,6 +962,21 @@ export class WorldScenes {
     const actor = actorId ?? row?.actor_id;
     if (!row || !actor || (row.actor_id !== actor && !row.data.shared))
       throw new ConstructionStateError("現在のシーンを取得してください");
+    await this.#unify(row, client);
+    if (command === "finish") {
+      if (row.actor_id !== actor)
+        throw new ConstructionStateError("開始者が終了してください");
+      const control = await this.shared.turns.control(row.id, client);
+      if (
+        !["result", "reflecting"].includes(row.state) &&
+        control.flow !== "closing"
+      )
+        await this.shared.turns.submit(client, row, actor, kind, {
+          ...input,
+          command,
+        });
+      return (await this.latest(world, client, false, actor, row.id))!;
+    }
     if (command === "react") {
       const answer = await this.shared.contacts.answer(
         client,
@@ -935,6 +1037,11 @@ export class WorldScenes {
       if (row.state !== "paused")
         throw new ConstructionStateError("保留中のシーンを指定してください");
       row.state = row.data.resumeState!;
+      if (row.data.work?.formatAttempts === 3) {
+        row.data.work.id = randomUUID();
+        row.data.work.formatAttempts = 0;
+        row.data.work.target = "resolution";
+      }
       if (
         row.data.work &&
         (await this.agent.model.ledger.state(row.data.work.id)) ===
@@ -952,54 +1059,6 @@ export class WorldScenes {
       delete row.data.error;
       delete row.data.limitReached;
       delete row.data.suspended;
-    } else {
-      if (row.state !== "active")
-        throw new ConstructionStateError(
-          "シーンが操作可能になってから入力してください",
-        );
-      row.data.requestId = input.requestId;
-      const action =
-        command === "vote"
-          ? row.data.deferredSoloAction
-          : command === "act" || command === "leave"
-            ? {
-                id: input.requestId,
-                text:
-                  command === "leave"
-                    ? "この場から退出する"
-                    : input.actionText!,
-                submittedAt: new Date().toISOString(),
-              }
-            : undefined;
-      const proposal = row.data.soloProposal;
-      if (proposal) {
-        if (command === "vote") {
-          await this.shared.turns.answer(
-            client,
-            row.id,
-            actor,
-            input.proposalId!,
-            input.continue!,
-          );
-          if (!input.continue) row.data.ending = "unanimous";
-        }
-        await this.#closeProposal(row, client);
-      }
-      if (command === "finish" || (command === "vote" && !input.continue))
-        row.state = "reflecting";
-      else if (action) {
-        if (!row.data.shared)
-          row.data.soloBot = command === "vote" || kind === "bot";
-        await this.#startAction(
-          row,
-          actor,
-          {
-            ...action,
-            ...(command === "leave" ? { leave: true } : {}),
-          },
-          client,
-        );
-      }
     }
     row.data.commandId = input.requestId;
     row.claim = null;
@@ -1024,38 +1083,6 @@ export class WorldScenes {
       await this.#enqueue(client, row.id, !!row.data.shared);
     return row;
   }
-  async #closeProposal(row: SceneRow, db: Pick<pg.Pool, "query">) {
-    if (!row.data.soloProposal) return;
-    await db.query(
-      "UPDATE world_scene_end_vote SET state='closed' WHERE id=$1",
-      [row.data.soloProposal],
-    );
-    delete row.data.soloProposal;
-    delete row.data.deferredSoloAction;
-  }
-  async #startAction(
-    row: SceneRow,
-    actor: string,
-    action: { id: string; text: string; submittedAt?: string; leave?: true },
-    db: Pick<pg.Pool, "query">,
-  ) {
-    await this.#closeProposal(row, db);
-    row.state = "acting";
-    row.data.actions.push({
-      ...(row.data.shared ? { actorId: actor } : {}),
-      ...action,
-      state: "running",
-    });
-    const intent = {
-      inputId: action.id,
-      actorId: actor,
-      actionText: action.text,
-      continuing: row.data.pending[actor]?.actionText === action.text,
-    };
-    row.data.pending[actor] = intent;
-    row.data.intentions[actor] = intent;
-    row.data.choices.push(intent);
-  }
   #budget(row: SceneRow) {
     return row.state === "preparing"
       ? row.id
@@ -1076,6 +1103,12 @@ export class WorldScenes {
     if (!row.data.work) {
       row.data.work = {
         id: randomUUID(),
+        ...(kind === "intent" &&
+        input &&
+        typeof input === "object" &&
+        "observerId" in input
+          ? { actorId: String(input.observerId) }
+          : {}),
         kind,
         target,
         messages: [
@@ -1099,7 +1132,25 @@ export class WorldScenes {
         work.target,
         kind === "background" ? "resolution" : work.target,
         row.data.sources !== undefined && file === "scene-background.md",
+        work.formatAttempts ?? 0,
       );
+    if (response.formatAttempts || response.upperModel) {
+      const conclusion =
+        workConclusion(work) ??
+        sceneRepairConclusion(
+          [...(response.formatHistory ?? []), response.content].map(
+            (content): ChatMessage => ({
+              role: "assistant",
+              content,
+            }),
+          ),
+        );
+      if (conclusion !== undefined) work.repairConclusion = conclusion;
+      work.formatAttempts =
+        (work.formatAttempts ?? 0) + (response.formatAttempts ?? 0);
+      if (response.upperModel) work.target = "resolution";
+      await this.#save(row, undefined, row.claim!);
+    }
     if (response.finishReason !== "stop")
       throw new SceneResponseError("シーンのモデル応答が未完了です");
     // 確定後・保存前に止まった行動解決の再開では、確定済みの変更を文脈の変化と見なさない。
@@ -1279,6 +1330,12 @@ export class WorldScenes {
   async #participation(row: SceneRow): Promise<boolean> {
     const current = await this.shared.get(row.id);
     if (!current || current.phase === "merged") return false;
+    if (current.phase === "settled") {
+      row.data.externalActors = (await this.shared.members(row.id))
+        .filter((m) => m.state === "joined")
+        .map((m) => m.actor_id);
+      return true;
+    }
     let plan = current.plan;
     if (!plan) {
       const request = { ...this.#request(row), actionText: row.data.purpose };
@@ -1893,7 +1950,7 @@ export class WorldScenes {
         ? (
             await this.pool.query(
               "SELECT 1 FROM world_controlled_actor WHERE world_id=$1 AND actor_id=$2 AND npc_active AND npc_session=$3",
-              [d.worldId, actor, turn.id],
+              [d.worldId, actor, turn.npcSession ?? turn.id],
             )
           ).rowCount
         : (await npcActors(this.pool, d.worldId, [actor])).length;
@@ -1921,6 +1978,16 @@ export class WorldScenes {
       await this.#save(row, undefined, row.claim!);
     }
     const continuing = turn?.continuingActor;
+    if (
+      continuing &&
+      !d.pending[continuing] &&
+      d.nextDecisions.includes(continuing)
+    ) {
+      await this.#chooseIntent(row, continuing);
+      d.nextDecisions = d.nextDecisions.filter((id) => id !== continuing);
+      d.pending[continuing]!.continuing = true;
+      await this.#save(row, undefined, row.claim!);
+    }
     if (turn && !turn.inputs.length && !continuing)
       return this.#completeTurn(row, []);
     if (
@@ -2161,7 +2228,7 @@ export class WorldScenes {
         },
         "default",
       );
-      const conclusion = sceneRepairConclusion(d.work!.messages);
+      const conclusion = workConclusion(d.work!);
       if (
         value.value &&
         typeof value.value === "object" &&
@@ -2465,6 +2532,17 @@ export class WorldScenes {
             .map(([id]) => id),
         ]),
       ];
+      d.awaiting = [
+        ...new Set([
+          ...(d.awaiting ?? []),
+          ...step.newDecisions.filter((id) => external.includes(id)),
+          ...Object.entries(step.decisions)
+            .filter(
+              ([id, status]) => external.includes(id) && status === "decide",
+            )
+            .map(([id]) => id),
+        ]),
+      ];
       for (const exit of step.departures) {
         (d.departures ??= {})[exit.actorId] =
           departureOffset + exit.eventIndex + 1;
@@ -2513,14 +2591,10 @@ export class WorldScenes {
       }
       if (
         live.length &&
-        !d.turn &&
         !d.nextDecisions.some((id) => !external.includes(id)) &&
         !Object.keys(d.pending).some((id) => !external.includes(id))
       ) {
-        action.state = "complete";
-        row.state = "active";
-        await this.#save(row, undefined, row.claim!);
-        return false;
+        return this.#completeTurn(row, []);
       }
       if (d.turn) {
         const targets = [
@@ -2552,8 +2626,13 @@ export class WorldScenes {
         if (
           step.concluded ||
           targets.length ||
+          (d.turn.sourceKind === "human" &&
+            controlled.some((id) => d.awaiting?.includes(id)) &&
+            !d.nextDecisions.some((id) => !controllers.has(id))) ||
           ((continuing || controlled.every((id) => !d.pending[id])) &&
-            !d.nextDecisions.some((id) => away.has(id))) ||
+            !d.nextDecisions.some(
+              (id) => !controllers.has(id) || away.has(id),
+            )) ||
           (await this.shared.turns.control(row.id)).flow === "inactive"
         ) {
           const recipients =
@@ -2569,34 +2648,6 @@ export class WorldScenes {
             !!step.concluded,
           );
         }
-      }
-      if (
-        !d.turn &&
-        !d.nextDecisions.some((id) => away.has(id)) &&
-        ((step.decisions[actor] === "finished" &&
-          !d.nextDecisions.some((id) => !external.includes(id))) ||
-          step.decisions[actor] === "decide" ||
-          step.newDecisions.includes(actor))
-      ) {
-        action.state = "complete";
-        row.state = "active";
-        d.nextDecisions = d.nextDecisions.filter((id) => id !== actor);
-        const npcTurn = !!d.npcSoloTurn;
-        delete d.npcSoloTurn;
-        if (npcTurn && step.concluded) {
-          row.state = "reflecting";
-          d.ending = "concluded";
-          await this.#save(row, undefined, row.claim!);
-          return true;
-        }
-        if (d.soloBot && step.concluded) {
-          await this.#transaction(async (db) => {
-            await this.shared.lock(db, row.construction_id);
-            d.soloProposal = await this.shared.turns.propose(db, row, [actor]);
-            await this.#save(row, db, row.claim!);
-          });
-        } else await this.#save(row, undefined, row.claim!);
-        return false;
       }
       if (
         !d.nextDecisions.length &&
@@ -2936,6 +2987,39 @@ export class WorldScenes {
       this.#tick(id),
     );
   }
+  async #finishProgress(row: SceneRow, db: Pick<pg.Pool, "query"> = this.pool) {
+    const d = row.data;
+    d.background ??= {
+      type: "background",
+      synopsis: "場面の準備を終了しました。",
+      participants: [row.actor_id],
+      facts: [],
+      perceptions: [],
+      unknowns: [],
+      creations: [],
+      beliefs: [],
+    };
+    for (const action of d.actions)
+      if (action.state === "running") {
+        action.state = "boundary";
+        delete d.pending[action.actorId ?? row.actor_id];
+      }
+    await db.query(
+      "UPDATE world_scene_turn SET state='resolved' WHERE scene_id=$1 AND state='running'",
+      [row.id],
+    );
+    delete d.work;
+    delete d.turn;
+    delete d.backgroundMessages;
+    delete d.error;
+    const queued = await db.query(
+      "SELECT 1 FROM world_scene_turn WHERE scene_id=$1 AND state='queued' LIMIT 1",
+      [row.id],
+    );
+    row.state = queued.rowCount ? "active" : "reflecting";
+    d.ending = "requested";
+    return !!queued.rowCount;
+  }
   async #repair(row: SceneRow, error: unknown) {
     if (
       !(error instanceof WorldConflict) &&
@@ -2975,16 +3059,23 @@ export class WorldScenes {
     Object.assign(row, saved);
     delete row.data.error;
     const work = row.data.work!;
+    if ((work.formatAttempts ?? 0) >= 3) return false;
+    work.formatAttempts = (work.formatAttempts ?? 0) + 1;
+    if (work.formatAttempts === 3) work.target = "resolution";
     work.id = randomUUID();
     work.messages.push({ role: "assistant", content: response.content });
     const conclusion =
-      work.kind === "resolve"
-        ? sceneRepairConclusion(work.messages)
-        : undefined;
+      work.kind === "resolve" ? workConclusion(work) : undefined;
     work.messages.push({
       role: "user",
       content: JSON.stringify({
         validationErrors,
+        ...(work.formatAttempts === 3
+          ? {
+              instruction:
+                "未表示の原応答を元の入力と出力形式に沿って再解釈してください。内容の検品や改善は行いません。",
+            }
+          : {}),
         ...(conclusion === undefined
           ? {}
           : {
@@ -3001,6 +3092,7 @@ export class WorldScenes {
             }),
       }),
     });
+
     await this.#save(row, undefined, row.claim!);
     return true;
   }
@@ -3021,6 +3113,17 @@ export class WorldScenes {
           )
         ).rows[0];
         if (!row) throw new Error("シーンが見つかりません");
+        await this.#unify(row, client);
+        if (
+          (await this.shared.turns.control(row.id, client))?.flow ===
+            "closing" &&
+          (row.state === "paused" ||
+            row.state === "preparing" ||
+            (row.state === "acting" && row.data.resumeState))
+        ) {
+          if (row.data.resumeState === "reflecting") row.state = "reflecting";
+          else await this.#finishProgress(row, client);
+        }
         if (row.data.playVersion !== 4) {
           const d = row.data;
           if (
@@ -3074,45 +3177,6 @@ export class WorldScenes {
           d.playVersion = 4;
         }
 
-        if (
-          !row.data.turns &&
-          ["ready", "active"].includes(row.state) &&
-          !row.data.encounter &&
-          !(await npcActors(client, row.data.worldId, [row.actor_id])).length
-        ) {
-          const reply = await this.shared.contacts.nextReply(client, row.id);
-          if (reply) {
-            row.data.soloBot = reply.kind === "bot";
-            row.data.requestId = row.data.commandId = reply.requestId;
-            await this.#startAction(
-              row,
-              reply.actor,
-              {
-                id: reply.requestId,
-                text: reply.actionText,
-              },
-              client,
-            );
-          }
-        }
-        if (
-          !row.data.shared &&
-          !row.data.encounter &&
-          ["ready", "active"].includes(row.state) &&
-          (await npcActors(client, row.data.worldId, [row.actor_id])).length
-        ) {
-          if (row.data.soloProposal) {
-            await client.query(
-              "UPDATE world_scene_end_vote SET state='closed' WHERE id=$1",
-              [row.data.soloProposal],
-            );
-            delete row.data.soloProposal;
-            row.state = "reflecting";
-          } else {
-            row.data.npcSoloTurn = randomUUID();
-            row.state = "acting";
-          }
-        }
         if (row.data.encounter) {
           const encounter = row.data.encounter;
           const invitation = await this.shared.get(row.id, client);
@@ -3178,8 +3242,14 @@ export class WorldScenes {
           row.data.turns &&
           (["active", "acting"].includes(row.state) ||
             (row.state === "ready" &&
-              (await this.shared.turns.control(row.id, client)).flow ===
-                "closing")) &&
+              ((await this.shared.turns.control(row.id, client)).flow ===
+                "closing" ||
+                (
+                  await client.query(
+                    "SELECT 1 FROM world_scene_turn WHERE scene_id=$1 AND state='queued' LIMIT 1",
+                    [row.id],
+                  )
+                ).rowCount))) &&
           !row.data.turn
         ) {
           const turn = await this.shared.turns.next(client, row);
@@ -3297,9 +3367,33 @@ export class WorldScenes {
               { role: "user", actorId: row.actor_id },
             );
         });
+        if (
+          row.state === "ready" &&
+          (await this.shared.turns.control(row.id)).flow === "closing"
+        ) {
+          const queued = await this.#finishProgress(row);
+          await this.#save(row, undefined, claim);
+          if (queued) {
+            await this.shared.transaction((db) => this.shared.wake(db, row.id));
+            return;
+          }
+          continue;
+        }
         return;
       } catch (error) {
         if (error instanceof SupersededWorker) return;
+        if (
+          row.state !== "reflecting" &&
+          (await this.shared.turns.control(row.id)).flow === "closing"
+        ) {
+          const queued = await this.#finishProgress(row);
+          await this.#save(row, undefined, claim);
+          if (queued) {
+            await this.shared.transaction((db) => this.shared.wake(db, row.id));
+            return;
+          }
+          continue;
+        }
         if (await this.#repair(row, error)) continue;
         if (row.contactDecisions) {
           const prior = await this.pool.query<SceneRow>(
@@ -3311,12 +3405,29 @@ export class WorldScenes {
           Object.assign(row, prior.rows[0]);
         }
         row.data.resumeState = row.state;
+        if (error instanceof ResponseFormatError && row.data.work) {
+          row.data.work.formatAttempts = 3;
+          row.data.work.target = "resolution";
+        }
         row.data.limitReached = error instanceof ExecutionLimit;
         row.data.suspended = error instanceof RuntimeStopped;
         row.data.error =
           error instanceof Error ? error.message : "シーンを保留しました";
         row.state = "paused";
         await this.#save(row, undefined, claim);
+        if (
+          (error instanceof RuntimeStopped ||
+            error instanceof ExecutionLimit) &&
+          (await this.shared.turns.control(row.id)).flow === "closing"
+        )
+          await this.shared.transaction((db) =>
+            this.shared.schedule(
+              db,
+              `finish:${row.id}`,
+              { sceneId: row.id },
+              new Date(this.shared.now().getTime() + 30000),
+            ),
+          );
         throw error;
       }
   }
