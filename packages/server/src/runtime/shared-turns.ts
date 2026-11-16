@@ -470,7 +470,8 @@ export class SharedTurns {
       ).length
     )
       return;
-    const candidates = [
+    const candidates = [];
+    for (const actor of [
       ...new Set([
         ...Object.values(row.data.pending)
           .filter(
@@ -480,7 +481,13 @@ export class SharedTurns {
           .map((i) => i.actorId),
         ...row.data.nextDecisions,
       ]),
-    ];
+    ])
+      if (
+        row.data.nextDecisions.includes(actor) ||
+        !row.data.pending[actor] ||
+        (await this.shared.contacts.ready(row.id, row.data.pending[actor]!, db))
+      )
+        candidates.push(actor);
     if (!candidates.length) return;
     // An outstanding response wave will wake the scene on reply or deadline.
     return (
