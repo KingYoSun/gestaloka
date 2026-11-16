@@ -1525,8 +1525,8 @@ test.each(["accept", "reject", "timeout", "NPC timeout"] as const)(
       }
       if (answer === "timeout" || npc) {
         const deadline = Date.parse(invite.deadline);
-        expect(deadline).toBeGreaterThanOrEqual(beforeCall + 180000);
-        expect(deadline).toBeLessThanOrEqual(Date.now() + 180000);
+        expect(deadline).toBeGreaterThanOrEqual(beforeCall + 600000);
+        expect(deadline).toBeLessThanOrEqual(Date.now() + 600000);
         const now = vi
           .spyOn(access.scenes.shared, "now")
           .mockReturnValue(new Date(deadline - 1));
@@ -1632,11 +1632,18 @@ test.each(["end", "timeout"] as const)(
           [scene],
         );
       }
+      const beforeAct = Date.now();
       const act = await cli.run(profile, "act", "--text", "戸口に戻る");
       await access.scenes.tick(scene);
       expect((await cli.run(profile, "status")).state).toBe("waiting_vote");
       const proposal = (await cli.run(profile, "inbox")).proposals.find(
         (p: { sceneId: string }) => p.sceneId === scene,
+      );
+      expect(Date.parse(proposal.deadline)).toBeGreaterThanOrEqual(
+        beforeAct + 600000,
+      );
+      expect(Date.parse(proposal.deadline)).toBeLessThanOrEqual(
+        Date.now() + 600000,
       );
       expect(proposal).toBeDefined();
       expect((await cli.run(people[1]!.profile, "inbox")).proposals).toEqual(
@@ -2037,6 +2044,7 @@ test("並行の回答をまとめ、割り込みBの後もAの範囲へ回答し
     );
   };
   try {
+    const beforeAct = Date.now();
     const first = await humanAct(0, "A");
     await access.scenes.tick(id);
     const inboxB = await cli.run(b!.profile, "inbox"),
@@ -2048,6 +2056,8 @@ test("並行の回答をまとめ、割り込みBの後もAの範囲へ回答し
         (o: { sourceInputId: string }) => o.sourceInputId === first,
       );
     expect(one.deadline).toBe(two.deadline);
+    expect(Date.parse(one.deadline)).toBeGreaterThanOrEqual(beforeAct + 600000);
+    expect(Date.parse(one.deadline)).toBeLessThanOrEqual(Date.now() + 600000);
     expect(JSON.stringify(one.context)).not.toContain(`VIEW-${c!.actor}-`);
     expect(JSON.stringify(two.context)).not.toContain(`VIEW-${b!.actor}-`);
     const second = await humanAct(0, "B");
