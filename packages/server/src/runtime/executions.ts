@@ -51,7 +51,10 @@ export class RuntimeExecutions {
         const claimed = await db.query(
           `INSERT INTO runtime_execution(kind,id,token,job_id,state) VALUES($1,$2,$3,$4,$5)
           ON CONFLICT(kind,id) DO UPDATE SET token=$3,job_id=$4,state=$5,deliveries=runtime_execution.deliveries+CASE WHEN runtime_execution.token=$3 THEN 0 ELSE 1 END,
-          started_at=CASE WHEN runtime_execution.token=$3 THEN runtime_execution.started_at ELSE now() END,finished_at=NULL,error_code=NULL WHERE runtime_execution.token=$3 OR $6::boolean RETURNING id`,
+          started_at=CASE WHEN runtime_execution.token=$3 THEN runtime_execution.started_at ELSE now() END,finished_at=NULL,error_code=NULL
+          WHERE runtime_execution.token=$3 OR ($6::boolean AND NOT (
+            runtime_execution.kind='scene' AND runtime_execution.state IN ('running','waiting') AND (runtime_execution.job_id IS NULL OR
+              EXISTS(SELECT 1 FROM pgboss.job j WHERE j.id=runtime_execution.job_id AND j.state='active')))) RETURNING id`,
           [
             kind,
             id,
@@ -61,12 +64,13 @@ export class RuntimeExecutions {
             first,
           ],
         );
-        if (!claimed.rowCount)
+        if (!claimed.rowCount && !first)
           throw new RuntimeStopped(
             "SUPERSEDED",
             "古いワーカーの処理枠待ちは終了しました。",
           );
-        first = false;
+        if (claimed.rowCount) first = false;
+        acquired = acquired && !!claimed.rowCount;
         await db.query("COMMIT");
       } catch (error) {
         await db.query("ROLLBACK");

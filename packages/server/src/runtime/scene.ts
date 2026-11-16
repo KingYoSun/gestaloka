@@ -2686,21 +2686,7 @@ export class WorldScenes {
     );
     await this.#transaction(async (db) => {
       await this.shared.lock(db, row.construction_id);
-      if (departures.length) {
-        await db.query(
-          "UPDATE world_scene_member SET state='left' WHERE scene_id=$1 AND actor_id=ANY($2::uuid[])",
-          [row.id, departures],
-        );
-        await this.shared.turns.departed(db, row, departures);
-        for (const member of await this.shared.members(row.id, db))
-          await this.shared.notice(
-            db,
-            row.construction_id,
-            member.actor_id,
-            row.id,
-            "participant_left",
-          );
-      }
+      if (departures.length) await this.shared.turns.leave(db, row, departures);
       row.state = await this.shared.turns.complete(
         db,
         row,
@@ -3121,9 +3107,11 @@ export class WorldScenes {
             "closing" &&
           (row.state === "paused" ||
             row.state === "preparing" ||
+            (row.state === "reflecting" && !row.data.background) ||
             (row.state === "acting" && row.data.resumeState))
         ) {
-          if (row.data.resumeState === "reflecting") row.state = "reflecting";
+          if (row.data.resumeState === "reflecting" && row.data.background)
+            row.state = "reflecting";
           else await this.#finishProgress(row, client);
         }
         if (row.data.playVersion !== 4) {
