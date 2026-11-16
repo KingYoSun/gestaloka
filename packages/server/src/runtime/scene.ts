@@ -1,6 +1,12 @@
 import { npcActors, trackNpcScene } from "./npc-mode.js";
 import { RuntimeExecutions } from "./executions.js";
 import { sceneSources } from "./scene-sources.js";
+import {
+  SceneRecordQuery,
+  readSceneRecords,
+  scenePlayContext,
+  type SceneRecords,
+} from "./scene-records.js";
 import { SharedScenes, SceneSelection } from "./shared-scenes.js";
 import { type ContactDecision } from "./player-contact.js";
 import { SceneDrafts, type SceneDraft } from "./scene-drafts.js";
@@ -87,10 +93,16 @@ function backgroundDecision() {
     ...BackgroundChoices,
   ]);
 }
+const SceneQueries = z
+  .object({
+    type: z.literal("query"),
+    requests: z.array(z.union([Query, SceneRecordQuery])).min(1),
+  })
+  .strict();
 const SceneDecision = z.discriminatedUnion("type", [
   ...SceneStep.options,
   SceneContext,
-  BackgroundChoices[0],
+  SceneQueries,
 ]);
 const Narrative = z
   .object({
@@ -123,6 +135,7 @@ type Work = {
   kind: "background" | "resolve" | "intent" | "result";
   messages: ChatMessage[];
   target: "default" | "resolution";
+  records?: SceneRecords;
 };
 function workConclusion(work: Work) {
   return work.repairConclusion ?? sceneRepairConclusion(work.messages);
@@ -1099,6 +1112,7 @@ export class WorldScenes {
     file: string,
     input: unknown,
     target: Work["target"] = "default",
+    records?: SceneRecords,
   ) {
     if (!row.data.work) {
       row.data.work = {
@@ -1111,6 +1125,7 @@ export class WorldScenes {
           : {}),
         kind,
         target,
+        ...(records ? { records: structuredClone(records) } : {}),
         messages: [
           {
             role: "system",
@@ -2192,7 +2207,7 @@ export class WorldScenes {
           savedInput?.currentLocations ?? (await this.#locations(row)),
         received: Awaited<ReturnType<SharedScenes["contacts"]["received"]>> =
           savedInput
-            ? (savedInput.receivedContacts ?? [])
+            ? (d.work?.records?.contacts ?? savedInput.receivedContacts ?? [])
             : await this.shared.contacts.received(
                 row.id,
                 Object.keys(d.pending),
@@ -2201,59 +2216,69 @@ export class WorldScenes {
       const intents = Object.values(d.pending).filter(
         (i) => !i.replyWait && !sleeping.has(i.actorId),
       );
+      const records = d.work?.records ?? {
+        history: savedInput?.sceneHistory ?? d.events,
+        contacts: received,
+      };
       const value = await this.#ask(
         row,
         "resolve",
         "scene-play.md",
-        {
-          playVersion: 4,
-          initialContext,
-          background: bg,
-          currentLocations,
-          ...(received.length ? { receivedContacts: received } : {}),
-          ...(d.peerConditions?.length
-            ? {
-                otherPlayers: d.peerConditions.map((p) => ({
-                  ...p,
-                  controlledByPlayer: true,
-                })),
-              }
-            : {}),
-          sleepingPlayerIds: [...sleeping],
-          sceneHistory: d.events,
-          controlledView: d.views[actor],
-          ...(await this.#belongings(row)),
-          request: {
-            at: d.at,
-            rootIds: d.roots,
-            controlledActorId: actor,
-            ...(d.soloBot || d.npcSoloTurn ? { scenePurpose: d.purpose } : {}),
-            ...(d.turn
+        scenePlayContext(
+          {
+            playVersion: 4,
+            initialContext,
+            background: bg,
+            currentLocations,
+            ...(received.length ? { receivedContacts: received } : {}),
+            ...(d.peerConditions?.length
               ? {
-                  controlledActorIds: controlled,
-                  playerActorIds: external,
-                  humanInput: d.turn.sourceKind === "human" && !d.turn.reply,
-                  controlledInputs: d.turn.inputs,
-                  reactionTo:
-                    d.turn.reply && !d.turn.idleInput
-                      ? {
-                          inputId: d.turn.sourceId,
-                          seenEventIds: Object.fromEntries(
-                            d.turn.inputs.map((i) => [i.actorId, i.seen]),
-                          ),
-                        }
-                      : null,
+                  otherPlayers: d.peerConditions.map((p) => ({
+                    ...p,
+                    controlledByPlayer: true,
+                  })),
                 }
               : {}),
-            controlledInputId: action.id,
-            controlledActionText: action.text,
-            leavingActorIds: action.leave ? [actor] : [],
-            departedActorIds: Object.keys(d.departures ?? {}),
-            intentions: intents,
+            sleepingPlayerIds: [...sleeping],
+            sceneHistory: d.events,
+            controlledView: d.views[actor],
+            ...(await this.#belongings(row)),
+            request: {
+              at: d.at,
+              rootIds: d.roots,
+              controlledActorId: actor,
+              ...(d.soloBot || d.npcSoloTurn
+                ? { scenePurpose: d.purpose }
+                : {}),
+              ...(d.turn
+                ? {
+                    controlledActorIds: controlled,
+                    playerActorIds: external,
+                    humanInput: d.turn.sourceKind === "human" && !d.turn.reply,
+                    controlledInputs: d.turn.inputs,
+                    reactionTo:
+                      d.turn.reply && !d.turn.idleInput
+                        ? {
+                            inputId: d.turn.sourceId,
+                            seenEventIds: Object.fromEntries(
+                              d.turn.inputs.map((i) => [i.actorId, i.seen]),
+                            ),
+                          }
+                        : null,
+                  }
+                : {}),
+              controlledInputId: action.id,
+              controlledActionText: action.text,
+              leavingActorIds: action.leave ? [actor] : [],
+              departedActorIds: Object.keys(d.departures ?? {}),
+              intentions: intents,
+            },
+            responseSchema: z.toJSONSchema(SceneDecision, { io: "output" }),
           },
-          responseSchema: z.toJSONSchema(SceneDecision, { io: "output" }),
-        },
+          records,
+        ),
         "default",
+        records,
       );
       const conclusion = workConclusion(d.work!);
       if (
@@ -2262,17 +2287,26 @@ export class WorldScenes {
         "type" in value.value
       ) {
         if (value.value.type === "query") {
-          const query = BackgroundChoices[0].parse(value.value),
+          const query = SceneQueries.parse(value.value),
+            worldQueries = query.requests.filter(
+              (q) => q.kind !== "scene-records",
+            ),
             read = await this.agent.read(
               { request: this.#request(row), dependencies: d.basis },
-              query.requests,
+              worldQueries,
               true,
             );
           d.basis = read.dependencies;
           await this.#peerConditions(
             row,
             read.controlledActorIds,
-            query.requests.flatMap((q) => (q.kind === "node" ? [q.id] : [])),
+            worldQueries.flatMap((q) => (q.kind === "node" ? [q.id] : [])),
+          );
+          let worldIndex = 0;
+          const results = query.requests.map((q) =>
+            q.kind === "scene-records"
+              ? readSceneRecords(records, q)
+              : read.results[worldIndex++],
           );
           d.work!.messages.push(
             { role: "assistant", content: value.content },
@@ -2280,7 +2314,7 @@ export class WorldScenes {
               role: "user",
               content: JSON.stringify({
                 requests: query.requests,
-                results: read.results,
+                results,
                 currentAt: d.at,
                 otherPlayers: d.peerConditions,
                 controlledActorIds: read.controlledActorIds,
@@ -2577,10 +2611,17 @@ export class WorldScenes {
         const remaining =
           typeof status === "object" ? status.pending : undefined;
         if (remaining && !step.departures.some((exit) => exit.actorId === id)) {
+          const prior = d.pending[id]!,
+            originEventId =
+              prior.originEventId ??
+              (!prior.continuing
+                ? d.events.findLast((e) => e.actorId === id)?.id
+                : undefined);
           d.pending[id] = {
             ...d.pending[id]!,
             actionText: remaining,
             continuing: true,
+            ...(originEventId ? { originEventId } : {}),
           };
           delete d.pending[id]!.replyWait;
           if (typeof status === "object" && status.waitingFor.length)

@@ -402,6 +402,7 @@ export type SceneIntent = {
   actorId: string;
   actionText: string;
   continuing: boolean;
+  originEventId?: string;
   replyWait?: { actors: string[]; seenEventIds: string[] };
 };
 export const sceneId = derivedId;
