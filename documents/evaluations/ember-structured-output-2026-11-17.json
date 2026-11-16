@@ -1,0 +1,216 @@
+{
+  "roles": {
+    "old": {
+      "trials": 15,
+      "complete": 14,
+      "calls": 36,
+      "upperHandoffCalls": 6,
+      "calculatedNanoUsd": "2235733876",
+      "unknownNanoUsd": "132768000",
+      "lengthCalls": 11,
+      "queries": 0
+    },
+    "new": {
+      "trials": 15,
+      "complete": 15,
+      "calls": 28,
+      "upperHandoffCalls": 2,
+      "calculatedNanoUsd": "493509824",
+      "unknownNanoUsd": "0",
+      "lengthCalls": 2,
+      "queries": 0
+    }
+  },
+  "scenes": {
+    "old": {
+      "trials": 4,
+      "complete": 1,
+      "calls": 66,
+      "upperHandoffCalls": 6,
+      "calculatedNanoUsd": "921617430",
+      "unknownNanoUsd": "0",
+      "lengthCalls": 7,
+      "queries": 0
+    },
+    "new": {
+      "trials": 4,
+      "complete": 4,
+      "calls": 81,
+      "upperHandoffCalls": 4,
+      "calculatedNanoUsd": "442909668",
+      "unknownNanoUsd": "0",
+      "lengthCalls": 4,
+      "queries": 0
+    }
+  },
+  "presentations": [
+    {
+      "setting": "tide-archive",
+      "variant": 0,
+      "group": "new",
+      "status": "complete",
+      "sceneId": "334cfef3-a4af-495f-a40b-2f099b21e1cd",
+      "initial": null,
+      "initialMissing": "Initial knowledge API was not recorded; the same fixture and purpose were supplied in both conditions.",
+      "presentationIds": [
+        "1527bf24-71f2-4109-ade7-a6fa722628e5",
+        "b63c6038-d5b9-4b9b-ad60-d1351f1a81c1",
+        "8bae3352-0ee0-45ef-af83-21354c19fbad",
+        "b4f66b8d-8089-4464-aa51-ae0e0a81f05e",
+        "c12bdaf0-7488-4eae-a2a5-fc9d21ee0b68",
+        "eb4b3a5a-c275-4ba7-ad1f-fcef678b1a0e",
+        "607ba3e2-4567-4675-a09a-7aa71ae3e8a9",
+        "f921024d-21d1-4371-aeef-b82a0f33c477",
+        "6830219f-bd4f-4f44-a789-6578994de771"
+      ]
+    },
+    {
+      "setting": "tide-archive",
+      "variant": 0,
+      "group": "old",
+      "status": "complete",
+      "sceneId": "e3a739ec-4915-4ffa-ab03-442b92cb155f",
+      "initial": null,
+      "initialMissing": "Initial knowledge API was not recorded; the same fixture and purpose were supplied in both conditions.",
+      "presentationIds": [
+        "03180984-5ef8-4684-a22e-5049db381d9a",
+        "6a80057c-6395-407c-ac1f-8d2da0a98989",
+        "1d9ddb29-e65f-4587-af95-8e290665410d",
+        "df68d26b-97eb-4b7d-aa69-86a2a1eb6011",
+        "f0b3f2e6-7980-45ff-a11f-dd70c99f1fa3",
+        "b8f0c3c2-3769-4cbd-aef1-c786e1433565",
+        "7581fe0d-4deb-4045-a2f9-c5c1a7e883a4",
+        "07004b46-5f67-42f2-ae43-5cd7d3f68d72",
+        "23668709-be67-4239-a24a-d52e6c294982",
+        "724ed01d-837f-42e3-a1aa-a9749c9ed241"
+      ]
+    },
+    {
+      "setting": "tide-archive",
+      "variant": 1,
+      "group": "new",
+      "status": "complete",
+      "sceneId": "aab63e3a-b90f-4340-a4b9-394f450b941f",
+      "initial": null,
+      "initialMissing": "Initial knowledge API was not recorded; the same fixture and purpose were supplied in both conditions.",
+      "presentationIds": [
+        "f7b67c67-3c78-4767-acc9-ab60b62ed2f6",
+        "3401bd7f-7b2b-46d2-a5e3-5b2677edfabf",
+        "3399ab41-98b6-4741-a94a-d85b2b28a6a5",
+        "2abcdcc1-50c4-44a2-a193-ef95bf8435c6",
+        "feefc94d-4c0a-4c9a-a9dc-27c333a20e13",
+        "4a21dad0-fac9-4a63-a733-94396eecec0e",
+        "703a0df8-75e4-4160-a2f4-bcccd6c8275d",
+        "e7a8d563-1161-4533-a8af-3ed837e26660"
+      ]
+    },
+    {
+      "setting": "tide-archive",
+      "variant": 1,
+      "group": "old",
+      "status": "error",
+      "sceneId": "be205ccf-d827-4d71-8ea4-ae58944b4611",
+      "initial": null,
+      "initialMissing": "Initial knowledge API was not recorded; the same fixture and purpose were supplied in both conditions.",
+      "presentationIds": [
+        "1a3b0720-86df-41ec-a68c-f27141fc0a56",
+        "373bf529-8f46-4a8f-adcd-d4fa8d262e5f",
+        "1c17cfaf-53d3-4b36-a342-8a91686969e8",
+        "8d0e0d4c-6064-42f8-a8a8-4fa70ecb8431",
+        "2b4d2e3f-edff-4042-aa1c-abe78b682738"
+      ]
+    },
+    {
+      "setting": "orbital-garden",
+      "variant": 0,
+      "group": "old",
+      "status": "error",
+      "sceneId": "c2deb48d-a1bc-471e-8fcc-047bd8a5d061",
+      "initial": null,
+      "initialMissing": "Initial knowledge API was not recorded; the same fixture and purpose were supplied in both conditions.",
+      "presentationIds": [
+        "4d4bafd7-0cc7-4545-a835-cb480a70425d",
+        "692e8688-de10-4863-a729-14c878e7491b",
+        "147c6183-df72-45d8-a518-bbdf03ec09fc",
+        "601e48b0-9cb3-41b3-a251-1ceefec89d6b",
+        "18626c9e-8f0a-4239-a53c-1d8fc6dcae86",
+        "7090d9e4-b66d-41b1-ab6b-fa2a33c96e86"
+      ]
+    },
+    {
+      "setting": "orbital-garden",
+      "variant": 0,
+      "group": "new",
+      "status": "complete",
+      "sceneId": "48d0fa17-d6d0-4f81-bff1-9af7ae974e09",
+      "initial": null,
+      "initialMissing": "Initial knowledge API was not recorded; the same fixture and purpose were supplied in both conditions.",
+      "presentationIds": [
+        "9aaa33d3-042f-48f9-abf9-ec70462b5483",
+        "fc7deab7-bb8a-43e6-a014-b35534fd706c",
+        "d7a7842d-adde-4c8b-a76c-ad44caf99f13",
+        "3201ef02-fea7-44f0-a849-a5d2c918e2ed",
+        "24c1fba6-acda-4ae5-ab90-13d45e90c019",
+        "80efae26-b0ab-41f2-af1d-dc60c00fab4f",
+        "32e1852e-6bae-4cc2-afbc-6a9734ca7771",
+        "a1f26dda-d056-42a0-ac9f-394a5df3ff4b",
+        "bc289248-7a77-42ad-a683-a101bc3b9ae5"
+      ]
+    },
+    {
+      "setting": "orbital-garden",
+      "variant": 1,
+      "group": "new",
+      "status": "complete",
+      "sceneId": "183ebe5b-40a6-4772-8def-9b99855f2c5c",
+      "initial": null,
+      "initialMissing": "Initial knowledge API was not recorded; the same fixture and purpose were supplied in both conditions.",
+      "presentationIds": [
+        "213e7d67-388c-4a6e-a9c6-87681b327e07",
+        "c4aa92ce-fb41-4d1a-a765-c67d66d73032",
+        "575b54a2-81eb-41f5-a46e-68e813ffd9db",
+        "d3ebeb48-92fe-4d86-aff2-5b90ebad9d14",
+        "12e6f77b-a306-4977-aed2-147c15fb5cc4",
+        "9211cfa5-a823-4e1a-a357-34bfd56a46a1",
+        "e7615fd5-2b29-4fc8-ab21-25b93f15cf4a",
+        "94e5653b-d673-499e-a5c9-551897cbbf3a",
+        "d40f1897-e4cf-4e41-a65c-b0ad9edef71d",
+        "fc82bdbf-642a-4830-a36b-ad066fee577d"
+      ]
+    },
+    {
+      "setting": "orbital-garden",
+      "variant": 1,
+      "group": "old",
+      "status": "error",
+      "sceneId": "cceea79b-34e1-4366-89eb-831ed5b3fd64",
+      "initial": null,
+      "initialMissing": "Initial knowledge API was not recorded; the same fixture and purpose were supplied in both conditions.",
+      "presentationIds": [
+        "cda38b1a-4b75-4d95-a483-cdc40bcf5fb9",
+        "55d3e1d6-c83f-47b6-ac8a-3e40742bad0a",
+        "eeeb78ac-b8f7-4259-a46a-d616dcc827f6",
+        "aa776ff6-50af-47f4-a3aa-403b110ac9c2"
+      ]
+    }
+  ],
+  "allExperimentCharges": {
+    "calculatedNanoUsd": "5122494074",
+    "unknownNanoUsd": "398304000",
+    "calls": 373,
+    "diagnosticScenes": 16
+  },
+  "method": {
+    "baselineCommit": "68fdf93475a563fe158c821955e26b7f5ac18960",
+    "roleComparator": "Original model inputs, existing parsers and matching runtime validation errors. No new query was requested in the measured role trials.",
+    "sceneComparator": "Product WorldAccess, WorldScenes and WorldAgent; human input, staged events, world reflection and result. Four fixed starts in two settings.",
+    "diagnostics": "Two bot-mode driver attempts were stopped locally; all 16 attempts and fees retained separately. The ordinary human-mode comparator was fixed before its eight trials.",
+    "limitations": [
+      "Each condition has one valid human-mode trial per initial state; generation diverges and is not deterministic.",
+      "Old side has three failures before result, so cost per completed scene is not directly comparable.",
+      "The tide-archive-1 result includes verbose administrative phrasing; that repetition is not counted as new information.",
+      "The older tide-archive-0 additionally distinguishes planned closure time and actual closure time. Different elaborations are recorded rather than made into a fixed dialogue expectation."
+    ]
+  },
+  "evidenceSha256": "4486540b7d58ce8a45a5178c93303113f3fc77befa8f82694212f3366d90e3de"
+}

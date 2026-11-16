@@ -14,7 +14,13 @@ import {
 } from "./budget.js";
 import { ModelLimits } from "./limits.js";
 import { responseDeadline } from "./response-deadline.js";
-import { preparePrompt, canonical, parseOutput } from "./prompt.js";
+import {
+  preparePrompt,
+  canonical,
+  parseOutput,
+  compactJsonWhitespace,
+  strictOutput,
+} from "./prompt.js";
 import { shortIds } from "./short-ids.js";
 import { derivedId } from "../world/model.js";
 import { PromptCache, geminiCachePlan, renderCachedPrompt } from "./cache.js";
@@ -58,7 +64,7 @@ type StoredRequest = {
   max_tokens?: number;
   max_completion_tokens?: number;
   max_output_tokens?: number;
-  reasoning?: { effort: string };
+  reasoning?: { effort: string; exclude?: boolean };
   output_config?: { effort?: string };
   thinking?: { type: string };
 };
@@ -639,21 +645,27 @@ export class LlmClient {
           ? this.settingsFor(effortTarget).effort
           : selected.effort;
     const codec = shorten ? shortIds(id, messages) : undefined;
-    const wire = codec?.messages ?? messages;
+    const wire = (codec?.messages ?? messages).map((message) =>
+      message.role === "assistant" &&
+      message.content.trimStart().startsWith("{")
+        ? { ...message, content: compactJsonWhitespace(message.content) }
+        : message,
+    );
     const prompt =
       provider !== "deepseek"
         ? // The full world schema exceeds Anthropic's grammar limit; retain Zod validation.
           preparePrompt(
             wire,
-            (api === "messages" ||
-              (provider === "gemini" && role === "narrative-inspection")) &&
-              [
-                "scene-resolve",
-                "scene-result",
-                "narrative-inspection",
-                "world-commit",
-                "initial-commit",
-              ].includes(role),
+            provider === "openrouter" ||
+              ((api === "messages" ||
+                (provider === "gemini" && role === "narrative-inspection")) &&
+                [
+                  "scene-resolve",
+                  "scene-result",
+                  "narrative-inspection",
+                  "world-commit",
+                  "initial-commit",
+                ].includes(role)),
             ["intent", "scene-intent"].includes(role),
             provider === "anthropic" ||
               (provider === "openai" &&
@@ -664,6 +676,10 @@ export class LlmClient {
     const rendered = prompt
       ? renderCachedPrompt(prompt, provider, api, model)
       : undefined;
+    const strict =
+      provider === "openrouter" && prompt?.format
+        ? strictOutput(prompt.format.schema)
+        : undefined;
     const cache = new PromptCache(this.ledger, this.transport);
     const candidate =
       provider === "gemini" && prompt && selected.cacheStorage !== undefined
@@ -724,13 +740,14 @@ export class LlmClient {
                   }
                 : {}),
               response_format:
-                provider === "gemini" && prompt?.format
+                (provider === "gemini" || provider === "openrouter") &&
+                prompt?.format
                   ? {
                       type: "json_schema",
                       json_schema: {
                         name: "narrative_inspection",
                         strict: true,
-                        schema: prompt.format.schema,
+                        schema: strict?.schema ?? prompt.format.schema,
                       },
                     }
                   : { type: "json_object" },
@@ -743,7 +760,7 @@ export class LlmClient {
                   }
                 : provider === "openrouter"
                   ? {
-                      reasoning: { effort },
+                      reasoning: { effort, exclude: true },
                       provider: { require_parameters: true },
                     }
                   : { reasoning_effort: effort }),
@@ -1068,9 +1085,14 @@ export class LlmClient {
             if (!completion.content.trim()) completion.rawResponse = raw;
             if ((prompt || codec) && completion.finishReason === "stop") {
               try {
+                const content = strict
+                  ? JSON.stringify(
+                      strict.decode(parseOutput(completion.content)),
+                    )
+                  : completion.content;
                 completion.content = codec
-                  ? codec.expand(completion.content)
-                  : JSON.stringify(parseOutput(completion.content));
+                  ? codec.expand(content)
+                  : JSON.stringify(parseOutput(content));
               } catch {
                 /* Persist the invalid response; the caller's existing validation handles it. */
               }
