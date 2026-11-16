@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { WorldAccess } from "@gestaloka/server/access";
 import { changeBelongings } from "@gestaloka/server/belongings";
+import { locationRecords } from "../../packages/server/src/world/locations.js";
 import type { WorldProposal } from "@gestaloka/server/agent";
 import {
   sceneAnchors,
@@ -41,6 +42,8 @@ type PlayInput = {
   sleepingPlayerIds: string[];
   otherPlayers?: {
     actorId: string;
+    controlledByPlayer: true;
+    contactChannel: "participant" | "callsToPlayers" | "liveContacts" | null;
     states: { text: string; relationId: string }[];
   }[];
   background: SceneBackground;
@@ -3432,4 +3435,211 @@ test("在席している最後の人間が入力待ちで離れると成立済�
     state: "result",
     data: { ending: "dissolved", actions: [], events: [] },
   });
+}, 60000);
+
+test("開始背景の移動を確定し、追記で戻さず、場所から取得したプレイヤーを接触へ渡す", async () => {
+  const [caller, peer] = [people[0]!, people[1]!],
+    store = runtime.agent.store,
+    place = (await runtime.get(world)).root_ids[0]!,
+    at = (await runtime.get(world)).at;
+  await presence(0);
+  await presence(1);
+  await changeBelongings(store, await store.claim(graph, randomUUID()), {
+    commitId: randomUUID(),
+    at,
+    ops: [
+      {
+        type: "locate",
+        subjectId: caller.actor,
+        text: "以前の通路",
+        aboutIds: [place],
+      },
+      {
+        type: "locate",
+        subjectId: peer.actor,
+        text: "作業室内",
+        aboutIds: [place],
+      },
+    ],
+  });
+  const before = await locationRecords(store.context(graph), caller.actor);
+  const context = runtime.agent.context.bind(runtime.agent);
+  const seed = vi
+    .spyOn(runtime.agent, "context")
+    .mockImplementation(async (...args) => {
+      const result = await context(...args);
+      // 初回の根からの取得では区分が欠け、場所の状態から相手を追加取得した実例。
+      result.controlledActorIds = result.controlledActorIds.filter(
+        (id) => id !== peer.actor,
+      );
+      return result;
+    });
+  const complete = runtime.agent.model.complete.bind(runtime.agent.model);
+  let extensions = 0;
+  const calls = vi
+    .spyOn(runtime.agent.model, "complete")
+    .mockImplementation(async (...args) => {
+      const response = await complete(...args);
+      if (args[1] !== "scene-background") return response;
+      const input = JSON.parse(args[2][1]!.content);
+      expect(
+        input.otherPlayers.map((p: { actorId: string }) => p.actorId),
+      ).toContain(peer.actor);
+      expect(input.controlledActorIds).toContain(peer.actor);
+      if (input.needsContext) {
+        extensions++;
+        return {
+          ...response,
+          content: JSON.stringify({
+            type: "context",
+            participants: [],
+            facts: [],
+            beliefs: [],
+            creations: [],
+            resolvedUnknowns: [],
+          }),
+        };
+      }
+      expect(input.currentLocations[caller.actor]).toEqual(before);
+      return {
+        ...response,
+        content: JSON.stringify({
+          type: "background",
+          synopsis: "通路から作業室の入口へ到着した。",
+          participants: [caller.actor],
+          facts: [
+            {
+              subjectId: caller.actor,
+              text: "作業室の入口",
+              aboutIds: [place],
+              location: true,
+            },
+          ],
+          perceptions: [
+            {
+              observerId: caller.actor,
+              text: "入口から作業室が見える",
+              sourceIds: [place],
+            },
+          ],
+          unknowns: [],
+          beliefs: [],
+          creations: [],
+        }),
+      };
+    });
+  const id = (
+    await cli.run(caller.profile, "prepare", "--purpose", "作業室へ向かう")
+  ).scene.id;
+  try {
+    await access.scenes.tick(id);
+    expect((await cli.run(caller.profile, "status")).state).toBe("prepared");
+    const opening = await locationRecords(store.context(graph), caller.actor);
+    expect(opening.map((p) => p.text)).toEqual(["作業室の入口"]);
+    expect(
+      (await store.context(graph).edge(before[0]!.id))!.period.until,
+    ).toBeDefined();
+    expect(
+      (await access.partners(peer.id, world, peer.actor)).players.find(
+        (p) => p.actorId === caller.actor,
+      )!.locations,
+    ).toEqual(["作業室の入口"]);
+    await cli.run(caller.profile, "start");
+    let resolves = 0;
+    playback = (input) => {
+      resolves++;
+      const step = playStep(input),
+        target = input.otherPlayers!.find((p) => p.actorId === peer.actor)!;
+      expect(target.controlledByPlayer).toBe(true);
+      expect(target.contactChannel).toBe("callsToPlayers");
+      if (resolves === 1)
+        return {
+          ...step,
+          events: [
+            {
+              actorId: caller.actor,
+              text: "作業室に入った",
+              locations: [
+                {
+                  subjectId: caller.actor,
+                  text: "作業室内",
+                  aboutIds: [place],
+                },
+              ],
+              receipts: [{ observerId: caller.actor, text: "作業室に入った" }],
+            },
+          ],
+          decisions: { [caller.actor]: "pending" },
+          needsContext: {
+            evidence: "world",
+            reason: "同席の相手からの返答が必要",
+            remainingActions: { [caller.actor]: "相手に声をかける" },
+          },
+        };
+      expect(
+        (
+          input as unknown as {
+            currentLocations: Record<string, { text: string }[]>;
+          }
+        ).currentLocations[caller.actor]!.map((p) => p.text),
+      ).toEqual(["作業室内"]);
+      expect(input.background.participants).not.toContain(peer.actor);
+      return {
+        ...step,
+        callsToPlayers: [
+          {
+            eventIndex: 0,
+            observerId: peer.actor,
+            positionRelationId: target.states.find(
+              (p) => p.text === "作業室内",
+            )!.relationId,
+            text: "近くから声をかけられた",
+          },
+        ],
+        needsContext: {
+          evidence: "world",
+          reason: "相手をNPCとして返答させるための文脈が必要",
+          remainingActions: { [caller.actor]: "相手の返答を待つ" },
+        },
+      };
+    };
+    await cli.run(caller.profile, "act", "--text", "作業室に入って声をかける");
+    await access.scenes.tick(id);
+    expect(extensions).toBe(1);
+    expect(resolves).toBe(2);
+    expect((await cli.run(caller.profile, "status")).state).toBe(
+      "waiting_invitation",
+    );
+    expect(
+      (await locationRecords(store.context(graph), caller.actor)).map(
+        (p) => p.text,
+      ),
+    ).toEqual(["作業室内"]);
+    const row = (await access.scenes.latest(
+      world,
+      undefined,
+      false,
+      caller.actor,
+    ))!;
+    expect(row.data.events.every((e) => e.actorId === caller.actor)).toBe(true);
+    expect(row.data.contextNeed).toBeUndefined();
+    const invitation = (await cli.run(peer.profile, "inbox")).invitations.find(
+      (i: { sceneId: string }) => i.sceneId === id,
+    );
+    expect(invitation.context).toEqual(["近くから声をかけられた"]);
+    await cli.run(
+      peer.profile,
+      "invite",
+      "--invitation",
+      invitation.id,
+      "--reject",
+    );
+  } finally {
+    seed.mockRestore();
+    calls.mockRestore();
+    playback = undefined;
+  }
+  await access.scenes.tick(id);
+  await cli.run(caller.profile, "finish");
+  await access.scenes.tick(id);
 }, 60000);
