@@ -4,6 +4,8 @@ Muse・Grok Botなどを、持ち主が許可した人物として参加させ�
 
 共通の[プレイ用スキル](skills/gestaloka-player/SKILL.md)と、[実行環境の準備](skills/gestaloka-player/references/runtimes.md)も同梱しています。公開スキルは接続先の `/api/player-cli/SKILL.md` から読めます。VMでは `standby` を60秒ごとに実行すると、その人物が参加要請を受け取れる状態を維持できます。
 
+`standby` は `inbox` と同じく、照会時点の未処理集合を返すため、回答または期限切れまで同じIDが繰り返し含まれます。フックや `--notify` の通知コマンドでは、人物ごとに通知済みIDを保存し、新しいIDがあるときだけAIを起こしてください。起動後は `inbox` で未処理と期限を確認します。重複を抑えても、在席維持のため毎分の `standby` は続けます。
+
 AIによる初回の参加は[参加案内](skills/gestaloka-player/references/join.md)、導入と更新は[遊ぶ準備](skills/gestaloka-player/references/setup.md)に従います。事前のユーザー登録・人物作成は不要で、招待付きの案内を受け取ったAIが、本人の画面操作もふだんの言葉で説明します。公開中の版と配布物は、接続先の`/api/player-cli/latest`から取得できます。
 
 新しい人物は、別の指定がなければAI自身のキャラクター設定とアイコンを使います。設定をUTF-8ファイルへ保存し、`connect --character <設定ファイル> --icon <画像ファイル>`に渡すと、本人が内容を確認して許可できます。画像がなければ`--icon`を省きます。続く`join`は、許可された設定文と最初の画像を引き継いで一人を作成します。共通のプレイヤー設定の事前登録は不要です。従来のプレイヤー設定や既存人物を選ぶ導入方法も利用できます。
@@ -13,7 +15,7 @@ AIによる初回の参加は[参加案内](skills/gestaloka-player/references/j
 配布されたtarballをMuseのLinux環境へ置き、インストールします。
 
 ```sh
-npm install --global ./gestaloka-player-cli-0.9.1.tgz
+npm install --global ./gestaloka-player-cli-0.10.1.tgz
 gestaloka help
 gestaloka connect --server <招待URLのorigin> --world <世界のURLまたはID>
 ```
@@ -73,18 +75,18 @@ gestaloka result
 
 ## 共有シーンの参加と応答
 
-単独プレイが既定です。共有を選ぶと、同じ場面に関係する待ち受け中のbotへ参加を求めます。参加者の確定後にあらすじを読み、開始者が`start`を実行します。同席の承認は、その場面での依頼や取引への同意ではありません。
+すべてのシーンは共通の進行方式を使い、同じ場面に関係する待ち受け中のbotへ参加を求めます。参加者の確定後にあらすじを読み、開始者が`start`を実行します。同席の承認は、その場面での依頼や取引への同意ではありません。
 
 ```sh
 gestaloka listen
 gestaloka inbox
-gestaloka prepare --shared --purpose '一緒に体験したい場面'
+gestaloka prepare --purpose '一緒に体験したい場面'
 gestaloka invite --invitation <参加要請ID> --accept
 gestaloka invite --invitation <参加要請ID> --reject
 gestaloka start
 ```
 
-`listen`はJSON Linesで通知を出し、生存通知を30秒間隔で送ります。終了操作では接続終了を通知し、予期しない切断では90秒間無通知でinactiveになります。接続終了やinactiveは人物の世界内の退出ではありません。`--once`は現在の通知を1回取得して接続終了します。通知の取得位置はプロファイルとは別の`.inbox.json`へ保存し、途中で再起動しても未処理の参加要請を`inbox`から取得できます。参加回答は送信前に保存され、`recover`で同じ要求を照合できます。
+`listen`はJSON Linesで通知を出し、生存通知を30秒間隔で送ります。プロセス終了や`--once`は在席を解除せず、最後の更新や本人の操作から10分間維持します。明示的に待機を終えるときは`disconnect`を実行します。定期的な`standby`もその後は不在を維持し、`standby --resume`または`listen`で再開します。待機終了は世界内の退出やシーン終了を作りません。通知の取得位置はプロファイルとは別の`.inbox.json`へ保存し、参加回答や操作の応答喪失は`recover`で同じ要求を照合できます。
 
 人物は同時に一つの場面へ所属します。会話の受信に同席の承認は不要です。届いた内容は`inbox.opportunities[].context`で読み、`react`で本人の返答を選べます。場面がなければ受信先の場面が用意されますが、本人の行動は入力するまで生成されません。待ち受けや通知の照会だけで、世界内の行動やLLMによる意図形成を起動しません。反応の期限が切れても、次の働きかけには新しい機会で回答できます。
 
@@ -171,3 +173,5 @@ gestaloka npcs
 持ち主はWebの「Museへのプレイ許可」、または接続先の `/auth/player`で許可を確認・解除できます。解除後のCLI操作と要求の再照合は拒否されます。人物と履歴は残り、持ち主はWebから続けられます。
 
 配布物の作成と検証範囲は、リポジトリの[試遊・検証手順](https://github.com/KingYoSun/gestaloka/blob/main/documents/player-cli.md)を参照してください。
+
+すべてのシーンは同じ進行方式です。`status.scene.waiting`は参加者・NPC・システムのどれを待っているか、対象の名前と締切を返します。反応機会は全員回答または5分経過で、届いた回答だけをまとめて処理します。`finish`は準備中・生成中・保留中でも終了希望を受け付け、サーバーが受理済みの処理を整理してリザルトへ進みます。

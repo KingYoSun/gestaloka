@@ -1737,6 +1737,18 @@ export interface paths {
                                 }[];
                                 recordIds: string[];
                                 nextPurpose: string | null;
+                                waiting?: {
+                                    /** @enum {string} */
+                                    kind: "participants" | "npc" | "system";
+                                    actors: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        name: string;
+                                    }[];
+                                    reason: string;
+                                    /** Format: date-time */
+                                    deadline: string | null;
+                                }[];
                                 departed?: boolean;
                                 waitingFor?: string[];
                                 waitingInvitation?: boolean;
@@ -1965,6 +1977,18 @@ export interface paths {
                                 }[];
                                 recordIds: string[];
                                 nextPurpose: string | null;
+                                waiting?: {
+                                    /** @enum {string} */
+                                    kind: "participants" | "npc" | "system";
+                                    actors: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        name: string;
+                                    }[];
+                                    reason: string;
+                                    /** Format: date-time */
+                                    deadline: string | null;
+                                }[];
                                 departed?: boolean;
                                 waitingFor?: string[];
                                 waitingInvitation?: boolean;

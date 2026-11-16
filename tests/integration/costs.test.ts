@@ -40,7 +40,7 @@ const response = () =>
     id: "upstream-id",
     model: "reported-claude",
     stop_reason: "end_turn",
-    content: [{ type: "text", text: "private response" }],
+    content: [{ type: "text", text: '{"text":"private response"}' }],
     usage: {
       input_tokens: 100,
       output_tokens: 50,
@@ -424,7 +424,9 @@ test("推論は出力の内数とし、Chat/Responsesで重複加算せず、使
         id: "resp",
         model: "reported-openai",
         status: "completed",
-        output: [],
+        output: [
+          { type: "message", content: [{ type: "output_text", text: "{}" }] },
+        ],
         usage: {
           input_tokens: 30,
           output_tokens: 20,
@@ -440,7 +442,7 @@ test("推論は出力の内数とし、Chat/Responsesで重複加算せず、使
     calculatedNanoUsd: "242000",
     usage: { output: 20, reasoning: 15 },
   });
-  transport.mockResolvedValue(Response.json({ id: "missing-usage" }));
+  transport.mockRejectedValue(new Error("connection lost"));
   const id = randomUUID();
   await expect(chat.complete(id, "unknown", messages)).rejects.toThrow();
   await expect(chat.complete(id, "unknown", messages)).rejects.toThrow(

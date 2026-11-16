@@ -289,6 +289,16 @@ export const SceneStatus = z.object({
   ),
   recordIds: z.array(z.uuid()),
   nextPurpose: z.string().nullable(),
+  waiting: z
+    .array(
+      z.object({
+        kind: z.enum(["participants", "npc", "system"]),
+        actors: z.array(z.object({ id: z.uuid(), name: z.string() })),
+        reason: z.string(),
+        deadline: z.iso.datetime().nullable(),
+      }),
+    )
+    .optional(),
   departed: z.boolean().optional(),
   waitingFor: z.array(z.uuid()).optional(),
   waitingInvitation: z.boolean().optional(),

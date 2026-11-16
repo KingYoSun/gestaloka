@@ -182,6 +182,10 @@ export class WorldBuilder {
           "initial-generation",
           input.messages,
           "resolution",
+          undefined,
+          false,
+          0,
+          (content) => Proposal.parse(JSON.parse(content)),
         ),
     );
     const review = task(
@@ -210,6 +214,10 @@ export class WorldBuilder {
             },
           ],
           "resolution",
+          undefined,
+          false,
+          0,
+          (content) => Review.parse(JSON.parse(content)),
         );
         if (response.finishReason !== "stop")
           throw new Error("初期確定の審査が未完了です。世界は確定していません");
