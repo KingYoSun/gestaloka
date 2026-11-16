@@ -2424,6 +2424,7 @@ export class WorldScenes {
       for (const e of step.events)
         d.events.push({
           ...e,
+          receipts: e.receipts.map((receipt) => ({ ...receipt, at: nextAt })),
           inputId:
             d.pending[e.actorId]?.inputId ??
             (d.turn

@@ -1228,8 +1228,8 @@ test.each(["standby", "separate", "same"] as const)(
             actorId: actor,
             text: reply ? "本人が返答した" : "相手に問いかけた",
             receipts: [
-              { observerId: actor, text },
-              { observerId: reply ? caller.actor : peer.actor, text },
+              { observerId: actor, text, at: 0 },
+              { observerId: reply ? caller.actor : peer.actor, text, at: 0 },
             ],
           },
         ],
@@ -1262,6 +1262,11 @@ test.each(["standby", "separate", "same"] as const)(
       expect(staged.data.events.every((e) => e.actorId !== peer.actor)).toBe(
         true,
       );
+      expect(
+        staged.data.events.every((e) =>
+          e.receipts.every((r) => r.at === e.period.until),
+        ),
+      ).toBe(true);
       if (mode === "standby") {
         const received = (await access.scenes.latest(
           world,
