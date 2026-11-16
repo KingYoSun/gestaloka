@@ -2079,7 +2079,13 @@ test("並行の回答をまとめ、割り込みBの後もAの範囲へ回答し
       now.mockRestore();
     }
     await cli.run(a!.profile, "finish");
-    await access.scenes.tick(id);
+    const queued = (
+      await runtime.pool.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM world_scene_turn WHERE scene_id=$1 AND state='queued'",
+        [id],
+      )
+    ).rows[0]!.count;
+    for (let i = 0; i <= queued; i++) await access.scenes.tick(id);
     expect((await cli.run(c!.profile, "result")).state).toBe("finished");
   } finally {
     playback = undefined;
