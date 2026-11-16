@@ -1205,7 +1205,7 @@ export class WorldScenes {
     if (!initialization) d.belongingCommits = (d.belongingCommits ?? 0) + 1;
     return Math.max(at, receipt.at);
   }
-  async #initializeLocations(row: SceneRow) {
+  async #initializeLocations(row: SceneRow, opening: boolean) {
     const locations = await this.#locations(row),
       facts = new Map(
         row.data
@@ -1217,7 +1217,7 @@ export class WorldScenes {
           .map((f) => [f.subjectId, f]),
       );
     const ops: BelongingOp[] = [...facts.values()]
-      .filter((f) => !locations[f.subjectId]?.length)
+      .filter((f) => opening || !locations[f.subjectId]?.length)
       .map((f) => ({
         type: "locate",
         subjectId: f.subjectId,
@@ -1372,7 +1372,7 @@ export class WorldScenes {
     await this.#save(row, undefined, row.claim!);
   }
   async #background(row: SceneRow) {
-    await this.#locations(row);
+    const currentLocations = await this.#locations(row);
     // An older worker may have paused with a completed call based on stale reads.
     if (row.data.work && row.data.basis.length)
       await this.agent.store
@@ -1405,7 +1405,7 @@ export class WorldScenes {
     // An unfinished pre-upgrade request still advertises the old output contract.
     if (
       d.backgroundMessages &&
-      !JSON.parse(d.backgroundMessages[0]!.content).backgroundVersion
+      JSON.parse(d.backgroundMessages[0]!.content).backgroundVersion !== 3
     ) {
       if (
         d.work &&
@@ -1431,9 +1431,15 @@ export class WorldScenes {
           role: "user",
           content: JSON.stringify({
             request: { ...request, at: d.at },
-            backgroundVersion: 2,
+            backgroundVersion: 3,
             initialContext: context.initialContext,
-            controlledActorIds: context.controlledActorIds,
+            currentLocations,
+            controlledActorIds: [
+              ...new Set([
+                ...context.controlledActorIds,
+                ...d.peerConditions!.map((p) => p.actorId),
+              ]),
+            ],
             otherPlayers: d.peerConditions,
             sleepingPlayerIds: await this.#sleepingPlayers(
               row,
@@ -1524,7 +1530,12 @@ export class WorldScenes {
               requests: answer.requests,
               results: read.results,
               currentAt: d.at,
-              controlledActorIds: read.controlledActorIds,
+              controlledActorIds: [
+                ...new Set([
+                  ...read.controlledActorIds,
+                  ...d.peerConditions!.map((p) => p.actorId),
+                ]),
+              ],
               otherPlayers: d.peerConditions,
               sleepingPlayerIds: await this.#sleepingPlayers(
                 row,
@@ -1611,16 +1622,6 @@ export class WorldScenes {
           creations: [...prior.creations, ...answer.creations],
           unknowns: remainingQuestions(prior, answer, inspected),
         };
-        if (
-          !d.contextNeed.worldChanged &&
-          !answer.facts.length &&
-          !answer.beliefs.length &&
-          !answer.creations.length &&
-          decision.participants.length === prior.participants.length
-        )
-          throw new SceneResponseError(
-            "不足文脈を補う変更がありません。世界の条件を確認してください",
-          );
       } else if (answer.type === "background") {
         decision = answer;
         if (established) {
@@ -1808,7 +1809,7 @@ export class WorldScenes {
             : await this.agent.intentView(d.worldId, id, d.at, d.purpose);
       await this.agent.store.context(d.worldId, d.basis).validate();
       d.background = decision;
-      await this.#initializeLocations(row);
+      await this.#initializeLocations(row, !d.contextNeed && !established);
       if (cited) Object.assign(d.sources!, cited);
       delete d.work;
       delete d.backgroundMessages;
@@ -2128,7 +2129,19 @@ export class WorldScenes {
             ...(livePlayers.length ? { livePlayers } : {}),
             ...(received.length ? { receivedContacts: received } : {}),
             ...(d.peerConditions?.length
-              ? { otherPlayers: d.peerConditions }
+              ? {
+                  otherPlayers: d.peerConditions.map((p) => ({
+                    ...p,
+                    controlledByPlayer: true,
+                    contactChannel: bg.participants.includes(p.actorId)
+                      ? "participant"
+                      : sleeping.has(p.actorId)
+                        ? null
+                        : livePlayers.some((live) => live.actorId === p.actorId)
+                          ? "liveContacts"
+                          : "callsToPlayers",
+                  })),
+                }
               : {}),
             sleepingPlayerIds: [...sleeping],
             ...(observation
