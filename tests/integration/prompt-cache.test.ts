@@ -29,6 +29,54 @@ beforeEach(async () => {
   isolated = isolatedDatabases();
   await isolated.setup();
 });
+
+test("Geminiのキャッシュ作成が429で拒否されたら確定して保留し、再開時に未確定扱いで残さない", async () => {
+  const transport = vi.fn<typeof fetch>().mockImplementation(async (url) => {
+    if (String(url).endsWith(":countTokens"))
+      return Response.json({ totalTokens: 5000 });
+    if (String(url).endsWith("/cachedContents"))
+      return Response.json(
+        {
+          error: {
+            code: 429,
+            status: "RESOURCE_EXHAUSTED",
+            message: "quota exceeded",
+          },
+        },
+        { status: 429 },
+      );
+    return Response.json({
+      id: randomUUID(),
+      model: "gemini-3.8-flash",
+      choices: [{ finish_reason: "stop", message: { content: '{"ok":true}' } }],
+      usage: { prompt_tokens: 6000, completion_tokens: 20, total_tokens: 6020 },
+    });
+  });
+  const env = environment(),
+    pool = isolated.databases.postgres;
+  const client = new LlmClient(pool, env, transport),
+    id = randomUUID();
+  await client.ledger.setup();
+  await expect(
+    client.complete(id, "scene-resolve", messages("問い")),
+  ).rejects.toThrow("HTTP 429で拒否");
+  expect(await client.ledger.summary()).toMatchObject({
+    unsettled: 0,
+    upperCostUsd: 0,
+    calls: 1,
+  });
+  await new LlmClient(pool, env, transport).complete(
+    id,
+    "scene-resolve",
+    messages("問い"),
+  );
+  expect(
+    transport.mock.calls.filter(([url]) =>
+      String(url).endsWith("/cachedContents"),
+    ),
+  ).toHaveLength(1);
+  expect((await client.ledger.summary()).unsettled).toBe(0);
+});
 afterEach(async () => {
   await isolated.close();
 });
