@@ -18,13 +18,23 @@ export class ResponseFormatError extends UncertainResponse {
     readonly raw: unknown,
     readonly missingBody: boolean,
     message = "受信したLLM応答の形式を確認できません",
+    readonly body?: string,
   ) {
-    super({ type: "format", raw, missingBody }, message);
+    super(
+      {
+        type: "format",
+        raw,
+        missingBody,
+        ...(body !== undefined ? { body } : {}),
+      },
+      message,
+    );
   }
 }
 export type SavedCompletion = {
   rawResponse?: unknown;
   formatAttempts?: number;
+  formatHistory?: string[];
   upperModel?: boolean;
   id: string;
   model: string;
@@ -145,6 +155,10 @@ export class BudgetLedger {
             throw new ResponseFormatError(
               diagnostic.raw,
               diagnostic.missingBody === true,
+              undefined,
+              "body" in diagnostic && typeof diagnostic.body === "string"
+                ? diagnostic.body
+                : undefined,
             );
           throw new BudgetUnavailable(
             "送信済み要求の結果が未確定です。自動では再送しません",

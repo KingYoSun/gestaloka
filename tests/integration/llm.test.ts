@@ -66,7 +66,11 @@ test.each(["missing", "missing-envelope", "json", "schema", "envelope"])(
                   ? {}
                   : {
                       content:
-                        fault === "schema" ? '{"wrong":true}' : "INVALID JSON",
+                        fault === "schema"
+                          ? '{"wrong":true}'
+                          : fault === "envelope"
+                            ? '{"concluded":false,"narrative":"本文"}'
+                            : "INVALID JSON",
                     }
                 : { content: '{"connected":true}' },
             },
@@ -113,6 +117,10 @@ test.each(["missing", "missing-envelope", "json", "schema", "envelope"])(
       validate,
     );
     expect(JSON.parse(result.content)).toEqual({ connected: true });
+    if (fault === "envelope")
+      expect(result.formatHistory).toEqual(
+        Array(3).fill('{"concluded":false,"narrative":"本文"}'),
+      );
     expect(models).toEqual(
       fault.startsWith("missing")
         ? ["deepseek-flash", "gpt-6-luna"]

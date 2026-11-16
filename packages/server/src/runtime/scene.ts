@@ -119,10 +119,14 @@ type Work = {
   id: string;
   actorId?: string;
   formatAttempts?: number;
+  repairConclusion?: boolean;
   kind: "background" | "resolve" | "intent" | "result";
   messages: ChatMessage[];
   target: "default" | "resolution";
 };
+function workConclusion(work: Work) {
+  return work.repairConclusion ?? sceneRepairConclusion(work.messages);
+}
 export type SceneData = {
   playVersion?: 4;
   turns?: true;
@@ -1133,6 +1137,15 @@ export class WorldScenes {
     if (response.finishReason !== "stop")
       throw new SceneResponseError("シーンのモデル応答が未完了です");
     if (response.formatAttempts || response.upperModel) {
+      if (response.formatHistory?.length)
+        work.repairConclusion ??=
+          workConclusion(work) ??
+          sceneRepairConclusion(
+            response.formatHistory.map((content): ChatMessage => ({
+              role: "assistant",
+              content,
+            })),
+          );
       work.formatAttempts =
         (work.formatAttempts ?? 0) + (response.formatAttempts ?? 0);
       if (response.upperModel) work.target = "resolution";
@@ -2213,7 +2226,7 @@ export class WorldScenes {
         },
         "default",
       );
-      const conclusion = sceneRepairConclusion(d.work!.messages);
+      const conclusion = workConclusion(d.work!);
       if (
         value.value &&
         typeof value.value === "object" &&
@@ -3050,9 +3063,7 @@ export class WorldScenes {
     work.id = randomUUID();
     work.messages.push({ role: "assistant", content: response.content });
     const conclusion =
-      work.kind === "resolve"
-        ? sceneRepairConclusion(work.messages)
-        : undefined;
+      work.kind === "resolve" ? workConclusion(work) : undefined;
     work.messages.push({
       role: "user",
       content: JSON.stringify({

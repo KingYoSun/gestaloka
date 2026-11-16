@@ -505,6 +505,7 @@ export class LlmClient {
       );
     let upper = false,
       previous: ResponseFormatError | undefined;
+    const formatHistory: string[] = [];
     const structured =
       /^(scene-|world-|initial-|narrative-inspection$|intent$)/.test(role);
     for (let attempt = formatAttempts; attempt < 4; attempt++) {
@@ -517,9 +518,10 @@ export class LlmClient {
               {
                 role: "assistant",
                 content:
-                  typeof previous.raw === "string"
+                  previous.body ??
+                  (typeof previous.raw === "string"
                     ? previous.raw
-                    : canonical(previous.raw),
+                    : canonical(previous.raw)),
               },
               {
                 role: "user",
@@ -574,11 +576,18 @@ export class LlmClient {
         return {
           ...response,
           ...(attempt > formatAttempts || upper
-            ? { formatAttempts: attempt - formatAttempts, upperModel: upper }
+            ? {
+                formatAttempts: attempt - formatAttempts,
+                upperModel: upper,
+                formatHistory,
+              }
             : {}),
         };
       } catch (error) {
         if (!(error instanceof ResponseFormatError) || repair) throw error;
+        const body =
+          error.body ?? (typeof error.raw === "string" ? error.raw : undefined);
+        if (body?.trim()) formatHistory.push(body);
         previous = error;
       }
     }
@@ -1154,6 +1163,7 @@ export class LlmClient {
                 received,
                 !text?.trim(),
                 error.message,
+                text ?? undefined,
               );
             }
             if (
