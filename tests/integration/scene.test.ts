@@ -1668,7 +1668,16 @@ test("返答の受容から本人へ戻り、終了・再開でも履歴・未�
   const movement = (await agent.view(world, actor, 2000)).observations.find(
     (o) => o.text === "一歩近づいた",
   );
-  expect(movement?.period).toEqual({ from: beganAt, until: beganAt + 1000 });
+  expect(movement?.period).toEqual({
+    from: beganAt + 1000,
+    until: beganAt + 1000,
+  });
+  const occurrence = (await access.scenes.latest(
+    construction,
+  ))!.data.events.find((e) =>
+    e.receipts.some((r) => r.text === "一歩近づいた"),
+  );
+  expect(occurrence?.period).toEqual({ from: beganAt, until: beganAt + 1000 });
   const finalCount = modelCalls;
   await access.scenes.tick(scene.id);
   expect(modelCalls).toBe(finalCount);
