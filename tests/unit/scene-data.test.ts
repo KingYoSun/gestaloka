@@ -10,7 +10,6 @@ import {
   SceneContext,
   sceneView,
   sceneResponse,
-  legacyCoverageFailure,
   sceneArrivals,
   type SceneBackground,
 } from "../../packages/server/src/runtime/scene-data.js";
@@ -456,68 +455,53 @@ test.each(["decide", "finished"] as const)(
     const original = structuredClone(value);
     const { responseCoverage: _coverage, ...expected } = value;
     void _coverage;
-    expect(sceneResponse(value)).toEqual({ ...expected, departures: [] });
+    expect(sceneResponse(value, true, events)).toMatchObject({
+      ...expected,
+      decisions: {
+        ...expected.decisions,
+        [npc]: { pending: "選んだ行為の未実行部分を続ける" },
+      },
+      arrivals: [],
+      departures: [],
+    });
     expect(value).toEqual(original);
   },
 );
 
-test("旧保存出力の診断フィールドだけを捨て、出来事・到着受容・判断先は変えない", () => {
-  const obsolete = {
-    code: "invalid_type",
-    path: ["responseCoverage", 0, "explanation"],
-    message: "旧診断の説明がない",
-  };
-  expect(legacyCoverageFailure(JSON.stringify([obsolete]))).toBe(true);
-  expect(
-    legacyCoverageFailure(
-      JSON.stringify([
-        obsolete,
-        { ...obsolete, path: ["events", 0, "actorId"] },
-      ]),
-    ),
-  ).toBe(false);
-  expect(legacyCoverageFailure("行動主体が不正です")).toBe(false);
-  const value = {
+test("旧保存出力は境界で受容契約へ変換し、新しいモデル出力には旧配送欄を認めない", () => {
+  const legacy = {
     type: "scene",
     events: [
       {
-        actorId: npc,
-        text: "本人が選んだ発言",
-        locations: [{ subjectId: npc, text: "道端", aboutIds: [place] }],
-        receipts: [{ observerId: actor, text: "本人の発言が届いた" }],
+        actorId: actor,
+        text: "声をかけた",
+        locations: [{ subjectId: actor, text: "道端", aboutIds: [place] }],
+        receipts: [],
       },
     ],
-    decisions: { [actor]: "decide", [npc]: "pending" },
-    newDecisions: [npc],
-    arrivals: [{ eventIndex: 0, observerId: npc, text: "前の声が届いた" }],
-    elapsedMs: 0,
-    responseCoverage: [
+    callsToPlayers: [
       {
-        requestPart: "未回答の問い",
-        outcome: "pending",
-        evidence: [],
+        eventIndex: 0,
+        observerId: npc,
+        positionRelationId: randomUUID(),
+        text: "声が届いた",
       },
     ],
+    decisions: { [actor]: "pending" },
+    newDecisions: [],
+    responseCoverage: [],
   };
-  const original = structuredClone(value);
-  const { responseCoverage: _coverage, ...expected } = value;
-  void _coverage;
-  expect(sceneResponse(value)).toEqual({ ...expected, departures: [] });
-  const { arrivals: _arrivals, ...withoutArrivals } = expected;
-  void _arrivals;
-  expect(sceneResponse(withoutArrivals)).toEqual({
-    ...withoutArrivals,
-    arrivals: [],
-    departures: [],
+  const parsed = sceneResponse(legacy, true);
+  expect(parsed.type).toBe("scene");
+  if (parsed.type !== "scene") throw Error("scene");
+  expect(parsed.events[0]!.receipts).toEqual([
+    { observerId: npc, text: "声が届いた" },
+  ]);
+  expect(parsed.decisions[actor]).toEqual({
+    pending: "選んだ行為の未実行部分を続ける",
   });
-  expect(value).toEqual(original);
-  expect(() => sceneResponse({ ...expected, elapsedMs: -1 })).toThrow();
-  expect(() =>
-    sceneResponse({ ...expected, events: [{ actorId: "invalid" }] }),
-  ).toThrow();
-  expect(() =>
-    sceneResponse({ ...expected, decisions: { [actor]: "unknown" } }),
-  ).toThrow();
+  expect(() => sceneResponse(legacy)).toThrow();
+  expect(legacy.callsToPlayers).toHaveLength(1);
 });
 
 test("本人条件を観測や自己解釈と分離し、背景の他者条件を本人へ混ぜない", () => {
@@ -560,7 +544,7 @@ test("既存の声を後から加わったNPCへ届け、発言や既存受容�
     },
   ];
   const arrival = {
-    eventIndex: 0,
+    eventId: history[0]!.id,
     observerId: npc,
     text: "手順と注意点を教えてほしいという声が届いた",
   };
@@ -615,7 +599,7 @@ test("既存の声を後から加わったNPCへ届け、発言や既存受容�
   expect(() =>
     sceneArrivals(
       history,
-      [{ ...arrival, eventIndex: 7 }],
+      [{ ...arrival, eventId: randomUUID() }],
       bg.participants,
       actor,
       0,

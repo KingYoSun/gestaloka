@@ -6,7 +6,6 @@ import type { WorldConstruction } from "./construction.js";
 import { ConstructionStateError } from "./construction.js";
 import { SharedTurns } from "./shared-turns.js";
 import { PlayerContacts } from "./player-contact.js";
-import type { SceneRow } from "./scene.js";
 
 export const SceneSelection = z
   .object({
@@ -303,37 +302,6 @@ export class SharedScenes {
       { sceneId: row.scene_id },
       row.deadline,
     );
-  }
-  async contact(
-    db: pg.PoolClient,
-    scene: SceneRow,
-    contacts: Map<string, string[]>,
-  ) {
-    // The world lock and the staged call are saved in the caller's transaction.
-    const kind = scene.data.soloBot ? "bot" : "human";
-    await this.open(
-      db,
-      scene.construction_id,
-      scene.actor_id,
-      scene.id,
-      scene.data.at,
-      scene.data.commandId,
-      kind,
-    );
-    const row = (
-      await db.query<SharedRow>(
-        "UPDATE world_shared_scene SET phase='inviting' WHERE scene_id=$1 RETURNING *",
-        [scene.id],
-      )
-    ).rows[0]!;
-    // A later, distinct call in the same solo scene may invite a former recipient again.
-    for (const [actor, context] of contacts) {
-      await db.query(
-        "DELETE FROM world_scene_invitation WHERE scene_id=$1 AND actor_id=$2 AND state IN ('declined','expired')",
-        [scene.id, actor],
-      );
-      await this.invite(db, row, actor, context, true);
-    }
   }
   async select(scene: string, plan: Selection, purpose: string) {
     const original = await this.get(scene);

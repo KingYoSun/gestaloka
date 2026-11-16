@@ -114,6 +114,7 @@ export const SceneEvent = z
         .object({
           observerId: id,
           text,
+          at: z.number().int().nonnegative().safe().optional(),
           information: z.array(InformationReference).optional(),
         })
         .strict(),
@@ -131,29 +132,29 @@ export type RecordedSceneEvent = z.infer<typeof SceneEvent> & {
   period: z.infer<typeof Period>;
   inputId?: string;
 };
+const ActionEvent = SceneEvent.extend({
+  locations: z.array(LocationOp.omit({ type: true })).min(1),
+}).refine((e) => e.locations.some((p) => p.subjectId === e.actorId), {
+  path: ["locations"],
+  message: "行動主体の結果時点の所在地が必要です",
+});
 export const SceneStep = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("scene"),
-      events: z.array(
-        SceneEvent.extend({
-          locations: z.array(LocationOp.omit({ type: true })).min(1),
-        }).refine((e) => e.locations.some((p) => p.subjectId === e.actorId), {
-          path: ["locations"],
-          message: "行動主体の結果時点の所在地が必要です",
-        }),
-      ),
-      arrivals: z
+      events: z
         .array(
-          z
-            .object({
-              eventIndex: z.number().int().nonnegative(),
-              observerId: id,
-              text,
-            })
-            .strict(),
+          z.union([
+            ActionEvent,
+            z
+              .object({
+                eventId: id,
+                receipts: SceneEvent.shape.receipts.min(1),
+              })
+              .strict(),
+          ]),
         )
-        .default([]),
+        .min(1),
       departures: z
         .array(
           z
@@ -162,97 +163,144 @@ export const SceneStep = z.discriminatedUnion("type", [
         )
         .default([]),
       concluded: z.literal(true).optional(),
-      decisions: z.record(id, z.enum(["pending", "finished", "decide"])),
-      newDecisions: z.array(id),
-      callsToPlayers: z
-        .array(
-          z
-            .object({
-              eventIndex: z.number().int().nonnegative(),
-              observerId: id,
-              positionRelationId: id.describe(
-                "対象本人のotherPlayers.locationsにある最新所在地のid",
-              ),
-              text,
-            })
-            .strict(),
-        )
-        .optional(),
-      liveContacts: z
-        .array(
-          z
-            .object({
-              eventIndex: z.number().int().nonnegative(),
-              observerId: id,
-              // Null means the action occurred but the contact did not reach this player.
-              receipt: text.nullable(),
-            })
-            .strict(),
-        )
-        .optional(),
+      decisions: z.record(
+        id,
+        z.union([
+          z.enum(["finished", "decide"]),
+          z.object({ pending: text }).strict(),
+        ]),
+      ),
       elapsedMs: z.number().int().nonnegative().safe().default(0),
-      needsContext: ContextNeed.nullable().optional(),
       belongings: z
         .array(z.string())
         .optional()
         .describe(
-          "今回成立した出来事による物品・保管先・技能の操作。1件の操作を表すJSONを1要素に書く",
+          "今回成立した出来事による物品・保管先・技能の操作。1件を表すJSONを1要素に書く",
         ),
     })
     .strict(),
-  z.object({ type: z.literal("boundary"), reason: text }).strict(),
 ]);
-// After the observation lookup, resolve the observation before requesting other context.
-export const ObservedStep = SceneStep.options[0]
-  .omit({ needsContext: true })
-  .extend({
-    events: z.array(SceneStep.options[0].shape.events.element).min(1),
-    decisions: z.record(
-      id,
-      z.union([
-        z.enum(["finished", "decide"]),
-        z.object({ pending: z.string().trim().min(1) }).strict(),
-      ]),
-    ),
-  });
-export function sceneResponse(value: unknown, observed = false) {
-  // 保存済みworkの旧診断は、出来事や判断へ影響させない。
-  const step =
-    value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.entries(value).filter(([key]) => key !== "responseCoverage"),
-        )
-      : value;
-  return observed
-    ? { ...ObservedStep.parse(step), needsContext: undefined }
-    : SceneStep.parse(step);
-}
+const LegacyBoundary = z
+  .object({ type: z.literal("boundary"), reason: text })
+  .strict();
 
-export function legacyCoverageFailure(message?: string) {
-  try {
-    const issues: unknown = JSON.parse(message ?? "null");
-    return (
-      Array.isArray(issues) &&
-      issues.length > 0 &&
-      issues.every(
-        (issue: unknown) =>
-          issue !== null &&
-          typeof issue === "object" &&
-          "path" in issue &&
-          Array.isArray(issue.path) &&
-          issue.path[0] === "responseCoverage",
-      )
-    );
-  } catch {
-    return false;
+/** Read old, unaccepted model work at the protocol boundary, never as a new output contract. */
+export function legacySceneResponse(
+  value: unknown,
+  history: RecordedSceneEvent[] = [],
+  intentions: { actorId: string; actionText: string }[] = [],
+) {
+  if (!value || typeof value !== "object") return value;
+  const v = structuredClone(value) as {
+    type: string;
+    events: (
+      | z.infer<typeof SceneEvent>
+      | { eventId: string; receipts: z.infer<typeof SceneEvent>["receipts"] }
+    )[];
+    callsToPlayers?: { eventIndex: number; observerId: string; text: string }[];
+    liveContacts?: {
+      eventIndex: number;
+      observerId: string;
+      receipt: string | null;
+    }[];
+    arrivals?: { eventIndex: number; observerId: string; text: string }[];
+    decisions: Record<string, string | { pending: string }>;
+    needsContext?: z.infer<typeof ContextNeed> | null;
+    [key: string]: unknown;
+  };
+  if (v.type !== "scene") return v;
+  for (const c of [...(v.callsToPlayers ?? []), ...(v.liveContacts ?? [])]) {
+    const message = "text" in c ? c.text : c.receipt;
+    if (message && v.events[c.eventIndex])
+      v.events[c.eventIndex]!.receipts.push({
+        observerId: c.observerId,
+        text: message,
+      });
   }
+  for (const a of v.arrivals ?? []) {
+    const event = history[a.eventIndex];
+    if (!event)
+      throw new SceneResponseError("保存済み受容の出来事がありません");
+    v.events.push({
+      eventId: event.id,
+      receipts: [{ observerId: a.observerId, text: a.text }],
+    });
+  }
+  for (const [actor, status] of Object.entries(v.decisions ?? {}))
+    if (
+      status === "pending" ||
+      (status === "finished" &&
+        v.needsContext?.remainingActions?.[actor]?.trim())
+    )
+      v.decisions[actor] = {
+        pending:
+          v.needsContext?.remainingActions?.[actor] ??
+          intentions.find((i) => i.actorId === actor)?.actionText ??
+          "選んだ行為の未実行部分を続ける",
+      };
+  for (const key of [
+    "callsToPlayers",
+    "liveContacts",
+    "arrivals",
+    "needsContext",
+    "responseCoverage",
+  ])
+    delete v[key];
+  return v;
+}
+export function sceneResponse(
+  value: unknown,
+  legacy = false,
+  history: RecordedSceneEvent[] = [],
+  intentions: { actorId: string; actionText: string }[] = [],
+) {
+  const reader = legacy
+    ? z.discriminatedUnion("type", [
+        SceneStep.options[0].extend({
+          newDecisions: z.array(id).default([]),
+          events: z.array(
+            z.union([
+              SceneEvent.extend({
+                locations: z.array(LocationOp.omit({ type: true })).default([]),
+              }),
+              z
+                .object({
+                  eventId: id,
+                  receipts: SceneEvent.shape.receipts.min(1),
+                })
+                .strict(),
+            ]),
+          ),
+        }),
+        LegacyBoundary,
+      ])
+    : SceneStep;
+  const step = reader.parse(
+    legacy ? legacySceneResponse(value, history, intentions) : value,
+  );
+  if (step.type !== "scene") return step;
+  return {
+    ...step,
+    newDecisions:
+      "newDecisions" in step && Array.isArray(step.newDecisions)
+        ? (step.newDecisions as string[])
+        : [],
+    events: step.events.filter(
+      (e): e is z.infer<typeof ActionEvent> => "actorId" in e,
+    ),
+    arrivals: step.events.flatMap((e) =>
+      "eventId" in e
+        ? e.receipts.map((p) => ({ eventId: e.eventId, ...p }))
+        : [],
+    ),
+  };
 }
 
 /** Add a new receiver to an existing, still-staged occurrence without re-emitting it. */
 export function sceneArrivals(
   events: RecordedSceneEvent[],
   arrivals: {
-    eventIndex: number;
+    eventId: string;
     observerId: string;
     text: string;
     information?: z.infer<typeof InformationReference>[] | undefined;
@@ -268,23 +316,23 @@ export function sceneArrivals(
       event: RecordedSceneEvent;
       receipt: RecordedSceneEvent["receipts"][number];
     }[] = [];
-  for (const { eventIndex, ...receipt } of arrivals) {
-    const event = events[eventIndex];
+  for (const { eventId, ...receipt } of arrivals) {
+    const event = events.find((e) => e.id === eventId);
     if (
       !event ||
-      event.period.until !== at ||
       receipt.observerId === actorId ||
       !participants.includes(receipt.observerId)
     )
       throw new SceneResponseError(
         "到達の参照先・受容者・時点がシーンと一致しません",
       );
-    const key = `${eventIndex}:${receipt.observerId}`;
+    const key = `${events.indexOf(event)}:${receipt.observerId}`;
     if (seen.has(key)) continue;
     seen.add(key);
     additions.push({ event, receipt });
   }
-  for (const { event, receipt } of additions) event.receipts.push(receipt);
+  for (const { event, receipt } of additions)
+    event.receipts.push({ ...receipt, at });
   return [...new Set(additions.map((a) => a.receipt.observerId))];
 }
 export const SceneEnding = z.enum([
@@ -320,6 +368,7 @@ export type SceneView = Awaited<ReturnType<WorldAgent["view"]>> & {
   conditions?: Awaited<ReturnType<WorldAgent["intentView"]>>["conditions"];
 };
 export type SceneIntent = {
+  inputId?: string;
   actorId: string;
   actionText: string;
   continuing: boolean;
@@ -390,7 +439,7 @@ export function sceneView(
             id: sceneId(`receipt:${e.id}:${base.observerId}`),
             target: e.id,
             text: p.text,
-            period: e.period,
+            period: p.at === undefined ? e.period : { from: p.at, until: p.at },
           })),
       ),
     ],
@@ -468,13 +517,15 @@ export function sceneAnchors(
       period: e.period,
     });
     for (const p of e.receipts) {
-      const path = sceneId(`${e.id}:${p.observerId}:effect`);
+      const path = sceneId(`${e.id}:${p.observerId}:effect`),
+        receptionPeriod =
+          p.at === undefined ? e.period : { from: p.at, until: p.at };
       edges.push({
         id: path,
         kind: "effect",
         source: e.id,
         target: p.observerId,
-        period: e.period,
+        period: receptionPeriod,
       });
       edges.push({
         id: sceneId(`${e.id}:${p.observerId}:see`),
@@ -482,10 +533,10 @@ export function sceneAnchors(
         source: p.observerId,
         target: e.id,
         text: p.text,
-        period: e.period,
+        period: receptionPeriod,
         observation: {
           aspect: p.text,
-          through: e.period.until,
+          through: receptionPeriod.until,
           sourceIds: [e.id],
           pathIds: [path],
         },

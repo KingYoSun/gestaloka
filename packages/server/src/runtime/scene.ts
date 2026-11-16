@@ -2,7 +2,7 @@ import { npcActors, trackNpcScene } from "./npc-mode.js";
 import { RuntimeExecutions } from "./executions.js";
 import { sceneSources } from "./scene-sources.js";
 import { SharedScenes, SceneSelection } from "./shared-scenes.js";
-import { ContactChanged, type ContactDecision } from "./player-contact.js";
+import { type ContactDecision } from "./player-contact.js";
 import { SceneDrafts, type SceneDraft } from "./scene-drafts.js";
 import type { SharedTurn } from "./shared-turns.js";
 import {
@@ -19,7 +19,6 @@ import {
 import { McpOrigin } from "../http/mcp-origin.js";
 import { RuntimeControl, RuntimeStopped } from "./control.js";
 import { randomUUID } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { parseOutput } from "../llm/prompt.js";
@@ -59,10 +58,8 @@ import {
   SceneContext,
   ContextNeed,
   SceneStep,
-  ObservedStep,
   SceneResponseError,
   sceneResponse,
-  legacyCoverageFailure,
   sceneArrivals,
   sceneAnchors,
   sceneAgenda,
@@ -83,26 +80,17 @@ const BackgroundChoices = [
     .strict(),
   z.object({ type: z.literal("pause"), reason: z.string() }).strict(),
 ] as const;
-function backgroundDecision(withSources: boolean, observing: boolean) {
-  const fact = OpeningBackground.shape.facts.element.omit({
-    sourceRelationIds: true,
-  });
-  const belief = SceneBackground.shape.beliefs
-    .unwrap()
-    .element.omit({ sourceRelationIds: true });
-  const source = { sourceRelationIds: z.array(z.uuid()) };
-  const fields = {
-    facts: z.array(withSources ? fact.extend(source) : fact),
-    beliefs: z.array(withSources ? belief.extend(source) : belief).default([]),
-  };
+function backgroundDecision() {
   return z.discriminatedUnion("type", [
-    observing
-      ? z.object({ type: z.literal("observation"), limits: z.string().min(1) })
-      : OpeningBackground.extend(fields),
-    SceneContext.extend(fields),
+    OpeningBackground,
     ...BackgroundChoices,
   ]);
 }
+const SceneDecision = z.discriminatedUnion("type", [
+  ...SceneStep.options,
+  SceneContext,
+  BackgroundChoices[0],
+]);
 const Narrative = z
   .object({
     text: z.string().min(1),
@@ -132,18 +120,8 @@ type Work = {
   messages: ChatMessage[];
   target: "default" | "resolution";
 };
-function backgroundPaused(content?: string) {
-  if (!content) return false;
-  try {
-    return z
-      .object({ type: z.literal("pause") })
-      .safeParse(parseOutput(content)).success;
-  } catch (error) {
-    if (error instanceof SyntaxError) return false;
-    throw error;
-  }
-}
 export type SceneData = {
+  playVersion?: 4;
   turns?: true;
   soloBot?: boolean;
   npcSoloTurn?: string;
@@ -389,10 +367,54 @@ export class WorldScenes {
       );
       if (result.rowCount !== 1)
         throw new SupersededWorker("シーンの実行が引き継がれました");
+      if (row.state === "result") {
+        for (const reply of (
+          await c.query<{
+            id: string;
+            listener: string;
+            speaker: string;
+            at: string;
+            reply_id: string;
+            queued_text: string;
+            reply_kind: "human" | "bot";
+          }>(
+            "SELECT * FROM world_player_contact WHERE target_scene=$1 AND queued_text IS NOT NULL ORDER BY deadline,id",
+            [row.id],
+          )
+        ).rows) {
+          const target = await this.reception(
+            row.construction_id,
+            reply.listener,
+            reply.speaker,
+            Number(reply.at),
+            reply.reply_id,
+            c,
+          );
+          await c.query(
+            "UPDATE world_player_contact SET target_scene=$2 WHERE id=$1",
+            [reply.id, target.id],
+          );
+          if (target.data.turns && target.state !== "reflecting") {
+            await this.shared.turns.receiveChoice(
+              c,
+              target,
+              reply.listener,
+              reply.reply_kind,
+              reply.reply_id,
+              reply.queued_text,
+            );
+            await c.query(
+              "UPDATE world_player_contact SET queued_text=NULL WHERE id=$1",
+              [reply.id],
+            );
+          } else if (["ready", "active"].includes(target.state))
+            await this.shared.wake(c, target.id);
+        }
+      }
       await trackNpcScene(c, row);
       if (
         !row.data.turns &&
-        row.state === "active" &&
+        ["ready", "active"].includes(row.state) &&
         !row.data.encounter &&
         !row.data.soloProposal &&
         (
@@ -656,6 +678,8 @@ export class WorldScenes {
         ...(shared
           ? { shared: true as const, turns: true as const }
           : { soloBot: kind === "bot" }),
+        playVersion: 4,
+        sources: {},
         recordingVersion: "inspection-record-v2",
         reflectionResponseId: sceneId(`${requestId}:reflection`),
         commandId: requestId,
@@ -715,6 +739,108 @@ export class WorldScenes {
     );
     await this.#enqueue(client, row.id, shared);
     return row;
+  }
+  /** A reception can open context, but never chooses an action for its owner. */
+  async reception(
+    world: string,
+    actor: string,
+    speaker: string,
+    at: number,
+    id: string,
+    db: pg.PoolClient,
+  ) {
+    let row = await this.latest(world, db, false, actor);
+    if (
+      row &&
+      (row.state === "result" || row.data.departures?.[actor] !== undefined)
+    )
+      row = null;
+    if (!row) {
+      const owner = (
+        await db.query<{ user_id: string }>(
+          "SELECT s.user_id FROM world_access a JOIN world_subject s ON s.id=a.subject_id WHERE a.construction_id=$1 AND a.actor_id=$2 AND a.role='player' LIMIT 1",
+          [world, actor],
+        )
+      ).rows[0];
+      const kind =
+        (
+          await db.query<{ kind: "human" | "bot" }>(
+            "SELECT kind FROM world_scene_presence WHERE world_id=$1 AND actor_id=$2 AND active AND expires_at>$3 ORDER BY (kind='human') DESC LIMIT 1",
+            [world, actor, this.shared.now()],
+          )
+        ).rows[0]?.kind ?? "bot";
+      row = await this.open(
+        world,
+        "届いた働きかけを受け止め、本人が次を選べる場面",
+        db,
+        id,
+        actor,
+        false,
+        kind,
+      );
+      row.user_id = owner?.user_id ?? null;
+      row.data.at = row.data.startedAt = Math.max(row.data.at, at);
+      row.data.roots = [...new Set([...row.data.roots, speaker])];
+      await this.#save(row, db);
+      await db.query("UPDATE world_scene SET user_id=$2 WHERE id=$1", [
+        row.id,
+        row.user_id,
+      ]);
+    }
+    return row;
+  }
+  async respond(
+    world: string,
+    actor: string,
+    input: {
+      requestId: string;
+      opportunityId: string;
+      actionText?: string | null;
+    },
+    db: pg.PoolClient,
+    kind: "human" | "bot",
+  ) {
+    const contact = await this.shared.contacts.pending(
+      db,
+      world,
+      actor,
+      input.opportunityId,
+    );
+    if (!contact) return undefined;
+    if (contact.state !== "pending" || contact.deadline <= this.shared.now())
+      throw new ConstructionStateError("この呼びかけには現在返答できません");
+    if (input.actionText == null) {
+      const row = await this.latest(
+        world,
+        db,
+        false,
+        actor,
+        contact.target_scene,
+      );
+      await this.shared.contacts.answer(
+        db,
+        row!,
+        actor,
+        contact.id,
+        input.requestId,
+        null,
+        kind,
+      );
+      return row;
+    }
+    const row = await this.reception(
+      world,
+      actor,
+      contact.speaker,
+      Number(contact.at),
+      input.requestId,
+      db,
+    );
+    await db.query(
+      "UPDATE world_player_contact SET target_scene=$2 WHERE id=$1",
+      [contact.id, row.id],
+    );
+    return this.command(world, "react", db, input, actor, row.id, kind);
   }
   async command(
     world: string,
@@ -808,108 +934,20 @@ export class WorldScenes {
       if (row.state !== "paused")
         throw new ConstructionStateError("保留中のシーンを指定してください");
       row.state = row.data.resumeState!;
-      // Older scenes could request the same observation again without advancing.
-      // Detach that redundant read, preserving the original call and its reservation.
-      const d = row.data,
-        input = d.actions.at(-1);
-      const requests = d.contextRequests?.slice(-2) ?? [];
-      const inputId = d.turn?.id ?? input?.id;
       if (
-        row.state === "acting" &&
-        d.work?.kind === "background" &&
-        input?.state === "running" &&
-        d.observationContext &&
-        d.observationContext.inputId === inputId &&
-        d.contextNeed?.evidence === "observation" &&
-        !d.contextNeed.worldChanged &&
-        requests.length === 2 &&
-        requests.every(
-          (r) =>
-            r.evidence === "observation" &&
-            r.inputId === (d.turn?.inputs[0]?.id ?? input.id) &&
-            r.at === d.at &&
-            isDeepStrictEqual(
-              r.remainingActions,
-              d.contextNeed!.remainingActions,
-            ),
-        )
-      ) {
-        delete d.work;
-        delete d.contextNeed;
-        delete d.backgroundMessages;
-      }
-      const workState =
         row.data.work &&
-        (await this.agent.model.ledger.state(row.data.work.id));
-      if (workState === "pending")
-        throw new ConstructionStateError(
-          "送信済み要求の結果が未確定です。自動では再送しません",
-        );
-      // Older shared turns kept the completed boundary call during reflection.
-      if (
-        row.state === "reflecting" &&
-        d.work?.kind === "resolve" &&
-        workState === "complete"
+        (await this.agent.model.ledger.state(row.data.work.id)) ===
+          "rejected" &&
+        !(await this.agent.store.receipt(
+          row.data.worldId,
+          this.#belongingsCommit(row),
+        )) &&
+        !(await this.agent.store.receipt(
+          row.data.worldId,
+          this.#initializationCommit(row),
+        ))
       )
-        delete d.work;
-      const committedState =
-        d.work?.kind === "background"
-          ? await this.agent.store.receipt(
-              d.worldId,
-              this.#initializationCommit(row),
-            )
-          : d.work?.kind === "resolve"
-            ? await this.agent.store.receipt(
-                d.worldId,
-                this.#belongingsCommit(row),
-              )
-            : undefined;
-      if (
-        row.data.work &&
-        !committedState &&
-        !row.data.limitReached &&
-        !row.data.suspended &&
-        !(
-          row.data.work.kind === "resolve" &&
-          legacyCoverageFailure(row.data.error)
-        ) &&
-        !(
-          row.data.work.kind === "background" &&
-          workState === "complete" &&
-          row.data.events.some(
-            (event) =>
-              row.data.error === `背景情報の参照が取得できません: ${event.id}`,
-          )
-        )
-      ) {
-        const previous = (
-          await client.query(
-            "SELECT response ? 'rejection' AS rejected,response->>'content' AS content FROM llm_call WHERE id=$1",
-            [row.data.work.id],
-          )
-        ).rows[0];
-        if (
-          row.data.contextNeed &&
-          row.data.work.kind === "background" &&
-          backgroundPaused(previous?.content)
-        ) {
-          // Re-read the world for the outstanding action instead of replaying stale query results.
-          delete row.data.work;
-          delete row.data.backgroundMessages;
-        } else if (previous?.rejected) delete row.data.work;
-        else
-          row.data.work = {
-            ...row.data.work,
-            id: randomUUID(),
-            messages: [
-              ...row.data.work.messages,
-              {
-                role: "user",
-                content: JSON.stringify({ validationError: row.data.error }),
-              },
-            ],
-          };
-      }
+        delete row.data.work;
       delete row.data.error;
       delete row.data.limitReached;
       delete row.data.suspended;
@@ -934,8 +972,6 @@ export class WorldScenes {
             : undefined;
       const proposal = row.data.soloProposal;
       if (proposal) {
-        if (command !== "vote" && command !== "finish")
-          throw new ConstructionStateError("終了提案に回答してください");
         if (command === "vote") {
           await this.shared.turns.answer(
             client,
@@ -946,30 +982,22 @@ export class WorldScenes {
           );
           if (!input.continue) row.data.ending = "unanimous";
         }
-        await client.query(
-          "UPDATE world_scene_end_vote SET state='closed' WHERE id=$1",
-          [proposal],
-        );
-        delete row.data.soloProposal;
-        delete row.data.deferredSoloAction;
+        await this.#closeProposal(row, client);
       }
       if (command === "finish" || (command === "vote" && !input.continue))
         row.state = "reflecting";
       else if (action) {
-        const legacy =
-          row.data.soloBot === undefined && !row.data.shared && kind === "bot";
         if (!row.data.shared)
           row.data.soloBot = command === "vote" || kind === "bot";
-        if (legacy && (await this.#savedConclusion(client, row))) {
-          row.data.soloProposal = await this.shared.turns.propose(client, row, [
-            actor,
-          ]);
-          row.data.deferredSoloAction = action;
-        } else
-          this.#startAction(row, actor, {
+        await this.#startAction(
+          row,
+          actor,
+          {
             ...action,
             ...(command === "leave" ? { leave: true } : {}),
-          });
+          },
+          client,
+        );
       }
     }
     row.data.commandId = input.requestId;
@@ -995,11 +1023,22 @@ export class WorldScenes {
       await this.#enqueue(client, row.id, !!row.data.shared);
     return row;
   }
-  #startAction(
+  async #closeProposal(row: SceneRow, db: Pick<pg.Pool, "query">) {
+    if (!row.data.soloProposal) return;
+    await db.query(
+      "UPDATE world_scene_end_vote SET state='closed' WHERE id=$1",
+      [row.data.soloProposal],
+    );
+    delete row.data.soloProposal;
+    delete row.data.deferredSoloAction;
+  }
+  async #startAction(
     row: SceneRow,
     actor: string,
     action: { id: string; text: string; submittedAt?: string; leave?: true },
+    db: Pick<pg.Pool, "query">,
   ) {
+    await this.#closeProposal(row, db);
     row.state = "acting";
     row.data.actions.push({
       ...(row.data.shared ? { actorId: actor } : {}),
@@ -1007,6 +1046,7 @@ export class WorldScenes {
       state: "running",
     });
     const intent = {
+      inputId: action.id,
       actorId: actor,
       actionText: action.text,
       continuing: row.data.pending[actor]?.actionText === action.text,
@@ -1014,31 +1054,6 @@ export class WorldScenes {
     row.data.pending[actor] = intent;
     row.data.intentions[actor] = intent;
     row.data.choices.push(intent);
-  }
-  async #savedConclusion(client: pg.PoolClient, row: SceneRow) {
-    const completed = row.data.actions
-      .filter((a) => a.state === "complete")
-      .map((a) => a.id);
-    const calls = await client.query<{ content: string }>(
-      `SELECT DISTINCT ON (response_id) response->>'content' AS content FROM llm_call
-       WHERE response_id=ANY($1::uuid[]) AND request->>'role'='scene-resolve' AND state='complete'
-       AND response->>'finishReason'='stop' ORDER BY response_id,created_at DESC,id DESC`,
-      [completed],
-    );
-    return calls.rows.some(({ content }) => {
-      try {
-        const step = sceneResponse(presentationEvidence(parseOutput(content)));
-        return (
-          step.type === "scene" &&
-          step.concluded === true &&
-          !step.liveContacts?.some((c) => c.receipt !== null)
-        );
-      } catch (error) {
-        if (error instanceof SyntaxError || error instanceof z.ZodError)
-          return false;
-        throw error;
-      }
-    });
   }
   #budget(row: SceneRow) {
     return row.state === "preparing"
@@ -1087,7 +1102,7 @@ export class WorldScenes {
     if (response.finishReason !== "stop")
       throw new SceneResponseError("シーンのモデル応答が未完了です");
     // 確定後・保存前に止まった行動解決の再開では、確定済みの変更を文脈の変化と見なさない。
-    if (kind === "resolve")
+    if (kind === "resolve") {
       this.#adopt(
         row,
         await this.agent.store.receipt(
@@ -1095,6 +1110,14 @@ export class WorldScenes {
           this.#belongingsCommit(row),
         ),
       );
+      this.#adopt(
+        row,
+        await this.agent.store.receipt(
+          row.data.worldId,
+          this.#initializationCommit(row),
+        ),
+      );
+    }
     if (kind === "resolve" || kind === "intent")
       await this.agent.store
         .context(row.data.worldId, row.data.basis)
@@ -1133,7 +1156,7 @@ export class WorldScenes {
         this.#belongingsCommit(row),
       ),
     );
-    if (row.data.work?.kind === "background")
+    if (row.data.work)
       this.#adopt(
         row,
         await this.agent.store.receipt(
@@ -1288,9 +1311,7 @@ export class WorldScenes {
             { io: "input" },
           ),
         },
-        row.construction_id === process.env.SCENE_DEFAULT_PARTICIPATION_WORLD_ID
-          ? "default"
-          : "resolution",
+        "default",
       );
       const answer = z
         .discriminatedUnion("type", [
@@ -1353,17 +1374,6 @@ export class WorldScenes {
       d.originalAgenda = latest.agenda;
       d.roots = [...new Set([row.actor_id, ...latest.root_ids])];
       d.views = {};
-    } else if (row.state === "acting") {
-      delete d.observationContext;
-      d.contextNeed ??= {
-        evidence: "world",
-        worldChanged: true,
-        reason:
-          "共有世界の更新後の状態を確認し、未実行の行動に必要な背景だけを補う。追加が不要なら空のcontextを返す。",
-        remainingActions: Object.fromEntries(
-          Object.values(d.pending).map((i) => [i.actorId, i.actionText]),
-        ),
-      };
     }
     d.basis = [];
     delete d.peerConditions;
@@ -1372,6 +1382,12 @@ export class WorldScenes {
     await this.#save(row, undefined, row.claim!);
   }
   async #background(row: SceneRow) {
+    const receivedContacts = await this.shared.contacts.received(row.id, [
+      row.actor_id,
+    ]);
+    if (!row.data.work && !row.data.backgroundMessages)
+      for (const receipt of receivedContacts)
+        row.data.at = Math.max(row.data.at, receipt.at);
     const currentLocations = await this.#locations(row);
     // An older worker may have paused with a completed call based on stale reads.
     if (row.data.work && row.data.basis.length)
@@ -1386,35 +1402,9 @@ export class WorldScenes {
     )
       return;
     const d = row.data,
-      established = !d.contextNeed ? d.background : undefined,
-      request = {
-        ...this.#request(row),
-        actionText: d.contextNeed?.reason ?? d.purpose,
-      };
-    const observing =
-      !!d.contextNeed &&
-      (d.contextNeed.evidence ?? "observation") === "observation";
-    if (
-      !d.background &&
-      !d.backgroundMessages &&
-      !d.work &&
-      row.construction_id === process.env.SCENE_HANDOFF_WORLD_ID
-    )
-      d.sources ??= {};
-    const schema = backgroundDecision(!!d.sources, observing);
-    // An unfinished pre-upgrade request still advertises the old output contract.
-    if (
-      d.backgroundMessages &&
-      JSON.parse(d.backgroundMessages[0]!.content).backgroundVersion !== 3
-    ) {
-      if (
-        d.work &&
-        (await this.agent.model.ledger.state(d.work.id)) === "pending"
-      )
-        throw new Error("送信済み要求の結果が未確定です。");
-      delete d.backgroundMessages;
-      delete d.work;
-    }
+      established = d.background,
+      request = this.#request(row);
+    const schema = backgroundDecision();
     if (!d.backgroundMessages) {
       const context = await this.agent.context(request, d.basis, true);
       d.basis = context.dependencies;
@@ -1431,8 +1421,13 @@ export class WorldScenes {
           role: "user",
           content: JSON.stringify({
             request: { ...request, at: d.at },
-            backgroundVersion: 3,
+            backgroundVersion: 4,
             initialContext: context.initialContext,
+            receivedContacts: receivedContacts.map(({ speaker, text, at }) => ({
+              speaker,
+              text,
+              at,
+            })),
             currentLocations,
             controlledActorIds: [
               ...new Set([
@@ -1455,23 +1450,6 @@ export class WorldScenes {
                 }
               : {}),
             ...(d.drafts?.length ? { priorScenes: d.drafts } : {}),
-            ...(d.contextNeed
-              ? {
-                  needsContext: {
-                    ...d.contextNeed,
-                    evidence: observing ? "observation" : "world",
-                  },
-                  stagedScene: {
-                    purpose: d.purpose,
-                    input: d.turn?.continuingActor
-                      ? d.pending[d.turn.continuingActor]?.actionText
-                      : d.actions.at(-1)?.text,
-                    background: d.background,
-                    events: d.events,
-                    intentions: Object.values(d.pending),
-                  },
-                }
-              : {}),
             responseSchema: z.toJSONSchema(schema, { io: "input" }),
           }),
         },
@@ -1482,11 +1460,7 @@ export class WorldScenes {
         d.work = {
           id: randomUUID(),
           kind: "background",
-          target:
-            row.construction_id ===
-            process.env.SCENE_DEFAULT_BACKGROUND_WORLD_ID
-              ? "default"
-              : "resolution",
+          target: "default",
           messages: [
             {
               role: "system",
@@ -1548,295 +1522,269 @@ export class WorldScenes {
         await this.#save(row, undefined, row.claim!);
         continue;
       }
-      if (answer.type === "observation") {
-        const observers = Object.keys(d.contextNeed!.remainingActions);
-        d.observationContext = {
-          inputId: d.turn?.id ?? d.actions.at(-1)!.id,
-          limits: answer.limits,
-          conditions: d.backgroundMessages
-            .filter((m) => m.role === "user")
-            .flatMap((m) => {
-              const page = JSON.parse(m.content);
-              return (
-                page.initialContext ??
-                (page.requests ?? []).map((request: unknown, i: number) => ({
-                  request,
-                  result: page.results[i],
-                }))
-              );
+      await this.#applyContext(row, answer, d.backgroundMessages, established);
+      return;
+    }
+  }
+  async #applyContext(
+    row: SceneRow,
+    answer: SceneBackground | z.infer<typeof SceneContext>,
+    messages: ChatMessage[],
+    established?: SceneBackground,
+  ) {
+    const d = row.data,
+      request = this.#request(row);
+    let decision: SceneBackground;
+    const cited =
+      d.sources && (answer.type === "context" || answer.type === "background")
+        ? sceneSources(messages, [...answer.facts, ...answer.beliefs])
+        : undefined;
+    if (answer.type === "context") {
+      const prior = d.background!;
+      const inspected = new Set<string>();
+      for (const message of messages) {
+        if (message.role !== "user") continue;
+        const page = JSON.parse(message.content);
+        const reads: {
+          request: z.infer<typeof Query>;
+          result: { node?: { id: string } } | null;
+        }[] =
+          page.initialContext ??
+          (page.requests ?? []).map(
+            (request: z.infer<typeof Query>, i: number) => ({
+              request,
+              result: page.results[i],
             }),
-          ...(observers.length ? { observers } : {}),
-        };
-        delete d.work;
-        delete d.backgroundMessages;
-        delete d.contextNeed;
-        await this.#save(row, undefined, row.claim!);
-        return;
-      }
-      let decision: SceneBackground;
-      const cited =
-        d.sources && (answer.type === "context" || answer.type === "background")
-          ? sceneSources(d.backgroundMessages, [
-              ...answer.facts,
-              ...answer.beliefs,
-            ])
-          : undefined;
-      if (d.contextNeed) {
-        if (answer.type !== "context")
-          throw new SceneResponseError(
-            "進行中の背景は追記として補ってください",
           );
-        const prior = d.background!;
-        const inspected = new Set<string>();
-        for (const message of d.backgroundMessages) {
-          if (message.role !== "user") continue;
-          const page = JSON.parse(message.content);
-          const reads: {
-            request: z.infer<typeof Query>;
-            result: { node?: { id: string } } | null;
-          }[] =
-            page.initialContext ??
-            (page.requests ?? []).map(
-              (request: z.infer<typeof Query>, i: number) => ({
-                request,
-                result: page.results[i],
-              }),
-            );
-          for (const { request, result } of reads)
-            if (request.kind === "node" && result?.node?.id === request.id)
-              inspected.add(request.id);
-        }
+        for (const { request, result } of reads)
+          if (request.kind === "node" && result?.node?.id === request.id)
+            inspected.add(request.id);
+      }
+      decision = {
+        ...prior,
+        participants: [
+          ...new Set([...prior.participants, ...answer.participants]),
+        ],
+        facts: [
+          ...prior.facts,
+          ...answer.facts.map((f) => ({ ...f, at: d.at })),
+        ],
+        beliefs: [
+          ...prior.beliefs,
+          ...answer.beliefs.map((f) => ({ ...f, at: d.at })),
+        ],
+        creations: [...prior.creations, ...answer.creations],
+        unknowns: remainingQuestions(prior, answer, inspected),
+      };
+    } else if (answer.type === "background") {
+      decision = answer;
+      if (established) {
+        const added = new Set(
+          answer.participants.filter(
+            (id) => !established.participants.includes(id),
+          ),
+        );
         decision = {
-          ...prior,
-          participants: [
-            ...new Set([...prior.participants, ...answer.participants]),
-          ],
+          ...established,
+          participants: [...established.participants, ...added],
           facts: [
-            ...prior.facts,
-            ...answer.facts.map((f) => ({ ...f, at: d.at })),
+            ...established.facts,
+            ...answer.facts.filter((f) => added.has(f.subjectId)),
           ],
           beliefs: [
-            ...prior.beliefs,
-            ...answer.beliefs.map((f) => ({ ...f, at: d.at })),
+            ...established.beliefs,
+            ...answer.beliefs.filter((f) => added.has(f.subjectId)),
           ],
-          creations: [...prior.creations, ...answer.creations],
-          unknowns: remainingQuestions(prior, answer, inspected),
+          perceptions: [
+            ...established.perceptions,
+            ...answer.perceptions.filter((p) => added.has(p.observerId)),
+          ],
+          creations: [...established.creations, ...answer.creations],
         };
-      } else if (answer.type === "background") {
-        decision = answer;
-        if (established) {
-          const added = new Set(
-            answer.participants.filter(
-              (id) => !established.participants.includes(id),
-            ),
-          );
-          decision = {
-            ...established,
-            participants: [...established.participants, ...added],
-            facts: [
-              ...established.facts,
-              ...answer.facts.filter((f) => added.has(f.subjectId)),
-            ],
-            beliefs: [
-              ...established.beliefs,
-              ...answer.beliefs.filter((f) => added.has(f.subjectId)),
-            ],
-            perceptions: [
-              ...established.perceptions,
-              ...answer.perceptions.filter((p) => added.has(p.observerId)),
-            ],
-            creations: [...established.creations, ...answer.creations],
-          };
-        }
-      } else throw new SceneResponseError("開始時の背景が必要です");
-      if (!d.contextNeed) {
-        const sleeping = await this.#sleepingPlayers(
-          row,
-          decision.participants,
-        );
-        decision.perceptions = decision.perceptions.filter(
-          (p) =>
-            !sleeping.includes(p.observerId) ||
-            established?.perceptions.includes(p),
-        );
-        const missingViews = (d.externalActors ?? []).filter(
-          (id) =>
-            !sleeping.includes(id) &&
-            !decision.perceptions.some((p) => p.observerId === id),
-        );
-        if (missingViews.length)
-          throw new SceneResponseError(
-            `参加確定済みの人物の視点がありません: ${missingViews.join(", ")}`,
-          );
       }
-      const missing = (d.externalActors ?? [row.actor_id]).filter(
-        (id) => !decision.participants.includes(id),
+    } else throw new SceneResponseError("開始時の背景が必要です");
+    if (answer.type !== "context") {
+      const sleeping = await this.#sleepingPlayers(row, decision.participants);
+      decision.perceptions = decision.perceptions.filter(
+        (p) =>
+          !sleeping.includes(p.observerId) ||
+          established?.perceptions.includes(p),
       );
-      if (missing.length)
+      const missingViews = (d.externalActors ?? []).filter(
+        (id) =>
+          !sleeping.includes(id) &&
+          !decision.perceptions.some((p) => p.observerId === id),
+      );
+      if (missingViews.length)
         throw new SceneResponseError(
-          `背景情報に参加確定済みの人物が含まれていません: ${missing.join(", ")}`,
+          `参加確定済みの人物の視点がありません: ${missingViews.join(", ")}`,
         );
-      const controlled = await this.agent.controlledActors(
-        d.worldId,
-        [
-          ...new Set([
-            ...decision.participants,
-            ...decision.facts.map((f) => f.subjectId),
-            ...decision.beliefs.map((f) => f.subjectId),
-            ...decision.perceptions.map((p) => p.observerId),
-          ]),
-        ].filter(
-          (id) =>
-            !(d.externalActors ?? [row.actor_id]).includes(id) &&
-            !d.background?.participants.includes(id),
-        ),
-        true,
+    }
+    const missing = (d.externalActors ?? [row.actor_id]).filter(
+      (id) => !decision.participants.includes(id),
+    );
+    if (missing.length)
+      throw new SceneResponseError(
+        `背景情報に参加確定済みの人物が含まれていません: ${missing.join(", ")}`,
       );
-      if (controlled.size)
-        throw new SceneResponseError(
-          "他プレイヤーをNPCの登場主体にできません。共有世界に確定済みの行動・返答は背景として参照してください",
-        );
-      const initialized = await this.agent.store.receipt(
-        d.worldId,
-        this.#initializationCommit(row),
-      );
-      const initializedIds = new Set(
-        initialized?.changes.nodes
-          .filter((n) => n.kind === "existence")
-          .map((n) => n.id),
-      );
-      const creations = new Set(decision.creations.map((n) => n.id)),
-        context = this.agent.store.context(d.worldId, d.basis),
-        known = new Set<string>();
-      const subjects = new Set([
+    const controlled = await this.agent.controlledActors(
+      d.worldId,
+      [
+        ...new Set([
           ...decision.participants,
-          ...decision.unknowns.flatMap((q) =>
-            typeof q !== "string" && q.targetId ? [q.targetId] : [],
-          ),
           ...decision.facts.map((f) => f.subjectId),
           ...decision.beliefs.map((f) => f.subjectId),
           ...decision.perceptions.map((p) => p.observerId),
         ]),
-        invalidSubjects: {
-          id: string;
-          actualKind: string;
-          requiredKind: "existence";
-        }[] = [];
-      const refs = new Set([
-        ...subjects,
-        ...decision.facts.flatMap((f) => [f.subjectId, ...f.aboutIds]),
-        ...decision.beliefs.flatMap((f) => [f.subjectId, ...f.aboutIds]),
-        ...decision.perceptions.flatMap((p) => [p.observerId, ...p.sourceIds]),
-      ]);
-      for (const id of refs) {
-        const node =
-          (await context.node(id, d.at)) ??
-          (d.events.some((event) => event.id === id)
-            ? { kind: "event" }
-            : null);
-        if (creations.has(id)) {
-          if (
-            node &&
-            !d.background?.creations.some((n) => n.id === id) &&
-            !initializedIds.has(id)
-          )
-            throw new SceneResponseError(
-              "既存の同一性を作り直すことはできません",
-            );
-          if (node) known.add(id);
-        } else {
-          if (!node)
-            throw new SceneResponseError(
-              `背景情報の参照が取得できません: ${id}`,
-            );
-          known.add(id);
-          if (subjects.has(id) && node.kind !== "existence")
-            invalidSubjects.push({
-              id,
-              actualKind: node.kind,
-              requiredKind: "existence",
-            });
-        }
+      ].filter(
+        (id) =>
+          !(d.externalActors ?? [row.actor_id]).includes(id) &&
+          !d.background?.participants.includes(id),
+      ),
+      true,
+    );
+    if (controlled.size)
+      throw new SceneResponseError(
+        "他プレイヤーをNPCの登場主体にできません。共有世界に確定済みの行動・返答は背景として参照してください",
+      );
+    const initialized = await this.agent.store.receipt(
+      d.worldId,
+      this.#initializationCommit(row),
+    );
+    const initializedIds = new Set(
+      initialized?.changes.nodes
+        .filter((n) => n.kind === "existence")
+        .map((n) => n.id),
+    );
+    const creations = new Set(decision.creations.map((n) => n.id)),
+      context = this.agent.store.context(d.worldId, d.basis),
+      known = new Set<string>();
+    const subjects = new Set([
+        ...decision.participants,
+        ...decision.unknowns.flatMap((q) =>
+          typeof q !== "string" && q.targetId ? [q.targetId] : [],
+        ),
+        ...decision.facts.map((f) => f.subjectId),
+        ...decision.beliefs.map((f) => f.subjectId),
+        ...decision.perceptions.map((p) => p.observerId),
+      ]),
+      invalidSubjects: {
+        id: string;
+        actualKind: string;
+        requiredKind: "existence";
+      }[] = [];
+    const refs = new Set([
+      ...subjects,
+      ...decision.facts.flatMap((f) => [f.subjectId, ...f.aboutIds]),
+      ...decision.beliefs.flatMap((f) => [f.subjectId, ...f.aboutIds]),
+      ...decision.perceptions.flatMap((p) => [p.observerId, ...p.sourceIds]),
+    ]);
+    for (const id of refs) {
+      const node =
+        (await context.node(id, d.at)) ??
+        (d.events.some((event) => event.id === id) ? { kind: "event" } : null);
+      if (creations.has(id)) {
+        if (
+          node &&
+          !d.background?.creations.some((n) => n.id === id) &&
+          !initializedIds.has(id)
+        )
+          throw new SceneResponseError(
+            "既存の同一性を作り直すことはできません",
+          );
+        if (node) known.add(id);
+      } else {
+        if (!node)
+          throw new SceneResponseError(`背景情報の参照が取得できません: ${id}`);
+        known.add(id);
+        if (subjects.has(id) && node.kind !== "existence")
+          invalidSubjects.push({
+            id,
+            actualKind: node.kind,
+            requiredKind: "existence",
+          });
       }
-      if (invalidSubjects.length)
-        throw new z.ZodError(
-          invalidSubjects.map((subject) => ({
-            code: "custom",
-            path: [subject.id],
-            params: subject,
-            message:
-              "登場主体・状態や解釈の所有者・観測者にはexistenceのIDを使います。既存の対象を照会し、未提示の背景だけを修正してください。既存IDの種類や表示済みの記録は変更しません。",
-          })),
-        );
-      for (const p of decision.perceptions)
-        if (!decision.participants.includes(p.observerId))
-          throw new SceneResponseError("観測主体が登場人物ではありません");
-      const graph = sceneAnchors(decision, [], d.at, row.id),
-        connected = new Set(known);
-      for (let changed = true; changed;) {
-        changed = false;
-        for (const e of graph.edges)
-          if (connected.has(e.source) || connected.has(e.target)) {
-            if (!connected.has(e.source) || !connected.has(e.target))
-              changed = true;
-            connected.add(e.source);
-            connected.add(e.target);
-          }
-      }
-      if (graph.nodes.some((n) => !connected.has(n.id)))
-        throw new SceneResponseError("背景情報が既存世界に接続していません");
-      d.basis = context.dependencies;
-      const actual = decision.participants.filter((id) => !creations.has(id));
-      if (actual.length) {
-        const context = await this.agent.context(
-          { ...request, rootIds: actual },
-          d.basis,
-          true,
-        );
-        d.basis = context.dependencies;
-      }
-      for (const id of decision.participants)
-        d.views[id] ??= creations.has(id)
-          ? {
-              observerId: id,
-              at: d.at,
-              observations: [],
-              interpretations: [],
-              ...(id === row.actor_id ? {} : { conditions: [] }),
-            }
-          : id === row.actor_id
-            ? await this.agent.view(d.worldId, id, d.at, d.purpose)
-            : await this.agent.intentView(d.worldId, id, d.at, d.purpose);
-      await this.agent.store.context(d.worldId, d.basis).validate();
-      d.background = decision;
-      await this.#initializeLocations(row, !d.contextNeed && !established);
-      if (cited) Object.assign(d.sources!, cited);
-      delete d.work;
-      delete d.backgroundMessages;
-      const extending = !!d.contextNeed;
-      delete d.contextNeed;
-      if (!extending && !established) row.state = "ready";
-      await this.#save(row, undefined, row.claim!);
-      if (
-        d.turns &&
-        row.state === "ready" &&
-        (await this.shared.turns.control(row.id)).flow === "closing"
-      )
-        await this.#transaction((db) => this.shared.wake(db, row.id));
-      if (row.data.shared && !extending)
-        await this.shared.transaction(async (db) => {
-          for (const member of await this.shared.members(row.id, db))
-            if (member.state === "joined")
-              await this.shared.notice(
-                db,
-                row.construction_id,
-                member.actor_id,
-                row.id,
-                "scene_ready",
-              );
-        });
-      return;
     }
+    if (invalidSubjects.length)
+      throw new z.ZodError(
+        invalidSubjects.map((subject) => ({
+          code: "custom",
+          path: [subject.id],
+          params: subject,
+          message:
+            "登場主体・状態や解釈の所有者・観測者にはexistenceのIDを使います。既存の対象を照会し、未提示の背景だけを修正してください。既存IDの種類や表示済みの記録は変更しません。",
+        })),
+      );
+    for (const p of decision.perceptions)
+      if (!decision.participants.includes(p.observerId))
+        throw new SceneResponseError("観測主体が登場人物ではありません");
+    const graph = sceneAnchors(decision, [], d.at, row.id),
+      connected = new Set(known);
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const e of graph.edges)
+        if (connected.has(e.source) || connected.has(e.target)) {
+          if (!connected.has(e.source) || !connected.has(e.target))
+            changed = true;
+          connected.add(e.source);
+          connected.add(e.target);
+        }
+    }
+    if (graph.nodes.some((n) => !connected.has(n.id)))
+      throw new SceneResponseError("背景情報が既存世界に接続していません");
+    d.basis = context.dependencies;
+    const actual = decision.participants.filter((id) => !creations.has(id));
+    if (actual.length) {
+      const context = await this.agent.context(
+        { ...request, rootIds: actual },
+        d.basis,
+        true,
+      );
+      d.basis = context.dependencies;
+    }
+    for (const id of decision.participants)
+      d.views[id] ??= creations.has(id)
+        ? {
+            observerId: id,
+            at: d.at,
+            observations: [],
+            interpretations: [],
+            ...(id === row.actor_id ? {} : { conditions: [] }),
+          }
+        : id === row.actor_id
+          ? await this.agent.view(d.worldId, id, d.at, d.purpose)
+          : await this.agent.intentView(d.worldId, id, d.at, d.purpose);
+    await this.agent.store.context(d.worldId, d.basis).validate();
+    d.background = decision;
+    await this.#initializeLocations(
+      row,
+      answer.type === "background" && !established,
+    );
+    if (cited) Object.assign(d.sources!, cited);
+    delete d.work;
+    delete d.backgroundMessages;
+    const extending = answer.type === "context";
+    delete d.contextNeed;
+    if (!extending && !established) row.state = "ready";
+    await this.#save(row, undefined, row.claim!);
+    if (
+      d.turns &&
+      row.state === "ready" &&
+      (await this.shared.turns.control(row.id)).flow === "closing"
+    )
+      await this.#transaction((db) => this.shared.wake(db, row.id));
+    if (row.data.shared && !extending)
+      await this.shared.transaction(async (db) => {
+        for (const member of await this.shared.members(row.id, db))
+          if (member.state === "joined")
+            await this.shared.notice(
+              db,
+              row.construction_id,
+              member.actor_id,
+              row.id,
+              "scene_ready",
+            );
+      });
   }
   async #peerConditions(row: SceneRow, ids: string[], places: string[]) {
     const d = row.data;
@@ -1934,6 +1882,7 @@ export class WorldScenes {
     return choice.actionText;
   }
   async #action(row: SceneRow) {
+    await this.#locations(row, []);
     const d = row.data,
       turn = d.turn;
     const npcTurnId = turn?.npcActor ? turn.id : d.npcSoloTurn;
@@ -1999,14 +1948,17 @@ export class WorldScenes {
           ? d.turn.inputs.map((i) => i.actorId)
           : [actor];
     for (;;) {
-      if (d.contextNeed) await this.#background(row);
-      if (!d.peerConditions) {
+      let initialContext:
+        | Awaited<ReturnType<WorldAgent["context"]>>["initialContext"]
+        | undefined;
+      if (!d.work) {
         const seed = await this.agent.context(
           this.#request(row),
           d.basis,
           true,
         );
         d.basis = seed.dependencies;
+        initialContext = seed.initialContext;
         await this.#peerConditions(
           row,
           seed.controlledActorIds,
@@ -2019,7 +1971,26 @@ export class WorldScenes {
       const away = new Set(
         await npcActors(this.pool, d.worldId, bg.participants),
       );
-      const external = (d.externalActors ?? []).filter((id) => !away.has(id));
+      const external = (d.externalActors ?? [row.actor_id]).filter(
+        (id) => !away.has(id),
+      );
+      const controllers = await this.agent.controlledActors(
+        d.worldId,
+        bg.participants,
+        true,
+      );
+      const committedWork =
+        d.work?.kind === "resolve" &&
+        (await this.agent.store.receipt(
+          d.worldId,
+          this.#belongingsCommit(row),
+        ));
+      if (!committedWork)
+        for (const id of controllers)
+          if (d.pending[id] && !d.pending[id]!.inputId) {
+            delete d.pending[id];
+            delete d.intentions[id];
+          }
       const sleeping = new Set(
         await this.#sleepingPlayers(row, bg.participants),
       );
@@ -2044,7 +2015,7 @@ export class WorldScenes {
             (id) =>
               !d.intentions[id] &&
               !d.nextDecisions.includes(id) &&
-              !external.includes(id) &&
+              !controllers.has(id) &&
               !sleeping.has(id) &&
               d.departures?.[id] === undefined,
           ),
@@ -2059,7 +2030,11 @@ export class WorldScenes {
         !controlled.some(
           (id) => d.pending[id] || d.nextDecisions.includes(id),
         ) &&
-        ![...away].some((id) => d.pending[id] || d.nextDecisions.includes(id))
+        ![...away].some(
+          (id) => d.pending[id] || d.nextDecisions.includes(id),
+        ) &&
+        !Object.keys(d.pending).some((id) => !external.includes(id)) &&
+        !d.nextDecisions.some((id) => !external.includes(id))
       ) {
         if (d.turn) return this.#completeTurn(row, []);
         delete d.npcSoloTurn;
@@ -2079,12 +2054,36 @@ export class WorldScenes {
             )
           ).has(d.nextDecisions[0]!)
         ) {
-          const returning = await this.pool.query(
-            "SELECT 1 FROM world_npc_scene WHERE scene_id=$1 AND actor_id=$2 AND NOT handled LIMIT 1",
-            [row.id, d.nextDecisions[0]],
-          );
-          if (!returning.rowCount) break;
-          d.nextDecisions.shift();
+          const listener = d.nextDecisions.shift()!;
+          if (external.includes(listener)) {
+            if (d.turn) return this.#completeTurn(row, [listener]);
+          } else {
+            const event = [...d.events]
+              .reverse()
+              .find(
+                (e) =>
+                  e.actorId !== listener &&
+                  e.receipts.some((r) => r.observerId === listener),
+              );
+            const reception = event?.receipts.find(
+              (r) => r.observerId === listener,
+            );
+            if (event && reception) {
+              row.contactDecisions = [
+                {
+                  listener,
+                  speaker: event.actorId,
+                  eventId: event.id,
+                  inputId: event.inputId ?? action.id,
+                  text: reception.text,
+                },
+              ];
+              action.state = "complete";
+              row.state = "active";
+              await this.#save(row, undefined, row.claim!);
+              return false;
+            }
+          }
           continue;
         }
         await this.#chooseIntent(row, d.nextDecisions[0]!);
@@ -2092,10 +2091,6 @@ export class WorldScenes {
         await this.#save(row, undefined, row.claim!);
         continue;
       }
-      const observation =
-        d.observationContext?.inputId === (d.turn?.id ?? action.id)
-          ? d.observationContext
-          : undefined;
       // Replayed calls must use the same snapshot, including the originating contact.
       const savedInput =
           d.work?.kind === "resolve"
@@ -2109,205 +2104,226 @@ export class WorldScenes {
             : await this.shared.contacts.received(row.id, controlled);
       for (const receipt of received) d.at = Math.max(d.at, receipt.at);
       const intents = Object.values(d.pending).filter(
-          (i) => !sleeping.has(i.actorId),
-        ),
-        livePlayers: ContactDecision["player"][] = savedInput
-          ? (savedInput.livePlayers ?? [])
-          : away.has(actor)
-            ? []
-            : await this.shared.contacts.states(
-                row,
-                [
-                  ...new Set([
-                    ...(d.peerConditions ?? []).map((p) => p.actorId),
-                    ...received.map((r) => r.speaker),
-                  ]),
-                ].filter((id) => !bg.participants.includes(id)),
-              );
-      d.at = Math.max(d.at, ...livePlayers.map((p) => p.at));
+        (i) => !sleeping.has(i.actorId),
+      );
       const value = await this.#ask(
-          row,
-          "resolve",
-          "scene-play.md",
-          {
-            background: bg,
-            currentLocations,
-            ...(livePlayers.length ? { livePlayers } : {}),
-            ...(received.length ? { receivedContacts: received } : {}),
-            ...(d.peerConditions?.length
+        row,
+        "resolve",
+        "scene-play.md",
+        {
+          playVersion: 4,
+          initialContext,
+          background: bg,
+          currentLocations,
+          ...(received.length ? { receivedContacts: received } : {}),
+          ...(d.peerConditions?.length
+            ? {
+                otherPlayers: d.peerConditions.map((p) => ({
+                  ...p,
+                  controlledByPlayer: true,
+                })),
+              }
+            : {}),
+          sleepingPlayerIds: [...sleeping],
+          sceneHistory: d.events,
+          controlledView: d.views[actor],
+          ...(await this.#belongings(row)),
+          request: {
+            at: d.at,
+            rootIds: d.roots,
+            controlledActorId: actor,
+            ...(d.soloBot || d.npcSoloTurn ? { scenePurpose: d.purpose } : {}),
+            ...(d.turn
               ? {
-                  otherPlayers: d.peerConditions.map((p) => ({
-                    ...p,
-                    controlledByPlayer: true,
-                    contactChannel: bg.participants.includes(p.actorId)
-                      ? "participant"
-                      : sleeping.has(p.actorId)
-                        ? null
-                        : livePlayers.some((live) => live.actorId === p.actorId)
-                          ? "liveContacts"
-                          : "callsToPlayers",
-                  })),
+                  controlledActorIds: controlled,
+                  playerActorIds: external,
+                  humanInput: d.turn.sourceKind === "human" && !d.turn.reply,
+                  controlledInputs: d.turn.inputs,
+                  reactionTo:
+                    d.turn.reply && !d.turn.idleInput
+                      ? {
+                          inputId: d.turn.sourceId,
+                          seenEventIds: Object.fromEntries(
+                            d.turn.inputs.map((i) => [i.actorId, i.seen]),
+                          ),
+                        }
+                      : null,
                 }
               : {}),
-            sleepingPlayerIds: [...sleeping],
-            ...(observation
-              ? {
-                  observationLimits: observation.limits,
-                  observationConditions: observation.conditions ?? [],
-                  observationObservers: observation.observers ?? controlled,
-                }
-              : {}),
-            sceneHistory: d.events,
-            controlledView: d.views[actor],
-            ...(await this.#belongings(row)),
-            request: {
-              at: d.at,
-              controlledActorId: actor,
-              ...(d.soloBot || d.npcSoloTurn
-                ? { scenePurpose: d.purpose }
-                : {}),
-              ...(d.turn
-                ? {
-                    controlledActorIds: controlled,
-                    playerActorIds: external,
-                    humanInput: d.turn.sourceKind === "human" && !d.turn.reply,
-                    controlledInputs: d.turn.inputs,
-                    reactionTo:
-                      d.turn.reply && !d.turn.idleInput
-                        ? {
-                            inputId: d.turn.sourceId,
-                            seenEventIds: Object.fromEntries(
-                              d.turn.inputs.map((i) => [i.actorId, i.seen]),
-                            ),
-                          }
-                        : null,
-                  }
-                : {}),
-              controlledInputId: action.id,
-              controlledActionText: action.text,
-              leavingActorIds: action.leave ? [actor] : [],
-              departedActorIds: Object.keys(d.departures ?? {}),
-              intentions: intents,
-            },
-            responseSchema: z.toJSONSchema(
-              observation ? ObservedStep : SceneStep,
-              { io: "output" },
-            ),
+            controlledInputId: action.id,
+            controlledActionText: action.text,
+            leavingActorIds: action.leave ? [actor] : [],
+            departedActorIds: Object.keys(d.departures ?? {}),
+            intentions: intents,
           },
-          livePlayers.length ? "default" : "resolution",
-        ),
-        step = sceneResponse(
-          value.value,
-          !!observation && (!savedInput || !!savedInput.observationObservers),
-        );
-      if (step.type === "boundary") {
-        if (observation)
-          throw new SceneResponseError(
-            "取得済みの観測範囲で本人が知覚した結果を返してください。",
+          responseSchema: z.toJSONSchema(SceneDecision, { io: "output" }),
+        },
+        "default",
+      );
+      if (
+        value.value &&
+        typeof value.value === "object" &&
+        "type" in value.value
+      ) {
+        if (value.value.type === "query") {
+          const query = BackgroundChoices[0].parse(value.value),
+            read = await this.agent.read(
+              { request: this.#request(row), dependencies: d.basis },
+              query.requests,
+              true,
+            );
+          d.basis = read.dependencies;
+          await this.#peerConditions(
+            row,
+            read.controlledActorIds,
+            query.requests.flatMap((q) => (q.kind === "node" ? [q.id] : [])),
           );
-        break;
-      }
-      if (observation) {
-        if (
-          step.needsContext ||
-          !step.events.some((e) =>
-            e.receipts.some((r) =>
-              (observation.observers ?? controlled).includes(r.observerId),
-            ),
+          d.work!.messages.push(
+            { role: "assistant", content: value.content },
+            {
+              role: "user",
+              content: JSON.stringify({
+                requests: query.requests,
+                results: read.results,
+                currentAt: d.at,
+                otherPlayers: d.peerConditions,
+                controlledActorIds: read.controlledActorIds,
+              }),
+            },
+          );
+          d.work!.id = randomUUID();
+          await this.#save(row, undefined, row.claim!);
+          continue;
+        }
+        if (value.value.type === "context") {
+          const context = SceneContext.parse(value.value);
+          if (
+            !context.facts.length &&
+            !context.beliefs.length &&
+            !context.creations.length &&
+            !context.participants.length
           )
-        )
-          throw new SceneResponseError(
-            "照会済みの観測範囲から本人に届いた結果をreceiptsに返してください。識別できなかった場合もその範囲を示し、同じ観測を再照会しません。",
-          );
-        delete d.observationContext;
+            throw new SceneResponseError(
+              "追加する局所状況がありません。既に得た条件からシーンの展開と受容を返してください。本人の返答待ちを世界の具体化に戻しません",
+            );
+          await this.#applyContext(row, context, d.work!.messages);
+          continue;
+        }
       }
-      if (step.needsContext)
-        for (const id of d.turn
-          ? Object.keys(step.needsContext.remainingActions)
-          : [actor])
-          if (step.decisions[id] === "finished") step.decisions[id] = "pending";
-      const actors = new Set(intents.map((i) => i.actorId));
-      const contacts = new Map<string, string[]>();
-      const live: ContactDecision[] = [];
+      const step = sceneResponse(
+        value.value,
+        !!savedInput && !savedInput.playVersion,
+        d.events,
+        Object.values(d.pending),
+      );
+      if (step.type === "boundary") break;
+      const actors = new Set(intents.map((i) => i.actorId)),
+        live: ContactDecision[] = [];
+      const known = [
+        ...new Set([
+          ...bg.participants,
+          ...(d.peerConditions ?? []).map((p) => p.actorId),
+          ...received.map((r) => r.speaker),
+        ]),
+      ];
+      const context = this.agent.store.context(d.worldId, d.basis);
+      for (const id of new Set([
+        ...step.events.flatMap((e) => e.receipts.map((r) => r.observerId)),
+        ...step.arrivals.map((r) => r.observerId),
+      ]))
+        if (
+          !known.includes(id) &&
+          (await context.node(id, d.at))?.kind === "existence"
+        )
+          known.push(id);
+      d.basis = context.dependencies;
       for (const event of step.events)
         event.receipts = event.receipts.filter(
           (r) => !sleeping.has(r.observerId),
         );
-      step.arrivals = step.arrivals.filter((a) => !sleeping.has(a.observerId));
+      step.arrivals = step.arrivals.filter((r) => !sleeping.has(r.observerId));
       step.newDecisions = step.newDecisions.filter((id) => !sleeping.has(id));
-      for (const call of step.liveContacts ?? []) {
-        const player = livePlayers.find((p) => p.actorId === call.observerId);
-        const event = step.events[call.eventIndex];
-        const eventId = sceneId(
-          `${row.id}:event:${d.events.length + call.eventIndex}`,
-        );
+      const priorReceptions = new Set(
+        d.events.flatMap((e) =>
+          e.receipts.map((r) => `${e.id}:${r.observerId}`),
+        ),
+      );
+      const receivers = sceneArrivals(
+        d.events,
+        step.arrivals,
+        known,
+        actor,
+        d.at + step.elapsedMs,
+      );
+      const delivered = [
+        ...step.events.flatMap((e, index) =>
+          e.receipts.map((r) => ({
+            eventId: sceneId(`${row.id}:event:${d.events.length + index}`),
+            speaker: e.actorId,
+            inputId:
+              d.turn?.inputs.find((i) => i.actorId === e.actorId)?.id ??
+              action.id,
+            ...r,
+          })),
+        ),
+        ...step.arrivals
+          .filter((r) => !priorReceptions.has(`${r.eventId}:${r.observerId}`))
+          .map((r) => {
+            const e = d.events.find((e) => e.id === r.eventId)!;
+            return {
+              ...r,
+              speaker: e.actorId,
+              inputId: e.inputId ?? action.id,
+            };
+          }),
+      ];
+      const players = await this.agent.controlledActors(
+        d.worldId,
+        delivered.map((r) => r.observerId),
+        true,
+      );
+      for (const reception of delivered) {
         if (
-          !player ||
-          !event ||
-          !controlled.includes(event.actorId) ||
-          (call.receipt !== null && !player.available) ||
-          live.some(
-            (c) =>
-              c.player.actorId === call.observerId && c.eventId === eventId,
-          )
+          !known.includes(reception.observerId) ||
+          d.departures?.[reception.observerId] !== undefined
         )
           throw new SceneResponseError(
-            "接触を試みた本人の出来事、対象プレイヤーと到達の有無を照合してください",
+            "受容先の同一性を確認してください。未具体化の人物は局所状況として定義します",
           );
-        live.push({
-          player,
-          eventId,
-          inputId:
-            d.turn?.inputs.find((i) => i.actorId === event.actorId)?.id ??
-            action.id,
-          speaker: event.actorId,
-          text: call.receipt,
-        });
-        if (call.receipt !== null)
-          event.receipts.push({
-            observerId: player.actorId,
-            text: call.receipt,
+        if (
+          players.has(reception.observerId) &&
+          !bg.participants.includes(reception.observerId)
+        )
+          live.push({
+            eventId: reception.eventId,
+            inputId: reception.inputId,
+            speaker: reception.speaker,
+            listener: reception.observerId,
+            text: reception.text,
           });
-      }
-      for (const call of step.callsToPlayers ?? []) {
-        if (sleeping.has(call.observerId)) continue;
-        const event = step.events[call.eventIndex];
-        if (
-          d.shared ||
-          livePlayers.some((p) => p.actorId === call.observerId) ||
-          !event ||
-          !d.peerConditions?.some(
-            (p) =>
-              p.actorId === call.observerId &&
-              p.locations.some(
-                (location) => location.id === call.positionRelationId,
-              ),
-          ) ||
-          event.receipts.some((r) => r.observerId === call.observerId)
-        )
-          throw new SceneResponseError(
-            "参加要請には呼びかけの出来事と、otherPlayers.locationsにある対象本人の最新所在地idが必要です。statesのrelationIdや過去の所在地idは使えません",
-          );
-        const lines = contacts.get(call.observerId) ?? [];
-        lines.push(call.text);
-        contacts.set(call.observerId, lines);
-        event.receipts.push({ observerId: call.observerId, text: call.text });
+        else if (
+          reception.observerId !== reception.speaker &&
+          !actors.has(reception.observerId)
+        ) {
+          const id = reception.observerId;
+          if (!bg.participants.includes(id)) {
+            bg.participants.push(id);
+            d.views[id] = await this.agent.intentView(
+              d.worldId,
+              id,
+              d.at,
+              d.purpose,
+            );
+          }
+          step.newDecisions.push(id);
+        }
       }
       if (
         Object.keys(step.decisions).sort().join() !== [...actors].sort().join()
       )
         throw new SceneResponseError("シーンで未解決の意図が省略されています");
-      const returnsControl = d.turn
-        ? controlled.every(
-            (id) =>
-              step.decisions[id] === "finished" ||
-              step.decisions[id] === "decide",
-          )
-        : step.decisions[actor] === "finished" ||
-          step.decisions[actor] === "decide" ||
-          step.newDecisions.includes(actor);
       // Keep the scene open for a response to the delivered call.
-      if (live.some((c) => c.text !== null)) delete step.concluded;
+      if (live.length) delete step.concluded;
       for (const e of step.events) {
         if (
           !actors.has(e.actorId) ||
@@ -2316,18 +2332,7 @@ export class WorldScenes {
           ) ||
           e.receipts.some(
             (p) =>
-              (!bg.participants.includes(p.observerId) &&
-                !step.liveContacts?.some(
-                  (c) =>
-                    c.receipt !== null &&
-                    step.events[c.eventIndex] === e &&
-                    c.observerId === p.observerId,
-                ) &&
-                !(step.callsToPlayers ?? []).some(
-                  (c) =>
-                    step.events[c.eventIndex] === e &&
-                    c.observerId === p.observerId,
-                )) ||
+              !known.includes(p.observerId) ||
               d.departures?.[p.observerId] !== undefined,
           ) ||
           new Set(e.receipts.map((p) => p.observerId)).size !==
@@ -2347,14 +2352,9 @@ export class WorldScenes {
       let nextAt = d.at + step.elapsedMs;
       if (!Number.isSafeInteger(nextAt))
         throw new SceneResponseError("シーンの経過時点が不正です");
-      const receivers = sceneArrivals(
-        d.events,
-        step.arrivals,
-        bg.participants,
-        actor,
-        d.events.at(-1)?.period.until ?? d.at,
-      );
-      for (const receiver of receivers)
+      for (const receiver of receivers.filter((id) =>
+        bg.participants.includes(id),
+      ))
         if (actors.has(receiver)) step.decisions[receiver] = "decide";
         else step.newDecisions.push(receiver);
       step.newDecisions = [...new Set(step.newDecisions)];
@@ -2382,13 +2382,32 @@ export class WorldScenes {
               ),
             ),
           );
-          nextAt = await this.#state(row, nextAt, [
-            ...belongingOps(step.belongings ?? []),
-            ...[...positions.values()].map((location) => ({
-              type: "locate" as const,
-              ...location,
-            })),
-          ]);
+          nextAt = await this.shared.transaction(async (db) => {
+            await this.shared.lock(db, row.construction_id);
+            if (!committedWork) {
+              const current = await this.agent.controlledActors(
+                d.worldId,
+                step.events.map((e) => e.actorId),
+                true,
+              );
+              if (
+                step.events.some(
+                  (e) =>
+                    current.has(e.actorId) && !d.pending[e.actorId]?.inputId,
+                )
+              )
+                throw new WorldConflict(
+                  "本人の判断担当が変わりました。現在の入力から解決し直します",
+                );
+            }
+            return this.#state(row, nextAt, [
+              ...belongingOps(step.belongings ?? []),
+              ...[...positions.values()].map((location) => ({
+                type: "locate" as const,
+                ...location,
+              })),
+            ]);
+          });
         } catch (error) {
           if (
             error instanceof WorldConflict ||
@@ -2405,11 +2424,14 @@ export class WorldScenes {
       for (const e of step.events)
         d.events.push({
           ...e,
-          inputId: d.turn
-            ? (d.actions.findLast(
-                (a) => (a.actorId ?? row.actor_id) === e.actorId,
-              )?.id ?? action.id)
-            : action.id,
+          receipts: e.receipts.map((receipt) => ({ ...receipt, at: nextAt })),
+          inputId:
+            d.pending[e.actorId]?.inputId ??
+            (d.turn
+              ? (d.actions.findLast(
+                  (a) => (a.actorId ?? row.actor_id) === e.actorId,
+                )?.id ?? action.id)
+              : action.id),
           id: sceneId(`${row.id}:event:${d.events.length}`),
           period: { from: d.at, until: nextAt },
         });
@@ -2418,19 +2440,15 @@ export class WorldScenes {
       for (const [id, status] of Object.entries(step.decisions)) {
         // Only an in-flight legacy resolve was asked to defer afterObservation verbatim.
         const remaining =
-          typeof status === "object"
-            ? status.pending
-            : observation && savedInput?.afterObservation?.[id];
+          typeof status === "object" ? status.pending : undefined;
         if (remaining && !step.departures.some((exit) => exit.actorId === id)) {
           d.pending[id] = {
             ...d.pending[id]!,
             actionText: remaining,
             continuing: true,
           };
-          step.decisions[id] = "pending";
           delete step.concluded;
-        } else if (status !== "pending") delete d.pending[id];
-        else d.pending[id]!.continuing = true;
+        } else delete d.pending[id];
       }
       d.nextDecisions = [
         ...new Set([
@@ -2486,51 +2504,16 @@ export class WorldScenes {
         });
         return ended;
       }
-      // 他プレイヤーの入力へ引き継いだ後の不足条件は、その入力を受けて判断し直す。
-      // 同じ応答の背景要求を持ち越して、相手の返答をNPCとして生成しない。
-      if (contacts.size || live.some((c) => c.text !== null))
-        delete step.needsContext;
       if (
-        step.needsContext &&
-        (!returnsControl ||
-          Object.keys(step.needsContext.remainingActions).some(
-            (id) => away.has(id) && d.pending[id],
-          ))
+        live.length &&
+        !d.turn &&
+        !d.nextDecisions.some((id) => !external.includes(id)) &&
+        !Object.keys(d.pending).some((id) => !external.includes(id))
       ) {
-        const need = {
-          ...step.needsContext,
-          remainingActions: Object.fromEntries(
-            Object.entries(step.needsContext.remainingActions).filter(
-              ([id, text]) => d.pending[id] && text.trim(),
-            ),
-          ),
-        };
-        for (const [id, text] of Object.entries(need.remainingActions)) {
-          d.pending[id] = {
-            ...d.pending[id]!,
-            actionText: text,
-            continuing: true,
-          };
-        }
-        d.contextNeed = need;
-        (d.contextRequests ??= []).push({
-          inputId: action.id,
-          at: d.at,
-          ...need,
-        });
-      }
-      if (contacts.size) {
-        d.encounter = { inputId: action.id };
-        await this.#transaction(async (db) => {
-          await this.shared.lock(db, row.construction_id);
-          await this.#save(row, db, row.claim!);
-          await this.shared.contact(db, row, contacts);
-        });
-        return false;
-      }
-      if (d.contextNeed) {
+        action.state = "complete";
+        row.state = "active";
         await this.#save(row, undefined, row.claim!);
-        continue;
+        return false;
       }
       if (d.turn) {
         const targets = [
@@ -2552,7 +2535,8 @@ export class WorldScenes {
               ) ||
               step.arrivals.some(
                 (a) =>
-                  a.observerId === id && d.events[a.eventIndex]?.actorId !== id,
+                  a.observerId === id &&
+                  d.events.find((e) => e.id === a.eventId)?.actorId !== id,
               )),
         );
         d.nextDecisions = d.nextDecisions.filter(
@@ -2582,7 +2566,8 @@ export class WorldScenes {
       if (
         !d.turn &&
         !d.nextDecisions.some((id) => away.has(id)) &&
-        (step.decisions[actor] === "finished" ||
+        ((step.decisions[actor] === "finished" &&
+          !d.nextDecisions.some((id) => !external.includes(id))) ||
           step.decisions[actor] === "decide" ||
           step.newDecisions.includes(actor))
       ) {
@@ -2676,6 +2661,13 @@ export class WorldScenes {
   }
   async #reflect(row: SceneRow) {
     const d = row.data;
+    // Older workers retained completed action work after entering reflection.
+    if (
+      d.work &&
+      d.work.kind !== "result" &&
+      (await this.agent.model.ledger.state(d.work.id)) === "complete"
+    )
+      delete d.work;
     if (!d.operationId && d.drafts?.length) {
       d.waitingFor = await this.drafts.waitingFor(row);
       if (d.waitingFor.length) {
@@ -2734,7 +2726,8 @@ export class WorldScenes {
             controlledActorId: row.actor_id,
             actionText: "",
             intentions: Object.values(d.intentions).map((i) => ({
-              ...i,
+              actorId: i.actorId,
+              actionText: i.actionText,
               continuing: true,
             })),
             completedScene: {
@@ -2938,7 +2931,6 @@ export class WorldScenes {
   }
   async #repair(row: SceneRow, error: unknown) {
     if (
-      !(error instanceof ContactChanged) &&
       !(error instanceof WorldConflict) &&
       !(error instanceof SceneResponseError) &&
       !(error instanceof SyntaxError) &&
@@ -2954,14 +2946,6 @@ export class WorldScenes {
         [row.id, row.claim],
       )
     ).rows[0];
-    if (error instanceof ContactChanged) {
-      if (!saved) throw new SupersededWorker("シーンの実行が引き継がれました");
-      delete row.contactDecisions;
-      Object.assign(row, saved);
-      delete row.data.work;
-      await this.#save(row, undefined, row.claim!);
-      return true;
-    }
     if (error instanceof WorldConflict) {
       if (!saved) throw new SupersededWorker("シーンの実行が引き継がれました");
       Object.assign(row, saved);
@@ -3012,21 +2996,78 @@ export class WorldScenes {
           )
         ).rows[0];
         if (!row) throw new Error("シーンが見つかりません");
+        if (row.data.playVersion !== 4) {
+          const d = row.data;
+          if (
+            d.work &&
+            ["resolve", "background"].includes(d.work.kind) &&
+            row.state !== "preparing"
+          ) {
+            const committed =
+              (await this.agent.store.receipt(
+                d.worldId,
+                this.#belongingsCommit(row),
+              )) ??
+              (await this.agent.store.receipt(
+                d.worldId,
+                this.#initializationCommit(row),
+              ));
+            if (!committed) {
+              if (
+                (await this.agent.model.ledger.state(d.work.id)) === "pending"
+              ) {
+                d.resumeState = row.state;
+                d.error =
+                  "送信済み要求の結果が未確定です。保存済みの要求の完了を待ってください";
+                row.state = "paused";
+                await this.#save(row, client);
+                return row;
+              }
+              if (d.work.kind !== "resolve") delete d.work;
+            } else this.#adopt(row, committed);
+          }
+          const chosen = new Set(
+            (
+              await client.query<{ id: string }>(
+                "SELECT id FROM api_request WHERE id=ANY($1::uuid[]) AND response ? 'scene'",
+                [d.actions.map((a) => a.id)],
+              )
+            ).rows.map((r) => r.id),
+          );
+          for (const intent of [
+            ...Object.values(d.pending),
+            ...Object.values(d.intentions),
+          ]) {
+            const action = d.actions.findLast(
+              (a) => (a.actorId ?? row.actor_id) === intent.actorId,
+            );
+            if (action && chosen.has(action.id)) intent.inputId = action.id;
+          }
+          delete d.contextNeed;
+          delete d.observationContext;
+          if (!d.work) delete d.backgroundMessages;
+          d.playVersion = 4;
+        }
+
         if (
           !row.data.turns &&
-          row.state === "active" &&
+          ["ready", "active"].includes(row.state) &&
           !row.data.encounter &&
-          !row.data.soloProposal &&
           !(await npcActors(client, row.data.worldId, [row.actor_id])).length
         ) {
           const reply = await this.shared.contacts.nextReply(client, row.id);
           if (reply) {
             row.data.soloBot = reply.kind === "bot";
             row.data.requestId = row.data.commandId = reply.requestId;
-            this.#startAction(row, reply.actor, {
-              id: reply.requestId,
-              text: reply.actionText,
-            });
+            await this.#startAction(
+              row,
+              reply.actor,
+              {
+                id: reply.requestId,
+                text: reply.actionText,
+              },
+              client,
+            );
           }
         }
         if (
@@ -3130,6 +3171,7 @@ export class WorldScenes {
                 submittedAt: new Date().toISOString(),
               });
               const intent = {
+                inputId: input.id,
                 actorId: input.actorId,
                 actionText: input.text,
                 continuing: false,
@@ -3158,6 +3200,21 @@ export class WorldScenes {
         return row;
       });
     if (row.claim !== claim) return;
+    if (row.state === "acting" && row.data.work?.kind === "background") {
+      const work = row.data.work,
+        stored = (
+          await this.pool.query<{ response: { content: string } }>(
+            "SELECT response FROM llm_call WHERE id=$1 AND state='complete'",
+            [work.id],
+          )
+        ).rows[0];
+      if (stored)
+        await this.#applyContext(
+          row,
+          SceneContext.parse(parseOutput(stored.response.content)),
+          work.messages,
+        );
+    }
     for (;;)
       try {
         await RuntimeControl.check(this.pool, {

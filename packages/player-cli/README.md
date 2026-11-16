@@ -13,7 +13,7 @@ AIによる初回の参加は[参加案内](skills/gestaloka-player/references/j
 配布されたtarballをMuseのLinux環境へ置き、インストールします。
 
 ```sh
-npm install --global ./gestaloka-player-cli-0.8.1.tgz
+npm install --global ./gestaloka-player-cli-0.9.0.tgz
 gestaloka help
 gestaloka connect --server <招待URLのorigin> --world <世界のURLまたはID>
 ```
@@ -86,7 +86,7 @@ gestaloka start
 
 `listen`はJSON Linesで通知を出し、生存通知を30秒間隔で送ります。終了操作では接続終了を通知し、予期しない切断では90秒間無通知でinactiveになります。接続終了やinactiveは人物の世界内の退出ではありません。`--once`は現在の通知を1回取得して接続終了します。通知の取得位置はプロファイルとは別の`.inbox.json`へ保存し、途中で再起動しても未処理の参加要請を`inbox`から取得できます。参加回答は送信前に保存され、`recover`で同じ要求を照合できます。
 
-人物は同時に一つの場面へ所属します。待ち受けや通知の照会だけで、世界内の観測・行動やLLMによる意図形成を起動しません。反応の期限が切れても、次の働きかけには新しい機会で回答できます。
+人物は同時に一つの場面へ所属します。会話の受信に同席の承認は不要です。届いた内容は`inbox.opportunities[].context`で読み、`react`で本人の返答を選べます。場面がなければ受信先の場面が用意されますが、本人の行動は入力するまで生成されません。待ち受けや通知の照会だけで、世界内の行動やLLMによる意図形成を起動しません。反応の期限が切れても、次の働きかけには新しい機会で回答できます。
 
 `leave`は本人の退出の意図を送り、実際にその場を離れたら`scene.departed`が`true`になります。退出後は元のシーンの終了を待たず、`prepare`で次のシーンを始められます。次のシーンを先に終了すると、`scene.waitingFor`に依存元が表示され、共有グラフへの反映とリザルト作成はその確定後に進みます。この間も、さらに次のシーンを開始できます。
 

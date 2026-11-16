@@ -1,3 +1,4 @@
+import { legacySceneResponse } from "../../packages/server/src/runtime/scene-data.js";
 import { randomUUID } from "node:crypto";
 
 export const modelEnvironment = (budgetId: string) => ({
@@ -67,37 +68,47 @@ export function approvedTransport(transport: typeof fetch): typeof fetch {
           ];
         choice.message.content = JSON.stringify(content);
       }
-      if (
-        content.type !== "scene" ||
-        content.responseCoverage ||
-        !input.request?.controlledActionText
-      )
-        continue;
-      const actor = input.request.controlledActorId;
-      const evidence = content.events.flatMap(
-        (
-          e: { receipts: { observerId: string; text: string }[] },
-          eventIndex: number,
-        ) =>
-          e.receipts.flatMap((r, receiptIndex) =>
-            r.observerId === actor
-              ? [{ eventIndex, receiptIndex, quote: r.text }]
-              : [],
-          ),
-      );
-      content.responseCoverage = [
-        {
-          requestPart: input.request.controlledActionText,
-          outcome:
-            evidence.length &&
-            ["finished", "decide"].includes(content.decisions[actor])
-              ? "delivered"
-              : "pending",
-          evidence,
-          explanation: "試験で指定した行動の完了状態と提示を使用する",
-        },
-      ];
-      choice.message.content = JSON.stringify(content);
+      if (input.playVersion === 4) {
+        if (content.type === "scene") {
+          const current = legacySceneResponse(
+            content,
+            input.sceneHistory,
+            input.request.intentions,
+          ) as Record<string, unknown>;
+          delete current.newDecisions;
+          choice.message.content = JSON.stringify(current);
+        } else if (content.type === "boundary") {
+          const actor = input.request.intentions[0].actorId;
+          choice.message.content = JSON.stringify({
+            type: "scene",
+            events: [
+              {
+                actorId: actor,
+                text: "場面が一区切りとなった",
+                locations: [
+                  {
+                    subjectId: actor,
+                    text:
+                      input.currentLocations?.[actor]?.[0]?.text ?? "試験の場",
+                    aboutIds:
+                      input.currentLocations?.[actor]?.[0]?.aboutIds ?? [],
+                  },
+                ],
+                receipts: [
+                  { observerId: actor, text: "次の行動を選べる場面となった" },
+                ],
+              },
+            ],
+            decisions: Object.fromEntries(
+              input.request.intentions.map((i: { actorId: string }) => [
+                i.actorId,
+                "decide",
+              ]),
+            ),
+            concluded: true,
+          });
+        }
+      }
     }
     if (data.usage)
       data.usage.total_tokens ??=

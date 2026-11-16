@@ -144,7 +144,7 @@ test("Webでは共有を明示的に選び、参加者確定後もあらすじ�
   });
 });
 
-test("同席botへの反応機会をWebでも確認し、反応なしを一度だけ回答できる", async ({
+test("参加承認なしに届いた働きかけをWebで読み、反応なしを一度だけ回答できる", async ({
   page,
 }) => {
   test.setTimeout(120000);
@@ -183,38 +183,10 @@ test("同席botへの反応機会をWebでも確認し、反応なしを一度�
   expect((await online.json()).kind).toBe("bot");
   await page.goto(`/worlds/${world}/play?actorId=${owner}`);
   await page.getByRole("button", { name: "自由入力" }).click();
-  await page.getByLabel("共有シーンとして参加を求める").check();
   await page.getByLabel("次のシーンで何をしたいですか").fill("同席者と話す");
   await page
     .getByRole("button", { name: "シーンのあらすじを準備する" })
     .click();
-  let invitation: { id: string } | undefined;
-  await expect
-    .poll(
-      async () => {
-        const inbox = await page.request.get(
-          `/api/worlds/${world}/scene/inbox?actorId=${bot}`,
-          { headers: botHeaders },
-        );
-        invitation = (await inbox.json()).invitations[0];
-        return !!invitation;
-      },
-      { timeout: 20000 },
-    )
-    .toBe(true);
-  expect(
-    (
-      await page.request.post(`/api/worlds/${world}/scene?actorId=${bot}`, {
-        headers: botHeaders,
-        data: {
-          requestId: randomUUID(),
-          command: "invite",
-          invitationId: invitation!.id,
-          accept: true,
-        },
-      })
-    ).ok(),
-  ).toBe(true);
   await page.getByRole("button", { name: "シーンを始める" }).click();
   await page.getByRole("button", { name: "自由入力" }).click();
   await page.getByLabel("どう行動しますか").fill("同席者へ声をかける");
@@ -234,15 +206,35 @@ test("同席botへの反応機会をWebでも確認し、反応なしを一度�
     .toBe(1);
   await page.goto(`/worlds/${world}/play?actorId=${bot}`);
   await expect(
-    page.getByRole("heading", { name: "返答を求められています" }),
+    page.getByRole("heading", { name: "届いた働きかけに返答できます" }),
   ).toBeVisible();
+  await expect(
+    page
+      .getByRole("article")
+      .filter({
+        has: page.getByRole("heading", {
+          name: "届いた働きかけに返答できます",
+        }),
+      })
+      .getByText(/公開された経験/),
+  ).toBeVisible();
+  expect(
+    (
+      await (
+        await page.request.get(
+          `/api/worlds/${world}/scene/inbox?actorId=${bot}`,
+          { headers: botHeaders },
+        )
+      ).json()
+    ).invitations,
+  ).toEqual([]);
   await page.screenshot({
     path: "artifacts/screenshots/shared-scene-reaction.png",
     fullPage: true,
   });
   await page.getByRole("button", { name: "反応しない", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "返答を求められています" }),
+    page.getByRole("heading", { name: "届いた働きかけに返答できます" }),
   ).toHaveCount(0);
   expect(
     (

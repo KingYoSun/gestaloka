@@ -731,30 +731,43 @@ export class WorldAccess {
               grant.actor_id!,
             );
           }
-          const row =
-            input.command === "prepare"
-              ? await this.scenes.open(
+          const received =
+            input.command === "react"
+              ? await this.scenes.respond(
                   id,
-                  input.purpose,
-                  client,
-                  input.requestId,
                   grant.actor_id!,
-                  !!input.shared,
+                  { ...input, opportunityId: input.opportunityId },
+                  client,
                   kind,
                 )
-              : await this.scenes.command(
-                  id,
-                  input.command,
-                  client,
-                  input,
-                  grant.actor_id!,
-                  sceneId,
-                  kind,
-                );
-          await client.query(
-            "UPDATE world_scene SET user_id=$2 WHERE id=$1 AND actor_id=$3",
-            [row.id, subject, grant.actor_id],
-          );
+              : undefined;
+          const row =
+            received !== undefined
+              ? received
+              : input.command === "prepare"
+                ? await this.scenes.open(
+                    id,
+                    input.purpose,
+                    client,
+                    input.requestId,
+                    grant.actor_id!,
+                    !!input.shared,
+                    kind,
+                  )
+                : await this.scenes.command(
+                    id,
+                    input.command,
+                    client,
+                    input,
+                    grant.actor_id!,
+                    sceneId,
+                    kind,
+                  );
+          if (row)
+            await client.query(
+              "UPDATE world_scene SET user_id=$2 WHERE id=$1 AND actor_id=$3",
+              [row.id, subject, grant.actor_id],
+            );
           return this.sceneData(row, compact, grant.actor_id!);
         } catch (error) {
           if (error instanceof ConstructionStateError)
