@@ -8,6 +8,63 @@ import {
   parseOutput,
 } from "../../packages/server/src/llm/prompt.js";
 
+test.each([
+  [true, true],
+  [false, true],
+  [false, false],
+])(
+  "形式修復で最後に指定した応答スキーマを使う（構造化=%s、参照変換=%s）",
+  (structured, graphReferences) => {
+    const messages = [
+      { role: "system" as const, content: "シーンを進める" },
+      {
+        role: "user" as const,
+        content: JSON.stringify({
+          responseSchema: z.toJSONSchema(
+            z.object({ concluded: z.literal(true) }),
+          ),
+        }),
+      },
+      { role: "assistant" as const, content: '{"concluded":false}' },
+      {
+        role: "user" as const,
+        content: JSON.stringify({
+          preserveConclusion: false,
+          responseSchema: z.toJSONSchema(
+            z.object({ concluded: z.literal(false) }),
+          ),
+        }),
+      },
+    ];
+    const original = structuredClone(messages),
+      prompt = preparePrompt(messages, structured, false, graphReferences);
+    if (structured)
+      expect(prompt.format).toMatchObject({
+        schema: { properties: { concluded: { const: false } } },
+      });
+    else if (graphReferences)
+      expect(prompt.system[0]!.text).toContain('"const":false');
+    else {
+      const schemas = prompt.messages
+        .filter((m) => m.role === "user")
+        .map(
+          (m) =>
+            JSON.parse(
+              typeof m.content === "string"
+                ? m.content
+                : m.content.map((p) => p.text).join(""),
+            ).responseSchema,
+        )
+        .filter(Boolean);
+      expect(schemas).toHaveLength(1);
+      expect(schemas[0]).toMatchObject({
+        properties: { concluded: { const: false } },
+      });
+    }
+    expect(messages).toEqual(original);
+  },
+);
+
 test("提供情報の対応配列は生成時に必須とし、旧記録を読む元schemaは変えない", () => {
   const schema = z.toJSONSchema(
     z

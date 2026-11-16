@@ -10,6 +10,7 @@ import {
   SceneContext,
   sceneView,
   sceneResponse,
+  sceneRepairConclusion,
   sceneArrivals,
   type SceneBackground,
 } from "../../packages/server/src/runtime/scene-data.js";
@@ -37,6 +38,52 @@ const events = [
     locations: [{ subjectId: actor, text: "道端", aboutIds: [place] }],
   },
 ];
+
+test.each([false, true, undefined])(
+  "終了判定%jを受理し、形式修復では同じ判定を保つ",
+  (concluded) => {
+    const event = {
+      actorId: actor,
+      text: events[0]!.text,
+      receipts: events[0]!.receipts,
+      locations: events[0]!.locations,
+    };
+    const original = {
+      type: "scene",
+      decisions: { [actor]: "finished" },
+      events: [event],
+      ...(concluded === undefined ? {} : { concluded }),
+    };
+    expect(sceneResponse(original)).toMatchObject({
+      type: "scene",
+      ...(concluded === undefined ? {} : { concluded }),
+    });
+    const messages = [
+      { role: "assistant", content: "{" },
+      {
+        role: "assistant",
+        content: JSON.stringify({ type: "query", requests: [] }),
+      },
+      { role: "assistant", content: JSON.stringify(original) },
+      {
+        role: "assistant",
+        content: JSON.stringify({ type: "query", requests: [] }),
+      },
+      {
+        role: "assistant",
+        content: JSON.stringify({ ...original, concluded: !concluded }),
+      },
+    ];
+    const fixed = sceneRepairConclusion(messages);
+    expect(fixed).toBe(concluded ?? false);
+    expect(() =>
+      sceneResponse({ ...original, concluded: !fixed }, false, [], [], fixed),
+    ).toThrow("終了判定");
+    expect(sceneResponse(original, false, [], [], fixed)).toMatchObject({
+      type: "scene",
+    });
+  },
+);
 test("別の対象の状態では問いを閉じず、同じ対象の照会と回答がそろえば閉じる", () => {
   const q = { question: "探している資料の署名は何か", targetId: place };
   const background = { ...bg, unknowns: [q] };
