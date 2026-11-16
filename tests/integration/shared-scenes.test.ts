@@ -504,6 +504,120 @@ test("形式修復の上限で保留しても終了要求から保存済みの�
   }
 }, 60000);
 
+test.each([false, true])(
+  "リザルト確定時の返答を次の場面へ一度だけ引き継ぐ（最終保存の失敗=%s）",
+  async (fail) => {
+    const owner = people[0]!,
+      peer = people[1]!;
+    selections.set(owner.actor, { candidates: [], mergeInto: null });
+    await presence(0);
+    const scene = await prepare(0);
+    await access.scenes.tick(scene);
+    await cli.run(owner.profile, "start");
+    const before = (await access.scenes.latest(
+      world,
+      undefined,
+      false,
+      owner.actor,
+    ))!;
+    const contact = randomUUID(),
+      reply = randomUUID();
+    await runtime.pool.query(
+      `INSERT INTO world_player_contact(id,world_id,source_scene,target_scene,speaker,listener,event_id,input_id,at,text,deadline,state,reply_id,queued_text,reply_kind)
+     VALUES($1,$2,$3,$3,$4,$5,$6,$7,$8,'届いた声',now()+interval '5 minutes','answered',$9,'保存済みの返答','bot')`,
+      [
+        contact,
+        world,
+        scene,
+        peer.actor,
+        owner.actor,
+        randomUUID(),
+        randomUUID(),
+        before.data.at,
+        reply,
+      ],
+    );
+    await cli.run(owner.profile, "finish");
+    const originalNotice = access.scenes.shared.notice.bind(
+      access.scenes.shared,
+    );
+    let failed = false;
+    const notice = vi
+      .spyOn(access.scenes.shared, "notice")
+      .mockImplementation(async (...args) => {
+        if (fail && !failed && args[4] === "result") {
+          failed = true;
+          throw new Error("終了通知の保存失敗");
+        }
+        return originalNotice(...args);
+      });
+    try {
+      if (fail) {
+        await expect(access.scenes.tick(scene)).rejects.toThrow(
+          "終了通知の保存失敗",
+        );
+        const paused = (
+          await runtime.pool.query(
+            "SELECT state,data FROM world_scene WHERE id=$1",
+            [scene],
+          )
+        ).rows[0];
+        expect(paused).toMatchObject({
+          state: "paused",
+          data: { resumeState: "reflecting" },
+        });
+        expect(paused.data.result).toBeTruthy();
+        expect(
+          (
+            await runtime.pool.query(
+              "SELECT target_scene,queued_text FROM world_player_contact WHERE id=$1",
+              [contact],
+            )
+          ).rows[0],
+        ).toEqual({ target_scene: scene, queued_text: "保存済みの返答" });
+        await cli.run(owner.profile, "resume");
+      }
+      const replay = vi.spyOn(runtime.agent.model, "complete");
+      await access.scenes.tick(scene);
+      if (fail) expect(replay).not.toHaveBeenCalled();
+      replay.mockRestore();
+    } finally {
+      notice.mockRestore();
+    }
+    const saved = (
+      await runtime.pool.query(
+        "SELECT state,data FROM world_scene WHERE id=$1",
+        [scene],
+      )
+    ).rows[0];
+    expect(saved.state).toBe("result");
+    expect(saved.data.result).toBeTruthy();
+    const delivery = (
+      await runtime.pool.query(
+        "SELECT target_scene,queued_text FROM world_player_contact WHERE id=$1",
+        [contact],
+      )
+    ).rows[0];
+    expect(delivery.target_scene).not.toBe(scene);
+    expect(delivery.queued_text).toBeNull();
+    expect(
+      (
+        await runtime.pool.query(
+          "SELECT id,data FROM world_scene_turn WHERE id=$1",
+          [reply],
+        )
+      ).rows,
+    ).toEqual([{ id: reply, data: { actionText: "保存済みの返答" } }]);
+    const calls = vi.spyOn(runtime.agent.model, "complete");
+    await access.scenes.tick(scene);
+    expect(calls).not.toHaveBeenCalled();
+    calls.mockRestore();
+    await cli.run(owner.profile, "finish");
+    await access.scenes.tick(delivery.target_scene);
+  },
+  60000,
+);
+
 test("回答済みの発言を5分でまとめ、未回答者をWebとCLIの共通状態に示す", async () => {
   const id = await sharedGame(0, true),
     owner = people[0]!,
