@@ -3090,8 +3090,13 @@ test("共有ターンの外部入力が完了してもNPCの未実行部分を�
     wake.mockClear();
     playback = (input) => {
       const step = playStep(input);
-      step.decisions[owner.actor] = { pending: "印を確かめながら書類を届ける" };
-      return step;
+      return {
+        ...step,
+        decisions: {
+          ...step.decisions,
+          [owner.actor]: { pending: "印を確かめながら書類を届ける" },
+        },
+      };
     };
     await access.scenes.tick(scene);
     const saved = await snapshot();
