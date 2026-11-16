@@ -1702,7 +1702,12 @@ test("返答の受容から本人へ戻り、終了・再開でも履歴・未�
     );
     expect(updates).toHaveLength(2);
     const latest = JSON.parse(updates[1]![2][1]!.content);
-    expect(JSON.stringify(latest.initialContext)).toContain(newcomer);
+    expect(JSON.stringify(latest.initialContext)).not.toContain(newcomer);
+    const refreshed = await agent.read(
+      { request: latest.request, dependencies: [] },
+      [{ kind: "relations", id: place, relation: "has", direction: "out" }],
+    );
+    expect(JSON.stringify(refreshed.results)).toContain(newcomer);
     expect(latest.request.completedScene.events).toEqual(saved!.data.events);
     const finished = (await access.scenes.latest(construction))!;
     expect(finished.data.operationId).toBe(saved!.data.operationId);
