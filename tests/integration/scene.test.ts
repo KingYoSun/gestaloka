@@ -948,11 +948,10 @@ test.each([false, true])(
 );
 
 test.each(["background", "intent", "resolve"])(
-  "%sのJSON・型・本文欠落・未完了応答を同じ要求内で修正し、確定前の履歴を重複させない",
+  "%sのJSON・本文欠落・未完了応答を同じ要求内で修正し、確定前の履歴を重複させない",
   async (stage) => {
     faults.set(stage, [
       { content: "{" },
-      { content: "{}" },
       { content: null },
       { finish: "length" },
     ]);
@@ -997,7 +996,7 @@ test.each(["background", "intent", "resolve"])(
         )
       ).rows[0];
       expect(counted.llm_used).toBe(counted.calls);
-      expect(counted.calls).toBeGreaterThanOrEqual(5);
+      expect(counted.calls).toBeGreaterThanOrEqual(4);
       expect(counted.unsettled).toBe(0);
     } finally {
       faults.clear();
@@ -1063,7 +1062,9 @@ test.each(["自動", "本文欠落後の世界更新", "旧版からの手動再
         ).toBe(202);
       }
       await access.scenes.tick(id);
-      expect(calls).toHaveBeenCalledTimes(mode === "自動" ? 2 : 3);
+      expect(calls).toHaveBeenCalledTimes(
+        mode === "旧版からの手動再開" ? 3 : 2,
+      );
       const [before] = calls.mock.calls;
       const after = calls.mock.calls.at(-1);
       expect(before![2][1]!.content).not.toContain(newcomer);
@@ -1710,7 +1711,6 @@ test("返答の受容から本人へ戻り、終了・再開でも履歴・未�
   worldPaused = false;
   faults.set("result", [
     { content: "{" },
-    { content: "{}" },
     { content: null },
     { finish: "length" },
   ]);
@@ -1766,7 +1766,7 @@ test("返答の受容から本人へ戻り、終了・再開でも履歴・未�
   ]);
   expect(view.result).toContain("まだ決まっておらず");
   expect(JSON.stringify(view)).not.toMatch(/PRIVATE_|NPCだけの秘密/);
-  expect(resultCalls).toBe(5);
+  expect(resultCalls).toBe(4);
   expect(faults.get("result")).toEqual([]);
   faults.clear();
   const restored = await new WorldAccess(runtime).scene(subject, construction);

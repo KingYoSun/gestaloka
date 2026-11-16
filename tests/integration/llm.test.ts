@@ -2,7 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { connectDatabases } from "@gestaloka/server";
-import { BudgetUnavailable, llmApiKey } from "@gestaloka/server/llm";
+import {
+  BudgetUnavailable,
+  ResponseFormatError,
+  llmApiKey,
+} from "@gestaloka/server/llm";
 import { createCountedClient } from "../support/token-counting.js";
 import { expandPrompt } from "../support/expand-prompt.js";
 import { canonical } from "../../packages/server/src/llm/prompt.js";
@@ -581,9 +585,10 @@ test.each(["stop", "length"])(
     );
     const client = createCountedClient(databases.postgres, config, transport);
     await client.ledger.setup();
-    const id = randomUUID(),
-      completion = await client.complete(id, "scene-background", []);
-    expect(completion).toMatchObject({ content: "", finishReason: finish });
+    const id = randomUUID();
+    await expect(client.complete(id, "scene-background", [])).rejects.toThrow(
+      "本文",
+    );
     expect(
       (
         await databases.postgres.query(
@@ -591,20 +596,20 @@ test.each(["stop", "length"])(
           [id],
         )
       ).rows[0],
-    ).toEqual({
+    ).toMatchObject({
       state: "complete",
       charged_nano: "80000",
-      response: completion,
+      response: { content: "", finishReason: finish },
     });
     expect((await client.ledger.summary()).unsettled).toBe(0);
-    expect(
-      await createCountedClient(databases.postgres, config, transport).complete(
+    await expect(
+      createCountedClient(databases.postgres, config, transport).complete(
         id,
         "scene-background",
         [],
       ),
-    ).toEqual(completion);
-    expect(transport).toHaveBeenCalledTimes(1);
+    ).rejects.toThrow("本文");
+    expect(transport).toHaveBeenCalledTimes(4);
   },
 );
 
@@ -852,6 +857,7 @@ test.each([
   },
   {
     name: "Geminiの本文欠落と使用量不明",
+    format: true,
     model: "gemini-3.8-flash",
     reply: () =>
       Response.json({
@@ -883,7 +889,8 @@ test.each([
   const id = randomUUID();
   await expect(client.complete(id, "probe", [])).rejects.toThrow();
   const before = await client.ledger.summary();
-  expect(before.unsettled).toBe(1);
+  const format = "format" in failure;
+  expect(before.unsettled).toBe(format ? 4 : 1);
   expect(before.upperCostUsd).toBeGreaterThan(0);
   expect(
     (
@@ -896,13 +903,20 @@ test.each([
     state: "pending",
     delivery: "unknown",
     charged_nano: null,
-    response: null,
+    response: format
+      ? expect.objectContaining({
+          diagnostic: expect.objectContaining({
+            type: "format",
+            missingBody: true,
+          }),
+        })
+      : null,
   });
   const reopened = createCountedClient(databases.postgres, config, transport);
   await expect(reopened.complete(id, "probe", [])).rejects.toBeInstanceOf(
-    BudgetUnavailable,
+    format ? ResponseFormatError : BudgetUnavailable,
   );
-  expect(transport).toHaveBeenCalledTimes(1);
+  expect(transport).toHaveBeenCalledTimes(format ? 4 : 1);
   expect(await client.ledger.summary()).toEqual(before);
 });
 

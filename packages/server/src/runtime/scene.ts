@@ -1134,25 +1134,25 @@ export class WorldScenes {
         row.data.sources !== undefined && file === "scene-background.md",
         work.formatAttempts ?? 0,
       );
-    if (response.finishReason !== "stop")
-      throw new SceneResponseError("シーンのモデル応答が未完了です");
     if (response.formatAttempts || response.upperModel) {
-      if (response.formatHistory?.length) {
-        const conclusion =
-          workConclusion(work) ??
-          sceneRepairConclusion(
-            response.formatHistory.map((content): ChatMessage => ({
+      const conclusion =
+        workConclusion(work) ??
+        sceneRepairConclusion(
+          [...(response.formatHistory ?? []), response.content].map(
+            (content): ChatMessage => ({
               role: "assistant",
               content,
-            })),
-          );
-        if (conclusion !== undefined) work.repairConclusion = conclusion;
-      }
+            }),
+          ),
+        );
+      if (conclusion !== undefined) work.repairConclusion = conclusion;
       work.formatAttempts =
         (work.formatAttempts ?? 0) + (response.formatAttempts ?? 0);
       if (response.upperModel) work.target = "resolution";
       await this.#save(row, undefined, row.claim!);
     }
+    if (response.finishReason !== "stop")
+      throw new SceneResponseError("シーンのモデル応答が未完了です");
     // 確定後・保存前に止まった行動解決の再開では、確定済みの変更を文脈の変化と見なさない。
     if (kind === "resolve") {
       this.#adopt(
