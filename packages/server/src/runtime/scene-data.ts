@@ -7,6 +7,7 @@ import type { WorldProposal } from "./agent.js";
 import type { Construction } from "./construction.js";
 import { randomUUID } from "node:crypto";
 import { LocationOp } from "../world/locations.js";
+import { parseOutput } from "../llm/prompt.js";
 
 export class SceneResponseError extends Error {}
 
@@ -162,7 +163,7 @@ export const SceneStep = z.discriminatedUnion("type", [
             .strict(),
         )
         .default([]),
-      concluded: z.literal(true).optional(),
+      concluded: z.boolean().optional(),
       decisions: z.record(
         id,
         z.union([
@@ -180,6 +181,24 @@ export const SceneStep = z.discriminatedUnion("type", [
     })
     .strict(),
 ]);
+const SceneConclusion = SceneStep.options[0]
+  .pick({ type: true, concluded: true })
+  .strip();
+
+/** A formatting retry keeps the first readable scene decision, including omission (= continue). */
+export function sceneRepairConclusion(
+  messages: { role: string; content: string }[],
+) {
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    try {
+      const result = SceneConclusion.safeParse(parseOutput(message.content));
+      if (result.success) return result.data.concluded ?? false;
+    } catch {
+      // An unreadable JSON response has no structured decision to preserve.
+    }
+  }
+}
 const LegacyBoundary = z
   .object({ type: z.literal("boundary"), reason: text })
   .strict();
@@ -253,6 +272,7 @@ export function sceneResponse(
   legacy = false,
   history: RecordedSceneEvent[] = [],
   intentions: { actorId: string; actionText: string }[] = [],
+  conclusion?: boolean,
 ) {
   const reader = legacy
     ? z.discriminatedUnion("type", [
@@ -278,6 +298,11 @@ export function sceneResponse(
   const step = reader.parse(
     legacy ? legacySceneResponse(value, history, intentions) : value,
   );
+  if (
+    conclusion !== undefined &&
+    (step.type !== "scene" || (step.concluded ?? false) !== conclusion)
+  )
+    throw new SceneResponseError("形式修復でシーンの終了判定を変更できません");
   if (step.type !== "scene") return step;
   return {
     ...step,

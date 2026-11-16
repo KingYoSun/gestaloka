@@ -181,7 +181,7 @@ export function preparePrompt(
       return undefined;
     }
   });
-  const schema = parsed.find((v) => v?.responseSchema)?.responseSchema as
+  const schema = parsed.findLast((v) => v?.responseSchema)?.responseSchema as
     Schema | undefined;
   if (!schema && !cacheOnly)
     return {
@@ -226,7 +226,8 @@ export function preparePrompt(
       controlledActorIds,
       ...current
     } = input;
-    if (graphReferences || structured) delete current.responseSchema;
+    if (graphReferences || structured || current.responseSchema !== schema)
+      delete current.responseSchema;
     const parts: Json[] = [];
     if (initialContext !== undefined)
       parts.push({
