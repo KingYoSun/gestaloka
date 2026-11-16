@@ -40,23 +40,69 @@ test("OpenRouterのシーン要求はlowと現行スキーマを送り、独立�
   };
   const configuration = {
     default: flash,
-    resolution: flash,
+    resolution: {
+      ...flash,
+      provider: "openai" as const,
+      model: "gpt-6.1-terra",
+      api: "responses" as const,
+      baseUrl: "https://api.openai.com/v1",
+      effort: "medium" as const,
+      initialEffort: "medium" as const,
+      contextTokens: 1050000,
+      inputUsdPerMillion: 1,
+      cachedInputUsdPerMillion: 0.05,
+      outputUsdPerMillion: 5,
+    },
     judgment: "combined" as const,
   };
   await store.put(pool, configuration, 0, null);
   await store.putSecret(pool, "gemini", "flash-secret", 0, null);
   await store.putSecret(pool, "openrouter", "ember-secret", 0, null);
+  await store.putSecret(pool, "openai", "terra-secret", 0, null);
   const requests: { url: string; body: Record<string, unknown> }[] = [];
   const transport = vi.fn<typeof fetch>(async (url, init) => {
     if (String(url).endsWith(":countTokens"))
       return Response.json({ totalTokens: 30 });
+    if (String(url).endsWith("/responses/input_tokens"))
+      return Response.json({ input_tokens: 30 });
     const body = JSON.parse(String(init?.body));
     requests.push({ url: String(url), body });
     expect(new Headers(init?.headers).get("authorization")).toBe(
       body.model === ember.model
         ? "Bearer ember-secret"
-        : "Bearer flash-secret",
+        : body.model === configuration.resolution.model
+          ? "Bearer terra-secret"
+          : "Bearer flash-secret",
     );
+    const content = JSON.stringify({
+      type: "scene",
+      events: [
+        {
+          eventId: randomUUID(),
+          receipts: [{ observerId: randomUUID(), text: "問いかけが聞こえた" }],
+        },
+      ],
+      decisions: {},
+      elapsedMs: 0,
+    });
+    if (String(url).endsWith("/responses"))
+      return Response.json({
+        id: randomUUID(),
+        model: body.model,
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            content: [{ type: "output_text", text: content }],
+          },
+        ],
+        usage: {
+          input_tokens: 30,
+          output_tokens: 20,
+          input_tokens_details: { cached_tokens: 10 },
+          output_tokens_details: { reasoning_tokens: 5 },
+        },
+      });
     return Response.json({
       id: randomUUID(),
       model: body.model,
@@ -64,19 +110,9 @@ test("OpenRouterのシーン要求はlowと現行スキーマを送り、独立�
         {
           finish_reason: "stop",
           message: {
-            content: JSON.stringify({
-              type: "scene",
-              events: [
-                {
-                  eventId: randomUUID(),
-                  receipts: [
-                    { observerId: randomUUID(), text: "問いかけが聞こえた" },
-                  ],
-                },
-              ],
-              decisions: {},
-              elapsedMs: 0,
-            }),
+            content: String(init?.body).includes("force-format-repair")
+              ? "INVALID JSON"
+              : content,
           },
         },
       ],
@@ -134,8 +170,12 @@ test("OpenRouterのシーン要求はlowと現行スキーマを送り、独立�
     flash.model,
     flash.model,
     ember.model,
-    flash.model,
+    configuration.resolution.model,
   ]);
+  expect(requests[3]).toMatchObject({
+    url: "https://api.openai.com/v1/responses",
+    body: { reasoning: { effort: "medium" } },
+  });
   expect(requests[2]).toMatchObject({
     url: "https://openrouter.ai/api/v1/chat/completions",
     body: {
@@ -162,7 +202,7 @@ test("OpenRouterのシーン要求はlowと現行スキーマを送り、独立�
     )
   ).rows;
   expect(rows.map((r) => r.request.configurationVersion)).toEqual([1, 1, 2, 2]);
-  expect(rows.map((r) => r.charge)).toEqual([90750, 90750, 12040, 90750]);
+  expect(rows.map((r) => r.charge)).toEqual([90750, 90750, 12040, 120500]);
   expect(rows[2].request.connection).toMatchObject({
     inputMiss: 100,
     inputHit: 4,
@@ -173,6 +213,16 @@ test("OpenRouterのシーン要求はlowと現行スキーマを送り、独立�
     restarted.complete(callId, "scene-resolve", messages),
   );
   expect(transport).toHaveBeenCalledTimes(before);
+  const repaired = await restarted.complete(randomUUID(), "scene-resolve", [
+    { role: "user", content: "force-format-repair" },
+  ]);
+  expect(requests.slice(-4).map(({ body }) => body.model)).toEqual([
+    ember.model,
+    ember.model,
+    ember.model,
+    configuration.resolution.model,
+  ]);
+  expect(repaired).toMatchObject({ upperModel: true, formatAttempts: 3 });
 });
 
 test("EmberのプロファイルはFlashの単価を継承せず、専用キーを選ぶ", () => {

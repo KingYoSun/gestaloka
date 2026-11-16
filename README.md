@@ -54,18 +54,19 @@ API・ワーカー・Web・管理画面は、それぞれ `pnpm --filter @gestal
 
 ## モデルの接続設定
 
-推奨構成は、基本モデルがSonnet 5.5／low、上位モデルがSonnet 5.5／mediumです。両方ともAnthropic Messages APIを使い、確定判断は`combined`、最大出力は65,536トークンとします。[81条件のシーン比較](documents/evaluations/claude-scenes-2026-10-23.md)を根拠に採用しました。判断の詳細は[ADR-016](documents/adr/ADR-016-claude-model-selection.md)を参照してください。
+下位モデルにはOpenRouterのMuse Ember／lowを採用します。上位モデルと既存の上位引継ぎは各運用環境の設定を維持します。[4試行のシーン比較](documents/evaluations/ember-flash-scenes-2026-11-17.md)と[ADR-044](documents/adr/ADR-044-ember-lower-model.md)に根拠と限界を記録しています。`.env.example`の上位Sonnet 5.5／medium、確定判断`combined`、最大出力65,536トークンは従来の例を保持しています。
 
-初回設定には`.env.example`のLLM設定を使い、`ANTHROPIC_API_KEY`をローカルで設定してください。既存DBでは環境変数を変えるだけでは保存済み設定を上書きしないため、管理画面のモデル設定で両担当を更新します。新しい応答から新設定を使い、再開中の応答は取得済みの設定版を保持します。
+初回設定には`.env.example`のLLM設定を使い、`OPENROUTER_API_KEY`と例の上位用の`ANTHROPIC_API_KEY`をローカルで設定してください。既存DBでは管理画面のモデル設定で下位を更新し、上位の設定を保持します。環境変数だけでは保存済み設定を上書きしません。新しい応答から新設定を使い、再開中の応答は取得済みの設定版を保持します。旧要求に必要なプロバイダーのキーも保持してください。
 
 `.env` の `LLM_MODEL` で基本モデルを、`LLM_RESOLUTION_MODEL` で結果提案・確定判断を担当する上位モデルを指定します。モデルIDは固定リストに制限しません。各サービスが返す利用可能なIDを指定してください。キーの値はチャットへ送らず、ローカルの `.env` に記入します。
 
-| LLM_MODEL          | APIキー             | endpoint設定         | 既定のbase URL                                            |
-| ------------------ | ------------------- | -------------------- | --------------------------------------------------------- |
-| `deepseek-flash`   | `DEEPSEEK_API_KEY`  | `DEEPSEEK_BASE_URL`  | `https://api.deepseek.com`                                |
-| `gemini-3.8-flash` | `GEMINI_API_KEY`    | `GEMINI_BASE_URL`    | `https://generativelanguage.googleapis.com/v1beta/openai` |
-| `gpt-6-luna`       | `OPENAI_API_KEY`    | `OPENAI_BASE_URL`    | `https://api.openai.com/v1`                               |
-| ClaudeのモデルID   | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com/v1`                            |
+| LLM_MODEL          | APIキー              | endpoint設定          | 既定のbase URL                                            |
+| ------------------ | -------------------- | --------------------- | --------------------------------------------------------- |
+| `deepseek-flash`   | `DEEPSEEK_API_KEY`   | `DEEPSEEK_BASE_URL`   | `https://api.deepseek.com`                                |
+| `gemini-3.8-flash` | `GEMINI_API_KEY`     | `GEMINI_BASE_URL`     | `https://generativelanguage.googleapis.com/v1beta/openai` |
+| `gpt-6-luna`       | `OPENAI_API_KEY`     | `OPENAI_BASE_URL`     | `https://api.openai.com/v1`                               |
+| `meta/muse-ember`  | `OPENROUTER_API_KEY` | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1`                            |
+| ClaudeのモデルID   | `ANTHROPIC_API_KEY`  | `ANTHROPIC_BASE_URL`  | `https://api.anthropic.com/v1`                            |
 
 endpointには `/chat/completions`・`/responses`・`/messages` を付けません。末尾の `/` はどちらでも使えます。ClaudeはAnthropic Messages API、OpenAIは既定でChat Completionsを使います。Responses APIを使うモデルには `OPENAI_API=responses` または対象側の `LLM_RESOLUTION_API=responses` を指定します。GPT-6.1 TerraとSolの既定のAPI形式はResponsesです。
 

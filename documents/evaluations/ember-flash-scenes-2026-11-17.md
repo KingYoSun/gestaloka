@@ -52,7 +52,7 @@
 
 参考仕様は[モデルページ](https://openrouter.ai/meta/muse-ember)、[推論量](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)、[使用量](https://openrouter.ai/docs/cookbook/administration/usage-accounting)、[構造化出力](https://openrouter.ai/docs/guides/features/structured-outputs)。OpenAPI定義と生成型にもプロバイダー選択肢を追加し、旧値や旧保存形式は削除しない。
 
-既存環境の `LLM_INPUT_USD_PER_MILLION` などの明示値は従来どおりプロファイルより優先する。modelだけ替えても明示単価は自動で消えない。準備スクリプトではEmberの下位設定を全項目指定し、Flashの単価・cache保存料を継承させない。本番設定を変える際もmodelだけの置換にしない。
+既存環境の `LLM_INPUT_USD_PER_MILLION` などの明示値は従来どおりプロファイルより優先する。modelだけ替えても明示単価は自動で消えない。比較用設定ではEmberの下位を全項目指定し、Flashの単価・cache保存料を継承させない。本番設定を変える際もmodelだけの置換にしない。
 
 ## 実行結果
 
@@ -178,7 +178,6 @@ node --env-file=C:/Users/kgm11/gestaloka/.env scripts/recover-adr042-fixtures.mj
 pnpm install --frozen-lockfile
 pnpm build:server
 docker compose -f compose.ember-evaluation.yaml up -d --wait
-node scripts/prepare-ember-comparison.mjs
 # 生成禁止の復元確認。4試行を別スキーマ・別世界IDに復元する。
 node --import tsx scripts/replay-ember-scenes.mjs
 ```
@@ -244,6 +243,6 @@ node scripts/report-ember-comparison.mjs
 node --env-file=.env node_modules/vitest/vitest.mjs run --config vitest.integration.config.ts tests/integration/openrouter.test.ts tests/integration/llm.test.ts tests/integration/scene.test.ts tests/integration/model-settings.test.ts tests/integration/model-limits.test.ts tests/integration/costs.test.ts
 ```
 
-[追加した結合試験](../../tests/integration/openrouter.test.ts)では、専用資格情報・送信先・low・シーンスキーマの本文への保持、通常入力20/cache読取10/出力20（推論5は内数）の精算を確認した。Emberは12,040 nano USD、Flashは90,750 nano USDとなり、新設定後も旧応答の次の呼出しが版1のFlashと元単価を使い、新応答の下位だけ版2のEmberへ切り替わる。上位はFlashを維持する。保存済み完了呼出しの再取得でtransportを再送しないことも確認した。
+[追加した結合試験](../../tests/integration/openrouter.test.ts)では、専用資格情報・送信先・low・シーンスキーマの本文への保持、通常入力20/cache読取10/出力20（推論5は内数）の精算を確認した。Emberは12,040 nano USD、Flashは90,750 nano USDとなり、新設定後も旧応答の次の呼出しが版1のFlashと元単価を使い、新応答の下位だけ版2のEmberへ切り替わる。採用作業では上位を本番と同じTerra / medium / Responsesにして設定の保持と3回の形式修復後の引継ぎを追加確認した（同じ使用量で120,500 nano USD）。比較4試行の上位Flash設定と、本番の上位維持の検証は区別する。保存済み完了呼出しの再取得でtransportを再送しないことも確認した。
 
-実装差分は、ModelProvider・利用枠名へのopenrouter追加、endpoint・Emberプロファイル、OpenRouter用reasoningの送信、設定例、OpenAPI生成物、上記試験、準備スクリプトと本記録である。共通プロンプトやシーン進行、予算、再試行の製品コードは変更していない。
+実装差分は、ModelProvider・利用枠名へのopenrouter追加、endpoint・Emberプロファイル、OpenRouter用reasoningの送信、設定例、OpenAPI生成物、上記試験、資料回収・再生・集計スクリプトと本記録である。実測後に不要になった準備専用スクリプトは残さない。共通プロンプトやシーン進行、予算、再試行の製品コードは変更していない。採用と本番切替の条件は[ADR-044](../adr/ADR-044-ember-lower-model.md)に記録する。
