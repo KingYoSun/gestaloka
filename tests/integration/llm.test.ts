@@ -45,6 +45,116 @@ const response = () =>
     }),
   );
 
+test.each(["正常完了", "未受信のまま上限", "一部受信後に上限"])(
+  "JSON応答の%sを10分上限で扱い、未確定要求と受信進捗を保持する",
+  async (mode) => {
+    const body = await response().json();
+    body.usage.total_tokens = 50;
+    const bytes = new TextEncoder().encode(JSON.stringify(body));
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    let signal!: AbortSignal;
+    let sent!: () => void;
+    const started = new Promise<void>((resolve) => {
+      sent = resolve;
+    });
+    const transport = vi.fn<typeof fetch>(async (_url, init) => {
+      signal = init!.signal!;
+      const stream = new ReadableStream<Uint8Array>({
+        start(value) {
+          controller = value;
+          if (mode !== "未受信のまま上限")
+            controller.enqueue(bytes.slice(0, 10));
+          signal.addEventListener(
+            "abort",
+            () => controller.error(signal.reason),
+            { once: true },
+          );
+        },
+      });
+      sent();
+      return new Response(stream, {
+        headers: {
+          "content-type": "application/json",
+          "request-id": "req-212",
+        },
+      });
+    });
+    const client = createCountedClient(
+      databases.postgres,
+      {
+        ...environment(),
+        LLM_MODEL: "meta/muse-ember",
+        OPENROUTER_API_KEY: "unused",
+      },
+      transport,
+    );
+    await client.ledger.setup();
+    const id = randomUUID();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const completion = client.complete(id, "deadline-probe", []);
+    void completion.catch(() => {});
+    try {
+      await started;
+      await vi.advanceTimersByTimeAsync(200_000);
+      expect(signal.aborted).toBe(false);
+      if (mode === "正常完了") {
+        controller.enqueue(bytes.slice(10));
+        controller.close();
+        await expect(completion).resolves.toHaveProperty(
+          "content",
+          '{"connected":true}',
+        );
+        expect((await client.ledger.summary()).unsettled).toBe(0);
+        await client.complete(id, "deadline-probe", []);
+        expect(transport).toHaveBeenCalledTimes(1);
+      } else {
+        if (mode === "一部受信後に上限")
+          controller.enqueue(bytes.slice(10, 20));
+        await vi.advanceTimersByTimeAsync(400_000);
+        await expect(completion).rejects.toThrow("待機上限");
+        const before = (
+          await databases.postgres.query("SELECT * FROM llm_call WHERE id=$1", [
+            id,
+          ])
+        ).rows[0];
+        expect(before).toMatchObject({
+          state: "pending",
+          delivery: "unknown",
+          charged_nano: null,
+          response: {
+            diagnostic: {
+              timeoutKind: "total",
+              receivedChunks: mode === "未受信のまま上限" ? 0 : 2,
+            },
+          },
+        });
+        expect(Number(before.reserved_nano)).toBeGreaterThan(0);
+        await expect(
+          client.complete(id, "deadline-probe", []),
+        ).rejects.toBeInstanceOf(BudgetUnavailable);
+        expect(transport).toHaveBeenCalledTimes(1);
+        transport.mockResolvedValueOnce(Response.json(body));
+        await expect(
+          client.complete(randomUUID(), "deadline-probe", []),
+        ).resolves.toHaveProperty("content", '{"connected":true}');
+        expect(
+          (
+            await databases.postgres.query(
+              "SELECT * FROM llm_call WHERE id=$1",
+              [id],
+            )
+          ).rows[0],
+        ).toEqual(before);
+      }
+    } finally {
+      if (signal && !signal.aborted)
+        controller.error(new Error("test finished"));
+      await completion.catch(() => {});
+      vi.useRealTimers();
+    }
+  },
+);
+
 test.each(["missing", "missing-envelope", "json", "schema", "envelope"])(
   "形式エラー%sを保存し、上位モデルへ引き継いで再送を重複させない",
   async (fault) => {

@@ -2,11 +2,11 @@ import { npcActors, trackNpcScene } from "./npc-mode.js";
 import { RuntimeExecutions } from "./executions.js";
 import { sceneSources } from "./scene-sources.js";
 import {
-  SceneRecordQuery,
   readSceneRecords,
   scenePlayContext,
   type SceneRecords,
 } from "./scene-records.js";
+import { sceneDecision, SceneQueries } from "./scene-decision.js";
 import { SharedScenes, SceneSelection } from "./shared-scenes.js";
 import { type ContactDecision } from "./player-contact.js";
 import type { SceneDraft } from "./scene-sessions.js";
@@ -27,7 +27,7 @@ import { RuntimeControl, RuntimeStopped } from "./control.js";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
-import { parseOutput } from "../llm/prompt.js";
+import { parseOutput, canonical } from "../llm/prompt.js";
 import { ExecutionBudget, ExecutionLimit } from "../execution-budget.js";
 import type pg from "pg";
 import { ResponseFormatError, type ChatMessage } from "../llm/client.js";
@@ -63,7 +63,6 @@ import {
   remainingQuestions,
   SceneContext,
   ContextNeed,
-  SceneStep,
   SceneResponseError,
   sceneResponse,
   sceneRepairConclusion,
@@ -91,33 +90,6 @@ function backgroundDecision() {
   return z.discriminatedUnion("type", [
     OpeningBackground,
     ...BackgroundChoices,
-  ]);
-}
-const SceneQueries = z
-  .object({
-    type: z.literal("query"),
-    requests: z.array(z.union([Query, SceneRecordQuery])).min(1),
-  })
-  .strict();
-function sceneDecision(
-  intentions: { actorId: string }[],
-  conclusion?: boolean,
-) {
-  return z.discriminatedUnion("type", [
-    SceneStep.options[0].extend({
-      decisions: z.strictObject(
-        Object.fromEntries(
-          intentions.map(({ actorId }) => [
-            actorId,
-            SceneStep.options[0].shape.decisions.valueType,
-          ]),
-        ),
-      ),
-      ...(conclusion === undefined ? {} : { concluded: z.literal(conclusion) }),
-    }),
-    ...(conclusion === undefined
-      ? [SceneContext, SceneQueries]
-      : [BackgroundChoices[0]]),
   ]);
 }
 const Narrative = z
@@ -2264,65 +2236,69 @@ export class WorldScenes {
         history: savedInput?.sceneHistory ?? this.sessions.history(row),
         contacts: received,
       };
+      const input = scenePlayContext(
+        {
+          playVersion: 4,
+          initialContext,
+          background: bg,
+          currentLocations,
+          ...(received.length ? { receivedContacts: received } : {}),
+          ...(d.peerConditions?.length
+            ? {
+                otherPlayers: d.peerConditions.map((p) => ({
+                  ...p,
+                  controlledByPlayer: true,
+                })),
+              }
+            : {}),
+          sleepingPlayerIds: [...sleeping],
+          sceneHistory: d.events,
+          controlledView: d.views[actor],
+          ...(await this.#belongings(row)),
+          request: {
+            at: d.at,
+            rootIds: d.roots,
+            controlledActorId: actor,
+            ...(d.soloBot || d.npcSoloTurn ? { scenePurpose: d.purpose } : {}),
+            ...(d.turn
+              ? {
+                  controlledActorIds: controlled,
+                  playerActorIds: external,
+                  humanInput: d.turn.sourceKind === "human" && !d.turn.reply,
+                  controlledInputs: d.turn.inputs,
+                  reactionTo:
+                    d.turn.reply && !d.turn.idleInput
+                      ? {
+                          inputId: d.turn.sourceId,
+                          seenEventIds: Object.fromEntries(
+                            d.turn.inputs.map((i) => [i.actorId, i.seen]),
+                          ),
+                        }
+                      : null,
+                }
+              : {}),
+            controlledInputId: action.id,
+            controlledActionText: action.text,
+            leavingActorIds: action.leave ? [actor] : [],
+            departedActorIds: Object.keys(d.departures ?? {}),
+            intentions: intents,
+          },
+        },
+        records,
+      );
       const value = await this.#ask(
         row,
         "resolve",
         "scene-play.md",
-        scenePlayContext(
-          {
-            playVersion: 4,
-            initialContext,
-            background: bg,
-            currentLocations,
-            ...(received.length ? { receivedContacts: received } : {}),
-            ...(d.peerConditions?.length
-              ? {
-                  otherPlayers: d.peerConditions.map((p) => ({
-                    ...p,
-                    controlledByPlayer: true,
-                  })),
-                }
-              : {}),
-            sleepingPlayerIds: [...sleeping],
-            sceneHistory: d.events,
-            controlledView: d.views[actor],
-            ...(await this.#belongings(row)),
-            request: {
-              at: d.at,
-              rootIds: d.roots,
-              controlledActorId: actor,
-              ...(d.soloBot || d.npcSoloTurn
-                ? { scenePurpose: d.purpose }
-                : {}),
-              ...(d.turn
-                ? {
-                    controlledActorIds: controlled,
-                    playerActorIds: external,
-                    humanInput: d.turn.sourceKind === "human" && !d.turn.reply,
-                    controlledInputs: d.turn.inputs,
-                    reactionTo:
-                      d.turn.reply && !d.turn.idleInput
-                        ? {
-                            inputId: d.turn.sourceId,
-                            seenEventIds: Object.fromEntries(
-                              d.turn.inputs.map((i) => [i.actorId, i.seen]),
-                            ),
-                          }
-                        : null,
-                  }
-                : {}),
-              controlledInputId: action.id,
-              controlledActionText: action.text,
-              leavingActorIds: action.leave ? [actor] : [],
-              departedActorIds: Object.keys(d.departures ?? {}),
-              intentions: intents,
-            },
-            responseSchema: z.toJSONSchema(sceneDecision(intents), {
-              io: "output",
-            }),
-          },
-          records,
-        ),
+        {
+          ...input,
+          responseSchema: z.toJSONSchema(
+            sceneDecision(intents, undefined, [
+              { role: "user", content: JSON.stringify(input) },
+            ]),
+            { io: "output" },
+          ),
+        },
         "default",
         records,
       );
@@ -2333,8 +2309,12 @@ export class WorldScenes {
         "type" in value.value
       ) {
         if (value.value.type === "query") {
-          const query = SceneQueries.parse(value.value),
-            worldQueries = query.requests.filter(
+          const query = SceneQueries.parse(value.value);
+          // These are read-only requests against the same frozen work context.
+          query.requests = [
+            ...new Map(query.requests.map((q) => [canonical(q), q])).values(),
+          ];
+          const worldQueries = query.requests.filter(
               (q) => q.kind !== "scene-records",
             ),
             read = await this.agent.read(
@@ -2354,16 +2334,26 @@ export class WorldScenes {
               ? readSceneRecords(records, q)
               : read.results[worldIndex++],
           );
+          const update = {
+            requests: query.requests,
+            results,
+            currentAt: d.at,
+            otherPlayers: d.peerConditions,
+            controlledActorIds: read.controlledActorIds,
+          };
           d.work!.messages.push(
             { role: "assistant", content: value.content },
             {
               role: "user",
               content: JSON.stringify({
-                requests: query.requests,
-                results,
-                currentAt: d.at,
-                otherPlayers: d.peerConditions,
-                controlledActorIds: read.controlledActorIds,
+                ...update,
+                responseSchema: z.toJSONSchema(
+                  sceneDecision(intents, workConclusion(d.work!), [
+                    ...d.work!.messages,
+                    { role: "user", content: JSON.stringify(update) },
+                  ]),
+                  { io: "output" },
+                ),
               }),
             },
           );
@@ -3311,6 +3301,7 @@ export class WorldScenes {
                 sceneDecision(
                   JSON.parse(work.messages[1]!.content).request.intentions,
                   conclusion,
+                  work.messages,
                 ),
                 { io: "output" },
               ),

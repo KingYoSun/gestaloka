@@ -34,6 +34,7 @@ export class ResponseFormatError extends UncertainResponse {
 }
 export type SavedCompletion = {
   rawResponse?: unknown;
+  formatError?: string;
   formatAttempts?: number;
   formatHistory?: string[];
   upperModel?: boolean;
@@ -162,7 +163,9 @@ export class BudgetLedger {
             throw new ResponseFormatError(
               diagnostic.raw,
               diagnostic.missingBody === true,
-              undefined,
+              prior.rows[0].response && "error" in prior.rows[0].response
+                ? prior.rows[0].response.error
+                : undefined,
               "body" in diagnostic && typeof diagnostic.body === "string"
                 ? diagnostic.body
                 : undefined,

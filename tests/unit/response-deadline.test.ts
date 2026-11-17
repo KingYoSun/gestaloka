@@ -15,7 +15,7 @@ test("受信中のストリームを固定3分で打ち切らず、受信停止�
   expect(deadline.timeoutKind).toBe("idle");
   deadline.close();
 });
-test("受信が続いても10分の全体上限で止め、非ストリームは3分を保つ", async () => {
+test("JSONとストリームは3分を超えて待ち、受信が続いても合計10分で止める", async () => {
   vi.useFakeTimers();
   const stream = responseDeadline(true),
     plain = responseDeadline(false);
@@ -23,10 +23,15 @@ test("受信が続いても10分の全体上限で止め、非ストリームは
     await vi.advanceTimersByTimeAsync(120_000);
     stream.touch();
     plain.touch();
+    if (i < 4) {
+      expect(stream.signal.aborted).toBe(false);
+      expect(plain.signal.aborted).toBe(false);
+    }
   }
   expect(stream.signal.aborted).toBe(true);
   expect(stream.timeoutKind).toBe("total");
   expect(plain.signal.aborted).toBe(true);
+  expect(plain.timeoutKind).toBe("total");
   stream.close();
   plain.close();
 });
