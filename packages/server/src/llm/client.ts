@@ -987,17 +987,28 @@ export class LlmClient {
                 .get("content-type")
                 ?.includes("text/event-stream")
                 ? streamedMessage(response, deadline.touch)
-                : response.text().then((text) => {
-                    try {
-                      return JSON.parse(text) as unknown;
-                    } catch {
-                      throw new ResponseFormatError(
-                        text,
-                        !text.trim(),
-                        "LLM応答の受信本文がJSONではありません",
-                      );
-                    }
-                  })
+                : new Response(
+                    response.body?.pipeThrough(
+                      new TransformStream<Uint8Array, Uint8Array>({
+                        transform(chunk, controller) {
+                          deadline.touch();
+                          controller.enqueue(chunk);
+                        },
+                      }),
+                    ),
+                  )
+                    .text()
+                    .then((text) => {
+                      try {
+                        return JSON.parse(text) as unknown;
+                      } catch {
+                        throw new ResponseFormatError(
+                          text,
+                          !text.trim(),
+                          "LLM応答の受信本文がJSONではありません",
+                        );
+                      }
+                    })
             ).catch((error: unknown) => {
               if (error instanceof ResponseFormatError) throw error;
               if (error instanceof Error && error.message.includes("予約枠"))
