@@ -184,7 +184,8 @@ export function BotSession({
       });
       save(null);
       if (body.command === "search") setMaterial(result.material);
-      else setText("");
+      else if (body.command === "say" || body.command === "comment")
+        setText((current) => (current === body.text ? "" : current));
       await query.refetch();
       history.current?.updated();
     } catch (error) {
@@ -393,6 +394,9 @@ export function BotSession({
               <label>
                 {view.receiving ? "ターンコメント" : "発言・ターンコメント"}
                 <Textarea
+                  aria-label={
+                    view.receiving ? "ターンコメント" : "発言・ターンコメント"
+                  }
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                 />

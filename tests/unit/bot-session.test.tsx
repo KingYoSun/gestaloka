@@ -204,6 +204,37 @@ test("本人の素材を個別表示し、手番終了時に入力・結果・�
   expect(posted.every((p) => p.actorId === actor)).toBe(true);
 });
 
+test("発言の応答待ちに書き始めた次の入力を消さない", async () => {
+  let release!: () => void,
+    started = false;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  server.use(
+    http.post("*/api/worlds/:id/session", async () => {
+      started = true;
+      await held;
+      return json(view);
+    }),
+  );
+  show();
+  const field = await screen.findByRole("textbox", {
+    name: "発言・ターンコメント",
+  });
+  fireEvent.change(field, { target: { value: "最初の発言" } });
+  fireEvent.click(screen.getByRole("button", { name: "発言する" }));
+  await waitFor(() => expect(started).toBe(true));
+  fireEvent.change(field, { target: { value: "次の入力" } });
+  release();
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "発言する" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  expect((field as HTMLTextAreaElement).value).toBe("次の入力");
+});
+
 test("受領判断を表示し、判断後は元の人物の通常手番へ戻る", async () => {
   view.members = [
     { actorId: actor, sceneId: scene },
