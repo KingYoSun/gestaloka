@@ -1399,6 +1399,12 @@ export class BotPlay {
                   target: event,
                   text: input.text,
                   period: { from: w.at },
+                  observation: {
+                    aspect: "発言",
+                    through: w.at,
+                    sourceIds: [actor, event],
+                    pathIds: [],
+                  },
                 });
               const receipt = await this.#commit(w.id, input.requestId, {
                 context: this.store.context(w.id),

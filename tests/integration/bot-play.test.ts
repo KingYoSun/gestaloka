@@ -198,6 +198,18 @@ test("個別検索を同報せず、成功した8回だけで手番を進め、�
   expect(JSON.stringify((await f.status(2)).entries)).not.toContain(
     "本人だけが選んだコメント",
   );
+  await f.send(0, { command: "say", text: "同席した相手に伝えた話" });
+  await f.send(0, { command: "end-turn" });
+  const history = await f.send(1, {
+    command: "search",
+    query: { kind: "history", targetId: f.actors[0] },
+  });
+  expect(JSON.stringify(history.material)).toContain("同席した相手に伝えた話");
+  const unseen = await f.send(2, {
+    command: "search",
+    query: { kind: "history", targetId: f.actors[0] },
+  });
+  expect(unseen.material).toEqual([]);
   expect(f.calls).not.toHaveBeenCalled();
   f.calls.mockRestore();
 });
