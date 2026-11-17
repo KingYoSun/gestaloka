@@ -26,13 +26,17 @@ export type SharedTurn = {
   }[];
 };
 type Flow = "open" | "manual" | "voting" | "rounds" | "inactive" | "closing";
+type Offer = {
+  turn: Pick<SharedTurn, "id" | "sourceKind" | "reply">;
+  targets: string[];
+};
 type Control = {
   scene_id: string;
   flow: Flow;
   rounds: number;
   inactive_until: Date | null;
   resume_flow: Flow | null;
-  continuation: { turn: SharedTurn; targets: string[] } | null;
+  continuation: Offer | Offer[] | null;
   end_reason: SceneEnding | null;
   last_idle_actor: string | null;
 };
@@ -41,7 +45,12 @@ type Task = {
   actor_id: string;
   kind: "human" | "bot";
   command: "act" | "leave" | "reply" | "npc";
-  data: { actionText?: string; waveId?: string; npcSession?: string };
+  data: {
+    actionText?: string;
+    waveId?: string;
+    npcSession?: string;
+    seen?: string[];
+  };
 };
 type Wave = {
   id: string;
@@ -86,10 +95,12 @@ export class SharedTurns {
       CREATE TABLE IF NOT EXISTS world_scene_end_vote (
       id uuid PRIMARY KEY,scene_id uuid NOT NULL REFERENCES world_scene(id) ON DELETE CASCADE,
       deadline timestamptz NOT NULL,state text NOT NULL DEFAULT 'pending');
-      CREATE UNIQUE INDEX IF NOT EXISTS world_scene_end_vote_pending ON world_scene_end_vote(scene_id) WHERE state='pending';
       CREATE TABLE IF NOT EXISTS world_scene_end_answer (
       vote_id uuid NOT NULL REFERENCES world_scene_end_vote(id) ON DELETE CASCADE,actor_id uuid NOT NULL,answer boolean,
-      PRIMARY KEY(vote_id,actor_id));`);
+      PRIMARY KEY(vote_id,actor_id));
+      ALTER TABLE world_scene_end_answer ADD COLUMN IF NOT EXISTS proposal_id uuid;
+      DROP INDEX IF EXISTS world_scene_end_vote_pending;
+      CREATE INDEX IF NOT EXISTS world_scene_end_vote_open ON world_scene_end_vote(scene_id) WHERE state='pending';`);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS world_scene_absence (
       scene_id uuid NOT NULL REFERENCES world_scene(id) ON DELETE CASCADE,actor_id uuid NOT NULL,
       from_event integer NOT NULL,through_event integer,PRIMARY KEY(scene_id,actor_id,from_event));
@@ -117,23 +128,35 @@ export class SharedTurns {
       [id, scene, actor, kind, command, data],
     );
   }
-  /** An external reply is an already-selected input, queued under the same scene policy. */
-  async receiveChoice(
+  async receiveReply(
     db: pg.PoolClient,
     row: SceneRow,
     actor: string,
     kind: "human" | "bot",
     id: string,
     text: string,
+    source: string,
+    sourceKind: "human" | "bot",
+    seen: string[],
   ) {
-    await this.#queue(db, row.id, id, actor, kind, "act", { actionText: text });
-    await this.cancelIdleOffer(db, row.id);
-    const control = await this.control(row.id, db);
-    if (["open", "closing"].includes(control.flow))
+    if (kind === "human") {
+      await this.#queue(db, row.id, id, actor, kind, "act", {
+        actionText: text,
+        seen,
+      });
+    } else {
+      const waveId = await this.#offer(db, row, source, sourceKind, [actor]);
       await db.query(
-        "UPDATE world_scene SET state='acting',claim=NULL WHERE id=$1 AND state IN ('ready','active')",
-        [row.id],
+        "UPDATE world_scene_reply SET state='answered',request_id=$3,text=$4,seen=$5 WHERE wave_id=$1 AND actor_id=$2",
+        [waveId, actor, id, text, JSON.stringify(seen)],
       );
+      const wave = (
+        await db.query<Wave>("SELECT * FROM world_scene_wave WHERE id=$1", [
+          waveId,
+        ])
+      ).rows[0]!;
+      await this.#flush(db, wave, true);
+    }
     await this.shared.wake(db, row.id);
   }
   async handoff(
@@ -183,11 +206,13 @@ export class SharedTurns {
       waveId: wave.id,
     });
   }
-  async #close(
+  async close(
     db: pg.PoolClient,
     scene: string,
     reason: SceneEnding = "requested",
   ) {
+    if (reason !== "concluded" && reason !== "departed")
+      await this.shared.sessions.closeScene(db, scene);
     await this.cancelIdleOffer(db, scene);
     await db.query(
       "UPDATE world_scene_turn SET state='resolved' WHERE scene_id=$1 AND state='held'",
@@ -285,11 +310,17 @@ export class SharedTurns {
         ).rows[0]!,
       );
     } else if (input.command === "vote") {
-      await this.answer(db, row.id, actor, input.proposalId!, input.continue!);
-      await this.#vote(db, row.id, input.proposalId!);
+      const vote = await this.answer(
+        db,
+        row.id,
+        actor,
+        input.proposalId!,
+        input.continue!,
+      );
+      await this.settleVote(db, row.id, vote);
     } else if (input.command === "finish") {
       if (actor !== row.actor_id) throw fail("開始者が終了してください");
-      await this.#close(db, row.id);
+      await this.close(db, row.id);
     } else if (input.command === "resume") {
       if (
         actor !== row.actor_id ||
@@ -300,7 +331,7 @@ export class SharedTurns {
         "UPDATE world_shared_scene SET flow='open',rounds=0,inactive_until=NULL,resume_flow=NULL WHERE scene_id=$1",
         [row.id],
       );
-      await this.#continue(db, row);
+      await this.resumeOffers(db, row);
     } else {
       if (
         !["active", "acting"].includes(row.state) ||
@@ -370,8 +401,20 @@ export class SharedTurns {
           [row.id],
         )
       ).rows[0];
+      const origin = this.shared.sessions
+        .history(row)
+        .findLast(
+          (e) =>
+            e.actorId === actor ||
+            e.receipts.some((r) => r.observerId === actor),
+        );
       const id =
-        previous?.id ?? row.data.actions.at(-1)?.id ?? row.data.commandId;
+        row.data.pending[actor]?.inputId ??
+        origin?.inputId ??
+        previous?.id ??
+        row.data.actions.at(-1)?.id ??
+        row.data.lastInputId ??
+        row.data.commandId;
       return {
         id,
         continuingActor: actor,
@@ -412,11 +455,14 @@ export class SharedTurns {
                 id: task.id,
                 actorId: task.actor_id,
                 text: task.data.actionText!,
-                seen: row.data.events
-                  .filter((e) =>
-                    e.receipts.some((p) => p.observerId === task.actor_id),
-                  )
-                  .map((e) => e.id),
+                seen:
+                  task.data.seen ??
+                  this.shared.sessions
+                    .history(row)
+                    .filter((e) =>
+                      e.receipts.some((p) => p.observerId === task.actor_id),
+                    )
+                    .map((e) => e.id),
                 ...(task.command === "leave" ? { leave: true as const } : {}),
               },
             ];
@@ -493,9 +539,19 @@ export class SharedTurns {
     return (
       await db.query<{ actor: string }>(
         `SELECT actor FROM unnest($2::uuid[]) AS actor
-      WHERE NOT EXISTS (SELECT 1 FROM world_controlled_actor WHERE world_id=$3 AND actor_id=actor AND NOT npc_active)
+      WHERE (NOT EXISTS (SELECT 1 FROM world_controlled_actor WHERE world_id=$3 AND actor_id=actor AND NOT npc_active)
+        OR actor=ANY($4::uuid[]))
       AND NOT EXISTS (SELECT 1 FROM world_scene_wave WHERE scene_id=$1 AND state='pending') LIMIT 1`,
-        [row.id, candidates, row.data.worldId],
+        [
+          row.id,
+          candidates,
+          row.data.worldId,
+          candidates.filter(
+            (a) =>
+              row.data.pending[a]?.inputId &&
+              !row.data.nextDecisions.includes(a),
+          ),
+        ],
       )
     ).rows[0]?.actor;
   }
@@ -506,12 +562,33 @@ export class SharedTurns {
     targets: string[],
   ) {
     const control = await this.control(row.id, db, true);
-    if (control.flow !== "open") return;
     const members = (await this.shared.members(row.id, db))
         .filter((m) => m.state === "joined" && m.kind === "bot")
         .map((m) => m.actor_id),
       actors = targets.filter((a) => members.includes(a));
-    await this.#offer(
+    if (!actors.length || control.flow === "closing") return;
+    if (control.flow !== "open") {
+      const prior = control.continuation;
+      await db.query(
+        "UPDATE world_shared_scene SET continuation=$2 WHERE scene_id=$1",
+        [
+          row.id,
+          JSON.stringify([
+            ...(Array.isArray(prior) ? prior : prior ? [prior] : []),
+            {
+              turn: {
+                id: turn.id,
+                sourceKind: turn.sourceKind,
+                reply: turn.reply,
+              },
+              targets: actors,
+            },
+          ]),
+        ],
+      );
+      return;
+    }
+    return this.#offer(
       db,
       row,
       turn.id,
@@ -534,17 +611,11 @@ export class SharedTurns {
       [id, row.id, source, kind, deadline],
     );
     for (const actor of [...new Set(actors)]) {
-      const events = row.data.events.filter((e) =>
-          e.receipts.some((p) => p.observerId === actor),
+      const { seen, context } = await this.shared.sessions.context(
+          row,
+          actor,
+          db,
         ),
-        context = [
-          ...row.data
-            .background!.perceptions.filter((p) => p.observerId === actor)
-            .map((p) => p.text),
-          ...events.flatMap((e) =>
-            e.receipts.filter((p) => p.observerId === actor).map((p) => p.text),
-          ),
-        ],
         opportunityId = randomUUID();
       await db.query(
         "INSERT INTO world_scene_reply(id,wave_id,actor_id,seen,context) VALUES($1,$2,$3,$4,$5)",
@@ -552,7 +623,7 @@ export class SharedTurns {
           opportunityId,
           id,
           actor,
-          JSON.stringify(events.map((e) => e.id)),
+          JSON.stringify(seen),
           JSON.stringify(context),
         ],
       );
@@ -570,6 +641,7 @@ export class SharedTurns {
       );
     }
     await this.shared.schedule(db, `wave:${id}`, { waveId: id }, deadline);
+    return id;
   }
   async cancelIdleOffer(db: pg.PoolClient, scene: string, actors?: string[]) {
     // An accepted input supersedes the invitation to supply the next input.
@@ -581,12 +653,13 @@ export class SharedTurns {
   }
   // Called under the world lock, only at a shared scene's input boundary.
   async routeIdle(db: pg.PoolClient, row: SceneRow) {
+    if (row.data.splitActors?.length || row.data.finishActors?.length) return;
     const control = await this.control(row.id, db, true);
     if (!["open", "manual"].includes(control.flow)) return;
     const busy = await db.query(
       `SELECT 1 WHERE EXISTS (SELECT 1 FROM world_scene_turn WHERE scene_id=$1 AND state IN ('queued','running'))
       OR EXISTS (SELECT 1 FROM world_scene_wave WHERE scene_id=$1 AND state='pending')
-      OR EXISTS (SELECT 1 FROM world_player_contact WHERE (target_scene=$1 OR source_scene=$1) AND state='pending')`,
+      OR EXISTS (SELECT 1 FROM world_player_contact WHERE (target_scene=$1 OR source_scene=$1) AND state IN ('pending','handoff'))`,
       [row.id],
     );
     if (
@@ -632,7 +705,7 @@ export class SharedTurns {
         );
         return "acting";
       }
-      await this.#close(db, row.id, "dissolved");
+      await this.close(db, row.id, "dissolved");
       return "closing";
     }
     await db.query(
@@ -642,7 +715,7 @@ export class SharedTurns {
     await this.#offer(
       db,
       row,
-      row.data.actions.at(-1)?.id ?? row.data.commandId,
+      row.data.actions.at(-1)?.id ?? row.data.lastInputId ?? row.data.commandId,
       "idle",
       [actor],
     );
@@ -677,13 +750,20 @@ export class SharedTurns {
         [row.id],
       );
     if (
+      !row.data.splitActors?.length &&
       !(await this.shared.members(row.id, db)).some((m) => m.state === "joined")
     )
-      await this.#close(db, row.id, "departed");
-    else if (finished) await this.#close(db, row.id, "concluded");
+      await this.close(db, row.id, "departed");
+    else if (finished && !row.data.splitActors?.length)
+      await this.close(db, row.id, "concluded");
     let control = await this.control(row.id, db, true);
     const priorFlow = control.flow;
-    if (control.flow === "open") {
+    if (row.data.splitActors?.length)
+      await db.query(
+        "UPDATE world_shared_scene SET continuation=$2 WHERE scene_id=$1",
+        [row.id, JSON.stringify({ turn, targets })],
+      );
+    if (control.flow === "open" && !row.data.splitActors?.length) {
       const actors = (await this.shared.members(row.id, db))
           .filter((m) => m.state === "joined")
           .map((m) => m.actor_id),
@@ -702,11 +782,6 @@ export class SharedTurns {
           (await this.shared.members(row.id, db))
             .filter((m) => m.state === "joined" && m.kind === "bot")
             .map((m) => m.actor_id),
-        );
-      if ((await this.control(row.id, db)).flow !== "open")
-        await db.query(
-          "UPDATE world_shared_scene SET continuation=$2 WHERE scene_id=$1",
-          [row.id, JSON.stringify({ turn, targets })],
         );
       await this.publish(db, row, turn, targets);
       if (
@@ -784,9 +859,10 @@ export class SharedTurns {
     keepGoing: boolean,
   ) {
     const vote = (
-      await db.query<{ deadline: Date; state: string }>(
-        "SELECT deadline,state FROM world_scene_end_vote WHERE id=$1 AND scene_id=$2",
-        [proposal, scene],
+      await db.query<{ id: string; deadline: Date; state: string }>(
+        `SELECT v.id,v.deadline,v.state FROM world_scene_end_vote v JOIN world_scene_end_answer a ON a.vote_id=v.id
+        WHERE (v.id=$1 OR a.proposal_id=$1) AND v.scene_id=$2 AND a.actor_id=$3`,
+        [proposal, scene, actor],
       )
     ).rows[0];
     if (!vote || vote.state !== "pending" || vote.deadline <= this.shared.now())
@@ -795,13 +871,27 @@ export class SharedTurns {
       !(
         await db.query(
           "UPDATE world_scene_end_answer SET answer=$3 WHERE vote_id=$1 AND actor_id=$2 AND answer IS NULL RETURNING actor_id",
-          [proposal, actor, keepGoing],
+          [vote.id, actor, keepGoing],
         )
       ).rowCount
     )
       throw fail("この終了提案には回答できません");
+    if (!keepGoing) {
+      const row = (
+        await db.query<SceneRow>("SELECT * FROM world_scene WHERE id=$1", [
+          scene,
+        ])
+      ).rows[0]!;
+      await this.shared.sessions.end(db, this.shared, row, actor);
+    }
+    return vote.id;
   }
-  async #vote(db: pg.PoolClient, scene: string, id: string, expired = false) {
+  async settleVote(
+    db: pg.PoolClient,
+    scene: string,
+    id: string,
+    expired = false,
+  ) {
     const voters = (
         await db.query<{ actor_id: string; answer: boolean | null }>(
           "SELECT actor_id,answer FROM world_scene_end_answer WHERE vote_id=$1",
@@ -814,36 +904,40 @@ export class SharedTurns {
       "UPDATE world_scene_end_vote SET state='closed' WHERE id=$1",
       [id],
     );
-    const continuing = !expired && answers.includes(true);
+    const row = (
+      await db.query<SceneRow>("SELECT * FROM world_scene WHERE id=$1", [scene])
+    ).rows[0]!;
+    if (expired)
+      for (const voter of voters)
+        await this.shared.sessions.end(db, this.shared, row, voter.actor_id);
+    const pending = (
+      await db.query(
+        "SELECT 1 FROM world_scene_end_vote WHERE scene_id=$1 AND state='pending'",
+        [scene],
+      )
+    ).rowCount;
+    const continuing =
+      !pending &&
+      (
+        await db.query(
+          "SELECT 1 FROM world_scene_session WHERE current_id=$1 AND NOT closed",
+          [scene],
+        )
+      ).rowCount;
     await db.query(
       "UPDATE world_scene_turn SET state=$2 WHERE scene_id=$1 AND state='held'",
       [scene, continuing ? "queued" : "resolved"],
     );
     if (continuing) {
-      const row = (
-        await db.query<SceneRow>("SELECT * FROM world_scene WHERE id=$1", [
-          scene,
-        ])
-      ).rows[0]!;
-      const leaving = voters
-        .filter((v) => v.answer === false)
-        .map((v) => v.actor_id);
-      if (leaving.length) {
-        await this.leave(db, row, leaving);
-        await db.query(
-          "UPDATE world_scene SET data=$2,claim=NULL,inspection_revision=inspection_revision+1 WHERE id=$1",
-          [scene, JSON.stringify(row.data)],
-        );
-      }
       await db.query(
         `UPDATE world_shared_scene SET rounds=0,
         resume_flow=CASE WHEN flow='inactive' THEN 'open' ELSE resume_flow END,
         flow=CASE WHEN flow='inactive' THEN flow ELSE 'open' END WHERE scene_id=$1`,
         [scene],
       );
-      await this.#continue(db, row);
-    } else
-      await this.#close(
+      await this.resumeOffers(db, row);
+    } else if (!pending)
+      await this.close(
         db,
         scene,
         !expired && answers.length && answers.every((a) => a === false)
@@ -851,7 +945,11 @@ export class SharedTurns {
           : "dissolved",
       );
   }
-  async #continue(db: pg.PoolClient, row: SceneRow) {
+  async resumeOffers(db: pg.PoolClient, row: SceneRow) {
+    if (row.data.splitActors?.length || row.data.finishActors?.length) {
+      await this.shared.wake(db, row.id);
+      return;
+    }
     const control = await this.control(row.id, db),
       continuation = control.continuation;
     if (control.flow !== "open") return;
@@ -860,7 +958,10 @@ export class SharedTurns {
       "UPDATE world_shared_scene SET continuation=NULL WHERE scene_id=$1",
       [row.id],
     );
-    await this.publish(db, row, continuation.turn, continuation.targets);
+    for (const offer of Array.isArray(continuation)
+      ? continuation
+      : [continuation])
+      await this.publish(db, row, offer.turn, offer.targets);
   }
 
   async departed(db: pg.PoolClient, row: SceneRow, actors: string[]) {
@@ -886,15 +987,16 @@ export class SharedTurns {
         [row.id],
       )
     ).rows)
-      await this.#vote(db, row.id, v.id);
+      await this.settleVote(db, row.id, v.id);
   }
 
   /** End participation at the current history boundary without inventing world movement. */
   async leave(db: pg.PoolClient, row: SceneRow, actors: string[]) {
+    row.data.splitActors = [
+      ...new Set([...(row.data.splitActors ?? []), ...actors]),
+    ];
     for (const actor of actors) {
       (row.data.departures ??= {})[actor] ??= row.data.events.length;
-      delete row.data.pending[actor];
-      delete row.data.intentions[actor];
     }
     row.data.nextDecisions = row.data.nextDecisions.filter(
       (id) => !actors.includes(id),
@@ -907,6 +1009,7 @@ export class SharedTurns {
       [row.id, actors],
     );
     await this.departed(db, row, actors);
+    await this.shared.wake(db, row.id);
     for (const member of await this.shared.members(row.id, db))
       await this.shared.notice(
         db,
@@ -1016,7 +1119,7 @@ export class SharedTurns {
         "UPDATE world_scene SET state='acting',claim=NULL WHERE id=$1 AND state='paused'",
         [row.id],
       );
-      await this.#continue(db, row);
+      await this.resumeOffers(db, row);
       await this.shared.wake(db, row.id);
     }
   }
@@ -1036,7 +1139,7 @@ export class SharedTurns {
       control.inactive_until > this.shared.now()
     )
       return false;
-    await this.#close(db, scene, "dissolved");
+    await this.close(db, scene, "dissolved");
     await db.query(
       "UPDATE world_scene SET state='acting',claim=NULL WHERE id=$1 AND state IN ('active','paused') AND data->>'error' IS NULL",
       [scene],
@@ -1081,7 +1184,7 @@ export class SharedTurns {
         return;
       }
       if (data.waveId) await this.#flush(db, item);
-      else await this.#vote(db, item.scene_id, id, true);
+      else await this.settleVote(db, item.scene_id, id, true);
       await db.query(
         `UPDATE world_scene SET state='acting',claim=NULL WHERE id=$1 AND (state='active' OR
         (state='paused' AND data->>'error' IS NULL AND EXISTS(SELECT 1 FROM world_shared_scene h WHERE h.scene_id=$1 AND h.flow='closing')))`,
@@ -1093,9 +1196,11 @@ export class SharedTurns {
   async inbox(world: string, actor: string) {
     const opportunities = (
       await this.pool.query(
-        `SELECT r.id,w.scene_id AS "sceneId",w.source_id AS "sourceInputId",w.source_kind AS "sourceKind",w.deadline,r.seen AS "seenEventIds",r.context
+        `SELECT r.id,coalesce(m.session_id,w.scene_id) AS "sceneId",w.source_id AS "sourceInputId",w.source_kind AS "sourceKind",w.deadline,r.seen AS "seenEventIds",r.context
       FROM world_scene_reply r JOIN world_scene_wave w ON w.id=r.wave_id JOIN world_shared_scene h ON h.scene_id=w.scene_id
-      WHERE h.world_id=$1 AND r.actor_id=$2 AND r.state='pending' AND w.state='pending' AND w.deadline>$3 ORDER BY w.deadline,r.id`,
+      LEFT JOIN world_scene_member m ON m.scene_id=w.scene_id AND m.actor_id=r.actor_id
+      WHERE h.world_id=$1 AND r.actor_id=$2 AND r.state='pending' AND w.state='pending' AND w.deadline>$3
+      AND NOT EXISTS(SELECT 1 FROM world_scene_session v WHERE v.id=m.session_id AND v.actor_id=r.actor_id AND v.closed) ORDER BY w.deadline,r.id`,
         [world, actor, this.shared.now()],
       )
     ).rows.map(({ sourceKind, ...r }) => ({
@@ -1105,8 +1210,10 @@ export class SharedTurns {
     }));
     const proposals = (
       await this.pool.query(
-        `SELECT v.id,v.scene_id AS "sceneId",v.deadline FROM world_scene_end_vote v JOIN world_scene_end_answer a ON a.vote_id=v.id
-      JOIN world_scene s ON s.id=v.scene_id WHERE s.construction_id=$1 AND a.actor_id=$2 AND a.answer IS NULL AND v.state='pending' AND v.deadline>$3 ORDER BY v.deadline,v.id`,
+        `SELECT coalesce(a.proposal_id,v.id) AS id,coalesce(m.session_id,v.scene_id) AS "sceneId",v.deadline FROM world_scene_end_vote v JOIN world_scene_end_answer a ON a.vote_id=v.id
+      JOIN world_scene s ON s.id=v.scene_id LEFT JOIN world_scene_member m ON m.scene_id=v.scene_id AND m.actor_id=a.actor_id
+      WHERE s.construction_id=$1 AND a.actor_id=$2 AND a.answer IS NULL AND v.state='pending' AND v.deadline>$3
+      AND NOT EXISTS(SELECT 1 FROM world_scene_session personal WHERE personal.id=m.session_id AND personal.actor_id=a.actor_id AND personal.closed) ORDER BY v.deadline,v.id`,
         [world, actor, this.shared.now()],
       )
     ).rows.map((r) => ({ ...r, deadline: r.deadline.toISOString() }));

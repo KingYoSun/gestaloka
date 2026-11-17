@@ -129,7 +129,29 @@ test("Webは共通のシーンを準備し、参加者確定後もあらすじ�
   });
   await page.getByRole("button", { name: "シーンを始める" }).click();
   await expect(page.getByRole("button", { name: "自由入力" })).toBeEnabled();
+  const original = (
+    await (
+      await page.request.get(`/api/worlds/${world}/scene?actorId=${actor}`)
+    ).json()
+  ).scene;
   await page.getByRole("button", { name: "この場から退出する" }).click();
+  await expect
+    .poll(async () => {
+      const scene = (
+        await (
+          await page.request.get(`/api/worlds/${world}/scene?actorId=${actor}`)
+        ).json()
+      ).scene;
+      return {
+        id: scene.id,
+        state: scene.state,
+        departed: scene.departed ?? false,
+      };
+    })
+    .toEqual({ id: original.id, state: "active", departed: false });
+  await page
+    .getByRole("button", { name: "シーンを終えてリザルトを見る" })
+    .click();
   await expect(
     page.getByRole("heading", { name: "リザルト", exact: true }),
   ).toBeVisible();
@@ -208,13 +230,10 @@ test("参加承認なしに届いた働きかけをWebで読み、反応なし�
   ).toBeVisible();
   await expect(
     page
-      .getByRole("article")
-      .filter({
-        has: page.getByRole("heading", {
-          name: "届いた働きかけに返答できます",
-        }),
-      })
-      .getByText(/公開された経験/),
+      .getByRole("heading", { name: "届いた働きかけに返答できます" })
+      .locator("..")
+      .getByText(/公開された経験/)
+      .filter({ visible: true }),
   ).toBeVisible();
   expect(
     (

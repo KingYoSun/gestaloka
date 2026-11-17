@@ -6,6 +6,7 @@ import type { WorldConstruction } from "./construction.js";
 import { ConstructionStateError } from "./construction.js";
 import { SharedTurns } from "./shared-turns.js";
 import { PlayerContacts } from "./player-contact.js";
+import { SceneSessions } from "./scene-sessions.js";
 
 export const SceneSelection = z
   .object({
@@ -33,6 +34,7 @@ type Member = {
   actor_id: string;
   request_id: string;
   last_request_id: string | null;
+  session_id: string | null;
   state: "reserved" | "joined" | "left" | "ended";
   kind: "human" | "bot";
 };
@@ -43,6 +45,7 @@ export class SharedScenes {
   readonly deadlineQueue: string;
   readonly sceneQueue: string;
   readonly turns: SharedTurns;
+  readonly sessions: SceneSessions;
   readonly contacts = new PlayerContacts(this);
   readonly invitationMs =
     Number(process.env.SCENE_INVITATION_SECONDS ?? 300) * 1000;
@@ -53,6 +56,10 @@ export class SharedScenes {
     this.sceneQueue = `${construction.queueName}-shared-scenes`;
     this.deadlineQueue = `${construction.queueName}-scene-deadlines`;
     this.turns = new SharedTurns(this);
+    this.sessions = new SceneSessions(
+      construction.pool,
+      construction.agent.store,
+    );
   }
   get pool() {
     return this.construction.pool;
@@ -81,6 +88,7 @@ export class SharedScenes {
       "ALTER TABLE world_scene_member ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'human'",
     );
     await this.turns.setup();
+    await this.sessions.setup();
     await this.contacts.setup();
     await this.construction.queue.createQueue(this.deadlineQueue, {
       retryLimit: 2,
@@ -576,16 +584,20 @@ export class SharedScenes {
     await this.wake(db, row.scene_id);
     return row.scene_id;
   }
-  async state(scene: string, actor: string) {
-    const row = await this.get(scene);
+  async state(
+    scene: string,
+    actor: string,
+    db: Pick<pg.Pool, "query"> = this.pool,
+  ) {
+    const row = await this.get(scene, db);
     if (!row || row.phase === "merged") return undefined;
-    const pending = await this.pool.query(
+    const pending = await db.query(
       "SELECT id FROM world_scene_invitation WHERE scene_id=$1 AND state='pending'",
       [scene],
     );
     return {
-      ...(await this.turns.control(scene)),
-      requestIds: (await this.members(scene))
+      ...(await this.turns.control(scene, db)),
+      requestIds: (await this.members(scene, db))
         .filter((m) => m.actor_id === actor)
         .flatMap((m) => [
           m.request_id,
@@ -597,9 +609,9 @@ export class SharedScenes {
       deadline: row.deadline?.toISOString() ?? null,
     };
   }
-  async waiting(scene: string) {
+  async waiting(scene: string, db: Pick<pg.Pool, "query"> = this.pool) {
     const row = (
-      await this.pool.query<{
+      await db.query<{
         state: string;
         actor_id: string;
         construction_id: string;
@@ -615,7 +627,7 @@ export class SharedScenes {
       )
     ).rows[0];
     if (!row || row.state === "result") return [];
-    if ((await this.turns.control(scene))?.flow === "closing")
+    if ((await this.turns.control(scene, db))?.flow === "closing")
       return [
         {
           kind: "system" as const,
@@ -628,7 +640,7 @@ export class SharedScenes {
         },
       ];
     const answers = (
-      await this.pool.query<{ actor: string; deadline: Date }>(
+      await db.query<{ actor: string; deadline: Date }>(
         `
       SELECT r.actor_id AS actor,w.deadline FROM world_scene_wave w JOIN world_scene_reply r ON r.wave_id=w.id
       WHERE w.scene_id=$1 AND w.state='pending' AND r.state='pending'
@@ -684,6 +696,7 @@ export class SharedScenes {
         row.construction_id,
         row.data.awaiting ?? [],
         "human",
+        db,
       );
       if (!waiting.length || human.length)
         waiting.push({
@@ -722,7 +735,9 @@ export class SharedScenes {
         kind: string;
         data: object;
       }>(
-        "SELECT id::text,scene_id,kind,data FROM world_scene_notice WHERE world_id=$1 AND actor_id=$2 AND id>$3 ORDER BY world_scene_notice.id LIMIT 51",
+        `SELECT n.id::text,coalesce(m.session_id,n.scene_id) AS scene_id,n.kind,n.data FROM world_scene_notice n
+        LEFT JOIN world_scene_member m ON m.scene_id=n.scene_id AND m.actor_id=n.actor_id
+        WHERE n.world_id=$1 AND n.actor_id=$2 AND n.id>$3 ORDER BY n.id LIMIT 51`,
         [world, actor, position],
       )
     ).rows;

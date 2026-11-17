@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+  vi,
+} from "vitest";
 import { WorldAccess } from "@gestaloka/server/access";
 import { changeBelongings } from "@gestaloka/server/belongings";
 import { locationRecords } from "../../packages/server/src/world/locations.js";
@@ -24,8 +32,6 @@ const selections = new Map<
   string,
   { candidates: string[]; mergeInto: string | null }
 >();
-let continuation: { actor: string; creation: string } | undefined;
-let denyDeparture = false;
 const backgroundFaults: ("participant" | "perception")[] = [];
 let backgroundGate: (() => Promise<void>) | undefined;
 type PlayInput = {
@@ -87,6 +93,46 @@ const people: { id: string; cookie: string; actor: string; profile: string }[] =
   [];
 const connections = new Map<number, string>();
 beforeEach(() => selections.clear());
+afterEach(async () => {
+  // finish now ends the caller's continuous scene; every fixture player owns cleanup.
+  playback = undefined;
+  for (const person of people) {
+    const row = await access.scenes.latest(
+      world,
+      undefined,
+      false,
+      person.actor,
+    );
+    if (!row || row.state === "result") continue;
+    await access.scenes.shared.transaction((db) =>
+      access.scenes.command(
+        world,
+        "finish",
+        db,
+        { requestId: randomUUID() },
+        person.actor,
+        row.id,
+      ),
+    );
+  }
+  for (let pass = 0; pass < 8; pass++) {
+    const rows = (
+      await runtime.pool.query<{ id: string }>(
+        "SELECT s.id FROM world_scene s WHERE construction_id=$1 AND (state IN ('preparing','acting','reflecting') OR EXISTS(SELECT 1 FROM world_scene_session v WHERE v.current_id=s.id AND v.closed AND v.result IS NULL)) ORDER BY created_at,id",
+        [world],
+      )
+    ).rows;
+    if (!rows.length) break;
+    for (const row of rows) await access.scenes.tick(row.id);
+  }
+  const remaining = (
+    await runtime.pool.query(
+      "SELECT m.actor_id,m.scene_id,s.state,v.closed,v.result IS NOT NULL AS result FROM world_scene_member m JOIN world_scene s ON s.id=m.scene_id LEFT JOIN world_scene_session v ON v.current_id=m.scene_id AND v.actor_id=m.actor_id WHERE m.world_id=$1 AND m.state IN ('joined','reserved')",
+      [world],
+    )
+  ).rows;
+  expect(remaining).toEqual([]);
+}, 60000);
 beforeAll(async () => {
   await isolated.setup();
   ({ runtime } = await fixtureRuntime(
@@ -193,12 +239,6 @@ beforeAll(async () => {
             mergeInto: null,
           }),
         };
-      if (continuation && input.confirmed)
-        return {
-          text:
-            input.confirmed.observations.map((o) => o.text).join("\n") ||
-            "本人に追加の受容はありません",
-        };
       if (
         (content as { type?: string }).type === "scene" &&
         input.request?.leavingActorIds?.length
@@ -209,16 +249,16 @@ beforeAll(async () => {
           events: [
             {
               actorId: actor,
-              text: denyDeparture ? "退出を試みた" : "場を離れた",
+              text: "場を離れた",
               receipts: [
                 {
                   observerId: actor,
-                  text: denyDeparture ? "通路はまだ通れない" : "EXIT-OWN",
+                  text: "EXIT-OWN",
                 },
               ],
             },
           ],
-          departures: denyDeparture ? [] : [{ actorId: actor, eventIndex: 0 }],
+          departures: [{ actorId: actor, eventIndex: 0 }],
         };
       }
       if (playback && (content as { type?: string }).type === "scene")
@@ -233,32 +273,6 @@ beforeAll(async () => {
         const background = content as SceneBackground;
         const result = {
           ...background,
-          ...(continuation && input.request!.actorId === continuation.actor
-            ? {
-                creations: [
-                  { id: continuation.creation, text: "場に現れた持ち運べる物" },
-                ],
-                facts: [
-                  ...background.facts,
-                  {
-                    subjectId: input.request!.actorId,
-                    text: "この物を見つけた",
-                    aboutIds: [continuation.creation],
-                  },
-                ],
-              }
-            : continuation && input.priorScenes?.length
-              ? {
-                  facts: [
-                    ...background.facts,
-                    {
-                      subjectId: input.request!.actorId,
-                      text: "前の場で見た物を改めて確かめる",
-                      aboutIds: [continuation!.creation],
-                    },
-                  ],
-                }
-              : {}),
           participants: [
             ...input.acceptedPlayerIds,
             ...(npcGuest ? [npcGuest] : []),
@@ -470,7 +484,7 @@ test("在席は最後の操作から10分維持し、待受終了では切断せ
   expect((await cli.run(owner.profile, "standby", "--resume")).state).toBe(
     "standby",
   );
-  await cli.run(owner.profile, "finish");
+  await finishGame(owner.profile);
   await access.scenes.tick(id);
   expect((await cli.run(owner.profile, "result")).state).toBe("finished");
 }, 60000);
@@ -493,9 +507,7 @@ test("形式修復の上限で保留しても終了要求から保存済みの�
       ),
     ).toHaveLength(4);
     const before = calls.mock.calls.length;
-    expect((await cli.run(owner.profile, "finish")).scene.shared.flow).toBe(
-      "closing",
-    );
+    expect((await finishGame(owner.profile)).scene.shared.flow).toBe("closing");
     await access.scenes.tick(id);
     expect((await cli.run(owner.profile, "result")).state).toBe("finished");
     expect(
@@ -542,7 +554,7 @@ test.each([false, true])(
         reply,
       ],
     );
-    await cli.run(owner.profile, "finish");
+    await finishGame(owner.profile);
     const originalNotice = access.scenes.shared.notice.bind(
       access.scenes.shared,
     );
@@ -571,7 +583,14 @@ test.each([false, true])(
           state: "paused",
           data: { resumeState: "reflecting" },
         });
-        expect(paused.data.result).toBeTruthy();
+        expect(paused.data.work.kind).toBe("result");
+        expect(
+          (
+            await runtime.pool.query("SELECT state FROM llm_call WHERE id=$1", [
+              paused.data.work.id,
+            ])
+          ).rows[0]?.state,
+        ).toBe("complete");
         expect(
           (
             await runtime.pool.query(
@@ -582,10 +601,15 @@ test.each([false, true])(
         ).toEqual({ target_scene: scene, queued_text: "保存済みの返答" });
         await cli.run(owner.profile, "resume");
       }
-      const replay = vi.spyOn(runtime.agent.model, "complete");
+      const callsBefore = (
+        await runtime.pool.query("SELECT count(*)::int AS n FROM llm_call")
+      ).rows[0]!.n;
       await access.scenes.tick(scene);
-      if (fail) expect(replay).not.toHaveBeenCalled();
-      replay.mockRestore();
+      if (fail)
+        expect(
+          (await runtime.pool.query("SELECT count(*)::int AS n FROM llm_call"))
+            .rows[0]!.n,
+        ).toBe(callsBefore);
     } finally {
       notice.mockRestore();
     }
@@ -599,26 +623,47 @@ test.each([false, true])(
     expect(saved.data.result).toBeTruthy();
     const delivery = (
       await runtime.pool.query(
-        "SELECT target_scene,queued_text FROM world_player_contact WHERE id=$1",
+        "SELECT target_scene,queued_text,state FROM world_player_contact WHERE id=$1",
         [contact],
       )
     ).rows[0];
     expect(delivery.target_scene).not.toBe(scene);
-    expect(delivery.queued_text).toBeNull();
+    expect(delivery.queued_text).toBe("保存済みの返答");
+    expect(delivery.state).toBe("handoff");
+    for (let pass = 0; pass < 6; pass++) {
+      const pending = (
+        await runtime.pool.query<{ id: string }>(
+          `SELECT s.id FROM world_scene s WHERE construction_id=$1 AND (state IN ('preparing','acting','reflecting') OR EXISTS(SELECT 1 FROM world_player_contact c WHERE c.target_scene=s.id AND c.state='handoff') OR EXISTS(SELECT 1 FROM world_scene_turn t WHERE t.scene_id=s.id AND t.state='queued')) ORDER BY created_at`,
+          [world],
+        )
+      ).rows;
+      for (const p of pending) await access.scenes.tick(p.id);
+    }
     expect(
       (
         await runtime.pool.query(
-          "SELECT id,data FROM world_scene_turn WHERE id=$1",
+          "SELECT id FROM world_scene_reply WHERE request_id=$1 AND state='answered'",
           [reply],
         )
       ).rows,
-    ).toEqual([{ id: reply, data: { actionText: "保存済みの返答" } }]);
+    ).toHaveLength(1);
+    expect(
+      (await cli.run(owner.profile, "status")).scene.actions.filter(
+        (a: { id: string }) => a.id === reply,
+      ),
+    ).toHaveLength(1);
     const calls = vi.spyOn(runtime.agent.model, "complete");
     await access.scenes.tick(scene);
     expect(calls).not.toHaveBeenCalled();
     calls.mockRestore();
-    await cli.run(owner.profile, "finish");
-    await access.scenes.tick(delivery.target_scene);
+    await finishGame(owner.profile);
+    const current = (await access.scenes.latest(
+      world,
+      undefined,
+      false,
+      owner.actor,
+    ))!;
+    await access.scenes.tick(current.id);
   },
   60000,
 );
@@ -690,7 +735,7 @@ test("回答済みの発言を5分でまとめ、未回答者をWebとCLIの共�
       }),
     );
     expect(saved.data.events.some((e) => e.actorId === last.actor)).toBe(false);
-    await cli.run(owner.profile, "finish");
+    await finishGame(owner.profile);
     await access.scenes.tick(id);
   } finally {
     playback = undefined;
@@ -700,10 +745,38 @@ async function end(index: number) {
   await presence(index);
   const p = people[index]!;
   expect((await cli.run(p.profile, "start")).state).toBe("waiting_input");
-  const r = await cli.run(p.profile, "finish");
+  const r = await finishGame(p.profile);
   expect(r.state).toBe("processing");
   await access.scenes.tick(r.scene.id);
   expect((await cli.run(p.profile, "result")).state).toBe("finished");
+}
+
+/** Existing whole-game scenarios explicitly end each participant; finish itself is personal. */
+async function finishGame(profile: string, ...args: string[]) {
+  const person = people.find((p) => p.profile === profile)!;
+  const row = await access.scenes.latest(
+    world,
+    undefined,
+    false,
+    person.actor,
+    args[0] === "--scene" ? args[1] : undefined,
+  );
+  const members = row ? await access.scenes.shared.members(row.id) : [];
+  const result = await cli.run(profile, "finish", ...args);
+  for (const member of members.filter(
+    (m) => m.actor_id !== person.actor && m.state === "joined",
+  ))
+    await access.scenes.shared.transaction((db) =>
+      access.scenes.command(
+        world,
+        "finish",
+        db,
+        { requestId: randomUUID() },
+        member.actor_id,
+        row!.id,
+      ),
+    );
+  return result;
 }
 
 test.each(["preparing", "ready", "legacy-closing"])(
@@ -741,9 +814,7 @@ test.each(["preparing", "ready", "legacy-closing"])(
           [id],
         );
       } else {
-        expect((await cli.run(people[0]!.profile, "finish")).state).toBe(
-          "processing",
-        );
+        expect((await finishGame(people[0]!.profile)).state).toBe("processing");
       }
       release();
       await running;
@@ -809,7 +880,7 @@ test("承認済み参加者と視点の欠落を同じ背景要求内で修正�
     "UPDATE world_scene SET data=$2 WHERE id=$1",
     [id, saved],
   );
-  await cli.run(people[0]!.profile, "finish");
+  await finishGame(people[0]!.profile);
   await access.scenes.tick(id);
   const after = (await access.scenes.latest(
     world,
@@ -1172,207 +1243,14 @@ test("相互に訪ねる同時開始を先行する参加待ちシーンへ合�
   expect(invite).toBeDefined();
   await cli.run(b!.profile, "invite", "--invitation", invite.id, "--accept");
   await access.scenes.tick(x);
-  expect((await cli.run(b!.profile, "status")).scene.id).toBe(x);
+  expect((await cli.run(b!.profile, "status")).scene.id).toBe(y);
   expect((await cli.run(b!.profile, "recover", "--request", y)).scene.id).toBe(
-    x,
+    y,
   );
   expect((await access.scenes.shared.get(y))!.phase).toBe("merged");
   await end(0);
 }, 60000);
-test("退出後は未確定の履歴から次々に開始でき、元の確定後に一度ずつ反映する", async () => {
-  const a = people[0]!,
-    b = people[1]!;
-  continuation = { actor: a.actor, creation: randomUUID() };
-  try {
-    await presence(0);
-    await presence(1);
-    selections.set(a.actor, { candidates: [b.actor], mergeInto: null });
-    const parent = await prepare(0);
-    await access.scenes.tick(parent);
-    const invitation = (await cli.run(b.profile, "inbox")).invitations.find(
-      (i: { sceneId: string }) => i.sceneId === parent,
-    );
-    expect(
-      (
-        await cli.run(
-          b.profile,
-          "invite",
-          "--invitation",
-          invitation.id,
-          "--accept",
-        )
-      ).state,
-    ).not.toBe("error");
-    await access.scenes.tick(parent);
-    await cli.run(a.profile, "start");
-    denyDeparture = true;
-    const denied = await cli.run(b.profile, "leave");
-    expect(denied.state, JSON.stringify(denied)).toBe("processing");
-    await access.scenes.tick(parent);
-    expect((await cli.run(b.profile, "status")).scene.departed).toBeUndefined();
-    expect(
-      (await cli.run(b.profile, "prepare", "--purpose", "別の場へ")).code,
-    ).toBe("STATE_CONFLICT");
-    denyDeparture = false;
-    const leaving = await cli.run(b.profile, "leave");
-    expect(leaving.state).toBe("processing");
-    await access.scenes.tick(parent);
-    expect((await cli.run(b.profile, "status")).scene.departed).toBe(true);
-    expect(
-      (await cli.run(b.profile, "recover", "--request", leaving.requestId))
-        .scene.id,
-    ).toBe(parent);
-    const source = (await access.scenes.latest(
-      world,
-      undefined,
-      false,
-      a.actor,
-    ))!;
-    expect(
-      source.data.actions.filter((action) => action.id === denied.requestId),
-    ).toHaveLength(1);
-    const anchors = sceneAnchors(
-      source.data.background!,
-      source.data.events,
-      source.data.startedAt,
-      parent,
-    );
-    expect(
-      await runtime.agent.store.context(graph).node(continuation.creation),
-    ).toBeUndefined();
-    const prefix = source.data.events.length;
-    const first = await cli.run(
-      b.profile,
-      "prepare",
-      "--purpose",
-      "先ほど見た物を確かめる",
-    );
-    const child = first.scene.id;
-    await access.scenes.tick(child);
-    let next = (await access.scenes.latest(world, undefined, false, b.actor))!;
-    expect(next.state).toBe("ready");
-    expect(next.data.drafts?.[0]?.events).toHaveLength(prefix);
-    await access.scenes.drafts.run(next, async () => {
-      const context = runtime.agent.store.context(graph);
-      expect((await context.node(continuation!.creation))?.text).toBe(
-        "場に現れた持ち運べる物",
-      );
-      const own = anchors.edges.filter(
-        (e) => e.kind === "see" && e.source === b.actor,
-      );
-      const paged = await context.historyPage(b.actor, "see", next.data.at);
-      expect(paged.map((e) => e.id)).toEqual(
-        expect.arrayContaining(own.map((e) => e.id)),
-      );
-      expect(
-        (await context.history(b.actor, "see", "out", next.data.at)).map(
-          (e) => e.id,
-        ),
-      ).toEqual(expect.arrayContaining(own.map((e) => e.id)));
-    });
-    await cli.run(b.profile, "start");
-    await cli.run(b.profile, "act", "--text", "自分の範囲を確かめる");
-    await access.scenes.tick(child);
-    await cli.run(b.profile, "finish");
-    const waitingCalls = vi.spyOn(runtime.agent.model, "complete");
-    await access.scenes.tick(child);
-    expect(waitingCalls).not.toHaveBeenCalled();
-    waitingCalls.mockRestore();
-    expect((await cli.run(b.profile, "status")).scene.waitingFor).toEqual([
-      parent,
-    ]);
-    const third = (
-      await cli.run(b.profile, "prepare", "--purpose", "さらに別の場へ")
-    ).scene.id;
-    await access.scenes.tick(third);
-    next = (await access.scenes.latest(world, undefined, false, b.actor))!;
-    expect(next.state).toBe("ready");
-    expect(next.data.drafts?.map((d) => d.sceneId)).toEqual([parent, child]);
-    // Remaining participants continue; the frozen child prefix and the former member's receipts stay unchanged.
-    await cli.run(a.profile, "act", "--text", "退出後に周囲を確かめる");
-    await access.scenes.tick(parent);
-    expect(
-      (await access.scenes.latest(world, undefined, false, a.actor))!.data
-        .events.length,
-    ).toBeGreaterThan(prefix);
-    expect(
-      (await access.scenes.latest(world, undefined, false, b.actor))!.data
-        .drafts?.[0]?.events,
-    ).toHaveLength(prefix);
-    expect(
-      (await cli.run(b.profile, "status", "--scene", parent)).scene.messages,
-    ).toHaveLength(prefix);
-    expect(
-      (await cli.run(people[2]!.profile, "status", "--scene", parent)).code,
-    ).toBe("SCENE_NOT_FOUND");
-    await cli.run(a.profile, "finish", "--scene", parent);
-    await access.scenes.tick(parent);
-    await access.scenes.tick(child);
-    expect((await cli.run(b.profile, "result", "--scene", child)).state).toBe(
-      "finished",
-    );
-    const result = await cli.run(b.profile, "result", "--scene", parent);
-    expect(result.state).toBe("finished");
-    expect(result.scene.result).toContain("EXIT-OWN");
-    expect(result.scene.result).not.toContain("公開された経験");
-    expect((await cli.run(b.profile, "status")).scene.id).toBe(third);
-    expect(
-      (await cli.run(b.profile, "recover", "--request", leaving.requestId))
-        .scene.id,
-    ).toBe(third);
-    await cli.run(b.profile, "start");
-    await cli.run(b.profile, "finish");
-    await access.scenes.tick(third);
-    expect((await cli.run(b.profile, "result")).state).toBe("finished");
-    const after = (
-      await runtime.agent.store
-        .context(graph)
-        .history(b.actor, "see", "out", (await runtime.get(world)).at)
-    ).map((e) => e.id);
-    await access.scenes.tick(parent);
-    await access.scenes.tick(child);
-    expect(
-      (
-        await runtime.agent.store
-          .context(graph)
-          .history(b.actor, "see", "out", (await runtime.get(world)).at)
-      ).map((e) => e.id),
-    ).toEqual(after);
-  } finally {
-    continuation = undefined;
-    denyDeparture = false;
-  }
-}, 120000);
-
-test("開始者も退出後に共有を開始でき、全員退出で元のシーンだけを終了する", async () => {
-  const a = people[0]!,
-    b = people[1]!;
-  await presence(1);
-  selections.set(a.actor, { candidates: [b.actor], mergeInto: null });
-  const parent = await prepare(0);
-  await access.scenes.tick(parent);
-  const invite = (await cli.run(b.profile, "inbox")).invitations.find(
-    (i: { sceneId: string }) => i.sceneId === parent,
-  );
-  await cli.run(b.profile, "invite", "--invitation", invite.id, "--accept");
-  await access.scenes.tick(parent);
-  await cli.run(a.profile, "start");
-  await cli.run(a.profile, "leave");
-  await access.scenes.tick(parent);
-  selections.set(a.actor, { candidates: [], mergeInto: null });
-  const child = await prepare(0);
-  await access.scenes.tick(child);
-  expect((await cli.run(a.profile, "status")).state).toBe("prepared");
-  const leaving = await cli.run(b.profile, "leave", "--scene", parent);
-  expect(leaving.state).toBe("processing");
-  await access.scenes.tick(parent);
-  expect((await cli.run(b.profile, "result")).state).toBe("finished");
-  expect((await cli.run(a.profile, "result", "--scene", parent)).state).toBe(
-    "finished",
-  );
-  expect((await cli.run(a.profile, "status")).scene.id).toBe(child);
-  await end(0);
-}, 60000);
+// Internal departure and pending-input continuity are covered in scene-handoffs.test.ts.
 
 async function sharedGame(owner = 0, web = false) {
   await isolated.databases.postgres.query(
@@ -1568,295 +1446,12 @@ test("省いた進行履歴と配送本文を照会し、新着と再開をま�
       "DELETE FROM world_player_contact WHERE source_scene=$1 AND event_id=ANY($2::uuid[])",
       [id, [old, recent, fresh]],
     );
-    await cli.run(owner.profile, "finish");
+    await finishGame(owner.profile);
     await access.scenes.tick(id);
   }
 }, 90000);
 
-test.each(["standby", "separate", "same"] as const)(
-  "受容から%sの相手へ承認なしで届け、本人の入力だけを返答として扱う",
-  async (mode) => {
-    const [caller, peer] = [people[0]!, people[1]!];
-    await presence(0);
-    await presence(1);
-    let target: string | undefined, source: string;
-    if (mode === "same") source = await sharedGame(0, true);
-    else {
-      if (mode === "separate") {
-        target = (
-          await cli.run(
-            peer.profile,
-            "prepare",
-            "--purpose",
-            "自分の作業をしている",
-          )
-        ).scene.id;
-        await access.scenes.tick(target!);
-        await cli.run(peer.profile, "start");
-      }
-      source = (
-        await cli.run(
-          caller.profile,
-          "prepare",
-          "--purpose",
-          "相手に問いかける",
-        )
-      ).scene.id;
-      await access.scenes.tick(source);
-      await cli.run(caller.profile, "start");
-    }
-    const before = await access.scenes.latest(
-      world,
-      undefined,
-      false,
-      peer.actor,
-    );
-    playback = (input) => {
-      const actor = input.request.controlledActorId,
-        reply = actor === peer.actor,
-        text = reply
-          ? "選んだ返答が届いた"
-          : "知っている範囲を尋ねる声が届いた";
-      const decisions = Object.fromEntries(
-        input.request.intentions.map((i) => [
-          i.actorId,
-          reply
-            ? i.actorId === caller.actor
-              ? "decide"
-              : "finished"
-            : { pending: "相手の返答を待つ" },
-        ]),
-      );
-      return {
-        type: "scene",
-        events: [
-          {
-            actorId: actor,
-            text: reply ? "本人が返答した" : "相手に問いかけた",
-            receipts: [
-              { observerId: actor, text, at: 0 },
-              { observerId: reply ? caller.actor : peer.actor, text, at: 0 },
-            ],
-          },
-        ],
-        decisions,
-        elapsedMs: 1000,
-      };
-    };
-    try {
-      if (mode === "same") await humanAct(0, "知っている範囲を尋ねる");
-      else
-        await cli.run(
-          caller.profile,
-          "act",
-          "--text",
-          "知っている範囲を尋ね、返答を待つ",
-        );
-      await access.scenes.tick(source);
-      expect((await cli.run(peer.profile, "inbox")).invitations).toEqual([]);
-      const inbox = await cli.run(peer.profile, "inbox"),
-        offer = inbox.opportunities.find((o: { context: string[] }) =>
-          o.context.some((text) =>
-            text.includes("知っている範囲を尋ねる声が届いた"),
-          ),
-        );
-      expect(offer.context.join(" ")).toContain(
-        "知っている範囲を尋ねる声が届いた",
-      );
-      const staged = (await access.scenes.latest(
-        world,
-        undefined,
-        false,
-        caller.actor,
-      ))!;
-      expect(staged.data.events.every((e) => e.actorId !== peer.actor)).toBe(
-        true,
-      );
-      expect(
-        staged.data.events.every((e) =>
-          e.receipts.every((r) => r.at === e.period.until),
-        ),
-      ).toBe(true);
-      if (mode === "standby") {
-        const received = (await access.scenes.latest(
-          world,
-          undefined,
-          false,
-          peer.actor,
-        ))!;
-        expect(received.id).not.toBe(before?.id);
-        expect(received.data.actions).toEqual([]);
-        await cli.run(caller.profile, "act", "--text", "問いに補足する");
-        await access.scenes.tick(source);
-        await access.scenes.tick(received.id);
-        expect(
-          (await access.scenes.latest(world, undefined, false, peer.actor))!
-            .data.startedAt,
-        ).toBeGreaterThanOrEqual(
-          (await access.scenes.latest(world, undefined, false, caller.actor))!
-            .data.at,
-        );
-        for (const extra of (
-          await cli.run(peer.profile, "inbox")
-        ).opportunities.filter((o: { id: string }) => o.id !== offer.id))
-          await cli.run(
-            peer.profile,
-            "react",
-            "--opportunity",
-            extra.id,
-            "--none",
-          );
-      }
-      const response = await cli.run(
-        peer.profile,
-        "react",
-        "--scene",
-        offer.sceneId,
-        "--opportunity",
-        offer.id,
-        "--text",
-        "自分が知ることを返す",
-      );
-      expect(response.state, JSON.stringify(response)).not.toBe("error");
-      target = (await access.scenes.latest(
-        world,
-        undefined,
-        false,
-        peer.actor,
-      ))!.id;
-      if (mode === "standby") {
-        expect(target).not.toBe(source);
-        await access.scenes.tick(target);
-      }
-      await access.scenes.tick(target);
-      const answered = (await access.scenes.latest(
-        world,
-        undefined,
-        false,
-        peer.actor,
-      ))!;
-      const selected = answered.data.actions.find(
-        (a) => a.text === "自分が知ることを返す",
-      )!;
-      expect(selected.state).toBe("complete");
-      expect(selected.actorId ?? answered.actor_id).toBe(peer.actor);
-      if (mode === "same")
-        expect(
-          answered.data.events.some(
-            (e) =>
-              e.actorId === peer.actor &&
-              e.receipts.some(
-                (r) =>
-                  r.observerId === caller.actor &&
-                  r.text === "選んだ返答が届いた",
-              ),
-          ),
-        ).toBe(true);
-      else {
-        expect(answered.data.events.some((e) => e.actorId === peer.actor)).toBe(
-          true,
-        );
-        const received = (await cli.run(caller.profile, "inbox"))
-          .opportunities[0];
-        expect(received.context).toEqual(["選んだ返答が届いた"]);
-        await cli.run(
-          caller.profile,
-          "react",
-          "--opportunity",
-          received.id,
-          "--none",
-        );
-      }
-    } finally {
-      playback = undefined;
-    }
-    await cli.run(caller.profile, "finish");
-    await access.scenes.tick(source);
-    if (target && target !== source) {
-      await cli.run(peer.profile, "finish");
-      await access.scenes.tick(target);
-    }
-  },
-  120000,
-);
-
-test.each(["decline", "timeout"] as const)(
-  "待機相手は参加せず%sを選べ、本文や本人の行動を増やさない",
-  async (answer) => {
-    const [caller, peer] = [people[0]!, people[1]!];
-    await presence(0);
-    await presence(1);
-    const id = (
-      await cli.run(caller.profile, "prepare", "--purpose", "挨拶する")
-    ).scene.id;
-    await access.scenes.tick(id);
-    await cli.run(caller.profile, "start");
-    playback = (input) => ({
-      ...playStep(input),
-      events: [
-        {
-          actorId: caller.actor,
-          text: "挨拶した",
-          receipts: [
-            { observerId: caller.actor, text: "挨拶をした" },
-            { observerId: peer.actor, text: "挨拶が届いた" },
-          ],
-        },
-      ],
-    });
-    try {
-      await cli.run(caller.profile, "act", "--text", "挨拶する");
-      await access.scenes.tick(id);
-      const offer = (await cli.run(peer.profile, "inbox")).opportunities[0];
-      if (answer === "decline")
-        expect(
-          (
-            await cli.run(
-              peer.profile,
-              "react",
-              "--opportunity",
-              offer.id,
-              "--none",
-            )
-          ).state,
-        ).not.toBe("error");
-      else {
-        const now = vi
-          .spyOn(access.scenes.shared, "now")
-          .mockReturnValue(new Date(Date.parse(offer.deadline) + 1));
-        try {
-          await access.scenes.shared.expire({ contactId: offer.id });
-        } finally {
-          now.mockRestore();
-        }
-      }
-      expect((await cli.run(peer.profile, "inbox")).opportunities).toEqual([]);
-      expect(
-        (await access.scenes.latest(
-          world,
-          undefined,
-          false,
-          caller.actor,
-        ))!.data.events.every((e) => e.actorId === caller.actor),
-      ).toBe(true);
-    } finally {
-      playback = undefined;
-    }
-    await cli.run(caller.profile, "finish");
-    await access.scenes.tick(id);
-    const target = (await access.scenes.latest(
-      world,
-      undefined,
-      false,
-      peer.actor,
-    ))!;
-    await access.scenes.tick(target.id);
-    await cli.run(peer.profile, "start");
-    await cli.run(peer.profile, "finish");
-    await access.scenes.tick(target.id);
-  },
-  60000,
-);
+// Common conversations and one-way contacts use the handoff scenarios in scene-handoffs.test.ts.
 
 async function humanPresence(
   index: number,
@@ -1877,21 +1472,28 @@ async function replyRound(scene: string, except?: string) {
   let found = false;
   for (const person of people) {
     const opportunity = (
-      await cli.run(person.profile, "inbox")
+      await access.inbox(person.id, world, person.actor)
     ).opportunities.find(
       (o: { sceneId: string; sourceInputId: string }) =>
         o.sceneId === scene && o.sourceInputId !== except,
     );
     if (!opportunity) continue;
-    const reply = await cli.run(
-      person.profile,
-      "react",
-      "--opportunity",
-      opportunity.id,
-      "--text",
-      "相手へ働きかける",
-    );
-    expect(reply.state, JSON.stringify(reply)).not.toBe("error");
+    const profile = JSON.parse(await readFile(person.profile, "utf8"));
+    const reply = await app.inject({
+      method: "POST",
+      url: `/api/worlds/${world}/scene?sceneId=${scene}`,
+      headers: {
+        authorization: `Bearer ${profile.secret}`,
+        "x-gestaloka-request": "1",
+      },
+      payload: {
+        requestId: randomUUID(),
+        command: "react",
+        opportunityId: opportunity.id,
+        actionText: "相手へ働きかける",
+      },
+    });
+    expect(reply.statusCode, reply.body).toBe(202);
     await access.scenes.tick(scene);
     found = true;
     break;
@@ -1965,7 +1567,7 @@ test("Webの人間がいる場合は5往復で自動応答を止め、新規入�
     await humanAct(0, "ここから自分で働きかける");
     expect((await access.scenes.shared.turns.control(scene)).rounds).toBe(0);
     await access.scenes.tick(scene);
-    await cli.run(people[0]!.profile, "finish");
+    await finishGame(people[0]!.profile);
     await access.scenes.tick(scene);
     // End processes accepted reactions, without requiring another external response.
     expect((await cli.run(people[0]!.profile, "status")).state).toBe(
@@ -2062,7 +1664,7 @@ test.each(["end", "timeout", "continue", "interrupt"] as const)(
           rounds: 0,
           flow: "open",
         });
-        await cli.run(people[0]!.profile, "finish");
+        await finishGame(people[0]!.profile);
         for (let i = 0; i < 3; i++) await access.scenes.tick(scene);
         expect((await cli.run(people[0]!.profile, "result")).state).toBe(
           "finished",
@@ -2143,7 +1745,7 @@ test.each(["end", "timeout", "continue", "interrupt"] as const)(
             )
           ).rows,
         ).toEqual([]);
-        await cli.run(people[0]!.profile, "finish");
+        await finishGame(people[0]!.profile);
         await access.scenes.tick(scene);
       }
       expect((await cli.run(people[0]!.profile, "result")).state).toBe(
@@ -2160,220 +1762,7 @@ test.each(["end", "timeout", "continue", "interrupt"] as const)(
   120000,
 );
 
-test.each([false, true])(
-  "投票が割れたら終了票だけを退出させ、NPCの未実行部分と続行側の入力を保つ（開始者が終了=%s）",
-  async (ownerEnds) => {
-    const scene = await sharedGame(0, false),
-      ender = people[ownerEnds ? 0 : 1]!,
-      continuer = people[ownerEnds ? 1 : 0]!,
-      speaker = people[2]!,
-      npc = randomUUID(),
-      condition = randomUUID();
-    let child: string | undefined;
-    const pending = {
-      actorId: npc,
-      actionText: "読みかけの資料を調べ、分かった範囲を伝える",
-      continuing: true,
-    };
-    try {
-      playback = (input) => playStep(input, [ender.actor, continuer.actor]);
-      await humanAct(2, "二人に問いかける");
-      await access.scenes.tick(scene);
-      const reply = async (person: typeof ender, text: string) => {
-        const offer = (
-          await cli.run(person.profile, "inbox")
-        ).opportunities.find((o: { sceneId: string }) => o.sceneId === scene);
-        const result = await cli.run(
-          person.profile,
-          "react",
-          "--opportunity",
-          offer.id,
-          "--text",
-          text,
-        );
-        expect(result.state, JSON.stringify(result)).not.toBe("error");
-        return result.requestId as string;
-      };
-      const endedInput = await reply(ender, "終了前に選んでいた返答"),
-        continuedInput = await reply(continuer, "続きを確かめる返答");
-      await runtime.agent.store.commit(
-        await runtime.agent.store.claim(graph, randomUUID()),
-        runtime.agent.store.context(graph),
-        {
-          commitId: randomUUID(),
-          at: 0,
-          changes: {
-            nodes: [
-              { id: npc, kind: "existence", text: "資料を調べている存在" },
-              {
-                id: condition,
-                kind: "script",
-                text: "自分の資料から確かめたことだけを伝える",
-              },
-            ],
-            edges: [
-              {
-                id: randomUUID(),
-                kind: "status",
-                role: "content",
-                source: npc,
-                target: condition,
-                period: { from: 0 },
-              },
-            ],
-            endEdges: [],
-          },
-        },
-      );
-      const before = (await access.scenes.latest(
-        world,
-        undefined,
-        false,
-        people[0]!.actor,
-        scene,
-      ))!;
-      before.data.background!.participants.push(npc);
-      before.data.views[npc] = await runtime.agent.intentView(
-        graph,
-        npc,
-        before.data.at,
-      );
-      before.data.pending[npc] = pending;
-      before.data.intentions[npc] = pending;
-      await runtime.pool.query(
-        "UPDATE world_scene SET data=$2,state='active' WHERE id=$1",
-        [scene, before.data],
-      );
-      const proposal = await access.scenes.shared.transaction(async (db) => {
-        await access.scenes.shared.lock(db, world);
-        await db.query(
-          "UPDATE world_shared_scene SET rounds=10,continuation=$2 WHERE scene_id=$1",
-          [
-            scene,
-            {
-              turn: {
-                id: before.data.actions[0]!.id,
-                sourceKind: "bot",
-                reply: true,
-              },
-              targets: [ender.actor, continuer.actor],
-            },
-          ],
-        );
-        return access.scenes.shared.turns.propose(
-          db,
-          before,
-          people.map((p) => p.actor),
-        );
-      });
-      await cli.run(ender.profile, "vote", "--proposal", proposal, "--end");
-      await cli.run(
-        continuer.profile,
-        "vote",
-        "--proposal",
-        proposal,
-        "--continue",
-      );
-      expect((await access.scenes.shared.turns.control(scene)).flow).toBe(
-        "voting",
-      );
-      const result = await cli.run(
-        speaker.profile,
-        "vote",
-        "--proposal",
-        proposal,
-        "--continue",
-      );
-      expect(result.state).not.toBe("error");
-      const split = (await access.scenes.latest(
-        world,
-        undefined,
-        false,
-        people[0]!.actor,
-        scene,
-      ))!;
-      expect(split.data.events).toEqual(before.data.events);
-      expect(split.data.pending[npc]).toEqual(pending);
-      expect(split.data.departures?.[ender.actor]).toBe(
-        before.data.events.length,
-      );
-      expect(split.data.departures?.[continuer.actor]).toBeUndefined();
-      expect(await access.scenes.shared.turns.control(scene)).toMatchObject({
-        flow: "open",
-        rounds: 0,
-        end_reason: null,
-      });
-      expect(
-        (await cli.run(ender.profile, "status", "--scene", scene)).state,
-      ).toBe("departed");
-      expect(
-        (
-          await cli.run(
-            ender.profile,
-            "act",
-            "--scene",
-            scene,
-            "--text",
-            "退出後の入力",
-          )
-        ).code,
-      ).toBe("STATE_CONFLICT");
-      for (const offer of (await cli.run(ender.profile, "inbox")).opportunities)
-        expect(offer.sceneId).not.toBe(scene);
-      const inputs: PlayInput[] = [];
-      playback = (input) => {
-        inputs.push(input);
-        return {
-          ...playStep(input),
-          decisions: {
-            [continuer.actor]: "decide",
-            [npc]: { pending: pending.actionText },
-          },
-        };
-      };
-      await access.scenes.tick(scene);
-      const after = (await access.scenes.latest(
-        world,
-        undefined,
-        false,
-        people[0]!.actor,
-        scene,
-      ))!;
-      expect(inputs).toHaveLength(1);
-      expect(inputs[0]!.request.controlledInputs.map((i) => i.id)).toEqual([
-        continuedInput,
-      ]);
-      expect(inputs[0]!.request.intentions).toContainEqual(pending);
-      expect(after.data.pending[npc]).toEqual(pending);
-      expect(after.state).toBe("active");
-      expect(after.data.result).toBeUndefined();
-      expect(after.data.actions.some((a) => a.id === endedInput)).toBe(false);
-      expect(after.data.events.slice(0, before.data.events.length)).toEqual(
-        before.data.events,
-      );
-      expect(
-        (
-          await access.sceneRecords(ender.id, world, {
-            sceneId: scene,
-            kind: "events",
-            actorId: ender.actor,
-          })
-        ).items,
-      ).toHaveLength(before.data.events.length);
-      child = (
-        await cli.run(ender.profile, "prepare", "--purpose", "別の場面へ進む")
-      ).scene.id;
-    } finally {
-      playback = undefined;
-      if (child)
-        await runtime.pool.query("DELETE FROM world_scene WHERE id=$1", [
-          child,
-        ]);
-      await runtime.pool.query("DELETE FROM world_scene WHERE id=$1", [scene]);
-    }
-  },
-  120000,
-);
+// Individual voting, selected input and NPC remainder transfers are covered together in scene-handoffs.test.ts.
 
 test("同じ時点の複数botの並行回答はまとめて1往復と数える", async () => {
   const scene = await sharedGame(0, false);
@@ -2403,7 +1792,7 @@ test("同じ時点の複数botの並行回答はまとめて1往復と数える"
     expect(replies.every((r) => r.state !== "error")).toBe(true);
     await access.scenes.tick(scene);
     expect((await access.scenes.shared.turns.control(scene)).rounds).toBe(1);
-    await cli.run(people[0]!.profile, "finish");
+    await finishGame(people[0]!.profile);
     await access.scenes.tick(scene);
     expect((await cli.run(people[0]!.profile, "result")).state).toBe(
       "finished",
@@ -2543,7 +1932,7 @@ test("並行の回答をまとめ、割り込みBの後もAの範囲へ回答し
     } finally {
       now.mockRestore();
     }
-    await cli.run(a!.profile, "finish");
+    await finishGame(a!.profile);
     const queued = (
       await runtime.pool.query<{ count: number }>(
         "SELECT count(*)::int AS count FROM world_scene_turn WHERE scene_id=$1 AND state='queued'",
@@ -2655,7 +2044,7 @@ test("同じ品への意図は到着順を逆にしても両方を一度の解�
         JSON.stringify({ quantity: 1 }),
       );
       expect(await store.context(graph).node(state)).toBeUndefined();
-      await cli.run(people[0]!.profile, "finish");
+      await finishGame(people[0]!.profile);
       await access.scenes.tick(scene);
       const row = (await access.scenes.latest(
         world,
@@ -2740,7 +2129,7 @@ test("旧版のシーンも共通の入力キューへ引き継ぎ、再送で�
     (await cli.run(owner.profile, "recover", "--request", accepted.requestId))
       .state,
   ).toBe("waiting_input");
-  await cli.run(owner.profile, "finish");
+  await finishGame(owner.profile);
   await access.scenes.tick(id);
   expect((await cli.run(owner.profile, "result")).state).toBe("finished");
   expect(
@@ -3007,7 +2396,7 @@ test("再接続は接続の休止だけを解除し、別の理由で保留し�
       [scene],
     );
     await cli.run(people[0]!.profile, "resume");
-    await cli.run(people[0]!.profile, "finish");
+    await finishGame(people[0]!.profile);
     await access.scenes.tick(scene);
   }
 }, 120000);
@@ -3047,7 +2436,7 @@ test("生成中も割り込みと終了を受理し、受理済み入力を処�
       await later;
     }
     expect(second).toBeTypeOf("string");
-    const finish = cli.run(owner.profile, "finish");
+    const finish = finishGame(owner.profile);
     const accepted = await Promise.race([
       finish,
       new Promise<undefined>((resolve) => setTimeout(resolve, 3000)),
@@ -3455,7 +2844,7 @@ test.each(["join", "decline"])(
         expect(row?.data.departures?.[guest.actor]).toBeDefined();
         expect(row?.data.events.at(-1)?.text).toContain("その場を離れた");
       }
-      await cli.run(owner.profile, "finish");
+      await finishGame(owner.profile);
       await access.scenes.tick(scene);
     } finally {
       npcGuest = undefined;
@@ -3577,7 +2966,7 @@ test.each([0, 1])(
       ).toEqual(
         expect.arrayContaining([expect.objectContaining({ kind: "intent" })]),
       );
-      await cli.run(people[0]!.profile, "finish");
+      await finishGame(people[0]!.profile);
       await access.scenes.tick(scene);
     } finally {
       calls.mockRestore();
@@ -3616,7 +3005,7 @@ test("共有中に離席した人物が、他の人物の一手からNPCとし�
       (await cli.run(guest.profile, "npc", "--accept", "--scene", scene)).result
         .scenes[0].handoff,
     ).toBeNull();
-    await cli.run(people[0]!.profile, "finish");
+    await finishGame(people[0]!.profile);
     await access.scenes.tick(scene);
   } finally {
     playback = undefined;
@@ -3624,180 +3013,118 @@ test("共有中に離席した人物が、他の人物の一手からNPCとし�
   }
 }, 90000);
 
-test.each([
-  { mode: "same", choice: "reply" },
-  { mode: "separate", choice: "reply" },
-  { mode: "separate", choice: "decline" },
-  { mode: "separate", choice: "expire" },
-] as const)(
-  "配送済みの問い ($mode / $choice) は相手の選択とNPCの未完了を保って再開する",
-  async ({ mode, choice }) => {
-    const caller = people[0]!,
-      peer = people[1]!;
-    let source: string;
-    if (mode === "same") source = await sharedGame();
-    else {
-      await presence(0);
-      await presence(1);
-      selections.set(caller.actor, { candidates: [], mergeInto: null });
-      source = await prepare(0);
-      await access.scenes.tick(source);
-      await cli.run(caller.profile, "start");
-    }
-    const snapshot = () =>
-      access.scenes.latest(world, undefined, false, caller.actor);
-    const remaining =
-      "受け取った内容を確かめてから、次にどうするかを自分で選ぶ";
-    npcChoice =
-      mode === "same"
-        ? "近くの相手に情報を尋ねる"
-        : "離れた中継先へ情報を問い合わせる";
-    const chosen = npcChoice;
-    const calls = vi.spyOn(runtime.agent.model, "complete");
-    const reply = "今は引き受けず、後で自分で決めたい";
-    try {
-      playback = (input) => ({
-        ...playStep(input, [peer.actor]),
-        decisions: {
-          ...Object.fromEntries(
-            input.request.intentions.map((i) => [i.actorId, "finished"]),
-          ),
-          [caller.actor]: { pending: remaining, waitingFor: [peer.actor] },
-        },
-      });
-      await cli.run(caller.profile, "npc", "--away");
-      await access.scenes.tick(source);
-      const before = (await snapshot())!;
-      expect(before.state).toBe("active");
-      expect(before.data.pending[caller.actor]).toMatchObject({
-        actionText: remaining,
-        continuing: true,
-        replyWait: { actors: [peer.actor] },
-      });
-      expect(before.data.intentions[caller.actor]!.actionText).toBe(chosen);
-      expect(before.data.events.some((e) => e.actorId === peer.actor)).toBe(
-        false,
-      );
-      expect(
-        calls.mock.calls.filter(([, role]) => role === "scene-resolve"),
-      ).toHaveLength(1);
-      calls.mockClear();
-      await access.scenes.tick(source);
-      expect(calls).not.toHaveBeenCalled();
-      expect((await snapshot())!.data.pending).toEqual(before.data.pending);
-      const offer = (await cli.run(peer.profile, "inbox")).opportunities.find(
-        (o: { context: string[] }) => o.context.some((t) => t.includes(chosen)),
-      );
-      expect(offer).toBeDefined();
-      const target = offer.sceneId;
-      if (mode === "separate") {
-        await access.scenes.tick(target);
-        await cli.run(peer.profile, "start");
-      }
-      if (choice !== "reply") {
-        if (choice === "decline")
-          await cli.run(
-            peer.profile,
-            "react",
-            "--scene",
-            target,
-            "--opportunity",
-            offer.id,
-            "--none",
-          );
-        else {
-          const clock = vi
-            .spyOn(access.scenes.shared, "now")
-            .mockReturnValue(new Date(Date.parse(offer.deadline) + 1));
-          try {
-            await access.scenes.shared.transaction((db) =>
-              access.scenes.shared.contacts.expire(db, offer.id),
-            );
-          } finally {
-            clock.mockRestore();
-          }
-        }
-        calls.mockClear();
-        await access.scenes.tick(source);
-        expect(calls).not.toHaveBeenCalled();
-        expect((await snapshot())!.data.events).toEqual(before.data.events);
-        expect((await snapshot())!.data.pending).toEqual(before.data.pending);
-      }
-      const count = calls.mock.calls.length;
-      if (choice === "reply")
-        await cli.run(
-          peer.profile,
-          "react",
-          "--scene",
-          target,
-          "--opportunity",
-          offer.id,
-          "--text",
-          reply,
-        );
-      else await cli.run(peer.profile, "act", "--text", reply);
-      if (mode === "separate") {
-        await access.scenes.tick(source);
-        expect(calls.mock.calls.length).toBe(count);
-      }
-      npcChoice = "受け取った返答を踏まえ、別の選択肢を考える";
-      playback = (input) =>
-        playStep(
-          input,
-          input.request.controlledInputs.some((i) => i.actorId === peer.actor)
-            ? [caller.actor]
-            : [],
-        );
-      await access.scenes.tick(target);
-      if (target !== source) await access.scenes.tick(source);
-      const after = (await snapshot())!;
-      expect(after.data.events.slice(0, before.data.events.length)).toEqual(
-        before.data.events,
-      );
-      expect(
-        after.data.events.some(
-          (e) => e.actorId === peer.actor && e.text.includes(reply),
-        ) || target !== source,
-      ).toBe(true);
-      expect(after.data.pending[caller.actor]).toBeUndefined();
-      expect(after.data.choices[0]!.actionText).toBe(chosen);
-      const intents = calls.mock.calls.filter(
-        ([, role]) => role === "scene-intent",
-      );
-      expect(intents).toHaveLength(1);
-      expect(
-        intents[0]![2].some(
-          (m) => m.content.includes(reply) && m.content.includes(remaining),
+test("同席の問いは相手の選択とNPCの未完了を保って再開する", async () => {
+  const caller = people[0]!,
+    peer = people[1]!;
+  const source = await sharedGame();
+  const snapshot = () =>
+    access.scenes.latest(world, undefined, false, caller.actor);
+  const remaining = "受け取った内容を確かめてから、次にどうするかを自分で選ぶ";
+  npcChoice = "近くの相手に情報を尋ねる";
+  const chosen = npcChoice;
+  const calls = vi.spyOn(runtime.agent.model, "complete");
+  const reply = "今は引き受けず、後で自分で決めたい";
+  try {
+    playback = (input) => ({
+      ...playStep(input, [peer.actor]),
+      decisions: {
+        ...Object.fromEntries(
+          input.request.intentions.map((i) => [i.actorId, "finished"]),
         ),
-      ).toBe(true);
-      calls.mockClear();
-      await access.scenes.tick(source);
-      expect(calls).not.toHaveBeenCalled();
-    } finally {
-      npcChoice = undefined;
-      playback = undefined;
-      calls.mockRestore();
-      await cli.run(caller.profile, "npc", "--return");
-      for (const person of [caller, peer]) {
-        const current = await access.scenes.latest(
-          world,
-          undefined,
-          false,
-          person.actor,
-        );
-        if (
-          current &&
-          current.state !== "result" &&
-          current.actor_id === person.actor
-        ) {
-          await cli.run(person.profile, "finish");
-          await access.scenes.tick(current.id);
-        }
+        [caller.actor]: { pending: remaining, waitingFor: [peer.actor] },
+      },
+    });
+    await cli.run(caller.profile, "npc", "--away");
+    await access.scenes.tick(source);
+    const before = (await snapshot())!;
+    expect(before.state).toBe("active");
+    expect(before.data.pending[caller.actor]).toMatchObject({
+      actionText: remaining,
+      continuing: true,
+      replyWait: { actors: [peer.actor] },
+    });
+    expect(before.data.intentions[caller.actor]!.actionText).toBe(chosen);
+    expect(before.data.events.some((e) => e.actorId === peer.actor)).toBe(
+      false,
+    );
+    expect(
+      calls.mock.calls.filter(([, role]) => role === "scene-resolve"),
+    ).toHaveLength(1);
+    calls.mockClear();
+    await access.scenes.tick(source);
+    expect(calls).not.toHaveBeenCalled();
+    expect((await snapshot())!.data.pending).toEqual(before.data.pending);
+    const offer = (await cli.run(peer.profile, "inbox")).opportunities.find(
+      (o: { context: string[] }) => o.context.some((t) => t.includes(chosen)),
+    );
+    expect(offer).toBeDefined();
+    const target = offer.sceneId;
+    await cli.run(
+      peer.profile,
+      "react",
+      "--scene",
+      target,
+      "--opportunity",
+      offer.id,
+      "--text",
+      reply,
+    );
+    npcChoice = "受け取った返答を踏まえ、別の選択肢を考える";
+    playback = (input) =>
+      playStep(
+        input,
+        input.request.controlledInputs.some((i) => i.actorId === peer.actor)
+          ? [caller.actor]
+          : [],
+      );
+    await access.scenes.tick(target);
+    if (target !== source) await access.scenes.tick(source);
+    const after = (await snapshot())!;
+    expect(after.data.events.slice(0, before.data.events.length)).toEqual(
+      before.data.events,
+    );
+    expect(
+      after.data.events.some(
+        (e) => e.actorId === peer.actor && e.text.includes(reply),
+      ) || target !== source,
+    ).toBe(true);
+    expect(after.data.pending[caller.actor]).toBeUndefined();
+    expect(after.data.choices[0]!.actionText).toBe(chosen);
+    const intents = calls.mock.calls.filter(
+      ([, role]) => role === "scene-intent",
+    );
+    expect(intents).toHaveLength(1);
+    expect(
+      intents[0]![2].some(
+        (m) => m.content.includes(reply) && m.content.includes(remaining),
+      ),
+    ).toBe(true);
+    calls.mockClear();
+    await access.scenes.tick(source);
+    expect(calls).not.toHaveBeenCalled();
+  } finally {
+    npcChoice = undefined;
+    playback = undefined;
+    calls.mockRestore();
+    await cli.run(caller.profile, "npc", "--return");
+    for (const person of [caller, peer]) {
+      const current = await access.scenes.latest(
+        world,
+        undefined,
+        false,
+        person.actor,
+      );
+      if (
+        current &&
+        current.state !== "result" &&
+        current.actor_id === person.actor
+      ) {
+        await finishGame(person.profile);
+        await access.scenes.tick(current.id);
       }
     }
-  },
-  120000,
-);
+  }
+}, 120000);
 
 test("共有ターンの外部入力が完了してもNPCの未実行部分を保存し、自動で続ける", async () => {
   const scene = await sharedGame(),
@@ -3881,7 +3208,7 @@ test("共有ターンの外部入力が完了してもNPCの未実行部分を�
     playback = undefined;
     calls.mockRestore();
     await cli.run(owner.profile, "npc", "--return");
-    await cli.run(owner.profile, "finish");
+    await finishGame(owner.profile);
     await access.scenes.tick(scene);
   }
 }, 90000);
@@ -3955,7 +3282,7 @@ test("入力待ちは在席する人間を優先し、不在になればAI一人
     expect(await offers()).toHaveLength(1);
   } finally {
     playback = undefined;
-    await cli.run(people[0]!.profile, "finish");
+    await finishGame(people[0]!.profile);
     await access.scenes.tick(scene);
   }
 }, 90000);

@@ -392,9 +392,46 @@ export class WorldAccess {
           : ("ready" as const),
     };
   }
-  async sceneData(row: SceneRow | null, compact = false, viewerId?: string) {
+  async sceneData(
+    row: SceneRow | null,
+    compact = false,
+    viewerId?: string,
+    db: Pick<pg.Pool, "query"> = this.pool,
+  ) {
     if (!row) return { scene: null };
     const viewer = viewerId ?? row.actor_id;
+    let shared = row.data.shared
+      ? await this.scenes.shared.state(row.id, viewer, db)
+      : undefined;
+    let waiting = await this.scenes.shared.waiting(row.id, db);
+    const actualState = row.state;
+    const presentation = await this.scenes.sessions.present(
+      row,
+      viewer,
+      compact,
+      db,
+    );
+    row = presentation.row;
+    if (shared && presentation.closed) shared = { ...shared, flow: "closing" };
+    if (row.state === "result") waiting = [];
+    else if (row.state === "reflecting" && actualState !== "reflecting")
+      waiting = [
+        {
+          kind: "system",
+          actors: [],
+          reason: "リザルトを生成しています",
+          deadline: null,
+        },
+      ];
+    if (row.state === "acting" && actualState !== "acting")
+      waiting = [
+        {
+          kind: "system",
+          actors: [],
+          reason: "行動の結果を生成しています",
+          deadline: null,
+        },
+      ];
     const d = row.data;
     const synopsis =
       viewer === row.actor_id
@@ -411,9 +448,6 @@ export class WorldAccess {
       viewer === row.actor_id
         ? d.resultInformation
         : d.participantResults?.[viewer]?.information;
-    const shared = d.shared
-      ? await this.scenes.shared.state(row.id, viewer)
-      : undefined;
     const messages = compact
       ? []
       : d.events.flatMap((e) =>
@@ -462,7 +496,7 @@ export class WorldAccess {
         id: row.id,
         requestId: shared?.requestIds.at(-1) ?? d.commandId,
         shared,
-        waiting: await this.scenes.shared.waiting(row.id),
+        waiting,
         viewerId: viewer,
         at: d.at,
         state: row.state,
@@ -487,7 +521,12 @@ export class WorldAccess {
         })),
         recordIds:
           !compact && d.background
-            ? sceneAnchors(d.background, d.events, d.startedAt, row.id)
+            ? sceneAnchors(
+                d.background,
+                d.events,
+                d.startedAt,
+                presentation.anchorId,
+              )
                 .edges.filter((e) => e.kind === "see" && e.source === viewer)
                 .map((e) => e.id)
             : [],
@@ -555,6 +594,10 @@ export class WorldAccess {
       this.pool,
       input.actorId,
     );
+    const session = await this.scenes.sessions.get(
+      input.sceneId,
+      grant.actor_id!,
+    );
     const row = (
       await this.pool.query<{
         count: number;
@@ -571,6 +614,9 @@ export class WorldAccess {
         "SCENE_NOT_FOUND",
         "利用できるシーンが見つかりません",
       );
+    if (session)
+      row.count =
+        input.kind === "events" ? session.event_count : session.action_count;
     let position = row.count;
     const raw = input.after || input.before;
     if (raw) {
@@ -579,7 +625,7 @@ export class WorldAccess {
           .object({
             sceneId: z.literal(input.sceneId),
             kind: z.literal(input.kind),
-            index: z.number().int().nonnegative().safe(),
+            index: z.number().int().min(-1).safe(),
             actorId: z.uuid().optional(),
           })
           .parse(JSON.parse(Buffer.from(raw, "base64url").toString("utf8")));
@@ -599,15 +645,26 @@ export class WorldAccess {
         row.count - 1,
         input.after ? position + 50 : position - 1,
       );
-    const rows = (
-      await this.pool.query<{
-        item: SceneRow["data"]["events"][number] &
-          SceneRow["data"]["actions"][number];
-      }>(
-        "SELECT data->$3->n AS item FROM world_scene CROSS JOIN generate_series($4::int,$5::int) n WHERE id=$1 AND construction_id=$2 ORDER BY n DESC",
-        [input.sceneId, id, input.kind, low, high],
-      )
-    ).rows;
+    const rows = session
+      ? (
+          await this.scenes.sessions.records(
+            input.sceneId,
+            grant.actor_id!,
+            input.kind,
+            this.pool,
+            low,
+            high,
+          )
+        ).reverse()
+      : (
+          await this.pool.query<{
+            item: SceneRow["data"]["events"][number] &
+              SceneRow["data"]["actions"][number];
+          }>(
+            "SELECT data->$3->n AS item FROM world_scene CROSS JOIN generate_series($4::int,$5::int) n WHERE id=$1 AND construction_id=$2 ORDER BY n DESC",
+            [input.sceneId, id, input.kind, low, high],
+          )
+        ).rows;
     const encode = (index: number) =>
       Buffer.from(
         JSON.stringify({
@@ -738,10 +795,25 @@ export class WorldAccess {
               input.requestId,
               kind,
             );
+            if (input.accept) {
+              const joined = await this.scenes.latest(
+                id,
+                client,
+                false,
+                grant.actor_id!,
+              );
+              if (joined)
+                await this.scenes.sessions.attach(
+                  client,
+                  joined.id,
+                  grant.actor_id!,
+                );
+            }
             return this.sceneData(
               await this.scenes.latest(id, client, false, grant.actor_id!),
               compact,
               grant.actor_id!,
+              client,
             );
           }
           const received =
@@ -781,7 +853,7 @@ export class WorldAccess {
               "UPDATE world_scene SET user_id=$2 WHERE id=$1 AND actor_id=$3",
               [row.id, subject, grant.actor_id],
             );
-          return this.sceneData(row, compact, grant.actor_id!);
+          return this.sceneData(row, compact, grant.actor_id!, client);
         } catch (error) {
           if (error instanceof ConstructionStateError)
             throw new AccessError(409, "STATE_CONFLICT", error.message);

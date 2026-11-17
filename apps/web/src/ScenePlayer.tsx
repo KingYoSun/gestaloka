@@ -293,7 +293,6 @@ export function ScenePlayer({
       !["rounds", "inactive", "closing"].includes(scene.shared?.flow ?? "open"),
     canFinish =
       !!scene &&
-      (!scene.shared || scene.shared.owner) &&
       scene.shared?.flow !== "closing" &&
       !["result", "reflecting"].includes(scene.state),
     busy = mutate.isPending || !!pending;
@@ -477,7 +476,7 @@ export function ScenePlayer({
           {inbox.data?.proposals?.map((proposal) => (
             <article key={proposal.id}>
               <p>
-                回答が揃って続行と終了に分かれた場合、終了を選んだ人だけが退出します。
+                自分は終えると、ここまでの履歴から自分のリザルトを作成します。他の参加者は続けられます。
               </p>
               <h2>このシーンを続けますか</h2>
               <p>

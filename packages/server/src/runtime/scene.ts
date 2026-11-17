@@ -9,7 +9,7 @@ import {
 import { sceneDecision, SceneQueries } from "./scene-decision.js";
 import { SharedScenes, SceneSelection } from "./shared-scenes.js";
 import { type ContactDecision } from "./player-contact.js";
-import { SceneDrafts, type SceneDraft } from "./scene-drafts.js";
+import type { SceneDraft } from "./scene-sessions.js";
 import type { SharedTurn } from "./shared-turns.js";
 import {
   type NpcModeCommand,
@@ -139,6 +139,12 @@ export type SceneData = {
   turn?: SharedTurn;
   ending?: SceneEnding;
   drafts?: SceneDraft[];
+  handoff?: true;
+  splitActors?: string[];
+  finishActors?: string[];
+  sessionIds?: Record<string, string>;
+  lastInputId?: string;
+  carriedInputs?: Record<string, SceneData["actions"][number]>;
   departures?: Record<string, number>;
   waitingFor?: string[];
   shared?: true;
@@ -229,11 +235,12 @@ export type SceneRow = {
 export class WorldScenes {
   readonly queueName: string;
   readonly shared: SharedScenes;
-  readonly drafts: SceneDrafts;
+  get sessions() {
+    return this.shared.sessions;
+  }
   constructor(readonly construction: WorldConstruction) {
     this.queueName = `${construction.queueName}-scenes`;
     this.shared = new SharedScenes(construction);
-    this.drafts = new SceneDrafts(construction.pool, construction.agent.store);
   }
   get pool() {
     return this.construction.pool;
@@ -272,7 +279,6 @@ export class WorldScenes {
       event_end integer,choice_end integer,handled boolean NOT NULL DEFAULT false,PRIMARY KEY(session_id,actor_id,scene_id));
       CREATE INDEX IF NOT EXISTS world_npc_scene_by_scene ON world_npc_scene(scene_id);`);
     await this.shared.setup();
-    await this.drafts.setup();
   }
   async latest(
     world: string,
@@ -282,7 +288,11 @@ export class WorldScenes {
     sceneId?: string,
   ) {
     const current = sceneId
-      ? { scene_id: sceneId }
+      ? {
+          scene_id: actorId
+            ? await this.sessions.resolve(sceneId, actorId, client)
+            : sceneId,
+        }
       : actorId
         ? (
             await client.query<{ scene_id: string }>(
@@ -343,7 +353,7 @@ export class WorldScenes {
   }
   async #save(row: SceneRow, client?: pg.PoolClient, expected?: string) {
     if (row.data.recordingVersion === "inspection-record-v2")
-      await this.drafts.run(row, () =>
+      await this.sessions.run(row, () =>
         captureSceneInformation(row, this.agent.store),
       );
     recordPresentations(row);
@@ -351,6 +361,15 @@ export class WorldScenes {
       if (row.contactDecisions) {
         await this.shared.lock(c, row.construction_id);
         await this.shared.contacts.deliver(c, row, row.contactDecisions);
+      }
+      if (
+        !row.data.handoff &&
+        row.state === "reflecting" &&
+        (row.data.splitActors?.length ||
+          (await this.sessions.pending(c, row.id)))
+      ) {
+        row.state = "active";
+        await this.shared.wake(c, row.id);
       }
       if (
         row.data.turns &&
@@ -380,6 +399,7 @@ export class WorldScenes {
       );
       if (result.rowCount !== 1)
         throw new SupersededWorker("シーンの実行が引き継がれました");
+      await this.sessions.record(c, row);
       if (row.state === "result") {
         for (const reply of (
           await c.query<{
@@ -404,24 +424,10 @@ export class WorldScenes {
             c,
           );
           await c.query(
-            "UPDATE world_player_contact SET target_scene=$2 WHERE id=$1",
+            "UPDATE world_player_contact SET target_scene=$2,state='handoff' WHERE id=$1",
             [reply.id, target.id],
           );
-          if (target.data.turns && target.state !== "reflecting") {
-            await this.shared.turns.receiveChoice(
-              c,
-              target,
-              reply.listener,
-              reply.reply_kind,
-              reply.reply_id,
-              reply.queued_text,
-            );
-            await c.query(
-              "UPDATE world_player_contact SET queued_text=NULL WHERE id=$1",
-              [reply.id],
-            );
-          } else if (["ready", "active"].includes(target.state))
-            await this.shared.wake(c, target.id);
+          await this.shared.wake(c, target.id);
         }
       }
       await trackNpcScene(c, row);
@@ -663,11 +669,15 @@ export class WorldScenes {
     const c = await this.construction.get(world, client, true);
     const actor = actorId ?? c.participant_id;
     const prior = actor ? await this.latest(world, client, false, actor) : null;
+    const complete =
+      prior &&
+      !!(await this.sessions.current(prior.id, actor!, client))?.result;
     if (
       !["finished", "playing", "play_paused"].includes(c.state) ||
       !actor ||
       (prior &&
         prior.state !== "result" &&
+        !complete &&
         prior.data.departures?.[actor] === undefined &&
         !prior.data.waitingFor?.length) ||
       (actor === c.participant_id && c.state !== "finished")
@@ -723,7 +733,7 @@ export class WorldScenes {
       [world, actor, row.id],
     );
     if (prior && prior.state !== "result") {
-      await this.drafts.inherit(client, row, prior);
+      await this.sessions.inherit(client, row, prior);
       await client.query("UPDATE world_scene SET data=$2 WHERE id=$1", [
         row.id,
         JSON.stringify(row.data),
@@ -742,6 +752,7 @@ export class WorldScenes {
       "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
       [c.world_id, actor],
     );
+    await this.sessions.attach(client, row.id, actor, true);
     await this.#enqueue(client, row.id, true);
     return row;
   }
@@ -771,6 +782,10 @@ export class WorldScenes {
       ],
     );
     d.shared = d.turns = true;
+    await db.query(
+      "INSERT INTO world_actor_scene(world_id,actor_id,scene_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
+      [row.construction_id, row.actor_id, row.id],
+    );
     d.externalActors ??= [row.actor_id];
     const action = d.actions.at(-1);
     if (row.state === "acting" && action?.state === "running") {
@@ -841,7 +856,9 @@ export class WorldScenes {
     let row = await this.latest(world, db, false, actor);
     if (
       row &&
-      (row.state === "result" || row.data.departures?.[actor] !== undefined)
+      (row.state === "result" ||
+        !!(await this.sessions.current(row.id, actor, db))?.result ||
+        row.data.departures?.[actor] !== undefined)
     )
       row = null;
     if (!row) {
@@ -906,6 +923,10 @@ export class WorldScenes {
         actor,
         contact.target_scene,
       );
+      await db.query(
+        "UPDATE world_player_contact SET target_scene=$2 WHERE id=$1",
+        [contact.id, row!.id],
+      );
       await this.shared.contacts.answer(
         db,
         row!,
@@ -917,6 +938,8 @@ export class WorldScenes {
       );
       return row;
     }
+    if ((await this.sessions.get(contact.target_scene, actor, db))?.closed)
+      throw new ConstructionStateError("このシーンは終了しています");
     const row = await this.reception(
       world,
       actor,
@@ -964,20 +987,17 @@ export class WorldScenes {
     if (!row || !actor || (row.actor_id !== actor && !row.data.shared))
       throw new ConstructionStateError("現在のシーンを取得してください");
     await this.#unify(row, client);
+    await this.sessions.record(client, row);
     if (command === "finish") {
-      if (row.actor_id !== actor)
-        throw new ConstructionStateError("開始者が終了してください");
-      const control = await this.shared.turns.control(row.id, client);
-      if (
-        !["result", "reflecting"].includes(row.state) &&
-        control.flow !== "closing"
-      )
-        await this.shared.turns.submit(client, row, actor, kind, {
-          ...input,
-          command,
-        });
+      if (row.state !== "result")
+        await this.sessions.end(client, this.shared, row, actor);
       return (await this.latest(world, client, false, actor, row.id))!;
     }
+    if (
+      command !== "resume" &&
+      (await this.sessions.current(row.id, actor, client))?.closed
+    )
+      throw new ConstructionStateError("シーンは終了処理中です");
     if (command === "react") {
       const answer = await this.shared.contacts.answer(
         client,
@@ -989,7 +1009,6 @@ export class WorldScenes {
         kind,
       );
       if (answer === "accepted") return row;
-      if (answer === "act") command = "act";
     }
     if (row.data.encounter)
       throw new ConstructionStateError("参加要請への回答を待っています");
@@ -1466,9 +1485,7 @@ export class WorldScenes {
     await this.#save(row, undefined, row.claim!);
   }
   async #background(row: SceneRow) {
-    const receivedContacts = await this.shared.contacts.received(row.id, [
-      row.actor_id,
-    ]);
+    const receivedContacts = await this.sessions.received(row, [row.actor_id]);
     if (!row.data.work && !row.data.backgroundMessages)
       for (const receipt of receivedContacts)
         row.data.at = Math.max(row.data.at, receipt.at);
@@ -1932,13 +1949,13 @@ export class WorldScenes {
       ? []
       : (await this.agent.intentView(d.worldId, actor, d.startedAt, d.purpose))
           .conditions;
-    const received = await this.shared.contacts.received(row.id, [actor]);
+    const received = await this.sessions.received(row, [actor]);
     for (const receipt of received) d.at = Math.max(d.at, receipt.at);
     const locations = await this.#locations(row, [actor]),
       view = sceneView(
         d.views[actor]!,
-        bg,
-        d.events,
+        (await this.sessions.current(row.id, actor))?.opening?.background ?? bg,
+        this.sessions.history(row),
         own,
         d.at,
         d.choices.filter((i) => i.actorId === actor).map((i) => i.actionText),
@@ -2030,9 +2047,10 @@ export class WorldScenes {
     if (
       continuing &&
       (!d.pending[continuing]?.continuing ||
-        (await this.agent.controlledActors(d.worldId, [continuing], true)).has(
+        ((await this.agent.controlledActors(d.worldId, [continuing], true)).has(
           continuing,
-        ))
+        ) &&
+          !d.pending[continuing]?.inputId))
     )
       return this.#completeTurn(row, []);
     const action = continuing
@@ -2056,7 +2074,7 @@ export class WorldScenes {
       for (const intent of Object.values(d.pending))
         if (
           intent.replyWait &&
-          (await this.shared.contacts.ready(row.id, intent)) &&
+          (await this.sessions.ready(row.id, intent)) &&
           !d.nextDecisions.includes(intent.actorId)
         )
           d.nextDecisions.push(intent.actorId);
@@ -2194,6 +2212,7 @@ export class WorldScenes {
                   eventId: event.id,
                   inputId: event.inputId ?? action.id,
                   text: reception.text,
+                  independent: !d.turn?.reply || !!d.turn.idleInput,
                 },
               ];
               action.state = "complete";
@@ -2219,16 +2238,13 @@ export class WorldScenes {
         received: Awaited<ReturnType<SharedScenes["contacts"]["received"]>> =
           savedInput
             ? (d.work?.records?.contacts ?? savedInput.receivedContacts ?? [])
-            : await this.shared.contacts.received(
-                row.id,
-                Object.keys(d.pending),
-              );
+            : await this.sessions.received(row, Object.keys(d.pending));
       for (const receipt of received) d.at = Math.max(d.at, receipt.at);
       const intents = Object.values(d.pending).filter(
         (i) => !i.replyWait && !sleeping.has(i.actorId),
       );
       const records = d.work?.records ?? {
-        history: savedInput?.sceneHistory ?? d.events,
+        history: savedInput?.sceneHistory ?? this.sessions.history(row),
         contacts: received,
       };
       const input = scenePlayContext(
@@ -2477,6 +2493,7 @@ export class WorldScenes {
             speaker: reception.speaker,
             listener: reception.observerId,
             text: reception.text,
+            independent: !d.turn?.reply || !!d.turn.idleInput,
           });
         else if (
           reception.observerId !== reception.speaker &&
@@ -2647,7 +2664,7 @@ export class WorldScenes {
         // Only an in-flight legacy resolve was asked to defer afterObservation verbatim.
         const remaining =
           typeof status === "object" ? status.pending : undefined;
-        if (remaining && !step.departures.some((exit) => exit.actorId === id)) {
+        if (remaining) {
           const prior = d.pending[id]!,
             originEventId =
               prior.originEventId ??
@@ -2695,8 +2712,6 @@ export class WorldScenes {
       for (const exit of step.departures) {
         (d.departures ??= {})[exit.actorId] =
           departureOffset + exit.eventIndex + 1;
-        delete d.pending[exit.actorId];
-        delete d.intentions[exit.actorId];
         d.nextDecisions = d.nextDecisions.filter((id) => id !== exit.actorId);
       }
       delete d.work;
@@ -2859,6 +2874,17 @@ export class WorldScenes {
   }
   async #reflect(row: SceneRow) {
     const d = row.data;
+    if (
+      !d.handoff &&
+      (d.splitActors?.length ||
+        (await this.sessions.pending(this.pool, row.id)))
+    ) {
+      row.state = "active";
+      await this.#save(row, undefined, row.claim!);
+      await this.#transaction((db) => this.shared.wake(db, row.id));
+      return;
+    }
+    if (!d.handoff) await this.sessions.closeScene(this.pool, row.id);
     // Older workers retained completed action work after entering reflection.
     if (
       d.work &&
@@ -2867,7 +2893,7 @@ export class WorldScenes {
     )
       delete d.work;
     if (!d.operationId && d.drafts?.length) {
-      d.waitingFor = await this.drafts.waitingFor(row);
+      d.waitingFor = await this.sessions.waitingFor(row);
       if (d.waitingFor.length) {
         await this.#transaction(async (db) => {
           await this.#save(row, db, row.claim!);
@@ -2947,23 +2973,71 @@ export class WorldScenes {
       d.projection = await this.agent.run(d.operationId!);
       await this.#save(row, undefined, row.claim!);
       await this.#transaction(async (db) => {
-        for (const child of await this.drafts.dependents(db, row.id))
+        for (const child of await this.sessions.dependents(db, row.id))
           await this.#enqueue(db, child.id, child.shared);
       });
     }
-    for (const viewer of [
-      ...new Set([row.actor_id, ...(d.externalActors ?? [])]),
-    ]) {
+    await this.#transaction(async (client) => {
+      const current = await this.construction.get(
+        row.construction_id,
+        client,
+        true,
+      );
+      const inserted = await client.query(
+        "INSERT INTO construction_log(construction_id,operation_id,at,result) VALUES($1,$2,$3,$4) ON CONFLICT(operation_id) DO NOTHING RETURNING id",
+        [
+          row.construction_id,
+          d.operationId,
+          d.at,
+          JSON.stringify(d.projection),
+        ],
+      );
+      if (inserted.rowCount)
+        await client.query(
+          "UPDATE world_construction SET at=greatest(at,$2),agenda=$3 WHERE id=$1",
+          [
+            row.construction_id,
+            d.at,
+            JSON.stringify(
+              sceneAgenda(
+                current.agenda,
+                row.actor_id,
+                d.at,
+                d.projection!,
+                d.intentions,
+                d.nextDecisions,
+              ),
+            ),
+          ],
+        );
+    });
+    for (const viewer of d.handoff
+      ? []
+      : [...new Set([row.actor_id, ...(d.externalActors ?? [])])]) {
+      const known = (await this.sessions.current(row.id, viewer))?.result;
+      if (known) {
+        if (viewer === row.actor_id) {
+          d.result = known.text;
+          if (known.information) d.resultInformation = known.information;
+        } else (d.participantResults ??= {})[viewer] = known;
+        continue;
+      }
       if (
         viewer === row.actor_id ? !!d.result : !!d.participantResults?.[viewer]
       )
         continue;
       const source = await this.resultSource(row, viewer);
+      const session = await this.sessions.current(row.id, viewer);
+      const chosenInputs = session
+        ? (await this.sessions.records(session.id, viewer, "actions")).map(
+            (r) => r.item,
+          )
+        : d.actions;
       const value = await this.#ask(row, "result", "scene-result.md", {
         confirmed: source,
-        receivedContacts: await this.shared.contacts.received(row.id, [viewer]),
+        receivedContacts: await this.sessions.received(row, [viewer]),
         presented: viewer === row.actor_id ? (d.presentations ?? []) : [],
-        requestedInputs: d.actions
+        requestedInputs: chosenInputs
           .filter(
             (a) =>
               (("actorId" in a ? a.actorId : undefined) ?? row.actor_id) ===
@@ -2973,6 +3047,7 @@ export class WorldScenes {
         responseSchema: z.toJSONSchema(Narrative, { io: "input" }),
       });
       const narrative = Narrative.parse(value.value);
+      await this.sessions.finish(row.id, viewer, narrative, this.shared);
       if (viewer === row.actor_id) {
         d.result = narrative.text;
         if (narrative.information) d.resultInformation = narrative.information;
@@ -2985,19 +3060,6 @@ export class WorldScenes {
     delete d.work;
     row.state = "result";
     await this.#transaction(async (client) => {
-      const current = await this.construction.get(
-        row.construction_id,
-        client,
-        true,
-      );
-      const agenda = sceneAgenda(
-        current.agenda,
-        row.actor_id,
-        d.at,
-        d.projection!,
-        d.intentions,
-        d.nextDecisions,
-      );
       if (d.shared) {
         await this.shared.turns.cancelIdleOffer(client, row.id);
         await client.query(
@@ -3006,32 +3068,57 @@ export class WorldScenes {
         );
       }
       await this.#save(row, client, row.claim!);
-      if (d.shared) {
+      if (d.shared && !d.handoff) {
         for (const member of await this.shared.members(row.id, client))
-          await this.shared.notice(
-            client,
-            row.construction_id,
-            member.actor_id,
-            row.id,
-            "result",
-          );
+          if (!member.session_id)
+            await this.shared.notice(
+              client,
+              row.construction_id,
+              member.actor_id,
+              row.id,
+              "result",
+            );
       }
-      await client.query(
-        "INSERT INTO construction_log(construction_id,operation_id,at,result) VALUES($1,$2,$3,$4) ON CONFLICT(operation_id) DO NOTHING",
-        [
-          row.construction_id,
-          d.operationId,
-          d.at,
-          JSON.stringify(d.projection),
-        ],
-      );
-      await client.query(
-        "UPDATE world_construction SET at=greatest(at,$2),agenda=$3 WHERE id=$1",
-        [row.construction_id, d.at, JSON.stringify(agenda)],
-      );
     });
   }
   async resultSource(row: SceneRow, viewer = row.actor_id) {
+    const source = await this.segmentResultSource(row, viewer);
+    source.synopsis =
+      (await this.sessions.present(row, viewer, true)).row.data.background
+        ?.synopsis ?? source.synopsis;
+    const prior = [];
+    let unfinishedAction = source.unfinishedAction;
+    for (const earlier of await this.sessions.priorRows(row, viewer)) {
+      if (earlier.data.projection) {
+        const segment = await this.segmentResultSource(earlier, viewer);
+        prior.push(segment);
+        if (!row.data.intentions[viewer] && earlier.data.intentions[viewer])
+          unfinishedAction = segment.unfinishedAction;
+      }
+    }
+    if (!prior.length) return source;
+    return {
+      ...source,
+      unfinishedAction,
+      synopsis: source.synopsis,
+      observations: [
+        ...new Map(
+          [...prior, source]
+            .flatMap((p) => p.observations)
+            .map((o) => [o.id, o]),
+        ).values(),
+      ],
+      interpretations: [
+        ...new Map(
+          [...prior, source]
+            .flatMap((p) => p.interpretations)
+            .map((o) => [o.id, o]),
+        ).values(),
+      ],
+      priorScenes: prior,
+    };
+  }
+  private async segmentResultSource(row: SceneRow, viewer = row.actor_id) {
     const d = row.data,
       operation = (
         await this.pool.query<{ commit_id: string }>(
@@ -3255,6 +3342,9 @@ export class WorldScenes {
         ).rows[0];
         if (!row) throw new Error("シーンが見つかりません");
         await this.#unify(row, client);
+        await this.sessions.record(client, row);
+        if (await this.sessions.process(client, this.shared, row))
+          return { ...row, claim: null };
         if (
           (await this.shared.turns.control(row.id, client))?.flow ===
             "closing" &&
@@ -3461,7 +3551,7 @@ export class WorldScenes {
           role: "user",
           actorId: row.actor_id,
         });
-        await this.drafts.run(row, async () => {
+        await this.sessions.run(row, async () => {
           if (
             row.data.background &&
             !row.data.operationId &&

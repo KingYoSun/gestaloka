@@ -1,6 +1,9 @@
 import { expect, test } from "./fixtures.js";
 import { createHash, randomUUID } from "node:crypto";
 import { connectDatabases } from "@gestaloka/server";
+import { WorldStore } from "../../packages/server/src/world/store.js";
+import type { SceneRow } from "@gestaloka/server/scene";
+import { SceneSessions } from "../../packages/server/src/runtime/scene-sessions.js";
 import type { Page } from "@playwright/test";
 
 async function participate(page: Page) {
@@ -418,6 +421,23 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
       "UPDATE world_scene SET data=data||$2::jsonb WHERE id=$1",
       [scene.id, JSON.stringify({ events, actions, at: 259 })],
     );
+    const client = await db.postgres.connect();
+    try {
+      await client.query("BEGIN");
+      const stored = (
+        await client.query<SceneRow>(
+          "SELECT * FROM world_scene WHERE id=$1 FOR UPDATE",
+          [scene.id],
+        )
+      ).rows[0]!;
+      await new SceneSessions(db.postgres, new WorldStore(db.graph)).record(
+        client,
+        stored,
+      );
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
   } finally {
     await db.close();
   }

@@ -325,6 +325,13 @@ test("名前を識別できる観測だけに顔を添え、未知・匿名・�
     "UPDATE world_scene SET data=$2 WHERE id=$1",
     [scene.id, scene.data],
   );
+  await access.scenes.shared.transaction(async (db) => {
+    await db.query(
+      "UPDATE world_scene_member SET state='joined' WHERE scene_id=$1",
+      [scene.id],
+    );
+    await access.scenes.sessions.record(db, scene);
+  });
   for (const compact of [true, false]) {
     const view = (await access.scene(one.id, world, compact, a.actor)).scene!;
     expect(view.synopsisCharacters).toEqual([
