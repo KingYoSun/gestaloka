@@ -48,6 +48,7 @@
     "thisTaskCalculatedNanoUsd": 1355083436,
     "thisTaskUnknownNanoUsd": 0,
     "previousPr206CalculatedNanoUsd": 5311338094,
+    "previousPr206DriverDiagnosticNanoUsd": 1011383076,
     "previousPr206UnknownNanoUsd": 398304000,
     "cumulativeCalculatedNanoUsd": 6666421530,
     "additionalLimitNanoUsd": 1000000000,
@@ -225,6 +226,6 @@
     "tests/integration/openrouter.test.ts": "d414c6f243e3648e3d31466b9bea616f4949b8c94ce97cbf4411d8f8a3771104",
     "tests/integration/scene.test.ts": "8b07a19cc27e661d52c2c21b3e02a34fec57a747054b781ccb87f50cfa03b85e"
   },
-  "evidenceSha256": "914e9d9b696d76131a1820e557ca43fd7f33fa45b6c07951bd4d7409805414b3",
-  "archiveSha256": "2cef48cf8683c4f931db106cd50340903cdf1923d7a708bd5ff6b4b025e2c679"
+  "evidenceSha256": "94547124f9a9ef0e5bccffceb3a09b17ce9183e7add972eabf75dba156658a93",
+  "archiveSha256": "44b17a2af92eb135f670b57c28fe2ef0c983244b8f0c49762915ee2e50c1911d"
 }
