@@ -28,13 +28,19 @@ for (const key of ["DATABASE_URL", "NEO4J_URI"])
 const base = new URL("../", import.meta.url);
 const fixtureBytes = gunzipSync(
   await readFile(
-    new URL("documents/evaluations/adr042-ember-fixtures.json.gz", base),
+    new URL(
+      "artifacts/evaluations/ember-flash-scenes-2026-11-17/adr042-ember-fixtures.json.gz",
+      base,
+    ),
   ),
 );
 const fixtures = JSON.parse(fixtureBytes);
 const plan = JSON.parse(
   await readFile(
-    new URL("documents/evaluations/ember-flash-scenes-2026-11-17.json", base),
+    new URL(
+      "artifacts/evaluations/ember-flash-scenes-2026-11-17/plan.json",
+      base,
+    ),
   ),
 );
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");

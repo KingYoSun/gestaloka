@@ -1,0 +1,108 @@
+{
+  "publication": "aggregate-only; production records are not included",
+  "date": "2026-11-17",
+  "title": "共有世界の更新・確定処理の内部関数化",
+  "aggregates": {
+    "sceneTotals": {
+      "calls": 24,
+      "usd": 7.17035975,
+      "prompt_tokens": 4073398,
+      "prompt_cache_hit_tokens": 595800,
+      "completion_tokens": 19754,
+      "reasoning_tokens": 11286
+    },
+    "allTotals": {
+      "calls": 28,
+      "usd": 7.28576305,
+      "prompt_tokens": 4189567,
+      "prompt_cache_hit_tokens": 612866,
+      "completion_tokens": 22356,
+      "reasoning_tokens": 11473
+    },
+    "summary": {
+      "sample": {
+        "worlds": 1,
+        "operations": 19,
+        "calls": 24,
+        "allProductionCompleteUsd": 75.246003741
+      },
+      "sectionCharsAcrossCalls": {
+        "request": 5661590,
+        "initialContext": 8133551,
+        "controlledActorIds": 6849,
+        "responseSchema": 275088
+      },
+      "initialContextFieldChars": {
+        "id": 532,
+        "kind": 94,
+        "source": 532,
+        "target": 532,
+        "role": 70,
+        "period": 329,
+        "node": 853399,
+        "currentStates": 628635,
+        "interpretations": 1820301,
+        "effects": 4177929,
+        "text": 579,
+        "observation": 2025
+      },
+      "outputChargeUsd": 0.1186925,
+      "queries": [
+        {
+          "index": 10,
+          "usd": 0.24515595
+        },
+        {
+          "index": 15,
+          "usd": 0.7957085
+        }
+      ],
+      "repair": [
+        {
+          "index": 2,
+          "usd": 0.0542859,
+          "input": 189010
+        }
+      ],
+      "conflictRegenerations": [
+        {
+          "index": 13,
+          "usd": 0.7534204,
+          "input": 313122
+        },
+        {
+          "index": 13,
+          "usd": 0.9654429,
+          "input": 397046
+        }
+      ],
+      "effects": [
+        {
+          "index": 14,
+          "entries": 1078,
+          "uniqueRecords": 250,
+          "uniqueIds": 250,
+          "rawChars": 530867,
+          "uniqueChars": 302081
+        }
+      ],
+      "zeroDelta": {
+        "count": 8,
+        "usd": 0.2919332,
+        "indices": [0, 1, 3, 4, 7, 8, 12, 17]
+      }
+    },
+    "roundtrip": {
+      "passed": 19,
+      "descriptionCount": 25,
+      "beforeChars": 17944,
+      "afterChars": 9181
+    },
+    "validation": {
+      "roundtripCases": 19,
+      "newModelCalls": 0,
+      "productionMutations": 0
+    }
+  },
+  "configuration": {}
+}

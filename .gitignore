@@ -10,4 +10,11 @@ test-results/
 playwright-report/
 artifacts/
 
+# Captured production records must stay outside tracked evaluation reports.
+/documents/evaluations/adr042-ember-fixtures.json.gz
+/documents/evaluations/ember-flash-scenes-2026-11-17-evidence.json.gz
+/documents/evaluations/ember-structured-output-2026-11-17-evidence.json.gz
+/documents/evaluations/strict-decoder-2026-11-17-evidence.json.gz
+/tests/fixtures/strict-output-2026-11-17.json.gz
+
 .deployments/

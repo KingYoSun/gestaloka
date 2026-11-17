@@ -1,0 +1,51 @@
+{
+  "publication": "aggregate-only; production records are not included",
+  "date": "2026-11-17",
+  "title": "作用経路の初期供給と追加照会を分ける比較",
+  "aggregates": {
+    "totals": {
+      "full": {
+        "calls": 6,
+        "initialInputTokens": 1175628,
+        "inputTokens": 1522244,
+        "outputTokens": 3638,
+        "calculatedNanoUsd": 2737561050,
+        "elapsedMs": 92731
+      },
+      "scoped": {
+        "calls": 7,
+        "initialInputTokens": 990112,
+        "inputTokens": 1376625,
+        "outputTokens": 5110,
+        "calculatedNanoUsd": 2427893000,
+        "elapsedMs": 117591
+      }
+    },
+    "reductions": {
+      "initialInput": 0.15780161751846677,
+      "totalInput": 0.09566074821119352,
+      "cost": 0.11311822616704748
+    },
+    "budget": {
+      "limitUsd": 8,
+      "upperCostUsd": 5.16545405,
+      "calls": 13,
+      "unsettled": 0
+    },
+    "validation": {
+      "wireRoundtrips": 13,
+      "liveDeferredEffectQueries": 1,
+      "completeAnchorsKept": true,
+      "units": 101,
+      "integrationTests": 47,
+      "productionWrites": 0
+    }
+  },
+  "configuration": {
+    "model": "gpt-6.1-terra",
+    "api": "responses",
+    "effort": "medium",
+    "maxOutputTokens": 65536,
+    "budgetUsd": 8
+  }
+}

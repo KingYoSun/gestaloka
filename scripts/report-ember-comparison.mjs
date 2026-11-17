@@ -17,8 +17,8 @@ process.env.DATABASE_URL =
   "postgresql://gestaloka:evaluation-only@127.0.0.1:25434/gestaloka";
 process.env.NEO4J_PASSWORD = "evaluation-only";
 const archivePath = new URL(
-  "../documents/evaluations/ember-flash-scenes-2026-11-17-evidence.json.gz",
-  import.meta.url,
+  "ember-flash-scenes-2026-11-17-evidence.json.gz",
+  directory,
 );
 let finalScenes = execution.trials.flatMap((trial) => trial.finalScenes ?? []);
 if (!finalScenes.length) {
@@ -200,8 +200,8 @@ assert(
 );
 const evidence = { execution, finalScenes };
 const output = new URL(
-  "../documents/evaluations/ember-flash-scenes-2026-11-17-evidence.json.gz",
-  import.meta.url,
+  "ember-flash-scenes-2026-11-17-evidence.json.gz",
+  directory,
 );
 const evidenceBytes = Buffer.from(JSON.stringify(evidence));
 await writeFile(output, gzipSync(evidenceBytes));

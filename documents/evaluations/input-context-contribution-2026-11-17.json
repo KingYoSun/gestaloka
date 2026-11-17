@@ -1,0 +1,41 @@
+{
+  "publication": "aggregate-only; production records are not included",
+  "date": "2026-11-17",
+  "title": "出力を支えた入力と初期供給の範囲",
+  "aggregates": {
+    "census": {
+      "counts": {
+        "newScripts": 25,
+        "endedRelations": 50,
+        "endedStatements": 50,
+        "currentStatementsSupplied": 2097,
+        "settledActors": 10,
+        "deferredActors": 9,
+        "wakeups": 6
+      }
+    },
+    "projection": {
+      "totals": {
+        "baselineChars": 5675395,
+        "anchors": 3986294,
+        "shared": 3858585,
+        "active": 3217447
+      },
+      "validation": {
+        "savedWireMatched": 19,
+        "anchorReconstructionPassed": 19,
+        "sharedEffectsRoundtripPassed": 19,
+        "scopeNarrowingValidated": false
+      }
+    },
+    "validation": {
+      "directClaimsRetainedByActiveProjection": 9,
+      "savedRequestsReproduced": 19,
+      "eventAnchorReconstruction": 19,
+      "losslessEffectTableRoundtrip": 19,
+      "productionAccessThisInvestigation": false,
+      "newModelCalls": 0
+    }
+  },
+  "configuration": {}
+}

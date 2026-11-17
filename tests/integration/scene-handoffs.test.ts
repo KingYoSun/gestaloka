@@ -239,7 +239,7 @@ beforeAll(async () => {
   }
 }, 120000);
 
-test("保存された反復入力を共通のターンで再生し、10往復の投票と続行後の再投票を使う", async () => {
+test("架空の反復入力を共通のターンで再生し、10往復の投票と続行後の再投票を使う", async () => {
   invite.clear();
   for (let i = 0; i < 2; i++) {
     const prepared = await command(i, {

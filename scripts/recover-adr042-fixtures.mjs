@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import { connectDatabases } from "@gestaloka/server";
@@ -77,9 +77,10 @@ try {
   };
   const bytes = Buffer.from(JSON.stringify(fixtures));
   const path = new URL(
-    "../documents/evaluations/adr042-ember-fixtures.json.gz",
+    "../artifacts/evaluations/ember-flash-scenes-2026-11-17/adr042-ember-fixtures.json.gz",
     import.meta.url,
   );
+  await mkdir(new URL("./", path), { recursive: true });
   await writeFile(path, gzipSync(bytes));
   console.log(
     JSON.stringify({

@@ -1,0 +1,97 @@
+{
+  "publication": "aggregate-only; production records are not included",
+  "date": "2026-11-17",
+  "title": "派生グラフ省略による処遇差の追跡",
+  "aggregates": {
+    "groups": {
+      "full_old": {
+        "trials": 4,
+        "patterns": {
+          "settled/settled/settled": 4
+        },
+        "actors": {
+          "Doro": {
+            "settled": 4
+          },
+          "Michiko": {
+            "settled": 4
+          },
+          "Paimon": {
+            "settled": 4
+          }
+        },
+        "calculatedNanoUsd": 1145498000,
+        "inputTokens": 1386464
+      },
+      "reduced_old": {
+        "trials": 4,
+        "patterns": {
+          "settled/intent/intent": 1,
+          "settled/deferred/deferred": 1,
+          "intent/intent/intent": 2
+        },
+        "actors": {
+          "Doro": {
+            "settled": 2,
+            "intent": 2
+          },
+          "Michiko": {
+            "intent": 3,
+            "deferred": 1
+          },
+          "Paimon": {
+            "intent": 3,
+            "deferred": 1
+          }
+        },
+        "calculatedNanoUsd": 601900400,
+        "inputTokens": 783112
+      },
+      "reduced_new": {
+        "trials": 4,
+        "patterns": {
+          "settled/deferred/deferred": 1,
+          "deferred/deferred/deferred": 3
+        },
+        "actors": {
+          "Doro": {
+            "settled": 1,
+            "deferred": 3
+          },
+          "Michiko": {
+            "deferred": 4
+          },
+          "Paimon": {
+            "deferred": 4
+          }
+        },
+        "calculatedNanoUsd": 510204400,
+        "inputTokens": 783248
+      }
+    },
+    "budget": {
+      "limitUsd": 8,
+      "upperCostUsd": 2.2576028,
+      "calls": 12,
+      "unsettled": 0
+    },
+    "validation": {
+      "sameWireWithinEachCondition": true,
+      "wireRequestAndCurrentContextRoundtripPassed": 12,
+      "uniqueProviderResponseIds": 12,
+      "sourceHashChecks": 12,
+      "priorPairExactlyReconstructed": true,
+      "queryAndReplyIdentical": true,
+      "actorAliasesUnchanged": true,
+      "productionAccess": false,
+      "newProductChanges": false
+    }
+  },
+  "configuration": {
+    "model": "gpt-6.1-terra",
+    "api": "responses",
+    "effort": "medium",
+    "maxOutputTokens": 65536,
+    "budgetUsd": 8
+  }
+}
