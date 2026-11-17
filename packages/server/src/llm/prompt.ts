@@ -169,22 +169,32 @@ export function parseOutput(content: string): unknown {
   );
 }
 
-// Keep every string and token, including unfinished JSON; only collapse layout.
-export function compactJsonWhitespace(content: string): string {
-  let result = "",
-    quoted = false,
+/** Stateful across fragments; only JSON's four layout characters count. */
+export function outsideJsonWhitespace() {
+  let quoted = false,
     escaped = false;
-  for (const character of content) {
+  return (character: string) => {
     if (quoted) {
-      result += character;
       if (escaped) escaped = false;
       else if (character === "\\") escaped = true;
       else if (character === '"') quoted = false;
-    } else if (" \t\r\n".includes(character)) {
+    } else {
+      if (character === '"') quoted = true;
+      return " \t\r\n".includes(character);
+    }
+    return false;
+  };
+}
+
+// Keep every string and token, including unfinished JSON; only collapse layout.
+export function compactJsonWhitespace(content: string): string {
+  const outside = outsideJsonWhitespace();
+  let result = "";
+  for (const character of content) {
+    if (outside(character)) {
       if (!result.endsWith(" ")) result += " ";
     } else {
       result += character;
-      if (character === '"') quoted = true;
     }
   }
   return result;
