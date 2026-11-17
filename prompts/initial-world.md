@@ -32,4 +32,4 @@ seeにはtextまたはobservation.aspectで、実際に見た・聞いた内容�
 
 reportには、明示入力をどのノード・関係で満たしたか、補完した内容、未指定・未確認の内容を管理者向けに短く記してください。自分の推論過程は記録せず、reportを世界内のscriptやinterpretへ複製しないでください。
 
-探索による出現を定義する場合はscriptにspawnを持たせる。spawnのkindはinstant-npc・existence・script・event、speciesは呼称、descriptionは説明、probabilityは0〜1の確率、countは1回当たったときの正の整数個数。存在から発生用scriptへstatus/content、scriptから検索対象へstatus/about（textはspawn-hit）、必要な保持物へstatus/about（textはspawn-hold）を張る。その場で生成物を先に配置しない。
+探索による出現を定義する場合はscriptにspawnを持たせる。spawnのkindはinstant-npc・existence・script・event、speciesは呼称、descriptionは説明、probabilityは0〜1の確率、countは1回当たったときの正の整数個数。存在から発生用scriptへstatus/content、scriptから検索対象へstatus/about（textはspawn-hit）、必要な現在地へstatus/about（textはspawn-at）、必要な保持物へstatus/about（textはspawn-hold）を張る。その場で生成物を先に配置しない。

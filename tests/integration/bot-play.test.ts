@@ -1906,6 +1906,16 @@ test("検索で発生した複数の物品を同席者が観測し、後から�
             id: randomUUID(),
             kind: "status",
             role: "about",
+            text: "spawn-at",
+            source: rule,
+            target: f.place,
+            period: { from: at },
+          },
+
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "about",
             text: "spawn-hold",
             source: rule,
             target: tool,
@@ -1926,6 +1936,32 @@ test("検索で発生した複数の物品を同席者が観測し、後から�
   await f.send(1, { command: "contact", targetId: f.actors[0] });
   const query = { kind: "subject", targetId: f.place },
     body = { command: "search", query, requestId: randomUUID() };
+  // The player still holds the required tool at the other site; a hit on it alone must not spawn anything there.
+  await f.move(0, f.far);
+  const depId = randomUUID(),
+    dep = {
+      id: randomUUID(),
+      kind: "status" as const,
+      role: "about" as const,
+      text: "spawn-hit",
+      source: rule,
+      target: tool,
+      period: { from: at },
+    };
+  await f.store.commit(
+    await f.store.claim(world, depId),
+    f.store.context(world),
+    {
+      commitId: depId,
+      at,
+      changes: { edges: [dep], nodes: [], revisions: [], endEdges: [] },
+    },
+  );
+  expect(
+    (await f.send(0, { command: "search", query: { kind: "belongings" } }))
+      .appearances,
+  ).toBeUndefined();
+  await f.move(0, f.place);
   const found = await f.send(0, body);
   const items = found.appearances as { id: string }[];
   expect(new Set(items.map((i) => i.id)).size).toBe(3);

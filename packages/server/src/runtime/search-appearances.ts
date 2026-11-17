@@ -76,7 +76,13 @@ export async function searchAppearances(
     if (node?.kind !== "script" || !node.spawn) continue;
     const rule = node.spawn,
       conditions = await ctx.relations(ruleId, "status", "out", latest);
-    if (!conditions.every((e) => !about(e, "spawn-hold") || held.has(e.target)))
+    if (
+      !conditions.every((edge) => {
+        if (about(edge, "spawn-hold")) return held.has(edge.target);
+        if (about(edge, "spawn-at")) return places.includes(edge.target);
+        return true;
+      })
+    )
       continue;
     if (!places.length && rule.kind !== "instant-npc") continue;
     if (randomInt(0x100000000) / 0x100000000 >= rule.probability) continue;
