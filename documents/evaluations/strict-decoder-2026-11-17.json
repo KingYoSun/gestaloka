@@ -1,0 +1,231 @@
+{
+  "baselineCommit": "70b8751e",
+  "initial": {
+    "old": {
+      "trials": 4,
+      "complete": 4,
+      "calls": 92,
+      "nanoUsd": 615645006,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 3,
+      "lengthCalls": 5
+    },
+    "new": {
+      "trials": 4,
+      "complete": 4,
+      "calls": 109,
+      "nanoUsd": 402268392,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 7,
+      "lengthCalls": 4
+    }
+  },
+  "expanded": {
+    "old": {
+      "trials": 2,
+      "complete": 1,
+      "calls": 75,
+      "nanoUsd": 276370048,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 4,
+      "lengthCalls": 4
+    },
+    "new": {
+      "trials": 2,
+      "complete": 1,
+      "calls": 39,
+      "nanoUsd": 60799990,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 0,
+      "lengthCalls": 0
+    }
+  },
+  "adoption": {
+    "decision": "必須CIの通過後に本番反映",
+    "reason": "ユーザー判断で温室完走をPR作成の必須条件から外し、保存255応答・記録庫の提示・全費用で判断した。温室の後続提示は未確認。"
+  },
+  "spending": {
+    "thisTaskCalculatedNanoUsd": 1355083436,
+    "thisTaskUnknownNanoUsd": 0,
+    "previousPr206CalculatedNanoUsd": 5311338094,
+    "previousPr206DriverDiagnosticNanoUsd": 1011383076,
+    "previousPr206UnknownNanoUsd": 398304000,
+    "cumulativeCalculatedNanoUsd": 6666421530,
+    "additionalLimitNanoUsd": 1000000000,
+    "additionalCalculatedNanoUsd": 337170038,
+    "additionalHeldNanoUsd": 0
+  },
+  "trials": [
+    {
+      "phase": "decoder-only",
+      "setting": "tide-archive",
+      "variant": 0,
+      "group": "old",
+      "world": "ee570d29-d2af-4b5c-a4cc-c010f3b7062d",
+      "sceneId": "8ccf0de1-2783-4b67-8dd0-751448b59b5b",
+      "status": "complete",
+      "calls": 20,
+      "nanoUsd": 37522752,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 0
+    },
+    {
+      "phase": "decoder-only",
+      "setting": "tide-archive",
+      "variant": 0,
+      "group": "new",
+      "world": "0daca27d-98b9-4341-b928-5eed1081d64c",
+      "sceneId": "c724e8fb-3aab-4212-9f10-8a3c62178c5e",
+      "status": "complete",
+      "calls": 40,
+      "nanoUsd": 109512302,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 2
+    },
+    {
+      "phase": "decoder-only",
+      "setting": "tide-archive",
+      "variant": 1,
+      "group": "new",
+      "world": "0bdaed89-fe6d-4dd2-be83-d85bad47ede4",
+      "sceneId": "bec90111-903f-4e88-9f4c-0294df6b6f92",
+      "status": "complete",
+      "calls": 21,
+      "nanoUsd": 98778120,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 2
+    },
+    {
+      "phase": "decoder-only",
+      "setting": "tide-archive",
+      "variant": 1,
+      "group": "old",
+      "world": "56b7e8b3-acd3-43bf-9ef9-b7a6d99c266a",
+      "sceneId": "2b9bf75f-f06e-4b03-8a60-07bcb2cae0df",
+      "status": "complete",
+      "calls": 24,
+      "nanoUsd": 80442552,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 1
+    },
+    {
+      "phase": "decoder-only",
+      "setting": "orbital-garden",
+      "variant": 0,
+      "group": "old",
+      "world": "20d88b14-0d59-4e95-baa7-627535787e25",
+      "sceneId": "b0fb1fcf-8db5-49cd-8081-9b80f61885e3",
+      "status": "complete",
+      "calls": 22,
+      "nanoUsd": 58969284,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 0
+    },
+    {
+      "phase": "decoder-only",
+      "setting": "orbital-garden",
+      "variant": 0,
+      "group": "new",
+      "world": "ef3a08df-819d-401a-aeaa-1bb26d087c49",
+      "sceneId": "d3411157-748f-4fe9-a14a-36115c02a688",
+      "status": "complete",
+      "calls": 24,
+      "nanoUsd": 100448794,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 2
+    },
+    {
+      "phase": "decoder-only",
+      "setting": "orbital-garden",
+      "variant": 1,
+      "group": "new",
+      "world": "a6965e69-dd18-4e24-ad06-3c930836b62e",
+      "sceneId": "4291cb19-8b6a-4337-bca3-dd4c1772d3f7",
+      "status": "complete",
+      "calls": 24,
+      "nanoUsd": 93529176,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 1
+    },
+    {
+      "phase": "decoder-only",
+      "setting": "orbital-garden",
+      "variant": 1,
+      "group": "old",
+      "world": "c3e8fe3f-e180-48d5-9b23-2df1cc915a8c",
+      "sceneId": "ffa2a223-8bc9-4460-ac17-6f1f86521c15",
+      "status": "complete",
+      "calls": 26,
+      "nanoUsd": 438710418,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 2
+    },
+    {
+      "phase": "reference-context",
+      "setting": "tide-archive",
+      "variant": 1,
+      "group": "old",
+      "world": "0d92222f-5894-4df2-90d4-03d4963a2f33",
+      "sceneId": "e57132cd-ff03-4872-b71a-9fa29bb80947",
+      "status": "complete",
+      "calls": 53,
+      "nanoUsd": 263198004,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 4
+    },
+    {
+      "phase": "reference-context",
+      "setting": "tide-archive",
+      "variant": 1,
+      "group": "new",
+      "world": "5dadd788-afce-40dc-8c65-9820c41bfae8",
+      "sceneId": "fc59e650-ee5b-4370-9119-bd9899a50871",
+      "status": "complete",
+      "calls": 18,
+      "nanoUsd": 45782422,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 0
+    },
+    {
+      "phase": "reference-context",
+      "setting": "orbital-garden",
+      "variant": 1,
+      "group": "old",
+      "world": "2d0c32da-cbf6-414e-ad68-5c970bedab4e",
+      "sceneId": "cb990eeb-40bf-408c-8c4f-406bacbd31d2",
+      "status": "error",
+      "calls": 22,
+      "nanoUsd": 13172044,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 0,
+      "error": "Error: 「目についた変化を調べる」ための資料がまだ不足している。起点の関係確認では effect が見当たらず、関係リストや受領連絡の具体的な内容も得られていない。この状態で変化の正体や次に確かめるべきことを判断できない。\n    at #background (file:///C:/Users/kgm11/.codex/worktrees/6966/gestaloka/packages/server/dist/runtime/baseline-scene.js:957:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///C:/Users/kgm11/.codex/worktrees/6966/gestaloka/packages/server/dist/runtime/baseline-scene.js:2265:25\n    at async #tick (file:///C:/Users/kgm11/.codex/worktrees/6966/gestaloka/packages/server/dist/runtime/baseline-scene.js:2259:17)\n    at async <anonymous> (C:\\Users\\kgm11\\.codex\\worktrees\\6966\\gestaloka\\packages\\server\\src\\runtime\\executions.ts:97:18)\n    at async drain (file:///C:/Users/kgm11/.codex/worktrees/6966/gestaloka/artifacts/evaluations/strict-decoder-2026-11-17/compare-expanded.mjs:50:33)\n    at async trial (file:///C:/Users/kgm11/.codex/worktrees/6966/gestaloka/artifacts/evaluations/strict-decoder-2026-11-17/compare-expanded.mjs:53:3)\n    at async file:///C:/Users/kgm11/.codex/worktrees/6966/gestaloka/artifacts/evaluations/strict-decoder-2026-11-17/compare-expanded.mjs:72:242\n    at async Promise.all (index 0)\n    at async file:///C:/Users/kgm11/.codex/worktrees/6966/gestaloka/artifacts/evaluations/strict-decoder-2026-11-17/compare-expanded.mjs:72:119"
+    },
+    {
+      "phase": "reference-context",
+      "setting": "orbital-garden",
+      "variant": 1,
+      "group": "new",
+      "world": "83af1964-1ae6-469f-92ce-188390c25027",
+      "sceneId": "c3658ae5-8eb2-431b-9a90-41b3215c5b61",
+      "status": "error",
+      "calls": 21,
+      "nanoUsd": 15017568,
+      "unknownNanoUsd": 0,
+      "upperHandoffCalls": 0,
+      "error": "Error: 不足を解消するため、応答形式の助けを求めており、scene生成スキル参照を複数回リクエストしています。\n    at WorldScenes.#background (C:\\Users\\kgm11\\.codex\\worktrees\\6966\\gestaloka\\packages\\server\\src\\runtime\\scene.ts:1569:42)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async <anonymous> (C:\\Users\\kgm11\\.codex\\worktrees\\6966\\gestaloka\\packages\\server\\src\\runtime\\scene.ts:3480:13)\n    at async WorldScenes.#tick (C:\\Users\\kgm11\\.codex\\worktrees\\6966\\gestaloka\\packages\\server\\src\\runtime\\scene.ts:3464:9)\n    at async <anonymous> (C:\\Users\\kgm11\\.codex\\worktrees\\6966\\gestaloka\\packages\\server\\src\\runtime\\executions.ts:97:18)\n    at async drain (file:///C:/Users/kgm11/.codex/worktrees/6966/gestaloka/artifacts/evaluations/strict-decoder-2026-11-17/compare-expanded.mjs:50:33)\n    at async trial (file:///C:/Users/kgm11/.codex/worktrees/6966/gestaloka/artifacts/evaluations/strict-decoder-2026-11-17/compare-expanded.mjs:53:3)\n    at async file:///C:/Users/kgm11/.codex/worktrees/6966/gestaloka/artifacts/evaluations/strict-decoder-2026-11-17/compare-expanded.mjs:72:242\n    at async Promise.all (index 0)\n    at async file:///C:/Users/kgm11/.codex/worktrees/6966/gestaloka/artifacts/evaluations/strict-decoder-2026-11-17/compare-expanded.mjs:72:119"
+    }
+  ],
+  "sourceHashes": {
+    "packages/server/src/llm/budget.ts": "65721e6c8afd0d291a7ef7ebe592b63e366ec4ee7d24482becd21c593f776fa6",
+    "packages/server/src/llm/client.ts": "f16270a9035d133b21861644ebd7740de03a5b893c6e6f7ee709e56066eeb579",
+    "packages/server/src/llm/prompt.ts": "75141722e78dd4a86030f5c8acac188120782ced46bd1bd2bc23b47a6b8c11a4",
+    "packages/server/src/runtime/scene.ts": "f185d6b60372b21c6059518bd186857423bfc56ccadeba00b9b5cfcc93111e18",
+    "packages/server/src/runtime/scene-decision.ts": "0c299d9b99ac10a719ee87476fbcaf56459829e88884de8d977738a4703a5f38",
+    "tests/unit/strict-output-regression.test.ts": "515559b42177dba7978d4ec8cbc9dfb287e0740d81a5452b6b1c472f75b07a74",
+    "tests/unit/scene-decision.test.ts": "8769b635584ed6d8216c302a0be72c51befb7f290d196c749fc2d472974d2681",
+    "tests/integration/openrouter.test.ts": "d414c6f243e3648e3d31466b9bea616f4949b8c94ce97cbf4411d8f8a3771104",
+    "tests/integration/scene.test.ts": "8b07a19cc27e661d52c2c21b3e02a34fec57a747054b781ccb87f50cfa03b85e"
+  },
+  "evidenceSha256": "25e4074c6176f580701763cc8e1fe1856eafb87be71158991bbd4975e2136d0c",
+  "archiveSha256": "b3aa7fbec7257be213de7e1d0b581f146a55b57957f3e197855222cefdf72212"
+}
