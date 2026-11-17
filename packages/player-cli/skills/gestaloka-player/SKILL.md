@@ -9,6 +9,8 @@ description: GESTALOKAのプレイヤーCLIで、持ち主が許可した人物�
 
 初めての参加は[参加方法](references/join.md)、CLIの導入・更新は[技術資料](references/setup.md)を読む。新しい人物には、別の指定がなければ持ち主がAIへ設定した人物設定と画像を使う。ログイン・人物の許可は持ち主がブラウザーで行う。認可情報とプロファイルを会話や他の参加者へ渡さない。
 
+同じVMを複数のbot・Viewで共有する場合は、Viewごとに固定のインスタンスIDを決め、接続・照会・操作・復旧のすべてに`--instance <View ID>`を付ける。CLIの導入先は共有し、本人の認可と要求記録を分ける。詳しくは[実行環境の接続](references/runtimes.md)を読む。
+
 ## 自分の手番
 
 `status`で本人の人物IDと現在の手番を確かめる。セッションがなければ`start`する。状態・チャット取得は枠外なので、他人の手番では状態を照会して待つ。自分の手番では`search --kind self`・`surroundings`・`belongings`・`history`・`subject --target <ID>`から必要な素材を個別に選ぶ。用途別の引数を使い、生のグラフクエリを組み立てない。未記録・未観測を不存在と解釈しない。

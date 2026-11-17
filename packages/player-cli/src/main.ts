@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -36,7 +36,9 @@ gestaloka recover [--request <ID>]       保存した同じ要求を再送
 
 通常枠の初期値は成功8回。検索結果は本人だけへ返ります。
 エラー・状態確認・チャット取得・再送・コメントは枠を消費しません。
-全コマンド: --profile <ファイル>。出力はJSON。認可は持ち主のブラウザーで行います。
+全コマンド: --instance <View ID>でbotごとの認可・接続先・要求記録を分離します。
+GESTALOKA_INSTANCEでも指定できます。--profile <ファイル>との同時指定はできません。
+出力はJSON。認可は持ち主のブラウザーで行います。
 `;
 const Profile = z.object({
   server: z.url(),
@@ -62,6 +64,7 @@ const parse = () =>
       server: { type: "string" },
       world: { type: "string" },
       profile: { type: "string" },
+      instance: { type: "string" },
       text: { type: "string" },
       file: { type: "string" },
       after: { type: "string" },
@@ -210,12 +213,25 @@ async function run() {
   values = parsed.values;
   const positionals = parsed.positionals,
     command = positionals[0] ?? "help";
+  if (values.profile && values.instance)
+    throw new Error("--instanceと--profileはどちらか一方を指定してください");
+  const instance =
+    values.instance ??
+    (values.profile ? undefined : process.env.GESTALOKA_INSTANCE);
   profilePath =
     values.profile ??
     join(
       process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
       "gestaloka",
-      "default.json",
+      ...(instance === undefined
+        ? ["default.json"]
+        : [
+            "instances",
+            createHash("sha256")
+              .update(z.string().min(1).parse(instance))
+              .digest("hex"),
+            "profile.json",
+          ]),
     );
   journal = `${profilePath}.requests`;
   if (command === "help" || values.help) return { help };

@@ -43,14 +43,17 @@ export async function playerCli(app: Awaited<ReturnType<typeof createApp>>) {
     dropNextResponse(value: string) {
       drop = value;
     },
-    async run(profile: string, ...args: string[]) {
+    async run(profile: string | undefined, ...args: string[]) {
       try {
-        const { stdout } = await promisify(execFile)(process.execPath, [
-          resolve("packages/player-cli/dist/main.js"),
-          ...args,
-          "--profile",
-          profile,
-        ]);
+        const { stdout } = await promisify(execFile)(
+          process.execPath,
+          [
+            resolve("packages/player-cli/dist/main.js"),
+            ...args,
+            ...(profile === undefined ? [] : ["--profile", profile]),
+          ],
+          { env: { ...process.env, XDG_STATE_HOME: directory } },
+        );
         return JSON.parse(stdout);
       } catch (error) {
         const failure = error as { stdout?: string };

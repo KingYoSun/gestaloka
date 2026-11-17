@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { readFile, readdir } from "node:fs/promises";
 import { beforeAll, afterAll, afterEach, expect, test, vi } from "vitest";
 import { PlayCommand } from "@gestaloka/contracts";
 import { WorldAccess } from "@gestaloka/server/access";
@@ -7,7 +10,7 @@ import { derivedId } from "@gestaloka/server/world";
 import { BotPlay } from "@gestaloka/server/play";
 import { createApp } from "../../apps/api/src/app.js";
 import { playerCli } from "../support/player-cli.js";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureRuntime } from "../support/provider.js";
 import { fixtureAuth } from "../support/auth.js";
@@ -452,6 +455,113 @@ test("HTTPとCLIは本人の手番APIを使い、旧書込を拒否し、同じ�
     });
     expect(old.statusCode).toBe(409);
     expect(old.json().code).toBe("PLAY_API_CHANGED");
+    expect(f.calls).not.toHaveBeenCalled();
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
+
+test("同じVMのCLIをView別インスタンスで並列実行し、認可と要求の復旧を分離する", async () => {
+  const f = await fixture(),
+    app = await createApp(access, auth.identity, undefined, auth.operations),
+    cli = await playerCli(app),
+    ids = ["View / 甲", "View / 乙"];
+  const run = (i: number, ...args: string[]) =>
+    cli.run(undefined, ...args, "--instance", ids[i]!);
+  try {
+    await Promise.all([
+      f.send(0, { command: "finish" }),
+      f.send(1, { command: "finish" }),
+    ]);
+    const connections = await Promise.all(
+      ids.map((_, i) =>
+        run(i, "connect", "--server", cli.base, "--world", f.world),
+      ),
+    );
+    expect(connections[0].id).not.toBe(connections[1].id);
+    const approvals = await Promise.all(
+      connections.map((c, i) =>
+        cli.approve(f.people[i]!.cookie, c.userCode, `actor:${f.actors[i]}`),
+      ),
+    );
+    expect(approvals.map((a) => a.statusCode)).toEqual([302, 302]);
+    const starts = await Promise.all(ids.map((_, i) => run(i, "start")));
+    expect(starts[0].result.sessionId).not.toBe(starts[1].result.sessionId);
+    cli.dropNextResponse("say");
+    const [lost, other] = await Promise.all([
+      run(0, "say", "--text", "自分のViewからの発言"),
+      run(1, "search", "--kind", "self"),
+    ]);
+    expect(lost.state).toBe("error");
+    expect(other.result.callsUsed).toBe(1);
+    const recovered = await run(0, "recover");
+    expect(recovered.requestId).toBe(lost.requestId);
+    expect(recovered.result.callsUsed).toBe(1);
+    expect((await run(1, "recover", "--request", lost.requestId)).code).toBe(
+      "ENOENT",
+    );
+    const states = await Promise.all(ids.map((_, i) => run(i, "status")));
+    expect(states.map((s) => s.viewerId)).toEqual(f.actors.slice(0, 2));
+    expect(states.map((s) => s.callsUsed)).toEqual([1, 1]);
+    const folders = await readdir(
+      join(cli.directory, "gestaloka", "instances"),
+    );
+    expect(folders).toHaveLength(2);
+    const profiles = await Promise.all(
+      folders.map(async (folder) =>
+        JSON.parse(
+          await readFile(
+            join(
+              cli.directory,
+              "gestaloka",
+              "instances",
+              folder,
+              "profile.json",
+            ),
+            "utf8",
+          ),
+        ),
+      ),
+    );
+    expect(profiles.map((p) => p.deviceId).sort()).toEqual(
+      connections.map((c) => c.id).sort(),
+    );
+    expect(new Set(profiles.map((p) => p.secret)).size).toBe(2);
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      [resolve("packages/player-cli/dist/main.js"), "status"],
+      {
+        env: {
+          ...process.env,
+          XDG_STATE_HOME: cli.directory,
+          GESTALOKA_INSTANCE: ids[0],
+        },
+      },
+    );
+    expect(JSON.parse(stdout).viewerId).toBe(f.actors[0]);
+    const legacy = join(cli.directory, "legacy.json");
+    await cli.run(legacy, "connect", "--server", cli.base, "--world", f.world);
+    expect(JSON.parse(await readFile(legacy, "utf8")).worldId).toBe(f.world);
+    expect(
+      (await cli.run(legacy, "status", "--instance", ids[0]!)).message,
+    ).toContain("どちらか一方");
+    const defaultConnection = await cli.run(
+      undefined,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      JSON.parse(
+        await readFile(
+          join(cli.directory, "gestaloka", "default.json"),
+          "utf8",
+        ),
+      ).deviceId,
+    ).toBe(defaultConnection.id);
     expect(f.calls).not.toHaveBeenCalled();
   } finally {
     await cli.close();
