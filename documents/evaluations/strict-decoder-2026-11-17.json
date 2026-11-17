@@ -41,8 +41,8 @@
     }
   },
   "adoption": {
-    "accepted": false,
-    "reason": "ユーザーの指示で温室の完走をPR作成の必須条件から外した。保存255応答・記録庫の提示・全費用を証拠とし、温室の後続提示は未確認と明示する。CIは確認中。"
+    "decision": "必須CIの通過後に本番反映",
+    "reason": "ユーザー判断で温室完走をPR作成の必須条件から外し、保存255応答・記録庫の提示・全費用で判断した。温室の後続提示は未確認。"
   },
   "spending": {
     "thisTaskCalculatedNanoUsd": 1355083436,
@@ -226,6 +226,6 @@
     "tests/integration/openrouter.test.ts": "d414c6f243e3648e3d31466b9bea616f4949b8c94ce97cbf4411d8f8a3771104",
     "tests/integration/scene.test.ts": "8b07a19cc27e661d52c2c21b3e02a34fec57a747054b781ccb87f50cfa03b85e"
   },
-  "evidenceSha256": "de2cf29d3838fb16e57c0d3787c494870641710c82b8ae25dc13dffd3b1766b1",
-  "archiveSha256": "4315c7d2855441260f63e61dd4c091bd59ec8051a34b6fe42909e5f7750e4eca"
+  "evidenceSha256": "25e4074c6176f580701763cc8e1fe1856eafb87be71158991bbd4975e2136d0c",
+  "archiveSha256": "b3aa7fbec7257be213de7e1d0b581f146a55b57957f3e197855222cefdf72212"
 }
