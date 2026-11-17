@@ -414,7 +414,10 @@ test("不正画像で成立済みの参加と以前の画像を失わず、再�
 
 test("CLIから参加時の画像を復旧し、Webとの更新・解除と村民単位の認可を共有する", async () => {
   const fixture = await playerCli(app),
-    { base, directory, run } = fixture;
+    { base, directory } = fixture;
+  // This test uses the same IDs in CLI output, HTTP paths and database assertions.
+  const run = (profile: string, ...args: string[]) =>
+    fixture.run(profile, ...args, "--full-ids");
   const profiles = [
     pathJoin(directory, "one.json"),
     pathJoin(directory, "two.json"),
