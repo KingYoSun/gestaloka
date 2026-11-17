@@ -99,11 +99,27 @@ const SceneQueries = z
     requests: z.array(z.union([Query, SceneRecordQuery])).min(1),
   })
   .strict();
-const SceneDecision = z.discriminatedUnion("type", [
-  ...SceneStep.options,
-  SceneContext,
-  SceneQueries,
-]);
+function sceneDecision(
+  intentions: { actorId: string }[],
+  conclusion?: boolean,
+) {
+  return z.discriminatedUnion("type", [
+    SceneStep.options[0].extend({
+      decisions: z.strictObject(
+        Object.fromEntries(
+          intentions.map(({ actorId }) => [
+            actorId,
+            SceneStep.options[0].shape.decisions.valueType,
+          ]),
+        ),
+      ),
+      ...(conclusion === undefined ? {} : { concluded: z.literal(conclusion) }),
+    }),
+    ...(conclusion === undefined
+      ? [SceneContext, SceneQueries]
+      : [BackgroundChoices[0]]),
+  ]);
+}
 const Narrative = z
   .object({
     text: z.string().min(1),
@@ -2278,7 +2294,9 @@ export class WorldScenes {
               departedActorIds: Object.keys(d.departures ?? {}),
               intentions: intents,
             },
-            responseSchema: z.toJSONSchema(SceneDecision, { io: "output" }),
+            responseSchema: z.toJSONSchema(sceneDecision(intents), {
+              io: "output",
+            }),
           },
           records,
         ),
@@ -2469,10 +2487,16 @@ export class WorldScenes {
           step.newDecisions.push(id);
         }
       }
-      if (
-        Object.keys(step.decisions).sort().join() !== [...actors].sort().join()
-      )
-        throw new SceneResponseError("シーンで未解決の意図が省略されています");
+      const missingActorIds = [...actors].filter(
+          (id) => !(id in step.decisions),
+        ),
+        unexpectedActorIds = Object.keys(step.decisions).filter(
+          (id) => !actors.has(id),
+        );
+      if (missingActorIds.length || unexpectedActorIds.length)
+        throw new SceneResponseError(
+          `シーンの決定対象が一致しません: ${JSON.stringify({ missingActorIds, unexpectedActorIds })}`,
+        );
       for (const [id, status] of Object.entries(step.decisions))
         if (
           typeof status === "object" &&
@@ -3186,20 +3210,18 @@ export class WorldScenes {
                 "未表示の原応答を元の入力と出力形式に沿って再解釈してください。内容の検品や改善は行いません。",
             }
           : {}),
-        ...(conclusion === undefined
+        ...(work.kind !== "resolve"
           ? {}
           : {
-              preserveConclusion: conclusion,
               responseSchema: z.toJSONSchema(
-                z.discriminatedUnion("type", [
-                  SceneStep.options[0].extend({
-                    concluded: z.literal(conclusion),
-                  }),
-                  BackgroundChoices[0],
-                ]),
+                sceneDecision(
+                  JSON.parse(work.messages[1]!.content).request.intentions,
+                  conclusion,
+                ),
                 { io: "output" },
               ),
             }),
+        ...(conclusion === undefined ? {} : { preserveConclusion: conclusion }),
       }),
     });
 

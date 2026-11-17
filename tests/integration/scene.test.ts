@@ -846,6 +846,88 @@ test("シーン前に本人へ返した初期知識だけを保存し、再取�
   expect(modelCalls).toBe(before);
 });
 
+test.each(["過剰", "不足", "一致"])(
+  "決定対象が%sでも対象IDを初回と修復へ渡し、正しい応答だけを一度表示する",
+  async (mode) => {
+    const id = randomUUID();
+    await command({
+      requestId: id,
+      command: "prepare",
+      purpose: "周囲を確かめる",
+    });
+    await access.scenes.tick(id);
+    await command({ requestId: randomUUID(), command: "start" });
+    const valid = {
+      type: "scene",
+      events: [
+        {
+          actorId: actor,
+          text: "若者が道へ出た",
+          receipts: [{ observerId: actor, text: "道へ出た" }],
+        },
+      ],
+      decisions: { [actor]: "finished" },
+    };
+    faults.set("resolve", [
+      ...(mode === "一致"
+        ? []
+        : [
+            {
+              content: JSON.stringify({
+                ...valid,
+                decisions:
+                  mode === "過剰"
+                    ? { ...valid.decisions, [npc]: "finished" }
+                    : {},
+              }),
+            },
+          ]),
+      { content: JSON.stringify(valid) },
+    ]);
+    const calls = vi.spyOn(model, "complete");
+    try {
+      await command({
+        requestId: randomUUID(),
+        command: "act",
+        actionText: "別の場所へ向かう",
+      });
+      await access.scenes.tick(id);
+      const resolutions = calls.mock.calls.filter(
+        (c) => c[1] === "scene-resolve",
+      );
+      expect(resolutions).toHaveLength(mode === "一致" ? 1 : 2);
+      for (const call of resolutions) {
+        const input = JSON.parse(call[2][1]!.content);
+        const repair = JSON.parse(call[2].at(-1)!.content);
+        const schema = repair.responseSchema.oneOf[0].properties.decisions;
+        expect(Object.keys(schema.properties)).toEqual(
+          input.request.intentions.map((i: { actorId: string }) => i.actorId),
+        );
+        expect(schema.required).toEqual([actor]);
+        expect(schema.additionalProperties).toBe(false);
+      }
+      if (mode !== "一致") {
+        const repair = JSON.parse(resolutions[1]![2].at(-1)!.content);
+        expect(repair.validationErrors).toContain(
+          JSON.stringify({
+            missingActorIds: mode === "不足" ? [actor] : [],
+            unexpectedActorIds: mode === "過剰" ? [npc] : [],
+          }),
+        );
+      }
+      const row = (await access.scenes.latest(construction))!;
+      expect(row.state).toBe("active");
+      expect(
+        row.data.events.filter((e) => e.text === valid.events[0]!.text),
+      ).toHaveLength(1);
+    } finally {
+      calls.mockRestore();
+      faults.clear();
+      await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [id]);
+    }
+  },
+);
+
 test.each([false, true])(
   "形式修復・保存後の再開でも継続判断を反転させず、履歴を一度だけ表示する（API形式修復: %s）",
   async (providerRepair) => {
