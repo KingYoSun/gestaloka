@@ -61,7 +61,7 @@ const model = new LlmClient(
         (n: { id: string }) => n.id === exploration!.id,
       )
     ) {
-      expect(user.responseSchema.oneOf).toContainEqual(
+      expect(user.responseSchema.anyOf).toContainEqual(
         expect.objectContaining({
           properties: expect.objectContaining({
             type: expect.objectContaining({ const: "context" }),
@@ -317,6 +317,16 @@ const model = new LlmClient(
             (m: { role: string; content: string }) =>
               m.role === "user" && m.content.includes('"results"'),
           );
+          if (queried) {
+            const answer = body.messages
+              .filter((m: { role: string }) => m.role === "user")
+              .map((m: { content: string }) => JSON.parse(m.content))
+              .findLast((m: { requests?: { kind: string; id?: string }[] }) =>
+                m.requests?.some((q) => q.kind === "node" && q.id === place),
+              );
+            expect(answer.requests).toHaveLength(1);
+            expect(answer.results).toHaveLength(1);
+          }
           content = queried
             ? {
                 type: "context",
@@ -332,7 +342,13 @@ const model = new LlmClient(
                   },
                 ],
               }
-            : { type: "query", requests: [{ kind: "node", id: place }] };
+            : {
+                type: "query",
+                requests: [
+                  { kind: "node", id: place },
+                  { kind: "node", id: place },
+                ],
+              };
         } else {
           expect(user.background.facts.at(-1)).toMatchObject({
             at: user.sceneHistory.at(-1).period.until,
@@ -899,7 +915,7 @@ test.each(["過剰", "不足", "一致"])(
       for (const call of resolutions) {
         const input = JSON.parse(call[2][1]!.content);
         const repair = JSON.parse(call[2].at(-1)!.content);
-        const schema = repair.responseSchema.oneOf[0].properties.decisions;
+        const schema = repair.responseSchema.anyOf[0].properties.decisions;
         expect(Object.keys(schema.properties)).toEqual(
           input.request.intentions.map((i: { actorId: string }) => i.actorId),
         );
@@ -977,7 +993,7 @@ test.each([false, true])(
           const repair = JSON.parse(args[2].at(-1)!.content);
           expect(repair.preserveConclusion).toBe(false);
           expect(
-            repair.responseSchema.oneOf[0].properties.concluded.const,
+            repair.responseSchema.anyOf[0].properties.concluded.const,
           ).toBe(false);
           if (!stopped) {
             stopped = true;

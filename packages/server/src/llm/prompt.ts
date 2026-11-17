@@ -67,6 +67,7 @@ export function compact(
 export function outputSchema(
   schema: Record<string, unknown>,
   keys?: string[],
+  textMinimums = false,
 ): Schema {
   const convert = (s: Schema): Schema => {
     if (
@@ -94,13 +95,13 @@ export function outputSchema(
             "exclusiveMinimum",
             "exclusiveMaximum",
             "multipleOf",
-            "minLength",
             "maxLength",
             "maxItems",
             "propertyNames",
           ].includes(key)
         )
           return [];
+        if (key === "minLength" && !textMinimums) return [];
         if (key === "pattern" && s.format === "uuid") return [];
         if (key === "minItems" && Number(value) > 1) return [[key, 1]];
         if (["properties", "$defs", "definitions"].includes(key))
@@ -227,9 +228,11 @@ export function strictOutput(schema: Schema) {
     if (s.properties) result.required = Object.keys(s.properties as Schema);
     return result;
   };
-  const decode = (value: Json, s: Schema): Json => {
+  const branches = (s: Schema): Schema[] =>
+    s.anyOf ? (s.anyOf as Schema[]).flatMap(branches) : [s];
+  const decode = (value: Json, s: Schema, path = "$response"): Json => {
     if (s.anyOf) {
-      const branch = (s.anyOf as Schema[]).find((candidate) =>
+      const branch = branches(s).find((candidate) =>
         candidate.type === "object"
           ? value !== null &&
             typeof value === "object" &&
@@ -243,7 +246,16 @@ export function strictOutput(schema: Schema) {
             Object.entries(candidate.properties as Schema).every(
               ([key, property]) =>
                 !("const" in (property as Schema)) ||
-                value[key] === (property as Schema).const,
+                (!((candidate.required as string[] | undefined) ?? []).includes(
+                  key,
+                ) &&
+                  value[key] === null) ||
+                (((candidate.required as string[] | undefined) ?? []).includes(
+                  key,
+                )
+                  ? value[key]
+                  : (value[key] as Schema | undefined)?.value) ===
+                  (property as Schema).const,
             )
           : candidate.enum
             ? (candidate.enum as Json[]).includes(value)
@@ -255,11 +267,13 @@ export function strictOutput(schema: Schema) {
                   ? Number.isInteger(value)
                   : typeof value === candidate.type,
       );
-      if (!branch) throw new Error("構造化応答の分岐を確認できません");
-      return decode(value, branch);
+      if (!branch) throw new Error(`構造化応答の分岐を確認できません: ${path}`);
+      return decode(value, branch, path);
     }
     if (Array.isArray(value) && s.items)
-      return value.map((item) => decode(item, s.items as Schema));
+      return value.map((item, index) =>
+        decode(item, s.items as Schema, `${path}[${index}]`),
+      );
     if (
       !value ||
       typeof value !== "object" ||
@@ -270,17 +284,18 @@ export function strictOutput(schema: Schema) {
     return Object.fromEntries(
       Object.entries(value).flatMap(([key, item]) => {
         const child = (s.properties as Schema)[key] as Schema;
-        if (!child) throw new Error("構造化応答に未知の項目があります");
+        if (!child)
+          throw new Error(`構造化応答に未知の項目があります: ${path}.${key}`);
         if (((s.required as string[] | undefined) ?? []).includes(key))
-          return [[key, decode(item, child)]];
+          return [[key, decode(item, child, `${path}.${key}`)]];
         if (item === null) return [];
         if (
           typeof item !== "object" ||
           Array.isArray(item) ||
           !("value" in item)
         )
-          throw new Error("任意項目の値を確認できません");
-        return [[key, decode(item.value, child)]];
+          throw new Error(`任意項目の値を確認できません: ${path}.${key}`);
+        return [[key, decode(item.value, child, `${path}.${key}`)]];
       }),
     );
   };
@@ -301,6 +316,7 @@ export function preparePrompt(
   structured = true,
   cacheOnly = false,
   graphReferences = true,
+  textMinimums = false,
 ) {
   const parsed = messages.map((m) => {
     try {
@@ -469,7 +485,8 @@ export function preparePrompt(
         text:
           system +
           (!structured && schema && graphReferences
-            ? "\nresponseSchema=" + JSON.stringify(outputSchema(schema, keys))
+            ? "\nresponseSchema=" +
+              JSON.stringify(outputSchema(schema, keys, textMinimums))
             : ""),
         cacheBoundary: true as const,
       },
@@ -477,7 +494,10 @@ export function preparePrompt(
     messages: prepared,
     format:
       structured && schema
-        ? { type: "json_schema", schema: outputSchema(schema, keys) }
+        ? {
+            type: "json_schema",
+            schema: outputSchema(schema, keys, textMinimums),
+          }
         : undefined,
   };
 }

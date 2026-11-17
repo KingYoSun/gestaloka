@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { LlmClient } from "@gestaloka/server/llm";
 import { SceneStep } from "../../packages/server/src/runtime/scene-data.js";
 import { ModelSettings } from "../../packages/server/src/llm/settings.js";
 import { isolatedDatabases } from "../support/isolated-db.js";
+import { canonical } from "../../packages/server/src/llm/prompt.js";
 
 const isolated = isolatedDatabases();
 beforeAll(() => isolated.setup());
@@ -320,4 +321,128 @@ test("EmberのプロファイルはFlashの単価を継承せず、専用キー�
     inputHit: 75,
     output: 3750,
   });
+});
+
+test("復元エラーと原応答・使用量を保存し、理由を修復へ渡して再送せず再開できる", async () => {
+  const pool = isolated.databases.postgres;
+  const schema = z.discriminatedUnion("type", [
+    z.object({ type: z.literal("scene"), text: z.string() }).strict(),
+    z.object({ type: z.literal("query"), text: z.string() }).strict(),
+  ]);
+  const messages = [
+    {
+      role: "user" as const,
+      content: JSON.stringify({ responseSchema: z.toJSONSchema(schema) }),
+    },
+  ];
+  const invalid =
+    '{"response":{"type":"invalid","text":"未表示の原応答  を保つ"}}';
+  const expected = { type: "scene", text: "まだ選んでいないことを残す" };
+  const requests: Record<string, unknown>[] = [];
+  const transport = vi.fn<typeof fetch>(async (_url, init) => {
+    const request = JSON.parse(String(init?.body));
+    requests.push(request);
+    return Response.json({
+      id: randomUUID(),
+      model: request.model,
+      choices: [
+        {
+          finish_reason: "stop",
+          message: {
+            content:
+              requests.length === 1
+                ? invalid
+                : JSON.stringify({ response: expected }),
+            reasoning: "本文へ混ぜない推論",
+            reasoning_details: [{ type: "reasoning.text", text: "推論専用" }],
+          },
+        },
+      ],
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 3,
+        total_tokens: 13,
+        completion_tokens_details: { reasoning_tokens: 1 },
+      },
+    });
+  });
+  const env = {
+    LLM_MODEL: "meta/muse-ember",
+    OPENROUTER_API_KEY: "test-key",
+    LLM_BUDGET_ID: randomUUID(),
+    LLM_BUDGET_USD: "1",
+  };
+  const client = new LlmClient(pool, env, transport);
+  await client.ledger.setup();
+  const id = randomUUID(),
+    responseId = randomUUID();
+  const result = await client.run(responseId, () =>
+    client.complete(id, "scene-resolve", messages),
+  );
+  expect(JSON.parse(result.content)).toEqual(expected);
+  expect(transport).toHaveBeenCalledTimes(2);
+  const correction = JSON.parse(
+    (requests[1]!.messages as { content: string }[]).at(-1)!.content,
+  );
+  expect(correction.validationErrors).toContain("$response");
+  expect(correction.validationErrors).toContain("応答の復元に失敗しました");
+  const saved = (
+    await pool.query(
+      "SELECT response,state,charged_nano FROM llm_call WHERE id=$1",
+      [id],
+    )
+  ).rows[0];
+  expect(saved.state).toBe("complete");
+  expect(saved.response).toMatchObject({
+    content: invalid,
+    formatError: correction.validationErrors,
+    usage: { prompt_tokens: 10, completion_tokens: 3, reasoning_tokens: 1 },
+  });
+  expect(Number(saved.charged_nano)).toBeGreaterThan(0);
+  const restarted = new LlmClient(pool, env, transport);
+  const resumed = await restarted.run(responseId, () =>
+    restarted.complete(id, "scene-resolve", messages),
+  );
+  expect(resumed.content).toBe(result.content);
+  expect(transport).toHaveBeenCalledTimes(2);
+  expect(
+    (await pool.query("SELECT charged_nano FROM llm_call WHERE id=$1", [id]))
+      .rows[0].charged_nano,
+  ).toBe(saved.charged_nano);
+  const repair = (
+    await pool.query(
+      "SELECT id,request FROM llm_call WHERE response_id=$1 AND id<>$2",
+      [responseId, id],
+    )
+  ).rows[0];
+  // Freeze a request written with the previous plain-text repair instruction.
+  const legacyInstruction =
+    "直前の未表示の応答は形式が不正です。元の入力と出力形式に沿ってJSONを返してください。";
+  repair.request.sourceMessages.at(-1).content = legacyInstruction;
+  repair.request.request.messages.at(-1).content = legacyInstruction;
+  const hash = createHash("sha256")
+    .update(canonical(repair.request))
+    .digest("hex");
+  await pool.query("UPDATE llm_call SET request=$2,hash=$3 WHERE id=$1", [
+    repair.id,
+    repair.request,
+    hash,
+  ]);
+  expect(
+    (
+      await restarted.run(responseId, () =>
+        restarted.complete(id, "scene-resolve", messages),
+      )
+    ).content,
+  ).toBe(result.content);
+  expect(transport).toHaveBeenCalledTimes(2);
+  expect(
+    (await pool.query("SELECT request FROM llm_call WHERE id=$1", [repair.id]))
+      .rows[0].request,
+  ).toEqual(repair.request);
+  await expect(
+    restarted.complete(id, "scene-resolve", [
+      { role: "user", content: "異なる入力" },
+    ]),
+  ).rejects.toThrow("同じ呼出しIDに異なる要求");
 });

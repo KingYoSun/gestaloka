@@ -531,21 +531,40 @@ export class LlmClient {
               },
               {
                 role: "user",
-                content: repair
-                  ? "直前の未表示の応答を、元の入力と出力形式に沿って再解釈してください。意味の評価や改善は行わず、指定のJSONだけを返してください。"
-                  : "直前の未表示の応答は形式が不正です。元の入力と出力形式に沿ってJSONを返してください。",
+                content: JSON.stringify({
+                  validationErrors: previous.message,
+                  instruction: repair
+                    ? "直前の未表示の応答を、元の入力と出力形式に沿って再解釈してください。意味の評価や改善は行わず、指定のJSONだけを返してください。"
+                    : "直前の未表示の応答は形式が不正です。元の入力と出力形式に沿ってJSONを返してください。",
+                }),
               },
             ]
           : messages;
       try {
-        const response = await this.#complete(
-          attempt > formatAttempts ? derivedId(`${id}:format:${attempt}`) : id,
-          role,
-          input,
-          upper ? "resolution" : target,
-          upper ? "resolution" : effortTarget,
-          shorten,
-        );
+        const call =
+          attempt > formatAttempts ? derivedId(`${id}:format:${attempt}`) : id;
+        const frozen =
+          attempt > formatAttempts
+            ? await this.ledger.savedInput(call)
+            : undefined;
+        // A repair written by an older worker retains its exact saved request.
+        const response = frozen
+          ? (await this.ledger.reserve(call, frozen.hash, 0, frozen.request))!
+          : await this.#complete(
+              call,
+              role,
+              input,
+              upper ? "resolution" : target,
+              upper ? "resolution" : effortTarget,
+              shorten,
+            );
+        if (response.formatError)
+          throw new ResponseFormatError(
+            response.rawResponse ?? response.content,
+            !response.content.trim(),
+            response.formatError,
+            response.content,
+          );
         if (!response.content.trim())
           throw new ResponseFormatError(
             response.rawResponse ?? response.content,
@@ -671,6 +690,7 @@ export class LlmClient {
               (provider === "openai" &&
                 api === "responses" &&
                 ["scene-background", "world-update"].includes(role)),
+            provider === "openrouter",
           )
         : undefined;
     const rendered = prompt
@@ -1104,8 +1124,9 @@ export class LlmClient {
                 completion.content = codec
                   ? codec.expand(content)
                   : JSON.stringify(parseOutput(content));
-              } catch {
-                /* Persist the invalid response; the caller's existing validation handles it. */
+              } catch (error) {
+                if (strict || codec)
+                  completion.formatError = `応答の復元に失敗しました: ${error instanceof Error ? error.message : String(error)}`;
               }
             }
             quota.used(usage.prompt_tokens + usage.completion_tokens);
