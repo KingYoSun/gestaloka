@@ -1,15 +1,7 @@
 import type { WorldContext } from "./store.js";
-import { z } from "zod";
 type Context = Pick<WorldContext, "history" | "node" | "relations">;
 
-export const LocationOp = z
-  .object({
-    type: z.literal("locate"),
-    subjectId: z.uuid(),
-    text: z.string().trim().min(1),
-    aboutIds: z.array(z.uuid()),
-  })
-  .strict();
+export { LocationOp } from "@gestaloka/contracts";
 
 export async function locationRecords(
   context: Context,

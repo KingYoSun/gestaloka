@@ -92,37 +92,32 @@ try {
     ).rows[0];
     assert.equal(joined.state, "ready");
     const actor = joined.actor_id;
-    await access.sceneCommand(
-      user,
-      world,
-      { requestId: randomUUID(), command: "prepare", purpose: "周囲を見る" },
-      false,
-      actor,
-    );
-    const scene = await access.scenes.latest(world, undefined, false, actor);
-    await access.scenes.tick(scene.id);
-    await access.sceneCommand(
+    await access.botCommand(
       user,
       world,
       { requestId: randomUUID(), command: "start" },
-      false,
       actor,
     );
-    await access.sceneCommand(
+    const speech = {
+      requestId: randomUUID(),
+      command: "say",
+      text: "周囲の観測を相談する",
+    };
+    const accepted = await access.botCommand(user, world, speech, actor);
+    await access.botCommand(
       user,
       world,
-      { requestId: randomUUID(), command: "act", actionText: "周囲を見渡す" },
-      false,
+      { requestId: randomUUID(), command: "end-turn" },
       actor,
     );
-    await access.scenes.tick(scene.id);
-    const savedScene = await access.scenes.latest(
+    await access.botCommand(
+      user,
       world,
-      undefined,
-      false,
+      { requestId: randomUUID(), command: "comment", text: "次の手番の考え" },
       actor,
     );
-    assert.equal(savedScene.state, "active");
+    const savedScene = await access.botStatus(user, world, actor);
+    assert(savedScene.sessionId);
     // A real committed graph receipt with an unfinished PostgreSQL operation.
     await db.postgres.query(
       "UPDATE world_operation SET state='paused',result=NULL,suspended=true WHERE id=$1",
@@ -164,12 +159,14 @@ try {
         ory: identity.id,
         world,
         actor,
-        scene: scene.id,
+        scene: savedScene.sceneId,
+        speech,
+        accepted,
         join,
         operation: joined.operation_id,
         fees,
         graph,
-        sceneData: savedScene.data,
+        sceneData: savedScene,
       }),
     ]);
     console.log(JSON.stringify({ seeded: true, fees: fees.calls }));
@@ -208,14 +205,21 @@ try {
       ).id,
       expected.join,
     );
-    const scene = await access.scenes.latest(
+    const scene = await access.botStatus(
+      expected.user,
       expected.world,
-      undefined,
-      false,
       expected.actor,
     );
-    assert.deepEqual(scene.data, expected.sceneData);
-    assert.equal(scene.state, "active");
+    assert.deepEqual(scene, expected.sceneData);
+    assert.deepEqual(
+      await access.botCommand(
+        expected.user,
+        expected.world,
+        expected.speech,
+        expected.actor,
+      ),
+      expected.accepted,
+    );
     const before = (
       await db.postgres.query(
         "SELECT count(*)::int AS calls,coalesce(sum(charged_nano),0)::text AS calculated FROM llm_call",

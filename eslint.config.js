@@ -11,6 +11,7 @@ export default tseslint.config(
       ".codegraph/**",
       "playwright-report/**",
       "test-results/**",
+      "artifacts/**",
     ],
   },
   js.configs.recommended,

@@ -1,0 +1,1848 @@
+import { randomUUID } from "node:crypto";
+import { execFile, spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+import { promisify } from "node:util";
+import { readFile, readdir } from "node:fs/promises";
+import { beforeAll, afterAll, afterEach, expect, test, vi } from "vitest";
+import { PlayCommand } from "@gestaloka/contracts";
+import { WorldAccess } from "@gestaloka/server/access";
+import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
+import { derivedId } from "@gestaloka/server/world";
+import { BotPlay } from "@gestaloka/server/play";
+import { createApp } from "../../apps/api/src/app.js";
+import { playerCli } from "../support/player-cli.js";
+import { join, resolve } from "node:path";
+import { isolatedDatabases } from "../support/isolated-db.js";
+import { fixtureRuntime } from "../support/provider.js";
+import { fixtureAuth } from "../support/auth.js";
+
+const isolated = isolatedDatabases();
+let runtime: Awaited<ReturnType<typeof fixtureRuntime>>["runtime"],
+  access: WorldAccess,
+  auth: Awaited<ReturnType<typeof fixtureAuth>>;
+const graphs: string[] = [];
+const answer = (id: string, content: unknown) => ({
+  id,
+  model: "fixture",
+  content: JSON.stringify(content),
+  finishReason: "stop",
+  usage: {
+    prompt_tokens: 1,
+    completion_tokens: 1,
+    prompt_cache_hit_tokens: 0,
+    prompt_cache_miss_tokens: 1,
+  },
+});
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await isolated.databases.postgres.query("DELETE FROM bot_npc");
+  await isolated.databases.postgres.query(
+    "UPDATE player_report_policy SET daily_limit=10,turns_per_report=3,max_characters=1200",
+  );
+});
+beforeAll(async () => {
+  await isolated.setup();
+  ({ runtime } = await fixtureRuntime(
+    `bot-play-${randomUUID()}`,
+    undefined,
+    isolated.databases,
+  ));
+  auth = await fixtureAuth(isolated.databases.postgres);
+  access = new WorldAccess(runtime);
+  await access.setup();
+}, 60000);
+afterAll(async () => {
+  await isolated.databases.queue.stop();
+  for (const world of graphs)
+    await isolated.databases.graph.executeQuery(
+      "MATCH(n {worldId:$world}) DETACH DELETE n",
+      { world },
+    );
+  await isolated.close();
+});
+
+async function fixture() {
+  const admin = await auth.person(),
+    world = (
+      await access.create(admin.id, {
+        requestId: randomUUID(),
+        budgetUsd: 10,
+        prompt: "独立したbotの検証世界",
+      })
+    ).id;
+  await runtime.tick(world);
+  const graph = (await runtime.get(world)).world_id!;
+  graphs.push(graph);
+  const people = await Promise.all([
+    auth.person("user"),
+    auth.person("user"),
+    auth.person("user"),
+  ]);
+  const actors = people.map(() => randomUUID()),
+    place = randomUUID(),
+    far = randomUUID();
+  const store = runtime.agent.store;
+  await store.commit(
+    await store.claim(graph, randomUUID()),
+    store.context(graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: [
+          ...actors.map((id, i) => ({
+            id,
+            kind: "existence" as const,
+            text: `人物${i}`,
+          })),
+          { id: place, kind: "existence", text: "広場" },
+          { id: far, kind: "existence", text: "離れた場所" },
+        ],
+        edges: [],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  for (const [i, p] of people.entries()) {
+    await isolated.databases.postgres.query(
+      "INSERT INTO world_subject(id,user_id) VALUES($1,$1)",
+      [p.id],
+    );
+    await isolated.databases.postgres.query(
+      "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3)",
+      [p.id, world, actors[i]],
+    );
+    await isolated.databases.postgres.query(
+      "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2)",
+      [graph, actors[i]],
+    );
+  }
+  const apply = (ops: unknown) =>
+    changeBelongings(
+      store,
+      { worldId: graph, runId: randomUUID(), generation: 1 },
+      { commitId: randomUUID(), at: 0, ops },
+    );
+  const move = async (i: number, location: string) => {
+    await changeBelongings(store, await store.claim(graph, randomUUID()), {
+      commitId: randomUUID(),
+      at: 0,
+      ops: [
+        {
+          type: "locate",
+          subjectId: actors[i],
+          text: location === place ? "広場" : "離れた場所",
+          aboutIds: [location],
+        },
+      ],
+    });
+  };
+  for (let i = 0; i < 3; i++) await move(i, i === 2 ? far : place);
+  const send = (i: number, input: Record<string, unknown>) =>
+    access.botCommand(
+      people[i]!.id,
+      world,
+      PlayCommand.parse({ requestId: randomUUID(), ...input }),
+      actors[i],
+    );
+  const status = (i: number) =>
+    access.botStatus(people[i]!.id, world, actors[i]);
+  for (let i = 0; i < 3; i++) await send(i, { command: "start" });
+  const calls = vi.spyOn(runtime.agent.model, "complete");
+  return {
+    world,
+    graph,
+    people,
+    actors,
+    place,
+    far,
+    store,
+    send,
+    status,
+    move,
+    calls,
+    apply,
+  };
+}
+
+test("個別検索を同報せず、成功した8回だけで手番を進め、コメントと再送を別枠にする", async () => {
+  const f = await fixture();
+  const own = await f.status(0),
+    other = await f.status(1);
+  const joined = await f.send(0, { command: "contact", targetId: f.actors[1] });
+  expect(joined.sessionId).toBe(other.sessionId);
+  expect((await f.status(0)).sceneId).toBe(own.sceneId);
+  await expect(
+    f.send(0, { command: "comment", text: "他人の手番" }),
+  ).rejects.toMatchObject({ code: "TURN_REQUIRED" });
+  const request = {
+    requestId: randomUUID(),
+    command: "search",
+    query: { kind: "self" },
+  };
+  const first = await f.send(1, request);
+  expect(first.callsUsed).toBe(1);
+  expect(await f.send(1, request)).toEqual(first);
+  const stored = (
+    await isolated.databases.postgres.query("SELECT $1::jsonb AS body", [
+      JSON.stringify(request),
+    ])
+  ).rows[0].body;
+  expect(
+    await access.botCommand(f.people[1]!.id, f.world, stored, f.actors[1]),
+  ).toEqual(first);
+  await f.send(1, { command: "comment", text: "本人だけが選んだコメント" });
+  await expect(
+    f.send(1, { command: "comment", text: "二度目" }),
+  ).rejects.toMatchObject({ code: "COMMENT_USED" });
+  await expect(
+    f.send(1, {
+      command: "search",
+      query: { kind: "subject", targetId: randomUUID() },
+    }),
+  ).rejects.toMatchObject({ code: "MATERIAL_NOT_AVAILABLE" });
+  expect((await f.status(1)).callsUsed).toBe(1);
+  for (let i = 0; i < 7; i++)
+    await f.send(1, { command: "search", query: { kind: "belongings" } });
+  const next = await f.status(0);
+  expect(next.actorId).toBe(f.actors[0]);
+  expect(next.callsUsed).toBe(0);
+  expect(JSON.stringify(next.entries)).toContain("本人だけが選んだコメント");
+  expect(JSON.stringify(next.entries)).not.toContain("material");
+  expect(JSON.stringify((await f.status(2)).entries)).not.toContain(
+    "本人だけが選んだコメント",
+  );
+  await f.send(0, { command: "say", text: "同席した相手に伝えた話" });
+  await f.send(0, { command: "end-turn" });
+  const history = await f.send(1, {
+    command: "search",
+    query: { kind: "history", targetId: f.actors[0] },
+  });
+  expect(JSON.stringify(history.material)).toContain("同席した相手に伝えた話");
+  const unseen = await f.send(2, {
+    command: "search",
+    query: { kind: "history", targetId: f.actors[0] },
+  });
+  expect(unseen.material).toEqual([]);
+  expect(f.calls).not.toHaveBeenCalled();
+  f.calls.mockRestore();
+});
+
+test("接触の不一致から移動・再申請でき、本人のシーンを保って分離・終了する", async () => {
+  const f = await fixture(),
+    before = await f.status(2);
+  await expect(
+    f.send(2, { command: "contact", targetId: f.actors[0] }),
+  ).rejects.toMatchObject({ code: "CONTACT_MISMATCH" });
+  expect((await f.status(2)).callsUsed).toBe(0);
+  await f.send(2, {
+    command: "update",
+    text: "広場へ歩く",
+    operations: [
+      {
+        type: "locate",
+        subjectId: f.actors[2],
+        text: "広場",
+        aboutIds: [f.place],
+      },
+    ],
+    dependencies: [],
+  });
+  await f.send(2, { command: "contact", targetId: f.actors[0] });
+  expect((await f.status(2)).sceneId).toBe(before.sceneId);
+  expect(JSON.stringify((await f.status(2)).entries)).toContain("接触する");
+  await f.send(2, { command: "leave" });
+  expect((await f.status(2)).sceneId).toBe(before.sceneId);
+  expect((await f.status(2)).sessionId).not.toBe((await f.status(0)).sessionId);
+  const ended = await f.send(2, { command: "finish" });
+  expect(ended.result).toBeDefined();
+  expect((await f.status(0)).sessionId).toBeTruthy();
+  expect(f.calls).not.toHaveBeenCalled();
+  f.calls.mockRestore();
+});
+
+test("同席者への受領判断を挟み、拒否・承認後に元の手番へ戻す。借り手の破棄は貸し手の承認を求めない", async () => {
+  const f = await fixture();
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  const item = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: [{ id: item, kind: "existence", text: "借りた道具" }],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "has",
+            source: f.actors[1]!,
+            target: item,
+            period: { from: 0 },
+          },
+          {
+            id: randomUUID(),
+            kind: "has",
+            role: "hold",
+            source: f.actors[0]!,
+            target: item,
+            period: { from: 0 },
+          },
+        ],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  const operations = [
+    {
+      type: "move",
+      item,
+      from: f.actors[0],
+      to: f.actors[1],
+      basis: "道具を返す",
+    },
+  ];
+  const pending = await f.send(0, {
+    command: "update",
+    text: "道具を返す",
+    operations,
+    dependencies: [],
+  });
+  expect(pending.actorId).toBe(f.actors[1]);
+  expect(
+    (await readBelongings(f.store.context(f.graph), f.actors[0]!)).items,
+  ).toHaveLength(1);
+  await f.send(1, {
+    command: "receive",
+    applicationId: pending.applicationId,
+    accept: false,
+  });
+  expect((await f.status(0)).actorId).toBe(f.actors[0]);
+  const removing = {
+    requestId: randomUUID(),
+    command: "update",
+    text: "道具が壊れる",
+    operations: [{ type: "remove", id: item }],
+    dependencies: [],
+  };
+  const accepted = await f.send(0, removing);
+  expect(accepted.receiving).toBeNull();
+  expect(await f.send(0, removing)).toEqual(accepted);
+  expect(
+    (await readBelongings(f.store.context(f.graph), f.actors[0]!)).items,
+  ).toHaveLength(0);
+  expect(f.calls).not.toHaveBeenCalled();
+  f.calls.mockRestore();
+});
+
+test("遠隔受領は即時拒否し、同席者の承認・退出・無応答で原子的に確定またはfailedとなる", async () => {
+  const f = await fixture();
+  const seed = async () => {
+    const item = randomUUID();
+    await f.store.commit(
+      await f.store.claim(f.graph, randomUUID()),
+      f.store.context(f.graph),
+      {
+        commitId: randomUUID(),
+        at: 0,
+        changes: {
+          nodes: [{ id: item, kind: "existence", text: "渡す道具" }],
+          edges: [
+            {
+              id: randomUUID(),
+              kind: "has",
+              role: "hold",
+              source: f.actors[0]!,
+              target: item,
+              period: { from: 0 },
+            },
+          ],
+          revisions: [],
+          endEdges: [],
+        },
+      },
+    );
+    return item;
+  };
+  const give = (item: string, to: string) =>
+    f.send(0, {
+      command: "update",
+      text: "道具を渡す",
+      operations: [
+        { type: "move", item, from: f.actors[0], to, basis: "手渡す" },
+      ],
+      dependencies: [],
+    });
+  const remote = await seed();
+  await expect(give(remote, f.actors[2]!)).rejects.toMatchObject({
+    code: "REMOTE_RECEIVING",
+  });
+  expect(f.calls).not.toHaveBeenCalled();
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  const accepted = await give(remote, f.actors[1]!);
+  await f.send(1, {
+    command: "receive",
+    applicationId: accepted.applicationId,
+    accept: true,
+  });
+  expect((await f.status(0)).actorId).toBe(f.actors[0]);
+  expect(
+    (await readBelongings(f.store.context(f.graph), f.actors[1]!)).items.map(
+      (v) => v.id,
+    ),
+  ).toContain(remote);
+  const timeoutItem = await seed(),
+    timeout = await give(timeoutItem, f.actors[1]!);
+  const clock = new BotPlay(runtime, () => new Date(Date.now() + 601000));
+  await clock.expire(f.world);
+  const resumed = await f.status(0);
+  expect(resumed.receiving).toBeNull();
+  expect(resumed.actorId).toBe(f.actors[0]);
+  expect(JSON.stringify(resumed.entries)).toContain(
+    timeout.applicationId as string,
+  );
+  expect(JSON.stringify(resumed.entries)).toContain("failed");
+  const leaving = await give(timeoutItem, f.actors[1]!);
+  await f.send(1, { command: "leave" });
+  expect((await f.status(0)).receiving).toBeNull();
+  expect(
+    (await readBelongings(f.store.context(f.graph), f.actors[0]!)).items.map(
+      (v) => v.id,
+    ),
+  ).toContain(timeoutItem);
+  expect(JSON.stringify((await f.status(0)).entries)).toContain(
+    leaving.applicationId as string,
+  );
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("HTTPとCLIは本人の手番APIを使い、旧書込を拒否し、同じ要求を復元する", async () => {
+  const f = await fixture(),
+    app = await createApp(access, auth.identity, undefined, auth.operations),
+    cli = await playerCli(app);
+  try {
+    const profile = join(cli.directory, "bot.json");
+    const connected = await cli.run(
+      profile,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (
+        await cli.approve(
+          f.people[0]!.cookie,
+          connected.userCode,
+          `actor:${f.actors[0]}`,
+        )
+      ).statusCode,
+    ).toBe(302);
+    const result = await cli.run(profile, "search", "--kind", "self");
+    expect(result.result.callsUsed).toBe(1);
+    expect(
+      await cli.run(profile, "recover", "--request", result.requestId),
+    ).toEqual(result);
+    const old = await app.inject({
+      method: "POST",
+      url: `/api/worlds/${f.world}/scene?actorId=${f.actors[0]}`,
+      headers: { cookie: f.people[0]!.cookie, "x-gestaloka-request": "1" },
+      payload: {
+        requestId: randomUUID(),
+        command: "prepare",
+        purpose: "旧入口",
+      },
+    });
+    expect(old.statusCode).toBe(409);
+    expect(old.json().code).toBe("PLAY_API_CHANGED");
+    expect(f.calls).not.toHaveBeenCalled();
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
+
+test("同じVMのCLIをView別インスタンスで並列実行し、認可と要求の復旧を分離する", async () => {
+  const f = await fixture(),
+    app = await createApp(access, auth.identity, undefined, auth.operations),
+    cli = await playerCli(app),
+    ids = ["View / 甲", "View / 乙"];
+  const run = (i: number, ...args: string[]) =>
+    cli.run(undefined, ...args, "--instance", ids[i]!);
+  try {
+    await Promise.all([
+      f.send(0, { command: "finish" }),
+      f.send(1, { command: "finish" }),
+    ]);
+    const connections = await Promise.all(
+      ids.map((_, i) =>
+        run(i, "connect", "--server", cli.base, "--world", f.world),
+      ),
+    );
+    expect(connections[0].id).not.toBe(connections[1].id);
+    const approvals = await Promise.all(
+      connections.map((c, i) =>
+        cli.approve(f.people[i]!.cookie, c.userCode, `actor:${f.actors[i]}`),
+      ),
+    );
+    expect(approvals.map((a) => a.statusCode)).toEqual([302, 302]);
+    const starts = await Promise.all(ids.map((_, i) => run(i, "start")));
+    expect(starts[0].result.sessionId).not.toBe(starts[1].result.sessionId);
+    cli.dropNextResponse("say");
+    const [lost, other] = await Promise.all([
+      run(0, "say", "--text", "自分のViewからの発言"),
+      run(1, "search", "--kind", "self"),
+    ]);
+    expect(lost.state).toBe("error");
+    expect(other.result.callsUsed).toBe(1);
+    const recovered = await run(0, "recover");
+    expect(recovered.requestId).toBe(lost.requestId);
+    expect(recovered.result.callsUsed).toBe(1);
+    expect((await run(1, "recover", "--request", lost.requestId)).code).toBe(
+      "ENOENT",
+    );
+    const states = await Promise.all(ids.map((_, i) => run(i, "status")));
+    expect(states.map((s) => s.viewerId)).toEqual(f.actors.slice(0, 2));
+    expect(states.map((s) => s.callsUsed)).toEqual([1, 1]);
+    const folders = await readdir(
+      join(cli.directory, "gestaloka", "instances"),
+    );
+    expect(folders).toHaveLength(2);
+    const profiles = await Promise.all(
+      folders.map(async (folder) =>
+        JSON.parse(
+          await readFile(
+            join(
+              cli.directory,
+              "gestaloka",
+              "instances",
+              folder,
+              "profile.json",
+            ),
+            "utf8",
+          ),
+        ),
+      ),
+    );
+    expect(profiles.map((p) => p.deviceId).sort()).toEqual(
+      connections.map((c) => c.id).sort(),
+    );
+    expect(new Set(profiles.map((p) => p.secret)).size).toBe(2);
+    const waiting = await Promise.all(
+      ids.map((_, i) => run(i, "standby", "--resume")),
+    );
+    expect(waiting.map((w) => w.active)).toEqual([true, true]);
+    expect((await run(0, "disconnect")).state).toBe("inactive");
+    expect((await run(0, "standby")).state).toBe("inactive");
+    expect((await run(1, "standby")).active).toBe(true);
+    expect((await run(0, "standby", "--resume")).wakeKey).not.toBe(
+      waiting[0].wakeKey,
+    );
+    const preserved = await Promise.all(
+      folders.map(async (folder) =>
+        JSON.parse(
+          await readFile(
+            join(
+              cli.directory,
+              "gestaloka",
+              "instances",
+              folder,
+              "profile.json",
+            ),
+            "utf8",
+          ),
+        ),
+      ),
+    );
+    expect(preserved.map((p) => p.lastRequestId).sort()).toEqual(
+      profiles.map((p) => p.lastRequestId).sort(),
+    );
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      [resolve("packages/player-cli/dist/main.js"), "status"],
+      {
+        env: {
+          ...process.env,
+          XDG_STATE_HOME: cli.directory,
+          GESTALOKA_INSTANCE: ids[0],
+        },
+      },
+    );
+    expect(JSON.parse(stdout).viewerId).toBe(f.actors[0]);
+    const legacy = join(cli.directory, "legacy.json");
+    await cli.run(legacy, "connect", "--server", cli.base, "--world", f.world);
+    expect(JSON.parse(await readFile(legacy, "utf8")).worldId).toBe(f.world);
+    expect(
+      (await cli.run(legacy, "status", "--instance", ids[0]!)).message,
+    ).toContain("どちらか一方");
+    const defaultConnection = await cli.run(
+      undefined,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      JSON.parse(
+        await readFile(
+          join(cli.directory, "gestaloka", "default.json"),
+          "utf8",
+        ),
+      ).deviceId,
+    ).toBe(defaultConnection.id);
+    expect(f.calls).not.toHaveBeenCalled();
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
+
+test("シーン外で待機する本人を接触で起こし、在席切れと再開を区別する", async () => {
+  const f = await fixture(),
+    user = f.people[1]!.id,
+    actor = f.actors[1]!,
+    connection = "muse-view";
+  await f.send(1, { command: "finish" });
+  await access.waiting(user, f.world, actor, undefined, false);
+  const credit = (await access.reportStatus(user, f.world, actor)).turns;
+  const idle = await access.waiting(user, f.world, actor, connection, true);
+  expect(idle).toMatchObject({
+    state: "standby",
+    active: true,
+    actionable: false,
+  });
+  expect((await f.status(1)).sessionId).toBeUndefined();
+  const nearby = await f.send(0, {
+    command: "search",
+    query: { kind: "surroundings" },
+  });
+  expect(JSON.stringify(nearby.material)).toContain('"contactAvailable":true');
+  await f.send(0, { command: "contact", targetId: actor });
+  const awake = await access.waiting(user, f.world, actor, connection, true);
+  expect(awake).toMatchObject({
+    state: "turn",
+    actionable: true,
+    viewerId: actor,
+  });
+  expect(awake.wakeKey).toBeTruthy();
+  expect(
+    (await access.waiting(user, f.world, actor, connection, true)).wakeKey,
+  ).toBe(awake.wakeKey);
+  expect((await access.reportStatus(user, f.world, actor)).turns).toBe(credit);
+  await access.waiting(user, f.world, actor, connection, false);
+  await f.move(2, f.place);
+  await expect(
+    f.send(2, { command: "contact", targetId: actor }),
+  ).rejects.toMatchObject({ code: "PARTNER_NOT_AVAILABLE" });
+  expect(
+    (await access.waiting(user, f.world, actor, connection, true)).wakeKey,
+  ).not.toBe(awake.wakeKey);
+  const now = new Date(Date.now() + 601000);
+  vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
+  await expect(
+    f.send(2, { command: "contact", targetId: actor }),
+  ).rejects.toMatchObject({ code: "PARTNER_NOT_AVAILABLE" });
+  await access.waiting(user, f.world, actor, connection, true);
+  await f.send(2, { command: "contact", targetId: actor });
+  expect((await f.status(2)).sessionId).toBe((await f.status(1)).sessionId);
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("受領判断から同じ元手番へ戻ったときにも、新しい起床キーを返す", async () => {
+  const f = await fixture();
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  const check = (i: number) =>
+    access.waiting(f.people[i]!.id, f.world, f.actors[i], `view-${i}`, true);
+  const before = await check(0),
+    item = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: [{ id: item, kind: "existence", text: "手渡す道具" }],
+        revisions: [],
+        endEdges: [],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "has",
+            role: "hold",
+            source: f.actors[0]!,
+            target: item,
+            period: { from: 0 },
+          },
+        ],
+      },
+    },
+  );
+  const proposal = await f.send(0, {
+    command: "update",
+    text: "道具を手渡す",
+    operations: [
+      {
+        type: "move",
+        item,
+        from: f.actors[0],
+        to: f.actors[1],
+        basis: "手渡しの申請",
+      },
+    ],
+    dependencies: [],
+  });
+  expect(await check(0)).toMatchObject({ state: "standby", actionable: false });
+  expect(await check(1)).toMatchObject({
+    state: "receiving",
+    actionable: true,
+    applicationId: proposal.applicationId,
+  });
+  await f.send(1, {
+    command: "receive",
+    applicationId: proposal.applicationId,
+    accept: false,
+  });
+  const resumed = await check(0);
+  expect(resumed).toMatchObject({ state: "turn", turn: before.turn });
+  expect(resumed.wakeKey).not.toBe(before.wakeKey);
+  await f.send(0, { command: "search", query: { kind: "self" } });
+  expect((await check(0)).wakeKey).toBe(resumed.wakeKey);
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("バックグラウンドのlistenが待機を維持し、後から来た接触でJSON通知を出す", async () => {
+  const f = await fixture(),
+    app = await createApp(access, auth.identity, undefined, auth.operations),
+    cli = await playerCli(app),
+    profile = join(cli.directory, "listener.json");
+  let child: ReturnType<typeof spawn> | undefined;
+  try {
+    await f.send(0, { command: "finish" });
+    await access.waiting(
+      f.people[0]!.id,
+      f.world,
+      f.actors[0],
+      undefined,
+      false,
+    );
+    const connection = await cli.run(
+      profile,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (
+        await cli.approve(
+          f.people[0]!.cookie,
+          connection.userCode,
+          `actor:${f.actors[0]}`,
+        )
+      ).statusCode,
+    ).toBe(302);
+    child = spawn(
+      process.execPath,
+      [
+        resolve("packages/player-cli/dist/main.js"),
+        "listen",
+        "--resume",
+        "--profile",
+        profile,
+      ],
+      { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    const events: Record<string, unknown>[] = [];
+    const reader = createInterface({ input: child.stdout! });
+    reader.on("line", (line) => events.push(JSON.parse(line)));
+    await vi.waitFor(
+      () => expect(events.some((e) => e.state === "standby")).toBe(true),
+      { timeout: 10000 },
+    );
+    await f.send(1, { command: "contact", targetId: f.actors[0] });
+    await vi.waitFor(
+      () =>
+        expect(
+          events.some((e) => e.state === "turn" && e.actionable === true),
+        ).toBe(true),
+      { timeout: 40000 },
+    );
+    expect(events.filter((e) => e.state === "turn")).toHaveLength(1);
+    expect(f.calls).not.toHaveBeenCalled();
+    reader.close();
+  } finally {
+    if (child && child.exitCode === null) {
+      child.kill();
+      await new Promise((resolve) => child!.once("exit", resolve));
+    }
+    await cli.close();
+    await app.close();
+  }
+}, 60000);
+
+test("メモノードは自由な本文で作成し、共有と更新に関係者の受領を使う", async () => {
+  const f = await fixture();
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  const request = {
+    command: "memo",
+    text: "見つけた色や音を自由に並べる観察ノート",
+    participants: [f.actors[1]],
+    dependencies: [],
+  };
+  const declined = await f.send(0, request);
+  expect((await f.status(1)).actorId).toBe(f.actors[1]);
+  expect(
+    await f.store.context(f.graph).node(declined.memoId as string),
+  ).toBeUndefined();
+  await f.send(1, {
+    command: "receive",
+    applicationId: declined.applicationId,
+    accept: false,
+  });
+  expect(
+    await f.store.context(f.graph).node(declined.memoId as string),
+  ).toBeUndefined();
+  await expect(
+    f.send(0, { ...request, participants: [f.actors[2]] }),
+  ).rejects.toMatchObject({ code: "REMOTE_RECEIVING" });
+  const shared = await f.send(0, request);
+  await f.send(1, {
+    command: "receive",
+    applicationId: shared.applicationId,
+    accept: true,
+  });
+  const memo = await f.store.context(f.graph).node(shared.memoId as string);
+  expect(memo).toMatchObject({
+    kind: "script",
+    type: "memo",
+    text: request.text,
+  });
+  expect(
+    JSON.stringify(
+      (await f.send(0, { command: "search", query: { kind: "memos" } }))
+        .material,
+    ),
+  ).toContain(request.text);
+  expect(
+    (await f.send(2, { command: "search", query: { kind: "memos" } })).material,
+  ).toEqual([]);
+  const revised = await f.send(0, {
+    command: "update",
+    text: "観察ノートへ追記する",
+    changes: {
+      nodes: [],
+      revisions: [{ ...memo, text: "別の感じ方も並べて残す" }],
+      edges: [],
+      endEdges: [],
+    },
+    dependencies: [],
+  });
+  expect(
+    (await f.store.context(f.graph).node(shared.memoId as string))?.text,
+  ).toBe(request.text);
+  await f.send(1, {
+    command: "receive",
+    applicationId: revised.applicationId,
+    accept: true,
+  });
+  expect(
+    (await f.store.context(f.graph).node(shared.memoId as string))?.text,
+  ).toBe("別の感じ方も並べて残す");
+  const own = await f.send(2, {
+    command: "memo",
+    text: "自分に関連付けた記録",
+    dependencies: [],
+  });
+  expect(own.state).toBe("accepted");
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("受容したインスタントNPCだけを昇格申請し、管理者の許可後に一度だけ永続化する", async () => {
+  const f = await fixture(),
+    admin = await auth.person(),
+    source = randomUUID();
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  await f.send(0, {
+    requestId: source,
+    command: "say",
+    text: "小さな動物が二匹、木陰を横切る",
+    instantNpcs: ["木陰の小さな動物", "別の小さな動物"],
+  });
+  await f.send(0, { command: "end-turn" });
+  const pending = await f.send(1, {
+    command: "promote-npc",
+    sourceRequestId: source,
+    npcIndex: 0,
+    description: "人のそばで穏やかに過ごす小さな動物",
+    ownerId: f.actors[1],
+  });
+  await f.send(1, { command: "end-turn" });
+  const npc = derivedId(`promotion:${pending.promotionId}:npc`);
+  expect(await f.store.context(f.graph).node(npc)).toBeUndefined();
+  await expect(
+    f.send(2, {
+      command: "promote-npc",
+      sourceRequestId: source,
+      npcIndex: 0,
+      description: "見ていない出現",
+    }),
+  ).rejects.toMatchObject({ code: "PROMOTION_SOURCE_NOT_AVAILABLE" });
+  const approve = {
+    operation: "npcs.decidePromotion" as const,
+    worldId: f.world,
+    promotionId: pending.promotionId as string,
+    approve: true,
+    reason: "継続する存在として許可",
+  };
+  await expect(
+    auth.operations.execute(f.people[0]!.id, randomUUID(), approve, {
+      players: access.players,
+    }),
+  ).rejects.toMatchObject({ code: "ADMIN_REQUIRED" });
+  const list = await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    { operation: "npcs.promotions", worldId: f.world },
+    { players: access.players },
+  );
+  expect(JSON.stringify(list)).toContain("木陰の小さな動物");
+  const id = randomUUID(),
+    accepted = await auth.operations.execute(admin.id, id, approve, {
+      players: access.players,
+    });
+  expect(
+    await auth.operations.execute(admin.id, id, approve, {
+      players: access.players,
+    }),
+  ).toEqual(accepted);
+  expect(await f.store.context(f.graph).node(npc)).toMatchObject({
+    kind: "existence",
+    text: "木陰の小さな動物",
+  });
+  expect(
+    (
+      await f.store
+        .context(f.graph)
+        .relations(npc, "has", "in", Number.MAX_SAFE_INTEGER)
+    ).some((e) => e.source === f.actors[1] && !e.role),
+  ).toBe(true);
+  expect(
+    (
+      await isolated.databases.postgres.query(
+        "SELECT controller FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
+        [f.world, npc],
+      )
+    ).rows[0].controller,
+  ).toBeNull();
+  await access.botPlay.tickNpcs();
+  expect(f.calls).not.toHaveBeenCalled();
+  await expect(
+    f.send(0, {
+      command: "promote-npc",
+      sourceRequestId: source,
+      npcIndex: 0,
+      description: "重ねた申請",
+    }),
+  ).rejects.toMatchObject({ code: "PROMOTION_EXISTS" });
+  const rejected = await f.send(0, {
+    command: "promote-npc",
+    sourceRequestId: source,
+    npcIndex: 1,
+    description: "別の個体の申請",
+  });
+  await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    { ...approve, promotionId: rejected.promotionId as string, approve: false },
+    { players: access.players },
+  );
+  expect(
+    await f.store
+      .context(f.graph)
+      .node(derivedId(`promotion:${rejected.promotionId}:npc`)),
+  ).toBeUndefined();
+  await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    {
+      operation: "npcs.put",
+      worldId: f.world,
+      actorId: npc,
+      controller: "bot",
+      userId: f.people[0]!.id,
+      reason: "操作担当を個別に指定",
+    },
+    { players: access.players },
+  );
+  expect(
+    (
+      await access.botCommand(
+        f.people[0]!.id,
+        f.world,
+        { requestId: randomUUID(), command: "start" },
+        npc,
+      )
+    ).sessionId,
+  ).toBeTruthy();
+});
+
+test("報告は当日の通常手番で枠を得て、文字数・再送・並列送信・本人認可を守る", async () => {
+  const f = await fixture(),
+    user = f.people[0]!.id;
+  const quota = () => access.reportStatus(user, f.world, f.actors[0]);
+  expect(await quota()).toMatchObject({
+    dailyLimit: 10,
+    turnsPerReport: 3,
+    maxCharacters: 1200,
+    available: 0,
+  });
+  const input = { requestId: randomUUID(), text: "運営への感想" };
+  await expect(
+    access.report(user, f.world, input, f.actors[0]),
+  ).rejects.toMatchObject({ code: "REPORT_LIMIT" });
+  for (let i = 0; i < 2; i++) await f.send(0, { command: "end-turn" });
+  expect((await quota()).available).toBe(0);
+  const third = { requestId: randomUUID(), command: "end-turn" };
+  await f.send(0, third);
+  await f.send(0, third);
+  expect(await quota()).toMatchObject({ turns: 3, available: 1 });
+  await f.send(0, { command: "search", query: { kind: "self" } });
+  await f.send(0, { command: "comment", text: "別枠のコメント" });
+  expect((await quota()).turns).toBe(3);
+  await expect(
+    access.report(
+      user,
+      f.world,
+      { requestId: randomUUID(), text: "あ".repeat(1201) },
+      f.actors[0],
+    ),
+  ).rejects.toMatchObject({ code: "REPORT_TOO_LONG" });
+  const requests = [
+    { requestId: randomUUID(), text: "あ".repeat(1200) },
+    input,
+  ];
+  const attempts = await Promise.allSettled(
+    requests.map((r) => access.report(user, f.world, r, f.actors[0])),
+  );
+  expect(attempts.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+  const accepted = attempts.findIndex((r) => r.status === "fulfilled");
+  const replay = await access.report(
+    user,
+    f.world,
+    requests[accepted]!,
+    f.actors[0],
+  );
+  expect(replay.id).toBe(requests[accepted]!.requestId);
+  expect(await quota()).toMatchObject({ sent: 1, available: 0 });
+  expect(
+    (await access.reportStatus(f.people[1]!.id, f.world, f.actors[1]))
+      .available,
+  ).toBe(0);
+  await expect(
+    access.report(
+      user,
+      f.world,
+      { requestId: randomUUID(), text: "他人の人物" },
+      f.actors[1],
+    ),
+  ).rejects.toMatchObject({ status: 404 });
+  const admin = await auth.person();
+  expect(
+    JSON.stringify(
+      await auth.operations.execute(
+        admin.id,
+        randomUUID(),
+        { operation: "reports.list", worldId: f.world },
+        { players: access.players },
+      ),
+    ),
+  ).toContain(requests[accepted]!.text);
+  await expect(
+    auth.operations.execute(
+      user,
+      randomUUID(),
+      { operation: "reports.list", worldId: f.world },
+      { players: access.players },
+    ),
+  ).rejects.toMatchObject({ code: "ADMIN_REQUIRED" });
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("報告の日次枠は日本時間で切り替わり、管理者が3つの上限を即時に変えられる", async () => {
+  const f = await fixture(),
+    admin = await auth.person(),
+    user = f.people[0]!.id;
+  let now = new Date("2026-11-18T14:59:59Z");
+  vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
+  const quota = () => access.reportStatus(user, f.world, f.actors[0]);
+  const complete = async (n: number) => {
+    for (let i = 0; i < n; i++) await f.send(0, { command: "end-turn" });
+  };
+  const post = (text: string) =>
+    access.report(
+      user,
+      f.world,
+      { requestId: randomUUID(), text },
+      f.actors[0],
+    );
+  await complete(3);
+  const earlier = await post("日付切替前の報告を保持する");
+  expect(await quota()).toMatchObject({
+    date: "2026-11-18",
+    turns: 3,
+    sent: 1,
+  });
+  now = new Date("2026-11-18T15:00:00Z");
+  expect(await quota()).toMatchObject({
+    date: "2026-11-19",
+    turns: 0,
+    sent: 0,
+    available: 0,
+  });
+  await expect(post("前日の枠は使わない")).rejects.toMatchObject({
+    code: "REPORT_LIMIT",
+  });
+  await complete(30);
+  for (let i = 0; i < 10; i++) await post(`本日分の報告 ${i}`);
+  expect(await quota()).toMatchObject({
+    turns: 30,
+    allowance: 10,
+    sent: 10,
+    available: 0,
+  });
+  await expect(post("日次上限を超える送信")).rejects.toMatchObject({
+    code: "REPORT_LIMIT",
+  });
+  const policy = async (
+    dailyLimit: number,
+    turnsPerReport: number,
+    maxCharacters: number,
+  ) => {
+    const current = await auth.operations.execute(admin.id, randomUUID(), {
+      operation: "reportPolicy.read",
+    });
+    return auth.operations.execute(admin.id, randomUUID(), {
+      operation: "reportPolicy.put",
+      dailyLimit,
+      turnsPerReport,
+      maxCharacters,
+      expectedVersion: Number(current.version),
+      reason: "運用中の上限変更",
+    });
+  };
+  await policy(12, 2, 5);
+  expect(await quota()).toMatchObject({
+    allowance: 12,
+    available: 2,
+    maxCharacters: 5,
+    turnsPerReport: 2,
+  });
+  await expect(post("あ".repeat(6))).rejects.toMatchObject({
+    code: "REPORT_TOO_LONG",
+  });
+  await post("あ".repeat(5));
+  await policy(12, 2, 8);
+  await post("あ".repeat(8));
+  await policy(1, 2, 8);
+  expect(await quota()).toMatchObject({ sent: 12, available: 0 });
+  const records = await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    { operation: "reports.list", worldId: f.world },
+    { players: access.players },
+  );
+  expect(JSON.stringify(records)).toContain(earlier.id);
+  expect(JSON.stringify(records)).toContain("日付切替前の報告を保持する");
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("報告枠は実際に手番を終えたユーザーと世界に属し、受領判断だけでは増えない", async () => {
+  const f = await fixture(),
+    g = await fixture(),
+    user = f.people[0]!.id;
+  f.calls.mockClear();
+  await isolated.databases.postgres.query(
+    "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3)",
+    [user, g.world, g.actors[0]],
+  );
+  for (let i = 0; i < 3; i++)
+    await access.botCommand(
+      user,
+      g.world,
+      { requestId: randomUUID(), command: "end-turn" },
+      g.actors[0],
+    );
+  expect(await access.reportStatus(user, g.world, g.actors[0])).toMatchObject({
+    turns: 3,
+    available: 1,
+  });
+  expect(
+    await access.reportStatus(g.people[0]!.id, g.world, g.actors[0]),
+  ).toMatchObject({ turns: 0, available: 0 });
+  expect(await access.reportStatus(user, f.world, f.actors[0])).toMatchObject({
+    turns: 0,
+    available: 0,
+  });
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  const before = await access.reportStatus(
+    f.people[1]!.id,
+    f.world,
+    f.actors[1],
+  );
+  const item = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: [{ id: item, kind: "existence", text: "手渡す道具" }],
+        revisions: [],
+        endEdges: [],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "has",
+            role: "hold",
+            source: f.actors[0]!,
+            target: item,
+            period: { from: 0 },
+          },
+        ],
+      },
+    },
+  );
+  const pending = await f.send(0, {
+    command: "update",
+    text: "道具を手渡す",
+    operations: [
+      {
+        type: "move",
+        item,
+        from: f.actors[0],
+        to: f.actors[1],
+        basis: "受領の申請",
+      },
+    ],
+    dependencies: [],
+  });
+  await f.send(1, {
+    command: "receive",
+    applicationId: pending.applicationId,
+    accept: true,
+  });
+  expect(
+    (await access.reportStatus(f.people[1]!.id, f.world, f.actors[1])).turns,
+  ).toBe(before.turns);
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("CLIの報告は専用枠で送り、失った返答を再送し、変更後の文字数上限も使う", async () => {
+  const f = await fixture(),
+    admin = await auth.person(),
+    app = await createApp(access, auth.identity, undefined, auth.operations),
+    cli = await playerCli(app),
+    profile = join(cli.directory, "report.json");
+  try {
+    const connection = await cli.run(
+      profile,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (
+        await cli.approve(
+          f.people[0]!.cookie,
+          connection.userCode,
+          `actor:${f.actors[0]}`,
+        )
+      ).statusCode,
+    ).toBe(302);
+    for (let i = 0; i < 3; i++) await f.send(0, { command: "end-turn" });
+    expect((await cli.run(profile, "report")).available).toBe(1);
+    cli.dropNextResponse(`/api/worlds/${f.world}/reports`);
+    const lost = await cli.run(
+      profile,
+      "report",
+      "--text",
+      "表示についての感想",
+    );
+    expect(lost.state).toBe("error");
+    expect((await cli.run(profile, "recover")).result.id).toBe(lost.requestId);
+    expect((await cli.run(profile, "report")).sent).toBe(1);
+    for (let i = 0; i < 3; i++) await f.send(0, { command: "end-turn" });
+    const policy = await auth.operations.execute(admin.id, randomUUID(), {
+      operation: "reportPolicy.read",
+    });
+    await auth.operations.execute(admin.id, randomUUID(), {
+      operation: "reportPolicy.put",
+      dailyLimit: 10,
+      turnsPerReport: 3,
+      maxCharacters: 2400,
+      expectedVersion: Number(policy.version),
+      reason: "文字数上限を増やす",
+    });
+    const long = await cli.run(profile, "report", "--text", "あ".repeat(1201));
+    expect(long.result.id).toBe(long.requestId);
+    expect((await f.status(0)).callsUsed).toBe(0);
+    const credentials = JSON.parse(await readFile(profile, "utf8"));
+    expect(
+      (await app.inject({ url: `/api/worlds/${f.world}/reports` })).statusCode,
+    ).toBe(401);
+    expect(
+      (
+        await app.inject({
+          url: `/api/worlds/${randomUUID()}/reports`,
+          headers: { authorization: `Bearer ${credentials.secret}` },
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(f.calls).not.toHaveBeenCalled();
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
+
+test("個体指定のない旧NPCフラグを無視し、bot担当とサーバー担当を個別に指定する", async () => {
+  const f = await fixture(),
+    admin = await auth.person(),
+    npcs = [randomUUID(), randomUUID(), randomUUID()];
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: npcs.map((id, i) => ({
+          id,
+          kind: "existence",
+          text: `固有NPC${i}`,
+        })),
+        edges: [],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  await isolated.databases.postgres.query(
+    "INSERT INTO world_controlled_actor(world_id,actor_id,npc_active) VALUES($1,$2,true)",
+    [f.graph, npcs[0]],
+  );
+  await access.botPlay.tickNpcs();
+  expect(f.calls).not.toHaveBeenCalled();
+  for (const [i, controller] of ["bot", "server"].entries())
+    await auth.operations.execute(
+      admin.id,
+      randomUUID(),
+      {
+        operation: "npcs.put",
+        worldId: f.world,
+        actorId: npcs[i + 1]!,
+        controller: controller as "bot" | "server",
+        ...(controller === "bot" ? { userId: f.people[0]!.id } : {}),
+        reason: "個体ごとの担当指定",
+      },
+      { players: access.players },
+    );
+  await access.botCommand(
+    f.people[0]!.id,
+    f.world,
+    { requestId: randomUUID(), command: "start" },
+    npcs[1],
+  );
+  f.calls.mockImplementation(async (id, role) =>
+    answer(
+      id,
+      role === "world-server-npc"
+        ? { command: "say", text: "独立した人物としての一手" }
+        : { allowed: true, reason: "許可" },
+    ),
+  );
+  await access.botPlay.tickNpcs();
+  expect(f.calls.mock.calls.map((c) => c[1])).toEqual(["world-server-npc"]);
+  expect(await access.botPlay.current(f.world, npcs[0]!)).toBeUndefined();
+  expect(await access.botPlay.current(f.world, npcs[2]!)).toBeDefined();
+  const before = (
+    await f.store.driver.executeQuery(
+      "MATCH(n:WorldNode {worldId:$world,kind:'existence'}) RETURN count(n) AS n",
+      { world: f.graph },
+    )
+  ).records[0]!.get("n").toNumber();
+  await f.send(0, {
+    command: "say",
+    text: "木陰を小さな動物が横切る",
+    instantNpcs: ["その場だけの小動物"],
+  });
+  expect(
+    (
+      await f.store.driver.executeQuery(
+        "MATCH(n:WorldNode {worldId:$world,kind:'existence'}) RETURN count(n) AS n",
+        { world: f.graph },
+      )
+    ).records[0]!.get("n").toNumber(),
+  ).toBe(before);
+});
+
+test("対抗行動の0%・100%ではGMも抽選も使わず、不確実な行動だけ一度の設定と抽選を保存する", async () => {
+  const f = await fixture(),
+    items = [randomUUID(), randomUUID()];
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: items.map((id) => ({ id, kind: "existence", text: "道具" })),
+        edges: items.map((target, i) => ({
+          id: randomUUID(),
+          kind: "has",
+          role: "hold",
+          source: f.actors[i]!,
+          target,
+          period: { from: 0 },
+        })),
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  const attempt = (
+    itemId: string,
+    holderId: string,
+    requestId = randomUUID(),
+  ) =>
+    f.send(0, {
+      requestId,
+      command: "oppose",
+      text: "道具を確保する",
+      operations: [
+        {
+          type: "move",
+          item: itemId,
+          from: holderId,
+          to: f.actors[0],
+          basis: "道具を確保する",
+        },
+      ],
+      dependencies: [],
+    });
+  expect((await attempt(items[1]!, f.actors[2]!)).outcome).toMatchObject({
+    success: false,
+  });
+  expect((await attempt(items[0]!, f.actors[0]!)).outcome).toMatchObject({
+    success: true,
+  });
+  expect(f.calls).not.toHaveBeenCalled();
+  f.calls.mockImplementation(async (id) =>
+    answer(id, { sides: 6, successThrough: 3 }),
+  );
+  const requestId = randomUUID(),
+    uncertain = await attempt(items[1]!, f.actors[1]!, requestId);
+  expect((uncertain.outcome as { roll: number }).roll).toBeGreaterThan(0);
+  expect(await attempt(items[1]!, f.actors[1]!, requestId)).toEqual(uncertain);
+  expect(f.calls).toHaveBeenCalledTimes(1);
+  expect(
+    (
+      await isolated.databases.postgres.query(
+        "SELECT count(*)::int AS n FROM bot_dice WHERE id=$1",
+        [requestId],
+      )
+    ).rows[0].n,
+  ).toBe(1);
+});
+
+test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人の解釈をチャットへ同報しない", async () => {
+  const f = await fixture();
+  const speech = randomUUID(),
+    event = derivedId(`${speech}:speech`),
+    thought = randomUUID(),
+    script = randomUUID();
+  const make = (
+    nodes: unknown[],
+    edges: unknown[],
+    text = "本人からの新規作成申請",
+  ) =>
+    f.send(0, {
+      command: "create",
+      text,
+      changes: { nodes, revisions: [], edges, endEdges: [] },
+      dependencies: [],
+    });
+  await f.send(0, { requestId: speech, command: "say", text: "本人の発言" });
+  await expect(
+    make(
+      [{ id: randomUUID(), kind: "script", text: "不正な接続" }],
+      [
+        {
+          id: randomUUID(),
+          kind: "has",
+          source: event,
+          target: f.actors[0],
+          period: { from: 0 },
+        },
+      ],
+    ),
+  ).rejects.toMatchObject({ code: "CONNECTION_REJECTED" });
+  await make(
+    [{ id: thought, kind: "script", text: "本人だけが持つ人物解釈" }],
+    [
+      {
+        id: randomUUID(),
+        kind: "interpret",
+        role: "content",
+        source: f.actors[0],
+        target: thought,
+        period: { from: 0 },
+      },
+      {
+        id: randomUUID(),
+        kind: "interpret",
+        role: "about",
+        source: thought,
+        target: f.actors[1],
+        period: { from: 0 },
+      },
+    ],
+    "私的な解釈を保存する",
+  );
+  expect(f.calls).not.toHaveBeenCalled();
+  await f.send(0, { command: "end-turn" });
+  expect(JSON.stringify((await f.status(0)).entries)).not.toContain(
+    "私的な解釈",
+  );
+  f.calls.mockImplementation(async (id) =>
+    answer(id, { allowed: true, reason: "材料に照らして作成可能" }),
+  );
+  await make(
+    [{ id: script, kind: "script", text: "新しい自由な性質" }],
+    [
+      {
+        id: randomUUID(),
+        kind: "status",
+        role: "content",
+        source: f.actors[0],
+        target: script,
+        period: { from: 0 },
+      },
+    ],
+  );
+  expect(f.calls).toHaveBeenCalledTimes(1);
+  expect(f.calls.mock.calls[0]![1]).toBe("world-creation-permission");
+});
+
+test("周囲の検索は所在地以外の記述が増えてもグラフ照会数を増やさない", async () => {
+  const f = await fixture(),
+    sessions = vi.spyOn(f.store.driver, "session");
+  await f.send(0, { command: "search", query: { kind: "surroundings" } });
+  const count = sessions.mock.calls.length;
+  const nodes = Array.from({ length: 100 }, (_, i) => ({
+    id: randomUUID(),
+    kind: "script" as const,
+    text: `場所についての記述${i}`,
+  }));
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes,
+        revisions: [],
+        endEdges: [],
+        edges: nodes.flatMap((n) => [
+          {
+            id: randomUUID(),
+            kind: "status" as const,
+            role: "content" as const,
+            source: f.actors[2]!,
+            target: n.id,
+            period: { from: 0 },
+          },
+          {
+            id: randomUUID(),
+            kind: "status" as const,
+            role: "about" as const,
+            source: n.id,
+            target: f.place,
+            period: { from: 0 },
+          },
+        ]),
+      },
+    },
+  );
+  sessions.mockClear();
+  const result = await f.send(0, {
+    command: "search",
+    query: { kind: "surroundings" },
+  });
+  expect(sessions.mock.calls.length).toBe(count);
+  expect(JSON.stringify(result.material)).not.toContain(f.actors[2]);
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("旧進行の表示済み履歴を本人のシーンへ引き継ぎ、一つのリザルトに含める", async () => {
+  const f = await fixture();
+  await f.send(0, { command: "finish" });
+  const publicId = randomUUID(),
+    segment = randomUUID(),
+    event = randomUUID(),
+    db = isolated.databases.postgres;
+  const background = {
+    type: "background",
+    synopsis: "保存した本人の場面",
+    participants: f.actors,
+    facts: [],
+    perceptions: [
+      {
+        observerId: f.actors[0],
+        text: "本人の初期の見聞",
+        sourceIds: [f.place],
+      },
+    ],
+    unknowns: [],
+    creations: [],
+    beliefs: [],
+  };
+  const data = {
+    worldId: f.graph,
+    at: 0,
+    startedAt: 0,
+    commandId: randomUUID(),
+    background,
+    actions: [],
+    events: [],
+    choices: [],
+    pending: {},
+    intentions: {},
+    previous: {},
+    views: {},
+    roots: [f.place],
+    originalAgenda: [],
+    basis: [],
+    purpose: "過去の場面",
+    nextDecisions: [],
+  };
+  for (const id of [publicId, segment])
+    await db.query(
+      "INSERT INTO world_scene(id,construction_id,actor_id,state,data) VALUES($1,$2,$3,'active',$4)",
+      [id, f.world, f.actors[0], data],
+    );
+  await db.query(
+    "INSERT INTO world_scene_session(id,actor_id,world_id,current_id,opening) VALUES($1,$2,$3,$4,$5)",
+    [
+      publicId,
+      f.actors[0],
+      f.world,
+      segment,
+      { sceneId: publicId, at: 0, background },
+    ],
+  );
+  await db.query(
+    "INSERT INTO world_scene_member(scene_id,world_id,actor_id,request_id,state,kind,session_id) VALUES($1,$2,$3,$4,'joined','bot',$5)",
+    [segment, f.world, f.actors[0], randomUUID(), publicId],
+  );
+  await db.query(
+    "INSERT INTO world_actor_scene(world_id,actor_id,scene_id) VALUES($1,$2,$3)",
+    [f.world, f.actors[0], segment],
+  );
+  await db.query(
+    "INSERT INTO world_scene_record(session_id,actor_id,kind,id,scene_id,position,payload) VALUES($1,$2,'events',$3,$4,0,$5)",
+    [
+      publicId,
+      f.actors[0],
+      event,
+      segment,
+      {
+        id: event,
+        actorId: f.actors[0],
+        text: "保存された出来事",
+        period: { from: 0, until: 0 },
+        receipts: [{ observerId: f.actors[0], text: "本人に届いた見聞" }],
+      },
+    ],
+  );
+  const archived = await access.scene(
+    f.people[0]!.id,
+    f.world,
+    false,
+    f.actors[0],
+    publicId,
+  );
+  expect(archived.scene?.id).toBe(publicId);
+  expect(archived.scene?.messages[0]?.text).toBe("本人に届いた見聞");
+  await f.send(0, { command: "start" });
+  expect((await f.status(0)).sceneId).toBe(publicId);
+  const finished = await f.send(0, { command: "finish" });
+  expect((finished.result as { legacy: unknown[] }).legacy).toHaveLength(1);
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("受領は関係する全員の判断を待ち、一人の拒否では全差分を未適用に保つ", async () => {
+  const f = await fixture();
+  await f.move(2, f.place);
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  await f.send(2, { command: "contact", targetId: f.actors[0] });
+  const storage = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: [{ id: storage, kind: "existence", text: "保管先" }],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "has",
+            source: f.actors[0]!,
+            target: storage,
+            period: { from: 0 },
+          },
+        ],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  const offer = () =>
+    f.send(0, {
+      command: "update",
+      text: "二人へ保管先の利用を申し出る",
+      operations: f.actors.slice(1).map((person) => ({
+        type: "grant",
+        person,
+        storage,
+        basis: "利用の申請",
+      })),
+      dependencies: [],
+    });
+  const first = await offer();
+  await f.send(1, { command: "comment", text: "判断のコメント" });
+  await expect(
+    f.send(1, { command: "comment", text: "二度目" }),
+  ).rejects.toMatchObject({ code: "COMMENT_USED" });
+  await f.send(1, {
+    command: "receive",
+    applicationId: first.applicationId,
+    accept: true,
+  });
+  expect((await f.status(0)).actorId).toBe(f.actors[2]);
+  await f.send(2, {
+    command: "receive",
+    applicationId: first.applicationId,
+    accept: false,
+  });
+  expect(
+    (await readBelongings(f.store.context(f.graph), f.actors[1]!)).storages,
+  ).toHaveLength(0);
+  const second = await offer();
+  for (const i of [1, 2])
+    await f.send(i, {
+      command: "receive",
+      applicationId: second.applicationId,
+      accept: true,
+    });
+  expect((await f.status(0)).actorId).toBe(f.actors[0]);
+  for (const actor of f.actors.slice(1))
+    expect(
+      (await readBelongings(f.store.context(f.graph), actor)).storages,
+    ).toHaveLength(1);
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("依存版の不一致と運用停止を理由付きエラーにし、失敗した要求で枠を消費しない", async () => {
+  const f = await fixture(),
+    basis = await f.send(0, { command: "search", query: { kind: "self" } }),
+    db = isolated.databases.postgres;
+  await f.move(0, f.far);
+  await expect(
+    f.send(0, {
+      command: "update",
+      text: "移動",
+      operations: [
+        {
+          type: "locate",
+          subjectId: f.actors[0],
+          text: "広場",
+          aboutIds: [f.place],
+        },
+      ],
+      dependencies: basis.dependencies,
+    }),
+  ).rejects.toMatchObject({ code: "WORLD_CHANGED" });
+  await db.query(
+    "UPDATE runtime_control SET configuration=jsonb_set(configuration,'{paused}','true') WHERE singleton",
+  );
+  try {
+    await expect(
+      f.send(0, { command: "say", text: "運用停止中の入力" }),
+    ).rejects.toMatchObject({ code: "MAINTENANCE" });
+  } finally {
+    await db.query(
+      "UPDATE runtime_control SET configuration=jsonb_set(configuration,'{paused}','false') WHERE singleton",
+    );
+  }
+  expect((await f.status(0)).callsUsed).toBe(1);
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("GM判断中に利用停止されても長いDBロックを持たず、確定前の権限確認で差分を拒否する", async () => {
+  const f = await fixture(),
+    script = randomUUID(),
+    db = isolated.databases.postgres;
+  let release!: () => void, reached!: () => void;
+  const gate = new Promise<void>((r) => {
+      release = r;
+    }),
+    waiting = new Promise<void>((r) => {
+      reached = r;
+    });
+  f.calls.mockImplementation(async (id) => {
+    reached();
+    await gate;
+    return answer(id, { allowed: true, reason: "作成可" });
+  });
+  const pending = f.send(0, {
+    command: "create",
+    text: "性質を追加する",
+    changes: {
+      nodes: [{ id: script, kind: "script", text: "新しい性質" }],
+      revisions: [],
+      endEdges: [],
+      edges: [
+        {
+          id: randomUUID(),
+          kind: "status",
+          role: "content",
+          source: f.actors[0],
+          target: script,
+          period: { from: 0 },
+        },
+      ],
+    },
+    dependencies: [],
+  });
+  await waiting;
+  await db.query("UPDATE app_user SET banned=true WHERE id=$1", [
+    f.people[0]!.id,
+  ]);
+  release();
+  await expect(pending).rejects.toMatchObject({ code: "USER_BANNED" });
+  expect(await f.store.context(f.graph).node(script)).toBeUndefined();
+});

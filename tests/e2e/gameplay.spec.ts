@@ -1,9 +1,6 @@
 import { expect, test } from "./fixtures.js";
 import { createHash, randomUUID } from "node:crypto";
 import { connectDatabases } from "@gestaloka/server";
-import { WorldStore } from "../../packages/server/src/world/store.js";
-import type { SceneRow } from "@gestaloka/server/scene";
-import { SceneSessions } from "../../packages/server/src/runtime/scene-sessions.js";
 import type { Page } from "@playwright/test";
 
 async function participate(page: Page) {
@@ -136,7 +133,7 @@ test("ログインだけでは匿名データを移行せず、対象確認と�
     ).toBe(user);
     await page.goto(`/worlds/${world}/play`);
     await expect(
-      page.getByRole("heading", { name: "村民として", exact: true }),
+      page.getByRole("heading", { name: "セッションを始める", exact: true }),
     ).toBeVisible();
     expect(
       (await (await page.request.get(`/api/worlds/${world}/play`)).json())
@@ -146,7 +143,6 @@ test("ログインだけでは匿名データを移行せず、対象確認と�
     await db.close();
   }
 });
-
 test("構築・追加進行・完了・別村民の行動を実APIと独立ワーカーで再開する", async ({
   page,
 }) => {
@@ -193,111 +189,24 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
     .click();
   await participate(page);
 
-  await expect(
-    page.getByRole("heading", { name: "村民として", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("あなたが初めて知覚した景色", { exact: true }),
-  ).toBeVisible();
-  await expect(page.locator("body")).not.toContainText("INTERNAL_GM_ONLY");
-  await expect(page.locator("body")).not.toContainText("PRIVATE_");
-  for (const [name, text] of [
-    ["セッションできる相手", "待機中またはNPCモードのプレイヤーはいません"],
-    ["持ち物と技能", "保管先"],
-  ] as const) {
-    await page.getByRole("button", { name, exact: true }).click();
-    const dialog = page.getByRole("dialog", { name, exact: true });
-    await expect(dialog.getByText(text, { exact: true })).toBeVisible();
-    await dialog.getByRole("button", { name: "閉じる" }).click();
-  }
-  await page.getByRole("button", { name: "自由入力" }).click();
   await page
-    .getByLabel("次のシーンで何をしたいですか", { exact: true })
-    .fill("村の道で周囲を確かめたい");
-  await page
-    .getByRole("button", { name: "シーンのあらすじを準備する", exact: true })
+    .getByRole("button", { name: "セッションを開始", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "シーンのあらすじ", exact: true }),
+    page.getByRole("heading", { name: "1人のセッション" }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "シーンを始める", exact: true }),
-  ).toBeEnabled();
-  await expect(
-    page.getByLabel("どう行動しますか", { exact: true }),
-  ).toHaveCount(0);
-  await page.reload();
-  await page
-    .getByRole("button", { name: "シーンを始める", exact: true })
-    .click();
-  let posted = 0;
-  page.on("request", (request) => {
-    if (
-      request.method() === "POST" &&
-      new URL(request.url()).pathname.endsWith("/scene") &&
-      request.postDataJSON()?.command === "act"
-    )
-      posted++;
-  });
-  const pencil = page.getByRole("button", { name: "自由入力" });
-  await pencil.click();
-  const field = page.getByLabel("どう行動しますか", { exact: true });
-  await expect(field).toBeFocused();
-  const input = "周囲を見渡す。\n見える範囲を確かめる。";
-  await field.fill(input);
-  await field.press("Escape");
-  await expect(field).toBeHidden();
-  await pencil.click();
-  await expect(field).toHaveValue(input);
-  await field.dispatchEvent("compositionstart");
-  await field.dispatchEvent("keydown", {
-    key: "Enter",
-    code: "Enter",
-    ctrlKey: true,
-    isComposing: true,
-    keyCode: 229,
-  });
-  await field.dispatchEvent("compositionend");
-  expect(posted).toBe(0);
-  const accepted = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      new URL(response.url()).pathname.endsWith("/scene") &&
-      response.request().postDataJSON()?.command === "act",
+  await page.getByLabel("発言・ターンコメント").fill("周囲の音に耳を澄ませる");
+  await page.getByRole("button", { name: "発言する", exact: true }).click();
+  await page.getByRole("button", { name: "手番を終える", exact: true }).click();
+  await expect(page.getByLabel("セッションのチャット")).toContainText(
+    "周囲の音に耳を澄ませる",
   );
   await page
-    .getByRole("button", { name: "この行動を送る", exact: true })
-    .click();
-  const response = await accepted;
-  expect(response.status()).toBe(202);
-  const result = await response.json();
-  expect(result.scene.id).toBeTruthy();
-  await page.reload();
-  await expect(page.getByText(input, { exact: true })).toBeVisible();
-  await expect(page.getByText(/公開された経験/)).toBeVisible();
-  await expect(pencil).toBeEnabled();
-  expect(posted).toBe(1);
-  await expect(
-    page.getByRole("heading", { name: "リザルト", exact: true }),
-  ).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "シーンを終えてリザルトを見る", exact: true })
+    .getByRole("button", { name: "本人のシーンを終了", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "リザルト", exact: true }),
-  ).toBeVisible({ timeout: 15000 });
-  await expect(
-    page.getByText(
-      "周囲の景色を確認しました。このシーンで見たことが記録に残りました。",
-      { exact: true },
-    ),
+    page.getByRole("heading", { name: "本人のシーンを終了しました" }),
   ).toBeVisible();
-  await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "リザルト", exact: true }),
-  ).toBeVisible();
-  await expect(page.locator("body")).not.toContainText("PRIVATE_");
-  await expect(page.locator("body")).not.toContainText("INTERNAL_GM_ONLY");
 });
 
 test("狭い画面で入力・閲覧・テーマ切替ができる", async ({ page }) => {
@@ -366,7 +275,6 @@ test("管理画面で設定を保存し、一般ユーザーには参加画面�
     fullPage: true,
   });
 });
-
 test("進行中シーンと行動履歴もスクロールで取得し、保持ページの入替えで閲覧位置を保つ", async ({
   page,
 }) => {
@@ -383,21 +291,11 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
     .click();
   await participate(page);
 
-  await page.getByRole("button", { name: "自由入力" }).click();
-  await page
-    .getByLabel("次のシーンで何をしたいですか")
-    .fill("村で人々の話を聞く");
-  await page
-    .getByRole("button", { name: "シーンのあらすじを準備する", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "シーンを始める", exact: true })
-    .click();
-  await expect(page.getByRole("button", { name: "自由入力" })).toBeEnabled();
   const id = new URL(page.url()).pathname.split("/")[2]!;
-  const scene = (
-    await (await page.request.get(`/api/worlds/${id}/scene`)).json()
-  ).scene;
+  const status = await (
+    await page.request.get(`/api/worlds/${id}/session`)
+  ).json();
+  const scene = { id: randomUUID(), viewerId: status.viewerId };
   const events = Array.from({ length: 260 }, (_, i) => ({
     id: randomUUID(),
     actorId: scene.viewerId,
@@ -417,31 +315,54 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
   }));
   const db = connectDatabases();
   try {
+    const world = (
+      await db.postgres.query(
+        "SELECT world_id FROM world_construction WHERE id=$1",
+        [id],
+      )
+    ).rows[0].world_id;
+    const data = {
+      worldId: world,
+      commandId: randomUUID(),
+      at: 259,
+      startedAt: 0,
+      actions,
+      events,
+      choices: [],
+      background: {
+        type: "background",
+        synopsis: "保存した場面",
+        participants: [scene.viewerId],
+        facts: [],
+        creations: [],
+        beliefs: [],
+        perceptions: [],
+        unknowns: [],
+      },
+    };
     await db.postgres.query(
-      "UPDATE world_scene SET data=data||$2::jsonb WHERE id=$1",
-      [scene.id, JSON.stringify({ events, actions, at: 259 })],
+      "INSERT INTO world_scene(id,construction_id,actor_id,state,data) VALUES($1,$2,$3,'result',$4)",
+      [scene.id, id, scene.viewerId, data],
     );
-    const client = await db.postgres.connect();
-    try {
-      await client.query("BEGIN");
-      const stored = (
-        await client.query<SceneRow>(
-          "SELECT * FROM world_scene WHERE id=$1 FOR UPDATE",
-          [scene.id],
-        )
-      ).rows[0]!;
-      await new SceneSessions(db.postgres, new WorldStore(db.graph)).record(
-        client,
-        stored,
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+    await db.postgres.query(
+      "INSERT INTO world_scene_session(id,actor_id,world_id,current_id,closed,result,event_count,action_count) VALUES($1,$2,$3,$1,true,$4,260,260)",
+      [scene.id, scene.viewerId, id, { text: "保存した結果" }],
+    );
+    for (const [kind, items] of [
+      ["events", events],
+      ["actions", actions],
+    ] as const)
+      for (const [position, payload] of items.entries())
+        await db.postgres.query(
+          "INSERT INTO world_scene_record(session_id,actor_id,kind,id,scene_id,position,payload) VALUES($1,$2,$3,$4,$1,$5,$6)",
+          [scene.id, scene.viewerId, kind, payload.id, position, payload],
+        );
   } finally {
     await db.close();
   }
-  await page.reload();
+  await page.goto(
+    `/worlds/${id}/play?actorId=${scene.viewerId}&sceneId=${scene.id}`,
+  );
   const section = page.getByRole("region", { name: "このシーン", exact: true }),
     scroll = section.getByLabel("記録の閲覧領域");
   await expect(section).toHaveAttribute("data-retained-records", "50");
@@ -536,7 +457,6 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
   expect(
     Number(await section.getAttribute("data-retained-records")),
   ).toBeLessThanOrEqual(200);
-  await page.locator("summary").click();
   const inputs = page.getByRole("region", {
     name: "入力した行動",
     exact: true,
@@ -548,13 +468,10 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
     fullPage: true,
   });
   await page.setViewportSize({ width: 375, height: 812 });
-  const pencil = page.getByRole("button", { name: "自由入力" });
-  await expect(pencil).toBeInViewport();
-  await pencil.click();
+  await expect(page.getByRole("button", { name: "発言する" })).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "この行動を送る" }),
-  ).toBeInViewport();
-  await page.keyboard.press("Escape");
+    page.getByRole("link", { name: "現在のセッションを開く", exact: true }),
+  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -565,7 +482,6 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
     fullPage: true,
   });
 });
-
 test("長い履歴の保持と描画を制限し、ページ破棄でも閲覧位置を保つ", async ({
   page,
 }) => {
@@ -584,6 +500,7 @@ test("長い履歴の保持と描画を制限し、ページ破棄でも閲覧�
     .click();
   await participate(page);
 
+  await page.getByText("本人のこれまでの履歴", { exact: true }).click();
   const section = page.getByRole("region", { name: "あなたの記録" }),
     scroll = page.getByLabel("記録の閲覧領域");
   async function settled() {

@@ -9,3 +9,4 @@ LICENSE
 .codegraph/
 .ory/
 .env.ory
+artifacts/

@@ -178,7 +178,7 @@ export class WorldContext {
     z.uuid().parse(id);
     const stored = await this.#read(edgeKey(id), async (tx) => {
       const result = await tx.run(
-        "MATCH ()-[r {worldId: $worldId, id: $id}]->() RETURN r.data AS data",
+        "MATCH (:WorldNode {worldId: $worldId})-[r {worldId: $worldId, id: $id}]->() RETURN r.data AS data",
         { worldId: this.worldId, id },
       );
       return result.records[0]
@@ -235,6 +235,19 @@ export class WorldContext {
       .slice(0, limit);
   }
 
+  async locationSubjects(place: string, at = Number.MAX_SAFE_INTEGER) {
+    z.uuid().parse(place);
+    return this.#read(relationKey(place, "status", "in"), async (tx) => {
+      const result = await tx.run(
+        `MATCH (p:WorldNode {worldId:$world,id:$place})<-[a:status {role:'about'}]-(s:WorldNode)<-[c:status {role:'content'}]-(n:WorldNode)
+        WHERE c.data CONTAINS $marker AND c.validFrom<=$at AND (c.validTo IS NULL OR $at<c.validTo)
+        AND a.validFrom<=$at AND (a.validTo IS NULL OR $at<a.validTo)
+        RETURN DISTINCT n.id AS id`,
+        { world: this.worldId, place, at, marker: '"text":"location"' },
+      );
+      return result.records.map((r) => r.get("id") as string);
+    });
+  }
   async relations(
     id: string,
     kind: RelationKind,
@@ -751,7 +764,7 @@ export class WorldStore {
             version: await version(tx, worldId, edgeKey(id)),
           });
           const result = await tx.run(
-            "MATCH ()-[r {worldId: $worldId, id: $id}]->() RETURN r.data AS data",
+            "MATCH (:WorldNode {worldId: $worldId})-[r {worldId: $worldId, id: $id}]->() RETURN r.data AS data",
             { worldId, id },
           );
           const edge = result.records[0]
@@ -949,7 +962,7 @@ export class WorldStore {
             period: { ...edge.period, until: at },
           });
           await tx.run(
-            "MATCH ()-[r {worldId: $worldId, id: $id}]->() SET r.validTo = $at, r.data = $data",
+            "MATCH (:WorldNode {worldId: $worldId})-[r {worldId: $worldId, id: $id}]->() SET r.validTo = $at, r.data = $data",
             { worldId, id: edge.id, at, data },
           );
         }
@@ -1021,7 +1034,7 @@ export class WorldStore {
           const paths = edge.observation.pathIds;
           if (paths.length) {
             const found = await tx.run(
-              "MATCH()-[r:effect {worldId:$worldId}]->() WHERE r.id IN $ids RETURN r.id AS id",
+              "MATCH(:WorldNode {worldId:$worldId})-[r:effect {worldId:$worldId}]->() WHERE r.id IN $ids RETURN r.id AS id",
               { worldId, ids: paths },
             );
             if (
@@ -1041,8 +1054,13 @@ export class WorldStore {
             observation: { ...edge.observation, versions: snapshot },
           };
           await tx.run(
-            "MATCH()-[r {worldId:$worldId,id:$id}]->() SET r.data=$data",
-            { worldId, id: edge.id, data: JSON.stringify(canonical) },
+            "MATCH(:WorldNode {worldId:$worldId,id:$source})-[r {worldId:$worldId,id:$id}]->() SET r.data=$data",
+            {
+              worldId,
+              source: edge.source,
+              id: edge.id,
+              data: JSON.stringify(canonical),
+            },
           );
           canonicalEdges.push(canonical);
         }

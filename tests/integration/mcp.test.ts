@@ -131,6 +131,101 @@ const create = async () => {
   return id;
 };
 
+test("世界を限定したMCPでNPC昇格を許可し、報告を読み、対象外の世界は拒否する", async () => {
+  const world = await create(),
+    row = await runtime.get(world),
+    actor = row.actor_id!;
+  await isolated.databases.postgres.query(
+    "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3)",
+    [admin, world, actor],
+  );
+  await access.botCommand(
+    admin,
+    world,
+    { requestId: randomUUID(), command: "start" },
+    actor,
+  );
+  const source = randomUUID();
+  await access.botCommand(
+    admin,
+    world,
+    {
+      requestId: source,
+      command: "say",
+      text: "小さな動物が姿を見せる",
+      instantNpcs: ["そばに来た小さな動物"],
+    },
+    actor,
+  );
+  const promotion = await access.botCommand(
+    admin,
+    world,
+    {
+      requestId: randomUUID(),
+      command: "promote-npc",
+      sourceRequestId: source,
+      npcIndex: 0,
+      description: "そばで暮らす小さな動物",
+      ownerId: actor,
+    },
+    actor,
+  );
+  const { token } = await delegation(
+    ["npcs.promotions", "npcs.decidePromotion", "reports.list"],
+    [world],
+  );
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  await app.listen({ host: "127.0.0.1", port: 18980 });
+  const client = new Client({ name: "player-tools", version: "1" });
+  try {
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL("http://127.0.0.1:18980/mcp"), {
+        requestInit: { headers: { authorization: `Bearer ${token}` } },
+      }),
+    );
+    const listed = await client.callTool({
+      name: "npcs_promotions",
+      arguments: { requestId: randomUUID(), worldId: world },
+    });
+    expect(listed.isError).not.toBe(true);
+    expect(JSON.stringify(listed.content)).toContain("そばに来た小さな動物");
+    const decision = await client.callTool({
+      name: "npcs_decidePromotion",
+      arguments: {
+        requestId: randomUUID(),
+        worldId: world,
+        promotionId: promotion.promotionId,
+        approve: true,
+        reason: "継続する存在として許可する",
+      },
+    });
+    expect(decision.isError).not.toBe(true);
+    expect(JSON.stringify(decision.content)).toContain("approved");
+    expect(
+      (
+        await client.callTool({
+          name: "reports_list",
+          arguments: { requestId: randomUUID(), worldId: world },
+        })
+      ).isError,
+    ).not.toBe(true);
+    const outside = await client.callTool({
+      name: "npcs_promotions",
+      arguments: { requestId: randomUUID(), worldId: randomUUID() },
+    });
+    expect(outside.isError).toBe(true);
+    expect(JSON.stringify(outside.content)).toContain("MCP_TARGET_DENIED");
+  } finally {
+    await client.close();
+    await app.close();
+  }
+});
+
 test("要求の受付照会にも元の操作のscopeが必要となる", async () => {
   const id = randomUUID();
   await auth.operations.execute(admin, id, { operation: "settings.read" });

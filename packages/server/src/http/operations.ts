@@ -8,8 +8,10 @@ import { readJobs, resumeJob } from "../runtime/jobs.js";
 import { RuntimeControl, RuntimeStopped } from "../runtime/control.js";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import type pg from "pg";
+import { derivedId } from "../world/model.js";
 import { z } from "zod";
 import { AccessError, WorldAccess } from "./access.js";
+import { PlayerTools } from "../runtime/player-tools.js";
 import type { WorldPlayers } from "../runtime/players.js";
 import { ModelLimits } from "../llm/limits.js";
 import { WorldBudget } from "../llm/world-budget.js";
@@ -97,12 +99,19 @@ export class Operations {
     this.mcp = new McpAuthorization(pool, mcpOptions);
   }
   async setup() {
+    await PlayerTools.setup(this.pool);
     await ModelSettings.setup(this.pool);
     await ModelLimits.setup(this.pool);
     await ExecutionBudget.setup(this.pool);
     await RuntimeMonitor.setup(this.pool);
     await WorldBudget.setup(this.pool);
     await InspectionStore.setup(this.pool);
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS session_play_policy (
+      singleton boolean PRIMARY KEY CHECK(singleton),
+      turn_calls bigint NOT NULL DEFAULT 8 CHECK(turn_calls>0),
+      receipt_timeout_seconds bigint NOT NULL DEFAULT 600 CHECK(receipt_timeout_seconds>0),
+      version integer NOT NULL DEFAULT 1,updated_by uuid,updated_at timestamptz NOT NULL DEFAULT now());
+      INSERT INTO session_play_policy(singleton) VALUES(true) ON CONFLICT DO NOTHING;`);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS app_user (
       id uuid PRIMARY KEY REFERENCES app_identity(id),role text NOT NULL CHECK(role IN ('admin','user')),
       banned boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now());
@@ -740,6 +749,101 @@ export class Operations {
           input,
         );
       }
+      case "reports.list":
+        return this.#access(context).botPlay.tools.reports(
+          db,
+          input.worldId,
+          input.before,
+        );
+      case "npcs.promotions":
+        return this.#access(context).botPlay.tools.promotions(
+          db,
+          input.worldId,
+          undefined,
+          input.before,
+        );
+      case "npcs.decidePromotion":
+        await RuntimeControl.check(db, {}, true);
+        return this.#access(context).botPlay.tools.decidePromotion(
+          db,
+          actor!,
+          input.worldId,
+          input.promotionId,
+          input.approve,
+        );
+      case "npcs.read":
+        return {
+          items: (
+            await db.query(
+              'SELECT actor_id AS "actorId",controller,user_id AS "userId" FROM bot_npc WHERE world_id=$1 ORDER BY actor_id',
+              [input.worldId],
+            )
+          ).rows,
+        };
+      case "npcs.put": {
+        const play = this.#access(context).botPlay,
+          world = await play.world(input.worldId, db);
+        if (
+          (await play.store.context(world.id).node(input.actorId))?.kind !==
+          "existence"
+        )
+          throw new AccessError(
+            409,
+            "ACTOR_NOT_FOUND",
+            "既存の存在を指定してください",
+          );
+        const prior = (
+          await db.query<{ user_id: string | null }>(
+            "SELECT user_id FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
+            [input.worldId, input.actorId],
+          )
+        ).rows[0];
+        if (prior?.user_id)
+          await db.query("UPDATE world_subject SET active=false WHERE id=$1", [
+            derivedId(`npc:${input.worldId}:${input.actorId}:${prior.user_id}`),
+          ]);
+        if (input.controller === null) {
+          await db.query(
+            "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,NULL,NULL,$3) ON CONFLICT(world_id,actor_id) DO UPDATE SET controller=NULL,user_id=NULL,assignment_id=$3",
+            [input.worldId, input.actorId, requestId],
+          );
+          return { actorId: input.actorId, controller: null };
+        }
+        const user = input.controller === "server" ? actor! : input.userId;
+        if (!user)
+          throw new AccessError(
+            409,
+            "USER_REQUIRED",
+            "bot担当の利用者IDを指定してください",
+          );
+        await requireMember(db, user);
+        await db.query(
+          "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(world_id,actor_id) DO UPDATE SET controller=$3,user_id=$4,assignment_id=$5",
+          [input.worldId, input.actorId, input.controller, user, requestId],
+        );
+        await db.query(
+          "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
+          [world.id, input.actorId],
+        );
+        if (input.controller === "bot") {
+          const subject = derivedId(
+            `npc:${input.worldId}:${input.actorId}:${user}`,
+          );
+          await db.query(
+            "INSERT INTO world_subject(id,user_id) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET active=true",
+            [subject, user],
+          );
+          await db.query(
+            "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3) ON CONFLICT DO NOTHING",
+            [subject, input.worldId, input.actorId],
+          );
+        }
+        return {
+          actorId: input.actorId,
+          controller: input.controller,
+          userId: user,
+        };
+      }
       case "backups.read":
       case "backups.jobs":
       case "backups.list":
@@ -772,7 +876,7 @@ export class Operations {
             "RUNTIME_NOT_CONFIGURED",
             "実行サービスを設定してください",
           );
-        return resumeJob(db, context.players, input.kind, input.id, requestId);
+        return resumeJob(db, context.players, input.kind, input.id);
       }
       case "monitor.samples":
         return RuntimeMonitor.page(db, "samples", input.query.before);
@@ -857,6 +961,62 @@ export class Operations {
             "現在のAPIキー設定版を読み直してください",
           );
         return saved;
+      }
+      case "playPolicy.read":
+      case "playPolicy.put":
+      case "reportPolicy.read":
+      case "reportPolicy.put": {
+        const reporting = input.operation.startsWith("reportPolicy."),
+          table = reporting ? "player_report_policy" : "session_play_policy";
+        const columns = reporting
+          ? {
+              dailyLimit: "daily_limit",
+              turnsPerReport: "turns_per_report",
+              maxCharacters: "max_characters",
+            }
+          : {
+              turnCalls: "turn_calls",
+              receiptTimeoutSeconds: "receipt_timeout_seconds",
+            };
+        const fields = Object.entries(columns),
+          projection = fields
+            .map(([key, column]) => `${column}::float8 AS "${key}"`)
+            .join(",");
+        const before = (
+          await db.query(
+            `SELECT ${projection},version,updated_by AS "updatedBy",updated_at AS "updatedAt" FROM ${table} WHERE singleton`,
+          )
+        ).rows[0];
+        if (!("expectedVersion" in input))
+          return { ...before, updatedAt: before.updatedAt.toISOString() };
+        const row = (
+          await db.query(
+            `UPDATE ${table} SET ${fields.map(([, column], i) => `${column}=$${i + 1}`).join(",")},
+            version=version+1,updated_by=$${fields.length + 1},updated_at=now() WHERE singleton AND version=$${fields.length + 2}
+            RETURNING ${projection},
+            version,updated_by AS "updatedBy",updated_at AS "updatedAt"`,
+            [
+              ...fields.map(
+                ([key]) => (input as unknown as Record<string, unknown>)[key],
+              ),
+              actor,
+              input.expectedVersion,
+            ],
+          )
+        ).rows[0];
+        if (!row)
+          throw new AccessError(
+            409,
+            "SETTINGS_CHANGED",
+            "現在のプレイ設定版を読み直してください",
+          );
+        return {
+          ...row,
+          updatedAt: row.updatedAt.toISOString(),
+          previous: Object.fromEntries(
+            fields.map(([key]) => [key, before[key]]),
+          ),
+        };
       }
       case "responseLimits.read": {
         const row = (

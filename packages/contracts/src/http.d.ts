@@ -2249,6 +2249,1455 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/worlds/{id}/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    actorId?: string;
+                    sceneId?: string;
+                    view?: "compact";
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: {
+                    actorId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "start";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "search";
+                        query: {
+                            /** @enum {string} */
+                            kind: "surroundings";
+                        } | {
+                            /** @enum {string} */
+                            kind: "belongings";
+                        } | {
+                            /** @enum {string} */
+                            kind: "self";
+                        } | {
+                            /** @enum {string} */
+                            kind: "memos";
+                        } | {
+                            /** @enum {string} */
+                            kind: "history";
+                            /** Format: uuid */
+                            targetId?: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "subject";
+                            /** Format: uuid */
+                            targetId: string;
+                        };
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "contact";
+                        /** Format: uuid */
+                        targetId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "say";
+                        text: string;
+                        /** @default [] */
+                        instantNpcs?: string[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "update";
+                        text: string;
+                        operations?: ({
+                            /** @enum {string} */
+                            type: "locate";
+                            /** Format: uuid */
+                            subjectId: string;
+                            text: string;
+                            aboutIds: string[];
+                        } | {
+                            /** @enum {string} */
+                            type: "create";
+                            label: string;
+                            /** Format: uuid */
+                            holder: string;
+                            /** Format: uuid */
+                            owner?: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "move";
+                            /** Format: uuid */
+                            item: string;
+                            /**
+                             * Format: uuid
+                             * @description 現在の保持者。所在が未記録ならnull
+                             */
+                            from: string | null;
+                            /** Format: uuid */
+                            to: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "transfer";
+                            /** Format: uuid */
+                            item: string;
+                            /** Format: uuid */
+                            to: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "grant";
+                            /** Format: uuid */
+                            person: string;
+                            /** Format: uuid */
+                            storage: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "revoke";
+                            /** Format: uuid */
+                            person: string;
+                            /** Format: uuid */
+                            storage: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "learn";
+                            /** Format: uuid */
+                            person: string;
+                            text: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "update";
+                            /** Format: uuid */
+                            id: string;
+                            text: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis?: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "remove";
+                            /** Format: uuid */
+                            id: string;
+                        })[];
+                        changes?: {
+                            nodes: ({
+                                /** Format: uuid */
+                                id: string;
+                                /** @description 同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す */
+                                text: string;
+                                /** @enum {string} */
+                                kind: "existence";
+                            } | {
+                                /** Format: uuid */
+                                id: string;
+                                text: string;
+                                /** @enum {string} */
+                                kind: "script";
+                                /** @enum {string} */
+                                type?: "memo";
+                            } | {
+                                /** Format: uuid */
+                                id: string;
+                                text: string;
+                                /** @enum {string} */
+                                kind: "event";
+                                period: {
+                                    from: number;
+                                    until?: number;
+                                };
+                            })[];
+                            /** @default [] */
+                            revisions?: ({
+                                /** Format: uuid */
+                                id: string;
+                                /** @description 同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す */
+                                text: string;
+                                /** @enum {string} */
+                                kind: "existence";
+                            } | {
+                                /** Format: uuid */
+                                id: string;
+                                text: string;
+                                /** @enum {string} */
+                                kind: "script";
+                                /** @enum {string} */
+                                type?: "memo";
+                            } | {
+                                /** Format: uuid */
+                                id: string;
+                                text: string;
+                                /** @enum {string} */
+                                kind: "event";
+                                period: {
+                                    from: number;
+                                    until?: number;
+                                };
+                            })[];
+                            edges: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                kind: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+                                /** Format: uuid */
+                                source: string;
+                                /** Format: uuid */
+                                target: string;
+                                /**
+                                 * @description status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する
+                                 * @enum {string}
+                                 */
+                                role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
+                                /** @description 関係の内容。seeでは受容本文。status/contentでtext=locationは主体の現在の所在専用のscriptを示し、status/aboutで場所を参照する */
+                                text?: string;
+                                period: {
+                                    from: number;
+                                    until?: number;
+                                };
+                                observation?: {
+                                    /** @description 受容した側面・範囲。textがない場合は、受容内容の本文も含める */
+                                    aspect: string;
+                                    through: number;
+                                    /** @default [] */
+                                    sourceIds?: string[];
+                                    /** @default [] */
+                                    pathIds?: string[];
+                                    /** @description サーバーが確定時に保存する版。モデルからの値は使用しない */
+                                    versions?: {
+                                        [key: string]: number;
+                                    };
+                                };
+                            }[];
+                            endEdges: string[];
+                        };
+                        dependencies: {
+                            key: string;
+                            version: number;
+                        }[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "memo";
+                        text: string;
+                        /** @default [] */
+                        participants?: string[];
+                        dependencies: {
+                            key: string;
+                            version: number;
+                        }[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "promote-npc";
+                        /** Format: uuid */
+                        sourceRequestId: string;
+                        npcIndex: number;
+                        description: string;
+                        /** Format: uuid */
+                        ownerId?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "create";
+                        text: string;
+                        changes: {
+                            nodes: ({
+                                /** Format: uuid */
+                                id: string;
+                                /** @description 同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す */
+                                text: string;
+                                /** @enum {string} */
+                                kind: "existence";
+                            } | {
+                                /** Format: uuid */
+                                id: string;
+                                text: string;
+                                /** @enum {string} */
+                                kind: "script";
+                                /** @enum {string} */
+                                type?: "memo";
+                            } | {
+                                /** Format: uuid */
+                                id: string;
+                                text: string;
+                                /** @enum {string} */
+                                kind: "event";
+                                period: {
+                                    from: number;
+                                    until?: number;
+                                };
+                            })[];
+                            /** @default [] */
+                            revisions?: ({
+                                /** Format: uuid */
+                                id: string;
+                                /** @description 同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す */
+                                text: string;
+                                /** @enum {string} */
+                                kind: "existence";
+                            } | {
+                                /** Format: uuid */
+                                id: string;
+                                text: string;
+                                /** @enum {string} */
+                                kind: "script";
+                                /** @enum {string} */
+                                type?: "memo";
+                            } | {
+                                /** Format: uuid */
+                                id: string;
+                                text: string;
+                                /** @enum {string} */
+                                kind: "event";
+                                period: {
+                                    from: number;
+                                    until?: number;
+                                };
+                            })[];
+                            edges: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                kind: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+                                /** Format: uuid */
+                                source: string;
+                                /** Format: uuid */
+                                target: string;
+                                /**
+                                 * @description status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する
+                                 * @enum {string}
+                                 */
+                                role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
+                                /** @description 関係の内容。seeでは受容本文。status/contentでtext=locationは主体の現在の所在専用のscriptを示し、status/aboutで場所を参照する */
+                                text?: string;
+                                period: {
+                                    from: number;
+                                    until?: number;
+                                };
+                                observation?: {
+                                    /** @description 受容した側面・範囲。textがない場合は、受容内容の本文も含める */
+                                    aspect: string;
+                                    through: number;
+                                    /** @default [] */
+                                    sourceIds?: string[];
+                                    /** @default [] */
+                                    pathIds?: string[];
+                                    /** @description サーバーが確定時に保存する版。モデルからの値は使用しない */
+                                    versions?: {
+                                        [key: string]: number;
+                                    };
+                                };
+                            }[];
+                            endEdges: string[];
+                        };
+                        dependencies: {
+                            key: string;
+                            version: number;
+                        }[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "oppose";
+                        text: string;
+                        operations?: ({
+                            /** @enum {string} */
+                            type: "locate";
+                            /** Format: uuid */
+                            subjectId: string;
+                            text: string;
+                            aboutIds: string[];
+                        } | {
+                            /** @enum {string} */
+                            type: "create";
+                            label: string;
+                            /** Format: uuid */
+                            holder: string;
+                            /** Format: uuid */
+                            owner?: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "move";
+                            /** Format: uuid */
+                            item: string;
+                            /**
+                             * Format: uuid
+                             * @description 現在の保持者。所在が未記録ならnull
+                             */
+                            from: string | null;
+                            /** Format: uuid */
+                            to: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "transfer";
+                            /** Format: uuid */
+                            item: string;
+                            /** Format: uuid */
+                            to: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "grant";
+                            /** Format: uuid */
+                            person: string;
+                            /** Format: uuid */
+                            storage: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "revoke";
+                            /** Format: uuid */
+                            person: string;
+                            /** Format: uuid */
+                            storage: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "learn";
+                            /** Format: uuid */
+                            person: string;
+                            text: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "update";
+                            /** Format: uuid */
+                            id: string;
+                            text: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis?: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "remove";
+                            /** Format: uuid */
+                            id: string;
+                        })[];
+                        changes?: {
+                            nodes: ({
+                                /** Format: uuid */
+                                id: string;
+                                /** @description 同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す */
+                                text: string;
+                                /** @enum {string} */
+                                kind: "existence";
+                            } | {
+                                /** Format: uuid */
+                                id: string;
+                                text: string;
+                                /** @enum {string} */
+                                kind: "script";
+                                /** @enum {string} */
+                                type?: "memo";
+                            } | {
+                                /** Format: uuid */
+                                id: string;
+                                text: string;
+                                /** @enum {string} */
+                                kind: "event";
+                                period: {
+                                    from: number;
+                                    until?: number;
+                                };
+                            })[];
+                            /** @default [] */
+                            revisions?: ({
+                                /** Format: uuid */
+                                id: string;
+                                /** @description 同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す */
+                                text: string;
+                                /** @enum {string} */
+                                kind: "existence";
+                            } | {
+                                /** Format: uuid */
+                                id: string;
+                                text: string;
+                                /** @enum {string} */
+                                kind: "script";
+                                /** @enum {string} */
+                                type?: "memo";
+                            } | {
+                                /** Format: uuid */
+                                id: string;
+                                text: string;
+                                /** @enum {string} */
+                                kind: "event";
+                                period: {
+                                    from: number;
+                                    until?: number;
+                                };
+                            })[];
+                            edges: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                kind: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+                                /** Format: uuid */
+                                source: string;
+                                /** Format: uuid */
+                                target: string;
+                                /**
+                                 * @description status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する
+                                 * @enum {string}
+                                 */
+                                role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
+                                /** @description 関係の内容。seeでは受容本文。status/contentでtext=locationは主体の現在の所在専用のscriptを示し、status/aboutで場所を参照する */
+                                text?: string;
+                                period: {
+                                    from: number;
+                                    until?: number;
+                                };
+                                observation?: {
+                                    /** @description 受容した側面・範囲。textがない場合は、受容内容の本文も含める */
+                                    aspect: string;
+                                    through: number;
+                                    /** @default [] */
+                                    sourceIds?: string[];
+                                    /** @default [] */
+                                    pathIds?: string[];
+                                    /** @description サーバーが確定時に保存する版。モデルからの値は使用しない */
+                                    versions?: {
+                                        [key: string]: number;
+                                    };
+                                };
+                            }[];
+                            endEdges: string[];
+                        };
+                        dependencies: {
+                            key: string;
+                            version: number;
+                        }[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "receive";
+                        /** Format: uuid */
+                        applicationId: string;
+                        accept: boolean;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "comment";
+                        text: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "end-turn" | "leave" | "finish";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worlds/{id}/waiting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    actorId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            state: "inactive" | "paused" | "standby" | "turn" | "receiving";
+                            active: boolean;
+                            connected: boolean;
+                            /** Format: uuid */
+                            viewerId: string;
+                            actionable: boolean;
+                            wakeKey: string | null;
+                            /** Format: date-time */
+                            expiresAt?: string;
+                            /** Format: uuid */
+                            sessionId?: string;
+                            turn?: number;
+                            /** Format: uuid */
+                            applicationId?: string;
+                            /** Format: date-time */
+                            deadline?: string;
+                            code?: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: {
+                    actorId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        active: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            state: "inactive" | "paused" | "standby" | "turn" | "receiving";
+                            active: boolean;
+                            connected: boolean;
+                            /** Format: uuid */
+                            viewerId: string;
+                            actionable: boolean;
+                            wakeKey: string | null;
+                            /** Format: date-time */
+                            expiresAt?: string;
+                            /** Format: uuid */
+                            sessionId?: string;
+                            turn?: number;
+                            /** Format: uuid */
+                            applicationId?: string;
+                            /** Format: date-time */
+                            deadline?: string;
+                            code?: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worlds/{id}/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    actorId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            date: string;
+                            version: number;
+                            dailyLimit: number;
+                            turnsPerReport: number;
+                            maxCharacters: number;
+                            turns: number;
+                            sent: number;
+                            allowance: number;
+                            available: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: {
+                    actorId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        requestId: string;
+                        text: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            date: string;
+                            version: number;
+                            dailyLimit: number;
+                            turnsPerReport: number;
+                            maxCharacters: number;
+                            turns: number;
+                            sent: number;
+                            allowance: number;
+                            available: number;
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worlds/{id}/npc-promotions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    before?: string;
+                    after?: string;
+                    actorId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/worlds/{id}/npc-mode": {
         parameters: {
             query?: never;
@@ -3743,6 +5192,8 @@ export interface paths {
                                     text: string;
                                     /** @enum {string} */
                                     kind: "script";
+                                    /** @enum {string} */
+                                    type?: "memo";
                                 } | {
                                     /** Format: uuid */
                                     id: string;
@@ -3768,6 +5219,8 @@ export interface paths {
                                     text: string;
                                     /** @enum {string} */
                                     kind: "script";
+                                    /** @enum {string} */
+                                    type?: "memo";
                                 } | {
                                     /** Format: uuid */
                                     id: string;
@@ -4037,6 +5490,67 @@ export interface paths {
                         } | {
                             /** @enum {string} */
                             operation: "responseLimits.read";
+                        } | {
+                            /** @enum {string} */
+                            operation: "playPolicy.read";
+                        } | {
+                            /** @enum {string} */
+                            operation: "reportPolicy.read";
+                        } | {
+                            /** @enum {string} */
+                            operation: "reportPolicy.put";
+                            dailyLimit: number;
+                            turnsPerReport: number;
+                            maxCharacters: number;
+                            expectedVersion: number;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "reports.list";
+                            /** Format: uuid */
+                            worldId: string;
+                            /** Format: uuid */
+                            before?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "npcs.promotions";
+                            /** Format: uuid */
+                            worldId: string;
+                            /** Format: uuid */
+                            before?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "npcs.decidePromotion";
+                            /** Format: uuid */
+                            worldId: string;
+                            /** Format: uuid */
+                            promotionId: string;
+                            approve: boolean;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "npcs.read";
+                            /** Format: uuid */
+                            worldId: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "npcs.put";
+                            /** Format: uuid */
+                            worldId: string;
+                            /** Format: uuid */
+                            actorId: string;
+                            /** @enum {string|null} */
+                            controller: "bot" | "server" | null;
+                            /** Format: uuid */
+                            userId?: string;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "playPolicy.put";
+                            turnCalls: number;
+                            receiptTimeoutSeconds: number;
+                            expectedVersion: number;
+                            reason: string;
                         } | {
                             /** @enum {string} */
                             operation: "responseLimits.put";

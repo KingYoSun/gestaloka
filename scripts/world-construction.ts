@@ -25,6 +25,10 @@ const { values, positionals } = parseArgs({
 const command = z
   .enum(["create", "show", "advance", "resume", "finish", "act"])
   .parse(positionals[0]);
+if (command === "act")
+  throw new Error(
+    "通常プレイは新しいgestaloka CLIと/api/worlds/:id/sessionを利用してください",
+  );
 const duration =
   command === "advance"
     ? ConstructionDuration.parse(Number(values.days) * WORLD_DAY_MS)
@@ -63,11 +67,7 @@ try {
     );
   } else {
     const id = z.uuid().parse(values.id);
-    if (command === "act") {
-      if (!values.action) throw new Error("--action <file> を指定してください");
-      await construction.play(id, await readFile(values.action, "utf8"));
-    } else if (command !== "show")
-      await construction.command(id, command, duration);
+    if (command !== "show") await construction.command(id, command, duration);
     console.log(JSON.stringify(await construction.report(id), null, 2));
   }
 } finally {

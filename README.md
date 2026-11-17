@@ -3,7 +3,15 @@
 自前Oryの開発環境は[認証基盤の起動・検証手順](documents/operations-auth.md)を参照してください。
 
 動的な自由記述シェアワールドを構築するプロジェクトです。
-共通の世界更新Agent、時間指定の構築、別村民の生成、人間の自由記述行動を実装しています。Webから初期生成・試遊・追加進行・明示完了・別村民への参加を操作できます。村民の画面は、本人の観測・解釈と入力を表示します。
+世界・キャラクターの生成はサーバーが担当し、通常プレイは参加者ごとのbotと手番APIで進めます。各botが本人の素材を検索し、発言や世界への変更を申請します。Webからも検索・接触・発言・受領判断・分離・本人の終了を操作できます。
+
+通常プレイの入口は`GET/POST /api/worlds/:id/session`です。検索結果と私的な解釈は本人だけに返し、入力・結果・任意コメントを手番終了時にセッションへ提示します。初期値は通常8回、受領判断の無応答期限600秒で、管理者が変更できます。エラーと同一要求の再送は枠を消費しません。旧プレイの書込APIは移行先を示すエラーを返し、保存済みのシーン・履歴は引き続き読めます。
+
+外部botの接続とコマンドは[プレイヤーCLI](packages/player-cli/README.md)、設計と検証範囲は[ADR-050](documents/adr/ADR-050-bot-session-play.md)を参照してください。
+
+同じVMの複数botは`--instance <View ID>`で認可と要求履歴を分けて動かせます。メモノードの共有、管理者が許可するNPC昇格、プレイ量に応じた運営への報告・感想は[ADR-051](documents/adr/ADR-051-player-memos-promotions-reports.md)に記載しています。報告枠の初期値は、日本時間の1日最大10件、通常手番3回で1件、1件1,200文字で、管理者が随時変更できます。
+
+Museプレイヤーはプレイ中以外、軽量フックによる待機を基本とします。シーンを開いていない待機者にも接触でき、本人の手番と受領判断でViewを起こします。仕組みと検証範囲は[ADR-052](documents/adr/ADR-052-player-bot-standby.md)を参照してください。
 
 ## 保存した物語の検品
 
@@ -56,7 +64,7 @@ API・ワーカー・Web・管理画面は、それぞれ `pnpm --filter @gestal
 
 下位モデルにはOpenRouterのMuse Ember／lowを採用します。上位モデルと既存の上位引継ぎは各運用環境の設定を維持します。[4試行のシーン比較](documents/evaluations/ember-flash-scenes-2026-11-17.md)と[ADR-044](documents/adr/ADR-044-ember-lower-model.md)に根拠と限界を記録しています。`.env.example`の上位Sonnet 5.5／medium、確定判断`combined`、最大出力65,536トークンは従来の例を保持しています。
 
-背景準備・参加選択の推論量は既存ルールどおり上位側のeffortを使います。defaultのlowと、各工程へ実際に送る推論量を区別してください。
+通常の検索・接触・発言・受領判断・分離・本人の終了ではサーバー側の生成LLMを呼びません。個別指定されたサーバーNPC、新規作成の可否判断、対抗行動のダイス設定では、保存済みのモデル設定を使います。
 
 初回設定には`.env.example`のLLM設定を使い、`OPENROUTER_API_KEY`と例の上位用の`ANTHROPIC_API_KEY`をローカルで設定してください。既存DBでは管理画面のモデル設定で下位を更新し、上位の設定を保持します。環境変数だけでは保存済み設定を上書きしません。新しい応答から新設定を使い、再開中の応答は取得済みの設定版を保持します。旧要求に必要なプロバイダーのキーも保持してください。
 
@@ -215,7 +223,7 @@ pnpm world:build resume --id <constructionId>
 
 `finish`はその区切りで構築を完了します。参加は管理者が公開・受付を設定した後、ユーザー画面または共通APIの`worlds.join`からプリセットを選んで行います。CLIの`join`は廃止済みです。別の新しい村民を生成し、試遊村民の存在・履歴・所有・知識は残します。`resume`はpausedの処理を再開します。目標未到達の保留を、構築完了として扱いません。人間の自由記述行動は、期間方針による要約を適用せず、次の本人の判断場面まで進めます。
 
-新規参加後の操作はユーザー画面で人物を選び、シーンから行います。既存の`participant_id`を持つ構築記録では、`pnpm world:build act --id <constructionId> --action examples/greet-neighbor.txt`も利用できます。この従来の通常行動は期間を指定せず、NPCの判断を必要に応じて挟み、次に人間の判断が必要になる場面まで進めます。人間の次の意図をAIで形成せず、継続中の活動と再開用の保存記録を保持します。
+新規参加後はユーザー画面で人物を選ぶか、プレイヤーCLIの許可を取得して手番を始めます。従来の`pnpm world:build act`は移行先を示すエラーを返します。
 
 取得結果は到達時刻・目標時刻・主な処理記録・未処理の起動を含む管理情報です。区間をまたぐ継続と参加の契約は [ADR-003](documents/adr/ADR-003-construction-lifecycle.md)、実行結果と時間配分の残る問題は [構築の実測記録](documents/evaluations/construction-2026-10-19.md) を参照してください。
 
@@ -229,11 +237,11 @@ API・ワーカーとOryを起動し、ブラウザーからは同じオリジ�
 
 管理者は`/api/worlds`で予算を指定して世界を作成・取得し、`/api/worlds/:id/commands`で期間追加・再開・完了を行います。参加は`POST /api/operations`の`worlds.join`へ一本化しています。受付とpg-boss投入は同時保存され、202の後はワーカーで実行します。`/records` は管理者向けの報告、`/knowledge` は本人に対応する村民の観測・解釈だけを返します。履歴は1ページ50件で、nextから続きを取得できます。公開・参加・複数人物の選択は[ADR-013](documents/adr/ADR-013-world-participation.md)と[運用手順](documents/operations-auth.md#世界の公開と参加の共通api)を参照してください。
 
-`/api/worlds/:id/actions` は自由記述のactionTextとrequestIdを受け付けます。操作対象はサーバー側の割当で決め、actorIdの自己申告は受け付けません。受付結果のrunIdから `/api/runs/:id` で本人の入力・到達時刻・処理状態を取得でき、`/api/worlds/:id/play/resume` で途中保留を再開できます。入力の受付と世界内の成功は区別します。
+旧`/actions`、`/play/resume`、`POST /scene`は`PLAY_API_CHANGED`と新しい手番APIの案内を返します。本人認可を確認してからエラーを返し、旧ジョブを再開しません。過去の入力は`/api/runs/:id`で読み取れます。
 
-ブラウザーの通常プレイは、背景情報からあらすじを準備し、シーンを始めて自由記述で行動し、終了後にリザルトを読む流れです。`GET/POST /api/worlds/:id/scene`で準備・開始・行動・終了・再開を扱います。リザルトは世界への一括反映後に本人が知り得る記録から生成します。既存の通常行動APIと履歴も保持します。詳細は[ADR-008](documents/adr/ADR-008-scene-synopsis-results.md)を参照してください。
+ブラウザーの通常プレイでは、本人向けの検索、接触、発言、コメント、受領判断を操作します。`GET/POST /api/worlds/:id/session`を使い、本人ごとの履歴とリザルトを合流・分離の後も保持します。詳しくは[ADR-050](documents/adr/ADR-050-bot-session-play.md)を参照してください。
 
-画面は`/scene?view=compact`で表示状態と直近の入力を取得し、`/scene/records?sceneId=<id>&kind=events`または`kind=actions`で本文・入力を前後50件ずつ取得します。全文の保存と既定の`/scene`応答は維持します。スクロール表示は最大4ページを保持して仮想描画し、ページの入替えでも読んでいる位置を保ちます。`/knowledge?excludeScene=<id>`は、同じシーン内で表示している受容の重複だけを除きます。
+旧シーンの閲覧では`/scene?view=compact`で保存済みの表示状態と入力を取得し、`/scene/records?sceneId=<id>&kind=events`または`kind=actions`で本文・入力を前後50件ずつ取得します。全文の保存と既定の`/scene`応答は維持します。スクロール表示は最大4ページを保持して仮想描画し、ページの入替えでも読んでいる位置を保ちます。`/knowledge?excludeScene=<id>`は、同じシーン内で表示している受容の重複だけを除きます。
 
 世界の確定時にNeo4jのreceiptへ未配信印を同時保存し、認可された更新通知へ反映してから配信済みにします。二つのDB間で停止した場合はreceiptから通知だけを回復します。他者の未観測情報を通知本文へ含めず、取得・配信だけで新しい観測も作りません。
 
@@ -241,7 +249,7 @@ API・ワーカーとOryを起動し、ブラウザーからは同じオリジ�
 
 同時刻の意図と人間への操作返却は [ADR-005](documents/adr/ADR-005-human-play.md)、待ち時間と推論量の比較は [通常行動の実測](documents/evaluations/human-play-2026-10-19.md) を参照してください。`LLM_REASONING_EFFORT`で通常行動、`LLM_INITIAL_REASONING_EFFORT`で初期生成の推論量を指定できます。DeepSeekはnone・low・high・max、Geminiはlow・medium・high、GPT-6 Lunaはnone・low・medium・high・xhigh・maxを使えます。同じ呼出しIDの保存済み設定と応答は保持し、新しい呼出しから設定を適用します。
 
-画面の履歴表示と再接続は[ADR-006](documents/adr/ADR-006-gameplay-ui.md)を引き継ぎ、シーン導線はADR-008、管理アプリの分離と参加導線はADR-013へ移行しています。受付後の再読込で行動を追加送信せず、保存された入力と進行へ戻ります。履歴は前後へ取得でき、保持は4ページ、描画は表示範囲に絞ります。過去を読んでいる間の更新では位置を移動しません。通信の再接続時は、配信位置と公開状態を取得し直します。
+過去の履歴表示は[ADR-006](documents/adr/ADR-006-gameplay-ui.md)を引き継ぎます。履歴は前後へ取得でき、保持は4ページ、描画は表示範囲に絞ります。新しい手番の操作は要求IDと本文を保存し、通信が途切れた場合も同じIDで結果を取得します。
 
 `pnpm llm:compare --operation <operationId> --effort low` は上位モデル設定で完了済みの最終入力から候補を再生成し、構造と時間・使用量を記録します。差分を世界へ確定せず、同じ予算で通算します。DeepSeekも通常APIを使う同じ比較の対象です。一つの候補の構造検査を、意味的な品質や通常プレイ全体の保証にはしません。
 

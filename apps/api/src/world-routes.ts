@@ -4,6 +4,13 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "@fastify/type-provider-zod";
 import {
   ApiError,
+  PlayCommand,
+  PlayResponse,
+  PlayerReportInput,
+  PlayerReportStatus,
+  PlayerReportReceipt,
+  WaitingCommand,
+  WaitingStatus,
   BrowserSession,
   ResourceId,
   CreateWorld,
@@ -70,6 +77,10 @@ export async function worldRoutes(
     if (request.headers.authorization) {
       const allowed = [
         "/api/worlds/:id/scene",
+        "/api/worlds/:id/session",
+        "/api/worlds/:id/waiting",
+        "/api/worlds/:id/reports",
+        "/api/worlds/:id/npc-promotions",
         "/api/worlds/:id/scene/records",
         "/api/worlds/:id/knowledge",
         "/api/worlds/:id/belongings",
@@ -372,6 +383,130 @@ export async function worldRoutes(
             deviceIds.get(request),
           ),
         ),
+  );
+  app.get(
+    "/api/worlds/:id/session",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: SceneViewQuery,
+        response: { 200: PlayResponse, ...errors },
+      },
+    },
+    async (request) =>
+      service().botStatus(
+        await subject(request),
+        request.params.id,
+        request.query.actorId,
+        request.query.sceneId,
+        deviceIds.get(request),
+      ),
+  );
+  app.post(
+    "/api/worlds/:id/session",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        body: PlayCommand,
+        response: { 200: PlayResponse, ...errors },
+      },
+    },
+    async (request) =>
+      service().botCommand(
+        await subject(request),
+        request.params.id,
+        request.body,
+        request.query.actorId,
+        deviceIds.get(request),
+      ),
+  );
+  app.get(
+    "/api/worlds/:id/waiting",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        response: { 200: WaitingStatus, ...errors },
+      },
+    },
+    async (request) =>
+      service().waiting(
+        await subject(request),
+        request.params.id,
+        request.query.actorId,
+        deviceIds.get(request),
+      ),
+  );
+  app.post(
+    "/api/worlds/:id/waiting",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        body: WaitingCommand,
+        response: { 200: WaitingStatus, ...errors },
+      },
+    },
+    async (request) =>
+      service().waiting(
+        await subject(request),
+        request.params.id,
+        request.query.actorId,
+        deviceIds.get(request),
+        request.body.active,
+      ),
+  );
+  app.get(
+    "/api/worlds/:id/reports",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        response: { 200: PlayerReportStatus, ...errors },
+      },
+    },
+    async (request) =>
+      service().reportStatus(
+        await subject(request),
+        request.params.id,
+        request.query.actorId,
+      ),
+  );
+  app.post(
+    "/api/worlds/:id/reports",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        body: PlayerReportInput,
+        response: { 200: PlayerReportReceipt, ...errors },
+      },
+    },
+    async (request) =>
+      service().report(
+        await subject(request),
+        request.params.id,
+        request.body,
+        request.query.actorId,
+      ),
+  );
+  app.get(
+    "/api/worlds/:id/npc-promotions",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: PageQuery.extend(ActorQuery.shape),
+        response: { 200: PlayResponse, ...errors },
+      },
+    },
+    async (request) =>
+      service().promotions(
+        await subject(request),
+        request.params.id,
+        request.query.actorId,
+        request.query.before,
+      ),
   );
   app.get(
     "/api/worlds/:id/npc-mode",
