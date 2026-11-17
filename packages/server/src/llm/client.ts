@@ -14,6 +14,7 @@ import {
 } from "./budget.js";
 import { ModelLimits } from "./limits.js";
 import { responseDeadline } from "./response-deadline.js";
+import { JSON_WHITESPACE_ERROR, streamedChat, streamEvents } from "./stream.js";
 import {
   preparePrompt,
   canonical,
@@ -203,82 +204,55 @@ const MessageEvent = z.object({
   usage: MessageUsage.partial().optional(),
 });
 async function streamedMessage(response: Response, onData: () => void) {
-  if (!response.body) throw new Error("LLM応答のストリームがありません");
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-  let buffer = "",
-    message: z.infer<typeof MessageResponse> | undefined;
+  let message: z.infer<typeof MessageResponse> | undefined;
   let finalUsage = false;
   const open = new Set<number>();
-  try {
-    for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done)
-        throw new Error("LLM応答が完了前に切断されました。予約枠は保持します");
-      onData();
-      buffer += chunk.value;
-      let boundary: RegExpExecArray | null;
-      while ((boundary = /\r?\n\r?\n/.exec(buffer))) {
-        const frame = buffer.slice(0, boundary.index);
-        buffer = buffer.slice(boundary.index + boundary[0].length);
-        const data = frame
-          .split(/\r?\n/)
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice(5).trimStart())
-          .join("\n");
-        if (!data) continue;
-        const event = MessageEvent.parse(JSON.parse(data));
-        if (event.type === "error")
-          throw new Error(
-            "LLM応答中にAPIエラーが発生しました。予約枠は保持します",
-          );
-        if (event.type === "message_start") message = event.message;
-        else if (
-          event.type === "content_block_start" &&
-          message &&
-          event.index !== undefined &&
-          event.content_block
-        ) {
-          // Thinking and signatures are never accumulated or persisted.
-          message.content[event.index] =
-            event.content_block.type === "text"
-              ? event.content_block
-              : { type: event.content_block.type };
-          open.add(event.index);
-        } else if (
-          event.type === "content_block_delta" &&
-          event.delta?.type === "text_delta"
-        ) {
-          const block = message?.content[event.index ?? -1];
-          if (!block || block.type !== "text" || !open.has(event.index!))
-            throw new Error("LLM応答の本文ブロックが不正です");
-          block.text = (block.text ?? "") + (event.delta.text ?? "");
-        } else if (
-          event.type === "content_block_stop" &&
-          event.index !== undefined
-        )
-          open.delete(event.index);
-        else if (event.type === "message_delta" && message) {
-          message.usage = MessageUsage.parse({
-            ...message.usage,
-            ...event.usage,
-          });
-          if (event.usage?.output_tokens !== undefined) finalUsage = true;
-          if (event.delta?.stop_reason !== undefined)
-            message.stop_reason = event.delta.stop_reason;
-        } else if (event.type === "message_stop") {
-          if (!message?.stop_reason || !finalUsage || open.size)
-            throw new Error(
-              "LLM応答の終了または使用量を確認できません。予約枠は保持します",
-            );
-          return MessageResponse.parse(message);
-        }
-      }
+  for await (const data of streamEvents(response, onData)) {
+    const event = MessageEvent.parse(JSON.parse(data));
+    if (event.type === "error")
+      throw new Error("LLM応答中にAPIエラーが発生しました。予約枠は保持します");
+    if (event.type === "message_start") message = event.message;
+    else if (
+      event.type === "content_block_start" &&
+      message &&
+      event.index !== undefined &&
+      event.content_block
+    ) {
+      // Thinking and signatures are never accumulated or persisted.
+      message.content[event.index] =
+        event.content_block.type === "text"
+          ? event.content_block
+          : { type: event.content_block.type };
+      open.add(event.index);
+    } else if (
+      event.type === "content_block_delta" &&
+      event.delta?.type === "text_delta"
+    ) {
+      const block = message?.content[event.index ?? -1];
+      if (!block || block.type !== "text" || !open.has(event.index!))
+        throw new Error("LLM応答の本文ブロックが不正です");
+      block.text = (block.text ?? "") + (event.delta.text ?? "");
+    } else if (event.type === "content_block_stop" && event.index !== undefined)
+      open.delete(event.index);
+    else if (event.type === "message_delta" && message) {
+      message.usage = MessageUsage.parse({
+        ...message.usage,
+        ...event.usage,
+      });
+      if (event.usage?.output_tokens !== undefined) finalUsage = true;
+      if (event.delta?.stop_reason !== undefined)
+        message.stop_reason = event.delta.stop_reason;
+    } else if (event.type === "message_stop") {
+      if (!message?.stop_reason || !finalUsage || open.size)
+        throw new Error(
+          "LLM応答の終了または使用量を確認できません。予約枠は保持します",
+        );
+      return MessageResponse.parse(message);
     }
-  } finally {
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
   }
+  throw new Error("LLM応答が完了前に切断されました。予約枠は保持します");
 }
+
 const ResponsesResponse = z.object({
   id: z.string(),
   model: z.string(),
@@ -700,6 +674,8 @@ export class LlmClient {
       provider === "openrouter" && prompt?.format
         ? strictOutput(prompt.format.schema)
         : undefined;
+    const streamChat =
+      provider === "openrouter" && api === "chat-completions" && !!strict;
     const cache = new PromptCache(this.ledger, this.transport);
     const candidate =
       provider === "gemini" && prompt && selected.cacheStorage !== undefined
@@ -787,7 +763,10 @@ export class LlmClient {
               ...(provider === "openai"
                 ? { max_completion_tokens: maxOutput }
                 : { max_tokens: maxOutput }),
-              stream: false,
+              stream: streamChat,
+              ...(streamChat
+                ? { stream_options: { include_usage: true } }
+                : {}),
               ...(provider === "openai" ? { service_tier: "default" } : {}),
             };
     const connection: Connection = {
@@ -942,6 +921,7 @@ export class LlmClient {
           quota.sent();
           const deadline = responseDeadline(api === "messages");
           let received: unknown;
+          let interrupted = false;
           try {
             const response = await this.transport(
               `${connection.baseUrl}/${path}`,
@@ -982,11 +962,16 @@ export class LlmClient {
               );
             }
             const raw: unknown = await (
-              api === "messages" &&
+              (api === "messages" || streamChat) &&
               response.headers
                 .get("content-type")
                 ?.includes("text/event-stream")
-                ? streamedMessage(response, deadline.touch)
+                ? api === "messages"
+                  ? streamedMessage(response, deadline.touch)
+                  : streamedChat(response, deadline.touch, () => {
+                      interrupted = true;
+                      deadline.cancel();
+                    })
                 : new Response(
                     response.body?.pipeThrough(
                       new TransformStream<Uint8Array, Uint8Array>({
@@ -1035,6 +1020,16 @@ export class LlmClient {
               );
             });
             received = raw;
+            const interruptedError = () => {
+              const content = (raw as Awaited<ReturnType<typeof streamedChat>>)
+                .choices[0]!.message.content;
+              return new ResponseFormatError(
+                raw,
+                !content.trim(),
+                JSON_WHITESPACE_ERROR,
+                content,
+              );
+            };
             let completion: SavedCompletion;
             if (api === "messages") {
               const result = MessageResponse.parse(raw);
@@ -1081,7 +1076,10 @@ export class LlmClient {
                 },
               };
             } else {
-              const result = ChatResponse.parse(raw),
+              const parsed = ChatResponse.safeParse(raw);
+              if (!parsed.success)
+                throw interrupted ? interruptedError() : parsed.error;
+              const result = parsed.data,
                 usage = result.usage;
               if (
                 (provider !== "deepseek" && usage.total_tokens === undefined) ||
@@ -1089,9 +1087,11 @@ export class LlmClient {
                   usage.total_tokens <
                     usage.prompt_tokens + usage.completion_tokens)
               )
-                throw new Error(
-                  "LLMの総使用量を確認できません。予約枠は保持します",
-                );
+                throw interrupted
+                  ? interruptedError()
+                  : new Error(
+                      "LLMの総使用量を確認できません。予約枠は保持します",
+                    );
               const hit =
                 usage.prompt_cache_hit_tokens ??
                 usage.prompt_tokens_details?.cached_tokens ??
@@ -1124,6 +1124,10 @@ export class LlmClient {
               };
             }
             const usage = completion.usage;
+            if (interrupted) {
+              completion.formatError = JSON_WHITESPACE_ERROR;
+              completion.rawResponse = raw;
+            }
             if (!completion.content.trim()) completion.rawResponse = raw;
             if ((prompt || codec) && completion.finishReason === "stop") {
               try {
@@ -1147,9 +1151,11 @@ export class LlmClient {
               usage.prompt_cache_miss_tokens < 0 ||
               usage.prompt_cache_hit_tokens > usage.prompt_tokens
             )
-              throw new Error(
-                "LLMの使用量内訳が整合しません。予約枠は保持します",
-              );
+              throw interrupted
+                ? interruptedError()
+                : new Error(
+                    "LLMの使用量内訳が整合しません。予約枠は保持します",
+                  );
             await this.ledger.settle(
               id,
               calculatedCharge(usage, connection),

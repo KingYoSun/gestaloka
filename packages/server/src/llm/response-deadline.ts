@@ -20,6 +20,7 @@ export function responseDeadline(streaming: boolean) {
   arm();
   return {
     signal: controller.signal,
+    cancel: () => controller.abort(),
     touch() {
       chunks++;
       arm();
