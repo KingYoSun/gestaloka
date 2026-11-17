@@ -2530,12 +2530,28 @@ export interface paths {
                                 kind: "script";
                                 /** @enum {string} */
                                 type?: "memo";
+                                spawn?: {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    probability: number;
+                                    count: number;
+                                };
                             } | {
                                 /** Format: uuid */
                                 id: string;
                                 text: string;
                                 /** @enum {string} */
                                 kind: "event";
+                                appearances?: {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    /** Format: uuid */
+                                    id: string;
+                                }[];
                                 period: {
                                     from: number;
                                     until?: number;
@@ -2557,12 +2573,28 @@ export interface paths {
                                 kind: "script";
                                 /** @enum {string} */
                                 type?: "memo";
+                                spawn?: {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    probability: number;
+                                    count: number;
+                                };
                             } | {
                                 /** Format: uuid */
                                 id: string;
                                 text: string;
                                 /** @enum {string} */
                                 kind: "event";
+                                appearances?: {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    /** Format: uuid */
+                                    id: string;
+                                }[];
                                 period: {
                                     from: number;
                                     until?: number;
@@ -2653,12 +2685,28 @@ export interface paths {
                                 kind: "script";
                                 /** @enum {string} */
                                 type?: "memo";
+                                spawn?: {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    probability: number;
+                                    count: number;
+                                };
                             } | {
                                 /** Format: uuid */
                                 id: string;
                                 text: string;
                                 /** @enum {string} */
                                 kind: "event";
+                                appearances?: {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    /** Format: uuid */
+                                    id: string;
+                                }[];
                                 period: {
                                     from: number;
                                     until?: number;
@@ -2680,12 +2728,28 @@ export interface paths {
                                 kind: "script";
                                 /** @enum {string} */
                                 type?: "memo";
+                                spawn?: {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    probability: number;
+                                    count: number;
+                                };
                             } | {
                                 /** Format: uuid */
                                 id: string;
                                 text: string;
                                 /** @enum {string} */
                                 kind: "event";
+                                appearances?: {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    /** Format: uuid */
+                                    id: string;
+                                }[];
                                 period: {
                                     from: number;
                                     until?: number;
@@ -2831,12 +2895,28 @@ export interface paths {
                                 kind: "script";
                                 /** @enum {string} */
                                 type?: "memo";
+                                spawn?: {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    probability: number;
+                                    count: number;
+                                };
                             } | {
                                 /** Format: uuid */
                                 id: string;
                                 text: string;
                                 /** @enum {string} */
                                 kind: "event";
+                                appearances?: {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    /** Format: uuid */
+                                    id: string;
+                                }[];
                                 period: {
                                     from: number;
                                     until?: number;
@@ -2858,12 +2938,28 @@ export interface paths {
                                 kind: "script";
                                 /** @enum {string} */
                                 type?: "memo";
+                                spawn?: {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    probability: number;
+                                    count: number;
+                                };
                             } | {
                                 /** Format: uuid */
                                 id: string;
                                 text: string;
                                 /** @enum {string} */
                                 kind: "event";
+                                appearances?: {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    /** Format: uuid */
+                                    id: string;
+                                }[];
                                 period: {
                                     from: number;
                                     until?: number;
@@ -5194,12 +5290,28 @@ export interface paths {
                                     kind: "script";
                                     /** @enum {string} */
                                     type?: "memo";
+                                    spawn?: {
+                                        /** @enum {string} */
+                                        kind: "instant-npc" | "existence" | "script" | "event";
+                                        species: string;
+                                        description: string;
+                                        probability: number;
+                                        count: number;
+                                    };
                                 } | {
                                     /** Format: uuid */
                                     id: string;
                                     text: string;
                                     /** @enum {string} */
                                     kind: "event";
+                                    appearances?: {
+                                        /** @enum {string} */
+                                        kind: "instant-npc" | "existence" | "script" | "event";
+                                        species: string;
+                                        description: string;
+                                        /** Format: uuid */
+                                        id: string;
+                                    }[];
                                     period: {
                                         from: number;
                                         until?: number;
@@ -5221,12 +5333,28 @@ export interface paths {
                                     kind: "script";
                                     /** @enum {string} */
                                     type?: "memo";
+                                    spawn?: {
+                                        /** @enum {string} */
+                                        kind: "instant-npc" | "existence" | "script" | "event";
+                                        species: string;
+                                        description: string;
+                                        probability: number;
+                                        count: number;
+                                    };
                                 } | {
                                     /** Format: uuid */
                                     id: string;
                                     text: string;
                                     /** @enum {string} */
                                     kind: "event";
+                                    appearances?: {
+                                        /** @enum {string} */
+                                        kind: "instant-npc" | "existence" | "script" | "event";
+                                        species: string;
+                                        description: string;
+                                        /** Format: uuid */
+                                        id: string;
+                                    }[];
                                     period: {
                                         from: number;
                                         until?: number;

@@ -31,3 +31,5 @@ seeにはtextまたはobservation.aspectで、実際に見た・聞いた内容�
 自ら判断する人物については、初期プレイヤー以外も、その人物が自然に知っている自身の呼称・役割・所属や身近な状況をsee・interpretで個別に成立させます。現実のstatusがあるだけで本人も知っているとは扱わず、逆に全員を初期知識のない状態へ放置しません。未指定の個人名や秘密を埋める必要はなく、既存の呼称や役割のどの範囲を本人が知っているかを表してください。
 
 reportには、明示入力をどのノード・関係で満たしたか、補完した内容、未指定・未確認の内容を管理者向けに短く記してください。自分の推論過程は記録せず、reportを世界内のscriptやinterpretへ複製しないでください。
+
+探索による出現を定義する場合はscriptにspawnを持たせる。spawnのkindはinstant-npc・existence・script・event、speciesは呼称、descriptionは説明、probabilityは0〜1の確率、countは1回当たったときの正の整数個数。存在から発生用scriptへstatus/content、scriptから検索対象へstatus/about（textはspawn-hit）、必要な保持物へstatus/about（textはspawn-hold）を張る。その場で生成物を先に配置しない。

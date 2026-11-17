@@ -43,7 +43,13 @@ export async function fixtureRuntime(
         endEdges: [],
       });
       let content: unknown;
-      if (user.initialPrompt) {
+      if (
+        input.messages[0]?.content.includes(
+          "新しいノード・エッジの作成可否だけ",
+        )
+      ) {
+        content = { allowed: true, reason: "検証用の生成申請を許可" };
+      } else if (user.initialPrompt) {
         const actor = randomUUID(),
           place = randomUUID(),
           state = randomUUID();

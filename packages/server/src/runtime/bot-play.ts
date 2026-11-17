@@ -27,6 +27,11 @@ import {
 import { locationRecords } from "../world/locations.js";
 import { canonical, parseOutput } from "../llm/prompt.js";
 import type { WorldConstruction } from "./construction.js";
+import {
+  groundItems,
+  groundPlacement,
+  searchAppearances,
+} from "./search-appearances.js";
 import { PlayerTools } from "./player-tools.js";
 
 type Input = z.infer<typeof PlayCommand>;
@@ -690,6 +695,7 @@ export class BotPlay {
     const found = new Set<string>();
     for (const place of await this.#places(context, actor)) {
       found.add(place);
+      for (const id of await groundItems(context, place)) found.add(id);
       for (const subject of await context.locationSubjects(place))
         if (
           (await locationRecords(context, subject)).some((r) =>
@@ -781,6 +787,7 @@ export class BotPlay {
           });
       material = {
         node: await context.node(target),
+        locations: await locationRecords(context, target),
         states,
         ...(target === actor
           ? {
@@ -1020,6 +1027,7 @@ export class BotPlay {
       const found = await owners(id);
       for (const owner of found.length ? found : [id]) parties.add(owner);
     };
+    const pickupEdges: string[] = [];
     let changes = empty(),
       at = w.at,
       needsCreation = false,
@@ -1066,8 +1074,13 @@ export class BotPlay {
           const id =
             "item" in op ? op.item : "storage" in op ? op.storage : op.id;
           refs.add(id);
-          if (!(await context.node(id)))
+          if (!(await context.node(id))) {
+            if (input.command === "oppose") {
+              impossible = true;
+              break;
+            }
             reject("TARGET_NOT_FOUND", "操作の対象が見つかりません");
+          }
           const incoming = await holders(id);
           if (op.type === "move") {
             const held = incoming.find((e) => e.role === "hold");
@@ -1081,15 +1094,30 @@ export class BotPlay {
             }
             if (!held && op.from !== null) {
               if (input.command === "oppose") {
-                parties.add(op.from);
-                op.from = null;
+                impossible = true;
               } else
                 reject(
                   "HOLD_NOT_RECORDED",
                   "指定された保持者の関係は未記録です",
                 );
             }
-            await affect(id);
+            const ground =
+              !held && op.from === null
+                ? await groundPlacement(context, id)
+                : [];
+            if (ground.length) {
+              if (
+                op.to !== actor ||
+                !(await this.#nearby(context, actor)).has(id)
+              )
+                reject(
+                  "GROUND_ITEM_NOT_HERE",
+                  "本人がいる場所の発見物を指定してください",
+                );
+              pickupEdges.push(...ground.map((e) => e.id));
+              at = Math.max(at, ...ground.map((e) => e.period.from));
+              parties.add(actor);
+            } else await affect(id);
             await affect(op.to);
           } else if (op.type === "transfer") {
             for (const e of incoming.filter((e) => e.role === undefined))
@@ -1118,6 +1146,7 @@ export class BotPlay {
           plannedOps,
         );
         changes = plan.changes;
+        changes.endEdges.push(...pickupEdges);
         at = plan.at;
       }
     } else {
@@ -1181,10 +1210,28 @@ export class BotPlay {
       }
       needsCreation = !!(changes.nodes.length || changes.edges.length);
     }
+    if (!impossible) {
+      try {
+        context = await this.#validate(context, changes, at);
+      } catch (error) {
+        if (
+          input.command !== "oppose" ||
+          !(error instanceof AccessError) ||
+          ![
+            "TARGET_NOT_FOUND",
+            "CONNECTION_REJECTED",
+            "EDGE_NOT_FOUND",
+            "NODE_CHANGED",
+          ].includes(error.code)
+        )
+          throw error;
+        impossible = true;
+      }
+    }
     if (impossible) {
       const outcome = {
         success: false,
-        reason: "対象の保持者が申請の前提と異なります",
+        reason: "対象と申請者の作用関係を構築できません",
       };
       await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
@@ -1192,7 +1239,6 @@ export class BotPlay {
       ]);
       return { context, changes: empty(), at, recipients: [], outcome };
     }
-    context = await this.#validate(context, changes, at);
     const recipients = [...parties].filter(
       (id) => id !== actor && controlled.has(id),
     );
@@ -1230,7 +1276,12 @@ export class BotPlay {
       );
     let outcome: unknown;
     if (input.command === "oppose") {
-      let success = [...parties].every((id) => id === actor);
+      let success =
+        (parties.size > 0 && [...parties].every((id) => id === actor)) ||
+        (!changes.nodes.length &&
+          !changes.edges.length &&
+          !changes.revisions.length &&
+          !changes.endEdges.length);
       if (!success) {
         const materials = await this.#facts(context, [
           actor,
@@ -1362,7 +1413,10 @@ export class BotPlay {
     )
       reject("NPC_CONTROLLER_CHANGED", "NPCの操作担当が変わりました");
     const w = await this.world(world);
-    if (["update", "create", "oppose", "memo"].includes(input.command)) {
+    if (
+      ["update", "create", "oppose", "memo"].includes(input.command) ||
+      (input.command === "say" && input.instantNpcs.length)
+    ) {
       const active = await this.current(world, actor);
       if (!active || active.data.turn !== actor || active.data.receiving)
         reject("TURN_REQUIRED", "本人の通常手番ではありません");
@@ -1371,7 +1425,25 @@ export class BotPlay {
     const plan = await ExecutionBudget.run(
       this.pool,
       input.requestId,
-      () => this.#plan(world, actor, input),
+      async () => {
+        if (input.command === "say" && input.instantNpcs.length) {
+          const changes = empty();
+          changes.nodes = input.instantNpcs.map((text, i) => ({
+            kind: "existence",
+            id: derivedId(input.requestId + ":manual:" + i),
+            text,
+          }));
+          await this.#creation(
+            world,
+            actor,
+            input.requestId,
+            this.store.context(w.id),
+            input.text,
+            changes,
+          );
+        }
+        return this.#plan(world, actor, input);
+      },
       w.id,
       user,
     ).catch((error) => {
@@ -1579,9 +1651,32 @@ export class BotPlay {
           } else if (input.command === "end-turn")
             await this.#next(db, session);
           else {
-            if (input.command === "search")
-              result = await this.search(world, actor, input.query);
-            else if (input.command === "promote-npc") {
+            if (input.command === "search") {
+              const queried = await this.search(world, actor, input.query);
+              result = queried;
+              const appearances = await searchAppearances(
+                this.store,
+                this.store.context(w.id, queried.dependencies),
+                actor,
+                d.members.map((m) => m.actorId),
+                input.requestId,
+                w.at,
+                queried.material,
+              );
+              if (appearances.length) {
+                const visible = {
+                  sourceRequestId: input.requestId,
+                  appearances,
+                  instantNpcs: appearances
+                    .filter((a) => a.kind === "instant-npc")
+                    .map((a) => a.species),
+                };
+                result = { ...result, ...visible };
+                await this.#record(db, session, {
+                  entries: [{ actorId: actor, input: "出現", result: visible }],
+                });
+              }
+            } else if (input.command === "promote-npc") {
               result = await this.tools.requestPromotion(
                 db,
                 world,

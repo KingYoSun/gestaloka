@@ -11,7 +11,7 @@ export async function playerCli(app: Awaited<ReturnType<typeof createApp>>) {
   const directory = await mkdtemp(join(tmpdir(), "gestaloka-cli-"));
   if (!resolve(directory).startsWith(resolve(tmpdir()) + sep))
     throw new Error("試験用ディレクトリーの外側です");
-  let drop: string | undefined;
+  let drop: string | undefined, timeoutPath: string | undefined;
   const server = createServer(async (request, response) => {
     const chunks: Buffer[] = [];
     for await (const chunk of request) chunks.push(Buffer.from(chunk));
@@ -22,6 +22,11 @@ export async function playerCli(app: Awaited<ReturnType<typeof createApp>>) {
       headers: request.headers,
       ...(body ? { payload: body } : {}),
     });
+    if (timeoutPath && request.url === timeoutPath) {
+      timeoutPath = undefined;
+      // The server already committed the request. Leave its response pending until the CLI aborts.
+      return;
+    }
     const sent = body ? JSON.parse(body) : {};
     if (
       drop &&
@@ -40,6 +45,9 @@ export async function playerCli(app: Awaited<ReturnType<typeof createApp>>) {
   return {
     directory,
     base: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
+    timeoutNextResponse(path: string) {
+      timeoutPath = path;
+    },
     dropNextResponse(value: string) {
       drop = value;
     },
