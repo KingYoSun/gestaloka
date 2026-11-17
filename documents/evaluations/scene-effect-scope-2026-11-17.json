@@ -1,0 +1,1247 @@
+{
+  "runId": "306a9518-cc00-4b5e-b24c-c38ede3b8e63",
+  "sourceSha256": "337a5eb6246c67b3cbba87c025d0ead68a64feecda44b7f587ec29a8c9f73952",
+  "startedAt": "2026-11-17T01:58:11.829Z",
+  "finishedAt": "2026-11-17T02:01:54.501Z",
+  "configuration": {
+    "model": "gpt-6.1-terra",
+    "api": "responses",
+    "effort": "medium",
+    "maxOutputTokens": 65536,
+    "budgetUsd": 8,
+    "promptSha256": "ce05a0d06651f8ab752ff460e3e85dd1deaa9df2e3dd8d5e8462eababaeecdbd"
+  },
+  "method": "Complete anchors in both groups. Same conditional instructions. Product WorldAgent.context over captured read-only records; deferred effects served through product WorldAgent.read.",
+  "limits": "Partial saved world, no DB-dependent candidate validation or world commit; no follow-on play. Unknown queries stop the trial rather than returning absence.",
+  "plan": {
+    "sourceSha256": "337a5eb6246c67b3cbba87c025d0ead68a64feecda44b7f587ec29a8c9f73952",
+    "cases": [3, 6, 14, 15, 16],
+    "budgetUsd": 8,
+    "groups": ["full", "scoped"],
+    "validation": {
+      "capturedCases": 19,
+      "allAnchorsAndSceneDataRetained": true,
+      "currentStatesAndInterpretationsRetained": true,
+      "deferredScopeRetrievals": 44
+    },
+    "audit": [
+      {
+        "index": 0,
+        "sourceOperation": "e05bd57f-1833-4f6c-92c4-0c8ff74e85b5",
+        "richSubjects": 3,
+        "initialEffectSubjects": 1,
+        "deferredEffectSubjects": 2,
+        "initialNodesBefore": 220,
+        "initialNodesAfter": 220
+      },
+      {
+        "index": 1,
+        "sourceOperation": "519394ed-2b46-4de9-9eeb-dffca1a26d65",
+        "richSubjects": 1,
+        "initialEffectSubjects": 1,
+        "deferredEffectSubjects": 0,
+        "initialNodesBefore": 27,
+        "initialNodesAfter": 27
+      },
+      {
+        "index": 2,
+        "sourceOperation": "e0ca3348-b879-44b5-a8f3-631865c696bd",
+        "richSubjects": 5,
+        "initialEffectSubjects": 1,
+        "deferredEffectSubjects": 4,
+        "initialNodesBefore": 312,
+        "initialNodesAfter": 235
+      },
+      {
+        "index": 3,
+        "sourceOperation": "782103d8-32a5-41a8-8d18-799bc6330d67",
+        "richSubjects": 2,
+        "initialEffectSubjects": 1,
+        "deferredEffectSubjects": 1,
+        "initialNodesBefore": 117,
+        "initialNodesAfter": 117
+      },
+      {
+        "index": 4,
+        "sourceOperation": "59b63e75-83f4-4db5-b997-5cd579733250",
+        "richSubjects": 1,
+        "initialEffectSubjects": 1,
+        "deferredEffectSubjects": 0,
+        "initialNodesBefore": 28,
+        "initialNodesAfter": 28
+      },
+      {
+        "index": 5,
+        "sourceOperation": "0885e42c-817c-4506-b5a5-82d9603953a9",
+        "richSubjects": 1,
+        "initialEffectSubjects": 1,
+        "deferredEffectSubjects": 0,
+        "initialNodesBefore": 30,
+        "initialNodesAfter": 30
+      },
+      {
+        "index": 6,
+        "sourceOperation": "ae770b9a-1a30-4723-8a07-38d4fbe9c7e6",
+        "richSubjects": 3,
+        "initialEffectSubjects": 2,
+        "deferredEffectSubjects": 1,
+        "initialNodesBefore": 117,
+        "initialNodesAfter": 91
+      },
+      {
+        "index": 7,
+        "sourceOperation": "b4eb0e94-e10c-4a62-a4e9-ecb59dcc746d",
+        "richSubjects": 1,
+        "initialEffectSubjects": 1,
+        "deferredEffectSubjects": 0,
+        "initialNodesBefore": 22,
+        "initialNodesAfter": 22
+      },
+      {
+        "index": 8,
+        "sourceOperation": "473a34dc-7a85-4a16-9665-12314b75ee70",
+        "richSubjects": 2,
+        "initialEffectSubjects": 1,
+        "deferredEffectSubjects": 1,
+        "initialNodesBefore": 90,
+        "initialNodesAfter": 90
+      },
+      {
+        "index": 9,
+        "sourceOperation": "38cec8f0-6f79-485c-b26d-5246a50d6525",
+        "richSubjects": 9,
+        "initialEffectSubjects": 3,
+        "deferredEffectSubjects": 6,
+        "initialNodesBefore": 549,
+        "initialNodesAfter": 506
+      },
+      {
+        "index": 10,
+        "sourceOperation": "49781bb2-d945-432d-81f7-c63254da4b01",
+        "richSubjects": 6,
+        "initialEffectSubjects": 2,
+        "deferredEffectSubjects": 4,
+        "initialNodesBefore": 330,
+        "initialNodesAfter": 324
+      },
+      {
+        "index": 11,
+        "sourceOperation": "92de68b8-a308-4491-b9c2-19678cc8f4ec",
+        "richSubjects": 5,
+        "initialEffectSubjects": 1,
+        "deferredEffectSubjects": 4,
+        "initialNodesBefore": 198,
+        "initialNodesAfter": 198
+      },
+      {
+        "index": 12,
+        "sourceOperation": "175cfad6-a68d-47da-aa70-e6248edc3359",
+        "richSubjects": 5,
+        "initialEffectSubjects": 2,
+        "deferredEffectSubjects": 3,
+        "initialNodesBefore": 182,
+        "initialNodesAfter": 166
+      },
+      {
+        "index": 13,
+        "sourceOperation": "9e42652a-2ff5-4963-8b49-9b05006505f7",
+        "richSubjects": 6,
+        "initialEffectSubjects": 2,
+        "deferredEffectSubjects": 4,
+        "initialNodesBefore": 461,
+        "initialNodesAfter": 407
+      },
+      {
+        "index": 14,
+        "sourceOperation": "a9aae320-2a07-4183-8461-df922db1ca5c",
+        "richSubjects": 8,
+        "initialEffectSubjects": 3,
+        "deferredEffectSubjects": 5,
+        "initialNodesBefore": 527,
+        "initialNodesAfter": 498
+      },
+      {
+        "index": 15,
+        "sourceOperation": "fc17aed7-b4c6-466e-9138-700236f160d0",
+        "richSubjects": 7,
+        "initialEffectSubjects": 5,
+        "deferredEffectSubjects": 2,
+        "initialNodesBefore": 288,
+        "initialNodesAfter": 287
+      },
+      {
+        "index": 16,
+        "sourceOperation": "b3fc23a4-229d-439d-9b01-bd9ce31af50d",
+        "richSubjects": 6,
+        "initialEffectSubjects": 1,
+        "deferredEffectSubjects": 5,
+        "initialNodesBefore": 442,
+        "initialNodesAfter": 176
+      },
+      {
+        "index": 17,
+        "sourceOperation": "aa3eca2b-c866-4e2c-8b50-474085f8377d",
+        "richSubjects": 1,
+        "initialEffectSubjects": 1,
+        "deferredEffectSubjects": 0,
+        "initialNodesBefore": 58,
+        "initialNodesAfter": 58
+      },
+      {
+        "index": 18,
+        "sourceOperation": "d3afdf48-7b7e-402b-8811-5e909127c578",
+        "richSubjects": 3,
+        "initialEffectSubjects": 1,
+        "deferredEffectSubjects": 2,
+        "initialNodesBefore": 94,
+        "initialNodesAfter": 94
+      }
+    ]
+  },
+  "totals": {
+    "full": {
+      "calls": 6,
+      "initialInputTokens": 1175628,
+      "inputTokens": 1522244,
+      "outputTokens": 3638,
+      "calculatedNanoUsd": 2737561050,
+      "elapsedMs": 92731
+    },
+    "scoped": {
+      "calls": 7,
+      "initialInputTokens": 990112,
+      "inputTokens": 1376625,
+      "outputTokens": 5110,
+      "calculatedNanoUsd": 2427893000,
+      "elapsedMs": 117591
+    }
+  },
+  "reductions": {
+    "initialInput": 0.15780161751846677,
+    "totalInput": 0.09566074821119352,
+    "cost": 0.11311822616704748
+  },
+  "budget": {
+    "limitUsd": 8,
+    "upperCostUsd": 5.16545405,
+    "calls": 13,
+    "unsettled": 0
+  },
+  "validation": {
+    "wireRoundtrips": 13,
+    "liveDeferredEffectQueries": 1,
+    "completeAnchorsKept": true,
+    "units": 101,
+    "integrationTests": 47,
+    "typecheck": "passed",
+    "lint": "passed",
+    "contracts": "passed",
+    "productionWrites": 0
+  },
+  "trials": [
+    {
+      "index": 3,
+      "group": "full",
+      "sourceOperation": "782103d8-32a5-41a8-8d18-799bc6330d67",
+      "sourceCall": "53191987-6486-442b-af70-00663f28dc16",
+      "state": "propose",
+      "callIds": ["abafcc48-28c9-432b-8d31-b81e09de2e4a"],
+      "initialInputTokens": 42229,
+      "inputTokens": 42229,
+      "outputTokens": 271,
+      "calculatedNanoUsd": 52320500,
+      "elapsedMs": 8342,
+      "wallMs": 9135,
+      "queries": [],
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [],
+          "edges": [],
+          "endEdges": []
+        },
+        "summary": "ミューズはお茶会の手伝いについてミチコに尋ね、返答を待っている。",
+        "resolvedUntil": 71591000,
+        "deferredIntentions": ["7244be11-77e8-40c9-b7f8-0e276023d101"],
+        "wakeups": []
+      },
+      "usage": [
+        {
+          "callId": "abafcc48-28c9-432b-8d31-b81e09de2e4a",
+          "usage": {
+            "prompt_tokens": 42229,
+            "reasoning_tokens": 192,
+            "completion_tokens": 271,
+            "cache_write_12h_tokens": 0,
+            "cache_write_30m_tokens": 34946,
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 42229
+          },
+          "pricing": {
+            "api": "responses",
+            "output": 5000,
+            "baseUrl": "https://api.openai.com/v1",
+            "context": 1050000,
+            "inputHit": 50,
+            "provider": "openai",
+            "inputMiss": 1000,
+            "cacheWrite12h": 2500,
+            "cacheWrite30m": 1250
+          }
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "group": "scoped",
+      "sourceOperation": "782103d8-32a5-41a8-8d18-799bc6330d67",
+      "sourceCall": "53191987-6486-442b-af70-00663f28dc16",
+      "state": "propose",
+      "callIds": ["013de520-7cd4-4e1e-a3ef-6972c18c5b56"],
+      "initialInputTokens": 42157,
+      "inputTokens": 42157,
+      "outputTokens": 231,
+      "calculatedNanoUsd": 29646900,
+      "elapsedMs": 8770,
+      "wallMs": 9178,
+      "queries": [],
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [],
+          "edges": [],
+          "endEdges": []
+        },
+        "summary": "ミューズのお手伝いの申し出はミチコに届き、ミューズは返答を待っている。",
+        "resolvedUntil": 71591000,
+        "deferredIntentions": ["7244be11-77e8-40c9-b7f8-0e276023d101"],
+        "wakeups": []
+      },
+      "usage": [
+        {
+          "callId": "013de520-7cd4-4e1e-a3ef-6972c18c5b56",
+          "usage": {
+            "prompt_tokens": 42157,
+            "reasoning_tokens": 149,
+            "completion_tokens": 231,
+            "cache_write_12h_tokens": 0,
+            "cache_write_30m_tokens": 16221,
+            "prompt_cache_hit_tokens": 18653,
+            "prompt_cache_miss_tokens": 23504
+          },
+          "pricing": {
+            "api": "responses",
+            "output": 5000,
+            "baseUrl": "https://api.openai.com/v1",
+            "context": 1050000,
+            "inputHit": 50,
+            "provider": "openai",
+            "inputMiss": 1000,
+            "cacheWrite12h": 2500,
+            "cacheWrite30m": 1250
+          }
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "group": "scoped",
+      "sourceOperation": "ae770b9a-1a30-4723-8a07-38d4fbe9c7e6",
+      "sourceCall": "65d84369-be42-4eb3-a49e-37b46564beef",
+      "state": "propose",
+      "callIds": [
+        "c5793940-1f24-4c50-902b-afc078749fc6",
+        "a6b301f2-5b43-4e45-9dae-f6920f9e35b9"
+      ],
+      "initialInputTokens": 35234,
+      "inputTokens": 75407,
+      "outputTokens": 1965,
+      "calculatedNanoUsd": 60060800,
+      "elapsedMs": 40566,
+      "wallMs": 41383,
+      "queries": [
+        {
+          "requests": [
+            {
+              "kind": "effects",
+              "id": "f5a10000-0000-4000-8000-000000000001",
+              "through": 71924000
+            }
+          ],
+          "results": [
+            {
+              "kind": "effects",
+              "id": "f5a10000-0000-4000-8000-000000000001",
+              "previouslyDeferred": true,
+              "records": 29
+            }
+          ]
+        }
+      ],
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [
+            {
+              "id": "17833e8a-5c9b-4a6d-a496-98d9041753c5",
+              "kind": "script",
+              "text": "ぶーちゃんは灰色の縞模様で、口元と胸が白い猫。日だまりで体を丸め、目を閉じてうとうとしている。尾は体の脇に沿い、耳は立っている。"
+            },
+            {
+              "id": "9faebc33-598b-40b2-adea-29beba9cde81",
+              "kind": "script",
+              "text": "日だまりから数歩離れたところに、座れる平らな土の余地がある。"
+            },
+            {
+              "id": "6d0f5f51-a620-4e4f-aad4-9b36a1f4cba2",
+              "kind": "script",
+              "text": "近づいて声をかけると、穏やかに見上げて反応できる。"
+            }
+          ],
+          "edges": [
+            {
+              "id": "7742a657-a9b9-46d2-ae2a-65053e81e1f4",
+              "kind": "status",
+              "source": "00000000-0000-4000-8000-00000000000d",
+              "target": "17833e8a-5c9b-4a6d-a496-98d9041753c5",
+              "role": "content",
+              "period": {
+                "from": 71924000
+              }
+            },
+            {
+              "id": "7188b990-dff4-4c72-a286-92205cd6b761",
+              "kind": "status",
+              "source": "00000000-0000-4000-8000-00000000000d",
+              "target": "9faebc33-598b-40b2-adea-29beba9cde81",
+              "role": "content",
+              "period": {
+                "from": 71924000
+              }
+            },
+            {
+              "id": "febd915d-a512-4d93-acdf-1ba7385e0eb0",
+              "kind": "status",
+              "source": "00000000-0000-4000-8000-00000000000d",
+              "target": "6d0f5f51-a620-4e4f-aad4-9b36a1f4cba2",
+              "role": "content",
+              "period": {
+                "from": 71924000
+              }
+            }
+          ],
+          "endEdges": [
+            "09a73920-3e53-426f-a70b-72f881f165b4",
+            "29528226-0360-4ec6-ad8c-208967faa27b",
+            "5811e3e0-2ba0-4237-a40f-4b4cde82b817",
+            "737f9a07-d846-48ee-a41d-43e26f7b3075",
+            "7c1a1f4a-3fcd-4952-ab10-5aac1de18e17",
+            "ac4a8b42-bd95-43b8-a78f-fb7f8053df6c",
+            "ae7cda01-baf1-44c8-872d-126a12ac0015",
+            "c1c55f77-dc51-4dc6-a209-1057d4a4ddbb",
+            "c81b71a1-c6c3-4e57-af30-470ab89f60dc",
+            "fe9f59cf-5971-4f44-af4a-1158dc9b452d"
+          ]
+        },
+        "summary": "ねぎとろの発言と各人の受容を保存。ぶーちゃんは日だまりで体を丸めてまどろんでいる。パイモンへの最後の発言については、本人への到達や返答を追加していない。",
+        "resolvedUntil": 71924000,
+        "deferredIntentions": [
+          "00000000-0000-4000-8000-00000000000d",
+          "a5000000-0000-4000-8000-000000000001"
+        ],
+        "wakeups": []
+      },
+      "usage": [
+        {
+          "callId": "c5793940-1f24-4c50-902b-afc078749fc6",
+          "usage": {
+            "prompt_tokens": 35234,
+            "reasoning_tokens": 85,
+            "completion_tokens": 120,
+            "cache_write_12h_tokens": 0,
+            "cache_write_30m_tokens": 24700,
+            "prompt_cache_hit_tokens": 4148,
+            "prompt_cache_miss_tokens": 31086
+          },
+          "pricing": {
+            "api": "responses",
+            "output": 5000,
+            "baseUrl": "https://api.openai.com/v1",
+            "context": 1050000,
+            "inputHit": 50,
+            "provider": "openai",
+            "inputMiss": 1000,
+            "cacheWrite12h": 2500,
+            "cacheWrite30m": 1250
+          }
+        },
+        {
+          "callId": "a6b301f2-5b43-4e45-9dae-f6920f9e35b9",
+          "usage": {
+            "prompt_tokens": 40173,
+            "reasoning_tokens": 1416,
+            "completion_tokens": 1845,
+            "cache_write_12h_tokens": 0,
+            "cache_write_30m_tokens": 0,
+            "prompt_cache_hit_tokens": 28848,
+            "prompt_cache_miss_tokens": 11325
+          },
+          "pricing": {
+            "api": "responses",
+            "output": 5000,
+            "baseUrl": "https://api.openai.com/v1",
+            "context": 1050000,
+            "inputHit": 50,
+            "provider": "openai",
+            "inputMiss": 1000,
+            "cacheWrite12h": 2500,
+            "cacheWrite30m": 1250
+          }
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "group": "full",
+      "sourceOperation": "ae770b9a-1a30-4723-8a07-38d4fbe9c7e6",
+      "sourceCall": "65d84369-be42-4eb3-a49e-37b46564beef",
+      "state": "propose",
+      "callIds": ["ec1c514c-fa69-4f44-8581-d6137422f889"],
+      "initialInputTokens": 40928,
+      "inputTokens": 40928,
+      "outputTokens": 1331,
+      "calculatedNanoUsd": 51240900,
+      "elapsedMs": 23135,
+      "wallMs": 23511,
+      "queries": [],
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [
+            {
+              "id": "c3690255-a1d7-46bd-a66c-3abc12578b7c",
+              "kind": "script",
+              "text": "ぶーちゃんは体を丸め、目を閉じてうとうととまどろんでいる。"
+            },
+            {
+              "id": "9befb914-c22b-4163-a088-b85656599cf7",
+              "kind": "script",
+              "text": "灰色の縞模様の毛並みで、口元と胸は白い。"
+            },
+            {
+              "id": "4453d517-a72a-4184-aea8-7537b0bd3a37",
+              "kind": "script",
+              "text": "日だまりはムジーナの家の前から見え、数歩離れたところに座れる平らな土の余地がある。"
+            }
+          ],
+          "edges": [
+            {
+              "id": "7c2c8a84-4965-4659-a52c-811faa57f866",
+              "kind": "status",
+              "source": "00000000-0000-4000-8000-00000000000d",
+              "target": "c3690255-a1d7-46bd-a66c-3abc12578b7c",
+              "role": "content",
+              "period": {
+                "from": 71924000
+              }
+            },
+            {
+              "id": "fb30f370-6568-4fe5-a318-1ac9b87884e3",
+              "kind": "status",
+              "source": "00000000-0000-4000-8000-00000000000d",
+              "target": "9befb914-c22b-4163-a088-b85656599cf7",
+              "role": "content",
+              "period": {
+                "from": 71924000
+              }
+            },
+            {
+              "id": "9561e534-db4c-41cb-a40b-0f7ccbec6c53",
+              "kind": "status",
+              "source": "00000000-0000-4000-8000-00000000000d",
+              "target": "4453d517-a72a-4184-aea8-7537b0bd3a37",
+              "role": "content",
+              "period": {
+                "from": 71924000
+              }
+            },
+            {
+              "id": "c741f6ab-fed2-4be2-a242-03bc4f23550c",
+              "kind": "status",
+              "source": "4453d517-a72a-4184-aea8-7537b0bd3a37",
+              "target": "e4f43637-3968-45df-a892-890c0ffb4a02",
+              "role": "about",
+              "period": {
+                "from": 71924000
+              }
+            },
+            {
+              "id": "a5e54590-9ed5-4f38-a08a-9efe7829b0cf",
+              "kind": "status",
+              "source": "4453d517-a72a-4184-aea8-7537b0bd3a37",
+              "target": "00000000-0000-4000-8000-000000000002",
+              "role": "about",
+              "period": {
+                "from": 71924000
+              }
+            }
+          ],
+          "endEdges": [
+            "09a73920-3e53-426f-a70b-72f881f165b4",
+            "29528226-0360-4ec6-ad8c-208967faa27b",
+            "5811e3e0-2ba0-4237-a40f-4b4cde82b817",
+            "737f9a07-d846-48ee-a41d-43e26f7b3075",
+            "7c1a1f4a-3fcd-4952-ab10-5aac1de18e17",
+            "ac4a8b42-bd95-43b8-a78f-fb7f8053df6c",
+            "ae7cda01-baf1-44c8-872d-126a12ac0015",
+            "c1c55f77-dc51-4dc6-a209-1057d4a4ddbb",
+            "c81b71a1-c6c3-4e57-af30-470ab89f60dc",
+            "fe9f59cf-5971-4f44-af4a-1158dc9b452d"
+          ]
+        },
+        "summary": "ねぎとろの発言と各人の受容を保存し、ぶーちゃんの姿勢をまどろんでいる状態に更新した。パイモンへの発言の到達や返答は未確認。",
+        "resolvedUntil": 71924000,
+        "deferredIntentions": [
+          "00000000-0000-4000-8000-00000000000d",
+          "a5000000-0000-4000-8000-000000000001"
+        ],
+        "wakeups": []
+      },
+      "usage": [
+        {
+          "callId": "ec1c514c-fa69-4f44-8581-d6137422f889",
+          "usage": {
+            "prompt_tokens": 40928,
+            "reasoning_tokens": 861,
+            "completion_tokens": 1331,
+            "cache_write_12h_tokens": 0,
+            "cache_write_30m_tokens": 30394,
+            "prompt_cache_hit_tokens": 4148,
+            "prompt_cache_miss_tokens": 36780
+          },
+          "pricing": {
+            "api": "responses",
+            "output": 5000,
+            "baseUrl": "https://api.openai.com/v1",
+            "context": 1050000,
+            "inputHit": 50,
+            "provider": "openai",
+            "inputMiss": 1000,
+            "cacheWrite12h": 2500,
+            "cacheWrite30m": 1250
+          }
+        }
+      ]
+    },
+    {
+      "index": 14,
+      "group": "full",
+      "sourceOperation": "a9aae320-2a07-4183-8461-df922db1ca5c",
+      "sourceCall": "c2910bdf-f667-4f36-a2bc-13d3730ba0f1",
+      "state": "propose",
+      "callIds": ["72dd1005-9cde-474c-bb3a-4a221d08a135"],
+      "initialInputTokens": 581037,
+      "inputTokens": 581037,
+      "outputTokens": 473,
+      "calculatedNanoUsd": 1354463300,
+      "elapsedMs": 17219,
+      "wallMs": 18584,
+      "queries": [],
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [],
+          "edges": [],
+          "endEdges": []
+        },
+        "summary": "表示済みの交流と受容を保存する。ミューズは写真を見た後、別の行動へ移った。ぶーちゃんは日だまりで休み続け、Doroは見守っている。",
+        "resolvedUntil": 72336000,
+        "settledIntentions": [
+          {
+            "actorId": "7244be11-77e8-40c9-b7f8-0e276023d101",
+            "reason": "Doroに声をかけ、パイモンの返事を待った後、写真を見て次の行動へ移った。"
+          }
+        ],
+        "deferredIntentions": ["a4210000-0000-4000-8000-000000000001"],
+        "wakeups": [
+          {
+            "actorId": "00000000-0000-4000-8000-00000000000d",
+            "at": 72336000,
+            "mode": "intent"
+          }
+        ]
+      },
+      "usage": [
+        {
+          "callId": "72dd1005-9cde-474c-bb3a-4a221d08a135",
+          "usage": {
+            "prompt_tokens": 581037,
+            "reasoning_tokens": 300,
+            "completion_tokens": 473,
+            "cache_write_12h_tokens": 0,
+            "cache_write_30m_tokens": 393446,
+            "prompt_cache_hit_tokens": 4148,
+            "prompt_cache_miss_tokens": 576889
+          },
+          "pricing": {
+            "api": "responses",
+            "output": 7500,
+            "baseUrl": "https://api.openai.com/v1",
+            "context": 1050000,
+            "inputHit": 100,
+            "provider": "openai",
+            "inputMiss": 2000,
+            "cacheWrite12h": 5000,
+            "cacheWrite30m": 2500
+          }
+        }
+      ]
+    },
+    {
+      "index": 14,
+      "group": "scoped",
+      "sourceOperation": "a9aae320-2a07-4183-8461-df922db1ca5c",
+      "sourceCall": "c2910bdf-f667-4f36-a2bc-13d3730ba0f1",
+      "state": "propose",
+      "callIds": ["7fc28b53-7096-40b9-82a9-5d919e50399c"],
+      "initialInputTokens": 519015,
+      "inputTokens": 519015,
+      "outputTokens": 1075,
+      "calculatedNanoUsd": 1203923300,
+      "elapsedMs": 26866,
+      "wallMs": 27821,
+      "queries": [],
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [
+            {
+              "id": "99af7bc9-0828-4af5-ae5c-0db66e7b55f3",
+              "kind": "script",
+              "text": "Doroはトイレットペーパーを全身に巻いたミイラ姿をしている。"
+            },
+            {
+              "id": "0ebb9ad8-199f-411c-a485-aa25946f27ae",
+              "kind": "script",
+              "text": "自分は女の子で、「Doroちゃん」と呼んでほしいと思っている。"
+            }
+          ],
+          "edges": [
+            {
+              "id": "ac4ae874-af62-46d9-a779-240d4b1a5747",
+              "kind": "status",
+              "source": "a4210000-0000-4000-8000-000000000001",
+              "target": "99af7bc9-0828-4af5-ae5c-0db66e7b55f3",
+              "role": "content",
+              "period": {
+                "from": 72062000,
+                "until": 72103000
+              }
+            },
+            {
+              "id": "9c35df63-56e9-4496-af75-5a277ae55cdb",
+              "kind": "interpret",
+              "source": "a4210000-0000-4000-8000-000000000001",
+              "target": "0ebb9ad8-199f-411c-a485-aa25946f27ae",
+              "role": "content",
+              "period": {
+                "from": 71362000
+              }
+            },
+            {
+              "id": "3859e67d-a6e7-45b0-ad50-762efd6992db",
+              "kind": "interpret",
+              "source": "0ebb9ad8-199f-411c-a485-aa25946f27ae",
+              "target": "a4210000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 71362000
+              }
+            }
+          ],
+          "endEdges": []
+        },
+        "summary": "表示済みの交流と受容を保持。Doroのミイラ姿の開始から既存状態までを補い、本人の自己理解を記録した。ミューズは写真を見た後、別の行動へ移っている。ぶーちゃんの休息とDoroの見守りは継続する。",
+        "resolvedUntil": 72336000,
+        "settledIntentions": [
+          {
+            "actorId": "7244be11-77e8-40c9-b7f8-0e276023d101",
+            "reason": "Doroに声をかけた後、パイモンが写真を見せ、ミューズは画面を見た。"
+          }
+        ],
+        "deferredIntentions": [
+          "00000000-0000-4000-8000-00000000000d",
+          "a4210000-0000-4000-8000-000000000001"
+        ],
+        "wakeups": []
+      },
+      "usage": [
+        {
+          "callId": "7fc28b53-7096-40b9-82a9-5d919e50399c",
+          "usage": {
+            "prompt_tokens": 519015,
+            "reasoning_tokens": 701,
+            "completion_tokens": 1075,
+            "cache_write_12h_tokens": 0,
+            "cache_write_30m_tokens": 331424,
+            "prompt_cache_hit_tokens": 4148,
+            "prompt_cache_miss_tokens": 514867
+          },
+          "pricing": {
+            "api": "responses",
+            "output": 7500,
+            "baseUrl": "https://api.openai.com/v1",
+            "context": 1050000,
+            "inputHit": 100,
+            "provider": "openai",
+            "inputMiss": 2000,
+            "cacheWrite12h": 5000,
+            "cacheWrite30m": 2500
+          }
+        }
+      ]
+    },
+    {
+      "index": 15,
+      "group": "scoped",
+      "sourceOperation": "fc17aed7-b4c6-466e-9138-700236f160d0",
+      "sourceCall": "54be8caa-0d4d-4862-a1a7-c36b58657056",
+      "state": "propose",
+      "callIds": [
+        "8cc582f1-f9fb-40c6-9668-4cc4227ecd4a",
+        "e35ad398-2008-494c-8b8b-8708ed7f3220"
+      ],
+      "initialInputTokens": 342326,
+      "inputTokens": 688666,
+      "outputTokens": 1528,
+      "calculatedNanoUsd": 1074262600,
+      "elapsedMs": 35401,
+      "wallMs": 37137,
+      "queries": [
+        {
+          "requests": [
+            {
+              "kind": "node",
+              "id": "c4801485-50c7-4ff7-85c8-fbc484cb9851",
+              "at": 72636000
+            }
+          ],
+          "results": [
+            {
+              "kind": "node"
+            }
+          ]
+        }
+      ],
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [
+            {
+              "id": "7f86e867-3620-43a7-ad7a-b30484dc80ec",
+              "kind": "script",
+              "text": "パイモンは今夜の星見と明朝9時の豆畑見学に参加するのを楽しみにしている。"
+            },
+            {
+              "id": "e7049875-a25e-48f4-a7fb-801c68d3ea16",
+              "kind": "script",
+              "text": "Doroはお茶会で甘いオレンジをパイモンやメイリーに分け、一緒に食べることを楽しみにしている。"
+            }
+          ],
+          "edges": [
+            {
+              "id": "65aceee1-2d21-4c48-ab9c-778c363b9d1b",
+              "kind": "interpret",
+              "source": "f5a10000-0000-4000-8000-000000000001",
+              "target": "7f86e867-3620-43a7-ad7a-b30484dc80ec",
+              "role": "content",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "6ecd9a75-ae07-4027-a9d5-686a782dde00",
+              "kind": "interpret",
+              "source": "7f86e867-3620-43a7-ad7a-b30484dc80ec",
+              "target": "6702e66e-195b-4889-919b-04448c7c6f51",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "3d93c8e6-1ad6-4cc8-ac31-e7257e0f7dee",
+              "kind": "interpret",
+              "source": "7f86e867-3620-43a7-ad7a-b30484dc80ec",
+              "target": "b1c00000-0000-4000-8000-000000000002",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "649e00f7-0e2a-4414-af2c-331a2bb29264",
+              "kind": "interpret",
+              "source": "a4210000-0000-4000-8000-000000000001",
+              "target": "e7049875-a25e-48f4-a7fb-801c68d3ea16",
+              "role": "content",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "d4652eb3-b1ed-4c39-af89-8523c9956fec",
+              "kind": "interpret",
+              "source": "e7049875-a25e-48f4-a7fb-801c68d3ea16",
+              "target": "f5a10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "7b9eab0c-9153-48e1-a7ba-3279e7d112d8",
+              "kind": "interpret",
+              "source": "e7049875-a25e-48f4-a7fb-801c68d3ea16",
+              "target": "d0d10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72614000
+              }
+            }
+          ],
+          "endEdges": []
+        },
+        "summary": "記念撮影と各人の発言・受容を保存。写真機の集合写真は既存状態で保持されている。星見、豆畑見学、お茶会は今後の予定として残し、村長の帰宅は歩き出した段階で継続する。",
+        "resolvedUntil": 72636000,
+        "settledIntentions": [
+          {
+            "actorId": "a4210000-0000-4000-8000-000000000001",
+            "reason": "写真への喜びを表し、その後の会話へ進んだ。"
+          },
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "笑顔で感謝と親しみを伝えた。"
+          },
+          {
+            "actorId": "b1c00000-0000-4000-8000-000000000001",
+            "reason": "メタルスピノサウルスについて話した後、撮影や別れの行動へ進んだ。指定された発言の細部は補わない。"
+          },
+          {
+            "actorId": "f5a10000-0000-4000-8000-000000000001",
+            "reason": "村のことを一緒に覚えていくと伝え、その後の会話へ進んだ。先生宛ての指定文は補わない。"
+          }
+        ],
+        "wakeups": [
+          {
+            "actorId": "00000000-0000-4000-8000-000000000008",
+            "at": 72636000,
+            "mode": "resolve"
+          }
+        ]
+      },
+      "usage": [
+        {
+          "callId": "8cc582f1-f9fb-40c6-9668-4cc4227ecd4a",
+          "usage": {
+            "prompt_tokens": 342326,
+            "reasoning_tokens": 300,
+            "completion_tokens": 335,
+            "cache_write_12h_tokens": 0,
+            "cache_write_30m_tokens": 213405,
+            "prompt_cache_hit_tokens": 4148,
+            "prompt_cache_miss_tokens": 338178
+          },
+          "pricing": {
+            "api": "responses",
+            "output": 7500,
+            "baseUrl": "https://api.openai.com/v1",
+            "context": 1050000,
+            "inputHit": 100,
+            "provider": "openai",
+            "inputMiss": 2000,
+            "cacheWrite12h": 5000,
+            "cacheWrite30m": 2500
+          }
+        },
+        {
+          "callId": "e35ad398-2008-494c-8b8b-8708ed7f3220",
+          "usage": {
+            "prompt_tokens": 346340,
+            "reasoning_tokens": 578,
+            "completion_tokens": 1193,
+            "cache_write_12h_tokens": 0,
+            "cache_write_30m_tokens": 0,
+            "prompt_cache_hit_tokens": 217553,
+            "prompt_cache_miss_tokens": 128787
+          },
+          "pricing": {
+            "api": "responses",
+            "output": 7500,
+            "baseUrl": "https://api.openai.com/v1",
+            "context": 1050000,
+            "inputHit": 100,
+            "provider": "openai",
+            "inputMiss": 2000,
+            "cacheWrite12h": 5000,
+            "cacheWrite30m": 2500
+          }
+        }
+      ]
+    },
+    {
+      "index": 15,
+      "group": "full",
+      "sourceOperation": "fc17aed7-b4c6-466e-9138-700236f160d0",
+      "sourceCall": "54be8caa-0d4d-4862-a1a7-c36b58657056",
+      "state": "propose",
+      "callIds": [
+        "7fae52fb-2140-4b0f-bbcd-9f7840fde9bc",
+        "d43c44d9-b7b1-4c41-9918-e263425e7016"
+      ],
+      "initialInputTokens": 342602,
+      "inputTokens": 689218,
+      "outputTokens": 1181,
+      "calculatedNanoUsd": 1072377700,
+      "elapsedMs": 34207,
+      "wallMs": 35926,
+      "queries": [
+        {
+          "requests": [
+            {
+              "kind": "node",
+              "id": "c4801485-50c7-4ff7-85c8-fbc484cb9851",
+              "at": 72636000
+            }
+          ],
+          "results": [
+            {
+              "kind": "node"
+            }
+          ]
+        }
+      ],
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [],
+          "edges": [],
+          "endEdges": []
+        },
+        "summary": "集合写真と会話、今夜の星見や翌朝の豆畑の話を保存する。村長は帰路についたが、到着や休息は未確認。オレンジやお茶会は今後の約束として扱う。",
+        "resolvedUntil": 72636000,
+        "settledIntentions": [
+          {
+            "actorId": "a4210000-0000-4000-8000-000000000001",
+            "reason": "写真の喜びを伝えた後、別の会話へ進んだ。"
+          },
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "メイリーたちへ笑顔で感謝と親しみを伝えた。"
+          },
+          {
+            "actorId": "b1c00000-0000-4000-8000-000000000001",
+            "reason": "メタルスピノサウルスについて優しいと伝えた後、別の会話と帰路へ進んだ。"
+          },
+          {
+            "actorId": "f5a10000-0000-4000-8000-000000000001",
+            "reason": "村のことを一緒に覚えていくと話した後、別の会話へ進んだ。"
+          }
+        ],
+        "wakeups": [
+          {
+            "actorId": "00000000-0000-4000-8000-000000000008",
+            "at": 72636000,
+            "mode": "resolve"
+          }
+        ]
+      },
+      "usage": [
+        {
+          "callId": "7fae52fb-2140-4b0f-bbcd-9f7840fde9bc",
+          "usage": {
+            "prompt_tokens": 342602,
+            "reasoning_tokens": 579,
+            "completion_tokens": 614,
+            "cache_write_12h_tokens": 0,
+            "cache_write_30m_tokens": 213681,
+            "prompt_cache_hit_tokens": 4148,
+            "prompt_cache_miss_tokens": 338454
+          },
+          "pricing": {
+            "api": "responses",
+            "output": 7500,
+            "baseUrl": "https://api.openai.com/v1",
+            "context": 1050000,
+            "inputHit": 100,
+            "provider": "openai",
+            "inputMiss": 2000,
+            "cacheWrite12h": 5000,
+            "cacheWrite30m": 2500
+          }
+        },
+        {
+          "callId": "d43c44d9-b7b1-4c41-9918-e263425e7016",
+          "usage": {
+            "prompt_tokens": 346616,
+            "reasoning_tokens": 301,
+            "completion_tokens": 567,
+            "cache_write_12h_tokens": 0,
+            "cache_write_30m_tokens": 0,
+            "prompt_cache_hit_tokens": 217829,
+            "prompt_cache_miss_tokens": 128787
+          },
+          "pricing": {
+            "api": "responses",
+            "output": 7500,
+            "baseUrl": "https://api.openai.com/v1",
+            "context": 1050000,
+            "inputHit": 100,
+            "provider": "openai",
+            "inputMiss": 2000,
+            "cacheWrite12h": 5000,
+            "cacheWrite30m": 2500
+          }
+        }
+      ]
+    },
+    {
+      "index": 16,
+      "group": "full",
+      "sourceOperation": "b3fc23a4-229d-439d-9b01-bd9ce31af50d",
+      "sourceCall": "076ed67d-203d-4c23-a7c1-ae9a3416dd6c",
+      "state": "propose",
+      "callIds": ["19fba6ea-a762-44e0-bcbc-3d1541b4e588"],
+      "initialInputTokens": 168832,
+      "inputTokens": 168832,
+      "outputTokens": 382,
+      "calculatedNanoUsd": 207158650,
+      "elapsedMs": 9828,
+      "wallMs": 10494,
+      "queries": [],
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [
+            {
+              "id": "af227085-16b4-4abd-a6e7-c64ae75bac1f",
+              "kind": "script",
+              "text": "体を低くかがめ、地面に寄せている。"
+            }
+          ],
+          "edges": [
+            {
+              "id": "2cbdebc4-83a5-4cfb-abab-934b749ff576",
+              "kind": "status",
+              "source": "a1aa0001-1111-4111-8111-111111111111",
+              "target": "af227085-16b4-4abd-a6e7-c64ae75bac1f",
+              "role": "content",
+              "period": {
+                "from": 72450000
+              }
+            }
+          ],
+          "endEdges": []
+        },
+        "summary": "メタルスピノサウルスが挨拶を交わし、ミュゼ子をサドルへ誘って体を低くかがめた。搭乗と移動は未確認。",
+        "resolvedUntil": 72636000,
+        "deferredIntentions": ["a1aa0001-1111-4111-8111-111111111111"],
+        "wakeups": []
+      },
+      "usage": [
+        {
+          "callId": "19fba6ea-a762-44e0-bcbc-3d1541b4e588",
+          "usage": {
+            "prompt_tokens": 168832,
+            "reasoning_tokens": 212,
+            "completion_tokens": 382,
+            "cache_write_12h_tokens": 0,
+            "cache_write_30m_tokens": 161429,
+            "prompt_cache_hit_tokens": 4148,
+            "prompt_cache_miss_tokens": 164684
+          },
+          "pricing": {
+            "api": "responses",
+            "output": 5000,
+            "baseUrl": "https://api.openai.com/v1",
+            "context": 1050000,
+            "inputHit": 50,
+            "provider": "openai",
+            "inputMiss": 1000,
+            "cacheWrite12h": 2500,
+            "cacheWrite30m": 1250
+          }
+        }
+      ]
+    },
+    {
+      "index": 16,
+      "group": "scoped",
+      "sourceOperation": "b3fc23a4-229d-439d-9b01-bd9ce31af50d",
+      "sourceCall": "076ed67d-203d-4c23-a7c1-ae9a3416dd6c",
+      "state": "propose",
+      "callIds": ["14430fee-6fa0-4c8a-978d-f717960c73e3"],
+      "initialInputTokens": 51380,
+      "inputTokens": 51380,
+      "outputTokens": 311,
+      "calculatedNanoUsd": 59999400,
+      "elapsedMs": 5988,
+      "wallMs": 6533,
+      "queries": [],
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [
+            {
+              "id": "5efbc2f0-4664-4ba3-acb3-416846169726",
+              "kind": "script",
+              "text": "ミュゼ子が乗りやすいよう、体を低くかがめて地面に寄せている。"
+            }
+          ],
+          "edges": [
+            {
+              "id": "7d6d0eaa-58ed-429f-ad5c-a3b1811d7c37",
+              "kind": "status",
+              "source": "a1aa0001-1111-4111-8111-111111111111",
+              "target": "5efbc2f0-4664-4ba3-acb3-416846169726",
+              "role": "content",
+              "period": {
+                "from": 72450000
+              }
+            }
+          ],
+          "endEdges": []
+        },
+        "summary": "メタルスピノサウルスがミュゼ子をサドルに誘い、体を低くかがめた。搭乗や村内の移動はまだ成立していない。",
+        "resolvedUntil": 72636000,
+        "deferredIntentions": ["a1aa0001-1111-4111-8111-111111111111"],
+        "wakeups": []
+      },
+      "usage": [
+        {
+          "callId": "14430fee-6fa0-4c8a-978d-f717960c73e3",
+          "usage": {
+            "prompt_tokens": 51380,
+            "reasoning_tokens": 131,
+            "completion_tokens": 311,
+            "cache_write_12h_tokens": 0,
+            "cache_write_30m_tokens": 44020,
+            "prompt_cache_hit_tokens": 4148,
+            "prompt_cache_miss_tokens": 47232
+          },
+          "pricing": {
+            "api": "responses",
+            "output": 5000,
+            "baseUrl": "https://api.openai.com/v1",
+            "context": 1050000,
+            "inputHit": 50,
+            "provider": "openai",
+            "inputMiss": 1000,
+            "cacheWrite12h": 2500,
+            "cacheWrite30m": 1250
+          }
+        }
+      ]
+    }
+  ]
+}

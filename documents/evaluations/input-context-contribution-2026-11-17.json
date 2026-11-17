@@ -1,0 +1,988 @@
+{
+  "scope": "recorded-input-contribution-investigation-no-production-change",
+  "sourceSha256": "337a5eb6246c67b3cbba87c025d0ead68a64feecda44b7f587ec29a8c9f73952",
+  "census": {
+    "sourceSha256": "337a5eb6246c67b3cbba87c025d0ead68a64feecda44b7f587ec29a8c9f73952",
+    "counts": {
+      "newScripts": 25,
+      "endedRelations": 50,
+      "endedStatements": 50,
+      "currentStatementsSupplied": 2097,
+      "settledActors": 10,
+      "deferredActors": 9,
+      "wakeups": 6
+    },
+    "cases": [
+      {
+        "index": 0,
+        "operationId": "e05bd57f-1833-4f6c-92c4-0c8ff74e85b5",
+        "newScripts": 0,
+        "endedRelations": 0,
+        "endedStatements": 0,
+        "endRelationSources": {},
+        "currentStatementsSupplied": 174,
+        "externalEndpoints": 0,
+        "settledActors": 0,
+        "deferredActors": 0,
+        "wakeups": 0
+      },
+      {
+        "index": 1,
+        "operationId": "519394ed-2b46-4de9-9eeb-dffca1a26d65",
+        "newScripts": 0,
+        "endedRelations": 0,
+        "endedStatements": 0,
+        "endRelationSources": {},
+        "currentStatementsSupplied": 15,
+        "externalEndpoints": 0,
+        "settledActors": 0,
+        "deferredActors": 0,
+        "wakeups": 0
+      },
+      {
+        "index": 2,
+        "operationId": "e0ca3348-b879-44b5-a8f3-631865c696bd",
+        "newScripts": 3,
+        "endedRelations": 5,
+        "endedStatements": 5,
+        "endRelationSources": {
+          "otherInitialContext": 1,
+          "currentStates": 1,
+          "interpretations": 4
+        },
+        "currentStatementsSupplied": 164,
+        "externalEndpoints": 7,
+        "settledActors": 1,
+        "deferredActors": 0,
+        "wakeups": 0
+      },
+      {
+        "index": 3,
+        "operationId": "782103d8-32a5-41a8-8d18-799bc6330d67",
+        "newScripts": 0,
+        "endedRelations": 0,
+        "endedStatements": 0,
+        "endRelationSources": {},
+        "currentStatementsSupplied": 77,
+        "externalEndpoints": 0,
+        "settledActors": 0,
+        "deferredActors": 1,
+        "wakeups": 0
+      },
+      {
+        "index": 4,
+        "operationId": "59b63e75-83f4-4db5-b997-5cd579733250",
+        "newScripts": 0,
+        "endedRelations": 0,
+        "endedStatements": 0,
+        "endRelationSources": {},
+        "currentStatementsSupplied": 16,
+        "externalEndpoints": 0,
+        "settledActors": 0,
+        "deferredActors": 0,
+        "wakeups": 0
+      },
+      {
+        "index": 5,
+        "operationId": "0885e42c-817c-4506-b5a5-82d9603953a9",
+        "newScripts": 0,
+        "endedRelations": 2,
+        "endedStatements": 2,
+        "endRelationSources": {
+          "interpretations": 2
+        },
+        "currentStatementsSupplied": 17,
+        "externalEndpoints": 0,
+        "settledActors": 0,
+        "deferredActors": 0,
+        "wakeups": 0
+      },
+      {
+        "index": 6,
+        "operationId": "ae770b9a-1a30-4723-8a07-38d4fbe9c7e6",
+        "newScripts": 3,
+        "endedRelations": 10,
+        "endedStatements": 10,
+        "endRelationSources": {
+          "otherInitialContext": 10,
+          "currentStates": 10
+        },
+        "currentStatementsSupplied": 56,
+        "externalEndpoints": 3,
+        "settledActors": 0,
+        "deferredActors": 2,
+        "wakeups": 0
+      },
+      {
+        "index": 7,
+        "operationId": "b4eb0e94-e10c-4a62-a4e9-ecb59dcc746d",
+        "newScripts": 0,
+        "endedRelations": 0,
+        "endedStatements": 0,
+        "endRelationSources": {},
+        "currentStatementsSupplied": 11,
+        "externalEndpoints": 0,
+        "settledActors": 0,
+        "deferredActors": 0,
+        "wakeups": 0
+      },
+      {
+        "index": 8,
+        "operationId": "473a34dc-7a85-4a16-9665-12314b75ee70",
+        "newScripts": 0,
+        "endedRelations": 0,
+        "endedStatements": 0,
+        "endRelationSources": {},
+        "currentStatementsSupplied": 67,
+        "externalEndpoints": 0,
+        "settledActors": 0,
+        "deferredActors": 0,
+        "wakeups": 1
+      },
+      {
+        "index": 9,
+        "operationId": "38cec8f0-6f79-485c-b26d-5246a50d6525",
+        "newScripts": 3,
+        "endedRelations": 4,
+        "endedStatements": 4,
+        "endRelationSources": {
+          "interpretations": 4
+        },
+        "currentStatementsSupplied": 273,
+        "externalEndpoints": 6,
+        "settledActors": 0,
+        "deferredActors": 1,
+        "wakeups": 2
+      },
+      {
+        "index": 10,
+        "operationId": "49781bb2-d945-432d-81f7-c63254da4b01",
+        "newScripts": 4,
+        "endedRelations": 0,
+        "endedStatements": 0,
+        "endRelationSources": {},
+        "currentStatementsSupplied": 169,
+        "externalEndpoints": 7,
+        "settledActors": 1,
+        "deferredActors": 0,
+        "wakeups": 1
+      },
+      {
+        "index": 11,
+        "operationId": "92de68b8-a308-4491-b9c2-19678cc8f4ec",
+        "newScripts": 1,
+        "endedRelations": 0,
+        "endedStatements": 0,
+        "endRelationSources": {},
+        "currentStatementsSupplied": 125,
+        "externalEndpoints": 1,
+        "settledActors": 1,
+        "deferredActors": 0,
+        "wakeups": 0
+      },
+      {
+        "index": 12,
+        "operationId": "175cfad6-a68d-47da-aa70-e6248edc3359",
+        "newScripts": 0,
+        "endedRelations": 0,
+        "endedStatements": 0,
+        "endRelationSources": {},
+        "currentStatementsSupplied": 99,
+        "externalEndpoints": 0,
+        "settledActors": 0,
+        "deferredActors": 1,
+        "wakeups": 1
+      },
+      {
+        "index": 13,
+        "operationId": "9e42652a-2ff5-4963-8b49-9b05006505f7",
+        "newScripts": 3,
+        "endedRelations": 22,
+        "endedStatements": 22,
+        "endRelationSources": {
+          "interpretations": 22
+        },
+        "currentStatementsSupplied": 172,
+        "externalEndpoints": 6,
+        "settledActors": 1,
+        "deferredActors": 1,
+        "wakeups": 0
+      },
+      {
+        "index": 14,
+        "operationId": "a9aae320-2a07-4183-8461-df922db1ca5c",
+        "newScripts": 1,
+        "endedRelations": 0,
+        "endedStatements": 0,
+        "endRelationSources": {},
+        "currentStatementsSupplied": 196,
+        "externalEndpoints": 1,
+        "settledActors": 1,
+        "deferredActors": 2,
+        "wakeups": 0
+      },
+      {
+        "index": 15,
+        "operationId": "fc17aed7-b4c6-466e-9138-700236f160d0",
+        "newScripts": 3,
+        "endedRelations": 0,
+        "endedStatements": 0,
+        "endRelationSources": {},
+        "currentStatementsSupplied": 231,
+        "externalEndpoints": 6,
+        "settledActors": 4,
+        "deferredActors": 0,
+        "wakeups": 1
+      },
+      {
+        "index": 16,
+        "operationId": "b3fc23a4-229d-439d-9b01-bd9ce31af50d",
+        "newScripts": 1,
+        "endedRelations": 0,
+        "endedStatements": 0,
+        "endRelationSources": {},
+        "currentStatementsSupplied": 132,
+        "externalEndpoints": 1,
+        "settledActors": 0,
+        "deferredActors": 1,
+        "wakeups": 0
+      },
+      {
+        "index": 17,
+        "operationId": "aa3eca2b-c866-4e2c-8b50-474085f8377d",
+        "newScripts": 0,
+        "endedRelations": 0,
+        "endedStatements": 0,
+        "endRelationSources": {},
+        "currentStatementsSupplied": 34,
+        "externalEndpoints": 0,
+        "settledActors": 0,
+        "deferredActors": 0,
+        "wakeups": 0
+      },
+      {
+        "index": 18,
+        "operationId": "d3afdf48-7b7e-402b-8811-5e909127c578",
+        "newScripts": 3,
+        "endedRelations": 7,
+        "endedStatements": 7,
+        "endRelationSources": {
+          "otherInitialContext": 7,
+          "currentStates": 7
+        },
+        "currentStatementsSupplied": 69,
+        "externalEndpoints": 5,
+        "settledActors": 1,
+        "deferredActors": 0,
+        "wakeups": 0
+      }
+    ],
+    "interpretation": "参照箇所の集計。未参照の入力が不要であることや、モデル内部の因果寄与は示さない。"
+  },
+  "evidence": {
+    "pathConvention": "inputs keys are sourceMessages indices; content JSON is decoded before path traversal.",
+    "claims": [
+      {
+        "index": 6,
+        "operationId": "ae770b9a-1a30-4723-8a07-38d4fbe9c7e6",
+        "callId": "65d84369-be42-4eb3-a49e-37b46564beef",
+        "claim": "姿勢の変更と毛色の保持",
+        "support": "direct",
+        "inputEvidence": [
+          {
+            "path": "/inputs/1/request/completedScene/events/11/text",
+            "quote": "体を丸めたまま目を閉じ"
+          },
+          {
+            "path": "/inputs/1/initialContext/1/result/currentStates/6/script/text",
+            "quote": "灰色の縞模様の毛並みで、口元と胸は白い"
+          }
+        ],
+        "outputPath": "/output/changes/nodes/0/text",
+        "output": "灰色の縞模様で口元と胸が白い猫。日だまりで体を丸め、目を閉じてうとうとしている。"
+      },
+      {
+        "index": 6,
+        "operationId": "ae770b9a-1a30-4723-8a07-38d4fbe9c7e6",
+        "callId": "65d84369-be42-4eb3-a49e-37b46564beef",
+        "claim": "複合状態の終了後に残す周囲の条件",
+        "support": "direct",
+        "inputEvidence": [
+          {
+            "path": "/inputs/1/initialContext/1/result/currentStates/2/script/text",
+            "quote": "数歩離れたところに座れる平らな土の余地がある"
+          }
+        ],
+        "outputPath": "/output/changes/nodes/1/text",
+        "output": "ムジーナの家の前から見える道端の日だまりの数歩先に、座れる平らな土の余地がある。"
+      },
+      {
+        "index": 6,
+        "operationId": "ae770b9a-1a30-4723-8a07-38d4fbe9c7e6",
+        "callId": "65d84369-be42-4eb3-a49e-37b46564beef",
+        "claim": "複合状態の終了後に残す反応可能性",
+        "support": "direct",
+        "inputEvidence": [
+          {
+            "path": "/inputs/1/initialContext/1/result/currentStates/7/script/text",
+            "quote": "近づいて声をかけると穏やかに見上げて反応できる"
+          }
+        ],
+        "outputPath": "/output/changes/nodes/2/text",
+        "output": "近づいて声をかけられたとき、穏やかに見上げて反応できる。"
+      },
+      {
+        "index": 14,
+        "operationId": "a9aae320-2a07-4183-8461-df922db1ca5c",
+        "callId": "c2910bdf-f667-4f36-a2bc-13d3730ba0f1",
+        "claim": "状態の成立と既存期間への接続",
+        "support": "direct",
+        "inputEvidence": [
+          {
+            "path": "/inputs/1/request/completedScene/events/114/text",
+            "quote": "体中にぐるぐる巻いてミイラみたいになって戻ってきて"
+          },
+          {
+            "path": "/inputs/1/initialContext/0/result/currentStates/0/script/text",
+            "quote": "Doroはトイレットペーパーを全身に巻いたミイラ姿をしている。"
+          },
+          {
+            "path": "/inputs/1/initialContext/0/result/currentStates/0/edge/period",
+            "quote": {
+              "from": 72103000
+            }
+          }
+        ],
+        "outputPath": "/output/changes/edges/0/period",
+        "output": {
+          "from": 72062000,
+          "until": 72103000
+        }
+      },
+      {
+        "index": 14,
+        "operationId": "a9aae320-2a07-4183-8461-df922db1ca5c",
+        "callId": "c2910bdf-f667-4f36-a2bc-13d3730ba0f1",
+        "claim": "別シーンの表示と閲覧が待ちの処遇を支える",
+        "support": "direct",
+        "inputEvidence": [
+          {
+            "path": "/inputs/1/request/intentions/1/actionText",
+            "quote": "写真を見せてもらえるのを楽しみに"
+          },
+          {
+            "path": "/inputs/1/initialContext/0/result/effects/121/node/text",
+            "quote": "写真機の画面をみんなに見えるように差し出して掲げた"
+          },
+          {
+            "path": "/inputs/1/initialContext/0/result/effects/49/node/text",
+            "quote": "差し出された写真機の画面を嬉しそうにのぞき込んだ。"
+          }
+        ],
+        "outputPath": "/output/settledIntentions/0",
+        "output": {
+          "actorId": "7244be11-77e8-40c9-b7f8-0e276023d101",
+          "reason": "パイモンが写真機の画面を差し出し、ミューズは写真を見た。その後、別の行動へ移っている。"
+        }
+      },
+      {
+        "index": 3,
+        "operationId": "782103d8-32a5-41a8-8d18-799bc6330d67",
+        "callId": "53191987-6486-442b-af70-00663f28dc16",
+        "claim": "質問の到達と返答待ちの保持",
+        "support": "direct",
+        "inputEvidence": [
+          {
+            "path": "/inputs/1/request/intentions/0/actionText",
+            "quote": "僕にもお手伝いできることある？"
+          },
+          {
+            "path": "/inputs/1/request/completedScene/events/0/receipts/1/text",
+            "quote": "顔を向けて尋ねられた。"
+          },
+          {
+            "path": "/inputs/1/request/completedScene/events/22/text",
+            "quote": "返答を待った。"
+          }
+        ],
+        "outputPath": "/output/deferredIntentions",
+        "output": ["7244be11-77e8-40c9-b7f8-0e276023d101"]
+      },
+      {
+        "index": 15,
+        "operationId": "fc17aed7-b4c6-466e-9138-700236f160d0",
+        "callId": "2cd6b7e4-fe25-48e9-a4f3-e78638b5669a",
+        "claim": "豆畑と星見の予定",
+        "support": "direct",
+        "inputEvidence": [
+          {
+            "path": "/inputs/1/request/completedScene/events/63/text",
+            "quote": "朝9時、忘れないぞ！星見のお話も楽しみだな。"
+          }
+        ],
+        "outputPath": "/output/changes/nodes/0/text",
+        "output": "パイモンは明朝9時の豆畑見学と、みんなでの星見を楽しみにしている。"
+      },
+      {
+        "index": 15,
+        "operationId": "fc17aed7-b4c6-466e-9138-700236f160d0",
+        "callId": "2cd6b7e4-fe25-48e9-a4f3-e78638b5669a",
+        "claim": "オレンジを分けたいという意図",
+        "support": "direct",
+        "inputEvidence": [
+          {
+            "path": "/inputs/1/request/completedScene/events/93/text",
+            "quote": "お茶会で一緒に食べよう！"
+          },
+          {
+            "path": "/inputs/1/request/completedScene/events/101/text",
+            "quote": "パイモンにも分けるよ！"
+          }
+        ],
+        "outputPath": "/output/changes/nodes/1/text",
+        "output": "Doroはお茶会でメイリーやパイモンと甘いオレンジを分け合いたいと思っている。"
+      },
+      {
+        "index": 15,
+        "operationId": "fc17aed7-b4c6-466e-9138-700236f160d0",
+        "callId": "2cd6b7e4-fe25-48e9-a4f3-e78638b5669a",
+        "claim": "支度のための帰路",
+        "support": "direct",
+        "inputEvidence": [
+          {
+            "path": "/inputs/1/request/completedScene/events/95/text",
+            "quote": "お茶会の支度をするため家へと向かって歩き出した。"
+          }
+        ],
+        "outputPath": "/output/changes/nodes/2/text",
+        "output": "ミチコはお茶会のごちそうを支度するため、自宅へ向かっている。"
+      },
+      {
+        "index": 15,
+        "operationId": "fc17aed7-b4c6-466e-9138-700236f160d0",
+        "callId": "2cd6b7e4-fe25-48e9-a4f3-e78638b5669a",
+        "claim": "既存の写真の照会と新規記録の非追加",
+        "support": "inferred-not-proven",
+        "inputEvidence": [
+          {
+            "path": "/inputs/3/requests/0/id",
+            "quote": "c4801485-50c7-4ff7-85c8-fbc484cb9851"
+          },
+          {
+            "path": "/inputs/3/results/0/currentStates/0/script/text",
+            "quote": "笑顔でポーズを取るねぎとろの写真が写真機に記録されている。"
+          },
+          {
+            "path": "/inputs/3/results/0/currentStates/7/script/text",
+            "quote": "集合写真が写真機に記録されている。"
+          }
+        ],
+        "outputPath": "/output/changes/nodes",
+        "output": [
+          {
+            "id": "b5d57d33-aa8c-4060-a3e8-01318bcbe7fa",
+            "kind": "script",
+            "text": "パイモンは明朝9時の豆畑見学と、みんなでの星見を楽しみにしている。"
+          },
+          {
+            "id": "165fc058-bd6d-4dc9-a0b5-c4f63d6c9456",
+            "kind": "script",
+            "text": "Doroはお茶会でメイリーやパイモンと甘いオレンジを分け合いたいと思っている。"
+          },
+          {
+            "id": "fe2a973c-aa53-4743-aa20-fe2e7fa48a07",
+            "kind": "script",
+            "text": "ミチコはお茶会のごちそうを支度するため、自宅へ向かっている。"
+          }
+        ]
+      }
+    ],
+    "validation": "All paths resolve and all quotes are exact substrings. Semantic support is manual; model-internal causal attribution is not measured."
+  },
+  "projection": {
+    "scope": "offline-prompt-projection-no-model-no-db",
+    "units": "Unicode characters in actual rendered message text; not provider tokens",
+    "cases": [
+      {
+        "index": 0,
+        "operationId": "e05bd57f-1833-4f6c-92c4-0c8ff74e85b5",
+        "callId": "bca3780d-2bdc-4b4c-ad88-6a53b8f50ef3",
+        "baselineChars": 151900,
+        "baselineTokens": 64914,
+        "anchors": {
+          "chars": 151900,
+          "removedNodes": 0,
+          "removedEdges": 0
+        },
+        "shared": {
+          "chars": 151996,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 148971,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 2
+        }
+      },
+      {
+        "index": 1,
+        "operationId": "519394ed-2b46-4de9-9eeb-dffca1a26d65",
+        "callId": "d1606158-003d-4163-ac36-09f43125bb68",
+        "baselineChars": 22228,
+        "baselineTokens": 9285,
+        "anchors": {
+          "chars": 22228,
+          "removedNodes": 0,
+          "removedEdges": 0
+        },
+        "shared": {
+          "chars": 22272,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 22272,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 0
+        }
+      },
+      {
+        "index": 2,
+        "operationId": "e0ca3348-b879-44b5-a8f3-631865c696bd",
+        "callId": "993b881c-7516-467e-a7af-92b0a5b2572b",
+        "baselineChars": 415521,
+        "baselineTokens": 188165,
+        "anchors": {
+          "chars": 297463,
+          "removedNodes": 50,
+          "removedEdges": 504
+        },
+        "shared": {
+          "chars": 288834,
+          "removedNodes": 50,
+          "removedEdges": 504,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 231515,
+          "removedNodes": 50,
+          "removedEdges": 504,
+          "deferredEffects": 319
+        }
+      },
+      {
+        "index": 3,
+        "operationId": "782103d8-32a5-41a8-8d18-799bc6330d67",
+        "callId": "53191987-6486-442b-af70-00663f28dc16",
+        "baselineChars": 96360,
+        "baselineTokens": 42175,
+        "anchors": {
+          "chars": 78357,
+          "removedNodes": 23,
+          "removedEdges": 71
+        },
+        "shared": {
+          "chars": 78427,
+          "removedNodes": 23,
+          "removedEdges": 71,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 78240,
+          "removedNodes": 23,
+          "removedEdges": 71,
+          "deferredEffects": 1
+        }
+      },
+      {
+        "index": 4,
+        "operationId": "59b63e75-83f4-4db5-b997-5cd579733250",
+        "callId": "0a42fc20-aead-432c-a9f1-b51eb876d43d",
+        "baselineChars": 22793,
+        "baselineTokens": 9598,
+        "anchors": {
+          "chars": 22793,
+          "removedNodes": 0,
+          "removedEdges": 0
+        },
+        "shared": {
+          "chars": 22837,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 22837,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 0
+        }
+      },
+      {
+        "index": 5,
+        "operationId": "0885e42c-817c-4506-b5a5-82d9603953a9",
+        "callId": "9c9cb49d-ef32-490b-a506-ee19f6d50944",
+        "baselineChars": 24018,
+        "baselineTokens": 10116,
+        "anchors": {
+          "chars": 24018,
+          "removedNodes": 0,
+          "removedEdges": 0
+        },
+        "shared": {
+          "chars": 24062,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 24062,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 0
+        }
+      },
+      {
+        "index": 6,
+        "operationId": "ae770b9a-1a30-4723-8a07-38d4fbe9c7e6",
+        "callId": "65d84369-be42-4eb3-a49e-37b46564beef",
+        "baselineChars": 91566,
+        "baselineTokens": 40874,
+        "anchors": {
+          "chars": 76499,
+          "removedNodes": 12,
+          "removedEdges": 62
+        },
+        "shared": {
+          "chars": 77278,
+          "removedNodes": 12,
+          "removedEdges": 62,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 70572,
+          "removedNodes": 12,
+          "removedEdges": 62,
+          "deferredEffects": 29
+        }
+      },
+      {
+        "index": 7,
+        "operationId": "b4eb0e94-e10c-4a62-a4e9-ecb59dcc746d",
+        "callId": "01747b48-7e12-4a7c-a554-5e14f0e0226d",
+        "baselineChars": 17927,
+        "baselineTokens": 7381,
+        "anchors": {
+          "chars": 17927,
+          "removedNodes": 0,
+          "removedEdges": 0
+        },
+        "shared": {
+          "chars": 17971,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 17971,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 0
+        }
+      },
+      {
+        "index": 8,
+        "operationId": "473a34dc-7a85-4a16-9665-12314b75ee70",
+        "callId": "c3edf020-ae55-449b-a4ed-b76b2dbf77a8",
+        "baselineChars": 53747,
+        "baselineTokens": 22636,
+        "anchors": {
+          "chars": 53747,
+          "removedNodes": 0,
+          "removedEdges": 0
+        },
+        "shared": {
+          "chars": 53817,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 53253,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 1
+        }
+      },
+      {
+        "index": 9,
+        "operationId": "38cec8f0-6f79-485c-b26d-5246a50d6525",
+        "callId": "c405e9d9-25d3-45ea-a7c4-838b238f1a32",
+        "baselineChars": 861316,
+        "baselineTokens": 397660,
+        "anchors": {
+          "chars": 529840,
+          "removedNodes": 118,
+          "removedEdges": 1360
+        },
+        "shared": {
+          "chars": 513445,
+          "removedNodes": 118,
+          "removedEdges": 1360,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 439201,
+          "removedNodes": 118,
+          "removedEdges": 1360,
+          "deferredEffects": 423
+        }
+      },
+      {
+        "index": 10,
+        "operationId": "49781bb2-d945-432d-81f7-c63254da4b01",
+        "callId": "a94a6aaf-cf06-4c87-a23f-077aea210739",
+        "baselineChars": 446179,
+        "baselineTokens": 206845,
+        "anchors": {
+          "chars": 323538,
+          "removedNodes": 40,
+          "removedEdges": 498
+        },
+        "shared": {
+          "chars": 311593,
+          "removedNodes": 40,
+          "removedEdges": 498,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 267230,
+          "removedNodes": 40,
+          "removedEdges": 498,
+          "deferredEffects": 270
+        }
+      },
+      {
+        "index": 11,
+        "operationId": "92de68b8-a308-4491-b9c2-19678cc8f4ec",
+        "callId": "928dcf20-3841-4505-a7eb-fe1772fc2e22",
+        "baselineChars": 214285,
+        "baselineTokens": 94344,
+        "anchors": {
+          "chars": 153765,
+          "removedNodes": 24,
+          "removedEdges": 258
+        },
+        "shared": {
+          "chars": 150596,
+          "removedNodes": 24,
+          "removedEdges": 258,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 135631,
+          "removedNodes": 24,
+          "removedEdges": 258,
+          "deferredEffects": 93
+        }
+      },
+      {
+        "index": 12,
+        "operationId": "175cfad6-a68d-47da-aa70-e6248edc3359",
+        "callId": "d9eae44e-0100-491e-a93e-c8a3053d4625",
+        "baselineChars": 187193,
+        "baselineTokens": 83208,
+        "anchors": {
+          "chars": 146867,
+          "removedNodes": 19,
+          "removedEdges": 169
+        },
+        "shared": {
+          "chars": 142769,
+          "removedNodes": 19,
+          "removedEdges": 169,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 119652,
+          "removedNodes": 19,
+          "removedEdges": 169,
+          "deferredEffects": 138
+        }
+      },
+      {
+        "index": 13,
+        "operationId": "9e42652a-2ff5-4963-8b49-9b05006505f7",
+        "callId": "729c6dfe-cf80-4e49-a38f-c467153b5e3f",
+        "baselineChars": 679721,
+        "baselineTokens": 307936,
+        "anchors": {
+          "chars": 487288,
+          "removedNodes": 79,
+          "removedEdges": 775
+        },
+        "shared": {
+          "chars": 460416,
+          "removedNodes": 79,
+          "removedEdges": 775,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 353509,
+          "removedNodes": 79,
+          "removedEdges": 775,
+          "deferredEffects": 626
+        }
+      },
+      {
+        "index": 14,
+        "operationId": "a9aae320-2a07-4183-8461-df922db1ca5c",
+        "callId": "c2910bdf-f667-4f36-a2bc-13d3730ba0f1",
+        "baselineChars": 1195942,
+        "baselineTokens": 580983,
+        "anchors": {
+          "chars": 733852,
+          "removedNodes": 152,
+          "removedEdges": 1810
+        },
+        "shared": {
+          "chars": 703991,
+          "removedNodes": 152,
+          "removedEdges": 1810,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 586201,
+          "removedNodes": 152,
+          "removedEdges": 1810,
+          "deferredEffects": 695
+        }
+      },
+      {
+        "index": 15,
+        "operationId": "fc17aed7-b4c6-466e-9138-700236f160d0",
+        "callId": "54be8caa-0d4d-4862-a1a7-c36b58657056",
+        "baselineChars": 690926,
+        "baselineTokens": 342548,
+        "anchors": {
+          "chars": 376132,
+          "removedNodes": 113,
+          "removedEdges": 1275
+        },
+        "shared": {
+          "chars": 376331,
+          "removedNodes": 113,
+          "removedEdges": 1275,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 375808,
+          "removedNodes": 113,
+          "removedEdges": 1275,
+          "deferredEffects": 2
+        }
+      },
+      {
+        "index": 16,
+        "operationId": "b3fc23a4-229d-439d-9b01-bd9ce31af50d",
+        "callId": "076ed67d-203d-4c23-a7c1-ae9a3416dd6c",
+        "baselineChars": 407462,
+        "baselineTokens": 168778,
+        "anchors": {
+          "chars": 396754,
+          "removedNodes": 4,
+          "removedEdges": 46
+        },
+        "shared": {
+          "chars": 368484,
+          "removedNodes": 4,
+          "removedEdges": 46,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 177735,
+          "removedNodes": 4,
+          "removedEdges": 46,
+          "deferredEffects": 1052
+        }
+      },
+      {
+        "index": 17,
+        "operationId": "aa3eca2b-c866-4e2c-8b50-474085f8377d",
+        "callId": "21fe00c1-fca7-4233-ad78-f843cd0e4a53",
+        "baselineChars": 34502,
+        "baselineTokens": 14252,
+        "anchors": {
+          "chars": 34502,
+          "removedNodes": 0,
+          "removedEdges": 0
+        },
+        "shared": {
+          "chars": 34546,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 34546,
+          "removedNodes": 0,
+          "removedEdges": 0,
+          "deferredEffects": 0
+        }
+      },
+      {
+        "index": 18,
+        "operationId": "d3afdf48-7b7e-402b-8811-5e909127c578",
+        "callId": "2c81733a-98e2-4ed3-a522-a30c47e58f4d",
+        "baselineChars": 61809,
+        "baselineTokens": 26469,
+        "anchors": {
+          "chars": 58824,
+          "removedNodes": 4,
+          "removedEdges": 12
+        },
+        "shared": {
+          "chars": 58920,
+          "removedNodes": 4,
+          "removedEdges": 12,
+          "deferredEffects": 0
+        },
+        "active": {
+          "chars": 58241,
+          "removedNodes": 4,
+          "removedEdges": 12,
+          "deferredEffects": 2
+        }
+      }
+    ],
+    "totals": {
+      "baselineChars": 5675395,
+      "anchors": 3986294,
+      "shared": 3858585,
+      "active": 3217447
+    },
+    "validation": {
+      "savedWireMatched": 19,
+      "anchorReconstructionPassed": 19,
+      "sharedEffectsRoundtripPassed": 19,
+      "scopeNarrowingValidated": false
+    }
+  },
+  "validation": {
+    "evidencePathsAndQuotes": "passed",
+    "directClaimsRetainedByActiveProjection": 9,
+    "savedRequestsReproduced": 19,
+    "eventAnchorReconstruction": 19,
+    "losslessEffectTableRoundtrip": 19,
+    "productionAccessThisInvestigation": false,
+    "newModelCalls": 0,
+    "counterfactualGeneration": "not-performed",
+    "actualTokenCostReduction": "not-measured",
+    "narrativeQuality": "not-evaluated"
+  }
+}

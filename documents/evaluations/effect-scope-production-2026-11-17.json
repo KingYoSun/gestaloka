@@ -1,0 +1,2556 @@
+{
+  "scope": "Read-only production observation; no model generation or production mutations",
+  "periods": {
+    "before213": ["2026-11-17T01:00:00Z", "2026-11-17T04:14:34.675853Z"],
+    "pre215": ["2026-11-17T04:14:34.675853Z", "2026-11-17T04:51:33.678410Z"],
+    "only215": ["2026-11-17T04:51:33.678410Z", "2026-11-17T05:14:17.877013Z"],
+    "after216": ["2026-11-17T05:14:17.877013Z", "2026-11-17T08:25:24.006344Z"]
+  },
+  "source": {
+    "sha256": "b341d8e72452488fbf1cb01cb099a9061142db07a59f9378257f79023c97ce17",
+    "bytes": 182407690,
+    "snapshotAt": "2026-11-17T08:27:39.492274+00:00",
+    "readOnly": "on",
+    "operations": 49,
+    "calls": 117,
+    "scenes": 305,
+    "initial": 18,
+    "worlds": 2
+  },
+  "metrics": {
+    "cohorts": {
+      "matchedBefore": {
+        "operations": 3,
+        "scenes": 3,
+        "initialInput": 816113,
+        "initialInputMean": 272037.6666666667,
+        "events": 10,
+        "deferredSubjects": 0,
+        "queryBatches": 1,
+        "queryRequests": 1,
+        "effectQueryRequests": 0,
+        "upper": {
+          "calls": 5,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 1350186,
+          "output": 3017,
+          "cached": 542640,
+          "cacheWrite30m": 799060,
+          "cacheWrite12h": 0,
+          "nano": 1393360200,
+          "commonColdNano": 1365271000
+        },
+        "result": {
+          "calls": 3,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 18045,
+          "output": 3770,
+          "cached": 0,
+          "cacheWrite30m": 0,
+          "cacheWrite12h": 0,
+          "nano": 3689500,
+          "commonColdNano": 3689500
+        },
+        "ending": {
+          "calls": 8,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 1368231,
+          "output": 6787,
+          "cached": 542640,
+          "cacheWrite30m": 799060,
+          "cacheWrite12h": 0,
+          "nano": 1397049700,
+          "commonColdNano": 1368960500
+        },
+        "other": {
+          "calls": 43,
+          "pending": 1,
+          "reservedPendingNano": 137625600,
+          "input": 5574333,
+          "output": 210826,
+          "cached": 1529023,
+          "cacheWrite30m": 1119994,
+          "cacheWrite12h": 0,
+          "nano": 2269434490,
+          "commonColdNano": 2266157600
+        },
+        "wholeScene": {
+          "calls": 46,
+          "pending": 1,
+          "reservedPendingNano": 137625600,
+          "input": 5592378,
+          "output": 214596,
+          "cached": 1529023,
+          "cacheWrite30m": 1119994,
+          "cacheWrite12h": 0,
+          "nano": 2273123990,
+          "commonColdNano": 2269847100
+        },
+        "roles": {
+          "scene-background": {
+            "calls": 15,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 1383860,
+            "output": 16937,
+            "cached": 430020,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 105572580,
+            "commonColdNano": 146854500
+          },
+          "scene-resolve": {
+            "calls": 23,
+            "pending": 1,
+            "reservedPendingNano": 137625600,
+            "input": 2840287,
+            "output": 190872,
+            "cached": 556363,
+            "cacheWrite30m": 320934,
+            "cacheWrite12h": 0,
+            "nano": 770501710,
+            "commonColdNano": 754032100
+          },
+          "world-update": {
+            "calls": 5,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 1350186,
+            "output": 3017,
+            "cached": 542640,
+            "cacheWrite30m": 799060,
+            "cacheWrite12h": 0,
+            "nano": 1393360200,
+            "commonColdNano": 1365271000
+          },
+          "scene-result": {
+            "calls": 3,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 18045,
+            "output": 3770,
+            "cached": 0,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 3689500,
+            "commonColdNano": 3689500
+          }
+        },
+        "dispositions": {
+          "settled": 3
+        }
+      },
+      "matchedAfter": {
+        "operations": 3,
+        "scenes": 3,
+        "initialInput": 815266,
+        "initialInputMean": 271755.3333333333,
+        "events": 13,
+        "deferredSubjects": 7,
+        "queryBatches": 1,
+        "queryRequests": 1,
+        "effectQueryRequests": 0,
+        "upper": {
+          "calls": 4,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 1086549,
+          "output": 3140,
+          "cached": 277115,
+          "cacheWrite30m": 800725,
+          "cacheWrite12h": 0,
+          "nano": 1375530650,
+          "commonColdNano": 1102249000
+        },
+        "result": {
+          "calls": 3,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 25444,
+          "output": 2731,
+          "cached": 0,
+          "cacheWrite30m": 0,
+          "cacheWrite12h": 0,
+          "nano": 3909900,
+          "commonColdNano": 3909900
+        },
+        "ending": {
+          "calls": 7,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 1111993,
+          "output": 5871,
+          "cached": 277115,
+          "cacheWrite30m": 800725,
+          "cacheWrite12h": 0,
+          "nano": 1379440550,
+          "commonColdNano": 1106158900
+        },
+        "other": {
+          "calls": 34,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 4329552,
+          "output": 179677,
+          "cached": 1142349,
+          "cacheWrite30m": 1015766,
+          "cacheWrite12h": 0,
+          "nano": 2068556608,
+          "commonColdNano": 1831479200
+        },
+        "wholeScene": {
+          "calls": 37,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 4354996,
+          "output": 182408,
+          "cached": 1142349,
+          "cacheWrite30m": 1015766,
+          "cacheWrite12h": 0,
+          "nano": 2072466508,
+          "commonColdNano": 1835389100
+        },
+        "roles": {
+          "scene-background": {
+            "calls": 15,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 1226551,
+            "output": 19487,
+            "cached": 321976,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 101488904,
+            "commonColdNano": 132398600
+          },
+          "scene-resolve": {
+            "calls": 15,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 2016452,
+            "output": 157050,
+            "cached": 543258,
+            "cacheWrite30m": 215041,
+            "cacheWrite12h": 0,
+            "nano": 591537054,
+            "commonColdNano": 596831600
+          },
+          "world-update": {
+            "calls": 4,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 1086549,
+            "output": 3140,
+            "cached": 277115,
+            "cacheWrite30m": 800725,
+            "cacheWrite12h": 0,
+            "nano": 1375530650,
+            "commonColdNano": 1102249000
+          },
+          "scene-result": {
+            "calls": 3,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 25444,
+            "output": 2731,
+            "cached": 0,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 3909900,
+            "commonColdNano": 3909900
+          }
+        },
+        "dispositions": {
+          "deferred": 2,
+          "settled": 1
+        }
+      },
+      "pre215": {
+        "operations": 8,
+        "scenes": 8,
+        "initialInput": 1422393,
+        "initialInputMean": 177799.125,
+        "events": 110,
+        "deferredSubjects": 0,
+        "queryBatches": 1,
+        "queryRequests": 1,
+        "effectQueryRequests": 0,
+        "upper": {
+          "calls": 10,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 1956466,
+          "output": 6199,
+          "cached": 563110,
+          "cacheWrite30m": 1351040,
+          "cacheWrite12h": 0,
+          "nano": 2725439150,
+          "commonColdNano": 1987461000
+        },
+        "result": {
+          "calls": 11,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 145205,
+          "output": 9783,
+          "cached": 4456,
+          "cacheWrite30m": 1279,
+          "cacheWrite12h": 0,
+          "nano": 22749174,
+          "commonColdNano": 22857200
+        },
+        "ending": {
+          "calls": 21,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 2101671,
+          "output": 15982,
+          "cached": 567566,
+          "cacheWrite30m": 1352319,
+          "cacheWrite12h": 0,
+          "nano": 2748188324,
+          "commonColdNano": 2010318200
+        },
+        "other": {
+          "calls": 265,
+          "pending": 3,
+          "reservedPendingNano": 412876800,
+          "input": 20996037,
+          "output": 668518,
+          "cached": 4543563,
+          "cacheWrite30m": 2064327,
+          "cacheWrite12h": 0,
+          "nano": 6420638562,
+          "commonColdNano": 6208014500
+        },
+        "wholeScene": {
+          "calls": 276,
+          "pending": 3,
+          "reservedPendingNano": 412876800,
+          "input": 21141242,
+          "output": 678301,
+          "cached": 4548019,
+          "cacheWrite30m": 2065606,
+          "cacheWrite12h": 0,
+          "nano": 6443387736,
+          "commonColdNano": 6230871700
+        },
+        "roles": {
+          "scene-background": {
+            "calls": 51,
+            "pending": 1,
+            "reservedPendingNano": 137625600,
+            "input": 2455561,
+            "output": 59092,
+            "cached": 749444,
+            "cacheWrite30m": 19803,
+            "cacheWrite12h": 0,
+            "nano": 262555326,
+            "commonColdNano": 329551200
+          },
+          "scene-resolve": {
+            "calls": 189,
+            "pending": 2,
+            "reservedPendingNano": 275251200,
+            "input": 16417704,
+            "output": 601390,
+            "cached": 3190149,
+            "cacheWrite30m": 598766,
+            "cacheWrite12h": 0,
+            "nano": 3272290586,
+            "commonColdNano": 3715511300
+          },
+          "scene-intent": {
+            "calls": 15,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 166306,
+            "output": 1837,
+            "cached": 40860,
+            "cacheWrite30m": 94718,
+            "cacheWrite12h": 0,
+            "nano": 160353500,
+            "commonColdNano": 175491000
+          },
+          "world-update": {
+            "calls": 10,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 1956466,
+            "output": 6199,
+            "cached": 563110,
+            "cacheWrite30m": 1351040,
+            "cacheWrite12h": 0,
+            "nano": 2725439150,
+            "commonColdNano": 1987461000
+          },
+          "scene-result": {
+            "calls": 11,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 145205,
+            "output": 9783,
+            "cached": 4456,
+            "cacheWrite30m": 1279,
+            "cacheWrite12h": 0,
+            "nano": 22749174,
+            "commonColdNano": 22857200
+          }
+        },
+        "dispositions": {
+          "settled": 5,
+          "deferred": 2,
+          "resolve": 1
+        }
+      },
+      "after216": {
+        "operations": 22,
+        "scenes": 22,
+        "initialInput": 3370440,
+        "initialInputMean": 153201.81818181818,
+        "events": 820,
+        "deferredSubjects": 46,
+        "queryBatches": 0,
+        "queryRequests": 0,
+        "effectQueryRequests": 0,
+        "upper": {
+          "calls": 22,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 3370440,
+          "output": 12754,
+          "cached": 91256,
+          "cacheWrite30m": 3000020,
+          "cacheWrite12h": 0,
+          "nano": 6947545050,
+          "commonColdNano": 3434210000
+        },
+        "result": {
+          "calls": 24,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 872698,
+          "output": 30393,
+          "cached": 1012,
+          "cacheWrite30m": 0,
+          "cacheWrite12h": 0,
+          "nano": 102369148,
+          "commonColdNano": 102466300
+        },
+        "ending": {
+          "calls": 46,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 4243138,
+          "output": 43147,
+          "cached": 92268,
+          "cacheWrite30m": 3000020,
+          "cacheWrite12h": 0,
+          "nano": 7049914198,
+          "commonColdNano": 3536676300
+        },
+        "other": {
+          "calls": 2042,
+          "pending": 5,
+          "reservedPendingNano": 688128000,
+          "input": 265682640,
+          "output": 7610323,
+          "cached": 62073328,
+          "cacheWrite30m": 4327045,
+          "cacheWrite12h": 0,
+          "nano": 39754838088,
+          "commonColdNano": 43477382300
+        },
+        "wholeScene": {
+          "calls": 2066,
+          "pending": 5,
+          "reservedPendingNano": 688128000,
+          "input": 266555338,
+          "output": 7640716,
+          "cached": 62074340,
+          "cacheWrite30m": 4327045,
+          "cacheWrite12h": 0,
+          "nano": 39857207236,
+          "commonColdNano": 43579848600
+        },
+        "roles": {
+          "scene-background": {
+            "calls": 131,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 14817197,
+            "output": 215772,
+            "cached": 6830120,
+            "cacheWrite30m": 23815,
+            "cacheWrite12h": 0,
+            "nano": 999285030,
+            "commonColdNano": 1649022800
+          },
+          "scene-resolve": {
+            "calls": 1757,
+            "pending": 5,
+            "reservedPendingNano": 688128000,
+            "input": 246623352,
+            "output": 7361808,
+            "cached": 54969853,
+            "cacheWrite30m": 806763,
+            "cacheWrite12h": 0,
+            "nano": 30885294308,
+            "commonColdNano": 37422553500
+          },
+          "scene-intent": {
+            "calls": 132,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 871651,
+            "output": 19989,
+            "cached": 182099,
+            "cacheWrite30m": 496447,
+            "cacheWrite12h": 0,
+            "nano": 922713700,
+            "commonColdNano": 971596000
+          },
+          "world-update": {
+            "calls": 22,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 3370440,
+            "output": 12754,
+            "cached": 91256,
+            "cacheWrite30m": 3000020,
+            "cacheWrite12h": 0,
+            "nano": 6947545050,
+            "commonColdNano": 3434210000
+          },
+          "scene-result": {
+            "calls": 24,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 872698,
+            "output": 30393,
+            "cached": 1012,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 102369148,
+            "commonColdNano": 102466300
+          }
+        },
+        "dispositions": {
+          "deferred": 15,
+          "intent": 3,
+          "settled": 15,
+          "resolve": 3
+        }
+      },
+      "before213": {
+        "operations": 15,
+        "scenes": 15,
+        "initialInput": 3887755,
+        "initialInputMean": 259183.66666666666,
+        "events": 943,
+        "deferredSubjects": 0,
+        "queryBatches": 2,
+        "queryRequests": 8,
+        "effectQueryRequests": 0,
+        "upper": {
+          "calls": 20,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 5491996,
+          "output": 18089,
+          "cached": 1322724,
+          "cacheWrite30m": 3404729,
+          "cacheWrite12h": 0,
+          "nano": 7645114900,
+          "commonColdNano": 5582441000
+        },
+        "result": {
+          "calls": 17,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 1472180,
+          "output": 20279,
+          "cached": 0,
+          "cacheWrite30m": 0,
+          "cacheWrite12h": 0,
+          "nano": 157357500,
+          "commonColdNano": 157357500
+        },
+        "ending": {
+          "calls": 37,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 6964176,
+          "output": 38368,
+          "cached": 1322724,
+          "cacheWrite30m": 3404729,
+          "cacheWrite12h": 0,
+          "nano": 7802472400,
+          "commonColdNano": 5739798500
+        },
+        "other": {
+          "calls": 1736,
+          "pending": 4,
+          "reservedPendingNano": 809169300,
+          "input": 123328707,
+          "output": 9126011,
+          "cached": 26436502,
+          "cacheWrite30m": 7614726,
+          "cacheWrite12h": 0,
+          "nano": 35481563866,
+          "commonColdNano": 36680481500
+        },
+        "wholeScene": {
+          "calls": 1753,
+          "pending": 4,
+          "reservedPendingNano": 809169300,
+          "input": 124800887,
+          "output": 9146290,
+          "cached": 26436502,
+          "cacheWrite30m": 7614726,
+          "cacheWrite12h": 0,
+          "nano": 35638921366,
+          "commonColdNano": 36837839000
+        },
+        "roles": {
+          "prompt-cache": {
+            "calls": 10,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 16241052,
+            "commonColdNano": 0
+          },
+          "scene-background": {
+            "calls": 83,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 5489211,
+            "output": 213481,
+            "cached": 1686339,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 535950693,
+            "commonColdNano": 754666350
+          },
+          "scene-resolve": {
+            "calls": 1502,
+            "pending": 3,
+            "reservedPendingNano": 412876800,
+            "input": 110101167,
+            "output": 8880268,
+            "cached": 23207134,
+            "cacheWrite30m": 2368254,
+            "cacheWrite12h": 0,
+            "nano": 24715913221,
+            "commonColdNano": 28026176150
+          },
+          "scene-intent": {
+            "calls": 121,
+            "pending": 1,
+            "reservedPendingNano": 396292500,
+            "input": 2246333,
+            "output": 14173,
+            "cached": 220305,
+            "cacheWrite30m": 1841743,
+            "cacheWrite12h": 0,
+            "nano": 2568344000,
+            "commonColdNano": 2317198000
+          },
+          "world-update": {
+            "calls": 20,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 5491996,
+            "output": 18089,
+            "cached": 1322724,
+            "cacheWrite30m": 3404729,
+            "cacheWrite12h": 0,
+            "nano": 7645114900,
+            "commonColdNano": 5582441000
+          },
+          "scene-result": {
+            "calls": 17,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 1472180,
+            "output": 20279,
+            "cached": 0,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 157357500,
+            "commonColdNano": 157357500
+          }
+        },
+        "dispositions": {
+          "settled": 14,
+          "deferred": 5,
+          "intent": 2
+        }
+      }
+    },
+    "components": [
+      {
+        "scene": "021f4598-5437-4912-90db-8652fe43694f",
+        "operation": "cc39d16d-9778-4c5a-a1de-7e31099a5acf",
+        "initialContextEntries": 1043,
+        "initialContextChars": 1265072,
+        "currentStatesChars": 836085,
+        "rootStateRecords": 939,
+        "rootEffectsChars": 190093,
+        "rootEffectRecords": 1,
+        "rootIncomingEdges": 0,
+        "deferred": [],
+        "rates": {
+          "api": "responses",
+          "output": 7500,
+          "baseUrl": "https://api.openai.com/v1",
+          "context": 1050000,
+          "inputHit": 100,
+          "provider": "openai",
+          "inputMiss": 2000,
+          "cacheWrite12h": 5000,
+          "cacheWrite30m": 2500
+        }
+      },
+      {
+        "scene": "5a1f2aad-1210-464c-8c8a-42c053285120",
+        "operation": "1e805bf6-f3cd-4817-ab75-27c26c36b3b1",
+        "initialContextEntries": 997,
+        "initialContextChars": 1220460,
+        "currentStatesChars": 825864,
+        "rootStateRecords": 941,
+        "rootEffectsChars": 190499,
+        "rootEffectRecords": 1,
+        "rootIncomingEdges": 0,
+        "deferred": [],
+        "rates": {
+          "api": "responses",
+          "output": 5000,
+          "baseUrl": "https://api.openai.com/v1",
+          "context": 1050000,
+          "inputHit": 50,
+          "provider": "openai",
+          "inputMiss": 1000,
+          "cacheWrite12h": 2500,
+          "cacheWrite30m": 1250
+        }
+      },
+      {
+        "scene": "bb34aadc-ff61-4f42-94dc-d3046868b93b",
+        "operation": "53b4b2c4-fc03-43dd-92e9-d82839d388a2",
+        "initialContextEntries": 1006,
+        "initialContextChars": 1229888,
+        "currentStatesChars": 830544,
+        "rootStateRecords": 942,
+        "rootEffectsChars": 190941,
+        "rootEffectRecords": 1,
+        "rootIncomingEdges": 0,
+        "deferred": [],
+        "rates": {
+          "api": "responses",
+          "output": 5000,
+          "baseUrl": "https://api.openai.com/v1",
+          "context": 1050000,
+          "inputHit": 50,
+          "provider": "openai",
+          "inputMiss": 1000,
+          "cacheWrite12h": 2500,
+          "cacheWrite30m": 1250
+        }
+      },
+      {
+        "scene": "b89458ea-0b94-47d2-9609-8450519bb544",
+        "operation": "77701af6-04fc-4e56-9442-8e7345d5a309",
+        "initialContextEntries": 1010,
+        "initialContextChars": 1227807,
+        "currentStatesChars": 828007,
+        "rootStateRecords": 942,
+        "rootEffectsChars": 190702,
+        "rootEffectRecords": 1,
+        "rootIncomingEdges": 0,
+        "deferred": [
+          {
+            "id": "e7c00000-0000-4000-8000-000000000002",
+            "name": "キッスの家"
+          },
+          {
+            "id": "8915a94f-e6ab-421f-a419-fac50ac5712e",
+            "name": "キッスの家の中には生活用のテーブルや椅子、食器棚やお茶の道具が備えられており、掃除や模様替えを行える広さがある。"
+          },
+          {
+            "id": "6cba0e9c-83bc-4870-a7ce-63d041ecabc7",
+            "name": "キッスの家の床は掃き清められ、窓辺の明るい場所に小さなテーブルと椅子を並べた、カフェ風の一角が整っている"
+          }
+        ],
+        "rates": {
+          "api": "responses",
+          "output": 5000,
+          "baseUrl": "https://api.openai.com/v1",
+          "context": 1050000,
+          "inputHit": 50,
+          "provider": "openai",
+          "inputMiss": 1000,
+          "cacheWrite12h": 2500,
+          "cacheWrite30m": 1250
+        }
+      },
+      {
+        "scene": "de287e23-6ece-4211-8457-bfde8511701a",
+        "operation": "8b9364cc-b3bd-4b2e-809e-3ff6569ff3cb",
+        "initialContextEntries": 1017,
+        "initialContextChars": 1234732,
+        "currentStatesChars": 831865,
+        "rootStateRecords": 942,
+        "rootEffectsChars": 191180,
+        "rootEffectRecords": 1,
+        "rootIncomingEdges": 0,
+        "deferred": [
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "name": "ぶー川"
+          },
+          {
+            "id": "aa9da8b2-6e18-4a33-a8db-6fb79bd13d18",
+            "name": "投網に作り替えた漁の網（枝の枠を外し、大きく編み広げて円形に整え、周囲の縁全体に小石の重りを等間隔に結び付け、中心に引き綱を通したもの）"
+          }
+        ],
+        "rates": {
+          "api": "responses",
+          "output": 7500,
+          "baseUrl": "https://api.openai.com/v1",
+          "context": 1050000,
+          "inputHit": 100,
+          "provider": "openai",
+          "inputMiss": 2000,
+          "cacheWrite12h": 5000,
+          "cacheWrite30m": 2500
+        }
+      },
+      {
+        "scene": "7e40359f-35ee-46c7-abfb-94e60d97be9d",
+        "operation": "2b5d3db0-8b96-4b5f-ac9e-6eaedf041335",
+        "initialContextEntries": 1015,
+        "initialContextChars": 1232651,
+        "currentStatesChars": 828676,
+        "rootStateRecords": 942,
+        "rootEffectsChars": 191180,
+        "rootEffectRecords": 1,
+        "rootIncomingEdges": 0,
+        "deferred": [
+          {
+            "id": "e7c00000-0000-4000-8000-000000000002",
+            "name": "キッスの家"
+          },
+          {
+            "id": "88bdfc3b-c54e-4c2f-af67-8813a1771ceb",
+            "name": "きな粉（煎り豆をすり潰した、少し粒の残る粉）"
+          }
+        ],
+        "rates": {
+          "api": "responses",
+          "output": 5000,
+          "baseUrl": "https://api.openai.com/v1",
+          "context": 1050000,
+          "inputHit": 50,
+          "provider": "openai",
+          "inputMiss": 1000,
+          "cacheWrite12h": 2500,
+          "cacheWrite30m": 1250
+        }
+      }
+    ],
+    "selected": [
+      {
+        "operationId": "cc39d16d-9778-4c5a-a1de-7e31099a5acf",
+        "sceneId": "021f4598-5437-4912-90db-8652fe43694f",
+        "actorId": "e7c00000-0000-4000-8000-000000000001",
+        "constructionId": "23b077cd-2157-4b87-9703-1ae41f8eb9e9",
+        "userId": "91ced0db-9261-4709-b1d0-01808f78d4c6",
+        "period": "pre215",
+        "resultCall": "b726e2f0-430e-4a83-a46b-e3f204250d0d",
+        "sourceResultPresentation": ["c0c06bb2-f644-47c0-a22e-bea9b776ace1"],
+        "requestedInputs": [
+          {
+            "id": "404f3858-aabb-477f-bd1a-125634ceaf95",
+            "text": "キッスはジョニーの家の前へ行き、Doroに明るく挨拶する。「この前はお茶会のオレンジの件でありがとう。今日はね、ちょっと気になることがあって」そう言って、失礼にならないよう断ってから、Doroの頭をよく見せてもらう。頭に麦の穂が生えていたり、刺さっていたりしないか、髪の色や形と一緒にじっくり確認する。"
+          },
+          {
+            "id": "612a20d5-cdc3-4f23-b16d-81e44e7d366b",
+            "text": "キッスはDoroのそばで、頭をじっくり観察する。髪の生え際、頭頂部、耳の後ろまで、麦の穂や麦の粒が付いていたり生えていたりしないか、目を凝らして確かめる。髪そのものの色や形もよく見て覚える。"
+          },
+          {
+            "id": "7f1ec5f9-21ce-4399-ac3a-f5786a491a96",
+            "text": "キッスはDoroにお礼を言う。「見せてくれてありがとう。麦の穂は無かったよ。ふわふわの二本の触角が、遠くからだと麦みたいに見えたのかも」お礼に、手元のきな粉を少し味見に差し出す。"
+          }
+        ],
+        "initialIds": [
+          "8977b97f-a94b-4f0c-a40a-ee3a7945806e",
+          "6a4b6201-29e5-4d42-aa22-c16619d4f3d5"
+        ]
+      },
+      {
+        "operationId": "1e805bf6-f3cd-4817-ab75-27c26c36b3b1",
+        "sceneId": "5a1f2aad-1210-464c-8c8a-42c053285120",
+        "actorId": "e7c00000-0000-4000-8000-000000000001",
+        "constructionId": "23b077cd-2157-4b87-9703-1ae41f8eb9e9",
+        "userId": "91ced0db-9261-4709-b1d0-01808f78d4c6",
+        "period": "pre215",
+        "resultCall": "e76edeb3-371a-4d03-bfb3-a307bf71fcbb",
+        "sourceResultPresentation": ["bbb34cd2-3d16-4497-a808-4dbf8bcd9f3f"],
+        "requestedInputs": [
+          {
+            "id": "df2bfebd-84d8-4f89-9bd0-17816609ef2a",
+            "text": "キッスは家の裁縫道具から太めの糸を取り出し、漁の網を編み始める。裁縫の腕を活かして、糸を格子状に結び目を作りながら編み進め、手で掬える大きさの網に仕上げる。縁に枝の枠を取り付けて持ちやすくし、下の縁には小石を重りに結び、川の中で広がるようにする。"
+          },
+          {
+            "id": "a3f284e0-b115-4ca5-a9f5-0385fb138504",
+            "text": "できた網を持ってぶー川へ行く。この前見つけた浅くて平らな場所で、葦の陰や水の流れの緩いところを狙い、網を水に入れて静かに掬ってみる。魚がいるかどうか、何か獲れるかどうか確かめる。"
+          }
+        ],
+        "initialIds": [
+          "8977b97f-a94b-4f0c-a40a-ee3a7945806e",
+          "6a4b6201-29e5-4d42-aa22-c16619d4f3d5"
+        ]
+      },
+      {
+        "operationId": "53b4b2c4-fc03-43dd-92e9-d82839d388a2",
+        "sceneId": "bb34aadc-ff61-4f42-94dc-d3046868b93b",
+        "actorId": "e7c00000-0000-4000-8000-000000000001",
+        "constructionId": "23b077cd-2157-4b87-9703-1ae41f8eb9e9",
+        "userId": "91ced0db-9261-4709-b1d0-01808f78d4c6",
+        "period": "pre215",
+        "resultCall": "4bacd609-532f-49ac-b73a-fab0971046e7",
+        "sourceResultPresentation": ["b58f84bb-fd63-49da-a078-3b2e2581c8b9"],
+        "requestedInputs": [
+          {
+            "id": "5bd03c3b-64d6-4fcb-954b-7fabdd6ebf2a",
+            "text": "キッスは手掬い網を作り替える。枝の枠を外して網を大きく編み広げ、円形に整え、周囲の縁全体に小石の重りを等間隔に結び付け、中心に引き綱を通して、投げて広がり沈みながら閉じる投網に仕上げる。仕上がりを手に取って、広がり方と重りの付き具合を確かめる。"
+          },
+          {
+            "id": "7159c659-c506-4515-a713-8c188bd582d4",
+            "text": "仕上がった投網を持って、魚影のいた葦の陰の浅瀬に近づく。気配を消して間合いを詰め、狙いを定めて投網を打つ。網が円く広がって沈むのを待ってから引き綱をゆっくり引き、閉じた網を引き上げる。"
+          },
+          {
+            "id": "87faf71e-f451-47a8-b632-41982d027c61",
+            "text": "獲れた二匹は桶に入れておく。次に鳥も試す。小鳥が降りていた葦の縁と足跡のあった岸辺で、鳥が来るのを気配を消して待ち、降りたところへ投網をふわりと被せるように打って、捕まえられるか試す。"
+          },
+          {
+            "id": "d1024563-49f5-4c61-a838-3ac20fd3d271",
+            "text": "捕まえた小鳥を傷つけないようそっと手に取り、種類や大きさ、羽の色をよく観察して覚える。野生の鳥なので、確かめた後は葦の縁でそっと放してやる。魚二匹と投網を持って家へ戻る。"
+          }
+        ],
+        "initialIds": [
+          "8977b97f-a94b-4f0c-a40a-ee3a7945806e",
+          "6a4b6201-29e5-4d42-aa22-c16619d4f3d5"
+        ]
+      },
+      {
+        "operationId": "77701af6-04fc-4e56-9442-8e7345d5a309",
+        "sceneId": "b89458ea-0b94-47d2-9609-8450519bb544",
+        "actorId": "e7c00000-0000-4000-8000-000000000001",
+        "constructionId": "23b077cd-2157-4b87-9703-1ae41f8eb9e9",
+        "userId": "91ced0db-9261-4709-b1d0-01808f78d4c6",
+        "period": "only215",
+        "resultCall": "3e632a89-187b-4c26-ac60-2db163b43813",
+        "sourceResultPresentation": ["3900f2c1-9fc6-4d2e-a723-ec2a5711dfa3"],
+        "requestedInputs": [
+          {
+            "id": "1d979c4b-85c7-44b1-8f34-ec96fa768049",
+            "text": "キッスは台所で川魚2匹を捌く。身は無駄にしないよう塩をして焼き魚に回し、皮と骨を分けて取っておく。皮と骨を少量の水で弱火で長く煮出し、布で漉して煮汁だけを小鉢に移す。これがゼラチンになるか、冷まして確かめる準備をする。"
+          },
+          {
+            "id": "fb49641e-59c9-44d6-8b8b-3d898c5559ec",
+            "text": "ゼラチン、ちゃんと固まってる！熱々の焼き魚の上にスプーンですくってのせて、とろっと溶けたところをいただいちゃお♪"
+          },
+          {
+            "id": "10e8106e-1635-4f9e-9398-4e3d982b3781",
+            "text": "残りのゼラチンは小鉢に蓋をして冷たい場所に取っておく。焼き魚の残りもおいしく食べて、片付けをしたら、魚のゼラチンがお菓子作りにも使えるか明日試してみることにする。"
+          }
+        ],
+        "initialIds": [
+          "8977b97f-a94b-4f0c-a40a-ee3a7945806e",
+          "6a4b6201-29e5-4d42-aa22-c16619d4f3d5"
+        ]
+      },
+      {
+        "operationId": "8b9364cc-b3bd-4b2e-809e-3ff6569ff3cb",
+        "sceneId": "de287e23-6ece-4211-8457-bfde8511701a",
+        "actorId": "e7c00000-0000-4000-8000-000000000001",
+        "constructionId": "23b077cd-2157-4b87-9703-1ae41f8eb9e9",
+        "userId": "91ced0db-9261-4709-b1d0-01808f78d4c6",
+        "period": "only215",
+        "resultCall": "26a58c03-3068-4596-b345-1896e1d9b5b8",
+        "sourceResultPresentation": ["c4ef86a7-ad81-4ec8-a591-db6311fa21fd"],
+        "requestedInputs": [
+          {
+            "id": "8af8b457-3279-49f5-8d14-3091d78d9e9e",
+            "text": "キッスは投網と、餌付け用の砕いた豆を布に包んでぶー川へ行く。川岸に立って水面全体をゆっくり見渡し、上流と下流、葦原の際、向こう岸の浅瀬に、鴨やアヒルが泳いでいたり休んでいたりしないか探す。鳴き声にも耳を澄ます。"
+          },
+          {
+            "id": "e35becb7-4ca2-47b5-a04d-193debb13cea",
+            "text": "見える範囲にいなかったので、岸伝いに下流へ歩き、流れの緩いよどみや葦の茂み、向こう岸の入り江を確かめる。川を渡った先の葦原の奥にも鴨の姿や巣がないか、足跡や羽の跡も含めて探す。"
+          },
+          {
+            "id": "fae0f1e8-683d-443b-96e3-c816249cfbb2",
+            "text": "今日の範囲では鴨は見つからなかったので、投網と豆を持って家へ戻る。鴨は朝や夕方に来るかもしれないので、またの機会に確かめることにする。"
+          },
+          {
+            "id": "45c593cd-55f7-4dc7-8a9a-f7c2a9b96748",
+            "text": "家に着いたし、今日の鴨探しはここまでにしよっか。投網を片付けて、残った砕いた豆は布包みのまま台所にしまっておく。今日は鴨も卵も見つからなかったけど、葦原に小さな足跡と古い羽が一枚あったし、鴨が来る場所なのは確かだと思う。朝か夕方にまた川へ行って確かめてみよっと。ひとまず家でひと休みするよ。"
+          }
+        ],
+        "initialIds": [
+          "8977b97f-a94b-4f0c-a40a-ee3a7945806e",
+          "6a4b6201-29e5-4d42-aa22-c16619d4f3d5"
+        ]
+      },
+      {
+        "operationId": "2b5d3db0-8b96-4b5f-ac9e-6eaedf041335",
+        "sceneId": "7e40359f-35ee-46c7-abfb-94e60d97be9d",
+        "actorId": "e7c00000-0000-4000-8000-000000000001",
+        "constructionId": "23b077cd-2157-4b87-9703-1ae41f8eb9e9",
+        "userId": "91ced0db-9261-4709-b1d0-01808f78d4c6",
+        "period": "only215",
+        "resultCall": "cfa3aaf6-908b-462c-ab99-cc9c1bc5b471",
+        "sourceResultPresentation": ["a09b541e-ea41-488a-a130-0937b5e79b9e"],
+        "requestedInputs": [
+          {
+            "id": "137b7290-1db8-49d0-84f0-7a0a69a00bbe",
+            "text": "キッスは川沿いの豆畑へ行き、畝の真ん中に立つ。今日も豆パン、豆腐、きな粉、そして魚とゼラチンまで広がった豆の恵みに手を合わせて感謝する。両手で大きくハートを作り、渾身の愛と祈りを込めて唱える。『おいしくなぁれ♡萌え♡萌え♡きゅん♡♡♡』何度か心を込めて繰り返し、畑の空気や豆の様子に変化がないか静かに見守る。"
+          },
+          {
+            "id": "16e58471-bf80-4f79-a0f6-48102978965e",
+            "text": "畑に「今日もありがとう」と手を合わせて一礼し、修行を終えて家へ戻る。"
+          },
+          {
+            "id": "2fbcb054-4e2c-4880-ba04-40eab8982c52",
+            "text": "家に帰り着いて、窓辺の小さなテーブルに座る。手に持った煎り豆をひとつつまんで、じっくり味わってみる。香ばしさの奥に甘みがあるかどうか確かめて、きな粉にしたらドーナツやプリンの甘みに使えるか考える。「うん、香ばしい〜……甘みはどうかなぁ」って独り言を言いながら、もうひとつ口に入れる。"
+          }
+        ],
+        "initialIds": [
+          "8977b97f-a94b-4f0c-a40a-ee3a7945806e",
+          "6a4b6201-29e5-4d42-aa22-c16619d4f3d5"
+        ]
+      }
+    ],
+    "snapshot": "2026-11-17T08:27:39.492274+00:00",
+    "ledgerSnapshot": "2026-11-17T08:33:52.038376+00:00",
+    "productionWrites": 0,
+    "modelCalls": 0
+  },
+  "delta": {
+    "initialInput": -0.0010378464746916283,
+    "upperInput": -0.19525976421026436,
+    "endingInput": -0.18727685602796607,
+    "upperCost": -0.012796081013366156,
+    "endingCost": -0.01260452652471844,
+    "commonColdEndingCost": -0.1919716456391547
+  },
+  "quality": {
+    "skill": "narrative-inspection-v13",
+    "rubric": "meaning-v6",
+    "evaluator": "Codex manual review; no additional model calls",
+    "evaluationCostUsd": 0,
+    "sourceSha256": "b341d8e72452488fbf1cb01cb099a9061142db07a59f9378257f79023c97ce17",
+    "priorScenes": 17,
+    "priorPresentations": 216,
+    "initialPresentations": 2,
+    "selectedPresentations": 35,
+    "selectedInputs": 19,
+    "cohorts": {
+      "before": {
+        "scenes": 3,
+        "newUnits": 9,
+        "importantNewUnits": 6,
+        "resultNewUnits": 0,
+        "resultImportantNewUnits": 0
+      },
+      "after": {
+        "scenes": 3,
+        "newUnits": 8,
+        "importantNewUnits": 3,
+        "resultNewUnits": 0,
+        "resultImportantNewUnits": 0
+      }
+    },
+    "assessments": [
+      {
+        "sceneId": "021f4598-5437-4912-90db-8652fe43694f",
+        "operationId": "cc39d16d-9778-4c5a-a1de-7e31099a5acf",
+        "period": "pre215",
+        "importantNewUnits": 1,
+        "resultNewUnits": 0,
+        "resultImportantNewUnits": 0,
+        "assessment": {
+          "inputs": [
+            {
+              "inputId": "404f3858-aabb-477f-bd1a-125634ceaf95",
+              "units": [
+                {
+                  "text": "目的の相手に近づき、問いが届いたという接触の成立を確認できた",
+                  "category": "addition",
+                  "importance": 1,
+                  "evidence": [
+                    {
+                      "presentationId": "353de2b7-67df-4657-a156-293bf3a848c7",
+                      "quote": "言葉はDoroに届いた。"
+                    }
+                  ],
+                  "explanation": "目的の相手に近づき、問いが届いたという接触の成立を確認できた。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "partial",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "353de2b7-67df-4657-a156-293bf3a848c7",
+                  "quote": "家を出て村道を進み、ジョニーの家の前にいるDoroに近づいて挨拶した。オレンジの件にお礼を言い、頭に麦の穂が生えたり刺さったりしていないか、髪の色や形と一緒によく見せてもらえないかと頼んだ。きな粉は手元に持ったままで、周囲にジョニーの姿は見えなかった。言葉はDoroに届いた。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "inputId": "612a20d5-cdc3-4f23-b16d-81e44e7d366b",
+              "units": [
+                {
+                  "text": "麦があるかという未確認事項に対し、見えたのは髪と触角であると分かった",
+                  "category": "addition",
+                  "importance": 2,
+                  "evidence": [
+                    {
+                      "presentationId": "29f4c1d5-b575-4034-a167-84a88b28ba98",
+                      "quote": "麦の穂や麦の粒が付いていたり生えていたりする様子は見当たらなかった。"
+                    }
+                  ],
+                  "explanation": "麦があるかという未確認事項に対し、見えたのは髪と触角であると分かった。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "29f4c1d5-b575-4034-a167-84a88b28ba98",
+                  "quote": "キッスはDoroのそばで、髪の生え際・頭頂部・耳の後ろまで目を凝らして確かめた。麦の穂や麦の粒が付いていたり生えていたりする様子は見当たらなかった。短くふわふわしたピンク色の髪と、草のようにふわふわした二本の触角が目に入ったが、麦の穂ではない。きな粉は手元に持ちながら観察した。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "inputId": "7f1ec5f9-21ce-4399-ac3a-f5786a491a96",
+              "units": [
+                {
+                  "text": "礼と味見の申し出を実際に表し、相手の受取・味見は未確認の状態になった",
+                  "category": "addition",
+                  "importance": 1,
+                  "evidence": [
+                    {
+                      "presentationId": "990a4dbd-5d8d-4781-a4fa-984e4f1b5fe6",
+                      "quote": "手元のきな粉を少し味見に差し出した。"
+                    }
+                  ],
+                  "explanation": "礼と味見の申し出を実際に表し、相手の受取・味見は未確認の状態になった。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "990a4dbd-5d8d-4781-a4fa-984e4f1b5fe6",
+                  "quote": "キッスは、ジョニーの家の前で観察の結果を伝えた。「見せてくれてありがとう。麦の穂は無かったよ。ふわふわの二本の触角が、遠くからだと麦みたいに見えたのかも」と言い、手元のきな粉を少し味見に差し出した。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            }
+          ],
+          "otherPresentations": [
+            {
+              "presentationId": "a4e5bed3-f88a-4864-a2ae-f22080839acf",
+              "units": [],
+              "missing": []
+            },
+            {
+              "presentationId": "c0c06bb2-f644-47c0-a22e-bea9b776ace1",
+              "units": [],
+              "missing": []
+            }
+          ],
+          "overall": {
+            "newInformation": 3,
+            "importance": 1.3333333333333333,
+            "responsiveness": "当該シーンの全入力を応答単位で照合。未回答を後の入力やリザルトで埋めて判定しない。",
+            "stagnation": "シーン進行中に確認できた意味の変化を記録。リザルトの再掲は重ねて数えない。",
+            "principle": "consistent",
+            "explanation": "前後は異なる入力・場面であり、件数差を施策の因果効果とは扱わない。",
+            "missing": []
+          },
+          "disagreements": []
+        }
+      },
+      {
+        "sceneId": "5a1f2aad-1210-464c-8c8a-42c053285120",
+        "operationId": "1e805bf6-f3cd-4817-ab75-27c26c36b3b1",
+        "period": "pre215",
+        "importantNewUnits": 2,
+        "resultNewUnits": 0,
+        "resultImportantNewUnits": 0,
+        "assessment": {
+          "inputs": [
+            {
+              "inputId": "df2bfebd-84d8-4f89-9bd0-17816609ef2a",
+              "units": [
+                {
+                  "text": "糸から枠と重りのある手掬い網ができ、漁を試せる手段が得られた",
+                  "category": "addition",
+                  "importance": 2,
+                  "evidence": [
+                    {
+                      "presentationId": "b8b8d1f9-fed4-442f-a981-b761c1534273",
+                      "quote": "手で掬える大きさの漁の網に仕上げました。"
+                    }
+                  ],
+                  "explanation": "糸から枠と重りのある手掬い網ができ、漁を試せる手段が得られた。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "b8b8d1f9-fed4-442f-a981-b761c1534273",
+                  "quote": "ジョニーの家の前で、キッスは裁縫の糸を格子状に結び目を作りながら編み進め、手で掬える大きさの漁の網に仕上げました。縁には枝の枠を取り付けて持ちやすくし、下の縁には小石を重りに結びました。キッスは仕上がった網を手に取り、大きさと枠・重りの付き具合を確かめました。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "inputId": "a3f284e0-b115-4ca5-a9f5-0385fb138504",
+              "units": [
+                {
+                  "text": "以前は未確認だった魚の存在が分かり、最初の網では逃げられたという結果が次の工夫の材料になった",
+                  "category": "addition",
+                  "importance": 2,
+                  "evidence": [
+                    {
+                      "presentationId": "887bde50-56f4-4415-ac04-08898584aff2",
+                      "quote": "この場所に魚がいることは確かめられたものの、今回の一掬いでは獲れなかった。"
+                    }
+                  ],
+                  "explanation": "以前は未確認だった魚の存在が分かり、最初の網では逃げられたという結果が次の工夫の材料になった。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "887bde50-56f4-4415-ac04-08898584aff2",
+                  "quote": "川岸の浅い水に網を入れると、葦の陰で小さな魚影が動いた。そっと掬い上げる直前、魚影は網の脇をすり抜けて逃げた。網には細い水草の切れ端が残ったが、魚は入っていない。この場所に魚がいることは確かめられたものの、今回の一掬いでは獲れなかった。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            }
+          ],
+          "otherPresentations": [
+            {
+              "presentationId": "1f5d095d-798a-4f76-a698-94cd290579af",
+              "units": [],
+              "missing": []
+            },
+            {
+              "presentationId": "bbb34cd2-3d16-4497-a808-4dbf8bcd9f3f",
+              "units": [],
+              "missing": []
+            }
+          ],
+          "overall": {
+            "newInformation": 2,
+            "importance": 2,
+            "responsiveness": "当該シーンの全入力を応答単位で照合。未回答を後の入力やリザルトで埋めて判定しない。",
+            "stagnation": "シーン進行中に確認できた意味の変化を記録。リザルトの再掲は重ねて数えない。",
+            "principle": "consistent",
+            "explanation": "前後は異なる入力・場面であり、件数差を施策の因果効果とは扱わない。",
+            "missing": []
+          },
+          "disagreements": []
+        }
+      },
+      {
+        "sceneId": "bb34aadc-ff61-4f42-94dc-d3046868b93b",
+        "operationId": "53b4b2c4-fc03-43dd-92e9-d82839d388a2",
+        "period": "pre215",
+        "importantNewUnits": 3,
+        "resultNewUnits": 0,
+        "resultImportantNewUnits": 0,
+        "assessment": {
+          "inputs": [
+            {
+              "inputId": "5bd03c3b-64d6-4fcb-954b-7fabdd6ebf2a",
+              "units": [
+                {
+                  "text": "網を投げて閉じる方式へ作り替え、漁の手段が変わった",
+                  "category": "addition",
+                  "importance": 2,
+                  "evidence": [
+                    {
+                      "presentationId": "2274d4b2-77fb-45f7-a9ee-9bb1605ff53c",
+                      "quote": "中心に引き綱を通して投網に仕上げた。"
+                    }
+                  ],
+                  "explanation": "網を投げて閉じる方式へ作り替え、漁の手段が変わった。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "2274d4b2-77fb-45f7-a9ee-9bb1605ff53c",
+                  "quote": "キッスはぶー川の浅く平らな岸辺で、手掬い網の小石の重りをほどき、枝の枠を外した。網目を大きく編み広げて円形に整え、周囲の縁全体に小石の重りを等間隔に結び直し、中心に引き綱を通して投網に仕上げた。手に取って広げると、網は円形に開き、小石の重りが縁に均等に付いていた。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "inputId": "7159c659-c506-4515-a713-8c188bd582d4",
+              "units": [
+                {
+                  "text": "前回は逃げた魚を今回の投網では獲れ、食材として持てるようになった",
+                  "category": "addition",
+                  "importance": 2,
+                  "evidence": [
+                    {
+                      "presentationId": "7415d085-b4af-46ea-a615-f8094121e461",
+                      "quote": "引き上げた網の中には小さな川魚が二匹入っていた。"
+                    }
+                  ],
+                  "explanation": "前回は逃げた魚を今回の投網では獲れ、食材として持てるようになった。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "7415d085-b4af-46ea-a615-f8094121e461",
+                  "quote": "キッスは投網を持って葦の陰の浅瀬へ静かに近づき、魚影の動きを見て間合いを詰めた。狙いを定めて網を打つと、網は円く広がって水面に落ち、小石の重りが縁から沈んだ。少し待ってから引き綱をゆっくり引くと網が閉じ、引き上げた網の中には小さな川魚が二匹入っていた。魚は網の中で跳ねており、手掬い網から投網へ作り替えた網で実際に魚が獲れたことをキッスは確認した。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "inputId": "87faf71e-f451-47a8-b632-41982d027c61",
+              "units": [
+                {
+                  "text": "同じ網を鳥にも使えるという新しい可能性が具体的な結果で示された",
+                  "category": "addition",
+                  "importance": 2,
+                  "evidence": [
+                    {
+                      "presentationId": "2e2348fb-5b37-454c-aa9b-7ea3103f85db",
+                      "quote": "投網で鳥も捕まえられることを確認した。"
+                    }
+                  ],
+                  "explanation": "同じ網を鳥にも使えるという新しい可能性が具体的な結果で示された。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "2e2348fb-5b37-454c-aa9b-7ea3103f85db",
+                  "quote": "キッスは獲れた小さな川魚を二匹とも桶に入れ、蓋をするように岸辺に置いた。次に、足跡のあった岸辺の葦の縁で身をかがめ、気配を消して待つ。やがて小鳥が葦の縁に降りた。キッスはゆっくり立ち上がらず、その場から投網をふわりと被せるように打った。網は広がって鳥を覆い、縁の小石が地面に落ちて網を押さえた。鳥は網の下で羽ばたいたが、網から抜け出すことはできなかった。キッスは網ごと鳥をそっと引き寄せ、投網で鳥も捕まえられることを確認した。魚は桶の中で生きており、鳥は網の中で落ち着きなく動いている。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "inputId": "d1024563-49f5-4c61-a838-3ac20fd3d271",
+              "units": [
+                {
+                  "text": "鳥を観察して放し、魚と網を持って帰るという今回の活動の終わり方が分かった",
+                  "category": "addition",
+                  "importance": 1,
+                  "evidence": [
+                    {
+                      "presentationId": "f889cb81-1ea2-4b35-aa27-4815eddc1667",
+                      "quote": "鳥を静かに放した。"
+                    },
+                    {
+                      "presentationId": "a32162a3-7c7d-42f2-aede-92533ade59d2",
+                      "quote": "魚のある桶と投網を台所の近くに置いた。"
+                    }
+                  ],
+                  "explanation": "鳥を観察して放し、魚と網を持って帰るという今回の活動の終わり方が分かった。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "f889cb81-1ea2-4b35-aa27-4815eddc1667",
+                  "quote": "キッスは網の下の小鳥を傷つけないよう、両手でそっと包むように取り出した。鳥は手のひらに収まるほど小さく、体は全体に茶褐色で、羽には薄く縞状の模様があった。腹の方は淡い灰色で、くちばしは細く尖っている。鳥は最初こそ羽を少し震わせたが、すぐに落ち着いてキッスの指の間から顔を出し、あたりをきょろきょろと見回した。キッスはその姿をよく覚え、葦の縁へ歩いて行き、鳥を静かに放した。鳥は一度だけ羽を広げて葦の陰へ飛び込み、枝の上からこちらを見ていた。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            }
+          ],
+          "otherPresentations": [
+            {
+              "presentationId": "463d2a6b-807e-43b1-a720-6605e6a1170d",
+              "units": [],
+              "missing": []
+            },
+            {
+              "presentationId": "b58f84bb-fd63-49da-a078-3b2e2581c8b9",
+              "units": [],
+              "missing": []
+            }
+          ],
+          "overall": {
+            "newInformation": 4,
+            "importance": 1.75,
+            "responsiveness": "当該シーンの全入力を応答単位で照合。未回答を後の入力やリザルトで埋めて判定しない。",
+            "stagnation": "シーン進行中に確認できた意味の変化を記録。リザルトの再掲は重ねて数えない。",
+            "principle": "consistent",
+            "explanation": "前後は異なる入力・場面であり、件数差を施策の因果効果とは扱わない。",
+            "missing": []
+          },
+          "disagreements": []
+        }
+      },
+      {
+        "sceneId": "b89458ea-0b94-47d2-9609-8450519bb544",
+        "operationId": "77701af6-04fc-4e56-9442-8e7345d5a309",
+        "period": "only215",
+        "importantNewUnits": 2,
+        "resultNewUnits": 0,
+        "resultImportantNewUnits": 0,
+        "assessment": {
+          "inputs": [
+            {
+              "inputId": "1d979c4b-85c7-44b1-8f34-ec96fa768049",
+              "units": [
+                {
+                  "text": "未確認だった煮汁の凝固が実際に観察され、皮と骨から弱い弾力のある素材が得られると分かった",
+                  "category": "update",
+                  "importance": 2,
+                  "evidence": [
+                    {
+                      "presentationId": "7bb18f56-4db3-4725-a998-6d4b139c45d5",
+                      "quote": "液体のままではなく、弱く固まって弾力のある状態であることが分かった。"
+                    },
+                    {
+                      "presentationId": "39056e9e-8d09-4c8d-a79d-a624c38c4b2b",
+                      "quote": "ゼラチンになっているかはまだ確かめていない。"
+                    }
+                  ],
+                  "explanation": "未確認だった煮汁の凝固が実際に観察され、皮と骨から弱い弾力のある素材が得られると分かった。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "39056e9e-8d09-4c8d-a79d-a624c38c4b2b",
+                  "quote": "キッスは台所で川魚2匹を捌いた。身は塩をして焼き魚にし、火で焼いて香ばしく仕上がった。皮と骨は分けて取り、少量の水で弱火で長く煮出し、布で漉して煮汁だけを小鉢に移した。煮汁は今冷ましているところで、ゼラチンになっているかはまだ確かめていない。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "inputId": "fb49641e-59c9-44d6-8b8b-3d898c5559ec",
+              "units": [
+                {
+                  "text": "冷やして固まった素材が温かな魚の上で溶け、魚のうまみを添えると分かった",
+                  "category": "addition",
+                  "importance": 2,
+                  "evidence": [
+                    {
+                      "presentationId": "02438667-52e2-43f1-a487-76a465cb940b",
+                      "quote": "焼き魚の上でとろりと溶けた。"
+                    }
+                  ],
+                  "explanation": "冷やして固まった素材が温かな魚の上で溶け、魚のうまみを添えると分かった。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "02438667-52e2-43f1-a487-76a465cb940b",
+                  "quote": "スプーンですくったゼラチン状の煮汁は、焼き魚の上でとろりと溶けた。一口食べると、香ばしい魚の身に、魚のうまみがある煮汁が絡む。小鉢にはまだ固まった煮汁が残っている。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "inputId": "10e8106e-1635-4f9e-9398-4e3d982b3781",
+              "units": [
+                {
+                  "text": "残った素材を保存でき、食事と片付けを終えて後日に使う余地を残した",
+                  "category": "addition",
+                  "importance": 1,
+                  "evidence": [
+                    {
+                      "presentationId": "8d6b07d2-b1c7-46a6-a41b-382b94d8e8f3",
+                      "quote": "残りのゼラチンが入った小鉢に蓋をして、台所の冷たい場所に置いた。"
+                    }
+                  ],
+                  "explanation": "残った素材を保存でき、食事と片付けを終えて後日に使う余地を残した。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "8d6b07d2-b1c7-46a6-a41b-382b94d8e8f3",
+                  "quote": "残りのゼラチンが入った小鉢に蓋をして、台所の冷たい場所に置いた。焼き魚の残りは温かいうちに一口ずつ食べてしまい、魚のうまみが残った。食器を洗って台を拭き、ゼラチンの小鉢の場所を確認して片付けを終えた。明日、魚のゼラチンがお菓子作りにも使えるか試してみることにした。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            }
+          ],
+          "otherPresentations": [
+            {
+              "presentationId": "f9b309bd-e0f2-4406-a243-c36e1980aca3",
+              "units": [],
+              "missing": []
+            },
+            {
+              "presentationId": "3900f2c1-9fc6-4d2e-a723-ec2a5711dfa3",
+              "units": [],
+              "missing": []
+            }
+          ],
+          "overall": {
+            "newInformation": 3,
+            "importance": 1.6666666666666667,
+            "responsiveness": "当該シーンの全入力を応答単位で照合。未回答を後の入力やリザルトで埋めて判定しない。",
+            "stagnation": "シーン進行中に確認できた意味の変化を記録。リザルトの再掲は重ねて数えない。",
+            "principle": "unknown",
+            "explanation": "リザルトが開始時のあらすじと完全一致する。開始状態の再掲なら結果の要約が欠け、終了現在状態と読むと食べ終えた魚を桶に保持しているように見せる。",
+            "missing": []
+          },
+          "disagreements": [
+            {
+              "presentationId": "3900f2c1-9fc6-4d2e-a723-ec2a5711dfa3",
+              "explanation": "調理・凝固・融解・保存が既に提示されたのに、開始時の文へ戻る。終了現在状態としては、食べ終えた魚二匹を桶に保持しているという根拠のない後退になる。"
+            }
+          ]
+        }
+      },
+      {
+        "sceneId": "de287e23-6ece-4211-8457-bfde8511701a",
+        "operationId": "8b9364cc-b3bd-4b2e-809e-3ff6569ff3cb",
+        "period": "only215",
+        "importantNewUnits": 1,
+        "resultNewUnits": 0,
+        "resultImportantNewUnits": 0,
+        "assessment": {
+          "inputs": [
+            {
+              "inputId": "8af8b457-3279-49f5-8d14-3091d78d9e9e",
+              "units": [
+                {
+                  "text": "開始時に既に水面に鴨が見えないと示されており、近い範囲の再確認では大きな理解の差はない",
+                  "category": "duplicate",
+                  "importance": 0,
+                  "evidence": [
+                    {
+                      "presentationId": "ad8f22cf-baf0-4073-a46e-b3bfb3d7761f",
+                      "quote": "見える範囲には鴨やアヒルの泳ぐ姿も休む姿もなく、鳴き声も聞こえなかった。"
+                    },
+                    {
+                      "presentationId": "41835d22-6faf-428c-a0cc-a900246d578f",
+                      "quote": "見渡せる水面に鴨やアヒルの姿はまだ目に入っていない。"
+                    }
+                  ],
+                  "explanation": "開始時に既に水面に鴨が見えないと示されており、近い範囲の再確認では大きな理解の差はない。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "ad8f22cf-baf0-4073-a46e-b3bfb3d7761f",
+                  "quote": "浅い水の中の石や草の生えた岸を見渡したが、見える範囲には鴨やアヒルの泳ぐ姿も休む姿もなく、鳴き声も聞こえなかった。投網と砕いた豆の布包みは手元にある。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "inputId": "e35becb7-4ca2-47b5-a04d-193debb13cea",
+              "units": [
+                {
+                  "text": "以前は見通せなかった奥まで調べても巣や卵は見つからず、調査範囲と次の探索判断の材料が変わった。鴨由来の証拠を得たとはしない",
+                  "category": "update",
+                  "importance": 2,
+                  "evidence": [
+                    {
+                      "presentationId": "88a51c7b-a97c-4cdd-a27a-e7b04a39cc85",
+                      "quote": "川を渡った先の葦原の奥まで進み、茂みの根元や泥の上、葦の倒れた辺りも確かめたが、巣や卵は見つからなかった。"
+                    },
+                    {
+                      "presentationId": "79ef5b62-0d45-48ef-a381-6572e58d3e52",
+                      "quote": "葦の葉や茎が重なる奥は見通せず、卵の所在はまだ分からない。"
+                    }
+                  ],
+                  "explanation": "以前は見通せなかった奥まで調べても巣や卵は見つからず、調査範囲と次の探索判断の材料が変わった。鴨由来の証拠を得たとはしない。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "88a51c7b-a97c-4cdd-a27a-e7b04a39cc85",
+                  "quote": "キッスは岸伝いに下流へ歩いた。流れの緩いよどみでは水面が静かに広がり、葦の茂みの際や向こう岸の入り江にも目を凝らしたが、鴨の泳ぐ姿や休む姿、鳴き声は見えなかった。川を渡った先の葦原の奥まで進み、茂みの根元や泥の上、葦の倒れた辺りも確かめたが、巣や卵は見つからなかった。泥には鳥らしい小さな足跡状の窪みがいくつか残っていたが、鴨のものと断定できるほどはっきりしたものではなく、羽の跡も古い羽毛の切れ端が一枚混ざっている程度だった。投網は手元に持ち、魚の姿もこの範囲では確認できなかった。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "inputId": "fae0f1e8-683d-443b-96e3-c816249cfbb2",
+              "units": [
+                {
+                  "text": "川での探索を切り上げて帰宅し、場面の現在地と継続の段階が変わった",
+                  "category": "addition",
+                  "importance": 1,
+                  "evidence": [
+                    {
+                      "presentationId": "09015643-4cc8-4396-a2c1-b323cc3f1e80",
+                      "quote": "キッスの家へ着いた。"
+                    }
+                  ],
+                  "explanation": "川での探索を切り上げて帰宅し、場面の現在地と継続の段階が変わった。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "09015643-4cc8-4396-a2c1-b323cc3f1e80",
+                  "quote": "キッスはぶー川の下流の岸辺から川を渡った先の葦原の奥を離れ、投網と豆を持って家へ戻った。今日の範囲で鴨は見つからなかったこと、鴨は朝や夕方に来るかもしれないのでまたの機会に確かめることにしたことを胸に置き、キッスの家へ着いた。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "inputId": "45c593cd-55f7-4dc7-8a9a-f7c2a9b96748",
+              "units": [
+                {
+                  "text": "道具と餌を片付けて今回の探索を区切り、再訪は今後の予定として残した",
+                  "category": "addition",
+                  "importance": 1,
+                  "evidence": [
+                    {
+                      "presentationId": "daa61164-bb68-4656-afd1-0c923fcef153",
+                      "quote": "投網を片付け、残った砕いた豆は布包みのまま台所にしまった。"
+                    }
+                  ],
+                  "explanation": "道具と餌を片付けて今回の探索を区切り、再訪は今後の予定として残した。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "daa61164-bb68-4656-afd1-0c923fcef153",
+                  "quote": "キッスはキッスの家に着き、今日の鴨探しをここまでと決めた。投網を片付け、残った砕いた豆は布包みのまま台所にしまった。今日は鴨も卵も見つからなかったが、葦原で小さな足跡と古い羽が一枚見つかったことを思い出し、鴨が来る場所である手応えを胸に置いた。朝か夕方にまた川へ行って確かめるつもりで、ひとまず家でひと休みすることにした。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            }
+          ],
+          "otherPresentations": [
+            {
+              "presentationId": "41835d22-6faf-428c-a0cc-a900246d578f",
+              "units": [
+                {
+                  "text": "開始提示で自宅から川岸へ移動したことが初めて示され、探索を始められる位置になった",
+                  "category": "addition",
+                  "importance": 1,
+                  "evidence": [
+                    {
+                      "presentationId": "41835d22-6faf-428c-a0cc-a900246d578f",
+                      "quote": "キッスはキッスの家の台所からぶー川へ移動し、浅く平らな岸辺に立っている。"
+                    }
+                  ],
+                  "explanation": "開始提示で自宅から川岸へ移動したことが初めて示され、探索を始められる位置になった。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "presentationId": "c4ef86a7-ad81-4ec8-a591-db6311fa21fd",
+              "units": [],
+              "missing": []
+            }
+          ],
+          "overall": {
+            "newInformation": 4,
+            "importance": 1.25,
+            "responsiveness": "当該シーンの全入力を応答単位で照合。未回答を後の入力やリザルトで埋めて判定しない。",
+            "stagnation": "シーン進行中に確認できた意味の変化を記録。リザルトの再掲は重ねて数えない。",
+            "principle": "consistent",
+            "explanation": "前後は異なる入力・場面であり、件数差を施策の因果効果とは扱わない。",
+            "missing": []
+          },
+          "disagreements": []
+        }
+      },
+      {
+        "sceneId": "7e40359f-35ee-46c7-abfb-94e60d97be9d",
+        "operationId": "2b5d3db0-8b96-4b5f-ac9e-6eaedf041335",
+        "period": "only215",
+        "importantNewUnits": 0,
+        "resultNewUnits": 0,
+        "resultImportantNewUnits": 0,
+        "assessment": {
+          "inputs": [
+            {
+              "inputId": "137b7290-1db8-49d0-84f0-7a0a69a00bbe",
+              "units": [
+                {
+                  "text": "同じ祈りをしても目に見える変化がなかったことは既に提示されており、今回の再掲は理解を更新しない",
+                  "category": "duplicate",
+                  "importance": 0,
+                  "evidence": [
+                    {
+                      "presentationId": "b5366421-74a4-41f8-a2b3-2638bf4e38ab",
+                      "quote": "豆の形や色に目に見える変化はなく"
+                    },
+                    {
+                      "presentationId": "b93dfb52-f1c2-4a4e-aa00-23d428cd2c3e",
+                      "quote": "豆の形や色、畑の様子に目に見える変化は起きず"
+                    }
+                  ],
+                  "explanation": "同じ祈りをしても目に見える変化がなかったことは既に提示されており、今回の再掲は理解を更新しない。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "b5366421-74a4-41f8-a2b3-2638bf4e38ab",
+                  "quote": "キッスは自宅を出て川沿いの豆畑へ向かい、畝の真ん中に立った。今日も豆パン、豆腐、きな粉、そして魚とゼラチンまで広がった豆の恵みに手を合わせて感謝した。次に両手で大きくハートを作り、渾身の愛と祈りを込めて「おいしくなぁれ♡萌え♡萌え♡きゅん♡♡♡」を何度か心を込めて唱えた。その後、畑の空気や豆の様子に変化がないか静かに見守ったが、豆の形や色に目に見える変化はなく、風に揺れる静かな畑のままであった。煎り豆を持ったまま、畝の真ん中に立っている。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "inputId": "16e58471-bf80-4f79-a0f6-48102978965e",
+              "units": [
+                {
+                  "text": "畑での修行を終え、家へ帰り着いたことが今回の活動の区切りとして分かった",
+                  "category": "addition",
+                  "importance": 1,
+                  "evidence": [
+                    {
+                      "presentationId": "19929997-d111-4975-ab6a-41b18d0ce73c",
+                      "quote": "煎り豆を持ったまま家に帰り着いた。"
+                    }
+                  ],
+                  "explanation": "畑での修行を終え、家へ帰り着いたことが今回の活動の区切りとして分かった。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "19929997-d111-4975-ab6a-41b18d0ce73c",
+                  "quote": "キッスは川沿いの豆畑の畝の真ん中で手を合わせて一礼し、「今日もありがとう」と声に出した。その後、畑を離れて家路につき、キッスの家の屋内へ戻った。修行を終え、煎り豆を持ったまま家に帰り着いた。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            },
+            {
+              "inputId": "2fbcb054-4e2c-4880-ba04-40eab8982c52",
+              "units": [
+                {
+                  "text": "煎り豆が香ばしくてもそのまま甘くないことは既に味見しており、甘味材料を得たという新しい結果ではない",
+                  "category": "duplicate",
+                  "importance": 0,
+                  "evidence": [
+                    {
+                      "presentationId": "69267e8e-fba6-4502-a1c7-ee5a476cb55a",
+                      "quote": "じっくり味わっても、はっきりした甘みは感じられない。"
+                    },
+                    {
+                      "presentationId": "f3ffb7f6-3f4b-45e7-a155-e0b5f4a6fd24",
+                      "quote": "そのまま甘い味はしなかった。"
+                    }
+                  ],
+                  "explanation": "煎り豆が香ばしくてもそのまま甘くないことは既に味見しており、甘味材料を得たという新しい結果ではない。内部記録数や予定した行動との一致ではなく、提示前後の理解・選択の前提の差を評価する。"
+                }
+              ],
+              "responsiveness": "responsive",
+              "principle": "consistent",
+              "principleEvidence": [
+                {
+                  "presentationId": "69267e8e-fba6-4502-a1c7-ee5a476cb55a",
+                  "quote": "一粒を噛むと、カリッと砕けて香ばしい豆の味が広がる。じっくり味わっても、はっきりした甘みは感じられない。「うん、香ばしい〜……甘みはどうかなぁ」もう一粒も同じ味だ。粉にすればドーナツやプリンに香ばしさを添えられそうだけれど、甘みをつけるには別の材料が要りそうだと思った。",
+                  "explanation": "入力の意図と成立した結果を分けて読んだ。特定の応答や成功を採否条件にしない。"
+                }
+              ],
+              "missing": []
+            }
+          ],
+          "otherPresentations": [
+            {
+              "presentationId": "2db57d7e-c393-4bbb-a117-ac347998d832",
+              "units": [],
+              "missing": []
+            },
+            {
+              "presentationId": "a09b541e-ea41-488a-a130-0937b5e79b9e",
+              "units": [],
+              "missing": []
+            }
+          ],
+          "overall": {
+            "newInformation": 1,
+            "importance": 1,
+            "responsiveness": "当該シーンの全入力を応答単位で照合。未回答を後の入力やリザルトで埋めて判定しない。",
+            "stagnation": "祈りと味見は既知結果の反復。帰宅という局所的な移動はある。",
+            "principle": "consistent",
+            "explanation": "前後は異なる入力・場面であり、件数差を施策の因果効果とは扱わない。",
+            "missing": []
+          },
+          "disagreements": []
+        }
+      }
+    ],
+    "continuity": [
+      {
+        "sceneId": "021f4598-5437-4912-90db-8652fe43694f",
+        "presentationId": "c0c06bb2-f644-47c0-a22e-bea9b776ace1",
+        "quoteIndex": 0,
+        "quote": "キッスは煎り豆のきな粉を持って家を出て、ジョニーの家の前にいるDoroに会いに行きました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "a4e5bed3-f88a-4864-a2ae-f22080839acf",
+            "quote": "キッスはキッスの家の屋内にいて、煎り豆のきな粉を持っている。窓辺には小さなテーブルと椅子の整った一角があり、生活用の家具も見える。これからジョニーの家の前へ向かい、Doroの頭に麦が生えているかどうかを確かめるために出発するところである。"
+          },
+          {
+            "presentationId": "353de2b7-67df-4657-a156-293bf3a848c7",
+            "quote": "家を出て村道を進み、ジョニーの家の前にいるDoroに近づいて挨拶した。オレンジの件にお礼を言い、頭に麦の穂が生えたり刺さったりしていないか、髪の色や形と一緒によく見せてもらえないかと頼んだ。きな粉は手元に持ったままで、周囲にジョニーの姿は見えなかった。言葉はDoroに届いた。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "021f4598-5437-4912-90db-8652fe43694f",
+        "presentationId": "c0c06bb2-f644-47c0-a22e-bea9b776ace1",
+        "quoteIndex": 1,
+        "quote": "Doroに挨拶してオレンジの件にお礼を言い、頭に麦の穂が生えたり刺さったりしていないか、よく見せてもらえないかと頼みました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "353de2b7-67df-4657-a156-293bf3a848c7",
+            "quote": "家を出て村道を進み、ジョニーの家の前にいるDoroに近づいて挨拶した。オレンジの件にお礼を言い、頭に麦の穂が生えたり刺さったりしていないか、髪の色や形と一緒によく見せてもらえないかと頼んだ。きな粉は手元に持ったままで、周囲にジョニーの姿は見えなかった。言葉はDoroに届いた。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "021f4598-5437-4912-90db-8652fe43694f",
+        "presentationId": "c0c06bb2-f644-47c0-a22e-bea9b776ace1",
+        "quoteIndex": 2,
+        "quote": "周囲にジョニーの姿は見えませんでした。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "353de2b7-67df-4657-a156-293bf3a848c7",
+            "quote": "家を出て村道を進み、ジョニーの家の前にいるDoroに近づいて挨拶した。オレンジの件にお礼を言い、頭に麦の穂が生えたり刺さったりしていないか、髪の色や形と一緒によく見せてもらえないかと頼んだ。きな粉は手元に持ったままで、周囲にジョニーの姿は見えなかった。言葉はDoroに届いた。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "021f4598-5437-4912-90db-8652fe43694f",
+        "presentationId": "c0c06bb2-f644-47c0-a22e-bea9b776ace1",
+        "quoteIndex": 3,
+        "quote": "Doroのそばで髪の生え際・頭頂部・耳の後ろまで確かめたところ、麦の穂や麦の粒が付いていたり生えていたりする様子は見当たらなかった。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "29f4c1d5-b575-4034-a167-84a88b28ba98",
+            "quote": "キッスはDoroのそばで、髪の生え際・頭頂部・耳の後ろまで目を凝らして確かめた。麦の穂や麦の粒が付いていたり生えていたりする様子は見当たらなかった。短くふわふわしたピンク色の髪と、草のようにふわふわした二本の触角が目に入ったが、麦の穂ではない。きな粉は手元に持ちながら観察した。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "021f4598-5437-4912-90db-8652fe43694f",
+        "presentationId": "c0c06bb2-f644-47c0-a22e-bea9b776ace1",
+        "quoteIndex": 4,
+        "quote": "短くふわふわしたピンク色の髪と、草のようにふわふわした二本の触角が見えたが、麦の穂ではなかった。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "29f4c1d5-b575-4034-a167-84a88b28ba98",
+            "quote": "キッスはDoroのそばで、髪の生え際・頭頂部・耳の後ろまで目を凝らして確かめた。麦の穂や麦の粒が付いていたり生えていたりする様子は見当たらなかった。短くふわふわしたピンク色の髪と、草のようにふわふわした二本の触角が目に入ったが、麦の穂ではない。きな粉は手元に持ちながら観察した。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "021f4598-5437-4912-90db-8652fe43694f",
+        "presentationId": "c0c06bb2-f644-47c0-a22e-bea9b776ace1",
+        "quoteIndex": 5,
+        "quote": "キッスは「見せてくれてありがとう。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "990a4dbd-5d8d-4781-a4fa-984e4f1b5fe6",
+            "quote": "キッスは、ジョニーの家の前で観察の結果を伝えた。「見せてくれてありがとう。麦の穂は無かったよ。ふわふわの二本の触角が、遠くからだと麦みたいに見えたのかも」と言い、手元のきな粉を少し味見に差し出した。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "021f4598-5437-4912-90db-8652fe43694f",
+        "presentationId": "c0c06bb2-f644-47c0-a22e-bea9b776ace1",
+        "quoteIndex": 6,
+        "quote": "麦の穂は無かったよ。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "29f4c1d5-b575-4034-a167-84a88b28ba98",
+            "quote": "キッスはDoroのそばで、髪の生え際・頭頂部・耳の後ろまで目を凝らして確かめた。麦の穂や麦の粒が付いていたり生えていたりする様子は見当たらなかった。短くふわふわしたピンク色の髪と、草のようにふわふわした二本の触角が目に入ったが、麦の穂ではない。きな粉は手元に持ちながら観察した。"
+          },
+          {
+            "presentationId": "990a4dbd-5d8d-4781-a4fa-984e4f1b5fe6",
+            "quote": "キッスは、ジョニーの家の前で観察の結果を伝えた。「見せてくれてありがとう。麦の穂は無かったよ。ふわふわの二本の触角が、遠くからだと麦みたいに見えたのかも」と言い、手元のきな粉を少し味見に差し出した。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "021f4598-5437-4912-90db-8652fe43694f",
+        "presentationId": "c0c06bb2-f644-47c0-a22e-bea9b776ace1",
+        "quoteIndex": 7,
+        "quote": "ふわふわの二本の触角が、遠くからだと麦みたいに見えたのかも」と結果を伝え、手元のきな粉を少し味見に差し出した。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "990a4dbd-5d8d-4781-a4fa-984e4f1b5fe6",
+            "quote": "キッスは、ジョニーの家の前で観察の結果を伝えた。「見せてくれてありがとう。麦の穂は無かったよ。ふわふわの二本の触角が、遠くからだと麦みたいに見えたのかも」と言い、手元のきな粉を少し味見に差し出した。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "021f4598-5437-4912-90db-8652fe43694f",
+        "presentationId": "c0c06bb2-f644-47c0-a22e-bea9b776ace1",
+        "quoteIndex": 8,
+        "quote": "きな粉をDoroが受け取ったか、味見したかについての記録はまだない。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "990a4dbd-5d8d-4781-a4fa-984e4f1b5fe6",
+            "quote": "キッスは、ジョニーの家の前で観察の結果を伝えた。「見せてくれてありがとう。麦の穂は無かったよ。ふわふわの二本の触角が、遠くからだと麦みたいに見えたのかも」と言い、手元のきな粉を少し味見に差し出した。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "5a1f2aad-1210-464c-8c8a-42c053285120",
+        "presentationId": "bbb34cd2-3d16-4497-a808-4dbf8bcd9f3f",
+        "quoteIndex": 0,
+        "quote": "キッスはジョニーの家の前に立ち、煎り豆ときな粉の入ったものと裁縫の糸の束を持っていました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "1f5d095d-798a-4f76-a698-94cd290579af",
+            "quote": "キッスはジョニーの家の前、村道沿いの家並みの前に立っている。台所で煎った煎り豆を持ち、手元には裁縫の糸の束もある。ぶー川で魚が獲れるか、糸で網を編んで試す実験を始めようとしている場面である。"
+          },
+          {
+            "presentationId": "b8b8d1f9-fed4-442f-a981-b761c1534273",
+            "quote": "ジョニーの家の前で、キッスは裁縫の糸を格子状に結び目を作りながら編み進め、手で掬える大きさの漁の網に仕上げました。縁には枝の枠を取り付けて持ちやすくし、下の縁には小石を重りに結びました。キッスは仕上がった網を手に取り、大きさと枠・重りの付き具合を確かめました。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "5a1f2aad-1210-464c-8c8a-42c053285120",
+        "presentationId": "bbb34cd2-3d16-4497-a808-4dbf8bcd9f3f",
+        "quoteIndex": 1,
+        "quote": "糸を格子状に結び目を作りながら編み進め、縁に枝の枠、下の縁に小石の重りを取り付けた、手で掬える大きさの漁の網に仕上げて確かめました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "b8b8d1f9-fed4-442f-a981-b761c1534273",
+            "quote": "ジョニーの家の前で、キッスは裁縫の糸を格子状に結び目を作りながら編み進め、手で掬える大きさの漁の網に仕上げました。縁には枝の枠を取り付けて持ちやすくし、下の縁には小石を重りに結びました。キッスは仕上がった網を手に取り、大きさと枠・重りの付き具合を確かめました。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "5a1f2aad-1210-464c-8c8a-42c053285120",
+        "presentationId": "bbb34cd2-3d16-4497-a808-4dbf8bcd9f3f",
+        "quoteIndex": 2,
+        "quote": "その後、川岸の浅い水に網を入れました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "887bde50-56f4-4415-ac04-08898584aff2",
+            "quote": "川岸の浅い水に網を入れると、葦の陰で小さな魚影が動いた。そっと掬い上げる直前、魚影は網の脇をすり抜けて逃げた。網には細い水草の切れ端が残ったが、魚は入っていない。この場所に魚がいることは確かめられたものの、今回の一掬いでは獲れなかった。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "5a1f2aad-1210-464c-8c8a-42c053285120",
+        "presentationId": "bbb34cd2-3d16-4497-a808-4dbf8bcd9f3f",
+        "quoteIndex": 3,
+        "quote": "葦の陰で小さな魚影が見えたものの、掬い上げる直前に網の脇をすり抜けて逃げ、網には細い水草の切れ端だけが残りました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "887bde50-56f4-4415-ac04-08898584aff2",
+            "quote": "川岸の浅い水に網を入れると、葦の陰で小さな魚影が動いた。そっと掬い上げる直前、魚影は網の脇をすり抜けて逃げた。網には細い水草の切れ端が残ったが、魚は入っていない。この場所に魚がいることは確かめられたものの、今回の一掬いでは獲れなかった。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "5a1f2aad-1210-464c-8c8a-42c053285120",
+        "presentationId": "bbb34cd2-3d16-4497-a808-4dbf8bcd9f3f",
+        "quoteIndex": 4,
+        "quote": "この場所に魚がいることは確かめられたものの、今回の一掬いでは魚は獲れませんでした。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "887bde50-56f4-4415-ac04-08898584aff2",
+            "quote": "川岸の浅い水に網を入れると、葦の陰で小さな魚影が動いた。そっと掬い上げる直前、魚影は網の脇をすり抜けて逃げた。網には細い水草の切れ端が残ったが、魚は入っていない。この場所に魚がいることは確かめられたものの、今回の一掬いでは獲れなかった。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "bb34aadc-ff61-4f42-94dc-d3046868b93b",
+        "presentationId": "b58f84bb-fd63-49da-a078-3b2e2581c8b9",
+        "quoteIndex": 0,
+        "quote": "キッスはぶー川の浅く平らな岸辺で、手掬い網の枝の枠を外し、網を円形に広げて縁に小石の重りを等間隔に結び、中心に引き綱を通した投網に作り替えました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "2274d4b2-77fb-45f7-a9ee-9bb1605ff53c",
+            "quote": "キッスはぶー川の浅く平らな岸辺で、手掬い網の小石の重りをほどき、枝の枠を外した。網目を大きく編み広げて円形に整え、周囲の縁全体に小石の重りを等間隔に結び直し、中心に引き綱を通して投網に仕上げた。手に取って広げると、網は円形に開き、小石の重りが縁に均等に付いていた。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "bb34aadc-ff61-4f42-94dc-d3046868b93b",
+        "presentationId": "b58f84bb-fd63-49da-a078-3b2e2581c8b9",
+        "quoteIndex": 1,
+        "quote": "葦の陰の浅瀬で投網を打つと小さな川魚が二匹獲れ、桶に入れました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "7415d085-b4af-46ea-a615-f8094121e461",
+            "quote": "キッスは投網を持って葦の陰の浅瀬へ静かに近づき、魚影の動きを見て間合いを詰めた。狙いを定めて網を打つと、網は円く広がって水面に落ち、小石の重りが縁から沈んだ。少し待ってから引き綱をゆっくり引くと網が閉じ、引き上げた網の中には小さな川魚が二匹入っていた。魚は網の中で跳ねており、手掬い網から投網へ作り替えた網で実際に魚が獲れたことをキッスは確認した。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "bb34aadc-ff61-4f42-94dc-d3046868b93b",
+        "presentationId": "b58f84bb-fd63-49da-a078-3b2e2581c8b9",
+        "quoteIndex": 2,
+        "quote": "次に葦の縁に降りた小鳥にも投網を被せて捕まえ、手のひらに収まるほど小さく、茶褐色で薄く縞模様のある羽、淡い灰色の腹、細く尖ったくちばしであることを観察して覚えました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "2e2348fb-5b37-454c-aa9b-7ea3103f85db",
+            "quote": "キッスは獲れた小さな川魚を二匹とも桶に入れ、蓋をするように岸辺に置いた。次に、足跡のあった岸辺の葦の縁で身をかがめ、気配を消して待つ。やがて小鳥が葦の縁に降りた。キッスはゆっくり立ち上がらず、その場から投網をふわりと被せるように打った。網は広がって鳥を覆い、縁の小石が地面に落ちて網を押さえた。鳥は網の下で羽ばたいたが、網から抜け出すことはできなかった。キッスは網ごと鳥をそっと引き寄せ、投網で鳥も捕まえられることを確認した。魚は桶の中で生きており、鳥は網の中で落ち着きなく動いている。"
+          },
+          {
+            "presentationId": "f889cb81-1ea2-4b35-aa27-4815eddc1667",
+            "quote": "キッスは網の下の小鳥を傷つけないよう、両手でそっと包むように取り出した。鳥は手のひらに収まるほど小さく、体は全体に茶褐色で、羽には薄く縞状の模様があった。腹の方は淡い灰色で、くちばしは細く尖っている。鳥は最初こそ羽を少し震わせたが、すぐに落ち着いてキッスの指の間から顔を出し、あたりをきょろきょろと見回した。キッスはその姿をよく覚え、葦の縁へ歩いて行き、鳥を静かに放した。鳥は一度だけ羽を広げて葦の陰へ飛び込み、枝の上からこちらを見ていた。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "bb34aadc-ff61-4f42-94dc-d3046868b93b",
+        "presentationId": "b58f84bb-fd63-49da-a078-3b2e2581c8b9",
+        "quoteIndex": 3,
+        "quote": "その鳥は葦の縁で放され、葦の陰へ飛び込みました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "f889cb81-1ea2-4b35-aa27-4815eddc1667",
+            "quote": "キッスは網の下の小鳥を傷つけないよう、両手でそっと包むように取り出した。鳥は手のひらに収まるほど小さく、体は全体に茶褐色で、羽には薄く縞状の模様があった。腹の方は淡い灰色で、くちばしは細く尖っている。鳥は最初こそ羽を少し震わせたが、すぐに落ち着いてキッスの指の間から顔を出し、あたりをきょろきょろと見回した。キッスはその姿をよく覚え、葦の縁へ歩いて行き、鳥を静かに放した。鳥は一度だけ羽を広げて葦の陰へ飛び込み、枝の上からこちらを見ていた。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "bb34aadc-ff61-4f42-94dc-d3046868b93b",
+        "presentationId": "b58f84bb-fd63-49da-a078-3b2e2581c8b9",
+        "quoteIndex": 4,
+        "quote": "キッスは魚二匹の入った桶と投網を持って家へ戻り、台所の近くに置きました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "a32162a3-7c7d-42f2-aede-92533ade59d2",
+            "quote": "キッスは桶に入れた小さな川魚を二匹と、投網を持って岸辺を離れた。村道をたどってキッスの家へ戻り、魚のある桶と投網を台所の近くに置いた。鳥を放してから家へ戻るまでの一連の出来事が終わった。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "bb34aadc-ff61-4f42-94dc-d3046868b93b",
+        "presentationId": "b58f84bb-fd63-49da-a078-3b2e2581c8b9",
+        "quoteIndex": 5,
+        "quote": "鳥を放してから家へ戻るまでの一連の出来事は終わっています。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "a32162a3-7c7d-42f2-aede-92533ade59d2",
+            "quote": "キッスは桶に入れた小さな川魚を二匹と、投網を持って岸辺を離れた。村道をたどってキッスの家へ戻り、魚のある桶と投網を台所の近くに置いた。鳥を放してから家へ戻るまでの一連の出来事が終わった。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "b89458ea-0b94-47d2-9609-8450519bb544",
+        "presentationId": "3900f2c1-9fc6-4d2e-a723-ec2a5711dfa3",
+        "quoteIndex": 0,
+        "quote": "キッスの家に戻ったキッスは、台所の近くに置いた桶の中に小さな川魚を二匹入れている。",
+        "state": "unsupported-change",
+        "proposition": "同じ魚二匹をまだ桶に入れたまま保持している",
+        "before": "false",
+        "after": "true",
+        "context": [
+          {
+            "presentationId": "f9b309bd-e0f2-4406-a243-c36e1980aca3",
+            "quote": "キッスの家に戻ったキッスは、台所の近くに置いた桶の中に小さな川魚を二匹入れている。掃き清められた部屋と窓辺の小さなテーブルや椅子が目に入り、魚の皮と骨を確かめる実験の材料が手元にある。"
+          },
+          {
+            "presentationId": "39056e9e-8d09-4c8d-a79d-a624c38c4b2b",
+            "quote": "キッスは台所で川魚2匹を捌いた。身は塩をして焼き魚にし、火で焼いて香ばしく仕上がった。皮と骨は分けて取り、少量の水で弱火で長く煮出し、布で漉して煮汁だけを小鉢に移した。煮汁は今冷ましているところで、ゼラチンになっているかはまだ確かめていない。"
+          },
+          {
+            "presentationId": "8d6b07d2-b1c7-46a6-a41b-382b94d8e8f3",
+            "quote": "残りのゼラチンが入った小鉢に蓋をして、台所の冷たい場所に置いた。焼き魚の残りは温かいうちに一口ずつ食べてしまい、魚のうまみが残った。食器を洗って台を拭き、ゼラチンの小鉢の場所を確認して片付けを終えた。明日、魚のゼラチンがお菓子作りにも使えるか試してみることにした。"
+          }
+        ],
+        "explanation": "現在状態として読んだ場合を照合。開始時の引用という読みでは新規性はないが、調理以降をまとめていない。家具と保存済み素材の存在を新しい獲得へ数えない。"
+      },
+      {
+        "sceneId": "b89458ea-0b94-47d2-9609-8450519bb544",
+        "presentationId": "3900f2c1-9fc6-4d2e-a723-ec2a5711dfa3",
+        "quoteIndex": 1,
+        "quote": "掃き清められた部屋と窓辺の小さなテーブルや椅子が目に入り、魚の皮と骨を確かめる実験の材料が手元にある。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "f9b309bd-e0f2-4406-a243-c36e1980aca3",
+            "quote": "キッスの家に戻ったキッスは、台所の近くに置いた桶の中に小さな川魚を二匹入れている。掃き清められた部屋と窓辺の小さなテーブルや椅子が目に入り、魚の皮と骨を確かめる実験の材料が手元にある。"
+          },
+          {
+            "presentationId": "8d6b07d2-b1c7-46a6-a41b-382b94d8e8f3",
+            "quote": "残りのゼラチンが入った小鉢に蓋をして、台所の冷たい場所に置いた。焼き魚の残りは温かいうちに一口ずつ食べてしまい、魚のうまみが残った。食器を洗って台を拭き、ゼラチンの小鉢の場所を確認して片付けを終えた。明日、魚のゼラチンがお菓子作りにも使えるか試してみることにした。"
+          }
+        ],
+        "explanation": "現在状態として読んだ場合を照合。開始時の引用という読みでは新規性はないが、調理以降をまとめていない。家具と保存済み素材の存在を新しい獲得へ数えない。"
+      },
+      {
+        "sceneId": "de287e23-6ece-4211-8457-bfde8511701a",
+        "presentationId": "c4ef86a7-ad81-4ec8-a591-db6311fa21fd",
+        "quoteIndex": 0,
+        "quote": "キッスはぶー川へ行き、投網と砕いた豆を持って岸辺や下流、川を渡った先の葦原の奥まで鴨を探しました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "41835d22-6faf-428c-a0cc-a900246d578f",
+            "quote": "キッスはキッスの家の台所からぶー川へ移動し、浅く平らな岸辺に立っている。浅い水の中の石や草の生えた岸が見渡せ、手には投網を持っている。見渡せる水面に鴨やアヒルの姿はまだ目に入っていない。"
+          },
+          {
+            "presentationId": "ad8f22cf-baf0-4073-a46e-b3bfb3d7761f",
+            "quote": "浅い水の中の石や草の生えた岸を見渡したが、見える範囲には鴨やアヒルの泳ぐ姿も休む姿もなく、鳴き声も聞こえなかった。投網と砕いた豆の布包みは手元にある。"
+          },
+          {
+            "presentationId": "88a51c7b-a97c-4cdd-a27a-e7b04a39cc85",
+            "quote": "キッスは岸伝いに下流へ歩いた。流れの緩いよどみでは水面が静かに広がり、葦の茂みの際や向こう岸の入り江にも目を凝らしたが、鴨の泳ぐ姿や休む姿、鳴き声は見えなかった。川を渡った先の葦原の奥まで進み、茂みの根元や泥の上、葦の倒れた辺りも確かめたが、巣や卵は見つからなかった。泥には鳥らしい小さな足跡状の窪みがいくつか残っていたが、鴨のものと断定できるほどはっきりしたものではなく、羽の跡も古い羽毛の切れ端が一枚混ざっている程度だった。投網は手元に持ち、魚の姿もこの範囲では確認できなかった。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "de287e23-6ece-4211-8457-bfde8511701a",
+        "presentationId": "c4ef86a7-ad81-4ec8-a591-db6311fa21fd",
+        "quoteIndex": 1,
+        "quote": "見渡せる範囲では鴨やアヒルの姿や鳴き声はなく、巣や卵も見つかりませんでした。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "ad8f22cf-baf0-4073-a46e-b3bfb3d7761f",
+            "quote": "浅い水の中の石や草の生えた岸を見渡したが、見える範囲には鴨やアヒルの泳ぐ姿も休む姿もなく、鳴き声も聞こえなかった。投網と砕いた豆の布包みは手元にある。"
+          },
+          {
+            "presentationId": "88a51c7b-a97c-4cdd-a27a-e7b04a39cc85",
+            "quote": "キッスは岸伝いに下流へ歩いた。流れの緩いよどみでは水面が静かに広がり、葦の茂みの際や向こう岸の入り江にも目を凝らしたが、鴨の泳ぐ姿や休む姿、鳴き声は見えなかった。川を渡った先の葦原の奥まで進み、茂みの根元や泥の上、葦の倒れた辺りも確かめたが、巣や卵は見つからなかった。泥には鳥らしい小さな足跡状の窪みがいくつか残っていたが、鴨のものと断定できるほどはっきりしたものではなく、羽の跡も古い羽毛の切れ端が一枚混ざっている程度だった。投網は手元に持ち、魚の姿もこの範囲では確認できなかった。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "de287e23-6ece-4211-8457-bfde8511701a",
+        "presentationId": "c4ef86a7-ad81-4ec8-a591-db6311fa21fd",
+        "quoteIndex": 2,
+        "quote": "葦原の泥には鳥らしい小さな足跡状の窪みがあり、古い羽毛の切れ端が一枚混ざっていましたが、鴨のものと断定できるものではありませんでした。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "88a51c7b-a97c-4cdd-a27a-e7b04a39cc85",
+            "quote": "キッスは岸伝いに下流へ歩いた。流れの緩いよどみでは水面が静かに広がり、葦の茂みの際や向こう岸の入り江にも目を凝らしたが、鴨の泳ぐ姿や休む姿、鳴き声は見えなかった。川を渡った先の葦原の奥まで進み、茂みの根元や泥の上、葦の倒れた辺りも確かめたが、巣や卵は見つからなかった。泥には鳥らしい小さな足跡状の窪みがいくつか残っていたが、鴨のものと断定できるほどはっきりしたものではなく、羽の跡も古い羽毛の切れ端が一枚混ざっている程度だった。投網は手元に持ち、魚の姿もこの範囲では確認できなかった。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "de287e23-6ece-4211-8457-bfde8511701a",
+        "presentationId": "c4ef86a7-ad81-4ec8-a591-db6311fa21fd",
+        "quoteIndex": 3,
+        "quote": "その後、キッスは家へ戻り、今日の鴨探しをここまでと決めました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "09015643-4cc8-4396-a2c1-b323cc3f1e80",
+            "quote": "キッスはぶー川の下流の岸辺から川を渡った先の葦原の奥を離れ、投網と豆を持って家へ戻った。今日の範囲で鴨は見つからなかったこと、鴨は朝や夕方に来るかもしれないのでまたの機会に確かめることにしたことを胸に置き、キッスの家へ着いた。"
+          },
+          {
+            "presentationId": "daa61164-bb68-4656-afd1-0c923fcef153",
+            "quote": "キッスはキッスの家に着き、今日の鴨探しをここまでと決めた。投網を片付け、残った砕いた豆は布包みのまま台所にしまった。今日は鴨も卵も見つからなかったが、葦原で小さな足跡と古い羽が一枚見つかったことを思い出し、鴨が来る場所である手応えを胸に置いた。朝か夕方にまた川へ行って確かめるつもりで、ひとまず家でひと休みすることにした。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "de287e23-6ece-4211-8457-bfde8511701a",
+        "presentationId": "c4ef86a7-ad81-4ec8-a591-db6311fa21fd",
+        "quoteIndex": 4,
+        "quote": "投網を片付け、残った砕いた豆は布包みのまま台所にしまいました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "daa61164-bb68-4656-afd1-0c923fcef153",
+            "quote": "キッスはキッスの家に着き、今日の鴨探しをここまでと決めた。投網を片付け、残った砕いた豆は布包みのまま台所にしまった。今日は鴨も卵も見つからなかったが、葦原で小さな足跡と古い羽が一枚見つかったことを思い出し、鴨が来る場所である手応えを胸に置いた。朝か夕方にまた川へ行って確かめるつもりで、ひとまず家でひと休みすることにした。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "de287e23-6ece-4211-8457-bfde8511701a",
+        "presentationId": "c4ef86a7-ad81-4ec8-a591-db6311fa21fd",
+        "quoteIndex": 5,
+        "quote": "鴨も卵も見つかりませんでしたが、キッスは小さな足跡と古い羽を手掛かりに鴨が来る場所だと考え、朝か夕方にまた川へ行って確かめるつもりで、ひとまず家で休むことにしました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "88a51c7b-a97c-4cdd-a27a-e7b04a39cc85",
+            "quote": "キッスは岸伝いに下流へ歩いた。流れの緩いよどみでは水面が静かに広がり、葦の茂みの際や向こう岸の入り江にも目を凝らしたが、鴨の泳ぐ姿や休む姿、鳴き声は見えなかった。川を渡った先の葦原の奥まで進み、茂みの根元や泥の上、葦の倒れた辺りも確かめたが、巣や卵は見つからなかった。泥には鳥らしい小さな足跡状の窪みがいくつか残っていたが、鴨のものと断定できるほどはっきりしたものではなく、羽の跡も古い羽毛の切れ端が一枚混ざっている程度だった。投網は手元に持ち、魚の姿もこの範囲では確認できなかった。"
+          },
+          {
+            "presentationId": "daa61164-bb68-4656-afd1-0c923fcef153",
+            "quote": "キッスはキッスの家に着き、今日の鴨探しをここまでと決めた。投網を片付け、残った砕いた豆は布包みのまま台所にしまった。今日は鴨も卵も見つからなかったが、葦原で小さな足跡と古い羽が一枚見つかったことを思い出し、鴨が来る場所である手応えを胸に置いた。朝か夕方にまた川へ行って確かめるつもりで、ひとまず家でひと休みすることにした。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "7e40359f-35ee-46c7-abfb-94e60d97be9d",
+        "presentationId": "a09b541e-ea41-488a-a130-0937b5e79b9e",
+        "quoteIndex": 0,
+        "quote": "キッスは自宅にいて煎り豆を持った状態から始め、川沿いの豆畑の畝の真ん中へ向かいました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "2db57d7e-c393-4bbb-a117-ac347998d832",
+            "quote": "キッスは自宅の台所にいる。手元には、乾いた豆の莢から豆を取り出し、油も水も使わず平らな焼き道具で煎った煎り豆がある。窓辺には小さなテーブルと椅子が並び、家の内側は掃き清められている。キッスはこの煎り豆を手に、豆の恵みへの感謝を込めた修行の時を過ごすため、川沿いの豆畑の真ん中へ向かうことを考えている。"
+          },
+          {
+            "presentationId": "b5366421-74a4-41f8-a2b3-2638bf4e38ab",
+            "quote": "キッスは自宅を出て川沿いの豆畑へ向かい、畝の真ん中に立った。今日も豆パン、豆腐、きな粉、そして魚とゼラチンまで広がった豆の恵みに手を合わせて感謝した。次に両手で大きくハートを作り、渾身の愛と祈りを込めて「おいしくなぁれ♡萌え♡萌え♡きゅん♡♡♡」を何度か心を込めて唱えた。その後、畑の空気や豆の様子に変化がないか静かに見守ったが、豆の形や色に目に見える変化はなく、風に揺れる静かな畑のままであった。煎り豆を持ったまま、畝の真ん中に立っている。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "7e40359f-35ee-46c7-abfb-94e60d97be9d",
+        "presentationId": "a09b541e-ea41-488a-a130-0937b5e79b9e",
+        "quoteIndex": 1,
+        "quote": "豆パン、豆腐、きな粉、そして魚とゼラチンまで広がった豆の恵みに手を合わせて感謝し、両手でハートを作って祈りを唱え、畑の様子を見守りましたが、豆の形や色に目に見える変化はありませんでした。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "b5366421-74a4-41f8-a2b3-2638bf4e38ab",
+            "quote": "キッスは自宅を出て川沿いの豆畑へ向かい、畝の真ん中に立った。今日も豆パン、豆腐、きな粉、そして魚とゼラチンまで広がった豆の恵みに手を合わせて感謝した。次に両手で大きくハートを作り、渾身の愛と祈りを込めて「おいしくなぁれ♡萌え♡萌え♡きゅん♡♡♡」を何度か心を込めて唱えた。その後、畑の空気や豆の様子に変化がないか静かに見守ったが、豆の形や色に目に見える変化はなく、風に揺れる静かな畑のままであった。煎り豆を持ったまま、畝の真ん中に立っている。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "7e40359f-35ee-46c7-abfb-94e60d97be9d",
+        "presentationId": "a09b541e-ea41-488a-a130-0937b5e79b9e",
+        "quoteIndex": 2,
+        "quote": "その後「今日もありがとう」と一礼して畑を離れ、煎り豆を持ったまま家へ帰り着きました。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "19929997-d111-4975-ab6a-41b18d0ce73c",
+            "quote": "キッスは川沿いの豆畑の畝の真ん中で手を合わせて一礼し、「今日もありがとう」と声に出した。その後、畑を離れて家路につき、キッスの家の屋内へ戻った。修行を終え、煎り豆を持ったまま家に帰り着いた。"
+          },
+          {
+            "presentationId": "9833ceaf-7ad8-403f-a8fd-f394b4a71fad",
+            "quote": "畑に感謝を伝えて修行を終え、キッスは家へ帰り着いた。窓辺には小さなテーブルと椅子が並んでいる。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "7e40359f-35ee-46c7-abfb-94e60d97be9d",
+        "presentationId": "a09b541e-ea41-488a-a130-0937b5e79b9e",
+        "quoteIndex": 3,
+        "quote": "家では煎り豆を二粒味わい、カリッと香ばしく豆の味が濃いものの、はっきりした甘みは感じられませんでした。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "69267e8e-fba6-4502-a1c7-ee5a476cb55a",
+            "quote": "一粒を噛むと、カリッと砕けて香ばしい豆の味が広がる。じっくり味わっても、はっきりした甘みは感じられない。「うん、香ばしい〜……甘みはどうかなぁ」もう一粒も同じ味だ。粉にすればドーナツやプリンに香ばしさを添えられそうだけれど、甘みをつけるには別の材料が要りそうだと思った。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      },
+      {
+        "sceneId": "7e40359f-35ee-46c7-abfb-94e60d97be9d",
+        "presentationId": "a09b541e-ea41-488a-a130-0937b5e79b9e",
+        "quoteIndex": 4,
+        "quote": "粉にすればドーナツやプリンに香ばしさを添えられそうですが、甘みには別の材料が必要そうだという考えで終わっています。",
+        "state": "preserved",
+        "proposition": null,
+        "before": null,
+        "after": null,
+        "context": [
+          {
+            "presentationId": "69267e8e-fba6-4502-a1c7-ee5a476cb55a",
+            "quote": "一粒を噛むと、カリッと砕けて香ばしい豆の味が広がる。じっくり味わっても、はっきりした甘みは感じられない。「うん、香ばしい〜……甘みはどうかなぁ」もう一粒も同じ味だ。粉にすればドーナツやプリンに香ばしさを添えられそうだけれど、甘みをつけるには別の材料が要りそうだと思った。"
+          }
+        ],
+        "explanation": "既に提示された内容の再掲。味見の受取や鴨の同定の未確認を、否定または新しい確証へ変えない。"
+      }
+    ],
+    "limits": [
+      "意味単位と重要度は未校正の手動判断であり、満足度の実測ではない。",
+      "前後で選んだ行為・結果・世界の蓄積が異なり、品質差を入力縮減の効果へ帰属しない。",
+      "新情報0は再掲の質や確かさの継続が同等であることを保証しない。"
+    ]
+  },
+  "validation": {
+    "upperOperations": 48,
+    "scopedRequestsWithFullAnchorsAndEvents": 25,
+    "crossBoundaryCalls": 0,
+    "allIntentionsClassifiedOnce": true,
+    "allUpperResponsesParsed": true,
+    "resultWireMatchesSource": 5,
+    "selectedRecordedResponseMatchesPublished": [
+      {
+        "scene": "021f4598-5437-4912-90db-8652fe43694f",
+        "call": "b726e2f0-430e-4a83-a46b-e3f204250d0d",
+        "recordedResponseMatchesPublished": true,
+        "exactSynopsisCopy": false
+      },
+      {
+        "scene": "5a1f2aad-1210-464c-8c8a-42c053285120",
+        "call": "e76edeb3-371a-4d03-bfb3-a307bf71fcbb",
+        "recordedResponseMatchesPublished": true,
+        "exactSynopsisCopy": false
+      },
+      {
+        "scene": "bb34aadc-ff61-4f42-94dc-d3046868b93b",
+        "call": "4bacd609-532f-49ac-b73a-fab0971046e7",
+        "recordedResponseMatchesPublished": true,
+        "exactSynopsisCopy": false
+      },
+      {
+        "scene": "b89458ea-0b94-47d2-9609-8450519bb544",
+        "call": "3e632a89-187b-4c26-ac60-2db163b43813",
+        "recordedResponseMatchesPublished": true,
+        "exactSynopsisCopy": true
+      },
+      {
+        "scene": "de287e23-6ece-4211-8457-bfde8511701a",
+        "call": "26a58c03-3068-4596-b345-1896e1d9b5b8",
+        "recordedResponseMatchesPublished": true,
+        "exactSynopsisCopy": false
+      },
+      {
+        "scene": "7e40359f-35ee-46c7-abfb-94e60d97be9d",
+        "call": "cfa3aaf6-908b-462c-ab99-cc9c1bc5b471",
+        "recordedResponseMatchesPublished": true,
+        "exactSynopsisCopy": false
+      }
+    ],
+    "readOnlyTransaction": true,
+    "productionWrites": 0,
+    "additionalModelCalls": 0
+  },
+  "earlierSynopsisCopies": [
+    {
+      "operation": "1747e97b-41e8-4c97-86e9-be461ba4e041",
+      "scene": "8fa0d75e-0f1a-4743-8dc5-9199b54c5eb5",
+      "dispositions": ["deferred"]
+    },
+    {
+      "operation": "da419624-f719-41c4-ba8b-c77f051cfd6e",
+      "scene": "df17e297-37da-43c7-af0a-5217a495215a",
+      "dispositions": ["settled", "settled"]
+    },
+    {
+      "operation": "e34d8917-d491-4d91-8423-83c2632c39a4",
+      "scene": "ee0c4a7e-4bd6-4bbb-8e66-1faba3d7536d",
+      "dispositions": ["settled"]
+    }
+  ],
+  "attribution": {
+    "input": "Retained principal state and references dominate these solo scenes. Small initial-input difference is not an intervention effect estimate.",
+    "cost": "One validation repair disappeared; cache hits and the 272000-token pricing tier differ. Recorded costs are not invoice verification.",
+    "wait": "Two after intents include future trials/rest. Whole text is retained and passed as unfinishedAction; no evidence from one cohort that omitted paths caused the disposition.",
+    "quality": "One after result copied the opening synopsis although the real provider input retained all progress observations. Same pattern existed before #215. No causal attribution to lazy effects or ordinary variability is identified."
+  },
+  "sourceArtifacts": [
+    {
+      "name": "production.json.gz",
+      "compressedSha256": "358b2d0a6d1f0c63ae32bceb514c49b57312ffea14e29b0d6fe23fb6a2db83f5"
+    },
+    {
+      "name": "ledger.json.gz",
+      "compressedSha256": "836fd73a7153c0d136f16b8bd486f94933fc2f77a00807669ba2594271ae3e9f"
+    },
+    {
+      "name": "result-wires.json.gz",
+      "compressedSha256": "e71e591884323a4af886c9bc3667604172a79d1fb9edaf4de113340301c54997"
+    }
+  ]
+}

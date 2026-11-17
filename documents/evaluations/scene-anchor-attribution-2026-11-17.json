@@ -1,0 +1,2853 @@
+{
+  "runId": "ec121f94-f0c3-46bd-b77d-6bd4e32466cd",
+  "sourceRun": "72fe0c2b-fa10-4a07-b105-ea15cdaae4c3",
+  "sourceOperation": "fc17aed7-b4c6-466e-9138-700236f160d0",
+  "startedAt": "2026-11-17T01:32:26.117Z",
+  "finishedAt": "2026-11-17T01:37:05.293Z",
+  "configuration": {
+    "model": "gpt-6.1-terra",
+    "api": "responses",
+    "effort": "medium",
+    "maxOutputTokens": 65536,
+    "budgetUsd": 8
+  },
+  "design": {
+    "sourceRun": "72fe0c2b-fa10-4a07-b105-ea15cdaae4c3",
+    "sourceOperation": "fc17aed7-b4c6-466e-9138-700236f160d0",
+    "sourceFinalCalls": {
+      "full": "a0efb519-77f6-4f1f-8534-d8726b3e1373",
+      "reduced": "4e7b3f13-edee-4844-abe4-47db8c76094b"
+    },
+    "repetitionsPerGroup": 4,
+    "budgetUsd": 8,
+    "order": [
+      {
+        "block": 1,
+        "group": "full_old"
+      },
+      {
+        "block": 1,
+        "group": "reduced_old"
+      },
+      {
+        "block": 1,
+        "group": "reduced_new"
+      },
+      {
+        "block": 2,
+        "group": "reduced_new"
+      },
+      {
+        "block": 2,
+        "group": "full_old"
+      },
+      {
+        "block": 2,
+        "group": "reduced_old"
+      },
+      {
+        "block": 3,
+        "group": "reduced_old"
+      },
+      {
+        "block": 3,
+        "group": "reduced_new"
+      },
+      {
+        "block": 3,
+        "group": "full_old"
+      },
+      {
+        "block": 4,
+        "group": "full_old"
+      },
+      {
+        "block": 4,
+        "group": "reduced_new"
+      },
+      {
+        "block": 4,
+        "group": "reduced_old"
+      }
+    ],
+    "inputs": {
+      "full_old": {
+        "sha256": "9b6e00dae274d65797603227c6fd16e6d1132a882eaa3418689ae77a5b936265",
+        "messages": 4
+      },
+      "reduced_old": {
+        "sha256": "53ee41c35ab0416bea713a184a394c37feffb4003f4eb2c12b248511a806c6dc",
+        "messages": 4
+      },
+      "reduced_new": {
+        "sha256": "9b7e85c45bb829ab57f3d9d46ce2cb463b9c586b96e6e24ab75c53db0d3f5dc1",
+        "messages": 4
+      }
+    },
+    "priorPairExactlyReconstructed": true,
+    "queryAndReplyIdentical": true,
+    "targetActors": {
+      "Doro": "a4210000-0000-4000-8000-000000000001",
+      "Michiko": "b1c00000-0000-4000-8000-000000000001",
+      "Paimon": "f5a10000-0000-4000-8000-000000000001"
+    },
+    "limits": "Final-step replay with the same frozen query and answer. One world. Diagnostic frequencies are not narrative quality scores. No production access or product changes."
+  },
+  "groups": {
+    "full_old": {
+      "trials": 4,
+      "patterns": {
+        "settled/settled/settled": 4
+      },
+      "actors": {
+        "Doro": {
+          "settled": 4
+        },
+        "Michiko": {
+          "settled": 4
+        },
+        "Paimon": {
+          "settled": 4
+        }
+      },
+      "wireHashes": [
+        "f4354c1f939be25c20bd9a35fec8f77b6abab88ef5dc77e63f14b5041b057894"
+      ],
+      "models": ["gpt-6.1-terra"],
+      "calculatedNanoUsd": 1145498000,
+      "inputTokens": 1386464
+    },
+    "reduced_old": {
+      "trials": 4,
+      "patterns": {
+        "settled/intent/intent": 1,
+        "settled/deferred/deferred": 1,
+        "intent/intent/intent": 2
+      },
+      "actors": {
+        "Doro": {
+          "settled": 2,
+          "intent": 2
+        },
+        "Michiko": {
+          "intent": 3,
+          "deferred": 1
+        },
+        "Paimon": {
+          "intent": 3,
+          "deferred": 1
+        }
+      },
+      "wireHashes": [
+        "c93b5788bf6815e8285c17015dceb810be4c12fb42a3af7724bceecfc6e2d883"
+      ],
+      "models": ["gpt-6.1-terra"],
+      "calculatedNanoUsd": 601900400,
+      "inputTokens": 783112
+    },
+    "reduced_new": {
+      "trials": 4,
+      "patterns": {
+        "settled/deferred/deferred": 1,
+        "deferred/deferred/deferred": 3
+      },
+      "actors": {
+        "Doro": {
+          "settled": 1,
+          "deferred": 3
+        },
+        "Michiko": {
+          "deferred": 4
+        },
+        "Paimon": {
+          "deferred": 4
+        }
+      },
+      "wireHashes": [
+        "92e7a1ed237fd8813b1837bacd82c7a4ecd4ffa4407cd06c803d474d66e81816"
+      ],
+      "models": ["gpt-6.1-terra"],
+      "calculatedNanoUsd": 510204400,
+      "inputTokens": 783248
+    }
+  },
+  "trials": [
+    {
+      "block": 1,
+      "group": "full_old",
+      "callId": "dbac318f-58e6-4c03-aad3-ceca5acc386b",
+      "sourceHash": "9b6e00dae274d65797603227c6fd16e6d1132a882eaa3418689ae77a5b936265",
+      "wireHash": "f4354c1f939be25c20bd9a35fec8f77b6abab88ef5dc77e63f14b5041b057894",
+      "state": "propose",
+      "dispositions": {
+        "Doro": "settled",
+        "Michiko": "settled",
+        "Paimon": "settled"
+      },
+      "inputTokens": 346616,
+      "calculatedNanoUsd": 283697000,
+      "usage": {
+        "prompt_tokens": 346616,
+        "reasoning_tokens": 290,
+        "completion_tokens": 565,
+        "cache_write_12h_tokens": 0,
+        "cache_write_30m_tokens": 0,
+        "prompt_cache_hit_tokens": 217775,
+        "prompt_cache_miss_tokens": 128841
+      },
+      "elapsedMs": 13789,
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [],
+          "edges": [],
+          "endEdges": []
+        },
+        "summary": "集合写真と会話、各人に届いた内容を保存する。写真機内の集合写真は既存状態で確認できる。村長は帰路に歩き出したが、到着・休息・翌朝の待ち合わせは未到達。",
+        "resolvedUntil": 72636000,
+        "settledIntentions": [
+          {
+            "actorId": "a4210000-0000-4000-8000-000000000001",
+            "reason": "写真に写れた喜びを伝え、その後の会話へ進んだ。"
+          },
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "感謝と仲良くできた喜びを笑顔で返した。"
+          },
+          {
+            "actorId": "b1c00000-0000-4000-8000-000000000001",
+            "reason": "メタルスピノサウルスについて優しいと話した後、別の発言へ進んだ。入力の細部を補って発言させない。"
+          },
+          {
+            "actorId": "f5a10000-0000-4000-8000-000000000001",
+            "reason": "村のことを一緒に覚えていくと伝えた後、別の発言へ進んだ。"
+          }
+        ],
+        "wakeups": [
+          {
+            "actorId": "00000000-0000-4000-8000-000000000008",
+            "at": 72636000,
+            "mode": "resolve"
+          }
+        ]
+      }
+    },
+    {
+      "block": 1,
+      "group": "reduced_old",
+      "callId": "bb5f8e91-f933-4d3c-badc-0817d033b0ea",
+      "sourceHash": "53ee41c35ab0416bea713a184a394c37feffb4003f4eb2c12b248511a806c6dc",
+      "wireHash": "c93b5788bf6815e8285c17015dceb810be4c12fb42a3af7724bceecfc6e2d883",
+      "state": "propose",
+      "dispositions": {
+        "Doro": "settled",
+        "Michiko": "intent",
+        "Paimon": "intent"
+      },
+      "inputTokens": 195778,
+      "calculatedNanoUsd": 215077200,
+      "usage": {
+        "prompt_tokens": 195778,
+        "reasoning_tokens": 699,
+        "completion_tokens": 938,
+        "cache_write_12h_tokens": 0,
+        "cache_write_30m_tokens": 73994,
+        "prompt_cache_hit_tokens": 4094,
+        "prompt_cache_miss_tokens": 191684
+      },
+      "elapsedMs": 21129,
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [],
+          "edges": [],
+          "endEdges": []
+        },
+        "summary": "集合写真を巡る会話や、星見・豆畑・お茶会の話が交わされた。ミチコはナギと紫の塗料について尋ね、村長とミチコはそれぞれ家へ向かって歩き出した。写真機には同等の集合写真の記録が既にある。",
+        "resolvedUntil": 72636000,
+        "settledIntentions": [
+          {
+            "actorId": "a4210000-0000-4000-8000-000000000001",
+            "reason": "写真の良さや皆と写れた喜びを伝えた。"
+          },
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "皆に感謝と親しくできた喜びを笑顔で返した。"
+          }
+        ],
+        "wakeups": [
+          {
+            "actorId": "00000000-0000-4000-8000-000000000008",
+            "at": 72636000,
+            "mode": "resolve"
+          },
+          {
+            "actorId": "b1c00000-0000-4000-8000-000000000001",
+            "at": 72636000,
+            "mode": "intent"
+          },
+          {
+            "actorId": "f5a10000-0000-4000-8000-000000000001",
+            "at": 72636000,
+            "mode": "intent"
+          }
+        ]
+      }
+    },
+    {
+      "block": 1,
+      "group": "reduced_new",
+      "callId": "a973f520-9e7d-4cf2-a90a-da4747821cd5",
+      "sourceHash": "9b7e85c45bb829ab57f3d9d46ce2cb463b9c586b96e6e24ab75c53db0d3f5dc1",
+      "wireHash": "92e7a1ed237fd8813b1837bacd82c7a4ecd4ffa4407cd06c803d474d66e81816",
+      "state": "propose",
+      "dispositions": {
+        "Doro": "settled",
+        "Michiko": "deferred",
+        "Paimon": "deferred"
+      },
+      "inputTokens": 195812,
+      "calculatedNanoUsd": 127726100,
+      "usage": {
+        "prompt_tokens": 195812,
+        "reasoning_tokens": 1051,
+        "completion_tokens": 1226,
+        "cache_write_12h_tokens": 0,
+        "cache_write_30m_tokens": 0,
+        "prompt_cache_hit_tokens": 78122,
+        "prompt_cache_miss_tokens": 117690
+      },
+      "elapsedMs": 26514,
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [],
+          "edges": [],
+          "endEdges": []
+        },
+        "summary": "写真をめぐる会話と各人の受容を保存する。村長は帰宅へ歩き出したが、到着や休息はまだ確認されていない。",
+        "resolvedUntil": 72636000,
+        "settledIntentions": [
+          {
+            "actorId": "a4210000-0000-4000-8000-000000000001",
+            "reason": "写真について喜びを伝えた。"
+          },
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "皆に感謝と親しくできた喜びを笑顔で返した。"
+          }
+        ],
+        "deferredIntentions": [
+          "b1c00000-0000-4000-8000-000000000001",
+          "f5a10000-0000-4000-8000-000000000001"
+        ],
+        "wakeups": [
+          {
+            "actorId": "00000000-0000-4000-8000-000000000008",
+            "at": 72636000,
+            "mode": "resolve"
+          }
+        ]
+      }
+    },
+    {
+      "block": 2,
+      "group": "reduced_new",
+      "callId": "db6258b0-0f62-4fab-be7a-8078d9c7f45e",
+      "sourceHash": "9b7e85c45bb829ab57f3d9d46ce2cb463b9c586b96e6e24ab75c53db0d3f5dc1",
+      "wireHash": "92e7a1ed237fd8813b1837bacd82c7a4ecd4ffa4407cd06c803d474d66e81816",
+      "state": "propose",
+      "dispositions": {
+        "Doro": "deferred",
+        "Michiko": "deferred",
+        "Paimon": "deferred"
+      },
+      "inputTokens": 195812,
+      "calculatedNanoUsd": 125646100,
+      "usage": {
+        "prompt_tokens": 195812,
+        "reasoning_tokens": 633,
+        "completion_tokens": 810,
+        "cache_write_12h_tokens": 0,
+        "cache_write_30m_tokens": 0,
+        "prompt_cache_hit_tokens": 78122,
+        "prompt_cache_miss_tokens": 117690
+      },
+      "elapsedMs": 17898,
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [],
+          "edges": [],
+          "endEdges": []
+        },
+        "summary": "撮影を巡る会話と各人の受容を保存する。村長は帰宅へ歩き出したが、到着や休息はまだ確認されていない。写真機には同等の集合写真の記録が既にある。",
+        "resolvedUntil": 72636000,
+        "settledIntentions": [
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "メイリーたちに笑顔でお礼と返事を伝えた。"
+          }
+        ],
+        "deferredIntentions": [
+          "a4210000-0000-4000-8000-000000000001",
+          "b1c00000-0000-4000-8000-000000000001",
+          "f5a10000-0000-4000-8000-000000000001"
+        ],
+        "wakeups": [
+          {
+            "actorId": "00000000-0000-4000-8000-000000000008",
+            "at": 72636000,
+            "mode": "resolve"
+          }
+        ]
+      }
+    },
+    {
+      "block": 2,
+      "group": "full_old",
+      "callId": "11617c88-6fa8-4412-b060-c451cdafd263",
+      "sourceHash": "9b6e00dae274d65797603227c6fd16e6d1132a882eaa3418689ae77a5b936265",
+      "wireHash": "f4354c1f939be25c20bd9a35fec8f77b6abab88ef5dc77e63f14b5041b057894",
+      "state": "propose",
+      "dispositions": {
+        "Doro": "settled",
+        "Michiko": "settled",
+        "Paimon": "settled"
+      },
+      "inputTokens": 346616,
+      "calculatedNanoUsd": 289067000,
+      "usage": {
+        "prompt_tokens": 346616,
+        "reasoning_tokens": 509,
+        "completion_tokens": 1281,
+        "cache_write_12h_tokens": 0,
+        "cache_write_30m_tokens": 0,
+        "prompt_cache_hit_tokens": 217775,
+        "prompt_cache_miss_tokens": 128841
+      },
+      "elapsedMs": 22170,
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [
+            {
+              "id": "b111a36e-601a-481a-a559-876c6b4f15f5",
+              "kind": "script",
+              "text": "パイモンは明朝9時の豆畑見学に行き、みんなとの星見やミチコのお茶会を楽しみにしている。"
+            },
+            {
+              "id": "e048a718-ed71-4710-aa2f-cd855071e979",
+              "kind": "script",
+              "text": "Doroはパイモンやメイリーにオレンジを分け、お茶会で一緒に食べることを楽しみにしている。"
+            },
+            {
+              "id": "7e3283be-e1e6-4d1f-a1d5-3e9840bdf22f",
+              "kind": "script",
+              "text": "ミチコはお茶会の支度のために家へ向かい、今夜の星見と明朝の豆畑を楽しみにしている。"
+            }
+          ],
+          "edges": [
+            {
+              "id": "20697e0a-bdce-4e2e-a2a5-6a06620ef13c",
+              "kind": "interpret",
+              "source": "f5a10000-0000-4000-8000-000000000001",
+              "target": "b111a36e-601a-481a-a559-876c6b4f15f5",
+              "role": "content",
+              "period": {
+                "from": 72420000
+              }
+            },
+            {
+              "id": "c552c5fa-8579-4505-acd8-be44e0f4db29",
+              "kind": "interpret",
+              "source": "b111a36e-601a-481a-a559-876c6b4f15f5",
+              "target": "6702e66e-195b-4889-919b-04448c7c6f51",
+              "role": "about",
+              "period": {
+                "from": 72420000
+              }
+            },
+            {
+              "id": "02e53b59-5d74-46ab-ac33-f3febed68ad1",
+              "kind": "interpret",
+              "source": "b111a36e-601a-481a-a559-876c6b4f15f5",
+              "target": "b1c00000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72420000
+              }
+            },
+            {
+              "id": "a1349040-5557-4bc3-ace2-7d1f6e9c98c0",
+              "kind": "interpret",
+              "source": "a4210000-0000-4000-8000-000000000001",
+              "target": "e048a718-ed71-4710-aa2f-cd855071e979",
+              "role": "content",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "5dad6c80-fbbb-419d-a78d-8108a5edc6d6",
+              "kind": "interpret",
+              "source": "e048a718-ed71-4710-aa2f-cd855071e979",
+              "target": "f5a10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "d94bcec7-1c12-4146-aa4a-660d642ce13c",
+              "kind": "interpret",
+              "source": "e048a718-ed71-4710-aa2f-cd855071e979",
+              "target": "d0d10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "80169fda-0c59-4e4e-a0b7-3f5a2ec91b46",
+              "kind": "interpret",
+              "source": "b1c00000-0000-4000-8000-000000000001",
+              "target": "7e3283be-e1e6-4d1f-a1d5-3e9840bdf22f",
+              "role": "content",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "a2e0a065-f716-4031-a3e1-349a3f891419",
+              "kind": "interpret",
+              "source": "7e3283be-e1e6-4d1f-a1d5-3e9840bdf22f",
+              "target": "b1c00000-0000-4000-8000-000000000002",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "1e7d4ba9-4669-486c-aeea-20b669f6fbe0",
+              "kind": "interpret",
+              "source": "7e3283be-e1e6-4d1f-a1d5-3e9840bdf22f",
+              "target": "6702e66e-195b-4889-919b-04448c7c6f51",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            }
+          ],
+          "endEdges": []
+        },
+        "summary": "記念撮影と会話を保存。星見、お茶会、明朝の豆畑への各自の期待を保持し、村長の帰路は継続中とする。写真機の集合写真は既存状態で足りる。",
+        "resolvedUntil": 72636000,
+        "settledIntentions": [
+          {
+            "actorId": "a4210000-0000-4000-8000-000000000001",
+            "reason": "写真への喜びを伝え、その後の会話に移った。"
+          },
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "笑顔で感謝と親しみを返した。"
+          },
+          {
+            "actorId": "b1c00000-0000-4000-8000-000000000001",
+            "reason": "メタルスピノサウルスについて優しいと伝え、その後別の話題や帰路へ移った。指定された細部の発言は補わない。"
+          },
+          {
+            "actorId": "f5a10000-0000-4000-8000-000000000001",
+            "reason": "村のことを一緒に覚えていくと話し、その後の会話に移った。指定された相手や文言は補わない。"
+          }
+        ],
+        "wakeups": [
+          {
+            "actorId": "00000000-0000-4000-8000-000000000008",
+            "at": 72636000,
+            "mode": "resolve"
+          }
+        ]
+      }
+    },
+    {
+      "block": 2,
+      "group": "reduced_old",
+      "callId": "66056738-762a-440b-b812-e580b44c3fef",
+      "sourceHash": "53ee41c35ab0416bea713a184a394c37feffb4003f4eb2c12b248511a806c6dc",
+      "wireHash": "c93b5788bf6815e8285c17015dceb810be4c12fb42a3af7724bceecfc6e2d883",
+      "state": "propose",
+      "dispositions": {
+        "Doro": "settled",
+        "Michiko": "deferred",
+        "Paimon": "deferred"
+      },
+      "inputTokens": 195778,
+      "calculatedNanoUsd": 128619400,
+      "usage": {
+        "prompt_tokens": 195778,
+        "reasoning_tokens": 540,
+        "completion_tokens": 1405,
+        "cache_write_12h_tokens": 0,
+        "cache_write_30m_tokens": 0,
+        "prompt_cache_hit_tokens": 78088,
+        "prompt_cache_miss_tokens": 117690
+      },
+      "elapsedMs": 22520,
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [
+            {
+              "id": "cdd1665e-5dfb-43a8-a1cd-2f1ac779342b",
+              "kind": "script",
+              "text": "村長は自宅へ向かって歩き出し、着いたら休んで、明朝9時にミチコの家の前へ行くつもりでいる。"
+            },
+            {
+              "id": "a3d7a841-6a91-442d-a874-807c9a0cc487",
+              "kind": "script",
+              "text": "パイモンは明朝9時の豆畑見学を楽しみにし、みんなとの星見やミチコのお茶会も楽しみにしている。"
+            },
+            {
+              "id": "e60a84d9-2887-4a78-a602-4356e037ecba",
+              "kind": "script",
+              "text": "Doroはお茶会でメイリーに甘いオレンジの半分をあげ、パイモンにも分けたいと話した。"
+            },
+            {
+              "id": "cdb6db4d-c2f8-4a22-a1be-864e54bb29c4",
+              "kind": "script",
+              "text": "ミチコはお茶会のごちそうを用意するため家へ向かった。今夜の星見と明日の豆畑の世話役の手がかり探しを楽しみにしている。"
+            }
+          ],
+          "edges": [
+            {
+              "id": "18e26497-539f-42bf-a137-9f7f52ff7c84",
+              "kind": "interpret",
+              "source": "00000000-0000-4000-8000-000000000008",
+              "target": "cdd1665e-5dfb-43a8-a1cd-2f1ac779342b",
+              "role": "content",
+              "period": {
+                "from": 72498000
+              }
+            },
+            {
+              "id": "1c7bb0d5-f613-4de9-a79e-1a104c86b91d",
+              "kind": "interpret",
+              "source": "cdd1665e-5dfb-43a8-a1cd-2f1ac779342b",
+              "target": "b1c00000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72498000
+              }
+            },
+            {
+              "id": "27a8ccd4-85c1-4f6c-a370-323d4c3ba933",
+              "kind": "interpret",
+              "source": "f5a10000-0000-4000-8000-000000000001",
+              "target": "a3d7a841-6a91-442d-a874-807c9a0cc487",
+              "role": "content",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "f5436de3-d36b-401f-ad69-98885c153fef",
+              "kind": "interpret",
+              "source": "a3d7a841-6a91-442d-a874-807c9a0cc487",
+              "target": "6702e66e-195b-4889-919b-04448c7c6f51",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "08bd26bb-5a6f-48a7-a70f-63fc30664b6b",
+              "kind": "interpret",
+              "source": "a3d7a841-6a91-442d-a874-807c9a0cc487",
+              "target": "b1c00000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "b8bde94b-de62-44dc-a064-9a0e81ebf9f8",
+              "kind": "interpret",
+              "source": "a4210000-0000-4000-8000-000000000001",
+              "target": "e60a84d9-2887-4a78-a602-4356e037ecba",
+              "role": "content",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "647a18b7-a3d3-4230-ade0-968288669deb",
+              "kind": "interpret",
+              "source": "e60a84d9-2887-4a78-a602-4356e037ecba",
+              "target": "d0d10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "253bc4df-de0d-4f7e-a726-26afa692a288",
+              "kind": "interpret",
+              "source": "e60a84d9-2887-4a78-a602-4356e037ecba",
+              "target": "f5a10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "677f43b9-10a9-4bdd-a342-98f2b3bc23d1",
+              "kind": "interpret",
+              "source": "b1c00000-0000-4000-8000-000000000001",
+              "target": "cdb6db4d-c2f8-4a22-a1be-864e54bb29c4",
+              "role": "content",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "4f182c98-f5a1-433e-a7ad-ddc0c01ebda0",
+              "kind": "interpret",
+              "source": "cdb6db4d-c2f8-4a22-a1be-864e54bb29c4",
+              "target": "b1c00000-0000-4000-8000-000000000002",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "5f681139-aa88-4a72-ad35-5de5111810e9",
+              "kind": "interpret",
+              "source": "cdb6db4d-c2f8-4a22-a1be-864e54bb29c4",
+              "target": "6702e66e-195b-4889-919b-04448c7c6f51",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            }
+          ],
+          "endEdges": []
+        },
+        "summary": "写真や星見、お茶会、翌朝の豆畑についての会話を保存。村長とミチコはそれぞれ家へ向かって歩き出したが、到着や支度の完了は確認されていない。オレンジの分配は申し出であり、実際の受け渡しは未確認。",
+        "resolvedUntil": 72636000,
+        "settledIntentions": [
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "メイリーたちに笑顔で感謝と、仲良くできて嬉しいという返事をした。"
+          },
+          {
+            "actorId": "a4210000-0000-4000-8000-000000000001",
+            "reason": "写真を褒め、皆と写れた喜びや仲良くなれた嬉しさを伝えた。"
+          }
+        ],
+        "deferredIntentions": [
+          "00000000-0000-4000-8000-000000000008",
+          "b1c00000-0000-4000-8000-000000000001",
+          "f5a10000-0000-4000-8000-000000000001"
+        ],
+        "wakeups": []
+      }
+    },
+    {
+      "block": 3,
+      "group": "reduced_old",
+      "callId": "b469ac83-1d86-4a09-86a4-f46237223d65",
+      "sourceHash": "53ee41c35ab0416bea713a184a394c37feffb4003f4eb2c12b248511a806c6dc",
+      "wireHash": "c93b5788bf6815e8285c17015dceb810be4c12fb42a3af7724bceecfc6e2d883",
+      "state": "propose",
+      "dispositions": {
+        "Doro": "intent",
+        "Michiko": "intent",
+        "Paimon": "intent"
+      },
+      "inputTokens": 195778,
+      "calculatedNanoUsd": 129344400,
+      "usage": {
+        "prompt_tokens": 195778,
+        "reasoning_tokens": 905,
+        "completion_tokens": 1550,
+        "cache_write_12h_tokens": 0,
+        "cache_write_30m_tokens": 0,
+        "prompt_cache_hit_tokens": 78088,
+        "prompt_cache_miss_tokens": 117690
+      },
+      "elapsedMs": 28882,
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [
+            {
+              "id": "0a1277cf-ac6b-47fc-a971-9d41d1080bd1",
+              "kind": "script",
+              "text": "パイモンは明朝9時に豆畑を見に行き、世話役の手がかりを探すことや、みんなとの星見を楽しみにしている。"
+            },
+            {
+              "id": "9b6d8603-4a2c-4686-a1c9-636fda8a65e5",
+              "kind": "script",
+              "text": "Doroはお茶会でメイリーやパイモンに甘いオレンジを分け、一緒に食べたいと思っている。"
+            },
+            {
+              "id": "f2d97a78-21e6-4691-a457-8ad1635cb3f6",
+              "kind": "script",
+              "text": "ミチコはお茶会の支度をするため家へ向かい、ごちそうを作るつもりでいる。"
+            }
+          ],
+          "edges": [
+            {
+              "id": "2adcd5b9-8dc0-4bcc-a5f4-4676b2436bd1",
+              "kind": "interpret",
+              "source": "f5a10000-0000-4000-8000-000000000001",
+              "target": "0a1277cf-ac6b-47fc-a971-9d41d1080bd1",
+              "role": "content",
+              "period": {
+                "from": 72420000
+              }
+            },
+            {
+              "id": "6a0dcd33-b669-4531-a07c-7a2c135ed9fb",
+              "kind": "interpret",
+              "source": "0a1277cf-ac6b-47fc-a971-9d41d1080bd1",
+              "target": "6702e66e-195b-4889-919b-04448c7c6f51",
+              "role": "about",
+              "period": {
+                "from": 72420000
+              }
+            },
+            {
+              "id": "f27d3791-0aee-4afb-ab13-10be812d2107",
+              "kind": "interpret",
+              "source": "a4210000-0000-4000-8000-000000000001",
+              "target": "9b6d8603-4a2c-4686-a1c9-636fda8a65e5",
+              "role": "content",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "7a5e24c2-bd05-4901-a1ed-4d02a4ddfd12",
+              "kind": "interpret",
+              "source": "9b6d8603-4a2c-4686-a1c9-636fda8a65e5",
+              "target": "d0d10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "1e109858-1d38-437f-a6c4-7d611a776363",
+              "kind": "interpret",
+              "source": "9b6d8603-4a2c-4686-a1c9-636fda8a65e5",
+              "target": "f5a10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "7e0a6fba-093e-4794-ac7c-6cd330f079b5",
+              "kind": "interpret",
+              "source": "b1c00000-0000-4000-8000-000000000001",
+              "target": "f2d97a78-21e6-4691-a457-8ad1635cb3f6",
+              "role": "content",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "a1fc828f-f52c-4382-a4c3-4430fb3b9a35",
+              "kind": "interpret",
+              "source": "f2d97a78-21e6-4691-a457-8ad1635cb3f6",
+              "target": "b1c00000-0000-4000-8000-000000000002",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            }
+          ],
+          "endEdges": []
+        },
+        "summary": "写真を囲む会話、星見や豆畑、お茶会の話を保存した。村長とミチコはそれぞれ家へ向かって歩き出したが、到着は確定していない。オレンジの分配やお茶会の実施はまだ起きていない。",
+        "resolvedUntil": 72636000,
+        "settledIntentions": [
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "皆への感謝と、仲良くできて嬉しいという笑顔の返事をした。"
+          }
+        ],
+        "wakeups": [
+          {
+            "actorId": "00000000-0000-4000-8000-000000000008",
+            "at": 72636000,
+            "mode": "resolve"
+          },
+          {
+            "actorId": "a4210000-0000-4000-8000-000000000001",
+            "at": 72636000,
+            "mode": "intent"
+          },
+          {
+            "actorId": "b1c00000-0000-4000-8000-000000000001",
+            "at": 72636000,
+            "mode": "intent"
+          },
+          {
+            "actorId": "f5a10000-0000-4000-8000-000000000001",
+            "at": 72636000,
+            "mode": "intent"
+          }
+        ]
+      }
+    },
+    {
+      "block": 3,
+      "group": "reduced_new",
+      "callId": "65326cfa-fd8b-4024-a022-c2df09347e03",
+      "sourceHash": "9b7e85c45bb829ab57f3d9d46ce2cb463b9c586b96e6e24ab75c53db0d3f5dc1",
+      "wireHash": "92e7a1ed237fd8813b1837bacd82c7a4ecd4ffa4407cd06c803d474d66e81816",
+      "state": "propose",
+      "dispositions": {
+        "Doro": "deferred",
+        "Michiko": "deferred",
+        "Paimon": "deferred"
+      },
+      "inputTokens": 195812,
+      "calculatedNanoUsd": 126406100,
+      "usage": {
+        "prompt_tokens": 195812,
+        "reasoning_tokens": 765,
+        "completion_tokens": 962,
+        "cache_write_12h_tokens": 0,
+        "cache_write_30m_tokens": 0,
+        "prompt_cache_hit_tokens": 78122,
+        "prompt_cache_miss_tokens": 117690
+      },
+      "elapsedMs": 21210,
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [],
+          "edges": [],
+          "endEdges": []
+        },
+        "summary": "集合写真や会話、村長が帰路についた出来事と各人の受容を保存する。星見、豆畑見学、お茶会は今後の予定として残る。",
+        "resolvedUntil": 72636000,
+        "continuation": "村長は帰宅に向けて歩き出したが、到着や休息はまだ確認されていない。",
+        "settledIntentions": [
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "メイリーたちに笑顔で感謝と親しみを伝えた。"
+          }
+        ],
+        "deferredIntentions": [
+          "a4210000-0000-4000-8000-000000000001",
+          "b1c00000-0000-4000-8000-000000000001",
+          "f5a10000-0000-4000-8000-000000000001"
+        ],
+        "wakeups": [
+          {
+            "actorId": "00000000-0000-4000-8000-000000000008",
+            "at": 72636000,
+            "mode": "intent"
+          }
+        ]
+      }
+    },
+    {
+      "block": 3,
+      "group": "full_old",
+      "callId": "9188cf26-4d68-4348-a63f-70cc984cf203",
+      "sourceHash": "9b6e00dae274d65797603227c6fd16e6d1132a882eaa3418689ae77a5b936265",
+      "wireHash": "f4354c1f939be25c20bd9a35fec8f77b6abab88ef5dc77e63f14b5041b057894",
+      "state": "propose",
+      "dispositions": {
+        "Doro": "settled",
+        "Michiko": "settled",
+        "Paimon": "settled"
+      },
+      "inputTokens": 346616,
+      "calculatedNanoUsd": 288332000,
+      "usage": {
+        "prompt_tokens": 346616,
+        "reasoning_tokens": 471,
+        "completion_tokens": 1183,
+        "cache_write_12h_tokens": 0,
+        "cache_write_30m_tokens": 0,
+        "prompt_cache_hit_tokens": 217775,
+        "prompt_cache_miss_tokens": 128841
+      },
+      "elapsedMs": 21228,
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [
+            {
+              "id": "a15c4a0d-5f88-4649-ae2e-cd1f820875cc",
+              "kind": "script",
+              "text": "パイモンは明朝9時の豆畑見学に行くことと、みんなとの星見を楽しみにしている。"
+            },
+            {
+              "id": "e4fa9f33-4149-4cc0-a386-16ea46efc745",
+              "kind": "script",
+              "text": "Doroはお茶会でメイリーやパイモンにもオレンジを分け、一緒に食べることを楽しみにしている。"
+            },
+            {
+              "id": "80553c46-3189-46ab-a490-335839715edc",
+              "kind": "script",
+              "text": "ミチコはお茶会の支度のため家へ向かい、今夜の星見や明日の豆畑を楽しみにしている。"
+            }
+          ],
+          "edges": [
+            {
+              "id": "795697a8-d957-4a76-a77e-174b2fba2be8",
+              "kind": "interpret",
+              "source": "f5a10000-0000-4000-8000-000000000001",
+              "target": "a15c4a0d-5f88-4649-ae2e-cd1f820875cc",
+              "role": "content",
+              "period": {
+                "from": 72420000
+              }
+            },
+            {
+              "id": "790c8bd9-fd82-488d-a5f5-fed0283acb12",
+              "kind": "interpret",
+              "source": "a15c4a0d-5f88-4649-ae2e-cd1f820875cc",
+              "target": "6702e66e-195b-4889-919b-04448c7c6f51",
+              "role": "about",
+              "period": {
+                "from": 72420000
+              }
+            },
+            {
+              "id": "90b64941-097d-4076-afdb-d4f23fe0a439",
+              "kind": "interpret",
+              "source": "a4210000-0000-4000-8000-000000000001",
+              "target": "e4fa9f33-4149-4cc0-a386-16ea46efc745",
+              "role": "content",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "aa7579a6-77a7-40d2-ae55-659d44cb8863",
+              "kind": "interpret",
+              "source": "e4fa9f33-4149-4cc0-a386-16ea46efc745",
+              "target": "d0d10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "e5ed355d-cc46-40a4-adb6-4730c8a45209",
+              "kind": "interpret",
+              "source": "e4fa9f33-4149-4cc0-a386-16ea46efc745",
+              "target": "f5a10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "65759488-8e2a-420c-a2b6-1691a6cc76c2",
+              "kind": "interpret",
+              "source": "b1c00000-0000-4000-8000-000000000001",
+              "target": "80553c46-3189-46ab-a490-335839715edc",
+              "role": "content",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "94bfdab4-efcd-416d-a990-823a96de2b3b",
+              "kind": "interpret",
+              "source": "80553c46-3189-46ab-a490-335839715edc",
+              "target": "b1c00000-0000-4000-8000-000000000002",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "1caab4a6-f728-4499-aeb8-1005676ff1a6",
+              "kind": "interpret",
+              "source": "80553c46-3189-46ab-a490-335839715edc",
+              "target": "6702e66e-195b-4889-919b-04448c7c6f51",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            }
+          ],
+          "endEdges": []
+        },
+        "summary": "集合写真と会話、星見や豆畑の予定を保存した。村長は帰宅へ歩き出したが到着・休息は未確認。ミチコも支度へ向かって歩き出した。",
+        "resolvedUntil": 72636000,
+        "settledIntentions": [
+          {
+            "actorId": "a4210000-0000-4000-8000-000000000001",
+            "reason": "写真を喜び、皆と写れた嬉しさを伝えた。"
+          },
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "笑顔で感謝と仲良くできる嬉しさを伝えた。"
+          },
+          {
+            "actorId": "b1c00000-0000-4000-8000-000000000001",
+            "reason": "メタルスピノサウルスの優しさを伝えた後、会話と支度へ移った。発言されなかった体験談は補わない。"
+          },
+          {
+            "actorId": "f5a10000-0000-4000-8000-000000000001",
+            "reason": "感謝を伝え、村のことを一緒に覚えていくと呼びかけた。"
+          }
+        ],
+        "deferredIntentions": ["00000000-0000-4000-8000-000000000008"],
+        "wakeups": []
+      }
+    },
+    {
+      "block": 4,
+      "group": "full_old",
+      "callId": "5e86f001-3bfe-4a8f-984e-30969c930a19",
+      "sourceHash": "9b6e00dae274d65797603227c6fd16e6d1132a882eaa3418689ae77a5b936265",
+      "wireHash": "f4354c1f939be25c20bd9a35fec8f77b6abab88ef5dc77e63f14b5041b057894",
+      "state": "propose",
+      "dispositions": {
+        "Doro": "settled",
+        "Michiko": "settled",
+        "Paimon": "settled"
+      },
+      "inputTokens": 346616,
+      "calculatedNanoUsd": 284402000,
+      "usage": {
+        "prompt_tokens": 346616,
+        "reasoning_tokens": 396,
+        "completion_tokens": 659,
+        "cache_write_12h_tokens": 0,
+        "cache_write_30m_tokens": 0,
+        "prompt_cache_hit_tokens": 217775,
+        "prompt_cache_miss_tokens": 128841
+      },
+      "elapsedMs": 13903,
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [],
+          "edges": [],
+          "endEdges": []
+        },
+        "summary": "記念写真は写真機に既に記録されている。撮影後の会話と各人の受容を保存し、村長の帰宅は歩き出した段階として保持する。",
+        "resolvedUntil": 72636000,
+        "settledIntentions": [
+          {
+            "actorId": "a4210000-0000-4000-8000-000000000001",
+            "reason": "写真を喜ぶ言葉を伝え、その後の会話へ移った。"
+          },
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "皆と仲良くできて嬉しいと笑顔で返事をした。"
+          },
+          {
+            "actorId": "b1c00000-0000-4000-8000-000000000001",
+            "reason": "メタルスピノサウルスの優しさを伝えた後、別の会話へ移った。初対面の詳しい話は発言されたものとして補わない。"
+          },
+          {
+            "actorId": "f5a10000-0000-4000-8000-000000000001",
+            "reason": "村のことを一緒に覚えていくと伝え、その後の会話へ移った。"
+          }
+        ],
+        "wakeups": [
+          {
+            "actorId": "00000000-0000-4000-8000-000000000008",
+            "at": 72636000,
+            "mode": "resolve"
+          }
+        ]
+      }
+    },
+    {
+      "block": 4,
+      "group": "reduced_new",
+      "callId": "5cb07346-524f-428f-b6bc-f120c11b6086",
+      "sourceHash": "9b7e85c45bb829ab57f3d9d46ce2cb463b9c586b96e6e24ab75c53db0d3f5dc1",
+      "wireHash": "92e7a1ed237fd8813b1837bacd82c7a4ecd4ffa4407cd06c803d474d66e81816",
+      "state": "propose",
+      "dispositions": {
+        "Doro": "deferred",
+        "Michiko": "deferred",
+        "Paimon": "deferred"
+      },
+      "inputTokens": 195812,
+      "calculatedNanoUsd": 130426100,
+      "usage": {
+        "prompt_tokens": 195812,
+        "reasoning_tokens": 1090,
+        "completion_tokens": 1766,
+        "cache_write_12h_tokens": 0,
+        "cache_write_30m_tokens": 0,
+        "prompt_cache_hit_tokens": 78122,
+        "prompt_cache_miss_tokens": 117690
+      },
+      "elapsedMs": 32302,
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [
+            {
+              "id": "27eab44c-7bde-431c-a8c9-f7f55e9cff80",
+              "kind": "script",
+              "text": "パイモンは明日の朝9時に豆畑へ行き、みんなと畑を見たり話を聞いたりするのを楽しみにしている。"
+            },
+            {
+              "id": "b504b602-27ba-4cc1-a350-a30b3299616d",
+              "kind": "script",
+              "text": "パイモンは今夜の星見に一緒に行きたいと思い、Doroとのオレンジの分け合いやミチコのお茶会も楽しみにしている。"
+            },
+            {
+              "id": "ce1286f9-4a4a-47df-aaaa-c95c2914036e",
+              "kind": "script",
+              "text": "Doroはパイモンにも甘いものを分け、メイリーには甘い半分をお茶会で一緒に食べようと伝えている。"
+            }
+          ],
+          "edges": [
+            {
+              "id": "630fd404-f853-4993-ad2f-af4041f14c45",
+              "kind": "interpret",
+              "source": "f5a10000-0000-4000-8000-000000000001",
+              "target": "27eab44c-7bde-431c-a8c9-f7f55e9cff80",
+              "role": "content",
+              "period": {
+                "from": 72420000
+              }
+            },
+            {
+              "id": "48af6d8c-32f4-4582-ae03-56e35d3bb5ae",
+              "kind": "interpret",
+              "source": "27eab44c-7bde-431c-a8c9-f7f55e9cff80",
+              "target": "6702e66e-195b-4889-919b-04448c7c6f51",
+              "role": "about",
+              "period": {
+                "from": 72420000
+              }
+            },
+            {
+              "id": "816745d1-780f-492b-a663-1888578893f3",
+              "kind": "interpret",
+              "source": "27eab44c-7bde-431c-a8c9-f7f55e9cff80",
+              "target": "00000000-0000-4000-8000-000000000008",
+              "role": "about",
+              "period": {
+                "from": 72420000
+              }
+            },
+            {
+              "id": "2fd1c5cf-2168-47ec-a072-2c8e7196920a",
+              "kind": "interpret",
+              "source": "f5a10000-0000-4000-8000-000000000001",
+              "target": "b504b602-27ba-4cc1-a350-a30b3299616d",
+              "role": "content",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "cf54b9e7-27be-40c9-aa46-8f42de7a79a0",
+              "kind": "interpret",
+              "source": "b504b602-27ba-4cc1-a350-a30b3299616d",
+              "target": "a4210000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "9e44b53e-83f3-4fd8-a03f-aa471242161b",
+              "kind": "interpret",
+              "source": "b504b602-27ba-4cc1-a350-a30b3299616d",
+              "target": "b1c00000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "43e96f1b-5289-4d41-a553-3627506455d9",
+              "kind": "interpret",
+              "source": "a4210000-0000-4000-8000-000000000001",
+              "target": "ce1286f9-4a4a-47df-aaaa-c95c2914036e",
+              "role": "content",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "3806d6de-c7ce-4cbc-a81e-2817a2a02f26",
+              "kind": "interpret",
+              "source": "ce1286f9-4a4a-47df-aaaa-c95c2914036e",
+              "target": "f5a10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "91b44f73-e007-48c0-a889-f1e72826cf55",
+              "kind": "interpret",
+              "source": "ce1286f9-4a4a-47df-aaaa-c95c2914036e",
+              "target": "d0d10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72614000
+              }
+            }
+          ],
+          "endEdges": []
+        },
+        "summary": "写真や今後の星見、お茶会、豆畑についての発言と受容を保存する。村長は帰路についたが、到着や休息はまだ確認されていない。",
+        "resolvedUntil": 72636000,
+        "settledIntentions": [
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "メイリーたちに笑顔で感謝と親しさを伝えて返事をした。"
+          }
+        ],
+        "deferredIntentions": [
+          "a4210000-0000-4000-8000-000000000001",
+          "b1c00000-0000-4000-8000-000000000001",
+          "f5a10000-0000-4000-8000-000000000001"
+        ],
+        "wakeups": [
+          {
+            "actorId": "00000000-0000-4000-8000-000000000008",
+            "at": 72636000,
+            "mode": "resolve"
+          }
+        ]
+      }
+    },
+    {
+      "block": 4,
+      "group": "reduced_old",
+      "callId": "0f87ed28-7398-4bfe-8c35-cb324feba042",
+      "sourceHash": "53ee41c35ab0416bea713a184a394c37feffb4003f4eb2c12b248511a806c6dc",
+      "wireHash": "c93b5788bf6815e8285c17015dceb810be4c12fb42a3af7724bceecfc6e2d883",
+      "state": "propose",
+      "dispositions": {
+        "Doro": "intent",
+        "Michiko": "intent",
+        "Paimon": "intent"
+      },
+      "inputTokens": 195778,
+      "calculatedNanoUsd": 128859400,
+      "usage": {
+        "prompt_tokens": 195778,
+        "reasoning_tokens": 753,
+        "completion_tokens": 1453,
+        "cache_write_12h_tokens": 0,
+        "cache_write_30m_tokens": 0,
+        "prompt_cache_hit_tokens": 78088,
+        "prompt_cache_miss_tokens": 117690
+      },
+      "elapsedMs": 26398,
+      "output": {
+        "type": "propose",
+        "changes": {
+          "nodes": [
+            {
+              "id": "b503352d-d803-43c4-a122-2b71a834531e",
+              "kind": "script",
+              "text": "パイモンは明日の朝9時に豆畑を見に行くことを楽しみにし、みんなと星を見ることも楽しみにしている。"
+            },
+            {
+              "id": "dcc7d211-efdf-4751-a6f1-0cf43ad13a61",
+              "kind": "script",
+              "text": "Doroはお茶会でメイリーにオレンジの甘い半分をあげ、パイモンにも分けたいと話している。"
+            },
+            {
+              "id": "ae89bae3-9667-4ea4-a9dd-d2094d48f57c",
+              "kind": "script",
+              "text": "ミチコはお茶会の支度をするため家へ向かっている。"
+            }
+          ],
+          "edges": [
+            {
+              "id": "24e060e6-bf10-4f9b-af0c-39bba92229aa",
+              "kind": "interpret",
+              "source": "f5a10000-0000-4000-8000-000000000001",
+              "target": "b503352d-d803-43c4-a122-2b71a834531e",
+              "role": "content",
+              "period": {
+                "from": 72420000
+              }
+            },
+            {
+              "id": "a11af39c-eb22-41c2-a1b0-3593e7207ebe",
+              "kind": "interpret",
+              "source": "b503352d-d803-43c4-a122-2b71a834531e",
+              "target": "6702e66e-195b-4889-919b-04448c7c6f51",
+              "role": "about",
+              "period": {
+                "from": 72420000
+              }
+            },
+            {
+              "id": "7dbeee94-0e13-4405-a6ba-4a059b4db032",
+              "kind": "interpret",
+              "source": "a4210000-0000-4000-8000-000000000001",
+              "target": "dcc7d211-efdf-4751-a6f1-0cf43ad13a61",
+              "role": "content",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "05fdf781-40b5-447f-a468-db6cffb09445",
+              "kind": "interpret",
+              "source": "dcc7d211-efdf-4751-a6f1-0cf43ad13a61",
+              "target": "d0d10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "403e3513-d4ce-42d4-a12a-eb82e832b1b4",
+              "kind": "interpret",
+              "source": "dcc7d211-efdf-4751-a6f1-0cf43ad13a61",
+              "target": "f5a10000-0000-4000-8000-000000000001",
+              "role": "about",
+              "period": {
+                "from": 72614000
+              }
+            },
+            {
+              "id": "b074e126-a84a-4870-a7e1-9647a232efd8",
+              "kind": "interpret",
+              "source": "b1c00000-0000-4000-8000-000000000001",
+              "target": "ae89bae3-9667-4ea4-a9dd-d2094d48f57c",
+              "role": "content",
+              "period": {
+                "from": 72602000
+              }
+            },
+            {
+              "id": "bee79768-0e1d-4695-afc6-11f26693d937",
+              "kind": "interpret",
+              "source": "ae89bae3-9667-4ea4-a9dd-d2094d48f57c",
+              "target": "b1c00000-0000-4000-8000-000000000002",
+              "role": "about",
+              "period": {
+                "from": 72602000
+              }
+            }
+          ],
+          "endEdges": []
+        },
+        "summary": "記念写真をめぐる交流と今後の話を保存。村長とミチコはそれぞれ家へ向かい始めたが、到着は確定していない。オレンジやお茶会は今後の予定であり、受け渡しや開催は未了。",
+        "resolvedUntil": 72636000,
+        "settledIntentions": [
+          {
+            "actorId": "a5000000-0000-4000-8000-000000000001",
+            "reason": "メイリーたちへ笑顔で感謝と親しみを返した。"
+          }
+        ],
+        "wakeups": [
+          {
+            "actorId": "00000000-0000-4000-8000-000000000008",
+            "at": 72636000,
+            "mode": "resolve"
+          },
+          {
+            "actorId": "a4210000-0000-4000-8000-000000000001",
+            "at": 72636000,
+            "mode": "intent"
+          },
+          {
+            "actorId": "b1c00000-0000-4000-8000-000000000001",
+            "at": 72636000,
+            "mode": "intent"
+          },
+          {
+            "actorId": "f5a10000-0000-4000-8000-000000000001",
+            "at": 72636000,
+            "mode": "intent"
+          }
+        ],
+        "continuation": "村長の帰宅とその後の休息・明朝の待ち合わせは未了。Doro、ミチコ、パイモンは提示された会話の中で別の発言へ進んでおり、元の文言を再実行せず次の判断に引き継ぐ。"
+      }
+    }
+  ],
+  "budget": {
+    "limitUsd": 8,
+    "upperCostUsd": 2.2576028,
+    "calls": 12,
+    "unsettled": 0
+  },
+  "evidence": {
+    "sourceOperation": "fc17aed7-b4c6-466e-9138-700236f160d0",
+    "groupsDifferOnlyInGraphAndPrompt": true,
+    "queryHistoryIdentical": true,
+    "actors": [
+      {
+        "name": "Doro",
+        "actorId": "a4210000-0000-4000-8000-000000000001",
+        "intentionPath": "sourceMessages[1].content.request.intentions[1]",
+        "intention": {
+          "actorId": "a4210000-0000-4000-8000-000000000001",
+          "actionText": "ほんと、いい写真になったね。みんな仲良しで、見てるだけであったかいな〜",
+          "continuing": true
+        },
+        "events": [
+          {
+            "index": 111,
+            "path": "sourceMessages[1].content.request.completedScene.events[111]",
+            "event": {
+              "id": "33338bec-bdd7-4e40-a00f-32dc83081146",
+              "text": "Doroはパイモンに向かって「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と元気に声をかけた。",
+              "period": {
+                "from": 72632000,
+                "until": 72636000
+              },
+              "actorId": "a4210000-0000-4000-8000-000000000001",
+              "inputId": "6bd6118d-6e39-4ab1-8e74-52b3caab031d",
+              "receipts": [
+                {
+                  "at": 72636000,
+                  "text": "パイモンへ向けて、「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と笑顔で言葉をかけた。",
+                  "observerId": "a4210000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "Doroはパイモンに向かって「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と元気に声をかけた。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "パイモンへ向けて、「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と笑顔で言葉をかけた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72636000,
+                  "text": "Doroから「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と元気に声をかけられた。",
+                  "observerId": "f5a10000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "Doroはパイモンに向かって「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と元気に声をかけた。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "Doroから「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と元気に声をかけられた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72636000,
+                  "text": "Doroがパイモンへ、みんなで写れて嬉しいと元気に話すのを聞いた。",
+                  "observerId": "b1c00000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "Doroはパイモンに向かって「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と元気に声をかけた。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "Doroがパイモンへ、みんなで写れて嬉しいと元気に話すのを聞いた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72636000,
+                  "text": "Doroがパイモンへ向けて、みんなで写れて嬉しいと元気に声をかけるのを聞いた。",
+                  "observerId": "a5000000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "Doroはパイモンに向かって「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と元気に声をかけた。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "Doroがパイモンへ向けて、みんなで写れて嬉しいと元気に声をかけるのを聞いた。"
+                    }
+                  ]
+                }
+              ],
+              "locations": [
+                {
+                  "text": "畑の向かいの道端の日だまりの前",
+                  "aboutIds": [
+                    "00000000-0000-4000-8000-000000000002",
+                    "00000000-0000-4000-8000-000000000007"
+                  ],
+                  "subjectId": "a4210000-0000-4000-8000-000000000001"
+                }
+              ]
+            },
+            "derivedDuplicate": {
+              "node": {
+                "id": "33338bec-bdd7-4e40-a00f-32dc83081146",
+                "kind": "event",
+                "text": "Doroはパイモンに向かって「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と元気に声をかけた。",
+                "period": {
+                  "from": 72632000,
+                  "until": 72636000
+                }
+              },
+              "happen": {
+                "id": "a5858816-c5b9-4e23-a6db-34fecfcb516f",
+                "kind": "happen",
+                "period": {
+                  "from": 72632000,
+                  "until": 72636000
+                },
+                "source": "a4210000-0000-4000-8000-000000000001",
+                "target": "33338bec-bdd7-4e40-a00f-32dc83081146"
+              },
+              "see": [
+                {
+                  "id": "867e8a32-b5d3-4702-a137-464bd1e1c5af",
+                  "kind": "see",
+                  "text": "パイモンへ向けて、「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と笑顔で言葉をかけた。",
+                  "period": {
+                    "from": 72636000,
+                    "until": 72636000
+                  },
+                  "source": "a4210000-0000-4000-8000-000000000001",
+                  "target": "33338bec-bdd7-4e40-a00f-32dc83081146",
+                  "observation": {
+                    "aspect": "パイモンへ向けて、「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と笑顔で言葉をかけた。",
+                    "pathIds": ["208680e4-f902-480a-abe2-72ae16b17274"],
+                    "through": 72636000,
+                    "sourceIds": ["33338bec-bdd7-4e40-a00f-32dc83081146"]
+                  }
+                },
+                {
+                  "id": "116ba05e-f88d-4500-a407-163d4cf18673",
+                  "kind": "see",
+                  "text": "Doroから「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と元気に声をかけられた。",
+                  "period": {
+                    "from": 72636000,
+                    "until": 72636000
+                  },
+                  "source": "f5a10000-0000-4000-8000-000000000001",
+                  "target": "33338bec-bdd7-4e40-a00f-32dc83081146",
+                  "observation": {
+                    "aspect": "Doroから「ありがとう、パイモン！みんなで写れて、わたしもうれしいよ。」と元気に声をかけられた。",
+                    "pathIds": ["715586eb-8e2c-4f67-a5e6-43919c1b5205"],
+                    "through": 72636000,
+                    "sourceIds": ["33338bec-bdd7-4e40-a00f-32dc83081146"]
+                  }
+                },
+                {
+                  "id": "5f6fb95b-4181-4d38-ab46-fffd8fbae051",
+                  "kind": "see",
+                  "text": "Doroがパイモンへ、みんなで写れて嬉しいと元気に話すのを聞いた。",
+                  "period": {
+                    "from": 72636000,
+                    "until": 72636000
+                  },
+                  "source": "b1c00000-0000-4000-8000-000000000001",
+                  "target": "33338bec-bdd7-4e40-a00f-32dc83081146",
+                  "observation": {
+                    "aspect": "Doroがパイモンへ、みんなで写れて嬉しいと元気に話すのを聞いた。",
+                    "pathIds": ["78564b46-7400-4778-aa17-2541a7eb4742"],
+                    "through": 72636000,
+                    "sourceIds": ["33338bec-bdd7-4e40-a00f-32dc83081146"]
+                  }
+                },
+                {
+                  "id": "9d961f21-8b86-4add-aaed-95f1c67470d4",
+                  "kind": "see",
+                  "text": "Doroがパイモンへ向けて、みんなで写れて嬉しいと元気に声をかけるのを聞いた。",
+                  "period": {
+                    "from": 72636000,
+                    "until": 72636000
+                  },
+                  "source": "a5000000-0000-4000-8000-000000000001",
+                  "target": "33338bec-bdd7-4e40-a00f-32dc83081146",
+                  "observation": {
+                    "aspect": "Doroがパイモンへ向けて、みんなで写れて嬉しいと元気に声をかけるのを聞いた。",
+                    "pathIds": ["ba8a5699-5938-40a3-a459-0c586aa782bd"],
+                    "through": 72636000,
+                    "sourceIds": ["33338bec-bdd7-4e40-a00f-32dc83081146"]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "index": 70,
+            "path": "sourceMessages[1].content.request.completedScene.events[70]",
+            "event": {
+              "id": "1863d632-2d89-4cf9-a1e6-a994b46babdd",
+              "text": "Doroはパイモンに向かって「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に声をかけた。",
+              "period": {
+                "from": 72546000,
+                "until": 72550000
+              },
+              "actorId": "a4210000-0000-4000-8000-000000000001",
+              "inputId": "38d74f4a-f449-4ddb-811e-fc7b70ead863",
+              "receipts": [
+                {
+                  "at": 72550000,
+                  "text": "パイモンへ向けて、「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と笑顔で言葉をかけた。",
+                  "observerId": "a4210000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "Doroはパイモンに向かって「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に声をかけた。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "パイモンへ向けて、「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と笑顔で言葉をかけた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72550000,
+                  "text": "Doroから「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に声をかけられた。",
+                  "observerId": "f5a10000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "Doroはパイモンに向かって「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に声をかけた。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "Doroから「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に声をかけられた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72550000,
+                  "text": "Doroがパイモンへ「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に話しかけるのを聞いた。",
+                  "observerId": "b1c00000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "Doroはパイモンに向かって「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に声をかけた。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "Doroがパイモンへ「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に話しかけるのを聞いた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72550000,
+                  "text": "Doroがパイモンへ向けて、甘いオレンジを半分こしようと元気に呼びかけるのを聞いた。",
+                  "observerId": "a5000000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "Doroはパイモンに向かって「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に声をかけた。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "Doroがパイモンへ向けて、甘いオレンジを半分こしようと元気に呼びかけるのを聞いた。"
+                    }
+                  ]
+                }
+              ],
+              "locations": [
+                {
+                  "text": "畑の向かいの道端の日だまりの前",
+                  "aboutIds": [
+                    "00000000-0000-4000-8000-000000000002",
+                    "00000000-0000-4000-8000-000000000007"
+                  ],
+                  "subjectId": "a4210000-0000-4000-8000-000000000001"
+                }
+              ]
+            },
+            "derivedDuplicate": {
+              "node": {
+                "id": "1863d632-2d89-4cf9-a1e6-a994b46babdd",
+                "kind": "event",
+                "text": "Doroはパイモンに向かって「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に声をかけた。",
+                "period": {
+                  "from": 72546000,
+                  "until": 72550000
+                }
+              },
+              "happen": {
+                "id": "35bcb1aa-c47e-4970-aa07-578de87b04ed",
+                "kind": "happen",
+                "period": {
+                  "from": 72546000,
+                  "until": 72550000
+                },
+                "source": "a4210000-0000-4000-8000-000000000001",
+                "target": "1863d632-2d89-4cf9-a1e6-a994b46babdd"
+              },
+              "see": [
+                {
+                  "id": "5d6e51bb-1576-4b0d-a3f2-cf38fd2d83f1",
+                  "kind": "see",
+                  "text": "パイモンへ向けて、「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と笑顔で言葉をかけた。",
+                  "period": {
+                    "from": 72550000,
+                    "until": 72550000
+                  },
+                  "source": "a4210000-0000-4000-8000-000000000001",
+                  "target": "1863d632-2d89-4cf9-a1e6-a994b46babdd",
+                  "observation": {
+                    "aspect": "パイモンへ向けて、「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と笑顔で言葉をかけた。",
+                    "pathIds": ["3d1cdb3c-80a2-4b9e-aa87-c74c6abffbec"],
+                    "through": 72550000,
+                    "sourceIds": ["1863d632-2d89-4cf9-a1e6-a994b46babdd"]
+                  }
+                },
+                {
+                  "id": "dc945d97-6117-4637-a2a9-925e676919de",
+                  "kind": "see",
+                  "text": "Doroから「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に声をかけられた。",
+                  "period": {
+                    "from": 72550000,
+                    "until": 72550000
+                  },
+                  "source": "f5a10000-0000-4000-8000-000000000001",
+                  "target": "1863d632-2d89-4cf9-a1e6-a994b46babdd",
+                  "observation": {
+                    "aspect": "Doroから「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に声をかけられた。",
+                    "pathIds": ["1ee68a59-d373-4aad-a135-1058c20a1c48"],
+                    "through": 72550000,
+                    "sourceIds": ["1863d632-2d89-4cf9-a1e6-a994b46babdd"]
+                  }
+                },
+                {
+                  "id": "b32fe9bc-48ea-48d5-ac6a-87a70081fca8",
+                  "kind": "see",
+                  "text": "Doroがパイモンへ「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に話しかけるのを聞いた。",
+                  "period": {
+                    "from": 72550000,
+                    "until": 72550000
+                  },
+                  "source": "b1c00000-0000-4000-8000-000000000001",
+                  "target": "1863d632-2d89-4cf9-a1e6-a994b46babdd",
+                  "observation": {
+                    "aspect": "Doroがパイモンへ「うん！甘いオレンジを半分こって、わくわくするよね。パイモンにもあげるね！」と元気に話しかけるのを聞いた。",
+                    "pathIds": ["7fecc17c-a60d-4a2a-aea8-f011b4669c70"],
+                    "through": 72550000,
+                    "sourceIds": ["1863d632-2d89-4cf9-a1e6-a994b46babdd"]
+                  }
+                },
+                {
+                  "id": "7f3bd192-1c63-434a-a12c-346fba5105a6",
+                  "kind": "see",
+                  "text": "Doroがパイモンへ向けて、甘いオレンジを半分こしようと元気に呼びかけるのを聞いた。",
+                  "period": {
+                    "from": 72550000,
+                    "until": 72550000
+                  },
+                  "source": "a5000000-0000-4000-8000-000000000001",
+                  "target": "1863d632-2d89-4cf9-a1e6-a994b46babdd",
+                  "observation": {
+                    "aspect": "Doroがパイモンへ向けて、甘いオレンジを半分こしようと元気に呼びかけるのを聞いた。",
+                    "pathIds": ["5582035e-26be-4328-afd9-7d103be80be3"],
+                    "through": 72550000,
+                    "sourceIds": ["1863d632-2d89-4cf9-a1e6-a994b46babdd"]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "aliases": {
+          "full_old": "~g10~",
+          "reduced_old": "~g10~",
+          "reduced_new": "~g10~"
+        },
+        "priorFullDisposition": {
+          "actorId": "a4210000-0000-4000-8000-000000000001",
+          "reason": "写真に一緒に写れた喜びをパイモンに伝えた。"
+        },
+        "priorReducedDisposition": "deferred"
+      },
+      {
+        "name": "Michiko",
+        "actorId": "b1c00000-0000-4000-8000-000000000001",
+        "intentionPath": "sourceMessages[1].content.request.intentions[3]",
+        "intention": {
+          "actorId": "b1c00000-0000-4000-8000-000000000001",
+          "actionText": "あらあら、メイリーちゃん、そうよねぇ。メタルスピノサウルスさん、見た目は大きくて迫力あるけど、本当に優しい方よね。アタシも初めて会ったとき、丁寧に頭を下げてくれてね、すっかり安心しちゃったわ。みんなで星見するときも、きっと優しく見守ってくれるわよ",
+          "continuing": true
+        },
+        "events": [
+          {
+            "index": 73,
+            "path": "sourceMessages[1].content.request.completedScene.events[73]",
+            "event": {
+              "id": "30f1090d-921b-4b23-a4f4-68509357308f",
+              "text": "ミチコはメイリーに向かって「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と温かく声をかけた。",
+              "period": {
+                "from": 72552000,
+                "until": 72554000
+              },
+              "actorId": "b1c00000-0000-4000-8000-000000000001",
+              "inputId": "9fcb5d70-5cc6-463f-8cc7-ada06061a047",
+              "receipts": [
+                {
+                  "at": 72554000,
+                  "text": "メイリーへ向けて、「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と笑顔で言葉をかけた。",
+                  "observerId": "b1c00000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "ミチコはメイリーに向かって「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と温かく声をかけた。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "メイリーへ向けて、「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と笑顔で言葉をかけた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72554000,
+                  "text": "ミチコから「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と穏やかに声をかけられた。",
+                  "observerId": "d0d10000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "ミチコはメイリーに向かって「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と温かく声をかけた。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "ミチコから「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と穏やかに声をかけられた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72554000,
+                  "text": "ミチコがメイリーへ向けて、メタルスピノサウルスは優しい子だから見かけたら話してみてと勧めるのを聞いた。",
+                  "observerId": "a4210000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "ミチコはメイリーに向かって「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と温かく声をかけた。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "ミチコがメイリーへ向けて、メタルスピノサウルスは優しい子だから見かけたら話してみてと勧めるのを聞いた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72554000,
+                  "text": "ミチコがメイリーに「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と話すのを聞いた。",
+                  "observerId": "f5a10000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "ミチコはメイリーに向かって「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と温かく声をかけた。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "ミチコがメイリーに「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と話すのを聞いた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72554000,
+                  "text": "ミチコがメイリーへ向けて、メタルスピノサウルスと話してみるよう勧めるのを聞いた。",
+                  "observerId": "a5000000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "ミチコはメイリーに向かって「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と温かく声をかけた。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "ミチコがメイリーへ向けて、メタルスピノサウルスと話してみるよう勧めるのを聞いた。"
+                    }
+                  ]
+                }
+              ],
+              "locations": [
+                {
+                  "text": "畑の向かいの道端の日だまりの前",
+                  "aboutIds": [
+                    "00000000-0000-4000-8000-000000000002",
+                    "00000000-0000-4000-8000-000000000007"
+                  ],
+                  "subjectId": "b1c00000-0000-4000-8000-000000000001"
+                }
+              ]
+            },
+            "derivedDuplicate": {
+              "node": {
+                "id": "30f1090d-921b-4b23-a4f4-68509357308f",
+                "kind": "event",
+                "text": "ミチコはメイリーに向かって「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と温かく声をかけた。",
+                "period": {
+                  "from": 72552000,
+                  "until": 72554000
+                }
+              },
+              "happen": {
+                "id": "b3b5c9ff-66cb-481a-a157-be3eb7883919",
+                "kind": "happen",
+                "period": {
+                  "from": 72552000,
+                  "until": 72554000
+                },
+                "source": "b1c00000-0000-4000-8000-000000000001",
+                "target": "30f1090d-921b-4b23-a4f4-68509357308f"
+              },
+              "see": [
+                {
+                  "id": "693da327-995f-4a7e-a535-8b34c5b3c593",
+                  "kind": "see",
+                  "text": "メイリーへ向けて、「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と笑顔で言葉をかけた。",
+                  "period": {
+                    "from": 72554000,
+                    "until": 72554000
+                  },
+                  "source": "b1c00000-0000-4000-8000-000000000001",
+                  "target": "30f1090d-921b-4b23-a4f4-68509357308f",
+                  "observation": {
+                    "aspect": "メイリーへ向けて、「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と笑顔で言葉をかけた。",
+                    "pathIds": ["76e1258e-b8ba-484c-aed2-a93cf79103d5"],
+                    "through": 72554000,
+                    "sourceIds": ["30f1090d-921b-4b23-a4f4-68509357308f"]
+                  }
+                },
+                {
+                  "id": "07db3b04-df0e-441d-a61c-2fd93dd09a04",
+                  "kind": "see",
+                  "text": "ミチコから「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と穏やかに声をかけられた。",
+                  "period": {
+                    "from": 72554000,
+                    "until": 72554000
+                  },
+                  "source": "d0d10000-0000-4000-8000-000000000001",
+                  "target": "30f1090d-921b-4b23-a4f4-68509357308f",
+                  "observation": {
+                    "aspect": "ミチコから「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と穏やかに声をかけられた。",
+                    "pathIds": ["7fcd1994-3a3d-43b9-a462-14527689a596"],
+                    "through": 72554000,
+                    "sourceIds": ["30f1090d-921b-4b23-a4f4-68509357308f"]
+                  }
+                },
+                {
+                  "id": "efc40625-9b40-4c6a-a12e-36c08061a8e7",
+                  "kind": "see",
+                  "text": "ミチコがメイリーへ向けて、メタルスピノサウルスは優しい子だから見かけたら話してみてと勧めるのを聞いた。",
+                  "period": {
+                    "from": 72554000,
+                    "until": 72554000
+                  },
+                  "source": "a4210000-0000-4000-8000-000000000001",
+                  "target": "30f1090d-921b-4b23-a4f4-68509357308f",
+                  "observation": {
+                    "aspect": "ミチコがメイリーへ向けて、メタルスピノサウルスは優しい子だから見かけたら話してみてと勧めるのを聞いた。",
+                    "pathIds": ["79a9f304-4051-4e12-acb2-bf788728bf07"],
+                    "through": 72554000,
+                    "sourceIds": ["30f1090d-921b-4b23-a4f4-68509357308f"]
+                  }
+                },
+                {
+                  "id": "c7142a99-4ed7-46bd-a7c4-d5945b6d834a",
+                  "kind": "see",
+                  "text": "ミチコがメイリーに「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と話すのを聞いた。",
+                  "period": {
+                    "from": 72554000,
+                    "until": 72554000
+                  },
+                  "source": "f5a10000-0000-4000-8000-000000000001",
+                  "target": "30f1090d-921b-4b23-a4f4-68509357308f",
+                  "observation": {
+                    "aspect": "ミチコがメイリーに「ええ、とっても優しい子よ。メイリーちゃん、見かけたらぜひゆっくりお話ししてみて。きっと仲良くなれるわよ」と話すのを聞いた。",
+                    "pathIds": ["bcadae62-3022-4861-a710-2504954a4b35"],
+                    "through": 72554000,
+                    "sourceIds": ["30f1090d-921b-4b23-a4f4-68509357308f"]
+                  }
+                },
+                {
+                  "id": "6f0366ec-6a96-4cd3-a3e3-4bbea852590c",
+                  "kind": "see",
+                  "text": "ミチコがメイリーへ向けて、メタルスピノサウルスと話してみるよう勧めるのを聞いた。",
+                  "period": {
+                    "from": 72554000,
+                    "until": 72554000
+                  },
+                  "source": "a5000000-0000-4000-8000-000000000001",
+                  "target": "30f1090d-921b-4b23-a4f4-68509357308f",
+                  "observation": {
+                    "aspect": "ミチコがメイリーへ向けて、メタルスピノサウルスと話してみるよう勧めるのを聞いた。",
+                    "pathIds": ["5d894e43-dc5f-4d31-ae4a-b21fcc88b4ea"],
+                    "through": 72554000,
+                    "sourceIds": ["30f1090d-921b-4b23-a4f4-68509357308f"]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "index": 95,
+            "path": "sourceMessages[1].content.request.completedScene.events[95]",
+            "event": {
+              "id": "fb717a1e-0a70-4a11-ae63-c7e88b62b99a",
+              "text": "ミチコは写真がばっちり撮れたのを見て、嬉しそうに両手を広げて「みんな、今日は本当に楽しかったよ！ 今夜は星見、明日は豆畑の世話役の手がかり探し、楽しみがいっぱいね」と笑い、別れ際にゴスペルの一節を口ずさんで小さく踊った。「フライドチキンもコーンブレッドも、山ほど作って待ってるからね。お腹ペコペコで来なさいよ！」と手を振り、Doroをぎゅっと抱きしめてから、お茶会の支度をするため家へと向かって歩き出した。",
+              "period": {
+                "from": 72594000,
+                "until": 72602000
+              },
+              "actorId": "b1c00000-0000-4000-8000-000000000001",
+              "inputId": "befe291e-4a7d-4646-83d1-0140a45e6916",
+              "receipts": [
+                {
+                  "at": 72602000,
+                  "text": "写真の出来栄えに満足して両手を広げ、星見や明日の豆畑、お茶会のごちそうを楽しみにみんなへ呼びかけ、ゴスペルを口ずさんで踊り、Doroを抱きしめてから自宅へ支度に向かった。",
+                  "observerId": "b1c00000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "ミチコは写真がばっちり撮れたのを見て、嬉しそうに両手を広げて「みんな、今日は本当に楽しかったよ！ 今夜は星見、明日は豆畑の世話役の手がかり探し、楽しみがいっぱいね」と笑い、別れ際にゴスペルの一節を口ずさんで小さく踊った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "写真の出来栄えに満足して両手を広げ、星見や明日の豆畑、お茶会のごちそうを楽しみにみんなへ呼びかけ、ゴスペルを口ずさんで踊り、Doroを抱きしめてから自宅へ支度に向かった。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72602000,
+                  "text": "ミチコから両手を広げて今日の楽しさや星見、お茶会の約束を笑顔で告げられ、ゴスペルに合わせて踊る姿を見たあと、ぎゅっと温かく抱きしめられ、家へ戻っていくのを見送った。",
+                  "observerId": "a4210000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "ミチコは写真がばっちり撮れたのを見て、嬉しそうに両手を広げて「みんな、今日は本当に楽しかったよ！ 今夜は星見、明日は豆畑の世話役の手がかり探し、楽しみがいっぱいね」と笑い、別れ際にゴスペルの一節を口ずさんで小さく踊った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "ミチコから両手を広げて今日の楽しさや星見、お茶会の約束を笑顔で告げられ、ゴスペルに合わせて踊る姿を見たあと、ぎゅっと温かく抱きしめられ、家へ戻っていくのを見送った。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72602000,
+                  "text": "ミチコが両手を広げて星見やお茶会のごちそうを約束し、ゴスペルを歌い踊りながらDoroを抱きしめ、お茶会の支度のために家へ歩き出すのを見た。",
+                  "observerId": "f5a10000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "ミチコは写真がばっちり撮れたのを見て、嬉しそうに両手を広げて「みんな、今日は本当に楽しかったよ！ 今夜は星見、明日は豆畑の世話役の手がかり探し、楽しみがいっぱいね」と笑い、別れ際にゴスペルの一節を口ずさんで小さく踊った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "ミチコが両手を広げて星見やお茶会のごちそうを約束し、ゴスペルを歌い踊りながらDoroを抱きしめ、お茶会の支度のために家へ歩き出すのを見た。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72602000,
+                  "text": "ミチコが楽しそうに星見や明日の豆畑、お茶会について話し、歌って小さく踊り、Doroを抱きしめて家へ戻っていく姿を見た。",
+                  "observerId": "d0d10000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "ミチコは写真がばっちり撮れたのを見て、嬉しそうに両手を広げて「みんな、今日は本当に楽しかったよ！ 今夜は星見、明日は豆畑の世話役の手がかり探し、楽しみがいっぱいね」と笑い、別れ際にゴスペルの一節を口ずさんで小さく踊った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "ミチコが楽しそうに星見や明日の豆畑、お茶会について話し、歌って小さく踊り、Doroを抱きしめて家へ戻っていく姿を見た。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72602000,
+                  "text": "ミチコが星見やお茶会のごちそうを楽しみに語り、ゴスペルを口ずさみながらDoroを抱きしめて家へ向かうのを見た。",
+                  "observerId": "a5000000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "ミチコは写真がばっちり撮れたのを見て、嬉しそうに両手を広げて「みんな、今日は本当に楽しかったよ！ 今夜は星見、明日は豆畑の世話役の手がかり探し、楽しみがいっぱいね」と笑い、別れ際にゴスペルの一節を口ずさんで小さく踊った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "ミチコが星見やお茶会のごちそうを楽しみに語り、ゴスペルを口ずさみながらDoroを抱きしめて家へ向かうのを見た。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72602000,
+                  "text": "ミチコが陽気に歌い踊り、星見やお茶会を楽しみにしながらDoroを抱きしめ、家へ戻っていくのを見た。",
+                  "observerId": "1ed35320-ff87-4e0e-9728-c021127d1a01",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "ミチコは写真がばっちり撮れたのを見て、嬉しそうに両手を広げて「みんな、今日は本当に楽しかったよ！ 今夜は星見、明日は豆畑の世話役の手がかり探し、楽しみがいっぱいね」と笑い、別れ際にゴスペルの一節を口ずさんで小さく踊った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "ミチコが陽気に歌い踊り、星見やお茶会を楽しみにしながらDoroを抱きしめ、家へ戻っていくのを見た。"
+                    }
+                  ]
+                }
+              ],
+              "locations": [
+                {
+                  "text": "村道",
+                  "aboutIds": ["00000000-0000-4000-8000-000000000002"],
+                  "subjectId": "b1c00000-0000-4000-8000-000000000001"
+                }
+              ]
+            },
+            "derivedDuplicate": {
+              "node": {
+                "id": "fb717a1e-0a70-4a11-ae63-c7e88b62b99a",
+                "kind": "event",
+                "text": "ミチコは写真がばっちり撮れたのを見て、嬉しそうに両手を広げて「みんな、今日は本当に楽しかったよ！ 今夜は星見、明日は豆畑の世話役の手がかり探し、楽しみがいっぱいね」と笑い、別れ際にゴスペルの一節を口ずさんで小さく踊った。「フライドチキンもコーンブレッドも、山ほど作って待ってるからね。お腹ペコペコで来なさいよ！」と手を振り、Doroをぎゅっと抱きしめてから、お茶会の支度をするため家へと向かって歩き出した。",
+                "period": {
+                  "from": 72594000,
+                  "until": 72602000
+                }
+              },
+              "happen": {
+                "id": "8e1b19e4-f784-4659-a033-00cfb5dc1048",
+                "kind": "happen",
+                "period": {
+                  "from": 72594000,
+                  "until": 72602000
+                },
+                "source": "b1c00000-0000-4000-8000-000000000001",
+                "target": "fb717a1e-0a70-4a11-ae63-c7e88b62b99a"
+              },
+              "see": [
+                {
+                  "id": "e5f4afac-2a52-4ff1-a2b3-cb41d783a251",
+                  "kind": "see",
+                  "text": "写真の出来栄えに満足して両手を広げ、星見や明日の豆畑、お茶会のごちそうを楽しみにみんなへ呼びかけ、ゴスペルを口ずさんで踊り、Doroを抱きしめてから自宅へ支度に向かった。",
+                  "period": {
+                    "from": 72602000,
+                    "until": 72602000
+                  },
+                  "source": "b1c00000-0000-4000-8000-000000000001",
+                  "target": "fb717a1e-0a70-4a11-ae63-c7e88b62b99a",
+                  "observation": {
+                    "aspect": "写真の出来栄えに満足して両手を広げ、星見や明日の豆畑、お茶会のごちそうを楽しみにみんなへ呼びかけ、ゴスペルを口ずさんで踊り、Doroを抱きしめてから自宅へ支度に向かった。",
+                    "pathIds": ["971bf44f-765a-4a6a-a28b-8c5f1fd67f56"],
+                    "through": 72602000,
+                    "sourceIds": ["fb717a1e-0a70-4a11-ae63-c7e88b62b99a"]
+                  }
+                },
+                {
+                  "id": "b6544dd6-1d39-4d92-a382-916ce47f0c04",
+                  "kind": "see",
+                  "text": "ミチコから両手を広げて今日の楽しさや星見、お茶会の約束を笑顔で告げられ、ゴスペルに合わせて踊る姿を見たあと、ぎゅっと温かく抱きしめられ、家へ戻っていくのを見送った。",
+                  "period": {
+                    "from": 72602000,
+                    "until": 72602000
+                  },
+                  "source": "a4210000-0000-4000-8000-000000000001",
+                  "target": "fb717a1e-0a70-4a11-ae63-c7e88b62b99a",
+                  "observation": {
+                    "aspect": "ミチコから両手を広げて今日の楽しさや星見、お茶会の約束を笑顔で告げられ、ゴスペルに合わせて踊る姿を見たあと、ぎゅっと温かく抱きしめられ、家へ戻っていくのを見送った。",
+                    "pathIds": ["ba4b411d-6044-44bc-a591-e22de185195a"],
+                    "through": 72602000,
+                    "sourceIds": ["fb717a1e-0a70-4a11-ae63-c7e88b62b99a"]
+                  }
+                },
+                {
+                  "id": "5a64a306-b1ca-4b1f-a717-980d72cdd751",
+                  "kind": "see",
+                  "text": "ミチコが両手を広げて星見やお茶会のごちそうを約束し、ゴスペルを歌い踊りながらDoroを抱きしめ、お茶会の支度のために家へ歩き出すのを見た。",
+                  "period": {
+                    "from": 72602000,
+                    "until": 72602000
+                  },
+                  "source": "f5a10000-0000-4000-8000-000000000001",
+                  "target": "fb717a1e-0a70-4a11-ae63-c7e88b62b99a",
+                  "observation": {
+                    "aspect": "ミチコが両手を広げて星見やお茶会のごちそうを約束し、ゴスペルを歌い踊りながらDoroを抱きしめ、お茶会の支度のために家へ歩き出すのを見た。",
+                    "pathIds": ["df11d8dc-8302-43a2-a171-c2f28c7796da"],
+                    "through": 72602000,
+                    "sourceIds": ["fb717a1e-0a70-4a11-ae63-c7e88b62b99a"]
+                  }
+                },
+                {
+                  "id": "a717e95b-0e48-470b-a076-91296be02d82",
+                  "kind": "see",
+                  "text": "ミチコが楽しそうに星見や明日の豆畑、お茶会について話し、歌って小さく踊り、Doroを抱きしめて家へ戻っていく姿を見た。",
+                  "period": {
+                    "from": 72602000,
+                    "until": 72602000
+                  },
+                  "source": "d0d10000-0000-4000-8000-000000000001",
+                  "target": "fb717a1e-0a70-4a11-ae63-c7e88b62b99a",
+                  "observation": {
+                    "aspect": "ミチコが楽しそうに星見や明日の豆畑、お茶会について話し、歌って小さく踊り、Doroを抱きしめて家へ戻っていく姿を見た。",
+                    "pathIds": ["cd23cd4d-0cc1-4815-a5c1-715130c96354"],
+                    "through": 72602000,
+                    "sourceIds": ["fb717a1e-0a70-4a11-ae63-c7e88b62b99a"]
+                  }
+                },
+                {
+                  "id": "d26da4b5-9c36-4a1a-af4e-781815379f54",
+                  "kind": "see",
+                  "text": "ミチコが星見やお茶会のごちそうを楽しみに語り、ゴスペルを口ずさみながらDoroを抱きしめて家へ向かうのを見た。",
+                  "period": {
+                    "from": 72602000,
+                    "until": 72602000
+                  },
+                  "source": "a5000000-0000-4000-8000-000000000001",
+                  "target": "fb717a1e-0a70-4a11-ae63-c7e88b62b99a",
+                  "observation": {
+                    "aspect": "ミチコが星見やお茶会のごちそうを楽しみに語り、ゴスペルを口ずさみながらDoroを抱きしめて家へ向かうのを見た。",
+                    "pathIds": ["1c0624c9-6b47-42d9-a0b1-6c3e352ba6df"],
+                    "through": 72602000,
+                    "sourceIds": ["fb717a1e-0a70-4a11-ae63-c7e88b62b99a"]
+                  }
+                },
+                {
+                  "id": "a54af8c2-bb3f-47d8-a9f5-d17aa80b08a5",
+                  "kind": "see",
+                  "text": "ミチコが陽気に歌い踊り、星見やお茶会を楽しみにしながらDoroを抱きしめ、家へ戻っていくのを見た。",
+                  "period": {
+                    "from": 72602000,
+                    "until": 72602000
+                  },
+                  "source": "1ed35320-ff87-4e0e-9728-c021127d1a01",
+                  "target": "fb717a1e-0a70-4a11-ae63-c7e88b62b99a",
+                  "observation": {
+                    "aspect": "ミチコが陽気に歌い踊り、星見やお茶会を楽しみにしながらDoroを抱きしめ、家へ戻っていくのを見た。",
+                    "pathIds": ["294fd456-8080-4566-ab6e-6c48f7e6dd9a"],
+                    "through": 72602000,
+                    "sourceIds": ["fb717a1e-0a70-4a11-ae63-c7e88b62b99a"]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "aliases": {
+          "full_old": "~g11~",
+          "reduced_old": "~g11~",
+          "reduced_new": "~g11~"
+        },
+        "priorFullDisposition": {
+          "actorId": "b1c00000-0000-4000-8000-000000000001",
+          "reason": "メタルスピノサウルスの優しさについてメイリーに話し、その後の会話へ移った。細部の発言は補わない。"
+        },
+        "priorReducedDisposition": "deferred"
+      },
+      {
+        "name": "Paimon",
+        "actorId": "f5a10000-0000-4000-8000-000000000001",
+        "intentionPath": "sourceMessages[1].content.request.intentions[4]",
+        "intention": {
+          "actorId": "f5a10000-0000-4000-8000-000000000001",
+          "actionText": "えへへ、こちらこそありがとうだぞ！先生と一緒に村のことを少しずつ覚えていけるの、オイラもすっごく嬉しいんだ！これからもよろしくな！",
+          "continuing": true
+        },
+        "events": [
+          {
+            "index": 86,
+            "path": "sourceMessages[1].content.request.completedScene.events[86]",
+            "event": {
+              "id": "e8308de8-264c-4733-a81e-6ec34fee375c",
+              "text": "パイモンはみんなに向かって「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に声を弾ませて言った。",
+              "period": {
+                "from": 72578000,
+                "until": 72580000
+              },
+              "actorId": "f5a10000-0000-4000-8000-000000000001",
+              "inputId": "4a848c3a-8448-4a14-aeb1-62ef039bc248",
+              "receipts": [
+                {
+                  "at": 72580000,
+                  "text": "Doroやメイリーの親しみやすさに笑顔を浮かべ、「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に言葉を投げかけた。",
+                  "observerId": "f5a10000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "パイモンはみんなに向かって「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に声を弾ませて言った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "Doroやメイリーの親しみやすさに笑顔を浮かべ、「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に言葉を投げかけた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72580000,
+                  "text": "パイモンから「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に声を弾ませて呼びかけられた。",
+                  "observerId": "a4210000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "パイモンはみんなに向かって「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に声を弾ませて言った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "パイモンから「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に声を弾ませて呼びかけられた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72580000,
+                  "text": "パイモンから「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に呼びかけられた。",
+                  "observerId": "d0d10000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "パイモンはみんなに向かって「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に声を弾ませて言った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "パイモンから「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に呼びかけられた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72580000,
+                  "text": "パイモンが「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と楽しそうに呼びかけるのを聞いた。",
+                  "observerId": "b1c00000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "パイモンはみんなに向かって「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に声を弾ませて言った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "パイモンが「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と楽しそうに呼びかけるのを聞いた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72580000,
+                  "text": "パイモンが村のことを一緒に覚えていくと元気に声を上げるのを聞いた。",
+                  "observerId": "a5000000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "パイモンはみんなに向かって「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に声を弾ませて言った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "パイモンが村のことを一緒に覚えていくと元気に声を上げるのを聞いた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72580000,
+                  "text": "パイモンがDoroやメイリーの仲の良さを喜び、村のことを一緒に覚えていくと元気に話すのを聞いた。",
+                  "observerId": "1ed35320-ff87-4e0e-9728-c021127d1a01",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "パイモンはみんなに向かって「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に声を弾ませて言った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "パイモンがDoroやメイリーの仲の良さを喜び、村のことを一緒に覚えていくと元気に話すのを聞いた。"
+                    }
+                  ]
+                }
+              ],
+              "locations": [
+                {
+                  "text": "村道の分かれ口付近",
+                  "aboutIds": ["00000000-0000-4000-8000-000000000002"],
+                  "subjectId": "f5a10000-0000-4000-8000-000000000001"
+                }
+              ]
+            },
+            "derivedDuplicate": {
+              "node": {
+                "id": "e8308de8-264c-4733-a81e-6ec34fee375c",
+                "kind": "event",
+                "text": "パイモンはみんなに向かって「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に声を弾ませて言った。",
+                "period": {
+                  "from": 72578000,
+                  "until": 72580000
+                }
+              },
+              "happen": {
+                "id": "b372ab28-7606-49d6-a29e-2868c047c5f0",
+                "kind": "happen",
+                "period": {
+                  "from": 72578000,
+                  "until": 72580000
+                },
+                "source": "f5a10000-0000-4000-8000-000000000001",
+                "target": "e8308de8-264c-4733-a81e-6ec34fee375c"
+              },
+              "see": [
+                {
+                  "id": "72673510-b5d1-4401-a6ea-3545c395ba7b",
+                  "kind": "see",
+                  "text": "Doroやメイリーの親しみやすさに笑顔を浮かべ、「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に言葉を投げかけた。",
+                  "period": {
+                    "from": 72580000,
+                    "until": 72580000
+                  },
+                  "source": "f5a10000-0000-4000-8000-000000000001",
+                  "target": "e8308de8-264c-4733-a81e-6ec34fee375c",
+                  "observation": {
+                    "aspect": "Doroやメイリーの親しみやすさに笑顔を浮かべ、「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に言葉を投げかけた。",
+                    "pathIds": ["473e915e-586b-440b-add6-0cda372bcc6a"],
+                    "through": 72580000,
+                    "sourceIds": ["e8308de8-264c-4733-a81e-6ec34fee375c"]
+                  }
+                },
+                {
+                  "id": "51c42bb3-e3bb-4471-ae7f-6a1d66d31ec4",
+                  "kind": "see",
+                  "text": "パイモンから「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に声を弾ませて呼びかけられた。",
+                  "period": {
+                    "from": 72580000,
+                    "until": 72580000
+                  },
+                  "source": "a4210000-0000-4000-8000-000000000001",
+                  "target": "e8308de8-264c-4733-a81e-6ec34fee375c",
+                  "observation": {
+                    "aspect": "パイモンから「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に声を弾ませて呼びかけられた。",
+                    "pathIds": ["e7da9571-cfb6-4ac4-adac-07d0d3396ffb"],
+                    "through": 72580000,
+                    "sourceIds": ["e8308de8-264c-4733-a81e-6ec34fee375c"]
+                  }
+                },
+                {
+                  "id": "3fd0e046-36cf-45ae-a4cf-6b0e0c880d97",
+                  "kind": "see",
+                  "text": "パイモンから「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に呼びかけられた。",
+                  "period": {
+                    "from": 72580000,
+                    "until": 72580000
+                  },
+                  "source": "d0d10000-0000-4000-8000-000000000001",
+                  "target": "e8308de8-264c-4733-a81e-6ec34fee375c",
+                  "observation": {
+                    "aspect": "パイモンから「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と元気に呼びかけられた。",
+                    "pathIds": ["ea9a994e-4a61-468e-a2f9-900bfbb2e060"],
+                    "through": 72580000,
+                    "sourceIds": ["e8308de8-264c-4733-a81e-6ec34fee375c"]
+                  }
+                },
+                {
+                  "id": "6b5e20b2-b4b1-4ebe-a776-20efe81bedad",
+                  "kind": "see",
+                  "text": "パイモンが「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と楽しそうに呼びかけるのを聞いた。",
+                  "period": {
+                    "from": 72580000,
+                    "until": 72580000
+                  },
+                  "source": "b1c00000-0000-4000-8000-000000000001",
+                  "target": "e8308de8-264c-4733-a81e-6ec34fee375c",
+                  "observation": {
+                    "aspect": "パイモンが「いいなぁ！Doroもメイリーも、もうすっかり村のみんなと仲良しだぞ！村のこと、オイラも一緒に覚えていくからな！」と楽しそうに呼びかけるのを聞いた。",
+                    "pathIds": ["df937f2a-08e4-4ba1-a9cb-25a3b5ae7326"],
+                    "through": 72580000,
+                    "sourceIds": ["e8308de8-264c-4733-a81e-6ec34fee375c"]
+                  }
+                },
+                {
+                  "id": "d165041c-b885-42fa-a37b-4f0a24f69485",
+                  "kind": "see",
+                  "text": "パイモンが村のことを一緒に覚えていくと元気に声を上げるのを聞いた。",
+                  "period": {
+                    "from": 72580000,
+                    "until": 72580000
+                  },
+                  "source": "a5000000-0000-4000-8000-000000000001",
+                  "target": "e8308de8-264c-4733-a81e-6ec34fee375c",
+                  "observation": {
+                    "aspect": "パイモンが村のことを一緒に覚えていくと元気に声を上げるのを聞いた。",
+                    "pathIds": ["a80c39ca-099b-473e-a647-17d57d57eebf"],
+                    "through": 72580000,
+                    "sourceIds": ["e8308de8-264c-4733-a81e-6ec34fee375c"]
+                  }
+                },
+                {
+                  "id": "5baf8634-c733-4b04-acf3-1fd82bccbace",
+                  "kind": "see",
+                  "text": "パイモンがDoroやメイリーの仲の良さを喜び、村のことを一緒に覚えていくと元気に話すのを聞いた。",
+                  "period": {
+                    "from": 72580000,
+                    "until": 72580000
+                  },
+                  "source": "1ed35320-ff87-4e0e-9728-c021127d1a01",
+                  "target": "e8308de8-264c-4733-a81e-6ec34fee375c",
+                  "observation": {
+                    "aspect": "パイモンがDoroやメイリーの仲の良さを喜び、村のことを一緒に覚えていくと元気に話すのを聞いた。",
+                    "pathIds": ["165e5dc8-4999-4477-a111-dc6511c39c0e"],
+                    "through": 72580000,
+                    "sourceIds": ["e8308de8-264c-4733-a81e-6ec34fee375c"]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "index": 94,
+            "path": "sourceMessages[1].content.request.completedScene.events[94]",
+            "event": {
+              "id": "b6ec9e18-62f3-414c-ac85-e20418a4625c",
+              "text": "パイモンはみんなに向かって「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に声を弾ませて言った。",
+              "period": {
+                "from": 72594000,
+                "until": 72602000
+              },
+              "actorId": "f5a10000-0000-4000-8000-000000000001",
+              "inputId": "88d9240b-87ac-49db-be57-6bd156b20f25",
+              "receipts": [
+                {
+                  "at": 72602000,
+                  "text": "ミチコの家の前での星見に胸を躍らせ、「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に言葉を返した。",
+                  "observerId": "f5a10000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "パイモンはみんなに向かって「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に声を弾ませて言った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "ミチコの家の前での星見に胸を躍らせ、「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に言葉を返した。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72602000,
+                  "text": "パイモンから「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に呼びかけられた。",
+                  "observerId": "b1c00000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "パイモンはみんなに向かって「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に声を弾ませて言った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "パイモンから「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に呼びかけられた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72602000,
+                  "text": "パイモンが「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に声を弾ませるのを聞いた。",
+                  "observerId": "a4210000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "パイモンはみんなに向かって「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に声を弾ませて言った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "パイモンが「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に声を弾ませるのを聞いた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72602000,
+                  "text": "パイモンが星見に一緒に行きたいことや、ミチコの家の前からの星空がきれいだろうと元気に話すのを聞いた。",
+                  "observerId": "d0d10000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "パイモンはみんなに向かって「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に声を弾ませて言った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "パイモンが星見に一緒に行きたいことや、ミチコの家の前からの星空がきれいだろうと元気に話すのを聞いた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72602000,
+                  "text": "パイモンが星見に行きたい、星空がきれいだろうと元気に声を上げるのを聞いた。",
+                  "observerId": "a5000000-0000-4000-8000-000000000001",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "パイモンはみんなに向かって「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に声を弾ませて言った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "パイモンが星見に行きたい、星空がきれいだろうと元気に声を上げるのを聞いた。"
+                    }
+                  ]
+                },
+                {
+                  "at": 72602000,
+                  "text": "パイモンがミチコの家の前から星見をしたいと元気に声を弾ませるのを聞いた。",
+                  "observerId": "1ed35320-ff87-4e0e-9728-c021127d1a01",
+                  "information": [
+                    {
+                      "id": "$event",
+                      "evidence": "パイモンはみんなに向かって「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に声を弾ませて言った。"
+                    },
+                    {
+                      "id": "$receipt",
+                      "evidence": "パイモンがミチコの家の前から星見をしたいと元気に声を弾ませるのを聞いた。"
+                    }
+                  ]
+                }
+              ],
+              "locations": [
+                {
+                  "text": "村道の分かれ口付近",
+                  "aboutIds": ["00000000-0000-4000-8000-000000000002"],
+                  "subjectId": "f5a10000-0000-4000-8000-000000000001"
+                }
+              ]
+            },
+            "derivedDuplicate": {
+              "node": {
+                "id": "b6ec9e18-62f3-414c-ac85-e20418a4625c",
+                "kind": "event",
+                "text": "パイモンはみんなに向かって「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に声を弾ませて言った。",
+                "period": {
+                  "from": 72594000,
+                  "until": 72602000
+                }
+              },
+              "happen": {
+                "id": "f5ed15a8-0a2c-40a3-a3ad-430ca5c49ffe",
+                "kind": "happen",
+                "period": {
+                  "from": 72594000,
+                  "until": 72602000
+                },
+                "source": "f5a10000-0000-4000-8000-000000000001",
+                "target": "b6ec9e18-62f3-414c-ac85-e20418a4625c"
+              },
+              "see": [
+                {
+                  "id": "6ebcda71-32c4-4f8a-af87-2bfd6969227e",
+                  "kind": "see",
+                  "text": "ミチコの家の前での星見に胸を躍らせ、「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に言葉を返した。",
+                  "period": {
+                    "from": 72602000,
+                    "until": 72602000
+                  },
+                  "source": "f5a10000-0000-4000-8000-000000000001",
+                  "target": "b6ec9e18-62f3-414c-ac85-e20418a4625c",
+                  "observation": {
+                    "aspect": "ミチコの家の前での星見に胸を躍らせ、「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に言葉を返した。",
+                    "pathIds": ["97ec064a-3ca2-42ae-acc7-71f595de7a05"],
+                    "through": 72602000,
+                    "sourceIds": ["b6ec9e18-62f3-414c-ac85-e20418a4625c"]
+                  }
+                },
+                {
+                  "id": "71318a82-8003-4d88-a75c-457d1faaf258",
+                  "kind": "see",
+                  "text": "パイモンから「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に呼びかけられた。",
+                  "period": {
+                    "from": 72602000,
+                    "until": 72602000
+                  },
+                  "source": "b1c00000-0000-4000-8000-000000000001",
+                  "target": "b6ec9e18-62f3-414c-ac85-e20418a4625c",
+                  "observation": {
+                    "aspect": "パイモンから「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に呼びかけられた。",
+                    "pathIds": ["d7dd63e9-055c-43fc-a9d1-1fe2669ec49b"],
+                    "through": 72602000,
+                    "sourceIds": ["b6ec9e18-62f3-414c-ac85-e20418a4625c"]
+                  }
+                },
+                {
+                  "id": "5a381ecd-77b1-41ad-af60-2d0d287b98f4",
+                  "kind": "see",
+                  "text": "パイモンが「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に声を弾ませるのを聞いた。",
+                  "period": {
+                    "from": 72602000,
+                    "until": 72602000
+                  },
+                  "source": "a4210000-0000-4000-8000-000000000001",
+                  "target": "b6ec9e18-62f3-414c-ac85-e20418a4625c",
+                  "observation": {
+                    "aspect": "パイモンが「わあ、星見か！オイラも一緒に行きたいな！ミチコの家の前から見る星空、きっとすっごくきれいだぞ！」と元気に声を弾ませるのを聞いた。",
+                    "pathIds": ["f930bc24-d0d4-4d4d-a115-fad1ce88ff12"],
+                    "through": 72602000,
+                    "sourceIds": ["b6ec9e18-62f3-414c-ac85-e20418a4625c"]
+                  }
+                },
+                {
+                  "id": "15622872-6ed7-4523-aac4-cf19133d7869",
+                  "kind": "see",
+                  "text": "パイモンが星見に一緒に行きたいことや、ミチコの家の前からの星空がきれいだろうと元気に話すのを聞いた。",
+                  "period": {
+                    "from": 72602000,
+                    "until": 72602000
+                  },
+                  "source": "d0d10000-0000-4000-8000-000000000001",
+                  "target": "b6ec9e18-62f3-414c-ac85-e20418a4625c",
+                  "observation": {
+                    "aspect": "パイモンが星見に一緒に行きたいことや、ミチコの家の前からの星空がきれいだろうと元気に話すのを聞いた。",
+                    "pathIds": ["b6c2393b-b15e-489c-ae8f-488511684376"],
+                    "through": 72602000,
+                    "sourceIds": ["b6ec9e18-62f3-414c-ac85-e20418a4625c"]
+                  }
+                },
+                {
+                  "id": "e6f2b593-7983-4b05-a11b-e70ebad025e9",
+                  "kind": "see",
+                  "text": "パイモンが星見に行きたい、星空がきれいだろうと元気に声を上げるのを聞いた。",
+                  "period": {
+                    "from": 72602000,
+                    "until": 72602000
+                  },
+                  "source": "a5000000-0000-4000-8000-000000000001",
+                  "target": "b6ec9e18-62f3-414c-ac85-e20418a4625c",
+                  "observation": {
+                    "aspect": "パイモンが星見に行きたい、星空がきれいだろうと元気に声を上げるのを聞いた。",
+                    "pathIds": ["8a413f67-b960-46a7-a63f-5c25db8ce666"],
+                    "through": 72602000,
+                    "sourceIds": ["b6ec9e18-62f3-414c-ac85-e20418a4625c"]
+                  }
+                },
+                {
+                  "id": "f7a9da0b-1d00-49fd-aa76-159782690829",
+                  "kind": "see",
+                  "text": "パイモンがミチコの家の前から星見をしたいと元気に声を弾ませるのを聞いた。",
+                  "period": {
+                    "from": 72602000,
+                    "until": 72602000
+                  },
+                  "source": "1ed35320-ff87-4e0e-9728-c021127d1a01",
+                  "target": "b6ec9e18-62f3-414c-ac85-e20418a4625c",
+                  "observation": {
+                    "aspect": "パイモンがミチコの家の前から星見をしたいと元気に声を弾ませるのを聞いた。",
+                    "pathIds": ["d758a8b9-dc5a-46e3-aab6-6c05b0316ea1"],
+                    "through": 72602000,
+                    "sourceIds": ["b6ec9e18-62f3-414c-ac85-e20418a4625c"]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "aliases": {
+          "full_old": "~g1~",
+          "reduced_old": "~g1~",
+          "reduced_new": "~g1~"
+        },
+        "priorFullDisposition": {
+          "actorId": "f5a10000-0000-4000-8000-000000000001",
+          "reason": "村のことを一緒に覚えていく気持ちを伝え、その後の会話へ移った。指定文の未発言部分は補わない。"
+        },
+        "priorReducedDisposition": "deferred"
+      }
+    ],
+    "interpretation": "The semantic event and actor linkage is present in every input. Removed records are duplicate nodes and edges. Deferred has no reason field, so the previous reduced output does not disclose why it retained an intention. Literal wording versus completed meaning is a hypothesis, not recovered model reasoning."
+  },
+  "validation": {
+    "sameWireWithinEachCondition": true,
+    "wireRequestAndCurrentContextRoundtripPassed": 12,
+    "uniqueProviderResponseIds": 12,
+    "sourceHashChecks": 12,
+    "priorPairExactlyReconstructed": true,
+    "queryAndReplyIdentical": true,
+    "actorAliasesUnchanged": true,
+    "productionAccess": false,
+    "newProductChanges": false,
+    "interpretation": "Diagnostic disposition distributions, not narrative quality scores. No follow-on play or final result generation."
+  }
+}

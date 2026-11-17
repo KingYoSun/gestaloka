@@ -1,0 +1,1067 @@
+{
+  "scope": "investigation-only-no-product-change",
+  "source": {
+    "from": "2026-11-16T19:01:46.553424Z",
+    "to": "2026-11-16T22:43:00Z",
+    "snapshotAt": "2026-11-16T22:44:37.176303+00:00",
+    "readOnly": "on",
+    "sha256": "337a5eb6246c67b3cbba87c025d0ead68a64feecda44b7f587ec29a8c9f73952",
+    "deploymentCommit": "fc0c6e7e45ba8602476da2fefe4f9ea861a43afb"
+  },
+  "sceneTotals": {
+    "calls": 24,
+    "usd": 7.17035975,
+    "prompt_tokens": 4073398,
+    "prompt_cache_hit_tokens": 595800,
+    "completion_tokens": 19754,
+    "reasoning_tokens": 11286
+  },
+  "allTotals": {
+    "calls": 28,
+    "usd": 7.28576305,
+    "prompt_tokens": 4189567,
+    "prompt_cache_hit_tokens": 612866,
+    "completion_tokens": 22356,
+    "reasoning_tokens": 11473
+  },
+  "summary": {
+    "sample": {
+      "worlds": 1,
+      "operations": 19,
+      "calls": 24,
+      "allProductionCompleteUsd": 75.246003741
+    },
+    "sectionCharsAcrossCalls": {
+      "request": 5661590,
+      "initialContext": 8133551,
+      "controlledActorIds": 6849,
+      "responseSchema": 275088
+    },
+    "initialContextFieldChars": {
+      "id": 532,
+      "kind": 94,
+      "source": 532,
+      "target": 532,
+      "role": 70,
+      "period": 329,
+      "node": 853399,
+      "currentStates": 628635,
+      "interpretations": 1820301,
+      "effects": 4177929,
+      "text": 579,
+      "observation": 2025
+    },
+    "outputChargeUsd": 0.1186925,
+    "queries": [
+      {
+        "index": 10,
+        "callId": "a94a6aaf-cf06-4c87-a23f-077aea210739",
+        "usd": 0.24515595,
+        "requests": [
+          {
+            "kind": "node",
+            "id": "c4801485-50c7-4ff7-85c8-fbc484cb9851",
+            "at": 72299000
+          }
+        ]
+      },
+      {
+        "index": 15,
+        "callId": "54be8caa-0d4d-4862-a1a7-c36b58657056",
+        "usd": 0.7957085,
+        "requests": [
+          {
+            "kind": "node",
+            "id": "c4801485-50c7-4ff7-85c8-fbc484cb9851",
+            "at": 72636000
+          }
+        ]
+      }
+    ],
+    "repair": [
+      {
+        "index": 2,
+        "callId": "41eaca8e-fa26-4f72-a8bf-44b893207e79",
+        "usd": 0.0542859,
+        "input": 189010,
+        "error": {
+          "validationErrors": "新規エッジのIDが既に使われています: 26ec5b56-7caf-4c84-a424-ae3bb0f8c3da"
+        }
+      }
+    ],
+    "conflictRegenerations": [
+      {
+        "index": 13,
+        "callId": "34f0806f-9905-4d93-aa23-0a161b64aec0",
+        "usd": 0.7534204,
+        "input": 313122
+      },
+      {
+        "index": 13,
+        "callId": "4e59a5cb-10ce-46f7-a8ca-a1d077051bd0",
+        "usd": 0.9654429,
+        "input": 397046
+      }
+    ],
+    "effects": [
+      {
+        "index": 14,
+        "entries": 1078,
+        "uniqueRecords": 250,
+        "uniqueIds": 250,
+        "rawChars": 530867,
+        "uniqueChars": 302081,
+        "note": "送信前の原入力。既存の参照圧縮前の値で、課金token削減率ではない。"
+      }
+    ],
+    "zeroDelta": {
+      "count": 8,
+      "usd": 0.2919332,
+      "indices": [0, 1, 3, 4, 7, 8, 12, 17]
+    },
+    "sourceSha256": "337a5eb6246c67b3cbba87c025d0ead68a64feecda44b7f587ec29a8c9f73952"
+  },
+  "roundtrip": {
+    "mode": "offline-stored-proposal-conversion",
+    "cases": [
+      {
+        "index": 0,
+        "operationId": "e05bd57f-1833-4f6c-92c4-0c8ff74e85b5",
+        "descriptions": 0,
+        "beforeChars": 37,
+        "afterChars": 37
+      },
+      {
+        "index": 1,
+        "operationId": "519394ed-2b46-4de9-9eeb-dffca1a26d65",
+        "descriptions": 0,
+        "beforeChars": 37,
+        "afterChars": 37
+      },
+      {
+        "index": 2,
+        "operationId": "e0ca3348-b879-44b5-a8f3-631865c696bd",
+        "descriptions": 3,
+        "beforeChars": 2193,
+        "afterChars": 981
+      },
+      {
+        "index": 3,
+        "operationId": "782103d8-32a5-41a8-8d18-799bc6330d67",
+        "descriptions": 0,
+        "beforeChars": 37,
+        "afterChars": 37
+      },
+      {
+        "index": 4,
+        "operationId": "59b63e75-83f4-4db5-b997-5cd579733250",
+        "descriptions": 0,
+        "beforeChars": 37,
+        "afterChars": 37
+      },
+      {
+        "index": 5,
+        "operationId": "0885e42c-817c-4506-b5a5-82d9603953a9",
+        "descriptions": 0,
+        "beforeChars": 114,
+        "afterChars": 114
+      },
+      {
+        "index": 6,
+        "operationId": "ae770b9a-1a30-4723-8a07-38d4fbe9c7e6",
+        "descriptions": 3,
+        "beforeChars": 1754,
+        "afterChars": 1042
+      },
+      {
+        "index": 7,
+        "operationId": "b4eb0e94-e10c-4a62-a4e9-ecb59dcc746d",
+        "descriptions": 0,
+        "beforeChars": 37,
+        "afterChars": 37
+      },
+      {
+        "index": 8,
+        "operationId": "473a34dc-7a85-4a16-9665-12314b75ee70",
+        "descriptions": 0,
+        "beforeChars": 37,
+        "afterChars": 37
+      },
+      {
+        "index": 9,
+        "operationId": "38cec8f0-6f79-485c-b26d-5246a50d6525",
+        "descriptions": 3,
+        "beforeChars": 2601,
+        "afterChars": 1061
+      },
+      {
+        "index": 10,
+        "operationId": "49781bb2-d945-432d-81f7-c63254da4b01",
+        "descriptions": 4,
+        "beforeChars": 3310,
+        "afterChars": 1171
+      },
+      {
+        "index": 11,
+        "operationId": "92de68b8-a308-4491-b9c2-19678cc8f4ec",
+        "descriptions": 1,
+        "beforeChars": 340,
+        "afterChars": 223
+      },
+      {
+        "index": 12,
+        "operationId": "175cfad6-a68d-47da-aa70-e6248edc3359",
+        "descriptions": 0,
+        "beforeChars": 37,
+        "afterChars": 37
+      },
+      {
+        "index": 13,
+        "operationId": "9e42652a-2ff5-4963-8b49-9b05006505f7",
+        "descriptions": 3,
+        "beforeChars": 2651,
+        "afterChars": 1604
+      },
+      {
+        "index": 14,
+        "operationId": "a9aae320-2a07-4183-8461-df922db1ca5c",
+        "descriptions": 1,
+        "beforeChars": 357,
+        "afterChars": 240
+      },
+      {
+        "index": 15,
+        "operationId": "fc17aed7-b4c6-466e-9138-700236f160d0",
+        "descriptions": 3,
+        "beforeChars": 1780,
+        "afterChars": 732
+      },
+      {
+        "index": 16,
+        "operationId": "b3fc23a4-229d-439d-9b01-bd9ce31af50d",
+        "descriptions": 1,
+        "beforeChars": 326,
+        "afterChars": 209
+      },
+      {
+        "index": 17,
+        "operationId": "aa3eca2b-c866-4e2c-8b50-474085f8377d",
+        "descriptions": 0,
+        "beforeChars": 37,
+        "afterChars": 37
+      },
+      {
+        "index": 18,
+        "operationId": "d3afdf48-7b7e-402b-8811-5e909127c578",
+        "descriptions": 3,
+        "beforeChars": 2222,
+        "afterChars": 1508
+      }
+    ],
+    "passed": 19,
+    "descriptionCount": 25,
+    "beforeChars": 17944,
+    "afterChars": 9181,
+    "limits": "同じ保存済み意味判断を変換。新しいモデル出力・DB確定・依存版競合・物語品質は未検証。IDの置換以外の全属性を照合。"
+  },
+  "cases": [
+    {
+      "index": 0,
+      "operationId": "e05bd57f-1833-4f6c-92c4-0c8ff74e85b5",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T19:04:06.859576+00:00",
+      "combined": true,
+      "epoch": 0,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 8634,
+        "initialContext": 254160,
+        "controlledActorIds": 313,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 2,
+        "anchors": 3639,
+        "sources": 1343,
+        "background": 3008
+      },
+      "calls": 1,
+      "usd": 0.081456,
+      "prompt_tokens": 64914,
+      "prompt_cache_hit_tokens": 0,
+      "completion_tokens": 128,
+      "reasoning_tokens": 63,
+      "deltaCounts": {
+        "nodes": 0,
+        "edges": 0,
+        "endEdges": 0
+      },
+      "deltaChars": 37,
+      "proposeChars": 148,
+      "nodeKinds": {},
+      "edgeKinds": {}
+    },
+    {
+      "index": 1,
+      "operationId": "519394ed-2b46-4de9-9eeb-dffca1a26d65",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T19:05:15.530481+00:00",
+      "combined": true,
+      "epoch": 0,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 2985,
+        "initialContext": 17496,
+        "controlledActorIds": 118,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 2,
+        "anchors": 1086,
+        "sources": 2,
+        "background": 1253
+      },
+      "calls": 1,
+      "usd": 0.00712345,
+      "prompt_tokens": 9285,
+      "prompt_cache_hit_tokens": 4094,
+      "completion_tokens": 107,
+      "reasoning_tokens": 24,
+      "deltaCounts": {
+        "nodes": 0,
+        "edges": 0,
+        "endEdges": 0
+      },
+      "deltaChars": 37,
+      "proposeChars": 164,
+      "nodeKinds": {},
+      "edgeKinds": {}
+    },
+    {
+      "index": 2,
+      "operationId": "e0ca3348-b879-44b5-a8f3-631865c696bd",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T19:05:43.820395+00:00",
+      "combined": true,
+      "epoch": 0,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 270287,
+        "initialContext": 384644,
+        "controlledActorIds": 313,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 96540,
+        "anchors": 172008,
+        "sources": 2,
+        "background": 910
+      },
+      "calls": 2,
+      "usd": 0.2832126,
+      "prompt_tokens": 377175,
+      "prompt_cache_hit_tokens": 150072,
+      "completion_tokens": 2627,
+      "reasoning_tokens": 1179,
+      "deltaCounts": {
+        "nodes": 3,
+        "edges": 8,
+        "endEdges": 5
+      },
+      "deltaChars": 2193,
+      "proposeChars": 2490,
+      "nodeKinds": {
+        "script": 3
+      },
+      "edgeKinds": {
+        "interpret:content": 3,
+        "interpret:about": 5
+      }
+    },
+    {
+      "index": 3,
+      "operationId": "782103d8-32a5-41a8-8d18-799bc6330d67",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T19:12:42.334685+00:00",
+      "combined": true,
+      "epoch": 0,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 42754,
+        "initialContext": 90569,
+        "controlledActorIds": 313,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 15727,
+        "anchors": 25159,
+        "sources": 2,
+        "background": 1039
+      },
+      "calls": 1,
+      "usd": 0.0467752,
+      "prompt_tokens": 42175,
+      "prompt_cache_hit_tokens": 4094,
+      "completion_tokens": 158,
+      "reasoning_tokens": 73,
+      "deltaCounts": {
+        "nodes": 0,
+        "edges": 0,
+        "endEdges": 0
+      },
+      "deltaChars": 37,
+      "proposeChars": 213,
+      "nodeKinds": {},
+      "edgeKinds": {}
+    },
+    {
+      "index": 4,
+      "operationId": "59b63e75-83f4-4db5-b997-5cd579733250",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T19:18:29.601854+00:00",
+      "combined": true,
+      "epoch": 0,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 2749,
+        "initialContext": 18337,
+        "controlledActorIds": 118,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 2,
+        "anchors": 995,
+        "sources": 2,
+        "background": 1108
+      },
+      "calls": 1,
+      "usd": 0.0083332,
+      "prompt_tokens": 9598,
+      "prompt_cache_hit_tokens": 4094,
+      "completion_tokens": 280,
+      "reasoning_tokens": 194,
+      "deltaCounts": {
+        "nodes": 0,
+        "edges": 0,
+        "endEdges": 0
+      },
+      "deltaChars": 37,
+      "proposeChars": 170,
+      "nodeKinds": {},
+      "edgeKinds": {}
+    },
+    {
+      "index": 5,
+      "operationId": "0885e42c-817c-4506-b5a5-82d9603953a9",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T19:19:46.715029+00:00",
+      "combined": true,
+      "epoch": 0,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 4117,
+        "initialContext": 19702,
+        "controlledActorIds": 118,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 2,
+        "anchors": 1354,
+        "sources": 2,
+        "background": 2117
+      },
+      "calls": 1,
+      "usd": 0.0118922,
+      "prompt_tokens": 10116,
+      "prompt_cache_hit_tokens": 4094,
+      "completion_tokens": 857,
+      "reasoning_tokens": 749,
+      "deltaCounts": {
+        "nodes": 0,
+        "edges": 0,
+        "endEdges": 2
+      },
+      "deltaChars": 114,
+      "proposeChars": 263,
+      "nodeKinds": {},
+      "edgeKinds": {}
+    },
+    {
+      "index": 6,
+      "operationId": "ae770b9a-1a30-4723-8a07-38d4fbe9c7e6",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T19:36:21.009855+00:00",
+      "combined": true,
+      "epoch": 0,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 39641,
+        "initialContext": 93947,
+        "controlledActorIds": 235,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "events": 14843,
+        "anchors": 22267,
+        "sources": 2,
+        "background": 1437
+      },
+      "calls": 1,
+      "usd": 0.0517782,
+      "prompt_tokens": 40874,
+      "prompt_cache_hit_tokens": 4094,
+      "completion_tokens": 1439,
+      "reasoning_tokens": 959,
+      "deltaCounts": {
+        "nodes": 3,
+        "edges": 5,
+        "endEdges": 10
+      },
+      "deltaChars": 1754,
+      "proposeChars": 1990,
+      "nodeKinds": {
+        "script": 3
+      },
+      "edgeKinds": {
+        "status:content": 3,
+        "status:about": 2
+      }
+    },
+    {
+      "index": 7,
+      "operationId": "b4eb0e94-e10c-4a62-a4e9-ecb59dcc746d",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T19:58:20.349201+00:00",
+      "combined": true,
+      "epoch": 1,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 872,
+        "initialContext": 12623,
+        "controlledActorIds": 79,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 2,
+        "anchors": 52,
+        "sources": 2,
+        "background": 174
+      },
+      "calls": 1,
+      "usd": 0.0046602,
+      "prompt_tokens": 7381,
+      "prompt_cache_hit_tokens": 4094,
+      "completion_tokens": 78,
+      "reasoning_tokens": 19,
+      "deltaCounts": {
+        "nodes": 0,
+        "edges": 0,
+        "endEdges": 0
+      },
+      "deltaChars": 37,
+      "proposeChars": 139,
+      "nodeKinds": {},
+      "edgeKinds": {}
+    },
+    {
+      "index": 8,
+      "operationId": "473a34dc-7a85-4a16-9665-12314b75ee70",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T19:59:45.663671+00:00",
+      "combined": true,
+      "epoch": 1,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 4873,
+        "initialContext": 71442,
+        "controlledActorIds": 40,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 2,
+        "anchors": 1902,
+        "sources": 368,
+        "background": 1766
+      },
+      "calls": 1,
+      "usd": 0.0270092,
+      "prompt_tokens": 22636,
+      "prompt_cache_hit_tokens": 4094,
+      "completion_tokens": 761,
+      "reasoning_tokens": 605,
+      "deltaCounts": {
+        "nodes": 0,
+        "edges": 0,
+        "endEdges": 0
+      },
+      "deltaChars": 37,
+      "proposeChars": 315,
+      "nodeKinds": {},
+      "edgeKinds": {}
+    },
+    {
+      "index": 9,
+      "operationId": "38cec8f0-6f79-485c-b26d-5246a50d6525",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T20:00:12.345026+00:00",
+      "combined": true,
+      "epoch": 0,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 642305,
+        "initialContext": 715523,
+        "controlledActorIds": 469,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 170602,
+        "anchors": 468891,
+        "sources": 2,
+        "background": 1655
+      },
+      "calls": 1,
+      "usd": 0.9648854,
+      "prompt_tokens": 397660,
+      "prompt_cache_hit_tokens": 4094,
+      "completion_tokens": 2135,
+      "reasoning_tokens": 1389,
+      "deltaCounts": {
+        "nodes": 3,
+        "edges": 10,
+        "endEdges": 4
+      },
+      "deltaChars": 2601,
+      "proposeChars": 2988,
+      "nodeKinds": {
+        "script": 3
+      },
+      "edgeKinds": {
+        "interpret:content": 3,
+        "interpret:about": 7
+      }
+    },
+    {
+      "index": 10,
+      "operationId": "49781bb2-d945-432d-81f7-c63254da4b01",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T20:17:33.30648+00:00",
+      "combined": true,
+      "epoch": 0,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 269301,
+        "initialContext": 427814,
+        "controlledActorIds": 391,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 94020,
+        "anchors": 172434,
+        "sources": 305,
+        "background": 1487
+      },
+      "calls": 2,
+      "usd": 0.3111847,
+      "prompt_tokens": 416341,
+      "prompt_cache_hit_tokens": 162449,
+      "completion_tokens": 2121,
+      "reasoning_tokens": 1208,
+      "deltaCounts": {
+        "nodes": 4,
+        "edges": 14,
+        "endEdges": 0
+      },
+      "deltaChars": 3310,
+      "proposeChars": 3633,
+      "nodeKinds": {
+        "script": 4
+      },
+      "edgeKinds": {
+        "status:content": 4,
+        "status:about": 10
+      }
+    },
+    {
+      "index": 11,
+      "operationId": "92de68b8-a308-4491-b9c2-19678cc8f4ec",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T20:24:59.109742+00:00",
+      "combined": true,
+      "epoch": 1,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 125651,
+        "initialContext": 205584,
+        "controlledActorIds": 352,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 35050,
+        "anchors": 87433,
+        "sources": 2,
+        "background": 2362
+      },
+      "calls": 1,
+      "usd": 0.11256845,
+      "prompt_tokens": 94344,
+      "prompt_cache_hit_tokens": 4094,
+      "completion_tokens": 701,
+      "reasoning_tokens": 477,
+      "deltaCounts": {
+        "nodes": 1,
+        "edges": 1,
+        "endEdges": 0
+      },
+      "deltaChars": 340,
+      "proposeChars": 612,
+      "nodeKinds": {
+        "script": 1
+      },
+      "edgeKinds": {
+        "status:content": 1
+      }
+    },
+    {
+      "index": 12,
+      "operationId": "175cfad6-a68d-47da-aa70-e6248edc3359",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T21:11:08.021025+00:00",
+      "combined": true,
+      "epoch": 1,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 88572,
+        "initialContext": 201868,
+        "controlledActorIds": 352,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 28307,
+        "anchors": 57799,
+        "sources": 2,
+        "background": 1527
+      },
+      "calls": 1,
+      "usd": 0.103332,
+      "prompt_tokens": 83208,
+      "prompt_cache_hit_tokens": 0,
+      "completion_tokens": 598,
+      "reasoning_tokens": 471,
+      "deltaCounts": {
+        "nodes": 0,
+        "edges": 0,
+        "endEdges": 0
+      },
+      "deltaChars": 37,
+      "proposeChars": 327,
+      "nodeKinds": {},
+      "edgeKinds": {}
+    },
+    {
+      "index": 13,
+      "operationId": "9e42652a-2ff5-4963-8b49-9b05006505f7",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T21:11:08.521816+00:00",
+      "combined": true,
+      "epoch": 3,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 404569,
+        "initialContext": 717236,
+        "controlledActorIds": 391,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 133174,
+        "anchors": 267107,
+        "sources": 1449,
+        "background": 1876
+      },
+      "calls": 3,
+      "usd": 2.4624237,
+      "prompt_tokens": 1018104,
+      "prompt_cache_hit_tokens": 12282,
+      "completion_tokens": 3961,
+      "reasoning_tokens": 1869,
+      "deltaCounts": {
+        "nodes": 3,
+        "edges": 7,
+        "endEdges": 22
+      },
+      "deltaChars": 2651,
+      "proposeChars": 2951,
+      "nodeKinds": {
+        "script": 3
+      },
+      "edgeKinds": {
+        "status:content": 1,
+        "interpret:content": 2,
+        "interpret:about": 4
+      }
+    },
+    {
+      "index": 14,
+      "operationId": "a9aae320-2a07-4183-8461-df922db1ca5c",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T21:11:38.604793+00:00",
+      "combined": true,
+      "epoch": 0,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 977355,
+        "initialContext": 824172,
+        "controlledActorIds": 430,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 344937,
+        "anchors": 629594,
+        "sources": 2,
+        "background": 1717
+      },
+      "calls": 1,
+      "usd": 1.3559354,
+      "prompt_tokens": 580983,
+      "prompt_cache_hit_tokens": 4094,
+      "completion_tokens": 670,
+      "reasoning_tokens": 406,
+      "deltaCounts": {
+        "nodes": 1,
+        "edges": 1,
+        "endEdges": 0
+      },
+      "deltaChars": 357,
+      "proposeChars": 756,
+      "nodeKinds": {
+        "script": 1
+      },
+      "edgeKinds": {
+        "status:content": 1
+      }
+    },
+    {
+      "index": 15,
+      "operationId": "fc17aed7-b4c6-466e-9138-700236f160d0",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T21:52:34.934017+00:00",
+      "combined": true,
+      "epoch": 1,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 690419,
+        "initialContext": 274715,
+        "controlledActorIds": 391,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 246339,
+        "anchors": 439953,
+        "sources": 2,
+        "background": 2622
+      },
+      "calls": 2,
+      "usd": 1.0823475,
+      "prompt_tokens": 689105,
+      "prompt_cache_hit_tokens": 217775,
+      "completion_tokens": 1203,
+      "reasoning_tokens": 492,
+      "deltaCounts": {
+        "nodes": 3,
+        "edges": 7,
+        "endEdges": 0
+      },
+      "deltaChars": 1780,
+      "proposeChars": 2403,
+      "nodeKinds": {
+        "script": 3
+      },
+      "edgeKinds": {
+        "interpret:content": 3,
+        "interpret:about": 4
+      }
+    },
+    {
+      "index": 16,
+      "operationId": "b3fc23a4-229d-439d-9b01-bd9ce31af50d",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T21:55:50.381863+00:00",
+      "combined": true,
+      "epoch": 1,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 32984,
+        "initialContext": 718760,
+        "controlledActorIds": 352,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 10097,
+        "anchors": 19443,
+        "sources": 2,
+        "background": 2604
+      },
+      "calls": 1,
+      "usd": 0.20678595,
+      "prompt_tokens": 168778,
+      "prompt_cache_hit_tokens": 4094,
+      "completion_tokens": 308,
+      "reasoning_tokens": 139,
+      "deltaCounts": {
+        "nodes": 1,
+        "edges": 1,
+        "endEdges": 0
+      },
+      "deltaChars": 326,
+      "proposeChars": 520,
+      "nodeKinds": {
+        "script": 1
+      },
+      "edgeKinds": {
+        "status:content": 1
+      }
+    },
+    {
+      "index": 17,
+      "operationId": "aa3eca2b-c866-4e2c-8b50-474085f8377d",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T22:04:34.551616+00:00",
+      "combined": true,
+      "epoch": 1,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 872,
+        "initialContext": 39821,
+        "controlledActorIds": 157,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 2,
+        "anchors": 52,
+        "sources": 2,
+        "background": 174
+      },
+      "calls": 1,
+      "usd": 0.01324395,
+      "prompt_tokens": 14252,
+      "prompt_cache_hit_tokens": 4094,
+      "completion_tokens": 77,
+      "reasoning_tokens": 15,
+      "deltaCounts": {
+        "nodes": 0,
+        "edges": 0,
+        "endEdges": 0
+      },
+      "deltaChars": 37,
+      "proposeChars": 143,
+      "nodeKinds": {},
+      "edgeKinds": {}
+    },
+    {
+      "index": 18,
+      "operationId": "d3afdf48-7b7e-402b-8811-5e909127c578",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T22:06:04.653118+00:00",
+      "combined": true,
+      "epoch": 1,
+      "promptChars": 3131,
+      "initialChars": {
+        "request": 13505,
+        "initialContext": 75057,
+        "controlledActorIds": 40,
+        "responseSchema": 11462
+      },
+      "sceneChars": {
+        "ending": 11,
+        "events": 3141,
+        "anchors": 7059,
+        "sources": 366,
+        "background": 2098
+      },
+      "calls": 1,
+      "usd": 0.03541245,
+      "prompt_tokens": 26469,
+      "prompt_cache_hit_tokens": 4094,
+      "completion_tokens": 1545,
+      "reasoning_tokens": 955,
+      "deltaCounts": {
+        "nodes": 3,
+        "edges": 8,
+        "endEdges": 7
+      },
+      "deltaChars": 2222,
+      "proposeChars": 2466,
+      "nodeKinds": {
+        "script": 3
+      },
+      "edgeKinds": {
+        "status:content": 3,
+        "status:about": 2,
+        "effect:": 3
+      }
+    },
+    {
+      "index": 19,
+      "operationId": "b10dc92b-dc71-4a50-b354-1da0fed3251e",
+      "worldId": "5078935c-66bb-44bb-88f3-3e9bec09382e",
+      "createdAt": "2026-11-16T22:39:42.029339+00:00",
+      "combined": false,
+      "epoch": 0,
+      "promptChars": 9232,
+      "initialChars": {
+        "request": 750,
+        "initialContext": 1346,
+        "controlledActorIds": 2,
+        "responseSchema": 11462
+      },
+      "sceneChars": {},
+      "calls": 4,
+      "usd": 0.1154033,
+      "prompt_tokens": 116169,
+      "prompt_cache_hit_tokens": 17066,
+      "completion_tokens": 2602,
+      "reasoning_tokens": 187,
+      "deltaCounts": {
+        "nodes": 6,
+        "edges": 10,
+        "endEdges": 0
+      },
+      "deltaChars": 2868,
+      "proposeChars": 3917,
+      "nodeKinds": {
+        "existence": 2,
+        "script": 4
+      },
+      "edgeKinds": {
+        "status:content": 3,
+        "status:about": 3,
+        "interpret:content": 1,
+        "interpret:about": 2,
+        "see:": 1
+      }
+    }
+  ],
+  "validation": {
+    "aggregateAssertions": "passed",
+    "roundtripCases": 19,
+    "newModelCalls": 0,
+    "productionMutations": 0,
+    "meaningQuality": "not-evaluated"
+  }
+}
