@@ -435,6 +435,79 @@ test("旧方式の重複待ちを整理しても、処理中のジョブと各�
   );
 });
 
+test.each([
+  "準備方針を整理します",
+  "必要な資料を取得できないため準備を続けられません",
+])(
+  "背景のpauseを保留し、明示再開でだけ新しい要求を使う（%s）",
+  async (reason) => {
+    const { world, id } = await prepareJoin();
+    await access.players.tick(id);
+    const actor = (await access.players.list(user, world)).items[0]!.actorId!;
+    const scene = (
+      await access.sceneCommand(
+        user,
+        world,
+        {
+          requestId: randomUUID(),
+          command: "prepare",
+          purpose: "周囲を確かめる",
+        },
+        true,
+        actor,
+      )
+    ).scene!;
+    let sent = 0;
+    transform = (content) => {
+      if ((content as { type?: string }).type === "background" && ++sent === 1)
+        return { type: "pause", reason };
+      return content;
+    };
+    await expect(access.scenes.tick(scene.id)).rejects.toThrow(reason);
+    await access.scenes.tick(scene.id);
+    expect(sent).toBe(1);
+    const old = (await access.scenes.latest(
+      world,
+      undefined,
+      false,
+      actor,
+      scene.id,
+    ))!.data.work!.id;
+    const read = () =>
+      isolated.databases.postgres.query("SELECT * FROM llm_call WHERE id=$1", [
+        old,
+      ]);
+    const original = (await read()).rows[0];
+    expect(original.state).toBe("complete");
+    expect(JSON.parse(original.response.content)).toEqual({
+      type: "pause",
+      reason,
+    });
+    const request = randomUUID();
+    await resume("scene", scene.id, request);
+    const fresh = (await access.scenes.latest(
+      world,
+      undefined,
+      false,
+      actor,
+      scene.id,
+    ))!.data.work!.id;
+    expect(fresh).not.toBe(old);
+    await resume("scene", scene.id, request);
+    expect(
+      (await access.scenes.latest(world, undefined, false, actor, scene.id))!
+        .data.work!.id,
+    ).toBe(fresh);
+    await access.scenes.tick(scene.id);
+    expect(
+      (await access.scenes.latest(world, undefined, false, actor, scene.id))!
+        .state,
+    ).toBe("ready");
+    expect(sent).toBe(2);
+    expect((await read()).rows[0]).toEqual(original);
+  },
+);
+
 test("未確定要求は通常配信では再送せず、明示再開だけ新IDを使い旧予約を保持する", async () => {
   const { world, id } = await prepareJoin();
   await access.players.tick(id);

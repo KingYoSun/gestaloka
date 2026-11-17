@@ -1071,6 +1071,24 @@ export class WorldScenes {
         (await this.agent.model.ledger.state(row.data.work.id)) === "pending"
       )
         row.data.work.id = randomUUID();
+      else if (row.data.work?.kind === "background") {
+        const response = (
+          await client.query<{ response: { content?: string } }>(
+            "SELECT response FROM llm_call WHERE id=$1 AND state='complete'",
+            [row.data.work.id],
+          )
+        ).rows[0]?.response;
+        if (response?.content)
+          try {
+            if (
+              BackgroundChoices[1].safeParse(parseOutput(response.content))
+                .success
+            )
+              row.data.work.id = randomUUID();
+          } catch {
+            // Invalid completions retain the existing format-repair path.
+          }
+      }
       if (row.data.work?.formatAttempts === 3) {
         row.data.work.id = randomUUID();
         row.data.work.formatAttempts = 0;
