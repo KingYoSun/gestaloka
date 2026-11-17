@@ -207,7 +207,7 @@ export function recordPresentations(
           : null,
     });
   };
-  if (d.background)
+  if (d.background?.synopsis && !d.sessionIds)
     add(
       "synopsis",
       "synopsis",

@@ -54,7 +54,7 @@ gestaloka players                        いま出会えるプレイヤー（待
 gestaloka npcs                           いま出会えるNPC
 gestaloka recover [--request <要求ID>]    保存した同じ要求を照合して最新状態を取得
 全コマンド: --profile <ファイル>。既定はXDG_STATE_HOMEまたは~/.local/stateのgestaloka/default.json。
-シーン照会・操作: --scene <id> で退出前のシーンも指定できます。
+シーン照会・操作: --scene <id> で本人の一続きの履歴を指定できます。finish は本人の終了です。
 出力はJSON、成功は終了コード0、エラーは1。照会では世界を進めません。
 応答喪失時は表示したrequestIdまたは最後の要求をrecoverで照合してください。
 許可の解除: 公開URLの/auth/player。サーバー・DB・モデルのAPIキーは不要です。

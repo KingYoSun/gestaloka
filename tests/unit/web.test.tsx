@@ -1188,7 +1188,7 @@ test.each([true, false])(
     });
     expect(
       screen.getByText(
-        "回答が揃って続行と終了に分かれた場合、終了を選んだ人だけが退出します。",
+        "自分は終えると、ここまでの履歴から自分のリザルトを作成します。他の参加者は続けられます。",
       ),
     ).toBeTruthy();
     await openInput();

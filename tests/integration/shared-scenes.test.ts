@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { WorldAccess } from "@gestaloka/server/access";
 import { changeBelongings } from "@gestaloka/server/belongings";
 import { locationRecords } from "../../packages/server/src/world/locations.js";
@@ -87,6 +87,20 @@ const people: { id: string; cookie: string; actor: string; profile: string }[] =
   [];
 const connections = new Map<number, string>();
 beforeEach(() => selections.clear());
+afterEach(async () => {
+  // finish now ends the caller's continuous scene; every fixture player owns cleanup.
+  playback = undefined;
+  for (const person of people) {
+    const row = await access.scenes.latest(world,undefined,false,person.actor);
+    if (!row || row.state==='result') continue;
+    await access.scenes.shared.transaction(db => access.scenes.command(world,'finish',db,{requestId:randomUUID()},person.actor,row.id));
+  }
+  for (let pass=0;pass<8;pass++) {
+    const rows = (await runtime.pool.query<{id:string}>("SELECT id FROM world_scene WHERE construction_id=$1 AND state IN ('preparing','acting','reflecting') ORDER BY created_at,id",[world])).rows;
+    if (!rows.length) break;
+    for (const row of rows) await access.scenes.tick(row.id);
+  }
+},60000);
 beforeAll(async () => {
   await isolated.setup();
   ({ runtime } = await fixtureRuntime(
@@ -571,7 +585,8 @@ test.each([false, true])(
           state: "paused",
           data: { resumeState: "reflecting" },
         });
-        expect(paused.data.result).toBeTruthy();
+        expect(paused.data.work.kind).toBe('result');
+        expect((await runtime.pool.query("SELECT state FROM llm_call WHERE id=$1",[paused.data.work.id])).rows[0]?.state).toBe('complete');
         expect(
           (
             await runtime.pool.query(
@@ -582,10 +597,9 @@ test.each([false, true])(
         ).toEqual({ target_scene: scene, queued_text: "保存済みの返答" });
         await cli.run(owner.profile, "resume");
       }
-      const replay = vi.spyOn(runtime.agent.model, "complete");
+      const callsBefore = (await runtime.pool.query("SELECT count(*)::int AS n FROM llm_call")).rows[0]!.n;
       await access.scenes.tick(scene);
-      if (fail) expect(replay).not.toHaveBeenCalled();
-      replay.mockRestore();
+      if (fail) expect((await runtime.pool.query("SELECT count(*)::int AS n FROM llm_call")).rows[0]!.n).toBe(callsBefore);
     } finally {
       notice.mockRestore();
     }
@@ -599,26 +613,42 @@ test.each([false, true])(
     expect(saved.data.result).toBeTruthy();
     const delivery = (
       await runtime.pool.query(
-        "SELECT target_scene,queued_text FROM world_player_contact WHERE id=$1",
+        "SELECT target_scene,queued_text,state FROM world_player_contact WHERE id=$1",
         [contact],
       )
     ).rows[0];
     expect(delivery.target_scene).not.toBe(scene);
-    expect(delivery.queued_text).toBeNull();
+    expect(delivery.queued_text).toBe("保存済みの返答");
+    expect(delivery.state).toBe("handoff");
+    for (let pass = 0; pass < 6; pass++) {
+      const pending = (
+        await runtime.pool.query<{ id: string }>(
+        `SELECT s.id FROM world_scene s WHERE construction_id=$1 AND (state IN ('preparing','acting','reflecting') OR EXISTS(SELECT 1 FROM world_player_contact c WHERE c.target_scene=s.id AND c.state='handoff') OR EXISTS(SELECT 1 FROM world_scene_turn t WHERE t.scene_id=s.id AND t.state='queued')) ORDER BY created_at`,
+          [world],
+        )
+      ).rows;
+      for (const p of pending) await access.scenes.tick(p.id);
+    }
     expect(
       (
         await runtime.pool.query(
-          "SELECT id,data FROM world_scene_turn WHERE id=$1",
+          "SELECT id FROM world_scene_reply WHERE request_id=$1 AND state='answered'",
           [reply],
         )
       ).rows,
-    ).toEqual([{ id: reply, data: { actionText: "保存済みの返答" } }]);
+    ).toHaveLength(1);
+    expect(
+      (await cli.run(owner.profile, "status")).scene.actions.filter(
+        (a: { id: string }) => a.id === reply,
+      ),
+    ).toHaveLength(1);
     const calls = vi.spyOn(runtime.agent.model, "complete");
     await access.scenes.tick(scene);
     expect(calls).not.toHaveBeenCalled();
     calls.mockRestore();
     await cli.run(owner.profile, "finish");
-    await access.scenes.tick(delivery.target_scene);
+    const current = (await access.scenes.latest(world,undefined,false,owner.actor))!;
+    await access.scenes.tick(current.id);
   },
   60000,
 );
@@ -1252,7 +1282,7 @@ test("退出後は未確定の履歴から次々に開始でき、元の確定�
     let next = (await access.scenes.latest(world, undefined, false, b.actor))!;
     expect(next.state).toBe("ready");
     expect(next.data.drafts?.[0]?.events).toHaveLength(prefix);
-    await access.scenes.drafts.run(next, async () => {
+    await access.scenes.sessions.run(next, async () => {
       const context = runtime.agent.store.context(graph);
       expect((await context.node(continuation!.creation))?.text).toBe(
         "場に現れた持ち運べる物",
@@ -1877,21 +1907,15 @@ async function replyRound(scene: string, except?: string) {
   let found = false;
   for (const person of people) {
     const opportunity = (
-      await cli.run(person.profile, "inbox")
+      await access.inbox(person.id,world,person.actor)
     ).opportunities.find(
       (o: { sceneId: string; sourceInputId: string }) =>
         o.sceneId === scene && o.sourceInputId !== except,
     );
     if (!opportunity) continue;
-    const reply = await cli.run(
-      person.profile,
-      "react",
-      "--opportunity",
-      opportunity.id,
-      "--text",
-      "相手へ働きかける",
-    );
-    expect(reply.state, JSON.stringify(reply)).not.toBe("error");
+    const profile = JSON.parse(await readFile(person.profile,'utf8'));
+    const reply = await app.inject({method:'POST',url:`/api/worlds/${world}/scene?sceneId=${scene}`,headers:{authorization:`Bearer ${profile.secret}`,'x-gestaloka-request':'1'},payload:{requestId:randomUUID(),command:'react',opportunityId:opportunity.id,actionText:'相手へ働きかける'}});
+    expect(reply.statusCode,reply.body).toBe(202);
     await access.scenes.tick(scene);
     found = true;
     break;

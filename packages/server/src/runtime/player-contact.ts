@@ -10,6 +10,7 @@ export type ContactDecision = {
   inputId: string;
   speaker: string;
   text: string;
+  independent?: boolean;
 };
 export type ReceivedContact = {
   eventId: string;
@@ -20,7 +21,7 @@ export type ReceivedContact = {
   replyInputId: string | null;
 };
 
-/** Delivery of a recorded reception; participation and world-path calculation are not prerequisites. */
+/** Stage a common execution; old opportunities are adapted at the reply boundary. */
 export class PlayerContacts {
   constructor(readonly shared: SharedScenes) {}
   async setup() {
@@ -31,7 +32,9 @@ export class PlayerContacts {
       event_id uuid NOT NULL,input_id uuid NOT NULL,at bigint NOT NULL,text text NOT NULL,deadline timestamptz NOT NULL,
       state text NOT NULL DEFAULT 'pending',reply_id uuid UNIQUE,queued_text text,reply_kind text);
       CREATE INDEX IF NOT EXISTS world_contact_listener ON world_player_contact(target_scene,listener,at);
-      CREATE INDEX IF NOT EXISTS world_contact_pending ON world_player_contact(world_id,listener) WHERE state='pending';`);
+      CREATE INDEX IF NOT EXISTS world_contact_pending ON world_player_contact(world_id,listener) WHERE state='pending';
+      CREATE INDEX IF NOT EXISTS world_contact_handoff_source ON world_player_contact(world_id,speaker) WHERE state='handoff';
+      CREATE INDEX IF NOT EXISTS world_contact_handoff_listener ON world_player_contact(world_id,listener) WHERE state='handoff';`);
   }
   async received(
     scene: string,
@@ -51,26 +54,22 @@ export class PlayerContacts {
     intent: SceneIntent,
     db: Pick<pg.Pool, "query"> = this.shared.pool,
   ) {
-    const wait = intent.replyWait;
-    return (
-      !wait ||
-      (await this.received(scene, [intent.actorId], db)).some(
-        (r) =>
-          wait.actors.includes(r.speaker) &&
-          !wait.seenEventIds.includes(r.eventId),
-      )
-    );
+    return this.shared.sessions.ready(scene, intent, db);
   }
   async deliver(
     db: pg.PoolClient,
     row: SceneRow,
     decisions: ContactDecision[],
   ) {
-    for (const { listener, eventId, inputId, speaker, text } of decisions) {
-      const id = sceneId(`${eventId}:contact:${listener}`),
-        deadline = new Date(
-          this.shared.now().getTime() + this.shared.turns.replyMs,
-        );
+    for (const d of decisions) {
+      const previous = row.data.sessionIds?.[d.listener];
+      if (
+        previous &&
+        d.independent === false &&
+        (await this.shared.sessions.get(previous, d.listener, db))?.closed
+      )
+        continue;
+      const id = sceneId(`${d.eventId}:contact:${d.listener}`);
       if (
         (await db.query("SELECT 1 FROM world_player_contact WHERE id=$1", [id]))
           .rowCount
@@ -79,63 +78,31 @@ export class PlayerContacts {
       const { WorldScenes } = await import("./scene.js");
       const target = await new WorldScenes(this.shared.construction).reception(
         row.construction_id,
-        listener,
-        speaker,
+        d.listener,
+        d.speaker,
         row.data.at,
         id,
         db,
       );
-      const inserted = await db.query(
-        `INSERT INTO world_player_contact(id,world_id,source_scene,target_scene,speaker,listener,event_id,input_id,at,text,deadline)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(id) DO NOTHING`,
+      await db.query(
+        `INSERT INTO world_player_contact(id,world_id,source_scene,target_scene,speaker,listener,event_id,input_id,at,text,deadline,state)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'handoff') ON CONFLICT DO NOTHING`,
         [
           id,
           row.construction_id,
           row.id,
           target.id,
-          speaker,
-          listener,
-          eventId,
-          inputId,
+          d.speaker,
+          d.listener,
+          d.eventId,
+          d.inputId,
           row.data.at,
-          text,
-          deadline,
+          d.text,
+          this.shared.now(),
         ],
       );
-      if (!inserted.rowCount) continue;
+      await this.shared.wake(db, row.id);
       await this.shared.wake(db, target.id);
-      await this.shared.notice(
-        db,
-        row.construction_id,
-        listener,
-        target.id,
-        "opportunity",
-        {
-          contact: true,
-          opportunityId: id,
-          sourceInputId: inputId,
-          context: [text],
-          deadline: deadline.toISOString(),
-        },
-      );
-      await this.shared.notice(
-        db,
-        row.construction_id,
-        speaker,
-        row.id,
-        "opportunity",
-        {
-          contactOutcome: "delivered",
-          sourceInputId: inputId,
-          context: ["働きかけを届けました。返答は相手が選びます。"],
-        },
-      );
-      await this.shared.schedule(
-        db,
-        `contact:${id}`,
-        { contactId: id },
-        deadline,
-      );
     }
   }
   async pending(db: pg.PoolClient, world: string, actor: string, id: string) {
@@ -165,15 +132,6 @@ export class PlayerContacts {
       )
     ).rows.map((r) => ({ ...r, deadline: r.deadline.toISOString() }));
   }
-  async #wakeWaiting(db: pg.PoolClient, source: string, target: string | null) {
-    for (const { id } of (
-      await db.query<{ id: string }>(
-        "SELECT id FROM world_scene WHERE id=ANY($1::uuid[]) AND state='active' AND data ? 'turns'",
-        [[source, target]],
-      )
-    ).rows)
-      await this.shared.wake(db, id);
-  }
   async answer(
     db: pg.PoolClient,
     row: SceneRow | null,
@@ -183,80 +141,47 @@ export class PlayerContacts {
     text: string | null,
     kind: "human" | "bot",
   ) {
-    const contact = (
+    const c = (
       await db.query(
         "SELECT * FROM world_player_contact WHERE id=$1 AND listener=$2 AND target_scene IS NOT DISTINCT FROM $3::uuid FOR UPDATE",
         [id, actor, row?.id ?? null],
       )
     ).rows[0];
-    if (!contact) return false;
-    if (contact.state !== "pending" || contact.deadline <= this.shared.now())
+    if (!c) return false;
+    if (c.state !== "pending" || c.deadline <= this.shared.now())
       throw new ConstructionStateError("この呼びかけには現在返答できません");
-    const group =
+    if (
       text !== null &&
-      row?.data.turns &&
-      row.state !== "reflecting" &&
-      row.state !== "result";
-    const queued = text !== null && !group && row?.state !== "active";
-    if (group)
-      await this.shared.turns.receiveChoice(
-        db,
-        row,
-        actor,
-        kind,
-        request,
-        text,
-      );
+      row &&
+      (await this.shared.turns.control(row.id, db, true)).flow === "closing"
+    )
+      throw new ConstructionStateError("シーンは終了処理中です");
     await db.query(
       "UPDATE world_player_contact SET state=$2,reply_id=$3,queued_text=$4,reply_kind=$5 WHERE id=$1",
-      [
-        id,
-        text === null ? "declined" : "answered",
-        request,
-        queued ? text : null,
-        kind,
-      ],
+      [id, text === null ? "declined" : "handoff", request, text, kind],
     );
-    await this.#wakeWaiting(db, contact.source_scene, row?.id ?? null);
-    if (queued && row && ["ready", "active"].includes(row.state))
-      await this.shared.wake(db, row.id);
-    return group || queued || text === null ? "accepted" : "act";
-  }
-  async nextReply(db: pg.PoolClient, scene: string) {
-    return (
-      await db.query<{
-        requestId: string;
-        actionText: string;
-        actor: string;
-        kind: "human" | "bot";
-      }>(
-        `WITH next AS (SELECT id,queued_text FROM world_player_contact WHERE target_scene=$1 AND queued_text IS NOT NULL ORDER BY deadline,id LIMIT 1 FOR UPDATE)
-       UPDATE world_player_contact c SET queued_text=NULL FROM next WHERE c.id=next.id RETURNING c.reply_id AS "requestId",next.queued_text AS "actionText",c.listener AS actor,c.reply_kind AS kind`,
-        [scene],
-      )
-    ).rows[0];
+    if (row && text !== null && ["ready", "active"].includes(row.state)) {
+      row.state = "acting";
+      await db.query(
+        "UPDATE world_scene SET state='acting',claim=NULL WHERE id=$1",
+        [row.id],
+      );
+    }
+    for (const scene of new Set(
+      [c.source_scene, row?.id].filter((s): s is string => !!s),
+    ))
+      await this.shared.wake(db, scene);
+    return "accepted" as const;
   }
   async expire(db: pg.PoolClient, id: string) {
-    const r = (
+    const c = (
       await db.query(
         "UPDATE world_player_contact SET state='expired' WHERE id=$1 AND state='pending' AND deadline<=$2 RETURNING *",
         [id, this.shared.now()],
       )
     ).rows[0];
-    if (r) {
-      await this.#wakeWaiting(db, r.source_scene, r.target_scene);
-      await this.shared.notice(
-        db,
-        r.world_id,
-        r.speaker,
-        r.source_scene,
-        "opportunity",
-        {
-          contactOutcome: "unanswered",
-          sourceInputId: r.input_id,
-          context: ["相手からの返答はまだ届いていません。"],
-        },
-      );
-    }
+    if (c)
+      for (const scene of [c.source_scene, c.target_scene])
+        await this.shared.wake(db, scene);
   }
 }
