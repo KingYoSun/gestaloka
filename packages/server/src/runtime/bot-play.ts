@@ -557,17 +557,10 @@ export class BotPlay {
     const r = session.data.receiving;
     const context = this.store.context((await this.world(world, db)).id),
       ids = session.data.members.map((m) => m.actorId);
-    const icons = (
-      await db.query<{ actor_id: string; image: string | null }>(
-        `SELECT a.actor_id,i.image FROM world_access a LEFT JOIN world_player_icon i ON i.player_id=a.id WHERE a.construction_id=$1 AND a.actor_id=ANY($2::uuid[]) ORDER BY a.actor_id,(i.image IS NULL),a.id`,
-        [world, ids],
-      )
-    ).rows;
     const characters = await Promise.all(
       ids.map(async (actorId) => ({
         actorId,
         name: (await context.node(actorId))?.text ?? "人物",
-        icon: icons.find((r) => r.actor_id === actorId)?.image ?? null,
       })),
     );
     await context.validate();
@@ -604,6 +597,7 @@ export class BotPlay {
     actor: string,
     scene?: string,
     db: Db = this.pool,
+    after?: string,
   ) {
     const selected =
       scene ??
@@ -616,14 +610,31 @@ export class BotPlay {
           [world, actor],
         )
       ).rows[0]?.id;
-    if (!selected) return { entries: [] };
+    if (!selected)
+      return {
+        entries: [],
+        ...(after === undefined ? {} : { nextCursor: after }),
+      };
     const valid = (
       await db.query(
-        "SELECT result FROM bot_scene WHERE id=$1 AND actor_id=$2 AND world_id=$3 UNION ALL SELECT result FROM world_scene_session WHERE id=$1 AND actor_id=$2 AND world_id=$3",
+        `SELECT ${after === undefined ? "result" : "1"} FROM bot_scene WHERE id=$1 AND actor_id=$2 AND world_id=$3 UNION ALL SELECT ${after === undefined ? "result" : "1"} FROM world_scene_session WHERE id=$1 AND actor_id=$2 AND world_id=$3`,
         [selected, actor, world],
       )
     ).rows[0];
     if (!valid) reject("SCENE_NOT_FOUND", "本人のシーンを指定してください");
+    const entries = (
+      await db.query(
+        `SELECT c.id,c.payload FROM bot_record r JOIN bot_chat c ON c.id=r.chat_id
+       WHERE r.scene_id=$1 AND r.actor_id=$2 AND r.chat_id > $3::bigint ORDER BY r.chat_id`,
+        [selected, actor, after ?? "0"],
+      )
+    ).rows;
+    if (after !== undefined)
+      return {
+        sceneId: selected,
+        entries,
+        nextCursor: String(entries.at(-1)?.id ?? after),
+      };
     return {
       sceneId: selected,
       result: valid.result,
@@ -633,13 +644,7 @@ export class BotPlay {
           [selected, actor],
         )
       ).rows,
-      entries: (
-        await db.query(
-          `SELECT c.id,c.payload FROM bot_record r JOIN bot_chat c ON c.id=r.chat_id
-      WHERE r.scene_id=$1 AND r.actor_id=$2 ORDER BY c.id`,
-          [selected, actor],
-        )
-      ).rows,
+      entries,
     };
   }
   async expire(world?: string) {

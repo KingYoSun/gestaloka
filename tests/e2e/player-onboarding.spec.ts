@@ -138,6 +138,7 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
       const initial = await cli.run(
         profile,
         "connect",
+        "--full-ids",
         "--server",
         cli.base,
         "--world",

@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { parseArgs } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
+import { PlayerReferences } from "./references.js";
 import {
   PlayerDeviceCode,
   PlayCommand,
@@ -22,7 +23,8 @@ const help = `GESTALOKA プレイヤーCLI
 
 gestaloka connect --server <URL> --world <IDまたはURL> [--character <ファイル>] [--icon <画像>]
 gestaloka join [--icon <画像>]           認可されたキャラクターを生成
-gestaloka status                        参加状態・手番・チャットを取得（枠外）
+gestaloka status [--after N]            参加状態・手番と前回からの新着（0で先頭）
+gestaloka result [--scene ID]           本人の履歴・終了結果をまとめて読む
 gestaloka standby [--resume]            待機を更新し、本人を起こす条件を取得（枠外）
 gestaloka listen [--resume]             待機を維持し、変化をJSON Linesで出力
 gestaloka disconnect                    このインスタンスの待機を解除
@@ -48,6 +50,7 @@ gestaloka recover [--request <ID>]       保存した同じ要求を再送
 エラー・状態確認・チャット取得・再送・コメントは枠を消費しません。
 全コマンド: --instance <View ID>でbotごとの認可・接続先・要求記録を分離します。
 GESTALOKA_INSTANCEでも指定できます。--profile <ファイル>との同時指定はできません。
+IDはこのインスタンス内で使える短縮ID。--full-idsで完全なUUIDを出力します。
 出力はJSON。認可は持ち主のブラウザーで行います。
 `;
 const Profile = z.object({
@@ -72,6 +75,7 @@ const parse = () =>
     allowPositionals: true,
     options: {
       help: { type: "boolean" },
+      "full-ids": { type: "boolean" },
       server: { type: "string" },
       world: { type: "string" },
       profile: { type: "string" },
@@ -100,6 +104,11 @@ const parse = () =>
 let values: ReturnType<typeof parse>["values"];
 let profilePath: string, journal: string;
 let requestId: string | undefined;
+let references: PlayerReferences | undefined, pendingCursor: string | undefined;
+const render = (value: unknown) =>
+  JSON.stringify(
+    !references || values["full-ids"] ? value : references.convert(value),
+  );
 async function save(path: string, data: unknown) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.tmp`;
@@ -148,18 +157,18 @@ async function http(
     return attempt();
   }
 }
-async function status(profile: Profile) {
+async function status(profile: Profile, after?: string) {
   const device = PlayerDeviceStatus.parse(
     await http(profile, "/api/player-device"),
   );
   if (device.state !== "ready") return { state: device.state, device };
+  const query = new URLSearchParams();
+  if (values.scene) query.set("sceneId", z.uuid().parse(values.scene));
+  if (after !== undefined) query.set("after", after);
   return {
     state: "ready",
     device,
-    ...(await http(
-      profile,
-      `/api/worlds/${profile.worldId}/session${values.scene ? `?sceneId=${z.uuid().parse(values.scene)}` : ""}`,
-    )),
+    ...(await http(profile, `/api/worlds/${profile.worldId}/session?${query}`)),
   };
 }
 const WaitingControl = z.object({ enabled: z.boolean() });
@@ -191,7 +200,7 @@ async function listen(profile: Profile) {
   while (frame.active) {
     const key = `${frame.state}:${frame.wakeKey ?? ""}`;
     if (key !== last) {
-      console.log(JSON.stringify(frame));
+      console.log(render(frame));
       last = key;
     }
     await delay(30000);
@@ -306,6 +315,24 @@ async function run() {
   if (command === "help" || values.help) return { help };
   if (positionals.length > 1)
     throw new Error("コマンドは1つ指定してください（helpを参照）");
+  await mkdir(journal, { recursive: true, mode: 0o700 });
+  references = new PlayerReferences(join(journal, "references.sqlite"));
+  for (const key of [
+    "world",
+    "target",
+    "owner",
+    "scene",
+    "application",
+    "request",
+    "source",
+    "before",
+  ] as const)
+    if (values[key]) values[key] = references.expand(values[key]!);
+  if (values.participants)
+    values.participants = values.participants
+      .split(",")
+      .map((id) => references!.expand(id.trim()))
+      .join(",");
   if (command === "connect") {
     if (!values.server || !values.world)
       throw new Error("--serverと--worldを指定してください");
@@ -359,7 +386,20 @@ async function run() {
     throw new Error(
       "--sceneは状態・履歴の照会に使います。プレイ操作は本人の現在のシーンを指定します。",
     );
-  if (["status", "result"].includes(command)) return status(profile);
+  if (command === "result") return status(profile);
+  if (command === "status") {
+    const result = await status(
+      profile,
+      values.after ?? (values.scene ? "0" : references.cursor()),
+    );
+    if (
+      !values.scene &&
+      values.after === undefined &&
+      typeof result.nextCursor === "string"
+    )
+      pendingCursor = result.nextCursor;
+    return result;
+  }
   if (command === "recover") {
     const id = z.uuid().parse(values.request ?? profile.lastRequestId);
     return send(
@@ -386,9 +426,6 @@ async function run() {
       ),
     };
   }
-  const device = PlayerDeviceStatus.parse(
-    await http(profile, "/api/player-device"),
-  );
   if (command === "standby") return standby(profile, !!values.resume);
   if (command === "listen") return listen(profile);
   if (command === "disconnect") {
@@ -445,7 +482,17 @@ async function run() {
       "PUT",
     );
   }
-  if (command === "join") {
+  if (command === "join" || command === "resume") {
+    const device = PlayerDeviceStatus.parse(
+      await http(profile, "/api/player-device"),
+    );
+    if (command === "resume") {
+      if (!device.actorId && device.joinId)
+        return submit(profile, "/api/operations", {
+          command: { operation: "worlds.resumeJoin", joinId: device.joinId },
+        });
+      throw new Error("再開する参加要求がありません");
+    }
     const joinCommand = JoinWorld.parse({
       operation: "worlds.join",
       worldId: profile.worldId,
@@ -487,15 +534,14 @@ async function run() {
       device.joinId,
     );
   }
-  if (command === "resume" && !device.actorId && device.joinId)
-    return submit(profile, "/api/operations", {
-      command: { operation: "worlds.resumeJoin", joinId: device.joinId },
-    });
   const id = randomUUID();
   const body = PlayCommand.parse(
     command === "play"
       ? {
-          ...JSON.parse(await readFile(z.string().parse(values.file), "utf8")),
+          ...(references.convert(
+            JSON.parse(await readFile(z.string().parse(values.file), "utf8")),
+            true,
+          ) as object),
           requestId: id,
         }
       : {
@@ -548,10 +594,14 @@ async function run() {
   );
 }
 try {
-  console.log(JSON.stringify(await run()));
+  const output = render(await run()) + "\n";
+  await new Promise<void>((resolve, reject) =>
+    process.stdout.write(output, (e) => (e ? reject(e) : resolve())),
+  );
+  if (pendingCursor !== undefined) references?.advance(pendingCursor);
 } catch (error) {
   console.log(
-    JSON.stringify({
+    render({
       state: "error",
       ...(requestId ? { requestId } : {}),
       code: (error as { code?: string }).code ?? "CLI_ERROR",

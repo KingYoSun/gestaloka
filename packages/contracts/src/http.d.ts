@@ -2262,6 +2262,7 @@ export interface paths {
                     actorId?: string;
                     sceneId?: string;
                     view?: "compact";
+                    after?: string;
                 };
                 header?: never;
                 path: {

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { setTimeout as delay } from "node:timers/promises";
 import cookie from "@fastify/cookie";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -389,7 +390,13 @@ export async function worldRoutes(
     {
       schema: {
         params: ResourceId,
-        querystring: SceneViewQuery,
+        querystring: SceneViewQuery.extend({
+          after: z
+            .string()
+            .regex(/^\d{1,19}$/)
+            .refine((v) => v.length < 19 || v <= "9223372036854775807")
+            .optional(),
+        }),
         response: { 200: PlayResponse, ...errors },
       },
     },
@@ -400,6 +407,7 @@ export async function worldRoutes(
         request.query.actorId,
         request.query.sceneId,
         deviceIds.get(request),
+        request.query.after,
       ),
   );
   app.post(

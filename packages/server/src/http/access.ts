@@ -181,6 +181,33 @@ export class WorldAccess {
       );
     return row[0];
   }
+  private async playCharacters<T extends Record<string, unknown>>(
+    world: string,
+    result: T,
+    device?: string,
+  ) {
+    if (!Array.isArray(result.characters)) return result;
+    const people = result.characters as { actorId: string; name: string }[];
+    // Old request journals can contain images. Project names even when replaying one.
+    const icons = device
+      ? []
+      : (
+          await this.pool.query<{ actor_id: string; image: string | null }>(
+            `SELECT DISTINCT ON (a.actor_id) a.actor_id,i.image FROM world_access a JOIN world_player_icon i ON i.player_id=a.id WHERE a.construction_id=$1 AND a.actor_id=ANY($2::uuid[]) ORDER BY a.actor_id,a.id`,
+            [world, people.map((p) => p.actorId)],
+          )
+        ).rows;
+    return {
+      ...result,
+      characters: people.map(({ actorId, name }) => ({
+        actorId,
+        name,
+        ...(device
+          ? {}
+          : { icon: icons.find((r) => r.actor_id === actorId)?.image ?? null }),
+      })),
+    };
+  }
   async botCommand(
     subject: string,
     id: string,
@@ -195,7 +222,7 @@ export class WorldAccess {
       this.pool,
       actorId,
     );
-    return this.botPlay.submit(
+    const result = await this.botPlay.submit(
       id,
       grant.actor_id!,
       input,
@@ -203,13 +230,15 @@ export class WorldAccess {
       undefined,
       connectionId,
     );
+    return this.playCharacters(id, result, connectionId);
   }
   async botStatus(
     subject: string,
     id: string,
     actorId?: string,
     sceneId?: string,
-    connectionId = `human:${subject}`,
+    connectionId?: string,
+    after?: string,
   ) {
     const grant = await this.authorize(
       subject,
@@ -218,12 +247,27 @@ export class WorldAccess {
       this.pool,
       actorId,
     );
-    await this.botPlay.keepAlive(id, grant.actor_id!, subject, connectionId);
+    await this.botPlay.keepAlive(
+      id,
+      grant.actor_id!,
+      subject,
+      connectionId ?? `human:${subject}`,
+    );
     await this.botPlay.expire(id);
     return {
       viewerId: grant.actor_id!,
-      ...(await this.botPlay.status(id, grant.actor_id!)),
-      ...(await this.botPlay.history(id, grant.actor_id!, sceneId)),
+      ...(await this.playCharacters(
+        id,
+        await this.botPlay.status(id, grant.actor_id!),
+        connectionId,
+      )),
+      ...(await this.botPlay.history(
+        id,
+        grant.actor_id!,
+        sceneId,
+        this.pool,
+        after,
+      )),
     };
   }
   async reportStatus(subject: string, id: string, actorId?: string) {

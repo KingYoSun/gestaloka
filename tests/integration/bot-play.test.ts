@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { beforeAll, afterAll, afterEach, expect, test, vi } from "vitest";
 import { PlayCommand } from "@gestaloka/contracts";
 import { WorldAccess } from "@gestaloka/server/access";
@@ -480,7 +480,15 @@ test("同じVMのCLIをView別インスタンスで並列実行し、認可と�
     ]);
     const connections = await Promise.all(
       ids.map((_, i) =>
-        run(i, "connect", "--server", cli.base, "--world", f.world),
+        run(
+          i,
+          "connect",
+          "--full-ids",
+          "--server",
+          cli.base,
+          "--world",
+          f.world,
+        ),
       ),
     );
     expect(connections[0].id).not.toBe(connections[1].id);
@@ -503,9 +511,11 @@ test("同じVMのCLIをView別インスタンスで並列実行し、認可と�
     expect(recovered.requestId).toBe(lost.requestId);
     expect(recovered.result.callsUsed).toBe(1);
     expect((await run(1, "recover", "--request", lost.requestId)).code).toBe(
-      "ENOENT",
+      "UNKNOWN_SHORT_ID",
     );
-    const states = await Promise.all(ids.map((_, i) => run(i, "status")));
+    const states = await Promise.all(
+      ids.map((_, i) => run(i, "status", "--full-ids")),
+    );
     expect(states.map((s) => s.viewerId)).toEqual(f.actors.slice(0, 2));
     expect(states.map((s) => s.callsUsed)).toEqual([1, 1]);
     const folders = await readdir(
@@ -563,7 +573,7 @@ test("同じVMのCLIをView別インスタンスで並列実行し、認可と�
     );
     const { stdout } = await promisify(execFile)(
       process.execPath,
-      [resolve("packages/player-cli/dist/main.js"), "status"],
+      [resolve("packages/player-cli/dist/main.js"), "status", "--full-ids"],
       {
         env: {
           ...process.env,
@@ -582,6 +592,7 @@ test("同じVMのCLIをView別インスタンスで並列実行し、認可と�
     const defaultConnection = await cli.run(
       undefined,
       "connect",
+      "--full-ids",
       "--server",
       cli.base,
       "--world",
@@ -2107,6 +2118,7 @@ test("初回接続と状態照会のタイムアウトを復旧し、終了時�
     const connected = await cli.run(
       profile,
       "connect",
+      "--full-ids",
       "--server",
       cli.base,
       "--world",
@@ -2142,3 +2154,70 @@ test("初回接続と状態照会のタイムアウトを復旧し、終了時�
     await app.close();
   }
 }, 60000);
+test("CLIは短縮IDを次の操作に使え、本人の未読手だけをアイコンなしで返す", async () => {
+  const f = await fixture(),
+    app = await createApp(access, auth.identity, undefined, auth.operations),
+    cli = await playerCli(app);
+  const profile = join(cli.directory, "incremental.json"),
+    run = (...args: string[]) => cli.run(profile, ...args);
+  try {
+    const icon = "data:image/png;base64," + "A".repeat(6315);
+    await isolated.databases.postgres.query(
+      "INSERT INTO world_player_icon(player_id,construction_id,image) SELECT id,construction_id,$3 FROM world_access WHERE construction_id=$1 AND actor_id=$2 AND role='player'",
+      [f.world, f.actors[1], icon],
+    );
+    const conn = await run("connect", "--server", cli.base, "--world", f.world);
+    await cli.approve(
+      f.people[0]!.cookie,
+      conn.userCode,
+      `actor:${f.actors[0]}`,
+    );
+    const nearby = await run("search", "--kind", "surroundings"),
+      target = nearby.result.material.subjects.find(
+        (s: { text: string }) => s.text === "人物1",
+      ).id;
+    expect(target).toMatch(/^@[0-9a-f]+$/);
+    const contact = await run("contact", "--target", target);
+    expect(JSON.stringify(contact)).not.toContain("base64");
+    expect(
+      contact.result.characters.find(
+        (p: { actorId: string }) => p.actorId === target,
+      ),
+    ).not.toHaveProperty("icon");
+    expect(JSON.stringify(await f.status(0))).toContain(icon);
+    const original = "発言中の" + f.actors[1] + "と" + target + "は本文";
+    await f.send(1, { command: "say", text: original });
+    await f.send(1, { command: "end-turn" });
+    const first = await run("status");
+    expect(JSON.stringify(first.entries)).toContain(original);
+    expect(first.actorId).toEqual(first.viewerId);
+    expect(first).not.toHaveProperty("legacy");
+    const repeat = await run("status");
+    expect(repeat.entries).toEqual([]);
+    expect(repeat.nextCursor).toEqual(first.nextCursor);
+    expect((await run("status", "--after", "0")).entries).toEqual(
+      first.entries,
+    );
+    expect((await run("status", "--after", "0", "--full-ids")).viewerId).toBe(
+      f.actors[0],
+    );
+    const file = join(cli.directory, "memo.json");
+    await writeFile(
+      file,
+      JSON.stringify({
+        command: "memo",
+        text: original,
+        participants: [target],
+        dependencies: nearby.result.dependencies
+          .filter((d: { key: string }) => d.key.startsWith("node:"))
+          .slice(0, 1),
+      }),
+    );
+    const pending = await run("play", "--file", file);
+    expect(pending.result.receiving.applicationId).toMatch(/^@/);
+    expect(pending.result.receiving.text).toBe(original);
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
