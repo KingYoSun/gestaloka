@@ -1,4 +1,6 @@
-import { npcReport, npcActors } from "../runtime/npc-mode.js";
+import { npcReport } from "../runtime/npc-mode.js";
+import { BotPlay } from "../runtime/bot-play.js";
+import type { PlayCommand } from "@gestaloka/contracts";
 import type { NpcModeCommand } from "@gestaloka/contracts";
 import { RuntimeStopped } from "../runtime/control.js";
 import { PlayerDevices } from "./player-devices.js";
@@ -11,24 +13,20 @@ import {
   KnowledgePage,
   AdminPage,
   type WorldCommand,
-  type PlayerAction,
   PlayerStatus,
   PlayRun,
   SceneStatus,
-  type SceneCommand,
+  SceneResponse,
   SceneRecordPage,
   type SceneRecordQuery,
   type CreateWorld,
-  type ScenePresence,
 } from "@gestaloka/contracts";
 import {
   ConstructionStateError,
   type WorldConstruction,
 } from "../runtime/construction.js";
 import { WorldScenes, type SceneRow } from "../runtime/scene.js";
-import { sceneAnchors, sceneId as presenceId } from "../runtime/scene-data.js";
-import { readBelongings } from "../world/belongings.js";
-import { readLocations } from "../world/locations.js";
+import { sceneAnchors } from "../runtime/scene-data.js";
 import { requireMember } from "./operations.js";
 import { ExecutionBudget } from "../execution-budget.js";
 import { WorldPlayers, type CharacterEvidence } from "../runtime/players.js";
@@ -56,10 +54,12 @@ const Cursor = z
 type Role = "admin" | "player";
 
 export class WorldAccess {
+  readonly botPlay: BotPlay;
   readonly devices: PlayerDevices;
   readonly scenes: WorldScenes;
   readonly players: WorldPlayers;
   constructor(readonly construction: WorldConstruction) {
+    this.botPlay = new BotPlay(construction);
     this.devices = new PlayerDevices(construction.pool);
     this.scenes = new WorldScenes(construction);
     this.players = new WorldPlayers(construction);
@@ -129,6 +129,7 @@ export class WorldAccess {
       CREATE OR REPLACE TRIGGER construction_notification AFTER UPDATE ON world_construction
       FOR EACH ROW EXECUTE FUNCTION notify_construction();`);
     await this.scenes.setup();
+    await this.botPlay.setup();
     await setupInitialPresentations(this.pool);
     await this.players.setup();
     await this.devices.setup();
@@ -178,6 +179,41 @@ export class WorldAccess {
         "利用できる世界が見つかりません",
       );
     return row[0];
+  }
+  async botCommand(
+    subject: string,
+    id: string,
+    input: z.infer<typeof PlayCommand>,
+    actorId?: string,
+  ) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    return this.botPlay.submit(id, grant.actor_id!, input, subject);
+  }
+  async botStatus(
+    subject: string,
+    id: string,
+    actorId?: string,
+    sceneId?: string,
+  ) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    await this.botPlay.expire(id);
+    return {
+      viewerId: grant.actor_id!,
+      ...(await this.botPlay.status(id, grant.actor_id!)),
+      ...(await this.botPlay.history(id, grant.actor_id!, sceneId)),
+    };
   }
   async #accept<T>(
     subject: string,
@@ -731,233 +767,83 @@ export class WorldAccess {
     });
   }
   async sceneCommand(
-    subject: string,
-    id: string,
-    input: z.infer<typeof SceneCommand>,
-    compact = false,
-    actorId?: string,
-    sceneId?: string,
-    kind: "human" | "bot" = "human",
-    deviceId?: string,
-  ) {
-    await this.authorize(subject, id, "player", this.pool, actorId);
-    return this.#accept(
-      subject,
-      input.requestId,
-      {
-        operation: "scene",
-        id,
-        ...input,
-        ...(actorId ? { actorId } : {}),
-        ...(sceneId ? { sceneId } : {}),
-      },
+    ...args: [subject: string, id: string, ...unknown[]]
+  ): Promise<z.infer<typeof SceneResponse>> {
+    await this.authorize(
+      args[0],
+      args[1],
       "player",
-      async (client) => {
-        const grant = await this.authorize(
-          subject,
-          id,
-          "player",
-          client,
-          actorId,
-        );
-        try {
-          await this.scenes.shared.lock(client, id);
-          await this.scenes.shared.presence(
-            client,
-            id,
-            grant.actor_id!,
-            subject,
-            deviceId ??
-              presenceId(`presence:${subject}:${id}:${grant.actor_id}`),
-            true,
-            kind,
-            deviceId,
-          );
-          if (
-            (
-              await npcActors(
-                client,
-                (await this.construction.get(id, client)).world_id!,
-                [grant.actor_id!],
-              )
-            ).length
-          )
-            throw new ConstructionStateError(
-              "NPCモードから復帰して操作してください",
-            );
-          if (input.command === "invite") {
-            await this.scenes.shared.respond(
-              client,
-              id,
-              grant.actor_id!,
-              input.invitationId,
-              input.accept,
-              input.requestId,
-              kind,
-            );
-            if (input.accept) {
-              const joined = await this.scenes.latest(
-                id,
-                client,
-                false,
-                grant.actor_id!,
-              );
-              if (joined)
-                await this.scenes.sessions.attach(
-                  client,
-                  joined.id,
-                  grant.actor_id!,
-                );
-            }
-            return this.sceneData(
-              await this.scenes.latest(id, client, false, grant.actor_id!),
-              compact,
-              grant.actor_id!,
-              client,
-            );
-          }
-          const received =
-            input.command === "react"
-              ? await this.scenes.respond(
-                  id,
-                  grant.actor_id!,
-                  { ...input, opportunityId: input.opportunityId },
-                  client,
-                  kind,
-                )
-              : undefined;
-          const row =
-            received !== undefined
-              ? received
-              : input.command === "prepare"
-                ? await this.scenes.open(
-                    id,
-                    input.purpose,
-                    client,
-                    input.requestId,
-                    grant.actor_id!,
-                    !!input.shared,
-                    kind,
-                  )
-                : await this.scenes.command(
-                    id,
-                    input.command,
-                    client,
-                    input,
-                    grant.actor_id!,
-                    sceneId,
-                    kind,
-                  );
-          if (row)
-            await client.query(
-              "UPDATE world_scene SET user_id=$2 WHERE id=$1 AND actor_id=$3",
-              [row.id, subject, grant.actor_id],
-            );
-          return this.sceneData(row, compact, grant.actor_id!, client);
-        } catch (error) {
-          if (error instanceof ConstructionStateError)
-            throw new AccessError(409, "STATE_CONFLICT", error.message);
-          throw error;
-        }
-      },
+      this.pool,
+      typeof args[4] === "string" ? args[4] : undefined,
+    );
+    throw new AccessError(
+      409,
+      "PLAY_API_CHANGED",
+      "通常プレイは/api/worlds/:id/sessionと新しいCLIを利用してください。保存済みの履歴は引き続き取得できます。",
     );
   }
   async npcMode(
-    subject: string,
-    world: string,
-    actorId?: string,
-    input?: z.infer<typeof NpcModeCommand>,
-    kind: "human" | "bot" = "human",
+    ...args: [
+      subject: string,
+      world: string,
+      actorId?: string,
+      input?: z.infer<typeof NpcModeCommand>,
+      kind?: "human" | "bot",
+    ]
   ) {
     const grant = await this.authorize(
-      subject,
-      world,
+      args[0],
+      args[1],
       "player",
       this.pool,
-      actorId,
+      args[2],
     );
-    const actor = grant.actor_id!;
-    if (input)
-      await this.#accept(
-        subject,
-        input.requestId,
-        { operation: "npc-mode", world, actor, ...input },
-        "player",
-        async (db) => {
-          await this.authorize(subject, world, "player", db, actor);
-          try {
-            await this.scenes.npcCommand(db, world, actor, input, kind);
-          } catch (error) {
-            if (error instanceof ConstructionStateError)
-              throw new AccessError(409, "STATE_CONFLICT", error.message);
-            throw error;
-          }
-          await db.query(
-            `INSERT INTO world_event(subject_id,construction_id,role,event_key)
-        SELECT subject_id,construction_id,role,gen_random_uuid()::text FROM world_access WHERE construction_id=$1 AND actor_id=$2 AND role='player'`,
-            [world, actor],
-          );
-          return true;
-        },
+    if (args[3])
+      throw new AccessError(
+        409,
+        "PLAY_API_CHANGED",
+        "NPCの操作担当は管理者がnpcs.putで個体ごとに指定してください。",
       );
-    return npcReport(this.pool, world, actor);
+    const report = await npcReport(this.pool, args[1], grant.actor_id!);
+    const assigned = (
+      await this.pool.query(
+        "SELECT controller FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
+        [args[1], grant.actor_id],
+      )
+    ).rows[0];
+    return { ...report, active: assigned?.controller === "server" };
   }
   async presence(
     subject: string,
     id: string,
-    input: z.infer<typeof ScenePresence>,
-    kind: "human" | "bot",
-    actorId?: string,
-    deviceId?: string,
-  ) {
-    await this.authorize(subject, id, "player", this.pool, actorId);
-    return this.#accept(
-      subject,
-      input.requestId,
-      { operation: "presence", id, ...input, actorId, kind, deviceId },
-      "player",
-      async (client) => {
-        const grant = await this.authorize(
-          subject,
-          id,
-          "player",
-          client,
-          actorId,
-        );
-        try {
-          return await this.scenes.shared.presence(
-            client,
-            id,
-            grant.actor_id!,
-            subject,
-            input.connectionId,
-            input.active,
-            kind,
-            deviceId,
-          );
-        } catch (error) {
-          if (error instanceof ConstructionStateError)
-            throw new AccessError(409, "STATE_CONFLICT", error.message);
-          throw error;
-        }
-      },
-    );
-  }
-  async inbox(subject: string, id: string, actorId?: string, after?: string) {
-    const grant = await this.authorize(
+    ...rest: unknown[]
+  ): Promise<never> {
+    await this.authorize(
       subject,
       id,
       "player",
       this.pool,
-      actorId,
+      typeof rest[2] === "string" ? rest[2] : undefined,
     );
-    try {
-      return await this.scenes.shared.inbox(id, grant.actor_id!, after);
-    } catch (error) {
-      if (error instanceof ConstructionStateError)
-        throw new AccessError(409, "CURSOR_INVALID", error.message);
-      throw error;
-    }
+    throw new AccessError(
+      409,
+      "PLAY_API_CHANGED",
+      "通常プレイは/api/worlds/:id/sessionと新しいCLIを利用してください。",
+    );
+  }
+  async inbox(subject: string, id: string, ...rest: unknown[]): Promise<never> {
+    await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      typeof rest[0] === "string" ? rest[0] : undefined,
+    );
+    throw new AccessError(
+      409,
+      "PLAY_API_CHANGED",
+      "通常プレイは/api/worlds/:id/sessionと新しいCLIを利用してください。",
+    );
   }
   async run(subject: string, id: string) {
     const row = (
@@ -1005,81 +891,16 @@ export class WorldAccess {
     });
   }
   async play(
-    subject: string,
-    id: string,
-    input: z.infer<typeof PlayerAction> | { requestId: string; resume: true },
-  ) {
-    await this.authorize(subject, id, "player");
-    return this.#accept(
-      subject,
-      input.requestId,
-      { operation: "play", id, ...input },
-      "player",
-      async (client) => {
-        const grant = await this.authorize(subject, id, "player", client);
-        const current = await this.construction.get(id, client, true);
-        if (
-          (await npcActors(client, current.world_id!, [grant.actor_id!])).length
-        )
-          throw new AccessError(
-            409,
-            "STATE_CONFLICT",
-            "NPCモードから復帰して操作してください",
-          );
-        const scene = await this.scenes.latest(
-          id,
-          client,
-          true,
-          grant.actor_id!,
-        );
-        if (scene && scene.state !== "result")
-          throw new AccessError(
-            409,
-            "STATE_CONFLICT",
-            "進行中のシーンを終えてください",
-          );
-        if (grant.actor_id !== current.participant_id)
-          throw new AccessError(
-            403,
-            "ACTOR_CHANGED",
-            "操作対象を再取得してください",
-          );
-        try {
-          if ("resume" in input) {
-            if (current.state !== "play_paused")
-              throw new ConstructionStateError(
-                "保留中の行動を指定してください",
-              );
-            return this.playerData(
-              await this.construction.command(id, "resume", undefined, client),
-              client,
-            );
-          }
-          await ExecutionBudget.attribute(client, input.requestId, subject, {
-            role: "user",
-            actorId: grant.actor_id!,
-          });
-          await client.query(
-            "UPDATE world_construction SET user_id=$2,request_id=$3 WHERE id=$1",
-            [id, subject, input.requestId],
-          );
-          return this.playerData(
-            await this.construction.play(
-              id,
-              input.actionText,
-              client,
-              input.requestId,
-            ),
-            client,
-          );
-        } catch (error) {
-          if (error instanceof ConstructionStateError)
-            throw new AccessError(409, "STATE_CONFLICT", error.message);
-          throw error;
-        }
-      },
+    ...args: [subject: string, id: string, ...unknown[]]
+  ): Promise<z.infer<typeof PlayerStatus>> {
+    await this.authorize(args[0], args[1], "player");
+    throw new AccessError(
+      409,
+      "PLAY_API_CHANGED",
+      "通常プレイは/api/worlds/:id/sessionと新しいCLIを利用してください。",
     );
   }
+
   async list(subject: string) {
     const member = await requireMember(this.pool, subject);
     return (
@@ -1153,94 +974,29 @@ export class WorldAccess {
     });
   }
   // 関係を読むだけで、観測・出来事・世界内の時点を変えない。モデルも呼ばない。
-  async belongings(subject: string, id: string, actorId?: string) {
-    const viewerId = (
-        await this.authorize(subject, id, "player", this.pool, actorId)
-      ).actor_id!,
-      row = await this.construction.get(id),
-      known = await readBelongings(
-        this.construction.agent.store.context(row.world_id!),
-        viewerId,
-      );
-    const held = (items: (typeof known)["items"]) => {
-      const groups = new Map<
-        string,
-        { label: string; quantity: number; mine: boolean }
-      >();
-      for (const item of items) {
-        const mine = item.owners.some((owner) => owner.id === viewerId),
-          key = JSON.stringify([item.label, mine]),
-          group = groups.get(key) ?? { label: item.label, quantity: 0, mine };
-        group.quantity++;
-        groups.set(key, group);
-      }
-      return [...groups.values()];
-    };
-    return {
-      viewerId,
-      items: held(known.items),
-      storages: known.storages.map((storage) => ({
-        id: storage.id,
-        label: storage.label,
-        items: held(storage.items),
-      })),
-      skills: known.skills.map(({ id, text }) => ({ id, text })),
-    };
+  async belongings(
+    subject: string,
+    id: string,
+    actorId?: string,
+  ): Promise<never> {
+    await this.authorize(subject, id, "player", this.pool, actorId);
+    throw new AccessError(
+      409,
+      "PLAY_API_CHANGED",
+      "通常プレイは/api/worlds/:id/sessionと新しいCLIを利用してください。",
+    );
   }
-  // 出会える相手を保存済みの状態だけから導く。照会では世界を進めず、モデルも呼ばない。
-  async partners(subject: string, id: string, actorId?: string) {
-    const viewerId = (
-        await this.authorize(subject, id, "player", this.pool, actorId)
-      ).actor_id!,
-      world = (await this.construction.get(id)).world_id!,
-      store = this.construction.agent.store,
-      controlled = (
-        await this.pool.query<{ actor_id: string; npc_active: boolean }>(
-          "SELECT actor_id,npc_active FROM world_controlled_actor WHERE world_id=$1",
-          [world],
-        )
-      ).rows,
-      awake = new Set(
-        await this.scenes.shared.active(
-          id,
-          controlled.map((player) => player.actor_id),
-        ),
-      ),
-      operated = new Set(controlled.map((player) => player.actor_id)),
-      byName = <T extends { actorId: string; name: string }>(list: T[]) =>
-        list.sort(
-          (a, b) =>
-            a.name.localeCompare(b.name, "ja") ||
-            a.actorId.localeCompare(b.actorId),
-        ),
-      players: { actorId: string; name: string; mode: "npc" | "standby" }[] =
-        [];
-    for (const player of controlled)
-      if (
-        player.actor_id !== viewerId &&
-        (player.npc_active || awake.has(player.actor_id))
-      )
-        players.push({
-          actorId: player.actor_id,
-          name: (await store.context(world).node(player.actor_id))?.text ?? "",
-          mode: player.npc_active ? ("npc" as const) : ("standby" as const),
-        });
-    const context = store.context(world),
-      locate = async <T extends { actorId: string }>(person: T) => ({
-        ...person,
-        locations: await readLocations(context, person.actorId),
-      });
-    return {
-      viewerId,
-      players: await Promise.all(byName(players).map(locate)),
-      npcs: await Promise.all(
-        byName(
-          (await store.observers(world))
-            .filter((node) => !operated.has(node.id))
-            .map((node) => ({ actorId: node.id, name: node.text })),
-        ).map(locate),
-      ),
-    };
+  async partners(
+    subject: string,
+    id: string,
+    actorId?: string,
+  ): Promise<never> {
+    await this.authorize(subject, id, "player", this.pool, actorId);
+    throw new AccessError(
+      409,
+      "PLAY_API_CHANGED",
+      "通常プレイは/api/worlds/:id/sessionと新しいCLIを利用してください。",
+    );
   }
 
   async knowledge(

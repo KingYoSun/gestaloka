@@ -121,8 +121,13 @@ export async function resumeJob(
   players: WorldPlayers,
   kind: z.infer<typeof JobKind>,
   id: string,
-  requestId: string,
 ) {
+  if (kind === "scene")
+    throw new AccessError(
+      409,
+      "PLAY_API_CHANGED",
+      "旧シーンの生成は再開しません。新しいセッションを開始してください。",
+    );
   await RuntimeControl.check(db, {}, true);
   const found = (await readJobs(db, {}, { kind, id })).items[0]!;
   const live = (
@@ -139,12 +144,7 @@ export async function resumeJob(
     );
   if (
     !["paused", "play_paused"].includes(found.state) &&
-    found.executionState !== "interrupted" &&
-    !(
-      kind === "scene" &&
-      found.executionState === "paused" &&
-      ["preparing", "acting", "reflecting"].includes(found.state)
-    )
+    found.executionState !== "interrupted"
   )
     throw new AccessError(
       409,
@@ -185,25 +185,16 @@ export async function resumeJob(
     };
   }
   const construction = players.construction;
-  if (kind === "construction") {
-    await db.query(
-      "UPDATE world_construction SET state=CASE WHEN state='playing' THEN 'play_paused' ELSE 'paused' END,claim=NULL,suspended=true WHERE id=$1 AND state NOT IN ('paused','play_paused')",
-      [id],
+  if (["playing", "play_paused"].includes(found.state))
+    throw new AccessError(
+      409,
+      "PLAY_API_CHANGED",
+      "旧プレイの生成は再開しません。",
     );
-    await construction.command(id, "resume", undefined, db);
-  } else {
-    await db.query(
-      "UPDATE world_scene SET data=CASE WHEN state='paused' THEN data ELSE jsonb_set(jsonb_set(data,'{resumeState}',to_jsonb(state)),'{suspended}','true') END,state='paused',claim=NULL WHERE id=$1",
-      [id],
-    );
-    const { WorldScenes } = await import("./scene.js");
-    await new WorldScenes(construction).command(
-      found.worldId,
-      "resume",
-      db,
-      { requestId },
-      found.actorId!,
-    );
-  }
+  await db.query(
+    "UPDATE world_construction SET state='paused',claim=NULL,suspended=true WHERE id=$1",
+    [id],
+  );
+  await construction.command(id, "resume", undefined, db);
   return { kind, id, worldId: found.worldId, state: "queued" };
 }

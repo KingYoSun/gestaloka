@@ -185,13 +185,12 @@ async function legacyFixture() {
     requestId: randomUUID(),
     actionText: "見える範囲を確かめる",
   };
-  const accepted = await access.play(scene.subject, scene.id, action);
   for (const table of ["world_access", "world_event", "api_request"])
     await databases.postgres.query(
       `UPDATE ${table} SET subject_id=$2 WHERE subject_id=$1`,
       [scene.subject, legacyId],
     );
-  return { ...scene, legacyId, token, action, accepted };
+  return { ...scene, legacyId, token, action };
 }
 async function archivedParticipant(scene: { subject: string; id: string }) {
   await access.command(scene.subject, scene.id, {
@@ -246,6 +245,19 @@ afterAll(async () => {
     [ids],
   );
   await databases.postgres.query(
+    "DELETE FROM bot_record WHERE chat_id IN (SELECT c.id FROM bot_chat c JOIN bot_session s ON s.id=c.session_id WHERE s.world_id=ANY($1))",
+    [ids],
+  );
+  await databases.postgres.query(
+    "DELETE FROM bot_chat WHERE session_id IN (SELECT id FROM bot_session WHERE world_id=ANY($1))",
+    [ids],
+  );
+  for (const table of ["bot_scene", "bot_session", "bot_npc"])
+    await databases.postgres.query(
+      `DELETE FROM ${table} WHERE world_id=ANY($1)`,
+      [ids],
+    );
+  await databases.postgres.query(
     "DELETE FROM world_construction WHERE id=ANY($1)",
     [ids],
   );
@@ -276,7 +288,7 @@ afterAll(async () => {
   await databases.close();
 });
 
-test("本人の確認で匿名主体を結び付け、操作対象・世界・履歴・再送を保持する", async () => {
+test("本人の確認で匿名主体を結び付け、操作対象・世界・履歴を保持する", async () => {
   const legacy = await legacyFixture(),
     person = await session("user");
   const cookie = `${person.cookie}; gestaloka=${legacy.token}`;
@@ -362,8 +374,8 @@ test("本人の確認で匿名主体を結び付け、操作対象・世界・�
     headers: headers(cookie),
     payload: legacy.action,
   });
-  expect(replay.statusCode).toBe(202);
-  expect(replay.json()).toEqual(legacy.accepted);
+  expect(replay.statusCode).toBe(409);
+  expect(replay.json().code).toBe("PLAY_API_CHANGED");
   expect(await runtime.get(legacy.id)).toEqual(before);
   expect(
     await runtime.agent.store
@@ -865,26 +877,26 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
       })
     ).statusCode,
   ).toBe(404);
-  const x = await access.sceneCommand(
+  await access.botCommand(
     one.subject,
     scene.id,
-    { requestId: randomUUID(), command: "prepare", purpose: "場を確かめる" },
-    false,
+    { requestId: randomUUID(), command: "start" },
     a,
   );
-  const y = await access.sceneCommand(
+  await access.botCommand(
     two.subject,
     scene.id,
-    { requestId: randomUUID(), command: "prepare", purpose: "周囲を確かめる" },
-    false,
+    { requestId: randomUUID(), command: "start" },
     b,
   );
-  expect(x.scene!.id).not.toBe(y.scene!.id);
-  expect((await access.scene(one.subject, scene.id, false, a)).scene!.id).toBe(
-    x.scene!.id,
+  const x = await access.botStatus(one.subject, scene.id, a),
+    y = await access.botStatus(two.subject, scene.id, b);
+  expect(x.sceneId).not.toBe(y.sceneId);
+  expect((await access.botStatus(one.subject, scene.id, a)).sceneId).toBe(
+    x.sceneId,
   );
-  expect((await access.scene(two.subject, scene.id, false, b)).scene!.id).toBe(
-    y.scene!.id,
+  expect((await access.botStatus(two.subject, scene.id, b)).sceneId).toBe(
+    y.sceneId,
   );
   await expect(
     runtime.agent.intent(
@@ -944,9 +956,9 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
       code: "ACTOR_REQUIRED",
     });
     expect((await access.player(one.subject, scene.id, a)).viewerId).toBe(a);
-    expect(
-      (await access.scene(one.subject, scene.id, false, a)).scene!.id,
-    ).toBe(x.scene!.id);
+    expect((await access.botStatus(one.subject, scene.id, a)).sceneId).toBe(
+      x.sceneId,
+    );
     await auth.operations.execute(scene.subject, randomUUID(), {
       operation: "worlds.configure",
       worldId: scene.id,
@@ -1404,102 +1416,52 @@ test("同じ世界の同時通知はコミット順に採番し、取得済みcu
   }
 });
 
-test("割当済みの村民へ自由記述を一度だけ受け付け、操作対象の自己申告を拒否する", async () => {
+test("旧書込は移行先を示し、新しい手番だけで発言を受け付ける", async () => {
   const scene = await fixture();
   await archivedParticipant(scene);
   const actor = (await runtime.get(scene.id)).participant_id!;
-  const input = {
-    requestId: randomUUID(),
-    actionText: "近くの人に挨拶する。\r\n辺りを見渡す。",
-  };
+  const input = { requestId: randomUUID(), actionText: "近くの人に挨拶する" };
+  const post = (cookie: string, suffix: string, payload: object) =>
+    app.inject({
+      method: "POST",
+      url: `/api/worlds/${scene.id}/${suffix}`,
+      headers: headers(cookie),
+      payload,
+    });
   expect(
-    (
-      await app.inject({
-        method: "POST",
-        url: `/api/worlds/${scene.id}/actions`,
-        headers: headers(scene.cookie),
-        payload: { ...input, actorId: randomUUID() },
-      })
-    ).statusCode,
+    (await post(scene.cookie, "actions", { ...input, actorId: randomUUID() }))
+      .statusCode,
   ).toBe(400);
-  const accepted = await Promise.all(
-    [1, 2].map(() =>
-      app.inject({
-        method: "POST",
-        url: `/api/worlds/${scene.id}/actions`,
-        headers: headers(scene.cookie),
-        payload: input,
-      }),
-    ),
-  );
-  expect(accepted.map((reply) => reply.statusCode)).toEqual([202, 202]);
-  expect(accepted[0]!.json()).toEqual(accepted[1]!.json());
-  expect(accepted[0]!.json()).toEqual({
-    id: scene.id,
-    viewerId: actor,
-    runId: input.requestId,
-    at: 0,
-    state: "running",
-    error: null,
-  });
-  expect((await runtime.get(scene.id)).agenda).toContainEqual(
-    expect.objectContaining({
-      actorId: actor,
-      actionText: input.actionText,
-      mode: "action",
-    }),
-  );
-  const jobs = await databases.postgres.query(
-    "SELECT id FROM pgboss.job WHERE name=$1 AND data->>'id'=$2",
-    [`${queueName}-play`, scene.id],
-  );
-  expect(jobs.rowCount).toBe(1);
+  const retired = await post(scene.cookie, "actions", input);
+  expect(retired.statusCode).toBe(409);
+  expect(retired.json()).toMatchObject({ code: "PLAY_API_CHANGED" });
+  expect(JSON.stringify(retired.json())).toContain("/session");
   const other = await session();
-  expect(
-    (
-      await app.inject({
-        method: "POST",
-        url: `/api/worlds/${scene.id}/actions`,
-        headers: headers(other.cookie),
-        payload: { ...input, requestId: randomUUID() },
-      })
-    ).statusCode,
-  ).toBe(404);
-  expect(
-    (
-      await app.inject({
-        url: `/api/worlds/${scene.id}/play`,
-        headers: headers(scene.cookie),
-      })
-    ).json(),
-  ).toEqual({
-    id: scene.id,
-    viewerId: actor,
-    runId: input.requestId,
-    at: 0,
-    state: "running",
-    error: null,
+  expect((await post(other.cookie, "actions", input)).statusCode).toBe(404);
+  expect((await runtime.get(scene.id)).agenda).toEqual([]);
+  const started = await post(scene.cookie, "session", {
+    requestId: randomUUID(),
+    command: "start",
   });
+  expect(started.statusCode).toBe(200);
+  const speech = {
+    requestId: randomUUID(),
+    command: "say",
+    text: input.actionText,
+  };
+  const accepted = await Promise.all(
+    [1, 2].map(() => post(scene.cookie, "session", speech)),
+  );
+  expect(accepted.map((r) => r.statusCode)).toEqual([200, 200]);
+  expect(accepted[0]!.json()).toEqual(accepted[1]!.json());
+  expect(
+    (await access.botStatus(scene.subject, scene.id, actor)).callsUsed,
+  ).toBe(1);
   expect(
     (
-      await app.inject({
-        url: `/api/runs/${input.requestId}`,
-        headers: headers(scene.cookie),
-      })
-    ).json(),
-  ).toMatchObject({
-    id: input.requestId,
-    worldId: scene.id,
-    actionText: input.actionText,
-    state: "running",
-    at: 0,
-    startedAt: 0,
-  });
-  expect(
-    (
-      await app.inject({
-        url: `/api/runs/${input.requestId}`,
-        headers: headers(other.cookie),
+      await post(other.cookie, "session", {
+        ...speech,
+        requestId: randomUUID(),
       })
     ).statusCode,
   ).toBe(404);

@@ -29,7 +29,7 @@ async function release() {
 
 export async function playerDistributionRoutes(instance: FastifyInstance) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  for (const name of ["join", "setup", "runtimes", "SKILL"]) {
+  for (const name of ["join", "setup", "runtimes", "commands", "SKILL"]) {
     for (const path of [name, `${name}.md`, `references/${name}.md`]) {
       app.get(
         `/api/player-cli/${path}`,

@@ -1,63 +1,42 @@
 #!/usr/bin/env node
 import { randomBytes, randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
 import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { parseArgs } from "node:util";
-import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import {
   PlayerDeviceCode,
+  PlayCommand,
   PlayerDeviceStatus,
-  SceneResponse,
-  SceneCommand,
-  KnowledgePage,
-  Belongings,
-  SessionPartners,
   SceneRecordPage,
   JoinWorld,
   PlayerIconInput,
   WorldPlayerPage,
-  SceneInbox,
-  ScenePresenceStatus,
-  NpcReport,
 } from "@gestaloka/contracts";
 
-const help = `GESTALOKA プレイヤーCLI（Node.js 22.23.4以上）
-gestaloka connect --server <公開URL> --world <世界のURLまたはID> [--character <設定のUTF-8ファイル>] [--icon <画像>]
-  表示する認可URLを持ち主に渡し、ブラウザーで確認コードと対象人物を確認して許可します。
-gestaloka status                         認可・参加・現在のシーンを照会
-gestaloka join [--icon <画像ファイル>]    許可された新規参加を開始
-gestaloka icon [--file <画像> | --clear]  許可された人物のアイコンを確認・更新・解除
-gestaloka prepare --purpose <目的>        シーンのあらすじを準備
-gestaloka npc [--away | --return | --accept --scene <id> | --reject --scene <id>] NPCモードと離席中の記録
-gestaloka inbox [--after <cursor>]       自分への通知と未処理の参加要請を取得
-gestaloka listen [--once]                生存通知を送りながら待ち受け（JSON Lines）
-gestaloka standby [--resume] [--notify <実行ファイル>] 在席を更新し未処理通知を確認
-gestaloka disconnect                     待機を明示的に終了。standby --resumeで再開
-gestaloka invite --invitation <id> --accept|--reject  同席を承認・拒否
-gestaloka react --opportunity <id> --text <意図>|--none  届いた働きかけへ本人の返答を送る
-gestaloka vote --proposal <id> --continue|--end          終了提案へ回答
-gestaloka start                          準備したシーンを開始
-gestaloka act --text <自由記述>           一手を送信（--file <UTF-8ファイル>も可）
-gestaloka finish                         シーンを終了しリザルトを準備
-gestaloka leave                          共有シーンから退出を試み、帰結を確認
-gestaloka result                         現在のリザルトを照会
-gestaloka resume                         保留中の参加・シーンを明示再開
-gestaloka knowledge [--since <checkpoint>] 本人の観測・解釈の履歴。前回取得時との差分を取得
-gestaloka history --scene <id> --kind <events|actions> [--before <cursor>]
-gestaloka inventory                      携行している物品と数量
-gestaloka storage                        利用できる保管先と、照会時点の最新の在庫
-gestaloka skills                         身につけた技能とその範囲
-gestaloka players                        いま出会えるプレイヤー（待機中・NPCモード）
-gestaloka npcs                           いま出会えるNPC
-gestaloka recover [--request <要求ID>]    保存した同じ要求を照合して最新状態を取得
-全コマンド: --profile <ファイル>。既定はXDG_STATE_HOMEまたは~/.local/stateのgestaloka/default.json。
-シーン照会・操作: --scene <id> で本人の一続きの履歴を指定できます。finish は本人の終了です。
-出力はJSON、成功は終了コード0、エラーは1。照会では世界を進めません。
-応答喪失時は表示したrequestIdまたは最後の要求をrecoverで照合してください。
-許可の解除: 公開URLの/auth/player。サーバー・DB・モデルのAPIキーは不要です。
+const help = `GESTALOKA プレイヤーCLI
+
+gestaloka connect --server <URL> --world <IDまたはURL> [--character <ファイル>] [--icon <画像>]
+gestaloka join [--icon <画像>]           認可されたキャラクターを生成
+gestaloka status                        参加状態・手番・チャットを取得（枠外）
+gestaloka start                         単独セッションを開始
+gestaloka search --kind <surroundings|belongings|self|history|subject> [--target <ID>]
+gestaloka contact --target <人物ID>      所在地から接触・合流を申請
+gestaloka say --text <発言>              本人の一手を記録
+gestaloka comment --text <コメント>      本人の手番に1回、枠外でコメント
+gestaloka receive --application <ID> --accept|--reject  受領判断
+gestaloka end-turn                      手番を終え、入力と結果を共有
+gestaloka leave                         セッションを分離して続行
+gestaloka finish                        本人のシーンを終了し履歴を取得
+gestaloka play --file <JSONファイル>     PlayCommandの検索・更新・作成・対抗行動を送信
+gestaloka history --scene <ID> --kind <events|actions>  旧シーンの保存履歴
+gestaloka icon [--file <画像>|--clear]   アイコンを操作
+gestaloka recover [--request <ID>]       保存した同じ要求を再送
+
+通常枠の初期値は成功8回。検索結果は本人だけへ返ります。
+エラー・状態確認・チャット取得・再送・コメントは枠を消費しません。
+全コマンド: --profile <ファイル>。出力はJSON。認可は持ち主のブラウザーで行います。
 `;
 const Profile = z.object({
   server: z.url(),
@@ -65,9 +44,7 @@ const Profile = z.object({
   deviceId: z.uuid(),
   secret: z.string(),
   lastRequestId: z.uuid().optional(),
-  knowledgeCheckpoint: z.uuid().optional(),
   joinIconRequestId: z.uuid().optional(),
-  waitingEnded: z.boolean().optional(),
 });
 const Request = z.object({
   id: z.uuid(),
@@ -85,32 +62,20 @@ const parse = () =>
       server: { type: "string" },
       world: { type: "string" },
       profile: { type: "string" },
-      purpose: { type: "string" },
       text: { type: "string" },
       file: { type: "string" },
       after: { type: "string" },
       before: { type: "string" },
       scene: { type: "string" },
       kind: { type: "string" },
+      target: { type: "string" },
+      application: { type: "string" },
       request: { type: "string" },
-      since: { type: "string" },
       icon: { type: "string" },
       character: { type: "string" },
       clear: { type: "boolean" },
-      away: { type: "boolean" },
-      return: { type: "boolean" },
-      shared: { type: "boolean" },
-      resume: { type: "boolean" },
-      once: { type: "boolean" },
-      notify: { type: "string" },
-      invitation: { type: "string" },
       accept: { type: "boolean" },
       reject: { type: "boolean" },
-      opportunity: { type: "string" },
-      proposal: { type: "string" },
-      none: { type: "boolean" },
-      continue: { type: "boolean" },
-      end: { type: "boolean" },
     },
   });
 let values: ReturnType<typeof parse>["values"];
@@ -151,44 +116,18 @@ async function http(
     });
   return data;
 }
-async function status(
-  profile: Profile,
-  sceneId: string | null | undefined = values.scene,
-) {
+async function status(profile: Profile) {
   const device = PlayerDeviceStatus.parse(
     await http(profile, "/api/player-device"),
   );
   if (device.state !== "ready") return { state: device.state, device };
-  const { scene } = SceneResponse.parse(
-    await http(
-      profile,
-      `/api/worlds/${profile.worldId}/scene?actorId=${device.actorId}${sceneId ? `&sceneId=${z.uuid().parse(sceneId)}` : ""}`,
-    ),
-  );
   return {
-    state: !scene
-      ? "no_scene"
-      : scene.waitingInvitation
-        ? "waiting_invitation"
-        : scene.waitingFor?.length
-          ? "waiting_confirmation"
-          : scene.departed && scene.state !== "result"
-            ? "departed"
-            : scene.soloProposal || scene.shared?.flow === "voting"
-              ? "waiting_vote"
-              : scene.shared?.flow === "manual"
-                ? "waiting_human"
-                : scene.state === "active"
-                  ? "waiting_input"
-                  : scene.state === "result"
-                    ? "finished"
-                    : scene.state === "ready"
-                      ? "prepared"
-                      : scene.state === "paused"
-                        ? "paused"
-                        : "processing",
+    state: "ready",
     device,
-    scene,
+    ...(await http(
+      profile,
+      `/api/worlds/${profile.worldId}/session${values.scene ? `?sceneId=${z.uuid().parse(values.scene)}` : ""}`,
+    )),
   };
 }
 async function send(
@@ -204,16 +143,6 @@ async function send(
     saved.method,
   );
   await save(join(journal, `${saved.id}.json`), { ...saved, result });
-  if (saved.path.endsWith("/presence")) {
-    const presence = ScenePresenceStatus.parse(result);
-    return {
-      requestId,
-      state: presence.active ? "standby" : "inactive",
-      result: presence,
-    };
-  }
-  if (saved.path.endsWith("/npc-mode"))
-    return { state: "npc_mode", requestId, result: NpcReport.parse(result) };
   if (profile.joinIconRequestId === saved.id) {
     delete profile.joinIconRequestId;
     await save(profilePath, profile);
@@ -250,11 +179,11 @@ async function send(
       )),
     };
   }
-  const responseScene =
-    saved.body.command === "react"
-      ? (SceneResponse.parse(result).scene?.id ?? null)
-      : undefined;
-  return { requestId, result, ...(await status(profile, responseScene)) };
+  return {
+    ...(saved.path.endsWith("/session") ? {} : await status(profile)),
+    requestId,
+    result,
+  };
 }
 async function submit(
   profile: Profile,
@@ -264,7 +193,6 @@ async function submit(
   id: string = randomUUID(),
   method: "POST" | "PUT" = "POST",
 ) {
-  if (path.endsWith("/scene")) profile.waitingEnded = false;
   requestId = id;
   const saved = {
     id,
@@ -276,112 +204,6 @@ async function submit(
   await save(join(journal, `${id}.json`), saved);
   await save(profilePath, { ...profile, lastRequestId: id });
   return send(profile, saved);
-}
-async function inbox(profile: Profile, after?: string) {
-  return SceneInbox.parse(
-    await http(
-      profile,
-      `/api/worlds/${profile.worldId}/scene/inbox${after ? `?after=${encodeURIComponent(after)}` : ""}`,
-    ),
-  );
-}
-async function listen(profile: Profile) {
-  const connectionId = profile.deviceId;
-  profile.waitingEnded = false;
-  await save(profilePath, profile);
-  const heartbeat = async (active: boolean) => {
-    const body = { requestId: randomUUID(), connectionId, active };
-    await save(`${profilePath}.connection.json`, body);
-    return http(profile, `/api/worlds/${profile.worldId}/presence`, body);
-  };
-  let stopped = false,
-    cursor = values.after;
-  if (!cursor)
-    try {
-      cursor = z
-        .string()
-        .parse(
-          JSON.parse(await readFile(`${profilePath}.inbox.json`, "utf8"))
-            .cursor,
-        );
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
-  const stop = () => {
-    stopped = true;
-  };
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
-  try {
-    await heartbeat(true);
-    let next = Date.now() + 30000,
-      first = true;
-    do {
-      const messages = await inbox(profile, cursor);
-      if (first || messages.items.length)
-        console.log(
-          JSON.stringify({ state: "listening", connectionId, ...messages }),
-        );
-      first = false;
-      if (messages.next) {
-        cursor = messages.next;
-        await save(`${profilePath}.inbox.json`, { cursor });
-      }
-      if (values.once || stopped) break;
-      if (Date.now() >= next) {
-        await heartbeat(true);
-        next = Date.now() + 30000;
-      }
-      await delay(1000);
-    } while (!stopped);
-  } finally {
-    process.removeListener("SIGINT", stop);
-    process.removeListener("SIGTERM", stop);
-  }
-  return { state: "waiting_stopped", connectionId };
-}
-async function standby(profile: Profile) {
-  const connectionId = profile.deviceId;
-  if (values.resume) {
-    profile.waitingEnded = false;
-    await save(profilePath, profile);
-  }
-  if (profile.waitingEnded) return { state: "inactive", connectionId };
-  const presence = await http(
-    profile,
-    `/api/worlds/${profile.worldId}/presence`,
-    {
-      requestId: randomUUID(),
-      connectionId,
-      active: true,
-    },
-  );
-  if (!presence.active) return { state: "npc_mode", connectionId };
-  const { invitations, opportunities, proposals } = await inbox(profile);
-  const snapshot = {
-    state: "standby",
-    connectionId,
-    invitations,
-    opportunities,
-    proposals,
-  };
-  if (
-    values.notify &&
-    (invitations.length || opportunities.length || proposals.length)
-  ) {
-    const child = spawn(values.notify, [], {
-      stdio: ["pipe", "ignore", "inherit"],
-    });
-    await new Promise<void>((resolve, reject) => {
-      child.once("error", reject);
-      child.stdin.once("error", reject);
-      child.once("close", (code) =>
-        code === 0 ? resolve() : reject(new Error("AIへの通知に失敗しました")),
-      );
-      child.stdin.end(JSON.stringify(snapshot) + "\n");
-    });
-  }
-  return snapshot;
 }
 async function run() {
   const parsed = parse();
@@ -445,52 +267,13 @@ async function run() {
     );
   }
   const profile = await load();
-  if (command === "disconnect") {
-    profile.waitingEnded = true;
-    await save(profilePath, profile);
-    return submit(profile, `/api/worlds/${profile.worldId}/presence`, {
-      connectionId: profile.deviceId,
-      active: false,
-    });
-  }
-  if (command === "npc") {
-    const path = `/api/worlds/${profile.worldId}/npc-mode`;
-    const modes = [
-      values.away,
-      values.return,
-      values.accept,
-      values.reject,
-    ].filter(Boolean);
-    if (modes.length > 1)
-      throw new Error("NPCモードの操作は一つ指定してください");
-    if (!modes.length) return NpcReport.parse(await http(profile, path));
-    const command = values.away
-      ? "away"
-      : values.return
-        ? "return"
-        : values.accept
-          ? "join"
-          : "decline";
-    return submit(profile, path, {
-      command,
-      ...(values.accept || values.reject
-        ? { sceneId: z.uuid().parse(values.scene) }
-        : {}),
-    });
-  }
-  if (command === "inbox")
-    return { state: "inbox", ...(await inbox(profile, values.after)) };
-  if (command === "listen") return listen(profile);
-  if (command === "standby") return standby(profile);
-  if (command === "invite") {
-    if (!!values.accept === !!values.reject)
-      throw new Error("--acceptか--rejectを一つ指定してください");
-    return submit(profile, `/api/worlds/${profile.worldId}/scene`, {
-      command: "invite",
-      invitationId: z.uuid().parse(values.invitation),
-      accept: !!values.accept,
-    });
-  }
+  if (
+    values.scene &&
+    !["status", "result", "history", "recover"].includes(command)
+  )
+    throw new Error(
+      "--sceneは状態・履歴の照会に使います。プレイ操作は本人の現在のシーンを指定します。",
+    );
   if (["status", "result"].includes(command)) return status(profile);
   if (command === "recover") {
     const id = z.uuid().parse(values.request ?? profile.lastRequestId);
@@ -501,74 +284,21 @@ async function run() {
       ),
     );
   }
-  if (
-    command === "inventory" ||
-    command === "storage" ||
-    command === "skills"
-  ) {
-    const known = Belongings.parse(
-      await http(profile, `/api/worlds/${profile.worldId}/belongings`),
-    );
-    return command === "inventory"
-      ? { state: command, items: known.items }
-      : command === "storage"
-        ? { state: command, storages: known.storages }
-        : { state: command, skills: known.skills };
-  }
-  if (command === "players" || command === "npcs") {
-    const known = SessionPartners.parse(
-      await http(profile, `/api/worlds/${profile.worldId}/partners`),
-    );
-    return { state: command, [command]: known[command] };
-  }
-  if (command === "knowledge" || command === "history") {
-    const query = new URLSearchParams();
+  if (command === "history") {
+    const query = new URLSearchParams({
+      sceneId: z.uuid().parse(values.scene),
+      kind: z.enum(["events", "actions"]).parse(values.kind ?? "events"),
+    });
     for (const key of ["before", "after"] as const)
       if (values[key]) query.set(key, values[key]!);
-    if (command === "history") {
-      query.set("sceneId", z.uuid().parse(values.scene));
-      query.set(
-        "kind",
-        z.enum(["events", "actions"]).parse(values.kind ?? "events"),
-      );
-    }
-    const data = await http(
-      profile,
-      `/api/worlds/${profile.worldId}/${command === "history" ? "scene/records" : "knowledge"}?${query}`,
-    );
-    if (command === "history")
-      return { state: "history", ...SceneRecordPage.parse(data) };
-    const page = KnowledgePage.parse(data),
-      since = values.since ? z.uuid().parse(values.since) : undefined;
-    const readIds = async (id: string) =>
-      new Set(
-        z
-          .array(z.uuid())
-          .parse(
-            JSON.parse(
-              await readFile(join(journal, "knowledge", `${id}.json`), "utf8"),
-            ),
-          ),
-      );
-    const known = since ? await readIds(since) : new Set<string>();
-    const checkpoint =
-      values.before && profile.knowledgeCheckpoint
-        ? profile.knowledgeCheckpoint
-        : randomUUID();
-    const accumulated =
-      values.before && profile.knowledgeCheckpoint
-        ? await readIds(checkpoint)
-        : new Set(known);
-    for (const item of page.items) accumulated.add(item.id);
-    await save(join(journal, "knowledge", `${checkpoint}.json`), [
-      ...accumulated,
-    ]);
-    await save(profilePath, { ...profile, knowledgeCheckpoint: checkpoint });
     return {
       state: "history",
-      ...page,
-      checkpoint,
-      items: page.items.filter((item) => !known.has(item.id)),
+      ...SceneRecordPage.parse(
+        await http(
+          profile,
+          `/api/worlds/${profile.worldId}/scene/records?${query}`,
+        ),
+      ),
     };
   }
   const device = PlayerDeviceStatus.parse(
@@ -644,44 +374,45 @@ async function run() {
     return submit(profile, "/api/operations", {
       command: { operation: "worlds.resumeJoin", joinId: device.joinId },
     });
-  if (
-    command === "react" &&
-    (values.none ? 1 : 0) + (values.text || values.file ? 1 : 0) !== 1
-  )
-    throw new Error("反応の内容か--noneのどちらかを指定してください");
-  if (command === "vote" && !!values.continue === !!values.end)
-    throw new Error("--continueか--endのどちらかを指定してください");
-  const body = SceneCommand.parse({
-    requestId: randomUUID(),
-    command,
-    ...(command === "prepare" ? { purpose: values.purpose } : {}),
-    ...(command === "act"
+  const id = randomUUID();
+  const body = PlayCommand.parse(
+    command === "play"
       ? {
-          actionText: values.file
-            ? await readFile(values.file, "utf8")
-            : values.text,
+          ...JSON.parse(await readFile(z.string().parse(values.file), "utf8")),
+          requestId: id,
         }
-      : {}),
-    ...(command === "react"
-      ? {
-          opportunityId: values.opportunity,
-          actionText: values.none
-            ? null
-            : values.file
-              ? await readFile(values.file, "utf8")
-              : values.text,
-        }
-      : {}),
-    ...(command === "vote"
-      ? { proposalId: values.proposal, continue: !!values.continue }
-      : {}),
-  });
+      : {
+          requestId: id,
+          command,
+          ...(command === "search"
+            ? {
+                query: {
+                  kind: values.kind,
+                  ...(values.target ? { targetId: values.target } : {}),
+                },
+              }
+            : {}),
+          ...(command === "contact" ? { targetId: values.target } : {}),
+          ...(["say", "comment"].includes(command)
+            ? {
+                text: values.file
+                  ? await readFile(values.file, "utf8")
+                  : values.text,
+              }
+            : {}),
+          ...(command === "receive"
+            ? { applicationId: values.application, accept: !!values.accept }
+            : {}),
+        },
+  );
+  if (command === "receive" && !!values.accept === !!values.reject)
+    throw new Error("--acceptか--rejectを一つ指定してください");
   return submit(
     profile,
-    `/api/worlds/${profile.worldId}/scene${values.scene ? `?sceneId=${z.uuid().parse(values.scene)}` : ""}`,
+    `/api/worlds/${profile.worldId}/session`,
     body,
     true,
-    body.requestId,
+    id,
   );
 }
 try {

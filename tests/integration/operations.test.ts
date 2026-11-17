@@ -672,3 +672,42 @@ test("応答のcall上限は管理者が変更し、版の衝突と再送で設�
     code: "SETTINGS_CHANGED",
   });
 });
+
+test("手番の初期設定は8回・600秒で、管理者だけが版を確認して変更できる", async () => {
+  const admin = await founder(),
+    user = await join(admin.id);
+  expect(await run(admin.id, { operation: "playPolicy.read" })).toMatchObject({
+    turnCalls: 8,
+    receiptTimeoutSeconds: 600,
+    version: 1,
+  });
+  const input = {
+    operation: "playPolicy.put" as const,
+    turnCalls: 12,
+    receiptTimeoutSeconds: 300,
+    expectedVersion: 1,
+    reason: "試遊の設定を変更",
+  };
+  await expect(run(user.id, input)).rejects.toMatchObject({
+    code: "ADMIN_REQUIRED",
+  });
+  const request = randomUUID(),
+    saved = await run(admin.id, input, request);
+  expect(saved).toMatchObject({
+    turnCalls: 12,
+    receiptTimeoutSeconds: 300,
+    version: 2,
+    updatedBy: admin.id,
+    previous: { turnCalls: 8, receiptTimeoutSeconds: 600 },
+  });
+  expect(await run(admin.id, input, request)).toEqual(saved);
+  await expect(run(admin.id, input)).rejects.toMatchObject({
+    code: "SETTINGS_CHANGED",
+  });
+  await ops.setup();
+  expect(await run(admin.id, { operation: "playPolicy.read" })).toMatchObject({
+    turnCalls: 12,
+    receiptTimeoutSeconds: 300,
+    version: 2,
+  });
+});

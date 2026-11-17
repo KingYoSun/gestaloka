@@ -1,67 +1,13 @@
 import { z } from "zod";
 import { derivedId, type Change, type WorldEdge } from "./model.js";
 import type { Lease, WorldContext, WorldStore } from "./store.js";
-import { LocationOp } from "./locations.js";
 import type { Dependency } from "./store.js";
 
 // 物品・保管先・技能の事実は、hasの役割で表す。役割なしは所有、holdは所在、
 // useは保管先の利用、skillは技能。要約と所在の一意性は確定処理が保つ。
 // 所在地はlocate操作で同じ原子的確定を使い、statusのlocation記録として保存する。
-const id = z.uuid(),
-  text = z.string().trim().min(1),
-  basis = text.describe(
-    "この事実が成立した根拠。初期設定、または成立した出来事の内容",
-  );
-export const BelongingOp = z.discriminatedUnion("type", [
-  LocationOp,
-  z
-    .object({
-      type: z.literal("create"),
-      label: text,
-      holder: id,
-      owner: id.optional(),
-      basis,
-    })
-    .strict()
-    .describe("新しい物品を保持者のもとに成立させる"),
-  z
-    .object({
-      type: z.literal("move"),
-      item: id,
-      from: id.nullable().describe("現在の保持者。所在が未記録ならnull"),
-      to: id,
-      basis,
-    })
-    .strict()
-    .describe("物品の所在を移す。所有者は変えない"),
-  z
-    .object({ type: z.literal("transfer"), item: id, to: id, basis })
-    .strict()
-    .describe("物品の所有者を替える。所在は変えない"),
-  z
-    .object({ type: z.literal("grant"), person: id, storage: id, basis })
-    .strict()
-    .describe("保管先を利用できるようにする"),
-  z
-    .object({ type: z.literal("revoke"), person: id, storage: id })
-    .strict()
-    .describe("保管先の利用を終える"),
-  z
-    .object({ type: z.literal("learn"), person: id, text, basis })
-    .strict()
-    .describe("できることとその範囲を技能として記録する"),
-  z
-    .object({ type: z.literal("update"), id, text, basis: basis.optional() })
-    .strict()
-    .describe(
-      "物品の呼称、または技能の内容と範囲を改める。技能の根拠が変わる場合はbasisを指定する",
-    ),
-  z
-    .object({ type: z.literal("remove"), id })
-    .strict()
-    .describe("消費・消失した物品、または失った技能の所有・所在・習得を終える"),
-]);
-export type BelongingOp = z.infer<typeof BelongingOp>;
+export { BelongingOp } from "@gestaloka/contracts";
+import { BelongingOp } from "@gestaloka/contracts";
 export class BelongingRejected extends Error {}
 // モデルは操作を1件ずつJSON文字列で返す。操作の形を応答スキーマへ並べると、
 // 行動解決の構造化出力が文法の上限を超えるため、形は実行側で検証する。

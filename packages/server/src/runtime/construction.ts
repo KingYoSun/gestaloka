@@ -255,45 +255,6 @@ export class WorldConstruction {
     }, existing);
   }
 
-  async play(
-    id: string,
-    actionText: string,
-    existing?: pg.PoolClient,
-    runId: string = randomUUID(),
-  ) {
-    z.string().min(1).parse(actionText);
-    z.uuid().parse(runId);
-    return this.#transaction(async (client) => {
-      const row = await this.get(id, client, true);
-      if (row.state !== "finished" || !row.participant_id)
-        throw new ConstructionStateError(
-          "前の行動が区切られてから操作してください",
-        );
-      await RuntimeControl.check(client, {}, true);
-      row.state = "playing";
-      row.budget_id = runId;
-      await client.query(
-        "INSERT INTO world_run(id,construction_id,actor_id,action_text,state,started_at,at) VALUES($1,$2,$3,$4,'running',$5,$5)",
-        [runId, id, row.participant_id, actionText, row.at],
-      );
-      row.claim = null;
-      row.error = null;
-      row.agenda = row.agenda.filter(
-        (work) => work.actorId !== row.participant_id || work.mode !== "intent",
-      );
-      row.agenda.push({
-        id: randomUUID(),
-        at: row.at,
-        mode: "action",
-        actorId: row.participant_id,
-        actionText,
-      });
-      await this.#save(row, client);
-      await this.#enqueue(client, id, true);
-      return row;
-    }, existing);
-  }
-
   async #save(
     row: Construction,
     client: Pick<pg.Pool, "query"> = this.pool,
@@ -800,13 +761,15 @@ export class WorldConstruction {
 
   async work() {
     return Promise.all(
-      [this.queueName, `${this.queueName}-play`].map((name) =>
+      [this.queueName].map((name) =>
         this.queue.work<{ id: string }>(
           name,
           { localConcurrency: 2, pollingIntervalSeconds: 0.5 },
           async (jobs) => {
             for (const job of jobs) {
               try {
+                const state = (await this.get(job.data.id)).state;
+                if (state === "playing" || state === "play_paused") continue;
                 await this.tick(job.data.id, job.id);
               } catch (error) {
                 if (!(error instanceof Error)) throw error;

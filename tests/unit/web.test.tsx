@@ -35,7 +35,6 @@ const A = "00000000-0000-4000-8000-000000000001",
 let identity = A,
   hasSession = false,
   created = false,
-  actionPosts = 0,
   adminReads = 0,
   submitted: unknown;
 const commands: unknown[] = [];
@@ -73,86 +72,11 @@ const sceneFixture = (
   recordIds: [],
   nextPurpose: null,
 });
-
-test.each(["preparing", "ready", "acting", "paused"] as const)(
-  "%sでも終了を受け付け、待ち相手を表示する",
-  async (state) => {
-    scene = {
-      ...sceneFixture(state),
-      waiting: [
-        {
-          kind: "participants",
-          actors: [{ id: A, name: "相手の人物" }],
-          reason: "回答を待っています",
-          deadline: "2026-11-17T00:05:00Z",
-        },
-      ],
-    };
-    const heartbeats: boolean[] = [];
-    server.use(
-      http.post("*/api/worlds/:id/presence", async ({ request }) => {
-        const body = (await request.json()) as { active: boolean };
-        heartbeats.push(body.active);
-        return json({
-          ...body,
-          connectionId: W,
-          kind: "human",
-          expiresAt: new Date(Date.now() + 600000).toISOString(),
-        });
-      }),
-    );
-    const view = render(
-      <App
-        navigation={createAppRouter(
-          createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-        )}
-      />,
-    );
-    await screen.findByText(/参加者：相手の人物：回答を待っています/);
-    const finish = await screen.findByRole("button", {
-      name: "シーンを終えてリザルトを見る",
-    });
-    expect((finish as HTMLButtonElement).disabled).toBe(false);
-    await waitFor(() => expect(heartbeats).toContain(true));
-    fireEvent.click(finish);
-    await waitFor(() => expect(submitted).toMatchObject({ command: "finish" }));
-    view.unmount();
-    expect(heartbeats).not.toContain(false);
-  },
-);
 const json = (body: Parameters<typeof HttpResponse.json>[0], status = 200) =>
   HttpResponse.json(body, {
     status,
     headers: { "X-Gestaloka-Subject": identity },
   });
-
-test("開始者以外も本人の一続きのシーンを終了できる", async () => {
-  scene = {
-    ...sceneFixture(),
-    shared: {
-      owner: false,
-      requestIds: [],
-      phase: "settled",
-      pending: 0,
-      deadline: null,
-      flow: "open",
-      rounds: 0,
-    },
-  };
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({
-          initialEntries: [`/worlds/${W}/play?actorId=${V}&sceneId=${W}`],
-        }),
-      )}
-    />,
-  );
-  fireEvent.click(
-    await screen.findByRole("button", { name: "シーンを終えてリザルトを見る" }),
-  );
-  await waitFor(() => expect(submitted).toMatchObject({ command: "finish" }));
-});
 class Source {
   static instances: Source[] = [];
   onopen: (() => void) | null = null;
@@ -303,7 +227,6 @@ const server = setupServer(
       scene = { ...sceneFixture("ready"), id: body.requestId };
     else if (body.command === "start") scene = { ...scene!, state: "active" };
     else if (body.command === "act") {
-      actionPosts++;
       scene = {
         ...scene!,
         state: "acting",
@@ -327,7 +250,6 @@ const server = setupServer(
     }),
   ),
   http.post("*/api/worlds/:id/actions", async ({ request }) => {
-    actionPosts++;
     const body = (await request.json()) as {
       requestId: string;
       actionText: string;
@@ -359,7 +281,6 @@ beforeEach(() => {
   identity = A;
   hasSession = true;
   created = false;
-  actionPosts = 0;
   adminReads = 0;
   submitted = undefined;
   commands.length = 0;
@@ -394,14 +315,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 afterAll(() => server.close());
-
-async function openInput() {
-  const button = await screen.findByRole("button", { name: "自由入力" });
-  await waitFor(() =>
-    expect((button as HTMLButtonElement).disabled).toBe(false),
-  );
-  fireEvent.click(button);
-}
 
 test("Reactを描画し、生成されたHTTPクライアント型を通信に使用できる", async () => {
   const { api } = await import("../../apps/web/src/api.js");
@@ -552,39 +465,6 @@ test("プリセットがない世界には名前だけでも参加できる", as
   );
 });
 
-test("選択した人物をシーン・知識・配信の照会と送信へ引き継ぐ", async () => {
-  const scoped: string[] = [];
-  server.events.on("request:start", ({ request }) => {
-    const url = new URL(request.url);
-    if (url.pathname.startsWith(`/api/worlds/${W}/`))
-      scoped.push(url.searchParams.get("actorId") ?? "");
-  });
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({
-          initialEntries: [`/worlds/${W}/play?actorId=${V}`],
-        }),
-      )}
-    />,
-  );
-  await openInput();
-  const input = await screen.findByLabelText("次のシーンで何をしたいですか");
-  fireEvent.change(input, { target: { value: "道を歩く" } });
-  fireEvent.click(
-    screen.getByRole("button", { name: "シーンのあらすじを準備する" }),
-  );
-  await screen.findByRole("button", { name: "シーンを始める" });
-  expect(scoped.length).toBeGreaterThan(3);
-  expect(scoped.every((id) => id === V)).toBe(true);
-  expect(
-    Source.instances
-      .filter((s) => !s.closed)
-      .every((s) => s.url.includes(`actorId=${V}`)),
-  ).toBe(true);
-  server.events.removeAllListeners("request:start");
-});
-
 test("初期入力を改変せず受付し、同じ世界の管理画面へ進む", async () => {
   render(
     <App
@@ -605,48 +485,16 @@ test("初期入力を改変せず受付し、同じ世界の管理画面へ進�
   expect(submitted).toMatchObject({ prompt: text, budgetUsd: 20 });
 });
 
-test("IMEの確定を送信にせず、本人の入力と公開知識だけを表示する", async () => {
-  scene = sceneFixture();
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-      )}
-    />,
-  );
-  await openInput();
-  const field = await screen.findByLabelText("どう行動しますか");
-  const text = "周囲を見渡す。\n返答を待つ。";
-  fireEvent.change(field, { target: { value: text } });
-  fireEvent.compositionStart(field);
-  fireEvent.keyDown(field, {
-    key: "Enter",
-    ctrlKey: true,
-    keyCode: 229,
-    isComposing: true,
-  });
-  fireEvent.compositionEnd(field);
-  expect(actionPosts).toBe(0);
-  fireEvent.click(screen.getByRole("button", { name: "この行動を送る" }));
-  await waitFor(() => expect(actionPosts).toBe(1));
-  expect(submitted).toMatchObject({ actionText: text });
-  await screen.findByText(
-    (_content, element) =>
-      element?.tagName === "P" && element.textContent === text,
-  );
-  expect(adminReads).toBe(0);
-  expect(document.body.textContent).not.toContain("PRIVATE_ADMIN");
-});
-
 test("応答の主体が変わった場合は旧キャッシュと画面を破棄する", async () => {
   render(
     <App
+      surface="admin"
       navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
+        createMemoryHistory({ initialEntries: [`/worlds/${W}`] }),
       )}
     />,
   );
-  await screen.findByRole("heading", { name: "村民として" });
+  await screen.findByRole("heading", { name: "世界構築" });
   await waitFor(() =>
     expect(Source.instances.some((source) => !source.closed)).toBe(true),
   );
@@ -656,588 +504,13 @@ test("応答の主体が変わった場合は旧キャッシュと画面を破�
   expect(screen.queryByRole("heading", { name: "村民として" })).toBeNull();
 });
 
-test("背景生成中の通知とシーンの記録は再取得中も表示を保つ", async () => {
-  scene = {
-    ...sceneFixture("preparing"),
-    messages: [{ id: A, text: "最初の記録" }],
-  };
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-      )}
-    />,
-  );
-  const toast = await screen.findByText("背景情報を生成中...", {
-    selector: ".generation-toast *",
-  });
-  const history = await screen.findByRole("region", { name: "このシーン" });
-  await waitFor(() =>
-    expect(history.getAttribute("data-retained-records")).toBe("1"),
-  );
-  let release!: () => void;
-  const response = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  server.use(
-    http.get("*/api/worlds/:id/scene/records", async () => {
-      await response;
-      return json({ viewerId: V, items: [], previous: null, next: null });
-    }),
-  );
-  Source.instances.find((s) => !s.closed)!.update();
-  try {
-    await waitFor(() =>
-      expect(
-        screen.getByLabelText("記録の閲覧領域").getAttribute("aria-busy"),
-      ).toBe("true"),
-    );
-    expect(history.getAttribute("data-retained-records")).toBe("1");
-    expect(toast.isConnected).toBe(true);
-  } finally {
-    release();
-  }
-  await waitFor(() =>
-    expect(history.getAttribute("data-retained-records")).toBe("0"),
-  );
-  scene = { ...scene, state: "ready" };
-  Source.instances.find((s) => !s.closed)!.update("2");
-  await screen.findByRole("button", { name: "シーンを始める" });
-  expect(toast.isConnected).toBe(false);
-});
-
-test("あらすじを読んで開始し、確定後だけリザルトを表示する", async () => {
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-      )}
-    />,
-  );
-  await openInput();
-  const purpose = await screen.findByLabelText("次のシーンで何をしたいですか");
-  fireEvent.change(purpose, { target: { value: "道端で村人と話す" } });
-  fireEvent.click(
-    screen.getByRole("button", { name: "シーンのあらすじを準備する" }),
-  );
-  await screen.findByRole("heading", { name: "シーンのあらすじ" });
-  expect(screen.queryByLabelText("どう行動しますか")).toBeNull();
-  expect(actionPosts).toBe(0);
-  fireEvent.click(screen.getByRole("button", { name: "シーンを始める" }));
-  fireEvent.click(
-    await screen.findByRole("button", { name: "シーンを終えてリザルトを見る" }),
-  );
-  await screen.findByText("このシーンが世界に残した影響をまとめています。");
-  await screen.findByText("リザルトを生成中...", {
-    selector: ".generation-toast *",
-  });
-  expect(screen.queryByRole("heading", { name: "リザルト" })).toBeNull();
-  scene = { ...scene!, state: "reflecting", result: "まだ表示できない候補" };
-  Source.instances.find((s) => !s.closed)!.update("1");
-  await waitFor(() => expect(submitted).toMatchObject({ command: "finish" }));
-  expect(screen.queryByText("まだ表示できない候補")).toBeNull();
-  scene = {
-    ...scene!,
-    state: "paused",
-    error: "1操作の処理上限に達しました。再開すると枠を追加します。",
-  };
-  Source.instances.find((s) => !s.closed)!.update("2");
-  await screen.findByText(
-    "1操作の処理上限に達しました。再開すると枠を追加します。",
-  );
-  expect(screen.queryByText("リザルトを生成中...")).toBeNull();
-  expect(
-    screen.getByRole("button", { name: "保存したシーンから再開する" }),
-  ).toBeTruthy();
-  expect(screen.queryByText("まだ表示できない候補")).toBeNull();
-  scene = {
-    ...scene!,
-    state: "result",
-    result: "村民へ質問が届き、相談の続きが残りました。",
-  };
-  Source.instances.find((s) => !s.closed)!.update("3");
-  await screen.findByRole("heading", { name: "リザルト" });
-  expect(
-    screen.getByText("村民へ質問が届き、相談の続きが残りました。"),
-  ).toBeTruthy();
-  expect(actionPosts).toBe(0);
-});
-
-test("共有は明示選択し、顔ぶれの確定後もあらすじを読んで開始する", async () => {
-  const heartbeats: boolean[] = [];
-  server.use(
-    http.post("*/api/worlds/:id/presence", async ({ request }) => {
-      const body = (await request.json()) as {
-        connectionId: string;
-        active: boolean;
-      };
-      heartbeats.push(body.active);
-      return json({
-        ...body,
-        kind: "human",
-        expiresAt: new Date(Date.now() + 90000).toISOString(),
-      });
-    }),
-    http.post("*/api/worlds/:id/scene", async ({ request }) => {
-      const body = (await request.json()) as {
-        requestId: string;
-        command: string;
-        shared?: boolean;
-      };
-      submitted = body;
-      scene = {
-        ...sceneFixture("preparing"),
-        requestId: body.requestId,
-        synopsis: null,
-        shared: {
-          owner: true,
-          requestIds: [body.requestId],
-          phase: "inviting",
-          pending: 2,
-          deadline: new Date(Date.now() + 60000).toISOString(),
-        },
-      };
-      return json({ scene }, 202);
-    }),
-  );
-  const view = render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-      )}
-    />,
-  );
-  await openInput();
-  expect(screen.queryByLabelText("共有シーンとして参加を求める")).toBeNull();
-  fireEvent.change(screen.getByLabelText("次のシーンで何をしたいですか"), {
-    target: { value: "近くの相手と話す" },
-  });
-  fireEvent.click(
-    screen.getByRole("button", { name: "シーンのあらすじを準備する" }),
-  );
-  await screen.findByText(
-    "同席の返答を待っています。回答が揃うか、締切を迎えたらあらすじを準備します。",
-  );
-  expect(submitted).toMatchObject({ command: "prepare" });
-  expect(screen.queryByText("背景情報を生成中...")).toBeNull();
-  expect(screen.queryByRole("button", { name: "シーンを始める" })).toBeNull();
-  await waitFor(() => expect(heartbeats).toContain(true));
-  scene = {
-    ...scene!,
-    state: "ready",
-    synopsis: "参加者が確定した場面",
-    shared: { ...scene!.shared!, phase: "settled", pending: 0 },
-  };
-  Source.instances.find((s) => !s.closed)!.update();
-  await screen.findByRole("button", { name: "シーンを始める" });
-  expect(screen.queryByLabelText("どう行動しますか")).toBeNull();
-  view.unmount();
-  expect(heartbeats).not.toContain(false);
-});
-
-test("参加回答を送信前に保存し、応答喪失後は同じ要求で照合する", async () => {
-  const replies: {
-    requestId: string;
-    command: string;
-    invitationId: string;
-    accept: boolean;
-  }[] = [];
-  const invitation = {
-    id: W,
-    sceneId: W,
-    deadline: new Date(Date.now() + 60000).toISOString(),
-    context: ["自分が見聞きした状況"],
-  };
-  server.use(
-    http.get("*/api/worlds/:id/scene/inbox", () =>
-      json({
-        viewerId: V,
-        items: [],
-        invitations: replies.length ? [] : [invitation],
-        next: null,
-      }),
-    ),
-    http.post("*/api/worlds/:id/scene", async ({ request }) => {
-      const body = (await request.json()) as (typeof replies)[number];
-      replies.push(body);
-      scene = {
-        ...sceneFixture("ready"),
-        shared: {
-          owner: false,
-          requestIds: [body.requestId],
-          phase: "settled",
-          pending: 0,
-          deadline: null,
-        },
-      };
-      return replies.length === 1 ? HttpResponse.error() : json({ scene }, 202);
-    }),
-  );
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-      )}
-    />,
-  );
-  fireEvent.click(await screen.findByRole("button", { name: "同席する" }));
-  const retry = await screen.findByRole("button", {
-    name: "同じ参加回答で確認する",
-  });
-  expect(Object.keys(localStorage).some((k) => k.includes("invite"))).toBe(
-    true,
-  );
-  fireEvent.click(retry);
-  await waitFor(() => expect(replies).toHaveLength(2));
-  expect(replies[0]).toEqual(replies[1]);
-  await screen.findByRole("heading", { name: "シーンのあらすじ" });
-  expect(screen.queryByRole("button", { name: "シーンを始める" })).toBeNull();
-  expect(
-    screen.queryByRole("button", { name: "同じ参加回答で確認する" }),
-  ).toBeNull();
-});
-
-test("共有の退出後は次の準備欄を表示し、終了待ちのシーンにも戻れる", async () => {
-  const posts: { requestId: string; command: string }[] = [];
-  scene = {
-    ...sceneFixture(),
-    shared: {
-      owner: false,
-      requestIds: [],
-      phase: "settled",
-      pending: 0,
-      deadline: null,
-    },
-  };
-  server.use(
-    http.get("*/api/worlds/:id/scene/inbox", () =>
-      json({
-        viewerId: V,
-        invitations: [],
-        next: null,
-        items: [
-          { id: "1", sceneId: B, kind: "result" },
-          {
-            id: "3",
-            sceneId: W,
-            kind: "opportunity",
-            contactOutcome: "delivered",
-            context: ["呼びかけを届けました。"],
-          },
-          {
-            id: "2",
-            sceneId: W,
-            kind: "invitation",
-            contact: true,
-            context: ["露台から呼びかけが届いた"],
-          },
-        ],
-      }),
-    ),
-    http.post("*/api/worlds/:id/scene", async ({ request }) => {
-      const body = (await request.json()) as (typeof posts)[number];
-      posts.push(body);
-      scene = {
-        ...scene!,
-        requestId: body.requestId,
-        departed: true,
-        shared: { ...scene!.shared!, requestIds: [body.requestId] },
-      };
-      return json({ scene }, 202);
-    }),
-  );
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-      )}
-    />,
-  );
-  fireEvent.click(
-    await screen.findByRole("button", { name: "この場から退出する" }),
-  );
-  await screen.findByText(/退出しました。/);
-  expect(screen.getByText("呼びかけを届けました。").getAttribute("role")).toBe(
-    "status",
-  );
-  await openInput();
-  await screen.findByLabelText("次のシーンで何をしたいですか");
-  expect(posts).toHaveLength(1);
-  expect(posts[0]!.command).toBe("leave");
-  expect(screen.queryByLabelText("どう行動しますか")).toBeNull();
-  expect(
-    screen.queryByRole("button", { name: "シーンを終えてリザルトを見る" }),
-  ).toBeNull();
-  fireEvent.click(screen.getByText("他のプレイヤーから届いた呼びかけ"));
-  expect(
-    screen.getByText("露台から呼びかけが届いた").closest("details")?.open,
-  ).toBe(true);
-  fireEvent.click(screen.getByText("シーンの通知と記録"));
-  expect(
-    screen
-      .getByRole("link", { name: "別のシーンの記録を開く" })
-      .getAttribute("href"),
-  ).toBe(`/worlds/${W}/play?actorId=${V}&sceneId=${B}`);
-});
-
-test("シーンIDを指定して元の終了操作を行い、確定待ちでも次を開始できる", async () => {
-  let target: string | null = null;
-  scene = {
-    ...sceneFixture(),
-    departed: true,
-    shared: {
-      owner: true,
-      requestIds: [],
-      phase: "settled",
-      pending: 0,
-      deadline: null,
-    },
-  };
-  server.use(
-    http.post("*/api/worlds/:id/scene", async ({ request }) => {
-      target = new URL(request.url).searchParams.get("sceneId");
-      const body = (await request.json()) as {
-        requestId: string;
-        command: string;
-      };
-      scene = {
-        ...scene!,
-        state: "reflecting",
-        requestId: body.requestId,
-        waitingFor: [B],
-        shared: { ...scene!.shared!, requestIds: [body.requestId] },
-      };
-      return json({ scene }, 202);
-    }),
-  );
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({
-          initialEntries: [`/worlds/${W}/play?sceneId=${W}`],
-        }),
-      )}
-    />,
-  );
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: "元のシーンを終えてリザルトを見る",
-    }),
-  );
-  await waitFor(() => expect(target).toBe(W));
-  await openInput();
-  expect(screen.getByLabelText("次のシーンで何をしたいですか")).toBeTruthy();
-  expect(screen.getByRole("link", { name: "現在のシーンへ戻る" })).toBeTruthy();
-});
-
-test("共有の生成中もWebから割り込む入力を受け付ける", async () => {
-  scene = {
-    ...sceneFixture("acting"),
-    shared: {
-      owner: true,
-      requestIds: [],
-      phase: "settled",
-      pending: 0,
-      deadline: null,
-      flow: "open",
-      rounds: 0,
-    },
-  };
-  server.use(
-    http.post("*/api/worlds/:id/scene", async ({ request }) => {
-      const body = (await request.json()) as {
-        requestId: string;
-        command: string;
-        actionText: string;
-      };
-      submitted = body;
-      scene = {
-        ...scene!,
-        requestId: body.requestId,
-        shared: { ...scene!.shared!, requestIds: [body.requestId] },
-      };
-      return json({ scene }, 202);
-    }),
-  );
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-      )}
-    />,
-  );
-  await screen.findByText("シーンの続きを生成中...", { selector: "main > p" });
-  await screen.findByText("シーンの続きを生成中...", {
-    selector: ".generation-toast *",
-  });
-  await openInput();
-  fireEvent.change(await screen.findByLabelText("どう行動しますか"), {
-    target: { value: "相手が考えている間に声をかける" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "この行動を送る" }));
-  await waitFor(() =>
-    expect(submitted).toMatchObject({
-      command: "act",
-      actionText: "相手が考えている間に声をかける",
-    }),
-  );
-});
-
-test("反応なしを送信前に保存し、別のシーンを開いていても元の機会へ同じ回答を再送する", async () => {
-  const replies: {
-    target: string | null;
-    body: {
-      requestId: string;
-      command: string;
-      opportunityId: string;
-      actionText: null;
-    };
-  }[] = [];
-  scene = {
-    ...sceneFixture(),
-    shared: {
-      owner: false,
-      requestIds: [],
-      phase: "settled",
-      pending: 0,
-      deadline: null,
-    },
-  };
-  server.use(
-    http.get("*/api/worlds/:id/scene/inbox", () =>
-      json({
-        viewerId: V,
-        invitations: [],
-        items: [],
-        next: null,
-        proposals: [],
-        opportunities: replies.length
-          ? []
-          : [
-              {
-                id: A,
-                sceneId: B,
-                sourceInputId: A,
-                deadline: new Date(Date.now() + 60000).toISOString(),
-                seenEventIds: [A],
-                context: ["この問いまでに届いた内容"],
-              },
-            ],
-      }),
-    ),
-    http.post("*/api/worlds/:id/scene", async ({ request }) => {
-      replies.push({
-        target: new URL(request.url).searchParams.get("sceneId"),
-        body: (await request.json()) as (typeof replies)[number]["body"],
-      });
-      return replies.length === 1 ? HttpResponse.error() : json({ scene }, 202);
-    }),
-  );
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({
-          initialEntries: [`/worlds/${W}/play?sceneId=${W}`],
-        }),
-      )}
-    />,
-  );
-  fireEvent.click(await screen.findByRole("button", { name: "反応しない" }));
-  const retry = await screen.findByRole("button", {
-    name: "同じ回答で確認する",
-  });
-  expect(Object.keys(localStorage).some((k) => k.includes("reaction"))).toBe(
-    true,
-  );
-  fireEvent.click(retry);
-  await waitFor(() => expect(replies).toHaveLength(2));
-  expect(replies[0]).toEqual(replies[1]);
-  expect(replies[0]).toMatchObject({
-    target: B,
-    body: { command: "react", opportunityId: A, actionText: null },
-  });
-  await waitFor(() =>
-    expect(
-      screen.queryByRole("button", { name: "同じ回答で確認する" }),
-    ).toBeNull(),
-  );
-});
-
-test.each([true, false])(
-  "終了提案は本人の選択でだけ続行=%sを回答する",
-  async (continueScene) => {
-    const votes: { command: string; continue: boolean }[] = [];
-    scene = {
-      ...sceneFixture(),
-      shared: {
-        owner: true,
-        requestIds: [],
-        phase: "settled",
-        pending: 0,
-        deadline: null,
-        flow: "voting",
-        rounds: 10,
-      },
-    };
-    server.use(
-      http.get("*/api/worlds/:id/scene/inbox", () =>
-        json({
-          viewerId: V,
-          invitations: [],
-          items: [],
-          next: null,
-          opportunities: [],
-          proposals: votes.length
-            ? []
-            : [
-                {
-                  id: A,
-                  sceneId: W,
-                  deadline: new Date(Date.now() + 60000).toISOString(),
-                },
-              ],
-        }),
-      ),
-      http.post("*/api/worlds/:id/scene", async ({ request }) => {
-        votes.push((await request.json()) as (typeof votes)[number]);
-        scene = { ...scene!, shared: { ...scene!.shared!, flow: "open" } };
-        return json({ scene }, 202);
-      }),
-    );
-    render(
-      <App
-        navigation={createAppRouter(
-          createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-        )}
-      />,
-    );
-    const choice = await screen.findByRole("button", {
-      name: continueScene ? "続ける" : "自分は終える",
-    });
-    expect(
-      screen.getByText(
-        "自分は終えると、ここまでの履歴から自分のリザルトを作成します。他の参加者は続けられます。",
-      ),
-    ).toBeTruthy();
-    await openInput();
-    expect(screen.getByLabelText("どう行動しますか")).toBeTruthy();
-    expect(votes).toEqual([]);
-    fireEvent.click(choice);
-    await waitFor(() => expect(votes).toHaveLength(1));
-    expect(votes[0]).toMatchObject({
-      command: "vote",
-      continue: continueScene,
-    });
-  },
-);
-
 test("SSEの重複を無視し、切断後は配信位置とスナップショットを取得し直す", async () => {
   let reads = 0,
     cursors = 0;
   server.use(
-    http.get("*/api/worlds/:id/play", () => {
+    http.get("*/api/worlds/:id", () => {
       reads++;
-      return json(player);
+      return json(world);
     }),
     http.get("*/api/worlds/:id/cursor", () => {
       cursors++;
@@ -1246,8 +519,9 @@ test("SSEの重複を無視し、切断後は配信位置とスナップショ�
   );
   render(
     <App
+      surface="admin"
       navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
+        createMemoryHistory({ initialEntries: [`/worlds/${W}`] }),
       )}
     />,
   );
@@ -1256,7 +530,7 @@ test("SSEの重複を無視し、切断後は配信位置とスナップショ�
   source.update("1");
   await waitFor(() => expect(reads).toBeGreaterThan(1));
   await waitFor(() =>
-    expect(screen.getByRole("heading", { name: "村民として" })).toBeTruthy(),
+    expect(screen.getByRole("heading", { name: "世界構築" })).toBeTruthy(),
   );
   const before = reads;
   source.update("1");
@@ -1294,173 +568,3 @@ test("構築期間は日数で入力し、端数を送信せず整数の日数�
     duration: WORLD_DAY_MS * 2,
   });
 });
-
-test("WebでNPCに任せて復帰した本人が見聞と参加の選択を読める", async () => {
-  let active = false,
-    visited = false;
-  const report = () => ({
-    active,
-    summary: visited ? "戸口で呼びかけを聞いた。" : "",
-    scenes: visited
-      ? [
-          {
-            sceneId: W,
-            handoff: active ? null : "available",
-            log: [{ kind: "observation", text: "扉が開いた。" }],
-          },
-        ]
-      : [],
-  });
-  server.use(
-    http.get("*/api/worlds/:id/npc-mode", () => json(report())),
-    http.post("*/api/worlds/:id/npc-mode", async ({ request }) => {
-      active =
-        ((await request.json()) as { command: string }).command === "away";
-      visited = true;
-      return json(report());
-    }),
-  );
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-      )}
-    />,
-  );
-  const button = await screen.findByRole("button", {
-    name: "NPCモードで離席する",
-  });
-  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
-  fireEvent.click(button);
-  fireEvent.click(
-    await screen.findByRole("button", { name: "NPCモードから復帰する" }),
-  );
-  expect(
-    await screen.findByRole("button", { name: "このシーンに参加する" }),
-  ).toBeTruthy();
-  expect(screen.getByText("戸口で呼びかけを聞いた。")).toBeTruthy();
-  expect(screen.getByText("扉が開いた。")).toBeTruthy();
-});
-
-test("シーンの外でも中でも、本人の持ち物・保管先の在庫・技能を開くたびに読み直す", async () => {
-  let reads = 0;
-  server.use(
-    http.get("*/api/worlds/:id/belongings", ({ request }) => {
-      reads++;
-      expect(new URL(request.url).searchParams.get("actorId")).toBe(V);
-      return json({
-        viewerId: V,
-        items: [{ label: "釘", quantity: 2, mine: true }],
-        storages: [
-          {
-            id: B,
-            label: "共同倉庫",
-            items: reads > 1 ? [] : [{ label: "縄", quantity: 1, mine: false }],
-          },
-        ],
-        skills: [{ id: A, text: "縄を結べる" }],
-      });
-    }),
-  );
-  const open = () =>
-    fireEvent.click(screen.getByRole("button", { name: "持ち物と技能" }));
-  const view = render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-      )}
-    />,
-  );
-  await screen.findByRole("button", { name: "持ち物と技能" });
-  open();
-  expect(await screen.findByText("釘 × 2")).toBeTruthy();
-  expect(screen.getByText("共同倉庫")).toBeTruthy();
-  expect(screen.getByText("（自分の所有ではない）")).toBeTruthy();
-  expect(screen.getByText("縄を結べる")).toBeTruthy();
-  view.unmount();
-
-  scene = sceneFixture("active");
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-      )}
-    />,
-  );
-  await screen.findByRole("button", { name: "持ち物と技能" });
-  open();
-  await waitFor(() => expect(reads).toBe(2));
-  await waitFor(() =>
-    expect(screen.queryByText("（自分の所有ではない）")).toBeNull(),
-  );
-  expect(screen.getByText("釘 × 2")).toBeTruthy();
-});
-
-test("出会える相手をプレイヤーとNPCのタブで示し、開いている間は読み直す", async () => {
-  let reads = 0;
-  server.use(
-    http.get("*/api/worlds/:id/partners", ({ request }) => {
-      reads++;
-      expect(new URL(request.url).searchParams.get("actorId")).toBe(V);
-      if (reads === 4) return json({ code: "X", message: "一時的な失敗" }, 500);
-      return json({
-        viewerId: V,
-        players: [
-          {
-            actorId: A,
-            name: "ミチコ",
-            mode: "standby",
-            locations: ["川沿いの畑の脇"],
-          },
-          ...(reads > 1
-            ? [{ actorId: B, name: "ジョニー", mode: "npc" as const }]
-            : []),
-        ],
-        npcs: [{ actorId: W, name: "村長", locations: ["共同炉への道の入口"] }],
-      });
-    }),
-  );
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
-      )}
-    />,
-  );
-  // 鉛筆の左に持ち物、その左に相手の一覧を置く。
-  const tools = (await screen.findByRole("button", { name: "自由入力" }))
-    .parentElement!;
-  expect(
-    [...tools.querySelectorAll("button")].map((b) => b.getAttribute("title")),
-  ).toEqual(["セッションできる相手", "持ち物と技能", "自由入力"]);
-  fireEvent.click(screen.getByRole("button", { name: "セッションできる相手" }));
-  expect(await screen.findByText("ミチコ")).toBeTruthy();
-  expect(screen.getByText("（待機中）")).toBeTruthy();
-  expect(screen.getByText("場所：川沿いの畑の脇")).toBeTruthy();
-  expect(screen.queryByText("村長")).toBeNull();
-  expect(
-    await screen.findByText("（NPCモード）", {}, { timeout: 5000 }),
-  ).toBeTruthy();
-  expect(screen.getByText("場所：不明")).toBeTruthy();
-  const npcs = screen.getByRole("tab", { name: "NPC（1）" });
-  fireEvent.mouseDown(npcs);
-  fireEvent.click(npcs);
-  expect(await screen.findByText("村長")).toBeTruthy();
-  expect(screen.getByText("場所：共同炉への道の入口")).toBeTruthy();
-  expect(screen.queryByText("ミチコ")).toBeNull();
-  // 同じ内容の読み直しと一時的な失敗では、モーダルの表示を書き換えず、選んだタブも保つ。
-  const changes: MutationRecord[] = [];
-  const observer = new MutationObserver((records) => changes.push(...records));
-  observer.observe(screen.getByRole("dialog"), {
-    subtree: true,
-    childList: true,
-    characterData: true,
-    attributes: true,
-  });
-  await waitFor(() => expect(reads).toBeGreaterThanOrEqual(5), {
-    timeout: 12000,
-  });
-  observer.disconnect();
-  expect(changes).toEqual([]);
-  expect(screen.getByText("村長")).toBeTruthy();
-}, 25000);

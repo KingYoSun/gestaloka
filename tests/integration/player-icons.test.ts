@@ -265,16 +265,23 @@ test("名前を識別できる観測だけに顔を添え、未知・匿名・�
       .items.find((i: { text: string }) => i.text.includes(a.name)).characters,
   ).toEqual([{ actorId: a.actor, name: a.name, icon: a.icon }]);
 
-  const opened = await access.sceneCommand(
-    one.id,
-    world,
-    {
-      requestId: randomUUID(),
-      command: "prepare",
-      purpose: "出会いを振り返る",
-    },
-    false,
-    a.actor,
+  const opened = { scene: { id: randomUUID() } };
+  await isolated.databases.postgres.query(
+    "INSERT INTO world_scene(id,construction_id,actor_id,state,data) VALUES($1,$2,$3,'active',$4)",
+    [
+      opened.scene.id,
+      world,
+      a.actor,
+      {
+        worldId: graph,
+        commandId: randomUUID(),
+        at: 0,
+        startedAt: 0,
+        actions: [],
+        events: [],
+        choices: [],
+      },
+    ],
   );
   const scene = (await access.scenes.latest(
     world,
@@ -325,13 +332,6 @@ test("名前を識別できる観測だけに顔を添え、未知・匿名・�
     "UPDATE world_scene SET data=$2 WHERE id=$1",
     [scene.id, scene.data],
   );
-  await access.scenes.shared.transaction(async (db) => {
-    await db.query(
-      "UPDATE world_scene_member SET state='joined' WHERE scene_id=$1",
-      [scene.id],
-    );
-    await access.scenes.sessions.record(db, scene);
-  });
   for (const compact of [true, false]) {
     const view = (await access.scene(one.id, world, compact, a.actor)).scene!;
     expect(view.synopsisCharacters).toEqual([

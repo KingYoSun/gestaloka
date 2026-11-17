@@ -1,8 +1,11 @@
-import { randomUUID, randomBytes } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { test, expect } from "./fixtures.js";
+import { connectDatabases } from "@gestaloka/server";
+import { WorldStore } from "@gestaloka/server/world";
 import type { Page } from "@playwright/test";
 
 const headers = { "X-Gestaloka-Request": "1" };
+test.setTimeout(120000);
 async function village(page: Page, count = 1) {
   const created = await page.request.post("/api/worlds", {
     headers,
@@ -100,174 +103,201 @@ async function village(page: Page, count = 1) {
   return { world, actors };
 }
 
-test("Webは共通のシーンを準備し、参加者確定後もあらすじを読んでから開始する", async ({
+async function group(page: Page) {
+  const { world, actors } = await village(page, 2),
+    db = connectDatabases();
+  const row = (
+    await db.postgres.query(
+      "SELECT world_id,root_ids FROM world_construction WHERE id=$1",
+      [world],
+    )
+  ).rows[0];
+  const call = async (actor: string, body: Record<string, unknown>) => {
+    const response = await page.request.post(
+      `/api/worlds/${world}/session?actorId=${actor}`,
+      { headers, data: { requestId: randomUUID(), ...body } },
+    );
+    expect(response.ok(), await response.text()).toBe(true);
+    return response.json();
+  };
+  for (const actor of actors) {
+    await call(actor, { command: "start" });
+    await call(actor, {
+      command: "update",
+      text: "合流場所へ移動する",
+      operations: [
+        {
+          type: "locate",
+          subjectId: actor,
+          text: "合流場所",
+          aboutIds: [row.root_ids[0]],
+        },
+      ],
+      dependencies: [],
+    });
+    await call(actor, { command: "end-turn" });
+  }
+  await call(actors[1]!, { command: "contact", targetId: actors[0] });
+  const count = async () =>
+    Number(
+      (
+        await db.postgres.query(
+          "SELECT count(*) AS n FROM llm_call WHERE world_id=$1",
+          [row.world_id],
+        )
+      ).rows[0].n,
+    );
+  return { world, actors, call, count, db, graph: row.world_id };
+}
+
+test("実APIの手番・個別検索・チャット・本人の終了を狭い画面でも操作する", async ({
   page,
 }) => {
-  const { world, actors } = await village(page);
-  const actor = actors[0]!;
-  await page.goto(`/worlds/${world}/play?actorId=${actor}`);
-  await page.getByRole("button", { name: "自由入力" }).click();
-  await expect(page.getByLabel("共有シーンとして参加を求める")).toHaveCount(0);
-  await page.getByLabel("次のシーンで何をしたいですか").fill("周囲を確かめる");
-  await page
-    .getByRole("button", { name: "シーンのあらすじを準備する" })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "シーンのあらすじ" }),
-  ).toBeVisible({ timeout: 30000 });
-  expect(
-    (
-      await (
-        await page.request.get(`/api/worlds/${world}/scene?actorId=${actor}`)
-      ).json()
-    ).scene.shared.phase,
-  ).toBe("settled");
-  await expect(page.getByLabel("どう行動しますか")).toHaveCount(0);
-  await page.screenshot({
-    path: "artifacts/screenshots/shared-scene-ready.png",
-    fullPage: true,
-  });
-  await page.getByRole("button", { name: "シーンを始める" }).click();
-  await expect(page.getByRole("button", { name: "自由入力" })).toBeEnabled();
-  const original = (
-    await (
-      await page.request.get(`/api/worlds/${world}/scene?actorId=${actor}`)
-    ).json()
-  ).scene;
-  await page.getByRole("button", { name: "この場から退出する" }).click();
-  await expect
-    .poll(async () => {
-      const scene = (
+  const f = await group(page),
+    actor = f.actors[0]!,
+    before = await f.count();
+  try {
+    await page.goto(`/worlds/${f.world}/play?actorId=${actor}`);
+    await expect(
+      page.getByRole("heading", { name: "2人のセッション" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "自分の情報", exact: true }).click();
+    await expect(
+      page.getByText("自分への検索結果", { exact: true }),
+    ).toBeVisible();
+    const field = page.getByRole("textbox", {
+      name: "発言・ターンコメント",
+      exact: true,
+    });
+    await field.fill("次の観測を相談する");
+    await field.dispatchEvent("compositionstart");
+    await field.dispatchEvent("keydown", {
+      key: "Enter",
+      isComposing: true,
+      keyCode: 229,
+    });
+    await field.dispatchEvent("compositionend");
+    await page.getByRole("button", { name: "発言する", exact: true }).click();
+    await expect(page.getByLabel("セッションのチャット")).not.toContainText(
+      "次の観測を相談する",
+    );
+    await field.fill("自分の考えを添える");
+    await page
+      .getByRole("button", { name: "ターンコメントを付ける", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "手番を終える", exact: true })
+      .click();
+    await expect(page.getByLabel("セッションのチャット")).toContainText(
+      "次の観測を相談する",
+    );
+    await expect(page.getByLabel("セッションのチャット")).toContainText(
+      "自分の考えを添える",
+    );
+    await page.screenshot({
+      path: "artifacts/screenshots/bot-session-desktop.png",
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: "artifacts/screenshots/bot-session-mobile.png",
+      fullPage: true,
+    });
+    await page
+      .getByRole("button", { name: "本人のシーンを終了", exact: true })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "本人のシーンを終了しました" }),
+    ).toBeVisible();
+    expect(
+      (
         await (
-          await page.request.get(`/api/worlds/${world}/scene?actorId=${actor}`)
+          await page.request.get(
+            `/api/worlds/${f.world}/session?actorId=${f.actors[1]}`,
+          )
         ).json()
-      ).scene;
-      return {
-        id: scene.id,
-        state: scene.state,
-        departed: scene.departed ?? false,
-      };
-    })
-    .toEqual({ id: original.id, state: "active", departed: false });
-  await page
-    .getByRole("button", { name: "シーンを終えてリザルトを見る" })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "リザルト", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "自由入力" }).click();
-  await expect(page.getByLabel("次のシーンで何をしたいですか")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await page.screenshot({
-    path: "artifacts/screenshots/shared-scene-departed.png",
-    fullPage: true,
-  });
+      ).sessionId,
+    ).toBeTruthy();
+    expect(await f.count()).toBe(before);
+  } finally {
+    await f.db.close();
+  }
 });
 
-test("参加承認なしに届いた働きかけをWebで読み、反応なしを一度だけ回答できる", async ({
+test("受領判断と別枠のコメントを表示し、判断後は元の手番へ戻る", async ({
   page,
 }) => {
-  test.setTimeout(120000);
-  const { world, actors } = await village(page, 2),
-    owner = actors[0]!,
-    bot = actors[1]!,
-    secret = randomBytes(32).toString("hex");
-  const created = await page.request.post("/api/player-devices", {
-    headers,
-    data: { requestId: randomUUID(), worldId: world, secret },
-  });
-  expect(created.ok()).toBe(true);
-  const code = (await created.json()).userCode;
-  const permit = await page.request.get(`/auth/player?code=${code}`),
-    csrf = (await permit.text()).match(/name="csrf" value="([a-f0-9]+)"/)![1]!;
-  expect(
-    (
-      await page.request.post("/auth/player", {
-        form: { csrf, code, choice: `actor:${bot}` },
-        maxRedirects: 0,
-      })
-    ).status(),
-  ).toBe(302);
-  const botHeaders = { ...headers, authorization: `Bearer ${secret}` };
-  await page.goto(`/worlds/${world}/play?actorId=${owner}`);
-  await page.getByRole("button", { name: "自由入力" }).click();
-  await page.getByLabel("次のシーンで何をしたいですか").fill("同席者と話す");
-  await page
-    .getByRole("button", { name: "シーンのあらすじを準備する" })
-    .click();
-  await page.getByRole("button", { name: "シーンを始める" }).click();
-  const online = await page.request.post(
-    `/api/worlds/${world}/presence?actorId=${bot}`,
-    {
-      headers: botHeaders,
-      data: {
-        requestId: randomUUID(),
-        connectionId: randomUUID(),
-        active: true,
+  const f = await group(page),
+    [sender, receiver] = f.actors as [string, string],
+    store = new WorldStore(f.db.graph),
+    item = randomUUID(),
+    before = await f.count();
+  try {
+    await store.commit(
+      await store.claim(f.graph, randomUUID()),
+      store.context(f.graph),
+      {
+        commitId: randomUUID(),
+        at: 0,
+        changes: {
+          nodes: [{ id: item, kind: "existence", text: "手渡す星図" }],
+          edges: [
+            {
+              id: randomUUID(),
+              kind: "has",
+              role: "hold",
+              source: sender,
+              target: item,
+              period: { from: 0 },
+            },
+          ],
+          revisions: [],
+          endEdges: [],
+        },
       },
-    },
-  );
-  expect((await online.json()).kind).toBe("bot");
-  await page.getByRole("button", { name: "自由入力" }).click();
-  await page.getByLabel("どう行動しますか").fill("同席者へ声をかける");
-  await page.getByRole("button", { name: "この行動を送る" }).click();
-  await expect
-    .poll(
-      async () =>
-        (
-          await (
-            await page.request.get(
-              `/api/worlds/${world}/scene/inbox?actorId=${bot}`,
-              { headers: botHeaders },
-            )
-          ).json()
-        ).opportunities.length,
-    )
-    .toBe(1);
-  await page.goto(`/worlds/${world}/play?actorId=${bot}`);
-  await expect(
-    page.getByRole("heading", { name: "届いた働きかけに返答できます" }),
-  ).toBeVisible();
-  await expect(
-    page
-      .getByRole("heading", { name: "届いた働きかけに返答できます" })
-      .locator("..")
-      .getByText(/公開された経験/)
-      .filter({ visible: true }),
-  ).toBeVisible();
-  expect(
-    (
-      await (
-        await page.request.get(
-          `/api/worlds/${world}/scene/inbox?actorId=${bot}`,
-          { headers: botHeaders },
-        )
-      ).json()
-    ).invitations,
-  ).toEqual([]);
-  await page.screenshot({
-    path: "artifacts/screenshots/shared-scene-reaction.png",
-    fullPage: true,
-  });
-  await page.getByRole("button", { name: "反応しない", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "届いた働きかけに返答できます" }),
-  ).toHaveCount(0);
-  expect(
-    (
-      await (
-        await page.request.get(
-          `/api/worlds/${world}/scene/inbox?actorId=${bot}`,
-          { headers: botHeaders },
-        )
-      ).json()
-    ).opportunities,
-  ).toEqual([]);
-  await page.goto(`/worlds/${world}/play?actorId=${owner}`);
-  await page
-    .getByRole("button", { name: "シーンを終えてリザルトを見る" })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "リザルト", exact: true }),
-  ).toBeVisible({ timeout: 20000 });
+    );
+    await f.call(sender, {
+      command: "update",
+      text: "星図を手渡す",
+      operations: [
+        {
+          type: "move",
+          item,
+          from: sender,
+          to: receiver,
+          basis: "手渡しの申請",
+        },
+      ],
+      dependencies: [],
+    });
+    await page.goto(`/worlds/${f.world}/play?actorId=${receiver}`);
+    await expect(
+      page.getByRole("button", { name: "受け入れる", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByLabel("ターンコメント", { exact: true })
+      .fill("この判断へのコメント");
+    await page
+      .getByRole("button", { name: "ターンコメントを付ける", exact: true })
+      .click();
+    await page.getByRole("button", { name: "受け入れる", exact: true }).click();
+    await expect(page.getByText(/の手番を待っています/)).toBeVisible();
+    expect(
+      (
+        await (
+          await page.request.get(
+            `/api/worlds/${f.world}/session?actorId=${sender}`,
+          )
+        ).json()
+      ).actorId,
+    ).toBe(sender);
+    expect(await f.count()).toBe(before);
+  } finally {
+    await f.db.close();
+  }
 });

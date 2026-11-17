@@ -7,6 +7,7 @@ import { LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldConstruction } from "@gestaloka/server/construction";
+import { BotPlay } from "@gestaloka/server/play";
 import { WorldScenes } from "@gestaloka/server/scene";
 import { WorldPlayers } from "@gestaloka/server/players";
 
@@ -40,7 +41,23 @@ try {
   const scenes = new WorldScenes(construction);
   await scenes.setup();
   await construction.work();
-  await scenes.work();
+  const play = new BotPlay(construction);
+  await play.setup();
+  let playing = false;
+  const tickPlay = async () => {
+    if (playing) return;
+    playing = true;
+    try {
+      await play.expire();
+      await play.tickNpcs();
+    } finally {
+      playing = false;
+    }
+  };
+  const playTimer = setInterval(() => {
+    void tickPlay().catch(console.error);
+  }, 1000);
+  playTimer.unref();
   const players = new WorldPlayers(construction);
   await players.setup();
   await players.work();

@@ -4,34 +4,6 @@ import type { NpcReport } from "@gestaloka/contracts";
 import type { SceneRow } from "./scene.js";
 
 type Db = Pick<pg.Pool, "query">;
-export async function npcActors(db: Db, world: string, actors: string[]) {
-  return (
-    await db.query<{ actor_id: string }>(
-      "SELECT actor_id FROM world_controlled_actor WHERE world_id=$1 AND actor_id=ANY($2::uuid[]) AND npc_active",
-      [world, actors],
-    )
-  ).rows.map((r) => r.actor_id);
-}
-
-// Keep offsets into the same durable scene history that the worker commits.
-export async function trackNpcScene(db: Db, row: SceneRow) {
-  const d = row.data;
-  await db.query(
-    `INSERT INTO world_npc_scene(session_id,actor_id,scene_id)
-     SELECT npc_session,actor_id,$3 FROM world_controlled_actor
-     WHERE world_id=$1 AND actor_id=ANY($2::uuid[]) AND npc_active ON CONFLICT DO NOTHING`,
-    [d.worldId, d.background?.participants ?? [row.actor_id], row.id],
-  );
-  if (["active", "ready", "paused", "result"].includes(row.state)) {
-    await db.query(
-      `UPDATE world_npc_scene n SET event_end=$2,choice_end=$3
-      FROM world_controlled_actor a WHERE n.scene_id=$1 AND n.event_end IS NULL
-      AND a.world_id=$4 AND a.actor_id=n.actor_id AND (NOT a.npc_active OR a.npc_session<>n.session_id)`,
-      [row.id, d.events.length, d.choices.length, d.worldId],
-    );
-  }
-}
-
 export async function npcReport(
   db: Db,
   world: string,

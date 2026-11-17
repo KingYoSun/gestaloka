@@ -30,6 +30,8 @@ export const operations = {
       "worldBudgets.put": "世界の予算を変更",
       "worlds.graph": "グラフと履歴を読む",
       "worlds.edit": "世界を直接編集",
+      "npcs.read": "ユニークNPCの操作担当",
+      "npcs.put": "ユニークNPCの操作担当を指定",
     },
   ],
   users: [
@@ -64,6 +66,8 @@ export const operations = {
     {
       "responseLimits.read": "応答生成1回の上限",
       "responseLimits.put": "call回数上限を変更",
+      "playPolicy.read": "手番のコール枠・受領判断期限",
+      "playPolicy.put": "手番のコール枠・受領判断期限を変更",
       "modelLimits.read": "モデルの共有枠",
       "modelLimits.put": "共有枠を変更",
     },
@@ -126,6 +130,7 @@ export const editAfterRead: Partial<Record<Name, Name>> = {
   "worlds.list": "worlds.read",
   "worlds.read": "worlds.configure",
   "worlds.graph": "worlds.edit",
+  "npcs.read": "npcs.put",
   "presets.list": "presets.put",
   "worldBudgets.read": "worldBudgets.put",
   "users.list": "users.role",
@@ -133,6 +138,7 @@ export const editAfterRead: Partial<Record<Name, Name>> = {
   "invites.list": "invites.revoke",
   "models.read": "models.put",
   "responseLimits.read": "responseLimits.put",
+  "playPolicy.read": "playPolicy.put",
   "modelLimits.read": "modelLimits.put",
   "runtime.read": "runtime.put",
   "jobs.list": "jobs.read",

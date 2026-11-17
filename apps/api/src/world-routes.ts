@@ -4,6 +4,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "@fastify/type-provider-zod";
 import {
   ApiError,
+  PlayCommand,
+  PlayResponse,
   BrowserSession,
   ResourceId,
   CreateWorld,
@@ -70,6 +72,7 @@ export async function worldRoutes(
     if (request.headers.authorization) {
       const allowed = [
         "/api/worlds/:id/scene",
+        "/api/worlds/:id/session",
         "/api/worlds/:id/scene/records",
         "/api/worlds/:id/knowledge",
         "/api/worlds/:id/belongings",
@@ -372,6 +375,41 @@ export async function worldRoutes(
             deviceIds.get(request),
           ),
         ),
+  );
+  app.get(
+    "/api/worlds/:id/session",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: SceneViewQuery,
+        response: { 200: PlayResponse, ...errors },
+      },
+    },
+    async (request) =>
+      service().botStatus(
+        await subject(request),
+        request.params.id,
+        request.query.actorId,
+        request.query.sceneId,
+      ),
+  );
+  app.post(
+    "/api/worlds/:id/session",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        body: PlayCommand,
+        response: { 200: PlayResponse, ...errors },
+      },
+    },
+    async (request) =>
+      service().botCommand(
+        await subject(request),
+        request.params.id,
+        request.body,
+        request.query.actorId,
+      ),
   );
   app.get(
     "/api/worlds/:id/npc-mode",

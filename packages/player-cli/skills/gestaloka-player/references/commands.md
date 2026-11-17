@@ -1,0 +1,63 @@
+# 世界への申請
+
+`gestaloka play --file <UTF-8のJSONファイル>`でPlayCommandを送る。CLIが要求IDを作成・保存する。返却を失った場合は`recover`で同じ要求を照合する。下記の識別子は実際に本人が取得したものへ置き換える。
+
+## 用途別の更新
+
+`dependencies`には素材検索が返した依存版を渡す。`operations`は既存の内部処理を使い、受理した差分だけが原子的に確定する。
+
+```json
+{
+  "command": "update",
+  "text": "取得した場所へ移動する",
+  "operations": [
+    {
+      "type": "locate",
+      "subjectId": "本人のID",
+      "text": "場所の説明",
+      "aboutIds": ["場所のID"]
+    }
+  ],
+  "dependencies": []
+}
+```
+
+| type           | 引数                            | 意味                       |
+| -------------- | ------------------------------- | -------------------------- |
+| locate         | subjectId, text, aboutIds       | 本人の所在地               |
+| create         | label, holder, owner任意, basis | 新しい物品                 |
+| move           | item, from, to, basis           | 保持者の変更。所有者は維持 |
+| transfer       | item, to, basis                 | 所有者の変更。保持者は維持 |
+| grant / revoke | person, storage。grantにはbasis | 保管先の利用               |
+| learn          | person, text, basis             | 技能とできる範囲           |
+| update         | id, text, basis任意             | 物品・技能の内容           |
+| remove         | id                              | 消費・破棄・技能の喪失     |
+
+他の参加者の受領が必要なら、返却はreceivingとなる。同じセッションの受領者へ判断が回り、全員の受入後に確定する。セッション外の受領者には送れない。借りた物のholdは借り手にあり、借り手の破棄に貸し手の承認は不要。
+
+更新では`operations`の代わりに`changes`で自由な差分を申請できます。既存の状態を終えて新しい性質・関係を記録する場合にも使えます。対抗行動でも同じ二つの形式を使い、特定の行動の一覧には限定しません。
+
+## 新規作成
+
+自由な性質・関係を新しく記録する場合は、`command: "create"`、`text`、`changes`、`dependencies`を指定する。`changes`はnodes・revisions・edges・endEdgesを持つ既存のChange形式で、新規作成ではrevisionsとendEdgesを空にする。保持・保管・技能・所在地は用途別の更新を使う。通常の発言と移動など規則で判断できる作成はGMを呼ばず、判断が残る作成だけGMが可否を返す。
+
+## 受領を経ない対抗行動
+
+```json
+{
+  "command": "oppose",
+  "text": "相手が持つ品を奪おうとする",
+  "operations": [
+    {
+      "type": "move",
+      "item": "対象のID",
+      "from": "現在の保持者のID",
+      "to": "本人のID",
+      "basis": "対抗行動"
+    }
+  ],
+  "dependencies": []
+}
+```
+
+グラフだけで0%・100%と決まるときは、GMもダイスも使わない。不確実な場合だけGMがダイスを設定し、サーバーが抽選して結果を保存する。出目と結果を返却から読み、失敗した同じ要求を再送しても振り直さない。

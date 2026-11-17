@@ -1,16 +1,11 @@
-import { NpcMode } from "./NpcMode.js";
+import { BotSession } from "./BotSession.js";
 import { useEffect, useRef, useState } from "react";
 import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import {
-  CreateWorld,
-  PlayerAction,
-  WorldCommand,
-  type PlayerStatus,
-} from "@gestaloka/contracts";
+import { CreateWorld, WorldCommand } from "@gestaloka/contracts";
 import { $api, pendingKey } from "./api.js";
 import { usePending, DurationForm } from "./forms.js";
 import { useUpdates, worldQuery } from "./updates.js";
@@ -20,16 +15,11 @@ import { Button } from "./components/ui/button.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { Input } from "./components/ui/input.js";
 import { Label } from "./components/ui/label.js";
-import { ScenePlayer } from "./ScenePlayer.js";
-import { GenerationStatus, InputPopover } from "./play-controls.js";
 import { Publication, Presets, WorldBudgetSettings } from "./operations-ui.js";
 import { operate } from "./operations-client.js";
 
 const PromptForm = CreateWorld.omit({ requestId: true }).extend({
   prompt: z.string().min(1, "初期設定を入力してください"),
-});
-const ActionForm = PlayerAction.omit({ requestId: true }).extend({
-  actionText: z.string().min(1, "行動を入力してください"),
 });
 const stateLabels = {
   generating: "初期世界を生成中",
@@ -360,218 +350,14 @@ export function Manage({ id }: { id: string }) {
 
 export function Player({ id }: { id: string }) {
   const { actorId, sceneId } = useSearch({ from: "/worlds/$id/play" });
-  const query = $api.useQuery("get", "/api/worlds/{id}/play", {
-    params: { path: { id }, query: actorId ? { actorId } : {} },
-  });
-  if (query.error)
-    return (
-      <main className="page">
-        <Problem error={query.error} />
-      </main>
-    );
-  if (!query.data)
-    return (
-      <main className="page">
-        <Notice>村民の視点を読み込んでいます</Notice>
-      </main>
-    );
   return (
-    <NpcMode key={query.data.viewerId} id={id} actorId={query.data.viewerId}>
-      <PlayerView
-        key={query.data.viewerId}
+    <main className="page">
+      <BotSession
+        key={`${id}:${actorId ?? "selected"}:${sceneId ?? "current"}`}
         id={id}
-        status={query.data}
+        {...(actorId ? { actorId } : {})}
         {...(sceneId ? { sceneId } : {})}
       />
-    </NpcMode>
-  );
-}
-type PlayerState = z.infer<typeof PlayerStatus>;
-function PlayerView({
-  id,
-  status,
-  sceneId,
-}: {
-  id: string;
-  status: PlayerState;
-  sceneId?: string;
-}) {
-  const query = $api.useQuery("get", "/api/worlds/{id}/scene", {
-    params: {
-      path: { id },
-      query: {
-        view: "compact",
-        actorId: status.viewerId,
-        ...(sceneId ? { sceneId } : {}),
-      },
-    },
-  });
-  if (query.error)
-    return (
-      <main className="page">
-        <Problem error={query.error} />
-      </main>
-    );
-  if (!query.data)
-    return (
-      <main className="page">
-        <Notice>シーンを読み込んでいます</Notice>
-      </main>
-    );
-  const scene = query.data.scene;
-  if (!scene && status.state !== "ready")
-    return <LegacyPlayerView id={id} status={status} />;
-  if (scene && scene.viewerId !== status.viewerId)
-    return (
-      <main className="page">
-        <Notice>操作する村民の情報を再取得してください。</Notice>
-      </main>
-    );
-  return (
-    <ScenePlayer
-      key={`${status.viewerId}:${scene?.id ?? "entry"}`}
-      id={id}
-      viewer={status.viewerId}
-      at={status.at}
-      scene={scene}
-      {...(sceneId ? { selectedSceneId: sceneId } : {})}
-    />
-  );
-}
-function LegacyPlayerView({ id, status }: { id: string; status: PlayerState }) {
-  const [inputOpen, setInputOpen] = useState(false);
-  const client = useQueryClient(),
-    history = useRef<HistoryHandle>(null);
-  const connection = useUpdates(
-    id,
-    "player",
-    () => history.current?.updated(),
-    status.viewerId,
-  );
-  const [pending, save] = usePending(pendingKey(id, "action"), PlayerAction);
-  const form = useForm<z.infer<typeof ActionForm>>({
-    resolver: zodResolver(ActionForm),
-    defaultValues: { actionText: pending?.actionText ?? "" },
-  });
-  const run = $api.useQuery(
-    "get",
-    "/api/runs/{id}",
-    { params: { path: { id: status.runId ?? "" } } },
-    { enabled: status.runId !== null },
-  );
-  const act = $api.useMutation("post", "/api/worlds/{id}/actions", {
-    onSuccess: () => {
-      save(null);
-      form.reset({ actionText: "" });
-      void client.invalidateQueries({
-        predicate: (query) => worldQuery(query.queryKey, id),
-      });
-    },
-  });
-  const resume = $api.useMutation("post", "/api/worlds/{id}/play/resume", {
-    onSuccess: () => {
-      void client.invalidateQueries({
-        predicate: (query) => worldQuery(query.queryKey, id),
-      });
-    },
-  });
-  const busy =
-    status.state === "running" ||
-    act.isPending ||
-    resume.isPending ||
-    !!(act.data?.runId && status.runId !== act.data.runId);
-  useEffect(() => {
-    if (pending && status.runId === pending.requestId) {
-      save(null);
-      if (form.getValues("actionText") === pending.actionText)
-        form.reset({ actionText: "" });
-    }
-  }, [form, pending, save, status.runId]);
-  function submit(value: z.infer<typeof ActionForm>) {
-    if (busy) return;
-    const body = pending ?? {
-      requestId: crypto.randomUUID(),
-      actionText: value.actionText,
-    };
-    save(body);
-    act.mutate({ params: { path: { id } }, body });
-    setInputOpen(false);
-  }
-  return (
-    <main className="page play">
-      {status.state === "running" && <GenerationStatus phase="acting" />}
-      <div className="play-heading">
-        <div>
-          <p className="eyebrow">LIVED STORIES</p>
-          <h1>村民として</h1>
-        </div>
-        <p className="world-clock">T + {worldTime(status.at)}</p>
-      </div>
-      {connection !== "open" && (
-        <Notice>再接続しています。確定した記録から復帰します。</Notice>
-      )}
-      {run.data && run.data.viewerId === status.viewerId && (
-        <div className="submitted-action">
-          <p className="record-meta">
-            送った行動 · T + {worldTime(run.data.startedAt)}
-          </p>
-          <p className="plain-text">{run.data.actionText}</p>
-        </div>
-      )}
-      <Notice>
-        {status.state === "running"
-          ? "世界の応答を待っています。画面を閉じても処理は続きます。"
-          : status.state === "paused"
-            ? status.error
-            : "次の行動を入力できます。"}
-      </Notice>
-      {act.error && <Problem error={act.error} />}
-      {resume.error && <Problem error={resume.error} />}
-      {run.error && <Problem error={run.error} />}
-      {status.state === "paused" && (
-        <Button
-          onClick={() =>
-            resume.mutate({
-              params: { path: { id } },
-              body: { requestId: crypto.randomUUID() },
-            })
-          }
-          disabled={resume.isPending}
-        >
-          保存した状態から再開する
-        </Button>
-      )}
-      <History ref={history} id={id} role="player" viewer={status.viewerId} />
-      <InputPopover
-        open={inputOpen}
-        onOpenChange={setInputOpen}
-        onSubmit={form.handleSubmit(submit)}
-      >
-        <Label htmlFor="action-text">どう行動しますか</Label>
-        <Textarea
-          id="action-text"
-          rows={4}
-          placeholder="行いたいことを、自由に書いてください。"
-          readOnly={busy || status.state === "paused" || !!pending}
-          {...form.register("actionText")}
-          aria-describedby="action-error action-help"
-        />
-        <div className="action-footer">
-          <p id="action-help" className="record-meta">
-            Ctrl / ⌘ + Enter で送信
-          </p>
-          <Button type="submit" disabled={busy || status.state === "paused"}>
-            {act.isPending
-              ? "受け付けています"
-              : pending
-                ? "同じ行動で確認する"
-                : "この行動を送る"}
-          </Button>
-        </div>
-        <p id="action-error" className="field-error">
-          {form.formState.errors.actionText?.message}
-        </p>
-      </InputPopover>
     </main>
   );
 }
