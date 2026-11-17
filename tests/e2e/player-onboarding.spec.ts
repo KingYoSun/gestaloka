@@ -339,7 +339,8 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
       await access.players.tick(initial.id);
       expect(receivedSettings).toBe(approvedSettings);
       const ready = await cli.run(profile, "status");
-      expect(ready.state).toBe("no_scene");
+      expect(ready.state).toBe("ready");
+      expect(ready.sessionId).toBeUndefined();
       expect(ready.device.actorId).toBeTruthy();
       expect((await cli.run(profile, "icon")).player.icon).toBe(icon);
       await cli.run(profile, "recover", "--request", lost.requestId);

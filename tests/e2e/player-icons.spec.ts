@@ -304,11 +304,13 @@ test("参加時の画像を再読込後に再試行し、Web・共通APIの変�
       world,
     ]);
     await page.goto(`/worlds/${world}/play?actorId=${own.actorId}`);
+    await page.getByText("本人のこれまでの履歴", { exact: true }).click();
     await expect(
       page.getByRole("img", { name: `${other.name}のアイコン`, exact: true }),
     ).toHaveAttribute("src", otherIcon);
     const otherPage = await second.newPage();
     await otherPage.goto(`/worlds/${world}/play?actorId=${other.actorId}`);
+    await otherPage.getByText("本人のこれまでの履歴", { exact: true }).click();
     await expect(
       otherPage.getByRole("img", {
         name: `${own.name}のアイコン`,

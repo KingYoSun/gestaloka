@@ -303,12 +303,13 @@ try {
         "node",
         "--import",
         "tsx",
-        "tests/production/data.mjs",
-        "verify",
+        "--input-type=module",
+        "-e",
+        "process.argv[2]='verify';try{await import('./tests/production/data.mjs')}catch(error){console.log(JSON.stringify({failure:error.name,code:error.code,location:error.stack?.split('\\n').find(line=>line.includes('tests/production/data.mjs'))}));}",
       ])
     ).toString(),
   );
-  assert(result.noDuplicateCharge);
+  assert(result.noDuplicateCharge, JSON.stringify(result));
   await writeFile(
     join(root, "result.json"),
     JSON.stringify(
