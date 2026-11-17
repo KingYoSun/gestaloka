@@ -26,16 +26,17 @@ export type SharedTurn = {
   }[];
 };
 type Flow = "open" | "manual" | "voting" | "rounds" | "inactive" | "closing";
+type Offer = {
+  turn: Pick<SharedTurn, "id" | "sourceKind" | "reply">;
+  targets: string[];
+};
 type Control = {
   scene_id: string;
   flow: Flow;
   rounds: number;
   inactive_until: Date | null;
   resume_flow: Flow | null;
-  continuation:
-    | { turn: SharedTurn; targets: string[] }
-    | { turn: SharedTurn; targets: string[] }[]
-    | null;
+  continuation: Offer | Offer[] | null;
   end_reason: SceneEnding | null;
   last_idle_actor: string | null;
 };
@@ -89,7 +90,6 @@ export class SharedTurns {
       CREATE TABLE IF NOT EXISTS world_scene_end_vote (
       id uuid PRIMARY KEY,scene_id uuid NOT NULL REFERENCES world_scene(id) ON DELETE CASCADE,
       deadline timestamptz NOT NULL,state text NOT NULL DEFAULT 'pending');
-      CREATE UNIQUE INDEX IF NOT EXISTS world_scene_end_vote_pending ON world_scene_end_vote(scene_id) WHERE state='pending';
       CREATE TABLE IF NOT EXISTS world_scene_end_answer (
       vote_id uuid NOT NULL REFERENCES world_scene_end_vote(id) ON DELETE CASCADE,actor_id uuid NOT NULL,answer boolean,
       PRIMARY KEY(vote_id,actor_id));
@@ -552,11 +552,32 @@ export class SharedTurns {
     targets: string[],
   ) {
     const control = await this.control(row.id, db, true);
-    if (control.flow !== "open") return;
     const members = (await this.shared.members(row.id, db))
         .filter((m) => m.state === "joined" && m.kind === "bot")
         .map((m) => m.actor_id),
       actors = targets.filter((a) => members.includes(a));
+    if (!actors.length || control.flow === "closing") return;
+    if (control.flow !== "open") {
+      const prior = control.continuation;
+      await db.query(
+        "UPDATE world_shared_scene SET continuation=$2 WHERE scene_id=$1",
+        [
+          row.id,
+          JSON.stringify([
+            ...(Array.isArray(prior) ? prior : prior ? [prior] : []),
+            {
+              turn: {
+                id: turn.id,
+                sourceKind: turn.sourceKind,
+                reply: turn.reply,
+              },
+              targets: actors,
+            },
+          ]),
+        ],
+      );
+      return;
+    }
     return this.#offer(
       db,
       row,
@@ -752,11 +773,6 @@ export class SharedTurns {
             .filter((m) => m.state === "joined" && m.kind === "bot")
             .map((m) => m.actor_id),
         );
-      if ((await this.control(row.id, db)).flow !== "open")
-        await db.query(
-          "UPDATE world_shared_scene SET continuation=$2 WHERE scene_id=$1",
-          [row.id, JSON.stringify({ turn, targets })],
-        );
       await this.publish(db, row, turn, targets);
       if (
         targets.length &&
@@ -860,7 +876,12 @@ export class SharedTurns {
     }
     return vote.id;
   }
-  async settleVote(db: pg.PoolClient, scene: string, id: string, expired = false) {
+  async settleVote(
+    db: pg.PoolClient,
+    scene: string,
+    id: string,
+    expired = false,
+  ) {
     const voters = (
         await db.query<{ actor_id: string; answer: boolean | null }>(
           "SELECT actor_id,answer FROM world_scene_end_answer WHERE vote_id=$1",

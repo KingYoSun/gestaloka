@@ -44,6 +44,7 @@ beforeAll(async () => {
           actorId: string;
           rootIds: string[];
           intentions?: SceneIntent[];
+          leavingActorIds?: string[];
           controlledInputs?: { id: string; actorId: string }[];
         };
         responseSchema?: unknown;
@@ -92,7 +93,7 @@ beforeAll(async () => {
       ) {
         const intentions = input.request.intentions;
         const remaining = intentions.find((i) => i.inputId === partial?.input);
-        if (remaining?.actionText === '選択済みの作業' && partial) {
+        if (remaining?.actionText === "選択済みの作業" && partial) {
           const gate = partial;
           gate.reached();
           await gate.wait;
@@ -139,6 +140,14 @@ beforeAll(async () => {
           decisions: Object.fromEntries(
             intentions.map((i) => [i.actorId, "finished"]),
           ),
+          ...(input.request.leavingActorIds?.length
+            ? {
+                departures: input.request.leavingActorIds.map((actorId) => ({
+                  actorId,
+                  eventIndex: 0,
+                })),
+              }
+            : {}),
         };
       }
       return content;
@@ -360,7 +369,7 @@ async function settle() {
     const rows = (
       await runtime.pool.query<{ id: string }>(
         `SELECT s.id FROM world_scene s WHERE s.construction_id=$1 AND
-      (s.state IN ('preparing','acting','reflecting') OR EXISTS(SELECT 1 FROM world_player_contact c WHERE c.state='handoff' AND (c.source_scene=s.id OR c.target_scene=s.id)) OR EXISTS(SELECT 1 FROM world_scene_turn t WHERE t.scene_id=s.id AND t.state='queued') OR EXISTS(SELECT 1 FROM world_scene_session v WHERE v.current_id=s.id AND v.closed AND v.result IS NULL) OR coalesce(jsonb_array_length(s.data->'splitActors'),0)>0) ORDER BY s.created_at,s.id`,
+      (s.state IN ('preparing','acting','reflecting') OR EXISTS(SELECT 1 FROM world_player_contact c WHERE c.state='handoff' AND (c.source_scene=s.id OR c.target_scene=s.id)) OR EXISTS(SELECT 1 FROM world_scene_turn t JOIN world_shared_scene h ON h.scene_id=t.scene_id WHERE t.scene_id=s.id AND t.state='queued' AND h.flow IN ('open','closing')) OR EXISTS(SELECT 1 FROM world_scene_session v WHERE v.current_id=s.id AND v.closed AND v.result IS NULL) OR coalesce(jsonb_array_length(s.data->'splitActors'),0)>0) ORDER BY s.created_at,s.id`,
         [world],
       )
     ).rows;
@@ -379,6 +388,7 @@ async function replyRecord(n: number) {
   )!;
   expect(offer, record.inputId).toBeDefined();
   if (n > 2) expect(offer.context).toContain(saved.records[n - 2]!.text);
+  expect(offer.context).toContain(saved.records[n - 1]!.receipt);
   await access.sceneCommand(
     p.id,
     world,
@@ -611,14 +621,213 @@ async function preparePair(shared = false) {
   }
 }
 
+test("投票中の相手への呼びかけを合流し、元の投票IDで続行した後に同じ呼びかけの反応機会を返す", async () => {
+  await preparePair();
+  const target = (await access.scenes.latest(
+    world,
+    undefined,
+    false,
+    people[1]!.actor,
+  ))!;
+  const proposal = await access.scenes.shared.transaction((db) =>
+    access.scenes.shared.turns.propose(db, target, [people[1]!.actor]),
+  );
+  const request = randomUUID();
+  inputs.set(request, saved.records[0]!);
+  await access.sceneCommand(
+    people[0]!.id,
+    world,
+    { requestId: request, command: "act", actionText: saved.records[0]!.text },
+    false,
+    people[0]!.actor,
+    people[0]!.scene,
+    "bot",
+  );
+  await settle();
+  expect(
+    (await access.inbox(people[1]!.id, world, people[1]!.actor)).proposals[0]!
+      .id,
+  ).toBe(proposal);
+  await access.scenes.shared.turns.setup();
+  await command(1, { command: "vote", proposalId: proposal, continue: true });
+  await settle();
+  const offer = (
+    await access.inbox(people[1]!.id, world, people[1]!.actor)
+  ).opportunities.find((o) => o.sourceInputId === request)!;
+  expect(offer.sceneId).toBe(people[1]!.scene);
+  expect(offer.context).toContain(saved.records[0]!.receipt);
+  for (let i = 0; i < 2; i++) await command(i, { command: "finish" });
+  await settle();
+}, 120000);
+
+test.each(["none", "deadline"] as const)(
+  "待機中の相手へ承認なしに届け、%sでは本人の入力や発言を作らない",
+  async (answer) => {
+    invite.clear();
+    people[0]!.scene = (
+      await command(0, { command: "prepare", purpose: "相手に声をかける" })
+    ).scene!.id;
+    await access.scenes.tick(people[0]!.scene);
+    await command(0, { command: "start" });
+    const request = randomUUID();
+    inputs.set(request, saved.records[0]!);
+    await access.sceneCommand(
+      people[0]!.id,
+      world,
+      {
+        requestId: request,
+        command: "act",
+        actionText: saved.records[0]!.text,
+      },
+      false,
+      people[0]!.actor,
+      people[0]!.scene,
+      "bot",
+    );
+    await settle();
+    const peer = people[1]!;
+    peer.scene = (
+      await access.scene(peer.id, world, false, peer.actor)
+    ).scene!.id;
+    const inbox = await access.inbox(peer.id, world, peer.actor);
+    expect(inbox.invitations).toEqual([]);
+    const offer = inbox.opportunities.find((o) => o.sourceInputId === request)!;
+    expect(offer.context).toContain(saved.records[0]!.receipt);
+    const calls = vi.spyOn(runtime.agent.model, "complete");
+    if (answer === "none")
+      await command(1, {
+        command: "react",
+        opportunityId: offer.id,
+        actionText: null,
+      });
+    else {
+      const wave = (
+        await runtime.pool.query<{ wave_id: string }>(
+          "SELECT wave_id FROM world_scene_reply WHERE id=$1",
+          [offer.id],
+        )
+      ).rows[0]!;
+      const now = vi
+        .spyOn(access.scenes.shared, "now")
+        .mockReturnValue(new Date(Date.parse(offer.deadline) + 1));
+      try {
+        await access.scenes.shared.expire({ waveId: wave.wave_id });
+      } finally {
+        now.mockRestore();
+      }
+    }
+    await settle();
+    expect(
+      calls.mock.calls.filter(([, role]) => role === "scene-resolve"),
+    ).toHaveLength(0);
+    calls.mockRestore();
+    const view = (
+      await access.scene(peer.id, world, false, peer.actor, peer.scene)
+    ).scene!;
+    expect(view.actions).toEqual([]);
+    expect(
+      (
+        await access.scenes.sessions.records(peer.scene, peer.actor, "events")
+      ).filter((r) => r.item.actorId === peer.actor),
+    ).toEqual([]);
+    for (let i = 0; i < 2; i++) await command(i, { command: "finish" });
+    await settle();
+  },
+  120000,
+);
+
+test("退出を受容した境界で内部進行だけを分け、後続の選択済み入力を一度だけ渡す", async () => {
+  await preparePair(true);
+  const root = people[0]!.scene;
+  await command(0, { command: "leave" });
+  const request = randomUUID();
+  await access.sceneCommand(
+    people[1]!.id,
+    world,
+    {
+      requestId: request,
+      command: "act",
+      actionText: "選択済みの用事を続ける",
+    },
+    false,
+    people[1]!.actor,
+    people[1]!.scene,
+    "bot",
+  );
+  const calls = vi.spyOn(runtime.agent.model, "complete");
+  await settle();
+  expect(
+    (await access.scenes.sessions.get(root, people[0]!.actor))!.current_id,
+  ).not.toBe(
+    (await access.scenes.sessions.get(root, people[1]!.actor))!.current_id,
+  );
+  expect(
+    calls.mock.calls.filter(([, role]) => role === "scene-result"),
+  ).toHaveLength(0);
+  calls.mockRestore();
+  for (let i = 0; i < 2; i++) {
+    const p = people[i]!,
+      view = (await access.scene(p.id, world, false, p.actor, p.scene)).scene!;
+    expect(view.id).toBe(root);
+    expect(view.state).toBe("active");
+    expect(view.departed).not.toBe(true);
+    if (i === 1)
+      expect(view.actions.filter((a) => a.id === request)).toHaveLength(1);
+    await command(i, { command: "finish" });
+  }
+  await settle();
+}, 120000);
+
 test("一人の終了投票で本人に結果を返し、残る人の未回答投票IDと続行時の反応機会を引き継ぐ", async () => {
   await preparePair(true);
+  const selected = [randomUUID(), randomUUID()];
+  for (let i = 0; i < 2; i++)
+    await access.sceneCommand(
+      people[i]!.id,
+      world,
+      {
+        requestId: selected[i]!,
+        command: "act",
+        actionText: `投票前に選択した作業-${i}`,
+      },
+      false,
+      people[i]!.actor,
+      people[i]!.scene,
+      "bot",
+    );
   const row = (await access.scenes.latest(
     world,
     undefined,
     false,
     people[0]!.actor,
   ))!;
+  const npc = randomUUID();
+  await runtime.agent.store.commit(
+    await runtime.agent.store.claim(graph, randomUUID()),
+    runtime.agent.store.context(graph),
+    {
+      commitId: randomUUID(),
+      at: row.data.at,
+      changes: {
+        nodes: [{ id: npc, kind: "existence", text: "作業を進めている人物" }],
+        edges: [],
+        endEdges: [],
+      },
+    },
+  );
+  const remaining: SceneIntent = {
+    actorId: npc,
+    actionText: "選択済みの作業の続きを処理する",
+    continuing: true,
+  };
+  row.data.background!.participants.push(npc);
+  row.data.views[npc] = await runtime.agent.intentView(graph, npc, row.data.at);
+  row.data.pending[npc] = remaining;
+  row.data.intentions[npc] = remaining;
+  await runtime.pool.query("UPDATE world_scene SET data=$2 WHERE id=$1", [
+    row.id,
+    JSON.stringify(row.data),
+  ]);
   const proposal = await access.scenes.shared.transaction(async (db) => {
     await access.scenes.shared.lock(db, world);
     await db.query(
@@ -652,6 +861,32 @@ test("一人の終了投票で本人に結果を返し、残る人の未回答�
   ).not.toBe("error");
   await settle();
   expect((await cli.run(people[0]!.profile, "result")).state).toBe("finished");
+  expect(
+    (
+      await access.scene(
+        people[0]!.id,
+        world,
+        false,
+        people[0]!.actor,
+        people[0]!.scene,
+      )
+    ).scene!.actions.filter((a) => a.id === selected[0]),
+  ).toHaveLength(1);
+  const ongoing = (await access.scenes.latest(
+    world,
+    undefined,
+    false,
+    people[1]!.actor,
+  ))!;
+  expect(ongoing.data.pending[npc]).toEqual(remaining);
+  expect(
+    (
+      await runtime.pool.query(
+        "SELECT state FROM world_scene_turn WHERE id=$1",
+        [selected[1]],
+      )
+    ).rows[0]?.state,
+  ).toBe("queued");
   const pending = (await access.inbox(people[1]!.id, world, people[1]!.actor))
     .proposals[0]!;
   expect(pending.id).toBe(proposal);
@@ -680,6 +915,19 @@ test("一人の終了投票で本人に結果を返し、残る人の未回答�
       await access.inbox(people[1]!.id, world, people[1]!.actor)
     ).opportunities.filter((o) => !o.nextInput),
   ).toHaveLength(1);
+  const continued = (await access.scenes.latest(
+    world,
+    undefined,
+    false,
+    people[1]!.actor,
+  ))!;
+  expect(
+    continued.data.actions.filter((a) => a.id === selected[1]),
+  ).toHaveLength(1);
+  expect(continued.data.events.filter((e) => e.actorId === npc)).toHaveLength(
+    1,
+  );
+  expect(continued.data.pending[npc]).toBeUndefined();
   await command(1, { command: "finish" });
   await settle();
 }, 120000);
@@ -732,9 +980,15 @@ test("生成中の入力を完了させてから合流し、保存済みの未�
     await running;
   }
   await settle();
-  const offer = (await access.inbox(people[0]!.id, world, people[0]!.actor)).opportunities.find(o => o.sourceInputId === request && !o.nextInput);
+  const offer = (
+    await access.inbox(people[0]!.id, world, people[0]!.actor)
+  ).opportunities.find((o) => o.sourceInputId === request && !o.nextInput);
   if (offer) {
-    await command(0,{command:'react',opportunityId:offer.id,actionText:null});
+    await command(0, {
+      command: "react",
+      opportunityId: offer.id,
+      actionText: null,
+    });
     await settle();
   }
   const view = (
@@ -757,6 +1011,8 @@ test("生成中の入力を完了させてから合流し、保存済みの未�
   ).toEqual(
     expect.arrayContaining(["選択済みの作業の途中", "選択済みの作業の残り"]),
   );
+  for (const text of ["選択済みの作業の途中", "選択済みの作業の残り"])
+    expect(view.messages.filter((m) => m.text === text)).toHaveLength(1);
   expect(
     (await access.scenes.sessions.get(people[0]!.scene, people[0]!.actor))!
       .current_id,

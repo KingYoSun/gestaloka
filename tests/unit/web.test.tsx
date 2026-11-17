@@ -125,6 +125,34 @@ const json = (body: Parameters<typeof HttpResponse.json>[0], status = 200) =>
     status,
     headers: { "X-Gestaloka-Subject": identity },
   });
+
+test("開始者以外も本人の一続きのシーンを終了できる", async () => {
+  scene = {
+    ...sceneFixture(),
+    shared: {
+      owner: false,
+      requestIds: [],
+      phase: "settled",
+      pending: 0,
+      deadline: null,
+      flow: "open",
+      rounds: 0,
+    },
+  };
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({
+          initialEntries: [`/worlds/${W}/play?actorId=${V}&sceneId=${W}`],
+        }),
+      )}
+    />,
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "シーンを終えてリザルトを見る" }),
+  );
+  await waitFor(() => expect(submitted).toMatchObject({ command: "finish" }));
+});
 class Source {
   static instances: Source[] = [];
   onopen: (() => void) | null = null;

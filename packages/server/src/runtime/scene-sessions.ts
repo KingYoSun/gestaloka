@@ -262,14 +262,15 @@ export class SceneSessions {
     actor: string,
     compact: boolean,
     db: Db = this.pool,
-  ): Promise<{ row: SceneRow; anchorId: string }> {
+  ): Promise<{ row: SceneRow; anchorId: string; closed: boolean }> {
     const session = (
       await db.query<Session>(
         "SELECT * FROM world_scene_session WHERE current_id=$1 AND actor_id=$2",
         [row.id, actor],
       )
     ).rows[0];
-    if (!session?.opening) return { row, anchorId: row.id };
+    if (!session?.opening)
+      return { row, anchorId: row.id, closed: session?.closed ?? false };
     const opening = session.opening.background;
     const ownResult =
       session.result ??
@@ -294,6 +295,7 @@ export class SceneSessions {
       delete data.departures[actor];
     }
     return {
+      closed: session.closed,
       anchorId: session.opening.sceneId,
       row: {
         ...row,
@@ -301,7 +303,7 @@ export class SceneSessions {
         actor_id: actor,
         state: session.result
           ? "result"
-          : session.closed && ["ready", "active", "acting"].includes(row.state)
+          : session.closed && row.state !== "paused"
             ? "reflecting"
             : row.data.splitActors?.includes(actor)
               ? "acting"
@@ -578,14 +580,14 @@ export class SceneSessions {
       [row.id],
     );
     let parents = [row];
-    let links: Link[] = [];
-    let members: Member[] = [];
+    let links: Link[];
+    let members: Member[];
     for (;;) {
       members = (
         await db.query<Member>(
           `SELECT m.* FROM world_scene_member m JOIN world_actor_scene a
         ON a.world_id=m.world_id AND a.actor_id=m.actor_id AND a.scene_id=m.scene_id
-        WHERE m.scene_id=ANY($1::uuid[]) AND m.state IN ('joined','left')`,
+        WHERE m.scene_id=ANY($1::uuid[]) AND m.state IN ('reserved','joined','left')`,
           [parents.map((p) => p.id)],
         )
       ).rows;
@@ -606,7 +608,7 @@ export class SceneSessions {
         await db.query<SceneRow>(
           `SELECT s.* FROM world_scene s JOIN world_actor_scene a ON a.scene_id=s.id
           JOIN world_scene_member m ON m.scene_id=s.id AND m.actor_id=a.actor_id
-          WHERE a.world_id=$1 AND a.actor_id=ANY($2::uuid[]) AND m.state IN ('joined','left') AND s.state<>'result'`,
+          WHERE a.world_id=$1 AND a.actor_id=ANY($2::uuid[]) AND m.state IN ('reserved','joined','left') AND s.state<>'result'`,
           [row.construction_id, all],
         )
       ).rows;
@@ -633,17 +635,11 @@ export class SceneSessions {
         [parents.map((p) => p.id), row.id],
       )
     ).rows;
-    const earlyClosed = (
-      await db.query<{ actor_id: string }>(
-        "SELECT actor_id FROM world_scene_session WHERE current_id=$1 AND closed AND result IS NULL",
-        [row.id],
-      )
-    ).rows;
     if (
       !links.length &&
       !row.data.splitActors?.length &&
-      earlyClosed.length &&
-      members.every((m) => earlyClosed.some((c) => c.actor_id === m.actor_id))
+      closing.length &&
+      members.every((m) => closing.some((c) => c.actor_id === m.actor_id))
     ) {
       await shared.turns.close(db, row.id, "requested");
       return false;
@@ -829,16 +825,23 @@ export class SceneSessions {
     );
     const allInputs = new Map(
       parents
-        .flatMap((p) => [
-          ...Object.values(p.data.carriedInputs ?? {}),
-          ...p.data.actions,
-        ])
+        .flatMap((p) =>
+          [...Object.values(p.data.carriedInputs ?? {}), ...p.data.actions].map(
+            (a) => ({ ...a, actorId: a.actorId ?? p.actor_id }),
+          ),
+        )
         .map((a) => [a.id, a]),
     );
     const owner = (p: SceneRow, actor: string, input?: string) =>
       memberByActor.has(actor)
         ? actor
-        : (allInputs.get(input ?? "")?.actorId ?? p.actor_id);
+        : (allInputs.get(input ?? "")?.actorId ??
+          p.data.pending[actor]?.replyWait?.actors.find(
+            (a) => memberByActor.has(a) && !endings.has(a),
+          ) ??
+          members.find((m) => m.scene_id === p.id && !endings.has(m.actor_id))
+            ?.actor_id ??
+          p.actor_id);
     const moved = new Map<string, string>();
     const controls = (
       await db.query<{
@@ -945,9 +948,13 @@ export class SceneSessions {
         participants: [
           ...new Set([
             ...actors,
-            ...parents
-              .flatMap((p) => p.data.background!.participants)
-              .filter((a) => !memberByActor.has(a)),
+            ...parents.flatMap((p) =>
+              p.data.background!.participants.filter(
+                (a) =>
+                  !memberByActor.has(a) &&
+                  selected.has(owner(p, a, p.data.pending[a]?.inputId)),
+              ),
+            ),
           ]),
         ],
         facts: [],
@@ -1239,8 +1246,13 @@ export class SceneSessions {
           target,
         ])
       ).rows[0]!;
-      for (const vote of (await db.query<{id:string}>("SELECT id FROM world_scene_end_vote WHERE scene_id=$1 AND state='pending'",[target])).rows)
-        await shared.turns.settleVote(db,target,vote.id);
+      for (const vote of (
+        await db.query<{ id: string }>(
+          "SELECT id FROM world_scene_end_vote WHERE scene_id=$1 AND state='pending'",
+          [target],
+        )
+      ).rows)
+        await shared.turns.settleVote(db, target, vote.id);
       await shared.turns.resumeOffers(db, child);
     }
     for (const parent of parents) {

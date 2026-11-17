@@ -400,7 +400,7 @@ export class WorldAccess {
   ) {
     if (!row) return { scene: null };
     const viewer = viewerId ?? row.actor_id;
-    const shared = row.data.shared
+    let shared = row.data.shared
       ? await this.scenes.shared.state(row.id, viewer, db)
       : undefined;
     let waiting = await this.scenes.shared.waiting(row.id, db);
@@ -412,6 +412,7 @@ export class WorldAccess {
       db,
     );
     row = presentation.row;
+    if (shared && presentation.closed) shared = { ...shared, flow: "closing" };
     if (row.state === "result") waiting = [];
     else if (row.state === "reflecting" && actualState !== "reflecting")
       waiting = [

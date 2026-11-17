@@ -782,6 +782,10 @@ export class WorldScenes {
       ],
     );
     d.shared = d.turns = true;
+    await db.query(
+      "INSERT INTO world_actor_scene(world_id,actor_id,scene_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
+      [row.construction_id, row.actor_id, row.id],
+    );
     d.externalActors ??= [row.actor_id];
     const action = d.actions.at(-1);
     if (row.state === "acting" && action?.state === "running") {
@@ -977,6 +981,7 @@ export class WorldScenes {
     if (!row || !actor || (row.actor_id !== actor && !row.data.shared))
       throw new ConstructionStateError("現在のシーンを取得してください");
     await this.#unify(row, client);
+    await this.sessions.record(client, row);
     if (command === "finish") {
       if (row.state !== "result")
         await this.sessions.end(client, this.shared, row, actor);
@@ -1943,8 +1948,8 @@ export class WorldScenes {
     const locations = await this.#locations(row, [actor]),
       view = sceneView(
         d.views[actor]!,
-        bg,
-        d.events,
+        (await this.sessions.current(row.id, actor))?.opening?.background ?? bg,
+        this.sessions.history(row),
         own,
         d.at,
         d.choices.filter((i) => i.actorId === actor).map((i) => i.actionText),
