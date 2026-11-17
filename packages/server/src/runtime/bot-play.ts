@@ -1415,7 +1415,7 @@ export class BotPlay {
     const w = await this.world(world);
     if (
       ["update", "create", "oppose", "memo"].includes(input.command) ||
-      (input.command === "say" && input.instantNpcs.length)
+      (input.command === "say" && input.instantNpcs?.length)
     ) {
       const active = await this.current(world, actor);
       if (!active || active.data.turn !== actor || active.data.receiving)
@@ -1426,7 +1426,7 @@ export class BotPlay {
       this.pool,
       input.requestId,
       async () => {
-        if (input.command === "say" && input.instantNpcs.length) {
+        if (input.command === "say" && input.instantNpcs?.length) {
           const changes = empty();
           changes.nodes = input.instantNpcs.map((text, i) => ({
             kind: "existence",
@@ -1769,7 +1769,7 @@ export class BotPlay {
               result = {
                 state: "accepted",
                 commitId: receipt.commitId,
-                instantNpcs: input.instantNpcs,
+                instantNpcs: input.instantNpcs ?? [],
               };
               d.entries.push({ actorId: actor, input: input.text, result });
             } else if (plan) {
