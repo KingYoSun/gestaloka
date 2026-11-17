@@ -1,12 +1,119 @@
 import { expect, test } from "vitest";
 import { z } from "zod";
+import { SceneRecordQuery } from "../../packages/server/src/runtime/scene-records.js";
 import { expandPrompt } from "../support/expand-prompt.js";
 import {
   preparePrompt,
   compact,
   outputSchema,
   parseOutput,
+  compactJsonWhitespace,
+  strictOutput,
 } from "../../packages/server/src/llm/prompt.js";
+
+test("履歴・配送本文の追加照会でも任意条件とページ位置を復元する", () => {
+  const codec = strictOutput(
+    outputSchema(
+      z.toJSONSchema(
+        z
+          .object({
+            type: z.literal("query"),
+            requests: z.array(SceneRecordQuery),
+          })
+          .strict(),
+        { io: "output" },
+      ),
+    ),
+  );
+  const restored = codec.decode({
+    response: {
+      type: "query",
+      requests: [
+        {
+          kind: "scene-records",
+          source: "contacts",
+          id: null,
+          actorId: null,
+          observerId: null,
+          inputId: null,
+          text: { value: "会話  の続き" },
+          from: { value: 0 },
+          through: null,
+          offset: 12,
+        },
+      ],
+    },
+  });
+  expect(restored).toEqual({
+    type: "query",
+    requests: [
+      {
+        kind: "scene-records",
+        source: "contacts",
+        text: "会話  の続き",
+        from: 0,
+        offset: 12,
+      },
+    ],
+  });
+});
+
+test("strictの必須項目化でも、未指定・明示null・任意オブジェクトを区別する", () => {
+  const schema = outputSchema(
+    z.toJSONSchema(
+      z.object({
+        role: z.string().nullable().optional(),
+        nested: z.object({ value: z.string().optional() }).optional(),
+        actionText: z.string(),
+      }),
+    ),
+  );
+  const codec = strictOutput(schema);
+  expect(codec.schema).toMatchObject({
+    type: "object",
+    required: ["response"],
+  });
+  expect(
+    codec.decode({
+      response: { role: null, nested: null, actionText: "返答を待つ" },
+    }),
+  ).toEqual({ actionText: "返答を待つ" });
+  expect(
+    codec.decode({
+      response: {
+        role: { value: null },
+        nested: { value: { value: { value: "選択  を保つ" } } },
+        actionText: "返答を待つ",
+      },
+    }),
+  ).toEqual({
+    role: null,
+    nested: { value: "選択  を保つ" },
+    actionText: "返答を待つ",
+  });
+  expect(schema.properties).toHaveProperty("role");
+});
+
+test("修復候補の文字列とトークンを保ち、未完成JSONの空白だけを縮める", () => {
+  const strings = [
+    JSON.stringify("日本語  の台詞\n次の行"),
+    JSON.stringify('引用"  続き'),
+  ];
+  const content = `{\n\t"text": ${strings[0]}, "pending": ${strings[1]}, "id": 123\n${" \t\r\n".repeat(10000)}`;
+  const compacted = compactJsonWhitespace(content);
+  expect(compacted).toBe(
+    `{ "text": ${strings[0]}, "pending": ${strings[1]}, "id": 123 `,
+  );
+  expect(() => JSON.parse(compacted)).toThrow();
+  const complete = content + "}";
+  expect(JSON.parse(compactJsonWhitespace(complete))).toEqual(
+    JSON.parse(complete),
+  );
+  expect(compactJsonWhitespace('{"text":"未完成  \\')).toBe(
+    '{"text":"未完成  \\',
+  );
+  expect(compactJsonWhitespace('{"x":1 \n 2}')).toBe('{"x":1 2}');
+});
 
 test.each([
   [true, true],

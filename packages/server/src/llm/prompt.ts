@@ -168,6 +168,134 @@ export function parseOutput(content: string): unknown {
   );
 }
 
+// Keep every string and token, including unfinished JSON; only collapse layout.
+export function compactJsonWhitespace(content: string): string {
+  let result = "",
+    quoted = false,
+    escaped = false;
+  for (const character of content) {
+    if (quoted) {
+      result += character;
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') quoted = false;
+    } else if (" \t\r\n".includes(character)) {
+      if (!result.endsWith(" ")) result += " ";
+    } else {
+      result += character;
+      if (character === '"') quoted = true;
+    }
+  }
+  return result;
+}
+
+// Strict endpoints require every property. Optional values use null for absence
+// and {value: ...} for presence, preserving an explicitly supplied null.
+export function strictOutput(schema: Schema) {
+  const encode = (s: Schema): Schema => {
+    const result = Object.fromEntries(
+      Object.entries(s)
+        .filter(([key]) => key !== "default")
+        .map(([key, value]) => [
+          key,
+          key === "properties"
+            ? Object.fromEntries(
+                Object.entries(value as Schema).map(([name, child]) => [
+                  name,
+                  ((s.required as string[] | undefined) ?? []).includes(name)
+                    ? encode(child as Schema)
+                    : {
+                        anyOf: [
+                          { type: "null" },
+                          {
+                            type: "object",
+                            properties: { value: encode(child as Schema) },
+                            required: ["value"],
+                            additionalProperties: false,
+                          },
+                        ],
+                      },
+                ]),
+              )
+            : ["anyOf", "oneOf"].includes(key)
+              ? (value as Schema[]).map(encode)
+              : value && typeof value === "object" && !Array.isArray(value)
+                ? encode(value as Schema)
+                : value,
+        ]),
+    ) as Schema;
+    if (s.properties) result.required = Object.keys(s.properties as Schema);
+    return result;
+  };
+  const decode = (value: Json, s: Schema): Json => {
+    if (s.anyOf) {
+      const branch = (s.anyOf as Schema[]).find((candidate) =>
+        candidate.type === "object"
+          ? value !== null &&
+            typeof value === "object" &&
+            !Array.isArray(value) &&
+            Object.keys(value).every(
+              (key) => key in (candidate.properties as Schema),
+            ) &&
+            ((candidate.required as string[] | undefined) ?? []).every(
+              (key) => key in value,
+            ) &&
+            Object.entries(candidate.properties as Schema).every(
+              ([key, property]) =>
+                !("const" in (property as Schema)) ||
+                value[key] === (property as Schema).const,
+            )
+          : candidate.enum
+            ? (candidate.enum as Json[]).includes(value)
+            : candidate.type === "null"
+              ? value === null
+              : candidate.type === "array"
+                ? Array.isArray(value)
+                : candidate.type === "integer"
+                  ? Number.isInteger(value)
+                  : typeof value === candidate.type,
+      );
+      if (!branch) throw new Error("構造化応答の分岐を確認できません");
+      return decode(value, branch);
+    }
+    if (Array.isArray(value) && s.items)
+      return value.map((item) => decode(item, s.items as Schema));
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value) ||
+      !s.properties
+    )
+      return value;
+    return Object.fromEntries(
+      Object.entries(value).flatMap(([key, item]) => {
+        const child = (s.properties as Schema)[key] as Schema;
+        if (!child) throw new Error("構造化応答に未知の項目があります");
+        if (((s.required as string[] | undefined) ?? []).includes(key))
+          return [[key, decode(item, child)]];
+        if (item === null) return [];
+        if (
+          typeof item !== "object" ||
+          Array.isArray(item) ||
+          !("value" in item)
+        )
+          throw new Error("任意項目の値を確認できません");
+        return [[key, decode(item.value, child)]];
+      }),
+    );
+  };
+  return {
+    schema: {
+      type: "object",
+      properties: { response: encode(schema) },
+      required: ["response"],
+      additionalProperties: false,
+    },
+    decode: (value: unknown) =>
+      decode((value as { response: Json }).response, schema),
+  };
+}
+
 export function preparePrompt(
   messages: ChatMessage[],
   structured = true,

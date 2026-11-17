@@ -110,9 +110,36 @@ test("OpenRouterのシーン要求はlowと現行スキーマを送り、独立�
         {
           finish_reason: "stop",
           message: {
-            content: String(init?.body).includes("force-format-repair")
-              ? "INVALID JSON"
-              : content,
+            reasoning: "推論はJSON本文でも、世界内の観測でもありません",
+            reasoning_details: [{ type: "reasoning.text", text: "推論専用" }],
+            content: String(init?.body).includes("reasoning-only")
+              ? null
+              : String(init?.body).includes("force-format-repair")
+                ? '{"text":"台詞  は残す"' +
+                  " \t\r\n".repeat(10000) +
+                  " INVALID JSON"
+                : body.response_format?.json_schema?.schema.properties?.response
+                  ? JSON.stringify({
+                      response: {
+                        ...JSON.parse(content),
+                        departures: [],
+                        concluded: null,
+                        belongings: null,
+                        events: JSON.parse(content).events.map(
+                          (event: Record<string, unknown>) => ({
+                            ...event,
+                            receipts: (
+                              event.receipts as Record<string, unknown>[]
+                            ).map((receipt) => ({
+                              ...receipt,
+                              at: null,
+                              information: [],
+                            })),
+                          }),
+                        ),
+                      },
+                    })
+                  : content,
           },
         },
       ],
@@ -179,15 +206,28 @@ test("OpenRouterのシーン要求はlowと現行スキーマを送り、独立�
   expect(requests[2]).toMatchObject({
     url: "https://openrouter.ai/api/v1/chat/completions",
     body: {
-      reasoning: { effort: "low" },
+      reasoning: { effort: "low", exclude: true },
       provider: { require_parameters: true },
-      response_format: { type: "json_object" },
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              response: {
+                anyOf: [{ type: "object", additionalProperties: false }],
+              },
+            },
+          },
+        },
+      },
       max_tokens: 16384,
     },
   });
   expect(requests[2]!.body).not.toHaveProperty("reasoning_effort");
   expect(requests[2]!.body).not.toHaveProperty("service_tier");
-  expect(JSON.stringify(requests[2]!.body.messages)).toContain(
+  expect(JSON.stringify(requests[2]!.body.messages)).not.toContain(
     "responseSchema",
   );
   expect(completed.usage).toMatchObject({
@@ -196,6 +236,7 @@ test("OpenRouterのシーン要求はlowと現行スキーマを送り、独立�
     completion_tokens: 20,
     reasoning_tokens: 5,
   });
+  expect(completed.content).not.toContain("推論");
   const rows = (
     await pool.query(
       "SELECT request,charged_nano::int AS charge FROM llm_call ORDER BY created_at,id",
@@ -208,6 +249,7 @@ test("OpenRouterのシーン要求はlowと現行スキーマを送り、独立�
     inputHit: 4,
     output: 500,
   });
+  expect(rows[2].request.sourceMessages).toEqual(messages);
   const before = transport.mock.calls.length;
   await restarted.run(responseId, () =>
     restarted.complete(callId, "scene-resolve", messages),
@@ -233,6 +275,27 @@ test("OpenRouterのシーン要求はlowと現行スキーマを送り、独立�
     configuration.resolution.model,
   ]);
   expect(repaired).toMatchObject({ upperModel: true, formatAttempts: 3 });
+  const retryMessages = requests.at(-1)!.body.input as {
+    role: string;
+    content: string;
+  }[];
+  expect(JSON.stringify(retryMessages)).not.toContain("\\t\\r\\n");
+  expect(JSON.stringify(retryMessages)).toContain("台詞  は残す");
+  const rawRetry = (
+    await pool.query(
+      "SELECT request,response FROM llm_call WHERE response->>'content' LIKE '%INVALID JSON%' LIMIT 1",
+    )
+  ).rows[0];
+  expect(rawRetry.response.content).toContain(" \t\r\n".repeat(10000));
+  const missing = await restarted.complete(randomUUID(), "scene-resolve", [
+    { role: "user", content: "reasoning-only" },
+  ]);
+  expect(requests.slice(-2).map(({ body }) => body.model)).toEqual([
+    ember.model,
+    configuration.resolution.model,
+  ]);
+  expect(missing).toMatchObject({ upperModel: true });
+  expect(missing.content).not.toContain("推論");
 });
 
 test("EmberのプロファイルはFlashの単価を継承せず、専用キーを選ぶ", () => {
