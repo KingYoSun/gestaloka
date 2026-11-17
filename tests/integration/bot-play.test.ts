@@ -869,12 +869,19 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
     admin = await auth.person(),
     source = randomUUID();
   await f.send(1, { command: "contact", targetId: f.actors[0] });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { allowed: true, reason: "許可" }),
+  );
   await f.send(0, {
     requestId: source,
     command: "say",
     text: "小さな動物が二匹、木陰を横切る",
     instantNpcs: ["木陰の小さな動物", "別の小さな動物"],
   });
+  expect(f.calls.mock.calls.map((call) => call[1])).toEqual([
+    "world-creation-permission",
+  ]);
+  f.calls.mockClear();
   await f.send(0, { command: "end-turn" });
   const pending = await f.send(1, {
     command: "promote-npc",
@@ -1846,3 +1853,292 @@ test("GM判断中に利用停止されても長いDBロックを持たず、確�
   await expect(pending).rejects.toMatchObject({ code: "USER_BANNED" });
   expect(await f.store.context(f.graph).node(script)).toBeUndefined();
 });
+test("検索で発生した複数の物品を同席者が観測し、後から来た人物が一つだけ拾う", async () => {
+  const f = await fixture(),
+    rule = randomUUID(),
+    tool = randomUUID();
+  const request = randomUUID(),
+    world = f.graph,
+    at = 0;
+  await f.store.commit(
+    await f.store.claim(world, request),
+    f.store.context(world),
+    {
+      commitId: request,
+      at,
+      changes: {
+        nodes: [
+          {
+            id: rule,
+            kind: "script",
+            text: "砂金の出現",
+            spawn: {
+              kind: "existence",
+              species: "砂金",
+              description: "小さな粒",
+              probability: 1,
+              count: 3,
+            },
+          },
+          { id: tool, kind: "existence", text: "皿" },
+        ],
+        revisions: [],
+        endEdges: [],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "content",
+            source: f.place,
+            target: rule,
+            period: { from: at },
+          },
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "about",
+            text: "spawn-hit",
+            source: rule,
+            target: f.place,
+            period: { from: at },
+          },
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "about",
+            text: "spawn-at",
+            source: rule,
+            target: f.place,
+            period: { from: at },
+          },
+
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "about",
+            text: "spawn-hold",
+            source: rule,
+            target: tool,
+            period: { from: at },
+          },
+          {
+            id: randomUUID(),
+            kind: "has",
+            role: "hold",
+            source: f.actors[0]!,
+            target: tool,
+            period: { from: at },
+          },
+        ],
+      },
+    },
+  );
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  const query = { kind: "subject", targetId: f.place },
+    body = { command: "search", query, requestId: randomUUID() };
+  // The player still holds the required tool at the other site; a hit on it alone must not spawn anything there.
+  await f.move(0, f.far);
+  const depId = randomUUID(),
+    dep = {
+      id: randomUUID(),
+      kind: "status" as const,
+      role: "about" as const,
+      text: "spawn-hit",
+      source: rule,
+      target: tool,
+      period: { from: at },
+    };
+  await f.store.commit(
+    await f.store.claim(world, depId),
+    f.store.context(world),
+    {
+      commitId: depId,
+      at,
+      changes: { edges: [dep], nodes: [], revisions: [], endEdges: [] },
+    },
+  );
+  expect(
+    (await f.send(0, { command: "search", query: { kind: "belongings" } }))
+      .appearances,
+  ).toBeUndefined();
+  await f.move(0, f.place);
+  const found = await f.send(0, body);
+  const items = found.appearances as { id: string }[];
+  expect(new Set(items.map((i) => i.id)).size).toBe(3);
+  expect(await f.send(0, body)).toEqual(found);
+  const second = await f.send(0, { command: "search", query });
+  expect(
+    (second.appearances as { id: string }[]).every(
+      (a) => !items.some((i) => a.id === i.id),
+    ),
+  ).toBe(true);
+  expect(JSON.stringify((await f.status(1)).entries)).toContain(items[0]!.id);
+  expect(JSON.stringify((await f.status(2)).entries)).not.toContain(
+    items[0]!.id,
+  );
+  await f.send(0, { command: "finish" });
+  await f.send(1, { command: "finish" });
+  await f.move(2, f.place);
+  const seen = await f.send(2, {
+    command: "search",
+    query: { kind: "surroundings" },
+  });
+  expect(seen.appearances).toBeUndefined();
+  expect(JSON.stringify(seen.material)).toContain(items[0]!.id);
+  const pickup = {
+    command: "update",
+    text: "拾う",
+    dependencies: [],
+    operations: [
+      {
+        type: "move",
+        from: null,
+        to: f.actors[2],
+        item: items[0]!.id,
+        basis: "拾う",
+      },
+    ],
+  };
+  await f.send(2, pickup);
+  expect(
+    JSON.stringify(await readBelongings(f.store.context(world), f.actors[2]!)),
+  ).toContain(items[0]!.id);
+  await expect(f.send(2, pickup)).rejects.toMatchObject({
+    code: "HOLD_CHANGED",
+  });
+  expect(f.calls).not.toHaveBeenCalled();
+});
+test("同じ検索の外れは確定し、新しい検索で当たった2匹を同じ出現から区別して昇格申請できる", async () => {
+  const f = await fixture(),
+    id = randomUUID(),
+    rule = randomUUID();
+  const node = {
+    id: rule,
+    kind: "script" as const,
+    text: "水辺の動物",
+    spawn: {
+      kind: "instant-npc" as const,
+      species: "鳥",
+      description: "水辺で鳴く",
+      count: 2,
+      probability: 0,
+    },
+  };
+  await f.store.commit(
+    await f.store.claim(f.graph, id),
+    f.store.context(f.graph),
+    {
+      at: 0,
+      commitId: id,
+      changes: {
+        nodes: [node],
+        revisions: [],
+        endEdges: [],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "content",
+            source: f.place,
+            target: rule,
+            period: { from: 0 },
+          },
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "about",
+            text: "spawn-hit",
+            source: rule,
+            target: f.place,
+            period: { from: 0 },
+          },
+        ],
+      },
+    },
+  );
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  const miss = {
+    requestId: randomUUID(),
+    command: "search",
+    query: { kind: "subject", targetId: f.place },
+  };
+  const first = await f.send(0, miss);
+  expect(first.appearances).toBeUndefined();
+  const change = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, change),
+    f.store.context(f.graph),
+    {
+      at: 1,
+      commitId: change,
+      changes: {
+        nodes: [],
+        edges: [],
+        endEdges: [],
+        revisions: [{ ...node, spawn: { ...node.spawn, probability: 1 } }],
+      },
+    },
+  );
+  expect(await f.send(0, miss)).toEqual(first);
+  const source = randomUUID(),
+    hit = await f.send(0, { ...miss, requestId: source });
+  expect(hit.instantNpcs).toEqual(["鳥", "鳥"]);
+  const animals = hit.appearances as { id: string }[];
+  expect(animals[0]!.id).not.toEqual(animals[1]!.id);
+  for (const a of animals)
+    expect(await f.store.context(f.graph).node(a.id)).toBeUndefined();
+  await f.send(0, { command: "end-turn" });
+  const requested = await f.send(1, {
+    command: "promote-npc",
+    sourceRequestId: source,
+    npcIndex: 1,
+    description: "二羽目を世話したい",
+  });
+  expect(requested.promotionId).toBeTruthy();
+  expect(f.calls).not.toHaveBeenCalled();
+});
+test("初回接続と状態照会のタイムアウトを復旧し、終了時に履歴を返す", async () => {
+  const f = await fixture(),
+    app = await createApp(access, auth.identity, undefined, auth.operations),
+    cli = await playerCli(app);
+  const profile = join(cli.directory, "cold.json");
+  try {
+    cli.timeoutNextResponse("/api/player-devices");
+    const connected = await cli.run(
+      profile,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(connected.state).toBe("authorization_pending");
+    expect(
+      (
+        await isolated.databases.postgres.query(
+          "select id from player_device where world_id=$1",
+          [f.world],
+        )
+      ).rows,
+    ).toEqual([{ id: connected.id }]);
+    await cli.approve(
+      f.people[0]!.cookie,
+      connected.userCode,
+      `actor:${f.actors[0]}`,
+    );
+    cli.timeoutNextResponse("/api/player-device");
+    expect((await cli.run(profile, "status")).state).toBe("ready");
+    await cli.run(profile, "say", "--text", "旅の手帳を閉じる");
+    const end = await cli.run(profile, "finish");
+    expect(end).toMatchObject({
+      state: "finished",
+      sceneId: end.result.sceneId,
+    });
+    expect(JSON.stringify(end.result.result.entries)).toContain(
+      "旅の手帳を閉じる",
+    );
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+}, 60000);

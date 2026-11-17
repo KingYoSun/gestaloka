@@ -14,6 +14,7 @@ export {
 } from "./play.js";
 export {
   Change,
+  Appearance,
   WorldNode,
   WorldEdge,
   RelationKind,

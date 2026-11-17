@@ -24,6 +24,22 @@ const Observation = z
   })
   .strict();
 
+export const SpawnRule = z
+  .object({
+    kind: z.enum(["instant-npc", "existence", "script", "event"]),
+    species: z.string().trim().min(1),
+    description: z.string().trim().min(1),
+    probability: z.number().min(0).max(1),
+    count: z.number().int().positive().safe(),
+  })
+  .strict();
+export const Appearance = SpawnRule.pick({
+  kind: true,
+  species: true,
+  description: true,
+}).extend({ id: z.uuid() });
+export type Appearance = z.infer<typeof Appearance>;
+
 export const WorldNode = z.discriminatedUnion("kind", [
   z
     .object({
@@ -41,9 +57,17 @@ export const WorldNode = z.discriminatedUnion("kind", [
       ...Content,
       kind: z.literal("script"),
       type: z.literal("memo").optional(),
+      spawn: SpawnRule.optional(),
     })
     .strict(),
-  z.object({ ...Content, kind: z.literal("event"), period: Period }).strict(),
+  z
+    .object({
+      ...Content,
+      kind: z.literal("event"),
+      appearances: z.array(Appearance).optional(),
+      period: Period,
+    })
+    .strict(),
 ]);
 export type WorldNode = z.infer<typeof WorldNode>;
 export const RelationKind = z.enum([

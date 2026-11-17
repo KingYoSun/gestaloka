@@ -116,24 +116,37 @@ async function http(
   authenticated = true,
   method = "POST",
 ) {
-  const response = await fetch(new URL(path, profile.server), {
-    method: body === undefined ? "GET" : method,
-    redirect: "error",
-    signal: AbortSignal.timeout(15000),
-    headers: {
-      ...(authenticated ? { authorization: `Bearer ${profile.secret}` } : {}),
-      ...(body === undefined
-        ? {}
-        : { "content-type": "application/json", "x-gestaloka-request": "1" }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const data = await response.json();
-  if (!response.ok)
-    throw Object.assign(new Error(data.message ?? `HTTP ${response.status}`), {
-      code: data.code ?? "HTTP_ERROR",
+  // Every write reaching this helper is journaled or an idempotent presence update.
+  const attempt = async () => {
+    const response = await fetch(new URL(path, profile.server), {
+      method: body === undefined ? "GET" : method,
+      redirect: "error",
+      signal: AbortSignal.timeout(15000),
+      headers: {
+        ...(authenticated ? { authorization: `Bearer ${profile.secret}` } : {}),
+        ...(body === undefined
+          ? {}
+          : { "content-type": "application/json", "x-gestaloka-request": "1" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  return data;
+    const data = await response.json();
+    if (!response.ok)
+      throw Object.assign(
+        new Error(data.message ?? `HTTP ${response.status}`),
+        {
+          code: data.code ?? "HTTP_ERROR",
+        },
+      );
+    return data;
+  };
+  try {
+    return await attempt();
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== "TimeoutError")
+      throw error;
+    return attempt();
+  }
 }
 async function status(profile: Profile) {
   const device = PlayerDeviceStatus.parse(
@@ -237,6 +250,9 @@ async function send(
   }
   return {
     ...(saved.path.endsWith("/session") ? {} : await status(profile)),
+    ...(saved.body.command === "finish"
+      ? { state: "finished", sceneId: result.sceneId }
+      : {}),
     requestId,
     result,
   };

@@ -5677,6 +5677,47 @@
                                       "enum": [
                                         "memo"
                                       ]
+                                    },
+                                    "spawn": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "instant-npc",
+                                            "existence",
+                                            "script",
+                                            "event"
+                                          ]
+                                        },
+                                        "species": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "description": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "probability": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 1
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "species",
+                                        "description",
+                                        "probability",
+                                        "count"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   },
                                   "required": [
@@ -5702,6 +5743,43 @@
                                       "enum": [
                                         "event"
                                       ]
+                                    },
+                                    "appearances": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "instant-npc",
+                                              "existence",
+                                              "script",
+                                              "event"
+                                            ]
+                                          },
+                                          "species": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "description": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "id": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "species",
+                                          "description",
+                                          "id"
+                                        ],
+                                        "additionalProperties": false
+                                      }
                                     },
                                     "period": {
                                       "type": "object",
@@ -5787,6 +5865,47 @@
                                       "enum": [
                                         "memo"
                                       ]
+                                    },
+                                    "spawn": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "instant-npc",
+                                            "existence",
+                                            "script",
+                                            "event"
+                                          ]
+                                        },
+                                        "species": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "description": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "probability": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 1
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "species",
+                                        "description",
+                                        "probability",
+                                        "count"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   },
                                   "required": [
@@ -5812,6 +5931,43 @@
                                       "enum": [
                                         "event"
                                       ]
+                                    },
+                                    "appearances": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "instant-npc",
+                                              "existence",
+                                              "script",
+                                              "event"
+                                            ]
+                                          },
+                                          "species": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "description": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "id": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "species",
+                                          "description",
+                                          "id"
+                                        ],
+                                        "additionalProperties": false
+                                      }
                                     },
                                     "period": {
                                       "type": "object",
@@ -6186,6 +6342,47 @@
                                       "enum": [
                                         "memo"
                                       ]
+                                    },
+                                    "spawn": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "instant-npc",
+                                            "existence",
+                                            "script",
+                                            "event"
+                                          ]
+                                        },
+                                        "species": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "description": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "probability": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 1
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "species",
+                                        "description",
+                                        "probability",
+                                        "count"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   },
                                   "required": [
@@ -6211,6 +6408,43 @@
                                       "enum": [
                                         "event"
                                       ]
+                                    },
+                                    "appearances": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "instant-npc",
+                                              "existence",
+                                              "script",
+                                              "event"
+                                            ]
+                                          },
+                                          "species": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "description": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "id": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "species",
+                                          "description",
+                                          "id"
+                                        ],
+                                        "additionalProperties": false
+                                      }
                                     },
                                     "period": {
                                       "type": "object",
@@ -6296,6 +6530,47 @@
                                       "enum": [
                                         "memo"
                                       ]
+                                    },
+                                    "spawn": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "instant-npc",
+                                            "existence",
+                                            "script",
+                                            "event"
+                                          ]
+                                        },
+                                        "species": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "description": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "probability": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 1
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "species",
+                                        "description",
+                                        "probability",
+                                        "count"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   },
                                   "required": [
@@ -6321,6 +6596,43 @@
                                       "enum": [
                                         "event"
                                       ]
+                                    },
+                                    "appearances": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "instant-npc",
+                                              "existence",
+                                              "script",
+                                              "event"
+                                            ]
+                                          },
+                                          "species": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "description": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "id": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "species",
+                                          "description",
+                                          "id"
+                                        ],
+                                        "additionalProperties": false
+                                      }
                                     },
                                     "period": {
                                       "type": "object",
@@ -6902,6 +7214,47 @@
                                       "enum": [
                                         "memo"
                                       ]
+                                    },
+                                    "spawn": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "instant-npc",
+                                            "existence",
+                                            "script",
+                                            "event"
+                                          ]
+                                        },
+                                        "species": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "description": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "probability": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 1
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "species",
+                                        "description",
+                                        "probability",
+                                        "count"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   },
                                   "required": [
@@ -6927,6 +7280,43 @@
                                       "enum": [
                                         "event"
                                       ]
+                                    },
+                                    "appearances": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "instant-npc",
+                                              "existence",
+                                              "script",
+                                              "event"
+                                            ]
+                                          },
+                                          "species": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "description": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "id": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "species",
+                                          "description",
+                                          "id"
+                                        ],
+                                        "additionalProperties": false
+                                      }
                                     },
                                     "period": {
                                       "type": "object",
@@ -7012,6 +7402,47 @@
                                       "enum": [
                                         "memo"
                                       ]
+                                    },
+                                    "spawn": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "instant-npc",
+                                            "existence",
+                                            "script",
+                                            "event"
+                                          ]
+                                        },
+                                        "species": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "description": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "probability": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 1
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "species",
+                                        "description",
+                                        "probability",
+                                        "count"
+                                      ],
+                                      "additionalProperties": false
                                     }
                                   },
                                   "required": [
@@ -7037,6 +7468,43 @@
                                       "enum": [
                                         "event"
                                       ]
+                                    },
+                                    "appearances": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "instant-npc",
+                                              "existence",
+                                              "script",
+                                              "event"
+                                            ]
+                                          },
+                                          "species": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "description": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "id": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "species",
+                                          "description",
+                                          "id"
+                                        ],
+                                        "additionalProperties": false
+                                      }
                                     },
                                     "period": {
                                       "type": "object",
@@ -12353,6 +12821,47 @@
                                           "enum": [
                                             "memo"
                                           ]
+                                        },
+                                        "spawn": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "instant-npc",
+                                                "existence",
+                                                "script",
+                                                "event"
+                                              ]
+                                            },
+                                            "species": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "description": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "probability": {
+                                              "type": "number",
+                                              "minimum": 0,
+                                              "maximum": 1
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "exclusiveMinimum": true,
+                                              "maximum": 9007199254740991
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "species",
+                                            "description",
+                                            "probability",
+                                            "count"
+                                          ],
+                                          "additionalProperties": false
                                         }
                                       },
                                       "required": [
@@ -12378,6 +12887,43 @@
                                           "enum": [
                                             "event"
                                           ]
+                                        },
+                                        "appearances": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "instant-npc",
+                                                  "existence",
+                                                  "script",
+                                                  "event"
+                                                ]
+                                              },
+                                              "species": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "description": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "id": {
+                                                "type": "string",
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "species",
+                                              "description",
+                                              "id"
+                                            ],
+                                            "additionalProperties": false
+                                          }
                                         },
                                         "period": {
                                           "type": "object",
@@ -12463,6 +13009,47 @@
                                           "enum": [
                                             "memo"
                                           ]
+                                        },
+                                        "spawn": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "instant-npc",
+                                                "existence",
+                                                "script",
+                                                "event"
+                                              ]
+                                            },
+                                            "species": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "description": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "probability": {
+                                              "type": "number",
+                                              "minimum": 0,
+                                              "maximum": 1
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "exclusiveMinimum": true,
+                                              "maximum": 9007199254740991
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "species",
+                                            "description",
+                                            "probability",
+                                            "count"
+                                          ],
+                                          "additionalProperties": false
                                         }
                                       },
                                       "required": [
@@ -12488,6 +13075,43 @@
                                           "enum": [
                                             "event"
                                           ]
+                                        },
+                                        "appearances": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "instant-npc",
+                                                  "existence",
+                                                  "script",
+                                                  "event"
+                                                ]
+                                              },
+                                              "species": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "description": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "id": {
+                                                "type": "string",
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "species",
+                                              "description",
+                                              "id"
+                                            ],
+                                            "additionalProperties": false
+                                          }
                                         },
                                         "period": {
                                           "type": "object",
