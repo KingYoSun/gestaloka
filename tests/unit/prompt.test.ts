@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { z } from "zod";
+import { SceneRecordQuery } from "../../packages/server/src/runtime/scene-records.js";
 import { expandPrompt } from "../support/expand-prompt.js";
 import {
   preparePrompt,
@@ -9,6 +10,53 @@ import {
   compactJsonWhitespace,
   strictOutput,
 } from "../../packages/server/src/llm/prompt.js";
+
+test("履歴・配送本文の追加照会でも任意条件とページ位置を復元する", () => {
+  const codec = strictOutput(
+    outputSchema(
+      z.toJSONSchema(
+        z
+          .object({
+            type: z.literal("query"),
+            requests: z.array(SceneRecordQuery),
+          })
+          .strict(),
+        { io: "output" },
+      ),
+    ),
+  );
+  const restored = codec.decode({
+    response: {
+      type: "query",
+      requests: [
+        {
+          kind: "scene-records",
+          source: "contacts",
+          id: null,
+          actorId: null,
+          observerId: null,
+          inputId: null,
+          text: { value: "会話  の続き" },
+          from: { value: 0 },
+          through: null,
+          offset: 12,
+        },
+      ],
+    },
+  });
+  expect(restored).toEqual({
+    type: "query",
+    requests: [
+      {
+        kind: "scene-records",
+        source: "contacts",
+        text: "会話  の続き",
+        from: 0,
+        offset: 12,
+      },
+    ],
+  });
+});
 
 test("strictの必須項目化でも、未指定・明示null・任意オブジェクトを区別する", () => {
   const schema = outputSchema(

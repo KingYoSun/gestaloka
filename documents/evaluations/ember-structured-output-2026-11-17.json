@@ -194,10 +194,18 @@
       ]
     }
   ],
+  "compatibility": {
+    "mainCommit": "5c11a4c05268d01fbc8a2d294bbc59001bd9ac16",
+    "trials": 2,
+    "complete": 2,
+    "calls": 54,
+    "calculatedNanoUsd": "188844020",
+    "unknownNanoUsd": "0"
+  },
   "allExperimentCharges": {
-    "calculatedNanoUsd": "5122494074",
+    "calculatedNanoUsd": "5311338094",
     "unknownNanoUsd": "398304000",
-    "calls": 373,
+    "calls": 427,
     "diagnosticScenes": 16
   },
   "method": {
@@ -212,5 +220,5 @@
       "The older tide-archive-0 additionally distinguishes planned closure time and actual closure time. Different elaborations are recorded rather than made into a fixed dialogue expectation."
     ]
   },
-  "evidenceSha256": "4486540b7d58ce8a45a5178c93303113f3fc77befa8f82694212f3366d90e3de"
+  "evidenceSha256": "c88358287c1fa94f3dd324ed16a63e1f33e75750750e833581423ac568e8b5bd"
 }
