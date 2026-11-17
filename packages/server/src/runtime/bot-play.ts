@@ -25,7 +25,7 @@ import {
   readBelongings,
 } from "../world/belongings.js";
 import { locationRecords } from "../world/locations.js";
-import { parseOutput } from "../llm/prompt.js";
+import { canonical, parseOutput } from "../llm/prompt.js";
 import type { WorldConstruction } from "./construction.js";
 
 type Input = z.infer<typeof PlayCommand>;
@@ -1069,9 +1069,7 @@ export class BotPlay {
     user: string,
     expectedAssignment?: string,
   ) {
-    const hash = createHash("sha256")
-      .update(JSON.stringify(input))
-      .digest("hex");
+    const hash = createHash("sha256").update(canonical(input)).digest("hex");
     await this.pool.query(
       "INSERT INTO bot_request(id,actor_id,world_id,hash) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
       [input.requestId, actor, world, hash],

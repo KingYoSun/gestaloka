@@ -177,6 +177,14 @@ test("個別検索を同報せず、成功した8回だけで手番を進め、�
   const first = await f.send(1, request);
   expect(first.callsUsed).toBe(1);
   expect(await f.send(1, request)).toEqual(first);
+  const stored = (
+    await isolated.databases.postgres.query("SELECT $1::jsonb AS body", [
+      JSON.stringify(request),
+    ])
+  ).rows[0].body;
+  expect(
+    await access.botCommand(f.people[1]!.id, f.world, stored, f.actors[1]),
+  ).toEqual(first);
   await f.send(1, { command: "comment", text: "本人だけが選んだコメント" });
   await expect(
     f.send(1, { command: "comment", text: "二度目" }),
