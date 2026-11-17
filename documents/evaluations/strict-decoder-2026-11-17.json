@@ -42,7 +42,7 @@
   },
   "adoption": {
     "accepted": false,
-    "reason": "最終構成の温室試行は旧新とも準備中にpauseとなり、二つ目の設定で提示内容と選択の意味を検品できていない。"
+    "reason": "ユーザーの指示で温室の完走をPR作成の必須条件から外した。保存255応答・記録庫の提示・全費用を証拠とし、温室の後続提示は未確認と明示する。CIは確認中。"
   },
   "spending": {
     "thisTaskCalculatedNanoUsd": 1355083436,
@@ -217,7 +217,7 @@
   ],
   "sourceHashes": {
     "packages/server/src/llm/budget.ts": "65721e6c8afd0d291a7ef7ebe592b63e366ec4ee7d24482becd21c593f776fa6",
-    "packages/server/src/llm/client.ts": "0c85ac77810cda46cad75c8fb5d81a89541188f0247cad318dcb9a216d5c33cb",
+    "packages/server/src/llm/client.ts": "f16270a9035d133b21861644ebd7740de03a5b893c6e6f7ee709e56066eeb579",
     "packages/server/src/llm/prompt.ts": "75141722e78dd4a86030f5c8acac188120782ced46bd1bd2bc23b47a6b8c11a4",
     "packages/server/src/runtime/scene.ts": "f185d6b60372b21c6059518bd186857423bfc56ccadeba00b9b5cfcc93111e18",
     "packages/server/src/runtime/scene-decision.ts": "0c299d9b99ac10a719ee87476fbcaf56459829e88884de8d977738a4703a5f38",
@@ -226,6 +226,6 @@
     "tests/integration/openrouter.test.ts": "d414c6f243e3648e3d31466b9bea616f4949b8c94ce97cbf4411d8f8a3771104",
     "tests/integration/scene.test.ts": "8b07a19cc27e661d52c2c21b3e02a34fec57a747054b781ccb87f50cfa03b85e"
   },
-  "evidenceSha256": "94547124f9a9ef0e5bccffceb3a09b17ce9183e7add972eabf75dba156658a93",
-  "archiveSha256": "44b17a2af92eb135f670b57c28fe2ef0c983244b8f0c49762915ee2e50c1911d"
+  "evidenceSha256": "de2cf29d3838fb16e57c0d3787c494870641710c82b8ae25dc13dffd3b1766b1",
+  "archiveSha256": "4315c7d2855441260f63e61dd4c091bd59ec8051a34b6fe42909e5f7750e4eca"
 }
