@@ -627,6 +627,104 @@ test.each([
   },
 );
 
+test("初期の作用経路を意図主体と操作主体に絞り、周辺の経路は照会と依存版の検査へ残す", async () => {
+  const scene = await fixture();
+  const npc = node("existence", "意図を持つ主体"),
+    relay = node("existence", "中継"),
+    source = node("existence", "ACTIVE_UPSTREAM"),
+    other = node("existence", "PASSIVE_UPSTREAM");
+  const incoming = [
+    edge("effect", source, relay),
+    edge("effect", relay, scene.actor),
+    edge("effect", relay, npc),
+    edge("effect", other, scene.object),
+  ];
+  await store.commit(
+    await store.claim(scene.worldId, randomUUID()),
+    store.context(scene.worldId),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: changes([npc, relay, source, other], incoming),
+    },
+  );
+  const runtime = await agent(vi.fn());
+  const request: Parameters<WorldAgent["context"]>[0] = {
+    worldId: scene.worldId,
+    phase: "resolution",
+    at: 0,
+    until: 10,
+    rootIds: [scene.actor.id],
+    controlledActorId: scene.actor.id,
+    actionText: "",
+    intentions: [
+      { actorId: npc.id, actionText: "本人の意図", continuing: true },
+    ],
+    completedScene: {
+      anchors: changes(),
+      events: [],
+      background: {
+        type: "background",
+        synopsis: "作用を照合する",
+        participants: [scene.actor.id, npc.id, scene.object.id],
+        facts: [],
+        beliefs: [],
+        perceptions: [],
+        creations: [],
+        unknowns: [],
+      },
+    },
+  };
+  const seed = await runtime.context(request);
+  for (const actor of [scene.actor, npc]) {
+    const result = seed.initialContext.find(
+      (entry) => entry.request.kind === "node" && entry.request.id === actor.id,
+    )?.result;
+    expect(result).toMatchObject({
+      effects: expect.arrayContaining([
+        expect.objectContaining({ node: source }),
+      ]),
+    });
+    expect(result).not.toHaveProperty("effectsDeferred");
+  }
+  const passive = seed.initialContext.find(
+    (entry) =>
+      entry.request.kind === "node" && entry.request.id === scene.object.id,
+  )?.result;
+  expect(passive).toMatchObject({
+    currentStates: [{ script: scene.secret }],
+    effectsDeferred: true,
+  });
+  expect(passive).not.toHaveProperty("effects");
+  expect(JSON.stringify(seed.initialContext)).not.toContain("PASSIVE_UPSTREAM");
+  const key = `relations:${scene.object.id}:effect:in`;
+  expect(seed.dependencies.some((d) => d.key === key)).toBe(false);
+  const read = await runtime.read(
+    { request, dependencies: seed.dependencies },
+    [{ kind: "effects", id: scene.object.id }],
+  );
+  expect(read.results[0]).toEqual(
+    expect.arrayContaining([expect.objectContaining({ node: other })]),
+  );
+  expect(read.dependencies.some((d) => d.key === key)).toBe(true);
+  const later = node("existence", "後で届いた作用");
+  await store.commit(
+    await store.claim(scene.worldId, randomUUID()),
+    store.context(scene.worldId),
+    {
+      commitId: randomUUID(),
+      at: 5,
+      changes: changes(
+        [later],
+        [{ ...edge("effect", later, scene.object), period: { from: 5 } }],
+      ),
+    },
+  );
+  await expect(
+    store.context(scene.worldId, read.dependencies).validate(),
+  ).rejects.toThrow();
+});
+
 test("シーン中の状態終了を実際の時点で確定し、受容を再生成せず保持する", async () => {
   const scene = await fixture(),
     background: SceneBackground = {
@@ -680,9 +778,11 @@ test("シーン中の状態終了を実際の時点で確定し、受容を再�
   delta.endEdges = [about.id];
   const transport = vi
       .fn<typeof fetch>()
-      .mockImplementation(async () =>
-        response(proposal(delta, { resolvedUntil: 35000 })),
-      ),
+      .mockImplementation(async (_url, options) => {
+        const packet = JSON.parse(fixtureBody(options).messages[1].content);
+        expect(packet.request.completedScene.anchors).toEqual(anchors);
+        return response(proposal(delta, { resolvedUntil: 35000 }));
+      }),
     runtime = await agent(transport, { LLM_RESOLUTION_JUDGMENT: "combined" }),
     context = store.context(scene.worldId),
     prior = (await context.history(scene.actor.id, "see", "out", 0))[0]!;
