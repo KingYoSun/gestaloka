@@ -249,7 +249,9 @@ export function BotSession({
                         ? "成立しませんでした"
                         : entry.result.state === "receiving"
                           ? "受領判断中です"
-                          : "受理しました"}
+                          : entry.result?.state === "pending"
+                            ? "管理者の許可待ちです"
+                            : "受理しました"}
                 </p>
               </div>
             ))}

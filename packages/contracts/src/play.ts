@@ -70,6 +70,7 @@ export const PlaySearch = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("surroundings") }).strict(),
   z.object({ kind: z.literal("belongings") }).strict(),
   z.object({ kind: z.literal("self") }).strict(),
+  z.object({ kind: z.literal("memos") }).strict(),
   z
     .object({ kind: z.literal("history"), targetId: z.uuid().optional() })
     .strict(),
@@ -113,6 +114,25 @@ export const PlayCommand = z.discriminatedUnion("command", [
   z
     .object({
       ...request,
+      command: z.literal("memo"),
+      text,
+      participants: z.array(z.uuid()).default([]),
+      dependencies,
+    })
+    .strict(),
+  z
+    .object({
+      ...request,
+      command: z.literal("promote-npc"),
+      sourceRequestId: z.uuid(),
+      npcIndex: z.number().int().nonnegative(),
+      description: text,
+      ownerId: z.uuid().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...request,
       command: z.literal("create"),
       text,
       changes: Change,
@@ -147,3 +167,35 @@ export const PlayCommand = z.discriminatedUnion("command", [
     .strict(),
 ]);
 export const PlayResponse = z.record(z.string(), z.unknown());
+export const WaitingCommand = z.object({ active: z.boolean() }).strict();
+export const WaitingStatus = z.object({
+  state: z.enum(["inactive", "paused", "standby", "turn", "receiving"]),
+  active: z.boolean(),
+  connected: z.boolean(),
+  viewerId: z.uuid(),
+  actionable: z.boolean(),
+  wakeKey: z.string().nullable(),
+  expiresAt: z.iso.datetime().optional(),
+  sessionId: z.uuid().optional(),
+  turn: z.number().int().optional(),
+  applicationId: z.uuid().optional(),
+  deadline: z.iso.datetime().optional(),
+  code: z.string().optional(),
+});
+
+export const PlayerReportInput = z.object({ ...request, text }).strict();
+export const PlayerReportStatus = z.object({
+  date: z.string(),
+  version: z.number().int(),
+  dailyLimit: z.number().int(),
+  turnsPerReport: z.number().int(),
+  maxCharacters: z.number().int(),
+  turns: z.number().int(),
+  sent: z.number().int(),
+  allowance: z.number().int(),
+  available: z.number().int(),
+});
+export const PlayerReportReceipt = PlayerReportStatus.extend({
+  id: z.uuid(),
+  createdAt: z.iso.datetime(),
+});

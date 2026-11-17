@@ -27,6 +27,7 @@ import {
 import { locationRecords } from "../world/locations.js";
 import { canonical, parseOutput } from "../llm/prompt.js";
 import type { WorldConstruction } from "./construction.js";
+import { PlayerTools } from "./player-tools.js";
 
 type Input = z.infer<typeof PlayCommand>;
 type Db = Pick<pg.Pool, "query">;
@@ -36,7 +37,7 @@ type Entry = {
   result: unknown;
   applicationId?: string;
 };
-type Member = { actorId: string; sceneId: string };
+type Member = { actorId: string; sceneId: string; userId?: string };
 type Session = {
   id: string;
   world_id: string;
@@ -69,6 +70,7 @@ type Plan = {
   outcome?: unknown;
 };
 const latest = Number.MAX_SAFE_INTEGER;
+const waitLeaseMs = 600000;
 function reject(code: string, message: string): never {
   throw new AccessError(409, code, message);
 }
@@ -106,10 +108,13 @@ const DiceSetting = z
 
 /** Bots select their own material; only completed public actions enter the chat. */
 export class BotPlay {
+  readonly tools: PlayerTools;
   constructor(
     readonly construction: WorldConstruction,
     readonly now = () => new Date(),
-  ) {}
+  ) {
+    this.tools = new PlayerTools(construction, () => this.now());
+  }
   get pool() {
     return this.construction.pool;
   }
@@ -117,6 +122,7 @@ export class BotPlay {
     return this.construction.agent.store;
   }
   async setup() {
+    await PlayerTools.setup(this.pool);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS bot_session (
       id uuid PRIMARY KEY,world_id uuid NOT NULL REFERENCES world_construction(id),data jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS bot_scene (
@@ -137,6 +143,215 @@ export class BotPlay {
       world_id uuid NOT NULL REFERENCES world_construction(id),actor_id uuid NOT NULL,
       controller text CHECK(controller IN ('bot','server')),user_id uuid,assignment_id uuid NOT NULL,PRIMARY KEY(world_id,actor_id));
       ALTER TABLE bot_npc ALTER COLUMN controller DROP NOT NULL;`);
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS player_waiting (
+      world_id uuid NOT NULL,actor_id uuid NOT NULL,connection_id text NOT NULL,user_id uuid NOT NULL,
+      active boolean NOT NULL,last_seen timestamptz NOT NULL,generation integer NOT NULL DEFAULT 1,
+      PRIMARY KEY(world_id,actor_id,connection_id));
+      CREATE INDEX IF NOT EXISTS player_waiting_live ON player_waiting(world_id,actor_id,last_seen);
+      CREATE INDEX IF NOT EXISTS bot_chat_session ON bot_chat(session_id,id);`);
+  }
+  async keepAlive(
+    world: string,
+    actor: string,
+    user: string,
+    connection: string,
+    db: Db = this.pool,
+  ) {
+    const now = this.now();
+    await db.query(
+      `UPDATE player_waiting SET generation=generation+CASE WHEN last_seen<$5 THEN 1 ELSE 0 END,last_seen=$4
+      WHERE world_id=$1 AND actor_id=$2 AND user_id=$3 AND active AND connection_id=$6`,
+      [
+        world,
+        actor,
+        user,
+        now.toISOString(),
+        new Date(now.getTime() - waitLeaseMs).toISOString(),
+        connection,
+      ],
+    );
+  }
+  async #setPresence(
+    db: Db,
+    world: string,
+    actor: string,
+    user: string,
+    connection: string,
+    active: boolean,
+  ) {
+    const now = this.now(),
+      cutoff = new Date(now.getTime() - waitLeaseMs).toISOString();
+    await db.query(
+      `INSERT INTO player_waiting(world_id,actor_id,user_id,connection_id,active,last_seen) VALUES($1,$2,$3,$4,$5,$6)
+      ON CONFLICT(world_id,actor_id,connection_id) DO UPDATE SET user_id=$3,active=$5,last_seen=$6,
+      generation=player_waiting.generation+CASE WHEN $5 AND (NOT player_waiting.active OR player_waiting.last_seen<$7 OR player_waiting.user_id<>$3) THEN 1 ELSE 0 END`,
+      [world, actor, user, connection, active, now.toISOString(), cutoff],
+    );
+  }
+  async waiting(
+    world: string,
+    actor: string,
+    user: string,
+    connection: string,
+    active?: boolean,
+    db: Db = this.pool,
+  ) {
+    const now = this.now();
+    const assignment = (
+      await db.query(
+        "SELECT controller,user_id FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
+        [world, actor],
+      )
+    ).rows[0];
+    if (
+      assignment &&
+      (assignment.controller !== "bot" || assignment.user_id !== user)
+    )
+      reject(
+        "NPC_CONTROLLER_CHANGED",
+        "本人のbot担当が指定された人物を使ってください",
+      );
+    if (active !== undefined)
+      await this.#setPresence(db, world, actor, user, connection, active);
+    else await this.keepAlive(world, actor, user, connection, db);
+    const presence = (
+      await db.query(
+        "SELECT active,last_seen,generation FROM player_waiting WHERE world_id=$1 AND actor_id=$2 AND user_id=$3 AND connection_id=$4",
+        [world, actor, user, connection],
+      )
+    ).rows[0];
+    const connected =
+      !!presence?.active &&
+      presence.last_seen.getTime() >= now.getTime() - waitLeaseMs;
+    const base = {
+      active: !!presence?.active,
+      connected,
+      viewerId: actor,
+      ...(presence
+        ? {
+            expiresAt: new Date(
+              presence.last_seen.getTime() + waitLeaseMs,
+            ).toISOString(),
+          }
+        : {}),
+      actionable: false,
+      wakeKey: null,
+    };
+    if (!connected) return { ...base, state: "inactive" };
+    const w = await this.world(world, db);
+    try {
+      await RuntimeControl.check(
+        db,
+        { worldId: w.id, userId: user, role: "user", actorId: actor },
+        true,
+      );
+    } catch (error) {
+      if (error instanceof RuntimeStopped)
+        return { ...base, state: "paused", code: error.code };
+      throw error;
+    }
+    const session = await this.current(world, actor, db);
+    if (!session) return { ...base, state: "standby" };
+    const d = session.data,
+      r = d.receiving,
+      current = r ? r.recipients.find((id) => !r.decided.includes(id)) : d.turn;
+    if (current !== actor)
+      return {
+        ...base,
+        state: "standby",
+        sessionId: session.id,
+        turn: d.number,
+      };
+    const last =
+      (
+        await db.query(
+          "SELECT id::text AS id FROM bot_chat WHERE session_id=$1 ORDER BY id DESC LIMIT 1",
+          [session.id],
+        )
+      ).rows[0]?.id ?? "0";
+    const state = r ? "receiving" : "turn",
+      key = createHash("sha256")
+        .update(
+          JSON.stringify([
+            session.id,
+            d.number,
+            actor,
+            r?.id ?? "normal",
+            last,
+            d.members.length,
+            presence.generation,
+          ]),
+        )
+        .digest("hex");
+    return {
+      ...base,
+      state,
+      actionable: true,
+      wakeKey: key,
+      sessionId: session.id,
+      turn: d.number,
+      ...(r ? { applicationId: r.id, deadline: r.deadline } : {}),
+    };
+  }
+  async #available(world: string, actors: string[], db: Db = this.pool) {
+    return (
+      await db.query<{
+        actor_id: string;
+        user_id: string | null;
+        npc: boolean;
+      }>(
+        `SELECT target.actor_id,
+      EXISTS(SELECT 1 FROM bot_npc n WHERE n.world_id=$1 AND n.actor_id=target.actor_id) AS npc,ready.user_id
+      FROM unnest($2::uuid[]) AS target(actor_id) LEFT JOIN LATERAL (
+      SELECT candidate.user_id FROM (
+        SELECT n.user_id,0 AS priority,now() AS seen FROM bot_npc n WHERE n.world_id=$1 AND n.actor_id=target.actor_id AND n.controller='server'
+        UNION ALL SELECT p.user_id,1 AS priority,p.last_seen AS seen FROM player_waiting p
+        WHERE p.world_id=$1 AND p.actor_id=target.actor_id AND p.active AND p.last_seen>=$3
+        AND EXISTS(SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id WHERE a.construction_id=$1 AND a.actor_id=p.actor_id AND a.role='player' AND s.user_id=p.user_id AND s.active)
+        AND NOT EXISTS(SELECT 1 FROM bot_npc n WHERE n.world_id=$1 AND n.actor_id=p.actor_id AND (n.controller IS DISTINCT FROM 'bot' OR n.user_id IS DISTINCT FROM p.user_id))
+      ) candidate JOIN app_user u ON u.id=candidate.user_id AND NOT u.banned ORDER BY candidate.priority,candidate.seen DESC LIMIT 1
+      ) ready ON true`,
+        [
+          world,
+          actors,
+          new Date(this.now().getTime() - waitLeaseMs).toISOString(),
+        ],
+      )
+    ).rows;
+  }
+  async #open(
+    db: Db,
+    world: string,
+    actor: string,
+    user: string,
+    id: string,
+  ): Promise<Session> {
+    const legacy = (
+      await db.query<{ id: string }>(
+        "SELECT v.id FROM world_scene_session v WHERE world_id=$1 AND actor_id=$2 AND NOT closed AND NOT EXISTS(SELECT 1 FROM bot_scene p WHERE p.id=v.id AND p.actor_id=v.actor_id)",
+        [world, actor],
+      )
+    ).rows[0];
+    const session: Session = {
+      id,
+      world_id: world,
+      data: {
+        members: [{ actorId: actor, sceneId: legacy?.id ?? id, userId: user }],
+        turn: actor,
+        number: 1,
+        used: 0,
+        entries: [],
+      },
+    };
+    await db.query(
+      "INSERT INTO bot_session(id,world_id,data) VALUES($1,$2,$3)",
+      [session.id, world, session.data],
+    );
+    await db.query(
+      "INSERT INTO bot_scene(id,actor_id,world_id,session_id) VALUES($1,$2,$3,$4)",
+      [session.data.members[0]!.sceneId, actor, world, session.id],
+    );
+    return session;
   }
   async tickNpcs() {
     const assigned = (
@@ -275,6 +490,8 @@ export class BotPlay {
   }
   async #next(db: Db, session: Session) {
     const d = session.data;
+    const user = d.members.find((m) => m.actorId === d.turn)?.userId;
+    if (user) await this.tools.completedTurn(db, user, session.world_id);
     await this.#record(db, session, {
       turn: d.number,
       actorId: d.turn,
@@ -351,7 +568,10 @@ export class BotPlay {
     await context.validate();
     return {
       sessionId: session.id,
-      members: session.data.members,
+      members: session.data.members.map(({ actorId, sceneId }) => ({
+        actorId,
+        sceneId,
+      })),
       characters,
       turn: session.data.number,
       actorId: r
@@ -493,7 +713,25 @@ export class BotPlay {
     let material: unknown;
     if (query.kind === "belongings")
       material = await readBelongings(context, actor);
-    else if (query.kind === "history") {
+    else if (query.kind === "memos") {
+      const memos = [];
+      for (const edge of await context.relations(actor, "has", "out", at)) {
+        const node = await context.node(edge.target);
+        if (!edge.role && node?.kind === "script" && node.type === "memo")
+          memos.push({
+            ...node,
+            participants: await Promise.all(
+              (await context.relations(node.id, "has", "in", at))
+                .filter((e) => !e.role)
+                .map(async (e) => ({
+                  id: e.source,
+                  name: (await context.node(e.source))?.text ?? "人物",
+                })),
+            ),
+          });
+      }
+      material = memos;
+    } else if (query.kind === "history") {
       const seen = await context.history(actor, "see", "out", at);
       material = seen.filter(
         (e) =>
@@ -503,18 +741,15 @@ export class BotPlay {
       );
     } else if (query.kind === "surroundings") {
       const neighbors = await this.#nearby(context, actor);
-      const contacts = (
-        await this.pool.query<{ actor_id: string; npc: boolean }>(
-          "SELECT s.actor_id,EXISTS(SELECT 1 FROM bot_npc n WHERE n.world_id=s.world_id AND n.actor_id=s.actor_id) AS npc FROM bot_scene s WHERE s.world_id=$1 AND NOT s.closed AND s.actor_id=ANY($2::uuid[])",
-          [world, [...neighbors]],
-        )
-      ).rows;
+      const contacts = await this.#available(world, [...neighbors]);
       material = {
         locations: await locationRecords(context, actor),
         subjects: await Promise.all(
           [...neighbors].map(async (id) => ({
             ...(await context.node(id)),
-            contactAvailable: contacts.some((r) => r.actor_id === id),
+            contactAvailable: contacts.some(
+              (r) => r.actor_id === id && r.user_id !== null,
+            ),
             npc: contacts.find((r) => r.actor_id === id)?.npc ?? false,
           })),
         ),
@@ -789,7 +1024,33 @@ export class BotPlay {
       at = w.at,
       needsCreation = false,
       impossible = false;
-    if ("operations" in input && input.operations) {
+    if (input.command === "memo") {
+      const id = derivedId(`${input.requestId}:memo`);
+      changes.nodes.push({
+        id,
+        kind: "script",
+        type: "memo",
+        text: input.text,
+      });
+      for (const person of new Set([actor, ...input.participants])) {
+        if (
+          !controlled.has(person) ||
+          (await context.node(person))?.kind !== "existence"
+        )
+          reject(
+            "PARTICIPANT_NOT_FOUND",
+            "メモに関連付ける人物を確認してください",
+          );
+        parties.add(person);
+        changes.edges.push({
+          id: derivedId(`${id}:${person}`),
+          kind: "has",
+          source: person,
+          target: id,
+          period: { from: at },
+        });
+      }
+    } else if ("operations" in input && input.operations) {
       const ops: BelongingOp[] = input.operations.map((op) => ({ ...op })),
         plannedOps: BelongingOp[] = [];
       for (const op of ops) {
@@ -1068,6 +1329,7 @@ export class BotPlay {
     input: Input,
     user: string,
     expectedAssignment?: string,
+    connectionId = `human:${user}`,
   ) {
     const hash = createHash("sha256").update(canonical(input)).digest("hex");
     await this.pool.query(
@@ -1100,7 +1362,7 @@ export class BotPlay {
     )
       reject("NPC_CONTROLLER_CHANGED", "NPCの操作担当が変わりました");
     const w = await this.world(world);
-    if (["update", "create", "oppose"].includes(input.command)) {
+    if (["update", "create", "oppose", "memo"].includes(input.command)) {
       const active = await this.current(world, actor);
       if (!active || active.data.turn !== actor || active.data.receiving)
         reject("TURN_REQUIRED", "本人の通常手番ではありません");
@@ -1160,6 +1422,8 @@ export class BotPlay {
       ).rowCount;
       if (!granted && !assignment)
         reject("ACTOR_REQUIRED", "本人が操作できる人物を指定してください");
+      if (assignment?.controller !== "server")
+        await this.#setPresence(db, world, actor, user, connectionId, true);
       const again = (
         await db.query<{ result: Record<string, unknown> | null }>(
           "SELECT result FROM bot_request WHERE id=$1",
@@ -1178,40 +1442,14 @@ export class BotPlay {
       if (session) await this.#expire(db, session);
       let result: Record<string, unknown> = {};
       if (input.command === "start") {
-        if (!session) {
-          const legacy = (
-            await db.query<{ id: string }>(
-              "SELECT v.id FROM world_scene_session v WHERE world_id=$1 AND actor_id=$2 AND NOT closed AND NOT EXISTS(SELECT 1 FROM bot_scene p WHERE p.id=v.id AND p.actor_id=v.actor_id)",
-              [world, actor],
-            )
-          ).rows[0];
-          session = {
-            id: input.requestId,
-            world_id: world,
-            data: {
-              members: [
-                { actorId: actor, sceneId: legacy?.id ?? input.requestId },
-              ],
-              turn: actor,
-              number: 1,
-              used: 0,
-              entries: [],
-            },
-          };
-          await db.query(
-            "INSERT INTO bot_session(id,world_id,data) VALUES($1,$2,$3)",
-            [session.id, world, session.data],
-          );
-          await db.query(
-            "INSERT INTO bot_scene(id,actor_id,world_id,session_id) VALUES($1,$2,$3,$4)",
-            [session.data.members[0]!.sceneId, actor, world, session.id],
-          );
-        }
+        session ??= await this.#open(db, world, actor, user, input.requestId);
       } else {
         if (!session)
           reject("SESSION_REQUIRED", "本人のセッションを開始してください");
         const d = session.data,
           receiving = d.receiving;
+        const member = d.members.find((m) => m.actorId === actor);
+        if (member) member.userId = user;
         if (input.command === "leave" || input.command === "finish") {
           if (
             receiving &&
@@ -1343,16 +1581,40 @@ export class BotPlay {
           else {
             if (input.command === "search")
               result = await this.search(world, actor, input.query);
-            else if (input.command === "contact") {
+            else if (input.command === "promote-npc") {
+              result = await this.tools.requestPromotion(
+                db,
+                world,
+                user,
+                actor,
+                input,
+              );
+              d.entries.push({
+                actorId: actor,
+                input: `${result.label}の昇格申請: ${input.description}`,
+                result,
+              });
+            } else if (input.command === "contact") {
               const context = this.store.context(w.id),
                 contact = await this.contact(context, actor, input.targetId);
               if (!contact.allowed) reject("CONTACT_MISMATCH", contact.reason);
-              const other = await this.current(world, input.targetId, db);
-              if (!other)
+              const available = (
+                await this.#available(world, [input.targetId], db)
+              )[0];
+              if (!available?.user_id)
                 reject(
-                  "PARTNER_NOT_PLAYING",
-                  "接触先のセッションが始まっていません",
+                  "PARTNER_NOT_AVAILABLE",
+                  "接触先に在席中の操作担当を確認できません",
                 );
+              const other =
+                (await this.current(world, input.targetId, db)) ??
+                (await this.#open(
+                  db,
+                  world,
+                  input.targetId,
+                  available.user_id,
+                  derivedId(`${input.requestId}:contact:${input.targetId}`),
+                ));
               result = { contact: "joined", targetId: input.targetId };
               d.entries.push({
                 actorId: actor,
@@ -1490,6 +1752,8 @@ export class BotPlay {
         await this.#save(db, session);
       }
       result = { ...result, ...(await this.status(world, actor, db)) };
+      if (input.command === "memo")
+        result.memoId = derivedId(`${input.requestId}:memo`);
       await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [
         input.requestId,
         result,

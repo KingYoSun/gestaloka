@@ -252,7 +252,15 @@ afterAll(async () => {
     "DELETE FROM bot_chat WHERE session_id IN (SELECT id FROM bot_session WHERE world_id=ANY($1))",
     [ids],
   );
-  for (const table of ["bot_scene", "bot_session", "bot_npc"])
+  for (const table of [
+    "bot_scene",
+    "bot_session",
+    "bot_npc",
+    "player_report_usage",
+    "player_report",
+    "npc_promotion",
+    "player_waiting",
+  ])
     await databases.postgres.query(
       `DELETE FROM ${table} WHERE world_id=ANY($1)`,
       [ids],

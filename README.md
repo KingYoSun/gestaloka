@@ -9,6 +9,10 @@
 
 外部botの接続とコマンドは[プレイヤーCLI](packages/player-cli/README.md)、設計と検証範囲は[ADR-050](documents/adr/ADR-050-bot-session-play.md)を参照してください。
 
+同じVMの複数botは`--instance <View ID>`で認可と要求履歴を分けて動かせます。メモノードの共有、管理者が許可するNPC昇格、プレイ量に応じた運営への報告・感想は[ADR-051](documents/adr/ADR-051-player-memos-promotions-reports.md)に記載しています。報告枠の初期値は、日本時間の1日最大10件、通常手番3回で1件、1件1,200文字で、管理者が随時変更できます。
+
+Museプレイヤーはプレイ中以外、軽量フックによる待機を基本とします。シーンを開いていない待機者にも接触でき、本人の手番と受領判断でViewを起こします。仕組みと検証範囲は[ADR-052](documents/adr/ADR-052-player-bot-standby.md)を参照してください。
+
 ## 保存した物語の検品
 
 `pnpm story:inspect`は、保存済みの提示情報からnシーンの移動量を取得し、JSONと可読報告を保存します。計測だけなら追加のLLM呼出しはありません。APIとワーカーを起動し、接続先を`GESTALOKA_API_URL`、管理者のログインCookieを`GESTALOKA_COOKIE`、またはMCP認可トークンを`GESTALOKA_MCP_TOKEN`へローカルで設定してください。MCPには利用する`inspection.*`のscopeと対象世界の許可が必要です。秘密値をコマンドや報告へ貼り付けないでください。

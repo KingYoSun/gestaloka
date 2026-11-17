@@ -1,6 +1,6 @@
 import { npcReport } from "../runtime/npc-mode.js";
 import { BotPlay } from "../runtime/bot-play.js";
-import type { PlayCommand } from "@gestaloka/contracts";
+import type { PlayCommand, PlayerReportInput } from "@gestaloka/contracts";
 import type { NpcModeCommand } from "@gestaloka/contracts";
 import { RuntimeStopped } from "../runtime/control.js";
 import { PlayerDevices } from "./player-devices.js";
@@ -10,6 +10,7 @@ import { z } from "zod";
 import type pg from "pg";
 import {
   WorldStatus,
+  WaitingStatus,
   KnowledgePage,
   AdminPage,
   type WorldCommand,
@@ -185,6 +186,7 @@ export class WorldAccess {
     id: string,
     input: z.infer<typeof PlayCommand>,
     actorId?: string,
+    connectionId?: string,
   ) {
     const grant = await this.authorize(
       subject,
@@ -193,13 +195,47 @@ export class WorldAccess {
       this.pool,
       actorId,
     );
-    return this.botPlay.submit(id, grant.actor_id!, input, subject);
+    return this.botPlay.submit(
+      id,
+      grant.actor_id!,
+      input,
+      subject,
+      undefined,
+      connectionId,
+    );
   }
   async botStatus(
     subject: string,
     id: string,
     actorId?: string,
     sceneId?: string,
+    connectionId = `human:${subject}`,
+  ) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    await this.botPlay.keepAlive(id, grant.actor_id!, subject, connectionId);
+    await this.botPlay.expire(id);
+    return {
+      viewerId: grant.actor_id!,
+      ...(await this.botPlay.status(id, grant.actor_id!)),
+      ...(await this.botPlay.history(id, grant.actor_id!, sceneId)),
+    };
+  }
+  async reportStatus(subject: string, id: string, actorId?: string) {
+    await this.authorize(subject, id, "player", this.pool, actorId);
+    return this.botPlay.tools.reportStatus(this.pool, subject, id);
+  }
+  async waiting(
+    subject: string,
+    id: string,
+    actorId?: string,
+    connectionId = `human:${subject}`,
+    active?: boolean,
   ) {
     const grant = await this.authorize(
       subject,
@@ -209,11 +245,71 @@ export class WorldAccess {
       actorId,
     );
     await this.botPlay.expire(id);
-    return {
-      viewerId: grant.actor_id!,
-      ...(await this.botPlay.status(id, grant.actor_id!)),
-      ...(await this.botPlay.history(id, grant.actor_id!, sceneId)),
-    };
+    return WaitingStatus.parse(
+      await this.botPlay.waiting(
+        id,
+        grant.actor_id!,
+        subject,
+        connectionId,
+        active,
+      ),
+    );
+  }
+  async report(
+    subject: string,
+    id: string,
+    input: z.infer<typeof PlayerReportInput>,
+    actorId?: string,
+  ) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    return this.#accept(
+      subject,
+      input.requestId,
+      {
+        operation: "player-report",
+        worldId: id,
+        actorId: grant.actor_id,
+        requestId: input.requestId,
+        text: input.text,
+      },
+      "player",
+      async (db) => {
+        await this.authorize(subject, id, "player", db, grant.actor_id!);
+        return this.botPlay.tools.report(
+          db,
+          subject,
+          id,
+          grant.actor_id!,
+          input,
+        );
+      },
+    );
+  }
+  async promotions(
+    subject: string,
+    id: string,
+    actorId?: string,
+    before?: string,
+  ) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    return this.botPlay.tools.promotions(
+      this.pool,
+      id,
+      grant.actor_id!,
+      before,
+    );
   }
   async #accept<T>(
     subject: string,

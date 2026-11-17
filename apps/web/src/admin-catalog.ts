@@ -32,6 +32,8 @@ export const operations = {
       "worlds.edit": "世界を直接編集",
       "npcs.read": "ユニークNPCの操作担当",
       "npcs.put": "ユニークNPCの操作担当を指定",
+      "npcs.promotions": "インスタントNPCの昇格申請",
+      "npcs.decidePromotion": "NPCの昇格を承認・却下",
     },
   ],
   users: [
@@ -40,6 +42,14 @@ export const operations = {
       "users.list": "ユーザー一覧",
       "users.role": "管理者任命・降格",
       "users.ban": "BAN・解除",
+    },
+  ],
+  reports: [
+    "報告・感想",
+    {
+      "reports.list": "プレイヤーからの報告・感想",
+      "reportPolicy.read": "報告・感想の送信枠",
+      "reportPolicy.put": "報告・感想の上限を変更",
     },
   ],
   invites: [
@@ -139,6 +149,7 @@ export const editAfterRead: Partial<Record<Name, Name>> = {
   "models.read": "models.put",
   "responseLimits.read": "responseLimits.put",
   "playPolicy.read": "playPolicy.put",
+  "reportPolicy.read": "reportPolicy.put",
   "modelLimits.read": "modelLimits.put",
   "runtime.read": "runtime.put",
   "jobs.list": "jobs.read",
@@ -155,7 +166,7 @@ export const catalog: Partial<Record<Name, string>> = Object.assign(
   ...Object.values(operations).map((v) => v[1]),
 );
 export const readOnly = (name: string) =>
-  /\.(read|list|records|graph|samples|notifications|jobs|job|uses|select|history|evaluation|settings)$/.test(
+  /\.(read|list|records|graph|samples|notifications|jobs|job|uses|select|history|evaluation|settings|promotions)$/.test(
     name,
   );
 export const schemas = Object.fromEntries(
@@ -167,6 +178,8 @@ export const schemas = Object.fromEntries(
   >;
 };
 export const guidance: Partial<Record<Section, string>> = {
+  reports:
+    "送信枠はユーザーと世界ごとに日本時間の日付で集計します。初期値は1日10件、通常手番3回で1件、1件1,200文字です。3つの上限はいつでも変更でき、新しい送信へ反映します。報告はプレイヤーの申告で、世界の事実とは区別します。",
   inspection:
     "保存済みの提示記録を検品します。移動量は新情報の代理指標であり、満足度の実測ではありません。意味評価と原則適合は別に表示します。定期評価の予算は1回の対象抽出全体へ適用します。",
   worlds:

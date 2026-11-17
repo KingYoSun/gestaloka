@@ -11,6 +11,7 @@ import type pg from "pg";
 import { derivedId } from "../world/model.js";
 import { z } from "zod";
 import { AccessError, WorldAccess } from "./access.js";
+import { PlayerTools } from "../runtime/player-tools.js";
 import type { WorldPlayers } from "../runtime/players.js";
 import { ModelLimits } from "../llm/limits.js";
 import { WorldBudget } from "../llm/world-budget.js";
@@ -98,6 +99,7 @@ export class Operations {
     this.mcp = new McpAuthorization(pool, mcpOptions);
   }
   async setup() {
+    await PlayerTools.setup(this.pool);
     await ModelSettings.setup(this.pool);
     await ModelLimits.setup(this.pool);
     await ExecutionBudget.setup(this.pool);
@@ -747,6 +749,28 @@ export class Operations {
           input,
         );
       }
+      case "reports.list":
+        return this.#access(context).botPlay.tools.reports(
+          db,
+          input.worldId,
+          input.before,
+        );
+      case "npcs.promotions":
+        return this.#access(context).botPlay.tools.promotions(
+          db,
+          input.worldId,
+          undefined,
+          input.before,
+        );
+      case "npcs.decidePromotion":
+        await RuntimeControl.check(db, {}, true);
+        return this.#access(context).botPlay.tools.decidePromotion(
+          db,
+          actor!,
+          input.worldId,
+          input.promotionId,
+          input.approve,
+        );
       case "npcs.read":
         return {
           items: (
@@ -939,24 +963,42 @@ export class Operations {
         return saved;
       }
       case "playPolicy.read":
-      case "playPolicy.put": {
+      case "playPolicy.put":
+      case "reportPolicy.read":
+      case "reportPolicy.put": {
+        const reporting = input.operation.startsWith("reportPolicy."),
+          table = reporting ? "player_report_policy" : "session_play_policy";
+        const columns = reporting
+          ? {
+              dailyLimit: "daily_limit",
+              turnsPerReport: "turns_per_report",
+              maxCharacters: "max_characters",
+            }
+          : {
+              turnCalls: "turn_calls",
+              receiptTimeoutSeconds: "receipt_timeout_seconds",
+            };
+        const fields = Object.entries(columns),
+          projection = fields
+            .map(([key, column]) => `${column}::float8 AS "${key}"`)
+            .join(",");
         const before = (
           await db.query(
-            `SELECT turn_calls::float8 AS "turnCalls",receipt_timeout_seconds::float8 AS "receiptTimeoutSeconds",
-            version,updated_by AS "updatedBy",updated_at AS "updatedAt" FROM session_play_policy WHERE singleton`,
+            `SELECT ${projection},version,updated_by AS "updatedBy",updated_at AS "updatedAt" FROM ${table} WHERE singleton`,
           )
         ).rows[0];
-        if (input.operation === "playPolicy.read")
+        if (!("expectedVersion" in input))
           return { ...before, updatedAt: before.updatedAt.toISOString() };
         const row = (
           await db.query(
-            `UPDATE session_play_policy SET turn_calls=$1,receipt_timeout_seconds=$2,
-            version=version+1,updated_by=$3,updated_at=now() WHERE singleton AND version=$4
-            RETURNING turn_calls::float8 AS "turnCalls",receipt_timeout_seconds::float8 AS "receiptTimeoutSeconds",
+            `UPDATE ${table} SET ${fields.map(([, column], i) => `${column}=$${i + 1}`).join(",")},
+            version=version+1,updated_by=$${fields.length + 1},updated_at=now() WHERE singleton AND version=$${fields.length + 2}
+            RETURNING ${projection},
             version,updated_by AS "updatedBy",updated_at AS "updatedAt"`,
             [
-              input.turnCalls,
-              input.receiptTimeoutSeconds,
+              ...fields.map(
+                ([key]) => (input as unknown as Record<string, unknown>)[key],
+              ),
               actor,
               input.expectedVersion,
             ],
@@ -971,10 +1013,9 @@ export class Operations {
         return {
           ...row,
           updatedAt: row.updatedAt.toISOString(),
-          previous: {
-            turnCalls: before.turnCalls,
-            receiptTimeoutSeconds: before.receiptTimeoutSeconds,
-          },
+          previous: Object.fromEntries(
+            fields.map(([key]) => [key, before[key]]),
+          ),
         };
       }
       case "responseLimits.read": {

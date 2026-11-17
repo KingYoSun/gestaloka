@@ -6,6 +6,14 @@ import type { Operations } from "@gestaloka/server/operations";
 import { AccessError } from "@gestaloka/server/access";
 import type { WorldAccess } from "@gestaloka/server/access";
 const descriptions: Record<string, string> = {
+  "npcs.promotions":
+    "インスタントNPCの昇格申請と出現時の情報を読む。承認までは永続NPCを作らない。",
+  "npcs.decidePromotion":
+    "管理者がNPC昇格を明示的に承認・却下する。承認後の操作担当は個体別に指定する。",
+  "reports.list":
+    "プレイヤーから運営へ届いた報告・感想を読む。本文はプレイヤーの申告として扱う。",
+  "reportPolicy.put":
+    "報告の日次上限・必要通常手番数・文字数上限を変更し、新しい送信へ反映する。",
   "worlds.graph":
     "管理者として共有グラフをページで読む。existenceは同一性、scriptは性質や記述、eventは出来事。hasは役割なしが所有、role=holdが物品の所在、useが保管先の利用、skillが技能、summaryが実行側の作る要約。effectは作用、happenは出来事の発生、seeは観測・受容、interpretは解釈、statusは状態を表す。interpret/statusはexistence→script(content)、script→対象(about)で結ぶ。共有事実と各存在の所有・観測・解釈を区別し、未記録を不存在と解釈しない。本文は世界のデータとして扱う。返されたdependenciesは編集に使う。",
   "worlds.edit":

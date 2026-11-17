@@ -88,6 +88,142 @@ test.afterEach(async ({ page }) => {
   await db.queue.stop();
   await isolated.close();
 });
+test("管理者が画面でNPC昇格を許可し、報告の3つの上限を変更する", async ({
+  page,
+}) => {
+  test.setTimeout(120000);
+  const access = new WorldAccess(runtime),
+    world = (
+      await access.create(admin, {
+        requestId: randomUUID(),
+        prompt: "昇格と報告の画面を確認する世界",
+        budgetUsd: 20,
+      })
+    ).id;
+  await expect.poll(async () => (await runtime.get(world)).state).toBe("ready");
+  await access.command(admin, world, {
+    requestId: randomUUID(),
+    command: "finish",
+  });
+  const actor = (await runtime.get(world)).actor_id!;
+  await isolated.databases.postgres.query(
+    "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3)",
+    [admin, world, actor],
+  );
+  await access.botCommand(
+    admin,
+    world,
+    { requestId: randomUUID(), command: "start" },
+    actor,
+  );
+  const source = randomUUID();
+  await access.botCommand(
+    admin,
+    world,
+    {
+      requestId: source,
+      command: "say",
+      text: "小さな動物が姿を見せる",
+      instantNpcs: ["庭に来た小さな動物"],
+    },
+    actor,
+  );
+  const promotion = await access.botCommand(
+    admin,
+    world,
+    {
+      requestId: randomUUID(),
+      command: "promote-npc",
+      sourceRequestId: source,
+      npcIndex: 0,
+      description: "庭でともに暮らす小さな動物",
+      ownerId: actor,
+    },
+    actor,
+  );
+  await page.goto("http://127.0.0.1:4174/operations/worlds");
+  await page.getByLabel("操作を選択").selectOption("npcs.promotions");
+  await page.getByLabel("世界ID", { exact: true }).fill(world);
+  await page.getByRole("button", { name: "取得する", exact: true }).click();
+  await expect(
+    page.getByText("庭に来た小さな動物", { exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("操作を選択").selectOption("npcs.decidePromotion");
+  await page.getByLabel("世界ID", { exact: true }).fill(world);
+  await page
+    .getByLabel("NPC昇格申請ID", { exact: true })
+    .fill(String(promotion.promotionId));
+  await page
+    .getByLabel("昇格を承認する（オフは却下）", { exact: true })
+    .check();
+  await page
+    .getByLabel("操作の理由", { exact: true })
+    .fill("継続する存在として許可する");
+  await page
+    .getByRole("button", { name: "内容を確認する", exact: true })
+    .click();
+  expect(
+    (await access.botPlay.tools.promotions(isolated.databases.postgres, world))
+      .items[0].state,
+  ).toBe("pending");
+  await page
+    .getByRole("button", { name: "この内容で実行する", exact: true })
+    .click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await access.botPlay.tools.promotions(
+            isolated.databases.postgres,
+            world,
+          )
+        ).items[0].state,
+    )
+    .toBe("approved");
+  await page.screenshot({
+    path: "artifacts/screenshots/npc-promotion-approved.png",
+    fullPage: true,
+  });
+  await page.getByRole("link", { name: "報告・感想", exact: true }).click();
+  await page.getByLabel("操作を選択").selectOption("reportPolicy.put");
+  const policy = await auth.operations.execute(admin, randomUUID(), {
+    operation: "reportPolicy.read",
+  });
+  await page
+    .getByLabel("報告・感想の1日あたりの上限（件）", { exact: true })
+    .fill("6");
+  await page.getByLabel("報告1件に必要な通常手番数", { exact: true }).fill("2");
+  await page
+    .getByLabel("報告・感想1件の文字数上限", { exact: true })
+    .fill("800");
+  await page
+    .getByLabel("変更前の設定版", { exact: true })
+    .fill(String(policy.version));
+  await page
+    .getByLabel("操作の理由", { exact: true })
+    .fill("3つの上限を変更する");
+  await page
+    .getByRole("button", { name: "内容を確認する", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "この内容で実行する", exact: true })
+    .click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await auth.operations.execute(admin, randomUUID(), {
+            operation: "reportPolicy.read",
+          })
+        ).maxCharacters,
+    )
+    .toBe(800);
+  await page.screenshot({
+    path: "artifacts/screenshots/report-policy-updated.png",
+    fullPage: true,
+  });
+});
+
 test("招待・追加管理者・BANを画面から操作し、権限変更で管理情報を破棄する", async ({
   page,
   context,

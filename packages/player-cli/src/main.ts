@@ -4,6 +4,7 @@ import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { parseArgs } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import {
   PlayerDeviceCode,
@@ -13,6 +14,8 @@ import {
   JoinWorld,
   PlayerIconInput,
   WorldPlayerPage,
+  PlayerReportInput,
+  WaitingStatus,
 } from "@gestaloka/contracts";
 
 const help = `GESTALOKA プレイヤーCLI
@@ -20,8 +23,11 @@ const help = `GESTALOKA プレイヤーCLI
 gestaloka connect --server <URL> --world <IDまたはURL> [--character <ファイル>] [--icon <画像>]
 gestaloka join [--icon <画像>]           認可されたキャラクターを生成
 gestaloka status                        参加状態・手番・チャットを取得（枠外）
+gestaloka standby [--resume]            待機を更新し、本人を起こす条件を取得（枠外）
+gestaloka listen [--resume]             待機を維持し、変化をJSON Linesで出力
+gestaloka disconnect                    このインスタンスの待機を解除
 gestaloka start                         単独セッションを開始
-gestaloka search --kind <surroundings|belongings|self|history|subject> [--target <ID>]
+gestaloka search --kind <surroundings|belongings|self|history|subject|memos> [--target <ID>]
 gestaloka contact --target <人物ID>      所在地から接触・合流を申請
 gestaloka say --text <発言>              本人の一手を記録
 gestaloka comment --text <コメント>      本人の手番に1回、枠外でコメント
@@ -30,6 +36,10 @@ gestaloka end-turn                      手番を終え、入力と結果を共�
 gestaloka leave                         セッションを分離して続行
 gestaloka finish                        本人のシーンを終了し履歴を取得
 gestaloka play --file <JSONファイル>     PlayCommandの検索・更新・作成・対抗行動を送信
+gestaloka memo --text <本文> [--participants <人物ID,人物ID>] メモノードを作成
+gestaloka promote-npc --source <発言要求ID> --index <番号> --text <NPCの説明> [--owner <本人ID>]
+gestaloka promotions [--before <ID>]    本人のNPC昇格申請と許可結果を確認
+gestaloka report [--text <本文>]        運営への報告・感想を送信。本文なしは送信枠を確認
 gestaloka history --scene <ID> --kind <events|actions>  旧シーンの保存履歴
 gestaloka icon [--file <画像>|--clear]   アイコンを操作
 gestaloka recover [--request <ID>]       保存した同じ要求を再送
@@ -47,6 +57,7 @@ const Profile = z.object({
   secret: z.string(),
   lastRequestId: z.uuid().optional(),
   joinIconRequestId: z.uuid().optional(),
+  waitingEnded: z.boolean().optional(),
 });
 const Request = z.object({
   id: z.uuid(),
@@ -65,6 +76,11 @@ const parse = () =>
       world: { type: "string" },
       profile: { type: "string" },
       instance: { type: "string" },
+      participants: { type: "string" },
+      source: { type: "string" },
+      index: { type: "string" },
+      owner: { type: "string" },
+      resume: { type: "boolean" },
       text: { type: "string" },
       file: { type: "string" },
       after: { type: "string" },
@@ -132,6 +148,43 @@ async function status(profile: Profile) {
       `/api/worlds/${profile.worldId}/session${values.scene ? `?sceneId=${z.uuid().parse(values.scene)}` : ""}`,
     )),
   };
+}
+const WaitingControl = z.object({ enabled: z.boolean() });
+async function waitingControl(profile: Profile) {
+  try {
+    return WaitingControl.parse(
+      JSON.parse(await readFile(join(journal, "waiting.json"), "utf8")),
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      return { enabled: !profile.waitingEnded };
+    throw error;
+  }
+}
+async function standby(profile: Profile, resume = false) {
+  if (resume) await save(join(journal, "waiting.json"), { enabled: true });
+  const control = await waitingControl(profile),
+    path = `/api/worlds/${profile.worldId}/waiting`;
+  const frame = WaitingStatus.parse(
+    await http(profile, path, { active: control.enabled }),
+  );
+  if (control.enabled && !(await waitingControl(profile)).enabled)
+    return WaitingStatus.parse(await http(profile, path, { active: false }));
+  return frame;
+}
+async function listen(profile: Profile) {
+  let frame = await standby(profile, !!values.resume),
+    last = "";
+  while (frame.active) {
+    const key = `${frame.state}:${frame.wakeKey ?? ""}`;
+    if (key !== last) {
+      console.log(JSON.stringify(frame));
+      last = key;
+    }
+    await delay(30000);
+    frame = await standby(profile);
+  }
+  return frame;
 }
 async function send(
   profile: Profile,
@@ -320,6 +373,38 @@ async function run() {
   const device = PlayerDeviceStatus.parse(
     await http(profile, "/api/player-device"),
   );
+  if (command === "standby") return standby(profile, !!values.resume);
+  if (command === "listen") return listen(profile);
+  if (command === "disconnect") {
+    await save(join(journal, "waiting.json"), { enabled: false });
+    return WaitingStatus.parse(
+      await http(profile, `/api/worlds/${profile.worldId}/waiting`, {
+        active: false,
+      }),
+    );
+  }
+  if (command === "report") {
+    const path = `/api/worlds/${profile.worldId}/reports`;
+    if (values.text === undefined)
+      return { state: "report", ...(await http(profile, path)) };
+    const id = randomUUID();
+    return submit(
+      profile,
+      path,
+      PlayerReportInput.parse({ requestId: id, text: values.text }),
+      true,
+      id,
+    );
+  }
+  if (command === "promotions") {
+    return {
+      state: "promotions",
+      ...(await http(
+        profile,
+        `/api/worlds/${profile.worldId}/npc-promotions${values.before ? `?before=${z.uuid().parse(values.before)}` : ""}`,
+      )),
+    };
+  }
   if (command === "icon") {
     const player = WorldPlayerPage.parse(
       await http(profile, `/api/worlds/${profile.worldId}/players`),
@@ -409,11 +494,26 @@ async function run() {
               }
             : {}),
           ...(command === "contact" ? { targetId: values.target } : {}),
-          ...(["say", "comment"].includes(command)
+          ...(["say", "comment", "memo"].includes(command)
             ? {
                 text: values.file
                   ? await readFile(values.file, "utf8")
                   : values.text,
+              }
+            : {}),
+          ...(command === "memo"
+            ? {
+                participants:
+                  values.participants?.split(",").map((v) => v.trim()) ?? [],
+                dependencies: [],
+              }
+            : {}),
+          ...(command === "promote-npc"
+            ? {
+                sourceRequestId: values.source,
+                npcIndex: Number(values.index),
+                description: values.text,
+                ...(values.owner ? { ownerId: values.owner } : {}),
               }
             : {}),
           ...(command === "receive"

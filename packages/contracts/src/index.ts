@@ -6,6 +6,11 @@ export {
   PlayResponse,
   BelongingOp,
   LocationOp,
+  PlayerReportInput,
+  PlayerReportStatus,
+  PlayerReportReceipt,
+  WaitingCommand,
+  WaitingStatus,
 } from "./play.js";
 export {
   Change,
@@ -1061,6 +1066,40 @@ export const Operation = z.discriminatedUnion("operation", [
     .strict(),
   z.object({ operation: z.literal("responseLimits.read") }).strict(),
   z.object({ operation: z.literal("playPolicy.read") }).strict(),
+  z.object({ operation: z.literal("reportPolicy.read") }).strict(),
+  z
+    .object({
+      operation: z.literal("reportPolicy.put"),
+      dailyLimit: quotaCount,
+      turnsPerReport: quotaCount,
+      maxCharacters: quotaCount,
+      expectedVersion: z.number().int().positive().safe(),
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("reports.list"),
+      worldId: z.uuid(),
+      before: z.uuid().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("npcs.promotions"),
+      worldId: z.uuid(),
+      before: z.uuid().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("npcs.decidePromotion"),
+      worldId: z.uuid(),
+      promotionId: z.uuid(),
+      approve: z.boolean(),
+      reason: operationReason,
+    })
+    .strict(),
   z.object({ operation: z.literal("npcs.read"), worldId: z.uuid() }).strict(),
   z
     .object({

@@ -36,7 +36,13 @@ export const WorldNode = z.discriminatedUnion("kind", [
       kind: z.literal("existence"),
     })
     .strict(),
-  z.object({ ...Content, kind: z.literal("script") }).strict(),
+  z
+    .object({
+      ...Content,
+      kind: z.literal("script"),
+      type: z.literal("memo").optional(),
+    })
+    .strict(),
   z.object({ ...Content, kind: z.literal("event"), period: Period }).strict(),
 ]);
 export type WorldNode = z.infer<typeof WorldNode>;
