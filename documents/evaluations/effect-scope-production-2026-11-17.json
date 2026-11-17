@@ -1,0 +1,661 @@
+{
+  "publication": "aggregate-only; production records are not included",
+  "date": "2026-11-17",
+  "title": "作用経路の供給変更後の本番観察",
+  "aggregates": {
+    "cohorts": {
+      "matchedBefore": {
+        "operations": 3,
+        "scenes": 3,
+        "initialInput": 816113,
+        "initialInputMean": 272037.6666666667,
+        "events": 10,
+        "deferredSubjects": 0,
+        "queryBatches": 1,
+        "queryRequests": 1,
+        "effectQueryRequests": 0,
+        "upper": {
+          "calls": 5,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 1350186,
+          "output": 3017,
+          "cached": 542640,
+          "cacheWrite30m": 799060,
+          "cacheWrite12h": 0,
+          "nano": 1393360200,
+          "commonColdNano": 1365271000
+        },
+        "ending": {
+          "calls": 8,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 1368231,
+          "output": 6787,
+          "cached": 542640,
+          "cacheWrite30m": 799060,
+          "cacheWrite12h": 0,
+          "nano": 1397049700,
+          "commonColdNano": 1368960500
+        },
+        "other": {
+          "calls": 43,
+          "pending": 1,
+          "reservedPendingNano": 137625600,
+          "input": 5574333,
+          "output": 210826,
+          "cached": 1529023,
+          "cacheWrite30m": 1119994,
+          "cacheWrite12h": 0,
+          "nano": 2269434490,
+          "commonColdNano": 2266157600
+        },
+        "wholeScene": {
+          "calls": 46,
+          "pending": 1,
+          "reservedPendingNano": 137625600,
+          "input": 5592378,
+          "output": 214596,
+          "cached": 1529023,
+          "cacheWrite30m": 1119994,
+          "cacheWrite12h": 0,
+          "nano": 2273123990,
+          "commonColdNano": 2269847100
+        },
+        "roles": {
+          "scene-background": {
+            "calls": 15,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 1383860,
+            "output": 16937,
+            "cached": 430020,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 105572580,
+            "commonColdNano": 146854500
+          },
+          "scene-resolve": {
+            "calls": 23,
+            "pending": 1,
+            "reservedPendingNano": 137625600,
+            "input": 2840287,
+            "output": 190872,
+            "cached": 556363,
+            "cacheWrite30m": 320934,
+            "cacheWrite12h": 0,
+            "nano": 770501710,
+            "commonColdNano": 754032100
+          },
+          "world-update": {
+            "calls": 5,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 1350186,
+            "output": 3017,
+            "cached": 542640,
+            "cacheWrite30m": 799060,
+            "cacheWrite12h": 0,
+            "nano": 1393360200,
+            "commonColdNano": 1365271000
+          },
+          "scene-result": {
+            "calls": 3,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 18045,
+            "output": 3770,
+            "cached": 0,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 3689500,
+            "commonColdNano": 3689500
+          }
+        },
+        "dispositions": {
+          "settled": 3
+        }
+      },
+      "matchedAfter": {
+        "operations": 3,
+        "scenes": 3,
+        "initialInput": 815266,
+        "initialInputMean": 271755.3333333333,
+        "events": 13,
+        "deferredSubjects": 7,
+        "queryBatches": 1,
+        "queryRequests": 1,
+        "effectQueryRequests": 0,
+        "upper": {
+          "calls": 4,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 1086549,
+          "output": 3140,
+          "cached": 277115,
+          "cacheWrite30m": 800725,
+          "cacheWrite12h": 0,
+          "nano": 1375530650,
+          "commonColdNano": 1102249000
+        },
+        "ending": {
+          "calls": 7,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 1111993,
+          "output": 5871,
+          "cached": 277115,
+          "cacheWrite30m": 800725,
+          "cacheWrite12h": 0,
+          "nano": 1379440550,
+          "commonColdNano": 1106158900
+        },
+        "other": {
+          "calls": 34,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 4329552,
+          "output": 179677,
+          "cached": 1142349,
+          "cacheWrite30m": 1015766,
+          "cacheWrite12h": 0,
+          "nano": 2068556608,
+          "commonColdNano": 1831479200
+        },
+        "wholeScene": {
+          "calls": 37,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 4354996,
+          "output": 182408,
+          "cached": 1142349,
+          "cacheWrite30m": 1015766,
+          "cacheWrite12h": 0,
+          "nano": 2072466508,
+          "commonColdNano": 1835389100
+        },
+        "roles": {
+          "scene-background": {
+            "calls": 15,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 1226551,
+            "output": 19487,
+            "cached": 321976,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 101488904,
+            "commonColdNano": 132398600
+          },
+          "scene-resolve": {
+            "calls": 15,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 2016452,
+            "output": 157050,
+            "cached": 543258,
+            "cacheWrite30m": 215041,
+            "cacheWrite12h": 0,
+            "nano": 591537054,
+            "commonColdNano": 596831600
+          },
+          "world-update": {
+            "calls": 4,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 1086549,
+            "output": 3140,
+            "cached": 277115,
+            "cacheWrite30m": 800725,
+            "cacheWrite12h": 0,
+            "nano": 1375530650,
+            "commonColdNano": 1102249000
+          },
+          "scene-result": {
+            "calls": 3,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 25444,
+            "output": 2731,
+            "cached": 0,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 3909900,
+            "commonColdNano": 3909900
+          }
+        },
+        "dispositions": {
+          "deferred": 2,
+          "settled": 1
+        }
+      },
+      "pre215": {
+        "operations": 8,
+        "scenes": 8,
+        "initialInput": 1422393,
+        "initialInputMean": 177799.125,
+        "events": 110,
+        "deferredSubjects": 0,
+        "queryBatches": 1,
+        "queryRequests": 1,
+        "effectQueryRequests": 0,
+        "upper": {
+          "calls": 10,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 1956466,
+          "output": 6199,
+          "cached": 563110,
+          "cacheWrite30m": 1351040,
+          "cacheWrite12h": 0,
+          "nano": 2725439150,
+          "commonColdNano": 1987461000
+        },
+        "ending": {
+          "calls": 21,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 2101671,
+          "output": 15982,
+          "cached": 567566,
+          "cacheWrite30m": 1352319,
+          "cacheWrite12h": 0,
+          "nano": 2748188324,
+          "commonColdNano": 2010318200
+        },
+        "other": {
+          "calls": 265,
+          "pending": 3,
+          "reservedPendingNano": 412876800,
+          "input": 20996037,
+          "output": 668518,
+          "cached": 4543563,
+          "cacheWrite30m": 2064327,
+          "cacheWrite12h": 0,
+          "nano": 6420638562,
+          "commonColdNano": 6208014500
+        },
+        "wholeScene": {
+          "calls": 276,
+          "pending": 3,
+          "reservedPendingNano": 412876800,
+          "input": 21141242,
+          "output": 678301,
+          "cached": 4548019,
+          "cacheWrite30m": 2065606,
+          "cacheWrite12h": 0,
+          "nano": 6443387736,
+          "commonColdNano": 6230871700
+        },
+        "roles": {
+          "scene-background": {
+            "calls": 51,
+            "pending": 1,
+            "reservedPendingNano": 137625600,
+            "input": 2455561,
+            "output": 59092,
+            "cached": 749444,
+            "cacheWrite30m": 19803,
+            "cacheWrite12h": 0,
+            "nano": 262555326,
+            "commonColdNano": 329551200
+          },
+          "scene-resolve": {
+            "calls": 189,
+            "pending": 2,
+            "reservedPendingNano": 275251200,
+            "input": 16417704,
+            "output": 601390,
+            "cached": 3190149,
+            "cacheWrite30m": 598766,
+            "cacheWrite12h": 0,
+            "nano": 3272290586,
+            "commonColdNano": 3715511300
+          },
+          "scene-intent": {
+            "calls": 15,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 166306,
+            "output": 1837,
+            "cached": 40860,
+            "cacheWrite30m": 94718,
+            "cacheWrite12h": 0,
+            "nano": 160353500,
+            "commonColdNano": 175491000
+          },
+          "world-update": {
+            "calls": 10,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 1956466,
+            "output": 6199,
+            "cached": 563110,
+            "cacheWrite30m": 1351040,
+            "cacheWrite12h": 0,
+            "nano": 2725439150,
+            "commonColdNano": 1987461000
+          },
+          "scene-result": {
+            "calls": 11,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 145205,
+            "output": 9783,
+            "cached": 4456,
+            "cacheWrite30m": 1279,
+            "cacheWrite12h": 0,
+            "nano": 22749174,
+            "commonColdNano": 22857200
+          }
+        },
+        "dispositions": {
+          "settled": 5,
+          "deferred": 2,
+          "resolve": 1
+        }
+      },
+      "after216": {
+        "operations": 22,
+        "scenes": 22,
+        "initialInput": 3370440,
+        "initialInputMean": 153201.81818181818,
+        "events": 820,
+        "deferredSubjects": 46,
+        "queryBatches": 0,
+        "queryRequests": 0,
+        "effectQueryRequests": 0,
+        "upper": {
+          "calls": 22,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 3370440,
+          "output": 12754,
+          "cached": 91256,
+          "cacheWrite30m": 3000020,
+          "cacheWrite12h": 0,
+          "nano": 6947545050,
+          "commonColdNano": 3434210000
+        },
+        "ending": {
+          "calls": 46,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 4243138,
+          "output": 43147,
+          "cached": 92268,
+          "cacheWrite30m": 3000020,
+          "cacheWrite12h": 0,
+          "nano": 7049914198,
+          "commonColdNano": 3536676300
+        },
+        "other": {
+          "calls": 2042,
+          "pending": 5,
+          "reservedPendingNano": 688128000,
+          "input": 265682640,
+          "output": 7610323,
+          "cached": 62073328,
+          "cacheWrite30m": 4327045,
+          "cacheWrite12h": 0,
+          "nano": 39754838088,
+          "commonColdNano": 43477382300
+        },
+        "wholeScene": {
+          "calls": 2066,
+          "pending": 5,
+          "reservedPendingNano": 688128000,
+          "input": 266555338,
+          "output": 7640716,
+          "cached": 62074340,
+          "cacheWrite30m": 4327045,
+          "cacheWrite12h": 0,
+          "nano": 39857207236,
+          "commonColdNano": 43579848600
+        },
+        "roles": {
+          "scene-background": {
+            "calls": 131,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 14817197,
+            "output": 215772,
+            "cached": 6830120,
+            "cacheWrite30m": 23815,
+            "cacheWrite12h": 0,
+            "nano": 999285030,
+            "commonColdNano": 1649022800
+          },
+          "scene-resolve": {
+            "calls": 1757,
+            "pending": 5,
+            "reservedPendingNano": 688128000,
+            "input": 246623352,
+            "output": 7361808,
+            "cached": 54969853,
+            "cacheWrite30m": 806763,
+            "cacheWrite12h": 0,
+            "nano": 30885294308,
+            "commonColdNano": 37422553500
+          },
+          "scene-intent": {
+            "calls": 132,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 871651,
+            "output": 19989,
+            "cached": 182099,
+            "cacheWrite30m": 496447,
+            "cacheWrite12h": 0,
+            "nano": 922713700,
+            "commonColdNano": 971596000
+          },
+          "world-update": {
+            "calls": 22,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 3370440,
+            "output": 12754,
+            "cached": 91256,
+            "cacheWrite30m": 3000020,
+            "cacheWrite12h": 0,
+            "nano": 6947545050,
+            "commonColdNano": 3434210000
+          },
+          "scene-result": {
+            "calls": 24,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 872698,
+            "output": 30393,
+            "cached": 1012,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 102369148,
+            "commonColdNano": 102466300
+          }
+        },
+        "dispositions": {
+          "deferred": 15,
+          "intent": 3,
+          "settled": 15,
+          "resolve": 3
+        }
+      },
+      "before213": {
+        "operations": 15,
+        "scenes": 15,
+        "initialInput": 3887755,
+        "initialInputMean": 259183.66666666666,
+        "events": 943,
+        "deferredSubjects": 0,
+        "queryBatches": 2,
+        "queryRequests": 8,
+        "effectQueryRequests": 0,
+        "upper": {
+          "calls": 20,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 5491996,
+          "output": 18089,
+          "cached": 1322724,
+          "cacheWrite30m": 3404729,
+          "cacheWrite12h": 0,
+          "nano": 7645114900,
+          "commonColdNano": 5582441000
+        },
+        "ending": {
+          "calls": 37,
+          "pending": 0,
+          "reservedPendingNano": 0,
+          "input": 6964176,
+          "output": 38368,
+          "cached": 1322724,
+          "cacheWrite30m": 3404729,
+          "cacheWrite12h": 0,
+          "nano": 7802472400,
+          "commonColdNano": 5739798500
+        },
+        "other": {
+          "calls": 1736,
+          "pending": 4,
+          "reservedPendingNano": 809169300,
+          "input": 123328707,
+          "output": 9126011,
+          "cached": 26436502,
+          "cacheWrite30m": 7614726,
+          "cacheWrite12h": 0,
+          "nano": 35481563866,
+          "commonColdNano": 36680481500
+        },
+        "wholeScene": {
+          "calls": 1753,
+          "pending": 4,
+          "reservedPendingNano": 809169300,
+          "input": 124800887,
+          "output": 9146290,
+          "cached": 26436502,
+          "cacheWrite30m": 7614726,
+          "cacheWrite12h": 0,
+          "nano": 35638921366,
+          "commonColdNano": 36837839000
+        },
+        "roles": {
+          "prompt-cache": {
+            "calls": 10,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 0,
+            "output": 0,
+            "cached": 0,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 16241052,
+            "commonColdNano": 0
+          },
+          "scene-background": {
+            "calls": 83,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 5489211,
+            "output": 213481,
+            "cached": 1686339,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 535950693,
+            "commonColdNano": 754666350
+          },
+          "scene-resolve": {
+            "calls": 1502,
+            "pending": 3,
+            "reservedPendingNano": 412876800,
+            "input": 110101167,
+            "output": 8880268,
+            "cached": 23207134,
+            "cacheWrite30m": 2368254,
+            "cacheWrite12h": 0,
+            "nano": 24715913221,
+            "commonColdNano": 28026176150
+          },
+          "scene-intent": {
+            "calls": 121,
+            "pending": 1,
+            "reservedPendingNano": 396292500,
+            "input": 2246333,
+            "output": 14173,
+            "cached": 220305,
+            "cacheWrite30m": 1841743,
+            "cacheWrite12h": 0,
+            "nano": 2568344000,
+            "commonColdNano": 2317198000
+          },
+          "world-update": {
+            "calls": 20,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 5491996,
+            "output": 18089,
+            "cached": 1322724,
+            "cacheWrite30m": 3404729,
+            "cacheWrite12h": 0,
+            "nano": 7645114900,
+            "commonColdNano": 5582441000
+          },
+          "scene-result": {
+            "calls": 17,
+            "pending": 0,
+            "reservedPendingNano": 0,
+            "input": 1472180,
+            "output": 20279,
+            "cached": 0,
+            "cacheWrite30m": 0,
+            "cacheWrite12h": 0,
+            "nano": 157357500,
+            "commonColdNano": 157357500
+          }
+        },
+        "dispositions": {
+          "settled": 14,
+          "deferred": 5,
+          "intent": 2
+        }
+      }
+    },
+    "delta": {
+      "initialInput": -0.0010378464746916283,
+      "upperInput": -0.19525976421026436,
+      "endingInput": -0.18727685602796607,
+      "upperCost": -0.012796081013366156,
+      "endingCost": -0.01260452652471844,
+      "commonColdEndingCost": -0.1919716456391547
+    },
+    "narrativeCohorts": {
+      "before": {
+        "scenes": 3,
+        "newUnits": 9,
+        "importantNewUnits": 6,
+        "resultNewUnits": 0,
+        "resultImportantNewUnits": 0
+      },
+      "after": {
+        "scenes": 3,
+        "newUnits": 8,
+        "importantNewUnits": 3,
+        "resultNewUnits": 0,
+        "resultImportantNewUnits": 0
+      }
+    },
+    "validation": {
+      "upperOperations": 48,
+      "scopedRequestsWithFullAnchorsAndEvents": 25,
+      "crossBoundaryCalls": 0,
+      "allIntentionsClassifiedOnce": true,
+      "allUpperResponsesParsed": true,
+      "resultWireMatchesSource": 5,
+      "readOnlyTransaction": true,
+      "productionWrites": 0,
+      "additionalModelCalls": 0
+    }
+  },
+  "configuration": {}
+}

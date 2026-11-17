@@ -1,0 +1,82 @@
+{
+  "publication": "aggregate-only; production records are not included",
+  "date": "2026-11-17",
+  "title": "派生グラフを残してeventsの重複を省く比較",
+  "aggregates": {
+    "totals": {
+      "full": {
+        "initialInput": 58083,
+        "world": {
+          "calls": 7,
+          "input": 97546,
+          "output": 3729,
+          "reasoning": 2234,
+          "cacheHit": 44923,
+          "cacheWrite": 30862,
+          "nano": 81229650,
+          "coldNano": 116191000
+        },
+        "total": {
+          "calls": 11,
+          "input": 149720,
+          "output": 8008,
+          "reasoning": 4291,
+          "cacheHit": 44923,
+          "cacheWrite": 30862,
+          "nano": 88586550,
+          "coldNano": 123547900
+        }
+      },
+      "metadata": {
+        "initialInput": 55670,
+        "world": {
+          "calls": 7,
+          "input": 93522,
+          "output": 4354,
+          "reasoning": 2502,
+          "cacheHit": 48859,
+          "cacheWrite": 26602,
+          "nano": 75526450,
+          "coldNano": 115292000
+        },
+        "total": {
+          "calls": 11,
+          "input": 145696,
+          "output": 9409,
+          "reasoning": 4283,
+          "cacheHit": 48859,
+          "cacheWrite": 26602,
+          "nano": 83271350,
+          "coldNano": 123036900
+        }
+      }
+    },
+    "reductions": {
+      "initialInput": 0.04154399738305525,
+      "worldInput": 0.041252332232997735,
+      "totalInput": 0.026876836761955625,
+      "cost": 0.06000007901876747,
+      "coldCost": 0.004136047638203522
+    },
+    "budget": {
+      "limitUsd": 8,
+      "upperCostUsd": 0.1718579,
+      "calls": 22,
+      "unsettled": 0
+    },
+    "validation": {
+      "wireRoundtrips": 22,
+      "nativeReceipts": 8,
+      "preflight": {
+        "worlds": 8,
+        "contextsMatchedCaptured": 8
+      },
+      "integrationTests": 46,
+      "unitTests": 102,
+      "productionWrites": 0,
+      "identicalResultProviderInputs": 4,
+      "identicalConfirmedSources": 4
+    }
+  },
+  "configuration": {}
+}

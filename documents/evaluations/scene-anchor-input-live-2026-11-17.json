@@ -1,0 +1,44 @@
+{
+  "publication": "aggregate-only; production records are not included",
+  "date": "2026-11-17",
+  "title": "派生グラフの重複供給を省く比較",
+  "aggregates": {
+    "totals": {
+      "full": {
+        "calls": 5,
+        "inputTokens": 1353196,
+        "outputTokens": 3183,
+        "calculatedNanoUsd": 2525641200,
+        "elapsedMs": 70751
+      },
+      "projected": {
+        "calls": 5,
+        "inputTokens": 811508,
+        "outputTokens": 4760,
+        "calculatedNanoUsd": 1227607200,
+        "elapsedMs": 92863
+      }
+    },
+    "inputReduction": 0.40030269081493,
+    "costReduction": 0.5139423604588015,
+    "budget": {
+      "limitUsd": 8,
+      "upperCostUsd": 3.7532484,
+      "calls": 10,
+      "unsettled": 0
+    },
+    "validation": {
+      "savedCasesProjectedAndGraphReconstructed": 19,
+      "unitTests": 102,
+      "integrationTests": 47,
+      "productionWrites": 0
+    }
+  },
+  "configuration": {
+    "model": "gpt-6.1-terra",
+    "api": "responses",
+    "effort": "medium",
+    "maxOutputTokens": 65536,
+    "budgetUsd": 8
+  }
+}

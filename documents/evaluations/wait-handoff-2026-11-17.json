@@ -1,0 +1,47 @@
+{
+  "publication": "aggregate-only; production records are not included",
+  "date": "2026-11-17",
+  "title": "進行中の待機判断を終了時へ引き継ぐ比較",
+  "aggregates": {
+    "totals": {
+      "baseline": {
+        "calls": 6,
+        "reviewedActors": 10,
+        "inputTokens": 84757,
+        "outputTokens": 4233,
+        "reasoningTokens": 2302,
+        "nano": 86521200,
+        "elapsedMs": 67751
+      },
+      "handoff": {
+        "calls": 6,
+        "reviewedActors": 0,
+        "inputTokens": 86000,
+        "outputTokens": 3237,
+        "reasoningTokens": 1846,
+        "nano": 87157000,
+        "elapsedMs": 58292
+      }
+    },
+    "budget": {
+      "limitUsd": 4,
+      "upperCostUsd": 0.1736782,
+      "calls": 12,
+      "unsettled": 0
+    },
+    "validation": {
+      "sourceAndWireChecks": 12,
+      "freshnessGuardScenarios": 6,
+      "allAnchorsAndEventsKept": true,
+      "productChangesThisTask": 0,
+      "productionAccess": false
+    }
+  },
+  "configuration": {
+    "model": "gpt-6.1-terra",
+    "api": "responses",
+    "effort": "medium",
+    "maxOutputTokens": 65536,
+    "budgetUsd": 4
+  }
+}
