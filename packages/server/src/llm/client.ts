@@ -939,14 +939,25 @@ export class LlmClient {
               const rejection = await this.ledger.reject(
                 id,
                 provider,
-                response,
+                response.clone(),
                 Math.round(performance.now() - started),
               );
               if (rejection) {
                 quota.used(0);
                 throw new Error(rejection);
               }
-              throw new Error(
+              throw new UncertainResponse(
+                {
+                  type: "http",
+                  provider,
+                  model,
+                  httpStatus: response.status,
+                  requestId:
+                    response.headers.get("x-request-id") ??
+                    response.headers.get("request-id"),
+                  contentType: response.headers.get("content-type"),
+                  body: await response.text().catch(() => null),
+                },
                 `LLM要求の結果を確定できません: HTTP ${response.status}。予約枠は保持します`,
               );
             }

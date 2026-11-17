@@ -862,6 +862,18 @@ test.each([
     reply: () => Response.json({ error: "Bad Request" }, { status: 400 }),
   },
   {
+    name: "OpenRouterの非課金を確認できないHTTP 400",
+    model: "meta/muse-ember",
+    reply: () =>
+      new Response('{"error":{"message":"invalid schema","code":400}}', {
+        status: 400,
+        headers: {
+          "x-request-id": "request-204",
+          "content-type": "application/json",
+        },
+      }),
+  },
+  {
     name: "HTTP 500",
     reply: () =>
       Response.json(
@@ -945,6 +957,7 @@ test.each([
     ANTHROPIC_API_KEY: "unused",
     OPENAI_API_KEY: "unused",
     GEMINI_API_KEY: "unused",
+    OPENROUTER_API_KEY: "unused",
     LLM_CONTEXT_TOKENS: "10000",
     LLM_MAX_OUTPUT_TOKENS: "1000",
     LLM_INPUT_USD_PER_MILLION: "2",
@@ -980,7 +993,11 @@ test.each([
             missingBody: true,
           }),
         })
-      : null,
+      : failure.name === "タイムアウト"
+        ? null
+        : expect.objectContaining({
+            diagnostic: expect.objectContaining({ type: "http" }),
+          }),
   });
   const reopened = createCountedClient(databases.postgres, config, transport);
   await expect(reopened.complete(id, "probe", [])).rejects.toBeInstanceOf(
@@ -988,6 +1005,34 @@ test.each([
   );
   expect(transport).toHaveBeenCalledTimes(format ? 4 : 1);
   expect(await client.ledger.summary()).toEqual(before);
+  if (model === "meta/muse-ember") {
+    const original = (
+      await databases.postgres.query("SELECT * FROM llm_call WHERE id=$1", [id])
+    ).rows[0];
+    expect(original.response.diagnostic).toEqual({
+      type: "http",
+      provider: "openrouter",
+      model,
+      httpStatus: 400,
+      requestId: "request-204",
+      contentType: "application/json",
+      body: '{"error":{"message":"invalid schema","code":400}}',
+    });
+    const accepted = await response().json();
+    accepted.usage.total_tokens = 50;
+    transport.mockResolvedValueOnce(Response.json(accepted));
+    await expect(
+      reopened.complete(randomUUID(), "probe", []),
+    ).resolves.toHaveProperty("content", '{"connected":true}');
+    expect(
+      (
+        await databases.postgres.query("SELECT * FROM llm_call WHERE id=$1", [
+          id,
+        ])
+      ).rows[0],
+    ).toEqual(original);
+    expect(transport).toHaveBeenCalledTimes(2);
+  }
 });
 
 test("推論量の設定を変更しても保存済み呼出しを再送せず、新しい呼出しだけへ適用する", async () => {
