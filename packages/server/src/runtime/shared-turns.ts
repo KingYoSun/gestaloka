@@ -45,7 +45,12 @@ type Task = {
   actor_id: string;
   kind: "human" | "bot";
   command: "act" | "leave" | "reply" | "npc";
-  data: { actionText?: string; waveId?: string; npcSession?: string };
+  data: {
+    actionText?: string;
+    waveId?: string;
+    npcSession?: string;
+    seen?: string[];
+  };
 };
 type Wave = {
   id: string;
@@ -132,16 +137,18 @@ export class SharedTurns {
     text: string,
     source: string,
     sourceKind: "human" | "bot",
+    seen: string[],
   ) {
     if (kind === "human") {
       await this.#queue(db, row.id, id, actor, kind, "act", {
         actionText: text,
+        seen,
       });
     } else {
       const waveId = await this.#offer(db, row, source, sourceKind, [actor]);
       await db.query(
-        "UPDATE world_scene_reply SET state='answered',request_id=$3,text=$4 WHERE wave_id=$1 AND actor_id=$2",
-        [waveId, actor, id, text],
+        "UPDATE world_scene_reply SET state='answered',request_id=$3,text=$4,seen=$5 WHERE wave_id=$1 AND actor_id=$2",
+        [waveId, actor, id, text, JSON.stringify(seen)],
       );
       const wave = (
         await db.query<Wave>("SELECT * FROM world_scene_wave WHERE id=$1", [
@@ -448,11 +455,14 @@ export class SharedTurns {
                 id: task.id,
                 actorId: task.actor_id,
                 text: task.data.actionText!,
-                seen: row.data.events
-                  .filter((e) =>
-                    e.receipts.some((p) => p.observerId === task.actor_id),
-                  )
-                  .map((e) => e.id),
+                seen:
+                  task.data.seen ??
+                  this.shared.sessions
+                    .history(row)
+                    .filter((e) =>
+                      e.receipts.some((p) => p.observerId === task.actor_id),
+                    )
+                    .map((e) => e.id),
                 ...(task.command === "leave" ? { leave: true as const } : {}),
               },
             ];
@@ -1189,7 +1199,8 @@ export class SharedTurns {
         `SELECT r.id,coalesce(m.session_id,w.scene_id) AS "sceneId",w.source_id AS "sourceInputId",w.source_kind AS "sourceKind",w.deadline,r.seen AS "seenEventIds",r.context
       FROM world_scene_reply r JOIN world_scene_wave w ON w.id=r.wave_id JOIN world_shared_scene h ON h.scene_id=w.scene_id
       LEFT JOIN world_scene_member m ON m.scene_id=w.scene_id AND m.actor_id=r.actor_id
-      WHERE h.world_id=$1 AND r.actor_id=$2 AND r.state='pending' AND w.state='pending' AND w.deadline>$3 ORDER BY w.deadline,r.id`,
+      WHERE h.world_id=$1 AND r.actor_id=$2 AND r.state='pending' AND w.state='pending' AND w.deadline>$3
+      AND NOT EXISTS(SELECT 1 FROM world_scene_session v WHERE v.id=m.session_id AND v.actor_id=r.actor_id AND v.closed) ORDER BY w.deadline,r.id`,
         [world, actor, this.shared.now()],
       )
     ).rows.map(({ sourceKind, ...r }) => ({
@@ -1201,7 +1212,8 @@ export class SharedTurns {
       await this.pool.query(
         `SELECT coalesce(a.proposal_id,v.id) AS id,coalesce(m.session_id,v.scene_id) AS "sceneId",v.deadline FROM world_scene_end_vote v JOIN world_scene_end_answer a ON a.vote_id=v.id
       JOIN world_scene s ON s.id=v.scene_id LEFT JOIN world_scene_member m ON m.scene_id=v.scene_id AND m.actor_id=a.actor_id
-      WHERE s.construction_id=$1 AND a.actor_id=$2 AND a.answer IS NULL AND v.state='pending' AND v.deadline>$3 ORDER BY v.deadline,v.id`,
+      WHERE s.construction_id=$1 AND a.actor_id=$2 AND a.answer IS NULL AND v.state='pending' AND v.deadline>$3
+      AND NOT EXISTS(SELECT 1 FROM world_scene_session personal WHERE personal.id=m.session_id AND personal.actor_id=a.actor_id AND personal.closed) ORDER BY v.deadline,v.id`,
         [world, actor, this.shared.now()],
       )
     ).rows.map((r) => ({ ...r, deadline: r.deadline.toISOString() }));

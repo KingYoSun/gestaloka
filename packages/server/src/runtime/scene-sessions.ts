@@ -365,7 +365,10 @@ export class SceneSessions {
     return {
       seen: events.map((e) => e.id),
       context: [
-        ...(session?.opening?.background ?? row.data.background)!.perceptions
+        ...(
+          (session?.opening?.background ?? row.data.background)?.perceptions ??
+          []
+        )
           .filter((p) => p.observerId === actor)
           .map((p) => p.text),
         ...events.flatMap((e) =>
@@ -791,6 +794,7 @@ export class SceneSessions {
           link.queued_text,
           link.input_id,
           senderKind,
+          [link.event_id],
         );
       } else if (!receiver.data.pending[link.listener]?.inputId)
         await shared.turns.publish(

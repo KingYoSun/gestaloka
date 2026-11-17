@@ -123,14 +123,47 @@ export class PlayerContacts {
     ).rows[0];
   }
   async opportunities(world: string, actor: string) {
-    return (
-      await this.shared.pool.query(
-        `SELECT id,target_scene AS "sceneId",input_id AS "sourceInputId",deadline,
-      ARRAY[event_id] AS "seenEventIds",ARRAY[text] AS context FROM world_player_contact
-      WHERE world_id=$1 AND listener=$2 AND state='pending' AND deadline>$3 ORDER BY deadline,id`,
+    const pending = (
+      await this.shared.pool.query<{
+        id: string;
+        sceneId: string;
+        sourceInputId: string;
+        deadline: Date;
+        event_id: string;
+        text: string;
+        execution: string;
+      }>(
+        `SELECT c.id,coalesce(v.id,c.target_scene) AS "sceneId",c.input_id AS "sourceInputId",c.deadline,c.event_id,c.text,
+        coalesce(v.current_id,c.target_scene) AS execution FROM world_player_contact c
+        LEFT JOIN world_scene_member m ON m.scene_id=c.target_scene AND m.actor_id=c.listener
+        LEFT JOIN world_scene_session v ON v.id=coalesce(m.session_id,c.target_scene) AND v.actor_id=c.listener
+        WHERE c.world_id=$1 AND c.listener=$2 AND c.state='pending' AND c.deadline>$3 AND NOT coalesce(v.closed,false) ORDER BY c.deadline,c.id`,
         [world, actor, this.shared.now()],
       )
-    ).rows.map((r) => ({ ...r, deadline: r.deadline.toISOString() }));
+    ).rows;
+    const contexts = new Map<
+      string,
+      Awaited<ReturnType<SharedScenes["sessions"]["context"]>>
+    >();
+    if (pending.length)
+      for (const row of (
+        await this.shared.pool.query<SceneRow>(
+          "SELECT * FROM world_scene WHERE id=ANY($1::uuid[])",
+          [[...new Set(pending.map((c) => c.execution))]],
+        )
+      ).rows)
+        contexts.set(row.id, await this.shared.sessions.context(row, actor));
+    return pending.map(({ execution, text, event_id, ...c }) => {
+      const prior = contexts.get(execution) ?? { seen: [], context: [] };
+      return {
+        ...c,
+        deadline: c.deadline.toISOString(),
+        seenEventIds: [...new Set([...prior.seen, event_id])],
+        context: prior.context.includes(text)
+          ? prior.context
+          : [...prior.context, text],
+      };
+    });
   }
   async answer(
     db: pg.PoolClient,

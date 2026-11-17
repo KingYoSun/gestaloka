@@ -669,7 +669,7 @@ test.each(["none", "deadline"] as const)(
     ).scene!.id;
     await access.scenes.tick(people[0]!.scene);
     await command(0, { command: "start" });
-    const request = randomUUID();
+    let request = randomUUID();
     inputs.set(request, saved.records[0]!);
     await access.sceneCommand(
       people[0]!.id,
@@ -684,6 +684,62 @@ test.each(["none", "deadline"] as const)(
       people[0]!.scene,
       "bot",
     );
+    let legacy: string | undefined;
+    let cached: string | undefined;
+    if (answer === "none") {
+      await access.scenes.tick(people[0]!.scene);
+      legacy = (
+        await runtime.pool.query<{ id: string }>(
+          "SELECT id FROM world_player_contact WHERE input_id=$1",
+          [request],
+        )
+      ).rows[0]!.id;
+      await runtime.pool.query(
+        "UPDATE world_player_contact SET state='pending',deadline=now()+interval '5 minutes' WHERE id=$1",
+        [legacy],
+      );
+      request = randomUUID();
+      inputs.set(request, saved.records[2]!);
+      await access.sceneCommand(
+        people[0]!.id,
+        world,
+        {
+          requestId: request,
+          command: "act",
+          actionText: saved.records[2]!.text,
+        },
+        false,
+        people[0]!.actor,
+        people[0]!.scene,
+        "bot",
+      );
+      await access.scenes.tick(people[0]!.scene);
+      cached = (
+        await runtime.pool.query<{ id: string }>(
+          "SELECT id FROM world_player_contact WHERE input_id=$1",
+          [request],
+        )
+      ).rows[0]!.id;
+      await runtime.pool.query(
+        "UPDATE world_player_contact SET state='pending',deadline=now()+interval '5 minutes' WHERE id=$1",
+        [cached],
+      );
+      request = randomUUID();
+      inputs.set(request, saved.records[2]!);
+      await access.sceneCommand(
+        people[0]!.id,
+        world,
+        {
+          requestId: request,
+          command: "act",
+          actionText: saved.records[2]!.text,
+        },
+        false,
+        people[0]!.actor,
+        people[0]!.scene,
+        "bot",
+      );
+    }
     await settle();
     const peer = people[1]!;
     peer.scene = (
@@ -694,6 +750,24 @@ test.each(["none", "deadline"] as const)(
     const offer = inbox.opportunities.find((o) => o.sourceInputId === request)!;
     expect(offer.context).toContain(saved.records[0]!.receipt);
     const calls = vi.spyOn(runtime.agent.model, "complete");
+    if (legacy) {
+      expect(
+        inbox.opportunities.find((o) => o.id === legacy)!.context,
+      ).toContain(saved.records[2]!.receipt);
+      await command(1, {
+        command: "react",
+        opportunityId: legacy,
+        actionText: null,
+      });
+      expect(
+        (
+          await runtime.pool.query(
+            "SELECT state FROM world_player_contact WHERE id=$1",
+            [legacy],
+          )
+        ).rows[0]!.state,
+      ).toBe("declined");
+    }
     if (answer === "none")
       await command(1, {
         command: "react",
@@ -731,6 +805,20 @@ test.each(["none", "deadline"] as const)(
       ).filter((r) => r.item.actorId === peer.actor),
     ).toEqual([]);
     for (let i = 0; i < 2; i++) await command(i, { command: "finish" });
+    if (cached) {
+      expect(
+        (await access.inbox(peer.id, world, peer.actor)).opportunities.find(
+          (o) => o.id === cached,
+        ),
+      ).toBeUndefined();
+      await expect(
+        command(1, {
+          command: "react",
+          opportunityId: cached,
+          actionText: "前の機会への返答",
+        }),
+      ).rejects.toMatchObject({ code: "STATE_CONFLICT" });
+    }
     await settle();
   },
   120000,

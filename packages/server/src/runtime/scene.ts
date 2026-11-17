@@ -923,6 +923,10 @@ export class WorldScenes {
         actor,
         contact.target_scene,
       );
+      await db.query(
+        "UPDATE world_player_contact SET target_scene=$2 WHERE id=$1",
+        [contact.id, row!.id],
+      );
       await this.shared.contacts.answer(
         db,
         row!,
@@ -934,6 +938,8 @@ export class WorldScenes {
       );
       return row;
     }
+    if ((await this.sessions.get(contact.target_scene, actor, db))?.closed)
+      throw new ConstructionStateError("このシーンは終了しています");
     const row = await this.reception(
       world,
       actor,
