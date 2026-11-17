@@ -852,6 +852,11 @@ export class WorldAgent {
       const scene = request.completedScene,
         at = request.until ?? request.at,
         context = this.store.context(request.worldId, dependencies),
+        effectSubjects = new Set([
+          request.actorId,
+          request.controlledActorId,
+          ...(request.intentions ?? []).map((intent) => intent.actorId),
+        ]),
         subjects = new Set([
           ...scene.background.participants,
           ...scene.background.facts.map((fact) => fact.subjectId),
@@ -887,7 +892,9 @@ export class WorldAgent {
               at,
               "interpret",
             ),
-            effects: await context.effects(id, request.at, at),
+            ...(effectSubjects.has(id)
+              ? { effects: await context.effects(id, request.at, at) }
+              : { effectsDeferred: true }),
           },
         });
       }
