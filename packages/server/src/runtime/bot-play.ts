@@ -58,6 +58,31 @@ type Entry = {
   itemWitnesses?: string[];
 };
 type TurnParticipant = { actorId: string; name: string };
+type SessionStatus = {
+  sessionId: string;
+  members: { actorId: string; sceneId: string }[];
+  characters: TurnParticipant[];
+  turn: number;
+  actorId: string | null;
+  callsUsed: number;
+  callsLimit: number;
+  commentUsed: boolean;
+  waitingForReturn?: TurnParticipant & {
+    deadline: string;
+    remainingSeconds: number;
+    message: string;
+  };
+  receiving: {
+    applicationId: string;
+    sender: string;
+    deadline: string;
+    text?: string;
+    changes?: Change;
+  } | null;
+};
+type IdleSessionStatus = { session: null } & Partial<
+  Record<keyof SessionStatus, never>
+>;
 type Member = {
   actorId: string;
   sceneId: string;
@@ -85,6 +110,9 @@ export type Session = {
     nextRegular?: string;
     lastInstant?: string;
     wakeRevision?: number;
+    lastTransitionId?: string;
+    awayUntil?: string;
+    parked?: boolean;
     entries: Entry[];
     npcActions?: { input: Input; result: Record<string, unknown> }[];
     comment?: string;
@@ -123,12 +151,17 @@ function turnState(session: Session) {
   const actor = turnOwner(session.data);
   return {
     actor,
+    turn: session.data.turn,
+    number: session.data.number,
+    size: session.data.members.length,
+    transition: session.data.lastTransitionId,
+    awayUntil: session.data.awayUntil,
     key: JSON.stringify([
       session.id,
       actor,
       session.data.number,
       session.data.receiving?.id,
-      session.data.members.length,
+      session.data.parked,
     ]),
   };
 }
@@ -146,6 +179,7 @@ async function signalTurns(
 }
 const latest = Number.MAX_SAFE_INTEGER;
 const waitLeaseMs = 600000;
+const turnReturnMs = 600000;
 function reject(code: string, message: string): never {
   throw new AccessError(409, code, message);
 }
@@ -291,6 +325,7 @@ export class BotPlay {
       );
     if (active !== undefined) {
       await this.#setPresence(db, world, actor, user, connection, active);
+      await this.expire(world);
     } else if (renew) await this.keepAlive(world, actor, user, connection, db);
     const presence = (
       await db.query(
@@ -333,7 +368,7 @@ export class BotPlay {
     const d = session.data,
       r = d.receiving,
       current = turnOwner(d);
-    if (current !== actor)
+    if (current !== actor || d.parked)
       return {
         ...base,
         state: "standby",
@@ -349,7 +384,6 @@ export class BotPlay {
             actor,
             r?.id ?? "normal",
             d.wakeRevision ?? 0,
-            d.members.length,
             presence.generation,
           ]),
         )
@@ -427,7 +461,7 @@ export class BotPlay {
   }
   async tickNpcs(world?: string) {
     const active = await this.pool.query<Session>(
-      "SELECT * FROM bot_session WHERE data ? 'nextRegular' AND NOT (data ? 'receiving') AND ($1::uuid IS NULL OR world_id=$1)",
+      "SELECT * FROM bot_session WHERE data ? 'nextRegular' AND NOT (data ? 'receiving') AND NOT (data ? 'parked') AND ($1::uuid IS NULL OR world_id=$1)",
       [world ?? null],
     );
     for (const session of active.rows)
@@ -466,7 +500,7 @@ export class BotPlay {
       }
       if (!current) continue;
       const status = await this.status(npc.world_id, npc.actor_id);
-      if (status.actorId !== npc.actor_id) continue;
+      if ("session" in status || status.actorId !== npc.actor_id) continue;
       const requestId = derivedId(
         `npc:${npc.assignment_id}:${current.id}:${status.turn}:${status.callsUsed}:${status.commentUsed}:${current.data.receiving?.id ?? "normal"}`,
       );
@@ -873,11 +907,46 @@ export class BotPlay {
       session.data.members = [];
       delete session.data.nextRegular;
     }
-    const after = turnState(session);
-    if (before.key !== after.key) {
-      session.data.wakeRevision = (session.data.wakeRevision ?? 0) + 1;
-      await signalTurns(db, session.world_id, before.actor, after.actor);
+    if (
+      session.data.members.length &&
+      !session.data.receiving &&
+      (session.data.turn !== before.turn ||
+        session.data.number !== before.number)
+    ) {
+      delete session.data.awayUntil;
+      const presence = await this.#turnPresence(db, session);
+      // At most one round is recorded while nobody can take a turn.
+      for (
+        let remaining = session.data.members.length;
+        remaining > 0;
+        remaining--
+      ) {
+        if (
+          !presence.has(session.data.turn) ||
+          presence.get(session.data.turn) === null
+        )
+          break;
+        await this.#next(db, session, true);
+      }
+      if (presence.size && ![...presence.values()].includes(null))
+        session.data.parked = true;
     }
+    const after = turnState(session);
+    const wakeChanged = before.key !== after.key || before.size < after.size;
+    if (wakeChanged) {
+      session.data.wakeRevision = (session.data.wakeRevision ?? 0) + 1;
+    }
+    const feedChanged =
+      before.transition !== after.transition ||
+      before.awayUntil !== after.awayUntil;
+    if (wakeChanged || feedChanged)
+      await signalTurns(
+        db,
+        session.world_id,
+        before.actor,
+        after.actor,
+        ...session.data.members.map((member) => member.actorId),
+      );
     await db.query("UPDATE bot_session SET data=$2 WHERE id=$1", [
       session.id,
       session.data,
@@ -960,6 +1029,7 @@ export class BotPlay {
         [session.id, payload],
       )
     ).rows[0]!.id;
+    if (payload.transition) session.data.lastTransitionId = id;
     for (const member of session.data.members) {
       let visibleId = id;
       if (Array.isArray(payload.entries)) {
@@ -994,6 +1064,7 @@ export class BotPlay {
       if (
         payload.turn !== undefined &&
         payload.actorId === member.actorId &&
+        Array.isArray(payload.entries) &&
         session.data.npcActions
       ) {
         member.lastServerTurn = {
@@ -1003,15 +1074,52 @@ export class BotPlay {
       }
     }
   }
-  async #next(db: Db, session: Session) {
+  async #transition(
+    db: Db,
+    session: Session,
+    actorId: string,
+    type: "turn-ended" | "turn-skipped" | "session-left",
+  ) {
+    const context = this.store.context(
+      (await this.world(session.world_id, db)).id,
+    );
+    const member = session.data.members.find(
+      (candidate) => candidate.actorId === actorId,
+    );
+    const name =
+      member?.instant?.name ?? (await context.node(actorId))?.text ?? "参加者";
+    return {
+      type,
+      actorId,
+      name,
+      turn: session.data.number,
+      at: this.now().toISOString(),
+    };
+  }
+  async #next(db: Db, session: Session, skipped = false) {
     const d = session.data;
     const user = d.members.find((m) => m.actorId === d.turn)?.userId;
-    if (user) await this.tools.completedTurn(db, user, session.world_id);
+    if (user && !skipped)
+      await this.tools.completedTurn(db, user, session.world_id);
+    const transition = await this.#transition(
+      db,
+      session,
+      d.turn,
+      skipped ? "turn-skipped" : "turn-ended",
+    );
+    const publicActivity = d.entries.length > 0 || !!d.comment;
     await this.#record(db, session, {
       turn: d.number,
       actorId: d.turn,
       entries: d.entries,
       ...(d.comment ? { comment: d.comment } : {}),
+      transition: {
+        ...transition,
+        publicActivity,
+        message: skipped
+          ? `${transition.name}が離席中のため手番をスキップします`
+          : `${transition.name}が手番を終了しました${publicActivity ? "" : "（公開行動なし）"}`,
+      },
     });
     const regular = d.members.filter((m) => !m.instant);
     const instant = d.members.filter((m) => m.instant);
@@ -1041,6 +1149,38 @@ export class BotPlay {
     delete d.npcActions;
     delete d.comment;
   }
+  async #turnPresence(db: Db, session: Session) {
+    const at = this.now().getTime();
+    const { rows } = await db.query<{
+      actor_id: string;
+      offline_since: Date | null;
+      online: boolean;
+    }>(
+      `SELECT member.actor_id, presence.offline_since, COALESCE(presence.online,false) AS online
+       FROM unnest($2::uuid[], $3::uuid[]) AS member(actor_id,user_id)
+       LEFT JOIN LATERAL (
+         SELECT max(last_seen + CASE WHEN active THEN $5::int * interval '1 millisecond' ELSE interval '0' END) AS offline_since,
+                bool_or(active AND last_seen >= $4::timestamptz) AS online
+         FROM player_waiting p WHERE p.world_id=$1 AND p.actor_id=member.actor_id AND p.user_id=member.user_id
+       ) presence ON true
+       WHERE NOT EXISTS (SELECT 1 FROM bot_npc n WHERE n.world_id=$1 AND n.actor_id=member.actor_id AND n.controller='server')`,
+      [
+        session.world_id,
+        session.data.members.filter((m) => !m.instant).map((m) => m.actorId),
+        session.data.members
+          .filter((m) => !m.instant)
+          .map((m) => m.userId ?? null),
+        new Date(at - waitLeaseMs),
+        waitLeaseMs,
+      ],
+    );
+    return new Map(
+      rows.map((row) => [
+        row.actor_id,
+        row.online ? null : (row.offline_since?.getTime() ?? at),
+      ]),
+    );
+  }
   #settle(
     session: Session,
     state: string,
@@ -1068,9 +1208,13 @@ export class BotPlay {
     return items;
   }
   async #expire(db: Db, session: Session) {
-    const r = session.data.receiving;
-    if (r && new Date(r.deadline) <= this.now()) {
-      const before = turnState(session);
+    const d = session.data;
+    const r = d.receiving;
+    if (!d.members.length) return;
+    const now = this.now();
+    const before = turnState(session);
+    if (r) {
+      if (new Date(r.deadline) > now) return;
       await this.#record(db, session, {
         applicationId: r.id,
         state: "failed",
@@ -1088,8 +1232,35 @@ export class BotPlay {
         )
       )
         await this.#next(db, session);
-      await this.#save(db, session, before);
     }
+    if (d.number === before.number) {
+      const presence = await this.#turnPresence(db, session);
+      if (d.parked) {
+        const index = d.members.findIndex((m) => m.actorId === d.turn);
+        const next = [
+          ...d.members.slice(index),
+          ...d.members.slice(0, index),
+        ].find((m) => presence.get(m.actorId) === null);
+        if (!next) return;
+        d.turn = next.actorId;
+        delete d.parked;
+        delete d.nextRegular;
+      } else {
+        const since = presence.get(d.turn);
+        if (since == null) delete d.awayUntil;
+        else {
+          const deadline = new Date(since + turnReturnMs);
+          if (deadline <= now) await this.#next(db, session, true);
+          else d.awayUntil = deadline.toISOString();
+        }
+      }
+    }
+    if (
+      r ||
+      before.key !== turnState(session).key ||
+      before.awayUntil !== d.awayUntil
+    )
+      await this.#save(db, session, before);
   }
   async #characters(session: Session, db: Db) {
     const context = this.store.context(
@@ -1105,7 +1276,11 @@ export class BotPlay {
     await context.validate();
     return characters;
   }
-  async status(world: string, actor: string, db: Db = this.pool) {
+  async status(
+    world: string,
+    actor: string,
+    db: Db = this.pool,
+  ): Promise<SessionStatus | IdleSessionStatus> {
     const session = await this.current(world, actor, db);
     if (!session) return { session: null };
     const policy = (
@@ -1115,6 +1290,20 @@ export class BotPlay {
     ).rows[0]!;
     const r = session.data.receiving;
     const characters = await this.#characters(session, db);
+    const due = r ? undefined : session.data.awayUntil;
+    const remainingSeconds = due
+      ? Math.max(0, Math.ceil((Date.parse(due) - this.now().getTime()) / 1000))
+      : 0;
+    const absent =
+      due && characters.find((member) => member.actorId === session.data.turn);
+    const waitingForReturn = absent
+      ? {
+          ...absent,
+          deadline: due!,
+          remainingSeconds,
+          message: `${absent.name}が離席中のため${remainingSeconds}秒復帰を待っています`,
+        }
+      : undefined;
     return {
       sessionId: session.id,
       members: session.data.members.map(({ actorId, sceneId }) => ({
@@ -1125,12 +1314,15 @@ export class BotPlay {
       turn: session.data.number,
       actorId: r
         ? r.recipients.find((id) => !r.decided.includes(id))!
-        : session.data.turn,
+        : session.data.parked
+          ? null
+          : session.data.turn,
       callsUsed: session.data.used,
       callsLimit: policy.turnCalls,
       commentUsed: r
         ? !!r.comments[r.recipients.find((id) => !r.decided.includes(id))!]
         : !!session.data.comment,
+      ...(waitingForReturn ? { waitingForReturn } : {}),
       receiving: r
         ? {
             applicationId: r.id,
@@ -1141,6 +1333,36 @@ export class BotPlay {
               : {}),
           }
         : null,
+    };
+  }
+  async turnFeed(world: string, actor: string, after: string) {
+    const history = await this.history(
+      world,
+      actor,
+      undefined,
+      this.pool,
+      after,
+    );
+    const state = await this.status(world, actor);
+    const current = "session" in state ? undefined : state;
+    const participant = current?.characters.find(
+      (member) => member.actorId === current.actorId,
+    );
+    return {
+      cursor: history.nextCursor ?? after,
+      actorId: current?.actorId ?? null,
+      name: participant?.name,
+      message:
+        current?.waitingForReturn?.message ??
+        (participant
+          ? `${participant.name}${current?.receiving ? "が受領判断中" : "の手番中"}`
+          : undefined),
+      waitingForReturn: current?.waitingForReturn,
+      updates: history.entries.flatMap(({ id, payload }) =>
+        payload.transition
+          ? [{ id: String(id), transition: payload.transition }]
+          : [],
+      ),
     };
   }
   async history(
@@ -1199,10 +1421,19 @@ export class BotPlay {
     };
   }
   async expire(world?: string) {
+    const now = this.now();
     const sessions = (
       await this.pool.query<Session>(
-        `SELECT * FROM bot_session WHERE data->'receiving' IS NOT NULL AND ($1::uuid IS NULL OR world_id=$1)`,
-        [world ?? null],
+        `SELECT s.* FROM bot_session s
+         JOIN bot_scene a ON a.session_id=s.id AND a.actor_id=(s.data->>'turn')::uuid AND NOT a.closed
+         WHERE ($1::uuid IS NULL OR s.world_id=$1) AND (
+           (s.data->'receiving'->>'deadline')::timestamptz <= $2 OR s.data ? 'awayUntil' OR s.data ? 'parked' OR
+           (NOT (s.data ? 'receiving') AND
+             NOT EXISTS (SELECT 1 FROM bot_npc n WHERE n.world_id=s.world_id AND n.actor_id=a.actor_id AND n.controller='server') AND
+             NOT (s.data ? 'nextRegular') AND
+             NOT EXISTS (SELECT 1 FROM player_waiting p WHERE p.world_id=s.world_id AND p.actor_id=a.actor_id AND p.active AND p.last_seen >= $3))
+         )`,
+        [world ?? null, now, new Date(now.getTime() - waitLeaseMs)],
       )
     ).rows;
     for (const initial of sessions) {
@@ -2545,8 +2776,6 @@ export class BotPlay {
       ).rowCount;
       if (!granted && !assignment)
         reject("ACTOR_REQUIRED", "本人が操作できる人物を指定してください");
-      if (assignment?.controller !== "server")
-        await this.#setPresence(db, world, actor, user, connectionId, true);
       const again = (
         await db.query<{ result: Record<string, unknown> | null }>(
           "SELECT result FROM bot_request WHERE id=$1",
@@ -2563,6 +2792,11 @@ export class BotPlay {
       ]);
       let session = await this.current(world, actor, db);
       if (session) await this.#expire(db, session);
+      if (assignment?.controller !== "server") {
+        await this.#setPresence(db, world, actor, user, connectionId, true);
+        if (session && (session.data.parked || session.data.awayUntil))
+          await this.#expire(db, session);
+      }
       let result: Record<string, unknown> = {};
       if (input.command === "start") {
         session ??= await this.#open(db, world, actor, user, input.requestId);
@@ -2581,6 +2815,12 @@ export class BotPlay {
         )
           d.npcActions ??= [];
         if (input.command === "leave" || input.command === "finish") {
+          const departure = await this.#transition(
+            db,
+            session,
+            actor,
+            "session-left",
+          );
           if (
             receiving &&
             (receiving.sender === actor || receiving.recipients.includes(actor))
@@ -2593,6 +2833,16 @@ export class BotPlay {
             this.#settle(session, "failed");
           }
           if (d.turn === actor) await this.#next(db, session);
+          await this.#record(db, session, {
+            transition: {
+              ...departure,
+              reason: input.command,
+              message:
+                input.command === "leave"
+                  ? `${departure.name}がセッションを離れました（単独プレイへ）`
+                  : `${departure.name}がプレイを終了しました`,
+            },
+          });
           const member = d.members.find((m) => m.actorId === actor)!;
           d.members = d.members.filter((m) => m.actorId !== actor);
           if (input.command === "finish") {

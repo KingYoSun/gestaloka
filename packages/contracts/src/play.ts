@@ -196,6 +196,16 @@ export const PlayCommand = z.discriminatedUnion("command", [
 ]);
 export const PlayResponse = z.record(z.string(), z.unknown());
 export const WaitingCommand = z.object({ active: z.boolean() }).strict();
+const TurnTransition = z.object({
+  type: z.enum(["turn-ended", "turn-skipped", "session-left"]),
+  actorId: z.uuid(),
+  name: z.string(),
+  turn: z.number().int(),
+  at: z.iso.datetime(),
+  reason: z.enum(["leave", "finish"]).optional(),
+  publicActivity: z.boolean().optional(),
+  message: z.string(),
+});
 export const WaitingStatus = z.object({
   state: z.enum(["inactive", "paused", "standby", "turn", "receiving"]),
   active: z.boolean(),
@@ -209,6 +219,28 @@ export const WaitingStatus = z.object({
   applicationId: z.uuid().optional(),
   deadline: z.iso.datetime().optional(),
   code: z.string().optional(),
+});
+export const WaitingEvent = WaitingStatus.extend({
+  progress: z
+    .object({
+      cursor: z.string(),
+      actorId: z.uuid().nullable(),
+      name: z.string().optional(),
+      message: z.string().optional(),
+      waitingForReturn: z
+        .object({
+          actorId: z.uuid(),
+          name: z.string(),
+          deadline: z.iso.datetime(),
+          remainingSeconds: z.number().int(),
+          message: z.string(),
+        })
+        .optional(),
+      updates: z.array(
+        z.object({ id: z.string(), transition: TurnTransition }),
+      ),
+    })
+    .optional(),
 });
 
 export const PlayerReportInput = z.object({ ...request, text }).strict();

@@ -4,7 +4,7 @@ import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { beforeAll, afterAll, afterEach, expect, test, vi } from "vitest";
-import { PlayCommand } from "@gestaloka/contracts";
+import { PlayCommand, WaitingEvent } from "@gestaloka/contracts";
 import { WorldAccess } from "@gestaloka/server/access";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
 import { derivedId } from "@gestaloka/server/world";
@@ -2902,24 +2902,21 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
         return { id: device.id, secret };
       }),
     );
-    const subscribe = async (i: number) => {
+    const subscribe = async (i: number, after?: string) => {
       const controller = new AbortController();
       readers.push(controller);
-      const res = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          accept: "text/event-stream",
-          authorization: "Bearer " + devices[i]!.secret,
+      const res = await fetch(
+        after === undefined ? url : `${url}?after=${after}`,
+        {
+          signal: controller.signal,
+          headers: {
+            accept: "text/event-stream",
+            authorization: "Bearer " + devices[i]!.secret,
+          },
         },
-      });
+      );
       expect(res.status).toBe(200);
-      const frames: {
-        state: string;
-        wakeKey: string | null;
-        actionable: boolean;
-        turn?: number;
-        viewerId: string;
-      }[] = [];
+      const frames: ReturnType<typeof WaitingEvent.parse>[] = [];
       const done = (async () => {
         let buf = "";
         try {
@@ -2946,7 +2943,7 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
     const [a, b, c] = await Promise.all([
       subscribe(0),
       subscribe(1),
-      subscribe(2),
+      subscribe(2, "0"),
     ]);
     expect(a!.frames[0]!.state).toBe("turn");
     expect(b!.frames[0]!.actionable).toBe(false);
@@ -2978,6 +2975,24 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
     await resumed.done;
     const again = await subscribe(0);
     expect(again.frames[0]!.wakeKey).toBe(frame.wakeKey);
+    const lastSeen = c!.frames.at(-1)!.progress!.cursor;
+    await f.send(1, { command: "finish" });
+    await vi.waitFor(() =>
+      expect(c!.frames.at(-1)).toMatchObject({
+        actionable: false,
+        progress: {
+          actorId: f.actors[0],
+          updates: [
+            { transition: { type: "session-left", actorId: f.actors[1] } },
+          ],
+        },
+      }),
+    );
+    const reconnected = await subscribe(2, lastSeen);
+    expect(reconnected.frames[0]!.progress!.updates).toMatchObject([
+      { transition: { type: "session-left", actorId: f.actors[1] } },
+    ]);
+    expect(again.frames.filter((event) => event.actionable)).toHaveLength(1);
     await access.devices.revoke(f.people[0]!.id, devices[0]!.id);
     await again.done;
     expect(c!.frames.filter((x) => x.actionable)).toHaveLength(0);
@@ -2990,6 +3005,86 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
     await app.close();
   }
 }, 20000);
+test("同席者に手番終了と退出を残し、離席の時点によって即時スキップと600秒待機を分ける", async () => {
+  const f = await fixture();
+  await f.move(2, f.place);
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  await f.send(2, { command: "contact", targetId: f.actors[0] });
+  let now = new Date();
+  vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
+  const ready = (i: number, active: boolean) =>
+    access.waiting(f.people[i]!.id, f.world, f.actors[i], undefined, active);
+
+  const cursor = (await access.botPlay.turnFeed(f.world, f.actors[0]!, "0"))
+    .cursor;
+  await ready(1, false);
+  await f.send(0, { command: "end-turn" });
+  expect(await f.status(0)).toMatchObject({ turn: 3, actorId: f.actors[2] });
+  const updates = await access.botPlay.turnFeed(f.world, f.actors[0]!, cursor);
+  expect(updates.updates.map((row) => row.transition)).toMatchObject([
+    { type: "turn-ended", name: "人物0", turn: 1, publicActivity: false },
+    {
+      type: "turn-skipped",
+      name: "人物1",
+      turn: 2,
+      message: "人物1が離席中のため手番をスキップします",
+    },
+  ]);
+  await ready(2, false);
+  const deadline = new Date(now.getTime() + 600000).toISOString();
+  expect(await f.status(0)).toMatchObject({
+    actorId: f.actors[2],
+    turn: 3,
+    waitingForReturn: { remainingSeconds: 600, deadline },
+  });
+  now = new Date(now.getTime() + 599000);
+  expect(await f.status(0)).toMatchObject({
+    actorId: f.actors[2],
+    turn: 3,
+    waitingForReturn: { remainingSeconds: 1, deadline },
+  });
+  expect(await ready(2, true)).toMatchObject({ actionable: true, turn: 3 });
+  expect(await f.status(0)).not.toHaveProperty("waitingForReturn");
+  const requestId = randomUUID();
+  await f.send(1, { command: "finish", requestId });
+  await f.send(1, { command: "finish", requestId });
+  expect(
+    await access.botPlay.turnFeed(f.world, f.actors[0]!, updates.cursor),
+  ).toMatchObject({
+    actorId: f.actors[2],
+    updates: [
+      {
+        transition: {
+          type: "session-left",
+          reason: "finish",
+          name: "人物1",
+          turn: 3,
+        },
+      },
+    ],
+  });
+  await ready(2, false);
+  now = new Date(now.getTime() + 599000);
+  await ready(0, true);
+  expect(await f.status(0)).toMatchObject({ actorId: f.actors[2], turn: 3 });
+  now = new Date(now.getTime() + 1000);
+  await access.botPlay.expire(f.world);
+  expect(await f.status(0)).toMatchObject({ actorId: f.actors[0], turn: 4 });
+  const restored = await f.status(0);
+  expect(restored).not.toHaveProperty("waitingForReturn");
+  expect(restored).toStrictEqual(JSON.parse(JSON.stringify(restored)));
+  await isolated.databases.postgres.query(
+    "UPDATE player_waiting SET last_seen=$3 WHERE world_id=$1 AND actor_id=$2",
+    [f.world, f.actors[0], new Date(now.getTime() - 601000)],
+  );
+  expect(await f.status(2)).toMatchObject({
+    actorId: f.actors[0],
+    turn: 4,
+    waitingForReturn: { remainingSeconds: 599 },
+  });
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
 test("認可済み端末は人物生成前に一度報告でき、参加後も枠・再送結果を引き継ぐ", async () => {
   const f = await fixture(),
     user = await auth.person("user"),

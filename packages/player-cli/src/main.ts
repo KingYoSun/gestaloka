@@ -18,6 +18,7 @@ import {
   PlayerIconInput,
   WorldPlayerPage,
   PlayerReportInput,
+  WaitingEvent,
   WaitingStatus,
 } from "@gestaloka/contracts";
 
@@ -205,25 +206,25 @@ async function listen(profile: Profile) {
   const registered = await standby(profile, !!values.resume);
   if (!registered.active) return registered;
   let last = "",
-    retry = 1000;
+    retry = 1000,
+    after = references!.cursor();
   for (;;) {
     if (!(await waitingControl(profile)).enabled) return standby(profile);
     try {
-      const response = await fetch(
-        new URL(
-          `/api/worlds/${profile.worldId}/waiting/events`,
-          profile.server,
-        ),
-        {
-          redirect: "error",
-          headers: {
-            authorization: `Bearer ${profile.secret}`,
-            accept: "text/event-stream",
-            "x-gestaloka-cli-version": cliVersion,
-          },
-          signal: AbortSignal.timeout(300000),
-        },
+      const url = new URL(
+        `/api/worlds/${profile.worldId}/waiting/events`,
+        profile.server,
       );
+      if (!values.once) url.searchParams.set("after", after);
+      const response = await fetch(url, {
+        redirect: "error",
+        headers: {
+          authorization: `Bearer ${profile.secret}`,
+          accept: "text/event-stream",
+          "x-gestaloka-cli-version": cliVersion,
+        },
+        signal: AbortSignal.timeout(300000),
+      });
       if (!response.ok) {
         if (response.status === 426) {
           const error = await response.json();
@@ -257,11 +258,24 @@ async function listen(profile: Profile) {
               data += line.slice(5).trimStart() + "\n";
             else if (line === "") {
               if (event === "waiting" && data) {
-                const frame = WaitingStatus.parse(JSON.parse(data));
+                const frame = WaitingEvent.parse(JSON.parse(data));
                 if (frame.viewerId !== registered.viewerId)
                   throw new Error("待受の人物が一致しません");
                 if (!frame.active || frame.state === "inactive") return frame;
-                const key = frame.state + ":" + (frame.wakeKey ?? "");
+                const progress = frame.progress;
+                const key = JSON.stringify([
+                  frame.state,
+                  frame.wakeKey,
+                  ...(progress
+                    ? [
+                        frame.sessionId,
+                        frame.turn,
+                        progress.actorId,
+                        progress.waitingForReturn?.deadline,
+                        progress.cursor,
+                      ]
+                    : []),
+                ]);
                 if (
                   values.once &&
                   frame.actionable &&
@@ -271,6 +285,7 @@ async function listen(profile: Profile) {
                 if (!values.once && key !== last) {
                   console.log(render(frame));
                   last = key;
+                  if (progress) after = progress.cursor;
                 }
                 retry = 1000;
               }
