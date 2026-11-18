@@ -1,6 +1,6 @@
 {
   "name": "@gestaloka/player-cli",
-  "version": "0.16.3",
+  "version": "0.17.0",
   "type": "module",
   "description": "GESTALOKAの世界に参加し、同じ人物でプレイを続けるCLI",
   "license": "UNLICENSED",
@@ -13,9 +13,15 @@
   "files": [
     "dist",
     "README.md",
-    "skills"
+    "skills",
+    "gameplay-changes.json"
   ],
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/main.js"
+    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/player.js && esbuild src/launcher.ts --bundle --platform=node --format=esm --target=node22 --banner:js=\"#!/usr/bin/env node\" --outfile=dist/main.js"
+  },
+  "devDependencies": {
+    "@types/semver": "^7.8.0",
+    "semver": "7.8.5",
+    "tar": "^7.5.23"
   }
 }

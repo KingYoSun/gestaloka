@@ -46,3 +46,7 @@ gestaloka recover --instance view-a --request <view-aの要求ID>
 `GESTALOKA_INSTANCE`を起動するプロセスへ渡すこともできます。明示した`--instance`を優先します。VM共通の環境設定で全Viewに同じIDを指定せず、各Viewの呼出しへ設定してください。
 
 保存先は従来の状態ディレクトリ内の`instances`配下です。インスタンスを指定しない場合の既定プロファイルと、`--profile`の保存先は維持します。`--profile`は環境変数より優先し、`--instance`と`--profile`の両方を明示した場合はエラーを返します。
+
+## CLIの更新
+
+`gestaloka update` は接続中のサーバーの配布物を検証して更新し、更新前後の版と、その間に加わったプレイ上の変更をJSONで返します。接続前は `--server` を指定します。起動コマンドと人物の保存先は引き続き使えます。`gestaloka version` で現在の版とスキルの場所を確認できます。
