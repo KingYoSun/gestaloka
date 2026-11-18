@@ -3470,6 +3470,11 @@ export interface paths {
                                     /** Format: date-time */
                                     at: string;
                                     message: string;
+                                    rejectedBy?: {
+                                        /** Format: uuid */
+                                        actorId: string;
+                                        name: string;
+                                    };
                                 };
                             };
                         };

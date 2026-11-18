@@ -21,6 +21,7 @@ import {
   WaitingContextStatus,
   WaitingEvent,
   WaitingStatus,
+  playActionMessage,
 } from "@gestaloka/contracts";
 
 import { playerHelp, playerOptions } from "./help.js";
@@ -155,11 +156,11 @@ function waitingNotice(
   lastWake: string | null = null,
 ) {
   const name = frame.context?.name ?? frame.progress?.name;
-  const actionMessage = frame.actionable
-    ? frame.state === "receiving"
-      ? "受領判断が必要です"
-      : "あなたの手番です"
-    : `操作不要です${name ? `（${name}の手番中）` : ""}`;
+  const actionMessage = playActionMessage(
+    frame.actionable,
+    frame.state === "receiving",
+    name,
+  );
   return {
     ...frame,
     actionMessage,

@@ -222,7 +222,16 @@ export const ReceiptResult = z.object({
   turn: z.number().int(),
   at: z.iso.datetime(),
   message: z.string(),
+  rejectedBy: z.object({ actorId: z.uuid(), name: z.string() }).optional(),
 });
+export function playActionMessage(
+  actionable: boolean,
+  receiving: boolean,
+  name?: string,
+) {
+  if (actionable) return receiving ? "受領判断が必要です" : "あなたの手番です";
+  return `操作不要です${name ? `（${name}の手番中）` : ""}`;
+}
 export const WaitingStatus = z.object({
   state: z.enum(["inactive", "paused", "standby", "turn", "receiving"]),
   active: z.boolean(),

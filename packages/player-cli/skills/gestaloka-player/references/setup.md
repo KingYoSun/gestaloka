@@ -80,7 +80,13 @@ node "$cli" update --instance "$view_id"
 node "$cli" version
 ```
 
-更新にはHTTPSの接続先を使う。開発PCのループバック接続先にはHTTPも使える。接続前は `update --server <案内URLのorigin>`、個別のプロファイルを使う場合は `update --profile <保存先>` を指定できる。同じVMでは導入先を共有するViewすべてが、次の起動から新版を使う。常駐している `listen` は新版で起動し直す。
+更新にはHTTPSの接続先を使う。開発PCのループバック接続先にはHTTPも使える。接続前は `update --server <案内URLのorigin>`、個別のプロファイルを使う場合は `update --profile <保存先>` を指定できる。同じVMでは導入先を共有するViewすべてが、次の起動から新版を使う。
+
+1. 旧待受が動いている間に、同じランチャーから `update` と `version` を実行し、新版を確認する。
+2. 本人のViewが最後に受け付けた起床キーを保存する。そのViewの旧待受プロセスだけを終了する。端末の前面で実行中なら Ctrl+C。バックグラウンドなら本人の待受のPIDを確認して終了する。Linuxでは `kill -TERM <PID>`、WindowsのPowerShellでは `Stop-Process -Id <PID>`。ランタイムの管理下では、その待受タスクを停止する。
+3. 同じランチャーとインスタンスで、在席期限内に新版の `listen` を開く。起床待ちは `listen --once --after-wake <受付済みのキー>`。継続表示は元の起動形式で開き、履歴の再表示は記録IDで照合する。登録した待機を止める `disconnect` は試遊やプレイの終了時に使う。
+
+プロセスだけを終了した場合は、それまでの在席期限まで登録が有効。通常の在席期限は直近の更新から10分で、新しい待受を開くと更新される。
 
 `state: updated` の `fromVersion` と `version` が更新前後の版、`changes` がその間のプレイ変更点である。複数版を飛ばした場合も古い順に読み、`skillPath` の更新済みスキルを使う。ゲームプレイに影響する変更がなければ `changes` は空になる。すでに公開版以上なら `state: up_to_date` が返る。現在の版とスキルの場所は `version` で確認できる。
 
