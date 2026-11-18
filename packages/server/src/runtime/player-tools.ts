@@ -1,3 +1,4 @@
+import { canonical } from "../llm/prompt.js";
 import type pg from "pg";
 import type { z } from "zod";
 import type { PlayCommand, PlayerReportInput } from "@gestaloka/contracts";
@@ -10,6 +11,12 @@ import { WorldConflict } from "../world/store.js";
 import type { Session } from "./bot-play.js";
 import type { Appearance } from "@gestaloka/contracts";
 
+export type PromotionProfile = {
+  description: string;
+  memory: string;
+  through: string;
+  snapshot: string;
+};
 type Db = Pick<pg.Pool, "query">;
 const reject = (code: string, message: string): never => {
   throw new AccessError(409, code, message);
@@ -38,7 +45,7 @@ export class PlayerTools {
       id uuid PRIMARY KEY,world_id uuid NOT NULL,user_id uuid NOT NULL,actor_id uuid NOT NULL,
       source_request_id uuid NOT NULL,npc_index integer NOT NULL,label text NOT NULL,description text NOT NULL,source_text text NOT NULL,
       owner_id uuid,state text NOT NULL DEFAULT 'pending',npc_id uuid,created_at timestamptz NOT NULL,decided_by uuid);
-      ALTER TABLE npc_promotion ADD COLUMN IF NOT EXISTS auto_review jsonb;
+      ALTER TABLE npc_promotion ADD COLUMN IF NOT EXISTS auto_review jsonb, ADD COLUMN IF NOT EXISTS profile_chat_id bigint;
       CREATE TABLE IF NOT EXISTS npc_promotion_policy(world_id uuid PRIMARY KEY,condition text NOT NULL,version uuid NOT NULL,admin uuid NOT NULL);
       CREATE UNIQUE INDEX IF NOT EXISTS npc_promotion_active ON npc_promotion(world_id,source_request_id,npc_index) WHERE state<>'rejected';
       CREATE INDEX IF NOT EXISTS npc_promotion_world_time ON npc_promotion(world_id,created_at,id);
@@ -247,6 +254,7 @@ export class PlayerTools {
     world: string,
     id: string,
     approve: boolean,
+    profile?: PromotionProfile,
     playingSession?: Session,
   ) {
     await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,225))", [
@@ -287,6 +295,16 @@ export class PlayerTools {
           [world, npc],
         )
       ).rows[0];
+      if (!profile)
+        return reject(
+          "PROFILE_REQUIRED",
+          "人物設定をまとめてから承認してください",
+        );
+      if (profile.snapshot !== canonical(session?.data ?? null))
+        reject(
+          "WORLD_CHANGED",
+          "人物設定の作成中に同席状況が変わりました。もう一度承認してください",
+        );
       const currentSession =
         playingSession && playingSession.id === session?.id
           ? playingSession
@@ -318,7 +336,7 @@ export class PlayerTools {
             {
               id: derivedId(`${npc}:description`),
               kind: "script",
-              text: row.description,
+              text: profile.description,
             },
           ],
           revisions: [],
@@ -334,6 +352,32 @@ export class PlayerTools {
             },
           ],
         };
+        if (profile.memory) {
+          const memory = derivedId(npc + ":memory");
+          changes.nodes.push({
+            id: memory,
+            kind: "script",
+            text: profile.memory,
+          });
+          changes.edges.push(
+            {
+              id: derivedId(memory + ":content"),
+              kind: "interpret",
+              role: "content",
+              source: npc,
+              target: memory,
+              period: { from: at },
+            },
+            {
+              id: derivedId(memory + ":about"),
+              kind: "interpret",
+              role: "about",
+              source: memory,
+              target: npc,
+              period: { from: at },
+            },
+          );
+        }
         if (row.owner_id)
           changes.edges.push({
             id: derivedId(`${npc}:owner`),
@@ -393,8 +437,14 @@ export class PlayerTools {
       );
     }
     await db.query(
-      "UPDATE npc_promotion SET state=$2,npc_id=$3,decided_by=$4 WHERE id=$1",
-      [id, state, approve ? npc : null, admin],
+      "UPDATE npc_promotion SET state=$2,npc_id=$3,decided_by=$4,profile_chat_id=$5 WHERE id=$1",
+      [
+        id,
+        state,
+        approve ? npc : null,
+        admin,
+        approve ? profile?.through : null,
+      ],
     );
     return { id, state, npcId: approve ? npc : null };
   }

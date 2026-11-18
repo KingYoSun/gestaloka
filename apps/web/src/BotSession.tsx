@@ -1,6 +1,10 @@
 import { useState, useRef } from "react";
 import { z } from "zod";
-import { PlayCommand, PlayerCharacter } from "@gestaloka/contracts";
+import {
+  ItemOutcome,
+  PlayCommand,
+  PlayerCharacter,
+} from "@gestaloka/contracts";
 import type { paths } from "@gestaloka/contracts/http";
 import { $api, ApiFailure, pendingKey } from "./api.js";
 import { usePending } from "./forms.js";
@@ -81,6 +85,7 @@ const View = z.object({
                   .object({
                     state: z.string().optional(),
                     effectState: z.string().optional(),
+                    items: z.array(ItemOutcome).optional(),
                     outcome: z.object({ success: z.boolean() }).optional(),
                   })
                   .passthrough(),
@@ -200,6 +205,8 @@ export function BotSession({
   };
   if (query.error) return <Problem error={query.error} />;
   if (!view) return <Notice>セッションを読み込んでいます</Notice>;
+  const personName = (id: string) =>
+    view.characters.find((c) => c.actorId === id)?.name ?? id;
   const mine = view.actorId === view.viewerId,
     busy = mutation.isPending || pending !== null,
     archive =
@@ -254,6 +261,30 @@ export function BotSession({
                             ? "管理者の許可待ちです"
                             : "受理しました"}
                 </p>
+                {entry.result.items?.map((item) => (
+                  <div key={item.itemId}>
+                    <span>
+                      {item.label}〈{item.itemId}〉
+                    </span>
+                    {item.ownership && (
+                      <p>
+                        所有
+                        {item.ownership.fromIds.map(personName).join("、") ||
+                          "なし"}{" "}
+                        → {personName(item.ownership.toId)}
+                      </p>
+                    )}
+                    {item.holding && (
+                      <p>
+                        保持
+                        {item.holding.fromId
+                          ? personName(item.holding.fromId)
+                          : "なし"}{" "}
+                        → {personName(item.holding.toId)}
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
             ))}
             {row.payload.comment && (

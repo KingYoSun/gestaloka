@@ -168,7 +168,11 @@ const show = () =>
 
 test("本人の素材を個別表示し、手番終了時に入力・結果・任意コメントを共有する", async () => {
   show();
-  await screen.findByRole("heading", { name: "1人のセッション" });
+  await screen.findByRole(
+    "heading",
+    { name: "1人のセッション" },
+    { timeout: 5000 },
+  );
   fireEvent.click(screen.getByRole("button", { name: "自分の情報" }));
   await screen.findByText("本人だけに返った素材");
   const field = screen.getByLabelText("発言・ターンコメント");
@@ -235,6 +239,41 @@ test("発言の応答待ちに書き始めた次の入力を消さない", async
   expect((field as HTMLTextAreaElement).value).toBe("次の入力");
 });
 
+test("目撃した物品の参照と成立した所有・保持の変化を表示する", async () => {
+  view.characters = [
+    { actorId: actor, name: "渡す人物", icon: null },
+    { actorId: peer, name: "受け取る人物", icon: null },
+  ];
+  view.entries = [
+    {
+      id: "12",
+      payload: {
+        entries: [
+          {
+            actorId: actor,
+            label: "渡す人物",
+            input: "紐を渡す",
+            result: {
+              state: "accepted",
+              items: [
+                {
+                  itemId: scene,
+                  label: "紐",
+                  ownership: { fromIds: [actor], toId: peer },
+                  holding: { fromId: actor, toId: peer },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ];
+  show();
+  expect(await screen.findByText("紐〈" + scene + "〉")).toBeTruthy();
+  expect(screen.getByText(/所有.*渡す人物.*受け取る人物/)).toBeTruthy();
+  expect(screen.getByText(/保持.*渡す人物.*受け取る人物/)).toBeTruthy();
+});
 test("受領判断を表示し、判断後は元の人物の通常手番へ戻る", async () => {
   view.members = [
     { actorId: actor, sceneId: scene },

@@ -87,3 +87,5 @@
 物品の `appearances[].id` は個体ごとに異なる。その場に残した物品は後から来た人物も周囲検索で発見できる。拾うときはupdateのmoveでitemにそのID、fromにnull、toに本人を指定する。インスタントNPCの昇格には出現結果のsourceRequestIdとinstantNpcs内の番号を使う。手動でsayにinstantNpcsを含めたときは、新ノード作成の可否を別途判定する。
 
 接触には本人と相手の直接の滞在先が一致する必要がある。周囲や自分の検索結果の `material.locations[].directPlaceId` を読む。複数の参照がある場合は `locate` の `aboutIds` に含まれる具体的な場所を `directPlaceId` に指定する。直接の場所1件だけなら従来どおり `aboutIds` で指定できる。
+
+目撃した物品の操作は、手番の共有記録の `entries[].result.items` に名前と `itemId` が入る。成立した変更に応じて `ownership`（所有）と `holding`（保持）を読む。このViewに表示された `itemId` を次の操作でそのまま指定できる。

@@ -43,7 +43,12 @@ export async function fixtureRuntime(
         endEdges: [],
       });
       let content: unknown;
-      if (
+      if (user.applicantDescription && user.experiences) {
+        content = {
+          description: "観測小屋に暮らす動物",
+          memory: "小屋で観察者の声を聞いた。",
+        };
+      } else if (
         input.messages[0]?.content.includes(
           "新しいノード・エッジの作成可否だけ",
         )

@@ -1,3 +1,5 @@
+import { ModelCallInProgress } from "../llm/budget.js";
+import type { PromotionProfile } from "../runtime/player-tools.js";
 import { RuntimeMonitor } from "../runtime/monitor.js";
 import { Backups } from "../runtime/backups.js";
 import { McpAuthorization, type McpPrincipal } from "./mcp.js";
@@ -348,6 +350,40 @@ export class Operations {
               );
       }
     }
+    let profile: PromotionProfile | undefined;
+    if (
+      actor &&
+      input.operation === "npcs.decidePromotion" &&
+      input.approve &&
+      (
+        await this.pool.query(
+          "SELECT 1 FROM operation_request WHERE id=$1 AND actor_id=$2 AND input_hash=$3 AND result IS NULL AND error IS NULL",
+          [requestId, actor, digest],
+        )
+      ).rowCount
+    ) {
+      try {
+        await this.authorize(actor, true);
+        await this.#mcpCheck(this.pool, actor, input, context);
+        await RuntimeControl.check(this.pool, {});
+        profile = await this.#access(context).botPlay.prepareManualProfile(
+          input.worldId,
+          input.promotionId,
+          actor,
+        );
+      } catch (error) {
+        if (error instanceof ModelCallInProgress)
+          throw new AccessError(409, "REQUEST_IN_PROGRESS", error.message);
+        preflightError =
+          error instanceof AccessError
+            ? error
+            : new AccessError(
+                409,
+                "PROMOTION_PROFILE_UNAVAILABLE",
+                "人物設定を作成できなかったため保留しました。設定を確認し改めて承認してください",
+              );
+      }
+    }
     const database = await this.pool.connect();
     let result: Record<string, unknown> = {},
       failure: AccessError | undefined;
@@ -432,6 +468,7 @@ export class Operations {
             input,
             context,
             requestId,
+            profile,
           );
         }
       } catch (error) {
@@ -579,6 +616,7 @@ export class Operations {
       Input | { operation: "recovery.admin"; userId: string; reason: string },
     context: Context,
     requestId: string,
+    profile?: PromotionProfile,
   ): Promise<Record<string, unknown>> {
     switch (input.operation) {
       case "inspection.select":
@@ -787,6 +825,7 @@ export class Operations {
           input.worldId,
           input.promotionId,
           input.approve,
+          profile,
         );
       case "npcs.read":
         return {
