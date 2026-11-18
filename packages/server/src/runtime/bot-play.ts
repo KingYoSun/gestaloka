@@ -51,6 +51,67 @@ const promotionCalls = new WeakMap<
 >();
 type Input = z.infer<typeof PlayCommand>;
 type Db = Pick<pg.Pool, "query">;
+function actionMessage(
+  input: Input,
+  result: Record<string, unknown>,
+  continuing: boolean,
+  owner: TurnParticipant | null,
+) {
+  switch (input.command) {
+    case "start":
+      return continuing
+        ? "現在のセッションを継続します"
+        : "単独プレイを開始しました";
+    case "search":
+      return "検索が完了しました";
+    case "contact":
+      return result.joined
+        ? "セッションに合流しました"
+        : "すでに同じセッションにいます";
+    case "say":
+      return "発言・行動を記録しました";
+    case "comment":
+      return "コメントを受け付けました";
+    case "end-turn":
+      return "手番を終了しました";
+    case "leave":
+      return "セッションを分離し、単独プレイを続けます";
+    case "finish":
+      return "プレイを終了し、履歴を確定しました";
+    case "receive":
+      if (!input.accept) return "あなたの却下を受け付け、申請は却下されました";
+      return (result.application as { state: string }).state === "waiting"
+        ? `あなたの承認を受け付けました。申請は${owner?.name ?? "次の受領者"}の判断待ちです`
+        : "あなたの承認を受け付け、申請は確定しました";
+    case "promote-npc":
+      return result.state === "approved"
+        ? "NPCの昇格が承認されました"
+        : "NPCの昇格申請を受け付けました。管理者の判断待ちです";
+    case "memo":
+      return result.state === "receiving"
+        ? "メモは受領判断待ちです。メモIDは確定予定です"
+        : "メモを確定しました";
+    case "update":
+    case "create":
+      return result.state === "receiving"
+        ? "申請を受け付けました。受領判断を待っています"
+        : "申請した変更を確定しました";
+    case "oppose":
+    case "npc-action": {
+      const outcome = result.outcome as
+        { success?: boolean; reason?: string } | undefined;
+      const message =
+        outcome?.success === false
+          ? `判定は失敗しました${outcome.reason ? `（${outcome.reason}）` : ""}`
+          : input.command === "npc-action" && !input.effect
+            ? "NPCの行動を記録しました"
+            : "行動の判定に成功しました";
+      if (input.command === "npc-action" && input.departs)
+        return message + "。NPCは退出しました";
+      return message;
+    }
+  }
+}
 type Entry = {
   actorId: string;
   input: string;
@@ -1010,7 +1071,7 @@ export class BotPlay {
     db: Db,
     session: Session,
     payload: Record<string, unknown>,
-    viewer?: string,
+    viewers?: readonly string[],
   ) {
     const witnesses = (
       Array.isArray(payload.entries) ? (payload.entries as Entry[]) : []
@@ -1044,7 +1105,7 @@ export class BotPlay {
     ).rows[0]!.id;
     if (payload.transition) session.data.lastTransitionId = id;
     for (const member of session.data.members) {
-      if (viewer && member.actorId !== viewer) continue;
+      if (viewers && !viewers.includes(member.actorId)) continue;
       let visibleId = id;
       if (Array.isArray(payload.entries)) {
         const skip =
@@ -1238,7 +1299,7 @@ export class BotPlay {
       at: this.now().toISOString(),
       message: `${memo ? "メモ" : "申請"}${
         {
-          accepted: "が承認されました",
+          accepted: "が確定しました（全員が承認）",
           rejected: "が却下されました",
           expired: "の受領判断が期限切れになりました",
           cancelled:
@@ -1247,7 +1308,10 @@ export class BotPlay {
       }`,
     };
     session.data.lastReceipt = { sender: r.sender, result };
-    await this.#record(db, session, { receiptResult: result }, r.sender);
+    await this.#record(db, session, { receiptResult: result }, [
+      r.sender,
+      ...r.recipients,
+    ]);
     delete session.data.receiving;
     return items;
   }
@@ -1467,6 +1531,13 @@ export class BotPlay {
     const participant = current?.characters.find(
       (member) => member.actorId === current.actorId,
     );
+    const receiptResults = includeJoins
+      ? history.entries.flatMap(({ id, payload }) =>
+          payload.receiptResult
+            ? [{ id: String(id), receiptResult: payload.receiptResult }]
+            : [],
+        )
+      : [];
     return {
       cursor: history.nextCursor ?? after,
       actorId: current?.actorId ?? null,
@@ -1477,6 +1548,7 @@ export class BotPlay {
           ? `${participant.name}${current?.receiving ? "が受領判断中" : "の手番中"}`
           : undefined),
       waitingForReturn: current?.waitingForReturn,
+      ...(receiptResults.length ? { receiptResults } : {}),
       updates: history.entries.flatMap(({ id, payload }) =>
         payload.transition &&
         (includeJoins || payload.transition.type !== "session-joined")
@@ -2918,6 +2990,13 @@ export class BotPlay {
           await this.#expire(db, session);
       }
       let result: Record<string, unknown> = {};
+      const continuing = !!session;
+      let endedTurn:
+        | {
+            number: number;
+            reason: "limit" | "explicit" | "contact" | "leave" | "finish";
+          }
+        | undefined;
       if (input.command === "start") {
         session ??= await this.#open(db, world, actor, user, input.requestId);
       } else {
@@ -2952,7 +3031,10 @@ export class BotPlay {
             });
             await this.#settle(db, session, "cancelled");
           }
-          if (d.turn === actor) await this.#next(db, session);
+          if (d.turn === actor) {
+            endedTurn = { number: d.number, reason: input.command };
+            await this.#next(db, session);
+          }
           await this.#record(db, session, {
             transition: {
               ...departure,
@@ -3042,6 +3124,24 @@ export class BotPlay {
               });
             }
           }
+          result.decision = {
+            applicationId: receiving.id,
+            choice: input.accept ? "approve" : "reject",
+            message: input.accept
+              ? "あなたの承認を受け付けました"
+              : "あなたの却下を受け付けました",
+          };
+          result.application = d.receiving
+            ? {
+                applicationId: receiving.id,
+                state: "waiting",
+                nextActorId: turnOwner(d),
+                deadline: receiving.deadline,
+              }
+            : {
+                ...d.lastReceipt!.result,
+                state: input.accept ? "confirmed" : "rejected",
+              };
           await this.#record(db, session, {
             ...(receiving.comments[actor]
               ? { comment: receiving.comments[actor] }
@@ -3072,8 +3172,10 @@ export class BotPlay {
                   )
                 ).rows[0].turn_calls,
               )
-          )
+          ) {
+            endedTurn = { number: d.number, reason: "limit" };
             await this.#next(db, session);
+          }
         } else {
           if (receiving || d.turn !== actor)
             reject("TURN_REQUIRED", "本人の通常手番ではありません");
@@ -3081,9 +3183,10 @@ export class BotPlay {
             if (d.comment)
               reject("COMMENT_USED", "この手番のコメントは投稿済みです");
             d.comment = input.text;
-          } else if (input.command === "end-turn")
+          } else if (input.command === "end-turn") {
+            endedTurn = { number: d.number, reason: "explicit" };
             await this.#next(db, session);
-          else {
+          } else {
             if (input.command === "search") {
               const queried = await this.#search(world, actor, input.query);
               result = queried.visible;
@@ -3202,6 +3305,7 @@ export class BotPlay {
               if (other.id !== session.id) {
                 await context.validate();
                 d.used++;
+                endedTurn = { number: d.number, reason: "contact" };
                 result.previousTurn = await this.#next(db, session, "contact");
                 const member = d.members.find((m) => m.actorId === actor)!;
                 d.members = d.members.filter((m) => m.actorId !== actor);
@@ -3372,8 +3476,10 @@ export class BotPlay {
                   )
                 ).rows[0].turn_calls,
               );
-              if (session.data.used >= limit && !session.data.receiving)
+              if (session.data.used >= limit && !session.data.receiving) {
+                endedTurn = { number: session.data.number, reason: "limit" };
                 await this.#next(db, session);
+              }
             }
           }
         }
@@ -3381,14 +3487,31 @@ export class BotPlay {
       }
       const status = await this.status(world, actor, db);
       result = { ...result, ...status };
-      if (result.joined) {
-        const owner = status.characters?.find(
+      const owner =
+        status.characters?.find(
           (member) => member.actorId === status.actorId,
-        );
-        result.turnHolder = owner ?? null;
-      }
-      if (input.command === "memo")
+        ) ?? null;
+      if (owner || result.joined) result.turnHolder = owner;
+      if (input.command === "memo") {
         result.memoId = derivedId(`${input.requestId}:memo`);
+        result.memoIdState =
+          result.state === "receiving" ? "pending" : "confirmed";
+      }
+      result.action = {
+        command: input.command,
+        message: actionMessage(input, result, continuing, owner),
+        ...(endedTurn
+          ? {
+              endedTurn: {
+                ...endedTurn,
+                message:
+                  endedTurn.reason === "limit"
+                    ? `通常枠を使い切ったため手番${endedTurn.number}を終了しました`
+                    : `手番${endedTurn.number}を終了しました`,
+              },
+            }
+          : {}),
+      };
       await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [
         input.requestId,
         result,

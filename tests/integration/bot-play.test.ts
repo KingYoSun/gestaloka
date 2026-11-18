@@ -166,6 +166,187 @@ async function fixture() {
   };
 }
 
+test("手番APIの15操作が受付結果を返し、確定内容と一致する", async () => {
+  const f = await fixture();
+  const checked = new Set<string>();
+  const act = async (
+    i: number,
+    input: { command: string; [key: string]: unknown },
+    message: string,
+  ) => {
+    const result = await f.send(i, input);
+    expect(result.action).toMatchObject({
+      command: input.command,
+      message: expect.stringContaining(message),
+    });
+    checked.add(input.command);
+    return result;
+  };
+  await act(0, { command: "start" }, "継続");
+  await act(1, { command: "contact", targetId: f.actors[0] }, "合流");
+  const same = await act(
+    0,
+    { command: "contact", targetId: f.actors[1] },
+    "すでに",
+  );
+  expect(same).not.toHaveProperty("joined");
+  expect(same.turnHolder).toMatchObject({ actorId: f.actors[0] });
+  expect(
+    await act(0, { command: "say", text: "記録に残す発言" }, "記録"),
+  ).toHaveProperty("commitId");
+  await act(0, { command: "comment", text: "別枠の記録" }, "受け付けました");
+  const memo = await act(
+    0,
+    {
+      command: "memo",
+      text: "試験用メモ",
+      participants: [f.actors[1]],
+      dependencies: [],
+    },
+    "受領判断待ち",
+  );
+  expect(memo.memoIdState).toBe("pending");
+  const done = await act(
+    1,
+    { command: "receive", applicationId: memo.applicationId, accept: true },
+    "申請は確定",
+  );
+  expect(done.application).toMatchObject({
+    state: "confirmed",
+    applicationId: memo.applicationId,
+  });
+  expect(
+    await f.store.context(f.graph).node(String(memo.memoId)),
+  ).toMatchObject({ type: "memo" });
+  await act(
+    0,
+    {
+      command: "update",
+      text: "別の場所へ移る",
+      operations: [
+        {
+          type: "locate",
+          subjectId: f.actors[0],
+          text: "離れた場所",
+          aboutIds: [f.far],
+        },
+      ],
+      dependencies: [],
+    },
+    "確定",
+  );
+  const self = await act(
+    0,
+    { command: "search", query: { kind: "self" } },
+    "検索が完了",
+  );
+  expect(JSON.stringify(self.material)).toContain(f.far);
+  const script = randomUUID(),
+    changes = { nodes: [], edges: [], endEdges: [], revisions: [] };
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { allowed: true, reason: "作成可" }),
+  );
+  await act(
+    0,
+    {
+      command: "create",
+      text: "新しい性質を作る",
+      dependencies: [],
+      changes: {
+        ...changes,
+        nodes: [{ id: script, kind: "script", text: "冷静に歩く" }],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "content",
+            source: f.actors[0],
+            target: script,
+            period: { from: 0 },
+          },
+        ],
+      },
+    },
+    "確定",
+  );
+  expect(await f.store.context(f.graph).node(script)).toMatchObject({
+    text: "冷静に歩く",
+  });
+  const failed = await act(
+    0,
+    { command: "oppose", text: "対象に作用する", dependencies: [], changes },
+    "判定は失敗",
+  );
+  expect(failed.outcome).toMatchObject({ success: false });
+  const ended = await act(0, { command: "end-turn" }, "手番を終了");
+  expect(ended.action).toMatchObject({
+    endedTurn: { number: 1, reason: "explicit" },
+  });
+  expect(ended.turnHolder).toMatchObject({ actorId: f.actors[1] });
+  expect(JSON.stringify((await f.status(0)).entries)).toContain("別枠の記録");
+
+  const source = randomUUID();
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { allowed: true, reason: "登場可" }),
+  );
+  await act(
+    1,
+    {
+      command: "say",
+      requestId: source,
+      text: "鳥が現れる",
+      instantNpcs: ["鳥"],
+    },
+    "記録",
+  );
+  const npc = await act(
+    1,
+    {
+      command: "npc-action",
+      npcId: derivedId(source + ":manual:0"),
+      text: "鳥が窓辺を見回した",
+    },
+    "NPCの行動を記録",
+  );
+  expect(npc.outcome).toMatchObject({ success: true });
+  const promotion = await act(
+    1,
+    {
+      command: "promote-npc",
+      sourceRequestId: source,
+      npcIndex: 0,
+      description: "小屋に来た鳥",
+    },
+    "管理者の判断待ち",
+  );
+  expect(promotion.state).toBe("pending");
+  const separated = await act(1, { command: "leave" }, "単独プレイを続けます");
+  expect(separated.sessionId).not.toBe(ended.sessionId);
+  const finished = await act(1, { command: "finish" }, "履歴を確定");
+  expect(finished).toMatchObject({
+    session: null,
+    sceneId: expect.any(String),
+  });
+  await act(1, { command: "start" }, "単独プレイを開始");
+  expect([...checked].sort()).toEqual([
+    "comment",
+    "contact",
+    "create",
+    "end-turn",
+    "finish",
+    "leave",
+    "memo",
+    "npc-action",
+    "oppose",
+    "promote-npc",
+    "receive",
+    "say",
+    "search",
+    "start",
+    "update",
+  ]);
+});
+
 test("個別検索を同報せず、成功した8回だけで手番を進め、コメントと再送を別枠にする", async () => {
   const f = await fixture();
   const own = await f.status(0),
@@ -203,8 +384,14 @@ test("個別検索を同報せず、成功した8回だけで手番を進め、�
     }),
   ).rejects.toMatchObject({ code: "MATERIAL_NOT_AVAILABLE" });
   expect((await f.status(1)).callsUsed).toBe(1);
-  for (let i = 0; i < 7; i++)
-    await f.send(1, { command: "search", query: { kind: "belongings" } });
+  for (let i = 0; i < 7; i++) {
+    const read = await f.send(1, {
+      command: "search",
+      query: { kind: "belongings" },
+    });
+    if (i === 6)
+      expect(read.action).toMatchObject({ endedTurn: { reason: "limit" } });
+  }
   const next = await f.status(0);
   expect(next.actorId).toBe(f.actors[0]);
   expect(next.callsUsed).toBe(0);
@@ -3168,10 +3355,21 @@ test("メモ本文を判断中の本人だけへ渡し、申請者の復帰で�
   });
   for (const i of [0, 2])
     expect(JSON.stringify(await waiting(i))).not.toContain(text);
-  await f.send(1, {
+  await expect(
+    f.send(1, { command: "comment", text: "受領判断中のコメント" }),
+  ).resolves.toMatchObject({
+    action: { command: "comment", message: "コメントを受け付けました" },
+  });
+  const intermediate = {
     command: "receive",
     applicationId: first.applicationId,
     accept: true,
+    requestId: randomUUID(),
+  };
+  const firstDecision = await f.send(1, intermediate);
+  expect(firstDecision).toMatchObject({
+    decision: { applicationId: first.applicationId, choice: "approve" },
+    application: { state: "waiting", nextActorId: f.actors[2] },
   });
   expect((await waiting(0)).context).not.toHaveProperty("receiptResult");
   expect(JSON.stringify(await waiting(1))).not.toContain(text);
@@ -3184,8 +3382,15 @@ test("メモ本文を判断中の本人だけへ渡し、申請者の復帰で�
     accept: true,
     requestId,
   };
-  await f.send(2, decide);
-  await f.send(2, decide);
+  const cursor = (await access.botPlay.turnFeed(f.world, f.actors[1]!, "0"))
+    .cursor;
+  const final = await f.send(2, decide);
+  expect(final).toMatchObject({
+    decision: { choice: "approve" },
+    application: { state: "confirmed" },
+  });
+  expect(await f.send(2, decide)).toStrictEqual(final);
+  expect(await f.send(1, intermediate)).toStrictEqual(firstDecision);
   const resumed = await waiting(0);
   expect(resumed).toMatchObject({
     actionable: true,
@@ -3208,14 +3413,33 @@ test("メモ本文を判断中の本人だけへ渡し、申請者の復帰で�
   ]);
   for (const i of [1, 2]) {
     expect((await waiting(i)).context).not.toHaveProperty("receiptResult");
-    expect(selectResults((await f.status(i)).entries)).toEqual([]);
+    expect(selectResults((await f.status(i)).entries)).toEqual([
+      resumed.context!.receiptResult,
+    ]);
   }
+  const replay = await access.botPlay.turnFeed(f.world, f.actors[1]!, cursor);
+  expect(replay.receiptResults).toMatchObject([
+    {
+      receiptResult: {
+        outcome: "accepted",
+        applicationId: first.applicationId,
+      },
+    },
+  ]);
+  expect(
+    await access.botPlay.turnFeed(f.world, f.actors[1]!, replay.cursor),
+  ).not.toHaveProperty("receiptResults");
 
   const second = await apply(1);
-  await f.send(1, {
-    command: "receive",
-    applicationId: second.applicationId,
-    accept: false,
+  await expect(
+    f.send(1, {
+      command: "receive",
+      applicationId: second.applicationId,
+      accept: false,
+    }),
+  ).resolves.toMatchObject({
+    decision: { choice: "reject" },
+    application: { state: "rejected" },
   });
   expect((await waiting(0)).context?.receiptResult).toMatchObject({
     applicationId: second.applicationId,
@@ -3232,6 +3456,17 @@ test("メモ本文を判断中の本人だけへ渡し、申請者の復帰で�
     outcome: "expired",
   });
   expect((await waiting(1)).context).not.toHaveProperty("receiptRequest");
+  const thirdView = await access.botPlay.turnFeed(f.world, f.actors[2]!, "0");
+  expect(
+    thirdView.receiptResults?.map(
+      ({ receiptResult }) => receiptResult.applicationId,
+    ),
+  ).toEqual([first.applicationId]);
+  expect(
+    (
+      await access.botPlay.turnFeed(f.world, f.actors[1]!, "0")
+    ).receiptResults?.map(({ receiptResult }) => receiptResult.outcome),
+  ).toEqual(["accepted", "rejected", "expired"]);
 });
 
 test("同席者に手番終了と退出を残し、離席の時点によって即時スキップと600秒待機を分ける", async () => {

@@ -274,6 +274,14 @@ export const WaitingEvent = WaitingContextStatus.extend({
         })
         .optional(),
       updates: z.array(TransitionRecord),
+      receiptResults: z
+        .array(
+          z.object({
+            id: z.string(),
+            receiptResult: ReceiptResult,
+          }),
+        )
+        .optional(),
     })
     .optional(),
 });
