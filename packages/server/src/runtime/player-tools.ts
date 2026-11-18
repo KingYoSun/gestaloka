@@ -28,8 +28,9 @@ export class PlayerTools {
       user_id uuid NOT NULL,world_id uuid NOT NULL,day date NOT NULL,turns bigint NOT NULL DEFAULT 0,sent bigint NOT NULL DEFAULT 0,
       PRIMARY KEY(user_id,world_id,day));
       CREATE TABLE IF NOT EXISTS player_report (
-      id uuid PRIMARY KEY,world_id uuid NOT NULL,user_id uuid NOT NULL,actor_id uuid NOT NULL,text text NOT NULL,
+      id uuid PRIMARY KEY,world_id uuid NOT NULL,user_id uuid NOT NULL,actor_id uuid,text text NOT NULL,
       created_at timestamptz NOT NULL);
+      ALTER TABLE player_report ALTER COLUMN actor_id DROP NOT NULL;
       CREATE INDEX IF NOT EXISTS player_report_world_time ON player_report(world_id,created_at,id);
       CREATE TABLE IF NOT EXISTS npc_promotion (
       id uuid PRIMARY KEY,world_id uuid NOT NULL,user_id uuid NOT NULL,actor_id uuid NOT NULL,
@@ -68,7 +69,7 @@ export class PlayerTools {
       ).rows[0];
     const allowance = Math.min(
       policy.dailyLimit,
-      Math.floor(policy.turns / policy.turnsPerReport),
+      Math.max(1, Math.floor(policy.turns / policy.turnsPerReport)),
     );
     return {
       date,
@@ -81,7 +82,7 @@ export class PlayerTools {
     db: Db,
     user: string,
     world: string,
-    actor: string,
+    actor: string | null,
     input: z.infer<typeof PlayerReportInput>,
   ) {
     const now = this.now();

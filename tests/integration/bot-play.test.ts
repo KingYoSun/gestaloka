@@ -1056,14 +1056,13 @@ test("報告は当日の通常手番で枠を得て、文字数・再送・並�
     dailyLimit: 10,
     turnsPerReport: 3,
     maxCharacters: 1200,
-    available: 0,
+    turns: 0,
+    allowance: 1,
+    available: 1,
   });
   const input = { requestId: randomUUID(), text: "運営への感想" };
-  await expect(
-    access.report(user, f.world, input, f.actors[0]),
-  ).rejects.toMatchObject({ code: "REPORT_LIMIT" });
   for (let i = 0; i < 2; i++) await f.send(0, { command: "end-turn" });
-  expect((await quota()).available).toBe(0);
+  expect((await quota()).available).toBe(1);
   const third = { requestId: randomUUID(), command: "end-turn" };
   await f.send(0, third);
   await f.send(0, third);
@@ -1099,7 +1098,7 @@ test("報告は当日の通常手番で枠を得て、文字数・再送・並�
   expect(
     (await access.reportStatus(f.people[1]!.id, f.world, f.actors[1]))
       .available,
-  ).toBe(0);
+  ).toBe(1);
   await expect(
     access.report(
       user,
@@ -1159,13 +1158,14 @@ test("報告の日次枠は日本時間で切り替わり、管理者が3つの�
     date: "2026-11-19",
     turns: 0,
     sent: 0,
-    available: 0,
+    available: 1,
   });
-  await expect(post("前日の枠は使わない")).rejects.toMatchObject({
+  await post("今日はプレイを開始できない");
+  await expect(post("未プレイ時の本日2件目")).rejects.toMatchObject({
     code: "REPORT_LIMIT",
   });
   await complete(30);
-  for (let i = 0; i < 10; i++) await post(`本日分の報告 ${i}`);
+  for (let i = 0; i < 9; i++) await post(`本日分の報告 ${i}`);
   expect(await quota()).toMatchObject({
     turns: 30,
     allowance: 10,
@@ -1240,10 +1240,10 @@ test("報告枠は実際に手番を終えたユーザーと世界に属し、�
   });
   expect(
     await access.reportStatus(g.people[0]!.id, g.world, g.actors[0]),
-  ).toMatchObject({ turns: 0, available: 0 });
+  ).toMatchObject({ turns: 0, available: 1 });
   expect(await access.reportStatus(user, f.world, f.actors[0])).toMatchObject({
     turns: 0,
-    available: 0,
+    available: 1,
   });
   await f.send(1, { command: "contact", targetId: f.actors[0] });
   const before = await access.reportStatus(
@@ -1324,7 +1324,7 @@ test("CLIの報告は専用枠で送り、失った返答を再送し、変更�
         )
       ).statusCode,
     ).toBe(302);
-    for (let i = 0; i < 3; i++) await f.send(0, { command: "end-turn" });
+
     expect((await cli.run(profile, "report")).available).toBe(1);
     cli.dropNextResponse(`/api/worlds/${f.world}/reports`);
     const lost = await cli.run(
@@ -1334,9 +1334,16 @@ test("CLIの報告は専用枠で送り、失った返答を再送し、変更�
       "表示についての感想",
     );
     expect(lost.state).toBe("error");
-    expect((await cli.run(profile, "recover")).result.id).toBe(lost.requestId);
+    cli.dropNextResponse(`/api/worlds/${f.world}/session`);
+    expect(await cli.run(profile, "recover")).toMatchObject({
+      state: "report",
+      result: { id: lost.requestId, sent: 1 },
+    });
     expect((await cli.run(profile, "report")).sent).toBe(1);
-    for (let i = 0; i < 3; i++) await f.send(0, { command: "end-turn" });
+    for (let i = 0; i < 5; i++) await f.send(0, { command: "end-turn" });
+    expect((await cli.run(profile, "report")).available).toBe(0);
+    await f.send(0, { command: "end-turn" });
+    expect((await cli.run(profile, "report")).available).toBe(1);
     const policy = await auth.operations.execute(admin.id, randomUUID(), {
       operation: "reportPolicy.read",
     });
@@ -2373,3 +2380,92 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
     await app.close();
   }
 }, 20000);
+test("認可済み端末は人物生成前に一度報告でき、参加後も枠・再送結果を引き継ぐ", async () => {
+  const f = await fixture(),
+    user = await auth.person("user"),
+    app = await createApp(access, auth.identity, undefined, auth.operations);
+  const id = randomUUID(),
+    secret = randomBytes(32).toString("hex"),
+    body = { requestId: randomUUID(), text: "人物を作成できません" };
+  const headers = {
+      authorization: "Bearer " + secret,
+      "x-gestaloka-request": "1",
+    },
+    url = "/api/worlds/" + f.world + "/reports";
+  const post = () =>
+    app.inject({ method: "POST", url, headers, payload: body });
+  try {
+    await isolated.databases.postgres.query(
+      "UPDATE world_construction SET published=true,accepting=true,state='finished' WHERE id=$1",
+      [f.world],
+    );
+    const code = await access.devices.begin(
+      id,
+      f.world,
+      secret,
+      "旅の記録を集める人",
+    );
+    expect((await post()).statusCode).toBe(403);
+    await access.devices.approve(user.id, code.userCode, { character: true });
+    expect(
+      (await app.inject({ url: url.replace(f.world, randomUUID()), headers }))
+        .statusCode,
+    ).toBe(403);
+    expect(
+      (await app.inject({ url: url + "?actorId=" + f.actors[0], headers }))
+        .statusCode,
+    ).toBe(403);
+    expect(
+      (await app.inject({ url: url.replace("/reports", "/session"), headers }))
+        .statusCode,
+    ).toBe(409);
+    expect((await app.inject({ url, headers })).json()).toMatchObject({
+      turns: 0,
+      available: 1,
+    });
+    const sent = await post();
+    expect(sent.statusCode).toBe(200);
+    expect(sent.json()).toMatchObject({
+      id: body.requestId,
+      turns: 0,
+      available: 0,
+      sent: 1,
+    });
+    const row = await isolated.databases.postgres.query(
+      "select actor_id,user_id from player_report where id=$1",
+      [body.requestId],
+    );
+    expect(row.rows).toEqual([{ actor_id: null, user_id: user.id }]);
+    const character = (await access.devices.read(headers.authorization))
+      .character;
+    const joined = await app.inject({
+      method: "POST",
+      url: "/api/operations",
+      headers,
+      payload: {
+        requestId: id,
+        command: { operation: "worlds.join", worldId: f.world, character },
+      },
+    });
+    expect(joined.statusCode).toBe(200);
+    await access.players.tick(id);
+    expect(
+      (await access.devices.read(headers.authorization)).actor_id,
+    ).toBeTruthy();
+    expect((await post()).json()).toEqual(sent.json());
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url,
+          headers,
+          payload: { ...body, requestId: randomUUID() },
+        })
+      ).json().code,
+    ).toBe("REPORT_LIMIT");
+    await access.devices.revoke(user.id, id);
+    expect((await post()).statusCode).toBe(403);
+  } finally {
+    await app.close();
+  }
+});

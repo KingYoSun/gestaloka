@@ -111,13 +111,16 @@ export async function worldRoutes(
         params.id,
         query.actorId,
       );
-      if (!device.actor_id)
+      if (
+        !device.actor_id &&
+        request.routeOptions.url !== "/api/worlds/:id/reports"
+      )
         throw new AccessError(
           409,
           "PLAYER_JOIN_REQUIRED",
           "参加完了を確認してください",
         );
-      query.actorId = device.actor_id;
+      if (device.actor_id) query.actorId = device.actor_id;
       deviceIds.set(request, device.id);
       id = device.user_id!;
     } else id = (await identity.session(request.headers.cookie)).userId;
@@ -484,6 +487,7 @@ export async function worldRoutes(
         await subject(request),
         request.params.id,
         request.query.actorId,
+        deviceIds.get(request),
       ),
   );
   app.post(
@@ -502,6 +506,7 @@ export async function worldRoutes(
         request.params.id,
         request.body,
         request.query.actorId,
+        deviceIds.get(request),
       ),
   );
   app.get(

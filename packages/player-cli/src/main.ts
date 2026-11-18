@@ -334,7 +334,12 @@ async function send(
     };
   }
   return {
-    ...(saved.path.endsWith("/session") ? {} : await status(profile)),
+    ...(saved.path.endsWith("/session")
+      ? {}
+      : await status(profile).catch((error) => {
+          if (saved.path.endsWith("/reports")) return { state: "report" };
+          throw error;
+        })),
     ...(saved.body.command === "finish"
       ? { state: "finished", sceneId: result.sceneId }
       : {}),
