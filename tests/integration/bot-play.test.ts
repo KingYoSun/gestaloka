@@ -777,7 +777,13 @@ test("バックグラウンドのlistenが待機を維持し、後から来た�
     const reader = createInterface({ input: child.stdout! });
     reader.on("line", (line) => events.push(JSON.parse(line)));
     await vi.waitFor(
-      () => expect(events.some((e) => e.state === "standby")).toBe(true),
+      () =>
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            state: "standby",
+            actionMessage: "操作不要です",
+          }),
+        ),
       { timeout: 10000 },
     );
     await f.send(1, { command: "contact", targetId: f.actors[0] });
@@ -821,6 +827,7 @@ test("バックグラウンドのlistenが待機を維持し、後から来た�
     expect(restored).toMatchObject({
       state: "turn",
       actionable: true,
+      actionMessage: "あなたの手番です",
       turn: first.turn,
       context: {
         actorId: restored.viewerId,
@@ -830,6 +837,27 @@ test("バックグラウンドのlistenが待機を維持し、後から来た�
       },
     });
     expect(restored.wakeKey).not.toBe(first.wakeKey);
+    await f.move(2, f.place);
+    await f.send(2, { command: "contact", targetId: f.actors[0] });
+    await vi.waitFor(() =>
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          actionable: true,
+          actionMessage: "あなたの手番です",
+          notificationMessage: "この通知への操作は不要です",
+          progress: expect.objectContaining({
+            updates: [
+              expect.objectContaining({
+                transition: expect.objectContaining({
+                  type: "session-joined",
+                  name: "人物2",
+                }),
+              }),
+            ],
+          }),
+        }),
+      ),
+    );
     reader.close();
   } finally {
     if (child && child.exitCode === null) {
@@ -3040,11 +3068,12 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
       actorId: f.actors[1],
       phase: "receiving",
       name: "人物1",
+      receiptRequest: { memoTexts: ["試験用の共有メモ"] },
     });
-    expect(JSON.stringify(b!.frames.at(-1)?.context)).not.toContain(
-      "試験用の共有メモ",
-    );
     await vi.waitFor(() => expect(a!.frames.at(-1)?.state).toBe("standby"));
+    for (const observer of [a!, c!]) {
+      expect(JSON.stringify(observer.frames)).not.toContain("試験用の共有メモ");
+    }
     a!.controller.abort();
     await a!.done;
     await f.send(1, {
@@ -3058,7 +3087,15 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
       state: "turn",
       turn: a!.frames[0]!.turn,
       viewerId: f.actors[0],
-      context: { actorId: f.actors[0], phase: "turn", name: "人物0" },
+      context: {
+        actorId: f.actors[0],
+        phase: "turn",
+        name: "人物0",
+        receiptResult: {
+          applicationId: req.applicationId,
+          outcome: "accepted",
+        },
+      },
     });
     expect(frame.wakeKey).not.toBe(a!.frames[0]!.wakeKey);
     resumed.controller.abort();
@@ -3095,6 +3132,108 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
     await app.close();
   }
 }, 20000);
+test("メモ本文を判断中の本人だけへ渡し、申請者の復帰で承認・却下・期限切れを照合する", async () => {
+  const f = await fixture();
+  await f.move(2, f.place);
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  await f.send(2, { command: "contact", targetId: f.actors[0] });
+  const waiting = (i: number) =>
+    access.waiting(
+      f.people[i]!.id,
+      f.world,
+      f.actors[i],
+      undefined,
+      undefined,
+      true,
+      true,
+    );
+  const text = "現在の判断者だけに出す本文";
+  const apply = (...recipients: number[]) =>
+    f.send(0, {
+      command: "memo",
+      text,
+      participants: recipients.map((i) => f.actors[i]),
+      dependencies: [],
+    });
+  const first = await apply(1, 2);
+  expect(await waiting(1)).toMatchObject({
+    actionable: true,
+    context: {
+      receiptRequest: {
+        applicationId: first.applicationId,
+        senderId: f.actors[0],
+        memoTexts: [text],
+      },
+    },
+  });
+  for (const i of [0, 2])
+    expect(JSON.stringify(await waiting(i))).not.toContain(text);
+  await f.send(1, {
+    command: "receive",
+    applicationId: first.applicationId,
+    accept: true,
+  });
+  expect((await waiting(0)).context).not.toHaveProperty("receiptResult");
+  expect(JSON.stringify(await waiting(1))).not.toContain(text);
+  expect((await waiting(2)).context?.receiptRequest?.memoTexts).toEqual([text]);
+
+  const requestId = randomUUID();
+  const decide = {
+    command: "receive",
+    applicationId: first.applicationId,
+    accept: true,
+    requestId,
+  };
+  await f.send(2, decide);
+  await f.send(2, decide);
+  const resumed = await waiting(0);
+  expect(resumed).toMatchObject({
+    actionable: true,
+    turn: 1,
+    context: {
+      receiptResult: {
+        applicationId: first.applicationId,
+        outcome: "accepted",
+      },
+    },
+  });
+  const selectResults = (
+    entries: { payload?: { receiptResult?: unknown } }[],
+  ) =>
+    entries.flatMap((entry) =>
+      entry.payload?.receiptResult ? [entry.payload.receiptResult] : [],
+    );
+  expect(selectResults((await f.status(0)).entries)).toEqual([
+    resumed.context!.receiptResult,
+  ]);
+  for (const i of [1, 2]) {
+    expect((await waiting(i)).context).not.toHaveProperty("receiptResult");
+    expect(selectResults((await f.status(i)).entries)).toEqual([]);
+  }
+
+  const second = await apply(1);
+  await f.send(1, {
+    command: "receive",
+    applicationId: second.applicationId,
+    accept: false,
+  });
+  expect((await waiting(0)).context?.receiptResult).toMatchObject({
+    applicationId: second.applicationId,
+    outcome: "rejected",
+  });
+  let now = new Date();
+  vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
+  const expired = await apply(1);
+  const deadline = (await waiting(1)).deadline!;
+  now = new Date(Date.parse(deadline) + 1);
+  expect((await f.status(0)).actorId).toBe(f.actors[0]);
+  expect((await waiting(0)).context?.receiptResult).toMatchObject({
+    applicationId: expired.applicationId,
+    outcome: "expired",
+  });
+  expect((await waiting(1)).context).not.toHaveProperty("receiptRequest");
+});
+
 test("同席者に手番終了と退出を残し、離席の時点によって即時スキップと600秒待機を分ける", async () => {
   const f = await fixture();
   await f.move(2, f.place);

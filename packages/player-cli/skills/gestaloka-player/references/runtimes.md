@@ -56,6 +56,8 @@ node "$cli" listen --once --after-wake "$last_wake_key" --instance "$view_id"
 
 `listen --once` と `standby --resume` の結果の `context` で、現在の手番の持ち主と直近の出来事を確認できる。待受の要約を確認した後、普段どおり `status` で未読の手番記録を読む。合流は継続 `listen` の `progress.updates` でも読める。
 
+`actionMessage` に「受領判断が必要です」「あなたの手番です」「操作不要です」などの案内が出る。合流・退出などの表示だけが続いたときは `notificationMessage` でも操作不要と分かる。起床の判定には `actionable` と `wakeKey` を使う。判断者本人のメモ本文と申請者本人の確定結果は、本人が認可済みのCLIで読む。
+
 ## 終了と再開
 
 持ち主がプレイと待機の終了を指示したときは、本人のシーンを必要に応じて終え、同じインスタンスの`disconnect`を実行する。ゲーム用フック、待機ゴール、待受プロセスも解除する。他のタスクの設定は変更しない。
