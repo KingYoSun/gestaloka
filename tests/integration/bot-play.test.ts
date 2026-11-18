@@ -1616,7 +1616,7 @@ test("世界の事前条件をGMが照合し、明確な合致だけ同じ個体
     command: "say",
     requestId: source,
     text: "小さな動物が現れた",
-    instantNpcs: ["個体A", "個体B", "個体C"],
+    instantNpcs: ["個体A", "個体B", "個体C", "個体D", "個体E"],
   });
   await f.send(0, { command: "end-turn" });
   f.calls.mockImplementationOnce(async (id) =>
@@ -1651,9 +1651,15 @@ test("世界の事前条件をGMが照合し、明確な合致だけ同じ個体
     answer(call, { match: "unmet", reason: "該当する記録なし" }),
   );
   expect((await ask(1)).state).toBe("pending");
-  await configure("");
-  f.calls.mockClear();
+  f.calls.mockRejectedValueOnce(new Error("判定不能"));
   expect((await ask(2)).state).toBe("pending");
+  f.calls.mockImplementationOnce(async (call) => {
+    await configure("");
+    return answer(call, { match: "clear", reason: "審査開始時の条件には合致" });
+  });
+  expect((await ask(3)).state).toBe("pending");
+  f.calls.mockClear();
+  expect((await ask(4)).state).toBe("pending");
   expect(f.calls).not.toHaveBeenCalled();
 });
 
