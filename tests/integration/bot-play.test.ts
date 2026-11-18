@@ -4,7 +4,7 @@ import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { beforeAll, afterAll, afterEach, expect, test, vi } from "vitest";
-import { PlayCommand, WaitingStatus } from "@gestaloka/contracts";
+import { PlayCommand, WaitingEvent } from "@gestaloka/contracts";
 import { WorldAccess } from "@gestaloka/server/access";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
 import { derivedId } from "@gestaloka/server/world";
@@ -2916,7 +2916,7 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
         },
       );
       expect(res.status).toBe(200);
-      const frames: ReturnType<typeof WaitingStatus.parse>[] = [];
+      const frames: ReturnType<typeof WaitingEvent.parse>[] = [];
       const done = (async () => {
         let buf = "";
         try {

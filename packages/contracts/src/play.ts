@@ -219,6 +219,8 @@ export const WaitingStatus = z.object({
   applicationId: z.uuid().optional(),
   deadline: z.iso.datetime().optional(),
   code: z.string().optional(),
+});
+export const WaitingEvent = WaitingStatus.extend({
   progress: z
     .object({
       cursor: z.string(),

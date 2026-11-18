@@ -18,6 +18,7 @@ import {
   PlayerIconInput,
   WorldPlayerPage,
   PlayerReportInput,
+  WaitingEvent,
   WaitingStatus,
 } from "@gestaloka/contracts";
 
@@ -257,7 +258,7 @@ async function listen(profile: Profile) {
               data += line.slice(5).trimStart() + "\n";
             else if (line === "") {
               if (event === "waiting" && data) {
-                const frame = WaitingStatus.parse(JSON.parse(data));
+                const frame = WaitingEvent.parse(JSON.parse(data));
                 if (frame.viewerId !== registered.viewerId)
                   throw new Error("待受の人物が一致しません");
                 if (!frame.active || frame.state === "inactive") return frame;
