@@ -271,8 +271,35 @@ export class WorldAccess {
       )),
     };
   }
-  async reportStatus(subject: string, id: string, actorId?: string) {
-    await this.authorize(subject, id, "player", this.pool, actorId);
+  private async reportActor(
+    subject: string,
+    id: string,
+    actorId: string | undefined,
+    deviceId: string | undefined,
+    db: Pick<pg.Pool, "query">,
+  ) {
+    if (deviceId && !actorId) {
+      const pending = await db.query(
+        "SELECT 1 FROM player_device WHERE id=$1 AND user_id=$2 AND world_id=$3 AND NOT revoked AND (character_approved OR preset_id IS NOT NULL) FOR SHARE",
+        [deviceId, subject, id],
+      );
+      if (!pending.rowCount)
+        throw new AccessError(
+          403,
+          "PLAYER_DEVICE_DENIED",
+          "この世界への端末の許可を確認してください",
+        );
+      return null;
+    }
+    return (await this.authorize(subject, id, "player", db, actorId)).actor_id!;
+  }
+  async reportStatus(
+    subject: string,
+    id: string,
+    actorId?: string,
+    deviceId?: string,
+  ) {
+    await this.reportActor(subject, id, actorId, deviceId, this.pool);
     return this.botPlay.tools.reportStatus(this.pool, subject, id);
   }
   async waiting(
@@ -308,35 +335,39 @@ export class WorldAccess {
     id: string,
     input: z.infer<typeof PlayerReportInput>,
     actorId?: string,
+    deviceId?: string,
   ) {
-    const grant = await this.authorize(
+    const actor = await this.reportActor(
       subject,
       id,
-      "player",
-      this.pool,
       actorId,
+      deviceId,
+      this.pool,
     );
+    const body = {
+      operation: "player-report",
+      worldId: id,
+      actorId: actor,
+      requestId: input.requestId,
+      text: input.text,
+    };
     return this.#accept(
       subject,
       input.requestId,
-      {
-        operation: "player-report",
-        worldId: id,
-        actorId: grant.actor_id,
-        requestId: input.requestId,
-        text: input.text,
-      },
+      body,
       "player",
       async (db) => {
-        await this.authorize(subject, id, "player", db, grant.actor_id!);
-        return this.botPlay.tools.report(
-          db,
+        const author = await this.reportActor(
           subject,
           id,
-          grant.actor_id!,
-          input,
+          actorId,
+          deviceId,
+          db,
         );
+        return this.botPlay.tools.report(db, subject, id, author, input);
       },
+      // The same request can be replayed after its sender has finished joining.
+      actor ? { ...body, actorId: null } : undefined,
     );
   }
   async promotions(
@@ -365,6 +396,7 @@ export class WorldAccess {
     body: unknown,
     role: Role,
     perform: (client: pg.PoolClient) => Promise<T>,
+    previousBody?: unknown,
   ) {
     const hash = digest(JSON.stringify(body));
     const client = await this.pool.connect();
@@ -390,7 +422,12 @@ export class WorldAccess {
         "SELECT id FROM world_subject WHERE id=$1 AND user_id=$2 AND active",
         [saved.subject_id, subject],
       );
-      if (!owner.rowCount || saved.hash !== hash)
+      if (
+        !owner.rowCount ||
+        (saved.hash !== hash &&
+          (previousBody === undefined ||
+            saved.hash !== digest(JSON.stringify(previousBody))))
+      )
         throw new AccessError(
           409,
           "REQUEST_CONFLICT",
