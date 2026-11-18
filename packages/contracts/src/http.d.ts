@@ -3291,6 +3291,39 @@ export interface paths {
                             /** Format: date-time */
                             deadline?: string;
                             code?: string;
+                            progress?: {
+                                cursor: string;
+                                /** Format: uuid */
+                                actorId: string | null;
+                                name?: string;
+                                message?: string;
+                                waitingForReturn?: {
+                                    /** Format: uuid */
+                                    actorId: string;
+                                    name: string;
+                                    /** Format: date-time */
+                                    deadline: string;
+                                    remainingSeconds: number;
+                                    message: string;
+                                };
+                                updates: {
+                                    id: string;
+                                    transition: {
+                                        /** @enum {string} */
+                                        type: "turn-ended" | "turn-skipped" | "session-left";
+                                        /** Format: uuid */
+                                        actorId: string;
+                                        name: string;
+                                        turn: number;
+                                        /** Format: date-time */
+                                        at: string;
+                                        /** @enum {string} */
+                                        reason?: "leave" | "finish";
+                                        publicActivity?: boolean;
+                                        message: string;
+                                    };
+                                }[];
+                            };
                         };
                     };
                 };
@@ -3425,6 +3458,39 @@ export interface paths {
                             /** Format: date-time */
                             deadline?: string;
                             code?: string;
+                            progress?: {
+                                cursor: string;
+                                /** Format: uuid */
+                                actorId: string | null;
+                                name?: string;
+                                message?: string;
+                                waitingForReturn?: {
+                                    /** Format: uuid */
+                                    actorId: string;
+                                    name: string;
+                                    /** Format: date-time */
+                                    deadline: string;
+                                    remainingSeconds: number;
+                                    message: string;
+                                };
+                                updates: {
+                                    id: string;
+                                    transition: {
+                                        /** @enum {string} */
+                                        type: "turn-ended" | "turn-skipped" | "session-left";
+                                        /** Format: uuid */
+                                        actorId: string;
+                                        name: string;
+                                        turn: number;
+                                        /** Format: date-time */
+                                        at: string;
+                                        /** @enum {string} */
+                                        reason?: "leave" | "finish";
+                                        publicActivity?: boolean;
+                                        message: string;
+                                    };
+                                }[];
+                            };
                         };
                     };
                 };

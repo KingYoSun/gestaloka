@@ -659,7 +659,17 @@ export async function worldRoutes(
     "/api/worlds/:id/waiting/events",
     {
       sse: "only",
-      schema: { hide: true, params: ResourceId, querystring: ActorQuery },
+      schema: {
+        hide: true,
+        params: ResourceId,
+        querystring: ActorQuery.extend({
+          after: z
+            .string()
+            .regex(/^\d{1,19}$/)
+            .refine((v) => v.length < 19 || v <= "9223372036854775807")
+            .optional(),
+        }),
+      },
     },
     async (request, reply) => {
       const user = await subject(request),
@@ -696,7 +706,8 @@ export async function worldRoutes(
       });
       const renewal = setTimeout(close, 240000);
       let sent = false,
-        last = "";
+        last = "",
+        after = request.query.after;
       try {
         while (!controller.signal.aborted) {
           if (!dirty)
@@ -722,15 +733,35 @@ export async function worldRoutes(
             !sent,
           );
           if (controller.signal.aborted) break;
-          const key = frame.state + ":" + (frame.wakeKey ?? "");
+          const progress =
+            after === undefined
+              ? undefined
+              : await service().botPlay.turnFeed(world, frame.viewerId, after);
+          const key = JSON.stringify([
+            frame.state,
+            frame.wakeKey,
+            ...(progress
+              ? [
+                  frame.sessionId,
+                  frame.turn,
+                  progress.actorId,
+                  progress.waitingForReturn?.deadline,
+                  progress.cursor,
+                ]
+              : []),
+          ]);
           if (key !== last) {
             if (!sent) {
               reply.header("X-Accel-Buffering", "no");
               reply.sse.keepAlive();
             }
-            await reply.sse.send({ event: "waiting", data: frame });
+            await reply.sse.send({
+              event: "waiting",
+              data: { ...frame, ...(progress ? { progress } : {}) },
+            });
             sent = true;
             last = key;
+            if (progress) after = progress.cursor;
           }
           if (!frame.active || frame.state === "inactive") break;
         }
