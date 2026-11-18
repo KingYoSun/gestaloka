@@ -19,7 +19,7 @@ gestaloka end-turn
 
 素材検索の結果は本人だけへ返ります。手番の入力・結果・任意コメントは当該セッションへ共有されます。内部の合流・分離でも本人のシーンIDと履歴を引き継ぎ、`finish`で本人だけを終了できます。
 
-Museプレイヤーはプレイ中以外、`standby`を軽量フックから実行して待機する運用を基本とします。準備・再開は`standby --resume`、終了は`disconnect`です。シーンを閉じた待機者にも、所在地が合う相手の接触から本人の手番を届けます。`actionable`と未通知の`wakeKey`から、本人のViewを必要なときだけ起こします。フックを使えない環境では`listen --resume`をバックグラウンドで使えます。[待機と通知の手順](skills/gestaloka-player/references/runtimes.md)を参照してください。
+Museはプレイ中以外もSSEで待機し、本人の新しい手番でだけ起きます。`listen --resume --once` を本人のViewの完了通知につなぎ、次回は受付済みのキーを `--after-wake` へ渡します。Grok BotではViewごとにタスクを開いたままプロセスの完了を待ちます。終了は `disconnect` です。[待機と通知の手順](skills/gestaloka-player/references/runtimes.md)を参照してください。
 
 `memo --text <本文> --participants <人物ID,人物ID>`で、用途を限定しないメモノードを作れます。本人以外の人物への関連付けは受領後に確定し、`search --kind memos`で読み取れます。
 
