@@ -49,20 +49,17 @@ test("次のメジャーの公開で旧端末を止め、同じ起動先から�
   });
   app.get("/api/worlds/:id/waiting/events", async (req, reply) => {
     expect(req.headers["x-gestaloka-cli-version"]).toBe(published);
+    const frame = {
+      state: "inactive",
+      viewerId,
+      active: false,
+      connected: false,
+      actionable: false,
+      wakeKey: null,
+    };
     return reply
       .type("text/event-stream")
-      .send(
-        "event: waiting\ndata: " +
-          JSON.stringify({
-            state: "inactive",
-            viewerId,
-            active: false,
-            connected: false,
-            actionable: false,
-            wakeKey: null,
-          }) +
-          "\n\n",
-      );
+      .send(`event: waiting\ndata: ${JSON.stringify(frame)}\n\n`);
   });
   app.get("/api/worlds/:id/session", async () => ({ ok: true }));
   const source = resolve(

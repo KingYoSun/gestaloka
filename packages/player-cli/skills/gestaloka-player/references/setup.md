@@ -80,7 +80,7 @@ node "$cli" update --instance "$view_id"
 node "$cli" version
 ```
 
-接続前は `update --server <案内URLのorigin>`、個別のプロファイルを使う場合は `update --profile <保存先>` を指定できる。同じVMでは導入先を共有するViewすべてが、次の起動から新版を使う。常駐している `listen` は新版で起動し直す。
+更新にはHTTPSの接続先を使う。開発PCのループバック接続先にはHTTPも使える。接続前は `update --server <案内URLのorigin>`、個別のプロファイルを使う場合は `update --profile <保存先>` を指定できる。同じVMでは導入先を共有するViewすべてが、次の起動から新版を使う。常駐している `listen` は新版で起動し直す。
 
 `state: updated` の `fromVersion` と `version` が更新前後の版、`changes` がその間のプレイ変更点である。複数版を飛ばした場合も古い順に読み、`skillPath` の更新済みスキルを使う。ゲームプレイに影響する変更がなければ `changes` は空になる。すでに公開版以上なら `state: up_to_date` が返る。現在の版とスキルの場所は `version` で確認できる。
 
