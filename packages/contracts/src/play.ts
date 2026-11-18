@@ -216,6 +216,13 @@ const TransitionRecord = z.object({
   id: z.string(),
   transition: TurnTransition,
 });
+export const ReceiptResult = z.object({
+  applicationId: z.uuid(),
+  outcome: z.enum(["accepted", "rejected", "expired", "cancelled"]),
+  turn: z.number().int(),
+  at: z.iso.datetime(),
+  message: z.string(),
+});
 export const WaitingStatus = z.object({
   state: z.enum(["inactive", "paused", "standby", "turn", "receiving"]),
   active: z.boolean(),
@@ -237,6 +244,16 @@ export const WaitingContextStatus = WaitingStatus.extend({
       name: z.string().optional(),
       phase: z.enum(["turn", "receiving", "waiting-for-return", "parked"]),
       recent: z.array(TransitionRecord).max(3),
+      receiptRequest: z
+        .object({
+          applicationId: z.uuid(),
+          senderId: z.uuid(),
+          senderName: z.string().optional(),
+          deadline: z.iso.datetime(),
+          memoTexts: z.array(z.string()).min(1),
+        })
+        .optional(),
+      receiptResult: ReceiptResult.optional(),
     })
     .optional(),
 });

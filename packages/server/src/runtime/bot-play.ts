@@ -8,6 +8,7 @@ import {
   type Appearance,
   type ItemOutcome,
   type PlaySearch,
+  type ReceiptResult,
 } from "@gestaloka/contracts";
 import { AccessError } from "../http/access.js";
 import { requireMember } from "../http/operations.js";
@@ -111,6 +112,7 @@ export type Session = {
     lastInstant?: string;
     wakeRevision?: number;
     lastTransitionId?: string;
+    lastReceipt?: { sender: string; result: z.infer<typeof ReceiptResult> };
     awayUntil?: string;
     parked?: boolean;
     entries: Entry[];
@@ -1004,7 +1006,12 @@ export class BotPlay {
       membership,
     };
   }
-  async #record(db: Db, session: Session, payload: Record<string, unknown>) {
+  async #record(
+    db: Db,
+    session: Session,
+    payload: Record<string, unknown>,
+    viewer?: string,
+  ) {
     const witnesses = (
       Array.isArray(payload.entries) ? (payload.entries as Entry[]) : []
     ).map((e) => e.itemWitnesses);
@@ -1037,6 +1044,7 @@ export class BotPlay {
     ).rows[0]!.id;
     if (payload.transition) session.data.lastTransitionId = id;
     for (const member of session.data.members) {
+      if (viewer && member.actorId !== viewer) continue;
       let visibleId = id;
       if (Array.isArray(payload.entries)) {
         const skip =
@@ -1159,6 +1167,7 @@ export class BotPlay {
     d.entries = [];
     delete d.npcActions;
     delete d.comment;
+    delete d.lastReceipt;
     return transition;
   }
   async #turnPresence(db: Db, session: Session) {
@@ -1193,12 +1202,15 @@ export class BotPlay {
       ]),
     );
   }
-  #settle(
+  async #settle(
+    db: Db,
     session: Session,
-    state: string,
+    outcome: z.infer<typeof ReceiptResult>["outcome"],
     extra: Record<string, unknown> = {},
   ) {
     const r = session.data.receiving!;
+    const state =
+      outcome === "expired" || outcome === "cancelled" ? "failed" : outcome;
     const entry = session.data.entries.find((e) => e.applicationId === r.id)!;
     const items =
       state === "accepted"
@@ -1216,6 +1228,26 @@ export class BotPlay {
       (action) => action.input.requestId === r.id,
     );
     if (submitted) submitted.result = entry.result as Record<string, unknown>;
+    const memo = [...r.changes.nodes, ...r.changes.revisions].some(
+      (node) => node.kind === "script" && node.type === "memo",
+    );
+    const result = {
+      applicationId: r.id,
+      outcome,
+      turn: session.data.number,
+      at: this.now().toISOString(),
+      message: `${memo ? "メモ" : "申請"}${
+        {
+          accepted: "が承認されました",
+          rejected: "が却下されました",
+          expired: "の受領判断が期限切れになりました",
+          cancelled:
+            "の受領判断は、関係する参加者が退出したため成立しませんでした",
+        }[outcome]
+      }`,
+    };
+    session.data.lastReceipt = { sender: r.sender, result };
+    await this.#record(db, session, { receiptResult: result }, r.sender);
     delete session.data.receiving;
     return items;
   }
@@ -1232,7 +1264,7 @@ export class BotPlay {
         state: "failed",
         reason: "受領判断の期限が切れました",
       });
-      this.#settle(session, "failed");
+      await this.#settle(db, session, "expired");
       if (
         session.data.used >=
         Number(
@@ -1350,11 +1382,8 @@ export class BotPlay {
   async #wakeContext(db: Db, session: Session, viewer: string) {
     const d = session.data;
     const actorId = d.parked ? null : (turnOwner(d) ?? null);
-    const name = actorId
-      ? (await this.#characters(session, db)).find(
-          (person) => person.actorId === actorId,
-        )?.name
-      : undefined;
+    const characters = actorId ? await this.#characters(session, db) : [];
+    const name = characters.find((person) => person.actorId === actorId)?.name;
     const phase = d.parked
       ? "parked"
       : d.receiving
@@ -1376,11 +1405,34 @@ export class BotPlay {
         d.lastTransitionId ?? "0",
       ],
     );
+    const r = d.receiving;
+    const memoTexts =
+      r && viewer === actorId && Date.parse(r.deadline) > this.now().getTime()
+        ? [...r.changes.nodes, ...r.changes.revisions].flatMap((node) =>
+            node.kind === "script" && node.type === "memo" ? [node.text] : [],
+          )
+        : [];
     return {
       actorId,
       ...(name === undefined ? {} : { name }),
       phase,
       recent: rows.reverse(),
+      ...(r && memoTexts.length
+        ? {
+            receiptRequest: {
+              applicationId: r.id,
+              senderId: r.sender,
+              senderName: characters.find(
+                (person) => person.actorId === r.sender,
+              )?.name,
+              deadline: r.deadline,
+              memoTexts,
+            },
+          }
+        : {}),
+      ...(!r && viewer === actorId && d.lastReceipt?.sender === viewer
+        ? { receiptResult: d.lastReceipt.result }
+        : {}),
     };
   }
   async joinHistory(scene: string, actor: string, after: string) {
@@ -2898,7 +2950,7 @@ export class BotPlay {
               state: "failed",
               reason: "関係する参加者が退出しました",
             });
-            this.#settle(session, "failed");
+            await this.#settle(db, session, "cancelled");
           }
           if (d.turn === actor) await this.#next(db, session);
           await this.#record(db, session, {
@@ -2974,7 +3026,7 @@ export class BotPlay {
             );
           let items: ItemOutcome[] | undefined;
           if (!input.accept) {
-            items = this.#settle(session, "rejected");
+            items = await this.#settle(db, session, "rejected");
           } else {
             receiving.decided.push(actor);
             if (
@@ -2985,7 +3037,7 @@ export class BotPlay {
                 changes: receiving.changes,
                 context: this.store.context(w.id, receiving.dependencies),
               });
-              items = this.#settle(session, "accepted", {
+              items = await this.#settle(db, session, "accepted", {
                 commitId: receipt.commitId,
               });
             }

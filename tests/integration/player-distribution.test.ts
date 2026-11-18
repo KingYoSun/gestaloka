@@ -39,6 +39,23 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
       { cwd: folder },
     );
     expect(JSON.parse(help.stdout).help).toContain("gestaloka connect");
+    const individual = async (...args: string[]) =>
+      JSON.parse(
+        (
+          await promisify(execFile)(
+            process.execPath,
+            [join(folder, "package/dist/main.js"), ...args],
+            { cwd: folder },
+          )
+        ).stdout,
+      ).help;
+    const listen = await individual("help", "listen");
+    expect(listen).toContain("--after-wake");
+    expect(await individual("listen", "--help")).toBe(listen);
+    expect(await individual("help", "receive")).toContain(
+      "--accept | --reject",
+    );
+    expect(await individual("help", "status")).toContain("--view <wait|joins>");
     const setup = await app.inject(release.setupUrl);
     expect(setup.statusCode).toBe(200);
     expect(setup.headers["content-type"]).toContain("text/markdown");

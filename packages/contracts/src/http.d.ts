@@ -3451,6 +3451,26 @@ export interface paths {
                                         message: string;
                                     };
                                 }[];
+                                receiptRequest?: {
+                                    /** Format: uuid */
+                                    applicationId: string;
+                                    /** Format: uuid */
+                                    senderId: string;
+                                    senderName?: string;
+                                    /** Format: date-time */
+                                    deadline: string;
+                                    memoTexts: string[];
+                                };
+                                receiptResult?: {
+                                    /** Format: uuid */
+                                    applicationId: string;
+                                    /** @enum {string} */
+                                    outcome: "accepted" | "rejected" | "expired" | "cancelled";
+                                    turn: number;
+                                    /** Format: date-time */
+                                    at: string;
+                                    message: string;
+                                };
                             };
                         };
                     };

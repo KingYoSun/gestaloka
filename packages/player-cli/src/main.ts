@@ -23,42 +23,8 @@ import {
   WaitingStatus,
 } from "@gestaloka/contracts";
 
-const help = `GESTALOKA プレイヤーCLI
+import { playerHelp, playerOptions } from "./help.js";
 
-gestaloka version                       実行中の版・スキルの保存先
-gestaloka update [--server <接続先>]     最新版に更新し、プレイに関係する変更を表示
-gestaloka connect --server <URL> --world <IDまたはURL> [--character <ファイル>] [--icon <画像>]
-gestaloka join [--icon <画像>]           認可されたキャラクターを生成
-gestaloka status [--after N] [--view <wait|joins>]  参加状態・手番と前回からの新着（0で先頭）
-gestaloka result [--scene ID]           本人の履歴・終了結果をまとめて読む
-gestaloka standby [--resume]            待機を更新し、本人を起こす条件を取得（枠外）
-gestaloka listen [--resume] [--once]             SSEで本人の変化を待ち、JSON Linesで出力
-gestaloka disconnect                    このインスタンスの待機を解除
-gestaloka start                         単独セッションを開始
-gestaloka search --kind <surroundings|belongings|self|history|subject|memos> [--target <ID>]
-gestaloka contact --target <人物ID>      所在地から接触・合流を申請
-gestaloka say --text <発言>              本人の一手を記録
-gestaloka comment --text <コメント>      本人の手番に1回、枠外でコメント
-gestaloka receive --application <ID> --accept|--reject  受領判断
-gestaloka end-turn                      手番を終え、入力と結果を共有
-gestaloka leave                         セッションを分離して続行
-gestaloka finish                        本人のシーンを終了し履歴を取得
-gestaloka play --file <JSONファイル>     PlayCommandの検索・更新・作成・対抗行動を送信
-gestaloka memo --text <本文> [--participants <人物ID,人物ID>] メモノードを作成
-gestaloka promote-npc --source <発言要求ID> --index <番号> --text <NPCの説明> [--owner <本人ID>]
-gestaloka promotions [--before <ID>]    本人のNPC昇格申請と許可結果を確認
-gestaloka report [--text <本文>]        運営への報告・感想を送信。本文なしは送信枠を確認
-gestaloka history --scene <ID> --kind <events|actions>  旧シーンの保存履歴
-gestaloka icon [--file <画像>|--clear]   アイコンを操作
-gestaloka recover [--request <ID>]       保存した同じ要求を再送
-
-通常枠の初期値は成功8回。検索結果は本人だけへ返ります。
-エラー・状態確認・チャット取得・再送・コメントは枠を消費しません。
-全コマンド: --instance <View ID>でbotごとの認可・接続先・要求記録を分離します。
-GESTALOKA_INSTANCEでも指定できます。--profile <ファイル>との同時指定はできません。
-IDはこのインスタンス内で使える短縮ID。--full-idsで完全なUUIDを出力します。
-出力はJSON。認可は持ち主のブラウザーで行います。
-`;
 const Profile = z.object({
   server: z.url(),
   worldId: z.uuid(),
@@ -79,36 +45,7 @@ type Profile = z.infer<typeof Profile>;
 const parse = () =>
   parseArgs({
     allowPositionals: true,
-    options: {
-      help: { type: "boolean" },
-      "full-ids": { type: "boolean" },
-      server: { type: "string" },
-      world: { type: "string" },
-      profile: { type: "string" },
-      instance: { type: "string" },
-      participants: { type: "string" },
-      source: { type: "string" },
-      index: { type: "string" },
-      owner: { type: "string" },
-      resume: { type: "boolean" },
-      once: { type: "boolean" },
-      "after-wake": { type: "string" },
-      text: { type: "string" },
-      file: { type: "string" },
-      after: { type: "string" },
-      view: { type: "string" },
-      before: { type: "string" },
-      scene: { type: "string" },
-      kind: { type: "string" },
-      target: { type: "string" },
-      application: { type: "string" },
-      request: { type: "string" },
-      icon: { type: "string" },
-      character: { type: "string" },
-      clear: { type: "boolean" },
-      accept: { type: "boolean" },
-      reject: { type: "boolean" },
-    },
+    options: playerOptions,
   });
 let values: ReturnType<typeof parse>["values"];
 let profilePath: string, journal: string;
@@ -213,14 +150,35 @@ async function standby(
     return WaitingStatus.parse(await http(profile, path, { active: false }));
   return frame;
 }
+function waitingNotice(
+  frame: z.infer<typeof WaitingEvent>,
+  lastWake: string | null = null,
+) {
+  const name = frame.context?.name ?? frame.progress?.name;
+  const actionMessage = frame.actionable
+    ? frame.state === "receiving"
+      ? "受領判断が必要です"
+      : "あなたの手番です"
+    : `操作不要です${name ? `（${name}の手番中）` : ""}`;
+  return {
+    ...frame,
+    actionMessage,
+    ...(frame.progress?.updates.length &&
+    (!frame.actionable || frame.wakeKey === lastWake)
+      ? { notificationMessage: "この通知への操作は不要です" }
+      : {}),
+  };
+}
 async function listen(profile: Profile) {
   const registered = await standby(profile, !!values.resume);
-  if (!registered.active) return registered;
+  if (!registered.active) return waitingNotice(registered);
   let last = "",
+    lastWake: string | null = values["after-wake"] ?? null,
     retry = 1000,
     after = references!.cursor();
   for (;;) {
-    if (!(await waitingControl(profile)).enabled) return standby(profile);
+    if (!(await waitingControl(profile)).enabled)
+      return waitingNotice(await standby(profile));
     try {
       const url = new URL(
         `/api/worlds/${profile.worldId}/waiting/events`,
@@ -273,7 +231,8 @@ async function listen(profile: Profile) {
                 const frame = WaitingEvent.parse(JSON.parse(data));
                 if (frame.viewerId !== registered.viewerId)
                   throw new Error("待受の人物が一致しません");
-                if (!frame.active || frame.state === "inactive") return frame;
+                if (!frame.active || frame.state === "inactive")
+                  return waitingNotice(frame, lastWake);
                 const progress = frame.progress;
                 const key = JSON.stringify([
                   frame.state,
@@ -293,10 +252,11 @@ async function listen(profile: Profile) {
                   frame.actionable &&
                   frame.wakeKey !== values["after-wake"]
                 )
-                  return frame;
+                  return waitingNotice(frame, lastWake);
                 if (!values.once && key !== last) {
-                  console.log(render(frame));
+                  console.log(render(waitingNotice(frame, lastWake)));
                   last = key;
+                  if (frame.actionable) lastWake = frame.wakeKey;
                   if (progress) after = progress.cursor;
                 }
                 retry = 1000;
@@ -409,6 +369,12 @@ async function run() {
   values = parsed.values;
   const positionals = parsed.positionals,
     command = positionals[0] ?? "help";
+  if (command === "help") {
+    if (positionals.length > 2)
+      throw new Error("helpにはコマンドを1つ指定してください");
+    return { help: playerHelp(positionals[1]) };
+  }
+  if (values.help) return { help: playerHelp(command) };
   if (values.profile && values.instance)
     throw new Error("--instanceと--profileはどちらか一方を指定してください");
   const instance =
@@ -430,7 +396,6 @@ async function run() {
           ]),
     );
   journal = `${profilePath}.requests`;
-  if (command === "help" || values.help) return { help };
   if (positionals.length > 1)
     throw new Error("コマンドは1つ指定してください（helpを参照）");
   if (command === "version")
@@ -573,7 +538,9 @@ async function run() {
     };
   }
   if (command === "standby")
-    return standby(profile, !!values.resume, !!values.resume);
+    return waitingNotice(
+      await standby(profile, !!values.resume, !!values.resume),
+    );
   if (command === "listen") return listen(profile);
   if (command === "disconnect") {
     await save(join(journal, "waiting.json"), { enabled: false });
