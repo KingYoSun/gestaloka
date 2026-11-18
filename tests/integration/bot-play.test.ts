@@ -2258,12 +2258,23 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
         },
       });
     })
-    .mockImplementationOnce(async (id) =>
-      answer(id, {
-        sides: 2,
-        successThrough: 1,
-        observable: "羽根が折れて回らない",
-      }),
+    .mockImplementationOnce(
+      async (
+        id,
+        _role,
+        _messages,
+        _target,
+        _effort,
+        _short,
+        _attempt,
+        validate,
+      ) => {
+        const dice = { sides: 2, successThrough: 1 };
+        expect(() =>
+          validate!(JSON.stringify({ ...dice, observable: "羽根" })),
+        ).toThrow();
+        return answer(id, { ...dice, observable: "羽根が折れて回らない" });
+      },
     );
   const ticking = access.botPlay.tickNpcs();
   try {

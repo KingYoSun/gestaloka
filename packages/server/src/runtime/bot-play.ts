@@ -1794,10 +1794,18 @@ export class BotPlay {
             .string()
             .trim()
             .min(1)
-            .refine(
-              (text) => proposedState.includes(text),
-              "状態案から原文のまま抜き出してください",
-            )
+            .refine((text) => {
+              const offset = proposedState.lastIndexOf(text);
+              if (offset < 0) return false;
+              const rest = proposedState
+                .slice(offset + text.length)
+                .trimStart();
+              return (
+                !rest ||
+                /\p{Terminal_Punctuation}$/u.test(text) ||
+                /^\p{Terminal_Punctuation}/u.test(rest)
+              );
+            }, "変化後の状態を述べる箇所を、文末または句読点まで原文のまま抜き出してください")
             .nullable(),
         })
         .passthrough()
@@ -1814,7 +1822,7 @@ export class BotPlay {
             "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {sides:整数,successThrough:整数}。1からsidesまでの一様な出目がsuccessThrough以下なら成功。1<=successThrough<sides。成否、出目、物語、追加の変更は生成しない。" +
             (proposedState === undefined
               ? ""
-              : "NPCの外界への作用ではさらにobservableを返す。後から対象だけを調べた人が観察できる状態をchanges.stateから連続する原文のまま抜き出す。行為者、経緯、原因の推測を除く。観察可能な箇所がなければnull。"),
+              : "NPCの外界への作用ではさらにobservableを返す。後から対象だけを調べた人が何がどうなったかを読めるよう、changes.stateから変化後の状態を述べる箇所を文末または句読点まで原文で抜き出す。部位名だけに切り詰めない。行為者、経緯、原因の推測を除く。観察可能な箇所がなければnull。"),
         },
         {
           role: "user",
