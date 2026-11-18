@@ -1,3 +1,4 @@
+import { ModelCallInProgress } from "../llm/budget.js";
 import type { PromotionProfile } from "../runtime/player-tools.js";
 import { RuntimeMonitor } from "../runtime/monitor.js";
 import { Backups } from "../runtime/backups.js";
@@ -371,6 +372,8 @@ export class Operations {
           actor,
         );
       } catch (error) {
+        if (error instanceof ModelCallInProgress)
+          throw new AccessError(409, "REQUEST_IN_PROGRESS", error.message);
         preflightError =
           error instanceof AccessError
             ? error

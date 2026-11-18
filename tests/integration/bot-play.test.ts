@@ -1740,6 +1740,68 @@ test("世界の事前条件をGMが照合し、明確な合致だけ同じ個体
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test("要約中の昇格再送は最初の判定を待ち、保留で先に確定しない", async () => {
+  const f = await fixture(),
+    admin = await auth.person(),
+    source = randomUUID(),
+    requestId = randomUUID();
+  await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    {
+      operation: "promotionPolicy.put",
+      worldId: f.world,
+      condition: "今回の個体を承認",
+      reason: "再送の照合",
+    },
+    { players: access.players },
+  );
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { allowed: true, reason: "許可" }),
+  );
+  await f.send(0, {
+    command: "say",
+    requestId: source,
+    text: "鳥を見つける",
+    instantNpcs: ["小鳥"],
+  });
+  let release!: () => void;
+  const gate = new Promise<void>((done) => {
+    release = done;
+  });
+  let profiles = 0,
+    reviews = 0;
+  f.calls.mockImplementation(async (id, role) => {
+    if (role === "world-npc-promotion") {
+      reviews++;
+      return answer(id, { match: "clear", reason: "該当" });
+    }
+    expect(role).toBe("world-npc-profile");
+    profiles++;
+    await gate;
+    return answer(id, { description: "小屋の小鳥", memory: "" });
+  });
+  const apply = () =>
+    f.send(0, {
+      command: "promote-npc",
+      requestId,
+      sourceRequestId: source,
+      npcIndex: 0,
+      description: "小屋に住む鳥",
+    });
+  const first = apply();
+  await vi.waitFor(() => expect(profiles).toBe(1));
+  const duplicate = apply();
+  try {
+    await vi.waitFor(() => expect(reviews).toBe(2));
+  } finally {
+    release();
+  }
+  const [a, b] = await Promise.all([first, duplicate]);
+  expect(a.state).toBe("approved");
+  expect(a).toEqual(b);
+  expect(profiles).toBe(1);
+});
 test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人の解釈をチャットへ同報しない", async () => {
   const f = await fixture();
   const speech = randomUUID(),

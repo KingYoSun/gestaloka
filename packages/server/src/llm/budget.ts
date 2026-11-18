@@ -6,6 +6,7 @@ import { WorldBudget } from "./world-budget.js";
 
 export const NANO_USD = 1_000_000_000;
 export class BudgetUnavailable extends Error {}
+export class ModelCallInProgress extends BudgetUnavailable {}
 export class UncertainResponse extends Error {
   constructor(
     readonly diagnostic: unknown,
@@ -136,9 +137,10 @@ export class BudgetLedger {
         hash: string;
         budget_id: string;
         state: string;
+        delivery: string;
         response: SavedResponse;
       }>(
-        "SELECT hash, budget_id, state, response FROM llm_call WHERE id = $1",
+        "SELECT hash, budget_id, state, delivery, response FROM llm_call WHERE id = $1",
         [id],
       );
       if (prior.rows[0]) {
@@ -169,6 +171,10 @@ export class BudgetLedger {
               "body" in diagnostic && typeof diagnostic.body === "string"
                 ? diagnostic.body
                 : undefined,
+            );
+          if (prior.rows[0].delivery === "reserved" && !prior.rows[0].response)
+            throw new ModelCallInProgress(
+              "同じモデル呼び出しを処理中です。同じ要求で結果を照合してください",
             );
           throw new BudgetUnavailable(
             "送信済み要求の結果が未確定です。自動では再送しません",
