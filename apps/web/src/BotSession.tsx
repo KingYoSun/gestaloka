@@ -1,7 +1,10 @@
-import { ItemOutcome } from "@gestaloka/contracts";
 import { useState, useRef } from "react";
 import { z } from "zod";
-import { PlayCommand, PlayerCharacter } from "@gestaloka/contracts";
+import {
+  ItemOutcome,
+  PlayCommand,
+  PlayerCharacter,
+} from "@gestaloka/contracts";
 import type { paths } from "@gestaloka/contracts/http";
 import { $api, ApiFailure, pendingKey } from "./api.js";
 import { usePending } from "./forms.js";

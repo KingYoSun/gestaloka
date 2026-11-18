@@ -1560,7 +1560,11 @@ export class BotPlay {
         at: prior.at,
         recipients: [],
         outcome,
-        items: await this.#itemOutcomes(context, input, prior.changes),
+        items: await this.#itemOutcomes(
+          this.store.context(w.id),
+          input,
+          prior.changes,
+        ),
       };
     }
     await context.validate();
@@ -2104,13 +2108,13 @@ export class BotPlay {
     world: string,
     admin: string,
     id: string,
-    source: { label: string; eventText: string },
+    label: string,
     description: string,
     experience: Awaited<ReturnType<BotPlay["profileExperience"]>>,
   ): Promise<PromotionProfile> {
     const { evidence, through, snapshot } = experience;
     const brief = {
-      label: source.label,
+      label,
       appearance: evidence.appearance,
       applicantDescription: description,
       experiences: evidence.recordsDeliveredDuringWitnessMembership.flatMap(
@@ -2177,7 +2181,7 @@ export class BotPlay {
   async prepareManualProfile(world: string, id: string, admin: string) {
     const row = (
       await this.pool.query(
-        "SELECT label,description,source_text,source_request_id,npc_index FROM npc_promotion WHERE id=$1 AND world_id=$2 AND state='pending'",
+        "SELECT label,description,source_request_id,npc_index FROM npc_promotion WHERE id=$1 AND world_id=$2 AND state='pending'",
         [id, world],
       )
     ).rows[0];
@@ -2195,7 +2199,7 @@ export class BotPlay {
       world,
       admin,
       id,
-      { label: row.label, eventText: row.source_text },
+      row.label,
       row.description,
       await this.profileExperience(world, appearance),
     );
@@ -2271,7 +2275,7 @@ export class BotPlay {
           world,
           policy.admin,
           input.requestId,
-          source,
+          source.label,
           input.description,
           experience,
         );
