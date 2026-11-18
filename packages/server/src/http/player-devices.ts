@@ -249,7 +249,9 @@ export class PlayerDevices {
   async revoke(userId: string, id: string) {
     await requireMember(this.pool, userId);
     const result = await this.pool.query(
-      "UPDATE player_device SET revoked=true WHERE id=$1 AND user_id=$2 RETURNING id",
+      `WITH revoked AS (UPDATE player_device SET revoked=true WHERE id=$1 AND user_id=$2 RETURNING id,world_id,actor_id),
+      stopped AS (UPDATE player_waiting p SET active=false FROM revoked d WHERE p.world_id=d.world_id AND p.actor_id=d.actor_id AND p.connection_id=d.id::text)
+      SELECT pg_notify('gestaloka_turn',world_id::text||':'||actor_id::text) FROM revoked`,
       [id, userId],
     );
     if (!result.rowCount) throw denied();

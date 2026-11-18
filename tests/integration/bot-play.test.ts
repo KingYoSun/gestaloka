@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
@@ -759,6 +759,9 @@ test("バックグラウンドのlistenが待機を維持し、後から来た�
         )
       ).statusCode,
     ).toBe(302);
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    const saved = JSON.parse(await readFile(profile, "utf8"));
+    await writeFile(profile, JSON.stringify({ ...saved, server: address }));
     child = spawn(
       process.execPath,
       [
@@ -783,7 +786,7 @@ test("バックグラウンドのlistenが待機を維持し、後から来た�
         expect(
           events.some((e) => e.state === "turn" && e.actionable === true),
         ).toBe(true),
-      { timeout: 40000 },
+      { timeout: 4000 },
     );
     expect(events.filter((e) => e.state === "turn")).toHaveLength(1);
     expect(f.calls).not.toHaveBeenCalled();
@@ -2221,3 +2224,118 @@ test("CLIは短縮IDを次の操作に使え、本人の未読手だけをアイ
     await app.close();
   }
 });
+test("SSEは受領者だけに判断を知らせ、切断中に戻った元手番を再購読で復元する", async () => {
+  const f = await fixture(),
+    app = await createApp(
+      new WorldAccess(runtime),
+      auth.identity,
+      undefined,
+      auth.operations,
+    );
+  const origin = await app.listen({ host: "127.0.0.1", port: 0 });
+  const url = origin + "/api/worlds/" + f.world + "/waiting/events",
+    readers: AbortController[] = [],
+    sessions: Promise<void>[] = [];
+  try {
+    await f.move(2, f.place);
+    await f.send(1, { command: "contact", targetId: f.actors[0] });
+    await f.send(2, { command: "contact", targetId: f.actors[0] });
+    const devices = await Promise.all(
+      f.actors.map(async (actor, i) => {
+        const secret = randomBytes(32).toString("hex"),
+          device = await access.devices.begin(randomUUID(), f.world, secret);
+        await access.devices.approve(f.people[i]!.id, device.userCode, {
+          actorId: actor,
+        });
+        await access.waiting(f.people[i]!.id, f.world, actor, device.id, true);
+        return { id: device.id, secret };
+      }),
+    );
+    const subscribe = async (i: number) => {
+      const controller = new AbortController();
+      readers.push(controller);
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          accept: "text/event-stream",
+          authorization: "Bearer " + devices[i]!.secret,
+        },
+      });
+      expect(res.status).toBe(200);
+      const frames: {
+        state: string;
+        wakeKey: string | null;
+        actionable: boolean;
+        turn?: number;
+        viewerId: string;
+      }[] = [];
+      const done = (async () => {
+        let buf = "";
+        try {
+          for await (const chunk of res.body!.pipeThrough(
+            new TextDecoderStream(),
+          )) {
+            buf += chunk;
+            let end;
+            while ((end = buf.indexOf("\n")) !== -1) {
+              const line = buf.slice(0, end);
+              buf = buf.slice(end + 1);
+              if (line.startsWith("data:"))
+                frames.push(JSON.parse(line.slice(5)));
+            }
+          }
+        } catch (error) {
+          if (!controller.signal.aborted) throw error;
+        }
+      })();
+      sessions.push(done);
+      await vi.waitFor(() => expect(frames.length).toBeGreaterThan(0));
+      return { frames, done, controller };
+    };
+    const [a, b, c] = await Promise.all([
+      subscribe(0),
+      subscribe(1),
+      subscribe(2),
+    ]);
+    expect(a!.frames[0]!.state).toBe("turn");
+    expect(b!.frames[0]!.actionable).toBe(false);
+    expect(c!.frames[0]!.actionable).toBe(false);
+    const req = await f.send(0, {
+      command: "memo",
+      participants: [f.actors[1]],
+      dependencies: [],
+      text: "試験用の共有メモ",
+    });
+    await vi.waitFor(() => expect(b!.frames.at(-1)?.state).toBe("receiving"));
+    await vi.waitFor(() => expect(a!.frames.at(-1)?.state).toBe("standby"));
+    a!.controller.abort();
+    await a!.done;
+    await f.send(1, {
+      command: "receive",
+      applicationId: req.applicationId,
+      accept: true,
+    });
+    const resumed = await subscribe(0),
+      frame = resumed.frames[0]!;
+    expect(frame).toMatchObject({
+      state: "turn",
+      turn: a!.frames[0]!.turn,
+      viewerId: f.actors[0],
+    });
+    expect(frame.wakeKey).not.toBe(a!.frames[0]!.wakeKey);
+    resumed.controller.abort();
+    await resumed.done;
+    const again = await subscribe(0);
+    expect(again.frames[0]!.wakeKey).toBe(frame.wakeKey);
+    await access.devices.revoke(f.people[0]!.id, devices[0]!.id);
+    await again.done;
+    expect(c!.frames.filter((x) => x.actionable)).toHaveLength(0);
+    expect(b!.frames.filter((x) => x.actionable).map((x) => x.state)).toEqual([
+      "receiving",
+    ]);
+  } finally {
+    readers.forEach((c) => c.abort());
+    await Promise.allSettled(sessions);
+    await app.close();
+  }
+}, 20000);
