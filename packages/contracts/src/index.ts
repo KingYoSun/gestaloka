@@ -3,6 +3,7 @@ import { Change, RelationKind } from "./world.js";
 export {
   PlayCommand,
   NpcAction,
+  ItemOutcome,
   PlaySearch,
   PlayResponse,
   BelongingOp,

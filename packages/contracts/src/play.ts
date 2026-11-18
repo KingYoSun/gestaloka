@@ -7,6 +7,13 @@ const id = z.uuid(),
   basis = text.describe(
     "この事実が成立した根拠。初期設定、または成立した出来事の内容",
   );
+export const ItemOutcome = z.object({
+  itemId: id,
+  label: z.string(),
+  holding: z.object({ fromId: id.nullable(), toId: id }).optional(),
+  ownership: z.object({ fromIds: z.array(id), toId: id }).optional(),
+});
+export type ItemOutcome = z.infer<typeof ItemOutcome>;
 export const LocationOp = z
   .object({
     type: z.literal("locate"),

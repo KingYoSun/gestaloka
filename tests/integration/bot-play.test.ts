@@ -973,6 +973,12 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
     { players: access.players },
   );
   expect(JSON.stringify(list)).toContain("木陰の小さな動物");
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, {
+      description: "木陰で暮らす小さな動物",
+      memory: "木陰で様子を見た",
+    }),
+  );
   const id = randomUUID(),
     accepted = await auth.operations.execute(admin.id, id, approve, {
       players: access.players,
@@ -1459,6 +1465,74 @@ test("個体指定のない旧NPCフラグを無視し、bot担当とサーバ�
   ).toBe(before);
 });
 
+test("目撃した手渡しには対象・所有・保持が残り、合流前の取得結果から参照は渡らない", async () => {
+  const f = await fixture(),
+    item = randomUUID(),
+    key = randomUUID(),
+    a = f.actors[0]!,
+    b = f.actors[1]!;
+  await f.store.commit(
+    await f.store.claim(f.graph, key),
+    f.store.context(f.graph),
+    {
+      commitId: key,
+      at: 0,
+      changes: {
+        nodes: [{ id: item, kind: "existence", text: "試験用の帯" }],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "has",
+            source: a,
+            target: item,
+            period: { from: 0 },
+          },
+        ],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  const update = (text: string, operations: unknown[]) =>
+    f.send(0, { command: "update", text, dependencies: [], operations });
+  const picked = await update("拾う", [
+    { type: "move", from: null, to: a, item, basis: "取得" },
+  ]);
+  expect(picked.items).toMatchObject([
+    { itemId: item, holding: { fromId: null, toId: a } },
+  ]);
+  await f.send(1, { command: "contact", targetId: a });
+  await f.move(2, f.place);
+  await f.send(2, { command: "contact", targetId: a });
+  const give = await update("渡す", [
+    { type: "transfer", item, to: b, basis: "譲渡" },
+    { type: "move", item, from: a, to: b, basis: "手渡し" },
+  ]);
+  expect(give.items).toBeUndefined();
+  await f.send(1, {
+    command: "receive",
+    applicationId: give.applicationId,
+    accept: true,
+  });
+  await f.send(0, { command: "end-turn" });
+  const entries = (await f.status(2)).entries.flatMap(
+    (r: { payload: { entries?: EntryRow[] } }) => r.payload.entries ?? [],
+  );
+  type EntryRow = { input: string; result: Record<string, unknown> };
+  expect(
+    entries.find((e: EntryRow) => e.input === "拾う")?.result.items,
+  ).toBeUndefined();
+  expect(
+    entries.find((e: EntryRow) => e.input === "渡す")?.result.items,
+  ).toEqual([
+    {
+      itemId: item,
+      label: "試験用の帯",
+      ownership: { fromIds: [a], toId: b },
+      holding: { fromId: a, toId: b },
+    },
+  ]);
+});
 test("対抗行動の0%・100%ではGMも抽選も使わず、不確実な行動だけ一度の設定と抽選を保存する", async () => {
   const f = await fixture(),
     items = [randomUUID(), randomUUID()];
@@ -1638,6 +1712,9 @@ test("世界の事前条件をGMが照合し、明確な合致だけ同じ個体
     expect(messages[1]?.content).toContain("鈴を鳴らす");
     return answer(call, { match: "clear", reason: "行動の記録で確認" });
   });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { description: "小屋に住む個体", memory: "鈴の音を聞いた。" }),
+  );
   const accepted = await ask(0, id);
   const npc = derivedId(source + ":manual:0");
   expect(accepted).toMatchObject({ state: "approved", npcId: npc });
@@ -2202,7 +2279,8 @@ test("検索で発生した複数の物品を同席者が観測し、後から�
 test("同じ検索の外れは確定し、新しい検索で当たった2匹を同じ出現から区別して昇格申請できる", async () => {
   const f = await fixture(),
     id = randomUUID(),
-    rule = randomUUID();
+    rule = randomUUID(),
+    hiddenLink = randomUUID();
   const node = {
     id: rule,
     kind: "script" as const,
@@ -2229,6 +2307,26 @@ test("同じ検索の外れは確定し、新しい検索で当たった2匹を�
         edges: [
           {
             id: randomUUID(),
+            kind: "see",
+            source: f.actors[0]!,
+            target: rule,
+            period: { from: 0 },
+          },
+          {
+            id: randomUUID(),
+            kind: "see",
+            source: f.actors[0]!,
+            target: f.place,
+            period: { from: 0 },
+            observation: {
+              aspect: "桟橋の眺め",
+              through: 0,
+              sourceIds: [f.place, rule],
+              pathIds: [],
+            },
+          },
+          {
+            id: hiddenLink,
             kind: "status",
             role: "content",
             source: f.place,
@@ -2256,6 +2354,38 @@ test("同じ検索の外れは確定し、新しい検索で当たった2匹を�
   };
   const first = await f.send(0, miss);
   expect(first.appearances).toBeUndefined();
+  // A recover request can replay a result stored before player projection existed.
+  const oldResult = structuredClone(first) as {
+    material: { states: unknown[] };
+    dependencies: unknown[];
+  };
+  oldResult.material.states.push({
+    node,
+    relation: { id: randomUUID(), source: f.place, target: rule },
+  });
+  oldResult.dependencies.push(
+    { key: "node:" + rule, version: 1 },
+    { key: "edge:" + hiddenLink, version: 1 },
+  );
+  await isolated.databases.postgres.query(
+    "UPDATE bot_request SET result=$2 WHERE id=$1",
+    [miss.requestId, oldResult],
+  );
+  expect(await f.send(0, miss)).toEqual(first);
+  const history = await f.send(0, {
+    command: "search",
+    query: { kind: "history" },
+  });
+  expect(JSON.stringify(history)).not.toContain(rule);
+  expect(JSON.stringify(history)).not.toContain(hiddenLink);
+  expect(
+    (
+      await f.send(0, {
+        command: "search",
+        query: { kind: "history", targetId: rule },
+      })
+    ).material,
+  ).toEqual([]);
   const change = randomUUID();
   await f.store.commit(
     await f.store.claim(f.graph, change),
@@ -2275,6 +2405,16 @@ test("同じ検索の外れは確定し、新しい検索で当たった2匹を�
   const uniform = vi.spyOn(Math, "random").mockReturnValue(0);
   const source = randomUUID(),
     hit = await f.send(0, { ...miss, requestId: source });
+  expect(JSON.stringify(hit.material)).not.toContain(rule);
+  expect(JSON.stringify(hit.dependencies)).not.toContain(rule);
+  for (const targetId of [rule, randomUUID()]) {
+    await expect(
+      f.send(0, { command: "search", query: { kind: "subject", targetId } }),
+    ).rejects.toMatchObject({
+      code: "MATERIAL_NOT_AVAILABLE",
+      message: "本人へ提供されている対象を指定してください",
+    });
+  }
   expect(hit.instantNpcs).toEqual(["鳥", "鳥"]);
   const animals = hit.appearances as { id: string }[];
   expect(animals[0]!.id).not.toEqual(animals[1]!.id);
@@ -2443,6 +2583,15 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
     npcIndex: 0,
     description: "水辺のクマ",
   });
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-npc-profile");
+    expect(JSON.stringify(messages)).toContain("羽根が折れて回らない");
+    expect(JSON.stringify(messages)).not.toContain("登場前の会話");
+    return answer(id, {
+      description: "水辺を訪れるクマ",
+      memory: "羽根が折れて回らないことを覚えている。",
+    });
+  });
   await auth.operations.execute(
     admin.id,
     randomUUID(),
@@ -2465,6 +2614,27 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
     const content = JSON.stringify(messages);
     expect(content).toContain("羽根が折れて回らない");
     expect(content).not.toContain("登場前の会話");
+    const prompt = JSON.parse(String(messages[1]!.content));
+    expect(prompt.currentTurn.actions).toEqual([]);
+    expect(
+      prompt.history.entries.flatMap(
+        (r: { payload: { entries?: unknown[] } }) => r.payload.entries ?? [],
+      ),
+    ).not.toContainEqual(
+      expect.objectContaining({ input: "羽根に体当たりする" }),
+    );
+    return answer(id, { command: "say", text: "水音を聞いている" });
+  });
+  await access.botPlay.tickNpcs();
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const prompt = JSON.parse(String(messages[1]!.content));
+    expect(prompt.status.callsLimit).toBe(8);
+    expect(prompt.currentTurn.actions).toMatchObject([
+      {
+        input: { command: "say", text: "水音を聞いている" },
+        result: { state: "accepted" },
+      },
+    ]);
     return answer(id, { command: "end-turn" });
   });
   await access.botPlay.tickNpcs();
