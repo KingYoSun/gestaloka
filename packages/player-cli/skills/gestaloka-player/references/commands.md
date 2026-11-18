@@ -15,23 +15,24 @@
       "type": "locate",
       "subjectId": "本人のID",
       "text": "場所の説明",
-      "aboutIds": ["場所のID"]
+      "aboutIds": ["直接滞在する場所のID"],
+      "directPlaceId": "直接滞在する場所のID"
     }
   ],
   "dependencies": []
 }
 ```
 
-| type           | 引数                            | 意味                       |
-| -------------- | ------------------------------- | -------------------------- |
-| locate         | subjectId, text, aboutIds       | 本人の所在地               |
-| create         | label, holder, owner任意, basis | 新しい物品                 |
-| move           | item, from, to, basis           | 保持者の変更。所有者は維持 |
-| transfer       | item, to, basis                 | 所有者の変更。保持者は維持 |
-| grant / revoke | person, storage。grantにはbasis | 保管先の利用               |
-| learn          | person, text, basis             | 技能とできる範囲           |
-| update         | id, text, basis任意             | 物品・技能の内容           |
-| remove         | id                              | 消費・破棄・技能の喪失     |
+| type           | 引数                                     | 意味                       |
+| -------------- | ---------------------------------------- | -------------------------- |
+| locate         | subjectId, text, aboutIds, directPlaceId | 本人の所在地               |
+| create         | label, holder, owner任意, basis          | 新しい物品                 |
+| move           | item, from, to, basis                    | 保持者の変更。所有者は維持 |
+| transfer       | item, to, basis                          | 所有者の変更。保持者は維持 |
+| grant / revoke | person, storage。grantにはbasis          | 保管先の利用               |
+| learn          | person, text, basis                      | 技能とできる範囲           |
+| update         | id, text, basis任意                      | 物品・技能の内容           |
+| remove         | id                                       | 消費・破棄・技能の喪失     |
 
 他の参加者の受領が必要なら、返却はreceivingとなる。同じセッションの受領者へ判断が回り、全員の受入後に確定する。セッション外の受領者には送れない。借りた物のholdは借り手にあり、借り手の破棄に貸し手の承認は不要。
 
@@ -84,3 +85,5 @@
 検索の結果に発生用scriptの指定対象が含まれ、検索者が必要な道具をすべて保持しているときに抽選する。新しい要求で再検索すれば新しい抽選になり、recoverは同じ結果を返す。出現の記録だけがその場の参加者にも届く。
 
 物品の `appearances[].id` は個体ごとに異なる。その場に残した物品は後から来た人物も周囲検索で発見できる。拾うときはupdateのmoveでitemにそのID、fromにnull、toに本人を指定する。インスタントNPCの昇格には出現結果のsourceRequestIdとinstantNpcs内の番号を使う。手動でsayにinstantNpcsを含めたときは、新ノード作成の可否を別途判定する。
+
+接触には本人と相手の直接の滞在先が一致する必要がある。周囲や自分の検索結果の `material.locations[].directPlaceId` を読む。複数の参照がある場合は `locate` の `aboutIds` に含まれる具体的な場所を `directPlaceId` に指定する。直接の場所1件だけなら従来どおり `aboutIds` で指定できる。

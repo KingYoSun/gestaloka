@@ -184,6 +184,33 @@ test("管理者が画面でNPC昇格を許可し、報告の3つの上限を変�
     path: "artifacts/screenshots/npc-promotion-approved.png",
     fullPage: true,
   });
+  await page.getByLabel("操作を選択").selectOption("promotionPolicy.put");
+  await page.getByLabel("世界ID", { exact: true }).fill(world);
+  await page
+    .getByLabel("自動昇格の条件（空欄で手動のみ）")
+    .fill("目印を見守った個体のみ");
+  await page
+    .getByLabel("操作の理由", { exact: true })
+    .fill("世界ごとの昇格条件を設定");
+  await page
+    .getByRole("button", { name: "内容を確認する", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "この内容で実行する", exact: true })
+    .click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await auth.operations.execute(
+            admin,
+            randomUUID(),
+            { operation: "promotionPolicy.read", worldId: world },
+            { players: access.players },
+          )
+        ).condition,
+    )
+    .toBe("目印を見守った個体のみ");
   await page.getByRole("link", { name: "報告・感想", exact: true }).click();
   await page.getByLabel("操作を選択").selectOption("reportPolicy.put");
   const policy = await auth.operations.execute(admin, randomUUID(), {

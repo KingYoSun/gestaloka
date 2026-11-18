@@ -6,6 +6,9 @@ import type { Operations } from "@gestaloka/server/operations";
 import { AccessError } from "@gestaloka/server/access";
 import type { WorldAccess } from "@gestaloka/server/access";
 const descriptions: Record<string, string> = {
+  "promotionPolicy.read": "世界ごとのNPC自動昇格条件を確認する。",
+  "promotionPolicy.put":
+    "管理者がNPC自動昇格の条件文を設定する。空文字で手動のみに戻す。",
   "npcs.promotions":
     "インスタントNPCの昇格申請と出現時の情報を読む。承認までは永続NPCを作らない。",
   "npcs.decidePromotion":

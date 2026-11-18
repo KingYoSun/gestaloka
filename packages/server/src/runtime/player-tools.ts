@@ -38,6 +38,8 @@ export class PlayerTools {
       id uuid PRIMARY KEY,world_id uuid NOT NULL,user_id uuid NOT NULL,actor_id uuid NOT NULL,
       source_request_id uuid NOT NULL,npc_index integer NOT NULL,label text NOT NULL,description text NOT NULL,source_text text NOT NULL,
       owner_id uuid,state text NOT NULL DEFAULT 'pending',npc_id uuid,created_at timestamptz NOT NULL,decided_by uuid);
+      ALTER TABLE npc_promotion ADD COLUMN IF NOT EXISTS auto_review jsonb;
+      CREATE TABLE IF NOT EXISTS npc_promotion_policy(world_id uuid PRIMARY KEY,condition text NOT NULL,version uuid NOT NULL,admin uuid NOT NULL);
       CREATE UNIQUE INDEX IF NOT EXISTS npc_promotion_active ON npc_promotion(world_id,source_request_id,npc_index) WHERE state<>'rejected';
       CREATE INDEX IF NOT EXISTS npc_promotion_world_time ON npc_promotion(world_id,created_at,id);
       CREATE INDEX IF NOT EXISTS npc_promotion_actor_time ON npc_promotion(world_id,actor_id,created_at,id);`);
@@ -139,10 +141,9 @@ export class PlayerTools {
       next: rows.length > 50 ? rows[49].id : null,
     };
   }
-  async requestPromotion(
+  async promotionSource(
     db: Db,
     world: string,
-    user: string,
     actor: string,
     input: Extract<z.infer<typeof PlayCommand>, { command: "promote-npc" }>,
   ) {
@@ -181,6 +182,20 @@ export class PlayerTools {
         "OWNER_MISMATCH",
         "所有関係を申請する場合は本人を指定してください",
       );
+    const appearance = (
+      source?.appearances as Appearance[] | undefined
+    )?.filter((a) => a.kind === "instant-npc")[input.npcIndex];
+    return { label, eventText: event!.text, appearance };
+  }
+  async requestPromotion(
+    db: Db,
+    world: string,
+    user: string,
+    actor: string,
+    input: Extract<z.infer<typeof PlayCommand>, { command: "promote-npc" }>,
+    source: Awaited<ReturnType<PlayerTools["promotionSource"]>>,
+  ) {
+    const { label, eventText } = source;
     try {
       await db.query(
         `INSERT INTO npc_promotion(id,world_id,user_id,actor_id,source_request_id,npc_index,label,description,source_text,owner_id,created_at)
@@ -194,7 +209,7 @@ export class PlayerTools {
           input.npcIndex,
           label,
           input.description,
-          event!.text,
+          eventText,
           input.ownerId ?? null,
           this.now().toISOString(),
         ],
@@ -213,7 +228,7 @@ export class PlayerTools {
     const rows = (
       await db.query(
         `SELECT id,actor_id AS "actorId",source_request_id AS "sourceRequestId",npc_index AS "npcIndex",label,description,source_text AS "sourceText",
-      owner_id AS "ownerId",state,npc_id AS "npcId",created_at AS "createdAt",decided_by AS "decidedBy" FROM npc_promotion
+      owner_id AS "ownerId",state,npc_id AS "npcId",created_at AS "createdAt",decided_by AS "decidedBy",CASE WHEN $2::uuid IS NULL THEN auto_review END AS "autoReview" FROM npc_promotion
       WHERE world_id=$1 AND ($2::uuid IS NULL OR actor_id=$2) AND ($3::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM npc_promotion WHERE world_id=$1 AND id=$3))
       ORDER BY created_at DESC,id DESC LIMIT 51`,
         [world, actor ?? null, before ?? null],
@@ -232,6 +247,7 @@ export class PlayerTools {
     world: string,
     id: string,
     approve: boolean,
+    playingSession?: Session,
   ) {
     await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,225))", [
       world,
@@ -271,7 +287,13 @@ export class PlayerTools {
           [world, npc],
         )
       ).rows[0];
-      const member = session?.data.members.find((m) => m.actorId === npc);
+      const currentSession =
+        playingSession && playingSession.id === session?.id
+          ? playingSession
+          : session;
+      const member = currentSession?.data.members.find(
+        (m) => m.actorId === npc,
+      );
       const instant = member?.instant;
       const w = await this.construction.get(world),
         store = this.construction.agent.store,
@@ -357,12 +379,13 @@ export class PlayerTools {
         "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,$4,$5,$3) ON CONFLICT DO NOTHING",
         [world, npc, id, instant ? "server" : null, instant ? admin : null],
       );
-      if (session && member && instant) {
+      if (currentSession && member && instant) {
         delete member.instant;
-        await db.query("UPDATE bot_session SET data=$2 WHERE id=$1", [
-          session.id,
-          session.data,
-        ]);
+        if (currentSession !== playingSession)
+          await db.query("UPDATE bot_session SET data=$2 WHERE id=$1", [
+            currentSession.id,
+            currentSession.data,
+          ]);
       }
       await db.query(
         "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING",

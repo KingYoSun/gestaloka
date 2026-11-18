@@ -2464,6 +2464,11 @@ export interface paths {
                             subjectId: string;
                             text: string;
                             aboutIds: string[];
+                            /**
+                             * Format: uuid
+                             * @description 直接滞在する具体的な場所。複数の場所を参照するときに指定する
+                             */
+                            directPlaceId?: string;
                         } | {
                             /** @enum {string} */
                             type: "create";
@@ -2885,6 +2890,11 @@ export interface paths {
                             subjectId: string;
                             text: string;
                             aboutIds: string[];
+                            /**
+                             * Format: uuid
+                             * @description 直接滞在する具体的な場所。複数の場所を参照するときに指定する
+                             */
+                            directPlaceId?: string;
                         } | {
                             /** @enum {string} */
                             type: "create";
@@ -5793,6 +5803,19 @@ export interface paths {
                             operation: "npcs.read";
                             /** Format: uuid */
                             worldId: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "promotionPolicy.read";
+                            /** Format: uuid */
+                            worldId: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "promotionPolicy.put";
+                            /** Format: uuid */
+                            worldId: string;
+                            /** @description 明確に合致すれば承認する条件。空欄で手動判断のみ */
+                            condition: string;
+                            reason: string;
                         } | {
                             /** @enum {string} */
                             operation: "npcs.put";

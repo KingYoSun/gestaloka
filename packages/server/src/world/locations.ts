@@ -19,16 +19,26 @@ export async function locationRecords(
           e.period.from === latest &&
           (e.period.until === undefined || at < e.period.until),
       )
-      .map(async (e) => ({
-        id: e.id,
-        at: e.period.from,
-        text: (await context.node(e.target, at))!.text,
-        aboutIds: (await context.relations(e.target, "status", "out", at))
-          .filter((a) => a.role === "about")
-          .map((a) => a.target)
-          .sort(),
-      })),
+      .map(async (e) => {
+        const about = (
+          await context.relations(e.target, "status", "out", at)
+        ).filter((a) => a.role === "about");
+        const direct = about.filter((a) => a.text === "direct-place");
+        return {
+          id: e.id,
+          at: e.period.from,
+          text: (await context.node(e.target, at))!.text,
+          aboutIds: about.map((a) => a.target).sort(),
+          directPlaceId: direct.length === 1 ? direct[0]!.target : null,
+        };
+      }),
   );
+}
+export async function directPlaces(context: Context, actor: string) {
+  const records = await locationRecords(context, actor);
+  const ids = new Set(records.map((r) => r.directPlaceId));
+  const [id] = ids;
+  return ids.size === 1 && id ? [id] : [];
 }
 
 // 所在は明示されたstatusだけから読む。自由記述やabout先の種類では判定しない。
