@@ -24,20 +24,24 @@ const Observation = z
   })
   .strict();
 
-export const SpawnRule = z
-  .object({
-    kind: z.enum(["instant-npc", "existence", "script", "event"]),
-    species: z.string().trim().min(1),
-    description: z.string().trim().min(1),
-    probability: z.number().min(0).max(1),
-    count: z.number().int().positive().safe(),
-  })
-  .strict();
-export const Appearance = SpawnRule.pick({
-  kind: true,
-  species: true,
-  description: true,
-}).extend({ id: z.uuid() });
+const SpawnSubject = z.object({
+  kind: z.enum(["instant-npc", "existence", "script", "event"]),
+  species: z.string().trim().min(1),
+  description: z.string().trim().min(1),
+});
+const spawnCount = z.number().int().positive().safe();
+const spawn = SpawnSubject.extend({ probability: z.number().min(0).max(1) });
+export const SpawnRule = z.union([
+  spawn
+    .extend({ minCount: spawnCount, maxCount: spawnCount })
+    .strict()
+    .refine(
+      (rule) => rule.minCount <= rule.maxCount,
+      "最大発生数は最低発生数以上にしてください",
+    ),
+  spawn.extend({ count: spawnCount }).strict(),
+]);
+export const Appearance = SpawnSubject.extend({ id: z.uuid() }).strict();
 export type Appearance = z.infer<typeof Appearance>;
 
 export const WorldNode = z.discriminatedUnion("kind", [
@@ -65,6 +69,10 @@ export const WorldNode = z.discriminatedUnion("kind", [
       ...Content,
       kind: z.literal("event"),
       appearances: z.array(Appearance).optional(),
+      instantActor: z
+        .object({ id: z.uuid(), sourceEventId: z.uuid() })
+        .strict()
+        .optional(),
       period: Period,
     })
     .strict(),

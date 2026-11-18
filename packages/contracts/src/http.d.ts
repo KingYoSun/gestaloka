@@ -2384,6 +2384,26 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        text: string;
+                        effect?: {
+                            /** Format: uuid */
+                            targetId: string;
+                            /** @description 後から対象を調べて観察できる状態 */
+                            state: string;
+                            /**
+                             * Format: uuid
+                             * @description 同じ性質について置き換える既存状態のID
+                             */
+                            replacesStateId?: string;
+                        };
+                        departs?: boolean;
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "npc-action";
+                        /** Format: uuid */
+                        npcId: string;
+                    } | {
                         /** Format: uuid */
                         requestId: string;
                         /** @enum {string} */
@@ -2537,6 +2557,14 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    minCount: number;
+                                    maxCount: number;
+                                } | {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    probability: number;
                                     count: number;
                                 };
                             } | {
@@ -2553,6 +2581,12 @@ export interface paths {
                                     /** Format: uuid */
                                     id: string;
                                 }[];
+                                instantActor?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** Format: uuid */
+                                    sourceEventId: string;
+                                };
                                 period: {
                                     from: number;
                                     until?: number;
@@ -2580,6 +2614,14 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    minCount: number;
+                                    maxCount: number;
+                                } | {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    probability: number;
                                     count: number;
                                 };
                             } | {
@@ -2596,6 +2638,12 @@ export interface paths {
                                     /** Format: uuid */
                                     id: string;
                                 }[];
+                                instantActor?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** Format: uuid */
+                                    sourceEventId: string;
+                                };
                                 period: {
                                     from: number;
                                     until?: number;
@@ -2692,6 +2740,14 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    minCount: number;
+                                    maxCount: number;
+                                } | {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    probability: number;
                                     count: number;
                                 };
                             } | {
@@ -2708,6 +2764,12 @@ export interface paths {
                                     /** Format: uuid */
                                     id: string;
                                 }[];
+                                instantActor?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** Format: uuid */
+                                    sourceEventId: string;
+                                };
                                 period: {
                                     from: number;
                                     until?: number;
@@ -2735,6 +2797,14 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    minCount: number;
+                                    maxCount: number;
+                                } | {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    probability: number;
                                     count: number;
                                 };
                             } | {
@@ -2751,6 +2821,12 @@ export interface paths {
                                     /** Format: uuid */
                                     id: string;
                                 }[];
+                                instantActor?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** Format: uuid */
+                                    sourceEventId: string;
+                                };
                                 period: {
                                     from: number;
                                     until?: number;
@@ -2902,6 +2978,14 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    minCount: number;
+                                    maxCount: number;
+                                } | {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    probability: number;
                                     count: number;
                                 };
                             } | {
@@ -2918,6 +3002,12 @@ export interface paths {
                                     /** Format: uuid */
                                     id: string;
                                 }[];
+                                instantActor?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** Format: uuid */
+                                    sourceEventId: string;
+                                };
                                 period: {
                                     from: number;
                                     until?: number;
@@ -2945,6 +3035,14 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    minCount: number;
+                                    maxCount: number;
+                                } | {
+                                    /** @enum {string} */
+                                    kind: "instant-npc" | "existence" | "script" | "event";
+                                    species: string;
+                                    description: string;
+                                    probability: number;
                                     count: number;
                                 };
                             } | {
@@ -2961,6 +3059,12 @@ export interface paths {
                                     /** Format: uuid */
                                     id: string;
                                 }[];
+                                instantActor?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** Format: uuid */
+                                    sourceEventId: string;
+                                };
                                 period: {
                                     from: number;
                                     until?: number;
@@ -5297,6 +5401,14 @@ export interface paths {
                                         species: string;
                                         description: string;
                                         probability: number;
+                                        minCount: number;
+                                        maxCount: number;
+                                    } | {
+                                        /** @enum {string} */
+                                        kind: "instant-npc" | "existence" | "script" | "event";
+                                        species: string;
+                                        description: string;
+                                        probability: number;
                                         count: number;
                                     };
                                 } | {
@@ -5313,6 +5425,12 @@ export interface paths {
                                         /** Format: uuid */
                                         id: string;
                                     }[];
+                                    instantActor?: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** Format: uuid */
+                                        sourceEventId: string;
+                                    };
                                     period: {
                                         from: number;
                                         until?: number;
@@ -5340,6 +5458,14 @@ export interface paths {
                                         species: string;
                                         description: string;
                                         probability: number;
+                                        minCount: number;
+                                        maxCount: number;
+                                    } | {
+                                        /** @enum {string} */
+                                        kind: "instant-npc" | "existence" | "script" | "event";
+                                        species: string;
+                                        description: string;
+                                        probability: number;
                                         count: number;
                                     };
                                 } | {
@@ -5356,6 +5482,12 @@ export interface paths {
                                         /** Format: uuid */
                                         id: string;
                                     }[];
+                                    instantActor?: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** Format: uuid */
+                                        sourceEventId: string;
+                                    };
                                     period: {
                                         from: number;
                                         until?: number;

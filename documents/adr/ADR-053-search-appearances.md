@@ -1,5 +1,7 @@
 # ADR-053: 検索で発生する存在と物品
 
+インスタントNPCの同席・手番、発生数の範囲、同席中の昇格後の動作は[ADR-056](ADR-056-instant-npc-turns.md)に従う。
+
 発生用ノードは `script` とし、世界生成時にも生成後にも同じグラフ差分で追加できる。`spawn` は出現対象の `kind`（instant-npc、existence、script、event）、呼称 `species`、説明 `description`、0〜1の `probability`、1回の当たりで発生する正の整数 `count` を持つ。
 
 発生用scriptは主体からstatus/contentで関連付ける。scriptから検索対象へのstatus/aboutのtextを `spawn-hit`、必要な現在地へのstatus/aboutのtextを `spawn-at`、必要な保持物へのstatus/aboutのtextを `spawn-hold` とする。本人が受け取る検索結果に依存先が含まれ、本人のhas/holdが全条件を満たしたとき、発生用ノードごとに1回だけ抽選する。新しい検索では再抽選する。同じ要求の再送は外れを含めて確定済みの結果を返す。

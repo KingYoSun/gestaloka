@@ -2,6 +2,7 @@ import { z } from "zod";
 import { Change, RelationKind } from "./world.js";
 export {
   PlayCommand,
+  NpcAction,
   PlaySearch,
   PlayResponse,
   BelongingOp,
