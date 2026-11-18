@@ -2253,13 +2253,17 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
         text: "羽根に体当たりする",
         effect: {
           targetId: wheel,
-          state: "羽根が折れて回らない",
+          state: "クマが体当たりしたため、羽根が折れて回らない",
           replacesStateId: intact,
         },
       });
     })
     .mockImplementationOnce(async (id) =>
-      answer(id, { sides: 2, successThrough: 1 }),
+      answer(id, {
+        sides: 2,
+        successThrough: 1,
+        observable: "羽根が折れて回らない",
+      }),
     );
   const ticking = access.botPlay.tickNpcs();
   try {

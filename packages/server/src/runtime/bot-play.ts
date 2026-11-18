@@ -568,10 +568,45 @@ export class BotPlay {
       period = { from: at },
       event = derivedId(request + ":action");
     const cause = { id: npcId, sourceEventId: npc.sourceEventId };
-    let outcome: { success: boolean; reason?: string; roll?: number } = {
+    let outcome: {
+      success: boolean;
+      reason?: string;
+      roll?: number;
+      setting?: z.infer<typeof DiceSetting>;
+    } = {
       success: true,
     };
     const effect = action.effect;
+    let effectState: string | null = null;
+    const prior = await this.store.receipt(context.worldId, request);
+    if (prior) {
+      const state = prior.changes.nodes.find(
+        (n) => n.id === derivedId(request + ":state"),
+      );
+      const dice = (
+        await this.pool.query("SELECT setting,roll FROM bot_dice WHERE id=$1", [
+          request,
+        ])
+      ).rows[0];
+      return {
+        context,
+        changes: prior.changes,
+        at: prior.at,
+        recipients: [],
+        outcome: {
+          success:
+            !effect ||
+            prior.changes.edges.some(
+              (e) => e.kind === "effect" && e.target === effect.targetId,
+            ),
+          ...(dice ??
+            (effect
+              ? { reason: "出現場所と対象の作用関係を構築できません" }
+              : {})),
+        },
+        ...(state ? { effectState: state.text } : {}),
+      };
+    }
     if (effect) {
       const nearby = await this.#atPlaces(context, npc.places);
       const previous =
@@ -596,13 +631,15 @@ export class BotPlay {
           action.text,
           effect,
           await this.#facts(context, [effect.targetId]),
+          effect.state,
         );
         outcome = {
-          ...saved,
+          setting: saved.setting,
+          roll: saved.roll,
           success: saved.roll <= saved.setting.successThrough,
         };
-        if (outcome.success && previous)
-          changes.endEdges.push(previous.relationId);
+        if (outcome.success) effectState = saved.observable;
+        if (effectState && previous) changes.endEdges.push(previous.relationId);
       }
     }
     const link = (
@@ -632,10 +669,10 @@ export class BotPlay {
     });
     for (const member of session.data.members)
       if (!member.instant) link("see", member.actorId, event);
-    if (effect && outcome.success) {
+    if (effect && outcome.success) link("effect", event, effect.targetId);
+    if (effect && effectState) {
       const state = derivedId(request + ":state");
-      changes.nodes.push({ id: state, kind: "script", text: effect.state });
-      link("effect", event, effect.targetId);
+      changes.nodes.push({ id: state, kind: "script", text: effectState });
       link("status", effect.targetId, state, "content");
       link("status", state, event, "about");
     }
@@ -645,7 +682,7 @@ export class BotPlay {
       at,
       recipients: [],
       outcome,
-      ...(effect && outcome.success ? { effectState: effect.state } : {}),
+      ...(effectState ? { effectState } : {}),
     };
   }
   async #instantTurn(session: Session) {
@@ -1704,7 +1741,7 @@ export class BotPlay {
           materials,
         );
         success = saved.roll <= saved.setting.successThrough;
-        outcome = { success, ...saved };
+        outcome = { success, setting: saved.setting, roll: saved.roll };
       } else
         outcome = {
           success: true,
@@ -1745,7 +1782,28 @@ export class BotPlay {
     action: string,
     changes: unknown,
     materials: unknown,
+    proposedState?: string,
   ) {
+    function readDecision(raw: string) {
+      const result = parseOutput(raw);
+      if (proposedState === undefined)
+        return { setting: DiceSetting.parse(result), observable: null };
+      const { observable, ...dice } = z
+        .object({
+          observable: z
+            .string()
+            .trim()
+            .min(1)
+            .refine(
+              (text) => proposedState.includes(text),
+              "状態案から原文のまま抜き出してください",
+            )
+            .nullable(),
+        })
+        .passthrough()
+        .parse(result);
+      return { setting: DiceSetting.parse(dice), observable };
+    }
     const response = await this.#ask(
       derivedId(`${requestId}:dice-setting`),
       "world-opposition-dice",
@@ -1753,7 +1811,10 @@ export class BotPlay {
         {
           role: "system",
           content:
-            "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {sides:整数,successThrough:整数}。1からsidesまでの一様な出目がsuccessThrough以下なら成功。1<=successThrough<sides。成否、出目、物語、追加の変更は生成しない。",
+            "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {sides:整数,successThrough:整数}。1からsidesまでの一様な出目がsuccessThrough以下なら成功。1<=successThrough<sides。成否、出目、物語、追加の変更は生成しない。" +
+            (proposedState === undefined
+              ? ""
+              : "NPCの外界への作用ではさらにobservableを返す。後から対象だけを調べた人が観察できる状態をchanges.stateから連続する原文のまま抜き出す。行為者、経緯、原因の推測を除く。観察可能な箇所がなければnull。"),
         },
         {
           role: "user",
@@ -1766,11 +1827,11 @@ export class BotPlay {
         },
       ],
       "resolution",
-      (raw) => DiceSetting.parse(parseOutput(raw)),
+      readDecision,
     );
-    const setting = DiceSetting.parse(parseOutput(response.content)),
+    const { setting, observable } = readDecision(response.content),
       saved = await this.#roll(requestId, setting);
-    return saved;
+    return { ...saved, observable };
   }
   async #roll(id: string, setting: z.infer<typeof DiceSetting>) {
     const db = await this.pool.connect();
