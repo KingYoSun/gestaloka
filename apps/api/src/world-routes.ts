@@ -11,6 +11,7 @@ import {
   PlayerReportStatus,
   PlayerReportReceipt,
   WaitingCommand,
+  WaitingContextStatus,
   WaitingStatus,
   BrowserSession,
   ResourceId,
@@ -399,6 +400,7 @@ export async function worldRoutes(
       schema: {
         params: ResourceId,
         querystring: SceneViewQuery.extend({
+          view: z.enum(["wait", "joins"]).optional(),
           after: z
             .string()
             .regex(/^\d{1,19}$/)
@@ -408,15 +410,35 @@ export async function worldRoutes(
         response: { 200: PlayResponse, ...errors },
       },
     },
-    async (request) =>
-      service().botStatus(
-        await subject(request),
+    async (request) => {
+      const user = await subject(request);
+      const { actorId, sceneId, view, after } = request.query;
+      const connection = deviceIds.get(request);
+      if (view) {
+        if (sceneId)
+          throw new AccessError(
+            400,
+            "INVALID_STATUS_VIEW",
+            "表示の絞り込みは現在のセッションを対象にします",
+          );
+        return service().botStatusView(
+          user,
+          request.params.id,
+          view,
+          actorId,
+          connection,
+          after,
+        );
+      }
+      return service().botStatus(
+        user,
         request.params.id,
-        request.query.actorId,
-        request.query.sceneId,
-        deviceIds.get(request),
-        request.query.after,
-      ),
+        actorId,
+        sceneId,
+        connection,
+        after,
+      );
+    },
   );
   app.post(
     "/api/worlds/:id/session",
@@ -459,9 +481,9 @@ export async function worldRoutes(
     {
       schema: {
         params: ResourceId,
-        querystring: ActorQuery,
+        querystring: ActorQuery.extend({ context: z.literal("1").optional() }),
         body: WaitingCommand,
-        response: { 200: WaitingStatus, ...errors },
+        response: { 200: WaitingContextStatus, ...errors },
       },
     },
     async (request) =>
@@ -471,6 +493,8 @@ export async function worldRoutes(
         request.query.actorId,
         deviceIds.get(request),
         request.body.active,
+        true,
+        request.query.context === "1",
       ),
   );
   app.get(
@@ -663,6 +687,7 @@ export async function worldRoutes(
         hide: true,
         params: ResourceId,
         querystring: ActorQuery.extend({
+          context: z.literal("1").optional(),
           after: z
             .string()
             .regex(/^\d{1,19}$/)
@@ -708,6 +733,7 @@ export async function worldRoutes(
       let sent = false,
         last = "",
         after = request.query.after;
+      const includeJoins = request.query.context === "1";
       try {
         while (!controller.signal.aborted) {
           if (!dirty)
@@ -731,12 +757,18 @@ export async function worldRoutes(
             device,
             undefined,
             !sent,
+            includeJoins && after === undefined,
           );
           if (controller.signal.aborted) break;
           const progress =
             after === undefined
               ? undefined
-              : await service().botPlay.turnFeed(world, frame.viewerId, after);
+              : await service().botPlay.turnFeed(
+                  world,
+                  frame.viewerId,
+                  after,
+                  includeJoins,
+                );
           const key = JSON.stringify([
             frame.state,
             frame.wakeKey,

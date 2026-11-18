@@ -4889,7 +4889,8 @@
             "schema": {
               "type": "string",
               "enum": [
-                "compact"
+                "wait",
+                "joins"
               ]
             },
             "in": "query",
@@ -8802,6 +8803,17 @@
           {
             "schema": {
               "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "in": "query",
+            "name": "context",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
@@ -8873,6 +8885,112 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "context": {
+                      "type": "object",
+                      "properties": {
+                        "actorId": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "turn",
+                            "receiving",
+                            "waiting-for-return",
+                            "parked"
+                          ]
+                        },
+                        "recent": {
+                          "maxItems": 3,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "transition": {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "turn-ended",
+                                      "turn-skipped",
+                                      "session-left",
+                                      "session-joined"
+                                    ]
+                                  },
+                                  "actorId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "turn": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "at": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "enum": [
+                                      "leave",
+                                      "finish"
+                                    ]
+                                  },
+                                  "cause": {
+                                    "type": "string",
+                                    "enum": [
+                                      "contact"
+                                    ]
+                                  },
+                                  "publicActivity": {
+                                    "type": "boolean"
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "actorId",
+                                  "name",
+                                  "turn",
+                                  "at",
+                                  "message"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "transition"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "actorId",
+                        "phase",
+                        "recent"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [

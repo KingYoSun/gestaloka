@@ -18,6 +18,7 @@ import {
   PlayerIconInput,
   WorldPlayerPage,
   PlayerReportInput,
+  WaitingContextStatus,
   WaitingEvent,
   WaitingStatus,
 } from "@gestaloka/contracts";
@@ -28,7 +29,7 @@ gestaloka version                       実行中の版・スキルの保存先
 gestaloka update [--server <接続先>]     最新版に更新し、プレイに関係する変更を表示
 gestaloka connect --server <URL> --world <IDまたはURL> [--character <ファイル>] [--icon <画像>]
 gestaloka join [--icon <画像>]           認可されたキャラクターを生成
-gestaloka status [--after N]            参加状態・手番と前回からの新着（0で先頭）
+gestaloka status [--after N] [--view <wait|joins>]  参加状態・手番と前回からの新着（0で先頭）
 gestaloka result [--scene ID]           本人の履歴・終了結果をまとめて読む
 gestaloka standby [--resume]            待機を更新し、本人を起こす条件を取得（枠外）
 gestaloka listen [--resume] [--once]             SSEで本人の変化を待ち、JSON Linesで出力
@@ -95,6 +96,7 @@ const parse = () =>
       text: { type: "string" },
       file: { type: "string" },
       after: { type: "string" },
+      view: { type: "string" },
       before: { type: "string" },
       scene: { type: "string" },
       kind: { type: "string" },
@@ -165,7 +167,11 @@ async function http(
     return attempt();
   }
 }
-async function status(profile: Profile, after?: string) {
+async function status(
+  profile: Profile,
+  after?: string,
+  view?: "wait" | "joins",
+) {
   const device = PlayerDeviceStatus.parse(
     await http(profile, "/api/player-device"),
   );
@@ -173,9 +179,10 @@ async function status(profile: Profile, after?: string) {
   const query = new URLSearchParams();
   if (values.scene) query.set("sceneId", z.uuid().parse(values.scene));
   if (after !== undefined) query.set("after", after);
+  if (view) query.set("view", view);
   return {
     state: "ready",
-    device,
+    ...(view ? {} : { device }),
     ...(await http(profile, `/api/worlds/${profile.worldId}/session?${query}`)),
   };
 }
@@ -191,11 +198,15 @@ async function waitingControl(profile: Profile) {
     throw error;
   }
 }
-async function standby(profile: Profile, resume = false) {
+async function standby(
+  profile: Profile,
+  resume = false,
+  includeContext = false,
+) {
   if (resume) await save(join(journal, "waiting.json"), { enabled: true });
   const control = await waitingControl(profile),
-    path = `/api/worlds/${profile.worldId}/waiting`;
-  const frame = WaitingStatus.parse(
+    path = `/api/worlds/${profile.worldId}/waiting${includeContext ? "?context=1" : ""}`;
+  const frame = WaitingContextStatus.parse(
     await http(profile, path, { active: control.enabled }),
   );
   if (control.enabled && !(await waitingControl(profile)).enabled)
@@ -215,6 +226,7 @@ async function listen(profile: Profile) {
         `/api/worlds/${profile.worldId}/waiting/events`,
         profile.server,
       );
+      url.searchParams.set("context", "1");
       if (!values.once) url.searchParams.set("after", after);
       const response = await fetch(url, {
         redirect: "error",
@@ -515,11 +527,18 @@ async function run() {
     );
   if (command === "result") return status(profile);
   if (command === "status") {
+    const view = z.enum(["wait", "joins"]).optional().parse(values.view);
+    if (view && values.scene)
+      throw new Error("--viewは現在のセッションを表示します");
     const result = await status(
       profile,
-      values.after ?? (values.scene ? "0" : references.cursor()),
+      view === "wait"
+        ? undefined
+        : (values.after ?? (values.scene ? "0" : references.cursor())),
+      view,
     );
     if (
+      !view &&
       !values.scene &&
       values.after === undefined &&
       typeof result.nextCursor === "string"
@@ -553,7 +572,8 @@ async function run() {
       ),
     };
   }
-  if (command === "standby") return standby(profile, !!values.resume);
+  if (command === "standby")
+    return standby(profile, !!values.resume, !!values.resume);
   if (command === "listen") return listen(profile);
   if (command === "disconnect") {
     await save(join(journal, "waiting.json"), { enabled: false });

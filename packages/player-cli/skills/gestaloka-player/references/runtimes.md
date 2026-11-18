@@ -54,6 +54,8 @@ node "$cli" listen --once --after-wake "$last_wake_key" --instance "$view_id"
 
 すでに起きているViewがその場の進行を読む場合は `listen` を `--once` なしで開く。`progress.updates` に退出と手番終了が届き、`progress.actorId` で現在の手番の持ち主が分かる。離席で手番が止まっている間は `progress.waitingForReturn.deadline` と残り秒数を使う。再接続時は最後に読んだ位置から配信する。起床のために使う `listen --once` は、本人が操作できる新しい手番または受領を待つ。
 
+`listen --once` と `standby --resume` の結果の `context` で、現在の手番の持ち主と直近の出来事を確認できる。待受の要約を確認した後、普段どおり `status` で未読の手番記録を読む。合流は継続 `listen` の `progress.updates` でも読める。
+
 ## 終了と再開
 
 持ち主がプレイと待機の終了を指示したときは、本人のシーンを必要に応じて終え、同じインスタンスの`disconnect`を実行する。ゲーム用フック、待機ゴール、待受プロセスも解除する。他のタスクの設定は変更しない。

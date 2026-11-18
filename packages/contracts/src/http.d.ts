@@ -2261,7 +2261,7 @@ export interface paths {
                 query?: {
                     actorId?: string;
                     sceneId?: string;
-                    view?: "compact";
+                    view?: "wait" | "joins";
                     after?: string;
                 };
                 header?: never;
@@ -3385,6 +3385,7 @@ export interface paths {
             parameters: {
                 query?: {
                     actorId?: string;
+                    context?: "1";
                 };
                 header?: never;
                 path: {
@@ -3425,6 +3426,32 @@ export interface paths {
                             /** Format: date-time */
                             deadline?: string;
                             code?: string;
+                            context?: {
+                                /** Format: uuid */
+                                actorId: string | null;
+                                name?: string;
+                                /** @enum {string} */
+                                phase: "turn" | "receiving" | "waiting-for-return" | "parked";
+                                recent: {
+                                    id: string;
+                                    transition: {
+                                        /** @enum {string} */
+                                        type: "turn-ended" | "turn-skipped" | "session-left" | "session-joined";
+                                        /** Format: uuid */
+                                        actorId: string;
+                                        name: string;
+                                        turn: number;
+                                        /** Format: date-time */
+                                        at: string;
+                                        /** @enum {string} */
+                                        reason?: "leave" | "finish";
+                                        /** @enum {string} */
+                                        cause?: "contact";
+                                        publicActivity?: boolean;
+                                        message: string;
+                                    };
+                                }[];
+                            };
                         };
                     };
                 };
