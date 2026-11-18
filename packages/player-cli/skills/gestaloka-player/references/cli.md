@@ -156,7 +156,7 @@ gestaloka comment --text <コメント> | --file <本文ファイル>
 
 ## receive
 
-本人の受領判断。起床応答やstatusにある申請IDを使い、承認・却下のどちらか一方を指定。
+本人の受領判断。起床応答やstatusの申請IDで承認・却下を指定。承認後は次の判断者へ進み、全員が承認すれば確定する。却下するとその時点で全体が却下される。応答のdecisionに自分の判断の受付、applicationに申請全体の状態が出る。後から確定した結果は本人の履歴や継続listenで読める。
 
 ```text
 gestaloka receive --application <申請ID> (--accept | --reject)

@@ -163,14 +163,15 @@ function waitingNotice(
   return {
     ...frame,
     actionMessage,
-    ...(frame.progress?.updates.length &&
-    (!frame.actionable ||
-      frame.wakeKey === lastWake ||
-      frame.progress.updates.every(
-        ({ transition }) =>
-          transition.type === "session-joined" ||
-          transition.type === "session-left",
-      ))
+    ...(frame.progress?.receiptResults?.length ||
+    (frame.progress?.updates.length &&
+      (!frame.actionable ||
+        frame.wakeKey === lastWake ||
+        frame.progress.updates.every(
+          ({ transition }) =>
+            transition.type === "session-joined" ||
+            transition.type === "session-left",
+        )))
       ? { notificationMessage: "この通知への操作は不要です" }
       : {}),
   };
