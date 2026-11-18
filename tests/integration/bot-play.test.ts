@@ -837,6 +837,27 @@ test("バックグラウンドのlistenが待機を維持し、後から来た�
       },
     });
     expect(restored.wakeKey).not.toBe(first.wakeKey);
+    await f.move(2, f.place);
+    await f.send(2, { command: "contact", targetId: f.actors[0] });
+    await vi.waitFor(() =>
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          actionable: true,
+          actionMessage: "あなたの手番です",
+          notificationMessage: "この通知への操作は不要です",
+          progress: expect.objectContaining({
+            updates: [
+              expect.objectContaining({
+                transition: expect.objectContaining({
+                  type: "session-joined",
+                  name: "人物2",
+                }),
+              }),
+            ],
+          }),
+        }),
+      ),
+    );
     reader.close();
   } finally {
     if (child && child.exitCode === null) {
