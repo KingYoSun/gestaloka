@@ -307,6 +307,7 @@ export class BotPlay {
     active?: boolean,
     db: Db = this.pool,
     renew = true,
+    includeContext = false,
   ) {
     const now = this.now();
     const assignment = (
@@ -368,12 +369,18 @@ export class BotPlay {
     const d = session.data,
       r = d.receiving,
       current = turnOwner(d);
+    const turn = {
+      sessionId: session.id,
+      turn: d.number,
+      ...(includeContext
+        ? { context: await this.#wakeContext(db, session, actor) }
+        : {}),
+    };
     if (current !== actor || d.parked)
       return {
         ...base,
         state: "standby",
-        sessionId: session.id,
-        turn: d.number,
+        ...turn,
       };
     const state = r ? "receiving" : "turn",
       key = createHash("sha256")
@@ -393,8 +400,7 @@ export class BotPlay {
       state,
       actionable: true,
       wakeKey: key,
-      sessionId: session.id,
-      turn: d.number,
+      ...turn,
       ...(r ? { applicationId: r.id, deadline: r.deadline } : {}),
     };
   }
@@ -926,7 +932,7 @@ export class BotPlay {
           presence.get(session.data.turn) === null
         )
           break;
-        await this.#next(db, session, true);
+        await this.#next(db, session, "absence");
       }
       if (presence.size && ![...presence.values()].includes(null))
         session.data.parked = true;
@@ -1078,7 +1084,7 @@ export class BotPlay {
     db: Db,
     session: Session,
     actorId: string,
-    type: "turn-ended" | "turn-skipped" | "session-left",
+    type: "turn-ended" | "turn-skipped" | "session-left" | "session-joined",
   ) {
     const context = this.store.context(
       (await this.world(session.world_id, db)).id,
@@ -1096,30 +1102,35 @@ export class BotPlay {
       at: this.now().toISOString(),
     };
   }
-  async #next(db: Db, session: Session, skipped = false) {
+  async #next(db: Db, session: Session, reason?: "absence" | "contact") {
+    const skipped = reason === "absence";
     const d = session.data;
     const user = d.members.find((m) => m.actorId === d.turn)?.userId;
     if (user && !skipped)
       await this.tools.completedTurn(db, user, session.world_id);
-    const transition = await this.#transition(
+    const turn = await this.#transition(
       db,
       session,
       d.turn,
       skipped ? "turn-skipped" : "turn-ended",
     );
     const publicActivity = d.entries.length > 0 || !!d.comment;
+    const transition = {
+      ...turn,
+      publicActivity,
+      ...(reason === "contact" ? { cause: reason } : {}),
+      message: skipped
+        ? `${turn.name}が離席中のため手番をスキップします`
+        : reason === "contact"
+          ? `${turn.name}が合流したため、合流前の手番${turn.turn}を終了しました`
+          : `${turn.name}が手番を終了しました${publicActivity ? "" : "（公開行動なし）"}`,
+    };
     await this.#record(db, session, {
       turn: d.number,
       actorId: d.turn,
       entries: d.entries,
       ...(d.comment ? { comment: d.comment } : {}),
-      transition: {
-        ...transition,
-        publicActivity,
-        message: skipped
-          ? `${transition.name}が離席中のため手番をスキップします`
-          : `${transition.name}が手番を終了しました${publicActivity ? "" : "（公開行動なし）"}`,
-      },
+      transition,
     });
     const regular = d.members.filter((m) => !m.instant);
     const instant = d.members.filter((m) => m.instant);
@@ -1148,6 +1159,7 @@ export class BotPlay {
     d.entries = [];
     delete d.npcActions;
     delete d.comment;
+    return transition;
   }
   async #turnPresence(db: Db, session: Session) {
     const at = this.now().getTime();
@@ -1250,7 +1262,7 @@ export class BotPlay {
         if (since == null) delete d.awayUntil;
         else {
           const deadline = new Date(since + turnReturnMs);
-          if (deadline <= now) await this.#next(db, session, true);
+          if (deadline <= now) await this.#next(db, session, "absence");
           else d.awayUntil = deadline.toISOString();
         }
       }
@@ -1335,7 +1347,62 @@ export class BotPlay {
         : null,
     };
   }
-  async turnFeed(world: string, actor: string, after: string) {
+  async #wakeContext(db: Db, session: Session, viewer: string) {
+    const d = session.data;
+    const actorId = d.parked ? null : (turnOwner(d) ?? null);
+    const name = actorId
+      ? (await this.#characters(session, db)).find(
+          (person) => person.actorId === actorId,
+        )?.name
+      : undefined;
+    const phase = d.parked
+      ? "parked"
+      : d.receiving
+        ? "receiving"
+        : d.awayUntil
+          ? "waiting-for-return"
+          : "turn";
+    const { rows } = await db.query(
+      `SELECT c.id,c.payload->'transition' AS transition
+       FROM bot_record r JOIN bot_chat c ON c.id=r.chat_id
+       WHERE r.scene_id=$1 AND r.actor_id=$2 AND c.session_id=$3 AND c.payload ? 'transition'
+         AND (r.chat_id <= $4::bigint OR c.payload->'transition' =
+              (SELECT payload->'transition' FROM bot_chat WHERE id=$4::bigint))
+       ORDER BY r.chat_id DESC LIMIT 3`,
+      [
+        d.members.find((m) => m.actorId === viewer)!.sceneId,
+        viewer,
+        session.id,
+        d.lastTransitionId ?? "0",
+      ],
+    );
+    return {
+      actorId,
+      ...(name === undefined ? {} : { name }),
+      phase,
+      recent: rows.reverse(),
+    };
+  }
+  async joinHistory(scene: string, actor: string, after: string) {
+    return (
+      await this.pool.query(
+        `SELECT c.id,c.payload->'transition' AS transition
+       FROM bot_record r JOIN bot_chat c ON c.id=r.chat_id
+       WHERE r.scene_id=$1 AND r.actor_id=$2 AND r.chat_id > $3::bigint
+         AND (c.payload->'transition'->>'type'='session-joined'
+              OR (c.payload->'transition'->>'cause'='contact'
+              AND c.payload->'transition'->>'actorId'=($2::uuid)::text))
+       ORDER BY r.chat_id`,
+        [scene, actor, after],
+      )
+    ).rows;
+  }
+  async turnFeed(
+    world: string,
+    actor: string,
+    after: string,
+    includeJoins = true,
+  ) {
     const history = await this.history(
       world,
       actor,
@@ -1359,7 +1426,8 @@ export class BotPlay {
           : undefined),
       waitingForReturn: current?.waitingForReturn,
       updates: history.entries.flatMap(({ id, payload }) =>
-        payload.transition
+        payload.transition &&
+        (includeJoins || payload.transition.type !== "session-joined")
           ? [{ id: String(id), transition: payload.transition }]
           : [],
       ),
@@ -3082,7 +3150,7 @@ export class BotPlay {
               if (other.id !== session.id) {
                 await context.validate();
                 d.used++;
-                await this.#next(db, session);
+                result.previousTurn = await this.#next(db, session, "contact");
                 const member = d.members.find((m) => m.actorId === actor)!;
                 d.members = d.members.filter((m) => m.actorId !== actor);
                 await this.#save(db, session, before);
@@ -3092,6 +3160,18 @@ export class BotPlay {
                   "UPDATE bot_scene SET session_id=$3 WHERE id=$1 AND actor_id=$2",
                   [member.sceneId, actor, other.id],
                 );
+                const arrival = await this.#transition(
+                  db,
+                  other,
+                  actor,
+                  "session-joined",
+                );
+                const transition = {
+                  ...arrival,
+                  message: `${arrival.name}がセッションに合流しました`,
+                };
+                await this.#record(db, other, { transition });
+                result.joined = transition;
                 session = other;
               }
             } else if (input.command === "say") {
@@ -3247,7 +3327,14 @@ export class BotPlay {
         }
         await this.#save(db, session, before);
       }
-      result = { ...result, ...(await this.status(world, actor, db)) };
+      const status = await this.status(world, actor, db);
+      result = { ...result, ...status };
+      if (result.joined) {
+        const owner = status.characters?.find(
+          (member) => member.actorId === status.actorId,
+        );
+        result.turnHolder = owner ?? null;
+      }
       if (input.command === "memo")
         result.memoId = derivedId(`${input.requestId}:memo`);
       await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [

@@ -11,7 +11,7 @@ import { z } from "zod";
 import type pg from "pg";
 import {
   WorldStatus,
-  WaitingStatus,
+  WaitingContextStatus,
   KnowledgePage,
   AdminPage,
   type WorldCommand,
@@ -233,13 +233,11 @@ export class WorldAccess {
     );
     return this.playCharacters(id, result, connectionId);
   }
-  async botStatus(
+  private async botStatusActor(
     subject: string,
     id: string,
     actorId?: string,
-    sceneId?: string,
     connectionId?: string,
-    after?: string,
   ) {
     const grant = await this.authorize(
       subject,
@@ -255,20 +253,68 @@ export class WorldAccess {
       connectionId ?? `human:${subject}`,
     );
     await this.botPlay.expire(id);
+    return grant.actor_id!;
+  }
+  async botStatus(
+    subject: string,
+    id: string,
+    actorId?: string,
+    sceneId?: string,
+    connectionId?: string,
+    after?: string,
+  ) {
+    const viewerId = await this.botStatusActor(
+      subject,
+      id,
+      actorId,
+      connectionId,
+    );
     return {
-      viewerId: grant.actor_id!,
+      viewerId,
       ...(await this.playCharacters(
         id,
-        await this.botPlay.status(id, grant.actor_id!),
+        await this.botPlay.status(id, viewerId),
         connectionId,
       )),
-      ...(await this.botPlay.history(
-        id,
-        grant.actor_id!,
-        sceneId,
-        this.pool,
-        after,
-      )),
+      ...(await this.botPlay.history(id, viewerId, sceneId, this.pool, after)),
+    };
+  }
+  async botStatusView(
+    subject: string,
+    id: string,
+    view: "wait" | "joins",
+    actorId?: string,
+    connectionId?: string,
+    after = "0",
+  ) {
+    const viewerId = await this.botStatusActor(
+      subject,
+      id,
+      actorId,
+      connectionId,
+    );
+    const state = await this.botPlay.status(id, viewerId);
+    if (view === "wait")
+      return {
+        viewerId,
+        view,
+        waitingForReturn: state.waitingForReturn ?? null,
+      };
+    const sceneId = state.members?.find(
+      (member) => member.actorId === viewerId,
+    )?.sceneId;
+    return {
+      viewerId,
+      view,
+      sessionId: state.sessionId ?? null,
+      turn: state.turn ?? null,
+      turnHolder:
+        state.characters?.find((member) => member.actorId === state.actorId) ??
+        null,
+      characters: state.characters ?? [],
+      entries: sceneId
+        ? await this.botPlay.joinHistory(sceneId, viewerId, after)
+        : [],
     };
   }
   private async reportActor(
@@ -309,6 +355,7 @@ export class WorldAccess {
     connectionId = `human:${subject}`,
     active?: boolean,
     renew = true,
+    includeContext = false,
   ) {
     const grant = await this.authorize(
       subject,
@@ -318,7 +365,7 @@ export class WorldAccess {
       actorId,
     );
     await this.botPlay.expire(id);
-    return WaitingStatus.parse(
+    return WaitingContextStatus.parse(
       await this.botPlay.waiting(
         id,
         grant.actor_id!,
@@ -327,6 +374,7 @@ export class WorldAccess {
         active,
         this.pool,
         renew,
+        includeContext,
       ),
     );
   }

@@ -822,6 +822,12 @@ test("バックグラウンドのlistenが待機を維持し、後から来た�
       state: "turn",
       actionable: true,
       turn: first.turn,
+      context: {
+        actorId: restored.viewerId,
+        name: "人物0",
+        phase: "turn",
+        recent: [{ transition: { type: "session-joined", name: "人物1" } }],
+      },
     });
     expect(restored.wakeKey).not.toBe(first.wakeKey);
     reader.close();
@@ -2832,6 +2838,11 @@ test("CLIは短縮IDを次の操作に使え、本人の未読手だけをアイ
       ).id;
     expect(target).toMatch(/^@[0-9a-f]+$/);
     const contact = await run("contact", "--target", target);
+    expect(contact.result).toMatchObject({
+      previousTurn: { cause: "contact", turn: 1 },
+      joined: { type: "session-joined", name: "人物0" },
+      turnHolder: { actorId: target, name: "人物1" },
+    });
     expect(JSON.stringify(contact)).not.toContain("base64");
     expect(
       contact.result.characters.find(
@@ -2839,16 +2850,78 @@ test("CLIは短縮IDを次の操作に使え、本人の未読手だけをアイ
       ),
     ).not.toHaveProperty("icon");
     expect(JSON.stringify(await f.status(0))).toContain(icon);
+    await f.move(2, f.place);
+    const requestId = randomUUID();
+    await f.send(2, { command: "say", text: "合流前のひとり言" });
+    const joined = await f.send(2, {
+      command: "contact",
+      requestId,
+      targetId: f.actors[1],
+    });
+    expect(
+      await f.send(2, {
+        command: "contact",
+        requestId,
+        targetId: f.actors[1],
+      }),
+    ).toStrictEqual(joined);
+    const joins = await run("status", "--view", "joins");
+    expect(joins).toMatchObject({
+      turnHolder: { actorId: target, name: "人物1" },
+      entries: [
+        { transition: { cause: "contact", name: "人物0" } },
+        { transition: { type: "session-joined", name: "人物0" } },
+        { transition: { type: "session-joined", name: "人物2" } },
+      ],
+    });
+    expect(joins).not.toHaveProperty("nextCursor");
+    expect(JSON.stringify(joins)).not.toContain("ひとり言");
+    let now = new Date();
+    vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
+    await access.waiting(
+      f.people[1]!.id,
+      f.world,
+      f.actors[1],
+      undefined,
+      false,
+    );
+    const wait = await run("status", "--view", "wait");
+    expect(wait).toMatchObject({
+      waitingForReturn: { name: "人物1", remainingSeconds: 600 },
+    });
+    expect(wait).not.toHaveProperty("entries");
+    now = new Date(now.getTime() + 5000);
+    expect(await run("status", "--view", "wait")).toMatchObject({
+      waitingForReturn: {
+        remainingSeconds: 595,
+        deadline: wait.waitingForReturn.deadline,
+      },
+    });
     const original = "発言中の" + f.actors[1] + "と" + target + "は本文";
     await f.send(1, { command: "say", text: original });
     await f.send(1, { command: "end-turn" });
     const first = await run("status");
     expect(JSON.stringify(first.entries)).toContain(original);
+    expect(JSON.stringify(first.entries)).not.toContain("ひとり言");
+    expect(
+      first.entries.filter(
+        (entry: { payload: { transition?: { type: string } } }) =>
+          entry.payload.transition?.type === "session-joined",
+      ),
+    ).toHaveLength(2);
     expect(first.actorId).toEqual(first.viewerId);
     expect(first).not.toHaveProperty("legacy");
     const repeat = await run("status");
     expect(repeat.entries).toEqual([]);
     expect(repeat.nextCursor).toEqual(first.nextCursor);
+    expect((await run("status", "--view", "joins")).entries).toEqual([]);
+    expect(
+      (await run("status", "--view", "joins", "--after", "0")).entries,
+    ).toEqual(joins.entries);
+    expect(await run("standby", "--resume")).toMatchObject({
+      actionable: true,
+      context: { actorId: first.viewerId, name: "人物0", phase: "turn" },
+    });
     expect((await run("status", "--after", "0")).entries).toEqual(
       first.entries,
     );
@@ -2902,19 +2975,19 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
         return { id: device.id, secret };
       }),
     );
-    const subscribe = async (i: number, after?: string) => {
+    const subscribe = async (i: number, after?: string, context = false) => {
       const controller = new AbortController();
       readers.push(controller);
-      const res = await fetch(
-        after === undefined ? url : `${url}?after=${after}`,
-        {
-          signal: controller.signal,
-          headers: {
-            accept: "text/event-stream",
-            authorization: "Bearer " + devices[i]!.secret,
-          },
+      const request = new URL(url);
+      if (after !== undefined) request.searchParams.set("after", after);
+      if (context) request.searchParams.set("context", "1");
+      const res = await fetch(request, {
+        signal: controller.signal,
+        headers: {
+          accept: "text/event-stream",
+          authorization: "Bearer " + devices[i]!.secret,
         },
-      );
+      });
       expect(res.status).toBe(200);
       const frames: ReturnType<typeof WaitingEvent.parse>[] = [];
       const done = (async () => {
@@ -2941,11 +3014,19 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
       return { frames, done, controller };
     };
     const [a, b, c] = await Promise.all([
-      subscribe(0),
-      subscribe(1),
+      subscribe(0, undefined, true),
+      subscribe(1, undefined, true),
       subscribe(2, "0"),
     ]);
     expect(a!.frames[0]!.state).toBe("turn");
+    expect(
+      a!.frames[0]!.context?.recent.map(({ transition }) => transition.type),
+    ).toEqual(["session-joined", "session-joined"]);
+    expect(
+      c!.frames[0]!.progress?.updates.some(
+        ({ transition }) => transition.type === "session-joined",
+      ),
+    ).toBe(false);
     expect(b!.frames[0]!.actionable).toBe(false);
     expect(c!.frames[0]!.actionable).toBe(false);
     const req = await f.send(0, {
@@ -2955,6 +3036,14 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
       text: "試験用の共有メモ",
     });
     await vi.waitFor(() => expect(b!.frames.at(-1)?.state).toBe("receiving"));
+    expect(b!.frames.at(-1)?.context).toMatchObject({
+      actorId: f.actors[1],
+      phase: "receiving",
+      name: "人物1",
+    });
+    expect(JSON.stringify(b!.frames.at(-1)?.context)).not.toContain(
+      "試験用の共有メモ",
+    );
     await vi.waitFor(() => expect(a!.frames.at(-1)?.state).toBe("standby"));
     a!.controller.abort();
     await a!.done;
@@ -2963,12 +3052,13 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
       applicationId: req.applicationId,
       accept: true,
     });
-    const resumed = await subscribe(0),
+    const resumed = await subscribe(0, undefined, true),
       frame = resumed.frames[0]!;
     expect(frame).toMatchObject({
       state: "turn",
       turn: a!.frames[0]!.turn,
       viewerId: f.actors[0],
+      context: { actorId: f.actors[0], phase: "turn", name: "人物0" },
     });
     expect(frame.wakeKey).not.toBe(a!.frames[0]!.wakeKey);
     resumed.controller.abort();

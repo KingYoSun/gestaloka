@@ -12,6 +12,7 @@ export {
   PlayerReportStatus,
   PlayerReportReceipt,
   WaitingCommand,
+  WaitingContextStatus,
   WaitingEvent,
   WaitingStatus,
 } from "./play.js";
