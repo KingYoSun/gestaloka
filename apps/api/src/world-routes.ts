@@ -44,7 +44,11 @@ import {
   SceneInbox,
   SceneInboxQuery,
 } from "@gestaloka/contracts";
-import { AccessError, type WorldAccess } from "@gestaloka/server/access";
+import {
+  AccessError,
+  TurnSignals,
+  type WorldAccess,
+} from "@gestaloka/server/access";
 import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
 import type { Operations } from "@gestaloka/server/operations";
 
@@ -80,6 +84,7 @@ export async function worldRoutes(
         "/api/worlds/:id/scene",
         "/api/worlds/:id/session",
         "/api/worlds/:id/waiting",
+        "/api/worlds/:id/waiting/events",
         "/api/worlds/:id/reports",
         "/api/worlds/:id/npc-promotions",
         "/api/worlds/:id/scene/records",
@@ -642,6 +647,103 @@ export async function worldRoutes(
         request.query.role,
         request.query.actorId,
       ),
+  );
+  const turnSignals = new TurnSignals();
+  app.addHook("onClose", () => turnSignals.close());
+  app.get(
+    "/api/worlds/:id/waiting/events",
+    {
+      sse: "only",
+      schema: { hide: true, params: ResourceId, querystring: ActorQuery },
+    },
+    async (request, reply) => {
+      const user = await subject(request),
+        world = request.params.id,
+        actor = request.query.actorId,
+        device = deviceIds.get(request);
+      if (!device || !actor)
+        throw new AccessError(
+          403,
+          "PLAYER_DEVICE_REQUIRED",
+          "本人のプレイ端末を指定してください",
+        );
+      const controller = new AbortController();
+      let dirty = true,
+        resume: (() => void) | undefined;
+      const changed = () => {
+        dirty = true;
+        resume?.();
+      };
+      const close = () => {
+        controller.abort();
+        changed();
+      };
+      reply.sse.onClose(close);
+      const unsubscribe = await turnSignals.subscribe(
+        service().pool,
+        world + ":" + actor,
+        changed,
+        close,
+      );
+      streams.set(controller, () => {
+        close();
+        reply.sse.close();
+      });
+      const renewal = setTimeout(close, 240000);
+      let sent = false,
+        last = "";
+      try {
+        while (!controller.signal.aborted) {
+          if (!dirty)
+            await new Promise<void>((resolve) => {
+              resume = resolve;
+            });
+          resume = undefined;
+          if (controller.signal.aborted) break;
+          dirty = false;
+          // Reauthorize before every delivery. Only a fresh client subscription renews presence.
+          if (sent && (await subject(request)) !== user)
+            throw new AccessError(
+              401,
+              "SESSION_CHANGED",
+              "ログインが変わりました",
+            );
+          const frame = await service().waiting(
+            user,
+            world,
+            actor,
+            device,
+            undefined,
+            !sent,
+          );
+          if (controller.signal.aborted) break;
+          const key = frame.state + ":" + (frame.wakeKey ?? "");
+          if (key !== last) {
+            if (!sent) {
+              reply.header("X-Accel-Buffering", "no");
+              reply.sse.keepAlive();
+            }
+            await reply.sse.send({ event: "waiting", data: frame });
+            sent = true;
+            last = key;
+          }
+          if (!frame.active || frame.state === "inactive") break;
+        }
+      } catch (error) {
+        if (!sent) throw error;
+        if (
+          !controller.signal.aborted &&
+          !(error instanceof AccessError) &&
+          !(error instanceof IdentityError)
+        )
+          app.log.error(error);
+      } finally {
+        clearTimeout(renewal);
+        unsubscribe();
+        streams.delete(controller);
+        if (sent) reply.sse.close();
+      }
+    },
   );
   app.addHook("preClose", async () => {
     for (const [controller, close] of streams) {

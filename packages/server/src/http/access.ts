@@ -1,3 +1,4 @@
+export { TurnSignals } from "./turn-signals.js";
 import { npcReport } from "../runtime/npc-mode.js";
 import { BotPlay } from "../runtime/bot-play.js";
 import type { PlayCommand, PlayerReportInput } from "@gestaloka/contracts";
@@ -280,6 +281,7 @@ export class WorldAccess {
     actorId?: string,
     connectionId = `human:${subject}`,
     active?: boolean,
+    renew = true,
   ) {
     const grant = await this.authorize(
       subject,
@@ -296,6 +298,8 @@ export class WorldAccess {
         subject,
         connectionId,
         active,
+        this.pool,
+        renew,
       ),
     );
   }

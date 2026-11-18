@@ -26,7 +26,7 @@ gestaloka join [--icon <画像>]           認可されたキャラクターを�
 gestaloka status [--after N]            参加状態・手番と前回からの新着（0で先頭）
 gestaloka result [--scene ID]           本人の履歴・終了結果をまとめて読む
 gestaloka standby [--resume]            待機を更新し、本人を起こす条件を取得（枠外）
-gestaloka listen [--resume]             待機を維持し、変化をJSON Linesで出力
+gestaloka listen [--resume] [--once]             SSEで本人の変化を待ち、JSON Linesで出力
 gestaloka disconnect                    このインスタンスの待機を解除
 gestaloka start                         単独セッションを開始
 gestaloka search --kind <surroundings|belongings|self|history|subject|memos> [--target <ID>]
@@ -85,6 +85,8 @@ const parse = () =>
       index: { type: "string" },
       owner: { type: "string" },
       resume: { type: "boolean" },
+      once: { type: "boolean" },
+      "after-wake": { type: "string" },
       text: { type: "string" },
       file: { type: "string" },
       after: { type: "string" },
@@ -195,18 +197,92 @@ async function standby(profile: Profile, resume = false) {
   return frame;
 }
 async function listen(profile: Profile) {
-  let frame = await standby(profile, !!values.resume),
-    last = "";
-  while (frame.active) {
-    const key = `${frame.state}:${frame.wakeKey ?? ""}`;
-    if (key !== last) {
-      console.log(render(frame));
-      last = key;
+  const registered = await standby(profile, !!values.resume);
+  if (!registered.active) return registered;
+  let last = "",
+    retry = 1000;
+  for (;;) {
+    if (!(await waitingControl(profile)).enabled) return standby(profile);
+    try {
+      const response = await fetch(
+        new URL(
+          `/api/worlds/${profile.worldId}/waiting/events`,
+          profile.server,
+        ),
+        {
+          redirect: "error",
+          headers: {
+            authorization: `Bearer ${profile.secret}`,
+            accept: "text/event-stream",
+          },
+          signal: AbortSignal.timeout(300000),
+        },
+      );
+      if (!response.ok) {
+        if (response.status < 500)
+          throw Object.assign(
+            new Error(`待受に接続できません（HTTP ${response.status}）`),
+            { code: "WAITING_STREAM_DENIED" },
+          );
+        await response.body?.cancel();
+      } else {
+        if (
+          !response.body ||
+          !response.headers.get("content-type")?.startsWith("text/event-stream")
+        )
+          throw new Error("手番の通知ストリームを確認できません");
+        let buffer = "",
+          event = "",
+          data = "";
+        for await (const chunk of response.body.pipeThrough(
+          new TextDecoderStream(),
+        )) {
+          buffer += chunk;
+          let end: number;
+          while ((end = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, end).replace(/\r$/, "");
+            buffer = buffer.slice(end + 1);
+            if (line.startsWith("event:")) event = line.slice(6).trimStart();
+            else if (line.startsWith("data:"))
+              data += line.slice(5).trimStart() + "\n";
+            else if (line === "") {
+              if (event === "waiting" && data) {
+                const frame = WaitingStatus.parse(JSON.parse(data));
+                if (frame.viewerId !== registered.viewerId)
+                  throw new Error("待受の人物が一致しません");
+                if (!frame.active || frame.state === "inactive") return frame;
+                const key = frame.state + ":" + (frame.wakeKey ?? "");
+                if (
+                  values.once &&
+                  frame.actionable &&
+                  frame.wakeKey !== values["after-wake"]
+                )
+                  return frame;
+                if (!values.once && key !== last) {
+                  console.log(render(frame));
+                  last = key;
+                }
+                retry = 1000;
+              }
+              event = "";
+              data = "";
+            }
+          }
+        }
+      }
+    } catch (error) {
+      if (
+        !(error instanceof TypeError) &&
+        !(
+          error instanceof DOMException &&
+          ["TimeoutError", "AbortError"].includes(error.name)
+        )
+      )
+        throw error;
     }
-    await delay(30000);
-    frame = await standby(profile);
+    await delay(retry);
+    retry = Math.min(30000, retry * 2);
   }
-  return frame;
 }
 async function send(
   profile: Profile,

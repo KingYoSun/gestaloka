@@ -51,6 +51,7 @@ type Session = {
     turn: string;
     number: number;
     used: number;
+    wakeRevision?: number;
     entries: Entry[];
     comment?: string;
     receiving?: {
@@ -74,6 +75,37 @@ type Plan = {
   recipients: string[];
   outcome?: unknown;
 };
+function turnOwner(data: Session["data"]) {
+  const receipt = data.receiving;
+  return receipt
+    ? receipt.recipients.find((id) => !receipt.decided.includes(id))
+    : data.turn;
+}
+function turnState(session: Session) {
+  const actor = turnOwner(session.data);
+  return {
+    actor,
+    key: JSON.stringify([
+      session.id,
+      actor,
+      session.data.number,
+      session.data.receiving?.id,
+      session.data.members.length,
+    ]),
+  };
+}
+async function signalTurns(
+  db: Db,
+  world: string,
+  ...actors: (string | undefined)[]
+) {
+  const targets = [...new Set(actors.filter(Boolean))];
+  if (targets.length)
+    await db.query(
+      "SELECT pg_notify('gestaloka_turn', $1 || ':' || actor) FROM unnest($2::text[]) actor",
+      [world, targets],
+    );
+}
 const latest = Number.MAX_SAFE_INTEGER;
 const waitLeaseMs = 600000;
 function reject(code: string, message: string): never {
@@ -187,9 +219,10 @@ export class BotPlay {
     const now = this.now(),
       cutoff = new Date(now.getTime() - waitLeaseMs).toISOString();
     await db.query(
-      `INSERT INTO player_waiting(world_id,actor_id,user_id,connection_id,active,last_seen) VALUES($1,$2,$3,$4,$5,$6)
+      `WITH presence AS (INSERT INTO player_waiting(world_id,actor_id,user_id,connection_id,active,last_seen) VALUES($1,$2,$3,$4,$5,$6)
       ON CONFLICT(world_id,actor_id,connection_id) DO UPDATE SET user_id=$3,active=$5,last_seen=$6,
-      generation=player_waiting.generation+CASE WHEN $5 AND (NOT player_waiting.active OR player_waiting.last_seen<$7 OR player_waiting.user_id<>$3) THEN 1 ELSE 0 END`,
+      generation=player_waiting.generation+CASE WHEN $5 AND (NOT player_waiting.active OR player_waiting.last_seen<$7 OR player_waiting.user_id<>$3) THEN 1 ELSE 0 END
+      RETURNING active,world_id,actor_id) SELECT pg_notify('gestaloka_turn',world_id::text||':'||actor_id::text) FROM presence WHERE NOT active`,
       [world, actor, user, connection, active, now.toISOString(), cutoff],
     );
   }
@@ -200,6 +233,7 @@ export class BotPlay {
     connection: string,
     active?: boolean,
     db: Db = this.pool,
+    renew = true,
   ) {
     const now = this.now();
     const assignment = (
@@ -216,9 +250,9 @@ export class BotPlay {
         "NPC_CONTROLLER_CHANGED",
         "本人のbot担当が指定された人物を使ってください",
       );
-    if (active !== undefined)
+    if (active !== undefined) {
       await this.#setPresence(db, world, actor, user, connection, active);
-    else await this.keepAlive(world, actor, user, connection, db);
+    } else if (renew) await this.keepAlive(world, actor, user, connection, db);
     const presence = (
       await db.query(
         "SELECT active,last_seen,generation FROM player_waiting WHERE world_id=$1 AND actor_id=$2 AND user_id=$3 AND connection_id=$4",
@@ -259,7 +293,7 @@ export class BotPlay {
     if (!session) return { ...base, state: "standby" };
     const d = session.data,
       r = d.receiving,
-      current = r ? r.recipients.find((id) => !r.decided.includes(id)) : d.turn;
+      current = turnOwner(d);
     if (current !== actor)
       return {
         ...base,
@@ -267,13 +301,6 @@ export class BotPlay {
         sessionId: session.id,
         turn: d.number,
       };
-    const last =
-      (
-        await db.query(
-          "SELECT id::text AS id FROM bot_chat WHERE session_id=$1 ORDER BY id DESC LIMIT 1",
-          [session.id],
-        )
-      ).rows[0]?.id ?? "0";
     const state = r ? "receiving" : "turn",
       key = createHash("sha256")
         .update(
@@ -282,7 +309,7 @@ export class BotPlay {
             d.number,
             actor,
             r?.id ?? "normal",
-            last,
+            d.wakeRevision ?? 0,
             d.members.length,
             presence.generation,
           ]),
@@ -356,6 +383,7 @@ export class BotPlay {
       "INSERT INTO bot_scene(id,actor_id,world_id,session_id) VALUES($1,$2,$3,$4)",
       [session.data.members[0]!.sceneId, actor, world, session.id],
     );
+    await signalTurns(db, world, actor);
     return session;
   }
   async tickNpcs() {
@@ -460,7 +488,12 @@ export class BotPlay {
       )
     ).rows[0];
   }
-  async #save(db: Db, session: Session) {
+  async #save(db: Db, session: Session, before: ReturnType<typeof turnState>) {
+    const after = turnState(session);
+    if (before.key !== after.key) {
+      session.data.wakeRevision = (session.data.wakeRevision ?? 0) + 1;
+      await signalTurns(db, session.world_id, before.actor, after.actor);
+    }
     await db.query("UPDATE bot_session SET data=$2 WHERE id=$1", [
       session.id,
       session.data,
@@ -526,6 +559,7 @@ export class BotPlay {
   async #expire(db: Db, session: Session) {
     const r = session.data.receiving;
     if (r && new Date(r.deadline) <= this.now()) {
+      const before = turnState(session);
       await this.#record(db, session, {
         applicationId: r.id,
         state: "failed",
@@ -543,7 +577,7 @@ export class BotPlay {
         )
       )
         await this.#next(db, session);
-      await this.#save(db, session);
+      await this.#save(db, session, before);
     }
   }
   async status(world: string, actor: string, db: Db = this.pool) {
@@ -1523,6 +1557,7 @@ export class BotPlay {
       } else {
         if (!session)
           reject("SESSION_REQUIRED", "本人のセッションを開始してください");
+        let before = turnState(session);
         const d = session.data,
           receiving = d.receiving;
         const member = d.members.find((m) => m.actorId === actor);
@@ -1556,6 +1591,7 @@ export class BotPlay {
             );
             result = { sceneId: member.sceneId, result: final };
           } else {
+            await signalTurns(db, world, actor);
             const separated: Session = {
               id: input.requestId,
               world_id: world,
@@ -1727,7 +1763,8 @@ export class BotPlay {
                 await this.#next(db, session);
                 const member = d.members.find((m) => m.actorId === actor)!;
                 d.members = d.members.filter((m) => m.actorId !== actor);
-                await this.#save(db, session);
+                await this.#save(db, session, before);
+                before = turnState(other);
                 other.data.members.push(member);
                 await db.query(
                   "UPDATE bot_scene SET session_id=$3 WHERE id=$1 AND actor_id=$2",
@@ -1849,7 +1886,7 @@ export class BotPlay {
             }
           }
         }
-        await this.#save(db, session);
+        await this.#save(db, session, before);
       }
       result = { ...result, ...(await this.status(world, actor, db)) };
       if (input.command === "memo")
