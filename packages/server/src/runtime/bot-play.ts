@@ -9,6 +9,7 @@ import {
   type ItemOutcome,
   type PlaySearch,
   type ReceiptResult,
+  playActionMessage,
 } from "@gestaloka/contracts";
 import { AccessError } from "../http/access.js";
 import { requireMember } from "../http/operations.js";
@@ -1171,7 +1172,12 @@ export class BotPlay {
       at: this.now().toISOString(),
     };
   }
-  async #next(db: Db, session: Session, reason?: "absence" | "contact") {
+  async #next(
+    db: Db,
+    session: Session,
+    reason?: "absence" | "contact",
+    departingActor?: string,
+  ) {
     const skipped = reason === "absence";
     const d = session.data;
     const user = d.members.find((m) => m.actorId === d.turn)?.userId;
@@ -1201,7 +1207,9 @@ export class BotPlay {
       ...(d.comment ? { comment: d.comment } : {}),
       transition,
     });
-    const regular = d.members.filter((m) => !m.instant);
+    const regular = d.members.filter(
+      (m) => !m.instant && m.actorId !== departingActor,
+    );
     const instant = d.members.filter((m) => m.instant);
     if (d.nextRegular) {
       d.turn =
@@ -1268,6 +1276,7 @@ export class BotPlay {
     session: Session,
     outcome: z.infer<typeof ReceiptResult>["outcome"],
     extra: Record<string, unknown> = {},
+    rejectingActor?: string,
   ) {
     const r = session.data.receiving!;
     const state =
@@ -1307,13 +1316,36 @@ export class BotPlay {
         }[outcome]
       }`,
     };
-    session.data.lastReceipt = { sender: r.sender, result };
-    await this.#record(db, session, { receiptResult: result }, [
-      r.sender,
-      ...r.recipients,
-    ]);
+    const rejectedBy = rejectingActor
+      ? (await this.#characters(session, db)).find(
+          (m) => m.actorId === rejectingActor,
+        )
+      : undefined;
+    const forSender = rejectedBy
+      ? {
+          ...result,
+          rejectedBy,
+          message: `${rejectedBy.name}が却下したため、${memo ? "メモ" : "申請"}は成立しませんでした`,
+        }
+      : result;
+    session.data.lastReceipt = { sender: r.sender, result: forSender };
+    if (rejectedBy) {
+      await this.#record(db, session, { receiptResult: forSender }, [r.sender]);
+      await this.#record(db, session, { receiptResult: result }, r.recipients);
+    } else {
+      await this.#record(db, session, { receiptResult: result }, [
+        r.sender,
+        ...r.recipients,
+      ]);
+    }
     delete session.data.receiving;
-    return items;
+    return { items, result };
+  }
+  async #turnCallsExhausted(db: Db, session: Session) {
+    const { rows } = await db.query(
+      "SELECT turn_calls FROM session_play_policy WHERE singleton",
+    );
+    return session.data.used >= Number(rows[0].turn_calls);
   }
   async #expire(db: Db, session: Session) {
     const d = session.data;
@@ -1329,16 +1361,7 @@ export class BotPlay {
         reason: "受領判断の期限が切れました",
       });
       await this.#settle(db, session, "expired");
-      if (
-        session.data.used >=
-        Number(
-          (
-            await db.query(
-              "SELECT turn_calls FROM session_play_policy WHERE singleton",
-            )
-          ).rows[0].turn_calls,
-        )
-      )
+      if (await this.#turnCallsExhausted(db, session))
         await this.#next(db, session);
     }
     if (d.number === before.number) {
@@ -3020,10 +3043,11 @@ export class BotPlay {
             actor,
             "session-left",
           );
-          if (
+          const cancelled =
             receiving &&
-            (receiving.sender === actor || receiving.recipients.includes(actor))
-          ) {
+            (receiving.sender === actor ||
+              receiving.recipients.includes(actor));
+          if (cancelled) {
             await this.#record(db, session, {
               applicationId: receiving.id,
               state: "failed",
@@ -3034,6 +3058,11 @@ export class BotPlay {
           if (d.turn === actor) {
             endedTurn = { number: d.number, reason: input.command };
             await this.#next(db, session);
+          } else if (
+            cancelled &&
+            (await this.#turnCallsExhausted(db, session))
+          ) {
+            await this.#next(db, session, undefined, actor);
           }
           await this.#record(db, session, {
             transition: {
@@ -3106,9 +3135,14 @@ export class BotPlay {
               "RECEIVING_TURN_REQUIRED",
               "本人の受領判断を指定してください",
             );
-          let items: ItemOutcome[] | undefined;
+          let settled:
+            | {
+                items: ItemOutcome[] | undefined;
+                result: z.infer<typeof ReceiptResult>;
+              }
+            | undefined;
           if (!input.accept) {
-            items = await this.#settle(db, session, "rejected");
+            settled = await this.#settle(db, session, "rejected", {}, actor);
           } else {
             receiving.decided.push(actor);
             if (
@@ -3119,7 +3153,7 @@ export class BotPlay {
                 changes: receiving.changes,
                 context: this.store.context(w.id, receiving.dependencies),
               });
-              items = await this.#settle(db, session, "accepted", {
+              settled = await this.#settle(db, session, "accepted", {
                 commitId: receipt.commitId,
               });
             }
@@ -3139,7 +3173,7 @@ export class BotPlay {
                 deadline: receiving.deadline,
               }
             : {
-                ...d.lastReceipt!.result,
+                ...settled!.result,
                 state: input.accept ? "confirmed" : "rejected",
               };
           await this.#record(db, session, {
@@ -3152,7 +3186,7 @@ export class BotPlay {
                 input: input.accept ? "受領を承認する" : "受領を拒否する",
                 result: {
                   applicationId: input.applicationId,
-                  ...(items?.length ? { items } : {}),
+                  ...(settled?.items?.length ? { items: settled.items } : {}),
                   state: input.accept
                     ? d.receiving
                       ? "receiving"
@@ -3162,17 +3196,7 @@ export class BotPlay {
               },
             ],
           });
-          if (
-            !d.receiving &&
-            d.used >=
-              Number(
-                (
-                  await db.query(
-                    "SELECT turn_calls FROM session_play_policy WHERE singleton",
-                  )
-                ).rows[0].turn_calls,
-              )
-          ) {
+          if (!d.receiving && (await this.#turnCallsExhausted(db, session))) {
             endedTurn = { number: d.number, reason: "limit" };
             await this.#next(db, session);
           }
@@ -3469,14 +3493,10 @@ export class BotPlay {
               )
                 (session.data.npcActions ??= []).push({ input, result });
               session.data.used++;
-              const limit = Number(
-                (
-                  await db.query(
-                    "SELECT turn_calls FROM session_play_policy WHERE singleton",
-                  )
-                ).rows[0].turn_calls,
-              );
-              if (session.data.used >= limit && !session.data.receiving) {
+              if (
+                !session.data.receiving &&
+                (await this.#turnCallsExhausted(db, session))
+              ) {
                 endedTurn = { number: session.data.number, reason: "limit" };
                 await this.#next(db, session);
               }
@@ -3492,6 +3512,15 @@ export class BotPlay {
           (member) => member.actorId === status.actorId,
         ) ?? null;
       if (owner || result.joined) result.turnHolder = owner;
+      if (input.command === "contact") {
+        const actionable = owner?.actorId === actor;
+        result.actionable = actionable;
+        result.actionMessage = playActionMessage(
+          actionable,
+          !!status.receiving,
+          owner?.name,
+        );
+      }
       if (input.command === "memo") {
         result.memoId = derivedId(`${input.requestId}:memo`);
         result.memoIdState =

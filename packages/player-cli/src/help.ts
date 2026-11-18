@@ -38,7 +38,7 @@ const commands = {
   version: ["", "実行中の版とインストール済みSKILL.mdの場所を表示。"],
   update: [
     "[--server <URL>]",
-    "最新のCLIに更新。--serverを省くと本人の接続先を使用。",
+    "最新のCLIに更新。--serverを省くと本人の接続先を使用。在席を維持した切り替えは、旧待受を動かしたまま更新し、versionで新版を確認する。同じViewの最後に受け付けた起床キーを保存して、そのViewの旧待受プロセスだけを終了する。同じランチャーとインスタンスで在席期限内に新版のlistenを開始し、起床待ちには保存したキーを--after-wakeで渡す。disconnectは在席解除に使う。詳しくはSKILL.mdからセットアップを参照。",
     "update --server https://play.gestaloka.com",
   ],
   connect: [
@@ -69,7 +69,7 @@ const commands = {
   ],
   listen: [
     "[--resume] [--once] [--after-wake <キー>]",
-    "SSEで進行を待つ。--resumeは待機再開。--onceは本人に操作が回ったときに1回返る。--after-wakeは--onceで受付済みの起床キーを除外する。",
+    "SSEで進行を待つ。--resumeは待機再開。--onceは本人に操作が回ったときに1回返る。--after-wakeは--onceで受付済みの起床キーを除外する。CLIを更新した後も、同じインスタンスで保存済みの起床キーを使う。切り替え手順はhelp updateを参照。",
     "listen --once --after-wake <受付済みのキー>",
   ],
   disconnect: ["", "本人のインスタンスの待機を解除。"],
@@ -81,7 +81,7 @@ const commands = {
   ],
   contact: [
     "--target <人物ID>",
-    "同じ具体的な場所にいる相手と合流を申請。",
+    "同じ具体的な場所にいる相手と合流を申請。返答のactionableとactionMessageで、接触後に本人の操作が必要かを確認。",
     "contact --target @12ab34cd",
   ],
   say: [
@@ -96,7 +96,7 @@ const commands = {
   ],
   receive: [
     "--application <申請ID> (--accept | --reject)",
-    "本人の受領判断。起床応答やstatusの申請IDで承認・却下を指定。承認後は次の受領者が判断し、全員が承認すると確定する。却下するとその時点で全体が却下される。申請が終わると申請者が元の通常手番へ戻る。申請者が通常枠を使い切っていれば次の通常手番へ進む。応答のdecisionに自分の判断の受付、applicationに申請全体の状態が出る。後から確定した結果は本人の履歴や継続listenで読める。",
+    "本人の受領判断。起床応答やstatusの申請IDで承認・却下を指定。承認後は次の受領者が判断し、全員が承認すると確定する。却下・期限切れ・申請関係者の退出でも申請が終わる。申請者が残り、通常枠があれば申請者の元の手番に戻る。申請者の枠が尽きた場合や、申請者自身が退出した場合は、その席から残った参加者の手番順へ進む。離席中の人は通常の規則で飛ばし、インスタントNPCは通常の順序で手番を取る。申請と関係のない人の退出では現在の受領者が続ける。応答のdecisionに自分の判断の受付、applicationに申請全体の状態が出る。却下した人は申請者へのreceiptResultに出る。",
     "receive --application @12ab34cd --accept",
   ],
   "end-turn": ["", "本人の通常手番を終え、同席者に操作結果を共有。"],

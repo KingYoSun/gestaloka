@@ -14,6 +14,7 @@ export {
   WaitingCommand,
   WaitingContextStatus,
   ReceiptResult,
+  playActionMessage,
   WaitingEvent,
   WaitingStatus,
 } from "./play.js";

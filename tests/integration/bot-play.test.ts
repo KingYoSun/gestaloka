@@ -183,13 +183,25 @@ test("手番APIの15操作が受付結果を返し、確定内容と一致する
     return result;
   };
   await act(0, { command: "start" }, "継続");
-  await act(1, { command: "contact", targetId: f.actors[0] }, "合流");
+  const joined = await act(
+    1,
+    { command: "contact", targetId: f.actors[0] },
+    "合流",
+  );
+  expect(joined).toMatchObject({
+    actionable: false,
+    actionMessage: "操作不要です（人物0の手番中）",
+  });
   const same = await act(
     0,
     { command: "contact", targetId: f.actors[1] },
     "すでに",
   );
   expect(same).not.toHaveProperty("joined");
+  expect(same).toMatchObject({
+    actionable: true,
+    actionMessage: "あなたの手番です",
+  });
   expect(same.turnHolder).toMatchObject({ actorId: f.actors[0] });
   expect(
     await act(0, { command: "say", text: "記録に残す発言" }, "記録"),
@@ -3430,17 +3442,37 @@ test("メモ本文を判断中の本人だけへ渡し、申請者の復帰で�
     await access.botPlay.turnFeed(f.world, f.actors[1]!, replay.cursor),
   ).not.toHaveProperty("receiptResults");
 
-  const second = await apply(1);
-  await expect(
-    f.send(1, {
-      command: "receive",
-      applicationId: second.applicationId,
-      accept: false,
-    }),
-  ).resolves.toMatchObject({
+  const second = await apply(1, 2);
+  await f.send(1, {
+    command: "receive",
+    applicationId: second.applicationId,
+    accept: true,
+  });
+  const rejected = await f.send(2, {
+    command: "receive",
+    applicationId: second.applicationId,
+    accept: false,
+  });
+  expect(rejected).toMatchObject({
     decision: { choice: "reject" },
     application: { state: "rejected" },
   });
+  expect(rejected.application).not.toHaveProperty("rejectedBy");
+  expect((await waiting(0)).context?.receiptResult).toMatchObject({
+    applicationId: second.applicationId,
+    outcome: "rejected",
+    rejectedBy: { actorId: f.actors[2], name: "人物2" },
+    message: "人物2が却下したため、メモは成立しませんでした",
+  });
+  const senderHistory = (
+    await access.botPlay.turnFeed(f.world, f.actors[0]!, "0")
+  ).receiptResults;
+  const rejectionInHistory = senderHistory?.find(
+    ({ receiptResult }) => receiptResult.applicationId === second.applicationId,
+  );
+  expect(rejectionInHistory?.receiptResult).toEqual(
+    (await waiting(0)).context?.receiptResult,
+  );
   expect((await waiting(0)).context?.receiptResult).toMatchObject({
     applicationId: second.applicationId,
     outcome: "rejected",
@@ -3461,13 +3493,89 @@ test("メモ本文を判断中の本人だけへ渡し、申請者の復帰で�
     thirdView.receiptResults?.map(
       ({ receiptResult }) => receiptResult.applicationId,
     ),
-  ).toEqual([first.applicationId]);
+  ).toEqual([first.applicationId, second.applicationId]);
+  expect(thirdView.receiptResults?.[1]?.receiptResult).not.toHaveProperty(
+    "rejectedBy",
+  );
   expect(
     (
       await access.botPlay.turnFeed(f.world, f.actors[1]!, "0")
     ).receiptResults?.map(({ receiptResult }) => receiptResult.outcome),
   ).toEqual(["accepted", "rejected", "expired"]);
 });
+
+test("通常枠の最後の接触で、返答は次の手番の持ち主と操作不要を返す", async () => {
+  const f = await fixture();
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  for (let n = 0; n < 7; n++)
+    await f.send(0, { command: "search", query: { kind: "self" } });
+  const input = {
+    command: "contact",
+    requestId: randomUUID(),
+    targetId: f.actors[1],
+  };
+  const result = await f.send(0, input);
+  expect(result).toMatchObject({
+    actionable: false,
+    actionMessage: "操作不要です（人物1の手番中）",
+    turnHolder: { actorId: f.actors[1] },
+    action: { endedTurn: { reason: "limit" } },
+  });
+  expect(await f.send(0, input)).toEqual(result);
+});
+
+test.each([
+  ["期限切れ・枠が残る", "expired", false, 0],
+  ["期限切れ・枠を使い切る", "expired", true, 1],
+  ["受領者が終了・枠が残る", "recipient-finish", false, 0],
+  ["受領者が分離・枠を使い切る", "recipient-leave", true, 2],
+  ["申請者が終了", "sender-finish", false, 1],
+  ["申請と関係のない人が終了", "observer-finish", false, 1],
+] as const)(
+  "%sの後に担当が決まる",
+  async (_label, end, exhausted, expected) => {
+    const f = await fixture();
+    await f.move(2, f.place);
+    await f.send(1, { command: "contact", targetId: f.actors[0] });
+    await f.send(2, { command: "contact", targetId: f.actors[0] });
+    let now = new Date();
+    vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
+    if (exhausted) {
+      for (let n = 0; n < 7; n++)
+        await f.send(0, { command: "search", query: { kind: "self" } });
+    }
+    const memo = await f.send(0, {
+      command: "memo",
+      text: "手番順の試験",
+      participants: [f.actors[1]],
+      dependencies: [],
+    });
+    const receipt = (await f.status(1)).receiving!;
+    expect(receipt.applicationId).toBe(memo.applicationId);
+    if (end === "expired") {
+      now = new Date(Date.parse(receipt.deadline) - 1);
+      for (const i of [0, 1, 2]) await f.status(i);
+      now = new Date(now.getTime() + 2);
+    } else if (end === "recipient-leave") {
+      const solo = await f.send(1, { command: "leave" });
+      expect(solo).toMatchObject({ actorId: f.actors[1], turn: 1 });
+      expect(solo.sessionId).not.toBe(memo.sessionId);
+    } else {
+      await f.send(
+        end === "sender-finish" ? 0 : end === "observer-finish" ? 2 : 1,
+        { command: "finish" },
+      );
+    }
+    const after = await f.status(end === "sender-finish" ? 2 : 0);
+    expect(after.actorId).toBe(f.actors[expected]);
+    if (end === "observer-finish")
+      expect(after.receiving?.applicationId).toBe(memo.applicationId);
+    else {
+      expect(after.receiving).toBeNull();
+      expect(after.turn).toBe(exhausted || end === "sender-finish" ? 2 : 1);
+    }
+  },
+);
 
 test("同席者に手番終了と退出を残し、離席の時点によって即時スキップと600秒待機を分ける", async () => {
   const f = await fixture();
