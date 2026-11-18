@@ -86,7 +86,12 @@ export async function searchAppearances(
       continue;
     if (!places.length && rule.kind !== "instant-npc") continue;
     if (randomInt(0x100000000) / 0x100000000 >= rule.probability) continue;
-    for (let i = 0; i < rule.count; i++)
+    const count =
+      "count" in rule
+        ? rule.count
+        : rule.minCount +
+          Math.floor(Math.random() * (rule.maxCount - rule.minCount + 1));
+    for (let i = 0; i < count; i++)
       appearances.push({
         id: derivedId(request + ":" + ruleId + ":" + i),
         kind: rule.kind,

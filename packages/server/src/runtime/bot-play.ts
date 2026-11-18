@@ -1,7 +1,12 @@
 import { createHash, randomInt } from "node:crypto";
 import type pg from "pg";
 import { z } from "zod";
-import { PlayCommand, type PlaySearch } from "@gestaloka/contracts";
+import {
+  PlayCommand,
+  NpcAction,
+  type Appearance,
+  type PlaySearch,
+} from "@gestaloka/contracts";
 import { AccessError } from "../http/access.js";
 import { requireMember } from "../http/operations.js";
 import { RuntimeControl, RuntimeStopped } from "./control.js";
@@ -42,8 +47,19 @@ type Entry = {
   result: unknown;
   applicationId?: string;
 };
-type Member = { actorId: string; sceneId: string; userId?: string };
-type Session = {
+type Member = {
+  actorId: string;
+  sceneId: string;
+  userId?: string;
+  joinedAfterEntries?: number;
+  instant?: {
+    name: string;
+    description: string;
+    sourceEventId: string;
+    places: string[];
+  };
+};
+export type Session = {
   id: string;
   world_id: string;
   data: {
@@ -51,6 +67,8 @@ type Session = {
     turn: string;
     number: number;
     used: number;
+    nextRegular?: string;
+    lastInstant?: string;
     wakeRevision?: number;
     entries: Entry[];
     comment?: string;
@@ -74,6 +92,8 @@ type Plan = {
   at: number;
   recipients: string[];
   outcome?: unknown;
+  instantMembers?: string;
+  effectState?: string;
 };
 function turnOwner(data: Session["data"]) {
   const receipt = data.receiving;
@@ -162,6 +182,7 @@ export class BotPlay {
     await PlayerTools.setup(this.pool);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS bot_session (
       id uuid PRIMARY KEY,world_id uuid NOT NULL REFERENCES world_construction(id),data jsonb NOT NULL);
+      CREATE INDEX IF NOT EXISTS bot_session_instant_turn ON bot_session(world_id) WHERE data ? 'nextRegular';
       CREATE TABLE IF NOT EXISTS bot_scene (
       id uuid NOT NULL,actor_id uuid NOT NULL,world_id uuid NOT NULL REFERENCES world_construction(id),
       session_id uuid NOT NULL REFERENCES bot_session(id),closed boolean NOT NULL DEFAULT false,result jsonb,
@@ -386,14 +407,28 @@ export class BotPlay {
     await signalTurns(db, world, actor);
     return session;
   }
-  async tickNpcs() {
+  async tickNpcs(world?: string) {
+    const active = await this.pool.query<Session>(
+      "SELECT * FROM bot_session WHERE data ? 'nextRegular' AND NOT (data ? 'receiving') AND ($1::uuid IS NULL OR world_id=$1)",
+      [world ?? null],
+    );
+    for (const session of active.rows)
+      if (
+        session.data.members.some(
+          (m) => m.actorId === session.data.turn && m.instant,
+        )
+      )
+        await this.#instantTurn(session);
     const assigned = (
       await this.pool.query<{
         world_id: string;
         actor_id: string;
         user_id: string;
         assignment_id: string;
-      }>("SELECT * FROM bot_npc WHERE controller='server'")
+      }>(
+        "SELECT * FROM bot_npc WHERE controller='server' AND ($1::uuid IS NULL OR world_id=$1)",
+        [world ?? null],
+      )
     ).rows;
     for (const npc of assigned) {
       let current = await this.current(npc.world_id, npc.actor_id);
@@ -427,6 +462,17 @@ export class BotPlay {
             nearby = await this.search(npc.world_id, npc.actor_id, {
               kind: "surroundings",
             });
+          const history = await this.history(npc.world_id, npc.actor_id);
+          const origin =
+            history.sceneId !== npc.actor_id &&
+            (
+              await this.pool.query(
+                "SELECT 1 FROM bot_scene WHERE id=$1 AND actor_id=$1 AND world_id=$2",
+                [npc.actor_id, npc.world_id],
+              )
+            ).rowCount
+              ? await this.history(npc.world_id, npc.actor_id, npc.actor_id)
+              : undefined;
           const completion = await this.#ask(
             derivedId(`${requestId}:choice`),
             "world-server-npc",
@@ -441,7 +487,8 @@ export class BotPlay {
                 content: JSON.stringify({
                   self,
                   nearby,
-                  history: await this.history(npc.world_id, npc.actor_id),
+                  history,
+                  origin,
                   status,
                   commandSchema: z.toJSONSchema(PlayCommand),
                 }),
@@ -479,6 +526,230 @@ export class BotPlay {
       reject("WORLD_NOT_FOUND", "確定した世界が見つかりません");
     return { id: row.world_id, at: Number(row.at) };
   }
+  async #addInstants(
+    db: Db,
+    session: Session,
+    animals: Appearance[],
+    event: string,
+    actor: string,
+  ) {
+    if (!animals.length) return;
+    const world = await this.world(session.world_id, db);
+    const places = await this.#places(this.store.context(world.id), actor);
+    for (const animal of animals) {
+      session.data.members.push({
+        actorId: animal.id,
+        sceneId: animal.id,
+        joinedAfterEntries: session.data.entries.length,
+        instant: {
+          name: animal.species,
+          description: animal.description,
+          sourceEventId: event,
+          places,
+        },
+      });
+      await db.query(
+        "INSERT INTO bot_scene(id,actor_id,world_id,session_id) VALUES($1,$1,$2,$3)",
+        [animal.id, session.world_id, session.id],
+      );
+    }
+  }
+  async #instantAction(
+    session: Session,
+    npcId: string,
+    action: z.infer<typeof NpcAction>,
+    request: string,
+    context: WorldContext,
+    at: number,
+  ) {
+    const npc = session.data.members.find((m) => m.actorId === npcId)?.instant;
+    if (!npc) reject("INSTANT_NPC_NOT_PRESENT", "この個体は同席していません");
+    const changes = empty(),
+      period = { from: at },
+      event = derivedId(request + ":action");
+    const cause = { id: npcId, sourceEventId: npc.sourceEventId };
+    let outcome: { success: boolean; reason?: string; roll?: number } = {
+      success: true,
+    };
+    const effect = action.effect;
+    if (effect) {
+      const nearby = await this.#atPlaces(context, npc.places);
+      const previous =
+        effect.replacesStateId &&
+        (await this.#physicalStates(context, effect.targetId)).find(
+          (s) => s.id === effect.replacesStateId,
+        );
+
+      if (
+        !nearby.has(effect.targetId) ||
+        (effect.replacesStateId && !previous) ||
+        (await context.node(effect.targetId))?.kind !== "existence"
+      )
+        outcome = {
+          success: false,
+          reason: "出現場所と対象の作用関係を構築できません",
+        };
+      else {
+        const saved = await this.#oppositionRoll(
+          request,
+          { ...cause, name: npc.name, description: npc.description },
+          action.text,
+          effect,
+          await this.#facts(context, [effect.targetId]),
+        );
+        outcome = {
+          ...saved,
+          success: saved.roll <= saved.setting.successThrough,
+        };
+        if (outcome.success && previous)
+          changes.endEdges.push(previous.relationId);
+      }
+    }
+    const link = (
+      kind: Change["edges"][number]["kind"],
+      source: string,
+      target: string,
+      role?: "content" | "about",
+    ) =>
+      changes.edges.push({
+        id: derivedId([request, kind, source, target].join(":")),
+        kind,
+        source,
+        target,
+        period,
+        ...(role ? { role } : {}),
+      });
+    const text = effect
+      ? action.text +
+        (outcome.success ? "。結果：" + effect.state : "。作用は成立しなかった")
+      : action.text;
+    changes.nodes.push({
+      id: event,
+      kind: "event",
+      text,
+      period,
+      instantActor: cause,
+    });
+    for (const member of session.data.members)
+      if (!member.instant) link("see", member.actorId, event);
+    if (effect && outcome.success) {
+      const state = derivedId(request + ":state");
+      changes.nodes.push({ id: state, kind: "script", text: effect.state });
+      link("effect", event, effect.targetId);
+      link("status", effect.targetId, state, "content");
+      link("status", state, event, "about");
+    }
+    return {
+      context,
+      changes,
+      at,
+      recipients: [],
+      outcome,
+      ...(effect && outcome.success ? { effectState: effect.state } : {}),
+    };
+  }
+  async #instantTurn(session: Session) {
+    const actor = session.data.turn,
+      npc = session.data.members.find((m) => m.actorId === actor)!.instant!;
+    const request = derivedId(
+      `instant:${session.id}:${actor}:${session.data.number}`,
+    );
+    const w = await this.world(session.world_id);
+    await ExecutionBudget.run(
+      this.pool,
+      request,
+      async () => {
+        await ExecutionBudget.check();
+        const context = this.store.context(w.id);
+        const nearby = await Promise.all(
+          [...(await this.#atPlaces(context, npc.places))].map(async (id) => ({
+            node: await context.node(id),
+            states: await this.#physicalStates(context, id),
+          })),
+        );
+        const response = await this.#ask(
+          derivedId(request + ":choice"),
+          "world-server-npc",
+          [
+            {
+              role: "system",
+              content:
+                "あなたはその場に現れた一個体です。自身の性質、見聞きした履歴、周囲から今回の一手を選んでください。textに行動を、外界を変えようとするならeffectに対象IDと成功時の状態を、立ち去るならdeparts:trueを指定します。成否はサーバーが決めます。schemaに沿うJSONだけを返してください。",
+            },
+            {
+              role: "user",
+              content: JSON.stringify({
+                npc,
+                nearby,
+                history: await this.history(session.world_id, actor),
+                schema: z.toJSONSchema(NpcAction),
+              }),
+            },
+          ],
+          "default",
+          (raw) => NpcAction.parse(parseOutput(raw)),
+        );
+        const action = NpcAction.parse(parseOutput(response.content));
+        const plan = await this.#instantAction(
+          session,
+          actor,
+          action,
+          request,
+          context,
+          w.at,
+        );
+        const db = await this.pool.connect();
+        try {
+          await db.query("BEGIN");
+          await db.query(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,225))",
+            [session.world_id],
+          );
+          const current = await this.current(session.world_id, actor, db);
+          if (
+            current &&
+            current.id === session.id &&
+            current.data.number === session.data.number &&
+            current.data.turn === actor &&
+            !current.data.receiving &&
+            JSON.stringify(current.data.members) ===
+              JSON.stringify(session.data.members)
+          ) {
+            await ExecutionBudget.check(db, true);
+            const receipt = await this.#commit(w.id, request, plan);
+            const before = turnState(current);
+            current.data.entries.push({
+              actorId: actor,
+              input: action.text,
+              result: {
+                outcome: plan.outcome,
+                ...(plan.effectState ? { effectState: plan.effectState } : {}),
+                commitId: receipt.commitId,
+              },
+            });
+            await this.#next(db, current);
+            if (action.departs) {
+              current.data.members = current.data.members.filter(
+                (m) => m.actorId !== actor,
+              );
+              await db.query(
+                "UPDATE bot_scene SET closed=true WHERE id=$1 AND actor_id=$1",
+                [actor],
+              );
+            }
+            await this.#save(db, current, before);
+          }
+          await db.query("COMMIT");
+        } catch (error) {
+          await db.query("ROLLBACK");
+          throw error;
+        } finally {
+          db.release();
+        }
+      },
+      w.id,
+    );
+  }
   async current(world: string, actor: string, db: Db = this.pool) {
     return (
       await db.query<Session>(
@@ -489,6 +760,17 @@ export class BotPlay {
     ).rows[0];
   }
   async #save(db: Db, session: Session, before: ReturnType<typeof turnState>) {
+    if (
+      session.data.members.length &&
+      session.data.members.every((m) => m.instant)
+    ) {
+      await db.query(
+        "UPDATE bot_scene SET closed=true WHERE session_id=$1 AND actor_id=ANY($2::uuid[]) AND NOT closed",
+        [session.id, session.data.members.map((m) => m.actorId)],
+      );
+      session.data.members = [];
+      delete session.data.nextRegular;
+    }
     const after = turnState(session);
     if (before.key !== after.key) {
       session.data.wakeRevision = (session.data.wakeRevision ?? 0) + 1;
@@ -509,7 +791,11 @@ export class BotPlay {
         entries: await Promise.all(
           (payload.entries as Entry[]).map(async (e) => ({
             ...e,
-            label: (await context.node(e.actorId))?.text ?? "参加者",
+            label:
+              session.data.members.find((m) => m.actorId === e.actorId)?.instant
+                ?.name ??
+              (await context.node(e.actorId))?.text ??
+              "参加者",
           })),
         ),
       };
@@ -520,11 +806,33 @@ export class BotPlay {
         [session.id, payload],
       )
     ).rows[0]!.id;
-    for (const member of session.data.members)
+    for (const member of session.data.members) {
+      let visibleId = id;
+      if (
+        payload.turn !== undefined &&
+        member.joinedAfterEntries !== undefined &&
+        Array.isArray(payload.entries)
+      ) {
+        if (member.joinedAfterEntries)
+          visibleId = (
+            await db.query(
+              "INSERT INTO bot_chat(session_id,payload) VALUES($1,$2) RETURNING id",
+              [
+                session.id,
+                {
+                  ...payload,
+                  entries: payload.entries.slice(member.joinedAfterEntries),
+                },
+              ],
+            )
+          ).rows[0].id;
+        delete member.joinedAfterEntries;
+      }
       await db.query(
         "INSERT INTO bot_record(scene_id,actor_id,chat_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
-        [member.sceneId, member.actorId, id],
+        [member.sceneId, member.actorId, visibleId],
       );
+    }
   }
   async #next(db: Db, session: Session) {
     const d = session.data;
@@ -536,11 +844,28 @@ export class BotPlay {
       entries: d.entries,
       ...(d.comment ? { comment: d.comment } : {}),
     });
-    d.turn =
-      d.members[
-        (d.members.findIndex((m) => m.actorId === d.turn) + 1) %
-          d.members.length
-      ]!.actorId;
+    const regular = d.members.filter((m) => !m.instant);
+    const instant = d.members.filter((m) => m.instant);
+    if (d.nextRegular) {
+      d.turn =
+        regular.find((m) => m.actorId === d.nextRegular)?.actorId ??
+        regular[0]!.actorId;
+      delete d.nextRegular;
+    } else {
+      const next =
+        regular[
+          (regular.findIndex((m) => m.actorId === d.turn) + 1) % regular.length
+        ]!.actorId;
+      if (instant.length) {
+        d.nextRegular = next;
+        d.turn =
+          instant[
+            (instant.findIndex((m) => m.actorId === d.lastInstant) + 1) %
+              instant.length
+          ]!.actorId;
+        d.lastInstant = d.turn;
+      } else d.turn = next;
+    }
     d.number++;
     d.used = 0;
     d.entries = [];
@@ -590,11 +915,11 @@ export class BotPlay {
     ).rows[0]!;
     const r = session.data.receiving;
     const context = this.store.context((await this.world(world, db)).id),
-      ids = session.data.members.map((m) => m.actorId);
+      members = session.data.members;
     const characters = await Promise.all(
-      ids.map(async (actorId) => ({
+      members.map(async ({ actorId, instant }) => ({
         actorId,
-        name: (await context.node(actorId))?.text ?? "人物",
+        name: instant?.name ?? (await context.node(actorId))?.text ?? "人物",
       })),
     );
     await context.validate();
@@ -731,8 +1056,16 @@ export class BotPlay {
         };
   }
   async #nearby(context: WorldContext, actor: string) {
+    const found = await this.#atPlaces(
+      context,
+      await this.#places(context, actor),
+    );
+    found.delete(actor);
+    return found;
+  }
+  async #atPlaces(context: WorldContext, places: string[]) {
     const found = new Set<string>();
-    for (const place of await this.#places(context, actor)) {
+    for (const place of places) {
       found.add(place);
       for (const id of await groundItems(context, place)) found.add(id);
       for (const subject of await context.locationSubjects(place))
@@ -743,7 +1076,6 @@ export class BotPlay {
         )
           found.add(subject);
     }
-    found.delete(actor);
     return found;
   }
   async search(
@@ -816,18 +1148,10 @@ export class BotPlay {
           "MATERIAL_NOT_AVAILABLE",
           "本人へ提供されている対象を指定してください",
         );
-      const states = [];
-      for (const e of await context.relations(target, "status", "out", at))
-        if (e.role === "content")
-          states.push({
-            relation: e,
-            node: await context.node(e.target),
-            about: await context.relations(e.target, "status", "out", at),
-          });
       material = {
         node: await context.node(target),
         locations: await locationRecords(context, target),
-        states,
+        states: await this.#states(context, target),
         ...(target === actor
           ? {
               interpretations: await Promise.all(
@@ -844,6 +1168,28 @@ export class BotPlay {
     }
     await context.validate();
     return { material, dependencies: context.dependencies };
+  }
+  async #physicalStates(context: WorldContext, target: string) {
+    return (await this.#states(context, target)).flatMap(
+      ({ node, relation }) =>
+        node?.kind === "script" &&
+        !node.spawn &&
+        !node.type &&
+        relation.text !== "location"
+          ? [{ id: node.id, text: node.text, relationId: relation.id }]
+          : [],
+    );
+  }
+  async #states(context: WorldContext, target: string) {
+    const states = [];
+    for (const e of await context.relations(target, "status", "out", latest))
+      if (e.role === "content")
+        states.push({
+          relation: e,
+          node: await context.node(e.target),
+          about: await context.relations(e.target, "status", "out", latest),
+        });
+    return states;
   }
   async #creation(
     world: string,
@@ -922,19 +1268,9 @@ export class BotPlay {
     for (const id of new Set(ids)) {
       const node = await context.node(id);
       if (!node) continue;
-      const states = [];
-      for (const edge of await context.relations(id, "status", "out", latest))
-        if (edge.role === "content")
-          states.push({
-            edge,
-            node: await context.node(edge.target),
-            about: await context.relations(
-              edge.target,
-              "status",
-              "out",
-              latest,
-            ),
-          });
+      const states = (await this.#states(context, id)).map(
+        ({ relation, ...state }) => ({ edge: relation, ...state }),
+      );
       result.push({
         node,
         states,
@@ -999,6 +1335,39 @@ export class BotPlay {
     actor: string,
     input: Input,
   ): Promise<Plan | undefined> {
+    if (input.command === "npc-action") {
+      const session = await this.current(world, actor);
+      const npc = session?.data.members.find(
+        (m) => m.actorId === input.npcId,
+      )?.instant;
+      if (!session || !npc)
+        reject("INSTANT_NPC_NOT_PRESENT", "この個体は同席していません");
+      const w = await this.world(world),
+        context = this.store.context(w.id);
+      if (
+        !(await context.history(actor, "see", "out", latest)).some(
+          (e) => e.target === npc.sourceEventId,
+        ) ||
+        !(await this.#places(context, actor)).some((p) =>
+          npc.places.includes(p),
+        )
+      )
+        reject(
+          "NPC_ACTION_NOT_AVAILABLE",
+          "本人が出現を見た場所で指定してください",
+        );
+      return {
+        ...(await this.#instantAction(
+          session,
+          input.npcId,
+          input,
+          input.requestId,
+          context,
+          w.at,
+        )),
+        instantMembers: JSON.stringify(session.data.members),
+      };
+    }
     if (!("dependencies" in input)) return;
     const w = await this.world(world);
     let context = this.store.context(w.id, input.dependencies);
@@ -1327,30 +1696,13 @@ export class BotPlay {
           ...parties,
           ...refs,
         ]);
-        const response = await this.#ask(
-          derivedId(`${input.requestId}:dice-setting`),
-          "world-opposition-dice",
-          [
-            {
-              role: "system",
-              content:
-                "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {sides:整数,successThrough:整数}。1からsidesまでの一様な出目がsuccessThrough以下なら成功。1<=successThrough<sides。成否、出目、物語、追加の変更は生成しない。",
-            },
-            {
-              role: "user",
-              content: JSON.stringify({
-                actor,
-                action: input.text,
-                changes,
-                materials,
-              }),
-            },
-          ],
-          "resolution",
-          (raw) => DiceSetting.parse(parseOutput(raw)),
+        const saved = await this.#oppositionRoll(
+          input.requestId,
+          actor,
+          input.text,
+          changes,
+          materials,
         );
-        const setting = DiceSetting.parse(parseOutput(response.content)),
-          saved = await this.#roll(input.requestId, setting);
         success = saved.roll <= saved.setting.successThrough;
         outcome = { success, ...saved };
       } else
@@ -1386,6 +1738,39 @@ export class BotPlay {
         { commitId: requestId, at: plan.at, changes: plan.changes },
       )
     );
+  }
+  async #oppositionRoll(
+    requestId: string,
+    actor: unknown,
+    action: string,
+    changes: unknown,
+    materials: unknown,
+  ) {
+    const response = await this.#ask(
+      derivedId(`${requestId}:dice-setting`),
+      "world-opposition-dice",
+      [
+        {
+          role: "system",
+          content:
+            "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {sides:整数,successThrough:整数}。1からsidesまでの一様な出目がsuccessThrough以下なら成功。1<=successThrough<sides。成否、出目、物語、追加の変更は生成しない。",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            actor,
+            action,
+            changes,
+            materials,
+          }),
+        },
+      ],
+      "resolution",
+      (raw) => DiceSetting.parse(parseOutput(raw)),
+    );
+    const setting = DiceSetting.parse(parseOutput(response.content)),
+      saved = await this.#roll(requestId, setting);
+    return saved;
   }
   async #roll(id: string, setting: z.infer<typeof DiceSetting>) {
     const db = await this.pool.connect();
@@ -1453,7 +1838,9 @@ export class BotPlay {
       reject("NPC_CONTROLLER_CHANGED", "NPCの操作担当が変わりました");
     const w = await this.world(world);
     if (
-      ["update", "create", "oppose", "memo"].includes(input.command) ||
+      ["update", "create", "oppose", "memo", "npc-action"].includes(
+        input.command,
+      ) ||
       (input.command === "say" && input.instantNpcs?.length)
     ) {
       const active = await this.current(world, actor);
@@ -1699,12 +2086,19 @@ export class BotPlay {
                 this.store,
                 this.store.context(w.id, queried.dependencies),
                 actor,
-                d.members.map((m) => m.actorId),
+                d.members.filter((m) => !m.instant).map((m) => m.actorId),
                 input.requestId,
                 w.at,
                 queried.material,
               );
               if (appearances.length) {
+                await this.#addInstants(
+                  db,
+                  session,
+                  appearances.filter((a) => a.kind === "instant-npc"),
+                  derivedId(input.requestId + ":appearance"),
+                  actor,
+                );
                 const visible = {
                   sourceRequestId: input.requestId,
                   appearances,
@@ -1775,11 +2169,18 @@ export class BotPlay {
             } else if (input.command === "say") {
               const event = derivedId(`${input.requestId}:speech`),
                 changes = empty();
+              const animals = (input.instantNpcs ?? []).map((species, i) => ({
+                id: derivedId(input.requestId + ":manual:" + i),
+                kind: "instant-npc" as const,
+                species,
+                description: species,
+              }));
               changes.nodes.push({
                 id: event,
                 kind: "event",
                 text: input.text,
                 period: { from: w.at },
+                ...(animals.length ? { appearances: animals } : {}),
               });
               changes.edges.push({
                 id: derivedId(`${event}:speaker`),
@@ -1788,7 +2189,7 @@ export class BotPlay {
                 target: event,
                 period: { from: w.at },
               });
-              for (const member of d.members)
+              for (const member of d.members.filter((m) => !m.instant))
                 changes.edges.push({
                   id: derivedId(`${event}:${member.actorId}`),
                   kind: "see",
@@ -1813,8 +2214,15 @@ export class BotPlay {
                 commitId: receipt.commitId,
                 instantNpcs: input.instantNpcs ?? [],
               };
+              await this.#addInstants(db, session, animals, event, actor);
+              if (animals.length) result.appearances = animals;
               d.entries.push({ actorId: actor, input: input.text, result });
             } else if (plan) {
+              if (
+                plan.instantMembers &&
+                plan.instantMembers !== JSON.stringify(d.members)
+              )
+                reject("WORLD_CHANGED", "NPCの同席者が変わりました");
               for (const recipient of plan.recipients)
                 if (!d.members.some((m) => m.actorId === recipient))
                   reject(
@@ -1859,16 +2267,29 @@ export class BotPlay {
                   state: "accepted",
                   commitId: receipt.commitId,
                   ...(plan.outcome ? { outcome: plan.outcome } : {}),
+                  ...(plan.effectState
+                    ? { effectState: plan.effectState }
+                    : {}),
                 };
                 if (
                   !plan.changes.edges.length ||
                   !plan.changes.edges.every((e) => e.kind === "interpret")
                 )
                   d.entries.push({
-                    actorId: actor,
+                    actorId:
+                      input.command === "npc-action" ? input.npcId : actor,
                     input: "text" in input ? input.text : "",
                     result,
                   });
+                if (input.command === "npc-action" && input.departs) {
+                  d.members = d.members.filter(
+                    (m) => m.actorId !== input.npcId,
+                  );
+                  await db.query(
+                    "UPDATE bot_scene SET closed=true WHERE id=$1 AND actor_id=$1",
+                    [input.npcId],
+                  );
+                }
               }
             }
             // Only successful calls consume a slot. Read material never enters chat.

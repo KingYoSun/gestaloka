@@ -7,6 +7,8 @@ import { derivedId, type Change } from "../world/model.js";
 import { locationRecords } from "../world/locations.js";
 import { planBelongings } from "../world/belongings.js";
 import { WorldConflict } from "../world/store.js";
+import type { Session } from "./bot-play.js";
+import type { Appearance } from "@gestaloka/contracts";
 
 type Db = Pick<pg.Pool, "query">;
 const reject = (code: string, message: string): never => {
@@ -231,6 +233,9 @@ export class PlayerTools {
     id: string,
     approve: boolean,
   ) {
+    await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,225))", [
+      world,
+    ]);
     const row = (
       await db.query(
         "SELECT * FROM npc_promotion WHERE world_id=$1 AND id=$2 FOR UPDATE",
@@ -243,20 +248,44 @@ export class PlayerTools {
         "PROMOTION_NOT_FOUND",
         "昇格申請が見つかりません",
       );
-    const state = approve ? "approved" : "rejected",
-      npc = derivedId(`promotion:${id}:npc`);
+    const state = approve ? "approved" : "rejected";
     if (row.state !== "pending") {
       if (row.state !== state)
         reject("PROMOTION_DECIDED", "この昇格申請は決定済みです");
       return { id, state, npcId: row.npc_id };
     }
+    const source = (
+      await db.query(
+        "SELECT result FROM bot_request WHERE world_id=$1 AND id=$2",
+        [world, row.source_request_id],
+      )
+    ).rows[0]?.result;
+    const appearance = (
+      source?.appearances as Appearance[] | undefined
+    )?.filter((a) => a.kind === "instant-npc")[row.npc_index];
+    const npc = appearance?.id ?? derivedId(`promotion:${id}:npc`);
     if (approve) {
+      const session = (
+        await db.query<Session>(
+          "SELECT s.* FROM bot_scene p JOIN bot_session s ON s.id=p.session_id WHERE p.world_id=$1 AND p.actor_id=$2 AND NOT p.closed",
+          [world, npc],
+        )
+      ).rows[0];
+      const member = session?.data.members.find((m) => m.actorId === npc);
+      const instant = member?.instant;
       const w = await this.construction.get(world),
         store = this.construction.agent.store,
         commitId = derivedId(`promotion:${id}`);
       if (!(await store.receipt(w.world_id!, commitId))) {
         const context = store.context(w.world_id!),
-          locations = await locationRecords(context, row.actor_id);
+          locations = instant
+            ? await Promise.all(
+                instant.places.map(async (place) => ({
+                  text: (await context.node(place))?.text ?? "",
+                  aboutIds: [place],
+                })),
+              )
+            : await locationRecords(context, row.actor_id);
         const at = Math.max(
           Number(w.at),
           (await context.latestTime(row.actor_id)) ?? 0,
@@ -291,6 +320,15 @@ export class PlayerTools {
             target: npc,
             period: { from: at },
           });
+        if (instant)
+          changes.edges.push({
+            id: derivedId(npc + ":origin"),
+            kind: "status",
+            role: "about",
+            source: derivedId(npc + ":description"),
+            target: instant.sourceEventId,
+            period: { from: at },
+          });
         if (locations.length) {
           const placed = await planBelongings(context, commitId, at, [
             {
@@ -316,9 +354,16 @@ export class PlayerTools {
         }
       }
       await db.query(
-        "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,NULL,NULL,$3) ON CONFLICT DO NOTHING",
-        [world, npc, id],
+        "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,$4,$5,$3) ON CONFLICT DO NOTHING",
+        [world, npc, id, instant ? "server" : null, instant ? admin : null],
       );
+      if (session && member && instant) {
+        delete member.instant;
+        await db.query("UPDATE bot_session SET data=$2 WHERE id=$1", [
+          session.id,
+          session.data,
+        ]);
+      }
       await db.query(
         "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
         [w.world_id, npc],

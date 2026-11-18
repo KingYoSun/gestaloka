@@ -81,7 +81,24 @@ const dependencies = z.array(
     .object({ key: z.string(), version: z.number().int().nonnegative().safe() })
     .strict(),
 );
+export const NpcAction = z
+  .object({
+    text,
+    effect: z
+      .object({
+        targetId: id,
+        state: text.describe("後から対象を調べて観察できる状態"),
+        replacesStateId: id
+          .optional()
+          .describe("同じ性質について置き換える既存状態のID"),
+      })
+      .strict()
+      .optional(),
+    departs: z.boolean().optional(),
+  })
+  .strict();
 export const PlayCommand = z.discriminatedUnion("command", [
+  NpcAction.extend({ ...request, command: z.literal("npc-action"), npcId: id }),
   z.object({ ...request, command: z.literal("start") }).strict(),
   z
     .object({ ...request, command: z.literal("search"), query: PlaySearch })

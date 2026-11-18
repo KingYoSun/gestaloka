@@ -118,12 +118,12 @@ async function fixture() {
       [graph, actors[i]],
     );
   }
-  const apply = (ops: unknown) =>
-    changeBelongings(
-      store,
-      { worldId: graph, runId: randomUUID(), generation: 1 },
-      { commitId: randomUUID(), at: 0, ops },
-    );
+  const apply = async (ops: unknown) =>
+    changeBelongings(store, await store.claim(graph, randomUUID()), {
+      commitId: randomUUID(),
+      at: 0,
+      ops,
+    });
   const move = async (i: number, location: string) => {
     await changeBelongings(store, await store.claim(graph, randomUUID()), {
       commitId: randomUUID(),
@@ -931,6 +931,10 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
   ]);
   f.calls.mockClear();
   await f.send(0, { command: "end-turn" });
+  f.calls.mockImplementation(async (id) =>
+    answer(id, { text: "木陰で様子を見る" }),
+  );
+  await access.botPlay.tickNpcs();
   const pending = await f.send(1, {
     command: "promote-npc",
     sourceRequestId: source,
@@ -939,7 +943,8 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
     ownerId: f.actors[1],
   });
   await f.send(1, { command: "end-turn" });
-  const npc = derivedId(`promotion:${pending.promotionId}:npc`);
+  await access.botPlay.tickNpcs();
+  const npc = derivedId(source + ":manual:0");
   expect(await f.store.context(f.graph).node(npc)).toBeUndefined();
   await expect(
     f.send(2, {
@@ -995,9 +1000,7 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
         [f.world, npc],
       )
     ).rows[0].controller,
-  ).toBeNull();
-  await access.botPlay.tickNpcs();
-  expect(f.calls).not.toHaveBeenCalled();
+  ).toBe("server");
   await expect(
     f.send(0, {
       command: "promote-npc",
@@ -1019,9 +1022,7 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
     { players: access.players },
   );
   expect(
-    await f.store
-      .context(f.graph)
-      .node(derivedId(`promotion:${rejected.promotionId}:npc`)),
+    await f.store.context(f.graph).node(derivedId(source + ":manual:1")),
   ).toBeUndefined();
   await auth.operations.execute(
     admin.id,
@@ -2075,7 +2076,8 @@ test("同じ検索の外れは確定し、新しい検索で当たった2匹を�
       kind: "instant-npc" as const,
       species: "鳥",
       description: "水辺で鳴く",
-      count: 2,
+      minCount: 2,
+      maxCount: 3,
       probability: 0,
     },
   };
@@ -2135,6 +2137,7 @@ test("同じ検索の外れは確定し、新しい検索で当たった2匹を�
     },
   );
   expect(await f.send(0, miss)).toEqual(first);
+  const uniform = vi.spyOn(Math, "random").mockReturnValue(0);
   const source = randomUUID(),
     hit = await f.send(0, { ...miss, requestId: source });
   expect(hit.instantNpcs).toEqual(["鳥", "鳥"]);
@@ -2143,6 +2146,11 @@ test("同じ検索の外れは確定し、新しい検索で当たった2匹を�
   for (const a of animals)
     expect(await f.store.context(f.graph).node(a.id)).toBeUndefined();
   await f.send(0, { command: "end-turn" });
+  expect((await f.status(1)).actorId).toBe(animals[0]!.id);
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { text: "岸に佇む" }),
+  );
+  await access.botPlay.tickNpcs();
   const requested = await f.send(1, {
     command: "promote-npc",
     sourceRequestId: source,
@@ -2150,7 +2158,176 @@ test("同じ検索の外れは確定し、新しい検索で当たった2匹を�
     description: "二羽目を世話したい",
   });
   expect(requested.promotionId).toBeTruthy();
-  expect(f.calls).not.toHaveBeenCalled();
+  uniform.mockReturnValue(0.999);
+  expect(await f.send(0, { ...miss, requestId: source })).toEqual(hit);
+  const three = await f.send(1, { ...miss, requestId: randomUUID() });
+  expect(three.instantNpcs).toHaveLength(3);
+  uniform.mockRestore();
+  expect(f.calls.mock.calls.map((c) => c[1])).toEqual(["world-server-npc"]);
+});
+test("出現個体の手番中は本人だけが動き、外界への作用と昇格前の経験を引き継ぐ", async () => {
+  const f = await fixture(),
+    admin = await auth.person(),
+    source = randomUUID();
+  const intact = randomUUID(),
+    wheel = randomUUID(),
+    seed = randomUUID(),
+    bear = derivedId(source + ":manual:0");
+  await f.store.commit(
+    await f.store.claim(f.graph, seed),
+    f.store.context(f.graph),
+    {
+      at: 0,
+      commitId: seed,
+      changes: {
+        nodes: [
+          { id: wheel, kind: "existence", text: "水車" },
+          { id: intact, kind: "script", text: "羽根は無傷" },
+        ],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "content",
+            source: wheel,
+            target: intact,
+            period: { from: 0 },
+          },
+          {
+            id: randomUUID(),
+            kind: "has",
+            source: f.actors[2]!,
+            target: wheel,
+            period: { from: 0 },
+          },
+        ],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  await f.apply([
+    { type: "locate", subjectId: wheel, text: "広場", aboutIds: [f.place] },
+  ]);
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  await f.send(0, { command: "say", text: "登場前の会話" });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { allowed: true, reason: "許可" }),
+  );
+  const appeared = await f.send(0, {
+    command: "say",
+    requestId: source,
+    text: "クマが足を止めた",
+    instantNpcs: ["クマ", "別のクマ"],
+  });
+  expect(appeared.characters).toEqual(
+    expect.arrayContaining([{ actorId: bear, name: "クマ", icon: null }]),
+  );
+  const unreachable = {
+    command: "npc-action",
+    requestId: randomUUID(),
+    npcId: bear,
+    text: "向こう岸を探る",
+    effect: { targetId: f.far, state: "足跡が残る" },
+  };
+  const failed = await f.send(0, unreachable);
+  expect(failed.outcome).toMatchObject({ success: false });
+  expect(await f.send(0, unreachable)).toEqual(failed);
+  const next = await f.send(0, { command: "end-turn" });
+  const request = derivedId(`instant:${next.sessionId}:${bear}:${next.turn}`);
+  await isolated.databases.postgres.query(
+    "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,1)",
+    [request, { sides: 2, successThrough: 1 }],
+  );
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let choosing = false;
+  f.calls
+    .mockImplementationOnce(async (id, _role, messages) => {
+      choosing = true;
+      await gate;
+      expect(JSON.stringify(messages)).not.toContain("登場前の会話");
+      return answer(id, {
+        text: "羽根に体当たりする",
+        effect: {
+          targetId: wheel,
+          state: "羽根が折れて回らない",
+          replacesStateId: intact,
+        },
+      });
+    })
+    .mockImplementationOnce(async (id) =>
+      answer(id, { sides: 2, successThrough: 1 }),
+    );
+  const ticking = access.botPlay.tickNpcs();
+  try {
+    await vi.waitFor(() => expect(choosing).toBe(true));
+    for (const i of [0, 1]) {
+      expect((await f.status(i)).actorId).toBe(bear);
+      expect(
+        await access.botPlay.waiting(
+          f.world,
+          f.actors[i]!,
+          f.people[i]!.id,
+          "human:" + f.people[i]!.id,
+        ),
+      ).toMatchObject({ actionable: false });
+    }
+  } finally {
+    release();
+    await ticking;
+  }
+  expect((await f.status(0)).actorId).toBe(f.actors[1]);
+  const receipt = await f.store.receipt(f.graph, request);
+  expect(receipt?.changes.nodes).toContainEqual(
+    expect.objectContaining({
+      instantActor: { id: bear, sourceEventId: derivedId(source + ":speech") },
+    }),
+  );
+  expect(await f.store.context(f.graph).node(bear)).toBeUndefined();
+  const pending = await f.send(1, {
+    command: "promote-npc",
+    sourceRequestId: source,
+    npcIndex: 0,
+    description: "水辺のクマ",
+  });
+  await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    {
+      operation: "npcs.decidePromotion",
+      worldId: f.world,
+      promotionId: String(pending.promotionId),
+      approve: true,
+      reason: "継続を許可",
+    },
+    { players: access.players },
+  );
+  const peer = derivedId(source + ":manual:1");
+  expect((await f.send(1, { command: "end-turn" })).actorId).toBe(peer);
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { text: "草地へ去る", departs: true }),
+  );
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    expect((await f.status(0)).actorId).toBe(bear);
+    const content = JSON.stringify(messages);
+    expect(content).toContain("羽根が折れて回らない");
+    expect(content).not.toContain("登場前の会話");
+    return answer(id, { command: "end-turn" });
+  });
+  await access.botPlay.tickNpcs();
+  await f.send(0, { command: "finish" });
+  await f.send(1, { command: "finish" });
+  await f.move(2, f.place);
+  const inspected = await f.send(2, {
+    command: "search",
+    query: { kind: "subject", targetId: wheel },
+  });
+  expect(JSON.stringify(inspected.material)).toContain("羽根が折れて回らない");
+  expect(JSON.stringify(inspected.material)).not.toContain("体当たり");
+  expect(JSON.stringify(inspected.material)).not.toContain("羽根は無傷");
 });
 test("初回接続と状態照会のタイムアウトを復旧し、終了時に履歴を返す", async () => {
   const f = await fixture(),

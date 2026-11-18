@@ -80,6 +80,7 @@ const View = z.object({
                 result: z
                   .object({
                     state: z.string().optional(),
+                    effectState: z.string().optional(),
                     outcome: z.object({ success: z.boolean() }).optional(),
                   })
                   .passthrough(),
@@ -241,7 +242,7 @@ export function BotSession({
                   結果：
                   {entry.result.outcome
                     ? entry.result.outcome.success
-                      ? "成立しました"
+                      ? (entry.result.effectState ?? "成立しました")
                       : "不成立でした"
                     : entry.result.state === "rejected"
                       ? "拒否しました"
