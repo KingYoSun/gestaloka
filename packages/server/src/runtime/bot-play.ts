@@ -58,6 +58,31 @@ type Entry = {
   itemWitnesses?: string[];
 };
 type TurnParticipant = { actorId: string; name: string };
+type SessionStatus = {
+  sessionId: string;
+  members: { actorId: string; sceneId: string }[];
+  characters: TurnParticipant[];
+  turn: number;
+  actorId: string | null;
+  callsUsed: number;
+  callsLimit: number;
+  commentUsed: boolean;
+  waitingForReturn?: TurnParticipant & {
+    deadline: string;
+    remainingSeconds: number;
+    message: string;
+  };
+  receiving: {
+    applicationId: string;
+    sender: string;
+    deadline: string;
+    text?: string;
+    changes?: Change;
+  } | null;
+};
+type IdleSessionStatus = { session: null } & Partial<
+  Record<keyof SessionStatus, never>
+>;
 type Member = {
   actorId: string;
   sceneId: string;
@@ -1251,7 +1276,11 @@ export class BotPlay {
     await context.validate();
     return characters;
   }
-  async status(world: string, actor: string, db: Db = this.pool) {
+  async status(
+    world: string,
+    actor: string,
+    db: Db = this.pool,
+  ): Promise<SessionStatus | IdleSessionStatus> {
     const session = await this.current(world, actor, db);
     if (!session) return { session: null };
     const policy = (
@@ -1267,6 +1296,14 @@ export class BotPlay {
       : 0;
     const absent =
       due && characters.find((member) => member.actorId === session.data.turn);
+    const waitingForReturn = absent
+      ? {
+          ...absent,
+          deadline: due!,
+          remainingSeconds,
+          message: `${absent.name}が離席中のため${remainingSeconds}秒復帰を待っています`,
+        }
+      : undefined;
     return {
       sessionId: session.id,
       members: session.data.members.map(({ actorId, sceneId }) => ({
@@ -1285,14 +1322,7 @@ export class BotPlay {
       commentUsed: r
         ? !!r.comments[r.recipients.find((id) => !r.decided.includes(id))!]
         : !!session.data.comment,
-      waitingForReturn: absent
-        ? {
-            ...absent,
-            deadline: due!,
-            remainingSeconds,
-            message: `${absent.name}が離席中のため${remainingSeconds}秒復帰を待っています`,
-          }
-        : undefined,
+      ...(waitingForReturn ? { waitingForReturn } : {}),
       receiving: r
         ? {
             applicationId: r.id,

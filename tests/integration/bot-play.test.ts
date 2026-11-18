@@ -3044,7 +3044,7 @@ test("同席者に手番終了と退出を残し、離席の時点によって�
     waitingForReturn: { remainingSeconds: 1, deadline },
   });
   expect(await ready(2, true)).toMatchObject({ actionable: true, turn: 3 });
-  expect((await f.status(0)).waitingForReturn).toBeUndefined();
+  expect(await f.status(0)).not.toHaveProperty("waitingForReturn");
   const requestId = randomUUID();
   await f.send(1, { command: "finish", requestId });
   await f.send(1, { command: "finish", requestId });
@@ -3070,7 +3070,9 @@ test("同席者に手番終了と退出を残し、離席の時点によって�
   now = new Date(now.getTime() + 1000);
   await access.botPlay.expire(f.world);
   expect(await f.status(0)).toMatchObject({ actorId: f.actors[0], turn: 4 });
-  expect((await f.status(0)).waitingForReturn).toBeUndefined();
+  const restored = await f.status(0);
+  expect(restored).not.toHaveProperty("waitingForReturn");
+  expect(restored).toStrictEqual(JSON.parse(JSON.stringify(restored)));
   await isolated.databases.postgres.query(
     "UPDATE player_waiting SET last_seen=$3 WHERE world_id=$1 AND actor_id=$2",
     [f.world, f.actors[0], new Date(now.getTime() - 601000)],
