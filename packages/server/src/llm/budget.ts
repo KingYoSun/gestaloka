@@ -172,11 +172,11 @@ export class BudgetLedger {
                 ? diagnostic.body
                 : undefined,
             );
-          if (prior.rows[0].delivery === "reserved" && !prior.rows[0].response)
-            throw new ModelCallInProgress(
-              "同じモデル呼び出しを処理中です。同じ要求で結果を照合してください",
-            );
-          throw new BudgetUnavailable(
+          const Unavailable =
+            prior.rows[0].delivery === "reserved" && !prior.rows[0].response
+              ? ModelCallInProgress
+              : BudgetUnavailable;
+          throw new Unavailable(
             "送信済み要求の結果が未確定です。自動では再送しません",
           );
         }
