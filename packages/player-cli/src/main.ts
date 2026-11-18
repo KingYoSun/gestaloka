@@ -6,6 +6,8 @@ import { homedir } from "node:os";
 import { parseArgs } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
+import { cliVersion, update } from "./update.js";
+import { fileURLToPath } from "node:url";
 import { PlayerReferences } from "./references.js";
 import {
   PlayerDeviceCode,
@@ -21,6 +23,8 @@ import {
 
 const help = `GESTALOKA プレイヤーCLI
 
+gestaloka version                       実行中の版・スキルの保存先
+gestaloka update [--server <接続先>]     最新版に更新し、プレイに関係する変更を表示
 gestaloka connect --server <URL> --world <IDまたはURL> [--character <ファイル>] [--icon <画像>]
 gestaloka join [--icon <画像>]           認可されたキャラクターを生成
 gestaloka status [--after N]            参加状態・手番と前回からの新着（0で先頭）
@@ -134,6 +138,7 @@ async function http(
       redirect: "error",
       signal: AbortSignal.timeout(15000),
       headers: {
+        "x-gestaloka-cli-version": cliVersion,
         ...(authenticated ? { authorization: `Bearer ${profile.secret}` } : {}),
         ...(body === undefined
           ? {}
@@ -214,11 +219,16 @@ async function listen(profile: Profile) {
           headers: {
             authorization: `Bearer ${profile.secret}`,
             accept: "text/event-stream",
+            "x-gestaloka-cli-version": cliVersion,
           },
           signal: AbortSignal.timeout(300000),
         },
       );
       if (!response.ok) {
+        if (response.status === 426) {
+          const error = await response.json();
+          throw Object.assign(new Error(error.message), { code: error.code });
+        }
         if (response.status < 500)
           throw Object.assign(
             new Error(`待受に接続できません（HTTP ${response.status}）`),
@@ -396,6 +406,27 @@ async function run() {
   if (command === "help" || values.help) return { help };
   if (positionals.length > 1)
     throw new Error("コマンドは1つ指定してください（helpを参照）");
+  if (command === "version")
+    return {
+      version: cliVersion,
+      skillPath: fileURLToPath(
+        new URL("../skills/gestaloka-player/SKILL.md", import.meta.url),
+      ),
+    };
+  if (command === "update") {
+    const server =
+      values.server ??
+      (
+        await load().catch((e) => {
+          if (e.code === "ENOENT")
+            throw new Error(
+              "接続設定がないため --server <接続先> を指定してください",
+            );
+          throw e;
+        })
+      ).server;
+    return update(server);
+  }
   await mkdir(journal, { recursive: true, mode: 0o700 });
   references = new PlayerReferences(join(journal, "references.sqlite"));
   for (const key of [

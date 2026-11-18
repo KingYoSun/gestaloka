@@ -1,3 +1,4 @@
+import { registerPlayerCliVersion } from "./player-cli-version.js";
 import Fastify from "fastify";
 import swagger from "@fastify/swagger";
 import { fastifySSE } from "@fastify/sse";
@@ -26,6 +27,7 @@ export async function createApp(
   trustProxy = false,
 ) {
   const app = Fastify({ trustProxy }).withTypeProvider<ZodTypeProvider>();
+  registerPlayerCliVersion(app);
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   await app.register(swagger, {

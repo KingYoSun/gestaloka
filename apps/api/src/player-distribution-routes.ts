@@ -13,7 +13,7 @@ const sendGuide = async (reply: FastifyReply, name: string) =>
     .header("Cache-Control", "no-store")
     .header("Referrer-Policy", "no-referrer")
     .send(await readFile(new URL(name, root), "utf8"));
-async function release() {
+export async function playerCliRelease() {
   try {
     return PlayerCliRelease.parse(
       JSON.parse(await readFile(new URL("latest.json", root), "utf8")),
@@ -50,7 +50,7 @@ export async function playerDistributionRoutes(instance: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      const current = await release();
+      const current = await playerCliRelease();
       if (request.params.version !== current.version)
         return reply
           .header("Cache-Control", "no-store")
@@ -68,7 +68,7 @@ export async function playerDistributionRoutes(instance: FastifyInstance) {
     },
     async (_request, reply) => {
       reply.header("Cache-Control", "no-store");
-      return release();
+      return playerCliRelease();
     },
   );
   app.get<{ Params: { filename: string } }>(
@@ -77,7 +77,7 @@ export async function playerDistributionRoutes(instance: FastifyInstance) {
       schema: { hide: true },
     },
     async (request, reply) => {
-      const current = await release();
+      const current = await playerCliRelease();
       const filename = basename(current.downloadUrl);
       if (request.params.filename !== filename)
         throw new AccessError(
