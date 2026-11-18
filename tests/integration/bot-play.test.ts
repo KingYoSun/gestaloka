@@ -2691,6 +2691,7 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
   f.calls.mockImplementationOnce(async (id, _role, messages) => {
     const prompt = JSON.parse(String(messages[1]!.content));
     expect(prompt.status.callsLimit).toBe(8);
+    expect(prompt.sinceLastTurn).toBeUndefined();
     expect(prompt.currentTurn.actions).toMatchObject([
       {
         input: { command: "say", text: "水音を聞いている" },
@@ -2700,7 +2701,57 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
     return answer(id, { command: "end-turn" });
   });
   await access.botPlay.tickNpcs();
+  await f.send(0, { command: "say", text: "ここの水音は聞こえますか" });
+  await f.send(0, { command: "end-turn" });
+  await f.send(1, { command: "search", query: { kind: "self" } });
+  await f.send(1, { command: "comment", text: "川辺を見守る" });
+  await f.send(1, { command: "end-turn" });
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const prompt = JSON.parse(String(messages[1]!.content));
+    expect(prompt.sinceLastTurn.previousTurn.actions).toMatchObject([
+      { input: "水音を聞いている", result: { state: "accepted" } },
+    ]);
+    expect(prompt.sinceLastTurn.observed).toMatchObject([
+      { entries: [{ input: "ここの水音は聞こえますか" }] },
+      { entries: [], comment: "川辺を見守る" },
+    ]);
+    expect(prompt.sinceLastTurn.membership).toEqual({ joined: [], left: [] });
+    expect(JSON.stringify(prompt.sinceLastTurn)).not.toContain('"material"');
+    return answer(id, { command: "end-turn" });
+  });
+  await access.botPlay.tickNpcs();
   await f.send(0, { command: "finish" });
+  // A name changed after departure is outside the NPC's observed roster.
+  const rename = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, rename),
+    f.store.context(f.graph),
+    {
+      commitId: rename,
+      at: 1,
+      changes: {
+        nodes: [],
+        revisions: [
+          { kind: "existence", id: f.actors[0]!, text: "退出後の名前" },
+        ],
+        edges: [],
+        endEdges: [],
+      },
+    },
+  );
+  await f.send(1, { command: "end-turn" });
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const prompt = JSON.parse(String(messages[1]!.content));
+    expect(prompt.sinceLastTurn.previousTurn.actions).toEqual([]);
+    expect(prompt.sinceLastTurn.observed).toEqual([]);
+    expect(prompt.sinceLastTurn.membership).toEqual({
+      joined: [],
+      left: [{ actorId: f.actors[0], name: "人物0" }],
+    });
+    expect(prompt.status.callsLimit).toBe(8);
+    return answer(id, { command: "end-turn" });
+  });
+  await access.botPlay.tickNpcs();
   await f.send(1, { command: "finish" });
   await f.move(2, f.place);
   const inspected = await f.send(2, {

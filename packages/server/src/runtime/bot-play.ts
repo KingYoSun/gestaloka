@@ -57,10 +57,15 @@ type Entry = {
   applicationId?: string;
   itemWitnesses?: string[];
 };
+type TurnParticipant = { actorId: string; name: string };
 type Member = {
   actorId: string;
   sceneId: string;
   userId?: string;
+  lastServerTurn?: {
+    recordId: string;
+    members: TurnParticipant[];
+  };
   joinedAfterEntries?: number;
   instant?: {
     name: string;
@@ -476,9 +481,10 @@ export class BotPlay {
             nearby = await this.search(npc.world_id, npc.actor_id, {
               kind: "surroundings",
             });
-          const scene = current.data.members.find(
+          const member = current.data.members.find(
             (m) => m.actorId === npc.actor_id,
-          )!.sceneId;
+          )!;
+          const scene = member.sceneId;
           const history = await this.history(
             npc.world_id,
             npc.actor_id,
@@ -518,6 +524,14 @@ export class BotPlay {
                   : option,
               ),
           );
+          const sinceLastTurn =
+            !status.receiving && !status.callsUsed && !status.commentUsed
+              ? this.#sinceLastTurn(
+                  member,
+                  history.entries,
+                  status.characters ?? [],
+                )
+              : undefined;
           const completion = await this.#ask(
             derivedId(`${requestId}:choice`),
             "world-server-npc",
@@ -525,7 +539,7 @@ export class BotPlay {
               {
                 role: "system",
                 content:
-                  "あなたは明示的に担当を指定された一人のユニークNPCです。自分自身の発言・行動の描写にはsayを使います。npc-actionは他の出現個体について申請するコマンドです。本人に提供された素材とセッションの入力・結果から、本人として次のAPIコマンドを一つ選びます。currentTurnはこの手番で既に実行した操作とその結果です。発言・行動を終え、続けて行う別の目的がなければend-turnで次の人物へ渡してください。世界の裁定や他人の私的な解釈を代作しません。requestIdはサーバーが設定します。commandSchemaに従うJSONだけを返します。",
+                  "あなたは明示的に担当を指定された一人のユニークNPCです。自分自身の発言・行動の描写にはsayを使います。npc-actionは他の出現個体について申請するコマンドです。本人に提供された素材とセッションの入力・結果から、本人として次のAPIコマンドを一つ選びます。通常手番の開始時、sinceLastTurnには前回の自分の公開行動、その後に届いた発言・結果・コメント、同席者の増減があります。退出はセッションからの退出で、世界内の移動を意味しません。前回応じた声と新しい呼びかけを区別してください。今応じることや自分からしたいことがなければ、何も発言せずend-turnを選べます。currentTurnはこの手番で既に実行した操作とその結果です。発言・行動を終え、続けて行う別の目的がなければend-turnで次の人物へ渡してください。世界の裁定や他人の私的な解釈を代作しません。requestIdはサーバーが設定します。commandSchemaに従うJSONだけを返します。",
               },
               {
                 role: "user",
@@ -536,6 +550,7 @@ export class BotPlay {
                   history,
                   origin,
                   status,
+                  sinceLastTurn,
                   currentTurn: {
                     actions: current.data.npcActions ?? [],
                     comment: current.data.comment,
@@ -868,6 +883,52 @@ export class BotPlay {
       session.data,
     ]);
   }
+  #sinceLastTurn(
+    member: Member,
+    history: {
+      id: string;
+      payload: {
+        turn?: number;
+        actorId?: string;
+        entries?: Entry[];
+        comment?: string;
+        state?: string;
+      };
+    }[],
+    characters: TurnParticipant[],
+  ) {
+    const checkpoint = member.lastServerTurn;
+    const actor = member.actorId;
+    const previous = history.findLastIndex((row) =>
+      checkpoint
+        ? row.id === checkpoint.recordId
+        : row.payload.actorId === actor && row.payload.turn !== undefined,
+    );
+    if (previous < 0) return null;
+    const prior = history[previous]!.payload;
+    const observed = history
+      .slice(previous + 1)
+      .map((row) => row.payload)
+      .filter((p) => p.entries?.length || p.comment || p.state);
+    let membership = null;
+    if (checkpoint) {
+      const present = new Set(characters.map((c) => c.actorId));
+      const former = new Set(checkpoint.members.map((c) => c.actorId));
+      membership = {
+        joined: characters.filter((c) => !former.has(c.actorId)),
+        left: checkpoint.members.filter((c) => !present.has(c.actorId)),
+      };
+    }
+    return {
+      previousTurn: {
+        turn: prior.turn,
+        actions: (prior.entries ?? []).filter((e) => e.actorId === actor),
+        comment: prior.comment,
+      },
+      observed,
+      membership,
+    };
+  }
   async #record(db: Db, session: Session, payload: Record<string, unknown>) {
     const witnesses = (
       Array.isArray(payload.entries) ? (payload.entries as Entry[]) : []
@@ -930,6 +991,16 @@ export class BotPlay {
         "INSERT INTO bot_record(scene_id,actor_id,chat_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
         [member.sceneId, member.actorId, visibleId],
       );
+      if (
+        payload.turn !== undefined &&
+        payload.actorId === member.actorId &&
+        session.data.npcActions
+      ) {
+        member.lastServerTurn = {
+          recordId: visibleId,
+          members: await this.#characters(session, db),
+        };
+      }
     }
   }
   async #next(db: Db, session: Session) {
@@ -1020,6 +1091,20 @@ export class BotPlay {
       await this.#save(db, session, before);
     }
   }
+  async #characters(session: Session, db: Db) {
+    const context = this.store.context(
+        (await this.world(session.world_id, db)).id,
+      ),
+      members = session.data.members;
+    const characters = await Promise.all(
+      members.map(async ({ actorId, instant }) => ({
+        actorId,
+        name: instant?.name ?? (await context.node(actorId))?.text ?? "人物",
+      })),
+    );
+    await context.validate();
+    return characters;
+  }
   async status(world: string, actor: string, db: Db = this.pool) {
     const session = await this.current(world, actor, db);
     if (!session) return { session: null };
@@ -1029,15 +1114,7 @@ export class BotPlay {
       )
     ).rows[0]!;
     const r = session.data.receiving;
-    const context = this.store.context((await this.world(world, db)).id),
-      members = session.data.members;
-    const characters = await Promise.all(
-      members.map(async ({ actorId, instant }) => ({
-        actorId,
-        name: instant?.name ?? (await context.node(actorId))?.text ?? "人物",
-      })),
-    );
-    await context.validate();
+    const characters = await this.#characters(session, db);
     return {
       sessionId: session.id,
       members: session.data.members.map(({ actorId, sceneId }) => ({
@@ -2497,6 +2574,12 @@ export class BotPlay {
           receiving = d.receiving;
         const member = d.members.find((m) => m.actorId === actor);
         if (member) member.userId = user;
+        if (
+          assignment?.controller === "server" &&
+          d.turn === actor &&
+          !receiving
+        )
+          d.npcActions ??= [];
         if (input.command === "leave" || input.command === "finish") {
           if (
             receiving &&
