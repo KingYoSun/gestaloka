@@ -5,7 +5,7 @@ import {
   type WorldContext,
   type WorldStore,
 } from "../world/store.js";
-import { locationRecords } from "../world/locations.js";
+import { directPlaces } from "../world/locations.js";
 
 const latest = Number.MAX_SAFE_INTEGER;
 const about = (edge: WorldEdge, text: string) =>
@@ -67,9 +67,7 @@ export async function searchAppearances(
       .filter((e) => e.role === "hold")
       .map((e) => e.target),
   );
-  const places = [
-    ...new Set((await locationRecords(ctx, actor)).flatMap((l) => l.aboutIds)),
-  ];
+  const places = await directPlaces(ctx, actor);
   const appearances: Appearance[] = [];
   for (const ruleId of rules) {
     const node = await ctx.node(ruleId);

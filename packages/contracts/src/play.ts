@@ -13,6 +13,10 @@ export const LocationOp = z
     subjectId: z.uuid(),
     text: z.string().trim().min(1),
     aboutIds: z.array(z.uuid()),
+    directPlaceId: z
+      .uuid()
+      .optional()
+      .describe("直接滞在する具体的な場所。複数の場所を参照するときに指定する"),
   })
   .strict();
 

@@ -1104,6 +1104,20 @@ export const Operation = z.discriminatedUnion("operation", [
     .strict(),
   z.object({ operation: z.literal("npcs.read"), worldId: z.uuid() }).strict(),
   z
+    .object({ operation: z.literal("promotionPolicy.read"), worldId: z.uuid() })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("promotionPolicy.put"),
+      worldId: z.uuid(),
+      condition: z
+        .string()
+        .trim()
+        .describe("明確に合致すれば承認する条件。空欄で手動判断のみ"),
+      reason: operationReason,
+    })
+    .strict(),
+  z
     .object({
       operation: z.literal("npcs.put"),
       worldId: z.uuid(),

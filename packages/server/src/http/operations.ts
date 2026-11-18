@@ -755,6 +755,23 @@ export class Operations {
           input.worldId,
           input.before,
         );
+      case "promotionPolicy.read":
+      case "promotionPolicy.put": {
+        await this.#access(context).botPlay.construction.get(input.worldId);
+        if (input.operation === "promotionPolicy.put")
+          await db.query(
+            "INSERT INTO npc_promotion_policy(world_id,condition,version,admin) VALUES($1,$2,$3,$4) ON CONFLICT(world_id) DO UPDATE SET condition=EXCLUDED.condition,version=EXCLUDED.version,admin=EXCLUDED.admin",
+            [input.worldId, input.condition, requestId, actor],
+          );
+        return (
+          (
+            await db.query(
+              "SELECT condition,version FROM npc_promotion_policy WHERE world_id=$1",
+              [input.worldId],
+            )
+          ).rows[0] ?? { condition: "", version: null }
+        );
+      }
       case "npcs.promotions":
         return this.#access(context).botPlay.tools.promotions(
           db,

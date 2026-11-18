@@ -1503,6 +1503,20 @@ test("対抗行動の0%・100%ではGMも抽選も使わず、不確実な行動
       ],
       dependencies: [],
     });
+  const emptyOpposition = await f.send(0, {
+    command: "oppose",
+    text: "作用先のない試み",
+    changes: { nodes: [], edges: [], revisions: [], endEdges: [] },
+    dependencies: [],
+  });
+  expect(emptyOpposition.outcome).toMatchObject({ success: false });
+  const missingRelation = await f.send(0, {
+    command: "oppose",
+    text: "存在しない使用権の取り消し",
+    dependencies: [],
+    operations: [{ type: "revoke", person: f.actors[0], storage: items[0] }],
+  });
+  expect(missingRelation.outcome).toMatchObject({ success: false });
   expect((await attempt(items[1]!, f.actors[2]!)).outcome).toMatchObject({
     success: false,
   });
@@ -1518,6 +1532,19 @@ test("対抗行動の0%・100%ではGMも抽選も使わず、不確実な行動
   expect((uncertain.outcome as { roll: number }).roll).toBeGreaterThan(0);
   expect(await attempt(items[1]!, f.actors[1]!, requestId)).toEqual(uncertain);
   expect(f.calls).toHaveBeenCalledTimes(1);
+  const equipment = await f.store.context(f.graph).node(items[0]!);
+  const damage = await f.send(0, {
+    command: "oppose",
+    text: "自分の道具を変形させる",
+    dependencies: [],
+    changes: {
+      nodes: [],
+      edges: [],
+      endEdges: [],
+      revisions: [{ ...equipment, text: "変形した道具" }],
+    },
+  });
+  expect(damage.outcome).toHaveProperty("roll");
   expect(
     (
       await isolated.databases.postgres.query(
@@ -1526,6 +1553,114 @@ test("対抗行動の0%・100%ではGMも抽選も使わず、不確実な行動
       )
     ).rows[0].n,
   ).toBe(1);
+});
+test("同じ地域の異なる直接滞在先では接触できず、直接の場所をそろえると合流する", async () => {
+  const f = await fixture(),
+    area = f.actors[2]!;
+  const move = (i: number, ids: string[], directPlaceId?: string) =>
+    f.send(i, {
+      command: "update",
+      text: "移動",
+      dependencies: [],
+      operations: [
+        {
+          type: "locate",
+          subjectId: f.actors[i],
+          text: "滞在中",
+          aboutIds: ids,
+          ...(directPlaceId ? { directPlaceId } : {}),
+        },
+      ],
+    });
+  await move(0, [area, f.place], f.place);
+  await move(1, [area, f.far], f.far);
+  await expect(
+    f.send(0, { command: "contact", targetId: f.actors[1] }),
+  ).rejects.toMatchObject({ code: "CONTACT_MISMATCH" });
+  for (const kind of ["self", "surroundings"]) {
+    const read = await f.send(0, { command: "search", query: { kind } });
+    expect(read.material).toMatchObject({
+      locations: [{ directPlaceId: f.place }],
+    });
+  }
+  await move(1, [area, f.place]);
+  await expect(
+    f.send(0, { command: "contact", targetId: f.actors[1] }),
+  ).rejects.toMatchObject({ code: "CONTACT_MISMATCH" });
+  await move(1, [area, f.place], f.place);
+  expect(
+    (await f.send(0, { command: "contact", targetId: f.actors[1] })).contact,
+  ).toBe("joined");
+});
+test("世界の事前条件をGMが照合し、明確な合致だけ同じ個体のまま承認する", async () => {
+  const f = await fixture(),
+    admin = await auth.person(),
+    source = randomUUID();
+  const configure = (condition: string) =>
+    auth.operations.execute(
+      admin.id,
+      randomUUID(),
+      {
+        operation: "promotionPolicy.put",
+        worldId: f.world,
+        condition,
+        reason: "試験条件を設定",
+      },
+      { players: access.players },
+    );
+  await configure("その場で鈴を鳴らした個体だけ");
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { allowed: true, reason: "許可" }),
+  );
+  await f.send(0, {
+    command: "say",
+    requestId: source,
+    text: "小さな動物が現れた",
+    instantNpcs: ["個体A", "個体B", "個体C", "個体D", "個体E"],
+  });
+  await f.send(0, { command: "end-turn" });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { text: "鈴を鳴らす" }),
+  );
+  await access.botPlay.tickNpcs(f.world);
+  const ask = (i: number, requestId = randomUUID()) =>
+    f.send(0, {
+      requestId,
+      command: "promote-npc",
+      sourceRequestId: source,
+      npcIndex: i,
+      description: "継続する個体",
+    });
+  const id = randomUUID();
+  f.calls.mockImplementationOnce(async (call, role, messages) => {
+    expect(role).toBe("world-npc-promotion");
+    expect(messages[0]?.content).toContain("その場で鈴を鳴らした個体だけ");
+    expect(messages[1]?.content).toContain("鈴を鳴らす");
+    return answer(call, { match: "clear", reason: "行動の記録で確認" });
+  });
+  const accepted = await ask(0, id);
+  const npc = derivedId(source + ":manual:0");
+  expect(accepted).toMatchObject({ state: "approved", npcId: npc });
+  expect(
+    (await access.botPlay.current(f.world, npc))?.data.members.find(
+      (m) => m.actorId === npc,
+    )?.instant,
+  ).toBeUndefined();
+  expect(await ask(0, id)).toEqual(accepted);
+  f.calls.mockImplementationOnce(async (call) =>
+    answer(call, { match: "unmet", reason: "該当する記録なし" }),
+  );
+  expect((await ask(1)).state).toBe("pending");
+  f.calls.mockRejectedValueOnce(new Error("判定不能"));
+  expect((await ask(2)).state).toBe("pending");
+  f.calls.mockImplementationOnce(async (call) => {
+    await configure("");
+    return answer(call, { match: "clear", reason: "審査開始時の条件には合致" });
+  });
+  expect((await ask(3)).state).toBe("pending");
+  f.calls.mockClear();
+  expect((await ask(4)).state).toBe("pending");
+  expect(f.calls).not.toHaveBeenCalled();
 });
 
 test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人の解釈をチャットへ同報しない", async () => {

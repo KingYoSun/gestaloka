@@ -69,6 +69,11 @@ export async function planBelongings(
     };
     switch (op.type) {
       case "locate": {
+        const ids = [...new Set(op.aboutIds)];
+        const direct =
+          op.directPlaceId ?? (ids.length === 1 ? ids[0] : undefined);
+        if (direct && !ids.includes(direct))
+          throw new BelongingRejected("直接の滞在先をaboutIdsに含めてください");
         const history = (
           await context.history(op.subjectId, "status", "out", LATEST)
         ).filter((e) => e.role === "content" && e.text === "location");
@@ -85,13 +90,11 @@ export async function planBelongings(
         ) {
           const about = (
             await context.relations(active[0]!.target, "status", "out", LATEST)
-          )
-            .filter((e) => e.role === "about")
-            .map((e) => e.target)
-            .sort();
+          ).filter((e) => e.role === "about");
           if (
-            JSON.stringify(about) ===
-            JSON.stringify([...new Set(op.aboutIds)].sort())
+            JSON.stringify(about.map((e) => e.target).sort()) ===
+              JSON.stringify(ids.sort()) &&
+            about.find((e) => e.text === "direct-place")?.target === direct
           )
             break;
         }
@@ -121,6 +124,7 @@ export async function planBelongings(
             role: "about",
             source: node,
             target,
+            ...(target === direct ? { text: "direct-place" } : {}),
             period: { from: at },
           });
         break;
