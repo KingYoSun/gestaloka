@@ -26,7 +26,7 @@ gestaloka join [--icon <画像>]           認可されたキャラクターを�
 gestaloka status [--after N]            参加状態・手番と前回からの新着（0で先頭）
 gestaloka result [--scene ID]           本人の履歴・終了結果をまとめて読む
 gestaloka standby [--resume]            待機を更新し、本人を起こす条件を取得（枠外）
-gestaloka listen [--resume]             SSEで本人の変化を待ち、JSON Linesで出力
+gestaloka listen [--resume] [--once]             SSEで本人の変化を待ち、JSON Linesで出力
 gestaloka disconnect                    このインスタンスの待機を解除
 gestaloka start                         単独セッションを開始
 gestaloka search --kind <surroundings|belongings|self|history|subject|memos> [--target <ID>]
@@ -85,6 +85,8 @@ const parse = () =>
       index: { type: "string" },
       owner: { type: "string" },
       resume: { type: "boolean" },
+      once: { type: "boolean" },
+      "after-wake": { type: "string" },
       text: { type: "string" },
       file: { type: "string" },
       after: { type: "string" },
@@ -250,7 +252,13 @@ async function listen(profile: Profile) {
                   throw new Error("待受の人物が一致しません");
                 if (!frame.active || frame.state === "inactive") return frame;
                 const key = frame.state + ":" + (frame.wakeKey ?? "");
-                if (key !== last) {
+                if (
+                  values.once &&
+                  frame.actionable &&
+                  frame.wakeKey !== values["after-wake"]
+                )
+                  return frame;
+                if (!values.once && key !== last) {
                   console.log(render(frame));
                   last = key;
                 }

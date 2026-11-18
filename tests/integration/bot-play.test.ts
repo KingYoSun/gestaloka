@@ -790,6 +790,40 @@ test("バックグラウンドのlistenが待機を維持し、後から来た�
     );
     expect(events.filter((e) => e.state === "turn")).toHaveLength(1);
     expect(f.calls).not.toHaveBeenCalled();
+    const first = events.find((e) => e.state === "turn")!;
+    const snapshots = vi.spyOn(access, "waiting");
+    const once = cli.run(
+      profile,
+      "listen",
+      "--once",
+      "--after-wake",
+      String(first.wakeKey),
+    );
+    await vi.waitFor(() =>
+      expect(
+        snapshots.mock.calls.some(
+          (call) => call[4] === undefined && call[5] === true,
+        ),
+      ).toBe(true),
+    );
+    const memo = await f.send(0, {
+      command: "memo",
+      text: "共有するメモ",
+      participants: [f.actors[1]],
+      dependencies: [],
+    });
+    await f.send(1, {
+      command: "receive",
+      applicationId: memo.applicationId,
+      accept: true,
+    });
+    const restored = await once;
+    expect(restored).toMatchObject({
+      state: "turn",
+      actionable: true,
+      turn: first.turn,
+    });
+    expect(restored.wakeKey).not.toBe(first.wakeKey);
     reader.close();
   } finally {
     if (child && child.exitCode === null) {
