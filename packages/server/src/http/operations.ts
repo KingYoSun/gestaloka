@@ -953,6 +953,25 @@ export class Operations {
           );
         return resumeJob(db, context.players, input.kind, input.id);
       }
+      case "playSessions.list":
+        return {
+          items: await this.#access(context).botPlay.sessions(
+            input.worldId,
+            db,
+          ),
+        };
+      case "playSessions.advance": {
+        const play = this.#access(context).botPlay;
+        if (!(await play.advance(db, input.worldId, input.sessionId)))
+          throw new AccessError(
+            409,
+            "SESSION_NOT_STALLED",
+            "保存状態から進められる手番はありません。playSessions.listで現在の状態を確認してください",
+          );
+        return {
+          session: (await play.sessions(input.worldId, db, input.sessionId))[0],
+        };
+      }
       case "monitor.samples":
         return RuntimeMonitor.page(db, "samples", input.query.before);
       case "monitor.notifications":

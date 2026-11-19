@@ -1666,16 +1666,7 @@ export class BotPlay {
       const db = await this.pool.connect();
       try {
         await db.query("BEGIN");
-        await db.query(
-          "SELECT pg_advisory_xact_lock(hashtextextended($1,225))",
-          [initial.world_id],
-        );
-        const session = (
-          await db.query<Session>("SELECT * FROM bot_session WHERE id=$1", [
-            initial.id,
-          ])
-        ).rows[0]!;
-        await this.#expire(db, session);
+        await this.advance(db, initial.world_id, initial.id);
         await db.query("COMMIT");
       } catch (error) {
         await db.query("ROLLBACK");
@@ -1684,6 +1675,71 @@ export class BotPlay {
         db.release();
       }
     }
+  }
+  // 止まっているかは、在席切れ・受領期限・離席の処理で手番が進むかで決める。
+  async advance(db: Db, world: string, id: string) {
+    await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,225))", [
+      world,
+    ]);
+    const session = (
+      await db.query<Session>(
+        "SELECT * FROM bot_session WHERE id=$1 AND world_id=$2",
+        [id, world],
+      )
+    ).rows[0];
+    if (!session) return false;
+    const before = turnState(session).key;
+    await this.#expire(db, session);
+    return before !== turnState(session).key;
+  }
+  async sessions(world: string, db: Db = this.pool, id?: string) {
+    const sessions = (
+      await db.query<Session & { progressed_at: string | null }>(
+        `SELECT s.*,c.payload->'transition'->>'at' AS progressed_at FROM bot_session s
+        LEFT JOIN bot_chat c ON c.id=(s.data->>'lastTransitionId')::bigint
+        WHERE s.world_id=$1 AND ($2::uuid IS NULL OR s.id=$2)
+        AND EXISTS(SELECT 1 FROM bot_scene a WHERE a.session_id=s.id AND NOT a.closed) ORDER BY s.id`,
+        [world, id ?? null],
+      )
+    ).rows;
+    const items = [];
+    for (const { id, data: d, progressed_at } of sessions) {
+      const actorId = turnOwner(d),
+        holder = (
+          await db.query<{
+            controller: string | null;
+            npc: boolean;
+            last_seen: Date | null;
+            connected: boolean;
+          }>(
+            `SELECT n.controller,n.actor_id IS NOT NULL AS npc,p.* FROM (SELECT max(last_seen) AS last_seen,
+              COALESCE(bool_or(active AND last_seen>=$3),false) AS connected FROM player_waiting WHERE world_id=$1 AND actor_id=$2) p
+              LEFT JOIN bot_npc n ON n.world_id=$1 AND n.actor_id=$2`,
+            [world, actorId, new Date(this.now().getTime() - waitLeaseMs)],
+          )
+        ).rows[0]!;
+      items.push({
+        sessionId: id,
+        turn: d.number,
+        holder: {
+          actorId,
+          controller: d.members.find((m) => m.actorId === actorId)?.instant
+            ? "instant"
+            : holder.npc
+              ? holder.controller
+              : "player",
+          lastSeen: holder.last_seen?.toISOString() ?? null,
+          connected: holder.connected,
+        },
+        receiving: d.receiving
+          ? { applicationId: d.receiving.id, deadline: d.receiving.deadline }
+          : null,
+        awayUntil: d.awayUntil ?? null,
+        parked: !!d.parked,
+        progressedAt: progressed_at,
+      });
+    }
+    return items;
   }
   async #places(context: WorldContext, actor: string) {
     return directPlaces(context, actor);

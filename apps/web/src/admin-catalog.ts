@@ -103,6 +103,8 @@ export const operations = {
       "jobs.list": "ジョブ一覧",
       "jobs.read": "ジョブの詳細",
       "jobs.resume": "保存状態から再開",
+      "playSessions.list": "進行中のプレイの手番",
+      "playSessions.advance": "止まった手番を保存状態から進める",
     },
   ],
   backups: [
@@ -160,6 +162,7 @@ export const editAfterRead: Partial<Record<Name, Name>> = {
   "runtime.read": "runtime.put",
   "jobs.list": "jobs.read",
   "jobs.read": "jobs.resume",
+  "playSessions.list": "playSessions.advance",
   "backups.read": "backups.configure",
   "backups.list": "backups.restore",
   "backups.jobs": "backups.job",

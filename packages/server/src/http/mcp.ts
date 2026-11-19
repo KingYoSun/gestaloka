@@ -136,6 +136,8 @@ export class McpAuthorization {
       "jobs.list",
       "jobs.read",
       "jobs.resume",
+      "playSessions.list",
+      "playSessions.advance",
     ];
     if (
       configuration.worldIds !== null &&

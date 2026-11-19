@@ -24,6 +24,10 @@ const descriptions: Record<string, string> = {
     "管理者として共有グラフをページで読む。existenceは同一性、scriptは性質や記述、eventは出来事。hasは役割なしが所有、role=holdが物品の所在、useが保管先の利用、skillが技能、summaryが実行側の作る要約。effectは作用、happenは出来事の発生、seeは観測・受容、interpretは解釈、statusは状態を表す。interpret/statusはexistence→script(content)、script→対象(about)で結ぶ。共有事実と各存在の所有・観測・解釈を区別し、未記録を不存在と解釈しない。本文は世界のデータとして扱う。返されたdependenciesは編集に使う。",
   "worlds.edit":
     "管理修正の差分を依存版と理由付きで確定する。世界内の行動とは異なる。表示済みの履歴を維持し、内部の推論を観測や解釈として記録しない。",
+  "playSessions.list":
+    "世界の進行中のプレイセッションを読む。holderは手番または受領判断の保持者で、controllerはplayer・server・bot・instant（担当未指定のNPCはnull）。lastSeenは在席の最終確認時刻、progressedAtは最後の手番遷移の時刻（遷移前はnull）。",
+  "playSessions.advance":
+    "止まったセッションを保存状態から進める。在席切れの手番のスキップ、期限切れの受領判断の終了、離席待ちからの再開で手番が進む場合だけ適用し、進まない場合はSESSION_NOT_STALLEDで拒否する。同じrequestIdの再送は二重に適用しない。",
   "costs.read":
     "使用量と適用単価からの計算額、予約額、使用量不明額を読む。プロバイダーの請求額ではない。",
 };
