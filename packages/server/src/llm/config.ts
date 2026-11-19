@@ -309,6 +309,21 @@ export function settings(
     );
   return result;
 }
+// 判断モデル（OpenRouterのDecisions API）。モデルが未設定なら判断APIを呼ばない。
+// 確率の出方はモデルごとに違うため、しきい値はモデルと合わせて設定する。
+export function decisionSettings(env: NodeJS.ProcessEnv) {
+  const model = optional(env, "LLM_DECISION_MODEL");
+  return model
+    ? {
+        model,
+        repeatThreshold: z.coerce
+          .number()
+          .gt(0)
+          .lt(1)
+          .parse(env.LLM_DECISION_REPEAT_THRESHOLD ?? 0.7),
+      }
+    : undefined;
+}
 export function budgetSettings(env: NodeJS.ProcessEnv) {
   return {
     budgetId: z

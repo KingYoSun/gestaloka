@@ -214,6 +214,30 @@ export async function changeBelongings(
   });
 }
 
+// その場にいる相手が手にしている物。保管先の中身は外から見えないものとして含めない。
+export async function heldItems(
+  context: WorldContext,
+  holder: string,
+  at = LATEST,
+) {
+  const held = (await context.relations(holder, "has", "out", at)).filter(
+    (edge) => edge.role === "hold",
+  );
+  if (
+    !held.length ||
+    (await context.relations(holder, "has", "in", at)).some(
+      (edge) => edge.role === "use",
+    )
+  )
+    return [];
+  return Promise.all(
+    held.map(async (edge) => ({
+      id: edge.target,
+      label: (await context.node(edge.target, at))?.text ?? "",
+    })),
+  );
+}
+
 // 取得は関係を読むだけで、観測や世界内の出来事を追加しない。
 export async function readBelongings(
   context: WorldContext,

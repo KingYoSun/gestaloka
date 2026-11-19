@@ -31,6 +31,7 @@ import {
   BelongingOp,
   BelongingRejected,
   planBelongings,
+  heldItems,
   readBelongings,
 } from "../world/belongings.js";
 import { directPlaces, locationRecords } from "../world/locations.js";
@@ -138,6 +139,7 @@ type SessionStatus = {
   callsUsed: number;
   callsLimit: number;
   commentUsed: boolean;
+  creationCriteria?: string;
   waitingForReturn?: TurnParticipant & {
     deadline: string;
     remainingSeconds: number;
@@ -373,7 +375,8 @@ export class BotPlay {
       CREATE TABLE IF NOT EXISTS bot_npc (
       world_id uuid NOT NULL REFERENCES world_construction(id),actor_id uuid NOT NULL,
       controller text CHECK(controller IN ('bot','server')),user_id uuid,assignment_id uuid NOT NULL,PRIMARY KEY(world_id,actor_id));
-      ALTER TABLE bot_npc ALTER COLUMN controller DROP NOT NULL;`);
+      ALTER TABLE bot_npc ALTER COLUMN controller DROP NOT NULL;
+      ALTER TABLE bot_dice ADD COLUMN IF NOT EXISTS repeated boolean NOT NULL DEFAULT false;`);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS player_waiting (
       world_id uuid NOT NULL,actor_id uuid NOT NULL,connection_id text NOT NULL,user_id uuid NOT NULL,
       active boolean NOT NULL,last_seen timestamptz NOT NULL,generation integer NOT NULL DEFAULT 1,
@@ -1544,6 +1547,13 @@ export class BotPlay {
         `SELECT turn_calls::float8 AS "turnCalls",receipt_timeout_seconds::float8 AS "receiptTimeoutSeconds" FROM session_play_policy WHERE singleton`,
       )
     ).rows[0]!;
+    // 運営者が表示を選んだ世界では、新規作成のダイスの基準を申請の前に読める。
+    const criteria = (
+      await db.query<{ criteria: string }>(
+        "SELECT criteria FROM creation_policy WHERE world_id=$1 AND shown",
+        [world],
+      )
+    ).rows[0];
     const r = session.data.receiving;
     const characters = await this.#characters(session, db);
     const due = r ? undefined : session.data.awayUntil;
@@ -1578,6 +1588,9 @@ export class BotPlay {
       commentUsed: r
         ? !!r.comments[r.recipients.find((id) => !r.decided.includes(id))!]
         : !!session.data.comment,
+      ...(criteria
+        ? { creationCriteria: criteria.criteria || defaultCreationCriteria }
+        : {}),
       ...(waitingForReturn ? { waitingForReturn } : {}),
       receiving: r
         ? {
@@ -1954,6 +1967,7 @@ export class BotPlay {
               contacts.some((r) => r.actor_id === id && r.user_id !== null) &&
               (await this.contact(context, actor, id)).allowed,
             npc: contacts.find((r) => r.actor_id === id)?.npc ?? false,
+            held: await heldItems(context, id, at),
           })),
         ),
       };
@@ -2073,6 +2087,79 @@ export class BotPlay {
       )
     )
       return;
+    // 同じ手番でダイスに失敗した申請の出し直しは、GMに設定を作り直させず、前回の結果を返す。
+    // 同じ試みかは判断モデルが決める。未設定・呼び出しの失敗・低い確率では、通常どおりGMが設定する。
+    const diceId = derivedId(`${requestId}:creation`),
+      model = this.construction.agent.model,
+      known = (
+        await this.pool.query<{
+          setting: z.infer<typeof DiceSetting>;
+          roll: number;
+          repeated: boolean;
+        }>("SELECT setting,roll,repeated FROM bot_dice WHERE id=$1", [diceId])
+      ).rows[0];
+    let repeated:
+      Pick<NonNullable<typeof known>, "setting" | "roll"> | undefined =
+      known?.repeated ? known : undefined;
+    if (!known && model.decision) {
+      const failed = (
+        (await this.current(world, actor))?.data.entries ?? []
+      ).flatMap((e) => {
+        const o = (
+          e.result as {
+            outcome?: {
+              success: boolean;
+              setting?: z.infer<typeof DiceSetting>;
+              roll: number;
+            };
+          }
+        ).outcome;
+        return e.actorId === actor && o?.success === false && o.setting
+          ? [{ text: e.input, setting: o.setting, roll: o.roll }]
+          : [];
+      });
+      const state = { failed: failed.map((f) => f.text), current: text },
+        answers =
+          failed.length &&
+          (await model
+            .decide(
+              derivedId(`${requestId}:repeat:${JSON.stringify(state)}`),
+              "world-creation-repeat",
+              state,
+              Object.fromEntries(
+                failed.map((_, i) => [
+                  `f${i}`,
+                  {
+                    instructions: `current は、failed[${i}] と同じ試みを出し直したものか。同じ対象に同じ結果を得ようとしていれば、言い回し・言語・細部・規模・根拠の説明が違っても同じ試みとする。`,
+                    criteria: {
+                      true: "同じ対象に同じ結果を得ようとする出し直し",
+                      false: "対象か、得ようとする結果が異なる別の試み",
+                    },
+                  },
+                ]),
+              ),
+            )
+            .catch(() => undefined));
+      const same =
+        answers &&
+        failed.find(
+          (_, i) => answers[`f${i}`]! >= model.decision!.repeatThreshold,
+        );
+      if (same) {
+        await this.pool.query(
+          "INSERT INTO bot_dice(id,setting,roll,repeated) VALUES($1,$2,$3,true) ON CONFLICT DO NOTHING",
+          [diceId, same.setting, same.roll],
+        );
+        repeated = same;
+      }
+    }
+    if (repeated)
+      return {
+        setting: repeated.setting,
+        roll: repeated.roll,
+        success: false,
+        repeated: true,
+      };
     // 世界の起点の記録をすべて渡すと入力が膨らむ。世界の前提は設定文で渡し、材料は申請者と申請が触れる対象に絞る。
     const premise = (await this.construction.get(world)).initial_prompt;
     const nodes = await this.#facts(context, [
@@ -2089,7 +2176,7 @@ export class BotPlay {
         ).rows[0]?.criteria || defaultCreationCriteria;
     const Dice = explore ? ExploreDice : DiceSetting;
     const response = await this.#ask(
-      derivedId(`${requestId}:creation`),
+      diceId,
       explore ? "world-explore-dice" : "world-creation-dice",
       [
         {
@@ -2114,7 +2201,7 @@ export class BotPlay {
       (raw) => Dice.parse(parseOutput(raw)),
     );
     const saved = await this.#roll(
-      derivedId(`${requestId}:creation`),
+      diceId,
       Dice.parse(parseOutput(response.content)),
     );
     return { ...saved, success: saved.roll <= saved.setting.successThrough };

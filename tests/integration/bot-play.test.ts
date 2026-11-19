@@ -2223,9 +2223,14 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
         randomUUID(),
         { worldId: f.world, ...input } as never,
         { players: access.players },
-      ) as Promise<{ criteria: string; defaultCriteria: string }>;
+      ) as Promise<{
+        criteria: string;
+        defaultCriteria: string;
+        shown: boolean;
+      }>;
   const unset = await policy({ operation: "creationPolicy.read" });
   expect(unset.criteria).toBe("");
+  expect(unset.shown).toBe(false);
   const free = (id: string) =>
     make(
       [{ id, kind: "script", text: "新しい自由な性質" }],
@@ -2247,11 +2252,31 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
   expect((await free(script)).outcome).toMatchObject({ success: true });
   expect(f.calls).toHaveBeenCalledTimes(1);
   expect(f.calls.mock.calls[0]![1]).toBe("world-creation-dice");
+  // 基準の文は既定ではプレイヤーに見せない。表示を選ぶと、空欄の世界では既定の基準を見せる。
+  expect(
+    await policy({
+      operation: "creationPolicy.put",
+      criteria: "",
+      shown: true,
+      reason: "基準を表示",
+    }),
+  ).toMatchObject({ shown: true });
+  expect((await f.status(0)).creationCriteria).toBe(unset.defaultCriteria);
+  expect(
+    await policy({
+      operation: "creationPolicy.put",
+      criteria: "この世界だけの基準",
+      reason: "世界ごとの基準を設定",
+    }),
+  ).toMatchObject({ shown: true });
+  expect((await f.status(0)).creationCriteria).toBe("この世界だけの基準");
   await policy({
     operation: "creationPolicy.put",
     criteria: "この世界だけの基準",
-    reason: "世界ごとの基準を設定",
+    shown: false,
+    reason: "基準を非表示",
   });
+  expect((await f.status(0)).creationCriteria).toBeUndefined();
   f.calls.mockImplementation(async (id, _role, messages) => {
     expect(messages[0]?.content).toContain("この世界だけの基準");
     return answer(id, { sides: 100, successThrough: 10 });
@@ -2302,6 +2327,151 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
   });
   expect(spoken.appearances).toBeUndefined();
   expect((await f.status(0)).members).toHaveLength(1);
+});
+
+test("同じ手番で失敗した申請の出し直しは、判断モデルが同じ試みと認めたときだけ前回の結果を返す", async () => {
+  const f = await fixture(),
+    db = isolated.databases.postgres,
+    model = runtime.agent.model,
+    dice = { sides: 100, successThrough: 10 };
+  let probability = 0.9,
+    status = 200;
+  vi.spyOn(model, "decision", "get").mockReturnValue({
+    model: "fixture/decide",
+    repeatThreshold: 0.7,
+  });
+  vi.spyOn(model, "apiKey").mockResolvedValue("unused");
+  const decisions = vi
+    .spyOn(model, "transport")
+    .mockImplementation(async (_url, options) => {
+      const body = JSON.parse(String(options?.body));
+      return Response.json(
+        {
+          id: "decision",
+          model: body.model,
+          answers: Object.fromEntries(
+            Object.keys(body.questions).map((key) => [
+              key,
+              { type: "noul", noul: probability },
+            ]),
+          ),
+          usage: { input_tokens: 100, output_tokens: 20, cost: 0.0000042 },
+        },
+        { status },
+      );
+    });
+  f.calls.mockImplementation(async (id) => answer(id, dice));
+  // 出目を指定すると、判定の前にダイスを保存して結果を固定する。
+  const attempt = async (text: string, roll?: number) => {
+    const requestId = randomUUID();
+    if (roll)
+      await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,$3)", [
+        derivedId(`${requestId}:creation`),
+        dice,
+        roll,
+      ]);
+    return (
+      await f.send(0, {
+        requestId,
+        command: "create",
+        text,
+        changes: {
+          nodes: [{ id: randomUUID(), kind: "existence", text }],
+          revisions: [],
+          edges: [],
+          endEdges: [],
+        },
+        dependencies: [],
+      })
+    ).outcome;
+  };
+  // 手番に失敗がなければ、判断モデルを呼ばない。
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+  expect(await attempt("最初の作成")).toMatchObject({ success: true });
+  expect(decisions).not.toHaveBeenCalled();
+  expect(await attempt("通らない作成", 50)).toEqual({
+    success: false,
+    setting: dice,
+    roll: 50,
+  });
+  const judged = f.calls.mock.calls.length,
+    used = (await f.status(0)).callsUsed as number;
+  // 同じ試みと判定された出し直しは、GMを呼ばずに前回の設定と出目を返し、通常枠を1回使う。
+  const repeated = randomUUID(),
+    changes = {
+      nodes: [{ id: randomUUID(), kind: "existence", text: "出し直し" }],
+      revisions: [],
+      edges: [],
+      endEdges: [],
+    },
+    again = () =>
+      f.send(0, {
+        requestId: repeated,
+        command: "create",
+        text: "言い回しを変えた通らない作成",
+        changes,
+        dependencies: [],
+      });
+  const first = await again();
+  expect(first.outcome).toEqual({
+    success: false,
+    setting: dice,
+    roll: 50,
+    repeated: true,
+  });
+  expect(f.calls).toHaveBeenCalledTimes(judged);
+  expect((await f.status(0)).callsUsed).toBe(used + 1);
+  expect(
+    await f.store.context(f.graph).node(changes.nodes[0]!.id),
+  ).toBeUndefined();
+  expect(JSON.parse(String(decisions.mock.calls[0]![1]!.body)).state).toEqual({
+    failed: ["通らない作成"],
+    current: "言い回しを変えた通らない作成",
+  });
+  // 費用は判断APIが報告した額で台帳に載る。
+  expect(
+    (
+      await db.query(
+        "SELECT charged_nano::int AS charged,state FROM llm_call WHERE request->>'role'='world-creation-repeat'",
+      )
+    ).rows,
+  ).toEqual([{ charged: 4200, state: "complete" }]);
+  // 同じ要求の再送は、判定をやり直さずに同じ結果を返す。
+  expect(await again()).toEqual(first);
+  expect(decisions).toHaveBeenCalledTimes(1);
+  // 確率が低いとき、判断APIが失敗したときは、通常どおりGMが設定する。
+  probability = 0.3;
+  expect(await attempt("別の作成")).not.toHaveProperty("repeated");
+  expect(decisions).toHaveBeenCalledTimes(2);
+  expect(f.calls).toHaveBeenCalledTimes(judged + 1);
+  status = 500;
+  expect(await attempt("さらに別の作成")).not.toHaveProperty("repeated");
+  expect(decisions).toHaveBeenCalledTimes(3);
+  expect(f.calls).toHaveBeenCalledTimes(judged + 2);
+});
+
+test("周囲の検索は、同じ場所にいる相手が手にしている物を返し、保管先の中身は返さない", async () => {
+  const f = await fixture();
+  await f.apply([
+    { type: "create", label: "古い鍵", holder: f.actors[1], basis: "検証" },
+  ]);
+  const held = (await readBelongings(f.store.context(f.graph), f.actors[1]!))
+    .items[0]!;
+  const subjects = async () =>
+    (
+      (await f.send(0, { command: "search", query: { kind: "surroundings" } }))
+        .material as { subjects: { id: string; held: unknown[] }[] }
+    ).subjects;
+  expect((await subjects()).find((s) => s.id === f.actors[1])?.held).toEqual([
+    { id: held.id, label: "古い鍵" },
+  ]);
+  // 相手を保管先として使う関係ができると、その中身は外から見えない。
+  await f.apply([
+    { type: "grant", person: f.actors[0], storage: f.actors[1], basis: "検証" },
+  ]);
+  expect((await subjects()).find((s) => s.id === f.actors[1])?.held).toEqual(
+    [],
+  );
 });
 
 test("周囲の検索は所在地以外の記述が増えてもグラフ照会数を増やさない", async () => {

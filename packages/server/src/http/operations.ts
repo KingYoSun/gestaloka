@@ -816,16 +816,22 @@ export class Operations {
         await this.#access(context).botPlay.construction.get(input.worldId);
         if (input.operation === "creationPolicy.put")
           await db.query(
-            "INSERT INTO creation_policy(world_id,criteria,version,admin) VALUES($1,$2,$3,$4) ON CONFLICT(world_id) DO UPDATE SET criteria=EXCLUDED.criteria,version=EXCLUDED.version,admin=EXCLUDED.admin",
-            [input.worldId, input.criteria, requestId, actor],
+            "INSERT INTO creation_policy(world_id,criteria,version,admin,shown) VALUES($1,$2,$3,$4,coalesce($5,false)) ON CONFLICT(world_id) DO UPDATE SET criteria=EXCLUDED.criteria,version=EXCLUDED.version,admin=EXCLUDED.admin,shown=coalesce($5,creation_policy.shown)",
+            [
+              input.worldId,
+              input.criteria,
+              requestId,
+              actor,
+              input.shown ?? null,
+            ],
           );
         return {
           ...((
             await db.query(
-              "SELECT criteria,version FROM creation_policy WHERE world_id=$1",
+              "SELECT criteria,version,shown FROM creation_policy WHERE world_id=$1",
               [input.worldId],
             )
-          ).rows[0] ?? { criteria: "", version: null }),
+          ).rows[0] ?? { criteria: "", version: null, shown: false }),
           defaultCriteria: defaultCreationCriteria,
         };
       }
