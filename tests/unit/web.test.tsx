@@ -53,6 +53,7 @@ const world = {
     published: false,
     accepting: false,
     playerList: false,
+    instantNpcMultiplier: 2,
   },
 };
 let player: z.infer<typeof PlayerStatus>, run: z.infer<typeof PlayRun> | null;

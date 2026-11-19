@@ -3107,8 +3107,45 @@ test("同じ検索の外れは確定し、新しい検索で当たった2匹を�
   expect(await f.send(0, { ...miss, requestId: source })).toEqual(hit);
   const three = await f.send(1, { ...miss, requestId: randomUUID() });
   expect(three.instantNpcs).toHaveLength(3);
+  // その場に残る5羽と合わせて、発生数3に既定の倍率2を掛けた6羽を超えない。
+  const sixth = await f.send(1, { ...miss, requestId: randomUUID() });
+  expect(sixth.instantNpcs).toEqual(["鳥"]);
+  const full = await f.send(1, { ...miss, requestId: randomUUID() });
+  expect(full.appearances).toBeUndefined();
   uniform.mockRestore();
   expect(f.calls.mock.calls.map((c) => c[1])).toEqual(["world-server-npc"]);
+});
+test("出現個体はその場所で手番を終えた人物の後にだけ動き、誰もいなくなれば同席から外れる", async () => {
+  const f = await fixture(),
+    source = randomUUID(),
+    bird = derivedId(source + ":manual:0");
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+  await f.send(0, {
+    command: "say",
+    requestId: source,
+    text: "鳥が降りてきた",
+    instantNpcs: ["鳥"],
+  });
+  const peck = async () => {
+    f.calls.mockImplementationOnce(async (id) =>
+      answer(id, { text: "地面をつつく" }),
+    );
+    await access.botPlay.tickNpcs();
+    expect((await f.status(1)).actorId).toBe(f.actors[1]);
+  };
+  expect((await f.send(0, { command: "end-turn" })).actorId).toBe(bird);
+  await peck();
+  await f.move(1, f.far);
+  expect((await f.send(1, { command: "end-turn" })).actorId).toBe(f.actors[0]);
+  expect((await f.send(0, { command: "end-turn" })).actorId).toBe(bird);
+  await peck();
+  await f.move(0, f.far);
+  const left = await f.send(1, { command: "end-turn" });
+  expect(left.actorId).toBe(f.actors[0]);
+  expect(left.characters).not.toContainEqual(
+    expect.objectContaining({ actorId: bird }),
+  );
 });
 test("出現個体の手番中は本人だけが動き、外界への作用と昇格前の経験を引き継ぐ", async () => {
   const f = await fixture(),

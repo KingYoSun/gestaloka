@@ -425,6 +425,7 @@ export interface paths {
                                 published: boolean;
                                 accepting: boolean;
                                 playerList: boolean;
+                                instantNpcMultiplier: number;
                             };
                             error: string | null;
                         };
@@ -564,6 +565,7 @@ export interface paths {
                                 published: boolean;
                                 accepting: boolean;
                                 playerList: boolean;
+                                instantNpcMultiplier: number;
                             };
                             error: string | null;
                         };
@@ -723,6 +725,7 @@ export interface paths {
                                 published: boolean;
                                 accepting: boolean;
                                 playerList: boolean;
+                                instantNpcMultiplier: number;
                             };
                             error: string | null;
                         };
@@ -5977,6 +5980,8 @@ export interface paths {
                             accepting: boolean;
                             /** @description いま出会えるプレイヤーと居場所の一覧（players）を参加者へ提供する。省略すると現在の設定を保つ */
                             playerList?: boolean;
+                            /** @description 検索で出現した個体が同じ場所に同時に同席できる数を、発生用ノードの発生数（maxCount、旧形式はcount）の何倍までにするか。既定は2。省略すると現在の設定を保つ */
+                            instantNpcMultiplier?: number;
                             reason: string;
                         } | {
                             /** @enum {string} */
