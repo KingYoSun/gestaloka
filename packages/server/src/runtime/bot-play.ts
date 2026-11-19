@@ -324,9 +324,48 @@ export const selectStates = <
     room = materialLimit - origin.length;
   return [...origin, ...(room ? states.slice(origin.length).slice(-room) : [])];
 };
+// LLMへ渡す記録から、行動の選択に使えない属性を外す。確定ID、記録された実時刻、公開行動の有無、
+// 空の出現一覧、手番の持ち主と重なる人物IDが当たる。プレイヤーへ見せる記録は変えない。
+const omit = (value: Record<string, unknown>, keys: string[]) =>
+  Object.fromEntries(
+    Object.entries(value).filter(([key]) => !keys.includes(key)),
+  );
+const compactRecord = (record: unknown) => {
+  const { payload, ...row } = record as { payload?: Record<string, unknown> };
+  if (!payload) return record;
+  const transition = payload.transition as Record<string, unknown> | undefined;
+  return {
+    ...row,
+    payload: {
+      ...(transition ? omit(payload, ["actorId"]) : payload),
+      ...(Array.isArray(payload.entries)
+        ? {
+            entries: (payload.entries as Entry[]).map((entry) => {
+              const result = entry.result as Record<string, unknown> | null;
+              return result && typeof result === "object"
+                ? {
+                    ...entry,
+                    result: omit(result, [
+                      "commitId",
+                      ...(Array.isArray(result.instantNpcs) &&
+                      !result.instantNpcs.length
+                        ? ["instantNpcs"]
+                        : []),
+                    ]),
+                  }
+                : entry;
+            }),
+          }
+        : {}),
+      ...(transition
+        ? { transition: omit(transition, ["at", "publicActivity"]) }
+        : {}),
+    },
+  };
+};
 const recentEntries = <T extends { entries: unknown[] }>(history: T) => ({
   ...history,
-  entries: history.entries.slice(-historyLimit),
+  entries: history.entries.slice(-historyLimit).map(compactRecord),
   omittedEntries: Math.max(0, history.entries.length - historyLimit),
 });
 export const defaultCreationCriteria =
