@@ -6,6 +6,9 @@ import type { Operations } from "@gestaloka/server/operations";
 import { AccessError } from "@gestaloka/server/access";
 import type { WorldAccess } from "@gestaloka/server/access";
 const descriptions: Record<string, string> = {
+  "creationPolicy.read": "世界ごとの新規作成のダイス基準を確認する。",
+  "creationPolicy.put":
+    "管理者が新規作成のダイス基準を設定する。空文字で既定の基準に戻す。",
   "promotionPolicy.read": "世界ごとのNPC自動昇格条件を確認する。",
   "promotionPolicy.put":
     "管理者がNPC自動昇格の条件文を設定する。空文字で手動のみに戻す。",

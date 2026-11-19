@@ -1123,6 +1123,20 @@ export const Operation = z.discriminatedUnion("operation", [
     })
     .strict(),
   z
+    .object({ operation: z.literal("creationPolicy.read"), worldId: z.uuid() })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("creationPolicy.put"),
+      worldId: z.uuid(),
+      criteria: z
+        .string()
+        .trim()
+        .describe("新規作成のダイスをGMが設定するときの基準。空欄で既定の基準"),
+      reason: operationReason,
+    })
+    .strict(),
+  z
     .object({
       operation: z.literal("npcs.put"),
       worldId: z.uuid(),

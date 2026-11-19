@@ -57,7 +57,7 @@
 
 ### その他の作成
 
-自由な性質・関係を新しく記録する場合は、`command: "create"`、`text`、`changes`、`dependencies`を指定する。`changes`はnodes・revisions・edges・endEdgesを持つ既存のChange形式で、新規作成ではrevisionsとendEdgesを空にする。保持・保管・技能・所在地は用途別の更新を使う。通常の発言と移動など規則で判断できる作成はGMを呼ばず、判断が残る作成だけGMが可否を返す。
+自由な性質・関係を新しく記録する場合は、`command: "create"`、`text`、`changes`、`dependencies`を指定する。`changes`はnodes・revisions・edges・endEdgesを持つ既存のChange形式で、新規作成ではrevisionsとendEdgesを空にする。保持・保管・技能・所在地は用途別の更新を使う。通常の発言と移動など規則で判断できる作成はGMを呼ばない。判断が残る作成では、GMが世界の基準に従ってダイスを設定し、サーバーが一度だけ振る。物品の `create`、技能の `learn`、`say` の `instantNpcs` も同じ扱いになる。応答の `outcome` に成否・ダイス設定・出目が入る。失敗しても行動として記録されて通常枠を1回使い、何も作られない。`say` では発言だけが記録され、`instantNpcs` は空で返る。同じ要求の再送は同じ結果を返す。
 
 ## 受領を経ない対抗行動
 

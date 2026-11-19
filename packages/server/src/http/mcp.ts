@@ -128,6 +128,8 @@ export class McpAuthorization {
       "npcs.promotions",
       "promotionPolicy.read",
       "promotionPolicy.put",
+      "creationPolicy.read",
+      "creationPolicy.put",
       "npcs.decidePromotion",
       "reports.list",
       "costs.read",

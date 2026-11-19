@@ -21,6 +21,8 @@ let runtime: Awaited<ReturnType<typeof fixtureRuntime>>["runtime"],
   access: WorldAccess,
   auth: Awaited<ReturnType<typeof fixtureAuth>>;
 const graphs: string[] = [];
+// 成功範囲が面数未満という制約の中で、実質的に必ず成功するダイス設定。
+const sure = { sides: 2147483647, successThrough: 2147483646 };
 const answer = (id: string, content: unknown) => ({
   id,
   model: "fixture",
@@ -255,9 +257,7 @@ test("手番APIの15操作が受付結果を返し、確定内容と一致する
   expect(JSON.stringify(self.material)).toContain(f.far);
   const script = randomUUID(),
     changes = { nodes: [], edges: [], endEdges: [], revisions: [] };
-  f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { allowed: true, reason: "作成可" }),
-  );
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
   await act(
     0,
     {
@@ -298,9 +298,7 @@ test("手番APIの15操作が受付結果を返し、確定内容と一致する
   expect(JSON.stringify((await f.status(0)).entries)).toContain("別枠の記録");
 
   const source = randomUUID();
-  f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { allowed: true, reason: "登場可" }),
-  );
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
   await act(
     1,
     {
@@ -1150,9 +1148,7 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
     admin = await auth.person(),
     source = randomUUID();
   await f.send(1, { command: "contact", targetId: f.actors[0] });
-  f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { allowed: true, reason: "許可" }),
-  );
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
   await f.send(0, {
     requestId: source,
     command: "say",
@@ -1160,7 +1156,7 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
     instantNpcs: ["木陰の小さな動物", "別の小さな動物"],
   });
   expect(f.calls.mock.calls.map((call) => call[1])).toEqual([
-    "world-creation-permission",
+    "world-creation-dice",
   ]);
   f.calls.mockClear();
   await f.send(0, { command: "end-turn" });
@@ -1666,12 +1662,7 @@ test("個体指定のない旧NPCフラグを無視し、bot担当とサーバ�
     npcs[1],
   );
   f.calls.mockImplementation(async (id, role) =>
-    answer(
-      id,
-      role === "world-server-npc"
-        ? { command: "end-turn" }
-        : { allowed: true, reason: "許可" },
-    ),
+    answer(id, role === "world-server-npc" ? { command: "end-turn" } : sure),
   );
   await f.apply([
     { type: "locate", subjectId: npcs[2], text: "広場", aboutIds: [f.place] },
@@ -1927,9 +1918,7 @@ test("世界の事前条件をGMが照合し、明確な合致だけ同じ個体
       { players: access.players },
     );
   await configure("その場で鈴を鳴らした個体だけ");
-  f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { allowed: true, reason: "許可" }),
-  );
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
   await f.send(0, {
     command: "say",
     requestId: source,
@@ -2000,9 +1989,7 @@ test("要約中の昇格再送は最初の判定を待ち、保留で先に確�
     },
     { players: access.players },
   );
-  f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { allowed: true, reason: "許可" }),
-  );
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
   await f.send(0, {
     command: "say",
     requestId: source,
@@ -2105,24 +2092,92 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
   expect(JSON.stringify((await f.status(0)).entries)).not.toContain(
     "私的な解釈",
   );
-  f.calls.mockImplementation(async (id) =>
-    answer(id, { allowed: true, reason: "材料に照らして作成可能" }),
-  );
-  await make(
-    [{ id: script, kind: "script", text: "新しい自由な性質" }],
-    [
-      {
-        id: randomUUID(),
-        kind: "status",
-        role: "content",
-        source: f.actors[0],
-        target: script,
-        period: { from: 0 },
-      },
-    ],
-  );
+  const admin = await auth.person(),
+    policy = (input: Record<string, unknown>) =>
+      auth.operations.execute(
+        admin.id,
+        randomUUID(),
+        { worldId: f.world, ...input } as never,
+        { players: access.players },
+      ) as Promise<{ criteria: string; defaultCriteria: string }>;
+  const unset = await policy({ operation: "creationPolicy.read" });
+  expect(unset.criteria).toBe("");
+  const free = (id: string) =>
+    make(
+      [{ id, kind: "script", text: "新しい自由な性質" }],
+      [
+        {
+          id: randomUUID(),
+          kind: "status",
+          role: "content",
+          source: f.actors[0],
+          target: id,
+          period: { from: 0 },
+        },
+      ],
+    );
+  f.calls.mockImplementation(async (id, _role, messages) => {
+    expect(messages[0]?.content).toContain(unset.defaultCriteria);
+    return answer(id, sure);
+  });
+  expect((await free(script)).outcome).toMatchObject({ success: true });
   expect(f.calls).toHaveBeenCalledTimes(1);
-  expect(f.calls.mock.calls[0]![1]).toBe("world-creation-permission");
+  expect(f.calls.mock.calls[0]![1]).toBe("world-creation-dice");
+  await policy({
+    operation: "creationPolicy.put",
+    criteria: "この世界だけの基準",
+    reason: "世界ごとの基準を設定",
+  });
+  f.calls.mockImplementation(async (id, _role, messages) => {
+    expect(messages[0]?.content).toContain("この世界だけの基準");
+    return answer(id, { sides: 100, successThrough: 10 });
+  });
+  const failing = randomUUID(),
+    rejected = randomUUID(),
+    used = (await f.status(0)).callsUsed as number,
+    seed = (request: string) =>
+      isolated.databases.postgres.query(
+        "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,50)",
+        [derivedId(`${request}:creation`), { sides: 100, successThrough: 10 }],
+      ),
+    attempt = () =>
+      f.send(0, {
+        requestId: failing,
+        command: "create",
+        text: "成功しにくい作成",
+        changes: {
+          nodes: [{ id: rejected, kind: "existence", text: "ありえない物" }],
+          revisions: [],
+          edges: [],
+          endEdges: [],
+        },
+        dependencies: [],
+      });
+  await seed(failing);
+  const failed = await attempt();
+  expect(failed.outcome).toEqual({
+    success: false,
+    setting: { sides: 100, successThrough: 10 },
+    roll: 50,
+  });
+  expect(await f.store.context(f.graph).node(rejected)).toBeUndefined();
+  expect((await f.status(0)).callsUsed).toBe(used + 1);
+  expect(await attempt()).toEqual(failed);
+  const absent = randomUUID();
+  await seed(absent);
+  const spoken = await f.send(0, {
+    requestId: absent,
+    command: "say",
+    text: "物陰で何かが動いた気がする",
+    instantNpcs: ["物陰の何か"],
+  });
+  expect(spoken).toMatchObject({
+    state: "accepted",
+    instantNpcs: [],
+    outcome: { success: false },
+  });
+  expect(spoken.appearances).toBeUndefined();
+  expect((await f.status(0)).members).toHaveLength(1);
 });
 
 test("周囲の検索は所在地以外の記述が増えてもグラフ照会数を増やさない", async () => {
@@ -2397,7 +2452,7 @@ test("GM判断中に利用停止されても長いDBロックを持たず、確�
   f.calls.mockImplementation(async (id) => {
     reached();
     await gate;
-    return answer(id, { allowed: true, reason: "作成可" });
+    return answer(id, sure);
   });
   const pending = f.send(0, {
     command: "create",
@@ -2792,9 +2847,7 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
   ]);
   await f.send(1, { command: "contact", targetId: f.actors[0] });
   await f.send(0, { command: "say", text: "登場前の会話" });
-  f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { allowed: true, reason: "許可" }),
-  );
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
   const appeared = await f.send(0, {
     command: "say",
     requestId: source,
