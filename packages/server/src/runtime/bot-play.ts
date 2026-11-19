@@ -2082,9 +2082,11 @@ export class BotPlay {
     target: "default" | "resolution",
     validate: (raw: string) => unknown,
   ) {
+    // 手番の途中で同席者や履歴が変わると、同じ手番の再試行でも入力が変わる。
+    // 入力ごとに別の呼び出しとして扱い、同じ入力の再送だけを同じ呼び出しにする。
     const complete = () =>
       this.construction.agent.model.complete(
-        id,
+        derivedId(`${id}:${JSON.stringify(messages)}`),
         role,
         messages,
         target,
