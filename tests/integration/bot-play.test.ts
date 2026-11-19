@@ -916,6 +916,35 @@ test("プレイヤーの一覧は、待機中で接触を受けられるプレ�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test("その場の存在の手番中に同席者が増えても、次の試行で手番が進む", async () => {
+  const f = await fixture();
+  await f.send(0, {
+    command: "say",
+    text: "鳥を見つける",
+    instantNpcs: ["小鳥"],
+  });
+  await f.send(0, { command: "end-turn" });
+  const bird = (await f.status(0)).actorId,
+    ids: string[] = [],
+    act = { text: "土をつつく" };
+  // 行動を選んでいる間に別の人物が合流し、この試行は確定されない。
+  f.calls.mockImplementationOnce(async (id) => {
+    ids.push(id);
+    await f.send(1, { command: "contact", targetId: f.actors[0] });
+    return answer(id, act);
+  });
+  await access.botPlay.tickNpcs(f.world);
+  expect((await f.status(0)).actorId).toBe(bird);
+  // 入力が変わった再試行は別の呼び出しになり、手番が進む。
+  f.calls.mockImplementationOnce(async (id) => {
+    ids.push(id);
+    return answer(id, act);
+  });
+  await access.botPlay.tickNpcs(f.world);
+  expect(ids[1]).not.toBe(ids[0]);
+  expect((await f.status(0)).actorId).not.toBe(bird);
+});
+
 test("受領判断から同じ元手番へ戻ったときにも、新しい起床キーを返す", async () => {
   const f = await fixture();
   await f.send(1, { command: "contact", targetId: f.actors[0] });
