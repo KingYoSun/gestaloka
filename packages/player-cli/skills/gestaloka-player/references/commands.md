@@ -59,6 +59,32 @@
 
 自由な性質・関係を新しく記録する場合は、`command: "create"`、`text`、`changes`、`dependencies`を指定する。`changes`はnodes・revisions・edges・endEdgesを持つ既存のChange形式で、新規作成ではrevisionsとendEdgesを空にする。保持・保管・技能・所在地は用途別の更新を使う。通常の発言と移動など規則で判断できる作成はGMを呼ばない。判断が残る作成では、GMが世界の基準に従ってダイスを設定し、サーバーが一度だけ振る。物品の `create`、技能の `learn`、`say` の `instantNpcs` も同じ扱いになる。応答の `outcome` に成否・ダイス設定・出目が入る。失敗しても行動として記録されて通常枠を1回使い、何も作られない。`say` では発言だけが記録され、`instantNpcs` は空で返る。同じ要求の再送は同じ結果を返す。
 
+## 新しい場所
+
+まだ記録されていない場所へ行きたいときは、`explore`で場所の追加を申請する。通常の`create`とは別の操作で、接続元の場所が必須になる。
+
+```sh
+gestaloka explore --from <接続元の場所ID> --label <場所の呼び名> --text <場所の様子と、接続元からの行き方>
+```
+
+`play --file`で送る場合は次の形になる。
+
+```json
+{
+  "command": "explore",
+  "fromId": "接続元の場所のID",
+  "label": "森の奥の沢",
+  "text": "ぶー森の小道を奥へ進むと、浅い沢に出る。",
+  "dependencies": []
+}
+```
+
+接続元には、本人の現在の所在地にある場所を指定する。`search --kind self`または`surroundings`の`material.locations[].aboutIds`にあるIDが使える。離れた場所を接続元にはできない。
+
+GMは接続元から見た妥当性でダイスを設定し、サーバーが一度だけ振る。応答の`outcome`に成否・ダイス設定・出目が入る。成功すると`placeId`に新しい場所のIDが返り、`update`の`locate`でそこへ移動できる。接続元と新しい場所には同じ記述が付き、どちらを`search --kind subject`で調べても、相手の名前とIDを`about`から読める。後から来た人物も同じ手がかりで行き来できる。
+
+失敗しても行動として記録されて通常枠を1回使い、場所は作られない。同じ要求の再送は同じ結果を返す。
+
 ## 受領を経ない対抗行動
 
 ```json

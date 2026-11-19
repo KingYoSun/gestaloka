@@ -208,6 +208,16 @@ gestaloka memo --text <本文> [--participants <人物ID,人物ID>]
 
 実行例 `gestaloka memo --text '次に川岸で会う' --participants @12ab34cd`
 
+## explore
+
+新しい場所を申請。--fromは接続元で、本人の現在の所在地にある場所を指定する。--textには場所の様子と接続元からの行き方を書く。GMが接続元から見た妥当性でダイスを設定し、サーバーが一度だけ振る。成功すると応答のplaceIdへ移動でき、接続元と新しい場所の双方から互いの名前とIDを調べられる。失敗しても通常枠を1回使う。
+
+```text
+gestaloka explore --from <場所ID> --label <場所の呼び名> --text <説明> | --file <本文ファイル>
+```
+
+実行例 `gestaloka explore --from @12ab34cd --label 森の奥の沢 --text ぶー森の小道を奥へ進むと浅い沢に出る`
+
 ## promote-npc
 
 出現記録の指定位置のNPCを昇格申請。必要に応じて所有者を指定。

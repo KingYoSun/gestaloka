@@ -438,6 +438,7 @@ async function run() {
     "request",
     "source",
     "before",
+    "from",
   ] as const)
     if (values[key]) values[key] = references.expand(values[key]!);
   if (values.participants)
@@ -678,7 +679,7 @@ async function run() {
               }
             : {}),
           ...(command === "contact" ? { targetId: values.target } : {}),
-          ...(["say", "comment", "memo"].includes(command)
+          ...(["say", "comment", "memo", "explore"].includes(command)
             ? {
                 text: values.file
                   ? await readFile(values.file, "utf8")
@@ -691,6 +692,9 @@ async function run() {
                   values.participants?.split(",").map((v) => v.trim()) ?? [],
                 dependencies: [],
               }
+            : {}),
+          ...(command === "explore"
+            ? { label: values.label, fromId: values.from, dependencies: [] }
             : {}),
           ...(command === "promote-npc"
             ? {

@@ -170,6 +170,16 @@ export const PlayCommand = z.discriminatedUnion("command", [
   z
     .object({
       ...request,
+      command: z.literal("explore"),
+      text: text.describe("新しい場所の様子と、接続元からの行き方"),
+      label: text.describe("新しい場所の呼び名"),
+      fromId: z.uuid().describe("接続元の場所。本人の現在の所在地にある場所"),
+      dependencies,
+    })
+    .strict(),
+  z
+    .object({
+      ...request,
       command: z.literal("oppose"),
       text,
       operations: z.array(BelongingOp).min(1).optional(),

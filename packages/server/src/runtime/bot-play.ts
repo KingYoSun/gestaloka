@@ -94,6 +94,10 @@ function actionMessage(
       return result.state === "receiving"
         ? "メモは受領判断待ちです。メモIDは確定予定です"
         : "メモを確定しました";
+    case "explore":
+      return (result.outcome as { success?: boolean })?.success === false
+        ? "新しい場所は見つかりませんでした"
+        : "新しい場所を記録しました。placeIdへ移動できます";
     case "update":
     case "create":
       if ((result.outcome as { success?: boolean })?.success === false)
@@ -273,6 +277,9 @@ const empty = (): Change => ({
   endEdges: [],
 });
 // 新規作成の成否を決めるダイスの基準。世界ごとの設定が空ならこれを使う。
+// 新しい場所の申請に使う基準。確実に成立する場所には成功範囲100を設定できる。
+const exploreCriteria =
+  "接続元ノードから見た妥当性によってダイスを1d100で振る。基準値100も可とする";
 export const defaultCreationCriteria =
   "材料から判断できる実現可能性を1d100のダイスの基準値で設定する";
 const DiceSetting = z
@@ -282,6 +289,12 @@ const DiceSetting = z
   })
   .strict()
   .refine((v) => v.successThrough < v.sides);
+const ExploreDice = z
+  .object({
+    sides: z.literal(100),
+    successThrough: z.number().int().min(1).max(100),
+  })
+  .strict();
 
 /** Bots select their own material; only completed public actions enter the chat. */
 export class BotPlay {
@@ -1857,6 +1870,7 @@ export class BotPlay {
     context: WorldContext,
     text: string,
     changes: Change,
+    explore = false,
   ) {
     if (!changes.nodes.length && !changes.edges.length) return;
     if (
@@ -1877,16 +1891,18 @@ export class BotPlay {
       ...roots,
       ...changes.edges.flatMap((e) => [e.source, e.target]),
     ]);
-    const criteria =
-      (
-        await this.pool.query<{ criteria: string }>(
-          "SELECT criteria FROM creation_policy WHERE world_id=$1",
-          [world],
-        )
-      ).rows[0]?.criteria || defaultCreationCriteria;
+    const criteria = explore
+      ? exploreCriteria
+      : (
+          await this.pool.query<{ criteria: string }>(
+            "SELECT criteria FROM creation_policy WHERE world_id=$1",
+            [world],
+          )
+        ).rows[0]?.criteria || defaultCreationCriteria;
+    const Dice = explore ? ExploreDice : DiceSetting;
     const response = await this.#ask(
       derivedId(`${requestId}:creation`),
-      "world-creation-dice",
+      explore ? "world-explore-dice" : "world-creation-dice",
       [
         {
           role: "system",
@@ -1907,11 +1923,11 @@ export class BotPlay {
         },
       ],
       "resolution",
-      (raw) => DiceSetting.parse(parseOutput(raw)),
+      (raw) => Dice.parse(parseOutput(raw)),
     );
     const saved = await this.#roll(
       derivedId(`${requestId}:creation`),
-      DiceSetting.parse(parseOutput(response.content)),
+      Dice.parse(parseOutput(response.content)),
     );
     return { ...saved, success: saved.roll <= saved.setting.successThrough };
   }
@@ -2177,7 +2193,50 @@ export class BotPlay {
       needsCreation = false,
       externalEffect = false,
       impossible = false;
-    if (input.command === "memo") {
+    if (input.command === "explore") {
+      const source = await context.node(input.fromId);
+      if (
+        source?.kind !== "existence" ||
+        !(await locationRecords(context, actor)).some((r) =>
+          r.aboutIds.includes(input.fromId),
+        )
+      )
+        reject(
+          "EXPLORE_SOURCE_REQUIRED",
+          "接続元には本人の現在の所在地にある場所を指定してください",
+        );
+      // 場所と、接続元との行き来を示す記述を作る。どちらの場所を調べても相手の名前とIDを読める。
+      const place = derivedId(`${input.requestId}:place`),
+        route = derivedId(`${input.requestId}:route`);
+      changes.nodes.push(
+        { id: place, kind: "existence", text: input.label },
+        { id: route, kind: "script", text: input.text },
+      );
+      for (const [id, name] of [
+        [input.fromId, source.text],
+        [place, input.label],
+      ] as const)
+        changes.edges.push(
+          {
+            id: derivedId(`${route}:content:${id}`),
+            kind: "status",
+            role: "content",
+            source: id,
+            target: route,
+            period: { from: at },
+          },
+          {
+            id: derivedId(`${route}:about:${id}`),
+            kind: "status",
+            role: "about",
+            text: name,
+            source: route,
+            target: id,
+            period: { from: at },
+          },
+        );
+      needsCreation = true;
+    } else if (input.command === "memo") {
       const id = derivedId(`${input.requestId}:memo`);
       changes.nodes.push({
         id,
@@ -2489,6 +2548,7 @@ export class BotPlay {
           context,
           input.text,
           changes,
+          input.command === "explore",
         )
       : undefined;
     if (outcome) {
@@ -2921,6 +2981,7 @@ export class BotPlay {
       [
         "update",
         "create",
+        "explore",
         "oppose",
         "memo",
         "npc-action",
@@ -3478,6 +3539,9 @@ export class BotPlay {
                   commitId: receipt.commitId,
                   ...(plan.items?.length ? { items: plan.items } : {}),
                   ...(plan.outcome ? { outcome: plan.outcome } : {}),
+                  ...(input.command === "explore" && plan.changes.nodes[0]
+                    ? { placeId: plan.changes.nodes[0].id }
+                    : {}),
                   ...(plan.effectState
                     ? { effectState: plan.effectState }
                     : {}),

@@ -3810,3 +3810,115 @@ test("認可済み端末は人物生成前に一度報告でき、参加後も�
     await app.close();
   }
 });
+
+test("新しい場所は接続元を指定して申請し、ダイスの成否と行き来の手がかりを残す", async () => {
+  const f = await fixture(),
+    app = await createApp(access, auth.identity, undefined, auth.operations),
+    cli = await playerCli(app);
+  const profile = join(cli.directory, "explore.json"),
+    run = (...args: string[]) => cli.run(profile, ...args);
+  try {
+    const conn = await run("connect", "--server", cli.base, "--world", f.world);
+    await cli.approve(
+      f.people[0]!.cookie,
+      conn.userCode,
+      `actor:${f.actors[0]}`,
+    );
+    await expect(
+      f.send(0, {
+        command: "explore",
+        text: "離れた場所の裏手に出る",
+        label: "裏手",
+        fromId: f.far,
+        dependencies: [],
+      }),
+    ).rejects.toMatchObject({ code: "EXPLORE_SOURCE_REQUIRED" });
+    expect(f.calls).not.toHaveBeenCalled();
+    const square = (
+      await run("search", "--kind", "surroundings")
+    ).result.material.subjects.find(
+      (s: { text: string }) => s.text === "広場",
+    ).id;
+    f.calls.mockImplementation(async (id, role, messages) => {
+      expect(role).toBe("world-explore-dice");
+      expect(messages[0]?.content).toContain(
+        "接続元ノードから見た妥当性によってダイスを1d100で振る。基準値100も可とする",
+      );
+      return answer(id, { sides: 100, successThrough: 100 });
+    });
+    const found = await run(
+      "explore",
+      "--from",
+      square,
+      "--label",
+      "広場の裏の小道",
+      "--text",
+      "広場の裏手から細い小道が続いている。",
+    );
+    expect(found.result).toMatchObject({
+      state: "accepted",
+      outcome: { success: true, setting: { sides: 100, successThrough: 100 } },
+    });
+    expect(f.calls).toHaveBeenCalledTimes(1);
+    const route = (target: string) =>
+      run("search", "--kind", "subject", "--target", target).then((r) =>
+        r.result.material.states.find(
+          (s: { node: { text: string } }) =>
+            s.node.text === "広場の裏手から細い小道が続いている。",
+        ),
+      );
+    const names = (state: { about: { text?: string }[] }) =>
+      state.about.map((a) => a.text).sort();
+    expect(names(await route(square))).toEqual(["広場", "広場の裏の小道"]);
+    const path = found.result.placeId as string,
+      me = (await run("status")).device.actorId as string,
+      move = join(cli.directory, "move.json");
+    await writeFile(
+      move,
+      JSON.stringify({
+        command: "update",
+        text: "小道へ入る",
+        operations: [
+          {
+            type: "locate",
+            subjectId: me,
+            text: "広場の裏の小道",
+            aboutIds: [path],
+          },
+        ],
+        dependencies: [],
+      }),
+    );
+    expect((await run("play", "--file", move)).result.state).toBe("accepted");
+    expect(names(await route(path))).toEqual(["広場", "広場の裏の小道"]);
+    const placed = (
+      await f.store.driver.executeQuery(
+        "MATCH (n:WorldNode {worldId:$w,kind:'existence'}) WHERE n.data CONTAINS '広場の裏の小道' RETURN n.id AS id",
+        { w: f.graph },
+      )
+    ).records[0]!.get("id") as string;
+    const failing = randomUUID(),
+      used = (await f.status(0)).callsUsed as number;
+    await isolated.databases.postgres.query(
+      "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,90)",
+      [derivedId(`${failing}:creation`), { sides: 100, successThrough: 20 }],
+    );
+    const missed = await f.send(0, {
+      requestId: failing,
+      command: "explore",
+      text: "小道の先に城がある",
+      label: "城",
+      fromId: placed,
+      dependencies: [],
+    });
+    expect(missed.outcome).toMatchObject({ success: false, roll: 90 });
+    expect(missed.placeId).toBeUndefined();
+    expect(
+      await f.store.context(f.graph).node(derivedId(`${failing}:place`)),
+    ).toBeUndefined();
+    expect((await f.status(0)).callsUsed).toBe(used + 1);
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+}, 60000);
