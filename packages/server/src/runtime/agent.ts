@@ -440,6 +440,18 @@ export class WorldAgent {
           results.push((await context.edge(query.id)) ?? null);
           break;
         case "node": {
+          // 新規参加は世界のどこにも結び付いていない。多くの記録が集まる対象を照会しても、
+          // 同一性と直近の状態だけを返し、関連はrelationsのページ照会で必要な分だけ取得させる。
+          if (row.request.phase === "participant") {
+            const states = await this.#stateRecords(context, query.id, at);
+            results.push({
+              node: (await context.node(query.id, at)) ?? null,
+              knownAt: await context.latestTime(query.id),
+              currentStates: states.slice(-12),
+              omittedCurrentStates: Math.max(0, states.length - 12),
+            });
+            break;
+          }
           results.push({
             currentStates: await this.#stateRecords(context, query.id, at),
             relatedStates: await this.#relatedStates(context, query.id, at),
@@ -494,6 +506,7 @@ export class WorldAgent {
           const paged =
             inScene ||
             !!row.request.completedScene ||
+            row.request.phase === "participant" ||
             query.after !== undefined;
           const edges = await context.relations(
             query.id,
