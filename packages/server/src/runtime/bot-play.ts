@@ -956,10 +956,16 @@ export class BotPlay {
         await ExecutionBudget.check();
         const context = this.store.context(w.id);
         const nearby = await Promise.all(
-          [...(await this.#atPlaces(context, npc.places))].map(async (id) => ({
-            node: await context.node(id),
-            states: await this.#physicalStates(context, id),
-          })),
+          [...(await this.#atPlaces(context, npc.places))].map(async (id) => {
+            // サーバー担当NPCやダイスの材料と同じく、対象ごとに直近の状態だけを渡す。
+            const all = await this.#physicalStates(context, id),
+              states = all.slice(-materialLimit);
+            return {
+              node: await context.node(id),
+              states,
+              omittedStates: all.length - states.length,
+            };
+          }),
         );
         const response = await this.#ask(
           derivedId(request + ":choice"),
@@ -975,7 +981,9 @@ export class BotPlay {
               content: JSON.stringify({
                 npc,
                 nearby,
-                history: await this.history(session.world_id, actor),
+                history: recentEntries(
+                  await this.history(session.world_id, actor),
+                ),
                 schema: z.toJSONSchema(NpcAction),
               }),
             },

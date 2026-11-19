@@ -916,7 +916,7 @@ test("プレイヤーの一覧は、待機中で接触を受けられるプレ�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
-test("その場の存在の手番中に同席者が増えても、次の試行で手番が進む", async () => {
+test("その場の存在へ渡す入力は直近に絞られ、手番中に同席者が増えても次の試行で手番が進む", async () => {
   const f = await fixture();
   await f.send(0, {
     command: "say",
@@ -927,8 +927,48 @@ test("その場の存在の手番中に同席者が増えても、次の試行�
   const bird = (await f.status(0)).actorId,
     ids: string[] = [],
     act = { text: "土をつつく" };
+  // 長く続いた場でも、その場の存在へ渡す履歴と周囲の状態は直近の件数に絞られる。
+  f.calls.mockImplementation(async (id) => answer(id, act));
+  for (let i = 0; i < 26; i++) {
+    await access.botPlay.tickNpcs(f.world);
+    await f.send(0, { command: "end-turn" });
+  }
+  const crowd = Array.from({ length: 13 }, () => randomUUID());
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: crowd.map((id, i) => ({
+          id,
+          kind: "script" as const,
+          text: `広場の様子${i}`,
+        })),
+        edges: crowd.map((id) => ({
+          id: randomUUID(),
+          kind: "status" as const,
+          role: "content" as const,
+          source: f.place,
+          target: id,
+          period: { from: 0 },
+        })),
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
   // 行動を選んでいる間に別の人物が合流し、この試行は確定されない。
-  f.calls.mockImplementationOnce(async (id) => {
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const prompt = JSON.parse(String(messages[1]!.content));
+    expect(prompt.history.entries).toHaveLength(24);
+    expect(prompt.history.omittedEntries).toBeGreaterThan(0);
+    const place = prompt.nearby.find(
+      (n: { node: { id: string } }) => n.node.id === f.place,
+    );
+    expect(place.states).toHaveLength(12);
+    expect(place.omittedStates).toBe(1);
     ids.push(id);
     await f.send(1, { command: "contact", targetId: f.actors[0] });
     return answer(id, act);
