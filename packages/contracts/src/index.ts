@@ -108,6 +108,7 @@ export const WorldStatus = z.object({
     published: z.boolean(),
     accepting: z.boolean(),
     playerList: z.boolean(),
+    instantNpcMultiplier: z.number().int().positive(),
   }),
   error: z.string().nullable(),
 });
@@ -1204,6 +1205,14 @@ export const Operation = z.discriminatedUnion("operation", [
         .optional()
         .describe(
           "いま出会えるプレイヤーと居場所の一覧（players）を参加者へ提供する。省略すると現在の設定を保つ",
+        ),
+      instantNpcMultiplier: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "検索で出現した個体が同じ場所に同時に同席できる数を、発生用ノードの発生数（maxCount、旧形式はcount）の何倍までにするか。既定は2。省略すると現在の設定を保つ",
         ),
       reason: operationReason,
     })

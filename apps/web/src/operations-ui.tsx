@@ -181,6 +181,20 @@ export function Publication({
         />{" "}
         いま出会えるプレイヤーと居場所の一覧を参加者へ提供する
       </Label>
+      <Label htmlFor="public-instant-npc-multiplier">
+        出現個体の同席上限（発生数の何倍まで）
+      </Label>
+      <Input
+        id="public-instant-npc-multiplier"
+        type="number"
+        min={1}
+        step={1}
+        required
+        value={value.instantNpcMultiplier}
+        onChange={(e) =>
+          set({ ...value, instantNpcMultiplier: Number(e.target.value) })
+        }
+      />
       <p>非公開・受付停止にしても、参加済みの人物は利用を続けられます。</p>
       <Button disabled={mutation.isPending}>公開・参加受付を保存する</Button>
       {mutation.error && <Problem error={mutation.error} />}

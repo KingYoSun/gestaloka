@@ -46,6 +46,8 @@ export async function searchAppearances(
   request: string,
   at: number,
   material: unknown,
+  present: { name: string; places: string[] }[],
+  multiplier: number,
 ) {
   const prior = await store.receipt(ctx.worldId, request);
   if (prior) {
@@ -83,12 +85,25 @@ export async function searchAppearances(
     )
       continue;
     if (!places.length && rule.kind !== "instant-npc") continue;
+    // その場に残っている同種の個体と合わせて、発生数に世界ごとの倍率を掛けた数を超えない。
+    const limit = ("count" in rule ? rule.count : rule.maxCount) * multiplier,
+      staying =
+        rule.kind === "instant-npc"
+          ? present.filter(
+              (p) =>
+                p.name === rule.species &&
+                p.places.some((x) => places.includes(x)),
+            ).length
+          : 0;
+    if (staying >= limit) continue;
     if (randomInt(0x100000000) / 0x100000000 >= rule.probability) continue;
-    const count =
+    const count = Math.min(
+      limit - staying,
       "count" in rule
         ? rule.count
         : rule.minCount +
-          Math.floor(Math.random() * (rule.maxCount - rule.minCount + 1));
+            Math.floor(Math.random() * (rule.maxCount - rule.minCount + 1)),
+    );
     for (let i = 0; i < count; i++)
       appearances.push({
         id: derivedId(request + ":" + ruleId + ":" + i),

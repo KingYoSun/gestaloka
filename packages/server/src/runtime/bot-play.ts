@@ -1338,7 +1338,29 @@ export class BotPlay {
     const regular = d.members.filter(
       (m) => !m.instant && m.actorId !== departingActor,
     );
-    const instant = d.members.filter((m) => m.instant);
+    // 出現個体は出現した場所に属する。その場所に通常の同席者がいなくなれば同席から外れ、
+    // その場所で手番を終えた人物の後にだけ行動する。
+    const context = this.store.context(
+        (await this.world(session.world_id, db)).id,
+      ),
+      places = new Map<string, string[]>();
+    for (const m of regular)
+      places.set(m.actorId, await this.#places(context, m.actorId));
+    const at = (m: Member, actors: string[]) =>
+      actors.some((a) =>
+        places.get(a)?.some((p) => m.instant!.places.includes(p)),
+      );
+    const gone = d.members.filter(
+      (m) => m.instant && !at(m, [...places.keys()]),
+    );
+    if (gone.length) {
+      d.members = d.members.filter((m) => !gone.includes(m));
+      await db.query(
+        "UPDATE bot_scene SET closed=true WHERE id=ANY($1::uuid[]) AND actor_id=id",
+        [gone.map((m) => m.actorId)],
+      );
+    }
+    const instant = d.members.filter((m) => m.instant && at(m, [d.turn]));
     if (d.nextRegular) {
       d.turn =
         regular.find((m) => m.actorId === d.nextRegular)?.actorId ??
@@ -3582,6 +3604,13 @@ export class BotPlay {
                 input.requestId,
                 w.at,
                 queried.visible.material,
+                d.members.flatMap((m) => (m.instant ? [m.instant] : [])),
+                (
+                  await db.query<{ instant_npc_multiplier: number }>(
+                    "SELECT instant_npc_multiplier FROM world_construction WHERE id=$1",
+                    [world],
+                  )
+                ).rows[0]!.instant_npc_multiplier,
               );
               if (appearances.length) {
                 // 出現の確定で依存版が進む。本人が次の操作に使えるよう、確定後の素材と版を返す。

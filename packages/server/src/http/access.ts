@@ -516,6 +516,7 @@ export class WorldAccess {
         published: row.published,
         accepting: row.accepting,
         playerList: row.player_list,
+        instantNpcMultiplier: row.instant_npc_multiplier,
       },
       error: row.error,
     });
