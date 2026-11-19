@@ -42,6 +42,15 @@ CADDY_TLS_MODE=internal
 
 `CADDY_TLS_MODE=internal` ではCaddyの内部CAが証明書を発行します。前段のプロキシにはそのCAを信頼する設定が必要です。`auto` はCaddyの自動HTTPSを使います。未指定時は本番で `auto`、試験環境で `internal` です。待受の指定を省くと、ポートはプロファイルの値、アドレスは本番で `0.0.0.0`、試験環境で `127.0.0.1` になります。再描画で生成される `BIND_ADDRESS`・`HTTP_PORT`・`HTTPS_PORT` はComposeが読み取ります。
 
+## 判断モデル
+
+同じ手番でダイスに失敗した申請の出し直しを見分けるには、配置先の `deployment.env` に判断モデルを設定し、`api` と `worker` を作り直します（[ADR-061](adr/ADR-061-decision-model-and-repeated-applications.md)）。キーは管理画面に保存したOpenRouterのキーを使います。空欄なら判断APIを呼びません。
+
+```dotenv
+LLM_DECISION_MODEL=typesafe/jev-1.14
+LLM_DECISION_REPEAT_THRESHOLD=0.7
+```
+
 ## 秘密情報
 
 生成した設定と制御用の永続ボリュームは管理者だけが読める場所に置く。設定ファイルをGitやイメージへ含めない。モデルのAPIキー、監視Webhook、バックアップ認証情報は保存時に暗号化し、通常の取得APIへ返さない。
