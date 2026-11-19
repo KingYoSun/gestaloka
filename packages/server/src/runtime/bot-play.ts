@@ -283,6 +283,38 @@ const exploreCriteria =
 // LLMへ渡す記録の件数の上限。対象や履歴が育っても、1回の入力は件数に依存しない。
 const materialLimit = 12,
   historyLimit = 24;
+// 対象の状態からLLMへ渡す分を選ぶ。状態の並びは時点の順ではないため、時点で並べてから絞る。
+// その対象で最も古い時点の状態（人物なら作成時の設定）は必ず残し、残りの枠を新しい順に埋める。
+// 本文が同じ状態は1件にまとめる。
+export const selectStates = <
+  T extends {
+    relation: { id: string; period: { from: number } };
+    node?: { text?: string } | null | undefined;
+  },
+>(
+  all: T[],
+) => {
+  const sorted = [...all].sort(
+      (a, b) => a.relation.period.from - b.relation.period.from,
+    ),
+    first = sorted[0]?.relation.period.from,
+    unique = new Map<string, T>();
+  for (const state of sorted) {
+    const key = state.node?.text ?? state.relation.id;
+    if (unique.get(key)?.relation.period.from !== first) {
+      unique.delete(key);
+      unique.set(key, state);
+    }
+  }
+  const states = [...unique.values()].sort(
+      (a, b) => a.relation.period.from - b.relation.period.from,
+    ),
+    origin = states
+      .filter((s) => s.relation.period.from === first)
+      .slice(0, materialLimit),
+    room = materialLimit - origin.length;
+  return [...origin, ...(room ? states.slice(origin.length).slice(-room) : [])];
+};
 const recentEntries = <T extends { entries: unknown[] }>(history: T) => ({
   ...history,
   entries: history.entries.slice(-historyLimit),
@@ -868,7 +900,7 @@ export class BotPlay {
       const nearby = await this.#atPlaces(context, npc.places);
       const previous =
         effect.replacesStateId &&
-        (await this.#physicalStates(context, effect.targetId)).find(
+        (await this.#physicalStates(context, effect.targetId)).states.find(
           (s) => s.id === effect.replacesStateId,
         );
 
@@ -957,13 +989,10 @@ export class BotPlay {
         const context = this.store.context(w.id);
         const nearby = await Promise.all(
           [...(await this.#atPlaces(context, npc.places))].map(async (id) => {
-            // サーバー担当NPCやダイスの材料と同じく、対象ごとに直近の状態だけを渡す。
-            const all = await this.#physicalStates(context, id),
-              states = all.slice(-materialLimit);
+            // ダイスの材料と同じく、対象ごとに選んだ状態だけを渡す。
             return {
               node: await context.node(id),
-              states,
-              omittedStates: all.length - states.length,
+              ...(await this.#physicalStates(context, id, true)),
             };
           }),
         );
@@ -1993,16 +2022,23 @@ export class BotPlay {
     await context.validate();
     return { visible, context };
   }
-  async #physicalStates(context: WorldContext, target: string) {
-    return (await this.#states(context, target)).flatMap(
-      ({ node, relation }) =>
-        node?.kind === "script" &&
-        !node.spawn &&
-        !node.type &&
-        relation.text !== "location"
-          ? [{ id: node.id, text: node.text, relationId: relation.id }]
-          : [],
-    );
+  async #physicalStates(context: WorldContext, target: string, select = false) {
+    const all = (await this.#states(context, target)).filter(
+        ({ node, relation }) =>
+          node?.kind === "script" &&
+          !node.spawn &&
+          !node.type &&
+          relation.text !== "location",
+      ),
+      chosen = select ? selectStates(all) : all;
+    return {
+      states: chosen.map(({ node, relation }) => ({
+        id: node!.id,
+        text: node!.text,
+        relationId: relation.id,
+      })),
+      omittedStates: all.length - chosen.length,
+    };
   }
   async #states(context: WorldContext, target: string) {
     const states = [];
@@ -2123,11 +2159,12 @@ export class BotPlay {
     for (const id of new Set(ids)) {
       const node = await context.node(id);
       if (!node) continue;
-      // 多くの状態を持つ対象でも入力が膨らまないよう、直近の状態だけを渡す。
+      // 多くの状態を持つ対象でも入力が膨らまないよう、選んだ状態だけを渡す。
       const all = await this.#states(context, id),
-        states = all
-          .slice(-materialLimit)
-          .map(({ relation, ...state }) => ({ edge: relation, ...state }));
+        states = selectStates(all).map(({ relation, ...state }) => ({
+          edge: relation,
+          ...state,
+        }));
       result.push({
         node,
         states,
