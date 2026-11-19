@@ -56,7 +56,7 @@ const commands = {
   resume: ["", "中断した人物の参加準備を再開。待機の再開は standby --resume。"],
   status: [
     "[--scene <ID>] [--after <カーソル>] [--view <wait|joins>]",
-    "現在の手番と未読履歴を照会。--sceneは本人の過去シーン、--after 0は先頭。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。",
+    "現在の手番と未読履歴を照会。運営者が表示を選んだ世界では、creationCriteriaに新規作成のダイスの基準が出る。--sceneは本人の過去シーン、--after 0は先頭。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。",
     "status --view wait",
   ],
   result: [
@@ -78,7 +78,7 @@ const commands = {
   start: ["", "本人の通常手番を単独で開始。"],
   search: [
     "--kind <surroundings|belongings|self|history|subject|memos> [--target <ID>]",
-    "本人の手番で素材を検索。subjectには対象IDを指定し、historyには必要に応じて相手を指定。",
+    "本人の手番で素材を検索。subjectには対象IDを指定し、historyには必要に応じて相手を指定。surroundingsのsubjects[].heldに、同じ場所にいる相手が手にしている物が出る。",
     "search --kind subject --target @12ab34cd",
   ],
   contact: [

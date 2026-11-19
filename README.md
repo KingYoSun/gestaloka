@@ -141,6 +141,8 @@ ANTHROPIC_API_KEY=<APIキー>
 ANTHROPIC_BASE_URL=https://api.anthropic.com/v1
 ```
 
+`LLM_DECISION_MODEL` に判断モデル（OpenRouterのDecisions APIで呼べるモデルID）を指定すると、同じ手番でダイスに失敗した申請の出し直しを見分け、前回の結果を返します。空欄なら判断モデルを呼びません。しきい値は `LLM_DECISION_REPEAT_THRESHOLD` で指定します（[ADR-061](documents/adr/ADR-061-decision-model-and-repeated-applications.md)）。
+
 既知の3モデル以外では、コンテキスト上限と3種類の単価が必須です。基本モデルへ使う場合は `LLM_RESOLUTION_` を `LLM_` に置き換えます。キャッシュ書込や長い入力の割増がある場合は、それを含む上限単価にしてください。`LLM_RESOLUTION_BASE_URL` で上位モデル専用の接続先も指定できます。`LLM_RESOLUTION_MODEL` が空欄なら従来の基本モデルを引き継ぐため、上位モデルで運用するには明示設定が必要です。
 
 ```powershell

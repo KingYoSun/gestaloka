@@ -5907,6 +5907,8 @@ export interface paths {
                             worldId: string;
                             /** @description 新規作成のダイスをGMが設定するときの基準。空欄で既定の基準 */
                             criteria: string;
+                            /** @description 基準の文をプレイヤーのstatusに表示する。省略すると現在の設定を保つ。初期値は非表示 */
+                            shown?: boolean;
                             reason: string;
                         } | {
                             /** @enum {string} */

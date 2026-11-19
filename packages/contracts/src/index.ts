@@ -1138,6 +1138,12 @@ export const Operation = z.discriminatedUnion("operation", [
         .string()
         .trim()
         .describe("新規作成のダイスをGMが設定するときの基準。空欄で既定の基準"),
+      shown: z
+        .boolean()
+        .optional()
+        .describe(
+          "基準の文をプレイヤーのstatusに表示する。省略すると現在の設定を保つ。初期値は非表示",
+        ),
       reason: operationReason,
     })
     .strict(),

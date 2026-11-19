@@ -28,6 +28,7 @@ import { PromptCache, geminiCachePlan, renderCachedPrompt } from "./cache.js";
 import {
   settings,
   budgetSettings,
+  decisionSettings,
   type Provider,
   type Api,
   type LlmTarget,
@@ -459,6 +460,120 @@ export class LlmClient {
     )
       throw new Error("指定モデルのAPI識別子が利用できません");
     return { requestedVersion: config.version, apiModel: config.model };
+  }
+  get decision() {
+    return decisionSettings(this.environment);
+  }
+  // 判断モデルに、状態についてのはい／いいえの質問を送り、質問ごとの「はい」の確率を返す。
+  // 判断モデルが未設定ならundefinedを返す。文章は生成されない。費用は応答が報告した額を台帳へ計上する。
+  async decide(
+    id: string,
+    role: string,
+    state: unknown,
+    questions: Record<
+      string,
+      { instructions: string; criteria: { true: string; false: string } }
+    >,
+  ): Promise<Record<string, number> | undefined> {
+    const model = this.decision?.model;
+    if (!model) return undefined;
+    const request = {
+      model,
+      state,
+      questions: Object.fromEntries(
+        Object.entries(questions).map(([key, q]) => [
+          key,
+          { type: "noul", ...q },
+        ]),
+      ),
+    };
+    const stored = {
+      role,
+      request,
+      connection: { provider: "openrouter", api: "decisions" },
+    };
+    return this.limits.run(
+      {
+        name: `openrouter:${model}`,
+        key: () => this.apiKey("openrouter"),
+        request,
+        maxOutput: 0,
+        cached: false,
+      },
+      async (quota) => {
+        const saved = await this.ledger.reserve(
+          id,
+          createHash("sha256").update(canonical(stored)).digest("hex"),
+          0,
+          stored,
+        );
+        if (saved) return JSON.parse(saved.content) as Record<string, number>;
+        return this.ledger.track(id, async () => {
+          const started = performance.now(),
+            elapsed = () => Math.round(performance.now() - started);
+          quota.sent();
+          const response = await this.transport(
+            "https://openrouter.ai/api/alpha/decisions",
+            {
+              method: "POST",
+              headers: {
+                ...(await this.headers("openrouter", quota.key)),
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(request),
+              signal: AbortSignal.timeout(10000),
+            },
+          );
+          if (!response.ok) {
+            const error = `判断APIがHTTP ${response.status}を返しました`;
+            await this.ledger.settle(
+              id,
+              0,
+              { error, httpStatus: response.status },
+              elapsed(),
+            );
+            throw new Error(error);
+          }
+          const body = z
+            .object({
+              id: z.string(),
+              model: z.string(),
+              answers: z.record(
+                z.string(),
+                z.object({ noul: z.number().min(0).max(1) }),
+              ),
+              usage: z.object({
+                input_tokens: count,
+                output_tokens: count,
+                cost: z.number().nonnegative(),
+              }),
+            })
+            .parse(await response.json());
+          const answers = Object.fromEntries(
+            Object.entries(body.answers).map(([key, a]) => [key, a.noul]),
+          );
+          await this.ledger.settle(
+            id,
+            Math.ceil(body.usage.cost * NANO_USD),
+            {
+              id: body.id,
+              model: body.model,
+              content: JSON.stringify(answers),
+              finishReason: "stop",
+              usage: {
+                prompt_tokens: body.usage.input_tokens,
+                completion_tokens: body.usage.output_tokens,
+                prompt_cache_hit_tokens: 0,
+                prompt_cache_miss_tokens: body.usage.input_tokens,
+              },
+            },
+            elapsed(),
+          );
+          quota.used(body.usage.input_tokens);
+          return answers;
+        });
+      },
+    );
   }
   async complete(
     id: string,
