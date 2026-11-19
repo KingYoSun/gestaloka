@@ -2881,6 +2881,24 @@ export interface paths {
                         /** Format: uuid */
                         requestId: string;
                         /** @enum {string} */
+                        command: "explore";
+                        /** @description 新しい場所の様子と、接続元からの行き方 */
+                        text: string;
+                        /** @description 新しい場所の呼び名 */
+                        label: string;
+                        /**
+                         * Format: uuid
+                         * @description 接続元の場所。本人の現在の所在地にある場所
+                         */
+                        fromId: string;
+                        dependencies: {
+                            key: string;
+                            version: number;
+                        }[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
                         command: "oppose";
                         text: string;
                         operations?: ({

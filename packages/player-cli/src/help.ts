@@ -6,6 +6,8 @@ export const playerOptions = {
   profile: { type: "string" },
   instance: { type: "string" },
   participants: { type: "string" },
+  from: { type: "string" },
+  label: { type: "string" },
   source: { type: "string" },
   index: { type: "string" },
   owner: { type: "string" },
@@ -111,6 +113,11 @@ const commands = {
     "--text <本文> [--participants <人物ID,人物ID>]",
     "本人と指定した同席者に関連するメモを申請。手番が回った関係者が受領を判断。",
     "memo --text '次に川岸で会う' --participants @12ab34cd",
+  ],
+  explore: [
+    "--from <場所ID> --label <場所の呼び名> --text <説明> | --file <本文ファイル>",
+    "新しい場所を申請。--fromは接続元で、本人の現在の所在地にある場所を指定する。--textには場所の様子と接続元からの行き方を書く。GMが接続元から見た妥当性でダイスを設定し、サーバーが一度だけ振る。成功すると応答のplaceIdへ移動でき、接続元と新しい場所の双方から互いの名前とIDを調べられる。失敗しても通常枠を1回使う。",
+    "explore --from @12ab34cd --label 森の奥の沢 --text ぶー森の小道を奥へ進むと浅い沢に出る",
   ],
   "promote-npc": [
     "--source <発言要求ID> --index <番号> --text <NPCの説明> [--owner <人物ID>]",
