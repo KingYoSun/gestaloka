@@ -3003,6 +3003,7 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
   f.calls.mockImplementationOnce(async (id, _role, messages) => {
     const prompt = JSON.parse(String(messages[1]!.content));
     expect(prompt.status.callsLimit).toBe(8);
+    expect(prompt.history.omittedEntries).toBe(0);
     expect(prompt.sinceLastTurn).toBeUndefined();
     expect(prompt.currentTurn.actions).toMatchObject([
       {
@@ -3854,7 +3855,42 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
     ).result.material.subjects.find(
       (s: { text: string }) => s.text === "広場",
     ).id;
+    // 接続元が多くの状態を持っていても、GMへ渡す状態は直近の件数に絞られる。
+    const crowd = Array.from({ length: 13 }, () => randomUUID());
+    await f.store.commit(
+      await f.store.claim(f.graph, randomUUID()),
+      f.store.context(f.graph),
+      {
+        commitId: randomUUID(),
+        at: 0,
+        changes: {
+          nodes: crowd.map((id, i) => ({
+            id,
+            kind: "script" as const,
+            text: `広場の様子${i}`,
+          })),
+          edges: crowd.map((id) => ({
+            id: randomUUID(),
+            kind: "status" as const,
+            role: "content" as const,
+            source: f.place,
+            target: id,
+            period: { from: 0 },
+          })),
+          revisions: [],
+          endEdges: [],
+        },
+      },
+    );
     f.calls.mockImplementation(async (id, role, messages) => {
+      const prompt = JSON.parse(String(messages[1]!.content));
+      if (prompt.text === "広場の裏手から細い小道が続いている。") {
+        const material = prompt.nodes.find(
+          (n: { node: { id: string } }) => n.node.id === f.place,
+        );
+        expect(material.states).toHaveLength(12);
+        expect(material.omittedStates).toBeGreaterThan(0);
+      }
       expect(role).toBe("world-explore-dice");
       expect(messages[0]?.content).toContain(
         "接続元ノードから見た妥当性によってダイスを1d100で振る。基準値100も可とする",

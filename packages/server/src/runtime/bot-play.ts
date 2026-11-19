@@ -280,6 +280,14 @@ const empty = (): Change => ({
 // 新しい場所の申請に使う基準。確実に成立する場所には成功範囲100を設定できる。
 const exploreCriteria =
   "接続元ノードから見た妥当性によってダイスを1d100で振る。基準値100も可とする";
+// LLMへ渡す記録の件数の上限。対象や履歴が育っても、1回の入力は件数に依存しない。
+const materialLimit = 12,
+  historyLimit = 24;
+const recentEntries = <T extends { entries: unknown[] }>(history: T) => ({
+  ...history,
+  entries: history.entries.slice(-historyLimit),
+  omittedEntries: Math.max(0, history.entries.length - historyLimit),
+});
 export const defaultCreationCriteria =
   "材料から判断できる実現可能性を1d100のダイスの基準値で設定する";
 const DiceSetting = z
@@ -662,8 +670,8 @@ export class BotPlay {
                   actorId: npc.actor_id,
                   self,
                   nearby,
-                  history,
-                  origin,
+                  history: recentEntries(history),
+                  origin: origin && recentEntries(origin),
                   status,
                   sinceLastTurn,
                   currentTurn: {
@@ -1979,12 +1987,15 @@ export class BotPlay {
     for (const id of new Set(ids)) {
       const node = await context.node(id);
       if (!node) continue;
-      const states = (await this.#states(context, id)).map(
-        ({ relation, ...state }) => ({ edge: relation, ...state }),
-      );
+      // 多くの状態を持つ対象でも入力が膨らまないよう、直近の状態だけを渡す。
+      const all = await this.#states(context, id),
+        states = all
+          .slice(-materialLimit)
+          .map(({ relation, ...state }) => ({ edge: relation, ...state }));
       result.push({
         node,
         states,
+        omittedStates: all.length - states.length,
         ...(node.kind === "existence"
           ? { belongings: await readBelongings(context, id) }
           : {}),
