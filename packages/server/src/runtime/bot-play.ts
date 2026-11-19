@@ -1801,6 +1801,16 @@ export class BotPlay {
         (await context.history(actor, "see", "out", at)).some(
           (e) =>
             e.target === target || e.observation?.sourceIds.includes(target),
+        ) ||
+        // いまいる場所の記録が参照している対象。道しるべや行き来の記述から、行く前に相手を調べられる。
+        (
+          await Promise.all(
+            (await locationRecords(context, actor))
+              .flatMap((r) => r.aboutIds)
+              .map((place) => this.#states(context, place)),
+          )
+        ).some((states) =>
+          states.some((s) => s.about.some((a) => a.target === target)),
         );
       if (!accessible)
         reject(
@@ -1885,10 +1895,10 @@ export class BotPlay {
       )
     )
       return;
-    const roots = (await this.construction.get(world)).root_ids;
+    // 世界の起点の記録をすべて渡すと入力が膨らむ。世界の前提は設定文で渡し、材料は申請者と申請が触れる対象に絞る。
+    const premise = (await this.construction.get(world)).initial_prompt;
     const nodes = await this.#facts(context, [
       actor,
-      ...roots,
       ...changes.edges.flatMap((e) => [e.source, e.target]),
     ]);
     const criteria = explore
@@ -1913,7 +1923,7 @@ export class BotPlay {
         {
           role: "user",
           content: JSON.stringify({
-            world,
+            premise,
             actor,
             text,
             changes,
@@ -3303,6 +3313,9 @@ export class BotPlay {
                 queried.visible.material,
               );
               if (appearances.length) {
+                // 出現の確定で依存版が進む。本人が次の操作に使えるよう、確定後の素材と版を返す。
+                result = (await this.#search(world, actor, input.query))
+                  .visible;
                 await this.#addInstants(
                   db,
                   session,

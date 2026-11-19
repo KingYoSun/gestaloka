@@ -2594,6 +2594,21 @@ test("検索で発生した複数の物品を同席者が観測し、後から�
   const found = await f.send(0, body);
   const items = found.appearances as { id: string }[];
   expect(new Set(items.map((i) => i.id)).size).toBe(3);
+  // 出現を起こした検索が返した依存版のまま、現れた物を拾える。
+  await f.send(0, {
+    command: "update",
+    text: "現れた物を拾う",
+    dependencies: found.dependencies,
+    operations: [
+      {
+        type: "move",
+        from: null,
+        to: f.actors[0],
+        item: items[2]!.id,
+        basis: "拾う",
+      },
+    ],
+  });
   expect(await f.send(0, body)).toEqual(found);
   const second = await f.send(0, { command: "search", query });
   expect(
@@ -3889,6 +3904,8 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
         dependencies: [],
       }),
     );
+    // 行く前でも、いまいる場所の記述が参照している新しい場所を調べられる。
+    expect(names(await route(path))).toEqual(["広場", "広場の裏の小道"]);
     expect((await run("play", "--file", move)).result.state).toBe("accepted");
     expect(names(await route(path))).toEqual(["広場", "広場の裏の小道"]);
     const placed = (
