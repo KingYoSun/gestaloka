@@ -83,7 +83,10 @@ function actionMessage(
     case "finish":
       return "プレイを終了し、履歴を確定しました";
     case "receive":
-      if (!input.accept) return "あなたの却下を受け付け、申請は却下されました";
+      if (!input.accept)
+        return (result.application as { state: string }).state === "rejected"
+          ? "あなたの却下を受け付け、申請は却下されました"
+          : "あなたの却下を受け付けました。あなたは移動しません";
       return (result.application as { state: string }).state === "waiting"
         ? `あなたの承認を受け付けました。申請は${owner?.name ?? "次の受領者"}の判断待ちです`
         : "あなたの承認を受け付け、申請は確定しました";
@@ -202,6 +205,9 @@ export type Session = {
       dependencies: Dependency[];
       items?: ItemOutcome[];
       text: string;
+      // 所在の変更だけの申請では、却下した同行者を除いて確定する。
+      locates?: BelongingOp[];
+      declined?: string[];
     };
   };
 };
@@ -214,6 +220,7 @@ type Plan = {
   outcome?: unknown;
   instantMembers?: string;
   effectState?: string;
+  locates?: BelongingOp[];
 };
 function turnOwner(data: Session["data"]) {
   const receipt = data.receiving;
@@ -1335,23 +1342,20 @@ export class BotPlay {
       ...(d.comment ? { comment: d.comment } : {}),
       transition,
     });
+    if (!reason && !departingActor) await this.#separate(db, session, d.turn);
     const regular = d.members.filter(
       (m) => !m.instant && m.actorId !== departingActor,
     );
-    // 出現個体は出現した場所に属する。その場所に通常の同席者がいなくなれば同席から外れ、
-    // その場所で手番を終えた人物の後にだけ行動する。
+    // 出現個体は出現した場所に属し、その場所に通常の同席者がいなくなれば同席から外れる。
     const context = this.store.context(
         (await this.world(session.world_id, db)).id,
       ),
-      places = new Map<string, string[]>();
+      places = new Set<string>();
     for (const m of regular)
-      places.set(m.actorId, await this.#places(context, m.actorId));
-    const at = (m: Member, actors: string[]) =>
-      actors.some((a) =>
-        places.get(a)?.some((p) => m.instant!.places.includes(p)),
-      );
+      for (const place of await this.#places(context, m.actorId))
+        places.add(place);
     const gone = d.members.filter(
-      (m) => m.instant && !at(m, [...places.keys()]),
+      (m) => m.instant && !m.instant.places.some((p) => places.has(p)),
     );
     if (gone.length) {
       d.members = d.members.filter((m) => !gone.includes(m));
@@ -1360,7 +1364,10 @@ export class BotPlay {
         [gone.map((m) => m.actorId)],
       );
     }
-    const instant = d.members.filter((m) => m.instant && at(m, [d.turn]));
+    // 手番を終えた人物が別のセッションへ移ったときは、出現個体の手番を挟まない。
+    const instant = d.members.some((m) => m.actorId === d.turn)
+      ? d.members.filter((m) => m.instant)
+      : [];
     if (d.nextRegular) {
       d.turn =
         regular.find((m) => m.actorId === d.nextRegular)?.actorId ??
@@ -1388,6 +1395,77 @@ export class BotPlay {
     delete d.comment;
     delete d.lastReceipt;
     return transition;
+  }
+  // セッションは同じ場所の同席者だけで続ける。基準の人物と同じ場所の同席者と出現個体を、
+  // 他の場所の同席者が残るときに新しいセッションへ移す。
+  async #apart(db: Db, session: Session, pivot: string) {
+    const context = this.store.context(
+        (await this.world(session.world_id, db)).id,
+      ),
+      places = new Map<string, string[]>();
+    for (const m of session.data.members)
+      if (!m.instant)
+        places.set(m.actorId, await this.#places(context, m.actorId));
+    const own = places.get(pivot) ?? [],
+      here = (ids: string[]) => ids.some((p) => own.includes(p));
+    return own.length &&
+      [...places.values()].some((ids) => ids.length && !here(ids))
+      ? session.data.members.filter((m) =>
+          here(m.instant?.places ?? places.get(m.actorId)!),
+        )
+      : [];
+  }
+  async #separate(db: Db, session: Session, pivot: string) {
+    const d = session.data,
+      moving = await this.#apart(db, session, pivot);
+    if (!moving.length) return;
+    d.members = d.members.filter((m) => !moving.includes(m));
+    const split: Session = {
+      id: derivedId(`${session.id}:${d.number}:${pivot}:separate`),
+      world_id: session.world_id,
+      data: {
+        members: moving,
+        turn: moving.find((m) => !m.instant)!.actorId,
+        number: 1,
+        used: 0,
+        entries: [],
+      },
+    };
+    await db.query(
+      "INSERT INTO bot_session(id,world_id,data) VALUES($1,$2,$3)",
+      [split.id, split.world_id, split.data],
+    );
+    for (const m of moving)
+      await db.query(
+        "UPDATE bot_scene SET session_id=$3 WHERE id=$1 AND actor_id=$2",
+        [m.sceneId, m.actorId, split.id],
+      );
+    for (const m of moving.filter((m) => !m.instant)) {
+      const left = await this.#transition(
+          db,
+          session,
+          m.actorId,
+          "session-left",
+        ),
+        joined = await this.#transition(db, split, m.actorId, "session-joined");
+      await this.#record(db, session, {
+        transition: {
+          ...left,
+          message: `${left.name}が別の場所にいるため、セッションを分けました`,
+        },
+      });
+      await this.#record(db, split, {
+        transition: {
+          ...joined,
+          message: `${joined.name}は別の場所のセッションで続けます`,
+        },
+      });
+    }
+    await db.query("UPDATE bot_session SET data=$2 WHERE id=$1", [
+      split.id,
+      split.data,
+    ]);
+    await signalTurns(db, session.world_id, ...moving.map((m) => m.actorId));
   }
   async #turnPresence(db: Db, session: Session) {
     const at = this.now().getTime();
@@ -1458,7 +1536,9 @@ export class BotPlay {
       at: this.now().toISOString(),
       message: `${memo ? "メモ" : "申請"}${
         {
-          accepted: "が確定しました（全員が承認）",
+          accepted: r.declined?.length
+            ? "が確定しました（承認した人だけ移動）"
+            : "が確定しました（全員が承認）",
           rejected: "が却下されました",
           expired: "の受領判断が期限切れになりました",
           cancelled:
@@ -2495,7 +2575,8 @@ export class BotPlay {
       at = w.at,
       needsCreation = false,
       externalEffect = false,
-      impossible = false;
+      impossible = false,
+      locates: BelongingOp[] | undefined;
     if (input.command === "explore") {
       const source = await context.node(input.fromId);
       if (
@@ -2692,6 +2773,11 @@ export class BotPlay {
         changes = plan.changes;
         changes.endEdges.push(...pickupEdges);
         at = plan.at;
+        if (
+          input.command === "update" &&
+          plannedOps.every((op) => op.type === "locate")
+        )
+          locates = plannedOps;
       }
     } else {
       changes = input.changes!;
@@ -2897,6 +2983,7 @@ export class BotPlay {
       recipients: input.command === "oppose" ? [] : recipients,
       items: await this.#itemOutcomes(context, input, changes),
       outcome,
+      ...(locates ? { locates } : {}),
     };
   }
   async #commit(
@@ -3523,21 +3610,51 @@ export class BotPlay {
                 result: z.infer<typeof ReceiptResult>;
               }
             | undefined;
-          if (!input.accept) {
+          let moved: string[] = [];
+          if (!input.accept && !receiving.locates) {
             settled = await this.#settle(db, session, "rejected", {}, actor);
           } else {
             receiving.decided.push(actor);
+            if (!input.accept) (receiving.declined ??= []).push(actor);
             if (
               receiving.recipients.every((id) => receiving.decided.includes(id))
             ) {
-              const receipt = await this.#commit(w.id, receiving.id, {
-                at: receiving.at,
-                changes: receiving.changes,
-                context: this.store.context(w.id, receiving.dependencies),
-              });
-              settled = await this.#settle(db, session, "accepted", {
-                commitId: receipt.commitId,
-              });
+              const declined = receiving.declined ?? [],
+                ops = receiving.locates?.filter(
+                  (op) =>
+                    op.type === "locate" && !declined.includes(op.subjectId),
+                ),
+                context = this.store.context(w.id, receiving.dependencies);
+              if (ops && !ops.length)
+                settled = await this.#settle(
+                  db,
+                  session,
+                  "rejected",
+                  {},
+                  actor,
+                );
+              else {
+                const plan = declined.length
+                  ? await planBelongings(
+                      context,
+                      receiving.id,
+                      receiving.at,
+                      ops!,
+                    )
+                  : receiving;
+                const receipt = await this.#commit(w.id, receiving.id, {
+                  at: plan.at,
+                  changes: plan.changes,
+                  context,
+                });
+                settled = await this.#settle(db, session, "accepted", {
+                  commitId: receipt.commitId,
+                  ...(declined.length ? { declined } : {}),
+                });
+                moved = (ops ?? []).flatMap((op) =>
+                  op.type === "locate" ? [op.subjectId] : [],
+                );
+              }
             }
           }
           result.decision = {
@@ -3556,7 +3673,10 @@ export class BotPlay {
               }
             : {
                 ...settled!.result,
-                state: input.accept ? "confirmed" : "rejected",
+                state:
+                  settled!.result.outcome === "accepted"
+                    ? "confirmed"
+                    : "rejected",
               };
           await this.#record(db, session, {
             ...(receiving.comments[actor]
@@ -3578,9 +3698,20 @@ export class BotPlay {
               },
             ],
           });
-          if (!d.receiving && (await this.#turnCallsExhausted(db, session))) {
-            endedTurn = { number: d.number, reason: "limit" };
+          // まとめて移動した時点で、移動した同席者を別のセッションへ分ける。
+          // 申請者も移ったなら、申請者の手番を記録してから分ける。
+          const apart = moved.length
+            ? await this.#apart(db, session, moved[0]!)
+            : [];
+          if (apart.some((m) => m.actorId === d.turn)) {
+            endedTurn = { number: d.number, reason: "explicit" };
             await this.#next(db, session);
+          } else {
+            if (apart.length) await this.#separate(db, session, moved[0]!);
+            if (!d.receiving && (await this.#turnCallsExhausted(db, session))) {
+              endedTurn = { number: d.number, reason: "limit" };
+              await this.#next(db, session);
+            }
           }
         } else {
           if (receiving || d.turn !== actor)
@@ -3843,6 +3974,7 @@ export class BotPlay {
                   at: plan.at,
                   dependencies: plan.context.dependencies,
                   text: "text" in input ? input.text : "",
+                  ...(plan.locates ? { locates: plan.locates } : {}),
                 };
                 result = { applicationId: input.requestId, state: "receiving" };
               } else {
