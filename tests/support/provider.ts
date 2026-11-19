@@ -50,10 +50,11 @@ export async function fixtureRuntime(
         };
       } else if (
         input.messages[0]?.content.includes(
-          "新しいノード・エッジの作成可否だけ",
+          "新しいノード・エッジを作成する申請の成否を決めるダイス設定",
         )
       ) {
-        content = { allowed: true, reason: "検証用の生成申請を許可" };
+        // 成功範囲が面数未満という制約の中で、実質的に必ず成功する設定。
+        content = { sides: 2147483647, successThrough: 2147483646 };
       } else if (user.initialPrompt) {
         const actor = randomUUID(),
           place = randomUUID(),
