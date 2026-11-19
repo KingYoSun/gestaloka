@@ -521,21 +521,7 @@ export class BotPlay {
   }
   // 接触を受けられる待機中のプレイヤーと、その直接の滞在先。照会者の所在地は問わない。
   async players(world: string, actor: string, before?: string) {
-    const rows = (
-      await this.pool.query<{ actor_id: string }>(
-        `SELECT DISTINCT p.actor_id FROM player_waiting p JOIN app_user u ON u.id=p.user_id AND NOT u.banned
-      WHERE p.world_id=$1 AND p.actor_id<>$2 AND p.active AND p.last_seen>=$3 AND ($4::uuid IS NULL OR p.actor_id<$4)
-      AND EXISTS(SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id WHERE a.construction_id=$1 AND a.actor_id=p.actor_id AND a.role='player' AND s.user_id=p.user_id AND s.active)
-      AND NOT EXISTS(SELECT 1 FROM bot_npc n WHERE n.world_id=$1 AND n.actor_id=p.actor_id)
-      ORDER BY p.actor_id DESC LIMIT 51`,
-        [
-          world,
-          actor,
-          new Date(this.now().getTime() - waitLeaseMs).toISOString(),
-          before ?? null,
-        ],
-      )
-    ).rows;
+    const rows = await this.#waitingPlayers(world, actor, before);
     const context = this.store.context((await this.world(world)).id),
       items = [];
     for (const { actor_id } of rows.slice(0, 50)) {
@@ -548,6 +534,59 @@ export class BotPlay {
       });
     }
     return { items, next: rows.length > 50 ? rows[49]!.actor_id : null };
+  }
+  // 一覧を有効にした世界では、一覧に載る人物とその滞在先を、行く前に調べられる。
+  async #listed(
+    world: string,
+    context: WorldContext,
+    actor: string,
+    target: string,
+  ) {
+    if (
+      !(
+        await this.pool.query(
+          "SELECT 1 FROM world_construction WHERE id=$1 AND player_list",
+          [world],
+        )
+      ).rowCount
+    )
+      return false;
+    const staying = [];
+    for (const subject of await context.locationSubjects(target))
+      if ((await this.#places(context, subject)).includes(target))
+        staying.push(subject);
+    return (
+      (
+        await this.#waitingPlayers(world, actor, undefined, [
+          target,
+          ...staying,
+        ])
+      ).length > 0
+    );
+  }
+  async #waitingPlayers(
+    world: string,
+    actor: string,
+    before?: string,
+    among?: string[],
+  ) {
+    return (
+      await this.pool.query<{ actor_id: string }>(
+        `SELECT DISTINCT p.actor_id FROM player_waiting p JOIN app_user u ON u.id=p.user_id AND NOT u.banned
+      WHERE p.world_id=$1 AND p.actor_id<>$2 AND p.active AND p.last_seen>=$3 AND ($4::uuid IS NULL OR p.actor_id<$4)
+      AND ($5::uuid[] IS NULL OR p.actor_id=ANY($5))
+      AND EXISTS(SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id WHERE a.construction_id=$1 AND a.actor_id=p.actor_id AND a.role='player' AND s.user_id=p.user_id AND s.active)
+      AND NOT EXISTS(SELECT 1 FROM bot_npc n WHERE n.world_id=$1 AND n.actor_id=p.actor_id)
+      ORDER BY p.actor_id DESC LIMIT 51`,
+        [
+          world,
+          actor,
+          new Date(this.now().getTime() - waitLeaseMs).toISOString(),
+          before ?? null,
+          among ?? null,
+        ],
+      )
+    ).rows;
   }
   async #open(
     db: Db,
@@ -1905,7 +1944,8 @@ export class BotPlay {
           )
         ).some((states) =>
           states.some((s) => s.about.some((a) => a.target === target)),
-        );
+        ) ||
+        (await this.#listed(world, context, actor, target));
       if (!accessible)
         reject(
           "MATERIAL_NOT_AVAILABLE",
