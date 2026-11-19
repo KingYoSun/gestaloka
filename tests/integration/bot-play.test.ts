@@ -878,6 +878,12 @@ test("プレイヤーの一覧は、待機中で接触を受けられるプレ�
   const f = await fixture(),
     list = () => access.partners(f.people[2]!.id, f.world, f.actors[2]);
   await expect(list()).rejects.toMatchObject({ code: "PLAYER_LIST_DISABLED" });
+  // 一覧が無効な世界では、離れた人物と滞在先を調べられない。
+  const look = (targetId: string) =>
+    f.send(2, { command: "search", query: { kind: "subject", targetId } });
+  await expect(look(f.actors[0]!)).rejects.toMatchObject({
+    code: "MATERIAL_NOT_AVAILABLE",
+  });
   await isolated.databases.postgres.query(
     "UPDATE world_construction SET player_list=true WHERE id=$1",
     [f.world],
@@ -893,11 +899,20 @@ test("プレイヤーの一覧は、待機中で接触を受けられるプレ�
     ],
     next: null,
   });
+  // 一覧に載る人物とその滞在先は、行く前に調べられる。載らない人物は調べられない。
+  await look(f.actors[0]!);
+  await look(f.place);
+  await expect(look(f.actors[1]!)).rejects.toMatchObject({
+    code: "MATERIAL_NOT_AVAILABLE",
+  });
   await isolated.databases.postgres.query(
     "UPDATE player_waiting SET last_seen=$3 WHERE world_id=$1 AND actor_id=$2",
     [f.world, f.actors[0], new Date(Date.now() - 601000)],
   );
   expect(await list()).toEqual({ items: [], next: null });
+  await expect(look(f.place)).rejects.toMatchObject({
+    code: "MATERIAL_NOT_AVAILABLE",
+  });
   expect(f.calls).not.toHaveBeenCalled();
 });
 

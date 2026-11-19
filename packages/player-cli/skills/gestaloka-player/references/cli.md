@@ -230,7 +230,7 @@ gestaloka promote-npc --source <発言要求ID> --index <番号> --text <NPCの�
 
 ## players
 
-いま出会えるプレイヤーと居場所を照会。本人の所在地を問わず、待機中で接触を受けられるプレイヤーの人物ID・名前・直接の滞在先（placeId・place）を返す。滞在先が未確定の人物はnull。世界の運営者が有効にした世界でだけ使え、無効な世界ではPLAYER_LIST_DISABLEDになる。通常枠は使わない。--beforeにnextを指定して続きを取得。
+いま出会えるプレイヤーと居場所を照会。本人の所在地を問わず、待機中で接触を受けられるプレイヤーの人物ID・名前・直接の滞在先（placeId・place）を返す。滞在先が未確定の人物はnull。世界の運営者が有効にした世界でだけ使え、無効な世界ではPLAYER_LIST_DISABLEDになる。通常枠は使わない。一覧に載っている人物と滞在先は、離れていてもsearch --kind subjectで調べられる。--beforeにnextを指定して続きを取得。
 
 ```text
 gestaloka players [--before <ID>]
