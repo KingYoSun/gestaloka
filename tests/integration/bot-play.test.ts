@@ -969,6 +969,8 @@ test("その場の存在へ渡す入力は直近に絞られ、手番中に同�
     );
     expect(place.states).toHaveLength(12);
     expect(place.omittedStates).toBe(1);
+    // 状態は、置き換えの指定に使うIDと本文だけを渡す。
+    expect(Object.keys(place.states[0])).toEqual(["id", "text"]);
     ids.push(id);
     await f.send(1, { command: "contact", targetId: f.actors[0] });
     return answer(id, act);
@@ -2247,6 +2249,18 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
     );
   f.calls.mockImplementation(async (id, _role, messages) => {
     expect(messages[0]?.content).toContain(unset.defaultCriteria);
+    // 材料は、状態の本文とそれが何についての記述かに絞る。依存版と関係の属性は渡さない。
+    const input = JSON.parse(String(messages[1]!.content));
+    expect(Object.keys(input)).toEqual([
+      "premise",
+      "actor",
+      "text",
+      "changes",
+      "nodes",
+    ]);
+    for (const node of input.nodes)
+      for (const state of node.states)
+        expect(Object.keys(state)).toEqual(["node", "about"]);
     return answer(id, sure);
   });
   expect((await free(script)).outcome).toMatchObject({ success: true });

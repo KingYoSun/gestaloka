@@ -992,10 +992,16 @@ export class BotPlay {
         const context = this.store.context(w.id);
         const nearby = await Promise.all(
           [...(await this.#atPlaces(context, npc.places))].map(async (id) => {
-            // ダイスの材料と同じく、対象ごとに選んだ状態だけを渡す。
+            // ダイスの材料と同じく、対象ごとに選んだ状態だけを渡す。関係のIDはサーバーが使うもので、渡さない。
+            const { states, omittedStates } = await this.#physicalStates(
+              context,
+              id,
+              true,
+            );
             return {
               node: await context.node(id),
-              ...(await this.#physicalStates(context, id, true)),
+              states: states.map(({ id, text }) => ({ id, text })),
+              omittedStates,
             };
           }),
         );
@@ -2193,7 +2199,6 @@ export class BotPlay {
             text,
             changes,
             nodes,
-            dependencies: context.dependencies,
           }),
         },
       ],
@@ -2247,10 +2252,11 @@ export class BotPlay {
       const node = await context.node(id);
       if (!node) continue;
       // 多くの状態を持つ対象でも入力が膨らまないよう、選んだ状態だけを渡す。
+      // 判断に使うのは状態の本文と、それが何についての記述かである。関係の属性は渡さない。
       const all = await this.#states(context, id),
-        states = selectStates(all).map(({ relation, ...state }) => ({
-          edge: relation,
-          ...state,
+        states = selectStates(all).map(({ node, about }) => ({
+          node,
+          about: about.map((edge) => edge.target),
         }));
       result.push({
         node,
