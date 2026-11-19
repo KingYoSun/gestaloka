@@ -968,6 +968,15 @@ test("その場の存在へ渡す入力は直近に絞られ、手番中に同�
     const prompt = JSON.parse(String(messages[1]!.content));
     expect(prompt.history.entries).toHaveLength(24);
     expect(prompt.history.omittedEntries).toBeGreaterThan(0);
+    // 記録からは、行動の選択に使えない属性を外して渡す。発言と手番の移り変わりは残す。
+    const records = JSON.stringify(prompt.history.entries);
+    for (const key of ["commitId", "publicActivity", "at"])
+      expect(records).not.toContain(`"${key}":`);
+    expect(records).toContain(`"input":`);
+    expect(records).toContain(`"transition":`);
+    for (const record of prompt.history.entries)
+      if (record.payload.transition)
+        expect(record.payload).not.toHaveProperty("actorId");
     const place = prompt.nearby.find(
       (n: { node: { id: string } }) => n.node.id === f.place,
     );
