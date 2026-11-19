@@ -5870,6 +5870,19 @@ export interface paths {
                             reason: string;
                         } | {
                             /** @enum {string} */
+                            operation: "creationPolicy.read";
+                            /** Format: uuid */
+                            worldId: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "creationPolicy.put";
+                            /** Format: uuid */
+                            worldId: string;
+                            /** @description 新規作成のダイスをGMが設定するときの基準。空欄で既定の基準 */
+                            criteria: string;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
                             operation: "npcs.put";
                             /** Format: uuid */
                             worldId: string;

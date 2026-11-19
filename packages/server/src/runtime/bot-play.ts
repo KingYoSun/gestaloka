@@ -70,7 +70,9 @@ function actionMessage(
         ? "セッションに合流しました"
         : "すでに同じセッションにいます";
     case "say":
-      return "発言・行動を記録しました";
+      return (result.outcome as { success?: boolean })?.success === false
+        ? "発言・行動を記録しました。その場の存在の登場は判定に失敗しました"
+        : "発言・行動を記録しました";
     case "comment":
       return "コメントを受け付けました";
     case "end-turn":
@@ -94,6 +96,8 @@ function actionMessage(
         : "メモを確定しました";
     case "update":
     case "create":
+      if ((result.outcome as { success?: boolean })?.success === false)
+        return "新規作成の判定は失敗しました";
       return result.state === "receiving"
         ? "申請を受け付けました。受領判断を待っています"
         : "申請した変更を確定しました";
@@ -268,9 +272,9 @@ const empty = (): Change => ({
   edges: [],
   endEdges: [],
 });
-const CreationJudgment = z
-  .object({ allowed: z.boolean(), reason: z.string() })
-  .strict();
+// 新規作成の成否を決めるダイスの基準。世界ごとの設定が空ならこれを使う。
+export const defaultCreationCriteria =
+  "材料から判断できる実現可能性を1d100のダイスの基準値で設定する";
 const DiceSetting = z
   .object({
     sides: z.number().int().min(2).max(2147483647),
@@ -1873,14 +1877,22 @@ export class BotPlay {
       ...roots,
       ...changes.edges.flatMap((e) => [e.source, e.target]),
     ]);
+    const criteria =
+      (
+        await this.pool.query<{ criteria: string }>(
+          "SELECT criteria FROM creation_policy WHERE world_id=$1",
+          [world],
+        )
+      ).rows[0]?.criteria || defaultCreationCriteria;
     const response = await this.#ask(
       derivedId(`${requestId}:creation`),
-      "world-creation-permission",
+      "world-creation-dice",
       [
         {
           role: "system",
           content:
-            "新しいノード・エッジの作成可否だけを判断する。申請者、申請、関係する確定済みの材料を参照する。許可ならallowed=true、拒否ならfalseと理由を返す。物語・行動結果・追加の変更を生成しない。JSON: {allowed:boolean,reason:string}",
+            "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。世界の基準: " +
+            criteria,
         },
         {
           role: "user",
@@ -1895,10 +1907,13 @@ export class BotPlay {
         },
       ],
       "resolution",
-      (raw) => CreationJudgment.parse(parseOutput(raw)),
+      (raw) => DiceSetting.parse(parseOutput(raw)),
     );
-    const judgment = CreationJudgment.parse(parseOutput(response.content));
-    if (!judgment.allowed) reject("CREATION_REJECTED", judgment.reason);
+    const saved = await this.#roll(
+      derivedId(`${requestId}:creation`),
+      DiceSetting.parse(parseOutput(response.content)),
+    );
+    return { ...saved, success: saved.roll <= saved.setting.successThrough };
   }
   #ask(
     id: string,
@@ -2466,16 +2481,24 @@ export class BotPlay {
           "本人の操作範囲または同席者の判断が必要です",
         );
     }
-    if (needsCreation)
-      await this.#creation(
-        world,
-        actor,
+    let outcome: unknown = needsCreation
+      ? await this.#creation(
+          world,
+          actor,
+          input.requestId,
+          context,
+          input.text,
+          changes,
+        )
+      : undefined;
+    if (outcome) {
+      await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
-        context,
-        input.text,
-        changes,
-      );
-    let outcome: unknown;
+        outcome,
+      ]);
+      if (!(outcome as { success: boolean }).success)
+        return { context, changes: empty(), at, recipients: [], outcome };
+    }
     if (input.command === "oppose") {
       let success = !externalEffect && [...parties].every((id) => id === actor);
       if (!success) {
@@ -2911,6 +2934,7 @@ export class BotPlay {
     }
     // Semantic work precedes all session locks; its graph dependencies are validated at commit.
     let promotion: Awaited<ReturnType<BotPlay["preparePromotion"]>> | undefined;
+    let appearing: { success: boolean } | undefined;
     const plan = await ExecutionBudget.run(
       this.pool,
       input.requestId,
@@ -2924,7 +2948,7 @@ export class BotPlay {
             id: derivedId(input.requestId + ":manual:" + i),
             text,
           }));
-          await this.#creation(
+          appearing = await this.#creation(
             world,
             actor,
             input.requestId,
@@ -3351,7 +3375,9 @@ export class BotPlay {
             } else if (input.command === "say") {
               const event = derivedId(`${input.requestId}:speech`),
                 changes = empty();
-              const animals = (input.instantNpcs ?? []).map((species, i) => ({
+              const appeared =
+                appearing?.success === false ? [] : (input.instantNpcs ?? []);
+              const animals = appeared.map((species, i) => ({
                 id: derivedId(input.requestId + ":manual:" + i),
                 kind: "instant-npc" as const,
                 species,
@@ -3394,7 +3420,8 @@ export class BotPlay {
               result = {
                 state: "accepted",
                 commitId: receipt.commitId,
-                instantNpcs: input.instantNpcs ?? [],
+                instantNpcs: appeared,
+                ...(appearing ? { outcome: appearing } : {}),
               };
               await this.#addInstants(db, session, animals, event, actor);
               if (animals.length) result.appearances = animals;

@@ -1,4 +1,5 @@
 import { ModelCallInProgress } from "../llm/budget.js";
+import { defaultCreationCriteria } from "../runtime/bot-play.js";
 import type { PromotionProfile } from "../runtime/player-tools.js";
 import { RuntimeMonitor } from "../runtime/monitor.js";
 import { Backups } from "../runtime/backups.js";
@@ -809,6 +810,24 @@ export class Operations {
             )
           ).rows[0] ?? { condition: "", version: null }
         );
+      }
+      case "creationPolicy.read":
+      case "creationPolicy.put": {
+        await this.#access(context).botPlay.construction.get(input.worldId);
+        if (input.operation === "creationPolicy.put")
+          await db.query(
+            "INSERT INTO creation_policy(world_id,criteria,version,admin) VALUES($1,$2,$3,$4) ON CONFLICT(world_id) DO UPDATE SET criteria=EXCLUDED.criteria,version=EXCLUDED.version,admin=EXCLUDED.admin",
+            [input.worldId, input.criteria, requestId, actor],
+          );
+        return {
+          ...((
+            await db.query(
+              "SELECT criteria,version FROM creation_policy WHERE world_id=$1",
+              [input.worldId],
+            )
+          ).rows[0] ?? { criteria: "", version: null }),
+          defaultCriteria: defaultCreationCriteria,
+        };
       }
       case "npcs.promotions":
         return this.#access(context).botPlay.tools.promotions(
