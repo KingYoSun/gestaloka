@@ -644,6 +644,19 @@ test("HTTPとCLIは本人の手番APIを使い、旧書込を拒否し、同じ�
     expect(
       await cli.run(profile, "recover", "--request", result.requestId),
     ).toEqual(result);
+    expect(await cli.run(profile, "players")).toMatchObject({
+      state: "error",
+      code: "PLAYER_LIST_DISABLED",
+    });
+    await isolated.databases.postgres.query(
+      "UPDATE world_construction SET player_list=true WHERE id=$1",
+      [f.world],
+    );
+    const players = await cli.run(profile, "players");
+    expect(players).toMatchObject({ state: "players", next: null });
+    expect(players.items).toContainEqual(
+      expect.objectContaining({ name: "人物2", place: "離れた場所" }),
+    );
     const old = await app.inject({
       method: "POST",
       url: `/api/worlds/${f.world}/scene?actorId=${f.actors[0]}`,
@@ -858,6 +871,33 @@ test("シーン外で待機する本人を接触で起こし、在席切れと�
   await access.waiting(user, f.world, actor, connection, true);
   await f.send(2, { command: "contact", targetId: actor });
   expect((await f.status(2)).sessionId).toBe((await f.status(1)).sessionId);
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("プレイヤーの一覧は、待機中で接触を受けられるプレイヤーだけを所在地を問わず返す", async () => {
+  const f = await fixture(),
+    list = () => access.partners(f.people[2]!.id, f.world, f.actors[2]);
+  await expect(list()).rejects.toMatchObject({ code: "PLAYER_LIST_DISABLED" });
+  await isolated.databases.postgres.query(
+    "UPDATE world_construction SET player_list=true WHERE id=$1",
+    [f.world],
+  );
+  // 開始した人物は待機中になる。本人と、NPCとして担当される人物は含めない。
+  await isolated.databases.postgres.query(
+    "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,'bot',$3,$4)",
+    [f.world, f.actors[1], f.people[1]!.id, randomUUID()],
+  );
+  expect(await list()).toEqual({
+    items: [
+      { actorId: f.actors[0], name: "人物0", placeId: f.place, place: "広場" },
+    ],
+    next: null,
+  });
+  await isolated.databases.postgres.query(
+    "UPDATE player_waiting SET last_seen=$3 WHERE world_id=$1 AND actor_id=$2",
+    [f.world, f.actors[0], new Date(Date.now() - 601000)],
+  );
+  expect(await list()).toEqual({ items: [], next: null });
   expect(f.calls).not.toHaveBeenCalled();
 });
 

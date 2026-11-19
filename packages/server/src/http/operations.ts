@@ -1252,8 +1252,8 @@ export class Operations {
       case "worlds.configure": {
         const row = (
           await db.query(
-            `UPDATE world_construction SET public_title=$2,public_description=$3,published=$4,accepting=$5,player_settings=coalesce($6,player_settings) WHERE id=$1
-          RETURNING id,public_title AS title,public_description AS description,player_settings AS "playerSettings",published,accepting`,
+            `UPDATE world_construction SET public_title=$2,public_description=$3,published=$4,accepting=$5,player_settings=coalesce($6,player_settings),player_list=coalesce($7,player_list) WHERE id=$1
+          RETURNING id,public_title AS title,public_description AS description,player_settings AS "playerSettings",published,accepting,player_list AS "playerList"`,
             [
               input.worldId,
               input.title,
@@ -1261,6 +1261,7 @@ export class Operations {
               input.published,
               input.accepting,
               input.playerSettings ?? null,
+              input.playerList ?? null,
             ],
           )
         ).rows[0];

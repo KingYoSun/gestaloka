@@ -52,6 +52,7 @@ const world = {
     description: "",
     published: false,
     accepting: false,
+    playerList: false,
   },
 };
 let player: z.infer<typeof PlayerStatus>, run: z.infer<typeof PlayRun> | null;

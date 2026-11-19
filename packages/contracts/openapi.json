@@ -707,13 +707,17 @@
                         },
                         "accepting": {
                           "type": "boolean"
+                        },
+                        "playerList": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "title",
                         "description",
                         "published",
-                        "accepting"
+                        "accepting",
+                        "playerList"
                       ],
                       "additionalProperties": false
                     },
@@ -980,13 +984,17 @@
                         },
                         "accepting": {
                           "type": "boolean"
+                        },
+                        "playerList": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "title",
                         "description",
                         "published",
-                        "accepting"
+                        "accepting",
+                        "playerList"
                       ],
                       "additionalProperties": false
                     },
@@ -1315,13 +1323,17 @@
                         },
                         "accepting": {
                           "type": "boolean"
+                        },
+                        "playerList": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "title",
                         "description",
                         "published",
-                        "accepting"
+                        "accepting",
+                        "playerList"
                       ],
                       "additionalProperties": false
                     },
@@ -2428,6 +2440,16 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
+            "in": "query",
+            "name": "before",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
             "in": "path",
             "name": "id",
             "required": true
@@ -2441,82 +2463,49 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "viewerId": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "actorId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "placeId": {
+                            "nullable": true,
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "place": {
+                            "nullable": true,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "actorId",
+                          "name",
+                          "placeId",
+                          "place"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "next": {
+                      "nullable": true,
                       "type": "string",
                       "format": "uuid",
                       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                    },
-                    "players": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "actorId": {
-                            "type": "string",
-                            "format": "uuid",
-                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "mode": {
-                            "type": "string",
-                            "enum": [
-                              "standby",
-                              "npc"
-                            ]
-                          },
-                          "locations": {
-                            "default": [],
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          }
-                        },
-                        "required": [
-                          "actorId",
-                          "name",
-                          "mode",
-                          "locations"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "npcs": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "actorId": {
-                            "type": "string",
-                            "format": "uuid",
-                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "locations": {
-                            "default": [],
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          }
-                        },
-                        "required": [
-                          "actorId",
-                          "name",
-                          "locations"
-                        ],
-                        "additionalProperties": false
-                      }
                     }
                   },
                   "required": [
-                    "viewerId",
-                    "players",
-                    "npcs"
+                    "items",
+                    "next"
                   ],
                   "additionalProperties": false
                 }
@@ -15854,6 +15843,10 @@
                             "type": "boolean"
                           },
                           "accepting": {
+                            "type": "boolean"
+                          },
+                          "playerList": {
+                            "description": "いま出会えるプレイヤーと居場所の一覧（players）を参加者へ提供する。省略すると現在の設定を保つ",
                             "type": "boolean"
                           },
                           "reason": {

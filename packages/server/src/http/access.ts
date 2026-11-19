@@ -515,6 +515,7 @@ export class WorldAccess {
         description: row.public_description,
         published: row.published,
         accepting: row.accepting,
+        playerList: row.player_list,
       },
       error: row.error,
     });
@@ -1215,17 +1216,27 @@ export class WorldAccess {
       "通常プレイは/api/worlds/:id/sessionと新しいCLIを利用してください。",
     );
   }
+  // 運営者が世界ごとに有効にした場合だけ、いま出会えるプレイヤーと居場所を返す。
   async partners(
     subject: string,
     id: string,
     actorId?: string,
-  ): Promise<never> {
-    await this.authorize(subject, id, "player", this.pool, actorId);
-    throw new AccessError(
-      409,
-      "PLAY_API_CHANGED",
-      "通常プレイは/api/worlds/:id/sessionと新しいCLIを利用してください。",
+    before?: string,
+  ) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
     );
+    if (!(await this.construction.get(id)).player_list)
+      throw new AccessError(
+        403,
+        "PLAYER_LIST_DISABLED",
+        "この世界ではプレイヤーの一覧を利用できません",
+      );
+    return this.botPlay.players(id, grant.actor_id!, before);
   }
 
   async knowledge(
