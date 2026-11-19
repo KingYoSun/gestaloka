@@ -1176,6 +1176,24 @@ test("新規参加は同一性から始め、追加照会で状態と履歴を�
     ),
     { newParticipantId: newcomer.id },
   );
+  // 多くの状態を持つ対象でも、新規参加の照会は件数に依存しない大きさで返る。
+  const crowded = Array.from({ length: 13 }, (_, i) =>
+    node("script", `広場の様子${i}`),
+  );
+  await store.commit(
+    await store.claim(scene.worldId, randomUUID()),
+    store.context(scene.worldId),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: changes(
+        crowded,
+        crowded.map((script) =>
+          edge("status", scene.place, script, undefined, "content"),
+        ),
+      ),
+    },
+  );
   const inputs: Record<string, unknown>[] = [];
   const transport = vi
     .fn<typeof fetch>()
@@ -1206,9 +1224,22 @@ test("新規参加は同一性から始め、追加照会で状態と履歴を�
               relation: "see",
               direction: "out",
             },
+            { kind: "node", id: scene.place.id },
+            {
+              kind: "relations",
+              id: scene.place.id,
+              relation: "status",
+              direction: "out",
+            },
           ],
         });
       }
+      expect(latest.results[2].currentStates).toHaveLength(12);
+      expect(latest.results[2].omittedCurrentStates).toBeGreaterThan(0);
+      expect(latest.results[2]).not.toHaveProperty("relatedStates");
+      expect(latest.results[2]).not.toHaveProperty("stateSubjects");
+      expect(latest.results[3].edges).toHaveLength(12);
+      expect(latest.results[3].next).toEqual(expect.any(String));
       expect(latest.results[0]).toMatchObject({
         currentStates: [{ script: scene.secret }],
       });
