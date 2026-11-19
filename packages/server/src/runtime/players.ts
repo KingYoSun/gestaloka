@@ -182,7 +182,9 @@ export class WorldPlayers {
       throw new AccessError(
         409,
         "STATE_CONFLICT",
-        "保留中の参加要求を指定してください",
+        row.state === "joining"
+          ? "人物の作成中です。再開は不要です。statusで完了を確かめてください"
+          : "人物の作成は完了しています。再開は不要です",
       );
     await db.query(
       "UPDATE world_join SET state='joining',claim=NULL,error=NULL WHERE id=$1",

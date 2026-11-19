@@ -960,6 +960,18 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
         (p) => p.id === id3,
       ),
     ).toMatchObject({ actorId: operation.newParticipantId, state: "ready" });
+    // 完了済みの参加要求への再開は、IDの指定を求めず、再開が不要なことを伝える。
+    await expect(
+      auth.operations.execute(
+        one.subject,
+        randomUUID(),
+        { operation: "worlds.resumeJoin", joinId: id3 },
+        { players: access.players },
+      ),
+    ).rejects.toMatchObject({
+      code: "STATE_CONFLICT",
+      message: "人物の作成は完了しています。再開は不要です",
+    });
     await expect(access.player(one.subject, scene.id)).rejects.toMatchObject({
       code: "ACTOR_REQUIRED",
     });
