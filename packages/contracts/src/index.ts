@@ -107,6 +107,7 @@ export const WorldStatus = z.object({
     description: z.string(),
     published: z.boolean(),
     accepting: z.boolean(),
+    playerList: z.boolean(),
   }),
   error: z.string().nullable(),
 });
@@ -173,22 +174,15 @@ export const Belongings = z.object({
 });
 // いまシーンで出会える相手。プレイヤーは待機接続があるかNPCモードの人物、NPCはプレイヤーが操作していない人物。
 export const SessionPartners = z.object({
-  viewerId: z.uuid(),
-  players: z.array(
+  items: z.array(
     z.object({
       actorId: z.uuid(),
       name: z.string(),
-      mode: z.enum(["standby", "npc"]),
-      locations: z.array(z.string()).default([]),
+      placeId: z.uuid().nullable(),
+      place: z.string().nullable(),
     }),
   ),
-  npcs: z.array(
-    z.object({
-      actorId: z.uuid(),
-      name: z.string(),
-      locations: z.array(z.string()).default([]),
-    }),
-  ),
+  next: z.uuid().nullable(),
 });
 export const EventQuery = z.object({
   actorId: z.uuid().optional(),
@@ -1199,6 +1193,12 @@ export const Operation = z.discriminatedUnion("operation", [
       playerSettings: z.string().optional(),
       published: z.boolean(),
       accepting: z.boolean(),
+      playerList: z
+        .boolean()
+        .optional()
+        .describe(
+          "いま出会えるプレイヤーと居場所の一覧（players）を参加者へ提供する。省略すると現在の設定を保つ",
+        ),
       reason: operationReason,
     })
     .strict(),

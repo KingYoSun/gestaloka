@@ -302,7 +302,7 @@ export async function worldRoutes(
     {
       schema: {
         params: ResourceId,
-        querystring: ActorQuery,
+        querystring: ActorQuery.extend({ before: z.uuid().optional() }),
         response: { 200: SessionPartners, ...errors },
       },
     },
@@ -311,6 +311,7 @@ export async function worldRoutes(
         await subject(request),
         request.params.id,
         request.query.actorId,
+        request.query.before,
       ),
   );
   app.get(

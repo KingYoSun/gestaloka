@@ -572,6 +572,14 @@ async function run() {
       id,
     );
   }
+  if (command === "players")
+    return {
+      state: "players",
+      ...(await http(
+        profile,
+        `/api/worlds/${profile.worldId}/partners${values.before ? `?before=${z.uuid().parse(values.before)}` : ""}`,
+      )),
+    };
   if (command === "promotions") {
     return {
       state: "promotions",

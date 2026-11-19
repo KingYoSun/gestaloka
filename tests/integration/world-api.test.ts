@@ -618,7 +618,19 @@ test("公開と参加受付を分け、非公開化後も参加者の参照と�
     auth.operations.execute(person.subject, randomUUID(), cfg),
   ).rejects.toMatchObject({ code: "ADMIN_REQUIRED" });
   const req = randomUUID();
-  await auth.operations.execute(legacy.subject, req, cfg);
+  // 一覧の提供は既定で無効。省略した設定変更では保たれる。
+  expect(await auth.operations.execute(legacy.subject, req, cfg)).toMatchObject(
+    { playerList: false },
+  );
+  expect(
+    await auth.operations.execute(legacy.subject, randomUUID(), {
+      ...cfg,
+      playerList: true,
+    }),
+  ).toMatchObject({ playerList: true });
+  expect(
+    await auth.operations.execute(legacy.subject, randomUUID(), cfg),
+  ).toMatchObject({ playerList: true });
   let catalog = await auth.operations.catalog(person.subject);
   expect(catalog.items.find((w) => w.id === legacy.id)).toMatchObject({
     title: cfg.title,

@@ -173,6 +173,14 @@ export function Publication({
         />{" "}
         新しい参加を受け付ける
       </Label>
+      <Label>
+        <input
+          type="checkbox"
+          checked={value.playerList}
+          onChange={(e) => set({ ...value, playerList: e.target.checked })}
+        />{" "}
+        いま出会えるプレイヤーと居場所の一覧を参加者へ提供する
+      </Label>
       <p>非公開・受付停止にしても、参加済みの人物は利用を続けられます。</p>
       <Button disabled={mutation.isPending}>公開・参加受付を保存する</Button>
       {mutation.error && <Problem error={mutation.error} />}

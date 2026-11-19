@@ -424,6 +424,7 @@ export interface paths {
                                 description: string;
                                 published: boolean;
                                 accepting: boolean;
+                                playerList: boolean;
                             };
                             error: string | null;
                         };
@@ -562,6 +563,7 @@ export interface paths {
                                 description: string;
                                 published: boolean;
                                 accepting: boolean;
+                                playerList: boolean;
                             };
                             error: string | null;
                         };
@@ -720,6 +722,7 @@ export interface paths {
                                 description: string;
                                 published: boolean;
                                 accepting: boolean;
+                                playerList: boolean;
                             };
                             error: string | null;
                         };
@@ -1258,6 +1261,7 @@ export interface paths {
             parameters: {
                 query?: {
                     actorId?: string;
+                    before?: string;
                 };
                 header?: never;
                 path: {
@@ -1274,24 +1278,16 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            items: {
+                                /** Format: uuid */
+                                actorId: string;
+                                name: string;
+                                /** Format: uuid */
+                                placeId: string | null;
+                                place: string | null;
+                            }[];
                             /** Format: uuid */
-                            viewerId: string;
-                            players: {
-                                /** Format: uuid */
-                                actorId: string;
-                                name: string;
-                                /** @enum {string} */
-                                mode: "standby" | "npc";
-                                /** @default [] */
-                                locations: string[];
-                            }[];
-                            npcs: {
-                                /** Format: uuid */
-                                actorId: string;
-                                name: string;
-                                /** @default [] */
-                                locations: string[];
-                            }[];
+                            next: string | null;
                         };
                     };
                 };
@@ -5977,6 +5973,8 @@ export interface paths {
                             playerSettings?: string;
                             published: boolean;
                             accepting: boolean;
+                            /** @description いま出会えるプレイヤーと居場所の一覧（players）を参加者へ提供する。省略すると現在の設定を保つ */
+                            playerList?: boolean;
                             reason: string;
                         } | {
                             /** @enum {string} */

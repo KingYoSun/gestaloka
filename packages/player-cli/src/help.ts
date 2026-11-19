@@ -124,6 +124,11 @@ const commands = {
     "出現記録の指定位置のNPCを昇格申請。必要に応じて所有者を指定。",
     "promote-npc --source @12ab34cd --index 0 --text '小屋の留鳥'",
   ],
+  players: [
+    "[--before <ID>]",
+    "いま出会えるプレイヤーと居場所を照会。本人の所在地を問わず、待機中で接触を受けられるプレイヤーの人物ID・名前・直接の滞在先（placeId・place）を返す。滞在先が未確定の人物はnull。世界の運営者が有効にした世界でだけ使え、無効な世界ではPLAYER_LIST_DISABLEDになる。通常枠は使わない。--beforeにnextを指定して続きを取得。",
+    "players",
+  ],
   promotions: [
     "[--before <ID>]",
     "本人のNPC昇格申請を照会。--beforeで前のページを取得。",
