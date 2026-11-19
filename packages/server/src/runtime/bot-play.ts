@@ -553,22 +553,16 @@ export class BotPlay {
         [world ?? null],
       )
     ).rows;
+    // サーバー担当は、プレイヤーか外部botの人物が同席している間だけ行動を選ぶ。
+    const servers = new Set(assigned.map((n) => n.world_id + n.actor_id));
     for (const npc of assigned) {
-      let current = await this.current(npc.world_id, npc.actor_id);
-      if (!current) {
-        await this.submit(
-          npc.world_id,
-          npc.actor_id,
-          {
-            requestId: derivedId(`npc-start:${npc.assignment_id}`),
-            command: "start",
-          },
-          npc.user_id,
-          npc.assignment_id,
-        );
-        current = await this.current(npc.world_id, npc.actor_id);
-      }
-      if (!current) continue;
+      const current = await this.current(npc.world_id, npc.actor_id);
+      if (
+        !current?.data.members.some(
+          (m) => !m.instant && !servers.has(npc.world_id + m.actorId),
+        )
+      )
+        continue;
       const status = await this.status(npc.world_id, npc.actor_id);
       if ("session" in status || status.actorId !== npc.actor_id) continue;
       const requestId = derivedId(

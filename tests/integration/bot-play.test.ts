@@ -1669,13 +1669,24 @@ test("個体指定のない旧NPCフラグを無視し、bot担当とサーバ�
     answer(
       id,
       role === "world-server-npc"
-        ? { command: "say", text: "独立した人物としての一手" }
+        ? { command: "end-turn" }
         : { allowed: true, reason: "許可" },
     ),
   );
+  await f.apply([
+    { type: "locate", subjectId: npcs[2], text: "広場", aboutIds: [f.place] },
+  ]);
+  await access.botPlay.tickNpcs();
+  expect(f.calls).not.toHaveBeenCalled();
+  expect(await access.botPlay.current(f.world, npcs[2]!)).toBeUndefined();
+  await f.send(0, { command: "contact", targetId: npcs[2] });
   await access.botPlay.tickNpcs();
   expect(f.calls.mock.calls.map((c) => c[1])).toEqual(["world-server-npc"]);
   expect(await access.botPlay.current(f.world, npcs[0]!)).toBeUndefined();
+  await f.send(0, { command: "leave" });
+  f.calls.mockClear();
+  await access.botPlay.tickNpcs();
+  expect(f.calls).not.toHaveBeenCalled();
   expect(await access.botPlay.current(f.world, npcs[2]!)).toBeDefined();
   const before = (
     await f.store.driver.executeQuery(
