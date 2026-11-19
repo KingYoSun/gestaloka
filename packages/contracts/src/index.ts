@@ -1040,6 +1040,17 @@ export const Operation = z.discriminatedUnion("operation", [
       reason: z.string().trim().min(1),
     })
     .strict(),
+  z
+    .object({ operation: z.literal("playSessions.list"), worldId: z.uuid() })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("playSessions.advance"),
+      worldId: z.uuid(),
+      sessionId: z.uuid(),
+      reason: operationReason,
+    })
+    .strict(),
   z.object({ operation: z.literal("costs.read"), query: CostQuery }).strict(),
   z.object({ operation: z.literal("models.read") }).strict(),
   z

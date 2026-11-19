@@ -5716,6 +5716,19 @@ export interface paths {
                             reason: string;
                         } | {
                             /** @enum {string} */
+                            operation: "playSessions.list";
+                            /** Format: uuid */
+                            worldId: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "playSessions.advance";
+                            /** Format: uuid */
+                            worldId: string;
+                            /** Format: uuid */
+                            sessionId: string;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
                             operation: "costs.read";
                             query: {
                                 /** Format: date-time */

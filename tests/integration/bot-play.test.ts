@@ -3939,3 +3939,97 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
     await app.close();
   }
 }, 60000);
+
+test("管理操作で止まったセッションを一覧から見つけ、保存状態から一度だけ進める", async () => {
+  const f = await fixture(),
+    admin = await auth.person();
+  type Listed = {
+    sessionId: string;
+    turn: number;
+    holder: { actorId: string; lastSeen: string | null; connected: boolean };
+    progressedAt: string | null;
+  };
+  const run = (
+      input: Record<string, unknown>,
+      requestId: string = randomUUID(),
+    ) =>
+      auth.operations.execute(
+        admin.id,
+        requestId,
+        input as Parameters<typeof auth.operations.execute>[2],
+        { players: access.players },
+      ),
+    list = async () =>
+      (await run({ operation: "playSessions.list", worldId: f.world }))
+        .items as Listed[],
+    advance = (sessionId: string, requestId?: string) =>
+      run(
+        {
+          operation: "playSessions.advance",
+          worldId: f.world,
+          sessionId,
+          reason: "止まった手番を進める",
+        },
+        requestId,
+      );
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  const memo = await f.send(0, {
+    command: "memo",
+    text: "期限切れの試験",
+    participants: [f.actors[1]],
+    dependencies: [],
+  });
+  const deadline = new Date(Date.now() - 1000).toISOString();
+  await isolated.databases.postgres.query(
+    "UPDATE bot_session SET data=jsonb_set(data,'{receiving,deadline}',to_jsonb($2::text)) WHERE id=$1",
+    [memo.sessionId, deadline],
+  );
+  expect(
+    (await list()).find((s) => s.sessionId === memo.sessionId),
+  ).toMatchObject({
+    turn: 1,
+    holder: { actorId: f.actors[1], controller: "player", connected: true },
+    receiving: { applicationId: memo.applicationId, deadline },
+  });
+  expect((await advance(memo.sessionId as string)).session).toMatchObject({
+    turn: 1,
+    holder: { actorId: f.actors[0] },
+    receiving: null,
+  });
+
+  const lastSeen = new Date(Date.now() - 1201000);
+  await isolated.databases.postgres.query(
+    "UPDATE player_waiting SET last_seen=$3 WHERE world_id=$1 AND actor_id=$2",
+    [f.world, f.actors[0], lastSeen],
+  );
+  const listed = await list(),
+    stalled = listed.find((s) => s.sessionId === memo.sessionId)!,
+    solo = listed.find((s) => s.holder.actorId === f.actors[2])!;
+  expect(stalled).toMatchObject({
+    turn: 1,
+    holder: {
+      actorId: f.actors[0],
+      lastSeen: lastSeen.toISOString(),
+      connected: false,
+    },
+    receiving: null,
+  });
+  await expect(advance(solo.sessionId)).rejects.toMatchObject({
+    code: "SESSION_NOT_STALLED",
+  });
+  const requestId = randomUUID(),
+    advanced = await advance(stalled.sessionId, requestId);
+  expect(advanced.session).toMatchObject({
+    turn: 2,
+    holder: { actorId: f.actors[1], connected: true },
+    progressedAt: expect.any(String),
+  });
+  expect((advanced.session as Listed).progressedAt).not.toBe(
+    stalled.progressedAt,
+  );
+  expect(await advance(stalled.sessionId, requestId)).toEqual(advanced);
+  await expect(advance(stalled.sessionId)).rejects.toMatchObject({
+    code: "SESSION_NOT_STALLED",
+  });
+  expect(f.calls).not.toHaveBeenCalled();
+});
