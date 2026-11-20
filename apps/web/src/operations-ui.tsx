@@ -195,6 +195,31 @@ export function Publication({
           set({ ...value, instantNpcMultiplier: Number(e.target.value) })
         }
       />
+      <Label>
+        <input
+          type="checkbox"
+          checked={value.deathJudgment}
+          onChange={(e) => set({ ...value, deathJudgment: e.target.checked })}
+        />{" "}
+        プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする
+      </Label>
+      <Label htmlFor="public-death-criteria">人物の死亡を判定する条件</Label>
+      <Textarea
+        id="public-death-criteria"
+        value={value.deathCriteria}
+        onChange={(e) => set({ ...value, deathCriteria: e.target.value })}
+      />
+      <Label htmlFor="public-death-place">死亡した人物を移す場所のID</Label>
+      <Input
+        id="public-death-place"
+        value={value.deathPlaceId ?? ""}
+        onChange={(e) =>
+          set({ ...value, deathPlaceId: e.target.value.trim() || null })
+        }
+      />
+      <p>
+        死亡した人物はセッションから外れ、この場所へ移ります。空欄なら本人の最初の所在地へ移ります。
+      </p>
       <p>非公開・受付停止にしても、参加済みの人物は利用を続けられます。</p>
       <Button disabled={mutation.isPending}>公開・参加受付を保存する</Button>
       {mutation.error && <Problem error={mutation.error} />}

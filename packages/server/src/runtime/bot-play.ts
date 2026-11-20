@@ -986,7 +986,9 @@ export class BotPlay {
               ]
             : await this.#facts(context, [effect.targetId]),
           victim ? undefined : effect.state,
-          victim ? [effect.targetId] : [],
+          ...(victim
+            ? ([[effect.targetId], ""] satisfies [string[], string])
+            : await this.#mortal(session, [effect.targetId])),
         );
         outcome = {
           setting: saved.setting,
@@ -1005,6 +1007,14 @@ export class BotPlay {
             victim.ruleId,
             victim.places,
           );
+        at = await this.#relocateDead(
+          session,
+          context,
+          request,
+          at,
+          changes,
+          fatal,
+        );
       }
     }
     const link = recordAppearances(
@@ -1165,6 +1175,7 @@ export class BotPlay {
               ...(action.departs ? [actor] : []),
               ...(plan.fatal ?? []),
             ]);
+            await this.#expel(db, current, plan.fatal ?? [], request);
             await this.#save(db, current, before);
           }
           await db.query("COMMIT");
@@ -1501,12 +1512,43 @@ export class BotPlay {
       : [];
   }
   async #separate(db: Db, session: Session, pivot: string) {
-    const d = session.data,
-      moving = await this.#apart(db, session, pivot);
+    await this.#split(
+      db,
+      session,
+      await this.#apart(db, session, pivot),
+      derivedId(`${session.id}:${session.data.number}:${pivot}:separate`),
+      "が別の場所にいるため、セッションを分けました",
+      "は別の場所のセッションで続けます",
+    );
+  }
+  // 死亡した人物をセッションから外す。所在の移動は、死亡を確定した差分に含めている。
+  async #expel(db: Db, session: Session, ids: string[], request: string) {
+    const d = session.data;
+    for (const id of ids)
+      await this.#split(
+        db,
+        session,
+        d.members.filter((m) => m.actorId === id && !m.instant),
+        derivedId(`${request}:death:${id}`),
+        "は死亡し、セッションから外れました",
+        "は死亡したため、別のセッションで続けます",
+      );
+    if (d.members.length && !d.members.some((m) => m.actorId === d.turn))
+      d.turn = d.members[0]!.actorId;
+  }
+  async #split(
+    db: Db,
+    session: Session,
+    moving: Member[],
+    id: string,
+    left: string,
+    joined: string,
+  ) {
+    const d = session.data;
     if (!moving.length) return;
     d.members = d.members.filter((m) => !moving.includes(m));
     const split: Session = {
-      id: derivedId(`${session.id}:${d.number}:${pivot}:separate`),
+      id,
       world_id: session.world_id,
       data: {
         members: moving,
@@ -1526,24 +1568,18 @@ export class BotPlay {
         [m.sceneId, m.actorId, split.id],
       );
     for (const m of moving.filter((m) => !m.instant)) {
-      const left = await this.#transition(
+      const from = await this.#transition(
           db,
           session,
           m.actorId,
           "session-left",
         ),
-        joined = await this.#transition(db, split, m.actorId, "session-joined");
+        to = await this.#transition(db, split, m.actorId, "session-joined");
       await this.#record(db, session, {
-        transition: {
-          ...left,
-          message: `${left.name}が別の場所にいるため、セッションを分けました`,
-        },
+        transition: { ...from, message: from.name + left },
       });
       await this.#record(db, split, {
-        transition: {
-          ...joined,
-          message: `${joined.name}は別の場所のセッションで続けます`,
-        },
+        transition: { ...to, message: to.name + joined },
       });
     }
     await db.query("UPDATE bot_session SET data=$2 WHERE id=$1", [
@@ -2687,6 +2723,7 @@ export class BotPlay {
       needsCreation = false,
       externalEffect = false,
       impossible = false,
+      fatal: string[] = [],
       locates: BelongingOp[] | undefined;
     if (input.command === "explore") {
       const source = await context.node(input.fromId);
@@ -3075,14 +3112,28 @@ export class BotPlay {
           ...parties,
           ...refs,
         ]);
+        const session = (await this.current(world, actor))!;
         const saved = await this.#oppositionRoll(
           input.requestId,
           actor,
           input.text,
           changes,
           materials,
+          undefined,
+          ...(await this.#mortal(session, recipients)),
         );
         success = saved.roll <= saved.setting.successThrough;
+        if (success && saved.setting.fatal) {
+          fatal = saved.setting.fatal;
+          at = await this.#relocateDead(
+            session,
+            context,
+            input.requestId,
+            at,
+            changes,
+            fatal,
+          );
+        }
         outcome = { success, setting: saved.setting, roll: saved.roll };
       } else
         outcome = {
@@ -3103,7 +3154,82 @@ export class BotPlay {
       items: await this.#itemOutcomes(context, input, changes),
       outcome,
       ...(locates ? { locates } : {}),
+      ...(fatal.length ? { fatal } : {}),
     };
+  }
+  // 死亡判定の対象になる同席中の人物（プレイヤーとユニークNPC）と、世界の条件文を返す。
+  async #mortal(
+    session: Session,
+    ids: Iterable<string>,
+  ): Promise<[string[], string]> {
+    const policy = (
+      await this.pool.query<{
+        death_judgment: boolean;
+        death_criteria: string;
+      }>(
+        "SELECT death_judgment,death_criteria FROM world_construction WHERE id=$1",
+        [session.world_id],
+      )
+    ).rows[0]!;
+    return [
+      policy.death_judgment
+        ? [...ids].filter((id) =>
+            session.data.members.some((m) => m.actorId === id && !m.instant),
+          )
+        : [],
+      policy.death_criteria,
+    ];
+  }
+  // 死亡した人物を、世界に設定された場所か本人の最初の所在地へ移す差分を、同じ確定に加える。
+  async #relocateDead(
+    session: Session,
+    context: WorldContext,
+    request: string,
+    at: number,
+    changes: Change,
+    fatal: string[],
+  ) {
+    const ops: BelongingOp[] = [];
+    for (const id of fatal) {
+      if (session.data.members.every((m) => m.actorId !== id || m.instant))
+        continue;
+      const origin = await context.firstLocation(id),
+        about = origin
+          ? (await context.history(origin, "status", "out", latest)).filter(
+              (e) => e.role === "about",
+            )
+          : [],
+        direct = about.filter((e) => e.text === "direct-place");
+      const configured = (
+        await this.pool.query<{ death_place_id: string | null }>(
+          "SELECT death_place_id FROM world_construction WHERE id=$1",
+          [session.world_id],
+        )
+      ).rows[0]!.death_place_id;
+      const placeId =
+          (configured && (await context.node(configured)) && configured) ||
+          (direct.length === 1 ? direct : about.length === 1 ? about : [])[0]
+            ?.target,
+        place = placeId && (await context.node(placeId));
+      if (place)
+        ops.push({
+          type: "locate",
+          subjectId: id,
+          text: place.text,
+          aboutIds: [place.id],
+        });
+    }
+    if (!ops.length) return at;
+    const moved = await planBelongings(
+      context,
+      derivedId(request + ":death"),
+      at,
+      ops,
+    );
+    changes.nodes.push(...moved.changes.nodes);
+    changes.edges.push(...moved.changes.edges);
+    changes.endEdges.push(...moved.changes.endEdges);
+    return moved.at;
   }
   async #commit(
     world: string,
@@ -3128,6 +3254,7 @@ export class BotPlay {
     materials: unknown,
     proposedState?: string,
     mortal: string[] = [],
+    deathCriteria = "",
   ) {
     function readDecision(raw: string) {
       const { setting, observable } = read(parseOutput(raw)),
@@ -3177,7 +3304,7 @@ export class BotPlay {
               ? ""
               : "NPCの外界への作用ではさらにobservableを返す。後から対象だけを調べた人が何がどうなったかを読めるよう、changes.stateから変化後の状態を述べる箇所を文末または句読点まで原文で抜き出す。部位名だけに切り詰めない。行為者、経緯、原因の推測を除く。観察可能な箇所がなければnull。") +
             (mortal.length
-              ? "この行動が成功したときに死亡する対象を、mortalのIDから選んでfatal:[ID]に返す。行動と結果が対象の死を意味するときだけ選び、該当がなければ空配列。"
+              ? "この行動が成功したときに死亡する対象を、mortalのIDから選んでfatal:[ID]に返す。行動と結果が対象の死を意味するときだけ選び、該当がなければ空配列。deathCriteriaがあれば、この世界で人物が死亡する条件として従う。"
               : ""),
         },
         {
@@ -3188,6 +3315,7 @@ export class BotPlay {
             changes,
             materials,
             ...(mortal.length ? { mortal } : {}),
+            ...(mortal.length && deathCriteria ? { deathCriteria } : {}),
           }),
         },
       ],
@@ -4145,6 +4273,12 @@ export class BotPlay {
                     : []),
                   ...(plan.fatal ?? []),
                 ]);
+                await this.#expel(
+                  db,
+                  session,
+                  plan.fatal ?? [],
+                  input.requestId,
+                );
               }
             }
             // Only successful calls consume a slot. Read material never enters chat.

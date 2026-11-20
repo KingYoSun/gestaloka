@@ -51,6 +51,9 @@ export type Construction = {
   accepting: boolean;
   player_list: boolean;
   instant_npc_multiplier: number;
+  death_judgment: boolean;
+  death_criteria: string;
+  death_place_id: string | null;
   claim: string | null;
   error: string | null;
   initial_prompt: string;
@@ -100,7 +103,10 @@ export class WorldConstruction {
       ADD COLUMN IF NOT EXISTS published boolean NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS accepting boolean NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS player_list boolean NOT NULL DEFAULT false,
-      ADD COLUMN IF NOT EXISTS instant_npc_multiplier integer NOT NULL DEFAULT 2;`);
+      ADD COLUMN IF NOT EXISTS instant_npc_multiplier integer NOT NULL DEFAULT 2,
+      ADD COLUMN IF NOT EXISTS death_judgment boolean NOT NULL DEFAULT true,
+      ADD COLUMN IF NOT EXISTS death_criteria text NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS death_place_id uuid;`);
     for (const name of [this.queueName, `${this.queueName}-play`])
       await this.queue.createQueue(name, {
         retryLimit: 2,

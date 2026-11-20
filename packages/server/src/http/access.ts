@@ -517,6 +517,9 @@ export class WorldAccess {
         accepting: row.accepting,
         playerList: row.player_list,
         instantNpcMultiplier: row.instant_npc_multiplier,
+        deathJudgment: row.death_judgment,
+        deathCriteria: row.death_criteria,
+        deathPlaceId: row.death_place_id,
       },
       error: row.error,
     });
