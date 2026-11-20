@@ -277,7 +277,6 @@ export async function worldRoutes(
         request.params.id,
         request.query.before,
         request.query.after,
-        request.query.excludeScene,
         request.query.actorId,
       ),
   );

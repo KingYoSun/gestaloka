@@ -37,7 +37,6 @@ export function History({
   role,
   viewer,
   ref,
-  excludeScene,
   sceneId,
   sceneKind,
 }: {
@@ -45,16 +44,14 @@ export function History({
   role: "admin" | "player";
   viewer: string;
   ref: Ref<HistoryHandle>;
-  excludeScene?: string;
   sceneId?: string;
   sceneKind?: "events" | "actions";
 }) {
   const client = useQueryClient(),
     scroll = useRef<HTMLDivElement>(null);
   const key = useMemo(
-    () =>
-      ["history", id, role, viewer, sceneId, sceneKind, excludeScene] as const,
-    [id, role, viewer, sceneId, sceneKind, excludeScene],
+    () => ["history", id, role, viewer, sceneId, sceneKind] as const,
+    [id, role, viewer, sceneId, sceneKind],
   );
   const title =
     sceneKind === "events"
@@ -115,7 +112,6 @@ export function History({
           query: {
             ...pageParam,
             actorId: viewer,
-            ...(excludeScene ? { excludeScene } : {}),
           },
         },
         signal,

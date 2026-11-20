@@ -429,13 +429,6 @@ export class WorldContext {
     );
   }
 
-  async observations(id: string, through: number) {
-    const records = [];
-    for (const edge of await this.history(id, "see", "out", through)) {
-      records.push({ edge, ...(await this.observationState(edge, through)) });
-    }
-    return records;
-  }
   private async observationState(edge: WorldEdge, through: number) {
     const basis = edge.observation;
     let sourceChanged: boolean | null = basis?.versions ? false : null;
@@ -533,11 +526,14 @@ export class WorldContext {
     return { items, next: rows.length > pageSize ? offset + pageSize : null };
   }
 
+  // 起点から近い順に12ノードまでたどり、各ノードの到達作用と状態も12件までにする。
+  // 続きはrelationsのページ照会で取得する。
   async effects(id: string, from: number, through: number) {
     const pending = [id],
-      visited = new Set<string>();
+      visited = new Set<string>(),
+      page = { limit: 12 };
     const result = [];
-    while (pending.length) {
+    while (pending.length && result.length < page.limit) {
       const current = pending.shift()!;
       if (visited.has(current)) continue;
       visited.add(current);
@@ -547,11 +543,19 @@ export class WorldContext {
         "in",
         from,
         through,
+        page,
       );
       result.push({
         id: current,
         node: await this.node(current, through),
-        states: await this.relations(current, "status", "out", from, through),
+        states: await this.relations(
+          current,
+          "status",
+          "out",
+          from,
+          through,
+          page,
+        ),
         incoming,
       });
       pending.push(...incoming.map((edge) => edge.source));

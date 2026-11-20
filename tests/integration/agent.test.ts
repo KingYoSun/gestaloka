@@ -21,10 +21,6 @@ import {
   SupersededWorker,
   type WorldProposal,
 } from "@gestaloka/server/agent";
-import {
-  sceneAnchors,
-  type SceneBackground,
-} from "../../packages/server/src/runtime/scene-data.js";
 
 const databases = connectDatabases(),
   store = new WorldStore(databases.graph);
@@ -140,74 +136,6 @@ async function agent(
   return runtime;
 }
 
-test.each([
-  ["庭", "庭師", "庭の端で苗の土を確かめている。"],
-  [
-    "通信中継域",
-    "無人中継機",
-    "通信中継域の低い軌道を巡回し、暗号信号だけを受信する。",
-  ],
-])(
-  "%sへの状態参照から持ち主を取得し、過去の状態・解釈や本人の知識と区別する",
-  async (label, subjectLabel, text) => {
-    const scene = await fixture();
-    const place = node("existence", label),
-      subject = node("existence", subjectLabel),
-      former = node("existence", "既に離れた存在"),
-      state = node("script", text),
-      old = node("script", "以前ここにいた。"),
-      belief = node("script", "相手は不在だと思う。");
-    await store.commit(
-      await store.claim(scene.worldId, randomUUID()),
-      store.context(scene.worldId),
-      {
-        commitId: randomUUID(),
-        at: 0,
-        changes: changes(
-          [place, subject, former, state, old, belief],
-          [
-            edge("status", subject, state, undefined, "content"),
-            edge("status", state, place, undefined, "about"),
-            ...[
-              edge("status", former, old, undefined, "content"),
-              edge("status", old, place, undefined, "about"),
-            ].map((e) => ({ ...e, period: { from: 0, until: 10 } })),
-            edge("interpret", scene.actor, belief, undefined, "content"),
-            edge("interpret", belief, place, undefined, "about"),
-          ],
-        ),
-      },
-    );
-    const transport = vi.fn<typeof fetch>();
-    const runtime = await agent(transport);
-    const request = {
-      worldId: scene.worldId,
-      phase: "observation" as const,
-      actorId: scene.actor.id,
-      rootIds: [place.id],
-      at: 10,
-      until: 10,
-      actionText: "周囲を調べる",
-    };
-    const expected = [{ script: state, subjects: [{ node: subject }] }];
-    const read = await runtime.read(
-      { request, dependencies: [] },
-      [{ kind: "node", id: place.id }],
-      true,
-    );
-    expect(read.results[0]).toMatchObject({ relatedStates: expected });
-    const packet = await runtime.context(request, [], true);
-    expect(
-      packet.initialContext.find(
-        (v) => v.request.kind === "node" && v.request.id === place.id,
-      )?.result,
-    ).toMatchObject({ relatedStates: expected });
-    expect(
-      JSON.stringify(await runtime.view(scene.worldId, scene.actor.id, 10)),
-    ).not.toContain(text);
-    expect(transport).not.toHaveBeenCalled();
-  },
-);
 test.each(
   ["separate", "combined"].flatMap((judgment) =>
     ["openai", "deepseek"].map((provider) => ({ judgment, provider })),
@@ -322,591 +250,6 @@ afterAll(async () => {
       { worldId },
     );
   await databases.close();
-});
-
-test("背景の根拠を通常の照会へ引き継ぎ、短縮IDを戻して確定する", async () => {
-  const scene = await fixture(),
-    ctx = store.context(scene.worldId);
-  const relation = (
-    await ctx.relations(scene.object.id, "status", "out", 0)
-  )[0]!;
-  const about = edge("status", scene.secret, scene.actor, undefined, "about");
-  await store.commit(
-    await store.claim(scene.worldId, randomUUID()),
-    store.context(scene.worldId),
-    { commitId: randomUUID(), at: 0, changes: changes([], [about]) },
-  );
-  const transport = vi.fn<typeof fetch>(async (_url, options) => {
-    const messages = fixtureBody(options).messages,
-      packet = JSON.parse(messages[1].content),
-      latest = JSON.parse(
-        messages.filter((m: { role: string }) => m.role === "user").at(-1)
-          .content,
-      );
-    expect(JSON.stringify(packet)).not.toContain(relation.id);
-    expect(packet).not.toHaveProperty("profiles");
-    const source = Object.values(packet.request.completedScene.sources)[0] as {
-      edge: { id: string; source: string };
-    };
-    expect(source.edge.id).toMatch(/^~g\d+~$/);
-    if (!latest.results) {
-      return response({
-        type: "query",
-        requests: [{ kind: "node", id: source.edge.source }],
-      });
-    }
-    expect(
-      latest.results[0].currentStates.some(
-        (s: { edge: { id: string } }) => s.edge.id === source.edge.id,
-      ),
-    ).toBe(true);
-    return response(proposal({ ...changes(), endEdges: [source.edge.id] }));
-  });
-  const runtime = await agent(transport, {
-    LLM_PROVIDER: "deepseek",
-    LLM_MODEL: "deepseek-flash",
-    DEEPSEEK_API_KEY: "unused",
-    LLM_RESOLUTION_JUDGMENT: "combined",
-  });
-  const op = await runtime.create({
-    worldId: scene.worldId,
-    at: 0,
-    until: 1000,
-    phase: "resolution",
-    rootIds: [scene.actor.id],
-    controlledActorId: scene.actor.id,
-    actionText: "",
-    completedScene: {
-      background: {
-        type: "background",
-        synopsis: "場面",
-        participants: [scene.actor.id],
-        facts: [],
-        perceptions: [],
-        beliefs: [],
-        unknowns: [],
-        creations: [],
-      },
-      anchors: changes(),
-      events: [],
-      sources: {
-        [relation.id]: { edge: relation, targetText: scene.secret.text },
-      },
-    },
-  });
-  const applied = await runtime.run(op);
-  expect(applied.changes.endEdges).toEqual([relation.id]);
-  expect(
-    (await store.context(scene.worldId).edge(relation.id))?.period.until,
-  ).toBe(1000);
-  expect(await runtime.run(op)).toEqual(applied);
-  expect(transport).toHaveBeenCalledTimes(2);
-});
-
-test.each([
-  ["庭の設備", "苗の区画", "覆いが閉じ、札の文字と青い塗装は残っている。"],
-  ["通信中継域", "信号蓄積器", "受信を止め、識別符号と暗号鍵は保持している。"],
-])(
-  "%sの終了反映は現在状態と参照先を保持し、未提示の状態・履歴を照会できる",
-  async (label, target, text) => {
-    const scene = await fixture(),
-      reference = node("existence", target),
-      receivedReference = node("existence", "受容本文から参照された対象"),
-      states = Array.from({ length: 16 }, (_, i) =>
-        node("script", `${text} ${i}`),
-      ),
-      belief = node("script", "本人は相手の返答を待っていると思っている。"),
-      unrelated = node("script", "UNRELATED_CURRENT_STATE"),
-      archived: WorldNode = {
-        id: randomUUID(),
-        kind: "event",
-        text: "ARCHIVED_OCCURRENCE",
-        period: { from: 0, until: 1 },
-      },
-      source = edge("status", scene.object, states[0]!, undefined, "content"),
-      active = states.map((state, i) => ({
-        ...edge("status", scene.object, state, undefined, "content"),
-        ...(i === 0 ? { id: source.id } : {}),
-        period: { from: 5 },
-      }));
-    await store.commit(
-      await store.claim(scene.worldId, randomUUID()),
-      store.context(scene.worldId),
-      {
-        commitId: randomUUID(),
-        at: 5,
-        changes: changes(
-          [
-            reference,
-            receivedReference,
-            ...states,
-            belief,
-            unrelated,
-            archived,
-          ],
-          [
-            ...active,
-            ...states.map((state) =>
-              edge("status", state, reference, undefined, "about"),
-            ),
-            edge("interpret", scene.actor, belief, undefined, "content"),
-            edge("interpret", belief, reference, undefined, "about"),
-            edge("status", scene.place, unrelated, undefined, "content"),
-            {
-              ...edge("happen", scene.actor, archived),
-              period: { from: 0, until: 1 },
-            },
-          ],
-        ),
-      },
-    );
-    const transport = vi.fn<typeof fetch>(),
-      runtime = await agent(transport);
-    await databases.postgres.query(
-      "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2)",
-      [scene.worldId, reference.id],
-    );
-    const background: SceneBackground = {
-        type: "background",
-        synopsis: label,
-        participants: [scene.actor.id],
-        facts: [{ subjectId: scene.object.id, text, aboutIds: [reference.id] }],
-        perceptions: [
-          {
-            observerId: scene.actor.id,
-            text: "対象の様子を受け取った。",
-            sourceIds: [receivedReference.id],
-          },
-        ],
-        beliefs: [],
-        unknowns: [],
-        creations: [],
-      },
-      request: Parameters<WorldAgent["context"]>[0] = {
-        worldId: scene.worldId,
-        phase: "resolution",
-        rootIds: [scene.place.id],
-        controlledActorId: scene.actor.id,
-        at: 0,
-        until: 10,
-        actionText: "",
-        intentions: [
-          {
-            actorId: scene.actor.id,
-            actionText: "選んだ行動",
-            continuing: true,
-          },
-        ],
-        completedScene: {
-          background,
-          anchors: changes(),
-          events: [],
-          sources: {
-            [source.id]: { edge: source, targetText: states[0]!.text },
-          },
-        },
-      };
-    const seed = await runtime.context(request),
-      packet = seed.initialContext.find(
-        (entry) =>
-          entry.request.kind === "node" && entry.request.id === scene.object.id,
-      )?.result;
-    expect(packet).toMatchObject({
-      node: scene.object,
-      currentStates: expect.arrayContaining(
-        states.map((script, i) => ({
-          edge: active[i],
-          script,
-          about: [
-            expect.objectContaining({
-              kind: "status",
-              source: script.id,
-              target: reference.id,
-              role: "about",
-            }),
-          ],
-          targets: [reference],
-        })),
-      ),
-    });
-    expect(
-      seed.initialContext.find(
-        (entry) =>
-          entry.request.kind === "node" && entry.request.id === reference.id,
-      )?.result,
-    ).toEqual({ node: reference });
-    expect(
-      seed.initialContext.find(
-        (entry) =>
-          entry.request.kind === "node" &&
-          entry.request.id === receivedReference.id,
-      )?.result,
-    ).toEqual({ node: receivedReference });
-    expect(
-      seed.initialContext.find(
-        (entry) =>
-          entry.request.kind === "node" && entry.request.id === scene.actor.id,
-      )?.result,
-    ).toMatchObject({
-      interpretations: [
-        {
-          script: belief,
-          edge: expect.objectContaining({ kind: "interpret" }),
-        },
-      ],
-    });
-    expect(
-      seed.initialContext.find(
-        (entry) =>
-          entry.request.kind === "edge" && entry.request.id === source.id,
-      )?.result,
-    ).toEqual(active[0]);
-    expect(seed.controlledActorIds).toContain(reference.id);
-    expect(JSON.stringify(seed.initialContext)).not.toMatch(
-      /UNRELATED_CURRENT_STATE|ARCHIVED_OCCURRENCE/,
-    );
-    const read = await runtime.read(
-      { request, dependencies: seed.dependencies },
-      [
-        { kind: "node", id: scene.place.id },
-        {
-          kind: "history",
-          id: scene.actor.id,
-          relation: "happen",
-          direction: "out",
-        },
-        {
-          kind: "relations",
-          id: scene.object.id,
-          relation: "status",
-          direction: "out",
-        },
-      ],
-    );
-    expect(read.results[0]).toMatchObject({
-      currentStates: [{ script: unrelated }],
-    });
-    expect(read.results[1]).toMatchObject({ peers: [archived] });
-    const first = read.results[2] as { edges: WorldEdge[]; next: string };
-    expect(first.edges).toHaveLength(12);
-    const next = await runtime.read(
-      { request, dependencies: read.dependencies },
-      [
-        {
-          kind: "relations",
-          id: scene.object.id,
-          relation: "status",
-          direction: "out",
-          after: first.next,
-        },
-      ],
-    );
-    expect(next.results[0]).toMatchObject({
-      edges: expect.any(Array),
-      next: null,
-    });
-    const all = [
-      ...first.edges,
-      ...(next.results[0] as { edges: WorldEdge[] }).edges,
-    ];
-    expect(all).toHaveLength(17);
-    expect(all).toEqual(expect.arrayContaining(active));
-    expect(transport).not.toHaveBeenCalled();
-    await store.commit(
-      await store.claim(scene.worldId, randomUUID()),
-      store.context(scene.worldId),
-      {
-        commitId: randomUUID(),
-        at: 10,
-        changes: { ...changes(), endEdges: [source.id] },
-      },
-    );
-    await expect(
-      store.context(scene.worldId, seed.dependencies).validate(),
-    ).rejects.toThrow();
-  },
-);
-
-test("初期の作用経路を意図主体と操作主体に絞り、周辺の経路は照会と依存版の検査へ残す", async () => {
-  const scene = await fixture();
-  const npc = node("existence", "意図を持つ主体"),
-    relay = node("existence", "中継"),
-    source = node("existence", "ACTIVE_UPSTREAM"),
-    other = node("existence", "PASSIVE_UPSTREAM");
-  const incoming = [
-    edge("effect", source, relay),
-    edge("effect", relay, scene.actor),
-    edge("effect", relay, npc),
-    edge("effect", other, scene.object),
-  ];
-  await store.commit(
-    await store.claim(scene.worldId, randomUUID()),
-    store.context(scene.worldId),
-    {
-      commitId: randomUUID(),
-      at: 0,
-      changes: changes([npc, relay, source, other], incoming),
-    },
-  );
-  const runtime = await agent(vi.fn());
-  const request: Parameters<WorldAgent["context"]>[0] = {
-    worldId: scene.worldId,
-    phase: "resolution",
-    at: 0,
-    until: 10,
-    rootIds: [scene.actor.id],
-    controlledActorId: scene.actor.id,
-    actionText: "",
-    intentions: [
-      { actorId: npc.id, actionText: "本人の意図", continuing: true },
-    ],
-    completedScene: {
-      anchors: changes(),
-      events: [],
-      background: {
-        type: "background",
-        synopsis: "作用を照合する",
-        participants: [scene.actor.id, npc.id, scene.object.id],
-        facts: [],
-        beliefs: [],
-        perceptions: [],
-        creations: [],
-        unknowns: [],
-      },
-    },
-  };
-  const seed = await runtime.context(request);
-  for (const actor of [scene.actor, npc]) {
-    const result = seed.initialContext.find(
-      (entry) => entry.request.kind === "node" && entry.request.id === actor.id,
-    )?.result;
-    expect(result).toMatchObject({
-      effects: expect.arrayContaining([
-        expect.objectContaining({ node: source }),
-      ]),
-    });
-    expect(result).not.toHaveProperty("effectsDeferred");
-  }
-  const passive = seed.initialContext.find(
-    (entry) =>
-      entry.request.kind === "node" && entry.request.id === scene.object.id,
-  )?.result;
-  expect(passive).toMatchObject({
-    currentStates: [{ script: scene.secret }],
-    effectsDeferred: true,
-  });
-  expect(passive).not.toHaveProperty("effects");
-  expect(JSON.stringify(seed.initialContext)).not.toContain("PASSIVE_UPSTREAM");
-  const key = `relations:${scene.object.id}:effect:in`;
-  expect(seed.dependencies.some((d) => d.key === key)).toBe(false);
-  const read = await runtime.read(
-    { request, dependencies: seed.dependencies },
-    [{ kind: "effects", id: scene.object.id }],
-  );
-  expect(read.results[0]).toEqual(
-    expect.arrayContaining([expect.objectContaining({ node: other })]),
-  );
-  expect(read.dependencies.some((d) => d.key === key)).toBe(true);
-  const later = node("existence", "後で届いた作用");
-  await store.commit(
-    await store.claim(scene.worldId, randomUUID()),
-    store.context(scene.worldId),
-    {
-      commitId: randomUUID(),
-      at: 5,
-      changes: changes(
-        [later],
-        [{ ...edge("effect", later, scene.object), period: { from: 5 } }],
-      ),
-    },
-  );
-  await expect(
-    store.context(scene.worldId, read.dependencies).validate(),
-  ).rejects.toThrow();
-});
-
-test("シーン中の状態終了を実際の時点で確定し、受容を再生成せず保持する", async () => {
-  const scene = await fixture(),
-    background: SceneBackground = {
-      type: "background",
-      synopsis: "状態の変化を確認する",
-      participants: [scene.actor.id],
-      facts: [
-        {
-          subjectId: scene.object.id,
-          text: "状態A",
-          aboutIds: [scene.place.id],
-        },
-      ],
-      perceptions: [],
-      beliefs: [],
-      creations: [],
-      unknowns: [],
-    },
-    occurred = {
-      id: randomUUID(),
-      actorId: scene.actor.id,
-      text: "対象の状態が変わった",
-      period: { from: 0, until: 8000 },
-      receipts: [
-        { observerId: scene.actor.id, text: "変わった状態を受容した" },
-      ],
-    },
-    anchors = sceneAnchors(background, [occurred], 0, randomUUID()),
-    state = anchors.edges.find(
-      (e) => e.kind === "status" && e.role === "content",
-    )!,
-    about = anchors.edges.find(
-      (e) => e.kind === "status" && e.role === "about",
-    )!,
-    next = node("script", "状態B"),
-    nextContent = {
-      ...edge("status", scene.object, next, undefined, "content"),
-      period: { from: 8000 },
-    },
-    delta = changes(
-      [next],
-      [
-        { ...state, period: { ...state.period, until: 8000 } },
-        nextContent,
-        {
-          ...edge("status", next, scene.place, undefined, "about"),
-          period: { from: 8000 },
-        },
-      ],
-    );
-  delta.endEdges = [about.id];
-  const transport = vi
-      .fn<typeof fetch>()
-      .mockImplementation(async (_url, options) => {
-        const packet = JSON.parse(fixtureBody(options).messages[1].content);
-        expect(packet.request.completedScene.anchors).toEqual(anchors);
-        return response(proposal(delta, { resolvedUntil: 35000 }));
-      }),
-    runtime = await agent(transport, { LLM_RESOLUTION_JUDGMENT: "combined" }),
-    context = store.context(scene.worldId),
-    prior = (await context.history(scene.actor.id, "see", "out", 0))[0]!;
-  const id = await runtime.create({
-    worldId: scene.worldId,
-    phase: "interaction",
-    at: 0,
-    until: 35000,
-    rootIds: [scene.actor.id, scene.object.id],
-    actionText: "保存済みシーンを反映する",
-    completedScene: { background, events: [occurred], anchors },
-  });
-  operations.push(id);
-  const result = await runtime.run(id);
-  expect(transport).toHaveBeenCalledTimes(1);
-  expect(await runtime.model.ledger.summary()).toMatchObject({ calls: 1 });
-  for (const anchored of [state, about])
-    expect((await context.edge(anchored.id))?.period.until).toBe(8000);
-  for (const [at, expected] of [
-    [7999, state.id],
-    [8000, nextContent.id],
-    [20000, nextContent.id],
-    [35000, nextContent.id],
-  ] as const)
-    expect(
-      (await context.relations(scene.object.id, "status", "out", at))
-        .filter((e) => [state.id, nextContent.id].includes(e.id))
-        .map((e) => e.id),
-    ).toEqual([expected]);
-  expect(await context.edge(prior.id)).toEqual(prior);
-  const receipt = anchors.edges.find((e) => e.kind === "see")!;
-  expect(await context.edge(receipt.id)).toMatchObject({
-    text: receipt.text,
-    period: receipt.period,
-    target: occurred.id,
-  });
-  expect(result.changes.edges.filter((e) => e.id === state.id)).toHaveLength(1);
-  await runtime.run(id);
-  expect(transport).toHaveBeenCalledTimes(1);
-  expect(await context.edge(prior.id)).toEqual(prior);
-});
-
-test("シーンの初期文脈は対象別の観測を一ページだけ渡し、過去の原文も照会できる", async () => {
-  const scene = await fixture();
-  const others = Array.from({ length: 13 }, (_, i) =>
-    node("existence", `対象${i}`),
-  );
-  const old = edge("see", scene.actor, scene.object, "別の観測");
-  await store.commit(
-    await store.claim(scene.worldId, randomUUID()),
-    store.context(scene.worldId),
-    {
-      commitId: randomUUID(),
-      at: 10,
-      changes: changes(others, [
-        old,
-        ...others.map((n) => ({
-          ...edge("see", scene.actor, n, "別の観測"),
-          period: { from: 10 },
-        })),
-      ]),
-    },
-  );
-  const runtime = await agent(vi.fn());
-  const request: Parameters<WorldAgent["context"]>[0] = {
-    worldId: scene.worldId,
-    at: 10,
-    phase: "observation",
-    rootIds: [scene.actor.id, scene.place.id],
-    actorId: scene.actor.id,
-    actionText: "箱の表面を確認する",
-  };
-  const seed = await runtime.context(request, [], true);
-  const pages = seed.initialContext.filter(
-    (item) => item.request.kind === "observations",
-  );
-  expect(pages).toHaveLength(1);
-  expect(
-    seed.initialContext.some((item) => item.request.kind === "history"),
-  ).toBe(false);
-  expect(pages[0]!.result).toMatchObject({
-    items: expect.arrayContaining([
-      expect.objectContaining({
-        edge: expect.objectContaining({
-          target: scene.object.id,
-          text: expect.stringContaining("箱の表面"),
-        }),
-        count: 2,
-        firstAt: 0,
-        lastAt: 0,
-      }),
-    ]),
-    next: 12,
-  });
-  const read = await runtime.read(
-    { request, dependencies: seed.dependencies },
-    [
-      { kind: "observations", id: scene.actor.id, offset: 12 },
-      { kind: "observations", id: scene.actor.id, target: scene.object.id },
-      { kind: "edge", id: old.id },
-    ],
-    true,
-  );
-  expect(read.results[0]).toMatchObject({
-    items: [expect.anything(), expect.anything()],
-    next: null,
-  });
-  expect(read.results[1]).toMatchObject({
-    items: expect.arrayContaining([
-      expect.objectContaining({
-        edge: expect.objectContaining({ id: old.id }),
-      }),
-    ]),
-  });
-  expect(read.results[2]).toMatchObject(old);
-  const view = await runtime.view(
-    scene.worldId,
-    scene.actor.id,
-    10,
-    request.actionText,
-  );
-  expect(
-    view.observations.filter((o) => o.target === scene.object.id),
-  ).toHaveLength(1);
 });
 
 test("意図形成へ観測の側面を渡し、対象全体・未観測の秘密・管理文脈を渡さない", async () => {
@@ -1110,10 +453,12 @@ test("未記録の同じ住人を同時に具体化すると、競合側は読�
         JSON.parse(String(options?.body)).messages[1].content,
       );
       const house = input.initialContext.find(
-        (p: { request: { kind: string; id: string } }) =>
-          p.request.kind === "node" && p.request.id === scene.object.id,
+        (p: { request: { kind: string; id: string; direction?: string } }) =>
+          p.request.kind === "relations" &&
+          p.request.id === scene.object.id &&
+          p.request.direction === "in",
       ).result;
-      if (house.stateSubjects.length) return response(proposal(changes()));
+      if (house.edges.length) return response(proposal(changes()));
       const resident = candidates[arrived++]!,
         state = node("script", "この家に暮らしている");
       if (arrived === 2) release();
@@ -1285,6 +630,149 @@ test("新規参加は同一性から始め、追加照会で状態と履歴を�
   expect(
     (await runtime.view(scene.worldId, scene.actor.id, 1000)).observations,
   ).toHaveLength(1);
+});
+
+test("多くの関係を持つ起点でも、世界時間の進行で渡す入力は上限のある件数に収まり、続きを取得できる", async () => {
+  const scene = await fixture(),
+    count = 25;
+  const people = Array.from({ length: count }, (_, i) =>
+      node("existence", `住人${i}`),
+    ),
+    notes = people.map((_, i) => node("script", `広場にいる${i}`)),
+    own = people.map((_, i) => node("script", `広場の様子${i}`)),
+    events: WorldNode[] = people.map((_, i) => ({
+      id: randomUUID(),
+      kind: "event",
+      text: `広場の出来事${i}`,
+      period: { from: 0 },
+    }));
+  await store.commit(
+    await store.claim(scene.worldId, randomUUID()),
+    store.context(scene.worldId),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: changes(
+        [...people, ...notes, ...own, ...events],
+        [
+          ...people.flatMap((person, i) => [
+            edge("status", person, notes[i]!, undefined, "content"),
+            edge("status", notes[i]!, scene.place, undefined, "about"),
+            edge("effect", person, scene.place),
+            edge("see", scene.actor, person, `住人${i}を見た`),
+          ]),
+          ...own.map((s) =>
+            edge("status", scene.place, s, undefined, "content"),
+          ),
+          ...events.map((e) => edge("happen", scene.place, e)),
+        ],
+      ),
+    },
+  );
+  // 結果に含まれるどの一覧も上限の件数に収まる。
+  const bounded = (value: unknown): boolean =>
+    Array.isArray(value)
+      ? value.length <= 12 && value.every(bounded)
+      : value !== null && typeof value === "object"
+        ? Object.values(value).every(bounded)
+        : true;
+  const read = { relations: new Set<string>(), history: new Set<string>() };
+  let rounds = 0;
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async (_url, options) => {
+      const users = fixtureBody(options)
+          .messages.filter((m: { role: string }) => m.role === "user")
+          .map((m: { content: string }) => JSON.parse(m.content)),
+        latest = users.at(-1);
+      rounds++;
+      if (rounds === 1) {
+        const initial = users[0].initialContext as {
+          request: { kind: string; id: string; relation?: string };
+          result: Record<string, unknown> & { next?: unknown };
+        }[];
+        for (const { result } of initial) expect(bounded(result)).toBe(true);
+        const find = (kind: string, id: string, relation?: string) =>
+          initial.find(
+            (c) =>
+              c.request.kind === kind &&
+              c.request.id === id &&
+              c.request.relation === relation,
+          )!.result;
+        expect(find("node", scene.place.id)).toMatchObject({
+          omittedCurrentStates: count - 12,
+        });
+        expect(find("node", scene.place.id)).not.toHaveProperty(
+          "relatedStates",
+        );
+        expect(find("relations", scene.place.id, "status").next).toEqual(
+          expect.any(String),
+        );
+        expect(find("history", scene.place.id, "happen").next).toEqual(
+          expect.any(String),
+        );
+        expect(find("observations", scene.actor.id).next).toBe(12);
+        expect(find("effects", scene.place.id)).toHaveLength(12);
+        return response({
+          type: "query",
+          requests: [
+            {
+              kind: "relations",
+              id: scene.place.id,
+              relation: "status",
+              direction: "in",
+            },
+            {
+              kind: "history",
+              id: scene.place.id,
+              relation: "happen",
+              direction: "out",
+            },
+          ],
+        });
+      }
+      expect(bounded(latest.results)).toBe(true);
+      const requests = [];
+      for (const [i, query] of latest.requests.entries()) {
+        const result = latest.results[i];
+        if (query.kind === "relations") {
+          for (const e of result.edges) read.relations.add(e.id);
+          if (result.next) requests.push({ ...query, after: result.next });
+        }
+        if (query.kind === "history") {
+          for (const e of result.history) read.history.add(e.id);
+          if (result.next) requests.push({ ...query, before: result.next });
+        }
+      }
+      // 照会の回数が上限を超えるまで続け、確定の検査に渡す根拠が絞られることを確かめる。
+      if (!requests.length && rounds < 16)
+        requests.push({ kind: "node", id: scene.place.id });
+      return response(
+        requests.length ? { type: "query", requests } : proposal(changes()),
+      );
+    });
+  const runtime = await agent(transport),
+    calls = vi.spyOn(runtime.model, "complete");
+  const id = await runtime.create({
+    worldId: scene.worldId,
+    phase: "resolution",
+    at: 0,
+    until: 1000,
+    rootIds: [scene.place.id, scene.actor.id],
+    actionText: "",
+  });
+  operations.push(id);
+  await runtime.run(id);
+  expect(read.relations.size).toBe(count);
+  expect(read.history.size).toBe(count);
+  const review = calls.mock.calls.find((call) => call[1] === "world-commit")!,
+    evidence = JSON.parse(review[2][1]!.content).commitReview.evidence;
+  expect(evidence).toHaveLength(13);
+  expect(evidence[0]).toHaveProperty("initialContext");
+  expect(evidence.slice(1).every(bounded)).toBe(true);
+  expect(
+    (await runtime.intentView(scene.worldId, scene.actor.id, 0)).observations,
+  ).toHaveLength(24);
 });
 
 test("既存の状態記述へ不完全な解釈だけを結びつけて新しい存在を確定できない", async () => {

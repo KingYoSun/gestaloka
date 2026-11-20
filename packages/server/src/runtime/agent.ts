@@ -29,7 +29,11 @@ import {
 } from "../world/belongings.js";
 import type { LlmClient, ChatMessage } from "../llm/client.js";
 import { locationRecords } from "../world/locations.js";
-import { CompletedScene, mergeSceneChanges } from "./scene-data.js";
+import {
+  historyLimit,
+  materialLimit,
+  selectStates,
+} from "./state-selection.js";
 
 const Time = z.number().int().nonnegative().safe();
 export const IntentResult = z
@@ -55,7 +59,6 @@ export const Interaction = z
     controlledActionText: z.string().optional(),
     triggerEdgeIds: z.array(z.uuid()).optional(),
     actionText: z.string(),
-    completedScene: CompletedScene.optional(),
     intentions: z
       .array(
         z
@@ -110,6 +113,7 @@ export const Query = z.discriminatedUnion("kind", [
       direction: z.enum(["in", "out"]),
       from: Time.optional(),
       through: Time.optional(),
+      before: z.uuid().optional(),
     })
     .strict(),
   z.object({ kind: z.literal("edge"), id: z.uuid() }).strict(),
@@ -172,7 +176,10 @@ export type WorldProposal = z.infer<typeof Proposal> & {
 // 所在地の更新と、参加時の物品・技能は内部関数の操作として返す。
 const Decision = z.discriminatedUnion("type", [
   z
-    .object({ type: z.literal("query"), requests: z.array(Query).min(1) })
+    .object({
+      type: z.literal("query"),
+      requests: z.array(Query).min(1).max(materialLimit),
+    })
     .strict(),
   Proposal.extend({ belongings: z.array(z.string()).optional() }),
   z.object({ type: z.literal("pause"), reason: z.string() }).strict(),
@@ -262,15 +269,10 @@ export class WorldAgent {
       ["interaction", "resolution"].includes(input.phase);
     z.uuid().parse(runId);
     let system = await readFile(
-      new URL(
-        input.completedScene
-          ? "../../../../prompts/scene-world.md"
-          : "../../../../prompts/world-update.md",
-        import.meta.url,
-      ),
+      new URL("../../../../prompts/world-update.md", import.meta.url),
       "utf8",
     );
-    if (combined && !input.completedScene) {
+    if (combined) {
       const rules = await readFile(
         new URL("../../../../prompts/world-commit.md", import.meta.url),
         "utf8",
@@ -294,9 +296,6 @@ export class WorldAgent {
           new URL("../../../../prompts/skills/belongings.md", import.meta.url),
           "utf8",
         ));
-    if (request.completedScene?.sources)
-      system +=
-        "\n初期資料には背景調査の根拠と状態の変更差分、本人と相手の現状を照合した結果があります。各候補の失効部分・残す部分・未確認部分を出来事と照合してください。元の関係を終了すると全文が失効します。部分失効のときは同じ持ち主の有効な状態に残る内容を保ち、既存の同等状態で足りる場合は重ねません。終了する既存関係はendEdgesに指定し、未確認を新たな現実や受容にしません。";
     await database.query(
       "INSERT INTO world_operation (id,run_id,commit_id,request,system_prompt,combined_judgment,dependencies) VALUES ($1,$2,$3,$4,$5,$6,$7)",
       [
@@ -395,17 +394,19 @@ export class WorldAgent {
           }),
         ),
       },
+      // 照会の回数が増えても件数が上限を超えないよう、初期文脈と直近の照会結果だけを根拠にする。
       evidence: (row.messages ?? [])
         .filter((m) => m.role === "user")
         .map((m) => JSON.parse(m.content))
-        .filter((m) => !("validationErrors" in m)),
+        .filter((m) => !("validationErrors" in m))
+        .filter((_m, i, all) => i === 0 || i >= all.length - materialLimit),
     };
   }
 
+  // 照会結果は、対象の持つ記録の件数にかかわらず上限のある件数で返し、続きは指定して取得させる。
   async read(
     row: Pick<Operation, "request" | "dependencies">,
     requests: z.infer<typeof Query>[],
-    inScene = false,
   ) {
     const context = this.store.context(row.request.worldId, row.dependencies);
     await context.validate();
@@ -422,76 +423,74 @@ export class WorldAgent {
       switch (query.kind) {
         case "observations":
           results.push(
-            inScene ||
-              row.request.completedScene ||
-              query.target ||
-              query.offset !== undefined
-              ? await context.sceneObservations(
-                  query.id,
-                  through,
-                  row.request.actionText,
-                  query.offset,
-                  query.target,
-                )
-              : await context.observations(query.id, through),
+            await context.sceneObservations(
+              query.id,
+              through,
+              row.request.actionText,
+              query.offset,
+              query.target,
+            ),
           );
           break;
         case "edge":
           results.push((await context.edge(query.id)) ?? null);
           break;
         case "node": {
-          // 新規参加は世界のどこにも結び付いていない。多くの記録が集まる対象を照会しても、
-          // 同一性と直近の状態だけを返し、関連はrelationsのページ照会で必要な分だけ取得させる。
-          if (row.request.phase === "participant") {
-            const states = await this.#stateRecords(context, query.id, at);
-            results.push({
-              node: (await context.node(query.id, at)) ?? null,
-              knownAt: await context.latestTime(query.id),
-              currentStates: states.slice(-12),
-              omittedCurrentStates: Math.max(0, states.length - 12),
-            });
-            break;
+          // 多くの記録が集まる対象を照会しても、同一性と選んだ状態だけを返す。
+          // 関連する状態・主体・解釈者は、relationsのページ照会で必要な分だけ取得させる。
+          const states = [];
+          for (const edge of await context.relations(
+            query.id,
+            "status",
+            "out",
+            at,
+          ))
+            if (edge.role === "content")
+              states.push({
+                relation: edge,
+                node: await context.node(edge.target, at),
+              });
+          const chosen = selectStates(states),
+            currentStates = [];
+          for (const { relation: edge, node: script } of chosen) {
+            const about = await context.relations(
+                edge.target,
+                "status",
+                "out",
+                at,
+                at,
+                { limit: materialLimit },
+              ),
+              targets = [];
+            for (const relation of about)
+              if (relation.role === "about")
+                targets.push(await context.node(relation.target, at));
+            currentStates.push({ edge, script, about, targets });
           }
           results.push({
-            currentStates: await this.#stateRecords(context, query.id, at),
-            relatedStates: await this.#relatedStates(context, query.id, at),
             node: (await context.node(query.id, at)) ?? null,
             knownAt: await context.latestTime(query.id),
-            stateSubjects: await context.history(query.id, "status", "in", at),
-            interpreters: await context.history(
-              query.id,
-              "interpret",
-              "in",
-              at,
-            ),
+            currentStates,
+            omittedCurrentStates: states.length - chosen.length,
           });
           break;
         }
         case "history": {
-          if (
-            (inScene || row.request.completedScene) &&
-            query.relation === "see" &&
-            query.direction === "out"
-          ) {
-            results.push(
-              await context.sceneObservations(
-                query.id,
-                through,
-                row.request.actionText,
-                0,
-                undefined,
-                query.from,
-              ),
-            );
-            break;
-          }
-          const history = await context.history(
-            query.id,
-            query.relation,
-            query.direction,
-            through,
-            query.from ?? 0,
-          );
+          // 新しい順に12件ずつ遡る。続きはnextをbeforeに指定する。
+          const all = await context.history(
+              query.id,
+              query.relation,
+              query.direction,
+              through,
+              query.from ?? 0,
+            ),
+            end = query.before
+              ? Math.max(
+                  0,
+                  all.findIndex((edge) => edge.id === query.before),
+                )
+              : all.length,
+            history = all.slice(Math.max(0, end - materialLimit), end);
           const peers = [];
           for (const id of new Set(
             history.map((edge) =>
@@ -499,31 +498,29 @@ export class WorldAgent {
             ),
           ))
             peers.push((await context.node(id, through)) ?? null);
-          results.push({ history, peers });
+          results.push({
+            history,
+            peers,
+            next: end > materialLimit ? history[0]!.id : null,
+          });
           break;
         }
         case "relations": {
-          const paged =
-            inScene ||
-            !!row.request.completedScene ||
-            row.request.phase === "participant" ||
-            query.after !== undefined;
           const edges = await context.relations(
             query.id,
             query.relation,
             query.direction,
             at,
             through,
-            paged ? { after: query.after, limit: 13 } : undefined,
+            { after: query.after, limit: materialLimit + 1 },
           );
-          results.push(
-            paged
-              ? {
-                  edges: edges.slice(0, 12),
-                  next: edges.length > 12 ? edges[11]!.id : null,
-                }
-              : edges,
-          );
+          results.push({
+            edges: edges.slice(0, materialLimit),
+            next:
+              edges.length > materialLimit
+                ? edges[materialLimit - 1]!.id
+                : null,
+          });
           break;
         }
         case "effects":
@@ -551,11 +548,7 @@ export class WorldAgent {
         ) ?? [],
       ),
     ];
-    const controlled = await this.controlledActors(
-      row.request.worldId,
-      ids,
-      inScene,
-    );
+    const controlled = await this.controlledActors(row.request.worldId, ids);
     requests.forEach((q, index) => {
       const result = results[index];
       if (q.kind === "node" && result && typeof result === "object")
@@ -847,92 +840,14 @@ export class WorldAgent {
     return context.dependencies;
   }
 
-  async context(
-    request: Interaction,
-    dependencies: Dependency[] = [],
-    inScene = false,
-  ) {
-    const requests: z.infer<typeof Query>[] = (
-      request.triggerEdgeIds ?? []
-    ).map((id) => ({ kind: "edge", id }));
+  // 最初の入力は、起点の同一性と、上限のある件数で返る照会結果だけで構成する。
+  async context(request: Interaction, dependencies: Dependency[] = []) {
     const roots = new Set([
       ...request.rootIds,
       ...(request.actorId ? [request.actorId] : []),
       ...(request.controlledActorId ? [request.controlledActorId] : []),
       ...(request.intentions ?? []).map((item) => item.actorId),
     ]);
-    if (request.completedScene) {
-      const scene = request.completedScene,
-        at = request.until ?? request.at,
-        context = this.store.context(request.worldId, dependencies),
-        effectSubjects = new Set([
-          request.actorId,
-          request.controlledActorId,
-          ...(request.intentions ?? []).map((intent) => intent.actorId),
-        ]),
-        subjects = new Set([
-          ...scene.background.participants,
-          ...scene.background.facts.map((fact) => fact.subjectId),
-          ...scene.background.beliefs.map((belief) => belief.subjectId),
-          ...scene.events.flatMap((event) => [
-            event.actorId,
-            ...event.receipts.map((receipt) => receipt.observerId),
-          ]),
-          ...(request.intentions ?? []).map((intent) => intent.actorId),
-          ...(request.controlledActorId ? [request.controlledActorId] : []),
-        ]),
-        initialContext = [];
-      for (const [id, source] of Object.entries(scene.sources ?? {})) {
-        initialContext.push({
-          request: { kind: "edge" as const, id },
-          result: (await context.edge(id)) ?? null,
-        });
-        subjects.add(source.edge.source);
-      }
-      const created = new Set(scene.anchors.nodes.map((node) => node.id));
-      for (const id of subjects) {
-        if (created.has(id)) continue;
-        const node = await context.node(id, at);
-        if (!node) continue;
-        initialContext.push({
-          request: { kind: "node" as const, id, at },
-          result: {
-            node,
-            currentStates: await this.#stateRecords(context, id, at),
-            interpretations: await this.#stateRecords(
-              context,
-              id,
-              at,
-              "interpret",
-            ),
-            ...(effectSubjects.has(id)
-              ? { effects: await context.effects(id, request.at, at) }
-              : { effectsDeferred: true }),
-          },
-        });
-      }
-      const references = new Set(
-        JSON.stringify([request, initialContext]).match(
-          /[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}/gi,
-        ) ?? [],
-      );
-      for (const id of references) {
-        if (subjects.has(id) || created.has(id)) continue;
-        const node = await context.node(id, at);
-        if (node)
-          initialContext.push({
-            request: { kind: "node" as const, id, at },
-            result: { node },
-          });
-      }
-      return {
-        initialContext,
-        dependencies: context.dependencies,
-        controlledActorIds: [
-          ...(await this.controlledActors(request.worldId, [...references])),
-        ],
-      };
-    }
     if (request.phase === "participant") {
       const context = this.store.context(request.worldId, dependencies);
       const initialContext = [];
@@ -949,121 +864,9 @@ export class WorldAgent {
         ],
       };
     }
-    if (inScene) {
-      const context = this.store.context(request.worldId, dependencies);
-      const actor = request.actorId ?? request.controlledActorId;
-      const states = actor
-        ? await this.#descriptions(context, actor, request.at, "status")
-        : [];
-      const linked = new Set(states.flatMap((state) => state.about));
-      if (actor)
-        for (const edge of await context.relations(
-          actor,
-          "has",
-          "in",
-          request.at,
-        ))
-          linked.add(edge.source);
-      for (const id of linked) roots.add(id);
-      const candidates = [];
-      for (const id of roots) {
-        const node = await context.node(id, request.at);
-        if (node)
-          candidates.push({
-            node,
-            priority:
-              Number(id === actor) * 4 +
-              Number(request.actionText.includes(node.text)) * 2 +
-              Number(linked.has(id)),
-          });
-      }
-      const selected = candidates
-        .sort((a, b) => b.priority - a.priority)
-        .slice(0, 12);
-      const initialContext = [];
-      const ids: string[] = [];
-      for (const { node } of selected) {
-        const stateSubjects = await context.relations(
-          node.id,
-          "status",
-          "in",
-          request.at,
-          request.at,
-          { limit: 12 },
-        );
-        const possessions = await context.relations(
-          node.id,
-          "has",
-          "out",
-          request.at,
-          request.at,
-          { limit: 12 },
-        );
-        const effects = [];
-        for (const edge of await context.relations(
-          node.id,
-          "effect",
-          "in",
-          request.at,
-          request.at,
-          { limit: 12 },
-        ))
-          effects.push({
-            edge,
-            source: await context.node(edge.source, request.at),
-          });
-        const relatedStates = await this.#relatedStates(
-          context,
-          node.id,
-          request.at,
-          stateSubjects,
-        );
-        ids.push(
-          node.id,
-          ...possessions.map((edge) => edge.target),
-          ...relatedStates.flatMap((state) =>
-            state.subjects.flatMap((subject) =>
-              subject.node ? [subject.node.id] : [],
-            ),
-          ),
-        );
-        initialContext.push({
-          request: { kind: "node", id: node.id },
-          result: {
-            node,
-            stateSubjects,
-            relatedStates,
-            possessions,
-            effects,
-            ...(node.id === actor ? { states } : {}),
-          },
-        });
-      }
-      if (actor) requests.push({ kind: "observations", id: actor });
-      const seed = await this.read(
-        { request, dependencies: context.dependencies },
-        requests,
-        inScene,
-      );
-      const controlled = await this.controlledActors(
-        request.worldId,
-        ids,
-        inScene,
-      );
-      return {
-        initialContext: [
-          ...initialContext,
-          ...requests.map((request, i) => ({
-            request,
-            result: seed.results[i],
-          })),
-        ],
-        dependencies: seed.dependencies,
-        controlledActorIds: [
-          ...new Set([...controlled, ...seed.controlledActorIds]),
-        ],
-      };
-    }
+    const requests: z.infer<typeof Query>[] = (
+      request.triggerEdgeIds ?? []
+    ).map((id) => ({ kind: "edge", id }));
     for (const root of roots) {
       requests.push(
         { kind: "node", id: root },
@@ -1107,7 +910,7 @@ export class WorldAgent {
         },
       );
     }
-    const seed = await this.read({ request, dependencies }, requests, inScene);
+    const seed = await this.read({ request, dependencies }, requests);
     return {
       initialContext: requests.map((request, index) => ({
         request,
@@ -1128,9 +931,7 @@ export class WorldAgent {
             !(
               row.request.phase === "participant"
                 ? ["create", "move", "grant", "learn", "locate"]
-                : row.request.completedScene
-                  ? []
-                  : ["locate"]
+                : ["locate"]
             ).includes(op.type),
         )
       )
@@ -1163,21 +964,7 @@ export class WorldAgent {
       );
       if (actor) actor.text = row.request.participantName;
     }
-    if (!row.request.completedScene) return proposal;
-    try {
-      return {
-        ...proposal,
-        changes: mergeSceneChanges(
-          row.request.completedScene.anchors,
-          proposal.changes,
-          proposal.resolvedUntil,
-        ),
-      };
-    } catch (error) {
-      throw new CandidateRejected(
-        error instanceof Error ? error.message : "シーンの反映が不正です",
-      );
-    }
+    return proposal;
   }
 
   async run(id: string, resumeInput?: string): Promise<WorldProposal> {
@@ -1296,7 +1083,6 @@ export class WorldAgent {
               ? "resolution"
               : "default",
             undefined,
-            row.request.completedScene?.sources !== undefined,
             0,
             (content) => Decision.parse(parseOutput(content)),
           ),
@@ -1442,7 +1228,6 @@ export class WorldAgent {
                     ],
                     "resolution",
                     undefined,
-                    false,
                     0,
                     (content) => CommitDecision.parse(parseOutput(content)),
                   );
@@ -1579,26 +1364,16 @@ export class WorldAgent {
     }
   }
 
-  async view(
-    worldId: string,
-    observerId: string,
-    at: number,
-    purpose?: string,
-  ) {
+  async view(worldId: string, observerId: string, at: number) {
     const context = this.store.context(worldId);
-    const view = await this.#view(context, observerId, at, purpose);
+    const view = await this.#view(context, observerId, at);
     await context.validate();
     return view;
   }
 
-  async intentView(
-    worldId: string,
-    observerId: string,
-    at: number,
-    purpose?: string,
-  ) {
+  async intentView(worldId: string, observerId: string, at: number) {
     const context = this.store.context(worldId);
-    const view = await this.#view(context, observerId, at, purpose);
+    const view = await this.#view(context, observerId, at);
     const conditions = (
       await this.#descriptions(context, observerId, at, "status")
     ).map((condition) => ({
@@ -1608,61 +1383,6 @@ export class WorldAgent {
     }));
     await context.validate();
     return { ...view, conditions };
-  }
-
-  async #stateRecords(
-    context: WorldContext,
-    id: string,
-    at: number,
-    kind: "status" | "interpret" = "status",
-  ) {
-    const records = [];
-    for (const edge of await context.relations(id, kind, "out", at)) {
-      if (edge.role !== "content") continue;
-      const about = await context.relations(edge.target, kind, "out", at),
-        targets = [];
-      for (const relation of about)
-        if (relation.role === "about")
-          targets.push(await context.node(relation.target, at));
-      records.push({
-        edge,
-        script: await context.node(edge.target, at),
-        about,
-        targets,
-      });
-    }
-    return records;
-  }
-  async #relatedStates(
-    context: WorldContext,
-    id: string,
-    at: number,
-    edges?: WorldEdge[],
-  ) {
-    const result = [];
-    for (const edge of edges ??
-      (await context.relations(id, "status", "in", at))) {
-      if (edge.role !== "about") continue;
-      const subjects = [];
-      for (const content of await context.relations(
-        edge.source,
-        "status",
-        "in",
-        at,
-      ))
-        if (content.role === "content")
-          subjects.push({
-            edge: content,
-            node: await context.node(content.source, at),
-          });
-      if (subjects.length)
-        result.push({
-          edge,
-          script: await context.node(edge.source, at),
-          subjects,
-        });
-    }
-    return result;
   }
 
   async #descriptions(
@@ -1693,34 +1413,19 @@ export class WorldAgent {
     return descriptions;
   }
 
-  async #view(
-    context: WorldContext,
-    observerId: string,
-    at: number,
-    purpose?: string,
-  ) {
+  async #view(context: WorldContext, observerId: string, at: number) {
     if ((await context.node(observerId, at))?.kind !== "existence")
       throw new Error("観測主体が見つかりません");
-    const records =
-      purpose === undefined
-        ? (await context.history(observerId, "see", "out", at)).map((edge) => ({
-            edge,
-          }))
-        : (await context.sceneObservations(observerId, at, purpose)).items.map(
-            ({ edge, count, firstAt, lastAt }) => ({
-              edge,
-              count,
-              firstAt,
-              lastAt,
-            }),
-          );
-    const observations = records.map(({ edge, ...summary }) => ({
-      id: edge.id,
-      target: edge.target,
-      text: edge.text || edge.observation?.aspect || null,
-      period: edge.period,
-      ...summary,
-    }));
+    // 観測は時点の順に、直近の上限件数までを渡す。
+    const observations = (await context.historyPage(observerId, "see", at))
+      .slice(0, historyLimit)
+      .reverse()
+      .map((edge) => ({
+        id: edge.id,
+        target: edge.target,
+        text: edge.text || edge.observation?.aspect || null,
+        period: edge.period,
+      }));
     const interpretations = await this.#descriptions(
       context,
       observerId,
@@ -1828,7 +1533,6 @@ export class WorldAgent {
         ],
         undefined,
         undefined,
-        false,
         0,
         (content) => IntentResult.parse(parseOutput(content)),
       ),

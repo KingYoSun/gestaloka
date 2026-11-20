@@ -278,16 +278,6 @@ export async function fixtureRuntime(
               ],
             },
           };
-        } else if (request.completedScene) {
-          content = {
-            ...result,
-            settledIntentions: (request.intentions ?? []).map(
-              (i: { actorId: string }) => ({
-                actorId: i.actorId,
-                reason: "シーン内の観測が成立した",
-              }),
-            ),
-          };
         } else if (
           request.controlledActorId &&
           request.phase !== "observation"
@@ -352,11 +342,6 @@ export async function fixtureRuntime(
       );
     }),
   );
-  // Semantic fixtures compare their seeded identities. Encoding round-trips have dedicated tests;
-  // real-model scene verification still uses the production encoding path.
-  const complete = model.complete.bind(model);
-  model.complete = (id, role, messages, target, effortTarget) =>
-    complete(id, role, messages, target, effortTarget, false);
   const runtime = new WorldConstruction(
     new WorldBuilder(
       databases.postgres,

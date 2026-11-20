@@ -458,7 +458,6 @@ export const SceneRecordPage = z.object({
 });
 export const KnowledgeQuery = PageQuery.safeExtend({
   actorId: z.uuid().optional(),
-  excludeScene: z.uuid().optional(),
 });
 
 export const Member = z.object({

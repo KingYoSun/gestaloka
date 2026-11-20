@@ -1245,7 +1245,6 @@ export class WorldAccess {
     id: string,
     before?: string,
     after?: string,
-    excludeScene?: string,
     actorId?: string,
   ) {
     const grant = await this.authorize(
@@ -1300,20 +1299,7 @@ export class WorldAccess {
     if (after) edges.reverse();
     const items = [],
       evidence: CharacterEvidence[] = [];
-    const excluded = new Set(
-      excludeScene
-        ? (
-            await this.pool.query<{ id: string }>(
-              `SELECT e->>'id' AS id FROM world_scene s JOIN world_operation o ON o.id=(s.data->>'operationId')::uuid
-       CROSS JOIN LATERAL jsonb_array_elements(o.request#>'{completedScene,anchors,edges}') e
-       WHERE s.id=$1 AND s.construction_id=$2 AND s.actor_id=$3 AND e->>'kind'='see' AND e->>'id'=ANY($4::text[])`,
-              [excludeScene, id, grant.actor_id, edges.map((e) => e.id)],
-            )
-          ).rows.map((e) => e.id)
-        : [],
-    );
     for (const edge of edges) {
-      if (excluded.has(edge.id)) continue;
       if (edge.kind === "interpret" && edge.role !== "content") continue;
       const content =
         edge.kind === "interpret"
