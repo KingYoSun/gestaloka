@@ -183,6 +183,15 @@ export const PlayCommand = z.discriminatedUnion("command", [
     .object({ ...request, command: z.literal("contact"), targetId: z.uuid() })
     .strict(),
   z
+    .object({ ...request, command: z.literal("team-invite"), targetId: id })
+    .strict(),
+  z
+    .object({ ...request, command: z.literal("team-join"), teamId: id })
+    .strict(),
+  z
+    .object({ ...request, command: z.enum(["team-status", "team-leave"]) })
+    .strict(),
+  z
     .object({
       ...request,
       command: z.literal("say"),

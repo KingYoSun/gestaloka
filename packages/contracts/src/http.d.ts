@@ -2572,6 +2572,25 @@ export interface paths {
                         /** Format: uuid */
                         requestId: string;
                         /** @enum {string} */
+                        command: "team-invite";
+                        /** Format: uuid */
+                        targetId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "team-join";
+                        /** Format: uuid */
+                        teamId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "team-status" | "team-leave";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
                         command: "say";
                         text: string;
                         /** @default [] */
