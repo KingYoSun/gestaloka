@@ -294,6 +294,8 @@ select {
 .play-layout {
   display: grid;
   grid-template-areas: "left toolbar right" "left center right";
+  /* サイドパネルの高さでツールバーの行が伸びないようにする。 */
+  grid-template-rows: auto 1fr;
   grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(
       180px,
       240px

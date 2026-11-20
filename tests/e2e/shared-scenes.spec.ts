@@ -166,8 +166,30 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     before = await f.count(),
     play = `/worlds/${f.world}/play?actorId=${actor}`,
     leave = page.getByRole("button", { name: "セッションを離れて続ける" }),
-    finish = page.getByRole("button", { name: "自分のプレイを終了する" });
+    finish = page.getByRole("button", { name: "自分のプレイを終了する" }),
+    log = page.getByLabel("セッションのチャット");
   try {
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    await page.route(
+      (url) =>
+        url.pathname === `/api/worlds/${f.world}/session` &&
+        url.searchParams.get("view") === "screen",
+      async (route) => {
+        const response = await route.fetch();
+        const view = await response.json();
+        view.screen.own.profile = Array.from(
+          { length: 40 },
+          (_, i) => `プロフィールの記録 ${i + 1}`,
+        );
+        await route.fulfill({ response, json: view });
+      },
+    );
+    const logPosition = () =>
+      log.evaluate((element) => ({
+        top: element.getBoundingClientRect().top,
+        pageScroll: window.scrollY,
+        scrollTop: element.scrollTop,
+      }));
     const device = await page.request.post("/api/player-devices", {
       headers,
       data: {
@@ -187,6 +209,11 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     await expect(
       page.getByRole("heading", { name: "2人のセッション" }),
     ).toBeVisible();
+    const players = page.getByRole("complementary", { name: "プレイヤー情報" });
+    await expect(players.getByText("プロフィールの記録 40")).toBeAttached();
+    const desktopPosition = await logPosition();
+    await players.getByRole("tab", { name: "所持品" }).click();
+    expect(await logPosition()).toEqual(desktopPosition);
     for (const action of [
       leave,
       finish,
@@ -202,7 +229,6 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     await expect(
       page.getByRole("heading", { name: "2人のセッション" }),
     ).toBeVisible();
-    const players = page.getByRole("complementary", { name: "プレイヤー情報" });
     await expect(players.getByRole("tab")).toHaveText([
       "基本情報",
       "所持品",
@@ -264,7 +290,6 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     await expect(page.getByLabel("セッションのチャット")).toContainText(
       "自分の考えを添える",
     );
-    const log = page.getByLabel("セッションのチャット");
     await expect(log.locator("time").last()).toHaveAttribute(
       "datetime",
       /^\d{4}-\d{2}-\d{2}T/,
@@ -331,6 +356,11 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     await swipe(log, 28, 150);
     await expect(drawer).toBeVisible();
     await expect(page.locator(".play-drawer-trigger:visible")).toHaveCount(0);
+    const mobilePosition = await logPosition();
+    await drawer.getByRole("tab", { name: "所持品" }).click();
+    expect(await logPosition()).toEqual(mobilePosition);
+    await drawer.getByRole("tab", { name: "基本情報" }).click();
+    expect(await logPosition()).toEqual(mobilePosition);
     await swipe(drawer, 170, 35);
     await expect(drawer).toBeHidden();
     await expect(page.locator(".play-drawer-trigger:visible")).toHaveCount(2);
