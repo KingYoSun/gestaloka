@@ -2685,6 +2685,8 @@ export interface paths {
                                 kind: "existence";
                                 /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                 count?: number;
+                                /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                viewers?: "all" | string[];
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -2709,6 +2711,8 @@ export interface paths {
                                     probability: number;
                                     count: number;
                                 };
+                                /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                viewers?: "all" | string[];
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -2757,6 +2761,8 @@ export interface paths {
                                 kind: "existence";
                                 /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                 count?: number;
+                                /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                viewers?: "all" | string[];
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -2781,6 +2787,8 @@ export interface paths {
                                     probability: number;
                                     count: number;
                                 };
+                                /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                viewers?: "all" | string[];
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -2900,6 +2908,8 @@ export interface paths {
                                 kind: "existence";
                                 /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                 count?: number;
+                                /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                viewers?: "all" | string[];
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -2924,6 +2934,8 @@ export interface paths {
                                     probability: number;
                                     count: number;
                                 };
+                                /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                viewers?: "all" | string[];
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -2972,6 +2984,8 @@ export interface paths {
                                 kind: "existence";
                                 /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                 count?: number;
+                                /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                viewers?: "all" | string[];
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -2996,6 +3010,8 @@ export interface paths {
                                     probability: number;
                                     count: number;
                                 };
+                                /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                viewers?: "all" | string[];
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -3201,6 +3217,8 @@ export interface paths {
                                 kind: "existence";
                                 /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                 count?: number;
+                                /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                viewers?: "all" | string[];
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -3225,6 +3243,8 @@ export interface paths {
                                     probability: number;
                                     count: number;
                                 };
+                                /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                viewers?: "all" | string[];
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -3273,6 +3293,8 @@ export interface paths {
                                 kind: "existence";
                                 /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                 count?: number;
+                                /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                viewers?: "all" | string[];
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -3297,6 +3319,8 @@ export interface paths {
                                     probability: number;
                                     count: number;
                                 };
+                                /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                viewers?: "all" | string[];
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -3758,6 +3782,8 @@ export interface paths {
                                             kind: "existence";
                                             /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                             count?: number;
+                                            /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                            viewers?: "all" | string[];
                                         } | {
                                             /** Format: uuid */
                                             id: string;
@@ -3782,6 +3808,8 @@ export interface paths {
                                                 probability: number;
                                                 count: number;
                                             };
+                                            /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                            viewers?: "all" | string[];
                                         } | {
                                             /** Format: uuid */
                                             id: string;
@@ -3830,6 +3858,8 @@ export interface paths {
                                             kind: "existence";
                                             /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                             count?: number;
+                                            /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                            viewers?: "all" | string[];
                                         } | {
                                             /** Format: uuid */
                                             id: string;
@@ -3854,6 +3884,8 @@ export interface paths {
                                                 probability: number;
                                                 count: number;
                                             };
+                                            /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                            viewers?: "all" | string[];
                                         } | {
                                             /** Format: uuid */
                                             id: string;
@@ -4466,6 +4498,158 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worlds/{id}/viewers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: {
+                    actorId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        requestId: string;
+                        /**
+                         * Format: uuid
+                         * @description 本人の物・保管先・技能・状態のID
+                         */
+                        targetId: string;
+                        /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ */
+                        viewers: "all" | string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /**
+                             * Format: uuid
+                             * @description 本人の物・保管先・技能・状態のID
+                             */
+                            targetId: string;
+                            /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ */
+                            viewers: "all" | string[];
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -6153,6 +6337,8 @@ export interface paths {
                                     kind: "existence";
                                     /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                     count?: number;
+                                    /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                    viewers?: "all" | string[];
                                 } | {
                                     /** Format: uuid */
                                     id: string;
@@ -6177,6 +6363,8 @@ export interface paths {
                                         probability: number;
                                         count: number;
                                     };
+                                    /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                    viewers?: "all" | string[];
                                 } | {
                                     /** Format: uuid */
                                     id: string;
@@ -6225,6 +6413,8 @@ export interface paths {
                                     kind: "existence";
                                     /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                     count?: number;
+                                    /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                    viewers?: "all" | string[];
                                 } | {
                                     /** Format: uuid */
                                     id: string;
@@ -6249,6 +6439,8 @@ export interface paths {
                                         probability: number;
                                         count: number;
                                     };
+                                    /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                    viewers?: "all" | string[];
                                 } | {
                                     /** Format: uuid */
                                     id: string;

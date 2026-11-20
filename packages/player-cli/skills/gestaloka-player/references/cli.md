@@ -114,6 +114,16 @@ gestaloka disconnect
 gestaloka notices
 ```
 
+## viewers
+
+本人の物・保管先・技能・状態を、ほかの参加者の誰が読めるかを決める。allはその場の全員、selfは本人だけ、人物IDは指定した相手だけ。設定しない物は、手にしている物と状態が全員、技能と保管先の中身が本人だけ。保管先を読めるようにすると中身の呼称と個数が、技能は本文が、相手のsearch --kind subjectのbelongingsに出る。読めなくした物はsurroundingsのheldに、状態はsubjectのstatesに出なくなる。設定した範囲はselfのbelongingsとstatesのviewersに出る。GMの判定は範囲に関係なく読む。世界内の行動ではなく、手番も通常枠も使わない。
+
+```text
+gestaloka viewers --target <ID> --to <all|self|人物ID,...>
+```
+
+実行例 `gestaloka viewers --target @12ab34cd --to self`
+
 ## start
 
 本人の通常手番を単独で開始。

@@ -8,6 +8,7 @@ import {
   type Appearance,
   type ItemOutcome,
   PlaySearch,
+  ViewersInput,
   type ReceiptResult,
   playActionMessage,
 } from "@gestaloka/contracts";
@@ -33,6 +34,7 @@ import {
   planBelongings,
   heldItems,
   readBelongings,
+  visibleTo,
 } from "../world/belongings.js";
 import { directPlaces, locationRecords } from "../world/locations.js";
 import { canonical, parseOutput } from "../llm/prompt.js";
@@ -1192,6 +1194,7 @@ export class BotPlay {
               context,
               id,
               true,
+              actor,
             );
             return {
               node: await context.node(id),
@@ -2168,7 +2171,7 @@ export class BotPlay {
     const placeId = places[0];
     const others = characters.filter((id) => id !== actor);
     const profile = async (id: string) =>
-      (await this.#physicalStates(context, id)).states.map(
+      (await this.#physicalStates(context, id, false, actor)).states.map(
         (state) => state.text,
       );
     const own = {
@@ -2524,7 +2527,7 @@ export class BotPlay {
               contacts.some((r) => r.actor_id === id && r.user_id !== null) &&
               (await this.contact(context, actor, id)).allowed,
             npc: contacts.find((r) => r.actor_id === id)?.npc ?? false,
-            held: await heldItems(context, id, at),
+            held: await heldItems(context, id, at, actor),
           })),
         ),
       };
@@ -2562,7 +2565,7 @@ export class BotPlay {
       material = {
         node: await context.node(target),
         locations: await locationRecords(context, target),
-        states: await this.#states(context, target),
+        states: await this.#states(context, target, actor),
         ...(target === actor
           ? {
               belongings: await readBelongings(context, actor),
@@ -2575,7 +2578,26 @@ export class BotPlay {
                   })),
               ),
             }
-          : {}),
+          : // ほかの参加者には、読める範囲の保管先の中身(呼称と個数)と技能の本文だけを返す。手にしている物はsurroundingsのheldに出る。
+            await readBelongings(context, target, at, actor).then(
+              ({ storages, skills }) =>
+                storages.length || skills.length
+                  ? {
+                      belongings: {
+                        storages: storages.map(({ id, label, items }) => ({
+                          id,
+                          label,
+                          items: items.map(({ id, label, count }) => ({
+                            id,
+                            label,
+                            ...(count ? { count } : {}),
+                          })),
+                        })),
+                        skills: skills.map(({ id, text }) => ({ id, text })),
+                      },
+                    }
+                  : {},
+            )),
       };
     }
     const visible = await playerMaterial(
@@ -2594,8 +2616,13 @@ export class BotPlay {
     await context.validate();
     return { visible, context };
   }
-  async #physicalStates(context: WorldContext, target: string, select = false) {
-    const all = (await this.#states(context, target)).filter(
+  async #physicalStates(
+    context: WorldContext,
+    target: string,
+    select = false,
+    viewer?: string,
+  ) {
+    const all = (await this.#states(context, target, viewer)).filter(
         ({ node, relation }) =>
           node?.kind === "script" &&
           !node.spawn &&
@@ -2612,16 +2639,58 @@ export class BotPlay {
       omittedStates: all.length - chosen.length,
     };
   }
-  async #states(context: WorldContext, target: string) {
+  // viewerを渡すと、対象の本人以外には、その参加者が読める状態だけを返す。判定の材料は渡さずに全部を読む。
+  async #states(context: WorldContext, target: string, viewer?: string) {
     const states = [];
-    for (const e of await context.relations(target, "status", "out", latest))
-      if (e.role === "content")
-        states.push({
-          relation: e,
-          node: await context.node(e.target),
-          about: await context.relations(e.target, "status", "out", latest),
-        });
+    for (const e of await context.relations(target, "status", "out", latest)) {
+      if (e.role !== "content") continue;
+      const node = await context.node(e.target);
+      if (viewer && viewer !== target && !visibleTo(node, viewer, true))
+        continue;
+      states.push({
+        relation: e,
+        node,
+        about: await context.relations(e.target, "status", "out", latest),
+      });
+    }
     return states;
+  }
+  // 本人の物・保管先・技能・状態について、ほかの参加者が読める範囲を決める。世界内の行動ではなく、判定も手番も使わない。
+  async setViewers(
+    world: string,
+    actor: string,
+    input: z.infer<typeof ViewersInput>,
+  ) {
+    const w = await this.world(world),
+      context = this.store.context(w.id),
+      node = await context.node(input.targetId);
+    if (
+      !node ||
+      node.kind === "event" ||
+      ![
+        ...(await context.relations(actor, "has", "out", latest)),
+        ...(await context.relations(actor, "status", "out", latest)),
+      ].some((e) => e.target === node.id && e.role !== "about")
+    )
+      reject(
+        "VIEW_TARGET_REQUIRED",
+        "本人の物・保管先・技能・状態を指定してください",
+      );
+    if (input.viewers !== "all")
+      for (const id of input.viewers)
+        if ((await context.node(id))?.kind !== "existence")
+          reject("VIEWER_NOT_FOUND", "読める相手には人物を指定してください");
+    await this.#commit(w.id, input.requestId, {
+      context,
+      at: w.at,
+      changes: {
+        nodes: [],
+        revisions: [{ ...node, viewers: input.viewers }],
+        edges: [],
+        endEdges: [],
+      },
+    });
+    return { targetId: node.id, viewers: input.viewers };
   }
   async #creation(
     world: string,

@@ -359,16 +359,36 @@ export async function changeBelongings(
 }
 
 // 物品の呼称と、個数つきなら個数。
+// 設定した閲覧範囲。省いた記録には出さない。
+const shown = (node: WorldNode | undefined) =>
+  node && "viewers" in node && node.viewers !== undefined
+    ? { viewers: node.viewers }
+    : {};
 const labelled = (node: WorldNode | undefined) => ({
   label: node?.text ?? "",
   ...(node?.kind === "existence" && node.count ? { count: node.count } : {}),
+  ...shown(node),
 });
 
+// 本人以外の参加者が読めるか。範囲を省いた記録は、種類ごとの既定(open)に従う。
+export const visibleTo = (
+  node: WorldNode | undefined,
+  viewer: string,
+  open: boolean,
+) => {
+  const viewers = node && "viewers" in node ? node.viewers : undefined;
+  return viewers === undefined
+    ? open
+    : viewers === "all" || viewers.includes(viewer);
+};
+
 // その場にいる相手が手にしている物。保管先の中身は外から見えないものとして含めない。
+// viewerを渡すと、その参加者が読める物だけを返す。
 export async function heldItems(
   context: WorldContext,
   holder: string,
   at = LATEST,
+  viewer?: string,
 ) {
   const held = (await context.relations(holder, "has", "out", at)).filter(
     (edge) => edge.role === "hold",
@@ -380,19 +400,22 @@ export async function heldItems(
     )
   )
     return [];
-  return Promise.all(
-    held.map(async (edge) => ({
-      id: edge.target,
-      ...labelled(await context.node(edge.target, at)),
-    })),
-  );
+  const items = [];
+  for (const edge of held) {
+    const node = await context.node(edge.target, at);
+    if (!viewer || visibleTo(node, viewer, true))
+      items.push({ id: edge.target, ...labelled(node) });
+  }
+  return items;
 }
 
 // 取得は関係を読むだけで、観測や世界内の出来事を追加しない。
+// viewerを渡すと、その参加者が読める物・保管先・技能だけを返す。
 export async function readBelongings(
   context: WorldContext,
   subject: string,
   at = LATEST,
+  viewer?: string,
 ) {
   const text = async (id: string) => (await context.node(id, at))?.text ?? "";
   const facts = async (holder: string, role: WorldEdge["role"]) =>
@@ -405,13 +428,15 @@ export async function readBelongings(
   const items = async (holder: string) => {
     const held = [];
     for (const edge of await facts(holder, "hold")) {
+      const node = await context.node(edge.target, at);
+      if (viewer && !visibleTo(node, viewer, true)) continue;
       const owners = [];
       for (const own of await context.relations(edge.target, "has", "in", at))
         if (!own.role)
           owners.push({ id: own.source, label: await text(own.source) });
       held.push({
         id: edge.target,
-        ...labelled(await context.node(edge.target, at)),
+        ...labelled(node),
         owners,
         basis: edge.text ?? null,
         since: edge.period.from,
@@ -426,22 +451,30 @@ export async function readBelongings(
     ...(await facts(subject, "use")),
     ...(await facts(subject, undefined)),
   ]) {
+    const node = await context.node(edge.target, at);
+    if (listed.has(edge.target) || (viewer && !visibleTo(node, viewer, false)))
+      continue;
     const stored = await items(edge.target);
-    if ((edge.role || stored.length) && !listed.has(edge.target))
-      storages.push({
-        id: edge.target,
-        label: await text(edge.target),
-        items: stored,
-      });
+    if (!edge.role && !stored.length) continue;
     listed.add(edge.target);
+    storages.push({
+      id: edge.target,
+      label: node?.text ?? "",
+      ...shown(node),
+      items: stored,
+    });
   }
   const skills = [];
-  for (const edge of await facts(subject, "skill"))
+  for (const edge of await facts(subject, "skill")) {
+    const node = await context.node(edge.target, at);
+    if (viewer && !visibleTo(node, viewer, false)) continue;
     skills.push({
       id: edge.target,
-      text: await text(edge.target),
+      text: node?.text ?? "",
+      ...shown(node),
       basis: edge.text ?? null,
       since: edge.period.from,
     });
+  }
   return { items: await items(subject), storages, skills };
 }
