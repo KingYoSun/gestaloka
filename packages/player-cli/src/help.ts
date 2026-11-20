@@ -24,6 +24,7 @@ export const playerOptions = {
   scene: { type: "string" },
   kind: { type: "string" },
   target: { type: "string" },
+  team: { type: "string" },
   application: { type: "string" },
   "deferred-until": { type: "string" },
   offer: { type: "string" },
@@ -59,6 +60,11 @@ const commands = {
     "join --icon portrait.png",
   ],
   resume: ["", "中断した人物の参加準備を再開。待機の再開は standby --resume。"],
+  team: [
+    "invite --target <人物ID> | join --team <チームID> | status | leave",
+    "同行する仲間を招待・承諾し、所属と招待を確認する。仲間と同じ地点に着くと自動でセッションに合流する。チームから離脱しても、その場の会話は続けられる。",
+    "team status",
+  ],
   status: [
     "[--scene <ID>] [--after <カーソル>] [--view <wait|joins>]",
     "現在の手番と未読履歴を照会。運営者が表示を選んだ世界では、creationCriteriaに新規作成のダイスの基準が出る。--sceneは本人の過去シーン、--after 0は先頭。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。",

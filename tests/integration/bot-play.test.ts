@@ -4134,6 +4134,196 @@ test("同行者の所在をまとめて申請すると承認した人だけが�
   expect(c.characters!.map((m) => m.actorId)).toEqual([f.actors[2], bird]);
   expect(c.actorId).toBe(f.actors[2]);
 });
+test("チームは別々に到着しても先着者の進行で続き、合流前の記録は本人にだけ残る", async () => {
+  const f = await fixture();
+  const [scout, follower, local] = f.actors as [string, string, string];
+  await f.send(1, { command: "contact", targetId: scout });
+  const requestId = randomUUID();
+  await expect(
+    f.send(2, { command: "team-join", teamId: requestId }),
+  ).rejects.toMatchObject({ code: "TEAM_INVITE_REQUIRED" });
+  const invite = { command: "team-invite", targetId: follower, requestId };
+  const [invited, retried] = await Promise.all([
+    f.send(0, invite),
+    f.send(0, invite),
+  ]);
+  expect(retried.team).toEqual(invited.team);
+  expect(
+    (await f.send(1, { command: "team-status" })).invitations,
+  ).toMatchObject([{ teamId: requestId, inviter: { actorId: scout } }]);
+  await f.send(1, { command: "team-join", teamId: requestId });
+  const move = (i: number) =>
+    f.send(i, {
+      command: "update",
+      text: "橋の向こうへ渡る",
+      dependencies: [],
+      operations: [
+        {
+          type: "locate",
+          subjectId: f.actors[i],
+          text: "橋の向こう",
+          aboutIds: [f.far],
+        },
+      ],
+    });
+  const followerBefore = await f.status(1);
+  await move(0);
+  await f.send(0, { command: "end-turn" });
+  await f.send(0, { command: "contact", targetId: local });
+  const anchor = await f.status(2);
+  await f.send(2, { command: "say", text: "合流前の話" });
+  await f.send(2, { command: "comment", text: "合流前のコメント" });
+  const receipt = await f.send(2, {
+    command: "memo",
+    text: "合流前のメモ",
+    participants: [scout],
+    dependencies: [],
+  });
+  expect(await move(1)).toMatchObject({
+    sessionId: anchor.sessionId,
+    actorId: scout,
+    turn: anchor.turn,
+    teamArrival: { state: "joined", sessionId: anchor.sessionId },
+  });
+  expect((await f.status(1)).sceneId).toBe(followerBefore.sceneId);
+  await f.send(0, {
+    command: "receive",
+    applicationId: receipt.applicationId,
+    accept: true,
+  });
+  await f.send(2, { command: "say", text: "橋の板が一枚抜けている" });
+  await f.send(2, { command: "end-turn" });
+  const after = await f.status(1);
+  expect(JSON.stringify(after.entries)).toContain("橋の板が一枚抜けている");
+  expect(JSON.stringify(after.entries)).not.toContain("合流前の話");
+  expect(JSON.stringify(after.entries)).not.toContain("合流前のコメント");
+  expect(JSON.stringify(after.entries)).not.toContain("合流前のメモ");
+  expect((await f.send(1, { command: "team-leave" })).team).toBeNull();
+  expect((await f.status(1)).sessionId).toBe(anchor.sessionId);
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("チーム合流は元の受領判断を待ち、残る人物の手番を続ける", async () => {
+  const f = await fixture();
+  const [anchor, member, local] = f.actors as [string, string, string];
+  await f.move(2, f.place);
+  await f.send(2, { command: "contact", targetId: member });
+  const first = await f.status(0);
+  const second = await f.status(1);
+  const receipt = await f.send(1, {
+    command: "memo",
+    text: "橋の補修を手伝う",
+    participants: [local],
+    dependencies: [],
+  });
+  const teamId = randomUUID();
+  await f.send(0, {
+    command: "team-invite",
+    targetId: member,
+    requestId: teamId,
+  });
+  expect(await f.send(1, { command: "team-join", teamId })).toMatchObject({
+    teamArrival: { state: "waiting", sessionId: first.sessionId },
+  });
+  expect((await f.status(1)).sessionId).toBe(second.sessionId);
+  const accepted = await f.send(2, {
+    command: "receive",
+    applicationId: receipt.applicationId,
+    accept: true,
+  });
+  expect(accepted).toMatchObject({
+    sessionId: second.sessionId,
+    actorId: local,
+    application: { state: "confirmed" },
+  });
+  expect(await f.status(1)).toMatchObject({
+    sessionId: first.sessionId,
+    sceneId: second.sceneId,
+    actorId: anchor,
+  });
+});
+
+test("同じ地点でチームが別々のセッションにいたら先着側で続ける", async () => {
+  const f = await fixture();
+  const teamId = randomUUID();
+  await f.send(0, {
+    command: "team-invite",
+    targetId: f.actors[1],
+    requestId: teamId,
+  });
+  await f.send(1, { command: "team-join", teamId });
+  const first = await f.status(0);
+  const separated = await f.send(1, { command: "leave" });
+  expect(separated.sessionId).not.toBe(first.sessionId);
+  await f.send(0, { command: "team-invite", targetId: f.actors[2] });
+  await f.send(2, { command: "team-join", teamId });
+  const arrived = await f.send(2, {
+    command: "update",
+    text: "広場へ向かう",
+    dependencies: [],
+    operations: [
+      {
+        type: "locate",
+        subjectId: f.actors[2],
+        text: "広場",
+        aboutIds: [f.place],
+      },
+    ],
+  });
+  expect(arrived.sessionId).toBe(first.sessionId);
+  expect((await f.status(1)).sessionId).toBe(first.sessionId);
+});
+
+test("CLIは招待を受けた本人が短縮IDでチームに加入し、離脱できる", async () => {
+  const f = await fixture();
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  const run = (i: number, ...args: string[]) =>
+    cli.run(join(cli.directory, `team-${i}.json`), ...args);
+  try {
+    for (const i of [0, 1]) {
+      const connection = await run(
+        i,
+        "connect",
+        "--server",
+        cli.base,
+        "--world",
+        f.world,
+      );
+      await cli.approve(
+        f.people[i]!.cookie,
+        connection.userCode,
+        `actor:${f.actors[i]}`,
+      );
+    }
+    expect(
+      await run(0, "team", "invite", "--target", f.actors[1]!),
+    ).toMatchObject({
+      result: { team: { members: [{ name: "人物0" }] } },
+    });
+    const status = await run(1, "team", "status");
+    const teamId = status.result.invitations[0].teamId;
+    expect(teamId).toMatch(/^@[a-f0-9]+$/);
+    expect(await run(1, "team", "join", "--team", teamId)).toMatchObject({
+      result: {
+        team: { teamId, members: [{ name: "人物0" }, { name: "人物1" }] },
+        teamArrival: { state: "joined" },
+      },
+    });
+    expect(await run(1, "team", "leave")).toMatchObject({
+      result: { team: null },
+    });
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
+
 test("出現個体の手番中は本人だけが動き、外界への作用と昇格前の経験を引き継ぐ", async () => {
   const f = await fixture(),
     admin = await auth.person(),

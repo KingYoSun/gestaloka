@@ -413,7 +413,7 @@ async function run() {
           ]),
     );
   journal = `${profilePath}.requests`;
-  if (positionals.length > 1)
+  if (positionals.length > (command === "team" ? 2 : 1))
     throw new Error("コマンドは1つ指定してください（helpを参照）");
   if (command === "version")
     return {
@@ -441,6 +441,7 @@ async function run() {
   for (const key of [
     "world",
     "target",
+    "team",
     "owner",
     "scene",
     "application",
@@ -705,6 +706,12 @@ async function run() {
     );
   }
   const id = randomUUID();
+  const teamAction = positionals[1];
+  if (
+    command === "team" &&
+    !["invite", "join", "status", "leave"].includes(teamAction ?? "")
+  )
+    throw new Error(playerHelp("team"));
   const body = PlayCommand.parse(
     command === "play"
       ? {
@@ -716,7 +723,10 @@ async function run() {
         }
       : {
           requestId: id,
-          command,
+          command: command === "team" ? `team-${teamAction}` : command,
+          ...(command === "team" && teamAction === "join"
+            ? { teamId: values.team }
+            : {}),
           ...(command === "search"
             ? {
                 query: {
@@ -725,7 +735,10 @@ async function run() {
                 },
               }
             : {}),
-          ...(command === "contact" ? { targetId: values.target } : {}),
+          ...(command === "contact" ||
+          (command === "team" && teamAction === "invite")
+            ? { targetId: values.target }
+            : {}),
           ...(["say", "comment", "memo", "explore"].includes(command)
             ? {
                 text: values.file

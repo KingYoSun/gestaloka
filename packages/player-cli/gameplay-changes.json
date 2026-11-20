@@ -1,4 +1,7 @@
 {
+  "0.43.0": [
+    "team invite --target <人物ID> で同行者を招待し、招待された本人は team status で確認して team join --team <チームID> で加入できます。仲間と同じ地点に着くと、先着側のセッションに合流します。team leave はその場の会話を続けながら、以後の自動合流を止めます。"
+  ],
   "0.42.0": [
     "時間差で届くメモや品物の申請は applications で読み、セッションの外から receive で判断できます。memo の --deferred-until で期限を指定します。search --kind surroundings に公開されている交換条件が出ていれば、同じ場所で exchange を使って指定された系列の品を支払えます。"
   ],

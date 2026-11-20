@@ -49,6 +49,7 @@ import {
 } from "./search-appearances.js";
 import { PlayerTools, type PromotionProfile } from "./player-tools.js";
 import { PlayApplications } from "./play-applications.js";
+import { PlayTeams, type TeamCommand } from "./play-teams.js";
 
 import { playerMaterial } from "./player-material.js";
 import { historyLimit, selectStates } from "./state-selection.js";
@@ -60,6 +61,13 @@ const promotionCalls = new WeakMap<
 >();
 type Input = z.infer<typeof PlayCommand>;
 type Db = Pick<pg.Pool, "query">;
+const isTeamCommand = (input: Input): input is TeamCommand =>
+  input.command.startsWith("team-");
+type TeamArrival = {
+  state: "joined" | "waiting";
+  sessionId: string;
+  message: string;
+};
 function actionMessage(
   input: Input,
   result: Record<string, unknown>,
@@ -181,6 +189,7 @@ type Member = {
     members: TurnParticipant[];
   };
   joinedAfterEntries?: number;
+  joinedAfterComment?: boolean;
   instant?: {
     name: string;
     description: string;
@@ -429,6 +438,7 @@ const ExploreDice = z
 
 /** Bots select their own material; only completed public actions enter the chat. */
 export class BotPlay {
+  private readonly teams = new PlayTeams();
   readonly tools: PlayerTools;
   readonly applications: PlayApplications;
   constructor(
@@ -448,6 +458,7 @@ export class BotPlay {
   }
   async setup() {
     await PlayerTools.setup(this.pool);
+    await this.teams.setup(this.pool);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS bot_session (
       id uuid PRIMARY KEY,world_id uuid NOT NULL REFERENCES world_construction(id),data jsonb NOT NULL);
       CREATE INDEX IF NOT EXISTS bot_session_instant_turn ON bot_session(world_id) WHERE data ? 'nextRegular';
@@ -1501,8 +1512,11 @@ export class BotPlay {
       if (Array.isArray(payload.entries)) {
         const skip =
           payload.turn === undefined ? 0 : (member.joinedAfterEntries ?? 0);
+        const hideComment =
+          payload.turn !== undefined && member.joinedAfterComment;
         if (
           skip ||
+          hideComment ||
           witnesses.some((ids) => ids && !ids.includes(member.actorId))
         ) {
           const entries = (payload.entries as Entry[])
@@ -1517,11 +1531,22 @@ export class BotPlay {
           visibleId = (
             await db.query(
               "INSERT INTO bot_chat(session_id,payload,recorded_at) VALUES($1,$2,$3) RETURNING id",
-              [session.id, { ...payload, entries }, recordedAt],
+              [
+                session.id,
+                {
+                  ...payload,
+                  entries,
+                  ...(hideComment ? { comment: undefined } : {}),
+                },
+                recordedAt,
+              ],
             )
           ).rows[0].id;
         }
-        if (payload.turn !== undefined) delete member.joinedAfterEntries;
+        if (payload.turn !== undefined) {
+          delete member.joinedAfterEntries;
+          delete member.joinedAfterComment;
+        }
       }
       await db.query(
         "INSERT INTO bot_record(scene_id,actor_id,chat_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
@@ -1565,8 +1590,8 @@ export class BotPlay {
   async #next(
     db: Db,
     session: Session,
-    reason?: "absence" | "idle" | "contact",
-    departingActor?: string,
+    reason?: "absence" | "idle" | "contact" | "team",
+    departingActors: string[] = [],
   ) {
     const skipped = reason === "absence" || reason === "idle";
     const d = session.data;
@@ -1591,7 +1616,9 @@ export class BotPlay {
             ? `${turn.name}の手番は操作が${turnIdleMs / 60000}分間成立しなかったため終了しました`
             : reason === "contact"
               ? `${turn.name}が合流したため、合流前の手番${turn.turn}を終了しました`
-              : `${turn.name}が手番を終了しました${publicActivity ? "" : "（公開行動なし）"}`,
+              : reason === "team"
+                ? `${turn.name}がチームに合流したため、合流前の手番${turn.turn}を終了しました`
+                : `${turn.name}が手番を終了しました${publicActivity ? "" : "（公開行動なし）"}`,
     };
     await this.#record(db, session, {
       turn: d.number,
@@ -1600,17 +1627,20 @@ export class BotPlay {
       ...(d.comment ? { comment: d.comment } : {}),
       transition,
     });
-    if ((!reason || reason === "idle") && !departingActor)
+    if ((!reason || reason === "idle") && !departingActors.length)
       await this.#separate(db, session, d.turn);
     const regular = d.members.filter(
-      (m) => !m.instant && m.actorId !== departingActor,
+      (m) => !m.instant && !departingActors.includes(m.actorId),
     );
     await this.#removeUnoccupiedInstants(db, session, regular);
     // 手番を終えた人物が別のセッションへ移ったときは、出現個体の手番を挟まない。
-    const instant = d.members.some((m) => m.actorId === d.turn)
-      ? d.members.filter((m) => m.instant)
-      : [];
-    if (d.nextRegular) {
+    const instant =
+      !departingActors.includes(d.turn) &&
+      d.members.some((m) => m.actorId === d.turn)
+        ? d.members.filter((m) => m.instant)
+        : [];
+    if (!regular.length) delete d.nextRegular;
+    else if (d.nextRegular) {
       d.turn =
         regular.find((m) => m.actorId === d.nextRegular)?.actorId ??
         regular[0]!.actorId;
@@ -1736,6 +1766,155 @@ export class BotPlay {
       split.data,
     ]);
     await signalTurns(db, session.world_id, ...moving.map((m) => m.actorId));
+  }
+  async #enter(db: Db, session: Session, member: Member, team = false) {
+    if (team) {
+      member.joinedAfterEntries = session.data.entries.length;
+      member.joinedAfterComment = !!session.data.comment;
+    }
+    session.data.members.push(member);
+    await db.query(
+      "UPDATE bot_scene SET session_id=$3 WHERE id=$1 AND actor_id=$2",
+      [member.sceneId, member.actorId, session.id],
+    );
+    const arrival = await this.#transition(
+      db,
+      session,
+      member.actorId,
+      "session-joined",
+    );
+    const transition = {
+      ...arrival,
+      message: `${arrival.name}が${team ? "チームの" : ""}セッションに合流しました`,
+    };
+    await this.#record(db, session, { transition });
+    return transition;
+  }
+  async #teamArrivals(
+    db: Db,
+    world: string,
+    context: WorldContext,
+    actors: string[],
+    located: string[] = [],
+  ) {
+    const results = new Map<string, TeamArrival>();
+    if (!actors.length) return results;
+    const arrivals = new Set<string>();
+    const points = new Map<string, { team: string; place: string }>();
+    for (const member of await this.teams.members(db, world, actors)) {
+      const [place = null] = await this.#places(context, member.actor_id);
+      const moved = place !== member.place_id;
+      if (moved) await this.teams.arrived(db, world, member.actor_id, place);
+      if (moved || located.includes(member.actor_id))
+        arrivals.add(member.actor_id);
+      if ((arrivals.has(member.actor_id) || member.pending) && place)
+        points.set(`${member.team_id}:${place}`, {
+          team: member.team_id,
+          place,
+        });
+      else if (!place && member.pending)
+        await this.teams.pending(db, world, member.actor_id, false);
+    }
+    for (const { team, place } of points.values()) {
+      const present = [];
+      for (const member of await this.teams.team(db, world, team))
+        if (
+          member.place_id === place &&
+          member.session_id &&
+          (await this.#places(context, member.actor_id)).includes(place)
+        )
+          present.push({ ...member, session_id: member.session_id });
+      const sources = new Map<string, typeof present>();
+      const waiting = present.filter(
+        (member) => !arrivals.has(member.actor_id) && !member.pending,
+      );
+      const waitingCount = new Map<string, number>();
+      for (const member of present) {
+        const group = sources.get(member.session_id) ?? [];
+        group.push(member);
+        sources.set(member.session_id, group);
+      }
+      for (const member of waiting)
+        waitingCount.set(
+          member.session_id,
+          (waitingCount.get(member.session_id) ?? 0) + 1,
+        );
+      // すでにチームで続けている進行を優先し、残る候補は先着順で選ぶ。
+      const shared = waiting.find(
+        (member) => waitingCount.get(member.session_id)! > 1,
+      );
+      const anchor = shared ?? waiting[0] ?? present[0];
+      if (!anchor) continue;
+      const target = (await this.current(world, anchor.actor_id, db))!;
+      const before = turnState(target);
+      for (const [id, candidates] of sources) {
+        if (id === target.id) {
+          for (const candidate of candidates)
+            if (candidate.pending)
+              await this.teams.pending(db, world, candidate.actor_id, false);
+          continue;
+        }
+        const source = (await this.current(
+          world,
+          candidates[0]!.actor_id,
+          db,
+        ))!;
+        const receiving = source.data.receiving;
+        const moving = [];
+        for (const candidate of candidates) {
+          const actor = candidate.actor_id;
+          const blocked =
+            !!receiving &&
+            (receiving.sender === actor ||
+              receiving.recipients.includes(actor));
+          await this.teams.pending(db, world, actor, blocked);
+          if (blocked) {
+            results.set(actor, {
+              state: "waiting",
+              sessionId: target.id,
+              message: "現在の受領判断が終わるとチームへの合流を確認します",
+            });
+          } else {
+            moving.push(
+              source.data.members.find((member) => member.actorId === actor)!,
+            );
+          }
+        }
+        if (!moving.length) continue;
+        const sourceBefore = turnState(source);
+        const leaving = moving.map((member) => member.actorId);
+        if (leaving.includes(source.data.turn))
+          await this.#next(db, source, "team", leaving);
+        source.data.members = source.data.members.filter(
+          (member) => !leaving.includes(member.actorId),
+        );
+        await this.#removeUnoccupiedInstants(db, source);
+        for (const member of moving) {
+          const departure = await this.#transition(
+            db,
+            source,
+            member.actorId,
+            "session-left",
+          );
+          await this.#record(db, source, {
+            transition: {
+              ...departure,
+              message: `${departure.name}がチームのセッションへ移りました`,
+            },
+          });
+          await this.#enter(db, target, member, true);
+          results.set(member.actorId, {
+            state: "joined",
+            sessionId: target.id,
+            message: "チームのセッションに合流しました",
+          });
+        }
+        await this.#save(db, source, sourceBefore);
+      }
+      if (before.size !== target.data.members.length)
+        await this.#save(db, target, before);
+    }
+    return results;
   }
   async #turnPresence(db: Db, session: Session) {
     const at = this.now().getTime();
@@ -1922,6 +2101,13 @@ export class BotPlay {
       before.awayUntil !== d.awayUntil
     )
       await this.#save(db, session, before);
+    if (r)
+      await this.#teamArrivals(
+        db,
+        session.world_id,
+        this.store.context((await this.world(session.world_id, db)).id),
+        [r.sender, ...r.recipients],
+      );
     return idleExpired;
   }
   async #characters(session: Session, db: Db) {
@@ -4415,6 +4601,10 @@ export class BotPlay {
       ).rowCount;
       if (!granted && !assignment)
         reject("ACTOR_REQUIRED", "本人が操作できる人物を指定してください");
+      // Membership changes share a short lock, never held across a model call.
+      await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,225))", [
+        world,
+      ]);
       const again = (
         await db.query<{ result: Record<string, unknown> | null }>(
           "SELECT result FROM bot_request WHERE id=$1",
@@ -4425,10 +4615,6 @@ export class BotPlay {
         await db.query("COMMIT");
         return this.#replay(world, input, again);
       }
-      // Membership changes share a short lock, never held across a model call.
-      await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,225))", [
-        world,
-      ]);
       const active = await this.#activeAdjudication(db, world, actor);
       if (active?.owner !== adjudicationOwner) {
         if (active) rejectAdjudication();
@@ -4436,6 +4622,35 @@ export class BotPlay {
           "REQUEST_IN_PROGRESS",
           "判定の受付を維持できませんでした。同じ要求を再送してください",
         );
+      }
+      if (isTeamCommand(input)) {
+        const context = this.store.context(w.id);
+        const [place = null] =
+          input.command === "team-invite" || input.command === "team-join"
+            ? await this.#places(context, actor)
+            : [];
+        const team = await this.teams.command(
+          db,
+          world,
+          context,
+          actor,
+          input,
+          place,
+        );
+        const arrival =
+          input.command === "team-join"
+            ? (await this.#teamArrivals(db, world, context, [actor])).get(actor)
+            : undefined;
+        const result = {
+          ...team,
+          ...(arrival ? { teamArrival: arrival } : {}),
+        };
+        await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [
+          input.requestId,
+          result,
+        ]);
+        await db.query("COMMIT");
+        return result;
       }
       const application =
         input.command === "applications"
@@ -4495,6 +4710,7 @@ export class BotPlay {
       let session = await this.current(world, actor, db);
       if (session) {
         const wasOwnTurn = session.data.turn === actor;
+        const wasReceiving = !!session.data.receiving;
         if (
           (await this.#expire(db, session)) &&
           wasOwnTurn &&
@@ -4510,6 +4726,8 @@ export class BotPlay {
           );
           throw committedRejection;
         }
+        if (wasReceiving && !session.data.receiving)
+          session = await this.current(world, actor, db);
       }
       if (
         prepared &&
@@ -4546,6 +4764,7 @@ export class BotPlay {
           await this.#expire(db, session);
       }
       let result: Record<string, unknown> = {};
+      let teamArrival: TeamArrival | undefined;
       const continuing = !!session;
       let endedTurn:
         | {
@@ -4554,7 +4773,18 @@ export class BotPlay {
           }
         | undefined;
       if (input.command === "start") {
-        session ??= await this.#open(db, world, actor, user, input.requestId);
+        if (!session) {
+          session = await this.#open(db, world, actor, user, input.requestId);
+          teamArrival = (
+            await this.#teamArrivals(
+              db,
+              world,
+              this.store.context(w.id),
+              [actor],
+              [actor],
+            )
+          ).get(actor);
+        }
       } else {
         if (!session)
           reject("SESSION_REQUIRED", "本人のセッションを開始してください");
@@ -4596,7 +4826,7 @@ export class BotPlay {
             cancelled &&
             (await this.#turnCallsExhausted(db, session))
           ) {
-            await this.#next(db, session, undefined, actor);
+            await this.#next(db, session, undefined, [actor]);
           }
           await this.#record(db, session, {
             transition: {
@@ -4992,23 +5222,7 @@ export class BotPlay {
                 d.members = d.members.filter((m) => m.actorId !== actor);
                 await this.#save(db, session, before);
                 before = turnState(other);
-                other.data.members.push(member);
-                await db.query(
-                  "UPDATE bot_scene SET session_id=$3 WHERE id=$1 AND actor_id=$2",
-                  [member.sceneId, actor, other.id],
-                );
-                const arrival = await this.#transition(
-                  db,
-                  other,
-                  actor,
-                  "session-joined",
-                );
-                const transition = {
-                  ...arrival,
-                  message: `${arrival.name}がセッションに合流しました`,
-                };
-                await this.#record(db, other, { transition });
-                result.joined = transition;
+                result.joined = await this.#enter(db, other, member);
                 session = other;
               }
             } else if (input.command === "say") {
@@ -5248,20 +5462,38 @@ export class BotPlay {
             }
           }
         }
+        const movedActors =
+          confirmedChanges?.edges.flatMap((edge) =>
+            edge.kind === "status" &&
+            edge.role === "content" &&
+            edge.text === "location"
+              ? [edge.source]
+              : [],
+          ) ?? [];
         if (
-          confirmedChanges?.edges.some(
-            (edge) =>
-              edge.kind === "status" &&
-              edge.role === "content" &&
-              edge.text === "location" &&
-              members.some((m) => !m.instant && m.actorId === edge.source),
+          movedActors.some((id) =>
+            members.some((m) => !m.instant && m.actorId === id),
           )
         )
           await this.#removeUnoccupiedInstants(db, session);
         await this.#save(db, session, before);
+        if (receiving && !d.receiving)
+          movedActors.push(receiving.sender, ...receiving.recipients);
+        teamArrival = (
+          await this.#teamArrivals(
+            db,
+            world,
+            this.store.context(w.id),
+            movedActors,
+          )
+        ).get(actor);
       }
       const status = await this.status(world, actor, db);
-      result = { ...result, ...status };
+      result = {
+        ...result,
+        ...status,
+        ...(teamArrival ? { teamArrival } : {}),
+      };
       const owner =
         status.characters?.find(
           (member) => member.actorId === status.actorId,
