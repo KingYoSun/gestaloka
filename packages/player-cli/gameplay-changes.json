@@ -1,4 +1,7 @@
 {
+  "0.37.0": [
+    "検索で現れた物品は、同じ物がいくつ現れても個数つきの1つの物品にまとまります（appearances[].count）。その場に同じ物品が残っていればそこへ足され、appearances[].id はその物品のIDになります。move の count で一部だけを拾え、残りはその場に残ります。"
+  ],
   "0.36.0": [
     "持ち物・保管先・技能は search --kind self の material.belongings に入りました。search --kind belongings は SEARCH_KIND_MOVED を返します。物品は個数（count）を持てます。move・transfer・remove に count を指定すると一部だけを渡す・減らすことができ、update の count で個数を書き換えられます（増やすときはダイスで判定）。GMがダイスを設定する申請では、成功したときに減る手持ちの物品もGMが決め、outcome.setting.consumes に返ります。say で使った・食べたと述べても持ち物は減りません。死亡ドロップの物品は個数つきの1つの物品として残り（appearances[].count）、move の count で一部だけを拾えます。"
   ],
