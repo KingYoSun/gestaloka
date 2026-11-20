@@ -2933,7 +2933,31 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
     ],
   });
   expect(await f.send(0, body)).toEqual(found);
-  // 次に現れた物品は、その場に残っている同じ物品へ足され、物品は増えない。
+  // 次に現れた物品は、その場に残っている同じ物品へ足され、物品は増えない。状態が付いていても足される。
+  const state = randomUUID();
+  await f.store.commit(
+    await f.store.claim(world, state),
+    f.store.context(world),
+    {
+      commitId: state,
+      at,
+      changes: {
+        nodes: [{ id: state, kind: "script", text: "砂にまみれている" }],
+        revisions: [],
+        endEdges: [],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "content",
+            source: items[0]!.id,
+            target: state,
+            period: { from: at },
+          },
+        ],
+      },
+    },
+  );
   const second = await f.send(0, { command: "search", query });
   expect(second.appearances).toMatchObject([{ id: items[0]!.id, count: 3 }]);
   expect(JSON.stringify((await f.status(1)).entries)).toContain(items[0]!.id);

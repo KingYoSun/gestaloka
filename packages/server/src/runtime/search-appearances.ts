@@ -67,9 +67,9 @@ function appear(key: string, rule: Rule, count: number): Appearance[] {
     ...(item ? { count } : {}),
   }));
 }
-// 出現を出来事として記録し、個体以外をその場に残る発見物にする。その場に、呼称が同じで
-// 固有の状態を持たない個数つきの発見物があれば、現れた物品をそこへ足して物品を増やさない。
-// 足した出現のidは、足した先の物品のidに書き換える。
+// 出現を出来事として記録し、個体以外をその場に残る発見物にする。その場に、呼称が同じ
+// 個数つきの発見物があれば、現れた物品をそこへ足して物品を増やさない。状態が付いた発見物にも
+// 足し、複数あれば個数の多いものを選ぶ。足した出現のidは、足した先の物品のidに書き換える。
 export async function recordAppearances(
   ctx: WorldContext,
   changes: Change,
@@ -84,13 +84,14 @@ export async function recordAppearances(
     for (const place of places)
       for (const id of await groundItems(ctx, place)) {
         const node = await ctx.node(id);
+        const known = node && stacks.get(node.text);
         if (
           node?.kind === "existence" &&
           node.count &&
           ((await ctx.latestTime(id)) ?? 0) <= at &&
-          !(await ctx.relations(id, "status", "out", latest)).some(
-            (e) => e.role === "content",
-          )
+          (!known ||
+            node.count > known.count! ||
+            (node.count === known.count && node.id < known.id))
         )
           stacks.set(node.text, node);
       }
