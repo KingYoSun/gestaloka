@@ -2105,8 +2105,23 @@ export class BotPlay {
       for (const location of locations)
         for (const id of location.aboutIds) neighbors.add(id);
       const contacts = await this.#available(world, [...neighbors]);
+      // 行き来の記述(route)が、いまいる場所と結んでいる別の場所。移動先の手がかりで、移動の制限ではない。
+      const here = new Set(locations.flatMap((l) => l.aboutIds)),
+        routes = new Map<string, string>();
+      for (const place of here)
+        for (const edge of await context.relations(place, "status", "out", at))
+          if (edge.role === "content" && edge.text === "route")
+            for (const e of await context.relations(
+              edge.target,
+              "status",
+              "out",
+              at,
+            ))
+              if (e.role === "about" && !here.has(e.target))
+                routes.set(e.target, (await context.node(e.target))!.text);
       material = {
         locations,
+        routes: [...routes].map(([id, label]) => ({ id, label })),
         subjects: await Promise.all(
           [...neighbors].map(async (id) => ({
             ...(await context.node(id)),
@@ -2650,6 +2665,7 @@ export class BotPlay {
             id: derivedId(`${route}:content:${id}`),
             kind: "status",
             role: "content",
+            text: "route",
             source: id,
             target: route,
             period: { from: at },
