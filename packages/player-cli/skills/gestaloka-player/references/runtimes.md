@@ -21,7 +21,7 @@ Museでは、その終了をサイドチャットのネイティブ完了通知�
 通知を受け付けたら、そのViewでキーを保存する。次は下記を使う。再接続時に同じキーが返る間は終了しない。inactiveで終了したときはプレイを再開しない。
 
 ```sh
-node "$cli" listen --once --after-wake "$last_wake_key" --instance "$view_id"
+node "$cli" listen --once --after-wake "$last_wake_key" --after-notice "$last_notice_key" --instance "$view_id"
 ```
 
 ストリームの各行を直接Viewへ渡せる実行環境では `--once` を省いたlistenを使える。この場合は下表で起床の要否を判定する。ファイルへの記録だけではViewは起きない。常駐接続を使えない環境だけ、代替として60秒ごとの軽量フックでstandbyを実行する。
@@ -30,6 +30,7 @@ node "$cli" listen --once --after-wake "$last_wake_key" --instance "$view_id"
 | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `state: standby`、`actionable: false`              | 在席を維持して`silent`。本人はランタイムの待機状態に留まる                                                                             |
 | `state: turn`または`receiving`、`actionable: true` | 本人のViewが待機中で、`wakeKey`が未通知なら1回起こす。受付成功後に通知済みキーを保存する                                               |
+| `noticeKey` が `null` でない                       | 本人のViewが待機中で、`noticeKey`が未通知なら1回起こす。受付成功後に通知済みの`noticeKey`を保存する。手番の`wakeKey`とは別に持つ       |
 | `state: paused`                                    | `silent`。再開時に同じ手番も再通知できるよう、直前の通知済みキーを解除する                                                             |
 | `state: inactive`                                  | 明示的な終了なので`silent`。持ち主から再開の指示を受けた時だけ`standby --resume`を使う                                                 |
 | 実行失敗・不正な返却                               | キーを通知済みにせず次のフックで再試行する。従来の失敗通知と同じく、連続30回失敗した回に一度だけ持ち主へ報告し、成功後に失敗回数を戻す |
@@ -55,6 +56,8 @@ node "$cli" listen --once --after-wake "$last_wake_key" --instance "$view_id"
 すでに起きているViewがその場の進行を読む場合は `listen` を `--once` なしで開く。`progress.updates` に退出と手番終了が届き、`progress.actorId` で現在の手番の持ち主が分かる。離席で手番が止まっている間は `progress.waitingForReturn.deadline` と残り秒数を使う。再接続時は最後に読んだ位置から配信する。起床のために使う `listen --once` は、本人が操作できる新しい手番または受領を待つ。
 
 `listen --once` と `standby --resume` の結果の `context` で、現在の手番の持ち主と直近の出来事を確認できる。待受の要約を確認した後、普段どおり `status` で未読の手番記録を読む。合流は継続 `listen` の `progress.updates` でも読める。
+
+本人あての通知（時間をかけた申請の物品が届いた、など）は、手番とは別に届く。未読があると待受の状態の `noticeKey` に最新の未読の通知のIDが入り、`noticeMessage` が出る。`listen --once` は新しい `noticeKey` でも返るので、次の待受には `--after-notice <受付済みのnoticeKey>` も渡す。起きた本人は `notices` で通知を読む。読むと既読になり、`noticeKey` は `null` に戻る。セッションの外で待機していても通知は届く。
 
 `actionMessage` に「受領判断が必要です」「あなたの手番です」「操作不要です」などの案内が出る。合流・退出などの表示だけが続いたときは `notificationMessage` でも操作不要と分かる。起床の判定には `actionable` と `wakeKey` を使う。判断者本人のメモ本文と申請者本人の確定結果は、本人が認可済みのCLIで読む。
 

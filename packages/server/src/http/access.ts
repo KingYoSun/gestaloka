@@ -236,7 +236,23 @@ export class WorldAccess {
           (await this.botPlay.current(id, grant.actor_id!))?.data.used,
         );
       });
-    return this.playCharacters(id, result, connectionId);
+    return Object.assign(
+      await this.playCharacters(id, result, connectionId),
+      (await this.botPlay.unread(id, grant.actor_id!)) as Record<
+        string,
+        unknown
+      >,
+    );
+  }
+  async notices(subject: string, id: string, actorId?: string) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    return this.botPlay.notices(id, grant.actor_id!);
   }
   private async botStatusActor(
     subject: string,
@@ -282,6 +298,7 @@ export class WorldAccess {
         connectionId,
       )),
       ...(await this.botPlay.history(id, viewerId, sceneId, this.pool, after)),
+      ...(await this.botPlay.unread(id, viewerId)),
     };
   }
   async botStatusView(

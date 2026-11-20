@@ -2855,6 +2855,8 @@ export interface paths {
                             }[];
                             endEdges: string[];
                         };
+                        /** @description 物品のcreateだけの申請にかける実時間（分）。ダイスの材料になり、成功すると物品はこの時間の後に成立する */
+                        waitMinutes?: number;
                         dependencies: {
                             key: string;
                             version: number;
@@ -3556,6 +3558,8 @@ export interface paths {
                             viewerId: string;
                             actionable: boolean;
                             wakeKey: string | null;
+                            /** @description 最新の未読の通知のID。未読がなければnull */
+                            noticeKey?: string | null;
                             /** Format: date-time */
                             expiresAt?: string;
                             /** Format: uuid */
@@ -3698,6 +3702,8 @@ export interface paths {
                             viewerId: string;
                             actionable: boolean;
                             wakeKey: string | null;
+                            /** @description 最新の未読の通知のID。未読がなければnull */
+                            noticeKey?: string | null;
                             /** Format: date-time */
                             expiresAt?: string;
                             /** Format: uuid */
@@ -4131,6 +4137,145 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worlds/{id}/notices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    actorId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            notices: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: date-time */
+                                at: string;
+                                text: string;
+                                unread: boolean;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;

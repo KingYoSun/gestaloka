@@ -1070,6 +1070,17 @@ test("バックグラウンドのlistenが待機を維持し、後から来た�
     profile = join(cli.directory, "listener.json");
   let child: ReturnType<typeof spawn> | undefined;
   try {
+    f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+    const ordered = await f.send(0, {
+      command: "update",
+      text: "薪を割って乾かす",
+      operations: [
+        { type: "create", label: "薪", holder: f.actors[0], basis: "割った" },
+      ],
+      waitMinutes: 1,
+      dependencies: [],
+    });
+    f.calls.mockClear();
     await f.send(0, { command: "finish" });
     await access.waiting(
       f.people[0]!.id,
@@ -1122,6 +1133,31 @@ test("バックグラウンドのlistenが待機を維持し、後から来た�
         ),
       { timeout: 10000 },
     );
+    // 届いた物品の通知は、セッションの外で待機している本人の待受にも出る。
+    await new BotPlay(
+      runtime,
+      () =>
+        new Date(Date.parse((ordered.arrival as { dueAt: string }).dueAt) + 1),
+    ).expire(f.world);
+    await vi.waitFor(
+      () =>
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            state: "standby",
+            noticeKey: expect.any(String),
+            noticeMessage: expect.stringContaining("notices"),
+          }),
+        ),
+      { timeout: 4000 },
+    );
+    const noticed = await cli.run(profile, "listen", "--once");
+    expect(noticed).toMatchObject({ state: "standby", actionable: false });
+    expect((await cli.run(profile, "status")).unreadNotices).toBe(1);
+    expect(await cli.run(profile, "notices", "--full-ids")).toMatchObject({
+      state: "notices",
+      notices: [{ id: noticed.noticeKey, unread: true }],
+    });
+    expect((await cli.run(profile, "standby")).noticeKey).toBeNull();
     await f.send(1, { command: "contact", targetId: f.actors[0] });
     await vi.waitFor(
       () =>
@@ -4959,4 +4995,131 @@ test("持ち物は本人検索で個数つきで読め、ダイスが成功し�
   });
   expect((await held(0)).map((i) => i.id)).not.toContain(stone);
   expect((await held(0)).map((i) => i.id)).toContain(shield);
+});
+
+test("時間をかける物品の作成は、届く時刻を過ぎてから成立し、本人あての通知になる", async () => {
+  const f = await fixture();
+  const coins = (
+    await f.apply([
+      {
+        type: "create",
+        label: "銀貨",
+        count: 5,
+        holder: f.actors[0],
+        owner: f.actors[0],
+        basis: "初期設定",
+      },
+    ])
+  ).changes.nodes[0]!.id;
+  const held = async () =>
+    (await readBelongings(f.store.context(f.graph), f.actors[0]!)).items.map(
+      ({ label, count }) => ({ label, count }),
+    );
+  const arriving = async () =>
+    (await f.send(0, { command: "search", query: { kind: "self" } })).arriving;
+  const order = (operations: unknown[]) => ({
+    requestId: randomUUID(),
+    command: "update",
+    text: "ミルクを取り寄せる",
+    operations,
+    waitMinutes: 90,
+    dependencies: [],
+  });
+  const milk = (holder = f.actors[0]) => ({
+    type: "create",
+    label: "ミルク",
+    count: 10,
+    holder,
+    basis: "取り寄せた",
+  });
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  // 物品のcreate以外を含む申請と、受領が必要な申請には指定できない。
+  for (const operations of [
+    [milk(), { type: "update", id: coins, count: 9 }],
+    [milk(f.actors[1])],
+  ])
+    await expect(f.send(0, order(operations))).rejects.toMatchObject({
+      code: "WAIT_NOT_APPLICABLE",
+    });
+  expect(f.calls).not.toHaveBeenCalled();
+  expect((await f.status(0)).callsUsed).toBe(0);
+  // かける時間がGMへ渡る。成功すると代価だけが減り、物品はまだ成立しない。
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(String(messages[0]!.content)).toContain("waitMinutes");
+    expect(JSON.parse(String(messages[1]!.content)).waitMinutes).toBe(90);
+    return answer(id, { ...sure, consumes: [{ id: coins, count: 2 }] });
+  });
+  const first = order([milk()]),
+    placed = await f.send(0, first),
+    arrival = placed.arrival as { dueAt: string };
+  expect(placed.outcome).toMatchObject({
+    success: true,
+    setting: { consumes: [{ id: coins, count: 2 }] },
+  });
+  const dueAt = Date.parse(arrival.dueAt);
+  expect(dueAt).toBeGreaterThan(Date.now() + 89 * 60000);
+  expect(await f.send(0, first)).toEqual(placed);
+  expect(await held()).toEqual([{ label: "銀貨", count: 3 }]);
+  expect(await arriving()).toEqual([
+    {
+      text: "ミルクを取り寄せる",
+      items: [{ label: "ミルク", count: 10 }],
+      dueAt: arrival.dueAt,
+    },
+  ]);
+  // 失敗では何も減らず、予定もできない。
+  const failing = order([milk()]),
+    lost = { sides: 100, successThrough: 10 };
+  await isolated.databases.postgres.query(
+    "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,50)",
+    [
+      derivedId(`${failing.requestId}:creation`),
+      { ...lost, consumes: [{ id: coins, label: "銀貨", count: 1 }] },
+    ],
+  );
+  f.calls.mockImplementationOnce(async (id) => answer(id, lost));
+  const failed = await f.send(0, failing);
+  expect(failed.outcome).toMatchObject({ success: false });
+  expect(failed.arrival).toBeUndefined();
+  expect(await held()).toEqual([{ label: "銀貨", count: 3 }]);
+  // 届く時刻の前の定期処理では何も変わらない。
+  const user = f.people[0]!.id,
+    waiting = () => access.waiting(user, f.world, f.actors[0], "view", true);
+  await new BotPlay(runtime, () => new Date(dueAt - 1)).expire(f.world);
+  expect(await held()).toHaveLength(1);
+  expect((await f.status(0)).unreadNotices).toBeUndefined();
+  expect((await waiting()).noticeKey).toBeNull();
+  // 過ぎた後の定期処理で成立する。繰り返しても物品と通知は増えない。
+  const later = new BotPlay(runtime, () => new Date(dueAt + 1));
+  await later.expire(f.world);
+  await later.expire(f.world);
+  expect(await held()).toEqual(
+    expect.arrayContaining([
+      { label: "銀貨", count: 3 },
+      { label: "ミルク", count: 10 },
+    ]),
+  );
+  expect(await held()).toHaveLength(2);
+  expect(await arriving()).toBeUndefined();
+  // 未読は手番の状態と待受の状態に出て、読むと消える。
+  expect(await f.status(0)).toMatchObject({
+    unreadNotices: 1,
+    noticeMessage: expect.stringContaining("notices"),
+  });
+  const key = (await waiting()).noticeKey;
+  const read = await access.notices(user, f.world, f.actors[0]);
+  expect(read.notices).toEqual([
+    {
+      id: key,
+      at: new Date(dueAt + 1).toISOString(),
+      text: expect.stringContaining("ミルク（10個）"),
+      unread: true,
+    },
+  ]);
+  expect(
+    (await access.notices(user, f.world, f.actors[0])).notices,
+  ).toMatchObject([{ id: key, unread: false }]);
+  expect((await f.status(0)).unreadNotices).toBeUndefined();
+  expect((await waiting()).noticeKey).toBeNull();
 });

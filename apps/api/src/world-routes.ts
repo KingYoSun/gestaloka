@@ -9,6 +9,7 @@ import {
   PlayResponse,
   PlayerReportInput,
   PlayerReportStatus,
+  PlayerNotices,
   PlayerReportReceipt,
   WaitingCommand,
   WaitingContextStatus,
@@ -87,6 +88,7 @@ export async function worldRoutes(
         "/api/worlds/:id/waiting",
         "/api/worlds/:id/waiting/events",
         "/api/worlds/:id/reports",
+        "/api/worlds/:id/notices",
         "/api/worlds/:id/npc-promotions",
         "/api/worlds/:id/scene/records",
         "/api/worlds/:id/knowledge",
@@ -516,6 +518,22 @@ export async function worldRoutes(
         deviceIds.get(request),
       ),
   );
+  app.get(
+    "/api/worlds/:id/notices",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        response: { 200: PlayerNotices, ...errors },
+      },
+    },
+    async (request) =>
+      service().notices(
+        await subject(request),
+        request.params.id,
+        request.query.actorId,
+      ),
+  );
   app.post(
     "/api/worlds/:id/reports",
     {
@@ -775,6 +793,7 @@ export async function worldRoutes(
           const key = JSON.stringify([
             frame.state,
             frame.wakeKey,
+            frame.noticeKey,
             ...(progress
               ? [
                   frame.sessionId,
