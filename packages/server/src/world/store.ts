@@ -709,6 +709,7 @@ export class WorldStore {
       changes: unknown;
       management?: { editorId: string; reason: string; requestHash: string };
     },
+    fromBelongingOperations = false,
   ): Promise<Receipt> {
     const parsed = z
       .object({
@@ -728,6 +729,14 @@ export class WorldStore {
       .parse(input);
     const { commitId, at } = parsed;
     const changes = normalizeChange(parsed.changes, at);
+    if (
+      !parsed.management &&
+      !fromBelongingOperations &&
+      changes.nodes.some((node) => node.kind === "existence" && node.seriesId)
+    )
+      throw new WorldConflict(
+        "新しい物品へ系列を付けるには管理者の確定が必要です",
+      );
     if (lease.worldId !== context.worldId)
       throw new Error("異なる世界の文脈は確定できません");
     const { worldId, runId, generation } = lease;
@@ -786,8 +795,32 @@ export class WorldStore {
             throw new WorldConflict(
               "同一性・種別・既存の記録履歴を維持できない改訂です",
             );
+          const original = WorldNode.parse(JSON.parse(row.get("data")));
+          if (
+            !parsed.management &&
+            node.kind === "existence" &&
+            original.kind === "existence"
+          ) {
+            if (
+              node.seriesId !== undefined &&
+              node.seriesId !== original.seriesId
+            )
+              throw new WorldConflict(
+                "物品の系列の変更には管理者の確定が必要です",
+              );
+            if (original.seriesId) {
+              if (
+                !fromBelongingOperations &&
+                (node.count ?? 0) > (original.count ?? 0)
+              )
+                throw new WorldConflict(
+                  "系列のある物品の個数を増やすには管理者の確定が必要です",
+                );
+              node.seriesId = original.seriesId;
+            }
+          }
           revised.push({
-            node: WorldNode.parse(JSON.parse(row.get("data"))),
+            node: original,
             knownFrom: Number(row.get("knownFrom")),
           });
         }

@@ -6377,6 +6377,12 @@
                                       "exclusiveMinimum": true,
                                       "maximum": 9007199254740991
                                     },
+                                    "seriesId": {
+                                      "description": "管理者が指定する物品の系列ID",
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    },
                                     "viewers": {
                                       "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
                                       "anyOf": [
@@ -6714,6 +6720,12 @@
                                       "minimum": 0,
                                       "exclusiveMinimum": true,
                                       "maximum": 9007199254740991
+                                    },
+                                    "seriesId": {
+                                      "description": "管理者が指定する物品の系列ID",
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                     },
                                     "viewers": {
                                       "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
@@ -7162,6 +7174,11 @@
                         ],
                         "additionalProperties": false
                       },
+                      "deferredUntil": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
                       "waitMinutes": {
                         "description": "物品のcreateだけの申請にかける実時間（分）。ダイスの材料になり、成功すると物品はこの時間の後に成立する",
                         "type": "integer",
@@ -7225,6 +7242,11 @@
                           "format": "uuid",
                           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                         }
+                      },
+                      "deferredUntil": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                       },
                       "dependencies": {
                         "type": "array",
@@ -7348,6 +7370,12 @@
                                       "minimum": 0,
                                       "exclusiveMinimum": true,
                                       "maximum": 9007199254740991
+                                    },
+                                    "seriesId": {
+                                      "description": "管理者が指定する物品の系列ID",
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                     },
                                     "viewers": {
                                       "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
@@ -7686,6 +7714,12 @@
                                       "minimum": 0,
                                       "exclusiveMinimum": true,
                                       "maximum": 9007199254740991
+                                    },
+                                    "seriesId": {
+                                      "description": "管理者が指定する物品の系列ID",
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                     },
                                     "viewers": {
                                       "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
@@ -8623,6 +8657,12 @@
                                       "exclusiveMinimum": true,
                                       "maximum": 9007199254740991
                                     },
+                                    "seriesId": {
+                                      "description": "管理者が指定する物品の系列ID",
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    },
                                     "viewers": {
                                       "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
                                       "anyOf": [
@@ -8960,6 +9000,12 @@
                                       "minimum": 0,
                                       "exclusiveMinimum": true,
                                       "maximum": 9007199254740991
+                                    },
+                                    "seriesId": {
+                                      "description": "管理者が指定する物品の系列ID",
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                     },
                                     "viewers": {
                                       "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
@@ -9520,6 +9566,150 @@
                       "requestId",
                       "command",
                       "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "requestId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "command": {
+                        "type": "string",
+                        "enum": [
+                          "applications"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "requestId",
+                      "command"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "requestId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "command": {
+                        "type": "string",
+                        "enum": [
+                          "withdraw"
+                        ]
+                      },
+                      "applicationId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "requestId",
+                      "command",
+                      "applicationId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "storageId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "itemId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "exclusiveMinimum": true,
+                        "maximum": 9007199254740991
+                      },
+                      "paymentSeriesId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "paymentLabel": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "paymentCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "exclusiveMinimum": true,
+                        "maximum": 9007199254740991
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "requestId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "command": {
+                        "type": "string",
+                        "enum": [
+                          "offer"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "storageId",
+                      "itemId",
+                      "count",
+                      "paymentSeriesId",
+                      "paymentLabel",
+                      "paymentCount",
+                      "text",
+                      "requestId",
+                      "command"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "requestId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "command": {
+                        "type": "string",
+                        "enum": [
+                          "exchange"
+                        ]
+                      },
+                      "offerId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "paymentItemId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "requestId",
+                      "command",
+                      "offerId",
+                      "paymentItemId"
                     ],
                     "additionalProperties": false
                   },
@@ -10365,6 +10555,12 @@
                                             "exclusiveMinimum": true,
                                             "maximum": 9007199254740991
                                           },
+                                          "seriesId": {
+                                            "description": "管理者が指定する物品の系列ID",
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
                                           "viewers": {
                                             "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
                                             "anyOf": [
@@ -10702,6 +10898,12 @@
                                             "minimum": 0,
                                             "exclusiveMinimum": true,
                                             "maximum": 9007199254740991
+                                          },
+                                          "seriesId": {
+                                            "description": "管理者が指定する物品の系列ID",
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "viewers": {
                                             "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
@@ -16714,6 +16916,12 @@
                                           "exclusiveMinimum": true,
                                           "maximum": 9007199254740991
                                         },
+                                        "seriesId": {
+                                          "description": "管理者が指定する物品の系列ID",
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
                                         "viewers": {
                                           "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
                                           "anyOf": [
@@ -17051,6 +17259,12 @@
                                           "minimum": 0,
                                           "exclusiveMinimum": true,
                                           "maximum": 9007199254740991
+                                        },
+                                        "seriesId": {
+                                          "description": "管理者が指定する物品の系列ID",
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                         },
                                         "viewers": {
                                           "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",

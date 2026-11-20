@@ -81,6 +81,7 @@ export const WorldNode = z.discriminatedUnion("kind", [
         .safe()
         .optional()
         .describe("物品の個数。無い物品は、個数を数えないひとまとまり"),
+      seriesId: z.uuid().optional().describe("管理者が指定する物品の系列ID"),
       viewers,
     })
     .strict(),

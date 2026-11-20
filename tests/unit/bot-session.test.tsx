@@ -190,6 +190,58 @@ const show = () =>
     />,
   );
 
+test("セッションの外で申請を開き、受領を確定する", async () => {
+  delete view.sessionId;
+  view.members = [];
+  let accepted = false;
+  server.use(
+    http.get("*/api/worlds/:id/session", () =>
+      json({
+        ...view,
+        screen: {
+          own: { actorId: actor, name: "観測者", profile: [] },
+          people: [],
+          neighbors: [],
+          past: [],
+          applications: accepted
+            ? []
+            : [
+                {
+                  id: scene,
+                  senderId: peer,
+                  senderName: "渡し守",
+                  text: "水位が下がったら渡し場を確認する",
+                  deadline: "2030-01-01T00:00:00.000Z",
+                  awaitingYou: true,
+                  preview: [],
+                },
+              ],
+        },
+      }),
+    ),
+    http.post("*/api/worlds/:id/session", async ({ request }) => {
+      expect(await request.json()).toMatchObject({
+        command: "receive",
+        applicationId: scene,
+        accept: true,
+      });
+      accepted = true;
+      return json({ state: "accepted", message: "申請を確定しました" });
+    }),
+  );
+  show();
+  await screen.findByText(
+    "水位が下がったら渡し場を確認する",
+    {},
+    { timeout: 5000 },
+  );
+  fireEvent.click(screen.getByRole("button", { name: "承認する" }));
+  await screen.findByText("申請を確定しました");
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "承認する" })).toBeNull(),
+  );
+});
+
 test("本人の素材を個別表示し、手番終了時に入力・結果・任意コメントを共有する", async () => {
   show();
   await screen.findByRole(

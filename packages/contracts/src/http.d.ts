@@ -2685,6 +2685,11 @@ export interface paths {
                                 kind: "existence";
                                 /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                 count?: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 管理者が指定する物品の系列ID
+                                 */
+                                seriesId?: string;
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                 viewers?: "all" | string[];
                             } | {
@@ -2761,6 +2766,11 @@ export interface paths {
                                 kind: "existence";
                                 /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                 count?: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 管理者が指定する物品の系列ID
+                                 */
+                                seriesId?: string;
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                 viewers?: "all" | string[];
                             } | {
@@ -2863,6 +2873,8 @@ export interface paths {
                             }[];
                             endEdges: string[];
                         };
+                        /** Format: date-time */
+                        deferredUntil?: string;
                         /** @description 物品のcreateだけの申請にかける実時間（分）。ダイスの材料になり、成功すると物品はこの時間の後に成立する */
                         waitMinutes?: number;
                         dependencies: {
@@ -2877,6 +2889,8 @@ export interface paths {
                         text: string;
                         /** @default [] */
                         participants?: string[];
+                        /** Format: date-time */
+                        deferredUntil?: string;
                         dependencies: {
                             key: string;
                             version: number;
@@ -2908,6 +2922,11 @@ export interface paths {
                                 kind: "existence";
                                 /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                 count?: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 管理者が指定する物品の系列ID
+                                 */
+                                seriesId?: string;
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                 viewers?: "all" | string[];
                             } | {
@@ -2984,6 +3003,11 @@ export interface paths {
                                 kind: "existence";
                                 /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                 count?: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 管理者が指定する物品の系列ID
+                                 */
+                                seriesId?: string;
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                 viewers?: "all" | string[];
                             } | {
@@ -3217,6 +3241,11 @@ export interface paths {
                                 kind: "existence";
                                 /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                 count?: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 管理者が指定する物品の系列ID
+                                 */
+                                seriesId?: string;
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                 viewers?: "all" | string[];
                             } | {
@@ -3293,6 +3322,11 @@ export interface paths {
                                 kind: "existence";
                                 /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                 count?: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 管理者が指定する物品の系列ID
+                                 */
+                                seriesId?: string;
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                 viewers?: "all" | string[];
                             } | {
@@ -3428,6 +3462,42 @@ export interface paths {
                         /** @enum {string} */
                         command: "comment";
                         text: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "applications";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "withdraw";
+                        /** Format: uuid */
+                        applicationId: string;
+                    } | {
+                        /** Format: uuid */
+                        storageId: string;
+                        /** Format: uuid */
+                        itemId: string;
+                        count: number;
+                        /** Format: uuid */
+                        paymentSeriesId: string;
+                        paymentLabel: string;
+                        paymentCount: number;
+                        text: string;
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "offer";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "exchange";
+                        /** Format: uuid */
+                        offerId: string;
+                        /** Format: uuid */
+                        paymentItemId: string;
                     } | {
                         /** Format: uuid */
                         requestId: string;
@@ -3782,6 +3852,11 @@ export interface paths {
                                             kind: "existence";
                                             /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                             count?: number;
+                                            /**
+                                             * Format: uuid
+                                             * @description 管理者が指定する物品の系列ID
+                                             */
+                                            seriesId?: string;
                                             /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                             viewers?: "all" | string[];
                                         } | {
@@ -3858,6 +3933,11 @@ export interface paths {
                                             kind: "existence";
                                             /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                             count?: number;
+                                            /**
+                                             * Format: uuid
+                                             * @description 管理者が指定する物品の系列ID
+                                             */
+                                            seriesId?: string;
                                             /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                             viewers?: "all" | string[];
                                         } | {
@@ -6337,6 +6417,11 @@ export interface paths {
                                     kind: "existence";
                                     /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                     count?: number;
+                                    /**
+                                     * Format: uuid
+                                     * @description 管理者が指定する物品の系列ID
+                                     */
+                                    seriesId?: string;
                                     /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                     viewers?: "all" | string[];
                                 } | {
@@ -6413,6 +6498,11 @@ export interface paths {
                                     kind: "existence";
                                     /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
                                     count?: number;
+                                    /**
+                                     * Format: uuid
+                                     * @description 管理者が指定する物品の系列ID
+                                     */
+                                    seriesId?: string;
                                     /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                     viewers?: "all" | string[];
                                 } | {

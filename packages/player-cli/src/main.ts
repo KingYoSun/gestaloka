@@ -444,6 +444,8 @@ async function run() {
     "owner",
     "scene",
     "application",
+    "offer",
+    "payment",
     "request",
     "source",
     "before",
@@ -736,6 +738,9 @@ async function run() {
                 participants:
                   values.participants?.split(",").map((v) => v.trim()) ?? [],
                 dependencies: [],
+                ...(values["deferred-until"]
+                  ? { deferredUntil: values["deferred-until"] }
+                  : {}),
               }
             : {}),
           ...(command === "explore"
@@ -751,6 +756,12 @@ async function run() {
             : {}),
           ...(command === "receive"
             ? { applicationId: values.application, accept: !!values.accept }
+            : {}),
+          ...(command === "withdraw"
+            ? { applicationId: values.application }
+            : {}),
+          ...(command === "exchange"
+            ? { offerId: values.offer, paymentItemId: values.payment }
             : {}),
         },
   );
