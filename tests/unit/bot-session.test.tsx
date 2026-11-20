@@ -242,6 +242,18 @@ test("セッションの外で申請を開き、受領を確定する", async ()
   );
 });
 
+test("出現した一団を一人分の同席枠に現在数つきで表示する", async () => {
+  view.characters = [
+    { actorId: actor, name: "観測者", icon: null },
+    { actorId: peer, name: "鳥", icon: null, count: 4 },
+  ];
+  show();
+  const group = await screen.findByRole("button", {
+    name: "鳥 ×4のプロフィール",
+  });
+  expect(within(group).getByText("×4")).toBeTruthy();
+});
+
 test("検索結果とセッションのチャットに同じ出現描写を表示する", async () => {
   const appearanceText = "水鳥が現れた\n\n浅瀬の飛び石を順に指さす。";
   server.use(

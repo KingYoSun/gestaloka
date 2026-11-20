@@ -27,6 +27,8 @@ export {
 export {
   Change,
   Appearance,
+  InstantReduction,
+  InstantReductionResult,
   WorldNode,
   WorldEdge,
   RelationKind,
@@ -144,6 +146,7 @@ export const PlayerCharacter = z.object({
   actorId: z.uuid(),
   name: z.string(),
   icon: z.string().nullable(),
+  count: z.number().int().positive().safe().optional(),
 });
 export const PLAYER_ICON_MAX_BYTES = 5 * 1024 * 1024;
 export const PlayerIconInput = z

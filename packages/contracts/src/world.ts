@@ -45,7 +45,7 @@ export const Appearance = SpawnSubject.extend({
   id: z.uuid(),
   count: spawnCount
     .optional()
-    .describe("個数つきの1つの物品として現れた・残った数。物品に付く"),
+    .describe("出現した一団の個体数、または一つにまとまった物品の個数"),
   ruleId: z
     .uuid()
     .optional()
@@ -64,6 +64,25 @@ const viewers = z
     "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
   );
 const InstantRef = z.object({ id: z.uuid(), sourceEventId: z.uuid() }).strict();
+export const InstantReduction = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("death"), count: spawnCount }).strict(),
+  z
+    .object({
+      kind: z.literal("separation"),
+      count: spawnCount,
+      stays: z.boolean(),
+    })
+    .strict(),
+]);
+export const InstantReductionResult = z
+  .object({
+    targetId: z.uuid(),
+    kind: z.enum(["death", "separation"]),
+    count: spawnCount,
+    remaining: z.number().int().nonnegative().safe(),
+    separatedId: z.uuid().optional(),
+  })
+  .strict();
 export const WorldNode = z.discriminatedUnion("kind", [
   z
     .object({
@@ -101,6 +120,7 @@ export const WorldNode = z.discriminatedUnion("kind", [
       appearances: z.array(Appearance).optional(),
       instantActor: InstantRef.optional(),
       instantTarget: InstantRef.optional(),
+      instantReduction: InstantReductionResult.optional(),
       period: Period,
     })
     .strict(),

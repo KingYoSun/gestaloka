@@ -11,6 +11,11 @@ import { Button } from "./components/ui/button.js";
 import { Label } from "./components/ui/label.js";
 
 type Character = z.infer<typeof PlayerCharacter>;
+export const characterName = ({
+  name,
+  count,
+}: Pick<Character, "name" | "count">) =>
+  count && count > 1 ? `${name} ×${count}` : name;
 export function CharacterAvatar({
   name,
   icon,
@@ -36,11 +41,12 @@ export function CharacterAvatar({
 export function CharacterBadge({
   name,
   icon,
-}: Pick<Character, "name" | "icon">) {
+  count,
+}: Pick<Character, "name" | "icon" | "count">) {
   return (
     <span className="player-character">
       <CharacterAvatar name={name} icon={icon} />
-      <span>{name}</span>
+      <span>{characterName({ name, count })}</span>
     </span>
   );
 }

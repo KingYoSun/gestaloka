@@ -194,6 +194,11 @@ export class PlayerTools {
     const appearance = (
       source?.appearances as Appearance[] | undefined
     )?.filter((a) => a.kind === "instant-npc")[input.npcIndex];
+    if ((appearance?.count ?? 1) > 1)
+      reject(
+        "INSTANT_NPC_GROUP",
+        "一団から分かれた個体を昇格に指定してください",
+      );
     return { label, eventText: event!.text, appearance };
   }
   async requestPromotion(

@@ -10,7 +10,11 @@ import {
   type PlayerNotices,
 } from "@gestaloka/contracts";
 import { Button } from "./components/ui/button.js";
-import { CharacterAvatar, CharacterBadge } from "./player-icons.js";
+import {
+  CharacterAvatar,
+  CharacterBadge,
+  characterName,
+} from "./player-icons.js";
 import { RichText } from "./RichText.js";
 import { Notice, Problem } from "./presentation.js";
 
@@ -402,6 +406,7 @@ export function ScenePanel({
         <ol className="scene-people">
           {people.map((person) => {
             const active = turn === person.actorId;
+            const label = characterName(person);
             return (
               <li key={person.actorId} className="scene-person">
                 <Dialog.Root>
@@ -414,17 +419,20 @@ export function ScenePanel({
                           aria-current={active ? "true" : undefined}
                           aria-label={
                             active
-                              ? `${person.name}のプロフィール（手番中）`
-                              : `${person.name}のプロフィール`
+                              ? `${label}のプロフィール（手番中）`
+                              : `${label}のプロフィール`
                           }
                         >
                           <CharacterAvatar {...person} />
+                          {!!person.count && person.count > 1 && (
+                            <span className="record-meta">×{person.count}</span>
+                          )}
                         </button>
                       </Dialog.Trigger>
                     </Tooltip.Trigger>
                     <Tooltip.Portal>
                       <Tooltip.Content className="play-tooltip" sideOffset={6}>
-                        {person.name}
+                        {label}
                       </Tooltip.Content>
                     </Tooltip.Portal>
                   </Tooltip.Root>

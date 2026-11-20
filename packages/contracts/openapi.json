@@ -2199,6 +2199,12 @@
                                 "icon": {
                                   "nullable": true,
                                   "type": "string"
+                                },
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true,
+                                  "maximum": 9007199254740991
                                 }
                               },
                               "required": [
@@ -3746,6 +3752,12 @@
                               "icon": {
                                 "nullable": true,
                                 "type": "string"
+                              },
+                              "count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
                               }
                             },
                             "required": [
@@ -3776,6 +3788,12 @@
                               "icon": {
                                 "nullable": true,
                                 "type": "string"
+                              },
+                              "count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
                               }
                             },
                             "required": [
@@ -3819,6 +3837,12 @@
                                     "icon": {
                                       "nullable": true,
                                       "type": "string"
+                                    },
+                                    "count": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
                                     }
                                   },
                                   "required": [
@@ -3874,6 +3898,12 @@
                                     "icon": {
                                       "nullable": true,
                                       "type": "string"
+                                    },
+                                    "count": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
                                     }
                                   },
                                   "required": [
@@ -4556,6 +4586,12 @@
                               "icon": {
                                 "nullable": true,
                                 "type": "string"
+                              },
+                              "count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
                               }
                             },
                             "required": [
@@ -4586,6 +4622,12 @@
                               "icon": {
                                 "nullable": true,
                                 "type": "string"
+                              },
+                              "count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
                               }
                             },
                             "required": [
@@ -4629,6 +4671,12 @@
                                     "icon": {
                                       "nullable": true,
                                       "type": "string"
+                                    },
+                                    "count": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
                                     }
                                   },
                                   "required": [
@@ -4684,6 +4732,12 @@
                                     "icon": {
                                       "nullable": true,
                                       "type": "string"
+                                    },
+                                    "count": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
                                     }
                                   },
                                   "required": [
@@ -5192,6 +5246,12 @@
                                 "icon": {
                                   "nullable": true,
                                   "type": "string"
+                                },
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true,
+                                  "maximum": 9007199254740991
                                 }
                               },
                               "required": [
@@ -6674,7 +6734,7 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "count": {
-                                            "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
+                                            "description": "出現した一団の個体数、または一つにまとまった物品の個数",
                                             "type": "integer",
                                             "minimum": 0,
                                             "exclusiveMinimum": true,
@@ -6733,6 +6793,46 @@
                                       "required": [
                                         "id",
                                         "sourceEventId"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "instantReduction": {
+                                      "type": "object",
+                                      "properties": {
+                                        "targetId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "death",
+                                            "separation"
+                                          ]
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "remaining": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "separatedId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        }
+                                      },
+                                      "required": [
+                                        "targetId",
+                                        "kind",
+                                        "count",
+                                        "remaining"
                                       ],
                                       "additionalProperties": false
                                     },
@@ -7018,7 +7118,7 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "count": {
-                                            "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
+                                            "description": "出現した一団の個体数、または一つにまとまった物品の個数",
                                             "type": "integer",
                                             "minimum": 0,
                                             "exclusiveMinimum": true,
@@ -7077,6 +7177,46 @@
                                       "required": [
                                         "id",
                                         "sourceEventId"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "instantReduction": {
+                                      "type": "object",
+                                      "properties": {
+                                        "targetId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "death",
+                                            "separation"
+                                          ]
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "remaining": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "separatedId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        }
+                                      },
+                                      "required": [
+                                        "targetId",
+                                        "kind",
+                                        "count",
+                                        "remaining"
                                       ],
                                       "additionalProperties": false
                                     },
@@ -7668,7 +7808,7 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "count": {
-                                            "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
+                                            "description": "出現した一団の個体数、または一つにまとまった物品の個数",
                                             "type": "integer",
                                             "minimum": 0,
                                             "exclusiveMinimum": true,
@@ -7727,6 +7867,46 @@
                                       "required": [
                                         "id",
                                         "sourceEventId"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "instantReduction": {
+                                      "type": "object",
+                                      "properties": {
+                                        "targetId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "death",
+                                            "separation"
+                                          ]
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "remaining": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "separatedId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        }
+                                      },
+                                      "required": [
+                                        "targetId",
+                                        "kind",
+                                        "count",
+                                        "remaining"
                                       ],
                                       "additionalProperties": false
                                     },
@@ -8012,7 +8192,7 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "count": {
-                                            "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
+                                            "description": "出現した一団の個体数、または一つにまとまった物品の個数",
                                             "type": "integer",
                                             "minimum": 0,
                                             "exclusiveMinimum": true,
@@ -8071,6 +8251,46 @@
                                       "required": [
                                         "id",
                                         "sourceEventId"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "instantReduction": {
+                                      "type": "object",
+                                      "properties": {
+                                        "targetId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "death",
+                                            "separation"
+                                          ]
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "remaining": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "separatedId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        }
+                                      },
+                                      "required": [
+                                        "targetId",
+                                        "kind",
+                                        "count",
+                                        "remaining"
                                       ],
                                       "additionalProperties": false
                                     },
@@ -8954,7 +9174,7 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "count": {
-                                            "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
+                                            "description": "出現した一団の個体数、または一つにまとまった物品の個数",
                                             "type": "integer",
                                             "minimum": 0,
                                             "exclusiveMinimum": true,
@@ -9013,6 +9233,46 @@
                                       "required": [
                                         "id",
                                         "sourceEventId"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "instantReduction": {
+                                      "type": "object",
+                                      "properties": {
+                                        "targetId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "death",
+                                            "separation"
+                                          ]
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "remaining": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "separatedId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        }
+                                      },
+                                      "required": [
+                                        "targetId",
+                                        "kind",
+                                        "count",
+                                        "remaining"
                                       ],
                                       "additionalProperties": false
                                     },
@@ -9298,7 +9558,7 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "count": {
-                                            "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
+                                            "description": "出現した一団の個体数、または一つにまとまった物品の個数",
                                             "type": "integer",
                                             "minimum": 0,
                                             "exclusiveMinimum": true,
@@ -9357,6 +9617,46 @@
                                       "required": [
                                         "id",
                                         "sourceEventId"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "instantReduction": {
+                                      "type": "object",
+                                      "properties": {
+                                        "targetId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "death",
+                                            "separation"
+                                          ]
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "remaining": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "separatedId": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        }
+                                      },
+                                      "required": [
+                                        "targetId",
+                                        "kind",
+                                        "count",
+                                        "remaining"
                                       ],
                                       "additionalProperties": false
                                     },
@@ -10852,7 +11152,7 @@
                                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                                 },
                                                 "count": {
-                                                  "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
+                                                  "description": "出現した一団の個体数、または一つにまとまった物品の個数",
                                                   "type": "integer",
                                                   "minimum": 0,
                                                   "exclusiveMinimum": true,
@@ -10911,6 +11211,46 @@
                                             "required": [
                                               "id",
                                               "sourceEventId"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "instantReduction": {
+                                            "type": "object",
+                                            "properties": {
+                                              "targetId": {
+                                                "type": "string",
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                              },
+                                              "kind": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "death",
+                                                  "separation"
+                                                ]
+                                              },
+                                              "count": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "exclusiveMinimum": true,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "remaining": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "separatedId": {
+                                                "type": "string",
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                              }
+                                            },
+                                            "required": [
+                                              "targetId",
+                                              "kind",
+                                              "count",
+                                              "remaining"
                                             ],
                                             "additionalProperties": false
                                           },
@@ -11196,7 +11536,7 @@
                                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                                 },
                                                 "count": {
-                                                  "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
+                                                  "description": "出現した一団の個体数、または一つにまとまった物品の個数",
                                                   "type": "integer",
                                                   "minimum": 0,
                                                   "exclusiveMinimum": true,
@@ -11255,6 +11595,46 @@
                                             "required": [
                                               "id",
                                               "sourceEventId"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "instantReduction": {
+                                            "type": "object",
+                                            "properties": {
+                                              "targetId": {
+                                                "type": "string",
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                              },
+                                              "kind": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "death",
+                                                  "separation"
+                                                ]
+                                              },
+                                              "count": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "exclusiveMinimum": true,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "remaining": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "separatedId": {
+                                                "type": "string",
+                                                "format": "uuid",
+                                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                              }
+                                            },
+                                            "required": [
+                                              "targetId",
+                                              "kind",
+                                              "count",
+                                              "remaining"
                                             ],
                                             "additionalProperties": false
                                           },
@@ -17213,7 +17593,7 @@
                                                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                               },
                                               "count": {
-                                                "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
+                                                "description": "出現した一団の個体数、または一つにまとまった物品の個数",
                                                 "type": "integer",
                                                 "minimum": 0,
                                                 "exclusiveMinimum": true,
@@ -17272,6 +17652,46 @@
                                           "required": [
                                             "id",
                                             "sourceEventId"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "instantReduction": {
+                                          "type": "object",
+                                          "properties": {
+                                            "targetId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "death",
+                                                "separation"
+                                              ]
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "exclusiveMinimum": true,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "remaining": {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "separatedId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            }
+                                          },
+                                          "required": [
+                                            "targetId",
+                                            "kind",
+                                            "count",
+                                            "remaining"
                                           ],
                                           "additionalProperties": false
                                         },
@@ -17557,7 +17977,7 @@
                                                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                               },
                                               "count": {
-                                                "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
+                                                "description": "出現した一団の個体数、または一つにまとまった物品の個数",
                                                 "type": "integer",
                                                 "minimum": 0,
                                                 "exclusiveMinimum": true,
@@ -17616,6 +18036,46 @@
                                           "required": [
                                             "id",
                                             "sourceEventId"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "instantReduction": {
+                                          "type": "object",
+                                          "properties": {
+                                            "targetId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "death",
+                                                "separation"
+                                              ]
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "exclusiveMinimum": true,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "remaining": {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "separatedId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            }
+                                          },
+                                          "required": [
+                                            "targetId",
+                                            "kind",
+                                            "count",
+                                            "remaining"
                                           ],
                                           "additionalProperties": false
                                         },
