@@ -2385,7 +2385,10 @@ export interface paths {
                     "application/json": {
                         text: string;
                         effect?: {
-                            /** Format: uuid */
+                            /**
+                             * Format: uuid
+                             * @description その場の存在、または同席している出現個体のID
+                             */
                             targetId: string;
                             /** @description 後から対象を調べて観察できる状態 */
                             state: string;
@@ -2584,8 +2587,19 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /**
+                                     * Format: uuid
+                                     * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
+                                     */
+                                    ruleId?: string;
                                 }[];
                                 instantActor?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** Format: uuid */
+                                    sourceEventId: string;
+                                };
+                                instantTarget?: {
                                     /** Format: uuid */
                                     id: string;
                                     /** Format: uuid */
@@ -2641,8 +2655,19 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /**
+                                     * Format: uuid
+                                     * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
+                                     */
+                                    ruleId?: string;
                                 }[];
                                 instantActor?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** Format: uuid */
+                                    sourceEventId: string;
+                                };
+                                instantTarget?: {
                                     /** Format: uuid */
                                     id: string;
                                     /** Format: uuid */
@@ -2767,8 +2792,19 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /**
+                                     * Format: uuid
+                                     * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
+                                     */
+                                    ruleId?: string;
                                 }[];
                                 instantActor?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** Format: uuid */
+                                    sourceEventId: string;
+                                };
+                                instantTarget?: {
                                     /** Format: uuid */
                                     id: string;
                                     /** Format: uuid */
@@ -2824,8 +2860,19 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /**
+                                     * Format: uuid
+                                     * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
+                                     */
+                                    ruleId?: string;
                                 }[];
                                 instantActor?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** Format: uuid */
+                                    sourceEventId: string;
+                                };
+                                instantTarget?: {
                                     /** Format: uuid */
                                     id: string;
                                     /** Format: uuid */
@@ -3028,8 +3075,19 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /**
+                                     * Format: uuid
+                                     * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
+                                     */
+                                    ruleId?: string;
                                 }[];
                                 instantActor?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** Format: uuid */
+                                    sourceEventId: string;
+                                };
+                                instantTarget?: {
                                     /** Format: uuid */
                                     id: string;
                                     /** Format: uuid */
@@ -3085,8 +3143,19 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /**
+                                     * Format: uuid
+                                     * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
+                                     */
+                                    ruleId?: string;
                                 }[];
                                 instantActor?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** Format: uuid */
+                                    sourceEventId: string;
+                                };
+                                instantTarget?: {
                                     /** Format: uuid */
                                     id: string;
                                     /** Format: uuid */
@@ -3132,6 +3201,21 @@ export interface paths {
                                 };
                             }[];
                             endEdges: string[];
+                        };
+                        /** @description 同席している出現個体への作用。targetIdに個体のIDを指定する */
+                        effect?: {
+                            /**
+                             * Format: uuid
+                             * @description その場の存在、または同席している出現個体のID
+                             */
+                            targetId: string;
+                            /** @description 後から対象を調べて観察できる状態 */
+                            state: string;
+                            /**
+                             * Format: uuid
+                             * @description 同じ性質について置き換える既存状態のID
+                             */
+                            replacesStateId?: string;
                         };
                         dependencies: {
                             key: string;
@@ -5503,8 +5587,19 @@ export interface paths {
                                         description: string;
                                         /** Format: uuid */
                                         id: string;
+                                        /**
+                                         * Format: uuid
+                                         * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
+                                         */
+                                        ruleId?: string;
                                     }[];
                                     instantActor?: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** Format: uuid */
+                                        sourceEventId: string;
+                                    };
+                                    instantTarget?: {
                                         /** Format: uuid */
                                         id: string;
                                         /** Format: uuid */
@@ -5560,8 +5655,19 @@ export interface paths {
                                         description: string;
                                         /** Format: uuid */
                                         id: string;
+                                        /**
+                                         * Format: uuid
+                                         * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
+                                         */
+                                        ruleId?: string;
                                     }[];
                                     instantActor?: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** Format: uuid */
+                                        sourceEventId: string;
+                                    };
+                                    instantTarget?: {
                                         /** Format: uuid */
                                         id: string;
                                         /** Format: uuid */

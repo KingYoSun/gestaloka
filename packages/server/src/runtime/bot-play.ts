@@ -40,6 +40,8 @@ import type { WorldConstruction } from "./construction.js";
 import {
   groundItems,
   groundPlacement,
+  deathDrops,
+  recordAppearances,
   searchAppearances,
 } from "./search-appearances.js";
 import { PlayerTools, type PromotionProfile } from "./player-tools.js";
@@ -173,6 +175,7 @@ type Member = {
     description: string;
     sourceEventId: string;
     places: string[];
+    ruleId?: string;
   };
 };
 export type Session = {
@@ -220,6 +223,9 @@ type Plan = {
   outcome?: unknown;
   instantMembers?: string;
   effectState?: string;
+  // ダイスの設定で死亡とされ、成功で確定した対象。
+  fatal?: string[];
+  appearances?: Appearance[];
   locates?: BelongingOp[];
 };
 function turnOwner(data: Session["data"]) {
@@ -374,6 +380,7 @@ const DiceSetting = z
   .object({
     sides: z.number().int().min(2).max(2147483647),
     successThrough: z.number().int().positive(),
+    fatal: z.array(z.uuid()).optional(),
   })
   .strict()
   .refine((v) => v.successThrough < v.sides);
@@ -884,6 +891,7 @@ export class BotPlay {
           description: animal.description,
           sourceEventId: event,
           places,
+          ...(animal.ruleId ? { ruleId: animal.ruleId } : {}),
         },
       });
       await db.query(
@@ -892,20 +900,40 @@ export class BotPlay {
       );
     }
   }
+  // 同席者から出現個体を外す。立ち去り、死亡、場所に誰もいなくなったときに使う。
+  async #removeInstants(db: Db, data: Session["data"], ids: string[]) {
+    if (!ids.length) return;
+    data.members = data.members.filter(
+      (m) => !m.instant || !ids.includes(m.actorId),
+    );
+    await db.query(
+      "UPDATE bot_scene SET closed=true WHERE id=ANY($1::uuid[]) AND actor_id=id",
+      [ids],
+    );
+  }
+  // 出現個体の行動と、同席者から出現個体への対抗行動を一つの出来事として確定する。
+  // 個体はノードを持たないため、個体への作用は同じ場所の同席で作用関係が成立したものとする。
   async #instantAction(
     session: Session,
-    npcId: string,
+    actorId: string,
     action: z.infer<typeof NpcAction>,
     request: string,
     context: WorldContext,
     at: number,
-  ) {
-    const npc = session.data.members.find((m) => m.actorId === npcId)?.instant;
-    if (!npc) reject("INSTANT_NPC_NOT_PRESENT", "この個体は同席していません");
+  ): Promise<Plan> {
+    const instant = (id: string) =>
+      session.data.members.find((m) => m.actorId === id)?.instant;
+    const npc = instant(actorId),
+      places = npc?.places ?? (await this.#places(context, actorId));
     const changes = empty(),
-      period = { from: at },
       event = derivedId(request + ":action");
-    const cause = { id: npcId, sourceEventId: npc.sourceEventId };
+    const cause = npc && { id: actorId, sourceEventId: npc.sourceEventId };
+    const unreachable = {
+      success: false,
+      reason: npc
+        ? "出現場所と対象の作用関係を構築できません"
+        : "対象と申請者の作用関係を構築できません",
+    };
     let outcome: {
       success: boolean;
       reason?: string;
@@ -922,97 +950,138 @@ export class BotPlay {
         (n) => n.id === derivedId(request + ":state"),
       );
       const dice = (
-        await this.pool.query("SELECT setting,roll FROM bot_dice WHERE id=$1", [
-          request,
-        ])
+        await this.pool.query<{
+          setting: z.infer<typeof DiceSetting>;
+          roll: number;
+        }>("SELECT setting,roll FROM bot_dice WHERE id=$1", [request])
       ).rows[0];
+      const success = dice ? dice.roll <= dice.setting.successThrough : !effect,
+        recorded = prior.changes.nodes.find((n) => n.id === event);
       return {
         context,
         changes: prior.changes,
         at: prior.at,
         recipients: [],
-        outcome: {
-          success:
-            !effect ||
-            prior.changes.edges.some(
-              (e) => e.kind === "effect" && e.target === effect.targetId,
-            ),
-          ...(dice ??
-            (effect
-              ? { reason: "出現場所と対象の作用関係を構築できません" }
-              : {})),
-        },
+        outcome: dice
+          ? { success, ...dice }
+          : effect
+            ? unreachable
+            : { success },
         ...(state ? { effectState: state.text } : {}),
+        ...(success && dice?.setting.fatal
+          ? { fatal: dice.setting.fatal }
+          : {}),
+        ...(recorded?.kind === "event" && recorded.appearances
+          ? { appearances: recorded.appearances }
+          : {}),
       };
     }
+    const target = effect && instant(effect.targetId),
+      victim =
+        target?.places.some((p) => places.includes(p)) &&
+        effect!.targetId !== actorId
+          ? target
+          : undefined;
+    let fatal: string[] = [],
+      drops: Appearance[] = [];
     if (effect) {
-      const nearby = await this.#atPlaces(context, npc.places);
+      const nearby =
+        npc && !victim ? await this.#atPlaces(context, places) : undefined;
       const previous =
+        nearby &&
         effect.replacesStateId &&
         (await this.#physicalStates(context, effect.targetId)).states.find(
           (s) => s.id === effect.replacesStateId,
         );
 
       if (
-        !nearby.has(effect.targetId) ||
-        (effect.replacesStateId && !previous) ||
-        (await context.node(effect.targetId))?.kind !== "existence"
+        !victim &&
+        (!nearby?.has(effect.targetId) ||
+          (effect.replacesStateId && !previous) ||
+          (await context.node(effect.targetId))?.kind !== "existence")
       )
-        outcome = {
-          success: false,
-          reason: "出現場所と対象の作用関係を構築できません",
-        };
+        outcome = unreachable;
       else {
         const saved = await this.#oppositionRoll(
           request,
-          { ...cause, name: npc.name, description: npc.description },
+          npc
+            ? { ...cause, name: npc.name, description: npc.description }
+            : actorId,
           action.text,
           effect,
-          await this.#facts(context, [effect.targetId]),
-          effect.state,
+          victim
+            ? [
+                {
+                  id: effect.targetId,
+                  name: victim.name,
+                  description: victim.description,
+                },
+                ...(npc ? [] : await this.#facts(context, [actorId])),
+              ]
+            : await this.#facts(context, [effect.targetId]),
+          victim ? undefined : effect.state,
+          victim ? [effect.targetId] : [],
         );
         outcome = {
           setting: saved.setting,
           roll: saved.roll,
           success: saved.roll <= saved.setting.successThrough,
         };
-        if (outcome.success) effectState = saved.observable;
+        if (outcome.success) {
+          effectState = saved.observable;
+          fatal = saved.setting.fatal ?? [];
+        }
         if (effectState && previous) changes.endEdges.push(previous.relationId);
+        if (victim && fatal.length)
+          drops = await deathDrops(
+            context,
+            request,
+            victim.ruleId,
+            victim.places,
+          );
       }
     }
-    const link = (
-      kind: Change["edges"][number]["kind"],
-      source: string,
-      target: string,
-      role?: "content" | "about",
-    ) =>
-      changes.edges.push({
-        id: derivedId([request, kind, source, target].join(":")),
-        kind,
-        source,
-        target,
-        period,
-        ...(role ? { role } : {}),
-      });
-    const text = effect
-      ? action.text +
-        (outcome.success ? "。結果：" + effect.state : "。作用は成立しなかった")
-      : action.text;
-    changes.nodes.push({
-      id: event,
-      kind: "event",
-      text,
-      period,
-      instantActor: cause,
-    });
+    const link = recordAppearances(
+      changes,
+      request,
+      {
+        id: event,
+        text: effect
+          ? action.text +
+            (outcome.success
+              ? "。結果：" + effect.state
+              : "。作用は成立しなかった")
+          : action.text,
+        ...(cause ? { instantActor: cause } : {}),
+        ...(victim
+          ? {
+              instantTarget: {
+                id: effect!.targetId,
+                sourceEventId: victim.sourceEventId,
+              },
+            }
+          : {}),
+      },
+      victim?.places ?? [],
+      at,
+      drops,
+    );
+    if (!npc) link({ kind: "happen", source: actorId, target: event });
     for (const member of session.data.members)
-      if (!member.instant) link("see", member.actorId, event);
-    if (effect && outcome.success) link("effect", event, effect.targetId);
+      if (!member.instant)
+        link({ kind: "see", source: member.actorId, target: event });
+    if (effect && outcome.success && !victim)
+      link({ kind: "effect", source: event, target: effect.targetId });
     if (effect && effectState) {
       const state = derivedId(request + ":state");
       changes.nodes.push({ id: state, kind: "script", text: effectState });
-      link("status", effect.targetId, state, "content");
-      link("status", state, event, "about");
+      link({
+        kind: "status",
+        source: effect.targetId,
+        target: state,
+        role: "content",
+      });
+      link({ kind: "status", source: state, target: event, role: "about" });
     }
     return {
       context,
@@ -1020,7 +1089,10 @@ export class BotPlay {
       at,
       recipients: [],
       outcome,
+      instantMembers: JSON.stringify(session.data.members),
       ...(effectState ? { effectState } : {}),
+      ...(fatal.length ? { fatal } : {}),
+      ...(drops.length ? { appearances: drops } : {}),
     };
   }
   async #instantTurn(session: Session) {
@@ -1036,7 +1108,7 @@ export class BotPlay {
       async () => {
         await ExecutionBudget.check();
         const context = this.store.context(w.id);
-        const nearby = await Promise.all(
+        const nearby: unknown[] = await Promise.all(
           [...(await this.#atPlaces(context, npc.places))].map(async (id) => {
             // ダイスの材料と同じく、対象ごとに選んだ状態だけを渡す。関係のIDはサーバーが使うもので、渡さない。
             const { states, omittedStates } = await this.#physicalStates(
@@ -1051,6 +1123,14 @@ export class BotPlay {
             };
           }),
         );
+        // 同席している他の個体も、作用の対象に選べる。
+        for (const m of session.data.members)
+          if (m.instant && m.actorId !== actor)
+            nearby.push({
+              id: m.actorId,
+              name: m.instant.name,
+              description: m.instant.description,
+            });
         const response = await this.#ask(
           derivedId(request + ":choice"),
           "world-server-npc",
@@ -1110,19 +1190,15 @@ export class BotPlay {
               result: {
                 outcome: plan.outcome,
                 ...(plan.effectState ? { effectState: plan.effectState } : {}),
+                ...(plan.appearances ? { appearances: plan.appearances } : {}),
                 commitId: receipt.commitId,
               },
             });
             await this.#next(db, current);
-            if (action.departs) {
-              current.data.members = current.data.members.filter(
-                (m) => m.actorId !== actor,
-              );
-              await db.query(
-                "UPDATE bot_scene SET closed=true WHERE id=$1 AND actor_id=$1",
-                [actor],
-              );
-            }
+            await this.#removeInstants(db, current.data, [
+              ...(action.departs ? [actor] : []),
+              ...(plan.fatal ?? []),
+            ]);
             await this.#save(db, current, before);
           }
           await db.query("COMMIT");
@@ -1402,13 +1478,11 @@ export class BotPlay {
     const gone = d.members.filter(
       (m) => m.instant && !m.instant.places.some((p) => places.has(p)),
     );
-    if (gone.length) {
-      d.members = d.members.filter((m) => !gone.includes(m));
-      await db.query(
-        "UPDATE bot_scene SET closed=true WHERE id=ANY($1::uuid[]) AND actor_id=id",
-        [gone.map((m) => m.actorId)],
-      );
-    }
+    await this.#removeInstants(
+      db,
+      d,
+      gone.map((m) => m.actorId),
+    );
     // 手番を終えた人物が別のセッションへ移ったときは、出現個体の手番を挟まない。
     const instant = d.members.some((m) => m.actorId === d.turn)
       ? d.members.filter((m) => m.instant)
@@ -2544,20 +2618,32 @@ export class BotPlay {
           "NPC_ACTION_NOT_AVAILABLE",
           "本人が出現を見た場所で指定してください",
         );
-      return {
-        ...(await this.#instantAction(
-          session,
-          input.npcId,
-          input,
-          input.requestId,
-          context,
-          w.at,
-        )),
-        instantMembers: JSON.stringify(session.data.members),
-      };
+      return this.#instantAction(
+        session,
+        input.npcId,
+        input,
+        input.requestId,
+        context,
+        w.at,
+      );
     }
     if (!("dependencies" in input)) return;
     const w = await this.world(world);
+    if (input.command === "oppose" && input.effect) {
+      const plan = await this.#instantAction(
+        (await this.current(world, actor))!,
+        actor,
+        { text: input.text, effect: input.effect },
+        input.requestId,
+        this.store.context(w.id, input.dependencies),
+        w.at,
+      );
+      await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
+        input.requestId,
+        plan.outcome,
+      ]);
+      return plan;
+    }
     let context = this.store.context(w.id, input.dependencies);
     const prior = await this.store.receipt(w.id, input.requestId);
     if (prior) {
@@ -3076,9 +3162,18 @@ export class BotPlay {
     changes: unknown,
     materials: unknown,
     proposedState?: string,
+    mortal: string[] = [],
   ) {
     function readDecision(raw: string) {
-      const result = parseOutput(raw);
+      const { setting, observable } = read(parseOutput(raw)),
+        fatal = setting.fatal?.filter((id) => mortal.includes(id));
+      delete setting.fatal;
+      return {
+        setting: { ...setting, ...(fatal?.length ? { fatal } : {}) },
+        observable,
+      };
+    }
+    function read(result: unknown) {
       if (proposedState === undefined)
         return { setting: DiceSetting.parse(result), observable: null };
       const { observable, ...dice } = z
@@ -3115,7 +3210,10 @@ export class BotPlay {
             "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {sides:整数,successThrough:整数}。1からsidesまでの一様な出目がsuccessThrough以下なら成功。1<=successThrough<sides。成否、出目、物語、追加の変更は生成しない。" +
             (proposedState === undefined
               ? ""
-              : "NPCの外界への作用ではさらにobservableを返す。後から対象だけを調べた人が何がどうなったかを読めるよう、changes.stateから変化後の状態を述べる箇所を文末または句読点まで原文で抜き出す。部位名だけに切り詰めない。行為者、経緯、原因の推測を除く。観察可能な箇所がなければnull。"),
+              : "NPCの外界への作用ではさらにobservableを返す。後から対象だけを調べた人が何がどうなったかを読めるよう、changes.stateから変化後の状態を述べる箇所を文末または句読点まで原文で抜き出す。部位名だけに切り詰めない。行為者、経緯、原因の推測を除く。観察可能な箇所がなければnull。") +
+            (mortal.length
+              ? "この行動が成功したときに死亡する対象を、mortalのIDから選んでfatal:[ID]に返す。行動と結果が対象の死を意味するときだけ選び、該当がなければ空配列。"
+              : ""),
         },
         {
           role: "user",
@@ -3124,6 +3222,7 @@ export class BotPlay {
             action,
             changes,
             materials,
+            ...(mortal.length ? { mortal } : {}),
           }),
         },
       ],
@@ -4058,6 +4157,9 @@ export class BotPlay {
                   ...(plan.effectState
                     ? { effectState: plan.effectState }
                     : {}),
+                  ...(plan.appearances
+                    ? { appearances: plan.appearances }
+                    : {}),
                 };
                 if (
                   !plan.changes.edges.length ||
@@ -4072,15 +4174,12 @@ export class BotPlay {
                       : {}),
                     result,
                   });
-                if (input.command === "npc-action" && input.departs) {
-                  d.members = d.members.filter(
-                    (m) => m.actorId !== input.npcId,
-                  );
-                  await db.query(
-                    "UPDATE bot_scene SET closed=true WHERE id=$1 AND actor_id=$1",
-                    [input.npcId],
-                  );
-                }
+                await this.#removeInstants(db, d, [
+                  ...(input.command === "npc-action" && input.departs
+                    ? [input.npcId]
+                    : []),
+                  ...(plan.fatal ?? []),
+                ]);
               }
             }
             // Only successful calls consume a slot. Read material never enters chat.
