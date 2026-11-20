@@ -19,6 +19,7 @@ import {
   WorldPlayerPage,
   PlayerReportInput,
   PlayerNotices,
+  ViewersInput,
   WaitingContextStatus,
   WaitingEvent,
   WaitingStatus,
@@ -449,11 +450,11 @@ async function run() {
     "from",
   ] as const)
     if (values[key]) values[key] = references.expand(values[key]!);
-  if (values.participants)
-    values.participants = values.participants
-      .split(",")
-      .map((id) => references!.expand(id.trim()))
-      .join(",");
+  for (const key of ["participants", "to"] as const)
+    if (values[key])
+      values[key] = values[key]!.split(",")
+        .map((id) => references!.expand(id.trim()))
+        .join(",");
   if (command === "connect") {
     if (!values.server || !values.world)
       throw new Error("--serverと--worldを指定してください");
@@ -576,6 +577,27 @@ async function run() {
       profile,
       path,
       PlayerReportInput.parse({ requestId: id, text: values.text }),
+      true,
+      id,
+    );
+  }
+  if (command === "viewers") {
+    if (!values.target || !values.to)
+      throw new Error("--targetと--toを指定してください");
+    const id = randomUUID();
+    return submit(
+      profile,
+      `/api/worlds/${profile.worldId}/viewers`,
+      ViewersInput.parse({
+        requestId: id,
+        targetId: values.target,
+        viewers:
+          values.to === "all"
+            ? "all"
+            : values.to === "self"
+              ? []
+              : values.to.split(","),
+      }),
       true,
       id,
     );

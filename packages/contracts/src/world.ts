@@ -56,6 +56,13 @@ export const Appearance = SpawnSubject.extend({
 export type Appearance = z.infer<typeof Appearance>;
 
 // 出現個体はノードを持たない。行為者・作用の対象になった個体を、出現を記録した出来事までたどれるようにする。
+// 本人以外の参加者のうち、誰が読めるか。世界内の事実ではなく読取りの範囲で、GMの判定は範囲に関係なく読む。
+const viewers = z
+  .union([z.literal("all"), z.array(z.uuid())])
+  .optional()
+  .describe(
+    "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
+  );
 const InstantRef = z.object({ id: z.uuid(), sourceEventId: z.uuid() }).strict();
 export const WorldNode = z.discriminatedUnion("kind", [
   z
@@ -74,6 +81,7 @@ export const WorldNode = z.discriminatedUnion("kind", [
         .safe()
         .optional()
         .describe("物品の個数。無い物品は、個数を数えないひとまとまり"),
+      viewers,
     })
     .strict(),
   z
@@ -82,6 +90,7 @@ export const WorldNode = z.discriminatedUnion("kind", [
       kind: z.literal("script"),
       type: z.literal("memo").optional(),
       spawn: SpawnRule.optional(),
+      viewers,
     })
     .strict(),
   z

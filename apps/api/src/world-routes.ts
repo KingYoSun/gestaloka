@@ -10,6 +10,8 @@ import {
   PlayerReportInput,
   PlayerReportStatus,
   PlayerNotices,
+  ViewersInput,
+  ViewersResult,
   PlayerReportReceipt,
   WaitingCommand,
   WaitingContextStatus,
@@ -89,6 +91,7 @@ export async function worldRoutes(
         "/api/worlds/:id/waiting/events",
         "/api/worlds/:id/reports",
         "/api/worlds/:id/notices",
+        "/api/worlds/:id/viewers",
         "/api/worlds/:id/npc-promotions",
         "/api/worlds/:id/scene/records",
         "/api/worlds/:id/knowledge",
@@ -532,6 +535,24 @@ export async function worldRoutes(
       service().notices(
         await subject(request),
         request.params.id,
+        request.query.actorId,
+      ),
+  );
+  app.post(
+    "/api/worlds/:id/viewers",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        body: ViewersInput,
+        response: { 200: ViewersResult, ...errors },
+      },
+    },
+    async (request) =>
+      service().setViewers(
+        await subject(request),
+        request.params.id,
+        request.body,
         request.query.actorId,
       ),
   );

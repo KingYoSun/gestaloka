@@ -252,6 +252,18 @@ export const PlayCommand = z.discriminatedUnion("command", [
     .object({ ...request, command: z.enum(["end-turn", "leave", "finish"]) })
     .strict(),
 ]);
+export const ViewersInput = z
+  .object({
+    ...request,
+    targetId: id.describe("本人の物・保管先・技能・状態のID"),
+    viewers: z
+      .union([z.literal("all"), z.array(id)])
+      .describe(
+        "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ",
+      ),
+  })
+  .strict();
+export const ViewersResult = ViewersInput.omit({ requestId: true });
 export const PlayResponse = z.record(z.string(), z.unknown());
 export const WaitingCommand = z.object({ active: z.boolean() }).strict();
 const TurnTransition = z.object({
