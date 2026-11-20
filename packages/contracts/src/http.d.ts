@@ -2621,7 +2621,10 @@ export interface paths {
                             count?: number;
                             /** Format: uuid */
                             holder: string;
-                            /** Format: uuid */
+                            /**
+                             * Format: uuid
+                             * @description 所有者。省くと保持先だけが登録される
+                             */
                             owner?: string;
                             /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                             basis: string;
@@ -3177,7 +3180,10 @@ export interface paths {
                             count?: number;
                             /** Format: uuid */
                             holder: string;
-                            /** Format: uuid */
+                            /**
+                             * Format: uuid
+                             * @description 所有者。省くと保持先だけが登録される
+                             */
                             owner?: string;
                             /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                             basis: string;

@@ -6147,6 +6147,7 @@
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                 },
                                 "owner": {
+                                  "description": "所有者。省くと保持先だけが登録される",
                                   "type": "string",
                                   "format": "uuid",
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
@@ -6254,7 +6255,7 @@
                                 "basis"
                               ],
                               "additionalProperties": false,
-                              "description": "物品の所有者を替える。所在は変えない"
+                              "description": "物品の所有者を替える。所有者が未登録なら新しく指定できる。所在は変えない"
                             },
                             {
                               "type": "object",
@@ -8427,6 +8428,7 @@
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                 },
                                 "owner": {
+                                  "description": "所有者。省くと保持先だけが登録される",
                                   "type": "string",
                                   "format": "uuid",
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
@@ -8534,7 +8536,7 @@
                                 "basis"
                               ],
                               "additionalProperties": false,
-                              "description": "物品の所有者を替える。所在は変えない"
+                              "description": "物品の所有者を替える。所有者が未登録なら新しく指定できる。所在は変えない"
                             },
                             {
                               "type": "object",

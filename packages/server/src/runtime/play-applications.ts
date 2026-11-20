@@ -4,6 +4,7 @@ import type {
   DeferredApplication,
   ExchangeOffer,
   ExchangeTerms,
+  ItemOutcome,
 } from "@gestaloka/contracts";
 import { AccessError } from "../http/access.js";
 import {
@@ -29,6 +30,7 @@ type Share = {
   changes: Change;
   at: number;
   dependencies: Dependency[];
+  items?: ItemOutcome[];
 };
 type Result = {
   applicationId: string;
@@ -36,6 +38,7 @@ type Result = {
     "pending" | "accepted" | "rejected" | "expired" | "withdrawn" | "changed";
   message: string;
   commitId?: string;
+  items?: ItemOutcome[];
 };
 type Row = {
   id: string;
@@ -53,6 +56,36 @@ const latest = Number.MAX_SAFE_INTEGER;
 const reject = (code: string, message: string): never => {
   throw new AccessError(409, code, message);
 };
+
+export async function itemOutcomeMessage(
+  context: WorldContext,
+  items: ItemOutcome[],
+  viewer?: string,
+) {
+  const name = async (id: string) =>
+    id === viewer ? "あなた" : ((await context.node(id))?.text ?? id);
+  return (
+    await Promise.all(
+      items.map(async ({ label, holding, ownership, ownershipUnrecorded }) => {
+        if (!holding && !ownership && !ownershipUnrecorded) return "";
+        const item = `「${label}」`;
+        const held = holding
+          ? holding.toId === viewer
+            ? `${item}を手元に置きました。`
+            : `${item}の保持先は${await name(holding.toId)}です。`
+          : `${item}の`;
+        return (
+          held +
+          (ownership
+            ? `所有者は${await name(ownership.toId)}です。`
+            : ownershipUnrecorded
+              ? "所有者は未登録です。"
+              : "所有者の変更はありません。")
+        );
+      }),
+    )
+  ).join("");
+}
 
 export class PlayApplications {
   constructor(
@@ -182,17 +215,24 @@ export class PlayApplications {
     if (row.result) return row.result;
     if (!row.share) return;
     const prior = await this.store.receipt(w.id, row.id);
-    if (prior)
-      return this.#finish(db, row, {
-        state: "accepted",
-        commitId: prior.commitId,
-        message: "全員が承認し、申請を確定しました",
-      });
+    if (prior) return this.#confirmed(db, w, row, prior.commitId);
     if (row.deadline && row.deadline <= this.now())
       return this.#finish(db, row, {
         state: "expired",
         message: "受領期限が過ぎました",
       });
+  }
+
+  async #confirmed(db: Db, w: World, row: Row, commitId: string) {
+    const items = row.share?.items;
+    return this.#finish(db, row, {
+      state: "accepted",
+      commitId,
+      ...(items?.length ? { items } : {}),
+      message: items?.length
+        ? await itemOutcomeMessage(this.store.context(w.id), items)
+        : "全員が承認し、申請を確定しました",
+    });
   }
 
   async receive(
@@ -254,11 +294,7 @@ export class PlayApplications {
           "申請時の前提が変わりました。対象を確認して申請し直してください",
       });
     }
-    return this.#finish(db, row, {
-      state: "accepted",
-      commitId: id,
-      message: "全員が承認し、申請を確定しました",
-    });
+    return this.#confirmed(db, w, row, id);
   }
 
   async withdraw(db: Db, world: string, w: World, actor: string, id: string) {
