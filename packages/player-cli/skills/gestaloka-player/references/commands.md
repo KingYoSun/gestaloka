@@ -147,7 +147,7 @@ GMは接続元から見た妥当性でダイスを設定し、サーバーが一
 
 検索の結果に発生用scriptの指定対象が含まれ、検索者が必要な道具をすべて保持しているときに抽選する。新しい要求で再検索すれば新しい抽選になり、recoverは同じ結果を返す。出現の記録だけがその場の参加者にも届く。
 
-物品の `appearances[].id` は個体ごとに異なる。その場に残した物品は後から来た人物も周囲検索で発見できる。拾うときはupdateのmoveでitemにそのID、fromにnull、toに本人を指定する。インスタントNPCの昇格には出現結果のsourceRequestIdとinstantNpcs内の番号を使う。手動でsayにinstantNpcsを含めたときは、新ノード作成の可否を別途判定する。
+物品は、同じ物がいくつ現れても1つの物品にまとまり、`appearances[].count` に個数が入る。その場に残した物品は後から来た人物も周囲検索で発見できる。拾うときはupdateのmoveでitemにそのID、fromにnull、toに本人を指定する。`count`を指定すると一部だけを拾え、残りはその場に残る。インスタントNPCの昇格には出現結果のsourceRequestIdとinstantNpcs内の番号を使う。手動でsayにinstantNpcsを含めたときは、新ノード作成の可否を別途判定する。
 
 接触には本人と相手の直接の滞在先が一致する必要がある。周囲や自分の検索結果の `material.locations[].directPlaceId` を読む。複数の参照がある場合は `locate` の `aboutIds` に含まれる具体的な場所を `directPlaceId` に指定する。直接の場所1件だけなら従来どおり `aboutIds` で指定できる。
 

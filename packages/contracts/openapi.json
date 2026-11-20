@@ -6553,7 +6553,7 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "count": {
-                                            "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                            "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
                                             "type": "integer",
                                             "minimum": 0,
                                             "exclusiveMinimum": true,
@@ -6853,7 +6853,7 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "count": {
-                                            "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                            "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
                                             "type": "integer",
                                             "minimum": 0,
                                             "exclusiveMinimum": true,
@@ -7442,7 +7442,7 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "count": {
-                                            "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                            "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
                                             "type": "integer",
                                             "minimum": 0,
                                             "exclusiveMinimum": true,
@@ -7742,7 +7742,7 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "count": {
-                                            "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                            "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
                                             "type": "integer",
                                             "minimum": 0,
                                             "exclusiveMinimum": true,
@@ -8640,7 +8640,7 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "count": {
-                                            "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                            "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
                                             "type": "integer",
                                             "minimum": 0,
                                             "exclusiveMinimum": true,
@@ -8940,7 +8940,7 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "count": {
-                                            "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                            "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
                                             "type": "integer",
                                             "minimum": 0,
                                             "exclusiveMinimum": true,
@@ -15206,7 +15206,7 @@
                                                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                               },
                                               "count": {
-                                                "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                                "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
                                                 "type": "integer",
                                                 "minimum": 0,
                                                 "exclusiveMinimum": true,
@@ -15506,7 +15506,7 @@
                                                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                               },
                                               "count": {
-                                                "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                                "description": "個数つきの1つの物品として現れた・残った数。物品に付く",
                                                 "type": "integer",
                                                 "minimum": 0,
                                                 "exclusiveMinimum": true,

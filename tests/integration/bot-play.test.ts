@@ -2803,7 +2803,7 @@ test("GM判断中に利用停止されても長いDBロックを持たず、確�
   await expect(pending).rejects.toMatchObject({ code: "USER_BANNED" });
   expect(await f.store.context(f.graph).node(script)).toBeUndefined();
 });
-test("検索で発生した複数の物品を同席者が観測し、後から来た人物が一つだけ拾う", async () => {
+test("検索で発生した複数の物品は個数つきの1つの物品として現れ、同席者が観測し、後から来た人物が残りを拾う", async () => {
   const f = await fixture(),
     rule = randomUUID(),
     tool = randomUUID();
@@ -2914,8 +2914,9 @@ test("検索で発生した複数の物品を同席者が観測し、後から�
   await f.move(0, f.place);
   const found = await f.send(0, body);
   const items = found.appearances as { id: string }[];
-  expect(new Set(items.map((i) => i.id)).size).toBe(3);
-  // 出現を起こした検索が返した依存版のまま、現れた物を拾える。
+  expect(items).toMatchObject([{ species: "砂金", count: 3 }]);
+  expect(items).toHaveLength(1);
+  // 出現を起こした検索が返した依存版のまま、現れた物の一部を拾える。残りはその場に残る。
   await f.send(0, {
     command: "update",
     text: "現れた物を拾う",
@@ -2925,7 +2926,8 @@ test("検索で発生した複数の物品を同席者が観測し、後から�
         type: "move",
         from: null,
         to: f.actors[0],
-        item: items[2]!.id,
+        item: items[0]!.id,
+        count: 1,
         basis: "拾う",
       },
     ],
@@ -2966,8 +2968,8 @@ test("検索で発生した複数の物品を同席者が観測し、後から�
   };
   await f.send(2, pickup);
   expect(
-    JSON.stringify(await readBelongings(f.store.context(world), f.actors[2]!)),
-  ).toContain(items[0]!.id);
+    (await readBelongings(f.store.context(world), f.actors[2]!)).items,
+  ).toMatchObject([{ id: items[0]!.id, count: 2 }]);
   await expect(f.send(2, pickup)).rejects.toMatchObject({
     code: "HOLD_CHANGED",
   });

@@ -55,6 +55,18 @@ function draw(rule: Rule, limit = Infinity) {
           Math.floor(Math.random() * (rule.maxCount - rule.minCount + 1)),
   );
 }
+// 抽選で当たった発生数を出現にする。物品は発生数を個数に持つ1つの物品にまとめ、物品のノードを増やさない。
+function appear(key: string, rule: Rule, count: number): Appearance[] {
+  const { kind, species, description } = rule,
+    item = kind === "existence";
+  return Array.from({ length: item ? Math.min(count, 1) : count }, (_, i) => ({
+    id: derivedId(key + ":" + i),
+    kind,
+    species,
+    description,
+    ...(item ? { count } : {}),
+  }));
+}
 // 出現を出来事として記録し、個体以外をその場に残る発見物にする。
 export function recordAppearances(
   changes: Change,
@@ -128,19 +140,10 @@ export async function deathDrops(
         ? await ctx.node(edge.source)
         : undefined;
       if (node?.kind !== "script" || !node.spawn) continue;
-      const { kind, species, description } = node.spawn;
-      if (kind === "instant-npc") continue;
-      // 物品は発生数を個数に持つ1つの物品として残し、物品のノードを増やさない。
-      const count = draw(node.spawn),
-        item = kind === "existence";
-      for (let i = item ? Math.min(count, 1) : count; i--;)
-        drops.push({
-          id: derivedId(request + ":" + node.id + ":" + i),
-          kind,
-          species,
-          description,
-          ...(item ? { count } : {}),
-        });
+      if (node.spawn.kind === "instant-npc") continue;
+      drops.push(
+        ...appear(request + ":" + node.id, node.spawn, draw(node.spawn)),
+      );
     }
   return drops;
 }
@@ -203,12 +206,13 @@ export async function searchAppearances(
             ).length
           : 0;
     if (staying >= limit) continue;
-    for (let i = 0, count = draw(rule, limit - staying); i < count; i++)
+    for (const appearance of appear(
+      request + ":" + ruleId,
+      rule,
+      draw(rule, limit - staying),
+    ))
       appearances.push({
-        id: derivedId(request + ":" + ruleId + ":" + i),
-        kind: rule.kind,
-        species: rule.species,
-        description: rule.description,
+        ...appearance,
         ...(rule.kind === "instant-npc" ? { ruleId } : {}),
       });
   }
