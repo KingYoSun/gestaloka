@@ -3850,11 +3850,99 @@ test("別の場所へ移って手番を終えた人物は別のセッション�
   await f.move(0, f.far);
   expect(ids(await f.send(0, { command: "end-turn" }))).toEqual([f.actors[0]]);
 });
-test("同行者の所在をまとめて申請すると承認した人だけが移り、移動した時点でセッションが分かれる", async () => {
+test.each([false, true])(
+  "出現場所の全員が移ると、確定直後に個体が外れて同じ手番が続く（同行者あり: %s）",
+  async (withCompanion) => {
+    const f = await fixture(),
+      source = randomUUID(),
+      bird = derivedId(source + ":manual:0");
+    const travelers = withCompanion ? [0, 1] : [0];
+    if (withCompanion)
+      await f.send(1, { command: "contact", targetId: f.actors[0] });
+    f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+    const before = await f.send(0, {
+      command: "say",
+      requestId: source,
+      text: "鳥が降りてきた",
+      instantNpcs: ["鳥"],
+    });
+    await f.send(0, {
+      command: "npc-action",
+      npcId: bird,
+      text: "鳥が地面をつつく",
+    });
+
+    let moved = await f.send(0, {
+      command: "update",
+      text: "離れた場所へ行く",
+      dependencies: [],
+      operations: travelers.map((i) => ({
+        type: "locate",
+        subjectId: f.actors[i],
+        text: "離れた場所",
+        aboutIds: [f.far],
+      })),
+    });
+    if (withCompanion) {
+      expect(moved.state).toBe("receiving");
+      expect((await f.status(0)).characters).toContainEqual(
+        expect.objectContaining({ actorId: bird }),
+      );
+      moved = await f.send(1, {
+        command: "receive",
+        applicationId: moved.applicationId,
+        accept: true,
+      });
+      expect(moved.application).toMatchObject({ state: "confirmed" });
+    } else {
+      expect(moved.state).toBe("accepted");
+    }
+    const ids = travelers.map((i) => f.actors[i]);
+    expect(await f.store.context(f.graph).locationSubjects(f.far)).toEqual(
+      expect.arrayContaining(ids),
+    );
+    expect(moved).toMatchObject({
+      sessionId: before.sessionId,
+      turn: before.turn,
+      actorId: f.actors[0],
+      characters: ids.map((actorId) => ({ actorId })),
+    });
+    for (const i of travelers)
+      expect((await f.status(i)).characters!.map((c) => c.actorId)).toEqual(
+        ids,
+      );
+    const { rows } = await isolated.databases.postgres.query(
+      "SELECT closed FROM bot_scene WHERE id=$1",
+      [bird],
+    );
+    expect(rows).toEqual([{ closed: true }]);
+
+    await f.send(0, { command: "end-turn" });
+    expect((await f.status(0)).entries).toContainEqual(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          entries: expect.arrayContaining([
+            expect.objectContaining({ actorId: bird, label: "鳥" }),
+          ]),
+        }),
+      }),
+    );
+  },
+);
+test("同行者の所在をまとめて申請すると承認した人だけが移り、出現個体は元の場所に残る", async () => {
   const f = await fixture();
   await f.move(2, f.place);
   await f.send(1, { command: "contact", targetId: f.actors[0] });
   await f.send(2, { command: "contact", targetId: f.actors[0] });
+  const source = randomUUID(),
+    bird = derivedId(source + ":manual:0");
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+  await f.send(0, {
+    command: "say",
+    requestId: source,
+    text: "鳥が降りてきた",
+    instantNpcs: ["鳥"],
+  });
   const go = (i: number) => ({
     type: "locate",
     subjectId: f.actors[i],
@@ -3897,7 +3985,7 @@ test("同行者の所在をまとめて申請すると承認した人だけが�
     f.actors[0],
     f.actors[1],
   ]);
-  expect(c.characters!.map((m) => m.actorId)).toEqual([f.actors[2]]);
+  expect(c.characters!.map((m) => m.actorId)).toEqual([f.actors[2], bird]);
   expect(c.actorId).toBe(f.actors[2]);
 });
 test("出現個体の手番中は本人だけが動き、外界への作用と昇格前の経験を引き継ぐ", async () => {
