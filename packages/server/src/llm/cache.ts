@@ -1,10 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { canonical, preparePrompt } from "./prompt.js";
+import { canonical, type PreparedPrompt } from "./prompt.js";
 import type { Api, Provider } from "./config.js";
 import type { BudgetLedger } from "./budget.js";
 
-type Prepared = ReturnType<typeof preparePrompt>;
 type Block = { text: string; cacheBoundary?: true };
 type Message = { role: "system" | "user" | "assistant"; content: Block[] };
 const hash = (v: unknown) =>
@@ -12,7 +11,7 @@ const hash = (v: unknown) =>
 const ttlSeconds = 300;
 
 /** One prefix plan; adapters only translate the selected boundaries. */
-export function cacheMessages(prompt: Prepared): Message[] {
+export function cacheMessages(prompt: PreparedPrompt): Message[] {
   const messages: Message[] = [
     ...(prompt.system.length
       ? [{ role: "system" as const, content: prompt.system }]
@@ -38,8 +37,17 @@ export function cacheMessages(prompt: Prepared): Message[] {
   }));
 }
 
+export function openAiExplicitCache(model: string) {
+  const generation = /^gpt-(\d+)(?:\.(\d+))?/.exec(model);
+  return (
+    generation !== null &&
+    (Number(generation[1]) > 5 ||
+      (Number(generation[1]) === 5 && Number(generation[2]) >= 6))
+  );
+}
+
 export function renderCachedPrompt(
-  prompt: Prepared,
+  prompt: PreparedPrompt,
   provider: Provider,
   api: Api,
   model: string,
@@ -63,12 +71,7 @@ export function renderCachedPrompt(
         .map((m) => ({ role: m.role, content: blocks(m.content) })),
     };
   }
-  const generation = /^gpt-(\d+)(?:\.(\d+))?/.exec(model);
-  const explicit =
-    provider === "openai" &&
-    generation &&
-    (Number(generation[1]) > 5 ||
-      (Number(generation[1]) === 5 && Number(generation[2]) >= 6));
+  const explicit = provider === "openai" && openAiExplicitCache(model);
   const rendered = messages.map((m) => ({
     role:
       explicit && api === "responses" && m.role === "system"
@@ -93,7 +96,7 @@ export function renderCachedPrompt(
   };
 }
 
-export function geminiCachePlan(prompt: Prepared) {
+export function geminiCachePlan(prompt: PreparedPrompt) {
   const messages = cacheMessages(prompt),
     boundaries = messages.flatMap((m, mi) =>
       m.content.flatMap((b, bi) => (b.cacheBoundary ? [{ mi, bi }] : [])),

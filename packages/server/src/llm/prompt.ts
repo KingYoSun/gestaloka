@@ -321,13 +321,24 @@ export function strictOutput(schema: Schema) {
   };
 }
 
+type PromptBlock = { type: "text"; text: string; cacheBoundary?: true };
+type PromptMessage = {
+  role: ChatMessage["role"];
+  content: string | PromptBlock[];
+};
+export type PreparedPrompt = {
+  system: PromptBlock[];
+  messages: PromptMessage[];
+  format: { type: "json_schema"; schema: Schema } | undefined;
+};
+
 export function preparePrompt(
   messages: ChatMessage[],
   structured = true,
   cacheOnly = false,
   graphReferences = true,
   textMinimums = false,
-) {
+): PreparedPrompt {
   const parsed = messages.map((m) => {
     try {
       return m.role === "user" ? (JSON.parse(m.content) as Schema) : undefined;
@@ -357,16 +368,7 @@ export function preparePrompt(
   const used = new Set<string>();
   const graphInput =
     graphReferences && parsed.some((v) => v?.initialContext !== undefined);
-  const prepared = messages.flatMap<{
-    role: ChatMessage["role"];
-    content:
-      | string
-      | {
-          type: "text";
-          text: string;
-          cacheBoundary?: true;
-        }[];
-  }>((m, i) => {
+  const prepared = messages.flatMap<PromptMessage>((m, i) => {
     if (m.role === "system") return [];
     const input = parsed[i];
     if (!input || Array.isArray(input) || typeof input !== "object") return [m];
@@ -436,11 +438,7 @@ export function preparePrompt(
         });
       }
     }
-    const content: {
-      type: "text";
-      text: string;
-      cacheBoundary?: true;
-    }[] = [];
+    const content: PromptBlock[] = [];
     const append = (text: string) => content.push({ type: "text", text });
     const mark = () => {
       if (content.length) content[content.length - 1]!.cacheBoundary = true;

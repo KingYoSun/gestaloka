@@ -320,7 +320,7 @@ export function decisionSettings(env: NodeJS.ProcessEnv) {
           .number()
           .gt(0)
           .lt(1)
-          .parse(env.LLM_DECISION_REPEAT_THRESHOLD ?? 0.7),
+          .parse(env.LLM_DECISION_REPEAT_THRESHOLD ?? 0.8),
       }
     : undefined;
 }
