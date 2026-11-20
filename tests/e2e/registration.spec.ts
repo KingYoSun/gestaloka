@@ -5,7 +5,7 @@ import { OryIdentity } from "@gestaloka/server/identity";
 import { Operations } from "@gestaloka/server/operations";
 import { createApp } from "../../apps/api/src/app.js";
 
-test("本人の登録操作で初代管理者となり、再読込でも登録と監査を増やさない", async ({
+test("本人の登録操作で初代管理者となって元の画面へ戻り、再訪でも登録と監査を増やさない", async ({
   page,
 }) => {
   const root = connectDatabases(),
@@ -40,20 +40,27 @@ test("本人の登録操作で初代管理者となり、再読込でも登録�
         path: "/",
       },
     ]);
-    await page.goto(origin + "/auth/register");
+    await page.route("http://ory.invalid/**", (route) =>
+      route.fulfill({ body: "" }),
+    );
+    const back = "http://app.invalid/worlds?tab=mine";
+    await page.goto(
+      `${origin}/auth/register?return_to=${encodeURIComponent(back)}`,
+    );
     await expect(
       page.getByText(
         "最初に利用登録した1人が管理者になります。その後は招待制になります。",
       ),
     ).toBeVisible();
     await page.getByRole("button", { name: "利用登録する" }).click();
-    await expect(
-      page.getByText("管理者として利用登録済みです。"),
-    ).toBeVisible();
-    await page.reload();
-    await expect(
-      page.getByText("管理者として利用登録済みです。"),
-    ).toBeVisible();
+    await page.waitForURL(
+      `http://ory.invalid/self-service/login/browser?return_to=${encodeURIComponent(back)}`,
+    );
+    await page.goto(origin + "/auth/register");
+    await page.waitForURL("http://ory.invalid/self-service/login/browser");
+    expect(
+      (await db.postgres.query("SELECT role FROM app_user")).rows[0].role,
+    ).toBe("admin");
     expect(
       Number(
         (await db.postgres.query("SELECT count(*) FROM app_user")).rows[0]
