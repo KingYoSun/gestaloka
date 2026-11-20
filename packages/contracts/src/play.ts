@@ -14,6 +14,7 @@ export const ItemOutcome = z.object({
   count: count.optional(),
   holding: z.object({ fromId: id.nullable(), toId: id }).optional(),
   ownership: z.object({ fromIds: z.array(id), toId: id }).optional(),
+  ownershipUnrecorded: z.literal(true).optional(),
 });
 export const ExchangeTerms = z
   .object({
@@ -68,7 +69,7 @@ export const BelongingOp = z.discriminatedUnion("type", [
       label: text,
       count: count.optional().describe("個数。数えないまとまりなら省く"),
       holder: id,
-      owner: id.optional(),
+      owner: id.optional().describe("所有者。省くと保持先だけが登録される"),
       basis,
     })
     .strict()
@@ -93,7 +94,9 @@ export const BelongingOp = z.discriminatedUnion("type", [
       basis,
     })
     .strict()
-    .describe("物品の所有者を替える。所在は変えない"),
+    .describe(
+      "物品の所有者を替える。所有者が未登録なら新しく指定できる。所在は変えない",
+    ),
   z
     .object({ type: z.literal("grant"), person: id, storage: id, basis })
     .strict()

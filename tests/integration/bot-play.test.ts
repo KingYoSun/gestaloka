@@ -2249,6 +2249,118 @@ test("個体指定のない旧NPCフラグを無視し、bot担当とサーバ�
   ).toBe(before);
 });
 
+test("保持と所有を区別して返し、所有者未登録の物品に所有者を設定できる", async () => {
+  const f = await fixture(),
+    a = f.actors[0]!,
+    b = f.actors[1]!;
+  await f.send(1, { command: "contact", targetId: a });
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+  const update = (text: string, operations: unknown[]) =>
+    f.send(0, { command: "update", text, operations, dependencies: [] });
+  const make = (label: string, owner?: string) => ({
+    type: "create",
+    label,
+    holder: a,
+    ...(owner ? { owner } : {}),
+    basis: "拾った",
+  });
+  const created = await update("三つの物を拾う", [
+    make("木の札"),
+    make("布袋", a),
+    make("丸い石"),
+  ]);
+  const [tag, bag, stone] = created.items as { itemId: string }[];
+  expect(created).toMatchObject({
+    items: [
+      {
+        label: "木の札",
+        holding: { fromId: null, toId: a },
+        ownershipUnrecorded: true,
+      },
+      {
+        label: "布袋",
+        holding: { fromId: null, toId: a },
+        ownership: { fromIds: [], toId: a },
+      },
+      { label: "丸い石", ownershipUnrecorded: true },
+    ],
+    action: {
+      message: expect.stringContaining(
+        "「木の札」を手元に置きました。所有者は未登録です。",
+      ),
+    },
+  });
+  const belongs = async (item: string) =>
+    f.store
+      .context(f.graph)
+      .relations(item, "has", "in", Number.MAX_SAFE_INTEGER);
+
+  const assign = await update("木の札の所有者を指定する", [
+    { type: "transfer", item: tag!.itemId, to: b, basis: "所有者の登録" },
+  ]);
+  expect(assign).toMatchObject({ state: "receiving" });
+  expect(assign.items).toBeUndefined();
+  expect(await belongs(tag!.itemId)).toMatchObject([
+    { source: a, role: "hold" },
+  ]);
+  const accepted = await f.send(1, {
+    command: "receive",
+    applicationId: assign.applicationId,
+    accept: true,
+  });
+  expect(accepted).toMatchObject({
+    items: [{ itemId: tag!.itemId, ownership: { fromIds: [], toId: b } }],
+    action: {
+      message: expect.stringContaining("「木の札」の所有者はあなたです。"),
+    },
+  });
+  const assigned = await belongs(tag!.itemId);
+  expect(assigned.find((edge) => edge.role === "hold")?.source).toBe(a);
+  expect(assigned.find((edge) => !edge.role)?.source).toBe(b);
+
+  const loan = await update("布袋を貸す", [
+    { type: "move", item: bag!.itemId, from: a, to: b, basis: "貸す" },
+  ]);
+  const borrowed = await f.send(1, {
+    command: "receive",
+    applicationId: loan.applicationId,
+    accept: true,
+  });
+  expect(borrowed).toMatchObject({
+    items: [{ itemId: bag!.itemId, holding: { fromId: a, toId: b } }],
+    action: { message: expect.stringContaining("所有者の変更はありません") },
+  });
+  expect((await belongs(bag!.itemId)).find((edge) => !edge.role)?.source).toBe(
+    a,
+  );
+
+  if ((await f.status(0)).actorId === a)
+    await f.send(0, { command: "end-turn" });
+  const claimed = await f.send(1, {
+    command: "update",
+    text: "丸い石を自分のものとして登録する",
+    operations: [
+      { type: "transfer", item: stone!.itemId, to: b, basis: "所有者の登録" },
+    ],
+    dependencies: [],
+  });
+  expect(claimed).toMatchObject({
+    state: "accepted",
+    items: [{ itemId: stone!.itemId, ownership: { fromIds: [], toId: b } }],
+  });
+  expect(
+    (await belongs(stone!.itemId)).find((edge) => edge.role === "hold")?.source,
+  ).toBe(a);
+  const entries = (await f.status(1)).entries.flatMap(
+    (row: { payload: { entries?: { input: string; result: unknown }[] } }) =>
+      row.payload.entries ?? [],
+  );
+  expect(
+    entries.find(({ input }: { input: string }) => input === "三つの物を拾う")
+      ?.result,
+  ).toMatchObject({ items: created.items });
+});
+
 test("目撃した手渡しには対象・所有・保持が残り、合流前の取得結果から参照は渡らない", async () => {
   const f = await fixture(),
     item = randomUUID(),

@@ -19,6 +19,7 @@ const Item = z.object({
   label: z.string(),
   count: z.number().optional(),
   seriesId: z.uuid().optional(),
+  owners: z.array(z.object({ id: z.uuid(), label: z.string() })).optional(),
 });
 export const Belongings = z.object({
   items: z.array(Item),
@@ -47,6 +48,14 @@ type Screen = z.infer<typeof PlayScreen>;
 type Character = z.infer<typeof PlayerCharacter>;
 export const itemText = (item: z.infer<typeof Item>) =>
   item.count ? `${item.label} ×${item.count}` : item.label;
+export function heldItemText(item: z.infer<typeof Item>, viewerId: string) {
+  const label = itemText(item);
+  if (!item.owners) return label;
+  const owners = item.owners
+    .map((owner) => (owner.id === viewerId ? "自分" : owner.label))
+    .join("、");
+  return `${label}（所有者：${owners || "未登録"}）`;
+}
 export function realTime(at: string) {
   return new Date(at).toLocaleString("ja-JP");
 }
@@ -267,7 +276,11 @@ export function PlayerPanel({
         </Tabs.Content>
         <Tabs.Content value="items">
           <TextList
-            items={belongings?.items.map(itemText) ?? []}
+            items={
+              belongings?.items.map((item) =>
+                heldItemText(item, own.actorId),
+              ) ?? []
+            }
             empty="所持品はありません"
           />
         </Tabs.Content>
@@ -277,7 +290,7 @@ export function PlayerPanel({
               <section className="play-storage" key={i}>
                 <h3>{label}</h3>
                 <TextList
-                  items={items.map(itemText)}
+                  items={items.map((item) => heldItemText(item, own.actorId))}
                   empty="保管品はありません"
                 />
               </section>
