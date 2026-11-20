@@ -4047,6 +4047,154 @@ test("メモ本文を判断中の本人だけへ渡し、申請者の復帰で�
   ).toEqual(["accepted", "rejected", "expired"]);
 });
 
+test.each([
+  ["expired", "期限切れ"],
+  ["cancelled", "関係する参加者が退出"],
+] as const)(
+  "受領者が待受と受領拒否で %s の申請を確認できる",
+  async (outcome, reason) => {
+    const f = await fixture(),
+      app = await createApp(access, auth.identity, undefined, auth.operations),
+      cli = await playerCli(app),
+      profile = join(cli.directory, "recipient.json");
+    const run = (...args: string[]) => cli.run(profile, ...args, "--full-ids");
+    try {
+      const connection = await run(
+        "connect",
+        "--server",
+        cli.base,
+        "--world",
+        f.world,
+      );
+      expect(
+        (
+          await cli.approve(
+            f.people[1]!.cookie,
+            connection.userCode,
+            `actor:${f.actors[1]}`,
+          )
+        ).statusCode,
+      ).toBe(302);
+      const origin = await app.listen({ host: "127.0.0.1", port: 0 });
+      const saved = JSON.parse(await readFile(profile, "utf8"));
+      await writeFile(profile, JSON.stringify({ ...saved, server: origin }));
+      await f.move(2, f.place);
+      await f.send(1, { command: "contact", targetId: f.actors[0] });
+      await f.send(2, { command: "contact", targetId: f.actors[0] });
+      let now = new Date();
+      vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
+      const text = "二人で離れた場所へ行く";
+      const pending = await f.send(0, {
+        command: "update",
+        text,
+        operations: f.actors.slice(0, 2).map((subjectId) => ({
+          type: "locate",
+          subjectId,
+          text: "離れた場所",
+          aboutIds: [f.far],
+        })),
+        dependencies: [],
+      });
+      const receiving = pending.receiving as {
+        applicationId: string;
+        deadline: string;
+        changes: unknown;
+      };
+      const { applicationId, deadline, changes } = receiving;
+      expect(changes).toBeDefined();
+      const receive = {
+        command: "receive",
+        requestId: randomUUID(),
+        applicationId,
+        accept: true,
+      };
+      const observer = await access.waiting(
+        f.people[2]!.id,
+        f.world,
+        f.actors[2],
+        undefined,
+        true,
+        true,
+        true,
+      );
+      expect(observer.context).not.toHaveProperty("receiving");
+      if (outcome === "cancelled") {
+        const expected = {
+          state: "receiving",
+          context: {
+            receiving: {
+              applicationId,
+              deadline,
+              changes,
+              text,
+              senderId: f.actors[0],
+              senderName: "人物0",
+            },
+          },
+        };
+        expect(await run("listen", "--once", "--resume")).toMatchObject(
+          expected,
+        );
+        expect(await run("standby", "--resume")).toMatchObject(expected);
+        await f.send(0, { command: "leave" });
+      } else {
+        now = new Date(Date.parse(deadline) + 1);
+        // Querying status or waiting here would settle first and hide a rollback in receive.
+        await expect(f.send(1, receive)).rejects.toMatchObject({
+          status: 409,
+          message: expect.stringContaining(reason),
+        });
+        expect(
+          (await access.botPlay.current(f.world, f.actors[1]!))?.data.receiving,
+        ).toBeUndefined();
+      }
+      expect(await run("listen", "--once", "--resume")).toMatchObject({
+        noticeKey: expect.any(String),
+        noticeMessage: expect.stringContaining("notices"),
+      });
+      const rejected = await run(
+        "receive",
+        "--application",
+        applicationId,
+        "--accept",
+      );
+      expect(rejected).toMatchObject({
+        state: "error",
+        code: "RECEIVING_TURN_REQUIRED",
+      });
+      expect(rejected.message).toContain(applicationId);
+      expect(rejected.message).toContain(reason);
+      await expect(f.send(1, receive)).rejects.toMatchObject({
+        status: 409,
+        message: rejected.message,
+      });
+      const { notices } = await run("notices");
+      expect(notices).toHaveLength(1);
+      for (const detail of ["人物0", applicationId, text, reason])
+        expect(notices[0].text).toContain(detail);
+      expect(
+        (await access.notices(f.people[2]!.id, f.world, f.actors[2])).notices,
+      ).toEqual([]);
+      await expect(
+        f.send(2, { ...receive, requestId: randomUUID() }),
+      ).rejects.toMatchObject({
+        code: "RECEIVING_TURN_REQUIRED",
+        message: "本人の受領判断を指定してください",
+      });
+      const history = await access.botPlay.turnFeed(f.world, f.actors[1]!, "0");
+      expect(history.receiptResults).toEqual([
+        expect.objectContaining({
+          receiptResult: expect.objectContaining({ applicationId, outcome }),
+        }),
+      ]);
+    } finally {
+      await cli.close();
+      await app.close();
+    }
+  },
+  20000,
+);
+
 test("通常枠の最後の接触で、返答は次の手番の持ち主と操作不要を返す", async () => {
   const f = await fixture();
   await f.send(1, { command: "contact", targetId: f.actors[0] });

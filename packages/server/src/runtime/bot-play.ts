@@ -446,6 +446,7 @@ export class BotPlay {
       PRIMARY KEY(world_id,actor_id,connection_id));
       CREATE INDEX IF NOT EXISTS player_waiting_live ON player_waiting(world_id,actor_id,last_seen);
       CREATE INDEX IF NOT EXISTS bot_chat_session ON bot_chat(session_id,id);
+      CREATE INDEX IF NOT EXISTS bot_chat_receipt_application ON bot_chat ((payload->'receiptResult'->>'applicationId')) WHERE payload ? 'receiptResult';
       CREATE TABLE IF NOT EXISTS bot_arrival (
       id uuid PRIMARY KEY,world_id uuid NOT NULL,actor_id uuid NOT NULL,due timestamptz NOT NULL,
       text text NOT NULL,operations jsonb NOT NULL);
@@ -1759,6 +1760,22 @@ export class BotPlay {
         ...r.recipients,
       ]);
     }
+    const recipient = turnOwner(session.data);
+    if (recipient && (outcome === "expired" || outcome === "cancelled")) {
+      const sender = (await this.#characters(session, db)).find(
+        (member) => member.actorId === r.sender,
+      )?.name;
+      await db.query(
+        `INSERT INTO player_notice(id,world_id,actor_id,created_at,text) VALUES($1,$2,$3,$4,$5)`,
+        [
+          derivedId(`${r.id}:receipt-notice:${recipient}`),
+          session.world_id,
+          recipient,
+          result.at,
+          `${sender ?? "申請者"}からの申請（${r.id}）「${r.text}」。${result.message}`,
+        ],
+      );
+    }
     delete session.data.receiving;
     return { items, result };
   }
@@ -1924,26 +1941,37 @@ export class BotPlay {
       ],
     );
     const r = d.receiving;
-    const memoTexts =
+    const receiving =
       r && viewer === actorId && Date.parse(r.deadline) > this.now().getTime()
-        ? [...r.changes.nodes, ...r.changes.revisions].flatMap((node) =>
+        ? {
+            applicationId: r.id,
+            senderId: r.sender,
+            senderName: characters.find((person) => person.actorId === r.sender)
+              ?.name,
+            deadline: r.deadline,
+            text: r.text,
+            changes: r.changes,
+          }
+        : undefined;
+    const memoTexts = receiving
+      ? [...receiving.changes.nodes, ...receiving.changes.revisions].flatMap(
+          (node) =>
             node.kind === "script" && node.type === "memo" ? [node.text] : [],
-          )
-        : [];
+        )
+      : [];
     return {
       actorId,
       ...(name === undefined ? {} : { name }),
       phase,
       recent: rows.reverse(),
-      ...(r && memoTexts.length
+      ...(receiving ? { receiving } : {}),
+      ...(receiving && memoTexts.length
         ? {
             receiptRequest: {
-              applicationId: r.id,
-              senderId: r.sender,
-              senderName: characters.find(
-                (person) => person.actorId === r.sender,
-              )?.name,
-              deadline: r.deadline,
+              applicationId: receiving.applicationId,
+              senderId: receiving.senderId,
+              senderName: receiving.senderName,
+              deadline: receiving.deadline,
               memoTexts,
             },
           }
@@ -3915,6 +3943,7 @@ export class BotPlay {
       throw playError(error);
     });
     const db = await this.pool.connect();
+    let endedReceipt: AccessError | undefined;
     try {
       await db.query("BEGIN");
       await db.query("SELECT id FROM bot_request WHERE id=$1 FOR UPDATE", [
@@ -3975,6 +4004,29 @@ export class BotPlay {
       ]);
       let session = await this.current(world, actor, db);
       if (session) await this.#expire(db, session);
+      if (
+        input.command === "receive" &&
+        session?.data.receiving?.id !== input.applicationId
+      ) {
+        const { rows } = await db.query<{ message: string }>(
+          `SELECT c.payload->'receiptResult'->>'message' AS message
+           FROM bot_chat c JOIN bot_session s ON s.id=c.session_id
+           WHERE s.world_id=$1 AND c.payload ? 'receiptResult'
+             AND c.payload->'receiptResult'->>'applicationId'=$3
+             AND EXISTS (SELECT 1 FROM bot_record r JOIN bot_scene a ON a.id=r.scene_id AND a.actor_id=r.actor_id
+                         WHERE r.chat_id=c.id AND r.actor_id=$2 AND a.world_id=$1)
+           LIMIT 1`,
+          [world, actor, input.applicationId],
+        );
+        if (rows[0]) {
+          endedReceipt = new AccessError(
+            409,
+            "RECEIVING_TURN_REQUIRED",
+            `${rows[0].message}（申請ID ${input.applicationId}）`,
+          );
+          throw endedReceipt;
+        }
+      }
       if (assignment?.controller !== "server") {
         await this.#setPresence(db, world, actor, user, connectionId, true);
         if (session && (session.data.parked || session.data.awayUntil))
@@ -4627,7 +4679,10 @@ export class BotPlay {
       await db.query("COMMIT");
       return result;
     } catch (error) {
-      await db.query("ROLLBACK");
+      // The deadline may have been settled by this receive command.
+      await db.query(
+        endedReceipt && error === endedReceipt ? "COMMIT" : "ROLLBACK",
+      );
       throw playError(error);
     } finally {
       db.release();
