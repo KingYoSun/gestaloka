@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { selectStates } from "../../packages/server/src/runtime/bot-play.js";
+import { selectStates } from "../../packages/server/src/runtime/state-selection.js";
 
 const state = (text: string, from: number) => ({
   relation: { id: `${text}@${from}`, period: { from } },

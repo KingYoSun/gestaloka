@@ -973,7 +973,6 @@ export interface paths {
                     before?: string;
                     after?: string;
                     actorId?: string;
-                    excludeScene?: string;
                 };
                 header?: never;
                 path: {

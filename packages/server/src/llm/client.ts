@@ -22,7 +22,6 @@ import {
   compactJsonWhitespace,
   strictOutput,
 } from "./prompt.js";
-import { shortIds } from "./short-ids.js";
 import { derivedId } from "../world/model.js";
 import { PromptCache, geminiCachePlan, renderCachedPrompt } from "./cache.js";
 import {
@@ -581,7 +580,6 @@ export class LlmClient {
     messages: ChatMessage[],
     target: LlmTarget = "default",
     effortTarget: LlmTarget = target,
-    shorten = false,
     formatAttempts = 0,
     validate?: (content: string) => unknown,
   ): Promise<SavedCompletion> {
@@ -593,7 +591,6 @@ export class LlmClient {
           messages,
           target,
           effortTarget,
-          shorten,
           formatAttempts,
           validate,
         ),
@@ -645,7 +642,6 @@ export class LlmClient {
               input,
               upper ? "resolution" : target,
               upper ? "resolution" : effortTarget,
-              shorten,
             );
         if (response.formatError)
           throw new ResponseFormatError(
@@ -713,7 +709,6 @@ export class LlmClient {
     messages: ChatMessage[],
     target: LlmTarget = "default",
     effortTarget: LlmTarget = target,
-    shorten = false,
   ): Promise<SavedCompletion> {
     z.uuid().parse(id);
     const cachedInput = await this.ledger.savedInput(id);
@@ -752,8 +747,7 @@ export class LlmClient {
         : effortTarget !== target
           ? this.settingsFor(effortTarget).effort
           : selected.effort;
-    const codec = shorten ? shortIds(id, messages) : undefined;
-    const wire = (codec?.messages ?? messages).map((message) =>
+    const wire = messages.map((message) =>
       message.role === "assistant" &&
       message.content.trimStart().startsWith("{")
         ? { ...message, content: compactJsonWhitespace(message.content) }
@@ -906,7 +900,7 @@ export class LlmClient {
           }),
     };
     const stored = {
-      ...(prompt || codec ? { sourceMessages: messages } : {}),
+      ...(prompt ? { sourceMessages: messages } : {}),
       role,
       requestedVersion: selected.version,
       pricingDate: selected.pricingDate,
@@ -1244,18 +1238,16 @@ export class LlmClient {
               completion.rawResponse = raw;
             }
             if (!completion.content.trim()) completion.rawResponse = raw;
-            if ((prompt || codec) && completion.finishReason === "stop") {
+            if (prompt && completion.finishReason === "stop") {
               try {
                 const content = strict
                   ? JSON.stringify(
                       strict.decode(parseOutput(completion.content)),
                     )
                   : completion.content;
-                completion.content = codec
-                  ? codec.expand(content)
-                  : JSON.stringify(parseOutput(content));
+                completion.content = JSON.stringify(parseOutput(content));
               } catch (error) {
-                if (strict || codec)
+                if (strict)
                   completion.formatError = `応答の復元に失敗しました: ${error instanceof Error ? error.message : String(error)}`;
               }
             }

@@ -3321,16 +3321,7 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
       });
     })
     .mockImplementationOnce(
-      async (
-        id,
-        _role,
-        _messages,
-        _target,
-        _effort,
-        _short,
-        _attempt,
-        validate,
-      ) => {
+      async (id, _role, _messages, _target, _effort, _attempt, validate) => {
         const dice = { sides: 2, successThrough: 1 };
         expect(() =>
           validate!(JSON.stringify({ ...dice, observable: "羽根" })),

@@ -324,7 +324,8 @@ test("受容した範囲と版をサーバーで記録し、照会や他者の�
     }),
   ).toEqual(receipt);
   expect(
-    (await store.context(worldId).observations(observer.id, 0))[0],
+    (await store.context(worldId).sceneObservations(observer.id, 0, ""))
+      .items[0],
   ).toMatchObject({ sourceChanged: false, timeAdvanced: false });
   await store.commit(lease, store.context(worldId), {
     commitId: randomUUID(),
@@ -335,11 +336,12 @@ test("受容した範囲と版をサーバーで記録し、照会や他者の�
     ),
   });
   expect(
-    (await store.context(worldId).observations(observer.id, 0))[0]
-      ?.sourceChanged,
+    (await store.context(worldId).sceneObservations(observer.id, 0, ""))
+      .items[0]?.sourceChanged,
   ).toBe(false);
   expect(
-    (await store.context(worldId).observations(observer.id, 1))[0],
+    (await store.context(worldId).sceneObservations(observer.id, 1, ""))
+      .items[0],
   ).toMatchObject({ sourceChanged: false, timeAdvanced: true });
   await store.commit(lease, store.context(worldId), {
     commitId: randomUUID(),
@@ -350,8 +352,8 @@ test("受容した範囲と版をサーバーで記録し、照会や他者の�
     },
   });
   expect(
-    (await store.context(worldId).observations(observer.id, 1))[0]
-      ?.sourceChanged,
+    (await store.context(worldId).sceneObservations(observer.id, 1, ""))
+      .items[0]?.sourceChanged,
   ).toBe(true);
   const unchanged = await store.context(worldId).node(object.id);
   expect(unchanged).toEqual(object);
@@ -402,9 +404,9 @@ test("同じ履歴を観測と再利用しても区間を混同せず、追加�
   });
   const recorded = receipt.changes.edges[0]!;
   const read = store.context(worldId);
-  expect((await read.observations(actor.id, 10)).map((o) => o.edge)).toEqual([
-    recorded,
-  ]);
+  expect(
+    (await read.sceneObservations(actor.id, 10, "")).items.map((o) => o.edge),
+  ).toEqual([recorded]);
   expect(await read.history(actor.id, "see", "out", 10)).toEqual([recorded]);
   expect(await read.history(actor.id, "see", "out", 10, 2)).toEqual([]);
   expect(await read.history(actor.id, "see", "out", 0)).toEqual([]);
