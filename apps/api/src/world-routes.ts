@@ -780,7 +780,7 @@ export async function worldRoutes(
             includeJoins && after === undefined,
           );
           if (controller.signal.aborted) break;
-          if (frame.context?.receiptRequest && dirty) continue;
+          if (frame.context?.receiving && dirty) continue;
           const progress =
             after === undefined
               ? undefined

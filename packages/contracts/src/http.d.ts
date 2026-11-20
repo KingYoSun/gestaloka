@@ -3739,6 +3739,196 @@ export interface paths {
                                         message: string;
                                     };
                                 }[];
+                                receiving?: {
+                                    /** Format: uuid */
+                                    applicationId: string;
+                                    /** Format: uuid */
+                                    senderId: string;
+                                    senderName?: string;
+                                    /** Format: date-time */
+                                    deadline: string;
+                                    text: string;
+                                    changes: {
+                                        nodes: ({
+                                            /** Format: uuid */
+                                            id: string;
+                                            /** @description 同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す */
+                                            text: string;
+                                            /** @enum {string} */
+                                            kind: "existence";
+                                            /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
+                                            count?: number;
+                                        } | {
+                                            /** Format: uuid */
+                                            id: string;
+                                            text: string;
+                                            /** @enum {string} */
+                                            kind: "script";
+                                            /** @enum {string} */
+                                            type?: "memo";
+                                            spawn?: {
+                                                /** @enum {string} */
+                                                kind: "instant-npc" | "existence" | "script" | "event";
+                                                species: string;
+                                                description: string;
+                                                probability: number;
+                                                minCount: number;
+                                                maxCount: number;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "instant-npc" | "existence" | "script" | "event";
+                                                species: string;
+                                                description: string;
+                                                probability: number;
+                                                count: number;
+                                            };
+                                        } | {
+                                            /** Format: uuid */
+                                            id: string;
+                                            text: string;
+                                            /** @enum {string} */
+                                            kind: "event";
+                                            appearances?: {
+                                                /** @enum {string} */
+                                                kind: "instant-npc" | "existence" | "script" | "event";
+                                                species: string;
+                                                description: string;
+                                                /** Format: uuid */
+                                                id: string;
+                                                /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
+                                                count?: number;
+                                                /**
+                                                 * Format: uuid
+                                                 * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
+                                                 */
+                                                ruleId?: string;
+                                            }[];
+                                            instantActor?: {
+                                                /** Format: uuid */
+                                                id: string;
+                                                /** Format: uuid */
+                                                sourceEventId: string;
+                                            };
+                                            instantTarget?: {
+                                                /** Format: uuid */
+                                                id: string;
+                                                /** Format: uuid */
+                                                sourceEventId: string;
+                                            };
+                                            period: {
+                                                from: number;
+                                                until?: number;
+                                            };
+                                        })[];
+                                        /** @default [] */
+                                        revisions: ({
+                                            /** Format: uuid */
+                                            id: string;
+                                            /** @description 同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す */
+                                            text: string;
+                                            /** @enum {string} */
+                                            kind: "existence";
+                                            /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
+                                            count?: number;
+                                        } | {
+                                            /** Format: uuid */
+                                            id: string;
+                                            text: string;
+                                            /** @enum {string} */
+                                            kind: "script";
+                                            /** @enum {string} */
+                                            type?: "memo";
+                                            spawn?: {
+                                                /** @enum {string} */
+                                                kind: "instant-npc" | "existence" | "script" | "event";
+                                                species: string;
+                                                description: string;
+                                                probability: number;
+                                                minCount: number;
+                                                maxCount: number;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "instant-npc" | "existence" | "script" | "event";
+                                                species: string;
+                                                description: string;
+                                                probability: number;
+                                                count: number;
+                                            };
+                                        } | {
+                                            /** Format: uuid */
+                                            id: string;
+                                            text: string;
+                                            /** @enum {string} */
+                                            kind: "event";
+                                            appearances?: {
+                                                /** @enum {string} */
+                                                kind: "instant-npc" | "existence" | "script" | "event";
+                                                species: string;
+                                                description: string;
+                                                /** Format: uuid */
+                                                id: string;
+                                                /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
+                                                count?: number;
+                                                /**
+                                                 * Format: uuid
+                                                 * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
+                                                 */
+                                                ruleId?: string;
+                                            }[];
+                                            instantActor?: {
+                                                /** Format: uuid */
+                                                id: string;
+                                                /** Format: uuid */
+                                                sourceEventId: string;
+                                            };
+                                            instantTarget?: {
+                                                /** Format: uuid */
+                                                id: string;
+                                                /** Format: uuid */
+                                                sourceEventId: string;
+                                            };
+                                            period: {
+                                                from: number;
+                                                until?: number;
+                                            };
+                                        })[];
+                                        edges: {
+                                            /** Format: uuid */
+                                            id: string;
+                                            /** @enum {string} */
+                                            kind: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+                                            /** Format: uuid */
+                                            source: string;
+                                            /** Format: uuid */
+                                            target: string;
+                                            /**
+                                             * @description status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する
+                                             * @enum {string}
+                                             */
+                                            role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
+                                            /** @description 関係の内容。seeでは受容本文。status/contentでtext=locationは主体の現在の所在専用のscriptを示し、status/aboutで場所を参照する */
+                                            text?: string;
+                                            period: {
+                                                from: number;
+                                                until?: number;
+                                            };
+                                            observation?: {
+                                                /** @description 受容した側面・範囲。textがない場合は、受容内容の本文も含める */
+                                                aspect: string;
+                                                through: number;
+                                                /** @default [] */
+                                                sourceIds: string[];
+                                                /** @default [] */
+                                                pathIds: string[];
+                                                /** @description サーバーが確定時に保存する版。モデルからの値は使用しない */
+                                                versions?: {
+                                                    [key: string]: number;
+                                                };
+                                            };
+                                        }[];
+                                        endEdges: string[];
+                                    };
+                                };
                                 receiptRequest?: {
                                     /** Format: uuid */
                                     applicationId: string;

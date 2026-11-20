@@ -309,6 +309,12 @@ export const WaitingStatus = z.object({
   deadline: z.iso.datetime().optional(),
   code: z.string().optional(),
 });
+const ReceiptRequest = z.object({
+  applicationId: z.uuid(),
+  senderId: z.uuid(),
+  senderName: z.string().optional(),
+  deadline: z.iso.datetime(),
+});
 export const WaitingContextStatus = WaitingStatus.extend({
   context: z
     .object({
@@ -316,15 +322,13 @@ export const WaitingContextStatus = WaitingStatus.extend({
       name: z.string().optional(),
       phase: z.enum(["turn", "receiving", "waiting-for-return", "parked"]),
       recent: z.array(TransitionRecord).max(3),
-      receiptRequest: z
-        .object({
-          applicationId: z.uuid(),
-          senderId: z.uuid(),
-          senderName: z.string().optional(),
-          deadline: z.iso.datetime(),
-          memoTexts: z.array(z.string()).min(1),
-        })
-        .optional(),
+      receiving: ReceiptRequest.extend({
+        text: z.string(),
+        changes: Change,
+      }).optional(),
+      receiptRequest: ReceiptRequest.extend({
+        memoTexts: z.array(z.string()).min(1),
+      }).optional(),
       receiptResult: ReceiptResult.optional(),
     })
     .optional(),
