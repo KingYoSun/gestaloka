@@ -3109,6 +3109,22 @@ export class BotPlay {
       const found = await owners(id);
       for (const owner of found.length ? found : [id]) parties.add(owner);
     };
+    const named = async (id: string) =>
+      `「${(await context.node(id))?.text ?? ""}」（ID: ${id}）`;
+    // 本人が利用できる、または所有する保管先。出し入れは本人の判断で行えるが、その場にいる必要がある。
+    // 人物は、利用の関係があっても本人の判断を経る。
+    const storage = async (id: string | null): Promise<boolean> =>
+      id !== null &&
+      id !== actor &&
+      !controlled.has(id) &&
+      (await holders(id)).some(
+        (e) => e.source === actor && (e.role === "use" || e.role === undefined),
+      );
+    const here = async (id: string) =>
+      (await this.#nearby(context, actor)).has(id) ||
+      (await locationRecords(context, actor)).some((r) =>
+        r.aboutIds.includes(id),
+      );
     const pickupEdges: string[] = [];
     let changes = empty(),
       at = w.at,
@@ -3277,9 +3293,29 @@ export class BotPlay {
               parties.add(actor);
             } else {
               if (op.from !== actor || op.to !== actor) externalEffect = true;
-              await affect(id);
+              const away =
+                (await storage(op.from)) && !(await here(op.from!))
+                  ? op.from!
+                  : (await storage(op.to)) && !(await here(op.to))
+                    ? op.to
+                    : undefined;
+              if (away) {
+                if (input.command === "oppose") {
+                  impossible = true;
+                  break;
+                }
+                reject(
+                  "STORAGE_NOT_HERE",
+                  `保管先${await named(away)}に物を出し入れするには、本人がその場所にいる必要があります。locateで移動してから申請してください`,
+                );
+              }
+              if (await storage(op.from)) parties.add(actor);
+              else await affect(id);
             }
-            await affect(op.to);
+            if (await storage(op.to)) {
+              refs.add(op.to);
+              parties.add(actor);
+            } else await affect(op.to);
           } else if (op.type === "transfer") {
             for (const e of incoming.filter((e) => e.role === undefined))
               parties.add(e.source);
@@ -3311,7 +3347,7 @@ export class BotPlay {
               }
               reject(
                 "BELONGING_NOT_RECORDED",
-                "物品・技能の保持または所有は未記録です",
+                "物品・技能の保持または所有は未記録です。operationsのupdateで改められるのは物品と技能です。本人の呼称や状態の本文は、changesのrevisionsで改めてください",
               );
             }
             await affect(id);
@@ -3473,16 +3509,16 @@ export class BotPlay {
         if (!session?.data.members.some((m) => m.actorId === id))
           reject(
             "REMOTE_RECEIVING",
-            "受領者は同じセッションにいる必要があります",
+            `受領者${await named(id)}が同じセッションにいません。contactで合流してから申請してください`,
           );
       }
-      if (
-        !needsCreation &&
-        [...parties].some((id) => id !== actor && !controlled.has(id))
-      )
+      const unowned = [...parties].filter(
+        (id) => id !== actor && !controlled.has(id),
+      );
+      if (!needsCreation && unowned.length)
         reject(
           "AUTHORITY_REQUIRED",
-          "本人の操作範囲または同席者の判断が必要です",
+          `${(await Promise.all(unowned.map(named))).join("・")}は本人の操作範囲になく、判断できる人物の記録もありません。本人の居場所は条件ではありません`,
         );
     }
     const wait = input.command === "update" ? input.waitMinutes : undefined;

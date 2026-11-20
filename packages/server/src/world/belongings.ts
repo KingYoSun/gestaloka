@@ -444,15 +444,24 @@ export async function readBelongings(
     }
     return held;
   };
-  const storages = [];
-  for (const edge of await facts(subject, "use")) {
+  // 利用できる保管先と、本人が所有していて物が置いてある存在。
+  const storages = [],
+    listed = new Set<string>();
+  for (const edge of [
+    ...(await facts(subject, "use")),
+    ...(await facts(subject, undefined)),
+  ]) {
     const node = await context.node(edge.target, at);
-    if (viewer && !visibleTo(node, viewer, false)) continue;
+    if (listed.has(edge.target) || (viewer && !visibleTo(node, viewer, false)))
+      continue;
+    const stored = await items(edge.target);
+    if (!edge.role && !stored.length) continue;
+    listed.add(edge.target);
     storages.push({
       id: edge.target,
       label: node?.text ?? "",
       ...shown(node),
-      items: await items(edge.target),
+      items: stored,
     });
   }
   const skills = [];

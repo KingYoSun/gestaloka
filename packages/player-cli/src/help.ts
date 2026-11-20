@@ -120,7 +120,7 @@ const commands = {
   finish: ["", "本人のプレイを終え、確定した履歴を取得。"],
   play: [
     "--file <JSONファイル>",
-    "PlayCommand形式の操作を送る。グラフ差分を使うメモの更新や対抗行動、時間をかける物品の作成（waitMinutes）の形式は commands.md を参照。",
+    "PlayCommand形式の操作を送る。保管先への出し入れはmoveで申請し、本人が保管先のある場所にいる必要がある（離れているとSTORAGE_NOT_HERE）。本人の呼称と状態はupdateのchangesで改める。operationsのupdateが扱うのは物品と技能。グラフ差分を使うメモの更新や対抗行動、時間をかける物品の作成（waitMinutes）の形式は commands.md を参照。",
     "play --file action.json",
   ],
   memo: [
