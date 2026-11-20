@@ -21,6 +21,7 @@
   --accent: #e6d8c5;
   --accent-foreground: #0b2034;
   --destructive: #b22323;
+  --badge: #d53c21;
   --border: rgba(11, 32, 52, 0.16);
   --input: rgba(11, 32, 52, 0.26);
   --ring: #7bcfd0;
@@ -386,6 +387,16 @@ select {
   border-color: var(--primary);
   color: var(--foreground);
   font-weight: 700;
+}
+.play-unread {
+  display: inline-block;
+  border-radius: 999px;
+  background: var(--badge);
+  padding-inline: 5px;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1rem;
 }
 .play-list {
   display: grid;

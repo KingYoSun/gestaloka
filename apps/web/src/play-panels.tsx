@@ -3,10 +3,11 @@ import { Link } from "@tanstack/react-router";
 import { DiagramFlowHorizontal, PanelLeft, PanelRight, X } from "lucide-react";
 import { Dialog, Tabs, Tooltip } from "radix-ui";
 import { z } from "zod";
-import { PlayerCharacter } from "@gestaloka/contracts";
+import { PlayerCharacter, type PlayerNotices } from "@gestaloka/contracts";
 import { Button } from "./components/ui/button.js";
 import { CharacterAvatar, CharacterBadge } from "./player-icons.js";
 import { RichText } from "./RichText.js";
+import { Notice, Problem } from "./presentation.js";
 
 const Item = z.object({
   id: z.uuid().optional(),
@@ -77,11 +78,13 @@ export function PlayLayout({
   right,
   toolbar,
   children,
+  unreadNotices,
 }: {
   left: ReactNode;
   right: ReactNode;
   toolbar: ReactNode;
   children: ReactNode;
+  unreadNotices: number;
 }) {
   const [drawer, setDrawer] = useState<"left" | "right">();
   const start = useRef<{ x: number; y: number }>(null);
@@ -117,6 +120,7 @@ export function PlayLayout({
           const isLeft = side === "left";
           const title = isLeft ? "プレイヤー情報" : "シーン情報";
           const Icon = isLeft ? PanelLeft : PanelRight;
+          const hasUnread = isLeft && unreadNotices > 0;
           return (
             <Dialog.Root
               key={side}
@@ -130,10 +134,22 @@ export function PlayLayout({
                   variant="ghost"
                   className="play-icon play-drawer-trigger"
                   data-side={side}
-                  aria-label={title}
+                  aria-label={
+                    hasUnread
+                      ? `${title}（未読の通知 ${unreadNotices}件）`
+                      : title
+                  }
                   title={title}
                 >
                   <Icon />
+                  {hasUnread && (
+                    <span
+                      className="play-unread absolute -top-1 -right-1"
+                      aria-hidden="true"
+                    >
+                      {unreadNotices}
+                    </span>
+                  )}
                 </Button>
               </Dialog.Trigger>
               <PanelDialog side={side} title={title}>
@@ -165,6 +181,7 @@ const tabs = {
   storage: "保管品",
   skills: "技能",
   past: "過去の履歴",
+  notices: "通知",
 };
 
 function TextList({ items, empty }: { items: string[]; empty: string }) {
@@ -187,12 +204,20 @@ export function PlayerPanel({
   screen,
   history,
   sceneId,
+  notices,
 }: {
   world: string;
   player: Character;
   screen: Screen;
   history: ReactNode;
   sceneId?: string;
+  notices: {
+    unread: number;
+    items: z.infer<typeof PlayerNotices>["notices"] | undefined;
+    loading: boolean;
+    error: unknown;
+    read: () => void;
+  };
 }) {
   const { belongings, own, past } = screen;
   return (
@@ -200,11 +225,22 @@ export function PlayerPanel({
       <div className="play-profile">
         <CharacterBadge {...player} />
       </div>
-      <Tabs.Root defaultValue={sceneId ? "past" : "profile"}>
+      <Tabs.Root
+        defaultValue={sceneId ? "past" : "profile"}
+        onValueChange={(tab) => {
+          if (tab === "notices") notices.read();
+        }}
+      >
         <Tabs.List className="play-tabs" aria-label="プレイヤー情報の種類">
           {Object.entries(tabs).map(([key, label]) => (
             <Tabs.Trigger key={key} value={key}>
               {label}
+              {key === "notices" && notices.unread > 0 && (
+                <span className="play-unread ml-1">
+                  <span className="sr-only">未読 {notices.unread}件</span>
+                  <span aria-hidden="true">{notices.unread}</span>
+                </span>
+              )}
             </Tabs.Trigger>
           ))}
         </Tabs.List>
@@ -280,6 +316,30 @@ export function PlayerPanel({
             <summary>本人のこれまでの履歴</summary>
             {history}
           </details>
+        </Tabs.Content>
+        <Tabs.Content value="notices">
+          {notices.loading && <Notice>通知を読み込んでいます</Notice>}
+          {notices.error != null && <Problem error={notices.error} />}
+          {notices.items?.length === 0 && (
+            <p className="muted">通知はありません</p>
+          )}
+          {!!notices.items?.length && (
+            <ul className="space-y-3">
+              {notices.items.map(({ id, at, text }) => (
+                <li key={id}>
+                  <time className="muted" dateTime={at}>
+                    {realTime(at)}
+                  </time>
+                  <p className="whitespace-pre-wrap">{text}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+          {(notices.error != null || (notices.items && notices.unread > 0)) && (
+            <Button type="button" onClick={notices.read}>
+              {notices.error != null ? "再試行" : "未読を読む"}
+            </Button>
+          )}
         </Tabs.Content>
       </Tabs.Root>
     </>

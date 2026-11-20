@@ -71,6 +71,7 @@ const server = setupServer(
       command: string;
       text?: string;
       accept?: boolean;
+      query?: { kind: string };
     };
     posted.push({
       requestId: body.requestId,
@@ -83,6 +84,16 @@ const server = setupServer(
       return json({
         ...view,
         material: { node: { text: "本人だけに返った素材" }, states: [] },
+        ...(body.query?.kind === "self"
+          ? {
+              arriving: [
+                {
+                  items: [{ label: "木箱", count: 2 }, { label: "粘土" }],
+                  dueAt: "2026-11-21T04:00:00.000Z",
+                },
+              ],
+            }
+          : {}),
       });
     }
     if (body.command === "say") {
@@ -188,6 +199,11 @@ test("本人の素材を個別表示し、手番終了時に入力・結果・�
   );
   fireEvent.click(screen.getByRole("button", { name: "自分の情報" }));
   await screen.findByText("本人だけに返った素材");
+  const arriving = screen.getByText("届く予定").parentElement!;
+  expect(arriving.textContent).toContain("木箱 ×2、粘土");
+  expect(arriving.querySelector("time")?.dateTime).toBe(
+    "2026-11-21T04:00:00.000Z",
+  );
   const field = screen.getByLabelText("発言・ターンコメント");
   fireEvent.change(field, { target: { value: "記録の方法を提案する" } });
   fireEvent.compositionStart(field);
@@ -215,12 +231,59 @@ test("本人の素材を個別表示し、手番終了時に入力・結果・�
   await within(chat).findByText("記録の方法を提案する");
   expect(chat.textContent).toContain("次の観測につなげたい");
   expect(chat.textContent).not.toContain("本人だけに返った素材");
+  expect(chat.textContent).not.toContain("届く予定");
   fireEvent.click(
     screen.getByRole("button", { name: "自分のプレイを終了する" }),
   );
   await screen.findByRole("heading", { name: "本人のシーンを終了しました" });
   expect(chat.textContent).toContain("記録の方法を提案する");
   expect(posted.every((p) => p.actorId === actor)).toBe(true);
+});
+
+test("通知の未読をプレイヤー情報に示し、通知タブを開いたときだけ既読にする", async () => {
+  view.actorId = peer;
+  const reads: (string | null)[] = [];
+  const at = "2026-11-21T04:00:00.000Z";
+  server.use(
+    http.get("*/api/worlds/:id/notices", ({ request }) => {
+      reads.push(new URL(request.url).searchParams.get("actorId"));
+      delete view.unreadNotices;
+      return json({
+        notices: [{ id: scene, at, text: "木箱が届きました。", unread: true }],
+      });
+    }),
+  );
+  show();
+  const player = await screen.findByRole("complementary", {
+    name: "プレイヤー情報",
+  });
+  expect(within(player).getByRole("tab", { name: "通知" })).toBeTruthy();
+  view.unreadNotices = 1;
+  const drawer = await screen.findByRole(
+    "button",
+    { name: "プレイヤー情報（未読の通知 1件）" },
+    { timeout: 5000 },
+  );
+  expect(
+    within(player).getByRole("tab", { name: /通知.*未読.*1件/ }),
+  ).toBeTruthy();
+  fireEvent.click(drawer);
+  const dialog = await screen.findByRole("dialog", { name: "プレイヤー情報" });
+  expect(reads).toEqual([]);
+  fireEvent.mouseDown(
+    within(dialog).getByRole("tab", { name: /通知.*未読.*1件/ }),
+    {
+      button: 0,
+      ctrlKey: false,
+    },
+  );
+  const body = await within(dialog).findByText("木箱が届きました。");
+  expect(body.parentElement?.querySelector("time")?.dateTime).toBe(at);
+  await within(dialog).findByRole("tab", { name: "通知" });
+  expect(reads).toEqual([actor]);
+  expect(posted).toEqual([]);
+  fireEvent.click(within(dialog).getByRole("button", { name: "閉じる" }));
+  await screen.findByRole("button", { name: "プレイヤー情報" });
 });
 
 test("発言の応答待ちに書き始めた次の入力を消さない", async () => {

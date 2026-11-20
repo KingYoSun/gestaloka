@@ -43,6 +43,12 @@ const Material = z.object({
     .optional(),
   belongings: Belongings.optional(),
 });
+const SearchResult = z.object({
+  material: Material,
+  arriving: z
+    .array(z.object({ items: Belongings.shape.items, dueAt: z.iso.datetime() }))
+    .optional(),
+});
 const View = z.object({
   sessionId: z.string().optional(),
   viewerId: z.string(),
@@ -52,6 +58,7 @@ const View = z.object({
   screen: PlayScreen,
   callsUsed: z.number().optional(),
   callsLimit: z.number().optional(),
+  unreadNotices: z.number().optional(),
   commentUsed: z.boolean().optional(),
   result: z.unknown().optional(),
   members: z
@@ -121,7 +128,7 @@ function PersonalMaterial({
   contact: (id: string) => void;
   disabled: boolean;
 }) {
-  const data = Material.parse(value);
+  const { material: data, arriving } = SearchResult.parse(value);
   const texts = [
     data.node?.text,
     ...(data.states ?? []).map((x) => x.node.text),
@@ -143,6 +150,19 @@ function PersonalMaterial({
       {texts.map((text, i) => (
         <RichText key={i} text={text!} />
       ))}
+      {!!arriving?.length && (
+        <section className="mt-3">
+          <h3>届く予定</h3>
+          <ul className="play-list">
+            {arriving.map(({ items, dueAt }, i) => (
+              <li key={i}>
+                {items.map(itemText).join("、")}（
+                <time dateTime={dueAt}>{realTime(dueAt)}</time>）
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {data.subjects?.map((x) => (
         <div
           className="flex items-center justify-between gap-3 py-2"
@@ -169,7 +189,7 @@ export function BotSession({
   sceneId?: string;
 }) {
   const [text, setText] = useState(""),
-    [material, setMaterial] = useState<unknown>();
+    [searchResult, setSearchResult] = useState<unknown>();
   const history = useRef<HistoryHandle>(null);
   const editorRequest = useRef<string>(null);
   const log = useRef<HTMLDivElement>(null);
@@ -195,6 +215,10 @@ export function BotSession({
   );
   const mutation = $api.useMutation("post", "/api/worlds/{id}/session"),
     view = query.data ? View.parse(query.data) : undefined;
+  // 取得時に既読になるため、プレイヤーが通知を読む操作で取得する。
+  const notices = $api.useMutation("get", "/api/worlds/{id}/notices", {
+    onSuccess: () => void query.refetch(),
+  });
   const newest = view?.entries.at(-1)?.id;
   useLayoutEffect(() => {
     if (newest && follow.current && log.current)
@@ -212,7 +236,7 @@ export function BotSession({
         body.command === "search" &&
         (body.query.kind === "self" || body.query.kind === "surroundings")
       )
-        setMaterial(result.material);
+        setSearchResult(result.material === undefined ? undefined : result);
       else if (
         editorRequest.current !== body.requestId &&
         (body.command === "say" || body.command === "comment")
@@ -235,6 +259,13 @@ export function BotSession({
     );
   if (query.error) return <Problem error={query.error} />;
   if (!view) return <Notice>セッションを読み込んでいます</Notice>;
+  const unreadNotices = view.unreadNotices ?? 0;
+  const readNotices = () => {
+    if (!notices.isPending)
+      notices.mutate({
+        params: { path: { id }, query: { actorId: view.viewerId } },
+      });
+  };
   const personName = (id: string) =>
     view.characters.find((c) => c.actorId === id)?.name ?? id;
   const mine = view.actorId === view.viewerId,
@@ -253,11 +284,19 @@ export function BotSession({
   }
   return (
     <PlayLayout
+      unreadNotices={unreadNotices}
       left={
         <PlayerPanel
           world={id}
           player={player}
           screen={view.screen}
+          notices={{
+            unread: unreadNotices,
+            items: notices.data?.notices,
+            loading: notices.isPending,
+            error: notices.error,
+            read: readNotices,
+          }}
           {...(sceneId ? { sceneId } : {})}
           history={
             <History
@@ -498,9 +537,9 @@ export function BotSession({
               </Button>
             </div>
           )}
-          {material !== undefined && (
+          {searchResult !== undefined && (
             <PersonalMaterial
-              value={material}
+              value={searchResult}
               disabled={busy || !mine || !!view.receiving}
               contact={(targetId) =>
                 void send({ command: "contact", targetId })
