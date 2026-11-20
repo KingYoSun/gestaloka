@@ -5460,7 +5460,8 @@
               "type": "string",
               "enum": [
                 "wait",
-                "joins"
+                "joins",
+                "screen"
               ]
             },
             "in": "query",

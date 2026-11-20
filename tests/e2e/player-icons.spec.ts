@@ -304,12 +304,16 @@ test("参加時の画像を再読込後に再試行し、Web・共通APIの変�
       world,
     ]);
     await page.goto(`/worlds/${world}/play?actorId=${own.actorId}`);
+    await page.getByRole("tab", { name: "過去の履歴", exact: true }).click();
     await page.getByText("本人のこれまでの履歴", { exact: true }).click();
     await expect(
       page.getByRole("img", { name: `${other.name}のアイコン`, exact: true }),
     ).toHaveAttribute("src", otherIcon);
     const otherPage = await second.newPage();
     await otherPage.goto(`/worlds/${world}/play?actorId=${other.actorId}`);
+    await otherPage
+      .getByRole("tab", { name: "過去の履歴", exact: true })
+      .click();
     await otherPage.getByText("本人のこれまでの履歴", { exact: true }).click();
     await expect(
       otherPage.getByRole("img", {
@@ -322,12 +326,15 @@ test("参加時の画像を再読込後に再試行し、Web・共通APIの変�
       fullPage: true,
     });
     await page.setViewportSize({ width: 390, height: 844 });
+    await page
+      .getByRole("button", { name: "プレイヤー情報", exact: true })
+      .click();
     await page.screenshot({
       path: "artifacts/screenshots/player-icon-mobile.png",
       fullPage: true,
     });
     // A decode/load failure must preserve the name and the default silhouette.
-    const avatar = page.locator(".player-avatar").first();
+    const avatar = page.getByRole("dialog").locator(".player-avatar").first();
     await avatar.locator("img").dispatchEvent("error");
     await expect(avatar.locator("svg")).toBeVisible();
     await page.goto(`/worlds/${world}`);

@@ -404,7 +404,7 @@ export async function worldRoutes(
       schema: {
         params: ResourceId,
         querystring: SceneViewQuery.extend({
-          view: z.enum(["wait", "joins"]).optional(),
+          view: z.enum(["wait", "joins", "screen"]).optional(),
           after: z
             .string()
             .regex(/^\d{1,19}$/)
@@ -418,7 +418,7 @@ export async function worldRoutes(
       const user = await subject(request);
       const { actorId, sceneId, view, after } = request.query;
       const connection = deviceIds.get(request);
-      if (view) {
+      if (view === "wait" || view === "joins") {
         if (sceneId)
           throw new AccessError(
             400,
@@ -441,6 +441,7 @@ export async function worldRoutes(
         sceneId,
         connection,
         after,
+        view === "screen",
       );
     },
   );

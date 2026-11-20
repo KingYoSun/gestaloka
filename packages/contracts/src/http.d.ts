@@ -2376,7 +2376,7 @@ export interface paths {
                 query?: {
                     actorId?: string;
                     sceneId?: string;
-                    view?: "wait" | "joins";
+                    view?: "wait" | "joins" | "screen";
                     after?: string;
                 };
                 header?: never;

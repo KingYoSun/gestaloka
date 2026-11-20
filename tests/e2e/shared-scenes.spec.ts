@@ -161,6 +161,34 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     await expect(
       page.getByRole("heading", { name: "2人のセッション" }),
     ).toBeVisible();
+    const players = page.getByRole("complementary", { name: "プレイヤー情報" });
+    await expect(players.getByRole("tab")).toHaveText([
+      "基本情報",
+      "所持品",
+      "保管品",
+      "技能",
+      "過去の履歴",
+    ]);
+    const scene = page.getByRole("complementary", { name: "シーン情報" });
+    await expect(scene.getByRole("listitem")).toHaveCount(2);
+    const current = scene.getByRole("button", {
+      name: /プロフィール（手番中）/,
+    });
+    const currentName = (await current.getAttribute("aria-label"))!.split(
+      "のプロフィール",
+    )[0]!;
+    const timer = scene.locator(".turn-clock");
+    await expect(timer).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
+    await current.hover();
+    await expect(page.getByRole("tooltip")).toHaveText(currentName);
+    await current.click();
+    await expect(page.getByRole("dialog", { name: currentName })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await scene.getByRole("button", { name: "隣接する場所" }).click();
+    await expect(
+      page.getByRole("dialog", { name: "隣接する場所" }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "自分の情報", exact: true }).click();
     await expect(
       page.getByText("自分への検索結果", { exact: true }),
@@ -194,11 +222,60 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     await expect(page.getByLabel("セッションのチャット")).toContainText(
       "自分の考えを添える",
     );
+    const log = page.getByLabel("セッションのチャット");
+    await expect(log.locator("time").last()).toHaveAttribute(
+      "datetime",
+      /^\d{4}-\d{2}-\d{2}T/,
+    );
+    await page.getByRole("button", { name: "最上部へ移動" }).click();
+    await expect
+      .poll(() => log.evaluate((element) => element.scrollTop))
+      .toBe(0);
+    await page.getByRole("button", { name: "最下部に移動" }).click();
+    await expect
+      .poll(() =>
+        log.evaluate(
+          (element) =>
+            element.scrollHeight - element.clientHeight - element.scrollTop,
+        ),
+      )
+      .toBeLessThanOrEqual(1);
     await page.screenshot({
       path: "artifacts/screenshots/bot-session-desktop.png",
       fullPage: true,
     });
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "シーン情報", exact: true }).click();
+    await expect(
+      page.getByRole("dialog", { name: "シーン情報" }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    const swipe = (source: typeof log, from: number, to: number) =>
+      source.evaluate(
+        (target, { from, to }) => {
+          const touch = (clientX: number) =>
+            new Touch({ identifier: 1, target, clientX, clientY: 180 });
+          target.dispatchEvent(
+            new TouchEvent("touchstart", {
+              bubbles: true,
+              touches: [touch(from)],
+              changedTouches: [touch(from)],
+            }),
+          );
+          target.dispatchEvent(
+            new TouchEvent("touchend", {
+              bubbles: true,
+              changedTouches: [touch(to)],
+            }),
+          );
+        },
+        { from, to },
+      );
+    const drawer = page.getByRole("dialog", { name: "プレイヤー情報" });
+    await swipe(log, 28, 150);
+    await expect(drawer).toBeVisible();
+    await swipe(drawer, 170, 35);
+    await expect(drawer).toBeHidden();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -214,6 +291,20 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     await expect(
       page.getByRole("heading", { name: "本人のシーンを終了しました" }),
     ).toBeVisible();
+    await f.call(actor, { command: "start" });
+    await page
+      .getByRole("button", { name: "プレイヤー情報", exact: true })
+      .click();
+    await drawer.getByRole("tab", { name: "過去の履歴" }).click();
+    await expect(drawer.getByRole("link", { name: /開始$/ })).toHaveCount(1);
+    await drawer.getByRole("link", { name: /開始$/ }).click();
+    await expect(
+      page.getByRole("heading", { name: "過去のプレイログ" }),
+    ).toBeVisible();
+    await expect(log).toContainText("次の観測を相談する");
+    await expect
+      .poll(() => log.evaluate((element) => element.scrollTop))
+      .toBe(0);
     expect(
       (
         await (

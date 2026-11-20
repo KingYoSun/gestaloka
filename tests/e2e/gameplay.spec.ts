@@ -363,6 +363,10 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
   await page.goto(
     `/worlds/${id}/play?actorId=${scene.viewerId}&sceneId=${scene.id}`,
   );
+  await expect(page.getByRole("link", { name: /開始$/ })).toHaveAttribute(
+    "href",
+    new RegExp(`sceneId=${scene.id}`),
+  );
   const section = page.getByRole("region", { name: "このシーン", exact: true }),
     scroll = section.getByLabel("記録の閲覧領域");
   await expect(section).toHaveAttribute("data-retained-records", "50");
@@ -500,6 +504,7 @@ test("長い履歴の保持と描画を制限し、ページ破棄でも閲覧�
     .click();
   await participate(page);
 
+  await page.getByRole("tab", { name: "過去の履歴", exact: true }).click();
   await page.getByText("本人のこれまでの履歴", { exact: true }).click();
   const section = page.getByRole("region", { name: "あなたの記録" }),
     scroll = page.getByLabel("記録の閲覧領域");
