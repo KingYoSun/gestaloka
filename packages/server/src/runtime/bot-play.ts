@@ -140,6 +140,7 @@ type Entry = {
   actorId: string;
   input: string;
   result: unknown;
+  label?: string;
   applicationId?: string;
   itemWitnesses?: string[];
 };
@@ -978,12 +979,38 @@ export class BotPlay {
   // 同席者から出現個体を外す。立ち去り、死亡、場所に誰もいなくなったときに使う。
   async #removeInstants(db: Db, data: Session["data"], ids: string[]) {
     if (!ids.length) return;
-    data.members = data.members.filter(
-      (m) => !m.instant || !ids.includes(m.actorId),
-    );
+    data.members = data.members.filter((m) => {
+      if (!m.instant || !ids.includes(m.actorId)) return true;
+      for (const entry of data.entries)
+        if (entry.actorId === m.actorId) entry.label ??= m.instant.name;
+      return false;
+    });
     await db.query(
       "UPDATE bot_scene SET closed=true WHERE id=ANY($1::uuid[]) AND actor_id=id",
       [ids],
+    );
+  }
+  // 出現場所に通常の同席者がいなくなった個体を外す。
+  async #removeUnoccupiedInstants(
+    db: Db,
+    session: Session,
+    regular = session.data.members.filter((m) => !m.instant),
+  ) {
+    const instants = session.data.members.filter((m) => m.instant);
+    if (!instants.length) return;
+    const context = this.store.context(
+      (await this.world(session.world_id, db)).id,
+    );
+    const places = new Set<string>();
+    for (const member of regular)
+      for (const place of await this.#places(context, member.actorId))
+        places.add(place);
+    await this.#removeInstants(
+      db,
+      session.data,
+      instants
+        .filter((m) => !m.instant!.places.some((place) => places.has(place)))
+        .map((m) => m.actorId),
     );
   }
   // 出現個体の行動と、同席者から出現個体への対抗行動を一つの出来事として確定する。
@@ -1451,6 +1478,7 @@ export class BotPlay {
             result: e.result,
             ...(e.applicationId ? { applicationId: e.applicationId } : {}),
             label:
+              e.label ??
               session.data.members.find((m) => m.actorId === e.actorId)?.instant
                 ?.name ??
               (await context.node(e.actorId))?.text ??
@@ -1577,22 +1605,7 @@ export class BotPlay {
     const regular = d.members.filter(
       (m) => !m.instant && m.actorId !== departingActor,
     );
-    // 出現個体は出現した場所に属し、その場所に通常の同席者がいなくなれば同席から外れる。
-    const context = this.store.context(
-        (await this.world(session.world_id, db)).id,
-      ),
-      places = new Set<string>();
-    for (const m of regular)
-      for (const place of await this.#places(context, m.actorId))
-        places.add(place);
-    const gone = d.members.filter(
-      (m) => m.instant && !m.instant.places.some((p) => places.has(p)),
-    );
-    await this.#removeInstants(
-      db,
-      d,
-      gone.map((m) => m.actorId),
-    );
+    await this.#removeUnoccupiedInstants(db, session, regular);
     // 手番を終えた人物が別のセッションへ移ったときは、出現個体の手番を挟まない。
     const instant = d.members.some((m) => m.actorId === d.turn)
       ? d.members.filter((m) => m.instant)
@@ -4547,7 +4560,8 @@ export class BotPlay {
           reject("SESSION_REQUIRED", "本人のセッションを開始してください");
         let before = turnState(session);
         const d = session.data,
-          receiving = d.receiving;
+          { receiving, members } = d;
+        let confirmedChanges: Change | undefined;
         const member = d.members.find((m) => m.actorId === actor);
         if (member) member.userId = user;
         if (
@@ -4701,6 +4715,7 @@ export class BotPlay {
                   changes: plan.changes,
                   context,
                 });
+                confirmedChanges = receipt.changes;
                 settled = await this.#settle(db, session, "accepted", {
                   commitId: receipt.commitId,
                   ...(declined.length ? { declined } : {}),
@@ -5143,6 +5158,7 @@ export class BotPlay {
                 result = { applicationId: input.requestId, state: "receiving" };
               } else {
                 const receipt = await this.#commit(w.id, input.requestId, plan);
+                confirmedChanges = receipt.changes;
                 result = {
                   state: "accepted",
                   commitId: receipt.commitId,
@@ -5225,6 +5241,16 @@ export class BotPlay {
             }
           }
         }
+        if (
+          confirmedChanges?.edges.some(
+            (edge) =>
+              edge.kind === "status" &&
+              edge.role === "content" &&
+              edge.text === "location" &&
+              members.some((m) => !m.instant && m.actorId === edge.source),
+          )
+        )
+          await this.#removeUnoccupiedInstants(db, session);
         await this.#save(db, session, before);
       }
       const status = await this.status(world, actor, db);
