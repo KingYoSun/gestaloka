@@ -13,6 +13,7 @@ import { Button } from "./components/ui/button.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { Notice, Problem } from "./presentation.js";
 import { PlayCommandEditor } from "./PlayCommandEditor.js";
+import { PlayApplications } from "./PlayApplications.js";
 import { RichText } from "./RichText.js";
 import { History, type HistoryHandle } from "./History.js";
 import { Link } from "@tanstack/react-router";
@@ -355,6 +356,20 @@ export function BotSession({
       {mutation.error && <Problem error={mutation.error} />}
       {pending && !mutation.isPending && (
         <Button onClick={() => void send()}>保存した同じ要求で確認する</Button>
+      )}
+      {!archive && (
+        <>
+          <PlayApplications
+            actorId={view.viewerId}
+            screen={view.screen}
+            canAct={!!view.sessionId && mine && !view.receiving}
+            busy={busy}
+            send={(raw) => void send(raw)}
+          />
+          {typeof mutation.data?.message === "string" && (
+            <Notice>{mutation.data.message}</Notice>
+          )}
+        </>
       )}
       {!archive && view.aiControlled === false && (
         <PlayCommandEditor

@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { Change, RelationKind } from "./world.js";
 export {
+  DeferredApplication,
+  ExchangeOffer,
+  ExchangeTerms,
   PlayCommand,
   NpcAction,
   ItemOutcome,

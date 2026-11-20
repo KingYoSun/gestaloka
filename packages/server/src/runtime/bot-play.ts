@@ -4,6 +4,7 @@ import type pg from "pg";
 import { z } from "zod";
 import {
   PlayCommand,
+  ExchangeTerms,
   NpcAction,
   type Appearance,
   type ItemOutcome,
@@ -47,6 +48,7 @@ import {
   searchAppearances,
 } from "./search-appearances.js";
 import { PlayerTools, type PromotionProfile } from "./player-tools.js";
+import { PlayApplications } from "./play-applications.js";
 
 import { playerMaterial } from "./player-material.js";
 import { historyLimit, selectStates } from "./state-selection.js";
@@ -100,7 +102,7 @@ function actionMessage(
         ? "NPCの昇格が承認されました"
         : "NPCの昇格申請を受け付けました。管理者の判断待ちです";
     case "memo":
-      return result.state === "receiving"
+      return result.state === "receiving" || result.state === "pending"
         ? "メモは受領判断待ちです。メモIDは確定予定です"
         : "メモを確定しました";
     case "explore":
@@ -111,9 +113,13 @@ function actionMessage(
     case "create":
       if ((result.outcome as { success?: boolean })?.success === false)
         return "新規作成の判定は失敗しました";
-      return result.state === "receiving"
+      return result.state === "receiving" || result.state === "pending"
         ? "申請を受け付けました。受領判断を待っています"
         : "申請した変更を確定しました";
+    case "offer":
+      return "この場所に交換条件を公開しました";
+    case "exchange":
+      return String(result.message);
     case "oppose":
     case "npc-action": {
       const outcome = result.outcome as
@@ -312,6 +318,10 @@ const empty = (): Change => ({
   edges: [],
   endEdges: [],
 });
+const deferred = (input: Input) =>
+  input.command === "memo" || input.command === "update"
+    ? input.deferredUntil
+    : undefined;
 // 新規作成の成否を決めるダイスの基準。世界ごとの設定が空ならこれを使う。
 // 新しい場所の申請に使う基準。確実に成立する場所には成功範囲100を設定できる。
 const exploreCriteria =
@@ -419,11 +429,15 @@ const ExploreDice = z
 /** Bots select their own material; only completed public actions enter the chat. */
 export class BotPlay {
   readonly tools: PlayerTools;
+  readonly applications: PlayApplications;
   constructor(
     readonly construction: WorldConstruction,
     readonly now = () => new Date(),
   ) {
     this.tools = new PlayerTools(construction, () => this.now());
+    this.applications = new PlayApplications(this.pool, this.store, () =>
+      this.now(),
+    );
   }
   get pool() {
     return this.construction.pool;
@@ -476,6 +490,7 @@ export class BotPlay {
       id uuid PRIMARY KEY,world_id uuid NOT NULL,actor_id uuid NOT NULL,created_at timestamptz NOT NULL,
       text text NOT NULL,read boolean NOT NULL DEFAULT false);
       CREATE INDEX IF NOT EXISTS player_notice_actor ON player_notice(world_id,actor_id,created_at);`);
+    await this.applications.setup();
     // Give turns already in progress a full grace period when this is first deployed.
     await this.pool.query(
       `UPDATE bot_session s SET data=jsonb_set(data,'{turnActivityAt}',to_jsonb($1::text))
@@ -2194,23 +2209,26 @@ export class BotPlay {
         };
       }),
     );
-    const [belongings, place, neighbors, past] = await Promise.all([
-      readBelongings(context, actor),
-      placeId ? context.node(placeId).then((node) => node?.text) : undefined,
-      this.#routes(context, places),
-      this.pool
-        .query<{ sceneId: string; startedAt: Date }>(
-          `SELECT id AS "sceneId",created_at AS "startedAt" FROM bot_scene
+    const [belongings, place, neighbors, past, applications, exchangeOffers] =
+      await Promise.all([
+        readBelongings(context, actor),
+        placeId ? context.node(placeId).then((node) => node?.text) : undefined,
+        this.#routes(context, places),
+        this.pool
+          .query<{ sceneId: string; startedAt: Date }>(
+            `SELECT id AS "sceneId",created_at AS "startedAt" FROM bot_scene
          WHERE world_id=$1 AND actor_id=$2 AND closed
          UNION ALL
          SELECT s.id,w.created_at FROM world_scene_session s JOIN world_scene w ON w.id=s.id
          WHERE s.world_id=$1 AND s.actor_id=$2 AND s.closed
            AND NOT EXISTS(SELECT 1 FROM bot_scene p WHERE p.id=s.id AND p.actor_id=s.actor_id)
          ORDER BY "startedAt" DESC,"sceneId" DESC`,
-          [world, actor],
-        )
-        .then(({ rows }) => rows),
-    ]);
+            [world, actor],
+          )
+          .then(({ rows }) => rows),
+        this.applications.list(this.pool, world, context, actor),
+        this.applications.offers(this.pool, world, context, actor),
+      ]);
     const material = await playerMaterial(
       context,
       belongings,
@@ -2224,6 +2242,8 @@ export class BotPlay {
       place,
       neighbors,
       past,
+      ...applications,
+      exchangeOffers,
     };
   }
   // 届く時刻を過ぎた申請の物品を成立させ、本人あての通知を作る。
@@ -2302,6 +2322,7 @@ export class BotPlay {
     };
   }
   async expire(world?: string) {
+    await this.applications.expire(world);
     await this.#arrive(world);
     const now = this.now();
     const sessions = (
@@ -3022,6 +3043,27 @@ export class BotPlay {
     }
     if (!("dependencies" in input)) return;
     const w = await this.world(world);
+    const deadline = deferred(input);
+    if (
+      deadline &&
+      input.command === "update" &&
+      (input.waitMinutes ||
+        (input.operations
+          ? !input.operations.every(
+              (op) => op.type === "move" || op.type === "transfer",
+            )
+          : !input.changes?.revisions.length ||
+            !!input.changes.nodes.length ||
+            !!input.changes.edges.length ||
+            !!input.changes.endEdges.length ||
+            !input.changes.revisions.every(
+              (node) => node.kind === "script" && node.type === "memo",
+            )))
+    )
+      reject(
+        "DEFERRED_NOT_APPLICABLE",
+        "時間差の受領は、メモの共有・更新と物品の移動・譲渡に指定できます",
+      );
     if (input.command === "oppose" && input.effect) {
       const plan = await this.#instantAction(
         (await this.current(world, actor))!,
@@ -3374,6 +3416,13 @@ export class BotPlay {
     } else {
       changes = input.changes!;
       if (
+        changes.nodes.some((node) => node.kind === "existence" && node.seriesId)
+      )
+        reject(
+          "SERIES_ADMIN_REQUIRED",
+          "物品へ系列を付けるには管理者の確定が必要です",
+        );
+      if (
         input.command === "create" &&
         (changes.revisions.length || changes.endEdges.length)
       )
@@ -3395,6 +3444,30 @@ export class BotPlay {
           "保持・保管・技能・所在地は用途別の操作で申請してください",
         );
       for (const node of changes.revisions) {
+        const original =
+          node.kind === "existence" || deadline
+            ? await context.node(node.id)
+            : undefined;
+        if (
+          deadline &&
+          (original?.kind !== "script" ||
+            original.type !== "memo" ||
+            canonical({ ...original, text: node.text }) !== canonical(node))
+        )
+          reject(
+            "DEFERRED_NOT_APPLICABLE",
+            "既存のメモの本文を指定してください",
+          );
+        if (
+          node.kind === "existence" &&
+          original?.kind === "existence" &&
+          original.seriesId &&
+          (node.count ?? 0) > (original.count ?? 0)
+        )
+          reject(
+            "SERIES_ADMIN_REQUIRED",
+            "系列のある物品の個数を増やすには管理者の確定が必要です",
+          );
         if (input.command === "oppose" && node.id !== actor) {
           const bindings =
             node.kind === "script"
@@ -3498,6 +3571,11 @@ export class BotPlay {
     const recipients = [...parties].filter(
       (id) => id !== actor && controlled.has(id),
     );
+    if (deadline && (!recipients.length || needsCreation))
+      reject(
+        "DEFERRED_NOT_APPLICABLE",
+        "時間差の受領には、受領を必要とするメモか物品の申請を指定してください",
+      );
     if (input.command !== "oppose") {
       const session = await this.current(world, actor);
       for (const id of recipients) {
@@ -3506,7 +3584,7 @@ export class BotPlay {
             "NPC_UNASSIGNED",
             "対象のユニークNPCには操作担当が指定されていません",
           );
-        if (!session?.data.members.some((m) => m.actorId === id))
+        if (!deadline && !session?.data.members.some((m) => m.actorId === id))
           reject(
             "REMOTE_RECEIVING",
             `受領者${await named(id)}が同じセッションにいません。contactで合流してから申請してください`,
@@ -3755,6 +3833,7 @@ export class BotPlay {
         await this.store.claim(world, requestId),
         plan.context,
         { commitId: requestId, at: plan.at, changes: plan.changes },
+        true,
       )
     );
   }
@@ -4226,7 +4305,7 @@ export class BotPlay {
     expectedAssignment: string | undefined,
     connectionId: string,
     adjudicationOwner?: string,
-  ) {
+  ): Promise<Record<string, unknown>> {
     const w = await this.world(world);
     let prepared: Session | undefined;
     if (adjudicationOwner) {
@@ -4344,6 +4423,61 @@ export class BotPlay {
           "REQUEST_IN_PROGRESS",
           "判定の受付を維持できませんでした。同じ要求を再送してください",
         );
+      }
+      const application =
+        input.command === "applications"
+          ? await this.applications.list(
+              db,
+              world,
+              this.store.context(w.id),
+              actor,
+            )
+          : input.command === "withdraw"
+            ? await this.applications.withdraw(
+                db,
+                world,
+                w,
+                actor,
+                input.applicationId,
+              )
+            : input.command === "receive"
+              ? await this.applications.receive(
+                  db,
+                  world,
+                  w,
+                  actor,
+                  input.applicationId,
+                  input.accept,
+                )
+              : input.command === "exchange" &&
+                  (await this.store.receipt(w.id, input.requestId))
+                ? await this.applications.exchange(
+                    db,
+                    world,
+                    w,
+                    actor,
+                    input.requestId,
+                    input.offerId,
+                    input.paymentItemId,
+                  )
+                : undefined;
+      if (application) {
+        const result = {
+          ...application,
+          action: {
+            command: input.command,
+            message:
+              "message" in application
+                ? application.message
+                : "未決の申請を取得しました",
+          },
+        };
+        await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [
+          input.requestId,
+          result,
+        ]);
+        await db.query("COMMIT");
+        return result;
       }
       let session = await this.current(world, actor, db);
       if (session) {
@@ -4708,6 +4842,42 @@ export class BotPlay {
                 }));
                 if (arriving.length) result = { ...result, arriving };
               }
+              if (input.query.kind === "surroundings") {
+                const exchangeOffers = await this.applications.offers(
+                  db,
+                  world,
+                  this.store.context(w.id),
+                  actor,
+                );
+                if (exchangeOffers.length)
+                  result = { ...result, exchangeOffers };
+              }
+            } else if (input.command === "offer") {
+              const offer = await this.applications.offer(
+                db,
+                world,
+                this.store.context(w.id),
+                actor,
+                input.requestId,
+                ExchangeTerms.strip().parse(input),
+              );
+              result = { state: "offered", offer };
+            } else if (input.command === "exchange") {
+              const exchange = await this.applications.exchange(
+                db,
+                world,
+                w,
+                actor,
+                input.requestId,
+                input.offerId,
+                input.paymentItemId,
+              );
+              result = exchange;
+              d.entries.push({
+                actorId: actor,
+                input: exchange.message,
+                result,
+              });
             } else if (input.command === "promote-npc") {
               const review = promotion!;
               result = await this.tools.requestPromotion(
@@ -4879,13 +5049,65 @@ export class BotPlay {
                 plan.instantMembers !== JSON.stringify(d.members)
               )
                 reject("WORLD_CHANGED", "NPCの同席者が変わりました");
-              for (const recipient of plan.recipients)
+              const deadline = deferred(input);
+              for (const recipient of deadline ? [] : plan.recipients)
                 if (!d.members.some((m) => m.actorId === recipient))
                   reject(
                     "REMOTE_RECEIVING",
                     "受領者は同じセッションにいる必要があります",
                   );
-              if (plan.recipients.length) {
+              if (deadline && "text" in input) {
+                const preview = [
+                  ...[...plan.changes.nodes, ...plan.changes.revisions].flatMap(
+                    (node) =>
+                      node.kind === "script" && node.type === "memo"
+                        ? [node.text]
+                        : [],
+                  ),
+                  ...(await Promise.all(
+                    (plan.items ?? []).map(async (item) => {
+                      const name = async (id: string | null) =>
+                        id
+                          ? ((await plan.context.node(id))?.text ?? id)
+                          : "置かれている場所";
+                      const hold = item.holding
+                        ? `保持 ${await name(item.holding.fromId)} → ${await name(item.holding.toId)}`
+                        : "";
+                      const own = item.ownership
+                        ? `所有 ${(await Promise.all(item.ownership.fromIds.map(name))).join("・") || "未記録"} → ${await name(item.ownership.toId)}`
+                        : "";
+                      return [
+                        `${item.label}${item.count ? ` × ${item.count}` : ""}`,
+                        hold,
+                        own,
+                      ]
+                        .filter(Boolean)
+                        .join(" / ");
+                    }),
+                  )),
+                ];
+                await this.applications.send(
+                  db,
+                  world,
+                  actor,
+                  input.requestId,
+                  deadline,
+                  plan.recipients,
+                  {
+                    text: input.text,
+                    preview,
+                    at: plan.at,
+                    changes: plan.changes,
+                    dependencies: plan.context.dependencies,
+                  },
+                );
+                result = {
+                  applicationId: input.requestId,
+                  state: "pending",
+                  deadline,
+                  message: "受領依頼を送りました",
+                };
+              } else if (plan.recipients.length) {
                 const timeout = Number(
                   (
                     await db.query(
@@ -5024,7 +5246,9 @@ export class BotPlay {
       if (input.command === "memo") {
         result.memoId = derivedId(`${input.requestId}:memo`);
         result.memoIdState =
-          result.state === "receiving" ? "pending" : "confirmed";
+          result.state === "receiving" || result.state === "pending"
+            ? "pending"
+            : "confirmed";
       }
       result.action = {
         command: input.command,

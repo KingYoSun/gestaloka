@@ -176,6 +176,361 @@ async function fixture() {
   };
 }
 
+test("時間差のメモは退出後も受領でき、全員の承認で一度だけ確定する", async () => {
+  const f = await fixture();
+  const deferredUntil = new Date(Date.now() + 60_000).toISOString();
+  const requestId = randomUUID();
+  const input = {
+    command: "memo",
+    requestId,
+    text: "水位が下がったら渡し場を確認する",
+    participants: f.actors.slice(1),
+    deferredUntil,
+    dependencies: [],
+  };
+  const sent = await f.send(0, input);
+  const memoId = sent.memoId as string;
+  expect(sent).toMatchObject({
+    applicationId: requestId,
+    state: "pending",
+    memoIdState: "pending",
+    receiving: null,
+  });
+  expect(await f.send(0, input)).toMatchObject({
+    applicationId: requestId,
+    state: "pending",
+  });
+  expect(await f.store.context(f.graph).node(memoId)).toBeUndefined();
+  await f.send(0, { command: "finish" });
+  await f.send(2, { command: "finish" });
+  expect(await f.send(2, { command: "applications" })).toMatchObject({
+    applications: [
+      {
+        id: requestId,
+        senderId: f.actors[0],
+        awaitingYou: true,
+        preview: [input.text],
+      },
+    ],
+  });
+  expect(
+    await access.notices(f.people[2]!.id, f.world, f.actors[2]),
+  ).toMatchObject({
+    notices: [{ unread: true, text: expect.stringContaining(input.text) }],
+  });
+  const accept = { command: "receive", applicationId: requestId, accept: true };
+  expect(await f.send(2, accept)).toMatchObject({ state: "pending" });
+  expect(await f.store.context(f.graph).node(memoId)).toBeUndefined();
+  const last = { ...accept, requestId: randomUUID() };
+  expect(await f.send(1, last)).toMatchObject({
+    state: "accepted",
+    commitId: requestId,
+  });
+  expect(await f.send(1, last)).toMatchObject({
+    state: "accepted",
+    commitId: requestId,
+  });
+  expect(await f.store.context(f.graph).node(memoId)).toMatchObject({
+    type: "memo",
+    text: input.text,
+  });
+  expect(
+    await access.notices(f.people[0]!.id, f.world, f.actors[0]),
+  ).toMatchObject({
+    notices: [{ text: expect.stringContaining("申請を確定しました") }],
+  });
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("時間差の申請は関係者にだけ届き、競合や期限切れや取り下げで確定しない", async () => {
+  const f = await fixture();
+  const expires = Date.now() + 60_000;
+  const deferredUntil = new Date(expires).toISOString();
+  const memo = (text: string) =>
+    f.send(0, {
+      command: "memo",
+      text,
+      participants: [f.actors[1]],
+      deferredUntil,
+      dependencies: [],
+    });
+  const decision = (applicationId: unknown, accept = true) => ({
+    command: "receive",
+    applicationId,
+    accept,
+  });
+  const { memoId, applicationId } = await memo("共同メモ");
+  expect(await f.send(2, { command: "applications" })).toMatchObject({
+    applications: [],
+  });
+  await expect(f.send(2, decision(applicationId))).rejects.toMatchObject({
+    code: "RECEIVING_TURN_REQUIRED",
+  });
+  await f.send(1, decision(applicationId));
+  const revise = (text: string) =>
+    f.send(0, {
+      command: "update",
+      text,
+      deferredUntil,
+      dependencies: [],
+      changes: {
+        nodes: [],
+        edges: [],
+        endEdges: [],
+        revisions: [{ id: memoId, kind: "script", type: "memo", text }],
+      },
+    });
+  const first = await revise("先に確定する改訂"),
+    second = await revise("同じ版を読んだ改訂");
+  expect(await f.send(1, decision(first.applicationId))).toMatchObject({
+    state: "accepted",
+  });
+  expect(await f.send(1, decision(second.applicationId))).toMatchObject({
+    state: "changed",
+  });
+  expect(await f.store.context(f.graph).node(memoId as string)).toMatchObject({
+    text: "先に確定する改訂",
+  });
+  const declined = await memo("却下するメモ");
+  expect(
+    await f.send(1, decision(declined.applicationId, false)),
+  ).toMatchObject({ state: "rejected" });
+  const withdrawn = await memo("取り下げるメモ");
+  expect(
+    await f.send(0, {
+      command: "withdraw",
+      applicationId: withdrawn.applicationId,
+    }),
+  ).toMatchObject({ state: "withdrawn" });
+  const expired = await memo("期限が切れるメモ");
+  const later = new BotPlay(runtime, () => new Date(expires + 1));
+  await later.expire(f.world);
+  await later.expire(f.world);
+  expect(await f.send(1, decision(expired.applicationId))).toMatchObject({
+    state: "expired",
+  });
+  for (const pending of [declined, withdrawn, expired])
+    expect(
+      await f.store.context(f.graph).node(pending.memoId as string),
+    ).toBeUndefined();
+  const { notices } = await access.notices(
+    f.people[0]!.id,
+    f.world,
+    f.actors[0],
+  );
+  expect(
+    notices.filter((notice) => notice.text.includes("受領期限が過ぎました")),
+  ).toHaveLength(1);
+});
+
+test("時間差の物品受け渡しは両側の変更を受領後に確定する", async () => {
+  const f = await fixture(),
+    seller = f.actors[0]!,
+    buyer = f.actors[2]!;
+  const item = (
+    await f.apply([
+      {
+        type: "create",
+        label: "結び紐",
+        count: 3,
+        holder: seller,
+        owner: seller,
+        basis: "試験用",
+      },
+    ])
+  ).changes.nodes.find((n) => n.text === "結び紐")!.id;
+  const { applicationId } = await f.send(0, {
+    command: "update",
+    text: "結び紐を一本分ける",
+    deferredUntil: new Date(Date.now() + 60_000).toISOString(),
+    dependencies: [],
+    operations: [
+      {
+        type: "move",
+        item,
+        from: seller,
+        to: buyer,
+        count: 1,
+        basis: "受け渡し",
+      },
+      { type: "transfer", item, to: buyer, count: 1, basis: "受け渡し" },
+    ],
+  });
+  expect(
+    (await readBelongings(f.store.context(f.graph), seller)).items,
+  ).toMatchObject([{ id: item, count: 3 }]);
+  expect(
+    await f.send(2, { command: "receive", applicationId, accept: true }),
+  ).toMatchObject({ state: "accepted" });
+  expect(
+    (await readBelongings(f.store.context(f.graph), seller)).items,
+  ).toMatchObject([{ id: item, count: 2 }]);
+  expect(
+    (await readBelongings(f.store.context(f.graph), buyer)).items,
+  ).toMatchObject([{ label: "結び紐", count: 1, owners: [{ id: buyer }] }]);
+});
+
+test("公開交換は売り手の退出中も系列を照合し、最後の在庫と支払いを一度だけ移す", async () => {
+  const f = await fixture(),
+    [seller, buyer, other] = f.actors as [string, string, string],
+    seriesId = randomUUID();
+  const seed = await f.apply([
+    {
+      type: "create",
+      label: "売店箱",
+      holder: seller,
+      owner: seller,
+      basis: "試験用",
+    },
+    {
+      type: "create",
+      label: "銅貨",
+      count: 5,
+      holder: buyer,
+      owner: buyer,
+      basis: "試験用",
+    },
+    {
+      type: "create",
+      label: "銅貨",
+      count: 5,
+      holder: other,
+      owner: other,
+      basis: "試験用",
+    },
+    {
+      type: "create",
+      label: "銅貨",
+      count: 8,
+      holder: buyer,
+      owner: buyer,
+      basis: "名前だけが同じ品",
+    },
+  ]);
+  const [storage, payment, otherPayment, fake] = seed.changes.nodes.filter(
+    (n) => n.kind === "existence",
+  );
+  const context = f.store.context(f.graph);
+  const revisions = await Promise.all(
+    [payment!, otherPayment!].map(async ({ id }) => ({
+      ...(await context.node(id)),
+      seriesId,
+    })),
+  );
+  const admin = await auth.person(),
+    managementRequest = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, managementRequest),
+    context,
+    {
+      commitId: managementRequest,
+      at: 0,
+      changes: { nodes: [], edges: [], revisions, endEdges: [] },
+      management: {
+        editorId: admin.id,
+        reason: "支払い品の系列を指定",
+        requestHash: "a".repeat(64),
+      },
+    },
+  );
+  const stock = await f.apply([
+    {
+      type: "locate",
+      subjectId: storage!.id,
+      text: "広場",
+      aboutIds: [f.place],
+    },
+    {
+      type: "create",
+      label: "焼き菓子",
+      count: 1,
+      holder: storage!.id,
+      owner: seller,
+      basis: "販売する在庫",
+    },
+  ]);
+  await f.move(2, f.place);
+  const itemId = stock.changes.nodes.find((n) => n.text === "焼き菓子")!.id;
+  const offerId = randomUUID();
+  expect(
+    await f.send(0, {
+      command: "offer",
+      requestId: offerId,
+      storageId: storage!.id,
+      itemId,
+      count: 1,
+      paymentSeriesId: seriesId,
+      paymentLabel: "銅貨",
+      paymentCount: 2,
+      text: "広場の売店",
+    }),
+  ).toMatchObject({ state: "offered", offer: { id: offerId } });
+  await f.send(0, { command: "finish" });
+  expect(
+    await f.send(1, { command: "search", query: { kind: "surroundings" } }),
+  ).toMatchObject({
+    exchangeOffers: [{ id: offerId, paymentSeriesId: seriesId }],
+  });
+  const exchange = (paymentItemId: string) => ({
+    command: "exchange",
+    offerId,
+    paymentItemId,
+    requestId: randomUUID(),
+  });
+  await expect(f.send(1, exchange(fake!.id))).rejects.toMatchObject({
+    code: "EXCHANGE_PAYMENT",
+  });
+  const orders = [exchange(payment!.id), exchange(otherPayment!.id)];
+  const bought = await Promise.allSettled(
+    orders.map((order, index) => f.send(index + 1, order)),
+  );
+  const winner = bought.findIndex((result) => result.status === "fulfilled");
+  expect(winner).toBeGreaterThanOrEqual(0);
+  expect(bought[1 - winner]).toMatchObject({
+    status: "rejected",
+    reason: { code: "EXCHANGE_STOCK" },
+  });
+  expect(await f.send(winner + 1, orders[winner]!)).toMatchObject({
+    state: "accepted",
+    commitId: orders[winner]!.requestId,
+  });
+  const winnerItems = (
+    await readBelongings(f.store.context(f.graph), f.actors[winner + 1]!)
+  ).items;
+  expect(winnerItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: itemId, label: "焼き菓子" }),
+      expect.objectContaining({
+        id: orders[winner]!.paymentItemId,
+        seriesId,
+        count: 3,
+      }),
+    ]),
+  );
+  expect(
+    (await readBelongings(f.store.context(f.graph), storage!.id)).items,
+  ).toMatchObject([
+    { label: "銅貨", seriesId, count: 2, owners: [{ id: seller }] },
+  ]);
+  expect(
+    await f.store.context(f.graph).node(orders[1 - winner]!.paymentItemId),
+  ).toMatchObject({ count: 5, seriesId });
+  expect(
+    (await access.notices(f.people[0]!.id, f.world, seller)).notices,
+  ).toHaveLength(1);
+  await expect(
+    f.send(winner + 1, {
+      command: "update",
+      text: "銅貨の個数を書き換える",
+      dependencies: [],
+      operations: [
+        { type: "update", id: orders[winner]!.paymentItemId, count: 10 },
+      ],
+    }),
+  ).rejects.toMatchObject({ code: "UPDATE_REJECTED" });
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
 test("手番APIの15操作が受付結果を返し、確定内容と一致する", async () => {
   const f = await fixture();
   const checked = new Set<string>();

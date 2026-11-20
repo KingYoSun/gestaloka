@@ -15,6 +15,31 @@ export const ItemOutcome = z.object({
   holding: z.object({ fromId: id.nullable(), toId: id }).optional(),
   ownership: z.object({ fromIds: z.array(id), toId: id }).optional(),
 });
+export const ExchangeTerms = z
+  .object({
+    storageId: id,
+    itemId: id,
+    count,
+    paymentSeriesId: id,
+    paymentLabel: text,
+    paymentCount: count,
+    text,
+  })
+  .strict();
+export const ExchangeOffer = ExchangeTerms.extend({
+  id,
+  sellerId: id,
+  itemLabel: text,
+});
+export const DeferredApplication = z.object({
+  id,
+  senderId: id,
+  senderName: z.string(),
+  text,
+  deadline: z.iso.datetime(),
+  awaitingYou: z.boolean(),
+  preview: z.array(z.string()),
+});
 export type ItemOutcome = z.infer<typeof ItemOutcome>;
 export const LocationOp = z
   .object({
@@ -172,6 +197,7 @@ export const PlayCommand = z.discriminatedUnion("command", [
       text,
       operations: z.array(BelongingOp).min(1).optional(),
       changes: Change.optional(),
+      deferredUntil: z.iso.datetime().optional(),
       waitMinutes: count
         .optional()
         .describe(
@@ -190,6 +216,7 @@ export const PlayCommand = z.discriminatedUnion("command", [
       command: z.literal("memo"),
       text,
       participants: z.array(z.uuid()).default([]),
+      deferredUntil: z.iso.datetime().optional(),
       dependencies,
     })
     .strict(),
@@ -248,6 +275,19 @@ export const PlayCommand = z.discriminatedUnion("command", [
     })
     .strict(),
   z.object({ ...request, command: z.literal("comment"), text }).strict(),
+  z.object({ ...request, command: z.literal("applications") }).strict(),
+  z
+    .object({ ...request, command: z.literal("withdraw"), applicationId: id })
+    .strict(),
+  ExchangeTerms.extend({ ...request, command: z.literal("offer") }),
+  z
+    .object({
+      ...request,
+      command: z.literal("exchange"),
+      offerId: id,
+      paymentItemId: id,
+    })
+    .strict(),
   z
     .object({ ...request, command: z.enum(["end-turn", "leave", "finish"]) })
     .strict(),

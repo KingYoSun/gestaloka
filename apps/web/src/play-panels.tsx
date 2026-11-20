@@ -3,7 +3,12 @@ import { Link } from "@tanstack/react-router";
 import { DiagramFlowHorizontal, PanelLeft, PanelRight, X } from "lucide-react";
 import { Dialog, Tabs, Tooltip } from "radix-ui";
 import { z } from "zod";
-import { PlayerCharacter, type PlayerNotices } from "@gestaloka/contracts";
+import {
+  DeferredApplication,
+  ExchangeOffer,
+  PlayerCharacter,
+  type PlayerNotices,
+} from "@gestaloka/contracts";
 import { Button } from "./components/ui/button.js";
 import { CharacterAvatar, CharacterBadge } from "./player-icons.js";
 import { RichText } from "./RichText.js";
@@ -13,10 +18,17 @@ const Item = z.object({
   id: z.uuid().optional(),
   label: z.string(),
   count: z.number().optional(),
+  seriesId: z.uuid().optional(),
 });
 export const Belongings = z.object({
   items: z.array(Item),
-  storages: z.array(z.object({ label: z.string(), items: z.array(Item) })),
+  storages: z.array(
+    z.object({
+      id: z.uuid().optional(),
+      label: z.string(),
+      items: z.array(Item),
+    }),
+  ),
   skills: z.array(z.object({ text: z.string() })),
 });
 const Profile = z.object({ actorId: z.string(), profile: z.array(z.string()) });
@@ -27,6 +39,9 @@ export const PlayScreen = z.object({
   place: z.string().optional(),
   neighbors: z.array(z.object({ id: z.string(), label: z.string() })),
   past: z.array(z.object({ sceneId: z.string(), startedAt: z.string() })),
+  applications: z.array(DeferredApplication).default([]),
+  exchangeOffers: z.array(ExchangeOffer).default([]),
+  ownOffers: z.array(ExchangeOffer).default([]),
 });
 type Screen = z.infer<typeof PlayScreen>;
 type Character = z.infer<typeof PlayerCharacter>;

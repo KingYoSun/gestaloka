@@ -1,0 +1,489 @@
+import type pg from "pg";
+import type { z } from "zod";
+import type {
+  DeferredApplication,
+  ExchangeOffer,
+  ExchangeTerms,
+} from "@gestaloka/contracts";
+import { AccessError } from "../http/access.js";
+import {
+  BelongingRejected,
+  planBelongings,
+  type BelongingOp,
+} from "../world/belongings.js";
+import { directPlaces } from "../world/locations.js";
+import { derivedId, type Change } from "../world/model.js";
+import {
+  WorldConflict,
+  type Dependency,
+  type WorldContext,
+  type WorldStore,
+} from "../world/store.js";
+
+type Db = Pick<pg.Pool, "query">;
+type World = { id: string; at: number };
+type Offer = z.infer<typeof ExchangeOffer>;
+type Share = {
+  text: string;
+  preview: string[];
+  changes: Change;
+  at: number;
+  dependencies: Dependency[];
+};
+type Result = {
+  applicationId: string;
+  state:
+    "pending" | "accepted" | "rejected" | "expired" | "withdrawn" | "changed";
+  message: string;
+  commitId?: string;
+};
+type Row = {
+  id: string;
+  world_id: string;
+  sender: string;
+  recipients: string[];
+  approved: string[];
+  deadline: Date | null;
+  share: Share | null;
+  offer: Offer | null;
+  place: string | null;
+  result: Result | null;
+};
+const latest = Number.MAX_SAFE_INTEGER;
+const reject = (code: string, message: string): never => {
+  throw new AccessError(409, code, message);
+};
+
+export class PlayApplications {
+  constructor(
+    private readonly pool: pg.Pool,
+    private readonly store: WorldStore,
+    private readonly now: () => Date,
+  ) {}
+
+  async setup() {
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS play_application (
+      id uuid PRIMARY KEY REFERENCES bot_request(id),
+      world_id uuid NOT NULL REFERENCES world_construction(id),
+      sender uuid NOT NULL, recipients uuid[] NOT NULL DEFAULT '{}',
+      approved uuid[] NOT NULL DEFAULT '{}',
+      deadline timestamptz, share jsonb, offer jsonb, place uuid, result jsonb
+    );
+    CREATE INDEX IF NOT EXISTS play_application_sender ON play_application(world_id,sender) WHERE result IS NULL;
+    CREATE INDEX IF NOT EXISTS play_application_recipients ON play_application USING gin(recipients) WHERE result IS NULL;
+    CREATE INDEX IF NOT EXISTS play_application_place ON play_application(world_id,place) WHERE result IS NULL;
+    CREATE INDEX IF NOT EXISTS play_application_deadline ON play_application(deadline) WHERE result IS NULL;`);
+  }
+
+  async #notice(
+    db: Db,
+    world: string,
+    id: string,
+    actors: string[],
+    text: string,
+  ) {
+    for (const actor of new Set(actors))
+      await db.query(
+        `WITH inserted AS (
+           INSERT INTO player_notice (id,world_id,actor_id,created_at,text)
+           VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING actor_id
+         ) SELECT pg_notify('gestaloka_turn',$2::text||':'||actor_id::text) FROM inserted`,
+        [
+          derivedId(`application:${id}:${actor}`),
+          world,
+          actor,
+          this.now(),
+          text,
+        ],
+      );
+  }
+
+  async send(
+    db: Db,
+    world: string,
+    sender: string,
+    id: string,
+    deadline: string,
+    recipients: string[],
+    share: Share,
+  ) {
+    if (new Date(deadline) <= this.now())
+      reject("APPLICATION_DEADLINE", "受領期限は未来の日時を指定してください");
+    await db.query(
+      "INSERT INTO play_application(id,world_id,sender,deadline,recipients,share) VALUES($1,$2,$3,$4,$5,$6)",
+      [id, world, sender, deadline, recipients, share],
+    );
+    await this.#notice(
+      db,
+      world,
+      `${id}:opened`,
+      recipients,
+      `受領依頼「${share.text}」（申請ID ${id}）があります。未決の申請を確認してください`,
+    );
+  }
+
+  async list(db: Db, world: string, context: WorldContext, actor: string) {
+    const { rows } = await db.query<Row>(
+      `SELECT * FROM play_application WHERE world_id=$1 AND result IS NULL
+       AND (sender=$2 OR recipients @> ARRAY[$2]::uuid[])
+       AND (deadline IS NULL OR deadline>$3) ORDER BY deadline,id`,
+      [world, actor, this.now()],
+    );
+    const applications: z.infer<typeof DeferredApplication>[] = [];
+    const ownOffers: Offer[] = [];
+    for (const row of rows) {
+      if (row.offer) ownOffers.push(row.offer);
+      if (row.share && row.deadline)
+        applications.push({
+          id: row.id,
+          senderId: row.sender,
+          senderName: (await context.node(row.sender))?.text ?? "申請者",
+          text: row.share.text,
+          deadline: row.deadline.toISOString(),
+          awaitingYou:
+            row.recipients.includes(actor) && !row.approved.includes(actor),
+          preview: row.share.preview,
+        });
+    }
+    return { applications, ownOffers };
+  }
+
+  async #finish(
+    db: Db,
+    row: Row,
+    result: Omit<Result, "applicationId">,
+  ): Promise<Result> {
+    const outcome = { applicationId: row.id, ...result };
+    await db.query("UPDATE play_application SET result=$2 WHERE id=$1", [
+      row.id,
+      outcome,
+    ]);
+    if (row.share)
+      await this.#notice(
+        db,
+        row.world_id,
+        `${row.id}:result`,
+        [row.sender, ...row.recipients],
+        `「${row.share.text}」（申請ID ${row.id}）。${result.message}`,
+      );
+    return outcome;
+  }
+
+  async #row(db: Db, world: string, id: string) {
+    return (
+      await db.query<Row>(
+        "SELECT * FROM play_application WHERE id=$1 AND world_id=$2 FOR UPDATE",
+        [id, world],
+      )
+    ).rows[0];
+  }
+
+  async #settled(db: Db, w: World, row: Row) {
+    if (row.result) return row.result;
+    if (!row.share) return;
+    const prior = await this.store.receipt(w.id, row.id);
+    if (prior)
+      return this.#finish(db, row, {
+        state: "accepted",
+        commitId: prior.commitId,
+        message: "全員が承認し、申請を確定しました",
+      });
+    if (row.deadline && row.deadline <= this.now())
+      return this.#finish(db, row, {
+        state: "expired",
+        message: "受領期限が過ぎました",
+      });
+  }
+
+  async receive(
+    db: Db,
+    world: string,
+    w: World,
+    actor: string,
+    id: string,
+    accept: boolean,
+  ) {
+    const row = await this.#row(db, world, id);
+    if (!row?.share || !row.recipients.includes(actor)) return;
+    const settled = await this.#settled(db, w, row);
+    if (settled) return settled;
+    const approved = [...new Set([...row.approved, actor])];
+    if (
+      row.approved.includes(actor) ||
+      (accept && approved.length < row.recipients.length)
+    ) {
+      await db.query("UPDATE play_application SET approved=$2 WHERE id=$1", [
+        id,
+        approved,
+      ]);
+      return {
+        applicationId: id,
+        state: "pending",
+        message: "ほかの受領者の判断を待っています",
+      } satisfies Result;
+    }
+    if (!accept)
+      return this.#finish(db, row, {
+        state: "rejected",
+        message: "受領者が申請を却下しました",
+      });
+    const { dependencies, changes } = row.share,
+      at = Math.max(w.at, row.share.at);
+    try {
+      await this.store.commit(
+        await this.store.claim(w.id, id),
+        this.store.context(w.id, dependencies),
+        {
+          commitId: id,
+          at,
+          changes: {
+            ...changes,
+            edges: changes.edges.map((edge) => ({
+              ...edge,
+              period: { ...edge.period, from: at },
+            })),
+          },
+        },
+        true,
+      );
+    } catch (error) {
+      if (!(error instanceof WorldConflict)) throw error;
+      return this.#finish(db, row, {
+        state: "changed",
+        message:
+          "申請時の前提が変わりました。対象を確認して申請し直してください",
+      });
+    }
+    return this.#finish(db, row, {
+      state: "accepted",
+      commitId: id,
+      message: "全員が承認し、申請を確定しました",
+    });
+  }
+
+  async withdraw(db: Db, world: string, w: World, actor: string, id: string) {
+    const row = await this.#row(db, world, id);
+    if (row?.sender !== actor)
+      return reject(
+        "APPLICATION_NOT_FOUND",
+        "本人が出した申請を指定してください",
+      );
+    return (
+      (await this.#settled(db, w, row)) ??
+      this.#finish(db, row, {
+        state: "withdrawn",
+        message: "申請を取り下げました",
+      })
+    );
+  }
+
+  async expire(world?: string) {
+    const { rows } = await this.pool.query<{
+      id: string;
+      world_id: string;
+      graph_id: string;
+    }>(
+      `SELECT a.id,a.world_id,w.world_id AS graph_id FROM play_application a
+       JOIN world_construction w ON w.id=a.world_id
+       WHERE a.result IS NULL AND a.deadline<=$1 AND ($2::uuid IS NULL OR a.world_id=$2)
+       ORDER BY a.deadline,a.id`,
+      [this.now(), world ?? null],
+    );
+    for (const { id, world_id, graph_id } of rows) {
+      const db = await this.pool.connect();
+      try {
+        await db.query("BEGIN");
+        const row = await this.#row(db, world_id, id);
+        if (row) await this.#settled(db, { id: graph_id, at: 0 }, row);
+        await db.query("COMMIT");
+      } catch (error) {
+        await db.query("ROLLBACK");
+        throw error;
+      } finally {
+        db.release();
+      }
+    }
+  }
+
+  async #ownedStock(
+    context: WorldContext,
+    itemId: string,
+    owner: string,
+    holder: string,
+    count: number,
+  ) {
+    const item = await context.node(itemId);
+    if (item?.kind !== "existence" || (item.count ?? 1) < count) return;
+    const edges = await context.relations(itemId, "has", "in", latest),
+      owners = edges.filter((edge) => !edge.role);
+    if (
+      owners.length === 1 &&
+      owners[0]!.source === owner &&
+      edges.some((edge) => edge.role === "hold" && edge.source === holder)
+    )
+      return item;
+  }
+
+  async #stock(context: WorldContext, offer: Offer, place: string) {
+    const storage = await context.relations(
+      offer.storageId,
+      "has",
+      "in",
+      latest,
+    );
+    if (
+      storage.some((e) => !e.role && e.source === offer.sellerId) &&
+      (offer.storageId === place ||
+        (await directPlaces(context, offer.storageId))[0] === place)
+    )
+      return this.#ownedStock(
+        context,
+        offer.itemId,
+        offer.sellerId,
+        offer.storageId,
+        offer.count,
+      );
+  }
+
+  async offer(
+    db: Db,
+    world: string,
+    context: WorldContext,
+    sellerId: string,
+    id: string,
+    terms: z.infer<typeof ExchangeTerms>,
+  ) {
+    const place = (await directPlaces(context, sellerId))[0],
+      offer = { ...terms, id, sellerId, itemLabel: "" },
+      item = place && (await this.#stock(context, offer, place));
+    if (!place || !item || !item.text.trim())
+      return reject(
+        "EXCHANGE_STOCK",
+        "この場所で本人が所有する保管先と、そこにある本人の在庫を指定してください",
+      );
+    offer.itemLabel = item.text;
+    await context.validate();
+    await db.query(
+      "INSERT INTO play_application(id,world_id,sender,offer,place) VALUES($1,$2,$3,$4,$5)",
+      [id, world, sellerId, offer, place],
+    );
+    return offer;
+  }
+
+  async offers(db: Db, world: string, context: WorldContext, actor: string) {
+    const [place] = await directPlaces(context, actor);
+    if (!place) return [];
+    const { rows } = await db.query<{ offer: Offer }>(
+      "SELECT offer FROM play_application WHERE world_id=$1 AND place=$2 AND result IS NULL ORDER BY id",
+      [world, place],
+    );
+    const visible: Offer[] = [];
+    for (const { offer } of rows) {
+      const item = await this.#stock(context, offer, place);
+      if (item?.text === offer.itemLabel) visible.push(offer);
+    }
+    return visible;
+  }
+
+  async exchange(
+    db: Db,
+    world: string,
+    w: World,
+    buyer: string,
+    request: string,
+    id: string,
+    paymentItemId: string,
+  ) {
+    const row = await this.#row(db, world, id);
+    if (!row?.offer || !row.place || row.sender === buyer)
+      return reject(
+        "EXCHANGE_NOT_AVAILABLE",
+        "ここで受領できる交換を指定してください",
+      );
+    const offer = row.offer,
+      context = this.store.context(w.id),
+      prior = await this.store.receipt(w.id, request);
+    if (!prior) {
+      if (row.result || (await directPlaces(context, buyer))[0] !== row.place)
+        return reject(
+          "EXCHANGE_NOT_AVAILABLE",
+          "交換条件を公開している場所で受領してください",
+        );
+      const item = await this.#stock(context, offer, row.place);
+      if (!item || item.text !== offer.itemLabel)
+        return reject("EXCHANGE_STOCK", "売り手の在庫が変わりました");
+      const payment = await this.#ownedStock(
+        context,
+        paymentItemId,
+        buyer,
+        buyer,
+        offer.paymentCount,
+      );
+      if (!payment || payment.seriesId !== offer.paymentSeriesId)
+        return reject(
+          "EXCHANGE_PAYMENT",
+          "提示された系列と個数を満たす、本人の手持ちの品を指定してください",
+        );
+      const basis = offer.text;
+      const ops: BelongingOp[] = [
+        {
+          type: "move",
+          item: item.id,
+          from: offer.storageId,
+          to: buyer,
+          ...(item.count ? { count: offer.count } : {}),
+          basis,
+        },
+        {
+          type: "transfer",
+          item: item.id,
+          to: buyer,
+          ...(item.count ? { count: offer.count } : {}),
+          basis,
+        },
+        {
+          type: "move",
+          item: payment.id,
+          from: buyer,
+          to: offer.storageId,
+          ...(payment.count ? { count: offer.paymentCount } : {}),
+          basis,
+        },
+        {
+          type: "transfer",
+          item: payment.id,
+          to: offer.sellerId,
+          ...(payment.count ? { count: offer.paymentCount } : {}),
+          basis,
+        },
+      ];
+      try {
+        const plan = await planBelongings(context, request, w.at, ops);
+        await this.store.commit(
+          await this.store.claim(w.id, request),
+          context,
+          { commitId: request, ...plan },
+          true,
+        );
+      } catch (error) {
+        if (!(
+          error instanceof BelongingRejected || error instanceof WorldConflict
+        ))
+          throw error;
+        return reject(
+          "EXCHANGE_CHANGED",
+          "交換に使う品の状態が変わりました。品物を確認し直してください",
+        );
+      }
+    }
+    const text = `${offer.itemLabel}×${offer.count}と${offer.paymentLabel}×${offer.paymentCount}の交換が成立しました`;
+    await this.#notice(
+      db,
+      world,
+      `${request}:exchange`,
+      [offer.sellerId, buyer],
+      text,
+    );
+    return { state: "accepted", commitId: request, offerId: id, message: text };
+  }
+}

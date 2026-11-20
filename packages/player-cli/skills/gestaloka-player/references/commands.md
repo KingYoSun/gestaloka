@@ -2,6 +2,31 @@
 
 `gestaloka play --file <UTF-8のJSONファイル>`でPlayCommandを送る。CLIが要求IDを作成・保存する。返却を失った場合は`recover`で同じ要求を照合する。下記の識別子は実際に本人が取得したものへ置き換える。
 
+## 時間差で受け取る申請
+
+`memo` や既存メモの本文を改訂する `update`、物品の `move` と `transfer` だけの `update` に、UTCのISO日時で `deferredUntil` を指定できる。相手が同席していない場合も、本人の通常手番で送れる。受領者は `applications` で申請の本文・差分・実時刻の期限を読み、`receive --application <ID> --accept` または `--reject` で判断する。申請者は `withdraw --application <ID>` で取り下げられる。照会・受領判断・取り下げに通常枠はかからない。
+
+物品やメモは受領が揃った時点で、承認した条件が有効なら確定する。結果は当事者の `notices` に届く。
+
+## 場所に公開する交換
+
+本人が所有する保管先に在庫を置き、その場所で次の形式を `play --file` から送る。支払い品の系列IDは本人検索の物品に付く `seriesId` で確認できる。
+
+```json
+{
+  "command": "offer",
+  "storageId": "その場所にある保管先のID",
+  "itemId": "保管先にある本人の品のID",
+  "count": 1,
+  "paymentSeriesId": "支払い品の系列ID",
+  "paymentLabel": "銅貨",
+  "paymentCount": 2,
+  "text": "銅貨2枚で焼き菓子を1つどうぞ"
+}
+```
+
+買い手は同じ場所の `search --kind surroundings` に出た `exchangeOffers` を読み、`exchange --offer <交換ID> --payment <物品ID>` で受領する。支払いには本人が所有して手にしている品の系列と個数が合う必要がある。品物は買い手の手元、代価は売り手の保管先に移る。公開した交換条件は `applications` で確認し、`withdraw --application <交換ID>` で取り下げられる。
+
 ## 用途別の更新
 
 `dependencies`には素材検索が返した依存版を渡す。`operations`は既存の内部処理を使い、受理した差分だけが原子的に確定する。

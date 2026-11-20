@@ -1,4 +1,7 @@
 {
+  "0.42.0": [
+    "時間差で届くメモや品物の申請は applications で読み、セッションの外から receive で判断できます。memo の --deferred-until で期限を指定します。search --kind surroundings に公開されている交換条件が出ていれば、同じ場所で exchange を使って指定された系列の品を支払えます。"
+  ],
   "0.41.0": [
     "利用できる保管先と、本人が所有する場所や物には、move で物品を預け、取り出せます。他の人の受領は要りません。出し入れには本人が保管先のある場所にいる必要があり、離れていると STORAGE_NOT_HERE が返ります。本人が所有する場所や物は、物を置くと search --kind self の storages に出ます。AUTHORITY_REQUIRED と REMOTE_RECEIVING のメッセージには、対象の名前とIDが入ります。本人の呼称と状態は update の changes で改めます（書き方は commands.md）。operations の update が扱うのは物品と技能です。"
   ],

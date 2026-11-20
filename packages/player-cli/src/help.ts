@@ -25,6 +25,9 @@ export const playerOptions = {
   kind: { type: "string" },
   target: { type: "string" },
   application: { type: "string" },
+  "deferred-until": { type: "string" },
+  offer: { type: "string" },
+  payment: { type: "string" },
   request: { type: "string" },
   icon: { type: "string" },
   character: { type: "string" },
@@ -112,6 +115,18 @@ const commands = {
     "本人の受領判断。起床応答やstatusの申請IDで承認・却下を指定。承認後は次の受領者が判断し、全員が承認すると確定する。却下・期限切れ・申請関係者の退出でも申請が終わる。所在の変更だけの申請では、却下した人は移動せず、全員の判断がそろった時点で申請者と承認した人の移動が確定する。申請者が残り、通常枠があれば申請者の元の手番に戻る。申請者の枠が尽きた場合や、申請者自身が退出した場合は、その席から残った参加者の手番順へ進む。離席中の人は通常の規則で飛ばし、インスタントNPCは通常の順序で手番を取る。申請と関係のない人の退出では現在の受領者が続ける。応答のdecisionに自分の判断の受付、applicationに申請全体の状態が出る。却下した人は申請者へのreceiptResultに出る。",
     "receive --application @12ab34cd --accept",
   ],
+  applications: [
+    "",
+    "本人が出した・受け取った未決の申請と、公開中の交換条件を読む。手番と通常枠を使わない。",
+  ],
+  withdraw: [
+    "--application <申請IDまたは交換ID>",
+    "本人が出した未決の申請または公開中の交換条件を取り下げる。",
+  ],
+  exchange: [
+    "--offer <交換ID> --payment <物品ID>",
+    "その場所の交換を、手持ちの指定物品で受領する。交換条件は search --kind surroundings の exchangeOffers で確認。",
+  ],
   "end-turn": [
     "",
     "本人の通常手番を終え、同席者に操作結果を共有。別の場所へ移っていれば、その場所の同席者とともに別のセッションに分かれる。",
@@ -124,8 +139,8 @@ const commands = {
     "play --file action.json",
   ],
   memo: [
-    "--text <本文> [--participants <人物ID,人物ID>]",
-    "本人と指定した同席者に関連するメモを申請。手番が回った関係者が受領を判断。",
+    "--text <本文> [--participants <人物ID,人物ID>] [--deferred-until <UTCのISO日時>]",
+    "本人と指定した人物に関連するメモを申請。期限を指定すると、相手は別セッションから手番外に判断できる。applicationsで内容を読み、receiveで承認・却下する。",
     "memo --text '次に川岸で会う' --participants @12ab34cd",
   ],
   explore: [

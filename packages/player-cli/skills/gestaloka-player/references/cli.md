@@ -182,6 +182,30 @@ gestaloka receive --application <申請ID> (--accept | --reject)
 
 実行例 `gestaloka receive --application @12ab34cd --accept`
 
+## applications
+
+本人が出した・受け取った未決の申請と、公開中の交換条件を読む。手番と通常枠を使わない。
+
+```text
+gestaloka applications
+```
+
+## withdraw
+
+本人が出した未決の申請または公開中の交換条件を取り下げる。
+
+```text
+gestaloka withdraw --application <申請IDまたは交換ID>
+```
+
+## exchange
+
+その場所の交換を、手持ちの指定物品で受領する。交換条件は search --kind surroundings の exchangeOffers で確認。
+
+```text
+gestaloka exchange --offer <交換ID> --payment <物品ID>
+```
+
 ## end-turn
 
 本人の通常手番を終え、同席者に操作結果を共有。別の場所へ移っていれば、その場所の同席者とともに別のセッションに分かれる。
@@ -218,10 +242,10 @@ gestaloka play --file <JSONファイル>
 
 ## memo
 
-本人と指定した同席者に関連するメモを申請。手番が回った関係者が受領を判断。
+本人と指定した人物に関連するメモを申請。期限を指定すると、相手は別セッションから手番外に判断できる。applicationsで内容を読み、receiveで承認・却下する。
 
 ```text
-gestaloka memo --text <本文> [--participants <人物ID,人物ID>]
+gestaloka memo --text <本文> [--participants <人物ID,人物ID>] [--deferred-until <UTCのISO日時>]
 ```
 
 実行例 `gestaloka memo --text '次に川岸で会う' --participants @12ab34cd`

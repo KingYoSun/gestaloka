@@ -227,6 +227,14 @@ export async function planBelongings(
           throw new BelongingRejected("物品または技能が見つかりません");
         if (op.count && node.kind !== "existence")
           throw new BelongingRejected("個数は物品にだけ指定できます");
+        if (
+          node.kind === "existence" &&
+          node.seriesId &&
+          (op.count ?? 0) > (node.count ?? 0)
+        )
+          throw new BelongingRejected(
+            "系列のある物品の個数を増やすには管理者の確定が必要です",
+          );
         await revise({
           ...node,
           ...(op.text ? { text: op.text } : {}),
@@ -243,6 +251,7 @@ export async function planBelongings(
         if (await take(op.id, op.count)) end(await incoming(op.id));
     }
   }
+  const moving = new Set([...parts.values()].map((part) => part.item));
   for (const part of parts.values()) {
     const source = (await current(part.item))!,
       facts = await incoming(part.item),
@@ -263,10 +272,12 @@ export async function planBelongings(
         const node = await current(edge.target);
         if (
           edge.role === "hold" &&
-          edge.target !== part.item &&
+          !moving.has(edge.target) &&
           node?.kind === "existence" &&
           node.count &&
           node.text === source.text &&
+          node.seriesId ===
+            (source.kind === "existence" ? source.seriesId : undefined) &&
           JSON.stringify(
             (await incoming(node.id))
               .filter((own) => !own.role)
@@ -289,6 +300,9 @@ export async function planBelongings(
         kind: "existence",
         text: source.text,
         count: part.count,
+        ...(source.kind === "existence" && source.seriesId
+          ? { seriesId: source.seriesId }
+          : {}),
       });
       if (holder)
         has(
@@ -351,11 +365,18 @@ export async function changeBelongings(
   if (prior) return prior;
   const context = store.context(lease.worldId, input.dependencies),
     planned = await planBelongings(context, input.commitId, input.at, ops);
+  if (input.nodes?.some((node) => node.kind === "existence" && node.seriesId))
+    throw new BelongingRejected("物品へ系列を付けるには管理者の確定が必要です");
   planned.changes.nodes.unshift(...(input.nodes ?? []));
-  return store.commit(lease, context, {
-    commitId: input.commitId,
-    ...planned,
-  });
+  return store.commit(
+    lease,
+    context,
+    {
+      commitId: input.commitId,
+      ...planned,
+    },
+    true,
+  );
 }
 
 // 物品の呼称と、個数つきなら個数。
@@ -367,6 +388,9 @@ const shown = (node: WorldNode | undefined) =>
 const labelled = (node: WorldNode | undefined) => ({
   label: node?.text ?? "",
   ...(node?.kind === "existence" && node.count ? { count: node.count } : {}),
+  ...(node?.kind === "existence" && node.seriesId
+    ? { seriesId: node.seriesId }
+    : {}),
   ...shown(node),
 });
 
