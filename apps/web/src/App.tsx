@@ -267,7 +267,11 @@ function Membership({
             利用が停止されています（BAN）。解除後に保存状態から再開できます。
           </p>
         )}
-        <a href="/auth/register">利用登録を確認する</a>
+        <a
+          href={`/auth/register?return_to=${encodeURIComponent(location.href)}`}
+        >
+          利用登録を確認する
+        </a>
       </main>
     );
   if (surface === "admin" && account.data.member.role !== "admin")
@@ -330,7 +334,10 @@ export function App({
           {state.error ? (
             <>
               <p role="alert">{state.error}</p>
-              <a className="text-link" href="/auth/register">
+              <a
+                className="text-link"
+                href={`/auth/register?return_to=${encodeURIComponent(location.href)}`}
+              >
                 ログイン・利用登録へ
               </a>
               <Button

@@ -374,11 +374,11 @@ test("招待・追加管理者・BANを画面から操作し、権限変更で�
   ).toBeVisible();
   expect((await auth.operations.state(invited)).member).toBeNull();
   await page.getByLabel("招待トークン", { exact: true }).fill(invitation);
+  await page.route("http://ory.invalid/**", (route) =>
+    route.fulfill({ body: "" }),
+  );
   await page.getByRole("button", { name: "利用登録する", exact: true }).click();
-  await expect(
-    page.getByText("利用登録済みです。", { exact: true }),
-  ).toBeVisible();
-  await page.reload();
+  await page.waitForURL("http://ory.invalid/self-service/login/browser");
   expect((await auth.operations.state(invited)).member?.role).toBe("user");
   expect(
     (

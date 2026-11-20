@@ -399,25 +399,38 @@ export async function operationsRoutes(
     reply: Parameters<typeof authPage>[0],
     error = "",
   ) => {
-    const { player, invitation } = z
+    const { player, invitation, return_to } = z
       .object({
         player: z
           .string()
           .regex(/^[A-F0-9]{10}$/)
           .optional(),
         invitation: z.string().optional(),
+        return_to: z.string().optional(),
       })
       .parse(request.method === "POST" ? request.body : request.query);
     const userId = await actor(request);
     const state = await service().state(userId);
-    if (player && state.member && !state.member.banned)
-      return reply.redirect(`/auth/player?code=${player}`);
+    if (state.member && !state.member.banned) {
+      if (player) return reply.redirect(`/auth/player?code=${player}`);
+      // 戻り先はKratosが許可リストで検証し、指定が無ければ既定のアプリURLへ戻す。
+      const url = new URL(
+        "self-service/login/browser",
+        `${identity!.publicUrl.replace(/\/$/, "")}/`,
+      );
+      if (return_to) url.searchParams.set("return_to", return_to);
+      // フォーム送信からの転送はform-actionで止まるため、表示後の新しい遷移で戻す。
+      reply.header("Refresh", `0;url=${url.href}`);
+      return authPage(
+        reply,
+        "利用登録",
+        `<p>利用登録済みです。</p><a href="${escapeHtml(url.href)}">ゲームへ戻る</a>`,
+      );
+    }
     const suppliedInvite = invitation && (player || request.method === "GET");
-    const status = state.member?.banned
+    const status = state.member
       ? "<p>利用が停止されています。</p>"
-      : state.member
-        ? `<p>${state.member.role === "admin" ? "管理者として" : ""}利用登録済みです。</p><a href="/auth/claim">このブラウザーのデータを引き継ぐ</a>`
-        : `${state.bootstrapAvailable ? "<p>最初に利用登録した1人が管理者になります。その後は招待制になります。</p>" : state.inviteRequired ? (suppliedInvite ? "<p>招待を受け取っています。下の「利用登録する」を押してください。</p>" : "<p>利用登録には招待トークンが必要です。</p>") : "<p>利用登録できます。</p>"}<form method="post">${fields(request, reply, "/auth/register")}${player ? `<input type="hidden" name="player" value="${player}">` : ""}${state.bootstrapAvailable || !state.inviteRequired ? "" : suppliedInvite ? `<input type="hidden" name="invitation" value="${escapeHtml(invitation)}">` : '<label>招待トークン <input name="invitation" autocomplete="off" required></label>'}<button>利用登録する</button></form>`;
+      : `${state.bootstrapAvailable ? "<p>最初に利用登録した1人が管理者になります。その後は招待制になります。</p>" : state.inviteRequired ? (suppliedInvite ? "<p>招待を受け取っています。下の「利用登録する」を押してください。</p>" : "<p>利用登録には招待トークンが必要です。</p>") : "<p>利用登録できます。</p>"}<form method="post">${fields(request, reply, "/auth/register")}${player ? `<input type="hidden" name="player" value="${player}">` : ""}${return_to ? `<input type="hidden" name="return_to" value="${escapeHtml(return_to)}">` : ""}${state.bootstrapAvailable || !state.inviteRequired ? "" : suppliedInvite ? `<input type="hidden" name="invitation" value="${escapeHtml(invitation)}">` : '<label>招待トークン <input name="invitation" autocomplete="off" required></label>'}<button>利用登録する</button></form>`;
     return authPage(
       reply,
       "利用登録",
@@ -475,6 +488,7 @@ export async function operationsRoutes(
         invitation?: string;
         version?: string;
         player?: string;
+        return_to?: string;
       };
     }>(path, { schema: { hide: true } }, async (request, reply) => {
       const { csrf, requestId, invitation, version } = request.body,
@@ -521,15 +535,10 @@ export async function operationsRoutes(
           );
         throw error;
       }
-      const player = request.body.player;
-      return reply.redirect(
-        path === "/auth/register" && player
-          ? `/auth/player?code=${z
-              .string()
-              .regex(/^[A-F0-9]{10}$/)
-              .parse(player)}`
-          : path,
-      );
+      const query = new URLSearchParams();
+      for (const key of ["player", "return_to"] as const)
+        if (request.body[key]) query.set(key, request.body[key]);
+      return reply.redirect(query.size ? `${path}?${query}` : path);
     });
   }
 }
