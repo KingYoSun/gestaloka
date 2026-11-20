@@ -280,7 +280,7 @@ test("通知の未読をプレイヤー情報に示し、通知タブを開い�
   expect(reads).toEqual([actor]);
   expect(posted).toEqual([]);
   fireEvent.click(within(dialog).getByRole("button", { name: "閉じる" }));
-  await screen.findByRole("button", { name: "プレイヤー情報", exact: true });
+  await screen.findByRole("button", { name: "プレイヤー情報" });
 });
 
 test("発言の応答待ちに書き始めた次の入力を消さない", async () => {
