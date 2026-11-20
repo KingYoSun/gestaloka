@@ -1010,6 +1010,23 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
     expect((await access.botStatus(one.subject, scene.id, a)).sceneId).toBe(
       x.sceneId,
     );
+    await databases.postgres.query(
+      "UPDATE world_join SET hidden_from_selection=true WHERE id=$1",
+      [id1],
+    );
+    expect(
+      (await access.players.list(one.subject, scene.id)).items.map((p) => p.id),
+    ).toEqual([id3]);
+    expect((await access.player(one.subject, scene.id)).viewerId).toBe(
+      operation.newParticipantId,
+    );
+    expect(
+      (await access.players.list(one.subject, scene.id, undefined, id1))
+        .items[0],
+    ).toMatchObject({ actorId: a, state: "ready" });
+    expect((await access.botStatus(one.subject, scene.id, a)).sceneId).toBe(
+      x.sceneId,
+    );
     await auth.operations.execute(scene.subject, randomUUID(), {
       operation: "worlds.configure",
       worldId: scene.id,
