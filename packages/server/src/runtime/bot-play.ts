@@ -2105,8 +2105,8 @@ export class BotPlay {
       for (const location of locations)
         for (const id of location.aboutIds) neighbors.add(id);
       const contacts = await this.#available(world, [...neighbors]);
-      // 行き来の記述(route)が、いまいる場所と結んでいる別の場所。移動先の手がかりで、移動の制限ではない。
-      const here = new Set(locations.flatMap((l) => l.aboutIds)),
+      // 行き来の記述(route)が、直接の滞在先と結んでいる別の場所。移動先の手がかりで、移動の制限ではない。
+      const here = new Set(await this.#places(context, actor)),
         routes = new Map<string, string>();
       for (const place of here)
         for (const edge of await context.relations(place, "status", "out", at))
@@ -2648,6 +2648,13 @@ export class BotPlay {
         reject(
           "EXPLORE_SOURCE_REQUIRED",
           "接続元には本人の現在の所在地にある場所を指定してください",
+        );
+      // 同じ呼び名の場所は増やさない。先にある場所のIDを返し、そこを調べるか別の名前で申請できるようにする。
+      const existing = await context.routePlace(input.label);
+      if (existing)
+        reject(
+          "EXPLORE_NAME_TAKEN",
+          `「${input.label}」という名前の場所は既にあります（ID: ${existing}）。その場所を調べるか、別の名前で申請してください`,
         );
       // 場所と、接続元との行き来を示す記述を作る。どちらの場所を調べても相手の名前とIDを読める。
       const place = derivedId(`${input.requestId}:place`),
