@@ -50,7 +50,7 @@ import {
   searchAppearances,
 } from "./search-appearances.js";
 import { PlayerTools, type PromotionProfile } from "./player-tools.js";
-import { PlayApplications } from "./play-applications.js";
+import { itemOutcomeMessage, PlayApplications } from "./play-applications.js";
 import { PlayTeams, type TeamCommand } from "./play-teams.js";
 
 import { playerMaterial } from "./player-material.js";
@@ -2082,7 +2082,11 @@ export class BotPlay {
     const items =
       state === "accepted"
         ? r.items
-        : r.items?.map(({ itemId, label }) => ({ itemId, label }));
+        : r.items
+            ?.filter(
+              ({ itemId }) => !r.changes.nodes.some((n) => n.id === itemId),
+            )
+            .map(({ itemId, label }) => ({ itemId, label }));
     entry.result = {
       applicationId: r.id,
       state,
@@ -2113,6 +2117,10 @@ export class BotPlay {
           cancelled:
             "の受領判断は、関係する参加者が退出したため成立しませんでした",
         }[outcome]
+      }${
+        state === "accepted" && items?.length
+          ? `。${await itemOutcomeMessage(this.store.context((await this.world(session.world_id)).id), items)}`
+          : ""
       }`,
     };
     const rejectedBy = rejectingActor
@@ -2583,7 +2591,12 @@ export class BotPlay {
         context = this.store.context(w.id),
         commitId = derivedId(row.id + ":arrival"),
         plan = await planBelongings(context, commitId, w.at, row.operations);
-      await this.#commit(w.id, commitId, { ...plan, context });
+      const receipt = await this.#commit(w.id, commitId, { ...plan, context });
+      const items = await this.#itemOutcomes(
+        context,
+        { requestId: commitId, operations: row.operations },
+        receipt.changes,
+      );
       await this.pool.query(
         `WITH done AS (DELETE FROM bot_arrival WHERE id=$1 RETURNING world_id,actor_id),
         noticed AS (INSERT INTO player_notice(id,world_id,actor_id,created_at,text) SELECT $2,world_id,actor_id,$3,$4 FROM done RETURNING world_id,actor_id)
@@ -2597,7 +2610,9 @@ export class BotPlay {
               (item) => item.label + (item.count ? `（${item.count}個）` : ""),
             )
             .join("、") +
-            "が届きました。search --kind self の belongings で確かめられます",
+            "が届きました。" +
+            (await itemOutcomeMessage(context, items)) +
+            "search --kind self の belongings で確かめられます",
         ],
       );
     }
@@ -3285,17 +3300,38 @@ export class BotPlay {
     await combined.validate();
     return combined;
   }
-  // 移動・譲渡した物品を、申請の操作から読める形にする。同じ物品・同じ個数の操作は一つにまとめる。
+  // 同じ物品・同じ個数の移動と譲渡は一つにまとめる。
   async #itemOutcomes(
     context: WorldContext,
-    input: Input,
+    input: { requestId: string; operations?: BelongingOp[] | undefined },
     changes: Change,
   ): Promise<ItemOutcome[]> {
-    if (!("operations" in input) || !input.operations) return [];
+    if (!input.operations) return [];
     const applied = changes.edges.length || changes.revisions.length,
       ended = await Promise.all(changes.endEdges.map((id) => context.edge(id))),
       items = new Map<string, ItemOutcome>();
-    for (const op of input.operations) {
+    for (const [index, op] of input.operations.entries()) {
+      if (op.type === "create") {
+        const itemId = derivedId(`${input.requestId}:${index}:node`);
+        const node = changes.nodes.find((node) => node.id === itemId);
+        if (node?.kind !== "existence") continue;
+        const relations = changes.edges.filter(
+          (edge) => edge.kind === "has" && edge.target === itemId,
+        );
+        const holding = relations.find((edge) => edge.role === "hold");
+        const ownership = relations.find((edge) => !edge.role);
+        if (holding)
+          items.set(itemId, {
+            itemId,
+            label: node.text,
+            ...(node.count ? { count: node.count } : {}),
+            holding: { fromId: null, toId: holding.source },
+            ...(ownership
+              ? { ownership: { fromIds: [], toId: ownership.source } }
+              : { ownershipUnrecorded: true }),
+          });
+        continue;
+      }
       if (op.type !== "move" && op.type !== "transfer") continue;
       const key = `${op.item}:${op.count ?? ""}`,
         item = items.get(key) ?? {
@@ -3316,14 +3352,28 @@ export class BotPlay {
         item.ownership = {
           fromIds: (former.length
             ? former
-            : (await context.relations(op.item, "has", "in", latest)).filter(
-                (e) => !e.role,
-              )
+            : changes.edges.some(
+                  (e) => e.kind === "has" && e.target === op.item && !e.role,
+                )
+              ? []
+              : (await context.relations(op.item, "has", "in", latest)).filter(
+                  (e) => !e.role,
+                )
           ).map((e) => e!.source),
           toId: op.to,
         };
       }
     }
+    for (const item of items.values())
+      if (
+        item.holding &&
+        !item.ownership &&
+        !item.ownershipUnrecorded &&
+        !(await context.relations(item.itemId, "has", "in", latest)).some(
+          (edge) => !edge.role,
+        )
+      )
+        item.ownershipUnrecorded = true;
     return [...items.values()];
   }
   async #plan(
@@ -3681,7 +3731,6 @@ export class BotPlay {
           } else if (op.type === "transfer") {
             for (const e of incoming.filter((e) => e.role === undefined))
               parties.add(e.source);
-            if (!incoming.some((e) => e.role === undefined)) parties.add(id);
             await affect(op.to);
           } else if (op.type === "grant" || op.type === "revoke") {
             if (
@@ -5115,6 +5164,8 @@ export class BotPlay {
                     ? "confirmed"
                     : "rejected",
               };
+          if (settled?.result.outcome === "accepted" && settled.items?.length)
+            result.items = settled.items;
           await this.#record(db, session, {
             ...(receiving.comments[actor]
               ? { comment: receiving.comments[actor] }
@@ -5449,7 +5500,11 @@ export class BotPlay {
                         : "";
                       const own = item.ownership
                         ? `所有 ${(await Promise.all(item.ownership.fromIds.map(name))).join("・") || "未記録"} → ${await name(item.ownership.toId)}`
-                        : "";
+                        : item.ownershipUnrecorded
+                          ? "所有者は未登録"
+                          : item.holding
+                            ? "所有者の変更なし"
+                            : "";
                       return [
                         `${item.label}${item.count ? ` × ${item.count}` : ""}`,
                         hold,
@@ -5473,6 +5528,7 @@ export class BotPlay {
                     at: plan.at,
                     changes: plan.changes,
                     dependencies: plan.context.dependencies,
+                    ...(plan.items?.length ? { items: plan.items } : {}),
                   },
                 );
                 result = {
@@ -5672,9 +5728,16 @@ export class BotPlay {
             ? "pending"
             : "confirmed";
       }
+      const itemMessage = Array.isArray(result.items)
+        ? await itemOutcomeMessage(
+            this.store.context(w.id),
+            result.items,
+            actor,
+          )
+        : "";
       result.action = {
         command: input.command,
-        message: actionMessage(input, result, continuing, owner),
+        message: itemMessage || actionMessage(input, result, continuing, owner),
         ...(endedTurn
           ? {
               endedTurn: {

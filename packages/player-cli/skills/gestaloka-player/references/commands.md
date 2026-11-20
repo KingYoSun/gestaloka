@@ -48,16 +48,16 @@
 }
 ```
 
-| type           | 引数                                       | 意味                         |
-| -------------- | ------------------------------------------ | ---------------------------- |
-| locate         | subjectId, text, aboutIds, directPlaceId   | 本人または同行者の所在地     |
-| create         | label, count任意, holder, owner任意, basis | 新しい物品                   |
-| move           | item, from, to, count任意, basis           | 保持者の変更。所有者は維持   |
-| transfer       | item, to, count任意, basis                 | 所有者の変更。保持者は維持   |
-| grant / revoke | person, storage。grantにはbasis            | 保管先の利用                 |
-| learn          | person, text, basis                        | 技能とできる範囲             |
-| update         | id, text任意, count任意, basis任意         | 物品の呼称・個数、技能の内容 |
-| remove         | id, count任意                              | 消費・破棄・技能の喪失       |
+| type           | 引数                                       | 意味                                    |
+| -------------- | ------------------------------------------ | --------------------------------------- |
+| locate         | subjectId, text, aboutIds, directPlaceId   | 本人または同行者の所在地                |
+| create         | label, count任意, holder, owner任意, basis | 新しい物品。ownerを省くと所有者は未登録 |
+| move           | item, from, to, count任意, basis           | 保持者の変更。所有者は維持              |
+| transfer       | item, to, count任意, basis                 | 所有者の変更・新規登録。保持者は維持    |
+| grant / revoke | person, storage。grantにはbasis            | 保管先の利用                            |
+| learn          | person, text, basis                        | 技能とできる範囲                        |
+| update         | id, text任意, count任意, basis任意         | 物品の呼称・個数、技能の内容            |
+| remove         | id, count任意                              | 消費・破棄・技能の喪失                  |
 
 ### 保管先への出し入れ
 
