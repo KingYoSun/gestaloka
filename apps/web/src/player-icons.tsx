@@ -11,27 +11,35 @@ import { Button } from "./components/ui/button.js";
 import { Label } from "./components/ui/label.js";
 
 type Character = z.infer<typeof PlayerCharacter>;
-export function CharacterBadge({
+export function CharacterAvatar({
   name,
   icon,
 }: Pick<Character, "name" | "icon">) {
   const [failed, setFailed] = useState<string>();
   return (
+    <span className="player-avatar">
+      {icon && failed !== icon ? (
+        <img
+          src={icon}
+          alt={`${name}のアイコン`}
+          onError={() => setFailed(icon)}
+        />
+      ) : (
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="11" r="5" />
+          <path d="M6 29v-3a10 10 0 0 1 20 0v3" />
+        </svg>
+      )}
+    </span>
+  );
+}
+export function CharacterBadge({
+  name,
+  icon,
+}: Pick<Character, "name" | "icon">) {
+  return (
     <span className="player-character">
-      <span className="player-avatar">
-        {icon && failed !== icon ? (
-          <img
-            src={icon}
-            alt={`${name}のアイコン`}
-            onError={() => setFailed(icon)}
-          />
-        ) : (
-          <svg viewBox="0 0 32 32" aria-hidden="true">
-            <circle cx="16" cy="11" r="5" />
-            <path d="M6 29v-3a10 10 0 0 1 20 0v3" />
-          </svg>
-        )}
-      </span>
+      <CharacterAvatar name={name} icon={icon} />
       <span>{name}</span>
     </span>
   );

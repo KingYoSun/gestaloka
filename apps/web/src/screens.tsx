@@ -351,7 +351,7 @@ export function Manage({ id }: { id: string }) {
 export function Player({ id }: { id: string }) {
   const { actorId, sceneId } = useSearch({ from: "/worlds/$id/play" });
   return (
-    <main className="page">
+    <main className="page play-page">
       <BotSession
         key={`${id}:${actorId ?? "selected"}:${sceneId ?? "current"}`}
         id={id}

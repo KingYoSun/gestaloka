@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+import { useLayoutEffect, useState, useRef } from "react";
+import { ArrowDownToLine, ArrowUpToLine } from "lucide-react";
 import { z } from "zod";
 import {
   ItemOutcome,
@@ -11,13 +12,20 @@ import { usePending } from "./forms.js";
 import { Button } from "./components/ui/button.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { Notice, Problem } from "./presentation.js";
-import { Characters } from "./player-icons.js";
 import { RichText } from "./RichText.js";
 import { History, type HistoryHandle } from "./History.js";
 import { Link } from "@tanstack/react-router";
+import {
+  Belongings,
+  itemText,
+  PlayLayout,
+  PlayerPanel,
+  PlayScreen,
+  realTime,
+  ScenePanel,
+} from "./play-panels.js";
 
-const TextNode = z.object({ text: z.string() }),
-  Item = z.object({ label: z.string(), count: z.number().optional() });
+const TextNode = z.object({ text: z.string() });
 const Material = z.object({
   node: TextNode.optional(),
   states: z.array(z.object({ node: TextNode })).optional(),
@@ -32,20 +40,14 @@ const Material = z.object({
       }),
     )
     .optional(),
-  belongings: z
-    .object({
-      items: z.array(Item),
-      storages: z.array(z.object({ label: z.string(), items: z.array(Item) })),
-      skills: z.array(z.object({ text: z.string() })),
-    })
-    .optional(),
+  belongings: Belongings.optional(),
 });
-const itemText = (item: z.infer<typeof Item>) =>
-  item.count ? `${item.label} ×${item.count}` : item.label;
 const View = z.object({
   sessionId: z.string().optional(),
   viewerId: z.string(),
-  actorId: z.string().optional(),
+  actorId: z.string().nullish(),
+  turnStartedAt: z.string().optional(),
+  screen: PlayScreen,
   callsUsed: z.number().optional(),
   callsLimit: z.number().optional(),
   commentUsed: z.boolean().optional(),
@@ -78,6 +80,7 @@ const View = z.object({
     .array(
       z.object({
         id: z.string(),
+        recordedAt: z.string().nullish(),
         payload: z.object({
           entries: z
             .array(
@@ -99,6 +102,9 @@ const View = z.object({
           comment: z.string().optional(),
           reason: z.string().optional(),
           state: z.string().optional(),
+          transition: z
+            .object({ at: z.string(), message: z.string() })
+            .optional(),
         }),
       }),
     )
@@ -163,6 +169,8 @@ export function BotSession({
   const [text, setText] = useState(""),
     [material, setMaterial] = useState<unknown>();
   const history = useRef<HistoryHandle>(null);
+  const log = useRef<HTMLDivElement>(null);
+  const follow = useRef(!sceneId);
   const [pending, save] = usePending(
     pendingKey(`${id}:${actorId ?? "selected"}`, "bot-turn"),
     PlayCommand,
@@ -174,6 +182,7 @@ export function BotSession({
       params: {
         path: { id },
         query: {
+          view: "screen",
           ...(actorId ? { actorId } : {}),
           ...(sceneId ? { sceneId } : {}),
         },
@@ -183,6 +192,11 @@ export function BotSession({
   );
   const mutation = $api.useMutation("post", "/api/worlds/{id}/session"),
     view = query.data ? View.parse(query.data) : undefined;
+  const newest = view?.entries.at(-1)?.id;
+  useLayoutEffect(() => {
+    if (newest && follow.current && log.current)
+      log.current.scrollTop = log.current.scrollHeight;
+  }, [newest]);
   const send = async (raw?: Record<string, unknown>) => {
     const body =
       pending ?? PlayCommand.parse({ requestId: crypto.randomUUID(), ...raw });
@@ -217,109 +231,195 @@ export function BotSession({
       !!sceneId &&
       sceneId !==
         view.members.find((m) => m.actorId === view.viewerId)?.sceneId;
+  const player = view.characters.find(
+    ({ actorId }) => actorId === view.viewerId,
+  ) ?? { ...view.screen.own, icon: null };
+  function jump(toEnd: boolean) {
+    follow.current = toEnd;
+    if (log.current)
+      log.current.scrollTop = toEnd ? log.current.scrollHeight : 0;
+  }
   return (
-    <section className="space-y-6" aria-label="セッション">
-      <div className="page-title">
-        <h1>
-          {view.sessionId
-            ? `${view.members.length}人のセッション`
-            : view.result
-              ? "本人のシーンを終了しました"
-              : "セッションを始める"}
-        </h1>
-        <Characters characters={view.characters} />
-      </div>
+    <PlayLayout
+      left={
+        <PlayerPanel
+          world={id}
+          player={player}
+          screen={view.screen}
+          {...(sceneId ? { sceneId } : {})}
+          history={
+            <History
+              id={id}
+              role="player"
+              viewer={view.viewerId}
+              ref={history}
+            />
+          }
+        />
+      }
+      right={
+        <ScenePanel
+          people={view.characters}
+          screen={view.screen}
+          turn={archive ? null : view.actorId}
+          turnStartedAt={view.turnStartedAt}
+        />
+      }
+      toolbar={
+        <>
+          <h1>
+            {archive
+              ? "過去のプレイログ"
+              : view.sessionId
+                ? `${view.members.length}人のセッション`
+                : view.result
+                  ? "本人のシーンを終了しました"
+                  : "セッションを始める"}
+          </h1>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="play-icon"
+            onClick={() => jump(false)}
+            aria-label="最上部へ移動"
+            title="最上部へ移動"
+          >
+            <ArrowUpToLine />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="play-icon"
+            onClick={() => jump(true)}
+            aria-label="最下部に移動"
+            title="最下部に移動"
+          >
+            <ArrowDownToLine />
+          </Button>
+        </>
+      }
+    >
       {mutation.error && <Problem error={mutation.error} />}
       {pending && !mutation.isPending && (
         <Button onClick={() => void send()}>保存した同じ要求で確認する</Button>
       )}
-      <details className="initial-setting">
-        <summary>本人のこれまでの履歴</summary>
-        <History id={id} role="player" viewer={view.viewerId} ref={history} />
-      </details>
-      <div className="space-y-4" aria-label="セッションのチャット">
-        {view.entries.map((row) => (
-          <article className="rounded-lg border bg-card px-6 py-5" key={row.id}>
-            {row.payload.entries?.map((entry, i) => (
-              <div key={i}>
-                <p className="record-meta">
-                  {entry.label ??
-                    view.characters.find((c) => c.actorId === entry.actorId)
-                      ?.name ??
-                    "参加者"}
-                </p>
-                <RichText text={entry.input} />
-                <p className="muted">
-                  結果：
-                  {entry.result.outcome
-                    ? entry.result.outcome.success
-                      ? (entry.result.effectState ?? "成立しました")
-                      : "不成立でした"
-                    : entry.result.state === "rejected"
-                      ? "拒否しました"
-                      : entry.result.state === "failed"
-                        ? "成立しませんでした"
-                        : entry.result.state === "receiving"
-                          ? "受領判断中です"
-                          : entry.result?.state === "pending"
-                            ? "管理者の許可待ちです"
-                            : "受理しました"}
-                </p>
-                {entry.result.items?.map((item) => (
-                  <div key={item.itemId}>
-                    <span>
-                      {item.label}
-                      {item.count ? ` ×${item.count}` : ""}〈{item.itemId}〉
-                    </span>
-                    {item.ownership && (
-                      <p>
-                        所有
-                        {item.ownership.fromIds.map(personName).join("、") ||
-                          "なし"}{" "}
-                        → {personName(item.ownership.toId)}
-                      </p>
-                    )}
-                    {item.holding && (
-                      <p>
-                        保持
-                        {item.holding.fromId
-                          ? personName(item.holding.fromId)
-                          : "なし"}{" "}
-                        → {personName(item.holding.toId)}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ))}
-            {row.payload.comment && (
-              <p>ターンコメント：{row.payload.comment}</p>
-            )}
-            {row.payload.reason && <p>{row.payload.reason}</p>}
-          </article>
-        ))}
+      <div
+        className="play-log space-y-4"
+        aria-label="セッションのチャット"
+        role="region"
+        tabIndex={0}
+        ref={log}
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          follow.current =
+            node.scrollHeight - node.scrollTop - node.clientHeight < 32;
+        }}
+      >
+        {view.entries.length === 0 && (
+          <p className="muted">表示できるプレイログはまだありません</p>
+        )}
+        {view.entries.map((row) => {
+          const at = row.recordedAt ?? row.payload.transition?.at;
+          return (
+            <article
+              className="rounded-lg border bg-card px-6 py-5"
+              key={row.id}
+            >
+              <p className="record-meta">
+                {at ? (
+                  <time dateTime={at}>{realTime(at)}</time>
+                ) : (
+                  "時刻の記録なし"
+                )}
+              </p>
+              {row.payload.entries?.map((entry, i) => (
+                <div key={i}>
+                  <p className="record-meta">
+                    {entry.label ??
+                      view.characters.find((c) => c.actorId === entry.actorId)
+                        ?.name ??
+                      "参加者"}
+                  </p>
+                  <RichText text={entry.input} />
+                  <p className="muted">
+                    結果：
+                    {entry.result.outcome
+                      ? entry.result.outcome.success
+                        ? (entry.result.effectState ?? "成立しました")
+                        : "不成立でした"
+                      : entry.result.state === "rejected"
+                        ? "拒否しました"
+                        : entry.result.state === "failed"
+                          ? "成立しませんでした"
+                          : entry.result.state === "receiving"
+                            ? "受領判断中です"
+                            : entry.result?.state === "pending"
+                              ? "管理者の許可待ちです"
+                              : "受理しました"}
+                  </p>
+                  {entry.result.items?.map((item) => (
+                    <div key={item.itemId}>
+                      <span>
+                        {item.label}
+                        {item.count ? ` ×${item.count}` : ""}〈{item.itemId}〉
+                      </span>
+                      {item.ownership && (
+                        <p>
+                          所有
+                          {item.ownership.fromIds.map(personName).join("、") ||
+                            "なし"}{" "}
+                          → {personName(item.ownership.toId)}
+                        </p>
+                      )}
+                      {item.holding && (
+                        <p>
+                          保持
+                          {item.holding.fromId
+                            ? personName(item.holding.fromId)
+                            : "なし"}{" "}
+                          → {personName(item.holding.toId)}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {row.payload.comment && (
+                <p>ターンコメント：{row.payload.comment}</p>
+              )}
+              {row.payload.reason && <p>{row.payload.reason}</p>}
+              {row.payload.transition && (
+                <p className="record-meta">{row.payload.transition.message}</p>
+              )}
+            </article>
+          );
+        })}
+        {view.legacy.length > 0 && sceneId && (
+          <details className="initial-setting" open={archive}>
+            <summary>引き継いだシーンの記録</summary>
+            <History
+              id={id}
+              role="player"
+              viewer={view.viewerId}
+              sceneId={sceneId}
+              sceneKind="events"
+              hideWorldTime
+              ref={null}
+            />
+            <History
+              id={id}
+              role="player"
+              viewer={view.viewerId}
+              sceneId={sceneId}
+              sceneKind="actions"
+              hideWorldTime
+              ref={null}
+            />
+          </details>
+        )}
       </div>
-      {view.legacy.length > 0 && sceneId && (
-        <details className="initial-setting" open={archive}>
-          <summary>引き継いだシーンの記録</summary>
-          <History
-            id={id}
-            role="player"
-            viewer={view.viewerId}
-            sceneId={sceneId}
-            sceneKind="events"
-            ref={null}
-          />
-          <History
-            id={id}
-            role="player"
-            viewer={view.viewerId}
-            sceneId={sceneId}
-            sceneKind="actions"
-            ref={null}
-          />
-        </details>
-      )}
       {archive ? (
         <Link
           to="/worlds/$id/play"
@@ -338,7 +438,9 @@ export function BotSession({
           <Notice>
             {mine
               ? "あなたの手番です"
-              : `${view.characters.find((c) => c.actorId === view.actorId)?.name ?? "相手"}の手番を待っています`}
+              : view.actorId
+                ? `${personName(view.actorId)}の手番を待っています`
+                : "待機中です"}
             （通常API {view.callsUsed} / {view.callsLimit}回）
           </Notice>
           {mine && !view.receiving && (
@@ -470,6 +572,6 @@ export function BotSession({
           </div>
         </>
       )}
-    </section>
+    </PlayLayout>
   );
 }

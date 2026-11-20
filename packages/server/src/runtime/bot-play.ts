@@ -146,6 +146,7 @@ type SessionStatus = {
   callsLimit: number;
   commentUsed: boolean;
   creationCriteria?: string;
+  turnStartedAt?: string;
   waitingForReturn?: TurnParticipant & {
     deadline: string;
     remainingSeconds: number;
@@ -186,6 +187,7 @@ export type Session = {
     members: Member[];
     turn: string;
     number: number;
+    turnStartedAt?: string;
     used: number;
     nextRegular?: string;
     lastInstant?: string;
@@ -428,6 +430,8 @@ export class BotPlay {
       CREATE UNIQUE INDEX IF NOT EXISTS bot_scene_active ON bot_scene(world_id,actor_id) WHERE NOT closed;
       CREATE TABLE IF NOT EXISTS bot_chat (
       id bigserial PRIMARY KEY,session_id uuid NOT NULL REFERENCES bot_session(id),payload jsonb NOT NULL);
+      ALTER TABLE bot_chat ADD COLUMN IF NOT EXISTS recorded_at timestamptz;
+      CREATE INDEX IF NOT EXISTS bot_scene_history ON bot_scene(world_id,actor_id,created_at DESC,id DESC) WHERE closed;
       CREATE TABLE IF NOT EXISTS bot_record (
       scene_id uuid NOT NULL,actor_id uuid NOT NULL,chat_id bigint NOT NULL REFERENCES bot_chat(id),
       PRIMARY KEY(scene_id,actor_id,chat_id));
@@ -722,6 +726,7 @@ export class BotPlay {
         members: [{ actorId: actor, sceneId: legacy?.id ?? id, userId: user }],
         turn: actor,
         number: 1,
+        turnStartedAt: this.now().toISOString(),
         used: 0,
         entries: [],
       },
@@ -1306,7 +1311,9 @@ export class BotPlay {
         session.data.parked = true;
     }
     const after = turnState(session);
-    const wakeChanged = before.key !== after.key || before.size < after.size;
+    const turnChanged = before.key !== after.key;
+    if (turnChanged) session.data.turnStartedAt = this.now().toISOString();
+    const wakeChanged = turnChanged || before.size < after.size;
     if (wakeChanged) {
       session.data.wakeRevision = (session.data.wakeRevision ?? 0) + 1;
     }
@@ -1402,10 +1409,11 @@ export class BotPlay {
         ),
       };
     }
+    const recordedAt = this.now().toISOString();
     const id = (
       await db.query<{ id: string }>(
-        "INSERT INTO bot_chat(session_id,payload) VALUES($1,$2) RETURNING id",
-        [session.id, payload],
+        "INSERT INTO bot_chat(session_id,payload,recorded_at) VALUES($1,$2,$3) RETURNING id",
+        [session.id, payload, recordedAt],
       )
     ).rows[0]!.id;
     if (payload.transition) session.data.lastTransitionId = id;
@@ -1430,8 +1438,8 @@ export class BotPlay {
             .slice(skip);
           visibleId = (
             await db.query(
-              "INSERT INTO bot_chat(session_id,payload) VALUES($1,$2) RETURNING id",
-              [session.id, { ...payload, entries }],
+              "INSERT INTO bot_chat(session_id,payload,recorded_at) VALUES($1,$2,$3) RETURNING id",
+              [session.id, { ...payload, entries }, recordedAt],
             )
           ).rows[0].id;
         }
@@ -1625,6 +1633,7 @@ export class BotPlay {
         members: moving,
         turn: moving.find((m) => !m.instant)!.actorId,
         number: 1,
+        turnStartedAt: this.now().toISOString(),
         used: 0,
         entries: [],
       },
@@ -1849,6 +1858,7 @@ export class BotPlay {
     world: string,
     actor: string,
     db: Db = this.pool,
+    withClock = false,
   ): Promise<SessionStatus | IdleSessionStatus> {
     const session = await this.current(world, actor, db);
     if (!session) return { session: null };
@@ -1888,6 +1898,9 @@ export class BotPlay {
       })),
       characters,
       turn: session.data.number,
+      ...(withClock && session.data.turnStartedAt
+        ? { turnStartedAt: session.data.turnStartedAt }
+        : {}),
       actorId: r
         ? r.recipients.find((id) => !r.decided.includes(id))!
         : session.data.parked
@@ -2045,6 +2058,7 @@ export class BotPlay {
     scene?: string,
     db: Db = this.pool,
     after?: string,
+    withClock = false,
   ) {
     const selected =
       scene ??
@@ -2071,7 +2085,7 @@ export class BotPlay {
     if (!valid) reject("SCENE_NOT_FOUND", "本人のシーンを指定してください");
     const entries = (
       await db.query(
-        `SELECT c.id,c.payload FROM bot_record r JOIN bot_chat c ON c.id=r.chat_id
+        `SELECT c.id,c.payload${withClock ? ',c.recorded_at AS "recordedAt"' : ""} FROM bot_record r JOIN bot_chat c ON c.id=r.chat_id
        WHERE r.scene_id=$1 AND r.actor_id=$2 AND r.chat_id > $3::bigint ORDER BY r.chat_id`,
         [selected, actor, after ?? "0"],
       )
@@ -2092,6 +2106,69 @@ export class BotPlay {
         )
       ).rows,
       entries,
+    };
+  }
+  async screen(world: string, actor: string, characters: string[]) {
+    const session = await this.current(world, actor);
+    const context = this.store.context((await this.world(world)).id);
+    const places = await this.#places(context, actor);
+    const placeId = places[0];
+    const others = characters.filter((id) => id !== actor);
+    const profile = async (id: string) =>
+      (await this.#physicalStates(context, id)).states.map(
+        (state) => state.text,
+      );
+    const own = {
+      actorId: actor,
+      name: (await context.node(actor))?.text ?? "プレイヤー",
+      profile: await profile(actor),
+    };
+    const people = await Promise.all(
+      others.map(async (actorId) => {
+        const instant = session?.data.members.find(
+          (m) => m.actorId === actorId,
+        )?.instant;
+        return {
+          actorId,
+          profile: instant
+            ? [instant.description]
+            : placeId &&
+                (await this.#places(context, actorId)).includes(placeId)
+              ? await profile(actorId)
+              : [],
+        };
+      }),
+    );
+    const [belongings, place, neighbors, past] = await Promise.all([
+      readBelongings(context, actor),
+      placeId ? context.node(placeId).then((node) => node?.text) : undefined,
+      this.#routes(context, places),
+      this.pool
+        .query<{ sceneId: string; startedAt: Date }>(
+          `SELECT id AS "sceneId",created_at AS "startedAt" FROM bot_scene
+         WHERE world_id=$1 AND actor_id=$2 AND closed
+         UNION ALL
+         SELECT s.id,w.created_at FROM world_scene_session s JOIN world_scene w ON w.id=s.id
+         WHERE s.world_id=$1 AND s.actor_id=$2 AND s.closed
+           AND NOT EXISTS(SELECT 1 FROM bot_scene p WHERE p.id=s.id AND p.actor_id=s.actor_id)
+         ORDER BY "startedAt" DESC,"sceneId" DESC`,
+          [world, actor],
+        )
+        .then(({ rows }) => rows),
+    ]);
+    const material = await playerMaterial(
+      context,
+      belongings,
+      context.dependencies,
+    );
+    await context.validate();
+    return {
+      own,
+      people,
+      belongings: material?.material,
+      place,
+      neighbors,
+      past,
     };
   }
   // 届く時刻を過ぎた申請の物品を成立させ、本人あての通知を作る。
@@ -2268,6 +2345,26 @@ export class BotPlay {
   async #places(context: WorldContext, actor: string) {
     return directPlaces(context, actor);
   }
+  async #routes(context: WorldContext, here: string[]) {
+    const routes = new Map<string, string>();
+    for (const place of here)
+      for (const edge of await context.relations(
+        place,
+        "status",
+        "out",
+        latest,
+      ))
+        if (edge.role === "content" && edge.text === "route")
+          for (const e of await context.relations(
+            edge.target,
+            "status",
+            "out",
+            latest,
+          ))
+            if (e.role === "about" && !here.includes(e.target))
+              routes.set(e.target, (await context.node(e.target))!.text);
+    return [...routes].map(([id, label]) => ({ id, label }));
+  }
   async contact(context: WorldContext, actor: string, target: string) {
     const own = await this.#places(context, actor);
     if (!own.length)
@@ -2354,22 +2451,9 @@ export class BotPlay {
         for (const id of location.aboutIds) neighbors.add(id);
       const contacts = await this.#available(world, [...neighbors]);
       // 行き来の記述(route)が、直接の滞在先と結んでいる別の場所。移動先の手がかりで、移動の制限ではない。
-      const here = new Set(await this.#places(context, actor)),
-        routes = new Map<string, string>();
-      for (const place of here)
-        for (const edge of await context.relations(place, "status", "out", at))
-          if (edge.role === "content" && edge.text === "route")
-            for (const e of await context.relations(
-              edge.target,
-              "status",
-              "out",
-              at,
-            ))
-              if (e.role === "about" && !here.has(e.target))
-                routes.set(e.target, (await context.node(e.target))!.text);
       material = {
         locations,
-        routes: [...routes].map(([id, label]) => ({ id, label })),
+        routes: await this.#routes(context, await this.#places(context, actor)),
         subjects: await Promise.all(
           [...neighbors].map(async (id) => ({
             ...(await context.node(id)),
@@ -4118,6 +4202,7 @@ export class BotPlay {
                 members: [member],
                 turn: actor,
                 number: 1,
+                turnStartedAt: this.now().toISOString(),
                 used: 0,
                 entries: [],
               },

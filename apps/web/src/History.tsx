@@ -39,6 +39,7 @@ export function History({
   ref,
   sceneId,
   sceneKind,
+  hideWorldTime = false,
 }: {
   id: string;
   role: "admin" | "player";
@@ -46,6 +47,7 @@ export function History({
   ref: Ref<HistoryHandle>;
   sceneId?: string;
   sceneKind?: "events" | "actions";
+  hideWorldTime?: boolean;
 }) {
   const client = useQueryClient(),
     scroll = useRef<HTMLDivElement>(null);
@@ -328,9 +330,11 @@ export function History({
                   }}
                 >
                   <p className="record-meta">
-                    {entry.at === null
-                      ? "送った行動"
-                      : `T + ${worldTime(entry.at)}`}
+                    {hideWorldTime
+                      ? "時刻の記録なし"
+                      : entry.at === null
+                        ? "送った行動"
+                        : `T + ${worldTime(entry.at)}`}
                     {entry.kind === "interpretation" ? " · 当時の解釈" : ""}
                   </p>
                   <Characters characters={entry.characters} />

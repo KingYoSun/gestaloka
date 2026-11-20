@@ -283,6 +283,7 @@ export class WorldAccess {
     sceneId?: string,
     connectionId?: string,
     after?: string,
+    screen = false,
   ) {
     const viewerId = await this.botStatusActor(
       subject,
@@ -290,16 +291,58 @@ export class WorldAccess {
       actorId,
       connectionId,
     );
-    return {
+    const status = await this.botPlay.status(id, viewerId, this.pool, screen);
+    const history = await this.botPlay.history(
+      id,
       viewerId,
-      ...(await this.playCharacters(
-        id,
-        await this.botPlay.status(id, viewerId),
-        connectionId,
-      )),
-      ...(await this.botPlay.history(id, viewerId, sceneId, this.pool, after)),
+      sceneId,
+      this.pool,
+      after,
+      screen,
+    );
+    const result = {
+      viewerId,
+      ...status,
+      ...history,
       ...(await this.botPlay.unread(id, viewerId)),
     };
+    if (!screen) return this.playCharacters(id, result, connectionId);
+    const characters = new Map<string, { actorId: string; name: string }>();
+    if (
+      history.sceneId &&
+      !status.members?.some(
+        (member) =>
+          member.sceneId === history.sceneId && member.actorId === viewerId,
+      )
+    ) {
+      for (const { payload } of history.entries) {
+        for (const entry of payload.entries ?? [])
+          characters.set(entry.actorId, {
+            actorId: entry.actorId,
+            name: entry.label ?? "参加者",
+          });
+        if (payload.transition) {
+          const { actorId, name } = payload.transition;
+          characters.set(actorId, { actorId, name });
+        }
+      }
+    } else {
+      for (const character of status.characters ?? [])
+        characters.set(character.actorId, character);
+    }
+    const details = await this.botPlay.screen(id, viewerId, [
+      ...characters.keys(),
+    ]);
+    if (!characters.has(viewerId)) characters.set(viewerId, details.own);
+    return this.playCharacters(
+      id,
+      {
+        ...result,
+        characters: [...characters.values()],
+        screen: details,
+      },
+      connectionId,
+    );
   }
   async botStatusView(
     subject: string,
