@@ -451,7 +451,8 @@ export class BotPlay {
       ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS prepared_turn text;
       CREATE TABLE IF NOT EXISTS bot_adjudication (
       world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
-      actor_id uuid NOT NULL,owner uuid NOT NULL,expires_at timestamptz NOT NULL,PRIMARY KEY(world_id,actor_id));
+      actor_id uuid NOT NULL,request_id uuid NOT NULL,owner uuid NOT NULL,
+      expires_at timestamptz NOT NULL,PRIMARY KEY(world_id,actor_id));
       CREATE TABLE IF NOT EXISTS bot_dice (
       id uuid PRIMARY KEY,setting jsonb NOT NULL,roll integer);
       CREATE TABLE IF NOT EXISTS bot_npc (
@@ -4001,23 +4002,13 @@ export class BotPlay {
       );
     return { ...result, ...visible };
   }
-  async #checkAdjudication(
-    db: Db,
-    world: string,
-    actor: string,
-    owner: string | null,
-  ) {
-    const { rows } = await db.query<{ owner: string }>(
-      `SELECT owner FROM bot_adjudication WHERE world_id=$1 AND actor_id=$2
+  async #activeAdjudication(db: Db, world: string, actor: string) {
+    const { rows } = await db.query<{ request_id: string; owner: string }>(
+      `SELECT request_id,owner FROM bot_adjudication WHERE world_id=$1 AND actor_id=$2
        AND expires_at>clock_timestamp()`,
       [world, actor],
     );
-    if ((rows[0]?.owner ?? null) === owner) return;
-    if (rows[0]) rejectAdjudication();
-    reject(
-      "REQUEST_IN_PROGRESS",
-      "判定の受付を維持できませんでした。同じ要求を再送してください",
-    );
+    return rows[0];
   }
   async submit(
     world: string,
@@ -4057,19 +4048,7 @@ export class BotPlay {
       ).rows[0]?.assignment_id !== expectedAssignment
     )
       reject("NPC_CONTROLLER_CHANGED", "NPCの操作担当が変わりました");
-    await this.#checkAdjudication(this.pool, world, actor, null);
-    const needsAdjudication =
-      [
-        "update",
-        "create",
-        "explore",
-        "oppose",
-        "memo",
-        "npc-action",
-        "promote-npc",
-      ].includes(input.command) ||
-      (input.command === "say" && input.instantNpcs?.length);
-    const execute = (owner: string | null) =>
+    const execute = (owner?: string) =>
       this.#executeCommand(
         world,
         actor,
@@ -4079,19 +4058,40 @@ export class BotPlay {
         connectionId,
         owner,
       );
-    if (!needsAdjudication) return execute(null);
+    const active = await this.#activeAdjudication(this.pool, world, actor);
+    if (active)
+      return active.request_id === input.requestId
+        ? execute(active.owner)
+        : rejectAdjudication();
+    if (
+      ![
+        "update",
+        "create",
+        "explore",
+        "oppose",
+        "memo",
+        "npc-action",
+        "promote-npc",
+      ].includes(input.command) &&
+      !(input.command === "say" && input.instantNpcs?.length)
+    )
+      return execute();
     const owner = randomUUID(),
       key = [world, actor, owner];
     // Serialize claiming with command commits using the same short world lock.
     const acquired = await this.pool.query(
-      `INSERT INTO bot_adjudication(world_id,actor_id,owner,expires_at)
-       SELECT $1::text::uuid,$2,$3,clock_timestamp()+${adjudicationLease}
+      `INSERT INTO bot_adjudication(world_id,actor_id,owner,request_id,expires_at)
+       SELECT $1::text::uuid,$2,$3,$4,clock_timestamp()+${adjudicationLease}
        FROM (SELECT pg_advisory_xact_lock(hashtextextended($1,225))) AS locked
-       ON CONFLICT(world_id,actor_id) DO UPDATE SET owner=$3,expires_at=EXCLUDED.expires_at
+       ON CONFLICT(world_id,actor_id) DO UPDATE SET owner=$3,request_id=$4,expires_at=EXCLUDED.expires_at
        WHERE bot_adjudication.expires_at<=clock_timestamp()`,
-      key,
+      [...key, input.requestId],
     );
-    if (!acquired.rowCount) rejectAdjudication();
+    if (!acquired.rowCount) {
+      const active = await this.#activeAdjudication(this.pool, world, actor);
+      if (active?.request_id === input.requestId) return execute(active.owner);
+      rejectAdjudication();
+    }
     const heartbeat = setInterval(() => {
       void this.pool
         .query(
@@ -4102,12 +4102,7 @@ export class BotPlay {
         .catch(() => undefined);
     }, 10000).unref();
     try {
-      const { rows } = await this.pool.query<{
-        result: Record<string, unknown> | null;
-      }>("SELECT result FROM bot_request WHERE id=$1", [input.requestId]);
-      return rows[0]?.result
-        ? await this.#replay(world, input, rows[0].result)
-        : await execute(owner);
+      return await execute(owner);
     } finally {
       clearInterval(heartbeat);
       // If the database is unavailable, the lease expires on its own.
@@ -4126,11 +4121,15 @@ export class BotPlay {
     user: string,
     expectedAssignment: string | undefined,
     connectionId: string,
-    adjudicationOwner: string | null,
+    adjudicationOwner?: string,
   ) {
     const w = await this.world(world);
     let prepared: Session | undefined;
     if (adjudicationOwner) {
+      const { rows } = await this.pool.query<{
+        result: Record<string, unknown> | null;
+      }>("SELECT result FROM bot_request WHERE id=$1", [input.requestId]);
+      if (rows[0]?.result) return this.#replay(world, input, rows[0].result);
       prepared = await this.current(world, actor);
       if (!prepared || prepared.data.turn !== actor || prepared.data.receiving)
         reject("TURN_REQUIRED", "本人の通常手番ではありません");
@@ -4234,7 +4233,14 @@ export class BotPlay {
       await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,225))", [
         world,
       ]);
-      await this.#checkAdjudication(db, world, actor, adjudicationOwner);
+      const active = await this.#activeAdjudication(db, world, actor);
+      if (active?.owner !== adjudicationOwner) {
+        if (active) rejectAdjudication();
+        reject(
+          "REQUEST_IN_PROGRESS",
+          "判定の受付を維持できませんでした。同じ要求を再送してください",
+        );
+      }
       let session = await this.current(world, actor, db);
       if (session) {
         const wasOwnTurn = session.data.turn === actor;
