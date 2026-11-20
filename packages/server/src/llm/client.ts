@@ -23,7 +23,13 @@ import {
   strictOutput,
 } from "./prompt.js";
 import { derivedId } from "../world/model.js";
-import { PromptCache, geminiCachePlan, renderCachedPrompt } from "./cache.js";
+import {
+  PromptCache,
+  geminiCachePlan,
+  renderCachedPrompt,
+  openAiExplicitCache,
+} from "./cache.js";
+import { prepareDicePrompt } from "./dice-prompt.js";
 import {
   settings,
   budgetSettings,
@@ -753,8 +759,18 @@ export class LlmClient {
         ? { ...message, content: compactJsonWhitespace(message.content) }
         : message,
     );
+    const dice =
+      role === "world-creation-dice" || role === "world-explore-dice"
+        ? prepareDicePrompt(
+            wire,
+            provider === "openai" &&
+              api === "responses" &&
+              openAiExplicitCache(model),
+          )
+        : undefined;
     const prompt =
-      provider !== "deepseek"
+      dice ??
+      (provider !== "deepseek"
         ? // The full world schema exceeds Anthropic's grammar limit; retain Zod validation.
           preparePrompt(
             wire,
@@ -775,7 +791,7 @@ export class LlmClient {
                 ["scene-background", "world-update"].includes(role)),
             provider === "openrouter",
           )
-        : undefined;
+        : undefined);
     const rendered = prompt
       ? renderCachedPrompt(prompt, provider, api, model)
       : undefined;

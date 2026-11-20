@@ -6,6 +6,7 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import { beforeAll, afterAll, afterEach, expect, test, vi } from "vitest";
 import { PlayCommand, WaitingEvent } from "@gestaloka/contracts";
 import { WorldAccess } from "@gestaloka/server/access";
+import { decisionSettings } from "../../packages/server/src/llm/config.js";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
 import { derivedId } from "@gestaloka/server/world";
 import { BotPlay } from "@gestaloka/server/play";
@@ -2397,12 +2398,11 @@ test("同じ手番で失敗した申請の出し直しは、判断モデルが�
     db = isolated.databases.postgres,
     model = runtime.agent.model,
     dice = { sides: 100, successThrough: 10 };
-  let probability = 0.9,
+  let probability = 0.8,
     status = 200;
-  vi.spyOn(model, "decision", "get").mockReturnValue({
-    model: "fixture/decide",
-    repeatThreshold: 0.7,
-  });
+  vi.spyOn(model, "decision", "get").mockReturnValue(
+    decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+  );
   vi.spyOn(model, "apiKey").mockResolvedValue("unused");
   const decisions = vi
     .spyOn(model, "transport")
@@ -2503,7 +2503,7 @@ test("同じ手番で失敗した申請の出し直しは、判断モデルが�
   expect(await again()).toEqual(first);
   expect(decisions).toHaveBeenCalledTimes(1);
   // 確率が低いとき、判断APIが失敗したときは、通常どおりGMが設定する。
-  probability = 0.3;
+  probability = 0.79;
   expect(await attempt("別の作成")).not.toHaveProperty("repeated");
   expect(decisions).toHaveBeenCalledTimes(2);
   expect(f.calls).toHaveBeenCalledTimes(judged + 1);

@@ -789,3 +789,131 @@ test("OpenAIの30分・12時間書込を重複せず精算し、旧応答の料�
   expect(await managed.ledger.input(newCall)).toEqual(saved);
   expect(JSON.stringify(row)).not.toContain("private-key");
 });
+
+test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュに書き込む", async () => {
+  const pool = isolated.databases.postgres;
+  const transport = vi.fn<typeof fetch>().mockImplementation(async () =>
+    Response.json({
+      id: "dice",
+      model: "gpt-6.1-terra",
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          content: [
+            { type: "output_text", text: '{"sides":100,"successThrough":50}' },
+          ],
+        },
+      ],
+      usage: { input_tokens: 2000, output_tokens: 20 },
+    }),
+  );
+  const model = createCountedClient(
+    pool,
+    {
+      ...env(randomUUID()),
+      LLM_PROVIDER: "openai",
+      LLM_API: "responses",
+      LLM_MODEL: "gpt-6.1-terra",
+      OPENAI_API_KEY: "test-key",
+    },
+    transport,
+  );
+  await model.ledger.setup();
+  const basis = "調査隊と一緒に回収した道具とその由来",
+    owners = [{ id: "owner", label: "持ち主" }],
+    held = { id: "held", label: "ひも", count: 3, owners, basis, since: 2 },
+    stored = { id: "stored", label: "板", owners: [], basis, since: 4 },
+    skills = [
+      { id: "skill", text: "作業手順。".repeat(450), basis: null, since: 5 },
+    ];
+  const input = (text: string, count: number, skillText = skills[0]!.text) => [
+    { role: "system" as const, content: "ダイスの設定をJSONで返す。" },
+    {
+      role: "user" as const,
+      content: JSON.stringify({
+        premise: "世界の前提",
+        actor: "actor",
+        text,
+        changes: { nodes: [] },
+        nodes: [
+          {
+            node: { id: "actor", text: "工作をする人" },
+            states: [
+              { node: { id: "state", text: "濡れている" }, about: ["actor"] },
+            ],
+            belongings: {
+              items: [{ ...held, count }],
+              storages: [{ id: "box", label: "箱", items: [stored] }],
+              skills: [{ ...skills[0], text: skillText }],
+            },
+          },
+        ],
+        consumable: [
+          { id: held.id, label: held.label, count },
+          { id: "other", label: "石" },
+        ],
+      }),
+    },
+  ];
+  const id = randomUUID(),
+    first = input("工作する", 3);
+  await model.complete(id, "world-creation-dice", first);
+  await model.complete(
+    randomUUID(),
+    "world-creation-dice",
+    input("別の工作", 2),
+  );
+  await model.complete(
+    randomUUID(),
+    "world-explore-dice",
+    input("探索", 2, skills[0]!.text + "変更"),
+  );
+  await model.complete(
+    randomUUID(),
+    "world-creation-dice",
+    input("短い技能で工作する", 2, "鑿を使う"),
+  );
+  await model.complete(id, "world-creation-dice", first);
+  expect(transport).toHaveBeenCalledTimes(4);
+  const [original, next, changed, short] = transport.mock.calls.map(
+    ([, options]) => JSON.parse(String(options?.body)),
+  );
+  const prefix = original.input[1].content[0];
+  expect(prefix).toEqual(next.input[1].content[0]);
+  expect(prefix).not.toEqual(changed.input[1].content[0]);
+  expect(prefix.prompt_cache_breakpoint).toEqual({ mode: "explicit" });
+  expect(original.input[0].content[0]).not.toHaveProperty(
+    "prompt_cache_breakpoint",
+  );
+  expect(JSON.parse(prefix.text)).toEqual({
+    premise: "世界の前提",
+    actor: "actor",
+    actorSkills: skills,
+  });
+  expect(original.input[1].content[1]).not.toHaveProperty(
+    "prompt_cache_breakpoint",
+  );
+  expect(JSON.parse(original.input[1].content[1].text)).toEqual({
+    text: "工作する",
+    changes: { nodes: [] },
+    nodes: [
+      {
+        node: { id: "actor", text: "工作をする人" },
+        states: [
+          { node: { id: "state", text: "濡れている" }, about: ["actor"] },
+        ],
+        belongings: {
+          items: [["held", "ひも", owners, 0, 2, 3]],
+          storages: [["box", "箱", [["stored", "板", [], 0, 4]]]],
+        },
+      },
+    ],
+    consumable: ["held", { id: "other", label: "石" }],
+    basisDictionary: [basis],
+  });
+  expect(
+    JSON.parse(short.input[1].content[0].text).nodes[0].belongings.skills,
+  ).toEqual([["skill", "鑿を使う", null, 5]]);
+  expect(await model.ledger.input(id)).toMatchObject({ sourceMessages: first });
+});
