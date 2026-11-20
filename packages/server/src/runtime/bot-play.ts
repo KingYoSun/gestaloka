@@ -1086,7 +1086,8 @@ export class BotPlay {
         );
       }
     }
-    const link = recordAppearances(
+    const link = await recordAppearances(
+      context,
       changes,
       request,
       {

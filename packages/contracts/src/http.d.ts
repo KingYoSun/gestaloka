@@ -2722,7 +2722,7 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
-                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
                                     count?: number;
                                     /**
                                      * Format: uuid
@@ -2794,7 +2794,7 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
-                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
                                     count?: number;
                                     /**
                                      * Format: uuid
@@ -2937,7 +2937,7 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
-                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
                                     count?: number;
                                     /**
                                      * Format: uuid
@@ -3009,7 +3009,7 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
-                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
                                     count?: number;
                                     /**
                                      * Format: uuid
@@ -3238,7 +3238,7 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
-                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
                                     count?: number;
                                     /**
                                      * Format: uuid
@@ -3310,7 +3310,7 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
-                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
                                     count?: number;
                                     /**
                                      * Format: uuid
@@ -6000,7 +6000,7 @@ export interface paths {
                                         description: string;
                                         /** Format: uuid */
                                         id: string;
-                                        /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                        /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
                                         count?: number;
                                         /**
                                          * Format: uuid
@@ -6072,7 +6072,7 @@ export interface paths {
                                         description: string;
                                         /** Format: uuid */
                                         id: string;
-                                        /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                        /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
                                         count?: number;
                                         /**
                                          * Format: uuid

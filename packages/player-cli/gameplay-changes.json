@@ -1,6 +1,9 @@
 {
-  "0.37.0": [
+  "0.38.0": [
     "物品の create だけの update に waitMinutes（実時間の分）を指定すると、時間をかける申請になります。かける時間はGMがダイスを設定する材料になり、時間をかけるほど成立しやすい申請では判定が緩くなります。成否は申請時に決まり、成功すると物品は応答の arrival.dueAt を過ぎてから成立します。届く予定は search --kind self の arriving で読めます。届くと本人あての通知ができ、notices で読めます。未読があると status とプレイ操作の応答に unreadNotices と noticeMessage が出ます。待受の状態には noticeKey が加わり、listen --once は --after-notice に渡したキーと異なる通知でも返ります。"
+  ],
+  "0.37.0": [
+    "検索で現れた物品は、同じ物がいくつ現れても個数つきの1つの物品にまとまります（appearances[].count）。その場に同じ物品が残っていればそこへ足され、appearances[].id はその物品のIDになります。move の count で一部だけを拾え、残りはその場に残ります。"
   ],
   "0.36.0": [
     "持ち物・保管先・技能は search --kind self の material.belongings に入りました。search --kind belongings は SEARCH_KIND_MOVED を返します。物品は個数（count）を持てます。move・transfer・remove に count を指定すると一部だけを渡す・減らすことができ、update の count で個数を書き換えられます（増やすときはダイスで判定）。GMがダイスを設定する申請では、成功したときに減る手持ちの物品もGMが決め、outcome.setting.consumes に返ります。say で使った・食べたと述べても持ち物は減りません。死亡ドロップの物品は個数つきの1つの物品として残り（appearances[].count）、move の count で一部だけを拾えます。"
