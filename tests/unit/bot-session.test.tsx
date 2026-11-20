@@ -52,7 +52,19 @@ const server = setupServer(
   http.get("*/api/worlds/:id/knowledge", () =>
     json({ viewerId: actor, items: [], next: null, previous: null }),
   ),
-  http.get("*/api/worlds/:id/session", () => json(view)),
+  http.get("*/api/worlds/:id/session", ({ request }) => {
+    if (new URL(request.url).searchParams.get("view") !== "screen")
+      return json(view);
+    return json({
+      ...view,
+      screen: {
+        own: { actorId: actor, name: "観測者", profile: [] },
+        people: [],
+        neighbors: [],
+        past: [],
+      },
+    });
+  }),
   http.post("*/api/worlds/:id/session", async ({ request }) => {
     const body = (await request.json()) as {
       requestId: string;
