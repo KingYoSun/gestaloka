@@ -242,6 +242,35 @@ test("セッションの外で申請を開き、受領を確定する", async ()
   );
 });
 
+test("検索結果とセッションのチャットに同じ出現描写を表示する", async () => {
+  const appearanceText = "水鳥が現れた\n\n浅瀬の飛び石を順に指さす。";
+  server.use(
+    http.post("*/api/worlds/:id/session", () => {
+      view.entries = [
+        {
+          id: "1",
+          payload: {
+            entries: [{ actorId: actor, input: appearanceText, result: {} }],
+          },
+        },
+      ];
+      return json({
+        material: { node: { text: "本人だけに返った素材" } },
+        appearanceText,
+      });
+    }),
+  );
+  show();
+  fireEvent.click(await screen.findByRole("button", { name: "周囲を見る" }));
+  const search = (await screen.findByText("自分への検索結果")).parentElement!;
+  const chat = screen.getByLabelText("セッションのチャット");
+  for (const text of appearanceText.split("\n\n")) {
+    await within(search).findByText(text);
+    await within(chat).findByText(text);
+  }
+  expect(within(chat).queryByText("本人だけに返った素材")).toBeNull();
+});
+
 test("本人の素材を個別表示し、手番終了時に入力・結果・任意コメントを共有する", async () => {
   show();
   await screen.findByRole(

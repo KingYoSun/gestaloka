@@ -3562,6 +3562,21 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
   await f.move(0, f.place);
   const found = await f.send(0, body);
   const items = found.appearances as { id: string }[];
+  expect(found.appearanceText).toBeUndefined();
+  expect((await f.status(1)).entries).toContainEqual(
+    expect.objectContaining({
+      payload: expect.objectContaining({
+        entries: [
+          expect.objectContaining({
+            input: "出現",
+            result: expect.objectContaining({
+              sourceRequestId: body.requestId,
+            }),
+          }),
+        ],
+      }),
+    }),
+  );
   expect(items).toMatchObject([{ species: "砂金", count: 3 }]);
   expect(items).toHaveLength(1);
   // 出現を起こした検索が返した依存版のまま、現れた物の一部を拾える。残りはその場に残る。
@@ -3644,6 +3659,137 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
   });
   expect(f.calls).not.toHaveBeenCalled();
 });
+test("発生用ノードごとの出現描写を検索結果と公開ログに返し、再送では確定済みの本文を使う", async () => {
+  const f = await fixture();
+  const groups = [
+    {
+      species: "羽のある番人",
+      count: 2,
+      texts: ["羽を広げて橋を覆う。", "斜面の脇に沿って並ぶ。"],
+    },
+    {
+      species: "水辺の案内役",
+      count: 1,
+      texts: ["浅瀬の飛び石を順に指さす。"],
+    },
+  ].map(({ species, count, texts }) => ({
+    rule: {
+      id: randomUUID(),
+      kind: "script" as const,
+      text: species,
+      spawn: {
+        kind: "instant-npc" as const,
+        species,
+        description: species,
+        count,
+        probability: 1,
+      },
+    },
+    candidates: texts.map((text) => ({
+      id: randomUUID(),
+      kind: "script" as const,
+      text,
+    })),
+  }));
+  const setup = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, setup),
+    f.store.context(f.graph),
+    {
+      commitId: setup,
+      at: 0,
+      changes: {
+        nodes: groups.flatMap(({ rule, candidates }) => [rule, ...candidates]),
+        endEdges: [],
+        edges: groups.flatMap(({ rule, candidates }) => [
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "content",
+            source: f.place,
+            target: rule.id,
+            period: { from: 0 },
+          },
+          ...[
+            { target: f.place, text: "spawn-hit" },
+            ...candidates.map(({ id }) => ({
+              target: id,
+              text: "spawn-description",
+            })),
+          ].map(({ target, text }) => ({
+            id: randomUUID(),
+            kind: "status",
+            role: "about",
+            source: rule.id,
+            target,
+            text,
+            period: { from: 0 },
+          })),
+        ]),
+      },
+    },
+  );
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  const body = {
+    requestId: randomUUID(),
+    command: "search",
+    query: { kind: "subject", targetId: f.place },
+  };
+  const commit = f.store.commit.bind(f.store);
+  vi.spyOn(f.store, "commit").mockImplementationOnce(async (...args) => {
+    await commit(...args);
+    throw new Error("検索結果の保存前に中断");
+  });
+  await expect(f.send(0, body)).rejects.toThrow("検索結果の保存前に中断");
+  const event = await f.store
+    .context(f.graph)
+    .node(derivedId(body.requestId + ":appearance"));
+  expect(event?.kind).toBe("event");
+  const descriptions = event!.text.split("\n\n").slice(1);
+  expect(descriptions).toHaveLength(groups.length);
+  for (const { candidates } of groups)
+    expect(
+      descriptions.filter((text) =>
+        candidates.some((candidate) => candidate.text === text),
+      ),
+    ).toHaveLength(1);
+
+  const edit = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, edit),
+    f.store.context(f.graph),
+    {
+      commitId: edit,
+      at: 1,
+      changes: {
+        nodes: [],
+        revisions: groups.flatMap(({ candidates }) =>
+          candidates.map((candidate) => ({
+            ...candidate,
+            text: "編集後の候補",
+          })),
+        ),
+        edges: [],
+        endEdges: [],
+      },
+    },
+  );
+  const found = await f.send(0, body);
+  expect(found.appearanceText).toBe(event!.text);
+  expect(found.appearances).toHaveLength(3);
+  expect(await f.send(0, body)).toEqual(found);
+  const publicEntries = (await f.status(1)).entries.flatMap(
+    ({ payload }) => payload.entries ?? [],
+  );
+  expect(
+    publicEntries.filter(({ input }) => input === event!.text),
+  ).toHaveLength(1);
+  expect(
+    (await f.status(2)).entries.flatMap(({ payload }) => payload.entries ?? []),
+  ).not.toContainEqual(expect.objectContaining({ input: event!.text }));
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
 test("同じ検索の外れは確定し、新しい検索で当たった2匹を同じ出現から区別して昇格申請できる", async () => {
   const f = await fixture(),
     id = randomUUID(),

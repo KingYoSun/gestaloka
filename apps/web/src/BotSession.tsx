@@ -46,6 +46,7 @@ const Material = z.object({
 });
 const SearchResult = z.object({
   material: Material,
+  appearanceText: z.string().optional(),
   arriving: z
     .array(z.object({ items: Belongings.shape.items, dueAt: z.iso.datetime() }))
     .optional(),
@@ -129,7 +130,11 @@ function PersonalMaterial({
   contact: (id: string) => void;
   disabled: boolean;
 }) {
-  const { material: data, arriving } = SearchResult.parse(value);
+  const {
+    material: data,
+    appearanceText,
+    arriving,
+  } = SearchResult.parse(value);
   const texts = [
     data.node?.text,
     ...(data.states ?? []).map((x) => x.node.text),
@@ -146,8 +151,11 @@ function PersonalMaterial({
     <details className="rounded-lg border bg-secondary p-4" open>
       <summary>自分への検索結果</summary>
       <p className="muted">
-        検索した時点の情報です。セッションのチャットには共有されません。
+        {appearanceText
+          ? "検索素材は本人にだけ表示されます。出現の描写はセッションのチャットにも表示されます。"
+          : "検索した時点の情報です。セッションのチャットには共有されません。"}
       </p>
+      {appearanceText && <RichText text={appearanceText} />}
       {texts.map((text, i) => (
         <RichText key={i} text={text!} />
       ))}

@@ -4786,7 +4786,7 @@ export class BotPlay {
                 );
               const queried = await this.#search(world, actor, input.query);
               result = queried.visible;
-              const appearances = await searchAppearances(
+              const appearance = await searchAppearances(
                 this.store,
                 queried.context,
                 actor,
@@ -4802,7 +4802,8 @@ export class BotPlay {
                   )
                 ).rows[0]!.instant_npc_multiplier,
               );
-              if (appearances.length) {
+              if (appearance) {
+                const { appearances, ...description } = appearance;
                 // 出現の確定で依存版が進む。本人が次の操作に使えるよう、確定後の素材と版を返す。
                 result = (await this.#search(world, actor, input.query))
                   .visible;
@@ -4820,9 +4821,15 @@ export class BotPlay {
                     .filter((a) => a.kind === "instant-npc")
                     .map((a) => a.species),
                 };
-                result = { ...result, ...visible };
+                result = { ...result, ...visible, ...description };
                 await this.#record(db, session, {
-                  entries: [{ actorId: actor, input: "出現", result: visible }],
+                  entries: [
+                    {
+                      actorId: actor,
+                      input: description.appearanceText ?? "出現",
+                      result: visible,
+                    },
+                  ],
                 });
               }
               if (input.query.kind === "self") {
