@@ -168,6 +168,7 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
       "保管品",
       "技能",
       "過去の履歴",
+      "通知",
     ]);
     const scene = page.getByRole("complementary", { name: "シーン情報" });
     await expect(scene.getByRole("listitem")).toHaveCount(2);
