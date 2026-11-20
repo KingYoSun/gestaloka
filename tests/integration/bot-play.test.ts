@@ -4557,7 +4557,7 @@ test("同席している出現個体への対抗行動はダイスに進み、�
               kind: "existence",
               species: "羽根",
               description: "抜け落ちた羽根",
-              count: 1,
+              count: 3,
               probability: 1,
             },
           },
@@ -4617,7 +4617,9 @@ test("同席している出現個体への対抗行動はダイスに進み、�
     killed = await f.send(0, hit);
   expect(killed.outcome).toMatchObject({ success: true });
   const drops = killed.appearances as { id: string; species: string }[];
-  expect(drops).toMatchObject([{ species: "羽根" }]);
+  // 物品のドロップは、発生数を個数に持つ1つの物品として残る。
+  expect(drops).toMatchObject([{ species: "羽根", count: 3 }]);
+  expect(drops).toHaveLength(1);
   expect(await f.send(0, hit)).toEqual(killed);
   expect(await present(1)).toEqual([
     ...f.actors.slice(0, 2),
@@ -4671,21 +4673,33 @@ test("同席している出現個体への対抗行動はダイスに進み、�
     query: { kind: "surroundings" },
   });
   expect(JSON.stringify(seen.material)).toContain(drops[0]!.id);
-  const picked = await f.send(2, {
-    command: "update",
-    text: "拾う",
-    dependencies: [],
-    operations: [
-      {
-        type: "move",
-        from: null,
-        to: f.actors[2],
-        item: drops[0]!.id,
-        basis: "拾う",
-      },
-    ],
-  });
-  expect(picked.items).toMatchObject([{ itemId: drops[0]!.id }]);
+  const pick = (count?: number) =>
+    f.send(2, {
+      command: "update",
+      text: "拾う",
+      dependencies: [],
+      operations: [
+        {
+          type: "move",
+          from: null,
+          to: f.actors[2],
+          item: drops[0]!.id,
+          ...(count ? { count } : {}),
+          basis: "拾う",
+        },
+      ],
+    });
+  const carried = async () =>
+    (await readBelongings(f.store.context(f.graph), f.actors[2]!)).items.map(
+      (item) => item.count,
+    );
+  // 一部だけ拾うと残りはその場に残り、後から残りを拾うと手持ちの同じ物品に足される。
+  expect((await pick(1)).items).toMatchObject([
+    { itemId: drops[0]!.id, count: 1 },
+  ]);
+  expect(await carried()).toEqual([1]);
+  expect((await pick()).items).toMatchObject([{ itemId: drops[0]!.id }]);
+  expect(await carried()).toEqual([3]);
 });
 test("人物への対抗行動で死亡と判定されると、対象はセッションから外れて設定された場所か最初の所在地へ移る", async () => {
   const f = await fixture(),

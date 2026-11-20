@@ -43,6 +43,9 @@ export const SpawnRule = z.union([
 ]);
 export const Appearance = SpawnSubject.extend({
   id: z.uuid(),
+  count: spawnCount
+    .optional()
+    .describe("個数つきの1つの物品として残った数。死亡ドロップの物品に付く"),
   ruleId: z
     .uuid()
     .optional()

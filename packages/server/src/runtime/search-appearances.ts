@@ -94,13 +94,15 @@ export function recordAppearances(
         target: ground,
       });
   }
-  for (const { id, kind, species, description } of appearances) {
+  for (const { id, kind, species, description, count } of appearances) {
     if (kind === "instant-npc") continue;
     const text = species + "：" + description;
     changes.nodes.push(
       kind === "event"
         ? { kind, id, text, period: { from: at } }
-        : { kind, id, text },
+        : kind === "existence" && count
+          ? { kind, id, text, count }
+          : { kind, id, text },
     );
     link({
       kind: "status",
@@ -128,12 +130,16 @@ export async function deathDrops(
       if (node?.kind !== "script" || !node.spawn) continue;
       const { kind, species, description } = node.spawn;
       if (kind === "instant-npc") continue;
-      for (let i = draw(node.spawn); i--;)
+      // 物品は発生数を個数に持つ1つの物品として残し、物品のノードを増やさない。
+      const count = draw(node.spawn),
+        item = kind === "existence";
+      for (let i = item ? Math.min(count, 1) : count; i--;)
         drops.push({
           id: derivedId(request + ":" + node.id + ":" + i),
           kind,
           species,
           description,
+          ...(item ? { count } : {}),
         });
     }
   return drops;

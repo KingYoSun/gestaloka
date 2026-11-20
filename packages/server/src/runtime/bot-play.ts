@@ -2921,7 +2921,13 @@ export class BotPlay {
                   "本人がいる場所の発見物を指定してください",
                 );
               }
-              pickupEdges.push(...ground.map((e) => e.id));
+              // 一部だけ拾うときは、残りをその場の発見物として残す。
+              const found = await context.node(id);
+              if (
+                !op.count ||
+                (found?.kind === "existence" && op.count === found.count)
+              )
+                pickupEdges.push(...ground.map((e) => e.id));
               at = Math.max(at, ...ground.map((e) => e.period.from));
               parties.add(actor);
             } else {

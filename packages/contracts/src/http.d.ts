@@ -2722,6 +2722,8 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    count?: number;
                                     /**
                                      * Format: uuid
                                      * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -2792,6 +2794,8 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    count?: number;
                                     /**
                                      * Format: uuid
                                      * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -2931,6 +2935,8 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    count?: number;
                                     /**
                                      * Format: uuid
                                      * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -3001,6 +3007,8 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    count?: number;
                                     /**
                                      * Format: uuid
                                      * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -3228,6 +3236,8 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    count?: number;
                                     /**
                                      * Format: uuid
                                      * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -3298,6 +3308,8 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    count?: number;
                                     /**
                                      * Format: uuid
                                      * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -5843,6 +5855,8 @@ export interface paths {
                                         description: string;
                                         /** Format: uuid */
                                         id: string;
+                                        /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                        count?: number;
                                         /**
                                          * Format: uuid
                                          * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -5913,6 +5927,8 @@ export interface paths {
                                         description: string;
                                         /** Format: uuid */
                                         id: string;
+                                        /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                        count?: number;
                                         /**
                                          * Format: uuid
                                          * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う

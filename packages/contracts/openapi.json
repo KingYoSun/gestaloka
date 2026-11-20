@@ -6552,6 +6552,13 @@
                                             "format": "uuid",
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
+                                          "count": {
+                                            "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "exclusiveMinimum": true,
+                                            "maximum": 9007199254740991
+                                          },
                                           "ruleId": {
                                             "description": "出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う",
                                             "type": "string",
@@ -6844,6 +6851,13 @@
                                             "type": "string",
                                             "format": "uuid",
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
+                                          "count": {
+                                            "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "exclusiveMinimum": true,
+                                            "maximum": 9007199254740991
                                           },
                                           "ruleId": {
                                             "description": "出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う",
@@ -7427,6 +7441,13 @@
                                             "format": "uuid",
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
+                                          "count": {
+                                            "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "exclusiveMinimum": true,
+                                            "maximum": 9007199254740991
+                                          },
                                           "ruleId": {
                                             "description": "出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う",
                                             "type": "string",
@@ -7719,6 +7740,13 @@
                                             "type": "string",
                                             "format": "uuid",
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
+                                          "count": {
+                                            "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "exclusiveMinimum": true,
+                                            "maximum": 9007199254740991
                                           },
                                           "ruleId": {
                                             "description": "出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う",
@@ -8611,6 +8639,13 @@
                                             "format": "uuid",
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
+                                          "count": {
+                                            "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "exclusiveMinimum": true,
+                                            "maximum": 9007199254740991
+                                          },
                                           "ruleId": {
                                             "description": "出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う",
                                             "type": "string",
@@ -8903,6 +8938,13 @@
                                             "type": "string",
                                             "format": "uuid",
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
+                                          "count": {
+                                            "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "exclusiveMinimum": true,
+                                            "maximum": 9007199254740991
                                           },
                                           "ruleId": {
                                             "description": "出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う",
@@ -15163,6 +15205,13 @@
                                                 "format": "uuid",
                                                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                               },
+                                              "count": {
+                                                "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "exclusiveMinimum": true,
+                                                "maximum": 9007199254740991
+                                              },
                                               "ruleId": {
                                                 "description": "出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う",
                                                 "type": "string",
@@ -15455,6 +15504,13 @@
                                                 "type": "string",
                                                 "format": "uuid",
                                                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                              },
+                                              "count": {
+                                                "description": "個数つきの1つの物品として残った数。死亡ドロップの物品に付く",
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "exclusiveMinimum": true,
+                                                "maximum": 9007199254740991
                                               },
                                               "ruleId": {
                                                 "description": "出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う",
