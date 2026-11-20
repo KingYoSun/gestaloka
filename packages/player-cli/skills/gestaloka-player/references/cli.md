@@ -116,7 +116,7 @@ gestaloka start
 
 ## search
 
-本人の手番で素材を検索。subjectには対象IDを指定し、historyには必要に応じて相手を指定。surroundingsのsubjects[].heldに、同じ場所にいる相手が手にしている物が出る。surroundingsのroutesに、いまいる場所と行き来の記述で結ばれた場所の名前とIDが出る。
+本人の手番で素材を検索。subjectには対象IDを指定し、historyには必要に応じて相手を指定。surroundingsのsubjects[].heldに、同じ場所にいる相手が手にしている物が出る。surroundingsのroutesに、直接滞在している場所と行き来の記述で結ばれた場所の名前(label)とIDが出る。移動の手がかりで、載っていない場所へも移動を申請できる。
 
 ```text
 gestaloka search --kind <surroundings|belongings|self|history|subject|memos> [--target <ID>]
@@ -210,7 +210,7 @@ gestaloka memo --text <本文> [--participants <人物ID,人物ID>]
 
 ## explore
 
-新しい場所を申請。--fromは接続元で、本人の現在の所在地にある場所を指定する。--textには場所の様子と接続元からの行き方を書く。GMが接続元から見た妥当性でダイスを設定し、サーバーが一度だけ振る。成功すると応答のplaceIdへ移動でき、接続元と新しい場所の双方から互いの名前とIDを調べられる。どちらの場所でも、surroundingsのroutesに相手が出る。失敗しても通常枠を1回使う。
+新しい場所を申請。--fromは接続元で、本人の現在の所在地にある場所を指定する。--textには場所の様子と接続元からの行き方を書く。GMが接続元から見た妥当性でダイスを設定し、サーバーが一度だけ振る。成功すると応答のplaceIdへ移動でき、接続元と新しい場所の双方から互いの名前とIDを調べられる。どちらの場所でも、surroundingsのroutesに相手が出る。既にある場所と同じ呼び名は申請できず、EXPLORE_NAME_TAKENと先にある場所のIDが返る。失敗しても通常枠を1回使う。
 
 ```text
 gestaloka explore --from <場所ID> --label <場所の呼び名> --text <説明> | --file <本文ファイル>

@@ -235,6 +235,23 @@ export class WorldContext {
       .slice(0, limit);
   }
 
+  // 行き来の記述(route)で結ばれている場所のうち、同じ呼び名のもの。申請の可否の確認に使い、依存版には含めない。
+  async routePlace(name: string) {
+    const result = await this.driver.executeQuery(
+      `MATCH (n:WorldNode {worldId:$world,kind:'existence'})-[r:status {role:'content'}]->(:WorldNode)
+       WHERE r.data CONTAINS $marker AND r.validTo IS NULL AND n.data CONTAINS $name
+       RETURN DISTINCT n.id AS id,n.data AS data ORDER BY id`,
+      {
+        world: this.worldId,
+        marker: '"text":"route"',
+        name: JSON.stringify(name),
+      },
+    );
+    return result.records
+      .find((r) => JSON.parse(r.get("data")).text === name)
+      ?.get("id") as string | undefined;
+  }
+
   async locationSubjects(place: string, at = Number.MAX_SAFE_INTEGER) {
     z.uuid().parse(place);
     return this.#read(relationKey(place, "status", "in"), async (tx) => {

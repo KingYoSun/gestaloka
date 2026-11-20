@@ -4394,6 +4394,37 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
       await f.store.context(f.graph).node(derivedId(`${failing}:place`)),
     ).toBeUndefined();
     expect((await f.status(0)).callsUsed).toBe(used + 1);
+    // 同じ呼び名の場所は申請できず、先にある場所のIDが返る。GMは呼ばれない。
+    const asked = f.calls.mock.calls.length;
+    await expect(
+      f.send(0, {
+        command: "explore",
+        text: "小道の脇にもう一本の小道がある",
+        label: "広場の裏の小道",
+        fromId: placed,
+        dependencies: [],
+      }),
+    ).rejects.toMatchObject({
+      code: "EXPLORE_NAME_TAKEN",
+      message: expect.stringContaining(placed),
+    });
+    expect(f.calls.mock.calls.length).toBe(asked);
+    // 行き先は直接の滞在先だけから集める。参照しているだけの場所の行き来は返さない。
+    await f.send(0, {
+      command: "update",
+      text: "離れた場所へ移る",
+      operations: [
+        {
+          type: "locate",
+          subjectId: f.actors[0]!,
+          text: "離れた場所",
+          aboutIds: [f.far, f.place],
+          directPlaceId: f.far,
+        },
+      ],
+      dependencies: [],
+    });
+    expect(await routes()).toEqual([]);
   } finally {
     await cli.close();
     await app.close();
