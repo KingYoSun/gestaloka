@@ -202,7 +202,7 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
     "周囲の音に耳を澄ませる",
   );
   await page
-    .getByRole("button", { name: "本人のシーンを終了", exact: true })
+    .getByRole("button", { name: "自分のプレイを終了する", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "本人のシーンを終了しました" }),

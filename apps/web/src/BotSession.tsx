@@ -12,6 +12,7 @@ import { usePending } from "./forms.js";
 import { Button } from "./components/ui/button.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { Notice, Problem } from "./presentation.js";
+import { PlayCommandEditor } from "./PlayCommandEditor.js";
 import { RichText } from "./RichText.js";
 import { History, type HistoryHandle } from "./History.js";
 import { Link } from "@tanstack/react-router";
@@ -45,6 +46,7 @@ const Material = z.object({
 const View = z.object({
   sessionId: z.string().optional(),
   viewerId: z.string(),
+  aiControlled: z.boolean().optional(),
   actorId: z.string().nullish(),
   turnStartedAt: z.string().optional(),
   screen: PlayScreen,
@@ -169,6 +171,7 @@ export function BotSession({
   const [text, setText] = useState(""),
     [material, setMaterial] = useState<unknown>();
   const history = useRef<HistoryHandle>(null);
+  const editorRequest = useRef<string>(null);
   const log = useRef<HTMLDivElement>(null);
   const follow = useRef(!sceneId);
   const [pending, save] = usePending(
@@ -197,9 +200,7 @@ export function BotSession({
     if (newest && follow.current && log.current)
       log.current.scrollTop = log.current.scrollHeight;
   }, [newest]);
-  const send = async (raw?: Record<string, unknown>) => {
-    const body =
-      pending ?? PlayCommand.parse({ requestId: crypto.randomUUID(), ...raw });
+  const execute = async (body: z.infer<typeof PlayCommand>) => {
     save(body);
     try {
       const result = await mutation.mutateAsync({
@@ -207,8 +208,15 @@ export function BotSession({
         body: body as paths["/api/worlds/{id}/session"]["post"]["requestBody"]["content"]["application/json"],
       });
       save(null);
-      if (body.command === "search") setMaterial(result.material);
-      else if (body.command === "say" || body.command === "comment")
+      if (
+        body.command === "search" &&
+        (body.query.kind === "self" || body.query.kind === "surroundings")
+      )
+        setMaterial(result.material);
+      else if (
+        editorRequest.current !== body.requestId &&
+        (body.command === "say" || body.command === "comment")
+      )
         setText((current) => (current === body.text ? "" : current));
       await query.refetch();
       history.current?.updated();
@@ -221,6 +229,10 @@ export function BotSession({
         save(null);
     }
   };
+  const send = (raw?: Record<string, unknown>) =>
+    execute(
+      pending ?? PlayCommand.parse({ ...raw, requestId: crypto.randomUUID() }),
+    );
   if (query.error) return <Problem error={query.error} />;
   if (!view) return <Notice>セッションを読み込んでいます</Notice>;
   const personName = (id: string) =>
@@ -304,6 +316,26 @@ export function BotSession({
       {mutation.error && <Problem error={mutation.error} />}
       {pending && !mutation.isPending && (
         <Button onClick={() => void send()}>保存した同じ要求で確認する</Button>
+      )}
+      {!archive && view.aiControlled === false && (
+        <PlayCommandEditor
+          actorId={view.viewerId}
+          disabled={busy}
+          selection={
+            view.sessionId
+              ? {
+                  screen: view.screen,
+                  characters: view.characters,
+                  canAct: mine && !view.receiving,
+                }
+              : undefined
+          }
+          response={mutation.data}
+          execute={(command) => {
+            editorRequest.current = command.requestId;
+            void execute(command);
+          }}
+        />
       )}
       <div
         className="play-log space-y-4"
@@ -556,20 +588,26 @@ export function BotSession({
               </div>
             </form>
           )}
-          <div className="flex flex-wrap gap-3">
-            <Button
-              disabled={busy}
-              onClick={() => void send({ command: "leave" })}
-            >
-              分離して続ける
-            </Button>
-            <Button
-              disabled={busy}
-              onClick={() => void send({ command: "finish" })}
-            >
-              本人のシーンを終了
-            </Button>
-          </div>
+          {view.aiControlled === false && (
+            <div className="flex flex-wrap gap-3">
+              {view.members.length > 1 && (
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void send({ command: "leave" })}
+                >
+                  セッションを離れて続ける
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => void send({ command: "finish" })}
+              >
+                自分のプレイを終了する
+              </Button>
+            </div>
+          )}
         </>
       )}
     </PlayLayout>

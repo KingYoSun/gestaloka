@@ -8,7 +8,11 @@ import { Button } from "./components/ui/button.js";
 import { CharacterAvatar, CharacterBadge } from "./player-icons.js";
 import { RichText } from "./RichText.js";
 
-const Item = z.object({ label: z.string(), count: z.number().optional() });
+const Item = z.object({
+  id: z.uuid().optional(),
+  label: z.string(),
+  count: z.number().optional(),
+});
 export const Belongings = z.object({
   items: z.array(Item),
   storages: z.array(z.object({ label: z.string(), items: z.array(Item) })),
@@ -17,7 +21,7 @@ export const Belongings = z.object({
 const Profile = z.object({ actorId: z.string(), profile: z.array(z.string()) });
 export const PlayScreen = z.object({
   own: Profile.extend({ name: z.string() }),
-  people: z.array(Profile),
+  people: z.array(Profile.extend({ canReceive: z.boolean().optional() })),
   belongings: Belongings.optional(),
   place: z.string().optional(),
   neighbors: z.array(z.object({ id: z.string(), label: z.string() })),

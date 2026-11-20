@@ -353,10 +353,25 @@ export class WorldAccess {
       ...characters.keys(),
     ]);
     if (!characters.has(viewerId)) characters.set(viewerId, details.own);
+    const { aiControlled } = (
+      await this.pool.query<{ aiControlled: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM player_device d
+           LEFT JOIN world_join j ON j.id=d.id AND j.subject_id=d.user_id
+           WHERE d.world_id=$1 AND d.user_id=$2 AND NOT d.revoked
+             AND coalesce(d.actor_id,j.actor_id)=$3
+           UNION ALL
+           SELECT 1 FROM bot_npc
+           WHERE world_id=$1 AND actor_id=$3 AND controller IS NOT NULL
+         ) AS "aiControlled"`,
+        [id, subject, viewerId],
+      )
+    ).rows[0]!;
     return this.playCharacters(
       id,
       {
         ...result,
+        aiControlled,
         characters: [...characters.values()],
         screen: details,
       },
