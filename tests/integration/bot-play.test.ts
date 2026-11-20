@@ -3888,7 +3888,13 @@ test("発生用ノードごとの出現描写を検索結果と公開ログに�
   );
   const found = await f.send(0, body);
   expect(found.appearanceText).toBe(event!.text);
-  expect(found.appearances).toHaveLength(3);
+  expect(found.appearances).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ species: "羽のある番人", count: 2 }),
+      expect.objectContaining({ species: "水辺の案内役", count: 1 }),
+    ]),
+  );
+  expect(found.appearances).toHaveLength(2);
   expect(await f.send(0, body)).toEqual(found);
   const publicEntries = (await f.status(1)).entries.flatMap(
     ({ payload }) => payload.entries ?? [],
@@ -3902,7 +3908,7 @@ test("発生用ノードごとの出現描写を検索結果と公開ログに�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
-test("同じ検索の外れは確定し、新しい検索で当たった2匹を同じ出現から区別して昇格申請できる", async () => {
+test("同じ検索の外れは確定し、発生判定1回の個体を1枠にまとめて同席中の個体数を数える", async () => {
   const f = await fixture(),
     id = randomUUID(),
     rule = randomUUID(),
@@ -4041,28 +4047,30 @@ test("同じ検索の外れは確定し、新しい検索で当たった2匹を�
       message: "本人へ提供されている対象を指定してください",
     });
   }
-  expect(hit.instantNpcs).toEqual(["鳥", "鳥"]);
-  const animals = hit.appearances as { id: string }[];
-  expect(animals[0]!.id).not.toEqual(animals[1]!.id);
-  for (const a of animals)
-    expect(await f.store.context(f.graph).node(a.id)).toBeUndefined();
+  expect(hit.instantNpcs).toEqual(["鳥"]);
+  expect(hit.appearances).toMatchObject([{ species: "鳥", count: 2 }]);
+  const [group] = hit.appearances as { id: string }[];
+  expect(await f.store.context(f.graph).node(group!.id)).toBeUndefined();
   await f.send(0, { command: "end-turn" });
-  expect((await f.status(1)).actorId).toBe(animals[0]!.id);
-  f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { text: "岸に佇む" }),
-  );
-  await access.botPlay.tickNpcs();
-  const requested = await f.send(1, {
-    command: "promote-npc",
-    sourceRequestId: source,
-    npcIndex: 1,
-    description: "二羽目を世話したい",
+  expect((await f.status(1)).actorId).toBe(group!.id);
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    expect(JSON.parse(String(messages[1]!.content)).npc.count).toBe(2);
+    return answer(id, { text: "岸に佇む" });
   });
-  expect(requested.promotionId).toBeTruthy();
+  await access.botPlay.tickNpcs();
+  await expect(
+    f.send(1, {
+      command: "promote-npc",
+      sourceRequestId: source,
+      npcIndex: 0,
+      description: "鳥を世話したい",
+    }),
+  ).rejects.toMatchObject({ code: "INSTANT_NPC_GROUP" });
   uniform.mockReturnValue(0.999);
   expect(await f.send(0, { ...miss, requestId: source })).toEqual(hit);
   const three = await f.send(1, { ...miss, requestId: randomUUID() });
-  expect(three.instantNpcs).toHaveLength(3);
+  expect(three.appearances).toMatchObject([{ species: "鳥", count: 3 }]);
+  expect((three.appearances as { id: string }[])[0]!.id).not.toBe(group!.id);
   // その場に残る5羽と合わせて、発生数3に既定の倍率2を掛けた6羽を超えない。
   const sixth = await f.send(1, { ...miss, requestId: randomUUID() });
   expect(sixth.instantNpcs).toEqual(["鳥"]);
@@ -6019,8 +6027,9 @@ test("管理操作で止まったセッションを一覧から見つけ、保�
   });
   expect(f.calls).not.toHaveBeenCalled();
 });
-test("同席している出現個体への対抗行動はダイスに進み、死亡と判定された個体は同席から外れてドロップを残す", async () => {
+test("一団へのダイスが分離と死亡を確定し、分けた個体を昇格できる", async () => {
   const f = await fixture(),
+    admin = await auth.person(),
     rule = randomUUID(),
     drop = randomUUID(),
     id = randomUUID();
@@ -6049,7 +6058,7 @@ test("同席している出現個体への対抗行動はダイスに進み、�
               kind: "instant-npc",
               species: "鳥",
               description: "地面をつつく",
-              count: 3,
+              count: 4,
               probability: 1,
             },
           },
@@ -6084,90 +6093,163 @@ test("同席している出現個体への対抗行動はダイスに進み、�
       command: "search",
       query: { kind: "subject", targetId: f.place },
     });
-  const birds = (found.appearances as { id: string }[]).map((a) => a.id);
-  expect(birds).toHaveLength(3);
-  const present = async (i = 0) =>
-    (await f.status(i)).characters!.map((c) => c.actorId);
-  const strike = (targetId: string) => ({
+  const [group] = found.appearances as { id: string }[];
+  expect(found.appearances).toMatchObject([{ id: group!.id, count: 4 }]);
+  expect(found.appearances).toHaveLength(1);
+  const present = async () => (await f.status(1)).characters!;
+  const count = async () =>
+    (await present()).find(({ actorId }) => actorId === group!.id)?.count;
+  const attempt = (text: string, state: string) => ({
     command: "oppose",
     requestId: randomUUID(),
-    text: "石を投げる",
+    text,
     dependencies: [],
-    effect: { targetId, state: "石が当たる" },
+    effect: { targetId: group!.id, state },
   });
-  // 候補にないIDは死亡の対象にならない。
-  f.calls.mockImplementationOnce(async (id, role, messages) => {
-    expect(role).toBe("world-opposition-dice");
-    expect(JSON.stringify(messages)).toContain("地面をつつく");
-    return answer(id, {
-      sides: sure.sides,
-      successThrough: 1,
-      fatal: [birds[1], f.actors[1]],
-    });
-  });
-  const missed = strike(birds[1]!),
-    failed = await f.send(0, missed);
-  expect(failed.outcome).toMatchObject({
-    success: false,
-    setting: { fatal: [birds[1]] },
-  });
+  const split = { kind: "separation", count: 1, stays: true };
+  const missed = attempt("そっと手を伸ばす", "手の届くところにいる");
+  const miss = { sides: 2, successThrough: 1, instantReduction: split };
+  await isolated.databases.postgres.query(
+    "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,2)",
+    [missed.requestId, miss],
+  );
+  f.calls.mockImplementationOnce(async (id) => answer(id, miss));
+  const failed = await f.send(0, missed);
+  expect(failed.outcome).toMatchObject({ success: false });
+  expect(failed.instantReduction).toBeUndefined();
   expect(failed.appearances).toBeUndefined();
   expect(await f.send(0, missed)).toEqual(failed);
-  expect(await present()).toEqual(expect.arrayContaining(birds));
-  f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { ...sure, fatal: [birds[0]] }),
+  expect(await count()).toBe(4);
+
+  const caught = attempt("餌をかごの中に置いて入り口に寄る", "羽音がしている");
+  const pet = derivedId(caught.requestId + ":separation");
+  f.calls.mockImplementationOnce(
+    async (id, role, messages, _target, _effort, _try, validate) => {
+      expect(role).toBe("world-opposition-dice");
+      expect(JSON.parse(String(messages[1]!.content))).toMatchObject({
+        action: caught.text,
+        group: { count: 4, allowSeparation: true },
+      });
+      expect(() =>
+        validate!(
+          JSON.stringify({ ...sure, instantReduction: { ...split, count: 5 } }),
+        ),
+      ).toThrow();
+      return answer(id, { ...sure, instantReduction: split });
+    },
   );
-  const hit = strike(birds[0]!),
-    killed = await f.send(0, hit);
-  expect(killed.outcome).toMatchObject({ success: true });
+  const commit = f.store.commit.bind(f.store);
+  vi.spyOn(f.store, "commit").mockImplementationOnce(async (...args) => {
+    await commit(...args);
+    throw new Error("同席の保存前に中断");
+  });
+  await expect(f.send(0, caught)).rejects.toThrow("同席の保存前に中断");
+  expect(await count()).toBe(4);
+  const separated = await f.send(0, caught);
+  expect(separated.instantReduction).toEqual({
+    targetId: group!.id,
+    kind: "separation",
+    count: 1,
+    remaining: 3,
+    separatedId: pet,
+  });
+  expect(separated.appearances).toMatchObject([
+    { id: pet, kind: "instant-npc", count: 1 },
+  ]);
+  expect(await f.send(0, caught)).toEqual(separated);
+  expect(await count()).toBe(3);
+  expect(
+    (await present()).filter(({ actorId }) => actorId === pet),
+  ).toHaveLength(1);
+
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { ...sure, instantReduction: { kind: "death", count: 2 } }),
+  );
+  const hit = attempt("鳥に対抗する", "鳥が攻撃を受けた");
+  const killed = await f.send(0, hit);
+  expect(killed.instantReduction).toMatchObject({
+    remaining: 1,
+    kind: "death",
+    count: 2,
+  });
   const drops = killed.appearances as { id: string; species: string }[];
-  // 物品のドロップは、発生数を個数に持つ1つの物品として残る。
-  expect(drops).toMatchObject([{ species: "羽根", count: 3 }]);
+  expect(drops).toMatchObject([{ species: "羽根", count: 6 }]);
   expect(drops).toHaveLength(1);
   expect(await f.send(0, hit)).toEqual(killed);
-  expect(await present(1)).toEqual([
-    ...f.actors.slice(0, 2),
-    ...birds.slice(1),
-  ]);
+  expect(await count()).toBe(1);
   expect(
     (await f.store.receipt(f.graph, hit.requestId))?.changes.nodes,
   ).toContainEqual(
     expect.objectContaining({
       instantTarget: {
-        id: birds[0],
+        id: group!.id,
         sourceEventId: derivedId(source + ":appearance"),
       },
+      instantReduction: killed.instantReduction,
     }),
   );
-  // 個体も同席している他の個体へ作用できる。死亡と判定されなければ相手は残る。
+
   const next = await f.send(0, { command: "end-turn" });
-  expect(next.actorId).toBe(birds[1]);
+  expect(next.actorId).toBe(group!.id);
   f.calls
     .mockImplementationOnce(async (id, _role, messages) => {
-      expect(JSON.stringify(messages)).toContain(birds[2]);
+      expect(JSON.stringify(messages)).toContain(pet);
       return answer(id, {
         text: "隣の鳥をつつく",
-        effect: { targetId: birds[2], state: "羽が乱れる" },
+        effect: { targetId: pet, state: "羽が乱れる" },
       });
     })
-    .mockImplementationOnce(async (id) => answer(id, { ...sure, fatal: [] }));
+    .mockImplementationOnce(async (id) => answer(id, sure));
   await access.botPlay.tickNpcs();
-  expect(await present(1)).toEqual([
-    ...f.actors.slice(0, 2),
-    ...birds.slice(1),
-  ]);
+  const pending = await f.send(1, {
+    command: "promote-npc",
+    sourceRequestId: caught.requestId,
+    npcIndex: 0,
+    ownerId: f.actors[1],
+    description: "分かれた鳥",
+  });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { description: "分かれた鳥", memory: "一団から分かれた。" }),
+  );
+  const approved = await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    {
+      operation: "npcs.decidePromotion",
+      worldId: f.world,
+      promotionId: String(pending.promotionId),
+      approve: true,
+      reason: "継続を許可",
+    },
+    { players: access.players },
+  );
+  expect(approved).toMatchObject({ state: "approved", npcId: pet });
+  expect(await count()).toBe(1);
   expect(
     (
-      await f.store.receipt(
-        f.graph,
-        derivedId(`instant:${next.sessionId}:${birds[1]}:${next.turn}`),
-      )
-    )?.changes.nodes,
-  ).toContainEqual(
-    expect.objectContaining({
-      instantActor: expect.objectContaining({ id: birds[1] }),
-      instantTarget: expect.objectContaining({ id: birds[2] }),
+      await f.store
+        .context(f.graph)
+        .relations(f.actors[1]!, "has", "out", Number.MAX_SAFE_INTEGER)
+    ).some((edge) => edge.target === pet),
+  ).toBe(true);
+
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, {
+      ...sure,
+      instantReduction: { kind: "separation", count: 1, stays: false },
     }),
+  );
+  const leave = attempt("距離を取って出口を空ける", "出口への道が開いている");
+  const left = await f.send(1, leave);
+  expect(left.instantReduction).toEqual({
+    targetId: group!.id,
+    kind: "separation",
+    count: 1,
+    remaining: 0,
+  });
+  expect(left.appearances).toBeUndefined();
+  expect((await present()).some(({ actorId }) => actorId === group!.id)).toBe(
+    false,
   );
   // 目撃していない人物も、後から来てその場に残った物を見つけて拾える。
   await f.send(1, { command: "end-turn" });
@@ -6203,7 +6285,7 @@ test("同席している出現個体への対抗行動はダイスに進み、�
   ]);
   expect(await carried()).toEqual([1]);
   expect((await pick()).items).toMatchObject([{ itemId: drops[0]!.id }]);
-  expect(await carried()).toEqual([3]);
+  expect(await carried()).toEqual([6]);
 });
 test("人物への対抗行動で死亡と判定されると、対象はセッションから外れて設定された場所か最初の所在地へ移る", async () => {
   const f = await fixture(),

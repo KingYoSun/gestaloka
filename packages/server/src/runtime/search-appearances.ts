@@ -55,17 +55,20 @@ function draw(rule: Rule, limit = Infinity) {
           Math.floor(Math.random() * (rule.maxCount - rule.minCount + 1)),
   );
 }
-// 抽選で当たった発生数を出現にする。物品は発生数を個数に持つ1つの物品にまとめ、物品のノードを増やさない。
+// 物品と出現NPCは、発生数を持つ一つの出現にまとめる。
 function appear(key: string, rule: Rule, count: number): Appearance[] {
   const { kind, species, description } = rule,
-    item = kind === "existence";
-  return Array.from({ length: item ? Math.min(count, 1) : count }, (_, i) => ({
-    id: derivedId(key + ":" + i),
-    kind,
-    species,
-    description,
-    ...(item ? { count } : {}),
-  }));
+    counted = kind === "existence" || kind === "instant-npc";
+  return Array.from(
+    { length: counted ? Math.min(count, 1) : count },
+    (_, i) => ({
+      id: derivedId(key + ":" + i),
+      kind,
+      species,
+      description,
+      ...(counted ? { count } : {}),
+    }),
+  );
 }
 // 出現を出来事として記録し、個体以外をその場に残る発見物にする。その場に、呼称が同じ
 // 個数つきの発見物があれば、現れた物品をそこへ足して物品を増やさない。状態が付いた発見物にも
@@ -161,6 +164,7 @@ export async function deathDrops(
   request: string,
   ruleId: string | undefined,
   places: string[],
+  deaths: number,
 ) {
   const drops: Appearance[] = [];
   if (ruleId && places.length)
@@ -170,15 +174,21 @@ export async function deathDrops(
         : undefined;
       if (node?.kind !== "script" || !node.spawn) continue;
       if (node.spawn.kind === "instant-npc") continue;
-      drops.push(
-        ...appear(request + ":" + node.id, node.spawn, draw(node.spawn)),
-      );
+      let count = 0;
+      for (let i = 0; i < deaths; i++) count += draw(node.spawn);
+      drops.push(...appear(request + ":" + node.id, node.spawn, count));
     }
   return drops;
 }
 
 const appearanceAnnouncement = (appearances: Appearance[]) =>
-  appearances.map((a) => a.species).join("、") + "が現れた";
+  appearances
+    .map((a) =>
+      a.kind === "instant-npc" && (a.count ?? 1) > 1
+        ? `${a.species} ×${a.count}`
+        : a.species,
+    )
+    .join("、") + "が現れた";
 
 function appearanceResult(appearances: Appearance[], text: string) {
   return {
@@ -197,7 +207,7 @@ export async function searchAppearances(
   request: string,
   at: number,
   material: unknown,
-  present: { name: string; places: string[] }[],
+  present: { name: string; places: string[]; count?: number }[],
   multiplier: number,
 ) {
   const prior = await store.receipt(ctx.worldId, request);
@@ -243,11 +253,13 @@ export async function searchAppearances(
     const limit = ("count" in rule ? rule.count : rule.maxCount) * multiplier,
       staying =
         rule.kind === "instant-npc"
-          ? present.filter(
-              (p) =>
-                p.name === rule.species &&
-                p.places.some((x) => places.includes(x)),
-            ).length
+          ? present
+              .filter(
+                (p) =>
+                  p.name === rule.species &&
+                  p.places.some((x) => places.includes(x)),
+              )
+              .reduce((count, p) => count + (p.count ?? 1), 0)
           : 0;
     if (staying >= limit) continue;
     const spawned = appear(

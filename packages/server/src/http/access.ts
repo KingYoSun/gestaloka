@@ -196,7 +196,11 @@ export class WorldAccess {
     device?: string,
   ) {
     if (!Array.isArray(result.characters)) return result;
-    const people = result.characters as { actorId: string; name: string }[];
+    const people = result.characters as {
+      actorId: string;
+      name: string;
+      count?: number;
+    }[];
     // Old request journals can contain images. Project names even when replaying one.
     const icons = device
       ? []
@@ -208,9 +212,10 @@ export class WorldAccess {
         ).rows;
     return {
       ...result,
-      characters: people.map(({ actorId, name }) => ({
+      characters: people.map(({ actorId, name, count }) => ({
         actorId,
         name,
+        ...(count !== undefined ? { count } : {}),
         ...(device
           ? {}
           : { icon: icons.find((r) => r.actor_id === actorId)?.image ?? null }),
@@ -328,7 +333,10 @@ export class WorldAccess {
       ...(await this.botPlay.unread(id, viewerId)),
     };
     if (!screen) return this.playCharacters(id, result, connectionId);
-    const characters = new Map<string, { actorId: string; name: string }>();
+    const characters = new Map<
+      string,
+      { actorId: string; name: string; count?: number }
+    >();
     if (
       history.sceneId &&
       !status.members?.some(

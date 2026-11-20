@@ -6,6 +6,8 @@ import {
   PlayCommand,
   ExchangeTerms,
   NpcAction,
+  InstantReduction,
+  type InstantReductionResult,
   type Appearance,
   type ItemOutcome,
   PlaySearch,
@@ -152,7 +154,7 @@ type Entry = {
   applicationId?: string;
   itemWitnesses?: string[];
 };
-type TurnParticipant = { actorId: string; name: string };
+type TurnParticipant = { actorId: string; name: string; count?: number };
 type SessionStatus = {
   sessionId: string;
   members: { actorId: string; sceneId: string }[];
@@ -196,6 +198,7 @@ type Member = {
     sourceEventId: string;
     places: string[];
     ruleId?: string;
+    count?: number;
   };
 };
 export type Session = {
@@ -245,6 +248,7 @@ type Plan = {
   outcome?: unknown;
   instantMembers?: string;
   effectState?: string;
+  instantReduction?: z.infer<typeof InstantReductionResult>;
   // ダイスの設定で死亡とされ、成功で確定した対象。
   fatal?: string[];
   appearances?: Appearance[];
@@ -387,6 +391,7 @@ const DiceSetting = z
     sides: z.number().int().min(2).max(2147483647),
     successThrough: z.number().int().positive(),
     fatal: z.array(z.uuid()).optional(),
+    instantReduction: InstantReduction.optional(),
     consumes: z
       .array(
         z
@@ -402,6 +407,20 @@ const DiceSetting = z
   .strict()
   .refine((v) => v.successThrough < v.sides);
 type Consumable = { id: string; label: string; count?: number };
+function instantReductionText({
+  kind,
+  count,
+  remaining,
+  separatedId,
+}: z.infer<typeof InstantReductionResult>) {
+  const change =
+    kind === "death"
+      ? "死亡した"
+      : separatedId
+        ? "一団から分かれた"
+        : "その場から離れた";
+  return `一団のうち${count}体が${change}（残り${remaining}体）`;
+}
 const consumePrompt =
   "consumableは申請者が手に持つ物品である。この行動が成功したときに使い切る・減る物品を選び、consumes:[{id,count}]に返す。countは減る個数で、個数のない物品やまるごと失う物品では省く。行動がその物品を減らさないなら選ばず、該当がなければ空配列。";
 const waitPrompt =
@@ -979,6 +998,7 @@ export class BotPlay {
           sourceEventId: event,
           places,
           ...(animal.ruleId ? { ruleId: animal.ruleId } : {}),
+          ...(animal.count !== undefined ? { count: animal.count } : {}),
         },
       });
       await db.query(
@@ -1024,6 +1044,32 @@ export class BotPlay {
         .map((m) => m.actorId),
     );
   }
+  async #applyInstantReduction(
+    db: Db,
+    session: Session,
+    actor: string,
+    request: string,
+    plan: Plan,
+  ) {
+    const result = plan.instantReduction;
+    if (!result) return;
+    const target = session.data.members.find(
+      (m) => m.actorId === result.targetId,
+    )?.instant;
+    if (!target || target.count !== result.remaining + result.count)
+      reject("WORLD_CHANGED", "出現した一団の個体数が変わりました");
+    if (result.remaining) target.count = result.remaining;
+    else await this.#removeInstants(db, session.data, [result.targetId]);
+    if (result.separatedId)
+      await this.#addInstants(
+        db,
+        session,
+        plan.appearances!.filter((a) => a.id === result.separatedId),
+        derivedId(request + ":action"),
+        actor,
+      );
+  }
+
   // 出現個体の行動と、同席者から出現個体への対抗行動を一つの出来事として確定する。
   // 個体はノードを持たないため、個体への作用は同じ場所の同席で作用関係が成立したものとする。
   async #instantAction(
@@ -1070,6 +1116,8 @@ export class BotPlay {
       ).rows[0];
       const success = dice ? dice.roll <= dice.setting.successThrough : !effect,
         recorded = prior.changes.nodes.find((n) => n.id === event);
+      const instantReduction =
+        recorded?.kind === "event" ? recorded.instantReduction : undefined;
       return {
         context,
         changes: prior.changes,
@@ -1080,7 +1128,14 @@ export class BotPlay {
           : effect
             ? unreachable
             : { success },
-        ...(state ? { effectState: state.text } : {}),
+        ...(instantReduction
+          ? {
+              instantReduction,
+              effectState: instantReductionText(instantReduction),
+            }
+          : state
+            ? { effectState: state.text }
+            : {}),
         ...(success && dice?.setting.fatal
           ? { fatal: dice.setting.fatal }
           : {}),
@@ -1096,7 +1151,8 @@ export class BotPlay {
           ? target
           : undefined;
     let fatal: string[] = [],
-      drops: Appearance[] = [];
+      appearances: Appearance[] = [];
+    let instantReduction: Plan["instantReduction"];
     if (effect) {
       const nearby =
         npc && !victim ? await this.#atPlaces(context, places) : undefined;
@@ -1118,7 +1174,12 @@ export class BotPlay {
         const saved = await this.#oppositionRoll(
           request,
           npc
-            ? { ...cause, name: npc.name, description: npc.description }
+            ? {
+                ...cause,
+                name: npc.name,
+                description: npc.description,
+                count: npc.count,
+              }
             : actorId,
           action.text,
           effect,
@@ -1128,6 +1189,7 @@ export class BotPlay {
                   id: effect.targetId,
                   name: victim.name,
                   description: victim.description,
+                  count: victim.count,
                 },
                 ...(npc ? [] : await this.#facts(context, [actorId])),
               ]
@@ -1135,8 +1197,14 @@ export class BotPlay {
           npc ? [] : await this.#consumable(context, actorId, changes),
           victim ? undefined : effect.state,
           ...(victim
-            ? ([[effect.targetId], ""] satisfies [string[], string])
+            ? ([
+                victim.count === undefined ? [effect.targetId] : [],
+                "",
+              ] satisfies [string[], string])
             : await this.#mortal(session, [effect.targetId])),
+          victim?.count === undefined
+            ? undefined
+            : { count: victim.count, allowSeparation: !npc },
         );
         outcome = {
           setting: saved.setting,
@@ -1155,12 +1223,39 @@ export class BotPlay {
           );
         }
         if (effectState && previous) changes.endEdges.push(previous.relationId);
-        if (victim && fatal.length)
-          drops = await deathDrops(
+        const reduction = outcome.success
+          ? saved.setting.instantReduction
+          : undefined;
+        if (victim?.count !== undefined && reduction) {
+          if (reduction.count > victim.count)
+            reject("WORLD_CHANGED", "出現した一団の個体数が変わりました");
+          instantReduction = {
+            targetId: effect.targetId,
+            kind: reduction.kind,
+            count: reduction.count,
+            remaining: victim.count - reduction.count,
+          };
+          if (reduction.kind === "separation" && reduction.stays) {
+            instantReduction.separatedId = derivedId(request + ":separation");
+            appearances.push({
+              id: instantReduction.separatedId,
+              kind: "instant-npc",
+              species: victim.name,
+              description: victim.description,
+              count: reduction.count,
+              ...(victim.ruleId ? { ruleId: victim.ruleId } : {}),
+            });
+          }
+        }
+        const deaths =
+          reduction?.kind === "death" ? reduction.count : fatal.length;
+        if (victim && deaths)
+          appearances = await deathDrops(
             context,
             request,
             victim.ruleId,
             victim.places,
+            deaths,
           );
         at = await this.#relocateDead(
           session,
@@ -1181,10 +1276,14 @@ export class BotPlay {
         text: effect
           ? action.text +
             (outcome.success
-              ? "。結果：" + effect.state
+              ? "。結果：" +
+                (instantReduction
+                  ? instantReductionText(instantReduction)
+                  : effect.state)
               : "。作用は成立しなかった")
           : action.text,
         ...(cause ? { instantActor: cause } : {}),
+        ...(instantReduction ? { instantReduction } : {}),
         ...(victim
           ? {
               instantTarget: {
@@ -1196,7 +1295,7 @@ export class BotPlay {
       },
       victim?.places ?? [],
       at,
-      drops,
+      appearances,
     );
     if (!npc) link({ kind: "happen", source: actorId, target: event });
     for (const member of session.data.members)
@@ -1222,9 +1321,16 @@ export class BotPlay {
       recipients: [],
       outcome,
       instantMembers: JSON.stringify(session.data.members),
-      ...(effectState ? { effectState } : {}),
+      ...(instantReduction
+        ? {
+            instantReduction,
+            effectState: instantReductionText(instantReduction),
+          }
+        : effectState
+          ? { effectState }
+          : {}),
       ...(fatal.length ? { fatal } : {}),
-      ...(drops.length ? { appearances: drops } : {}),
+      ...(appearances.length ? { appearances } : {}),
     };
   }
   async #instantTurn(session: Session) {
@@ -1263,6 +1369,7 @@ export class BotPlay {
               id: m.actorId,
               name: m.instant.name,
               description: m.instant.description,
+              count: m.instant.count,
             });
         const response = await this.#ask(
           derivedId(request + ":choice"),
@@ -1271,7 +1378,10 @@ export class BotPlay {
             {
               role: "system",
               content:
-                "あなたはその場に現れた一個体です。自身の性質、見聞きした履歴、周囲から今回の一手を選んでください。textに行動を、外界を変えようとするならeffectに対象IDと成功時の状態を、立ち去るならdeparts:trueを指定します。成否はサーバーが決めます。schemaに沿うJSONだけを返してください。",
+                ((npc.count ?? 1) > 1
+                  ? "あなたはその場に現れた一団です。npc.countは現在の個体数です。一団として一手を選んでください。"
+                  : "あなたはその場に現れた一個体です。") +
+                "自身の性質、見聞きした履歴、周囲から今回の一手を選んでください。textに行動を、外界を変えようとするならeffectに対象IDと成功時の状態を、立ち去るならdeparts:trueを指定します。成否はサーバーが決めます。schemaに沿うJSONだけを返してください。",
             },
             {
               role: "user",
@@ -1324,9 +1434,19 @@ export class BotPlay {
                 outcome: plan.outcome,
                 ...(plan.effectState ? { effectState: plan.effectState } : {}),
                 ...(plan.appearances ? { appearances: plan.appearances } : {}),
+                ...(plan.instantReduction
+                  ? { instantReduction: plan.instantReduction }
+                  : {}),
                 commitId: receipt.commitId,
               },
             });
+            await this.#applyInstantReduction(
+              db,
+              current,
+              actor,
+              request,
+              plan,
+            );
             await this.#next(db, current);
             await this.#removeInstants(db, current.data, [
               ...(action.departs ? [actor] : []),
@@ -2127,6 +2247,7 @@ export class BotPlay {
       members.map(async ({ actorId, instant }) => ({
         actorId,
         name: instant?.name ?? (await context.node(actorId))?.text ?? "人物",
+        ...(instant?.count !== undefined ? { count: instant.count } : {}),
       })),
     );
     await context.validate();
@@ -4095,11 +4216,20 @@ export class BotPlay {
     proposedState?: string,
     mortal: string[] = [],
     deathCriteria = "",
+    group?: { count: number; allowSeparation: boolean },
   ) {
     function readDecision(raw: string) {
       const { setting, observable } = read(parseOutput(raw)),
         fatal = setting.fatal?.filter((id) => mortal.includes(id));
       delete setting.fatal;
+      const reduction = setting.instantReduction;
+      if (!group) delete setting.instantReduction;
+      else if (
+        reduction &&
+        (reduction.count > group.count ||
+          (reduction.kind === "separation" && !group.allowSeparation))
+      )
+        throw new Error("一団の個体数と許可された変更の範囲で判定してください");
       return {
         setting: consumption(
           { ...setting, ...(fatal?.length ? { fatal } : {}) },
@@ -4149,6 +4279,13 @@ export class BotPlay {
             (mortal.length
               ? "この行動が成功したときに死亡する対象を、mortalのIDから選んでfatal:[ID]に返す。行動と結果が対象の死を意味するときだけ選び、該当がなければ空配列。deathCriteriaがあれば、この世界で人物が死亡する条件として従う。"
               : "") +
+            (group
+              ? "対象が一団の場合、行動が成功したときに減る個体がいればinstantReductionを返す。死亡なら{kind:'death',count:死亡数}。" +
+                (group.allowSeparation
+                  ? "分離なら{kind:'separation',count:分離数,stays:分離した個体がその場に残るか}。申請の文章と状況から、分かれる数と、その場に残るかを判定する。"
+                  : "") +
+                "countは一団の個体数以下の正の整数。数が減らなければ省く。"
+              : "") +
             (consumable.length ? consumePrompt : ""),
         },
         {
@@ -4161,6 +4298,7 @@ export class BotPlay {
             ...(consumable.length ? { consumable } : {}),
             ...(mortal.length ? { mortal } : {}),
             ...(mortal.length && deathCriteria ? { deathCriteria } : {}),
+            ...(group ? { group } : {}),
           }),
         },
       ],
@@ -5450,6 +5588,18 @@ export class BotPlay {
                   ...(plan.appearances
                     ? { appearances: plan.appearances }
                     : {}),
+                  ...(plan.instantReduction
+                    ? {
+                        instantReduction: plan.instantReduction,
+                        ...(plan.instantReduction.separatedId
+                          ? {
+                              instantNpcs: plan.appearances!.map(
+                                (a) => a.species,
+                              ),
+                            }
+                          : {}),
+                      }
+                    : {}),
                 };
                 if (
                   input.command === "update" &&
@@ -5486,6 +5636,13 @@ export class BotPlay {
                       : {}),
                     result,
                   });
+                await this.#applyInstantReduction(
+                  db,
+                  session,
+                  actor,
+                  input.requestId,
+                  plan,
+                );
                 await this.#removeInstants(db, d, [
                   ...(input.command === "npc-action" && input.departs
                     ? [input.npcId]

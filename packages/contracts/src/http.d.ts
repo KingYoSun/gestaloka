@@ -1064,6 +1064,7 @@ export interface paths {
                                     actorId: string;
                                     name: string;
                                     icon: string | null;
+                                    count?: number;
                                 }[];
                                 from: number;
                                 until?: number;
@@ -1796,6 +1797,7 @@ export interface paths {
                                     actorId: string;
                                     name: string;
                                     icon: string | null;
+                                    count?: number;
                                 }[];
                                 result: string | null;
                                 resultCharacters?: {
@@ -1803,6 +1805,7 @@ export interface paths {
                                     actorId: string;
                                     name: string;
                                     icon: string | null;
+                                    count?: number;
                                 }[];
                                 error: string | null;
                                 messages: {
@@ -1814,6 +1817,7 @@ export interface paths {
                                         actorId: string;
                                         name: string;
                                         icon: string | null;
+                                        count?: number;
                                     }[];
                                 }[];
                                 actions: {
@@ -1827,6 +1831,7 @@ export interface paths {
                                         actorId: string;
                                         name: string;
                                         icon: string | null;
+                                        count?: number;
                                     }[];
                                 }[];
                                 recordIds: string[];
@@ -2043,6 +2048,7 @@ export interface paths {
                                     actorId: string;
                                     name: string;
                                     icon: string | null;
+                                    count?: number;
                                 }[];
                                 result: string | null;
                                 resultCharacters?: {
@@ -2050,6 +2056,7 @@ export interface paths {
                                     actorId: string;
                                     name: string;
                                     icon: string | null;
+                                    count?: number;
                                 }[];
                                 error: string | null;
                                 messages: {
@@ -2061,6 +2068,7 @@ export interface paths {
                                         actorId: string;
                                         name: string;
                                         icon: string | null;
+                                        count?: number;
                                     }[];
                                 }[];
                                 actions: {
@@ -2074,6 +2082,7 @@ export interface paths {
                                         actorId: string;
                                         name: string;
                                         icon: string | null;
+                                        count?: number;
                                     }[];
                                 }[];
                                 recordIds: string[];
@@ -2256,6 +2265,7 @@ export interface paths {
                                     actorId: string;
                                     name: string;
                                     icon: string | null;
+                                    count?: number;
                                 }[];
                             }[];
                             next: string | null;
@@ -2753,7 +2763,7 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
-                                    /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
+                                    /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                     count?: number;
                                     /**
                                      * Format: uuid
@@ -2772,6 +2782,16 @@ export interface paths {
                                     id: string;
                                     /** Format: uuid */
                                     sourceEventId: string;
+                                };
+                                instantReduction?: {
+                                    /** Format: uuid */
+                                    targetId: string;
+                                    /** @enum {string} */
+                                    kind: "death" | "separation";
+                                    count: number;
+                                    remaining: number;
+                                    /** Format: uuid */
+                                    separatedId?: string;
                                 };
                                 period: {
                                     from: number;
@@ -2834,7 +2854,7 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
-                                    /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
+                                    /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                     count?: number;
                                     /**
                                      * Format: uuid
@@ -2853,6 +2873,16 @@ export interface paths {
                                     id: string;
                                     /** Format: uuid */
                                     sourceEventId: string;
+                                };
+                                instantReduction?: {
+                                    /** Format: uuid */
+                                    targetId: string;
+                                    /** @enum {string} */
+                                    kind: "death" | "separation";
+                                    count: number;
+                                    remaining: number;
+                                    /** Format: uuid */
+                                    separatedId?: string;
                                 };
                                 period: {
                                     from: number;
@@ -2990,7 +3020,7 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
-                                    /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
+                                    /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                     count?: number;
                                     /**
                                      * Format: uuid
@@ -3009,6 +3039,16 @@ export interface paths {
                                     id: string;
                                     /** Format: uuid */
                                     sourceEventId: string;
+                                };
+                                instantReduction?: {
+                                    /** Format: uuid */
+                                    targetId: string;
+                                    /** @enum {string} */
+                                    kind: "death" | "separation";
+                                    count: number;
+                                    remaining: number;
+                                    /** Format: uuid */
+                                    separatedId?: string;
                                 };
                                 period: {
                                     from: number;
@@ -3071,7 +3111,7 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
-                                    /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
+                                    /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                     count?: number;
                                     /**
                                      * Format: uuid
@@ -3090,6 +3130,16 @@ export interface paths {
                                     id: string;
                                     /** Format: uuid */
                                     sourceEventId: string;
+                                };
+                                instantReduction?: {
+                                    /** Format: uuid */
+                                    targetId: string;
+                                    /** @enum {string} */
+                                    kind: "death" | "separation";
+                                    count: number;
+                                    remaining: number;
+                                    /** Format: uuid */
+                                    separatedId?: string;
                                 };
                                 period: {
                                     from: number;
@@ -3312,7 +3362,7 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
-                                    /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
+                                    /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                     count?: number;
                                     /**
                                      * Format: uuid
@@ -3331,6 +3381,16 @@ export interface paths {
                                     id: string;
                                     /** Format: uuid */
                                     sourceEventId: string;
+                                };
+                                instantReduction?: {
+                                    /** Format: uuid */
+                                    targetId: string;
+                                    /** @enum {string} */
+                                    kind: "death" | "separation";
+                                    count: number;
+                                    remaining: number;
+                                    /** Format: uuid */
+                                    separatedId?: string;
                                 };
                                 period: {
                                     from: number;
@@ -3393,7 +3453,7 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
-                                    /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
+                                    /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                     count?: number;
                                     /**
                                      * Format: uuid
@@ -3412,6 +3472,16 @@ export interface paths {
                                     id: string;
                                     /** Format: uuid */
                                     sourceEventId: string;
+                                };
+                                instantReduction?: {
+                                    /** Format: uuid */
+                                    targetId: string;
+                                    /** @enum {string} */
+                                    kind: "death" | "separation";
+                                    count: number;
+                                    remaining: number;
+                                    /** Format: uuid */
+                                    separatedId?: string;
                                 };
                                 period: {
                                     from: number;
@@ -3923,7 +3993,7 @@ export interface paths {
                                                 description: string;
                                                 /** Format: uuid */
                                                 id: string;
-                                                /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
+                                                /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                                 count?: number;
                                                 /**
                                                  * Format: uuid
@@ -3942,6 +4012,16 @@ export interface paths {
                                                 id: string;
                                                 /** Format: uuid */
                                                 sourceEventId: string;
+                                            };
+                                            instantReduction?: {
+                                                /** Format: uuid */
+                                                targetId: string;
+                                                /** @enum {string} */
+                                                kind: "death" | "separation";
+                                                count: number;
+                                                remaining: number;
+                                                /** Format: uuid */
+                                                separatedId?: string;
                                             };
                                             period: {
                                                 from: number;
@@ -4004,7 +4084,7 @@ export interface paths {
                                                 description: string;
                                                 /** Format: uuid */
                                                 id: string;
-                                                /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
+                                                /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                                 count?: number;
                                                 /**
                                                  * Format: uuid
@@ -4023,6 +4103,16 @@ export interface paths {
                                                 id: string;
                                                 /** Format: uuid */
                                                 sourceEventId: string;
+                                            };
+                                            instantReduction?: {
+                                                /** Format: uuid */
+                                                targetId: string;
+                                                /** @enum {string} */
+                                                kind: "death" | "separation";
+                                                count: number;
+                                                remaining: number;
+                                                /** Format: uuid */
+                                                separatedId?: string;
                                             };
                                             period: {
                                                 from: number;
@@ -6488,7 +6578,7 @@ export interface paths {
                                         description: string;
                                         /** Format: uuid */
                                         id: string;
-                                        /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
+                                        /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                         count?: number;
                                         /**
                                          * Format: uuid
@@ -6507,6 +6597,16 @@ export interface paths {
                                         id: string;
                                         /** Format: uuid */
                                         sourceEventId: string;
+                                    };
+                                    instantReduction?: {
+                                        /** Format: uuid */
+                                        targetId: string;
+                                        /** @enum {string} */
+                                        kind: "death" | "separation";
+                                        count: number;
+                                        remaining: number;
+                                        /** Format: uuid */
+                                        separatedId?: string;
                                     };
                                     period: {
                                         from: number;
@@ -6569,7 +6669,7 @@ export interface paths {
                                         description: string;
                                         /** Format: uuid */
                                         id: string;
-                                        /** @description 個数つきの1つの物品として現れた・残った数。物品に付く */
+                                        /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                         count?: number;
                                         /**
                                          * Format: uuid
@@ -6588,6 +6688,16 @@ export interface paths {
                                         id: string;
                                         /** Format: uuid */
                                         sourceEventId: string;
+                                    };
+                                    instantReduction?: {
+                                        /** Format: uuid */
+                                        targetId: string;
+                                        /** @enum {string} */
+                                        kind: "death" | "separation";
+                                        count: number;
+                                        remaining: number;
+                                        /** Format: uuid */
+                                        separatedId?: string;
                                     };
                                     period: {
                                         from: number;
