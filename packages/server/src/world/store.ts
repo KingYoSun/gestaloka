@@ -265,6 +265,19 @@ export class WorldContext {
       return result.records.map((r) => r.get("id") as string);
     });
   }
+  // 主体の最初の所在記録。世界内の同じ時点に重なった記録は、記録された順で区別する。
+  async firstLocation(actor: string) {
+    z.uuid().parse(actor);
+    return this.#read(relationKey(actor, "status", "out"), async (tx) => {
+      const result = await tx.run(
+        `MATCH (:WorldNode {worldId:$world,id:$actor})-[c:status {role:'content'}]->(s:WorldNode)
+        WHERE c.data CONTAINS $marker
+        RETURN s.id AS id ORDER BY c.validFrom,s.recordedAt,s.id LIMIT 1`,
+        { world: this.worldId, actor, marker: '"text":"location"' },
+      );
+      return result.records[0]?.get("id") as string | undefined;
+    });
+  }
   async relations(
     id: string,
     kind: RelationKind,

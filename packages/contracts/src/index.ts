@@ -109,6 +109,9 @@ export const WorldStatus = z.object({
     accepting: z.boolean(),
     playerList: z.boolean(),
     instantNpcMultiplier: z.number().int().positive(),
+    deathJudgment: z.boolean(),
+    deathCriteria: z.string(),
+    deathPlaceId: z.uuid().nullable(),
   }),
   error: z.string().nullable(),
 });
@@ -1213,6 +1216,25 @@ export const Operation = z.discriminatedUnion("operation", [
         .optional()
         .describe(
           "検索で出現した個体が同じ場所に同時に同席できる数を、発生用ノードの発生数（maxCount、旧形式はcount）の何倍までにするか。既定は2。省略すると現在の設定を保つ",
+        ),
+      deathJudgment: z
+        .boolean()
+        .optional()
+        .describe(
+          "プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。死亡した人物はセッションから外れ、deathPlaceIdの場所へ移る。省略すると現在の設定を保つ",
+        ),
+      deathCriteria: z
+        .string()
+        .optional()
+        .describe(
+          "人物の死亡を判定するGMへ渡す、この世界の条件文。空なら行動と結果だけから判定する。省略すると現在の設定を保つ",
+        ),
+      deathPlaceId: z
+        .uuid()
+        .nullable()
+        .optional()
+        .describe(
+          "死亡した人物を移す場所。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ",
         ),
       reason: operationReason,
     })

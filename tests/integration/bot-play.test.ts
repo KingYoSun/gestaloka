@@ -4696,3 +4696,103 @@ test("同席している出現個体への対抗行動はダイスに進み、�
   });
   expect(picked.items).toMatchObject([{ itemId: drops[0]!.id }]);
 });
+test("人物への対抗行動で死亡と判定されると、対象はセッションから外れて設定された場所か最初の所在地へ移る", async () => {
+  const f = await fixture(),
+    items = [randomUUID(), randomUUID(), randomUUID()],
+    grave = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: [
+          ...items.map((id) => ({
+            id,
+            kind: "existence" as const,
+            text: "道具",
+          })),
+          { id: grave, kind: "existence", text: "墓地" },
+        ],
+        edges: items.map((target, i) => ({
+          id: randomUUID(),
+          kind: "has",
+          role: "hold",
+          source: f.actors[i === 2 ? 2 : 1]!,
+          target,
+          period: { from: 0 },
+        })),
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  // 人物2の最初の所在地は離れた場所。
+  await f.move(2, f.place);
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  await f.send(2, { command: "contact", targetId: f.actors[0] });
+  const configure = (setting: string, value: unknown) =>
+    isolated.databases.postgres.query(
+      `UPDATE world_construction SET ${setting}=$2 WHERE id=$1`,
+      [f.world, value],
+    );
+  const attack = (i: number) => ({
+    requestId: randomUUID(),
+    command: "oppose",
+    text: "斬りかかって道具を奪う",
+    operations: [
+      {
+        type: "move",
+        item: items[i],
+        from: f.actors[i === 2 ? 2 : 1],
+        to: f.actors[0],
+        basis: "奪う",
+      },
+    ],
+    dependencies: [],
+  });
+  const fatalDice = (victim: string, expected: string, absent = "\u0000") =>
+    f.calls.mockImplementationOnce(async (id, _role, messages) => {
+      const sent = JSON.stringify(messages);
+      expect(sent).toContain(expected);
+      expect(sent).not.toContain(absent);
+      return answer(id, { ...sure, fatal: [victim] });
+    });
+  const present = async (i: number) =>
+    (await f.status(i)).characters!.map((c) => c.actorId);
+  const whereabouts = async (i: number) =>
+    (
+      (await f.send(i, { command: "search", query: { kind: "self" } }))
+        .material as { locations: { directPlaceId: string }[] }
+    ).locations.map((l) => l.directPlaceId);
+  // 死亡判定が無効な世界では、候補を渡さず、成功しても同席は変わらない。
+  await configure("death_judgment", false);
+  fatalDice(f.actors[1]!, "道具", "mortal");
+  const spared = await f.send(0, attack(0));
+  expect(spared.outcome).toMatchObject({ success: true });
+  expect(spared.outcome).not.toHaveProperty("setting.fatal");
+  expect(await present(0)).toEqual(f.actors);
+  // 設定された場所へ移り、セッションから外れる。
+  await configure("death_judgment", true);
+  await configure("death_criteria", "致命傷で死亡する");
+  await configure("death_place_id", grave);
+  fatalDice(f.actors[1]!, "致命傷で死亡する");
+  const first = attack(1),
+    killed = await f.send(0, first);
+  expect(killed.outcome).toMatchObject({
+    success: true,
+    setting: { fatal: [f.actors[1]] },
+  });
+  expect(await f.send(0, first)).toEqual(killed);
+  expect(await present(0)).toEqual([f.actors[0], f.actors[2]]);
+  expect(await present(1)).toEqual([f.actors[1]]);
+  expect(await whereabouts(1)).toEqual([grave]);
+  // 場所が未設定なら、本人の最初の所在地へ移る。
+  await configure("death_place_id", null);
+  fatalDice(f.actors[2]!, "mortal");
+  await f.send(0, attack(2));
+  expect(await present(0)).toEqual([f.actors[0]]);
+  expect(await whereabouts(2)).toEqual([f.far]);
+  expect(await whereabouts(0)).toEqual([f.place]);
+});
