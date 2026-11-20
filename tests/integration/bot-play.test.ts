@@ -4334,6 +4334,22 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
     const names = (state: { about: { text?: string }[] }) =>
       state.about.map((a) => a.text).sort();
     expect(names(await route(square))).toEqual(["広場", "広場の裏の小道"]);
+    // 周囲の検索は、行き来の記述で結ばれた場所だけを移動先の手がかりとして返す。
+    const routes = async () =>
+      (
+        (
+          await access.botPlay.search(f.world, f.actors[0]!, {
+            kind: "surroundings",
+          })
+        ).material as { routes: unknown[] }
+      ).routes;
+    const placed = (
+      await f.store.driver.executeQuery(
+        "MATCH (n:WorldNode {worldId:$w,kind:'existence'}) WHERE n.data CONTAINS '広場の裏の小道' RETURN n.id AS id",
+        { w: f.graph },
+      )
+    ).records[0]!.get("id") as string;
+    expect(await routes()).toEqual([{ id: placed, label: "広場の裏の小道" }]);
     const path = found.result.placeId as string,
       me = (await run("status")).device.actorId as string,
       move = join(cli.directory, "move.json");
@@ -4357,12 +4373,7 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
     expect(names(await route(path))).toEqual(["広場", "広場の裏の小道"]);
     expect((await run("play", "--file", move)).result.state).toBe("accepted");
     expect(names(await route(path))).toEqual(["広場", "広場の裏の小道"]);
-    const placed = (
-      await f.store.driver.executeQuery(
-        "MATCH (n:WorldNode {worldId:$w,kind:'existence'}) WHERE n.data CONTAINS '広場の裏の小道' RETURN n.id AS id",
-        { w: f.graph },
-      )
-    ).records[0]!.get("id") as string;
+    expect(await routes()).toEqual([{ id: f.place, label: "広場" }]);
     const failing = randomUUID(),
       used = (await f.status(0)).callsUsed as number;
     await isolated.databases.postgres.query(
