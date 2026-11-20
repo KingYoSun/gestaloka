@@ -177,6 +177,18 @@ export async function deathDrops(
   return drops;
 }
 
+const appearanceAnnouncement = (appearances: Appearance[]) =>
+  appearances.map((a) => a.species).join("、") + "が現れた";
+
+function appearanceResult(appearances: Appearance[], text: string) {
+  return {
+    appearances,
+    ...(text !== appearanceAnnouncement(appearances)
+      ? { appearanceText: text }
+      : {}),
+  };
+}
+
 export async function searchAppearances(
   store: WorldStore,
   ctx: WorldContext,
@@ -193,7 +205,9 @@ export async function searchAppearances(
     const event = prior.changes.nodes.find(
       (n) => n.kind === "event" && n.appearances,
     );
-    return event?.kind === "event" ? (event.appearances ?? []) : [];
+    if (event?.kind === "event" && event.appearances?.length)
+      return appearanceResult(event.appearances, event.text);
+    return;
   }
   const hits = new Set<string>(),
     rules = new Set<string>();
@@ -202,7 +216,7 @@ export async function searchAppearances(
     for (const edge of await ctx.relations(hit, "status", "in", latest))
       if (about(edge, "spawn-hit")) rules.add(edge.source);
   }
-  if (!rules.size) return [];
+  if (!rules.size) return;
   const held = new Set(
     (await ctx.relations(actor, "has", "out", latest))
       .filter((e) => e.role === "hold")
@@ -210,6 +224,7 @@ export async function searchAppearances(
   );
   const places = await directPlaces(ctx, actor);
   const appearances: Appearance[] = [];
+  const descriptions: string[] = [];
   for (const ruleId of rules) {
     const node = await ctx.node(ruleId);
     if (node?.kind !== "script" || !node.spawn) continue;
@@ -235,30 +250,49 @@ export async function searchAppearances(
             ).length
           : 0;
     if (staying >= limit) continue;
-    for (const appearance of appear(
+    const spawned = appear(
       request + ":" + ruleId,
       rule,
       draw(rule, limit - staying),
-    ))
+    );
+    if (!spawned.length) continue;
+    for (const appearance of spawned)
       appearances.push({
         ...appearance,
         ...(rule.kind === "instant-npc" ? { ruleId } : {}),
       });
+    const candidates: string[] = [];
+    const descriptionIds = new Set(
+      conditions
+        .filter((edge) => about(edge, "spawn-description"))
+        .map((edge) => edge.target),
+    );
+    for (const id of descriptionIds) {
+      const candidate = await ctx.node(id);
+      if (
+        candidate?.kind === "script" &&
+        !Array.isArray(candidate.viewers) &&
+        candidate.text.trim()
+      )
+        candidates.push(candidate.text);
+    }
+    if (candidates.length)
+      descriptions.push(candidates[randomInt(candidates.length)]!);
   }
   if (!appearances.length) {
     await ctx.validate();
-    return [];
+    return;
   }
   const changes: Change = { nodes: [], edges: [], endEdges: [], revisions: [] };
   const event = derivedId(request + ":appearance");
+  const text = [appearanceAnnouncement(appearances), ...descriptions].join(
+    "\n\n",
+  );
   const link = await recordAppearances(
     ctx,
     changes,
     request,
-    {
-      id: event,
-      text: appearances.map((a) => a.species).join("、") + "が現れた",
-    },
+    { id: event, text },
     places,
     at,
     appearances,
@@ -271,7 +305,7 @@ export async function searchAppearances(
     at,
     changes,
   });
-  return appearances;
+  return appearanceResult(appearances, text);
 }
 export async function groundItems(ctx: WorldContext, place: string) {
   const ids = new Set<string>();
