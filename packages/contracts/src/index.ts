@@ -12,6 +12,8 @@ export {
   PlayerReportStatus,
   PlayerReportReceipt,
   PlayerNotices,
+  ViewersInput,
+  ViewersResult,
   WaitingCommand,
   WaitingContextStatus,
   ReceiptResult,

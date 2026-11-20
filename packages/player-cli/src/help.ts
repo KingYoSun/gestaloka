@@ -6,6 +6,7 @@ export const playerOptions = {
   profile: { type: "string" },
   instance: { type: "string" },
   participants: { type: "string" },
+  to: { type: "string" },
   from: { type: "string" },
   label: { type: "string" },
   source: { type: "string" },
@@ -79,6 +80,11 @@ const commands = {
   notices: [
     "",
     "本人あての通知を、未読を先に新しい順で20件まで読む。読んだ通知は既読になる。通常枠は使わない。時間をかけた申請の物品が届いたときに通知される。未読があると、statusとプレイ操作の応答にunreadNoticesとnoticeMessageが出る。",
+  ],
+  viewers: [
+    "--target <ID> --to <all|self|人物ID,...>",
+    "本人の物・保管先・技能・状態を、ほかの参加者の誰が読めるかを決める。allはその場の全員、selfは本人だけ、人物IDは指定した相手だけ。設定しない物は、手にしている物と状態が全員、技能と保管先の中身が本人だけ。保管先を読めるようにすると中身の呼称と個数が、技能は本文が、相手のsearch --kind subjectのbelongingsに出る。読めなくした物はsurroundingsのheldに、状態はsubjectのstatesに出なくなる。設定した範囲はselfのbelongingsとstatesのviewersに出る。GMの判定は範囲に関係なく読む。世界内の行動ではなく、手番も通常枠も使わない。",
+    "viewers --target @12ab34cd --to self",
   ],
   start: ["", "本人の通常手番を単独で開始。"],
   search: [

@@ -166,6 +166,13 @@ async function fixture() {
     move,
     calls,
     apply,
+    view: (i: number, targetId: string, viewers: "all" | string[]) =>
+      access.setViewers(
+        people[i]!.id,
+        world,
+        { requestId: randomUUID(), targetId, viewers },
+        actors[i],
+      ),
   };
 }
 
@@ -649,6 +656,17 @@ test("HTTPとCLIは本人の手番APIを使い、旧書込を拒否し、同じ�
     expect(
       await cli.run(profile, "recover", "--request", result.requestId),
     ).toEqual(result);
+    await f.apply([
+      { type: "create", label: "古い鍵", holder: f.actors[0], basis: "検証" },
+    ]);
+    const key = (await readBelongings(f.store.context(f.graph), f.actors[0]!))
+      .items[0]!.id;
+    expect(
+      await cli.run(profile, "viewers", "--target", key, "--to", "self"),
+    ).toMatchObject({ result: { viewers: [] } });
+    expect(await f.store.context(f.graph).node(key)).toMatchObject({
+      viewers: [],
+    });
     expect(await cli.run(profile, "players")).toMatchObject({
       state: "error",
       code: "PLAYER_LIST_DISABLED",
@@ -2535,6 +2553,112 @@ test("周囲の検索は、同じ場所にいる相手が手にしている物�
   expect((await subjects()).find((s) => s.id === f.actors[1])?.held).toEqual(
     [],
   );
+});
+
+test("本人が決めた閲覧範囲に従って、ほかの参加者が読める物・保管先・技能・状態が変わる", async () => {
+  const f = await fixture(),
+    [chest, state] = [randomUUID(), randomUUID()];
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: [
+          { id: chest, kind: "existence", text: "木箱" },
+          { id: state, kind: "script", text: "背中に古い傷がある" },
+        ],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "content",
+            source: f.actors[1]!,
+            target: state,
+            period: { from: 0 },
+          },
+        ],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  await f.apply([
+    { type: "create", label: "古い鍵", holder: f.actors[1], basis: "検証" },
+    { type: "grant", person: f.actors[1], storage: chest, basis: "検証" },
+    { type: "create", label: "銀貨", count: 3, holder: chest, basis: "検証" },
+    { type: "learn", person: f.actors[1], text: "鍵開け", basis: "検証" },
+  ]);
+  const own = await readBelongings(f.store.context(f.graph), f.actors[1]!),
+    key = own.items[0]!.id,
+    skill = own.skills[0]!.id;
+  // 人物iから見た人物1。手にしている物は周囲の検索、状態・保管先・技能は人物の検索に出る。
+  const seen = async (i: number) => {
+    const { subjects } = (
+      await f.send(i, { command: "search", query: { kind: "surroundings" } })
+    ).material as { subjects: { id: string; held: { id: string }[] }[] };
+    const subject = (
+      await f.send(i, {
+        command: "search",
+        query: { kind: "subject", targetId: f.actors[1] },
+      })
+    ).material as {
+      states: { node: { id: string } }[];
+      belongings?: {
+        storages: { id: string; items: unknown[] }[];
+        skills: unknown[];
+      };
+    };
+    return {
+      held: subjects.find((s) => s.id === f.actors[1])!.held.map((h) => h.id),
+      states: subject.states.map((s) => s.node.id).includes(state),
+      belongings: subject.belongings,
+    };
+  };
+  // 設定しない間は、手にしている物と状態だけが読める。
+  expect(await seen(0)).toEqual({ held: [key], states: true });
+  // 他人の物には設定できない。
+  await expect(f.view(0, key, [])).rejects.toMatchObject({
+    code: "VIEW_TARGET_REQUIRED",
+  });
+  await f.view(1, key, []);
+  await f.view(1, state, []);
+  await f.view(1, chest, [f.actors[0]!]);
+  expect(await f.view(1, skill, "all")).toEqual({
+    targetId: skill,
+    viewers: "all",
+  });
+  await f.move(2, f.place);
+  const items = [{ id: expect.any(String), label: "銀貨", count: 3 }],
+    skills = [{ id: skill, text: "鍵開け" }];
+  // 指定された人物0は保管先の中身まで、指定されていない人物2は全員向けの技能だけを読める。
+  expect(await seen(0)).toEqual({
+    held: [],
+    states: false,
+    belongings: { storages: [{ id: chest, label: "木箱", items }], skills },
+  });
+  expect(await seen(2)).toEqual({
+    held: [],
+    states: false,
+    belongings: { storages: [], skills },
+  });
+  // 本人は全部を読め、設定した範囲も確かめられる。
+  const self = (await f.send(1, { command: "search", query: { kind: "self" } }))
+    .material as {
+    states: { node: { id: string } }[];
+    belongings: {
+      items: unknown[];
+      storages: unknown[];
+      skills: unknown[];
+    };
+  };
+  expect(self.states.map((s) => s.node.id)).toContain(state);
+  expect(self.belongings).toMatchObject({
+    items: [{ id: key, viewers: [] }],
+    storages: [{ id: chest, viewers: [f.actors[0]], items }],
+    skills: [{ id: skill, viewers: "all" }],
+  });
 });
 
 test("周囲の検索は所在地以外の記述が増えてもグラフ照会数を増やさない", async () => {
