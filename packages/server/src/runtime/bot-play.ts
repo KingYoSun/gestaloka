@@ -188,6 +188,7 @@ export type Session = {
     turn: string;
     number: number;
     turnStartedAt?: string;
+    turnActivityAt: string;
     used: number;
     nextRegular?: string;
     lastInstant?: string;
@@ -246,6 +247,8 @@ function turnState(session: Session) {
     size: session.data.members.length,
     transition: session.data.lastTransitionId,
     awayUntil: session.data.awayUntil,
+    used: session.data.used,
+    comment: session.data.comment,
     key: JSON.stringify([
       session.id,
       actor,
@@ -275,6 +278,7 @@ const arrivingItems = (ops: BelongingOp[]) =>
     op.type === "create" ? [{ label: op.label, count: op.count }] : [],
   );
 const turnReturnMs = 600000;
+const turnIdleMs = 600000;
 function reject(code: string, message: string): never {
   throw new AccessError(409, code, message);
 }
@@ -437,6 +441,7 @@ export class BotPlay {
       PRIMARY KEY(scene_id,actor_id,chat_id));
       CREATE TABLE IF NOT EXISTS bot_request (
       id uuid PRIMARY KEY,actor_id uuid NOT NULL,world_id uuid NOT NULL,hash text NOT NULL,result jsonb,outcome jsonb);
+      ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS prepared_turn text;
       CREATE TABLE IF NOT EXISTS bot_dice (
       id uuid PRIMARY KEY,setting jsonb NOT NULL,roll integer);
       CREATE TABLE IF NOT EXISTS bot_npc (
@@ -458,6 +463,13 @@ export class BotPlay {
       id uuid PRIMARY KEY,world_id uuid NOT NULL,actor_id uuid NOT NULL,created_at timestamptz NOT NULL,
       text text NOT NULL,read boolean NOT NULL DEFAULT false);
       CREATE INDEX IF NOT EXISTS player_notice_actor ON player_notice(world_id,actor_id,created_at);`);
+    // Give turns already in progress a full grace period when this is first deployed.
+    await this.pool.query(
+      `UPDATE bot_session s SET data=jsonb_set(data,'{turnActivityAt}',to_jsonb($1::text))
+       WHERE NOT (data ? 'turnActivityAt')
+         AND EXISTS (SELECT 1 FROM bot_scene a WHERE a.session_id=s.id AND NOT a.closed)`,
+      [this.now().toISOString()],
+    );
   }
   async keepAlive(
     world: string,
@@ -719,6 +731,7 @@ export class BotPlay {
         [world, actor],
       )
     ).rows[0];
+    const at = this.now().toISOString();
     const session: Session = {
       id,
       world_id: world,
@@ -726,7 +739,8 @@ export class BotPlay {
         members: [{ actorId: actor, sceneId: legacy?.id ?? id, userId: user }],
         turn: actor,
         number: 1,
-        turnStartedAt: this.now().toISOString(),
+        turnStartedAt: at,
+        turnActivityAt: at,
         used: 0,
         entries: [],
       },
@@ -1313,6 +1327,13 @@ export class BotPlay {
     const after = turnState(session);
     const turnChanged = before.key !== after.key;
     if (turnChanged) session.data.turnStartedAt = this.now().toISOString();
+    if (
+      turnChanged ||
+      (before.awayUntil && !after.awayUntil) ||
+      after.used > before.used ||
+      after.comment !== before.comment
+    )
+      session.data.turnActivityAt = this.now().toISOString();
     const wakeChanged = turnChanged || before.size < after.size;
     if (wakeChanged) {
       session.data.wakeRevision = (session.data.wakeRevision ?? 0) + 1;
@@ -1487,10 +1508,10 @@ export class BotPlay {
   async #next(
     db: Db,
     session: Session,
-    reason?: "absence" | "contact",
+    reason?: "absence" | "idle" | "contact",
     departingActor?: string,
   ) {
-    const skipped = reason === "absence";
+    const skipped = reason === "absence" || reason === "idle";
     const d = session.data;
     const user = d.members.find((m) => m.actorId === d.turn)?.userId;
     if (user && !skipped)
@@ -1506,11 +1527,14 @@ export class BotPlay {
       ...turn,
       publicActivity,
       ...(reason === "contact" ? { cause: reason } : {}),
-      message: skipped
-        ? `${turn.name}が離席中のため手番をスキップします`
-        : reason === "contact"
-          ? `${turn.name}が合流したため、合流前の手番${turn.turn}を終了しました`
-          : `${turn.name}が手番を終了しました${publicActivity ? "" : "（公開行動なし）"}`,
+      message:
+        reason === "absence"
+          ? `${turn.name}が離席中のため手番をスキップします`
+          : reason === "idle"
+            ? `${turn.name}の手番は操作が${turnIdleMs / 60000}分間成立しなかったため終了しました`
+            : reason === "contact"
+              ? `${turn.name}が合流したため、合流前の手番${turn.turn}を終了しました`
+              : `${turn.name}が手番を終了しました${publicActivity ? "" : "（公開行動なし）"}`,
     };
     await this.#record(db, session, {
       turn: d.number,
@@ -1519,7 +1543,8 @@ export class BotPlay {
       ...(d.comment ? { comment: d.comment } : {}),
       transition,
     });
-    if (!reason && !departingActor) await this.#separate(db, session, d.turn);
+    if ((!reason || reason === "idle") && !departingActor)
+      await this.#separate(db, session, d.turn);
     const regular = d.members.filter(
       (m) => !m.instant && m.actorId !== departingActor,
     );
@@ -1626,6 +1651,7 @@ export class BotPlay {
     const d = session.data;
     if (!moving.length) return;
     d.members = d.members.filter((m) => !moving.includes(m));
+    const at = this.now().toISOString();
     const split: Session = {
       id,
       world_id: session.world_id,
@@ -1633,7 +1659,8 @@ export class BotPlay {
         members: moving,
         turn: moving.find((m) => !m.instant)!.actorId,
         number: 1,
-        turnStartedAt: this.now().toISOString(),
+        turnStartedAt: at,
+        turnActivityAt: at,
         used: 0,
         entries: [],
       },
@@ -1800,6 +1827,7 @@ export class BotPlay {
     if (!d.members.length) return;
     const now = this.now();
     const before = turnState(session);
+    let idleExpired = false;
     if (r) {
       if (new Date(r.deadline) > now) return;
       await this.#record(db, session, {
@@ -1825,8 +1853,21 @@ export class BotPlay {
         delete d.nextRegular;
       } else {
         const since = presence.get(d.turn);
-        if (since == null) delete d.awayUntil;
-        else {
+        if (since == null) {
+          delete d.awayUntil;
+          if (
+            !r &&
+            !before.awayUntil &&
+            since === null &&
+            Date.parse(d.turnActivityAt) + turnIdleMs <= now.getTime() &&
+            [...presence].some(
+              ([actor, offline]) => actor !== d.turn && offline === null,
+            )
+          ) {
+            await this.#next(db, session, "idle");
+            idleExpired = true;
+          }
+        } else {
           const deadline = new Date(since + turnReturnMs);
           if (deadline <= now) await this.#next(db, session, "absence");
           else d.awayUntil = deadline.toISOString();
@@ -1839,6 +1880,7 @@ export class BotPlay {
       before.awayUntil !== d.awayUntil
     )
       await this.#save(db, session, before);
+    return idleExpired;
   }
   async #characters(session: Session, db: Db) {
     const context = this.store.context(
@@ -2258,9 +2300,19 @@ export class BotPlay {
            (NOT (s.data ? 'receiving') AND
              NOT EXISTS (SELECT 1 FROM bot_npc n WHERE n.world_id=s.world_id AND n.actor_id=a.actor_id AND n.controller='server') AND
              NOT (s.data ? 'nextRegular') AND
-             NOT EXISTS (SELECT 1 FROM player_waiting p WHERE p.world_id=s.world_id AND p.actor_id=a.actor_id AND p.active AND p.last_seen >= $3))
+              (NOT EXISTS (SELECT 1 FROM player_waiting p WHERE p.world_id=s.world_id AND p.actor_id=a.actor_id AND p.active AND p.last_seen >= $3) OR
+                ((s.data->>'turnActivityAt')::timestamptz <= $4 AND EXISTS (
+                  SELECT 1 FROM jsonb_array_elements(s.data->'members') AS m
+                  JOIN player_waiting p ON p.world_id=s.world_id AND p.actor_id=(m->>'actorId')::uuid AND p.user_id=(m->>'userId')::uuid
+                  WHERE p.actor_id<>a.actor_id AND p.active AND p.last_seen >= $3 AND NOT (m ? 'instant')
+                    AND NOT EXISTS (SELECT 1 FROM bot_npc n WHERE n.world_id=s.world_id AND n.actor_id=p.actor_id AND n.controller='server')))))
          )`,
-        [world ?? null, now, new Date(now.getTime() - waitLeaseMs)],
+        [
+          world ?? null,
+          now,
+          new Date(now.getTime() - waitLeaseMs),
+          new Date(now.getTime() - turnIdleMs),
+        ],
       )
     ).rows;
     for (const initial of sessions) {
@@ -2277,7 +2329,7 @@ export class BotPlay {
       }
     }
   }
-  // 止まっているかは、在席切れ・受領期限・離席の処理で手番が進むかで決める。
+  // 自動の期限処理で手番が進む場合に、管理用操作からも進められる。
   async advance(db: Db, world: string, id: string) {
     await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,225))", [
       world,
@@ -3978,6 +4030,7 @@ export class BotPlay {
     )
       reject("NPC_CONTROLLER_CHANGED", "NPCの操作担当が変わりました");
     const w = await this.world(world);
+    let prepared: Session | undefined;
     if (
       [
         "update",
@@ -3990,9 +4043,16 @@ export class BotPlay {
       ].includes(input.command) ||
       (input.command === "say" && input.instantNpcs?.length)
     ) {
-      const active = await this.current(world, actor);
-      if (!active || active.data.turn !== actor || active.data.receiving)
+      prepared = await this.current(world, actor);
+      if (!prepared || prepared.data.turn !== actor || prepared.data.receiving)
         reject("TURN_REQUIRED", "本人の通常手番ではありません");
+      const bound = await this.pool.query(
+        `UPDATE bot_request SET prepared_turn=$2 WHERE id=$1
+         AND (prepared_turn IS NULL OR prepared_turn=$2)`,
+        [input.requestId, JSON.stringify([prepared.id, prepared.data.number])],
+      );
+      if (!bound.rowCount)
+        reject("TURN_REQUIRED", "申請した手番は終了しました");
     }
     // Semantic work precedes all session locks; its graph dependencies are validated at commit.
     let promotion: Awaited<ReturnType<BotPlay["preparePromotion"]>> | undefined;
@@ -4027,7 +4087,7 @@ export class BotPlay {
       throw playError(error);
     });
     const db = await this.pool.connect();
-    let endedReceipt: AccessError | undefined;
+    let committedRejection: AccessError | undefined;
     try {
       await db.query("BEGIN");
       await db.query("SELECT id FROM bot_request WHERE id=$1 FOR UPDATE", [
@@ -4087,7 +4147,30 @@ export class BotPlay {
         world,
       ]);
       let session = await this.current(world, actor, db);
-      if (session) await this.#expire(db, session);
+      if (session) {
+        const wasOwnTurn = session.data.turn === actor;
+        if (
+          (await this.#expire(db, session)) &&
+          wasOwnTurn &&
+          input.command !== "start" &&
+          input.command !== "leave" &&
+          input.command !== "finish" &&
+          input.command !== "receive"
+        ) {
+          committedRejection = new AccessError(
+            409,
+            "TURN_REQUIRED",
+            "無操作の期限に達したため手番が終了しました",
+          );
+          throw committedRejection;
+        }
+      }
+      if (
+        prepared &&
+        (session?.id !== prepared.id ||
+          session.data.number !== prepared.data.number)
+      )
+        reject("TURN_REQUIRED", "申請した手番は終了しました");
       if (
         input.command === "receive" &&
         session?.data.receiving?.id !== input.applicationId
@@ -4103,12 +4186,12 @@ export class BotPlay {
           [world, actor, input.applicationId],
         );
         if (rows[0]) {
-          endedReceipt = new AccessError(
+          committedRejection = new AccessError(
             409,
             "RECEIVING_TURN_REQUIRED",
             `${rows[0].message}（申請ID ${input.applicationId}）`,
           );
-          throw endedReceipt;
+          throw committedRejection;
         }
       }
       if (assignment?.controller !== "server") {
@@ -4195,6 +4278,7 @@ export class BotPlay {
             result = { sceneId: member.sceneId, result: final };
           } else {
             await signalTurns(db, world, actor);
+            const at = this.now().toISOString();
             const separated: Session = {
               id: input.requestId,
               world_id: world,
@@ -4202,7 +4286,8 @@ export class BotPlay {
                 members: [member],
                 turn: actor,
                 number: 1,
-                turnStartedAt: this.now().toISOString(),
+                turnStartedAt: at,
+                turnActivityAt: at,
                 used: 0,
                 entries: [],
               },
@@ -4764,9 +4849,11 @@ export class BotPlay {
       await db.query("COMMIT");
       return result;
     } catch (error) {
-      // The deadline may have been settled by this receive command.
+      // Persist a deadline processed by the request that it invalidated.
       await db.query(
-        endedReceipt && error === endedReceipt ? "COMMIT" : "ROLLBACK",
+        committedRejection && error === committedRejection
+          ? "COMMIT"
+          : "ROLLBACK",
       );
       throw playError(error);
     } finally {

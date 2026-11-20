@@ -178,7 +178,7 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
       "のプロフィール",
     )[0]!;
     const timer = scene.locator(".turn-clock");
-    await expect(timer).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
+    await expect(timer).toHaveText(/^\d{2,}:\d{2}$/);
     await current.hover();
     await expect(page.getByRole("tooltip")).toHaveText(currentName);
     await current.click();
@@ -245,10 +245,24 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
       fullPage: true,
     });
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole("button", { name: "シーン情報", exact: true }).click();
-    await expect(
-      page.getByRole("dialog", { name: "シーン情報" }),
-    ).toBeVisible();
+    const leftTrigger = page.locator('.play-drawer-trigger[data-side="left"]');
+    const rightTrigger = page.locator(
+      '.play-drawer-trigger[data-side="right"]',
+    );
+    for (const trigger of [leftTrigger, rightTrigger]) {
+      await expect(trigger).toBeVisible();
+      await expect(trigger).toHaveCSS("position", "fixed");
+      await expect(trigger).toHaveCSS("bottom", "12px");
+    }
+    await expect(leftTrigger).toHaveCSS("left", "12px");
+    await expect(rightTrigger).toHaveCSS("right", "12px");
+    await rightTrigger.click();
+    const sceneDrawer = page.getByRole("dialog", { name: "シーン情報" });
+    await expect(sceneDrawer).toBeVisible();
+    await expect(sceneDrawer.locator(".turn-clock")).toHaveText(
+      /^\d{2,}:\d{2}$/,
+    );
+    await expect(page.locator(".play-drawer-trigger:visible")).toHaveCount(0);
     await page.keyboard.press("Escape");
     const swipe = (source: typeof log, from: number, to: number) =>
       source.evaluate(
@@ -274,8 +288,10 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     const drawer = page.getByRole("dialog", { name: "プレイヤー情報" });
     await swipe(log, 28, 150);
     await expect(drawer).toBeVisible();
+    await expect(page.locator(".play-drawer-trigger:visible")).toHaveCount(0);
     await swipe(drawer, 170, 35);
     await expect(drawer).toBeHidden();
+    await expect(page.locator(".play-drawer-trigger:visible")).toHaveCount(2);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
