@@ -17,7 +17,7 @@ import { History, type HistoryHandle } from "./History.js";
 import { Link } from "@tanstack/react-router";
 
 const TextNode = z.object({ text: z.string() }),
-  Item = z.object({ label: z.string() });
+  Item = z.object({ label: z.string(), count: z.number().optional() });
 const Material = z.object({
   node: TextNode.optional(),
   states: z.array(z.object({ node: TextNode })).optional(),
@@ -32,12 +32,16 @@ const Material = z.object({
       }),
     )
     .optional(),
-  items: z.array(Item).optional(),
-  storages: z
-    .array(z.object({ label: z.string(), items: z.array(Item) }))
+  belongings: z
+    .object({
+      items: z.array(Item),
+      storages: z.array(z.object({ label: z.string(), items: z.array(Item) })),
+      skills: z.array(z.object({ text: z.string() })),
+    })
     .optional(),
-  skills: z.array(z.object({ text: z.string() })).optional(),
 });
+const itemText = (item: z.infer<typeof Item>) =>
+  item.count ? `${item.label} ×${item.count}` : item.label;
 const View = z.object({
   sessionId: z.string().optional(),
   viewerId: z.string(),
@@ -115,12 +119,12 @@ function PersonalMaterial({
     ...(data.states ?? []).map((x) => x.node.text),
     ...(data.interpretations ?? []).map((x) => x.node.text),
     ...(data.locations ?? []).map((x) => x.text),
-    ...(data.items ?? []).map((x) => x.label),
-    ...(data.storages ?? []).flatMap((x) => [
+    ...(data.belongings?.items ?? []).map(itemText),
+    ...(data.belongings?.storages ?? []).flatMap((x) => [
       x.label,
-      ...x.items.map((i) => i.label),
+      ...x.items.map(itemText),
     ]),
-    ...(data.skills ?? []).map((x) => x.text),
+    ...(data.belongings?.skills ?? []).map((x) => x.text),
   ].filter(Boolean);
   return (
     <details className="rounded-lg border bg-secondary p-4" open>
@@ -264,7 +268,8 @@ export function BotSession({
                 {entry.result.items?.map((item) => (
                   <div key={item.itemId}>
                     <span>
-                      {item.label}〈{item.itemId}〉
+                      {item.label}
+                      {item.count ? ` ×${item.count}` : ""}〈{item.itemId}〉
                     </span>
                     {item.ownership && (
                       <p>
@@ -348,17 +353,6 @@ export function BotSession({
                 }
               >
                 周囲を見る
-              </Button>
-              <Button
-                disabled={busy}
-                onClick={() =>
-                  void send({
-                    command: "search",
-                    query: { kind: "belongings" },
-                  })
-                }
-              >
-                持ち物・保管先・技能
               </Button>
               <Button
                 disabled={busy}

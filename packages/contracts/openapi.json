@@ -5802,21 +5802,96 @@
                         ]
                       },
                       "query": {
-                        "oneOf": [
+                        "anyOf": [
                           {
-                            "type": "object",
-                            "properties": {
-                              "kind": {
-                                "type": "string",
-                                "enum": [
-                                  "surroundings"
-                                ]
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "surroundings"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "self"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "memos"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "history"
+                                    ]
+                                  },
+                                  "targetId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "subject"
+                                    ]
+                                  },
+                                  "targetId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "targetId"
+                                ],
+                                "additionalProperties": false
                               }
-                            },
-                            "required": [
-                              "kind"
-                            ],
-                            "additionalProperties": false
+                            ]
                           },
                           {
                             "type": "object",
@@ -5831,78 +5906,8 @@
                             "required": [
                               "kind"
                             ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "kind": {
-                                "type": "string",
-                                "enum": [
-                                  "self"
-                                ]
-                              }
-                            },
-                            "required": [
-                              "kind"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "kind": {
-                                "type": "string",
-                                "enum": [
-                                  "memos"
-                                ]
-                              }
-                            },
-                            "required": [
-                              "kind"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "kind": {
-                                "type": "string",
-                                "enum": [
-                                  "history"
-                                ]
-                              },
-                              "targetId": {
-                                "type": "string",
-                                "format": "uuid",
-                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                              }
-                            },
-                            "required": [
-                              "kind"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "kind": {
-                                "type": "string",
-                                "enum": [
-                                  "subject"
-                                ]
-                              },
-                              "targetId": {
-                                "type": "string",
-                                "format": "uuid",
-                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                              }
-                            },
-                            "required": [
-                              "kind",
-                              "targetId"
-                            ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "description": "廃止。持ち物・保管先・技能はselfに含まれる"
                           }
                         ]
                       }
@@ -6052,6 +6057,13 @@
                                   "type": "string",
                                   "minLength": 1
                                 },
+                                "count": {
+                                  "description": "個数。数えないまとまりなら省く",
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true,
+                                  "maximum": 9007199254740991
+                                },
                                 "holder": {
                                   "type": "string",
                                   "format": "uuid",
@@ -6103,6 +6115,13 @@
                                   "format": "uuid",
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                 },
+                                "count": {
+                                  "description": "対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける",
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true,
+                                  "maximum": 9007199254740991
+                                },
                                 "basis": {
                                   "type": "string",
                                   "minLength": 1,
@@ -6137,6 +6156,13 @@
                                   "type": "string",
                                   "format": "uuid",
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "count": {
+                                  "description": "対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける",
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true,
+                                  "maximum": 9007199254740991
                                 },
                                 "basis": {
                                   "type": "string",
@@ -6266,6 +6292,13 @@
                                   "type": "string",
                                   "minLength": 1
                                 },
+                                "count": {
+                                  "description": "物品の新しい個数。増やす・新しく付けるときはダイスで判定する",
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true,
+                                  "maximum": 9007199254740991
+                                },
                                 "basis": {
                                   "type": "string",
                                   "minLength": 1,
@@ -6274,11 +6307,10 @@
                               },
                               "required": [
                                 "type",
-                                "id",
-                                "text"
+                                "id"
                               ],
                               "additionalProperties": false,
-                              "description": "物品の呼称、または技能の内容と範囲を改める。技能の根拠が変わる場合はbasisを指定する"
+                              "description": "物品の呼称・個数、または技能の内容と範囲を改める。技能の根拠が変わる場合はbasisを指定する"
                             },
                             {
                               "type": "object",
@@ -6293,6 +6325,13 @@
                                   "type": "string",
                                   "format": "uuid",
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "count": {
+                                  "description": "減らす個数。省くと全部",
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true,
+                                  "maximum": 9007199254740991
                                 }
                               },
                               "required": [
@@ -6329,6 +6368,13 @@
                                       "enum": [
                                         "existence"
                                       ]
+                                    },
+                                    "count": {
+                                      "description": "物品の個数。無い物品は、個数を数えないひとまとまり",
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
                                     }
                                   },
                                   "required": [
@@ -6615,6 +6661,13 @@
                                       "enum": [
                                         "existence"
                                       ]
+                                    },
+                                    "count": {
+                                      "description": "物品の個数。無い物品は、個数を数えないひとまとまり",
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
                                     }
                                   },
                                   "required": [
@@ -7190,6 +7243,13 @@
                                       "enum": [
                                         "existence"
                                       ]
+                                    },
+                                    "count": {
+                                      "description": "物品の個数。無い物品は、個数を数えないひとまとまり",
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
                                     }
                                   },
                                   "required": [
@@ -7476,6 +7536,13 @@
                                       "enum": [
                                         "existence"
                                       ]
+                                    },
+                                    "count": {
+                                      "description": "物品の個数。無い物品は、個数を数えないひとまとまり",
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
                                     }
                                   },
                                   "required": [
@@ -8049,6 +8116,13 @@
                                   "type": "string",
                                   "minLength": 1
                                 },
+                                "count": {
+                                  "description": "個数。数えないまとまりなら省く",
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true,
+                                  "maximum": 9007199254740991
+                                },
                                 "holder": {
                                   "type": "string",
                                   "format": "uuid",
@@ -8100,6 +8174,13 @@
                                   "format": "uuid",
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                 },
+                                "count": {
+                                  "description": "対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける",
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true,
+                                  "maximum": 9007199254740991
+                                },
                                 "basis": {
                                   "type": "string",
                                   "minLength": 1,
@@ -8134,6 +8215,13 @@
                                   "type": "string",
                                   "format": "uuid",
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "count": {
+                                  "description": "対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける",
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true,
+                                  "maximum": 9007199254740991
                                 },
                                 "basis": {
                                   "type": "string",
@@ -8263,6 +8351,13 @@
                                   "type": "string",
                                   "minLength": 1
                                 },
+                                "count": {
+                                  "description": "物品の新しい個数。増やす・新しく付けるときはダイスで判定する",
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true,
+                                  "maximum": 9007199254740991
+                                },
                                 "basis": {
                                   "type": "string",
                                   "minLength": 1,
@@ -8271,11 +8366,10 @@
                               },
                               "required": [
                                 "type",
-                                "id",
-                                "text"
+                                "id"
                               ],
                               "additionalProperties": false,
-                              "description": "物品の呼称、または技能の内容と範囲を改める。技能の根拠が変わる場合はbasisを指定する"
+                              "description": "物品の呼称・個数、または技能の内容と範囲を改める。技能の根拠が変わる場合はbasisを指定する"
                             },
                             {
                               "type": "object",
@@ -8290,6 +8384,13 @@
                                   "type": "string",
                                   "format": "uuid",
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "count": {
+                                  "description": "減らす個数。省くと全部",
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true,
+                                  "maximum": 9007199254740991
                                 }
                               },
                               "required": [
@@ -8326,6 +8427,13 @@
                                       "enum": [
                                         "existence"
                                       ]
+                                    },
+                                    "count": {
+                                      "description": "物品の個数。無い物品は、個数を数えないひとまとまり",
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
                                     }
                                   },
                                   "required": [
@@ -8612,6 +8720,13 @@
                                       "enum": [
                                         "existence"
                                       ]
+                                    },
+                                    "count": {
+                                      "description": "物品の個数。無い物品は、個数を数えないひとまとまり",
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
                                     }
                                   },
                                   "required": [
@@ -14864,6 +14979,13 @@
                                           "enum": [
                                             "existence"
                                           ]
+                                        },
+                                        "count": {
+                                          "description": "物品の個数。無い物品は、個数を数えないひとまとまり",
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
                                         }
                                       },
                                       "required": [
@@ -15150,6 +15272,13 @@
                                           "enum": [
                                             "existence"
                                           ]
+                                        },
+                                        "count": {
+                                          "description": "物品の個数。無い物品は、個数を数えないひとまとまり",
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
                                         }
                                       },
                                       "required": [

@@ -61,9 +61,8 @@ node <CLIの絶対パス> connect --server <接続先> --world <世界のURLま�
 | `join`                                | 許可された設定で一人を作成。最初のアイコンも引き継ぐ |
 | `recover --request <要求ID>`          | 保存した同じ要求の照合。新しい人物や一手を追加しない |
 | `start`                               | 本人の単独セッションを開始                           |
-| `search --kind self`                  | 本人の設定・状態・解釈を取得                         |
+| `search --kind self`                  | 本人の設定・状態・解釈と、物品・保管・技能を取得     |
 | `search --kind surroundings`          | 周囲と接触候補を取得                                 |
-| `search --kind belongings`            | 物品・保管・技能を取得                               |
 | `search --kind history`               | 本人に提供される過去の出来事を取得                   |
 | `search --kind subject --target <ID>` | 本人が参照できる対象を取得                           |
 

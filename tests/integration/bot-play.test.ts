@@ -401,7 +401,7 @@ test("個別検索を同報せず、成功した8回だけで手番を進め、�
   for (let i = 0; i < 7; i++) {
     const read = await f.send(1, {
       command: "search",
-      query: { kind: "belongings" },
+      query: { kind: "self" },
     });
     if (i === 6)
       expect(read.action).toMatchObject({ endedTurn: { reason: "limit" } });
@@ -2908,7 +2908,7 @@ test("検索で発生した複数の物品を同席者が観測し、後から�
     },
   );
   expect(
-    (await f.send(0, { command: "search", query: { kind: "belongings" } }))
+    (await f.send(0, { command: "search", query: { kind: "self" } }))
       .appearances,
   ).toBeUndefined();
   await f.move(0, f.place);
@@ -4786,4 +4786,163 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
   expect(await present(0)).toEqual([f.actors[0]]);
   expect(await whereabouts(2)).toEqual([f.far]);
   expect(await whereabouts(0)).toEqual([f.place]);
+});
+
+test("持ち物は本人検索で個数つきで読め、ダイスが成功したときだけGMの選んだ手持ちの物品が減る", async () => {
+  const f = await fixture();
+  const made = await f.apply([
+    {
+      type: "create",
+      label: "矢",
+      count: 5,
+      holder: f.actors[0],
+      owner: f.actors[0],
+      basis: "初期設定",
+    },
+    { type: "create", label: "砥石", holder: f.actors[0], basis: "初期設定" },
+    { type: "create", label: "盾", holder: f.actors[1], basis: "初期設定" },
+  ]);
+  const [arrows, stone, shield] = made.changes.nodes.map((n) => n.id) as [
+    string,
+    string,
+    string,
+  ];
+  const held = async (i: number) =>
+    (await readBelongings(f.store.context(f.graph), f.actors[i]!)).items.map(
+      ({ id, label, count }) => ({ id, label, count }),
+    );
+  const count = async (i: number, id: string) =>
+    (await held(i)).find((item) => item.id === id)?.count;
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  // 本人検索が持ち物を返す。旧い検索の種類は本人検索へ誘導し、通常枠を使わない。
+  const self = await f.send(0, { command: "search", query: { kind: "self" } });
+  expect(
+    (self.material as { belongings: { items: unknown[] } }).belongings.items,
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: arrows, label: "矢", count: 5 }),
+      expect.objectContaining({ id: stone, label: "砥石" }),
+    ]),
+  );
+  await expect(
+    f.send(0, { command: "search", query: { kind: "belongings" } }),
+  ).rejects.toMatchObject({ code: "SEARCH_KIND_MOVED" });
+  expect((await f.status(0)).callsUsed).toBe(1);
+  // 新規作成のダイス。候補は申請者が手に持つ物品で、候補にないIDは減らない。
+  const candidates = (messages: { content: unknown }[]) =>
+    (
+      JSON.parse(String(messages[1]!.content)) as {
+        consumable?: { id: string }[];
+      }
+    ).consumable?.map((c) => c.id);
+  const craft = (requestId = randomUUID()) => ({
+    requestId,
+    command: "update",
+    text: "矢を使って的を作る",
+    operations: [
+      { type: "create", label: "的", holder: f.actors[0], basis: "作った" },
+    ],
+    dependencies: [],
+  });
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(candidates(messages)?.sort()).toEqual([arrows, stone].sort());
+    return answer(id, {
+      ...sure,
+      consumes: [{ id: arrows, count: 2 }, { id: shield }],
+    });
+  });
+  const first = craft(),
+    crafted = await f.send(0, first);
+  expect(crafted.outcome).toMatchObject({
+    success: true,
+    setting: { consumes: [{ id: arrows, label: "矢", count: 2 }] },
+  });
+  expect(await f.send(0, first)).toEqual(crafted);
+  expect(await held(0)).toHaveLength(3);
+  expect(await count(0, arrows)).toBe(3);
+  expect(await held(1)).toMatchObject([{ id: shield }]);
+  // 失敗では減らない。
+  const failing = craft(),
+    lost = { sides: 100, successThrough: 10 };
+  await isolated.databases.postgres.query(
+    "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,50)",
+    [
+      derivedId(`${failing.requestId}:creation`),
+      { ...lost, consumes: [{ id: arrows, label: "矢", count: 1 }] },
+    ],
+  );
+  f.calls.mockImplementationOnce(async (id) => answer(id, lost));
+  expect((await f.send(0, failing)).outcome).toMatchObject({ success: false });
+  expect(await count(0, arrows)).toBe(3);
+  // 個数を増やす更新はダイスに進む。申請が操作する物品は候補から外れる。減らす更新はダイスを通らない。
+  const recount = (count: number) =>
+    f.send(0, {
+      command: "update",
+      text: "矢の数を改める",
+      operations: [{ type: "update", id: arrows, count }],
+      dependencies: [],
+    });
+  f.calls.mockClear();
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(candidates(messages)).not.toContain(arrows);
+    return answer(id, sure);
+  });
+  expect((await recount(8)).outcome).toMatchObject({ success: true });
+  expect(await count(0, arrows)).toBe(8);
+  expect((await recount(6)).outcome).toBeUndefined();
+  expect(f.calls).toHaveBeenCalledTimes(1);
+  // 一部の贈与は受領を経て確定し、受け取った側に個数つきの物品ができる。
+  const giving = await f.send(0, {
+    command: "update",
+    text: "矢を2本贈る",
+    operations: ["transfer", "move"].map((type) => ({
+      type,
+      item: arrows,
+      ...(type === "move" ? { from: f.actors[0] } : {}),
+      to: f.actors[1],
+      count: 2,
+      basis: "贈った",
+    })),
+    dependencies: [],
+  });
+  await f.send(1, {
+    command: "receive",
+    applicationId: giving.applicationId,
+    accept: true,
+  });
+  expect(await count(0, arrows)).toBe(4);
+  expect(await held(1)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: shield }),
+      expect.objectContaining({ label: "矢", count: 2 }),
+    ]),
+  );
+  // 対抗行動のダイスでも同じ判定で減る。個数のない物品はまるごと失う。
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-opposition-dice");
+    expect(candidates(messages)).toContain(stone);
+    return answer(id, { ...sure, consumes: [{ id: stone, count: 3 }] });
+  });
+  const seized = await f.send(0, {
+    command: "oppose",
+    text: "砥石を投げつけて盾を奪う",
+    operations: [
+      {
+        type: "move",
+        item: shield,
+        from: f.actors[1],
+        to: f.actors[0],
+        basis: "奪う",
+      },
+    ],
+    dependencies: [],
+  });
+  expect(seized.outcome).toMatchObject({
+    success: true,
+    setting: { consumes: [{ id: stone, label: "砥石" }] },
+  });
+  expect((await held(0)).map((i) => i.id)).not.toContain(stone);
+  expect((await held(0)).map((i) => i.id)).toContain(shield);
 });

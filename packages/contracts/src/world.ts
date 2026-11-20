@@ -64,6 +64,13 @@ export const WorldNode = z.discriminatedUnion("kind", [
           "同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す",
         ),
       kind: z.literal("existence"),
+      count: z
+        .number()
+        .int()
+        .positive()
+        .safe()
+        .optional()
+        .describe("物品の個数。無い物品は、個数を数えないひとまとまり"),
     })
     .strict(),
   z

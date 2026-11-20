@@ -34,7 +34,10 @@ export const summaryText = (
   [
     summaryTitle[role],
     ...(targets.length
-      ? targets.map((target) => `- ${target.text}〔${target.id}〕`)
+      ? targets.map(
+          (target) =>
+            `- ${target.text}${target.kind === "existence" && target.count ? ` ×${target.count}` : ""}〔${target.id}〕`,
+        )
       : ["(なし)"]),
   ].join("\n");
 

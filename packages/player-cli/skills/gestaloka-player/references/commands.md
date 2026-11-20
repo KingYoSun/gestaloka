@@ -23,16 +23,30 @@
 }
 ```
 
-| type           | 引数                                     | 意味                       |
-| -------------- | ---------------------------------------- | -------------------------- |
-| locate         | subjectId, text, aboutIds, directPlaceId | 本人または同行者の所在地   |
-| create         | label, holder, owner任意, basis          | 新しい物品                 |
-| move           | item, from, to, basis                    | 保持者の変更。所有者は維持 |
-| transfer       | item, to, basis                          | 所有者の変更。保持者は維持 |
-| grant / revoke | person, storage。grantにはbasis          | 保管先の利用               |
-| learn          | person, text, basis                      | 技能とできる範囲           |
-| update         | id, text, basis任意                      | 物品・技能の内容           |
-| remove         | id                                       | 消費・破棄・技能の喪失     |
+| type           | 引数                                       | 意味                         |
+| -------------- | ------------------------------------------ | ---------------------------- |
+| locate         | subjectId, text, aboutIds, directPlaceId   | 本人または同行者の所在地     |
+| create         | label, count任意, holder, owner任意, basis | 新しい物品                   |
+| move           | item, from, to, count任意, basis           | 保持者の変更。所有者は維持   |
+| transfer       | item, to, count任意, basis                 | 所有者の変更。保持者は維持   |
+| grant / revoke | person, storage。grantにはbasis            | 保管先の利用                 |
+| learn          | person, text, basis                        | 技能とできる範囲             |
+| update         | id, text任意, count任意, basis任意         | 物品の呼称・個数、技能の内容 |
+| remove         | id, count任意                              | 消費・破棄・技能の喪失       |
+
+### 物品の個数
+
+物品は個数（`count`）を持てる。個数のない物品は、数えないひとまとまりとして扱う。本人の持ち物と個数は`search --kind self`の`material.belongings`で読む。
+
+- `move`・`transfer`に`count`を指定すると、その個数だけを渡す・預ける・譲る。残りは元の物品に残る。省くと全部が対象になる。贈与や売買で一部を渡すときは、`transfer`と`move`に同じ`item`と同じ`count`を指定する。
+- 渡した先に、呼称と所有者が同じ個数つきの物品があれば、その個数に足される。なければ、渡した個数の物品が新しくできる。受け取った側は自分の`belongings`でIDを確かめる。
+- `remove`に`count`を指定すると、その個数だけ減る。全部なくなれば持ち物から消える。
+- `update`の`count`で個数を書き換えられる。減らすのは本人の判断でできる。増やす・個数のない物品に新しく付けるときは、新しい物を得る申請として下記の新規作成と同じダイスで判定する。
+- 個数のない物品に`move`・`transfer`・`remove`の`count`は指定できない。
+
+### ダイスの成功で減る物品
+
+GMがダイスを設定する申請（新規作成、個数を増やす更新、対抗行動）では、GMが同じ判定で、成功したときに減る物品も決める。対象は本人が手に持つ物だけで、保管先に置いた物は減らない。応答の`outcome.setting.consumes`に、物品のID・呼称・減る個数が入る。成功すると申請と同じ確定で減り、失敗すれば減らない。申請自身が`operations`で動かす・減らす物品は、GMの判定からは外れる。新しい場所の`explore`では減らない。
 
 他の参加者の受領が必要なら、返却はreceivingとなる。同じセッションの受領者へ判断が回り、全員の受入後に確定する。セッション外の受領者には送れない。
 
