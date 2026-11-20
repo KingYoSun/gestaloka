@@ -378,7 +378,7 @@ test("既存世界へ事実を追加登録し直しても、事実と要約が�
 test("個数つきの物品は一部を渡すと分かれ、渡した先の同じ物品へ足され、使い切ると持ち物から消える", async () => {
   const { worldId, ids, apply, read } = await world("A", "B");
   const [a, b] = ids as [string, string];
-  const created = await apply(1, [
+  const created = await apply(0, [
     {
       type: "create",
       label: "矢",
@@ -387,12 +387,14 @@ test("個数つきの物品は一部を渡すと分かれ、渡した先の同�
       owner: a,
       basis: "初期設定",
     },
-    { type: "create", label: "水袋", holder: a, basis: "初期設定" },
   ]);
-  const [arrows, bag] = created.changes.nodes.map((n) => n.id) as [
-    string,
-    string,
-  ];
+  // 同じ時点の物品は並びが決まらないので、成立の時点を分ける。
+  const arrows = created.changes.nodes[0]!.id,
+    bag = (
+      await apply(1, [
+        { type: "create", label: "水袋", holder: a, basis: "初期設定" },
+      ])
+    ).changes.nodes[0]!.id;
   // 貸した3本はBのもとで別の物品になり、所有者はAのまま残る。
   await apply(2, [
     { type: "move", item: arrows, from: a, to: b, count: 3, basis: "貸した" },
