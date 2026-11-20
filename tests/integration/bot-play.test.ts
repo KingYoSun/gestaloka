@@ -2933,12 +2933,9 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
     ],
   });
   expect(await f.send(0, body)).toEqual(found);
+  // 次に現れた物品は、その場に残っている同じ物品へ足され、物品は増えない。
   const second = await f.send(0, { command: "search", query });
-  expect(
-    (second.appearances as { id: string }[]).every(
-      (a) => !items.some((i) => a.id === i.id),
-    ),
-  ).toBe(true);
+  expect(second.appearances).toMatchObject([{ id: items[0]!.id, count: 3 }]);
   expect(JSON.stringify((await f.status(1)).entries)).toContain(items[0]!.id);
   expect(JSON.stringify((await f.status(2)).entries)).not.toContain(
     items[0]!.id,
@@ -2969,7 +2966,7 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
   await f.send(2, pickup);
   expect(
     (await readBelongings(f.store.context(world), f.actors[2]!)).items,
-  ).toMatchObject([{ id: items[0]!.id, count: 2 }]);
+  ).toMatchObject([{ id: items[0]!.id, count: 5 }]);
   await expect(f.send(2, pickup)).rejects.toMatchObject({
     code: "HOLD_CHANGED",
   });

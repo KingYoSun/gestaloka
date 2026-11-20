@@ -67,8 +67,11 @@ function appear(key: string, rule: Rule, count: number): Appearance[] {
     ...(item ? { count } : {}),
   }));
 }
-// 出現を出来事として記録し、個体以外をその場に残る発見物にする。
-export function recordAppearances(
+// 出現を出来事として記録し、個体以外をその場に残る発見物にする。その場に、呼称が同じで
+// 固有の状態を持たない個数つきの発見物があれば、現れた物品をそこへ足して物品を増やさない。
+// 足した出現のidは、足した先の物品のidに書き換える。
+export async function recordAppearances(
+  ctx: WorldContext,
   changes: Change,
   request: string,
   event: Omit<Extract<WorldNode, { kind: "event" }>, "kind" | "period">,
@@ -76,6 +79,31 @@ export function recordAppearances(
   at: number,
   appearances: Appearance[],
 ) {
+  const stacks = new Map<string, Extract<WorldNode, { kind: "existence" }>>();
+  if (appearances.some((a) => a.kind === "existence"))
+    for (const place of places)
+      for (const id of await groundItems(ctx, place)) {
+        const node = await ctx.node(id);
+        if (
+          node?.kind === "existence" &&
+          node.count &&
+          ((await ctx.latestTime(id)) ?? 0) <= at &&
+          !(await ctx.relations(id, "status", "out", latest)).some(
+            (e) => e.role === "content",
+          )
+        )
+          stacks.set(node.text, node);
+      }
+  const added = new Map<string, Extract<WorldNode, { kind: "existence" }>>();
+  for (const a of appearances) {
+    const stack =
+      a.kind === "existence" && stacks.get(a.species + "：" + a.description);
+    if (!stack || !a.count) continue;
+    a.id = stack.id;
+    const node = added.get(stack.id) ?? stack;
+    added.set(stack.id, { ...node, count: node.count! + a.count });
+  }
+  changes.revisions.push(...added.values());
   const ground = derivedId(request + ":ground");
   const link = (edge: Omit<WorldEdge, "id" | "period">) =>
     changes.edges.push({
@@ -91,7 +119,7 @@ export function recordAppearances(
     ...(appearances.length ? { appearances } : {}),
     period: { from: at },
   });
-  if (appearances.some((a) => a.kind !== "instant-npc")) {
+  if (appearances.some((a) => a.kind !== "instant-npc" && !added.has(a.id))) {
     changes.nodes.push({
       id: ground,
       kind: "script",
@@ -107,7 +135,7 @@ export function recordAppearances(
       });
   }
   for (const { id, kind, species, description, count } of appearances) {
-    if (kind === "instant-npc") continue;
+    if (kind === "instant-npc" || added.has(id)) continue;
     const text = species + "：" + description;
     changes.nodes.push(
       kind === "event"
@@ -222,7 +250,8 @@ export async function searchAppearances(
   }
   const changes: Change = { nodes: [], edges: [], endEdges: [], revisions: [] };
   const event = derivedId(request + ":appearance");
-  const link = recordAppearances(
+  const link = await recordAppearances(
+    ctx,
     changes,
     request,
     {
