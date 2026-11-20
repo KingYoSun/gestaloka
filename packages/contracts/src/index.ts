@@ -36,7 +36,11 @@ export const HealthEvent = z.object({
   data: Health,
 });
 
-export const ApiError = z.object({ code: z.string(), message: z.string() });
+export const ApiError = z.object({
+  code: z.string(),
+  message: z.string(),
+  callsUsed: z.number().int().optional(),
+});
 export const PlayerCliRelease = z.object({
   version: z.string(),
   node: z.string(),
