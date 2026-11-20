@@ -4348,6 +4348,130 @@ test("同席者に手番終了と退出を残し、離席の時点によって�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test("在席中も最後の操作から10分で手番を一度だけ進め、成立済みの発言を残す", async () => {
+  const start = Date.now();
+  let elapsed = 0;
+  const play = access.botPlay;
+  vi.spyOn(play, "now").mockImplementation(() => new Date(start + elapsed));
+  const f = await fixture();
+  await f.move(2, f.place);
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  await f.send(2, { command: "contact", targetId: f.actors[0] });
+  const cursor = (await play.turnFeed(f.world, f.actors[1]!, "0")).cursor;
+  elapsed = 300000;
+  await f.send(0, { command: "say", text: "成立済みの発言" });
+  elapsed = 600000;
+  for (const i of [0, 1, 2]) await f.status(i);
+  elapsed = 899999;
+  expect(await f.status(0)).toMatchObject({ turn: 1, actorId: f.actors[0] });
+  elapsed++;
+  await Promise.all([play.expire(f.world), play.expire(f.world)]);
+  expect(await f.status(1)).toMatchObject({ turn: 2, actorId: f.actors[1] });
+  expect(
+    (await play.turnFeed(f.world, f.actors[1]!, cursor)).updates.map(
+      (row) => row.transition,
+    ),
+  ).toMatchObject([
+    {
+      type: "turn-skipped",
+      turn: 1,
+      publicActivity: true,
+      message: expect.stringContaining("10分間"),
+    },
+  ]);
+  const session = (await play.current(f.world, f.actors[1]!))!;
+  const history = await play.history(
+    f.world,
+    f.actors[1]!,
+    session.data.members[1]!.sceneId,
+  );
+  expect(JSON.stringify(history.entries)).toContain("成立済みの発言");
+});
+
+test("受領と離席から戻った手番には無操作の期限を数え直す", async () => {
+  const start = Date.now();
+  let elapsed = 0;
+  const play = access.botPlay;
+  vi.spyOn(play, "now").mockImplementation(() => new Date(start + elapsed));
+  const f = await fixture();
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  const memo = await f.send(0, {
+    command: "memo",
+    text: "受領判断の試験",
+    participants: [f.actors[1]],
+    dependencies: [],
+  });
+  elapsed = 599999;
+  expect(await f.status(1)).toMatchObject({
+    turn: 1,
+    receiving: { applicationId: memo.applicationId },
+  });
+  await f.send(1, {
+    command: "receive",
+    applicationId: memo.applicationId,
+    accept: true,
+  });
+  elapsed = 600000;
+  expect(await f.status(0)).toMatchObject({
+    turn: 1,
+    actorId: f.actors[0],
+    receiving: null,
+  });
+  const ready = (active: boolean) =>
+    access.waiting(f.people[0]!.id, f.world, f.actors[0], undefined, active);
+  await ready(false);
+  elapsed = 1199999;
+  await f.status(1);
+  expect(await ready(true)).toMatchObject({ turn: 1, actionable: true });
+  elapsed++;
+  expect(await f.status(1)).toMatchObject({ turn: 1, actorId: f.actors[0] });
+  elapsed = 1799999;
+  await expect(
+    f.send(0, { command: "say", text: "期限後の操作" }),
+  ).rejects.toMatchObject({
+    code: "TURN_REQUIRED",
+  });
+  expect(await f.status(1)).toMatchObject({
+    turn: 2,
+    actorId: f.actors[1],
+    callsUsed: 0,
+  });
+});
+
+test("期限をまたいだ生成結果は同じ人物に手番が戻っても適用されない", async () => {
+  const start = Date.now();
+  let elapsed = 0;
+  vi.spyOn(access.botPlay, "now").mockImplementation(
+    () => new Date(start + elapsed),
+  );
+  const f = await fixture();
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  f.calls.mockImplementationOnce(async (id) => {
+    elapsed = 600000;
+    await access.botPlay.expire(f.world);
+    await f.send(1, { command: "end-turn" });
+    return answer(id, sure);
+  });
+  const input = {
+    requestId: randomUUID(),
+    command: "say",
+    text: "期限をまたぐ発言",
+    instantNpcs: ["小さな鳥"],
+  };
+  await expect(f.send(0, input)).rejects.toMatchObject({
+    code: "TURN_REQUIRED",
+  });
+  expect(await f.status(0)).toMatchObject({
+    turn: 3,
+    actorId: f.actors[0],
+    callsUsed: 0,
+  });
+  await expect(f.send(0, input)).rejects.toMatchObject({
+    code: "TURN_REQUIRED",
+  });
+  expect(await f.store.receipt(f.graph, input.requestId)).toBeUndefined();
+});
+
 test("認可済み端末は人物生成前に一度報告でき、参加後も枠・再送結果を引き継ぐ", async () => {
   const f = await fixture(),
     user = await auth.person("user"),
@@ -4719,6 +4843,31 @@ test("管理操作で止まったセッションを一覧から見つけ、保�
   expect(await advance(stalled.sessionId, requestId)).toEqual(advanced);
   await expect(advance(stalled.sessionId)).rejects.toMatchObject({
     code: "SESSION_NOT_STALLED",
+  });
+
+  await f.status(0);
+  const db = isolated.databases.postgres;
+  await db.query(
+    "UPDATE bot_session SET data=data-'turnActivityAt' WHERE id=$1",
+    [stalled.sessionId],
+  );
+  await access.botPlay.setup();
+  await expect(advance(stalled.sessionId)).rejects.toMatchObject({
+    code: "SESSION_NOT_STALLED",
+  });
+  await db.query(
+    "UPDATE bot_session SET data=jsonb_set(data,'{turnActivityAt}',to_jsonb($2::text)) WHERE id=ANY($1::uuid[])",
+    [
+      [stalled.sessionId, solo.sessionId],
+      new Date(Date.now() - 601000).toISOString(),
+    ],
+  );
+  await expect(advance(solo.sessionId)).rejects.toMatchObject({
+    code: "SESSION_NOT_STALLED",
+  });
+  expect((await advance(stalled.sessionId)).session).toMatchObject({
+    turn: 3,
+    holder: { actorId: f.actors[0], connected: true },
   });
   expect(f.calls).not.toHaveBeenCalled();
 });

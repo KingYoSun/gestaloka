@@ -323,8 +323,7 @@ select {
   width: 44px;
   height: 44px;
 }
-.play-toolbar .play-drawer-left,
-.play-toolbar .play-drawer-right {
+.play-layout .play-drawer-trigger {
   display: none;
 }
 .play-aside {
@@ -526,6 +525,7 @@ select {
 @media (max-width: 940px) {
   .play-layout {
     display: block;
+    padding-bottom: calc(56px + env(safe-area-inset-bottom));
   }
   .play-aside {
     display: none;
@@ -537,12 +537,19 @@ select {
     max-width: none;
     margin-bottom: 8px;
   }
-  .play-toolbar .play-drawer-left,
-  .play-toolbar .play-drawer-right {
+  .play-layout[data-drawer-open="false"] .play-drawer-trigger {
     display: inline-flex;
+    position: fixed;
+    z-index: 20;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    border: 1px solid var(--border);
+    background: var(--card);
   }
-  .play-drawer-right {
-    order: 1;
+  .play-drawer-trigger[data-side="left"] {
+    left: max(12px, env(safe-area-inset-left));
+  }
+  .play-drawer-trigger[data-side="right"] {
+    right: max(12px, env(safe-area-inset-right));
   }
   .play-dialog[data-side] {
     inset: 0 auto 0 0;

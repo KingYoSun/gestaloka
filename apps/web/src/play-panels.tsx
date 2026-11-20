@@ -84,6 +84,7 @@ export function PlayLayout({
   return (
     <section
       className="play-layout"
+      data-drawer-open={!!drawer}
       aria-label="セッション"
       onTouchStart={(event) => {
         const touch = event.touches[0];
@@ -123,7 +124,8 @@ export function PlayLayout({
                   type="button"
                   size="icon"
                   variant="ghost"
-                  className={`play-icon play-drawer-${side}`}
+                  className="play-icon play-drawer-trigger"
+                  data-side={side}
                   aria-label={title}
                   title={title}
                 >
@@ -287,11 +289,7 @@ function TurnClock({ since }: { since: string }) {
     return () => window.clearInterval(tick);
   }, []);
   const seconds = Math.max(0, Math.floor((now - Date.parse(since)) / 1000));
-  const duration = [
-    Math.floor(seconds / 3600),
-    Math.floor(seconds / 60) % 60,
-    seconds % 60,
-  ]
+  const duration = [Math.floor(seconds / 60), seconds % 60]
     .map((value) => value.toString().padStart(2, "0"))
     .join(":");
   return (
