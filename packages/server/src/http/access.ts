@@ -170,7 +170,9 @@ export class WorldAccess {
     const row = (
       await client.query<{ actor_id: string | null }>(
         `SELECT DISTINCT a.actor_id FROM world_access a JOIN world_subject s ON s.id=a.subject_id
-       WHERE s.user_id=$1 AND a.construction_id=$2 AND a.role=$3 AND s.active AND ($4::uuid IS NULL OR a.actor_id=$4) LIMIT 2`,
+       WHERE s.user_id=$1 AND a.construction_id=$2 AND a.role=$3 AND s.active
+       AND (($4::uuid IS NOT NULL AND a.actor_id=$4) OR ($4::uuid IS NULL AND NOT EXISTS (
+         SELECT 1 FROM world_join j WHERE j.id=a.id AND j.hidden_from_selection))) LIMIT 2`,
         [subject, id, role, actorId ?? null],
       )
     ).rows;

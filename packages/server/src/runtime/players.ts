@@ -50,7 +50,8 @@ export class WorldPlayers {
       player_id uuid PRIMARY KEY, construction_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
       image text NOT NULL);`);
     await this.pool.query(
-      "ALTER TABLE world_join ALTER COLUMN preset_id DROP NOT NULL, ALTER COLUMN preset_version DROP NOT NULL",
+      `ALTER TABLE world_join ALTER COLUMN preset_id DROP NOT NULL, ALTER COLUMN preset_version DROP NOT NULL,
+        ADD COLUMN IF NOT EXISTS hidden_from_selection boolean NOT NULL DEFAULT false`,
     );
     await this.construction.queue.createQueue(this.queueName, {
       retryLimit: 2,
@@ -206,6 +207,7 @@ export class WorldPlayers {
       await this.pool.query(
         `SELECT * FROM (
       SELECT j.id,j.actor_id AS "actorId",j.state,j.at FROM world_join j WHERE j.subject_id=$1 AND j.construction_id=$2
+        AND (NOT j.hidden_from_selection OR $4::uuid IS NOT NULL OR $5::uuid IS NOT NULL)
       UNION ALL SELECT a.id,a.actor_id AS "actorId",'ready' AS state,c.at FROM world_access a JOIN world_subject s ON s.id=a.subject_id
         JOIN world_construction c ON c.id=a.construction_id WHERE s.user_id=$1 AND s.active AND a.role='player' AND a.construction_id=$2
         AND NOT EXISTS(SELECT 1 FROM world_join j WHERE j.id=a.id)
