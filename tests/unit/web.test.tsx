@@ -399,7 +399,7 @@ test("未認証では匿名セッションを作らずログインへ案内す�
     (
       await screen.findByRole("link", { name: "ログイン・利用登録へ" })
     ).getAttribute("href"),
-  ).toBe("/auth/register");
+  ).toBe(`/auth/register?return_to=${encodeURIComponent(location.href)}`);
   expect(screen.queryByRole("heading", { name: "世界を始める" })).toBeNull();
 });
 
