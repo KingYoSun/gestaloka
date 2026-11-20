@@ -43,6 +43,9 @@ export const SpawnRule = z.union([
 ]);
 export const Appearance = SpawnSubject.extend({
   id: z.uuid(),
+  count: spawnCount
+    .optional()
+    .describe("個数つきの1つの物品として残った数。死亡ドロップの物品に付く"),
   ruleId: z
     .uuid()
     .optional()
@@ -64,6 +67,13 @@ export const WorldNode = z.discriminatedUnion("kind", [
           "同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す",
         ),
       kind: z.literal("existence"),
+      count: z
+        .number()
+        .int()
+        .positive()
+        .safe()
+        .optional()
+        .describe("物品の個数。無い物品は、個数を数えないひとまとまり"),
     })
     .strict(),
   z

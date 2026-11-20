@@ -7,7 +7,7 @@ import {
   NpcAction,
   type Appearance,
   type ItemOutcome,
-  type PlaySearch,
+  PlaySearch,
   type ReceiptResult,
   playActionMessage,
 } from "@gestaloka/contracts";
@@ -347,9 +347,46 @@ const DiceSetting = z
     sides: z.number().int().min(2).max(2147483647),
     successThrough: z.number().int().positive(),
     fatal: z.array(z.uuid()).optional(),
+    consumes: z
+      .array(
+        z
+          .object({
+            id: z.uuid(),
+            count: z.number().int().positive().safe().optional(),
+            label: z.string().optional(),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict()
   .refine((v) => v.successThrough < v.sides);
+type Consumable = { id: string; label: string; count?: number };
+const consumePrompt =
+  "consumableは申請者が手に持つ物品である。この行動が成功したときに使い切る・減る物品を選び、consumes:[{id,count}]に返す。countは減る個数で、個数のない物品やまるごと失う物品では省く。行動がその物品を減らさないなら選ばず、該当がなければ空配列。";
+// GMが選んだ消費を、申請者が手に持つ物品と、その個数までに限る。
+function consumption(
+  setting: z.infer<typeof DiceSetting>,
+  consumable: Consumable[],
+): z.infer<typeof DiceSetting> {
+  const consumes = consumable.flatMap((item) => {
+    const chosen = setting.consumes?.find((c) => c.id === item.id);
+    return chosen
+      ? [
+          {
+            id: item.id,
+            label: item.label,
+            ...(item.count
+              ? { count: Math.min(chosen.count ?? item.count, item.count) }
+              : {}),
+          },
+        ]
+      : [];
+  });
+  const dice = { ...setting };
+  delete dice.consumes;
+  return { ...dice, ...(consumes.length ? { consumes } : {}) };
+}
 const ExploreDice = z
   .object({
     sides: z.literal(100),
@@ -767,7 +804,9 @@ export class BotPlay {
               .map((option) =>
                 "npcId" in option.shape
                   ? option.safeExtend({ npcId: z.enum(npcIds) })
-                  : option,
+                  : "query" in option.shape
+                    ? option.safeExtend({ query: PlaySearch })
+                    : option,
               ),
           );
           const sinceLastTurn =
@@ -785,7 +824,7 @@ export class BotPlay {
               {
                 role: "system",
                 content:
-                  "あなたは明示的に担当を指定された一人のユニークNPCです。自分自身の発言・行動の描写にはsayを使います。npc-actionは他の出現個体について申請するコマンドです。本人に提供された素材とセッションの入力・結果から、本人として次のAPIコマンドを一つ選びます。通常手番の開始時、sinceLastTurnには前回の自分の公開行動、その後に届いた発言・結果・コメント、同席者の増減があります。退出はセッションからの退出で、世界内の移動を意味しません。前回応じた声と新しい呼びかけを区別してください。今応じることや自分からしたいことがなければ、何も発言せずend-turnを選べます。currentTurnはこの手番で既に実行した操作とその結果です。発言・行動を終え、続けて行う別の目的がなければend-turnで次の人物へ渡してください。世界の裁定や他人の私的な解釈を代作しません。requestIdはサーバーが設定します。commandSchemaに従うJSONだけを返します。",
+                  "あなたは明示的に担当を指定された一人のユニークNPCです。自分自身の発言・行動の描写にはsayを使います。発言の中で物を使った・食べた・渡したと述べても、持ち物は変わりません。npc-actionは他の出現個体について申請するコマンドです。本人に提供された素材とセッションの入力・結果から、本人として次のAPIコマンドを一つ選びます。通常手番の開始時、sinceLastTurnには前回の自分の公開行動、その後に届いた発言・結果・コメント、同席者の増減があります。退出はセッションからの退出で、世界内の移動を意味しません。前回応じた声と新しい呼びかけを区別してください。今応じることや自分からしたいことがなければ、何も発言せずend-turnを選べます。currentTurnはこの手番で既に実行した操作とその結果です。発言・行動を終え、続けて行う別の目的がなければend-turnで次の人物へ渡してください。世界の裁定や他人の私的な解釈を代作しません。requestIdはサーバーが設定します。commandSchemaに従うJSONだけを返します。",
               },
               {
                 role: "user",
@@ -985,6 +1024,7 @@ export class BotPlay {
                 ...(npc ? [] : await this.#facts(context, [actorId])),
               ]
             : await this.#facts(context, [effect.targetId]),
+          npc ? [] : await this.#consumable(context, actorId, changes),
           victim ? undefined : effect.state,
           ...(victim
             ? ([[effect.targetId], ""] satisfies [string[], string])
@@ -998,6 +1038,13 @@ export class BotPlay {
         if (outcome.success) {
           effectState = saved.observable;
           fatal = saved.setting.fatal ?? [];
+          at = await this.#consume(
+            context,
+            request,
+            at,
+            changes,
+            saved.setting,
+          );
         }
         if (effectState && previous) changes.endEdges.push(previous.relationId);
         if (victim && fatal.length)
@@ -2147,9 +2194,7 @@ export class BotPlay {
       context = this.store.context(w.id, dependencies);
     const at = latest;
     let material: unknown;
-    if (query.kind === "belongings")
-      material = await readBelongings(context, actor);
-    else if (query.kind === "memos") {
+    if (query.kind === "memos") {
       const memos = [];
       for (const edge of await context.relations(actor, "has", "out", at)) {
         const node = await context.node(edge.target);
@@ -2246,6 +2291,7 @@ export class BotPlay {
         states: await this.#states(context, target),
         ...(target === actor
           ? {
+              belongings: await readBelongings(context, actor),
               interpretations: await Promise.all(
                 (await context.relations(actor, "interpret", "out", at))
                   .filter((e) => e.role === "content")
@@ -2311,8 +2357,8 @@ export class BotPlay {
     text: string,
     changes: Change,
     explore = false,
+    consumable: Consumable[] = [],
   ) {
-    if (!changes.nodes.length && !changes.edges.length) return;
     if (
       changes.nodes.every((n) => n.kind === "script") &&
       changes.edges.length &&
@@ -2402,6 +2448,7 @@ export class BotPlay {
     const premise = (await this.construction.get(world)).initial_prompt;
     const nodes = await this.#facts(context, [
       actor,
+      ...changes.revisions.map((n) => n.id),
       ...changes.edges.flatMap((e) => [e.source, e.target]),
     ]);
     const criteria = explore
@@ -2420,7 +2467,9 @@ export class BotPlay {
         {
           role: "system",
           content:
-            "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。世界の基準: " +
+            "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。" +
+            (consumable.length ? consumePrompt : "") +
+            "世界の基準: " +
             criteria,
         },
         {
@@ -2431,6 +2480,7 @@ export class BotPlay {
             text,
             changes,
             nodes,
+            ...(consumable.length ? { consumable } : {}),
           }),
         },
       ],
@@ -2439,7 +2489,7 @@ export class BotPlay {
     );
     const saved = await this.#roll(
       diceId,
-      Dice.parse(parseOutput(response.content)),
+      consumption(Dice.parse(parseOutput(response.content)), consumable),
     );
     return { ...saved, success: saved.roll <= saved.setting.successThrough };
   }
@@ -2549,49 +2599,46 @@ export class BotPlay {
     await combined.validate();
     return combined;
   }
+  // 移動・譲渡した物品を、申請の操作から読める形にする。同じ物品・同じ個数の操作は一つにまとめる。
   async #itemOutcomes(
     context: WorldContext,
     input: Input,
     changes: Change,
   ): Promise<ItemOutcome[]> {
     if (!("operations" in input) || !input.operations) return [];
-    const ids = new Set(
-      input.operations.flatMap((op) =>
-        op.type === "move" || op.type === "transfer" ? [op.item] : [],
-      ),
-    );
-    if (!ids.size) return [];
-    const ended = (
-      await Promise.all(changes.endEdges.map((id) => context.edge(id)))
-    ).filter((e) => e?.kind === "has");
-    const items: ItemOutcome[] = [];
-    for (const id of ids) {
-      const item: ItemOutcome = {
-        itemId: id,
-        label:
-          changes.revisions.find((node) => node.id === id)?.text ??
-          (await context.node(id))!.text,
-      };
-      for (const edge of changes.edges) {
-        if (edge.kind !== "has" || edge.target !== id) continue;
-        if (edge.role === "hold")
-          item.holding = {
-            fromId:
-              ended.find((e) => e?.target === id && e.role === "hold")
-                ?.source ?? null,
-            toId: edge.source,
-          };
-        if (!edge.role)
-          item.ownership = {
-            fromIds: ended.flatMap((e) =>
-              e?.target === id && !e.role ? [e.source] : [],
-            ),
-            toId: edge.source,
-          };
+    const applied = changes.edges.length || changes.revisions.length,
+      ended = await Promise.all(changes.endEdges.map((id) => context.edge(id))),
+      items = new Map<string, ItemOutcome>();
+    for (const op of input.operations) {
+      if (op.type !== "move" && op.type !== "transfer") continue;
+      const key = `${op.item}:${op.count ?? ""}`,
+        item = items.get(key) ?? {
+          itemId: op.item,
+          label:
+            changes.revisions.find((node) => node.id === op.item)?.text ??
+            (await context.node(op.item))!.text,
+          ...(op.count ? { count: op.count } : {}),
+        };
+      items.set(key, item);
+      if (!applied) continue;
+      if (op.type === "move") item.holding = { fromId: op.from, toId: op.to };
+      else {
+        // 全部を譲った物品は所有の関係が終わっている。一部なら元の所有者は変わらない。
+        const former = ended.filter(
+          (e) => e?.kind === "has" && e.target === op.item && !e.role,
+        );
+        item.ownership = {
+          fromIds: (former.length
+            ? former
+            : (await context.relations(op.item, "has", "in", latest)).filter(
+                (e) => !e.role,
+              )
+          ).map((e) => e!.source),
+          toId: op.to,
+        };
       }
-      items.push(item);
     }
-    return items;
+    return [...items.values()];
   }
   async #plan(
     world: string,
@@ -2874,7 +2921,13 @@ export class BotPlay {
                   "本人がいる場所の発見物を指定してください",
                 );
               }
-              pickupEdges.push(...ground.map((e) => e.id));
+              // 一部だけ拾うときは、残りをその場の発見物として残す。
+              const found = await context.node(id);
+              if (
+                !op.count ||
+                (found?.kind === "existence" && op.count === found.count)
+              )
+                pickupEdges.push(...ground.map((e) => e.id));
               at = Math.max(at, ...ground.map((e) => e.period.from));
               parties.add(actor);
             } else {
@@ -2899,11 +2952,13 @@ export class BotPlay {
             await affect(op.storage);
             await affect(op.person);
           } else {
-            if (
-              op.type === "update" &&
-              (await context.node(id))?.kind === "existence"
-            )
+            const node = await context.node(id);
+            if (op.type === "update" && node?.kind === "existence") {
               externalEffect = true;
+              // 個数を増やす・新しく付ける更新は、新しい物を得る申請としてダイスで判定する。
+              if (op.count && op.count > (node.count ?? 0))
+                needsCreation = true;
+            }
             if (!incoming.length) {
               if (input.command === "oppose") {
                 impossible = true;
@@ -3094,6 +3149,9 @@ export class BotPlay {
           input.text,
           changes,
           input.command === "explore",
+          input.command === "explore"
+            ? []
+            : await this.#consumable(context, actor, changes),
         )
       : undefined;
     if (outcome) {
@@ -3101,8 +3159,19 @@ export class BotPlay {
         input.requestId,
         outcome,
       ]);
-      if (!(outcome as { success: boolean }).success)
+      const dice = outcome as {
+        success: boolean;
+        setting: z.infer<typeof DiceSetting>;
+      };
+      if (!dice.success)
         return { context, changes: empty(), at, recipients: [], outcome };
+      at = await this.#consume(
+        context,
+        input.requestId,
+        at,
+        changes,
+        dice.setting,
+      );
     }
     if (input.command === "oppose") {
       let success = !externalEffect && [...parties].every((id) => id === actor);
@@ -3119,12 +3188,13 @@ export class BotPlay {
           input.text,
           changes,
           materials,
+          await this.#consumable(context, actor, changes),
           undefined,
           ...(await this.#mortal(session, recipients)),
         );
         success = saved.roll <= saved.setting.successThrough;
-        if (success && saved.setting.fatal) {
-          fatal = saved.setting.fatal;
+        if (success) {
+          fatal = saved.setting.fatal ?? [];
           at = await this.#relocateDead(
             session,
             context,
@@ -3132,6 +3202,13 @@ export class BotPlay {
             at,
             changes,
             fatal,
+          );
+          at = await this.#consume(
+            context,
+            input.requestId,
+            at,
+            changes,
+            saved.setting,
           );
         }
         outcome = { success, setting: saved.setting, roll: saved.roll };
@@ -3219,17 +3296,57 @@ export class BotPlay {
           aboutIds: [place.id],
         });
     }
+    return this.#append(context, request + ":death", at, changes, ops);
+  }
+  // 申請者が手に持つ物品のうち、申請自身が操作していないもの。GMが成功時の消費を選ぶ候補になる。
+  async #consumable(
+    context: WorldContext,
+    actor: string,
+    changes: Change,
+  ): Promise<Consumable[]> {
+    const touched = new Set([
+      ...changes.revisions.map((n) => n.id),
+      ...changes.edges.map((e) => e.target),
+      ...(
+        await Promise.all(changes.endEdges.map((id) => context.edge(id)))
+      ).map((e) => e?.target),
+    ]);
+    return (await heldItems(context, actor)).filter((i) => !touched.has(i.id));
+  }
+  // ダイスの成功で決まった所在・物品の操作を、申請と同じ確定に加える。
+  async #append(
+    context: WorldContext,
+    key: string,
+    at: number,
+    changes: Change,
+    ops: BelongingOp[],
+  ) {
     if (!ops.length) return at;
-    const moved = await planBelongings(
+    const added = await planBelongings(context, derivedId(key), at, ops);
+    changes.nodes.push(...added.changes.nodes);
+    changes.revisions.push(...added.changes.revisions);
+    changes.edges.push(...added.changes.edges);
+    changes.endEdges.push(...added.changes.endEdges);
+    return added.at;
+  }
+  #consume(
+    context: WorldContext,
+    request: string,
+    at: number,
+    changes: Change,
+    setting: z.infer<typeof DiceSetting>,
+  ) {
+    return this.#append(
       context,
-      derivedId(request + ":death"),
+      request + ":consume",
       at,
-      ops,
+      changes,
+      (setting.consumes ?? []).map(({ id, count }) => ({
+        type: "remove",
+        id,
+        ...(count ? { count } : {}),
+      })),
     );
-    changes.nodes.push(...moved.changes.nodes);
-    changes.edges.push(...moved.changes.edges);
-    changes.endEdges.push(...moved.changes.endEdges);
-    return moved.at;
   }
   async #commit(
     world: string,
@@ -3252,6 +3369,7 @@ export class BotPlay {
     action: string,
     changes: unknown,
     materials: unknown,
+    consumable: Consumable[],
     proposedState?: string,
     mortal: string[] = [],
     deathCriteria = "",
@@ -3261,7 +3379,10 @@ export class BotPlay {
         fatal = setting.fatal?.filter((id) => mortal.includes(id));
       delete setting.fatal;
       return {
-        setting: { ...setting, ...(fatal?.length ? { fatal } : {}) },
+        setting: consumption(
+          { ...setting, ...(fatal?.length ? { fatal } : {}) },
+          consumable,
+        ),
         observable,
       };
     }
@@ -3305,7 +3426,8 @@ export class BotPlay {
               : "NPCの外界への作用ではさらにobservableを返す。後から対象だけを調べた人が何がどうなったかを読めるよう、changes.stateから変化後の状態を述べる箇所を文末または句読点まで原文で抜き出す。部位名だけに切り詰めない。行為者、経緯、原因の推測を除く。観察可能な箇所がなければnull。") +
             (mortal.length
               ? "この行動が成功したときに死亡する対象を、mortalのIDから選んでfatal:[ID]に返す。行動と結果が対象の死を意味するときだけ選び、該当がなければ空配列。deathCriteriaがあれば、この世界で人物が死亡する条件として従う。"
-              : ""),
+              : "") +
+            (consumable.length ? consumePrompt : ""),
         },
         {
           role: "user",
@@ -3314,6 +3436,7 @@ export class BotPlay {
             action,
             changes,
             materials,
+            ...(consumable.length ? { consumable } : {}),
             ...(mortal.length ? { mortal } : {}),
             ...(mortal.length && deathCriteria ? { deathCriteria } : {}),
           }),
@@ -3985,6 +4108,11 @@ export class BotPlay {
             await this.#next(db, session);
           } else {
             if (input.command === "search") {
+              if (input.query.kind === "belongings")
+                reject(
+                  "SEARCH_KIND_MOVED",
+                  "持ち物・保管先・技能は本人検索（search --kind self）のbelongingsに含まれます",
+                );
               const queried = await this.#search(world, actor, input.query);
               result = queried.visible;
               const appearances = await searchAppearances(

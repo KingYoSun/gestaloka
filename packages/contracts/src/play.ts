@@ -6,10 +6,12 @@ const request = { requestId: z.uuid() },
 const id = z.uuid(),
   basis = text.describe(
     "この事実が成立した根拠。初期設定、または成立した出来事の内容",
-  );
+  ),
+  count = z.number().int().positive().safe();
 export const ItemOutcome = z.object({
   itemId: id,
   label: z.string(),
+  count: count.optional(),
   holding: z.object({ fromId: id.nullable(), toId: id }).optional(),
   ownership: z.object({ fromIds: z.array(id), toId: id }).optional(),
 });
@@ -27,12 +29,19 @@ export const LocationOp = z
   })
   .strict();
 
+// 同じ申請で同じ物品に同じ個数を指定した移動と譲渡は、同じ取り分に作用する。
+const part = count
+  .optional()
+  .describe(
+    "対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける",
+  );
 export const BelongingOp = z.discriminatedUnion("type", [
   LocationOp,
   z
     .object({
       type: z.literal("create"),
       label: text,
+      count: count.optional().describe("個数。数えないまとまりなら省く"),
       holder: id,
       owner: id.optional(),
       basis,
@@ -45,12 +54,19 @@ export const BelongingOp = z.discriminatedUnion("type", [
       item: id,
       from: id.nullable().describe("現在の保持者。所在が未記録ならnull"),
       to: id,
+      count: part,
       basis,
     })
     .strict()
     .describe("物品の所在を移す。所有者は変えない"),
   z
-    .object({ type: z.literal("transfer"), item: id, to: id, basis })
+    .object({
+      type: z.literal("transfer"),
+      item: id,
+      to: id,
+      count: part,
+      basis,
+    })
     .strict()
     .describe("物品の所有者を替える。所在は変えない"),
   z
@@ -66,20 +82,37 @@ export const BelongingOp = z.discriminatedUnion("type", [
     .strict()
     .describe("できることとその範囲を技能として記録する"),
   z
-    .object({ type: z.literal("update"), id, text, basis: basis.optional() })
+    .object({
+      type: z.literal("update"),
+      id,
+      text: text.optional(),
+      count: count
+        .optional()
+        .describe(
+          "物品の新しい個数。増やす・新しく付けるときはダイスで判定する",
+        ),
+      basis: basis.optional(),
+    })
     .strict()
+    .refine(
+      (op) => op.text !== undefined || op.count !== undefined,
+      "textかcountを指定してください",
+    )
     .describe(
-      "物品の呼称、または技能の内容と範囲を改める。技能の根拠が変わる場合はbasisを指定する",
+      "物品の呼称・個数、または技能の内容と範囲を改める。技能の根拠が変わる場合はbasisを指定する",
     ),
   z
-    .object({ type: z.literal("remove"), id })
+    .object({
+      type: z.literal("remove"),
+      id,
+      count: count.optional().describe("減らす個数。省くと全部"),
+    })
     .strict()
     .describe("消費・消失した物品、または失った技能の所有・所在・習得を終える"),
 ]);
 export type BelongingOp = z.infer<typeof BelongingOp>;
 export const PlaySearch = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("surroundings") }).strict(),
-  z.object({ kind: z.literal("belongings") }).strict(),
   z.object({ kind: z.literal("self") }).strict(),
   z.object({ kind: z.literal("memos") }).strict(),
   z
@@ -108,7 +141,18 @@ export const PlayCommand = z.discriminatedUnion("command", [
   NpcAction.extend({ ...request, command: z.literal("npc-action"), npcId: id }),
   z.object({ ...request, command: z.literal("start") }).strict(),
   z
-    .object({ ...request, command: z.literal("search"), query: PlaySearch })
+    .object({
+      ...request,
+      command: z.literal("search"),
+      // 旧版のCLIが送るbelongingsは受け付けて、本人検索へ誘導する。
+      query: z.union([
+        PlaySearch,
+        z
+          .object({ kind: z.literal("belongings") })
+          .strict()
+          .describe("廃止。持ち物・保管先・技能はselfに含まれる"),
+      ]),
+    })
     .strict(),
   z
     .object({ ...request, command: z.literal("contact"), targetId: z.uuid() })

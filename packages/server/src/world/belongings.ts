@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { derivedId, type Change, type WorldEdge } from "./model.js";
+import {
+  derivedId,
+  type Change,
+  type WorldEdge,
+  type WorldNode,
+} from "./model.js";
 import type { Lease, WorldContext, WorldStore } from "./store.js";
 import type { Dependency } from "./store.js";
 
@@ -35,8 +40,62 @@ export async function planBelongings(
 ) {
   const change: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
   let at = requestedAt;
-  const incoming = (target: string) =>
-    context.relations(target, "has", "in", LATEST);
+  const incoming = async (target: string) =>
+    (await context.relations(target, "has", "in", LATEST)).filter(
+      (edge) => edge.role !== "summary",
+    );
+  const has = (
+    key: string,
+    source: string,
+    target: string,
+    role?: WorldEdge["role"],
+    text?: string,
+  ) =>
+    change.edges.push({
+      id: derivedId(`${commitId}:${key}`),
+      kind: "has",
+      source,
+      target,
+      ...(role ? { role } : {}),
+      ...(text ? { text } : {}),
+      period: { from: requestedAt },
+    });
+  const end = (edges: WorldEdge[]) => {
+    at = Math.max(at, ...edges.map((edge) => edge.period.from));
+    change.endEdges.push(...edges.map((edge) => edge.id));
+  };
+  // 同じ確定で改訂する物品・技能。個数の増減はここに重ね、ノードごとに一度だけ改訂する。
+  const revised = new Map<string, WorldNode>();
+  const current = async (id: string) =>
+    revised.get(id) ?? (await context.node(id));
+  const revise = async (node: WorldNode) => {
+    at = Math.max(at, (await context.latestTime(node.id)) ?? 0);
+    revised.set(node.id, node);
+  };
+  // 物品からcount個を取り分ける。全部を指すときはtrueを返し、物品そのものを扱わせる。
+  const take = async (id: string, count: number | undefined) => {
+    const node = await current(id);
+    if (
+      count === undefined ||
+      (node?.kind === "existence" && node.count === count)
+    )
+      return true;
+    if (node?.kind !== "existence" || !node.count || count > node.count)
+      throw new BelongingRejected("指定した個数の物品がありません");
+    await revise({ ...node, count: node.count - count });
+    return false;
+  };
+  // 同じ物品・同じ個数への移動と譲渡を一つの取り分にまとめ、最後に差分へ変える。
+  const parts = new Map<
+    string,
+    {
+      key: string;
+      item: string;
+      count?: number;
+      hold?: { to: string; basis: string };
+      own?: { to: string; basis: string };
+    }
+  >();
   for (const [index, op] of ops.entries()) {
     if (
       op.type === "locate" &&
@@ -47,26 +106,6 @@ export async function planBelongings(
         )
     )
       continue;
-    const has = (
-      key: string,
-      source: string,
-      target: string,
-      role?: WorldEdge["role"],
-      text?: string,
-    ) =>
-      change.edges.push({
-        id: derivedId(`${commitId}:${index}:${key}`),
-        kind: "has",
-        source,
-        target,
-        ...(role ? { role } : {}),
-        ...(text ? { text } : {}),
-        period: { from: requestedAt },
-      });
-    const end = (edges: WorldEdge[]) => {
-      at = Math.max(at, ...edges.map((edge) => edge.period.from));
-      change.endEdges.push(...edges.map((edge) => edge.id));
-    };
     switch (op.type) {
       case "locate": {
         const ids = [...new Set(op.aboutIds)];
@@ -134,28 +173,43 @@ export async function planBelongings(
         const node = derivedId(`${commitId}:${index}:node`);
         if (op.type === "learn") {
           change.nodes.push({ id: node, kind: "script", text: op.text });
-          has("skill", op.person, node, "skill", op.basis);
+          has(`${index}:skill`, op.person, node, "skill", op.basis);
           break;
         }
-        change.nodes.push({ id: node, kind: "existence", text: op.label });
-        has("hold", op.holder, node, "hold", op.basis);
-        if (op.owner) has("own", op.owner, node, undefined, op.basis);
+        change.nodes.push({
+          id: node,
+          kind: "existence",
+          text: op.label,
+          ...(op.count ? { count: op.count } : {}),
+        });
+        has(`${index}:hold`, op.holder, node, "hold", op.basis);
+        if (op.owner) has(`${index}:own`, op.owner, node, undefined, op.basis);
         break;
       }
-      case "move": {
-        const held = (await incoming(op.item)).filter(
-          (edge) => edge.role === "hold",
-        );
-        if ((held[0]?.source ?? null) !== op.from)
+      case "move":
+      case "transfer": {
+        if (
+          op.type === "move" &&
+          ((await incoming(op.item)).find((edge) => edge.role === "hold")
+            ?.source ?? null) !== op.from
+        )
           throw new BelongingRejected("物品の現在の所在が指定と異なります");
-        end(held);
-        has("hold", op.to, op.item, "hold", op.basis);
+        const id = `${op.item}:${op.count ?? ""}`;
+        let part = parts.get(id);
+        if (!part) {
+          part = {
+            key: `${index}:${op.item}`,
+            item: op.item,
+            ...((await take(op.item, op.count)) ? {} : { count: op.count! }),
+          };
+          parts.set(id, part);
+        }
+        part[op.type === "move" ? "hold" : "own"] = {
+          to: op.to,
+          basis: op.basis,
+        };
         break;
       }
-      case "transfer":
-        end((await incoming(op.item)).filter((edge) => !edge.role));
-        has("own", op.to, op.item, undefined, op.basis);
-        break;
       case "grant":
       case "revoke": {
         const uses = (await incoming(op.storage)).filter(
@@ -163,29 +217,119 @@ export async function planBelongings(
         );
         if (op.type === "revoke") end(uses);
         else if (!uses.length)
-          has("use", op.person, op.storage, "use", op.basis);
+          has(`${index}:use`, op.person, op.storage, "use", op.basis);
         break;
       }
       case "update": {
-        const node = await context.node(op.id),
-          facts = (await incoming(op.id)).filter(
-            (edge) => edge.role !== "summary",
-          );
+        const node = await current(op.id),
+          facts = await incoming(op.id);
         if (!node || !facts.length)
           throw new BelongingRejected("物品または技能が見つかりません");
-        at = Math.max(at, (await context.latestTime(op.id)) ?? 0);
-        change.revisions.push({ ...node, text: op.text });
+        if (op.count && node.kind !== "existence")
+          throw new BelongingRejected("個数は物品にだけ指定できます");
+        await revise({
+          ...node,
+          ...(op.text ? { text: op.text } : {}),
+          ...(op.count ? { count: op.count } : {}),
+        } as WorldNode);
         if (!op.basis) break;
         const skills = facts.filter((edge) => edge.role === "skill");
         end(skills);
         for (const edge of skills)
-          has(edge.source, edge.source, op.id, "skill", op.basis);
+          has(`${index}:${edge.source}`, edge.source, op.id, "skill", op.basis);
         break;
       }
       case "remove":
-        end((await incoming(op.id)).filter((edge) => edge.role !== "summary"));
+        if (await take(op.id, op.count)) end(await incoming(op.id));
     }
   }
+  for (const part of parts.values()) {
+    const source = (await current(part.item))!,
+      facts = await incoming(part.item),
+      held = facts.filter((edge) => edge.role === "hold"),
+      owned = facts.filter((edge) => !edge.role),
+      owners = part.own ? [part.own.to] : owned.map((edge) => edge.source),
+      count =
+        part.count ?? (source.kind === "existence" ? source.count : undefined);
+    // 移った先に、呼称と所有者が同じ個数つきの物品があれば、そこへ足して物品を増やさない。
+    let merged: WorldNode | undefined;
+    if (part.hold && count)
+      for (const edge of await context.relations(
+        part.hold.to,
+        "has",
+        "out",
+        LATEST,
+      )) {
+        const node = await current(edge.target);
+        if (
+          edge.role === "hold" &&
+          edge.target !== part.item &&
+          node?.kind === "existence" &&
+          node.count &&
+          node.text === source.text &&
+          JSON.stringify(
+            (await incoming(node.id))
+              .filter((own) => !own.role)
+              .map((own) => own.source)
+              .sort(),
+          ) === JSON.stringify([...owners].sort())
+        ) {
+          merged = { ...node, count: node.count + count };
+          break;
+        }
+      }
+    if (merged) {
+      await revise(merged);
+      if (!part.count) end(facts);
+    } else if (part.count) {
+      const node = derivedId(`${commitId}:${part.key}:part`),
+        holder = part.hold?.to ?? held[0]?.source;
+      change.nodes.push({
+        id: node,
+        kind: "existence",
+        text: source.text,
+        count: part.count,
+      });
+      if (holder)
+        has(
+          `${part.key}:hold`,
+          holder,
+          node,
+          "hold",
+          part.hold?.basis ?? held[0]?.text,
+        );
+      for (const owner of owners)
+        has(
+          `${part.key}:own:${owner}`,
+          owner,
+          node,
+          undefined,
+          part.own?.basis ?? owned.find((edge) => edge.source === owner)?.text,
+        );
+    } else {
+      if (part.hold) {
+        end(held);
+        has(
+          `${part.key}:hold`,
+          part.hold.to,
+          part.item,
+          "hold",
+          part.hold.basis,
+        );
+      }
+      if (part.own) {
+        end(owned);
+        has(
+          `${part.key}:own`,
+          part.own.to,
+          part.item,
+          undefined,
+          part.own.basis,
+        );
+      }
+    }
+  }
+  change.revisions.push(...revised.values());
   for (const edge of change.edges) edge.period = { from: at };
   return { at, changes: change };
 }
@@ -214,6 +358,12 @@ export async function changeBelongings(
   });
 }
 
+// 物品の呼称と、個数つきなら個数。
+const labelled = (node: WorldNode | undefined) => ({
+  label: node?.text ?? "",
+  ...(node?.kind === "existence" && node.count ? { count: node.count } : {}),
+});
+
 // その場にいる相手が手にしている物。保管先の中身は外から見えないものとして含めない。
 export async function heldItems(
   context: WorldContext,
@@ -233,7 +383,7 @@ export async function heldItems(
   return Promise.all(
     held.map(async (edge) => ({
       id: edge.target,
-      label: (await context.node(edge.target, at))?.text ?? "",
+      ...labelled(await context.node(edge.target, at)),
     })),
   );
 }
@@ -261,7 +411,7 @@ export async function readBelongings(
           owners.push({ id: own.source, label: await text(own.source) });
       held.push({
         id: edge.target,
-        label: await text(edge.target),
+        ...labelled(await context.node(edge.target, at)),
         owners,
         basis: edge.text ?? null,
         since: edge.period.from,

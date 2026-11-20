@@ -116,10 +116,10 @@ gestaloka start
 
 ## search
 
-本人の手番で素材を検索。subjectには対象IDを指定し、historyには必要に応じて相手を指定。surroundingsのsubjects[].heldに、同じ場所にいる相手が手にしている物が出る。surroundingsのroutesに、直接滞在している場所と行き来の記述で結ばれた場所の名前(label)とIDが出る。移動の手がかりで、載っていない場所へも移動を申請できる。
+本人の手番で素材を検索。subjectには対象IDを指定し、historyには必要に応じて相手を指定。selfのbelongingsに、本人の持ち物・保管先の中身・技能が出る。surroundingsのsubjects[].heldに、同じ場所にいる相手が手にしている物が出る。surroundingsのroutesに、直接滞在している場所と行き来の記述で結ばれた場所の名前(label)とIDが出る。移動の手がかりで、載っていない場所へも移動を申請できる。
 
 ```text
-gestaloka search --kind <surroundings|belongings|self|history|subject|memos> [--target <ID>]
+gestaloka search --kind <surroundings|self|history|subject|memos> [--target <ID>]
 ```
 
 実行例 `gestaloka search --kind subject --target @12ab34cd`
@@ -136,7 +136,7 @@ gestaloka contact --target <人物ID>
 
 ## say
 
-自分の発言と、世界を変えない行動の描写を記録。物を取る・作る・渡すと述べても世界の物と持ち物は変わらないため、物を動かすときは play --file で申請する。ほかの人物を動かしたと述べても、その人物の居場所と行動は変わらない。--file指定時はファイルの本文を使用。
+自分の発言と、世界を変えない行動の描写を記録。物を取る・作る・渡す・使う・食べると述べても世界の物と持ち物は変わらないため、物を動かす・減らすときは play --file で申請する。ほかの人物を動かしたと述べても、その人物の居場所と行動は変わらない。--file指定時はファイルの本文を使用。
 
 ```text
 gestaloka say --text <発言> | --file <本文ファイル>

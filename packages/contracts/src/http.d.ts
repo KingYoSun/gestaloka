@@ -2538,12 +2538,9 @@ export interface paths {
                         requestId: string;
                         /** @enum {string} */
                         command: "search";
-                        query: {
+                        query: ({
                             /** @enum {string} */
                             kind: "surroundings";
-                        } | {
-                            /** @enum {string} */
-                            kind: "belongings";
                         } | {
                             /** @enum {string} */
                             kind: "self";
@@ -2560,6 +2557,9 @@ export interface paths {
                             kind: "subject";
                             /** Format: uuid */
                             targetId: string;
+                        }) | {
+                            /** @enum {string} */
+                            kind: "belongings";
                         };
                     } | {
                         /** Format: uuid */
@@ -2598,6 +2598,8 @@ export interface paths {
                             /** @enum {string} */
                             type: "create";
                             label: string;
+                            /** @description 個数。数えないまとまりなら省く */
+                            count?: number;
                             /** Format: uuid */
                             holder: string;
                             /** Format: uuid */
@@ -2616,6 +2618,8 @@ export interface paths {
                             from: string | null;
                             /** Format: uuid */
                             to: string;
+                            /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
+                            count?: number;
                             /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                             basis: string;
                         } | {
@@ -2625,6 +2629,8 @@ export interface paths {
                             item: string;
                             /** Format: uuid */
                             to: string;
+                            /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
+                            count?: number;
                             /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                             basis: string;
                         } | {
@@ -2656,7 +2662,9 @@ export interface paths {
                             type: "update";
                             /** Format: uuid */
                             id: string;
-                            text: string;
+                            text?: string;
+                            /** @description 物品の新しい個数。増やす・新しく付けるときはダイスで判定する */
+                            count?: number;
                             /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                             basis?: string;
                         } | {
@@ -2664,6 +2672,8 @@ export interface paths {
                             type: "remove";
                             /** Format: uuid */
                             id: string;
+                            /** @description 減らす個数。省くと全部 */
+                            count?: number;
                         })[];
                         changes?: {
                             nodes: ({
@@ -2673,6 +2683,8 @@ export interface paths {
                                 text: string;
                                 /** @enum {string} */
                                 kind: "existence";
+                                /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
+                                count?: number;
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -2710,6 +2722,8 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    count?: number;
                                     /**
                                      * Format: uuid
                                      * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -2741,6 +2755,8 @@ export interface paths {
                                 text: string;
                                 /** @enum {string} */
                                 kind: "existence";
+                                /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
+                                count?: number;
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -2778,6 +2794,8 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    count?: number;
                                     /**
                                      * Format: uuid
                                      * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -2878,6 +2896,8 @@ export interface paths {
                                 text: string;
                                 /** @enum {string} */
                                 kind: "existence";
+                                /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
+                                count?: number;
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -2915,6 +2935,8 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    count?: number;
                                     /**
                                      * Format: uuid
                                      * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -2946,6 +2968,8 @@ export interface paths {
                                 text: string;
                                 /** @enum {string} */
                                 kind: "existence";
+                                /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
+                                count?: number;
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -2983,6 +3007,8 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    count?: number;
                                     /**
                                      * Format: uuid
                                      * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -3086,6 +3112,8 @@ export interface paths {
                             /** @enum {string} */
                             type: "create";
                             label: string;
+                            /** @description 個数。数えないまとまりなら省く */
+                            count?: number;
                             /** Format: uuid */
                             holder: string;
                             /** Format: uuid */
@@ -3104,6 +3132,8 @@ export interface paths {
                             from: string | null;
                             /** Format: uuid */
                             to: string;
+                            /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
+                            count?: number;
                             /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                             basis: string;
                         } | {
@@ -3113,6 +3143,8 @@ export interface paths {
                             item: string;
                             /** Format: uuid */
                             to: string;
+                            /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
+                            count?: number;
                             /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                             basis: string;
                         } | {
@@ -3144,7 +3176,9 @@ export interface paths {
                             type: "update";
                             /** Format: uuid */
                             id: string;
-                            text: string;
+                            text?: string;
+                            /** @description 物品の新しい個数。増やす・新しく付けるときはダイスで判定する */
+                            count?: number;
                             /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                             basis?: string;
                         } | {
@@ -3152,6 +3186,8 @@ export interface paths {
                             type: "remove";
                             /** Format: uuid */
                             id: string;
+                            /** @description 減らす個数。省くと全部 */
+                            count?: number;
                         })[];
                         changes?: {
                             nodes: ({
@@ -3161,6 +3197,8 @@ export interface paths {
                                 text: string;
                                 /** @enum {string} */
                                 kind: "existence";
+                                /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
+                                count?: number;
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -3198,6 +3236,8 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    count?: number;
                                     /**
                                      * Format: uuid
                                      * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -3229,6 +3269,8 @@ export interface paths {
                                 text: string;
                                 /** @enum {string} */
                                 kind: "existence";
+                                /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
+                                count?: number;
                             } | {
                                 /** Format: uuid */
                                 id: string;
@@ -3266,6 +3308,8 @@ export interface paths {
                                     description: string;
                                     /** Format: uuid */
                                     id: string;
+                                    /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                    count?: number;
                                     /**
                                      * Format: uuid
                                      * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -5772,6 +5816,8 @@ export interface paths {
                                     text: string;
                                     /** @enum {string} */
                                     kind: "existence";
+                                    /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
+                                    count?: number;
                                 } | {
                                     /** Format: uuid */
                                     id: string;
@@ -5809,6 +5855,8 @@ export interface paths {
                                         description: string;
                                         /** Format: uuid */
                                         id: string;
+                                        /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                        count?: number;
                                         /**
                                          * Format: uuid
                                          * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
@@ -5840,6 +5888,8 @@ export interface paths {
                                     text: string;
                                     /** @enum {string} */
                                     kind: "existence";
+                                    /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
+                                    count?: number;
                                 } | {
                                     /** Format: uuid */
                                     id: string;
@@ -5877,6 +5927,8 @@ export interface paths {
                                         description: string;
                                         /** Format: uuid */
                                         id: string;
+                                        /** @description 個数つきの1つの物品として残った数。死亡ドロップの物品に付く */
+                                        count?: number;
                                         /**
                                          * Format: uuid
                                          * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
