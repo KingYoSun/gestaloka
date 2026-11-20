@@ -5317,6 +5317,93 @@ test("持ち物は本人検索で個数つきで読め、ダイスが成功し�
   expect((await held(0)).map((i) => i.id)).toContain(shield);
 });
 
+test.each(["確定", "失敗"])(
+  "作成の判定中は本人の別の操作を拒否し、判定の%s後は再送を受け付ける",
+  async (decision) => {
+    const f = await fixture();
+    const before = await f.status(0);
+    let enter!: () => void;
+    let resume!: () => void;
+    const entered = new Promise<void>((resolve) => (enter = resolve));
+    const paused = new Promise<void>((resolve) => (resume = resolve));
+    const providerError = new Error("判定サービスのエラー");
+    f.calls.mockImplementationOnce(async (id, role) => {
+      expect(role).toBe("world-creation-dice");
+      enter();
+      await paused;
+      if (decision === "失敗") throw providerError;
+      return answer(id, sure);
+    });
+    const update = {
+      command: "update",
+      text: "木箱を作る",
+      operations: [
+        {
+          type: "create",
+          label: "木箱",
+          holder: f.actors[0],
+          basis: "板を組む",
+        },
+      ],
+      dependencies: [],
+    };
+    const adjudicated = f.send(0, update);
+    const connection = new WorldAccess(runtime);
+    const finish = { command: "finish", requestId: randomUUID() };
+    const submit = (input: Record<string, unknown>) =>
+      connection.botCommand(
+        f.people[0]!.id,
+        f.world,
+        PlayCommand.parse({ requestId: randomUUID(), ...input }),
+        f.actors[0],
+        "second-connection",
+      );
+    try {
+      await Promise.race([
+        entered,
+        adjudicated.then(() => {
+          throw new Error("作成の判定が呼ばれませんでした");
+        }),
+      ]);
+      for (const input of [
+        finish,
+        { command: "leave" },
+        { command: "say", text: "判定中の発言" },
+        { command: "search", query: { kind: "self" } },
+        update,
+      ]) {
+        await expect(submit(input)).rejects.toMatchObject({
+          status: 409,
+          code: "REQUEST_IN_PROGRESS",
+        });
+      }
+      expect(await f.status(0)).toMatchObject({
+        sessionId: before.sessionId,
+        callsUsed: 0,
+      });
+      await expect(
+        f.send(1, { command: "say", text: "別の人の発言" }),
+      ).resolves.toMatchObject({
+        callsUsed: 1,
+      });
+    } finally {
+      resume();
+      await adjudicated.catch(() => undefined);
+    }
+    if (decision === "失敗")
+      await expect(adjudicated).rejects.toBe(providerError);
+    else
+      await expect(adjudicated).resolves.toMatchObject({
+        sessionId: before.sessionId,
+        outcome: { success: true },
+      });
+    await expect(submit(finish)).resolves.toMatchObject({
+      session: null,
+      action: { command: "finish" },
+    });
+  },
+);
+
 test("時間をかける物品の作成は、届く時刻を過ぎてから成立し、本人あての通知になる", async () => {
   const f = await fixture();
   const coins = (
