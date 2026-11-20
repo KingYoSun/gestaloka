@@ -139,6 +139,7 @@ beforeEach(() => {
   drop = false;
   view = {
     viewerId: actor,
+    aiControlled: false,
     sessionId: scene,
     actorId: actor,
     callsUsed: 0,
@@ -214,7 +215,9 @@ test("本人の素材を個別表示し、手番終了時に入力・結果・�
   await within(chat).findByText("記録の方法を提案する");
   expect(chat.textContent).toContain("次の観測につなげたい");
   expect(chat.textContent).not.toContain("本人だけに返った素材");
-  fireEvent.click(screen.getByRole("button", { name: "本人のシーンを終了" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "自分のプレイを終了する" }),
+  );
   await screen.findByRole("heading", { name: "本人のシーンを終了しました" });
   expect(chat.textContent).toContain("記録の方法を提案する");
   expect(posted.every((p) => p.actorId === actor)).toBe(true);
@@ -327,4 +330,36 @@ test("応答喪失後は保存した同じ要求を再送し、入力を重ね�
   );
   expect(posted[0]!.requestId).toBe(posted[1]!.requestId);
   expect(entries).toHaveLength(1);
+});
+
+test("コマンド欄はJSONとコマンドの形式を検証し、入力中の発言と分けて送る", async () => {
+  show();
+  const speech = await screen.findByLabelText("発言・ターンコメント");
+  fireEvent.change(speech, { target: { value: "観測を続ける" } });
+  fireEvent.click(screen.getByText("プレイコマンド", { exact: true }));
+  fireEvent.click(screen.getByText("JSONでコマンドを実行", { exact: true }));
+  const input = screen.getByLabelText("コマンドのJSON");
+  const execute = screen.getByRole("button", { name: "コマンドを実行する" });
+  for (const invalid of ["{", '{"command":"update","text":"移動する"}']) {
+    fireEvent.change(input, { target: { value: invalid } });
+    fireEvent.click(execute);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(posted).toHaveLength(0);
+  }
+  fireEvent.change(input, {
+    target: {
+      value: JSON.stringify({
+        command: "say",
+        text: "観測を続ける",
+        requestId: scene,
+      }),
+    },
+  });
+  fireEvent.click(execute);
+  await screen.findByText("直近の応答データ");
+  expect(posted).toEqual([
+    { requestId: expect.any(String), command: "say", actorId: actor },
+  ]);
+  expect(posted[0]?.requestId).not.toBe(scene);
+  expect((speech as HTMLTextAreaElement).value).toBe("観測を続ける");
 });

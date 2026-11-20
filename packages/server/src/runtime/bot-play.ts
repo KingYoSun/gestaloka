@@ -2181,13 +2181,12 @@ export class BotPlay {
     };
     const people = await Promise.all(
       others.map(async (actorId) => {
-        const instant = session?.data.members.find(
-          (m) => m.actorId === actorId,
-        )?.instant;
+        const member = session?.data.members.find((m) => m.actorId === actorId);
         return {
           actorId,
-          profile: instant
-            ? [instant.description]
+          canReceive: !!member && !member.instant,
+          profile: member?.instant
+            ? [member.instant.description]
             : placeId &&
                 (await this.#places(context, actorId)).includes(placeId)
               ? await profile(actorId)
