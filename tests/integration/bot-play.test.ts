@@ -2759,6 +2759,139 @@ test("受領は関係する全員の判断を待ち、一人の拒否では全�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test("利用・所有する保管先には、その場にいるときだけ本人の判断で出し入れでき、拒否の理由に対象の名前が出る", async () => {
+  const f = await fixture();
+  const shared = randomUUID(),
+    home = randomUUID(),
+    others = randomUUID(),
+    loose = randomUUID(),
+    state = randomUUID();
+  const has = (source: string, target: string) => ({
+    id: randomUUID(),
+    kind: "has" as const,
+    source,
+    target,
+    period: { from: 0 },
+  });
+  const content = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: [
+          { id: shared, kind: "existence", text: "共同倉庫" },
+          { id: home, kind: "existence", text: "自分の家" },
+          { id: others, kind: "existence", text: "相手の家" },
+          { id: loose, kind: "existence", text: "誰のものでもない箱" },
+          { id: state, kind: "script", text: "背が高い" },
+        ],
+        edges: [
+          has(f.actors[0]!, home),
+          has(f.actors[2]!, others),
+          {
+            id: content,
+            kind: "status",
+            role: "content",
+            source: f.actors[0]!,
+            target: state,
+            period: { from: 0 },
+          },
+        ],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  await f.apply([
+    { type: "grant", person: f.actors[0], storage: shared, basis: "取り決め" },
+    { type: "create", label: "斧", holder: f.actors[0], basis: "初期" },
+    { type: "create", label: "鍬", holder: f.actors[0], basis: "初期" },
+    { type: "create", label: "縄", holder: shared, basis: "備え付け" },
+  ]);
+  const read = () => readBelongings(f.store.context(f.graph), f.actors[0]!);
+  const before = await read(),
+    axe = before.items.find((i) => i.label === "斧")!.id,
+    hoe = before.items.find((i) => i.label === "鍬")!.id,
+    rope = before.storages[0]!.items[0]!.id;
+  const update = (body: Record<string, unknown>) =>
+    f.send(0, { command: "update", text: "申請", dependencies: [], ...body });
+  const move = (item: string, from: string, to: string) =>
+    update({ operations: [{ type: "move", item, from, to, basis: "検証" }] });
+  await expect(move(axe, f.actors[0]!, shared)).rejects.toMatchObject({
+    code: "STORAGE_NOT_HERE",
+    message: expect.stringContaining(`「共同倉庫」（ID: ${shared}）`),
+  });
+  await expect(move(rope, shared, f.actors[0]!)).rejects.toMatchObject({
+    code: "STORAGE_NOT_HERE",
+  });
+  await expect(move(axe, f.actors[0]!, loose)).rejects.toMatchObject({
+    code: "AUTHORITY_REQUIRED",
+    message: expect.stringContaining(`「誰のものでもない箱」（ID: ${loose}）`),
+  });
+  await expect(move(axe, f.actors[0]!, others)).rejects.toMatchObject({
+    code: "REMOTE_RECEIVING",
+    message: expect.stringContaining(`「人物2」（ID: ${f.actors[2]}）`),
+  });
+  await expect(
+    update({ operations: [{ type: "update", id: state, text: "改める" }] }),
+  ).rejects.toMatchObject({
+    code: "BELONGING_NOT_RECORDED",
+    message: expect.stringContaining("changesのrevisions"),
+  });
+  // 保管先のある場所にいれば、受領もダイスもなく確定する。
+  for (const place of [shared, home]) {
+    await update({
+      operations: [
+        {
+          type: "locate",
+          subjectId: f.actors[0],
+          text: "保管先にいる",
+          aboutIds: [place],
+        },
+      ],
+    });
+    if (place === shared) {
+      await move(axe, f.actors[0]!, shared);
+      await move(rope, shared, f.actors[0]!);
+    } else await move(hoe, f.actors[0]!, home);
+  }
+  const after = await read();
+  expect(after.items.map((i) => i.label)).toEqual(["縄"]);
+  expect(
+    after.storages.map((s) => [s.label, s.items.map((i) => i.label)]),
+  ).toEqual([
+    ["共同倉庫", ["斧"]],
+    ["自分の家", ["鍬"]],
+  ]);
+  // 本人の状態は、changesで本文を改め、関係を終えられる。
+  await update({
+    changes: {
+      nodes: [],
+      revisions: [
+        { id: state, kind: "script", text: "背がとても高い" },
+        { id: f.actors[0], kind: "existence", text: "改めた名前" },
+      ],
+      edges: [],
+      endEdges: [],
+    },
+  });
+  for (const [id, text] of [
+    [state, "背がとても高い"],
+    [f.actors[0]!, "改めた名前"],
+  ] as const)
+    expect(await f.store.context(f.graph).node(id)).toMatchObject({ text });
+  await update({
+    changes: { nodes: [], revisions: [], edges: [], endEdges: [content] },
+  });
+  expect(
+    (await f.store.context(f.graph).edge(content))?.period.until,
+  ).toBeDefined();
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
 test("依存版の不一致と運用停止を理由付きエラーにし、失敗した要求で枠を消費しない", async () => {
   const f = await fixture(),
     basis = await f.send(0, { command: "search", query: { kind: "self" } }),
