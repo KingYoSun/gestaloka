@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { InformationReference } from "@gestaloka/contracts";
 import { Change, WorldEdge, derivedId } from "../world/model.js";
@@ -122,15 +121,9 @@ export const SceneEvent = z
     ),
   })
   .strict();
-const Period = z
-  .object({
-    from: z.number().int().nonnegative().safe(),
-    until: z.number().int().nonnegative().safe(),
-  })
-  .strict();
 export type RecordedSceneEvent = z.infer<typeof SceneEvent> & {
   id: string;
-  period: z.infer<typeof Period>;
+  period: { from: number; until: number };
   inputId?: string;
 };
 const ActionEvent = SceneEvent.extend({
@@ -382,18 +375,6 @@ export const SceneSources = z.record(
   }),
 );
 export type SceneSources = z.infer<typeof SceneSources>;
-export const CompletedScene = z
-  .object({
-    background: SceneBackground,
-    events: z.array(
-      SceneEvent.extend({ id, period: Period, inputId: id.optional() }),
-    ),
-    anchors: Change,
-    sources: SceneSources.optional(),
-    ending: SceneEnding.optional(),
-  })
-  .strict();
-export type CompletedScene = z.infer<typeof CompletedScene>;
 export type SceneView = Awaited<ReturnType<WorldAgent["view"]>> & {
   conditions?: Awaited<ReturnType<WorldAgent["intentView"]>>["conditions"];
 };
@@ -576,70 +557,6 @@ export function sceneAnchors(
     }
   }
   return Change.parse({ nodes, edges, revisions: [], endEdges: [] });
-}
-export function mergeSceneChanges(
-  anchors: Change,
-  extra: Change,
-  at: number,
-): Change {
-  const nodes = new Set(anchors.nodes.map((n) => n.id)),
-    edges = new Map(anchors.edges.map((e) => [e.id, e]));
-  if ([...extra.nodes, ...extra.revisions].some((n) => nodes.has(n.id)))
-    throw new Error("表示済みシーンの内容を改訂・再発行できません");
-  const precise = new Map<string, number>(),
-    additions: Change["edges"] = [];
-  for (const e of extra.edges) {
-    const original = edges.get(e.id);
-    if (!original) {
-      additions.push(e);
-      continue;
-    }
-    const until = e.period.until;
-    if (
-      original.kind !== "status" ||
-      original.period.until !== undefined ||
-      until === undefined ||
-      until > at ||
-      e.period.from !== original.period.from ||
-      !isDeepStrictEqual({ ...e, period: original.period }, original)
-    )
-      throw new Error("表示済みシーンの内容を改訂・再発行できません");
-    const script =
-        original.role === "content" ? original.target : original.source,
-      prior = precise.get(script);
-    if (prior !== undefined && prior !== until)
-      throw new Error("同じ状態へ異なる終了時点を指定できません");
-    precise.set(script, until);
-  }
-  const ended = new Set<string>();
-  for (const id of extra.endEdges) {
-    const e = edges.get(id);
-    if (!e) continue;
-    if (e.kind !== "status")
-      throw new Error("表示済みの発生・受容は終了できません");
-    ended.add(e.role === "content" ? e.target : e.source);
-  }
-  return Change.parse({
-    nodes: [...anchors.nodes, ...extra.nodes],
-    revisions: extra.revisions,
-    edges: [
-      ...anchors.edges.map((e) => {
-        if (e.kind !== "status") return e;
-        const script = e.role === "content" ? e.target : e.source,
-          until = precise.get(script) ?? (ended.has(script) ? at : undefined);
-        if (until === undefined) return e;
-        if (
-          precise.has(script) &&
-          e.period.until !== undefined &&
-          e.period.until !== until
-        )
-          throw new Error("既に終わった状態の時点を変更できません");
-        return { ...e, period: { ...e.period, until } };
-      }),
-      ...additions,
-    ],
-    endEdges: extra.endEdges.filter((id) => !edges.has(id)),
-  });
 }
 
 export function sceneAgenda(

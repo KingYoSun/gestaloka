@@ -447,6 +447,10 @@ export interface paths {
                                 accepting: boolean;
                                 playerList: boolean;
                                 instantNpcMultiplier: number;
+                                deathJudgment: boolean;
+                                deathCriteria: string;
+                                /** Format: uuid */
+                                deathPlaceId: string | null;
                             };
                             error: string | null;
                         };
@@ -594,6 +598,10 @@ export interface paths {
                                 accepting: boolean;
                                 playerList: boolean;
                                 instantNpcMultiplier: number;
+                                deathJudgment: boolean;
+                                deathCriteria: string;
+                                /** Format: uuid */
+                                deathPlaceId: string | null;
                             };
                             error: string | null;
                         };
@@ -761,6 +769,10 @@ export interface paths {
                                 accepting: boolean;
                                 playerList: boolean;
                                 instantNpcMultiplier: number;
+                                deathJudgment: boolean;
+                                deathCriteria: string;
+                                /** Format: uuid */
+                                deathPlaceId: string | null;
                             };
                             error: string | null;
                         };
@@ -1022,7 +1034,6 @@ export interface paths {
                     before?: string;
                     after?: string;
                     actorId?: string;
-                    excludeScene?: string;
                 };
                 header?: never;
                 path: {
@@ -6299,6 +6310,15 @@ export interface paths {
                             playerList?: boolean;
                             /** @description 検索で出現した個体が同じ場所に同時に同席できる数を、発生用ノードの発生数（maxCount、旧形式はcount）の何倍までにするか。既定は2。省略すると現在の設定を保つ */
                             instantNpcMultiplier?: number;
+                            /** @description プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。死亡した人物はセッションから外れ、deathPlaceIdの場所へ移る。省略すると現在の設定を保つ */
+                            deathJudgment?: boolean;
+                            /** @description 人物の死亡を判定するGMへ渡す、この世界の条件文。空なら行動と結果だけから判定する。省略すると現在の設定を保つ */
+                            deathCriteria?: string;
+                            /**
+                             * Format: uuid
+                             * @description 死亡した人物を移す場所。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ
+                             */
+                            deathPlaceId?: string | null;
                             reason: string;
                         } | {
                             /** @enum {string} */

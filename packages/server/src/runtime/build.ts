@@ -183,7 +183,6 @@ export class WorldBuilder {
           input.messages,
           "resolution",
           undefined,
-          false,
           0,
           (content) => Proposal.parse(JSON.parse(content)),
         ),
@@ -215,7 +214,6 @@ export class WorldBuilder {
           ],
           "resolution",
           undefined,
-          false,
           0,
           (content) => Review.parse(JSON.parse(content)),
         );

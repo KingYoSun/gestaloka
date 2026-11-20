@@ -821,6 +821,18 @@
                           "minimum": 0,
                           "exclusiveMinimum": true,
                           "maximum": 9007199254740991
+                        },
+                        "deathJudgment": {
+                          "type": "boolean"
+                        },
+                        "deathCriteria": {
+                          "type": "string"
+                        },
+                        "deathPlaceId": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                         }
                       },
                       "required": [
@@ -829,7 +841,10 @@
                         "published",
                         "accepting",
                         "playerList",
-                        "instantNpcMultiplier"
+                        "instantNpcMultiplier",
+                        "deathJudgment",
+                        "deathCriteria",
+                        "deathPlaceId"
                       ],
                       "additionalProperties": false
                     },
@@ -1140,6 +1155,18 @@
                           "minimum": 0,
                           "exclusiveMinimum": true,
                           "maximum": 9007199254740991
+                        },
+                        "deathJudgment": {
+                          "type": "boolean"
+                        },
+                        "deathCriteria": {
+                          "type": "string"
+                        },
+                        "deathPlaceId": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                         }
                       },
                       "required": [
@@ -1148,7 +1175,10 @@
                         "published",
                         "accepting",
                         "playerList",
-                        "instantNpcMultiplier"
+                        "instantNpcMultiplier",
+                        "deathJudgment",
+                        "deathCriteria",
+                        "deathPlaceId"
                       ],
                       "additionalProperties": false
                     },
@@ -1521,6 +1551,18 @@
                           "minimum": 0,
                           "exclusiveMinimum": true,
                           "maximum": 9007199254740991
+                        },
+                        "deathJudgment": {
+                          "type": "boolean"
+                        },
+                        "deathCriteria": {
+                          "type": "string"
+                        },
+                        "deathPlaceId": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                         }
                       },
                       "required": [
@@ -1529,7 +1571,10 @@
                         "published",
                         "accepting",
                         "playerList",
-                        "instantNpcMultiplier"
+                        "instantNpcMultiplier",
+                        "deathJudgment",
+                        "deathCriteria",
+                        "deathPlaceId"
                       ],
                       "additionalProperties": false
                     },
@@ -2087,16 +2132,6 @@
             },
             "in": "query",
             "name": "actorId",
-            "required": false
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            },
-            "in": "query",
-            "name": "excludeScene",
             "required": false
           },
           {
@@ -17172,6 +17207,21 @@
                             "minimum": 0,
                             "exclusiveMinimum": true,
                             "maximum": 9007199254740991
+                          },
+                          "deathJudgment": {
+                            "description": "プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。死亡した人物はセッションから外れ、deathPlaceIdの場所へ移る。省略すると現在の設定を保つ",
+                            "type": "boolean"
+                          },
+                          "deathCriteria": {
+                            "description": "人物の死亡を判定するGMへ渡す、この世界の条件文。空なら行動と結果だけから判定する。省略すると現在の設定を保つ",
+                            "type": "string"
+                          },
+                          "deathPlaceId": {
+                            "description": "死亡した人物を移す場所。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ",
+                            "nullable": true,
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                           },
                           "reason": {
                             "type": "string",

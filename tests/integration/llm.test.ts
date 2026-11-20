@@ -226,7 +226,6 @@ test.each(["missing", "missing-envelope", "json", "schema", "envelope"])(
       messages,
       undefined,
       undefined,
-      false,
       0,
       validate,
     );
@@ -247,7 +246,6 @@ test.each(["missing", "missing-envelope", "json", "schema", "envelope"])(
         messages,
         undefined,
         undefined,
-        false,
         0,
         validate,
       ),

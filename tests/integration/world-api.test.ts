@@ -618,20 +618,38 @@ test("公開と参加受付を分け、非公開化後も参加者の参照と�
     auth.operations.execute(person.subject, randomUUID(), cfg),
   ).rejects.toMatchObject({ code: "ADMIN_REQUIRED" });
   const req = randomUUID();
-  // 一覧の提供は既定で無効、出現個体の倍率は既定で2。省略した設定変更では保たれる。
+  // 一覧の提供は既定で無効、出現個体の倍率は既定で2、人物の死亡判定は既定で有効。省略した設定変更では保たれる。
   expect(await auth.operations.execute(legacy.subject, req, cfg)).toMatchObject(
-    { playerList: false, instantNpcMultiplier: 2 },
+    {
+      playerList: false,
+      instantNpcMultiplier: 2,
+      deathJudgment: true,
+      deathCriteria: "",
+      deathPlaceId: null,
+    },
   );
+  const changed = {
+    playerList: true,
+    instantNpcMultiplier: 1,
+    deathJudgment: false,
+    deathCriteria: "致命傷で死亡する",
+    deathPlaceId: randomUUID(),
+  };
   expect(
     await auth.operations.execute(legacy.subject, randomUUID(), {
       ...cfg,
-      playerList: true,
-      instantNpcMultiplier: 1,
+      ...changed,
     }),
-  ).toMatchObject({ playerList: true, instantNpcMultiplier: 1 });
+  ).toMatchObject(changed);
   expect(
     await auth.operations.execute(legacy.subject, randomUUID(), cfg),
-  ).toMatchObject({ playerList: true, instantNpcMultiplier: 1 });
+  ).toMatchObject(changed);
+  expect(
+    await auth.operations.execute(legacy.subject, randomUUID(), {
+      ...cfg,
+      deathPlaceId: null,
+    }),
+  ).toMatchObject({ ...changed, deathPlaceId: null });
   let catalog = await auth.operations.catalog(person.subject);
   expect(catalog.items.find((w) => w.id === legacy.id)).toMatchObject({
     title: cfg.title,
