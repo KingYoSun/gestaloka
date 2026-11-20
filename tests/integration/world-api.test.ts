@@ -1490,6 +1490,17 @@ test("旧書込は移行先を示し、新しい手番だけで発言を受け�
   expect(
     (await access.botStatus(scene.subject, scene.id, actor)).callsUsed,
   ).toBe(1);
+  // 拒否の応答は、現在の手番で使った通常枠の数を返す。拒否では枠が増えない。
+  const refused = await post(scene.cookie, "session", {
+    ...speech,
+    text: "別の内容",
+  });
+  expect(refused.statusCode).toBe(409);
+  expect(refused.json()).toEqual({
+    code: "REQUEST_CONFLICT",
+    message: expect.any(String),
+    callsUsed: 1,
+  });
   expect(
     (
       await post(other.cookie, "session", {

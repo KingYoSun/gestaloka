@@ -42,6 +42,8 @@ export class AccessError extends Error {
     readonly status: 400 | 401 | 403 | 404 | 409 | 503,
     readonly code: string,
     message: string,
+    // プレイ操作の拒否に付ける、現在の手番で使った通常枠の数。
+    readonly callsUsed?: number,
   ) {
     super(message);
   }
@@ -223,14 +225,17 @@ export class WorldAccess {
       this.pool,
       actorId,
     );
-    const result = await this.botPlay.submit(
-      id,
-      grant.actor_id!,
-      input,
-      subject,
-      undefined,
-      connectionId,
-    );
+    const result = await this.botPlay
+      .submit(id, grant.actor_id!, input, subject, undefined, connectionId)
+      .catch(async (error) => {
+        if (!(error instanceof AccessError)) throw error;
+        throw new AccessError(
+          error.status,
+          error.code,
+          error.message,
+          (await this.botPlay.current(id, grant.actor_id!))?.data.used,
+        );
+      });
     return this.playCharacters(id, result, connectionId);
   }
   private async botStatusActor(

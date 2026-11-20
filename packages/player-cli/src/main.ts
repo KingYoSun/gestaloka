@@ -93,6 +93,7 @@ async function http(
         new Error(data.message ?? `HTTP ${response.status}`),
         {
           code: data.code ?? "HTTP_ERROR",
+          callsUsed: data.callsUsed,
         },
       );
     return data;
@@ -740,6 +741,7 @@ try {
       ...(requestId ? { requestId } : {}),
       code: (error as { code?: string }).code ?? "CLI_ERROR",
       message: error instanceof Error ? error.message : String(error),
+      callsUsed: (error as { callsUsed?: number }).callsUsed,
     }),
   );
   process.exitCode = 1;

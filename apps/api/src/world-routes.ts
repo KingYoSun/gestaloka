@@ -175,9 +175,11 @@ export async function worldRoutes(
         .code(error.status)
         .send({ code: "LOGIN_REQUIRED", message: error.message });
     if (error instanceof AccessError)
-      return reply
-        .code(error.status)
-        .send({ code: error.code, message: error.message });
+      return reply.code(error.status).send({
+        code: error.code,
+        message: error.message,
+        callsUsed: error.callsUsed,
+      });
     if (
       typeof error === "object" &&
       error !== null &&
