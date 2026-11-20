@@ -1,7 +1,11 @@
 export { TurnSignals } from "./turn-signals.js";
 import { npcReport } from "../runtime/npc-mode.js";
 import { BotPlay } from "../runtime/bot-play.js";
-import type { PlayCommand, PlayerReportInput } from "@gestaloka/contracts";
+import type {
+  PlayCommand,
+  PlayerReportInput,
+  ViewersInput,
+} from "@gestaloka/contracts";
 import type { NpcModeCommand } from "@gestaloka/contracts";
 import { RuntimeStopped } from "../runtime/control.js";
 import { PlayerDevices } from "./player-devices.js";
@@ -243,6 +247,21 @@ export class WorldAccess {
         unknown
       >,
     );
+  }
+  async setViewers(
+    subject: string,
+    id: string,
+    input: z.infer<typeof ViewersInput>,
+    actorId?: string,
+  ) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    return this.botPlay.setViewers(id, grant.actor_id!, input);
   }
   async notices(subject: string, id: string, actorId?: string) {
     const grant = await this.authorize(
