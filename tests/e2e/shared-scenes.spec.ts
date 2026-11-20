@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { test, expect } from "./fixtures.js";
 import { connectDatabases } from "@gestaloka/server";
 import { WorldStore } from "@gestaloka/server/world";
@@ -147,7 +147,15 @@ async function group(page: Page) {
         )
       ).rows[0].n,
     );
-  return { world, actors, call, count, db, graph: row.world_id };
+  return {
+    world,
+    actors,
+    call,
+    count,
+    db,
+    graph: row.world_id,
+    place: row.root_ids[0] as string,
+  };
 }
 
 test("実APIの手番・個別検索・チャット・本人の終了を狭い画面でも操作する", async ({
@@ -155,9 +163,42 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
 }) => {
   const f = await group(page),
     actor = f.actors[0]!,
-    before = await f.count();
+    before = await f.count(),
+    play = `/worlds/${f.world}/play?actorId=${actor}`,
+    leave = page.getByRole("button", { name: "セッションを離れて続ける" }),
+    finish = page.getByRole("button", { name: "自分のプレイを終了する" });
   try {
-    await page.goto(`/worlds/${f.world}/play?actorId=${actor}`);
+    const device = await page.request.post("/api/player-devices", {
+      headers,
+      data: {
+        requestId: randomUUID(),
+        worldId: f.world,
+        secret: randomBytes(32).toString("hex"),
+      },
+    });
+    expect(device.ok(), await device.text()).toBe(true);
+    await page.goto((await device.json()).verificationPath);
+    await page.locator(`input[value="actor:${actor}"]`).check();
+    await page
+      .getByRole("button", { name: "この人物のプレイを許可する" })
+      .click();
+    await expect(page.getByText(/AIとの会話に戻り/)).toBeVisible();
+    await page.goto(play);
+    await expect(
+      page.getByRole("heading", { name: "2人のセッション" }),
+    ).toBeVisible();
+    for (const action of [
+      leave,
+      finish,
+      page.getByText("プレイコマンド", { exact: true }),
+      page.getByRole("button", { name: "分離して続ける", exact: true }),
+      page.getByRole("button", { name: "本人のシーンを終了", exact: true }),
+    ]) {
+      await expect(action).toHaveCount(0);
+    }
+    await page.goto("/auth/player");
+    await page.getByRole("button", { name: "許可を解除する" }).click();
+    await page.goto(play);
     await expect(
       page.getByRole("heading", { name: "2人のセッション" }),
     ).toBeVisible();
@@ -302,9 +343,13 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
       path: "artifacts/screenshots/bot-session-mobile.png",
       fullPage: true,
     });
-    await page
-      .getByRole("button", { name: "本人のシーンを終了", exact: true })
-      .click();
+    await leave.click();
+    await expect(
+      page.getByRole("heading", { name: "1人のセッション" }),
+    ).toBeVisible();
+    await field.fill("単独で観測を続ける");
+    await page.getByRole("button", { name: "発言する", exact: true }).click();
+    await finish.click();
     await expect(
       page.getByRole("heading", { name: "本人のシーンを終了しました" }),
     ).toBeVisible();
@@ -318,7 +363,11 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     await expect(
       page.getByRole("heading", { name: "過去のプレイログ" }),
     ).toBeVisible();
+    await expect(page.getByText("プレイコマンド", { exact: true })).toHaveCount(
+      0,
+    );
     await expect(log).toContainText("次の観測を相談する");
+    await expect(log).toContainText("単独で観測を続ける");
     await expect
       .poll(() => log.evaluate((element) => element.scrollTop))
       .toBe(0);
@@ -337,13 +386,15 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
   }
 });
 
-test("受領判断と別枠のコメントを表示し、判断後は元の手番へ戻る", async ({
+test("手動プレイでドロワーと同じ候補から物品を手渡して移動できる", async ({
   page,
 }) => {
   const f = await group(page),
     [sender, receiver] = f.actors as [string, string],
     store = new WorldStore(f.db.graph),
     item = randomUUID(),
+    place = randomUUID(),
+    route = randomUUID(),
     before = await f.count();
   try {
     await store.commit(
@@ -353,7 +404,11 @@ test("受領判断と別枠のコメントを表示し、判断後は元の手�
         commitId: randomUUID(),
         at: 0,
         changes: {
-          nodes: [{ id: item, kind: "existence", text: "手渡す星図" }],
+          nodes: [
+            { id: item, kind: "existence", text: "手渡す星図" },
+            { id: place, kind: "existence", text: "星を観測する丘" },
+            { id: route, kind: "script", text: "合流場所から丘へ続く道" },
+          ],
           edges: [
             {
               id: randomUUID(),
@@ -363,26 +418,59 @@ test("受領判断と別枠のコメントを表示し、判断後は元の手�
               target: item,
               period: { from: 0 },
             },
+            {
+              id: randomUUID(),
+              kind: "has",
+              source: sender,
+              target: item,
+              period: { from: 0 },
+            },
+            {
+              id: randomUUID(),
+              kind: "status",
+              role: "content",
+              text: "route",
+              source: f.place,
+              target: route,
+              period: { from: 0 },
+            },
+            {
+              id: randomUUID(),
+              kind: "status",
+              role: "about",
+              source: route,
+              target: place,
+              period: { from: 0 },
+            },
           ],
           revisions: [],
           endEdges: [],
         },
       },
     );
-    await f.call(sender, {
-      command: "update",
-      text: "星図を手渡す",
-      operations: [
-        {
-          type: "move",
-          item,
-          from: sender,
-          to: receiver,
-          basis: "手渡しの申請",
-        },
-      ],
-      dependencies: [],
-    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    const playerDrawer = page.getByRole("dialog", { name: "プレイヤー情報" });
+    const openPlayer = async () => {
+      await page
+        .getByRole("button", { name: "プレイヤー情報", exact: true })
+        .click();
+      await playerDrawer.getByRole("tab", { name: "所持品" }).click();
+    };
+    await page.goto(`/worlds/${f.world}/play?actorId=${sender}`);
+    await openPlayer();
+    await expect(
+      playerDrawer.getByText("手渡す星図", { exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.getByText("プレイコマンド", { exact: true }).click();
+    await page.getByLabel("手渡す物品").selectOption({ label: "手渡す星図" });
+    await page.getByLabel("渡す相手").selectOption(receiver);
+    await page.getByRole("button", { name: "手渡す", exact: true }).click();
+    await expect(
+      page.getByText("申請を受け付けました。受領判断を待っています", {
+        exact: true,
+      }),
+    ).toBeVisible();
     await page.goto(`/worlds/${f.world}/play?actorId=${receiver}`);
     await expect(
       page.getByRole("button", { name: "受け入れる", exact: true }),
@@ -395,6 +483,14 @@ test("受領判断と別枠のコメントを表示し、判断後は元の手�
       .click();
     await page.getByRole("button", { name: "受け入れる", exact: true }).click();
     await expect(page.getByText(/の手番を待っています/)).toBeVisible();
+    await openPlayer();
+    await expect(
+      playerDrawer.getByText("手渡す星図", { exact: true }),
+    ).toBeVisible();
+    const holders = await store
+      .context(f.graph)
+      .relations(item, "has", "in", Number.MAX_SAFE_INTEGER);
+    expect(holders.find((edge) => !edge.role)?.source).toBe(sender);
     expect(
       (
         await (
@@ -404,6 +500,29 @@ test("受領判断と別枠のコメントを表示し、判断後は元の手�
         ).json()
       ).actorId,
     ).toBe(sender);
+    await page.goto(`/worlds/${f.world}/play?actorId=${sender}`);
+    const sceneDrawer = page.getByRole("dialog", { name: "シーン情報" });
+    const openScene = () =>
+      page.getByRole("button", { name: "シーン情報", exact: true }).click();
+    await openScene();
+    await sceneDrawer.getByRole("button", { name: "隣接する場所" }).click();
+    await expect(
+      page
+        .getByRole("dialog", { name: "隣接する場所" })
+        .getByText("星を観測する丘", { exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await page.getByText("プレイコマンド", { exact: true }).click();
+    await page.getByLabel("移動先").selectOption({ label: "星を観測する丘" });
+    await page.getByRole("button", { name: "移動する", exact: true }).click();
+    await expect(
+      page.getByText("申請した変更を確定しました", { exact: true }),
+    ).toBeVisible();
+    await openScene();
+    await expect(
+      sceneDrawer.getByText("星を観測する丘", { exact: true }),
+    ).toBeVisible();
     expect(await f.count()).toBe(before);
   } finally {
     await f.db.close();
