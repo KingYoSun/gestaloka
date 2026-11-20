@@ -1,5 +1,10 @@
 import { randomInt } from "node:crypto";
-import type { Appearance, Change, WorldEdge } from "@gestaloka/contracts";
+import type {
+  Appearance,
+  Change,
+  WorldEdge,
+  WorldNode,
+} from "@gestaloka/contracts";
 import {
   derivedId,
   type WorldContext,
@@ -36,6 +41,102 @@ function materialIds(value: unknown, ids: Set<string>) {
       else materialIds(child, ids);
     }
   }
+}
+
+type Rule = NonNullable<Extract<WorldNode, { kind: "script" }>["spawn"]>;
+// 当たりを抽選し、発生数を返す。外れは0。
+function draw(rule: Rule, limit = Infinity) {
+  if (randomInt(0x100000000) / 0x100000000 >= rule.probability) return 0;
+  return Math.min(
+    limit,
+    "count" in rule
+      ? rule.count
+      : rule.minCount +
+          Math.floor(Math.random() * (rule.maxCount - rule.minCount + 1)),
+  );
+}
+// 出現を出来事として記録し、個体以外をその場に残る発見物にする。
+export function recordAppearances(
+  changes: Change,
+  request: string,
+  event: Omit<Extract<WorldNode, { kind: "event" }>, "kind" | "period">,
+  places: string[],
+  at: number,
+  appearances: Appearance[],
+) {
+  const ground = derivedId(request + ":ground");
+  const link = (edge: Omit<WorldEdge, "id" | "period">) =>
+    changes.edges.push({
+      ...edge,
+      id: derivedId(
+        request + ":" + edge.kind + ":" + edge.source + ":" + edge.target,
+      ),
+      period: { from: at },
+    });
+  changes.nodes.push({
+    ...event,
+    kind: "event",
+    ...(appearances.length ? { appearances } : {}),
+    period: { from: at },
+  });
+  if (appearances.some((a) => a.kind !== "instant-npc")) {
+    changes.nodes.push({
+      id: ground,
+      kind: "script",
+      text: "この場に残っている発見物",
+    });
+    for (const place of places)
+      link({
+        kind: "status",
+        role: "content",
+        text: "ground",
+        source: place,
+        target: ground,
+      });
+  }
+  for (const { id, kind, species, description } of appearances) {
+    if (kind === "instant-npc") continue;
+    const text = species + "：" + description;
+    changes.nodes.push(
+      kind === "event"
+        ? { kind, id, text, period: { from: at } }
+        : { kind, id, text },
+    );
+    link({
+      kind: "status",
+      role: "about",
+      text: "ground-item",
+      source: ground,
+      target: id,
+    });
+  }
+  return link;
+}
+// 個体の発生用ノードへspawn-deathで結ばれた発生用ノードを抽選し、個体のいた場所に残す。
+export async function deathDrops(
+  ctx: WorldContext,
+  request: string,
+  ruleId: string | undefined,
+  places: string[],
+) {
+  const drops: Appearance[] = [];
+  if (ruleId && places.length)
+    for (const edge of await ctx.relations(ruleId, "status", "in", latest)) {
+      const node = about(edge, "spawn-death")
+        ? await ctx.node(edge.source)
+        : undefined;
+      if (node?.kind !== "script" || !node.spawn) continue;
+      const { kind, species, description } = node.spawn;
+      if (kind === "instant-npc") continue;
+      for (let i = draw(node.spawn); i--;)
+        drops.push({
+          id: derivedId(request + ":" + node.id + ":" + i),
+          kind,
+          species,
+          description,
+        });
+    }
+  return drops;
 }
 
 export async function searchAppearances(
@@ -96,20 +197,13 @@ export async function searchAppearances(
             ).length
           : 0;
     if (staying >= limit) continue;
-    if (randomInt(0x100000000) / 0x100000000 >= rule.probability) continue;
-    const count = Math.min(
-      limit - staying,
-      "count" in rule
-        ? rule.count
-        : rule.minCount +
-            Math.floor(Math.random() * (rule.maxCount - rule.minCount + 1)),
-    );
-    for (let i = 0; i < count; i++)
+    for (let i = 0, count = draw(rule, limit - staying); i < count; i++)
       appearances.push({
         id: derivedId(request + ":" + ruleId + ":" + i),
         kind: rule.kind,
         species: rule.species,
         description: rule.description,
+        ...(rule.kind === "instant-npc" ? { ruleId } : {}),
       });
   }
   if (!appearances.length) {
@@ -117,57 +211,21 @@ export async function searchAppearances(
     return [];
   }
   const changes: Change = { nodes: [], edges: [], endEdges: [], revisions: [] };
-  const event = derivedId(request + ":appearance"),
-    ground = derivedId(request + ":ground");
-  const link = (edge: Omit<WorldEdge, "id" | "period">) =>
-    changes.edges.push({
-      ...edge,
-      id: derivedId(
-        request + ":" + edge.kind + ":" + edge.source + ":" + edge.target,
-      ),
-      period: { from: at },
-    });
-  changes.nodes.push({
-    id: event,
-    kind: "event",
-    text: appearances.map((a) => a.species).join("、") + "が現れた",
+  const event = derivedId(request + ":appearance");
+  const link = recordAppearances(
+    changes,
+    request,
+    {
+      id: event,
+      text: appearances.map((a) => a.species).join("、") + "が現れた",
+    },
+    places,
+    at,
     appearances,
-    period: { from: at },
-  });
+  );
   link({ kind: "happen", source: actor, target: event });
   for (const member of members)
     link({ kind: "see", source: member, target: event });
-  if (appearances.some((a) => a.kind !== "instant-npc")) {
-    changes.nodes.push({
-      id: ground,
-      kind: "script",
-      text: "この場に残っている発見物",
-    });
-    for (const place of places)
-      link({
-        kind: "status",
-        role: "content",
-        text: "ground",
-        source: place,
-        target: ground,
-      });
-  }
-  for (const { id, kind, species, description } of appearances) {
-    if (kind === "instant-npc") continue;
-    const text = species + "：" + description;
-    changes.nodes.push(
-      kind === "event"
-        ? { kind, id, text, period: { from: at } }
-        : { kind, id, text },
-    );
-    link({
-      kind: "status",
-      role: "about",
-      text: "ground-item",
-      source: ground,
-      target: id,
-    });
-  }
   await store.commit(await store.claim(ctx.worldId, request), ctx, {
     commitId: request,
     at,

@@ -41,9 +41,19 @@ export const SpawnRule = z.union([
     ),
   spawn.extend({ count: spawnCount }).strict(),
 ]);
-export const Appearance = SpawnSubject.extend({ id: z.uuid() }).strict();
+export const Appearance = SpawnSubject.extend({
+  id: z.uuid(),
+  ruleId: z
+    .uuid()
+    .optional()
+    .describe(
+      "出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う",
+    ),
+}).strict();
 export type Appearance = z.infer<typeof Appearance>;
 
+// 出現個体はノードを持たない。行為者・作用の対象になった個体を、出現を記録した出来事までたどれるようにする。
+const InstantRef = z.object({ id: z.uuid(), sourceEventId: z.uuid() }).strict();
 export const WorldNode = z.discriminatedUnion("kind", [
   z
     .object({
@@ -69,10 +79,8 @@ export const WorldNode = z.discriminatedUnion("kind", [
       ...Content,
       kind: z.literal("event"),
       appearances: z.array(Appearance).optional(),
-      instantActor: z
-        .object({ id: z.uuid(), sourceEventId: z.uuid() })
-        .strict()
-        .optional(),
+      instantActor: InstantRef.optional(),
+      instantTarget: InstantRef.optional(),
       period: Period,
     })
     .strict(),

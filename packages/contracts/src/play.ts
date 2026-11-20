@@ -92,21 +92,17 @@ const dependencies = z.array(
     .object({ key: z.string(), version: z.number().int().nonnegative().safe() })
     .strict(),
 );
-export const NpcAction = z
+const Effect = z
   .object({
-    text,
-    effect: z
-      .object({
-        targetId: id,
-        state: text.describe("後から対象を調べて観察できる状態"),
-        replacesStateId: id
-          .optional()
-          .describe("同じ性質について置き換える既存状態のID"),
-      })
-      .strict()
-      .optional(),
-    departs: z.boolean().optional(),
+    targetId: id.describe("その場の存在、または同席している出現個体のID"),
+    state: text.describe("後から対象を調べて観察できる状態"),
+    replacesStateId: id
+      .optional()
+      .describe("同じ性質について置き換える既存状態のID"),
   })
+  .strict();
+export const NpcAction = z
+  .object({ text, effect: Effect.optional(), departs: z.boolean().optional() })
   .strict();
 export const PlayCommand = z.discriminatedUnion("command", [
   NpcAction.extend({ ...request, command: z.literal("npc-action"), npcId: id }),
@@ -184,12 +180,15 @@ export const PlayCommand = z.discriminatedUnion("command", [
       text,
       operations: z.array(BelongingOp).min(1).optional(),
       changes: Change.optional(),
+      effect: Effect.optional().describe(
+        "同席している出現個体への作用。targetIdに個体のIDを指定する",
+      ),
       dependencies,
     })
     .strict()
     .refine(
-      (v) => !!v.operations !== !!v.changes,
-      "operationsかchangesの一方を指定してください",
+      (v) => [v.operations, v.changes, v.effect].filter(Boolean).length === 1,
+      "operations・changes・effectのどれか一つを指定してください",
     ),
   z
     .object({

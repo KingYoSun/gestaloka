@@ -4524,3 +4524,175 @@ test("管理操作で止まったセッションを一覧から見つけ、保�
   });
   expect(f.calls).not.toHaveBeenCalled();
 });
+test("同席している出現個体への対抗行動はダイスに進み、死亡と判定された個体は同席から外れてドロップを残す", async () => {
+  const f = await fixture(),
+    rule = randomUUID(),
+    drop = randomUUID(),
+    id = randomUUID();
+  const edge = (source: string, target: string, text?: string) => ({
+    id: randomUUID(),
+    kind: "status" as const,
+    role: text ? ("about" as const) : ("content" as const),
+    ...(text ? { text } : {}),
+    source,
+    target,
+    period: { from: 0 },
+  });
+  await f.store.commit(
+    await f.store.claim(f.graph, id),
+    f.store.context(f.graph),
+    {
+      at: 0,
+      commitId: id,
+      changes: {
+        nodes: [
+          {
+            id: rule,
+            kind: "script",
+            text: "広場の鳥",
+            spawn: {
+              kind: "instant-npc",
+              species: "鳥",
+              description: "地面をつつく",
+              count: 3,
+              probability: 1,
+            },
+          },
+          {
+            id: drop,
+            kind: "script",
+            text: "鳥の落とし物",
+            spawn: {
+              kind: "existence",
+              species: "羽根",
+              description: "抜け落ちた羽根",
+              count: 1,
+              probability: 1,
+            },
+          },
+        ],
+        revisions: [],
+        endEdges: [],
+        edges: [
+          edge(f.place, rule),
+          edge(rule, f.place, "spawn-hit"),
+          edge(f.place, drop),
+          edge(drop, rule, "spawn-death"),
+        ],
+      },
+    },
+  );
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  const source = randomUUID(),
+    found = await f.send(0, {
+      requestId: source,
+      command: "search",
+      query: { kind: "subject", targetId: f.place },
+    });
+  const birds = (found.appearances as { id: string }[]).map((a) => a.id);
+  expect(birds).toHaveLength(3);
+  const present = async (i = 0) =>
+    (await f.status(i)).characters!.map((c) => c.actorId);
+  const strike = (targetId: string) => ({
+    command: "oppose",
+    requestId: randomUUID(),
+    text: "石を投げる",
+    dependencies: [],
+    effect: { targetId, state: "石が当たる" },
+  });
+  // 候補にないIDは死亡の対象にならない。
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-opposition-dice");
+    expect(JSON.stringify(messages)).toContain("地面をつつく");
+    return answer(id, {
+      sides: sure.sides,
+      successThrough: 1,
+      fatal: [birds[1], f.actors[1]],
+    });
+  });
+  const missed = strike(birds[1]!),
+    failed = await f.send(0, missed);
+  expect(failed.outcome).toMatchObject({
+    success: false,
+    setting: { fatal: [birds[1]] },
+  });
+  expect(failed.appearances).toBeUndefined();
+  expect(await f.send(0, missed)).toEqual(failed);
+  expect(await present()).toEqual(expect.arrayContaining(birds));
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { ...sure, fatal: [birds[0]] }),
+  );
+  const hit = strike(birds[0]!),
+    killed = await f.send(0, hit);
+  expect(killed.outcome).toMatchObject({ success: true });
+  const drops = killed.appearances as { id: string; species: string }[];
+  expect(drops).toMatchObject([{ species: "羽根" }]);
+  expect(await f.send(0, hit)).toEqual(killed);
+  expect(await present(1)).toEqual([
+    ...f.actors.slice(0, 2),
+    ...birds.slice(1),
+  ]);
+  expect(
+    (await f.store.receipt(f.graph, hit.requestId))?.changes.nodes,
+  ).toContainEqual(
+    expect.objectContaining({
+      instantTarget: {
+        id: birds[0],
+        sourceEventId: derivedId(source + ":appearance"),
+      },
+    }),
+  );
+  // 個体も同席している他の個体へ作用できる。死亡と判定されなければ相手は残る。
+  const next = await f.send(0, { command: "end-turn" });
+  expect(next.actorId).toBe(birds[1]);
+  f.calls
+    .mockImplementationOnce(async (id, _role, messages) => {
+      expect(JSON.stringify(messages)).toContain(birds[2]);
+      return answer(id, {
+        text: "隣の鳥をつつく",
+        effect: { targetId: birds[2], state: "羽が乱れる" },
+      });
+    })
+    .mockImplementationOnce(async (id) => answer(id, { ...sure, fatal: [] }));
+  await access.botPlay.tickNpcs();
+  expect(await present(1)).toEqual([
+    ...f.actors.slice(0, 2),
+    ...birds.slice(1),
+  ]);
+  expect(
+    (
+      await f.store.receipt(
+        f.graph,
+        derivedId(`instant:${next.sessionId}:${birds[1]}:${next.turn}`),
+      )
+    )?.changes.nodes,
+  ).toContainEqual(
+    expect.objectContaining({
+      instantActor: expect.objectContaining({ id: birds[1] }),
+      instantTarget: expect.objectContaining({ id: birds[2] }),
+    }),
+  );
+  // 目撃していない人物も、後から来てその場に残った物を見つけて拾える。
+  await f.send(1, { command: "end-turn" });
+  await f.move(2, f.place);
+  const seen = await f.send(2, {
+    command: "search",
+    query: { kind: "surroundings" },
+  });
+  expect(JSON.stringify(seen.material)).toContain(drops[0]!.id);
+  const picked = await f.send(2, {
+    command: "update",
+    text: "拾う",
+    dependencies: [],
+    operations: [
+      {
+        type: "move",
+        from: null,
+        to: f.actors[2],
+        item: drops[0]!.id,
+        basis: "拾う",
+      },
+    ],
+  });
+  expect(picked.items).toMatchObject([{ itemId: drops[0]!.id }]);
+});
