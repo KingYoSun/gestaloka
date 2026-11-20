@@ -14,6 +14,7 @@ export const playerOptions = {
   resume: { type: "boolean" },
   once: { type: "boolean" },
   "after-wake": { type: "string" },
+  "after-notice": { type: "string" },
   text: { type: "string" },
   file: { type: "string" },
   after: { type: "string" },
@@ -70,11 +71,15 @@ const commands = {
     "standby --resume",
   ],
   listen: [
-    "[--resume] [--once] [--after-wake <キー>]",
-    "SSEで進行を待つ。--resumeは待機再開。--onceは本人に操作が回ったときに1回返る。--after-wakeは--onceで受付済みの起床キーを除外する。CLIを更新した後も、同じインスタンスで保存済みの起床キーを使う。切り替え手順はhelp updateを参照。",
+    "[--resume] [--once] [--after-wake <キー>] [--after-notice <キー>]",
+    "SSEで進行を待つ。--resumeは待機再開。--onceは本人に操作が回ったとき、または未読の通知があるときに1回返る。--after-wakeは--onceで受付済みの起床キーを除外する。--after-noticeは受付済みの通知のキー（noticeKey）を除外する。CLIを更新した後も、同じインスタンスで保存済みの起床キーを使う。切り替え手順はhelp updateを参照。",
     "listen --once --after-wake <受付済みのキー>",
   ],
   disconnect: ["", "本人のインスタンスの待機を解除。"],
+  notices: [
+    "",
+    "本人あての通知を、未読を先に新しい順で20件まで読む。読んだ通知は既読になる。通常枠は使わない。時間をかけた申請の物品が届いたときに通知される。未読があると、statusとプレイ操作の応答にunreadNoticesとnoticeMessageが出る。",
+  ],
   start: ["", "本人の通常手番を単独で開始。"],
   search: [
     "--kind <surroundings|self|history|subject|memos> [--target <ID>]",
@@ -109,7 +114,7 @@ const commands = {
   finish: ["", "本人のプレイを終え、確定した履歴を取得。"],
   play: [
     "--file <JSONファイル>",
-    "PlayCommand形式の操作を送る。グラフ差分を使うメモの更新や対抗行動の形式は commands.md を参照。",
+    "PlayCommand形式の操作を送る。グラフ差分を使うメモの更新や対抗行動、時間をかける物品の作成（waitMinutes）の形式は commands.md を参照。",
     "play --file action.json",
   ],
   memo: [

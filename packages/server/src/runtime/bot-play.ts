@@ -267,6 +267,11 @@ async function signalTurns(
 }
 const latest = Number.MAX_SAFE_INTEGER;
 const waitLeaseMs = 600000;
+// 時間をかける申請で届く物品の呼称と個数。
+const arrivingItems = (ops: BelongingOp[]) =>
+  ops.flatMap((op) =>
+    op.type === "create" ? [{ label: op.label, count: op.count }] : [],
+  );
 const turnReturnMs = 600000;
 function reject(code: string, message: string): never {
   throw new AccessError(409, code, message);
@@ -364,6 +369,8 @@ const DiceSetting = z
 type Consumable = { id: string; label: string; count?: number };
 const consumePrompt =
   "consumableは申請者が手に持つ物品である。この行動が成功したときに使い切る・減る物品を選び、consumes:[{id,count}]に返す。countは減る個数で、個数のない物品やまるごと失う物品では省く。行動がその物品を減らさないなら選ばず、該当がなければ空配列。";
+const waitPrompt =
+  "waitMinutesは申請者がこの作成にかける実時間（分）で、成功すると物品はその時間の後に成立する。その場にない物の取り寄せや手間のかかる製作のように、時間をかけるほど成立しやすい申請では、かける時間に応じて成功範囲を広げる。";
 // GMが選んだ消費を、申請者が手に持つ物品と、その個数までに限る。
 function consumption(
   setting: z.infer<typeof DiceSetting>,
@@ -438,7 +445,14 @@ export class BotPlay {
       active boolean NOT NULL,last_seen timestamptz NOT NULL,generation integer NOT NULL DEFAULT 1,
       PRIMARY KEY(world_id,actor_id,connection_id));
       CREATE INDEX IF NOT EXISTS player_waiting_live ON player_waiting(world_id,actor_id,last_seen);
-      CREATE INDEX IF NOT EXISTS bot_chat_session ON bot_chat(session_id,id);`);
+      CREATE INDEX IF NOT EXISTS bot_chat_session ON bot_chat(session_id,id);
+      CREATE TABLE IF NOT EXISTS bot_arrival (
+      id uuid PRIMARY KEY,world_id uuid NOT NULL,actor_id uuid NOT NULL,due timestamptz NOT NULL,
+      text text NOT NULL,operations jsonb NOT NULL);
+      CREATE TABLE IF NOT EXISTS player_notice (
+      id uuid PRIMARY KEY,world_id uuid NOT NULL,actor_id uuid NOT NULL,created_at timestamptz NOT NULL,
+      text text NOT NULL,read boolean NOT NULL DEFAULT false);
+      CREATE INDEX IF NOT EXISTS player_notice_actor ON player_notice(world_id,actor_id,created_at);`);
   }
   async keepAlive(
     world: string,
@@ -530,6 +544,14 @@ export class BotPlay {
         : {}),
       actionable: false,
       wakeKey: null,
+      noticeKey: connected
+        ? ((
+            await db.query<{ id: string }>(
+              "SELECT id FROM player_notice WHERE world_id=$1 AND actor_id=$2 AND NOT read ORDER BY created_at DESC,id LIMIT 1",
+              [world, actor],
+            )
+          ).rows[0]?.id ?? null)
+        : null,
     };
     if (!connected) return { ...base, state: "inactive" };
     const w = await this.world(world, db);
@@ -2044,7 +2066,83 @@ export class BotPlay {
       entries,
     };
   }
+  // 届く時刻を過ぎた申請の物品を成立させ、本人あての通知を作る。
+  async #arrive(world?: string) {
+    const due = (
+      await this.pool.query<{
+        id: string;
+        world_id: string;
+        operations: BelongingOp[];
+      }>(
+        "SELECT id,world_id,operations FROM bot_arrival WHERE ($1::uuid IS NULL OR world_id=$1) AND due<=$2 ORDER BY due,id",
+        [world ?? null, this.now()],
+      )
+    ).rows;
+    for (const row of due) {
+      const w = await this.world(row.world_id),
+        context = this.store.context(w.id),
+        commitId = derivedId(row.id + ":arrival"),
+        plan = await planBelongings(context, commitId, w.at, row.operations);
+      await this.#commit(w.id, commitId, { ...plan, context });
+      await this.pool.query(
+        `WITH done AS (DELETE FROM bot_arrival WHERE id=$1 RETURNING world_id,actor_id),
+        noticed AS (INSERT INTO player_notice(id,world_id,actor_id,created_at,text) SELECT $2,world_id,actor_id,$3,$4 FROM done RETURNING world_id,actor_id)
+        SELECT pg_notify('gestaloka_turn',world_id::text||':'||actor_id::text) FROM noticed`,
+        [
+          row.id,
+          derivedId(row.id + ":notice"),
+          this.now(),
+          arrivingItems(row.operations)
+            .map(
+              (item) => item.label + (item.count ? `（${item.count}個）` : ""),
+            )
+            .join("、") +
+            "が届きました。search --kind self の belongings で確かめられます",
+        ],
+      );
+    }
+  }
+  // 未読の通知があることを、プレイの応答に添える。
+  async unread(
+    world: string,
+    actor: string,
+  ): Promise<{ unreadNotices?: number; noticeMessage?: string }> {
+    const count = Number(
+      (
+        await this.pool.query<{ count: string }>(
+          "SELECT count(*) FROM player_notice WHERE world_id=$1 AND actor_id=$2 AND NOT read",
+          [world, actor],
+        )
+      ).rows[0]!.count,
+    );
+    return count
+      ? {
+          unreadNotices: count,
+          noticeMessage: `未読の通知が${count}件あります。notices で読めます`,
+        }
+      : {};
+  }
+  // 未読を先に、新しい順で返し、返した通知を既読にする。
+  async notices(world: string, actor: string) {
+    return {
+      notices: (
+        await this.pool.query<{
+          id: string;
+          at: Date;
+          text: string;
+          unread: boolean;
+        }>(
+          `WITH page AS (SELECT id,created_at AS at,text,NOT read AS unread FROM player_notice
+          WHERE world_id=$1 AND actor_id=$2 ORDER BY read,created_at DESC,id LIMIT 20),
+          seen AS (UPDATE player_notice n SET read=true FROM page WHERE n.id=page.id AND page.unread)
+          SELECT * FROM page ORDER BY unread DESC,at DESC,id`,
+          [world, actor],
+        )
+      ).rows.map((row) => ({ ...row, at: row.at.toISOString() })),
+    };
+  }
   async expire(world?: string) {
+    await this.#arrive(world);
     const now = this.now();
     const sessions = (
       await this.pool.query<Session>(
@@ -2359,6 +2457,7 @@ export class BotPlay {
     changes: Change,
     explore = false,
     consumable: Consumable[] = [],
+    waitMinutes?: number,
   ) {
     if (
       changes.nodes.every((n) => n.kind === "script") &&
@@ -2470,6 +2569,7 @@ export class BotPlay {
           content:
             "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。" +
             (consumable.length ? consumePrompt : "") +
+            (waitMinutes ? waitPrompt : "") +
             "世界の基準: " +
             criteria,
         },
@@ -2482,6 +2582,7 @@ export class BotPlay {
             changes,
             nodes,
             ...(consumable.length ? { consumable } : {}),
+            ...(waitMinutes ? { waitMinutes } : {}),
           }),
         },
       ],
@@ -3141,6 +3242,17 @@ export class BotPlay {
           "本人の操作範囲または同席者の判断が必要です",
         );
     }
+    const wait = input.command === "update" ? input.waitMinutes : undefined;
+    if (
+      wait &&
+      (recipients.length ||
+        !("operations" in input) ||
+        !input.operations?.every((op) => op.type === "create"))
+    )
+      reject(
+        "WAIT_NOT_APPLICABLE",
+        "かける時間は、受領を必要としない物品のcreateだけの申請に指定してください",
+      );
     let outcome: unknown = needsCreation
       ? await this.#creation(
           world,
@@ -3153,6 +3265,7 @@ export class BotPlay {
           input.command === "explore"
             ? []
             : await this.#consumable(context, actor, changes),
+          wait,
         )
       : undefined;
     if (outcome) {
@@ -3166,6 +3279,8 @@ export class BotPlay {
       };
       if (!dice.success)
         return { context, changes: empty(), at, recipients: [], outcome };
+      // 時間をかける申請の物品は届く時刻に成立させる。ここでは消費だけを確定する。
+      if (wait) changes = empty();
       at = await this.#consume(
         context,
         input.requestId,
@@ -4155,6 +4270,23 @@ export class BotPlay {
                   entries: [{ actorId: actor, input: "出現", result: visible }],
                 });
               }
+              if (input.query.kind === "self") {
+                const arriving = (
+                  await db.query<{
+                    text: string;
+                    operations: BelongingOp[];
+                    due: Date;
+                  }>(
+                    "SELECT text,operations,due FROM bot_arrival WHERE world_id=$1 AND actor_id=$2 ORDER BY due,id",
+                    [world, actor],
+                  )
+                ).rows.map((row) => ({
+                  text: row.text,
+                  items: arrivingItems(row.operations),
+                  dueAt: row.due.toISOString(),
+                }));
+                if (arriving.length) result = { ...result, arriving };
+              }
             } else if (input.command === "promote-npc") {
               const review = promotion!;
               result = await this.tools.requestPromotion(
@@ -4383,6 +4515,28 @@ export class BotPlay {
                     ? { appearances: plan.appearances }
                     : {}),
                 };
+                if (
+                  input.command === "update" &&
+                  input.waitMinutes &&
+                  (plan.outcome as { success?: boolean } | undefined)?.success
+                )
+                  result.arrival = {
+                    dueAt: (
+                      await db.query<{ due: Date }>(
+                        "INSERT INTO bot_arrival(id,world_id,actor_id,due,text,operations) VALUES($1,$2,$3,$4,$5,$6) RETURNING due",
+                        [
+                          input.requestId,
+                          world,
+                          actor,
+                          new Date(
+                            this.now().getTime() + input.waitMinutes * 60000,
+                          ),
+                          input.text,
+                          JSON.stringify(input.operations),
+                        ],
+                      )
+                    ).rows[0]!.due.toISOString(),
+                  };
                 if (
                   !plan.changes.edges.length ||
                   !plan.changes.edges.every((e) => e.kind === "interpret")

@@ -18,6 +18,7 @@ import {
   PlayerIconInput,
   WorldPlayerPage,
   PlayerReportInput,
+  PlayerNotices,
   WaitingContextStatus,
   WaitingEvent,
   WaitingStatus,
@@ -165,6 +166,9 @@ function waitingNotice(
   return {
     ...frame,
     actionMessage,
+    ...(frame.noticeKey
+      ? { noticeMessage: "未読の通知があります。notices で読めます" }
+      : {}),
     ...(frame.progress?.receiptResults?.length ||
     (frame.progress?.updates.length &&
       (!frame.actionable ||
@@ -246,6 +250,7 @@ async function listen(profile: Profile) {
                 const key = JSON.stringify([
                   frame.state,
                   frame.wakeKey,
+                  frame.noticeKey,
                   ...(progress
                     ? [
                         frame.sessionId,
@@ -258,8 +263,10 @@ async function listen(profile: Profile) {
                 ]);
                 if (
                   values.once &&
-                  frame.actionable &&
-                  frame.wakeKey !== values["after-wake"]
+                  ((frame.actionable &&
+                    frame.wakeKey !== values["after-wake"]) ||
+                    (frame.noticeKey &&
+                      frame.noticeKey !== values["after-notice"]))
                 )
                   return waitingNotice(frame, lastWake);
                 if (!values.once && key !== last) {
@@ -573,6 +580,13 @@ async function run() {
       id,
     );
   }
+  if (command === "notices")
+    return {
+      state: "notices",
+      ...PlayerNotices.parse(
+        await http(profile, `/api/worlds/${profile.worldId}/notices`),
+      ),
+    };
   if (command === "players")
     return {
       state: "players",

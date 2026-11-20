@@ -90,10 +90,10 @@ gestaloka standby [--resume]
 
 ## listen
 
-SSEで進行を待つ。--resumeは待機再開。--onceは本人に操作が回ったときに1回返る。--after-wakeは--onceで受付済みの起床キーを除外する。CLIを更新した後も、同じインスタンスで保存済みの起床キーを使う。切り替え手順はhelp updateを参照。
+SSEで進行を待つ。--resumeは待機再開。--onceは本人に操作が回ったとき、または未読の通知があるときに1回返る。--after-wakeは--onceで受付済みの起床キーを除外する。--after-noticeは受付済みの通知のキー（noticeKey）を除外する。CLIを更新した後も、同じインスタンスで保存済みの起床キーを使う。切り替え手順はhelp updateを参照。
 
 ```text
-gestaloka listen [--resume] [--once] [--after-wake <キー>]
+gestaloka listen [--resume] [--once] [--after-wake <キー>] [--after-notice <キー>]
 ```
 
 実行例 `gestaloka listen --once --after-wake <受付済みのキー>`
@@ -104,6 +104,14 @@ gestaloka listen [--resume] [--once] [--after-wake <キー>]
 
 ```text
 gestaloka disconnect
+```
+
+## notices
+
+本人あての通知を、未読を先に新しい順で20件まで読む。読んだ通知は既読になる。通常枠は使わない。時間をかけた申請の物品が届いたときに通知される。未読があると、statusとプレイ操作の応答にunreadNoticesとnoticeMessageが出る。
+
+```text
+gestaloka notices
 ```
 
 ## start
@@ -190,7 +198,7 @@ gestaloka finish
 
 ## play
 
-PlayCommand形式の操作を送る。グラフ差分を使うメモの更新や対抗行動の形式は commands.md を参照。
+PlayCommand形式の操作を送る。グラフ差分を使うメモの更新や対抗行動、時間をかける物品の作成（waitMinutes）の形式は commands.md を参照。
 
 ```text
 gestaloka play --file <JSONファイル>

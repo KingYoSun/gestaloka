@@ -172,6 +172,11 @@ export const PlayCommand = z.discriminatedUnion("command", [
       text,
       operations: z.array(BelongingOp).min(1).optional(),
       changes: Change.optional(),
+      waitMinutes: count
+        .optional()
+        .describe(
+          "物品のcreateだけの申請にかける実時間（分）。ダイスの材料になり、成功すると物品はこの時間の後に成立する",
+        ),
       dependencies,
     })
     .strict()
@@ -292,6 +297,11 @@ export const WaitingStatus = z.object({
   viewerId: z.uuid(),
   actionable: z.boolean(),
   wakeKey: z.string().nullable(),
+  noticeKey: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("最新の未読の通知のID。未読がなければnull"),
   expiresAt: z.iso.datetime().optional(),
   sessionId: z.uuid().optional(),
   turn: z.number().int().optional(),
@@ -363,4 +373,14 @@ export const PlayerReportStatus = z.object({
 export const PlayerReportReceipt = PlayerReportStatus.extend({
   id: z.uuid(),
   createdAt: z.iso.datetime(),
+});
+export const PlayerNotices = z.object({
+  notices: z.array(
+    z.object({
+      id: z.uuid(),
+      at: z.iso.datetime(),
+      text: z.string(),
+      unread: z.boolean(),
+    }),
+  ),
 });
