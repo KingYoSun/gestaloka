@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { CostQuery, CostReport } from "@gestaloka/contracts";
 import { ExecutionBudget } from "@gestaloka/server";
@@ -857,12 +857,13 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
     },
   ];
   const id = randomUUID(),
-    first = input("工作する", 3);
+    first = input("ひもと板で工作する", 3),
+    storedRef = "@" + createHash("sha256").update("stored").digest("hex");
   await model.complete(id, "world-creation-dice", first);
   await model.complete(
     randomUUID(),
     "world-creation-dice",
-    input("別の工作", 2),
+    input(`${storedRef.slice(0, 9)}で別の工作`, 2),
   );
   await model.complete(
     randomUUID(),
@@ -895,7 +896,7 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
     "prompt_cache_breakpoint",
   );
   expect(JSON.parse(original.input[1].content[1].text)).toEqual({
-    text: "工作する",
+    text: "ひもと板で工作する",
     changes: { nodes: [] },
     nodes: [
       {
@@ -912,6 +913,18 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
     consumable: ["held", { id: "other", label: "石" }],
     basisDictionary: [basis],
   });
+  // 申請が指さない物品には取得経緯を付けない。短縮IDで指した物品には付ける。
+  const { belongings, ...unreferenced } = JSON.parse(
+    next.input[1].content[1].text,
+  ).nodes[0];
+  expect(unreferenced.node.id).toBe("actor");
+  expect(belongings).toEqual({
+    items: [["held", "ひも", owners, null, 2, 2]],
+    storages: [["box", "箱", [["stored", "板", [], basis, 4]]]],
+  });
+  expect(JSON.parse(next.input[1].content[1].text)).not.toHaveProperty(
+    "basisDictionary",
+  );
   expect(
     JSON.parse(short.input[1].content[0].text).nodes[0].belongings.skills,
   ).toEqual([["skill", "鑿を使う", null, 5]]);
