@@ -209,6 +209,7 @@ export async function searchAppearances(
   material: unknown,
   present: { name: string; places: string[]; count?: number }[],
   multiplier: number,
+  players: number,
 ) {
   const prior = await store.receipt(ctx.worldId, request);
   if (prior) {
@@ -250,7 +251,11 @@ export async function searchAppearances(
       continue;
     if (!places.length && rule.kind !== "instant-npc") continue;
     // その場に残っている同種の個体と合わせて、発生数に世界ごとの倍率を掛けた数を超えない。
-    const limit = ("count" in rule ? rule.count : rule.maxCount) * multiplier,
+    // 物品は、その場に落ちている同じ物と合わせて、発生数に同席するプレイヤーの人数（最低1）を
+    // 掛けた数を超えない。拾われれば、また現れる。
+    const limit =
+        ("count" in rule ? rule.count : rule.maxCount) *
+        (rule.kind === "instant-npc" ? multiplier : Math.max(1, players)),
       staying =
         rule.kind === "instant-npc"
           ? present
@@ -260,7 +265,9 @@ export async function searchAppearances(
                   p.places.some((x) => places.includes(x)),
               )
               .reduce((count, p) => count + (p.count ?? 1), 0)
-          : 0;
+          : rule.kind === "existence"
+            ? await lying(ctx, places, rule.species + "：" + rule.description)
+            : 0;
     if (staying >= limit) continue;
     const spawned = appear(
       request + ":" + ruleId,
@@ -327,6 +334,16 @@ export async function groundItems(ctx: WorldContext, place: string) {
       if (about(e, "ground-item")) ids.add(e.target);
   }
   return ids;
+}
+async function lying(ctx: WorldContext, places: string[], text: string) {
+  let count = 0;
+  for (const place of places)
+    for (const id of await groundItems(ctx, place)) {
+      const node = await ctx.node(id);
+      if (node?.kind === "existence" && node.text === text)
+        count += node.count ?? 1;
+    }
+  return count;
 }
 export async function groundPlacement(ctx: WorldContext, id: string) {
   return (await ctx.relations(id, "status", "in", latest)).filter((e) =>

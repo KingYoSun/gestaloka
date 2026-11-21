@@ -4132,6 +4132,7 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
   });
   expect(await f.send(0, body)).toEqual(found);
   // 次に現れた物品は、その場に残っている同じ物品へ足され、物品は増えない。状態が付いていても足される。
+  // 落ちている数は、発生数3に同席するプレイヤー2人を掛けた6個を超えない。
   const state = randomUUID();
   await f.store.commit(
     await f.store.claim(world, state),
@@ -4158,10 +4159,39 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
   );
   const second = await f.send(0, { command: "search", query });
   expect(second.appearances).toMatchObject([{ id: items[0]!.id, count: 3 }]);
+  expect(
+    (await f.send(0, { command: "search", query })).appearances,
+  ).toMatchObject([{ id: items[0]!.id, count: 1 }]);
+  // 上限まで落ちている間は、検索しても現れない。
+  const full = await f.send(0, { command: "search", query });
+  expect(full.appearances).toBeUndefined();
   expect(JSON.stringify((await f.status(1)).entries)).toContain(items[0]!.id);
   expect(JSON.stringify((await f.status(2)).entries)).not.toContain(
     items[0]!.id,
   );
+  // NPCとして担当される同席者は数えない。2個残して拾うと、上限3個まで1個だけ現れる。
+  await isolated.databases.postgres.query(
+    "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,'bot',$3,$4)",
+    [f.world, f.actors[1], f.people[1]!.id, randomUUID()],
+  );
+  await f.send(0, {
+    command: "update",
+    text: "4個拾う",
+    dependencies: full.dependencies,
+    operations: [
+      {
+        type: "move",
+        from: null,
+        to: f.actors[0],
+        item: items[0]!.id,
+        count: 4,
+        basis: "拾う",
+      },
+    ],
+  });
+  expect(
+    (await f.send(0, { command: "search", query })).appearances,
+  ).toMatchObject([{ id: items[0]!.id, count: 1 }]);
   await f.send(0, { command: "finish" });
   await f.send(1, { command: "finish" });
   await f.move(2, f.place);
@@ -4188,7 +4218,7 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
   await f.send(2, pickup);
   expect(
     (await readBelongings(f.store.context(world), f.actors[2]!)).items,
-  ).toMatchObject([{ id: items[0]!.id, count: 5 }]);
+  ).toMatchObject([{ id: items[0]!.id, count: 3 }]);
   await expect(f.send(2, pickup)).rejects.toMatchObject({
     code: "HOLD_CHANGED",
   });
