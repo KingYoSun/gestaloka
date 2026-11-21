@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { readFile, writeFile } from "node:fs/promises";
 import { join as pathJoin } from "node:path";
-import { playerCli } from "../support/player-cli.js";
+import { cliVersionHeader, playerCli } from "../support/player-cli.js";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { WorldAccess } from "@gestaloka/server/access";
 import { createApp } from "../../apps/api/src/app.js";
@@ -507,6 +507,7 @@ test("CLIから参加時の画像を復旧し、Webとの更新・解除と村�
       headers = {
         authorization: `Bearer ${profile.secret}`,
         "x-gestaloka-request": "1",
+        ...cliVersionHeader,
       };
     for (const id of [b.entry, second.id]) {
       expect(

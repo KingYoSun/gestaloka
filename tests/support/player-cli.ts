@@ -1,11 +1,24 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import type { createApp } from "../../apps/api/src/app.js";
 import assert from "node:assert/strict";
+
+// 端末の認証で直接呼ぶときに、配布中のCLIと同じ版を名乗る。
+export const cliVersionHeader = {
+  "x-gestaloka-cli-version": (
+    JSON.parse(
+      readFileSync(
+        new URL("../../packages/player-cli/package.json", import.meta.url),
+        "utf8",
+      ),
+    ) as { version: string }
+  ).version,
+};
 
 export async function playerCli(app: Awaited<ReturnType<typeof createApp>>) {
   const directory = await mkdtemp(join(tmpdir(), "gestaloka-cli-"));

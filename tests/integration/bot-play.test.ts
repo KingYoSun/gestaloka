@@ -11,7 +11,7 @@ import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
 import { derivedId } from "@gestaloka/server/world";
 import { BotPlay } from "@gestaloka/server/play";
 import { createApp } from "../../apps/api/src/app.js";
-import { playerCli } from "../support/player-cli.js";
+import { cliVersionHeader, playerCli } from "../support/player-cli.js";
 import { join, resolve } from "node:path";
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureRuntime } from "../support/provider.js";
@@ -2475,7 +2475,10 @@ test("CLIの報告は専用枠で送り、失った返答を再送し、変更�
       (
         await app.inject({
           url: `/api/worlds/${randomUUID()}/reports`,
-          headers: { authorization: `Bearer ${credentials.secret}` },
+          headers: {
+            authorization: `Bearer ${credentials.secret}`,
+            ...cliVersionHeader,
+          },
         })
       ).statusCode,
     ).toBe(403);
@@ -5283,6 +5286,7 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
         headers: {
           accept: "text/event-stream",
           authorization: "Bearer " + devices[i]!.secret,
+          ...cliVersionHeader,
         },
       });
       expect(res.status).toBe(200);
@@ -6013,6 +6017,7 @@ test("認可済み端末は人物生成前に一度報告でき、参加後も�
   const headers = {
       authorization: "Bearer " + secret,
       "x-gestaloka-request": "1",
+      ...cliVersionHeader,
     },
     url = "/api/worlds/" + f.world + "/reports";
   const post = () =>
