@@ -443,7 +443,6 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
             {
               id: randomUUID(),
               kind: "has",
-              role: "hold",
               source: sender,
               target: item,
               period: { from: 0 },
@@ -513,7 +512,7 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
     const holders = await store
       .context(f.graph)
       .relations(item, "has", "in", Number.MAX_SAFE_INTEGER);
-    expect(holders.find((edge) => edge.role === "hold")?.source).toBe(receiver);
+    expect(holders.find((edge) => !edge.role)?.source).toBe(receiver);
     expect(
       (
         await (

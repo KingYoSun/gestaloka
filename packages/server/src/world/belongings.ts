@@ -8,7 +8,7 @@ import {
 import type { Lease, WorldContext, WorldStore } from "./store.js";
 import type { Dependency } from "./store.js";
 
-// 物品・保管先・技能の事実は、hasの役割で表す。holdは物品を持つこと（持つ存在の物であること）、
+// 物品・保管先・技能の事実はhasで表す。役割なしは物品を持つこと（持つ存在の物であること）、
 // useは家・場所の保管先の登録、skillは技能。要約と持つ存在の一意性は確定処理が保つ。
 // 所在地はlocate操作で同じ原子的確定を使い、statusのlocation記録として保存する。
 export { BelongingOp } from "@gestaloka/contracts";
@@ -29,6 +29,28 @@ export function belongingOps(texts: readonly string[]) {
 }
 
 const LATEST = Number.MAX_SAFE_INTEGER;
+
+// 物品を持つこと・保管先・技能・要約と所在地は、用途別の操作だけが記録・終了する。
+// 自由な差分がそれらを含むかを、追加する関係と終了する関係から判定する。
+export async function belongingEdges(
+  context: WorldContext,
+  changes: Change,
+  ended: readonly WorldEdge[],
+) {
+  const kinds = new Map(changes.nodes.map((node) => [node.id, node.kind]));
+  for (const edge of [...changes.edges, ...ended])
+    if (
+      (edge.kind === "has" &&
+        (edge.role !== undefined ||
+          (kinds.get(edge.target) ??
+            (await context.node(edge.target))?.kind) === "existence")) ||
+      (edge.kind === "status" &&
+        edge.role === "content" &&
+        edge.text === "location")
+    )
+      return true;
+  return false;
+}
 
 // 操作を差分へ変える。進行中のシーンは世界内の時点が互いにずれるため、終了・改訂する
 // 記録より前の時点を指定された場合は、その記録の時点まで確定時点を進める。
@@ -172,13 +194,13 @@ export async function planBelongings(
           text: op.label,
           ...(op.count ? { count: op.count } : {}),
         });
-        has(`${index}:hold`, op.holder, node, "hold", op.basis);
+        has(`${index}:hold`, op.holder, node, undefined, op.basis);
         break;
       }
       case "move": {
         if (
-          ((await incoming(op.item)).find((edge) => edge.role === "hold")
-            ?.source ?? null) !== op.from
+          ((await incoming(op.item)).find((edge) => !edge.role)?.source ??
+            null) !== op.from
         )
           throw new BelongingRejected("物品の現在の所在が指定と異なります");
         parts.push({
@@ -234,7 +256,7 @@ export async function planBelongings(
   const moving = new Set(parts.map((part) => part.item));
   for (const part of parts) {
     const source = (await current(part.item))!,
-      held = (await incoming(part.item)).filter((edge) => edge.role === "hold"),
+      held = (await incoming(part.item)).filter((edge) => !edge.role),
       count =
         part.count ?? (source.kind === "existence" ? source.count : undefined);
     // 移った先に、呼称と系列が同じ個数つきの物品があれば、そこへ足して物品を増やさない。
@@ -248,7 +270,7 @@ export async function planBelongings(
       )) {
         const node = await current(edge.target);
         if (
-          edge.role === "hold" &&
+          !edge.role &&
           !moving.has(edge.target) &&
           node?.kind === "existence" &&
           node.count &&
@@ -274,10 +296,10 @@ export async function planBelongings(
           ? { seriesId: source.seriesId }
           : {}),
       });
-      has(`${part.key}:hold`, part.to, node, "hold", part.basis);
+      has(`${part.key}:hold`, part.to, node, undefined, part.basis);
     } else {
       end(held);
-      has(`${part.key}:hold`, part.to, part.item, "hold", part.basis);
+      has(`${part.key}:hold`, part.to, part.item, undefined, part.basis);
     }
   }
   change.revisions.push(...revised.values());
@@ -352,7 +374,7 @@ export async function heldItems(
   viewer?: string,
 ) {
   const held = (await context.relations(holder, "has", "out", at)).filter(
-    (edge) => edge.role === "hold",
+    (edge) => !edge.role,
   );
   if (
     !held.length ||
@@ -364,7 +386,10 @@ export async function heldItems(
   const items = [];
   for (const edge of held) {
     const node = await context.node(edge.target, at);
-    if (!viewer || visibleTo(node, viewer, true))
+    if (
+      node?.kind === "existence" &&
+      (!viewer || visibleTo(node, viewer, true))
+    )
       items.push({ id: edge.target, ...labelled(node) });
   }
   return items;
@@ -387,9 +412,13 @@ export async function readBelongings(
       );
   const items = async (holder: string) => {
     const held = [];
-    for (const edge of await facts(holder, "hold")) {
+    for (const edge of await facts(holder, undefined)) {
       const node = await context.node(edge.target, at);
-      if (viewer && !visibleTo(node, viewer, true)) continue;
+      if (
+        node?.kind !== "existence" ||
+        (viewer && !visibleTo(node, viewer, true))
+      )
+        continue;
       held.push({
         id: edge.target,
         ...labelled(node),

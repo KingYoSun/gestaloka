@@ -1088,14 +1088,6 @@ test("同席者への受領判断を挟み、拒否・承認後に元の手番�
           {
             id: randomUUID(),
             kind: "has",
-            source: f.actors[1]!,
-            target: item,
-            period: { from: 0 },
-          },
-          {
-            id: randomUUID(),
-            kind: "has",
-            role: "hold",
             source: f.actors[0]!,
             target: item,
             period: { from: 0 },
@@ -1164,7 +1156,6 @@ test("遠隔受領は即時拒否し、同席者の承認・退出・無応答�
             {
               id: randomUUID(),
               kind: "has",
-              role: "hold",
               source: f.actors[0]!,
               target: item,
               period: { from: 0 },
@@ -1702,7 +1693,6 @@ test("受領判断から同じ元手番へ戻ったときにも、新しい起�
           {
             id: randomUUID(),
             kind: "has",
-            role: "hold",
             source: f.actors[0]!,
             target: item,
             period: { from: 0 },
@@ -2350,7 +2340,6 @@ test("報告枠は実際に手番を終えたユーザーと世界に属し、�
           {
             id: randomUUID(),
             kind: "has",
-            role: "hold",
             source: f.actors[0]!,
             target: item,
             period: { from: 0 },
@@ -2596,7 +2585,7 @@ test("作った物品は持つ人物の物になり、渡すと受け取った�
     await f.store
       .context(f.graph)
       .relations(bag!.itemId, "has", "in", Number.MAX_SAFE_INTEGER),
-  ).toMatchObject([{ source: b, role: "hold" }]);
+  ).toMatchObject([{ source: b }]);
   if ((await f.status(0)).actorId === a)
     await f.send(0, { command: "end-turn" });
   const entries = (await f.status(1)).entries.flatMap(
@@ -2612,6 +2601,7 @@ test("作った物品は持つ人物の物になり、渡すと受け取った�
 test("目撃した手渡しには対象と渡した先が残り、合流前の取得結果から参照は渡らない", async () => {
   const f = await fixture(),
     item = randomUUID(),
+    bag = randomUUID(),
     key = randomUUID(),
     a = f.actors[0]!,
     b = f.actors[1]!;
@@ -2622,12 +2612,22 @@ test("目撃した手渡しには対象と渡した先が残り、合流前の�
       commitId: key,
       at: 0,
       changes: {
-        nodes: [{ id: item, kind: "existence", text: "試験用の帯" }],
+        nodes: [
+          { id: item, kind: "existence", text: "試験用の帯" },
+          { id: bag, kind: "existence", text: "試験用の袋" },
+        ],
         edges: [
           {
             id: randomUUID(),
             kind: "has",
             source: a,
+            target: bag,
+            period: { from: 0 },
+          },
+          {
+            id: randomUUID(),
+            kind: "has",
+            source: bag,
             target: item,
             period: { from: 0 },
           },
@@ -2640,10 +2640,10 @@ test("目撃した手渡しには対象と渡した先が残り、合流前の�
   const update = (text: string, operations: unknown[]) =>
     f.send(0, { command: "update", text, dependencies: [], operations });
   const picked = await update("拾う", [
-    { type: "move", from: null, to: a, item, basis: "取得" },
+    { type: "move", from: bag, to: a, item, basis: "袋から出す" },
   ]);
   expect(picked.items).toMatchObject([
-    { itemId: item, holding: { fromId: null, toId: a } },
+    { itemId: item, holding: { fromId: bag, toId: a } },
   ]);
   await f.send(1, { command: "contact", targetId: a });
   await f.move(2, f.place);
@@ -2689,7 +2689,6 @@ test("対抗行動の0%・100%ではGMも抽選も使わず、不確実な行動
         edges: items.map((target, i) => ({
           id: randomUUID(),
           kind: "has",
-          role: "hold",
           source: f.actors[i]!,
           target,
           period: { from: 0 },
@@ -3788,7 +3787,6 @@ test("本人が手に持つ箱には、場所を問わず出し入れできる",
   const hold = (target: string) => ({
     id: randomUUID(),
     kind: "has" as const,
-    role: "hold" as const,
     source: actor,
     target,
     period: { from: 0 },
@@ -3980,7 +3978,6 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
           {
             id: randomUUID(),
             kind: "has",
-            role: "hold",
             source: f.actors[0]!,
             target: tool,
             period: { from: at },
@@ -6868,7 +6865,6 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
         edges: items.map((target, i) => ({
           id: randomUUID(),
           kind: "has",
-          role: "hold",
           source: f.actors[i === 2 ? 2 : 1]!,
           target,
           period: { from: 0 },

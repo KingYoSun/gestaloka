@@ -201,7 +201,6 @@ test("工具を倉庫へ預けると倉庫が持ち、携行と保管に二重�
             {
               id: randomUUID(),
               kind: "has",
-              role: "hold",
               source: a,
               target: tool,
               period: { from: 4 },
@@ -316,16 +315,41 @@ test("技能の習得・範囲変更・除去の前後で、当時の一覧と�
   expect((await summaries(worldId))[0]?.text).toBe("技能\n(なし)");
 });
 
-test("既存世界へ事実を追加登録し直しても、事実と要約が重複しない", async () => {
+test("旧版が役割holdで記録した関係を、起動時に役割なしのhasへ書き換える", async () => {
+  const { worldId, ids, read } = await world("A", "Aの古い帽子");
+  const [a, hat] = ids as [string, string];
+  const id = randomUUID();
+  const legacy = {
+    id,
+    kind: "has",
+    source: a,
+    target: hat,
+    role: "hold",
+    period: { from: 1 },
+  };
+  await databases.graph.executeQuery(
+    `MATCH (s:WorldNode {worldId:$worldId,id:$a}),(t:WorldNode {worldId:$worldId,id:$hat})
+     CREATE (s)-[:has {worldId:$worldId,id:$id,data:$data,validFrom:1,role:'hold'}]->(t)`,
+    { worldId, a, hat, id, data: JSON.stringify(legacy) },
+  );
+  await store.setup();
+  const { role, ...current } = legacy;
+  expect(role).toBe("hold");
+  expect(await store.context(worldId).edge(id)).toEqual(current);
+  expect((await read(a)).items).toMatchObject([{ id: hat }]);
+});
+
+test("事実を追加登録し直しても、事実と要約が重複しない", async () => {
   const { worldId, ids, read } = await world("A", "Aの家", "Aの写真機");
   const [a, home, camera] = ids as [string, string, string];
-  const has = (source: string, target: string, role?: "hold" | "use") => ({
+  const has = (source: string, target: string, role?: "use") => ({
     id: randomUUID(),
     kind: "has" as const,
     source,
     target,
-    ...(role ? { role, text: "既存の確定記述から" } : {}),
-    period: { from: role ? 5 : 0 },
+    ...(role ? { role } : {}),
+    text: "既存の確定記述から",
+    period: { from: 5 },
   });
   // 管理編集と同じく、要求IDを実行と確定の識別に使う。
   const commit = async (commitId: string, edges: ReturnType<typeof has>[]) =>
@@ -334,11 +358,7 @@ test("既存世界へ事実を追加登録し直しても、事実と要約が�
       at: 5,
       changes: { nodes: [], revisions: [], edges, endEdges: [] },
     });
-  // 役割導入前の所有は、持ち物にも保管先にも数えない。
-  await commit(randomUUID(), [has(a, home), has(a, camera)]);
-  expect(await summaries(worldId)).toEqual([]);
-
-  const takeover = { id: randomUUID(), edges: [has(a, camera, "hold")] };
+  const takeover = { id: randomUUID(), edges: [has(a, camera)] };
   const receipt = await commit(takeover.id, takeover.edges);
   expect(await commit(takeover.id, takeover.edges)).toEqual(receipt);
   await commit(randomUUID(), [has(a, home, "use")]);
@@ -355,7 +375,7 @@ test("既存世界へ事実を追加登録し直しても、事実と要約が�
     await store
       .context(worldId)
       .history(a, "has", "out", Number.MAX_SAFE_INTEGER),
-  ).toHaveLength(6);
+  ).toHaveLength(4);
 
   // 物品の呼称が変わると、保持者の要約も同じ確定で追従する。
   const context = store.context(worldId);

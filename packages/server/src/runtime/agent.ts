@@ -24,6 +24,7 @@ import {
 } from "../world/model.js";
 import {
   BelongingRejected,
+  belongingEdges,
   belongingOps,
   planBelongings,
 } from "../world/belongings.js";
@@ -651,17 +652,9 @@ export class WorldAgent {
     const oldEndings = [];
     for (const id of proposal.changes.endEdges)
       oldEndings.push((await context.edge(id))!);
-    if (
-      [...proposal.changes.edges, ...oldEndings].some(
-        (edge) =>
-          (edge.kind === "has" && edge.role) ||
-          (edge.kind === "status" &&
-            edge.role === "content" &&
-            edge.text === "location"),
-      )
-    )
+    if (await belongingEdges(context, proposal.changes, oldEndings))
       throw new CandidateRejected(
-        "所在地、および物品の所在・保管先の利用・技能・要約を表す役割つきのhasは、実行側の内部関数だけが記録・終了します",
+        "所在地、物品を持つこと、保管先の登録・技能・要約を表すhasは、実行側の内部関数だけが記録・終了します",
       );
     for (const node of proposal.changes.revisions)
       if (
