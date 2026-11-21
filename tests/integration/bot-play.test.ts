@@ -2047,6 +2047,23 @@ test("管理者のお知らせは操作中の人物全員か指定した人物�
   await expect(send(randomUUID(), [randomUUID()])).rejects.toMatchObject({
     code: "NOTICE_TARGET_NOT_FOUND",
   });
+  // 応答の形に合わない通知があれば、返せなかった通知を既読にしない。
+  await send(randomUUID(), [f.actors[2]!]);
+  await isolated.databases.postgres.query(
+    "INSERT INTO player_notice(id,world_id,actor_id,created_at,text) VALUES($1,$2,$3,now(),'形の合わない通知')",
+    ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", f.world, f.actors[2]],
+  );
+  await expect(
+    access.notices(f.people[2]!.id, f.world, f.actors[2]),
+  ).rejects.toThrow();
+  expect(
+    (
+      await isolated.databases.postgres.query(
+        "SELECT count(*)::int AS count FROM player_notice WHERE world_id=$1 AND actor_id=$2 AND NOT read",
+        [f.world, f.actors[2]],
+      )
+    ).rows[0].count,
+  ).toBe(2);
 });
 
 test("受容したインスタントNPCだけを昇格申請し、管理者の許可後に一度だけ永続化する", async () => {

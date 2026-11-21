@@ -11,6 +11,7 @@ import {
   type Appearance,
   type ItemOutcome,
   PlaySearch,
+  PlayerNotices,
   ViewersInput,
   type ReceiptResult,
   playActionMessage,
@@ -2718,8 +2719,9 @@ export class BotPlay {
       : {};
   }
   // 未読を先に、新しい順で返し、返した通知を既読にする。
+  // 応答の形を確かめてから既読にし、返せなかった通知を未読のまま残す。
   async notices(world: string, actor: string) {
-    return {
+    const page = PlayerNotices.parse({
       notices: (
         await this.pool.query<{
           id: string;
@@ -2727,14 +2729,18 @@ export class BotPlay {
           text: string;
           unread: boolean;
         }>(
-          `WITH page AS (SELECT id,created_at AS at,text,NOT read AS unread FROM player_notice
-          WHERE world_id=$1 AND actor_id=$2 ORDER BY read,created_at DESC,id LIMIT 20),
-          seen AS (UPDATE player_notice n SET read=true FROM page WHERE n.id=page.id AND page.unread)
-          SELECT * FROM page ORDER BY unread DESC,at DESC,id`,
+          `SELECT * FROM (SELECT id,created_at AS at,text,NOT read AS unread FROM player_notice
+          WHERE world_id=$1 AND actor_id=$2 ORDER BY read,created_at DESC,id LIMIT 20) page
+          ORDER BY unread DESC,at DESC,id`,
           [world, actor],
         )
       ).rows.map((row) => ({ ...row, at: row.at.toISOString() })),
-    };
+    });
+    await this.pool.query(
+      "UPDATE player_notice SET read=true WHERE id=ANY($1::uuid[])",
+      [page.notices.filter((n) => n.unread).map((n) => n.id)],
+    );
+    return page;
   }
   async expire(world?: string) {
     await this.applications.expire(world);
