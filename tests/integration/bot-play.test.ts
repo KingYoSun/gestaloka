@@ -2014,6 +2014,41 @@ test("メモノードは自由な本文で作成し、共有と更新に関係�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test("管理者のお知らせは操作中の人物全員か指定した人物に一度だけ届く", async () => {
+  const f = await fixture(),
+    admin = await auth.person(),
+    send = (requestId: string, actorIds?: string[]) =>
+      auth.operations.execute(
+        admin.id,
+        requestId,
+        {
+          operation: "notices.send",
+          worldId: f.world,
+          text: "全員へのお知らせ",
+          ...(actorIds ? { actorIds } : {}),
+          reason: "仕様変更の案内",
+        },
+        { players: access.players },
+      );
+  const requestId = randomUUID();
+  expect(await send(requestId)).toMatchObject({ actorIds: f.actors });
+  await send(requestId);
+  for (const [i, actor] of f.actors.entries())
+    expect(
+      (await access.notices(f.people[i]!.id, f.world, actor)).notices,
+    ).toMatchObject([{ unread: true, text: "全員へのお知らせ" }]);
+  await send(randomUUID(), [f.actors[1]!]);
+  expect(
+    (await access.notices(f.people[1]!.id, f.world, f.actors[1])).notices,
+  ).toHaveLength(2);
+  expect(
+    (await access.notices(f.people[0]!.id, f.world, f.actors[0])).notices,
+  ).toHaveLength(1);
+  await expect(send(randomUUID(), [randomUUID()])).rejects.toMatchObject({
+    code: "NOTICE_TARGET_NOT_FOUND",
+  });
+});
+
 test("受容したインスタントNPCだけを昇格申請し、管理者の許可後に一度だけ永続化する", async () => {
   const f = await fixture(),
     admin = await auth.person(),

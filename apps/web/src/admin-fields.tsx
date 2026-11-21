@@ -11,6 +11,7 @@ export const object = (v: unknown): Values =>
 export const labels: Record<string, string> = {
   selection: "対象の選択",
   actorId: "操作対象ID",
+  actorIds: "宛先の人物ID（省くと全員）",
   endSceneId: "終端シーンID",
   n: "窓のシーン数",
   manifestId: "資料ID",

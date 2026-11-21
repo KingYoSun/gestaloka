@@ -52,6 +52,7 @@ export const operations = {
     "報告・感想",
     {
       "reports.list": "プレイヤーからの報告・感想",
+      "notices.send": "プレイヤーへお知らせを送る",
       "reportPolicy.read": "報告・感想の送信枠",
       "reportPolicy.put": "報告・感想の上限を変更",
     },

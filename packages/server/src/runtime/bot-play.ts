@@ -1003,6 +1003,46 @@ export class BotPlay {
       );
     }
   }
+  // 運営のお知らせを人物ごとの通知として届ける。宛先を省くと、サーバー担当のNPCを除く
+  // 操作中の人物全員。同じ要求の再送では通知を増やさない。
+  async sendNotice(
+    db: Db,
+    world: string,
+    requestId: string,
+    text: string,
+    actorIds?: string[],
+  ) {
+    const w = await this.world(world, db);
+    const targets = (
+      await db.query<{ actor_id: string }>(
+        `SELECT c.actor_id FROM world_controlled_actor c
+         WHERE c.world_id=$1 AND ($3::uuid[] IS NULL OR c.actor_id=ANY($3))
+           AND NOT EXISTS (SELECT 1 FROM bot_npc n WHERE n.world_id=$2 AND n.actor_id=c.actor_id AND n.controller='server')`,
+        [w.id, world, actorIds ?? null],
+      )
+    ).rows.map((row) => row.actor_id);
+    const missing = (actorIds ?? []).filter((id) => !targets.includes(id));
+    if (missing.length)
+      reject(
+        "NOTICE_TARGET_NOT_FOUND",
+        `通知を届けられない人物です: ${missing.join(", ")}`,
+      );
+    for (const actor of targets)
+      await db.query(
+        `WITH inserted AS (
+           INSERT INTO player_notice(id,world_id,actor_id,created_at,text)
+           VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING actor_id
+         ) SELECT pg_notify('gestaloka_turn',$2::text||':'||actor_id::text) FROM inserted`,
+        [
+          derivedId(`${requestId}:notice:${actor}`),
+          world,
+          actor,
+          this.now(),
+          text,
+        ],
+      );
+    return { actorIds: targets };
+  }
   async world(id: string, db: Db = this.pool) {
     const row = (
       await db.query<{ world_id: string; at: string; state: string }>(

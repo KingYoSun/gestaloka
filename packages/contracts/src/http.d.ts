@@ -7285,6 +7285,15 @@ export interface paths {
                             before?: string;
                         } | {
                             /** @enum {string} */
+                            operation: "notices.send";
+                            /** Format: uuid */
+                            worldId: string;
+                            text: string;
+                            /** @description 宛先の人物。省くと、サーバー担当のNPCを除く、操作中の人物全員 */
+                            actorIds?: string[];
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
                             operation: "npcs.promotions";
                             /** Format: uuid */
                             worldId: string;
