@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { int, type Driver, type ManagedTransaction } from "neo4j-driver";
 import { z } from "zod";
+import { routeEndpoints } from "./locations.js";
 import {
   Change,
   RelationKind,
@@ -40,12 +41,18 @@ export type Receipt = {
   versions?: Record<string, { before: number; after: number }>;
 };
 export class WorldConflict extends Error {}
+export class FixedPlaceMovement extends WorldConflict {
+  constructor() {
+    super("固定場所そのものの所在や所持先は変更できません");
+  }
+}
 export type ItemReservations = {
   add?: { id: string; itemId: string; count: number };
   release: string[];
 };
 
 const nodeKey = (id: string) => `node:${id}`;
+const placeKey = (id: string) => `fixed-place:${id}`;
 const edgeKey = (id: string) => `edge:${id}`;
 // 関係の索引は種類ごとにある。種類を省いた照合は索引を使えず、世界中の関係を走査する。
 const edgeById = `CALL () { ${RelationKind.options
@@ -343,6 +350,17 @@ export class WorldContext {
       ],
     };
   }
+  async assertMovable(id: string) {
+    const fixed = await this.#read(placeKey(id), async (tx) => {
+      const result = await tx.run(
+        "MATCH (n:WorldNode {worldId:$world,id:$id}) RETURN n.fixedPlace AS fixed",
+        { world: this.worldId, id },
+      );
+      return result.records[0]?.get("fixed") === true;
+    });
+    if (fixed) throw new FixedPlaceMovement();
+  }
+
   async reserved(itemId: string) {
     return this.#read(relationKey(itemId, "has", "in"), async (tx) => {
       const { records } = await tx.run(
@@ -708,6 +726,92 @@ export class WorldStore {
     );
   }
 
+  /** 管理者による一度の移行。候補の抽出は通常のプレイ・起動から呼び出さない。 */
+  async protectExistingPlaces(
+    worldId: string,
+    actors: readonly string[],
+    reviewed: { fixed: readonly string[]; movable: readonly string[] },
+    apply = false,
+  ) {
+    const session = this.driver.session();
+    const classify = async (tx: ManagedTransaction) => {
+      const raw = await tx.run(
+        `MATCH (p:WorldNode {worldId:$worldId,kind:'existence'})-[r:status {role:'content'}]->(s:WorldNode {kind:'script'})
+         WHERE r.validTo IS NULL AND r.data CONTAINS '"text":"route"'
+         WITH s, collect(r.data) AS contents
+         OPTIONAL MATCH (s)-[a:status {role:'about'}]->(:WorldNode)
+         WHERE a.validTo IS NULL
+         RETURN contents, collect(a.data) AS about`,
+        { worldId },
+      );
+      const endpoints = routeEndpoints(
+        raw.records.flatMap((r) =>
+          [...r.get("contents"), ...r.get("about")].map((data) =>
+            WorldEdge.parse(JSON.parse(data)),
+          ),
+        ),
+      );
+      const movable = new Set(reviewed.movable);
+      const fixed = new Set(reviewed.fixed);
+      if (reviewed.fixed.some((id) => movable.has(id)))
+        throw new Error("固定と移動可の判定が重複しています");
+      const controlled = new Set(actors);
+      let automatic = 0,
+        ambiguous = 0;
+      const ids = [...new Set([...endpoints, ...fixed, ...movable])].sort();
+      // プレイヤーの確定と同じ順で印をロックしてから、現在の所持先を照合する。
+      if (apply) for (const id of ids) await lock(tx, worldId, placeKey(id));
+      const rows = await tx.run(
+        `UNWIND $ids AS id OPTIONAL MATCH (n:WorldNode {worldId:$worldId,id:id,kind:'existence'})
+         RETURN id,n.id IS NOT NULL AS found,coalesce(n.fixedPlace,false) AS fixed,
+           EXISTS { MATCH (:WorldNode {kind:'existence'})-[h:has]->(n) WHERE h.role IS NULL AND h.validTo IS NULL } AS held`,
+        { worldId, ids },
+      );
+      const mark = [];
+      for (const r of rows.records) {
+        const id: string = r.get("id");
+        if (!r.get("found"))
+          throw new Error(`判定対象が世界にありません: ${id}`);
+        if (movable.has(id)) {
+          if (r.get("fixed"))
+            throw new Error(`固定済みの場所が移動可に指定されています: ${id}`);
+          continue;
+        }
+        if (!fixed.has(id)) {
+          if (controlled.has(id) || r.get("held")) {
+            ambiguous++;
+            continue;
+          }
+          automatic++;
+        }
+        if (!r.get("fixed")) mark.push(id);
+      }
+      const added = mark.length;
+      if (apply && added)
+        await tx.run(
+          `UNWIND $mark AS id MATCH (n:WorldNode {worldId:$worldId,id:id}),
+         (g:WorldGuard {worldId:$worldId,key:'fixed-place:'+id})
+         SET n.fixedPlace=true,g.version=g.version+1`,
+          { worldId, mark },
+        );
+      return {
+        automatic,
+        ambiguous,
+        reviewedFixed: fixed.size,
+        reviewedMovable: movable.size,
+        added,
+        applied: apply,
+      };
+    };
+    try {
+      return await (apply
+        ? session.executeWrite(classify)
+        : session.executeRead(classify));
+    } finally {
+      await session.close();
+    }
+  }
+
   withDrafts<T>(
     worldId: string,
     drafts: readonly { at: number; changes: Change }[],
@@ -802,6 +906,8 @@ export class WorldStore {
       commitId: string;
       at: number;
       changes: unknown;
+      playerAction?: boolean;
+      newFixedPlaces?: string[];
       management?: { editorId: string; reason: string; requestHash: string };
     },
     fromBelongingOperations = false,
@@ -812,6 +918,8 @@ export class WorldStore {
         commitId: z.uuid(),
         at: z.number().int().nonnegative().safe(),
         changes: Change,
+        playerAction: z.boolean().optional(),
+        newFixedPlaces: z.array(z.uuid()).optional(),
         management: z
           .object({
             editorId: z.uuid(),
@@ -836,27 +944,36 @@ export class WorldStore {
     if (lease.worldId !== context.worldId)
       throw new Error("異なる世界の文脈は確定できません");
     const { worldId, runId, generation } = lease;
-    const hash = createHash("sha256")
-      .update(
-        JSON.stringify({
-          runId,
-          at,
-          changes: requestedChange(changes, at),
-          ...(reservations ? { reservations } : {}),
-          ...(parsed.management ? { management: parsed.management } : {}),
-        }),
-      )
-      .digest("hex");
+    const hashRequest = (fixedPlaces?: readonly string[]) =>
+      createHash("sha256")
+        .update(
+          JSON.stringify({
+            runId,
+            at,
+            changes: requestedChange(changes, at),
+            ...(fixedPlaces?.length ? { newFixedPlaces: fixedPlaces } : {}),
+            ...(reservations ? { reservations } : {}),
+            ...(parsed.management ? { management: parsed.management } : {}),
+          }),
+        )
+        .digest("hex");
+    const hash = hashRequest(parsed.newFixedPlaces);
     const session = this.driver.session();
     try {
       return await session.executeWrite(async (tx) => {
         await lock(tx, worldId, `commit:${commitId}`);
         const prior = await tx.run(
-          "MATCH (r:WorldReceipt {worldId: $worldId, commitId: $commitId}) RETURN r.hash AS hash, r.data AS data",
+          "MATCH (r:WorldReceipt {worldId: $worldId, commitId: $commitId}) RETURN r.hash AS hash, r.data AS data,r.placePolicy AS placePolicy",
           { worldId, commitId },
         );
         if (prior.records[0]) {
-          if (prior.records[0].get("hash") !== hash)
+          // 旧版の確定を再送した場合も、当時と同じ入力であることを照合する。
+          const expected =
+            !prior.records[0].get("placePolicy") &&
+            parsed.newFixedPlaces?.length
+              ? hashRequest()
+              : hash;
+          if (prior.records[0].get("hash") !== expected)
             throw new WorldConflict(
               "同じcommitIdに異なる確定内容は対応させられません",
             );
@@ -1022,6 +1139,22 @@ export class WorldStore {
             sourceIds.add(edge.target);
           }
         }
+        const movementTargets = new Set<string>();
+        const changedAbout = new Set<string>();
+        if (parsed.playerAction) {
+          for (const edge of [...changes.edges, ...ended]) {
+            if (edge.kind === "has" && !edge.role)
+              movementTargets.add(edge.target);
+            if (
+              edge.kind === "status" &&
+              edge.role === "content" &&
+              edge.text === "location"
+            )
+              movementTargets.add(edge.source);
+            if (edge.kind === "status" && edge.role === "about")
+              changedAbout.add(edge.source);
+          }
+        }
         const changedScripts = new Set([
           ...changes.revisions
             .filter((node) => node.kind === "script")
@@ -1035,10 +1168,15 @@ export class WorldStore {
           dependencies.push({ key, version: await version(tx, worldId, key) });
           const owners = await tx.run(
             `MATCH(o:WorldNode)-[r:status {worldId:$worldId}]->(s:WorldNode {worldId:$worldId,id:$id})
-            WHERE o.worldId=$worldId AND o.kind='existence' AND r.validFrom<=$at AND (r.validTo IS NULL OR $at<r.validTo) RETURN DISTINCT o.id AS id`,
+            WHERE o.worldId=$worldId AND o.kind='existence' AND r.validFrom<=$at AND (r.validTo IS NULL OR $at<r.validTo)
+            RETURN DISTINCT o.id AS id,r.data CONTAINS '"text":"location"' AS location`,
             { worldId, id, at },
           );
-          for (const owner of owners.records) sourceIds.add(owner.get("id"));
+          for (const owner of owners.records) {
+            sourceIds.add(owner.get("id"));
+            if (changedAbout.has(id) && owner.get("location"))
+              movementTargets.add(owner.get("id"));
+          }
         }
         for (const edge of changes.edges)
           if (
@@ -1052,6 +1190,7 @@ export class WorldStore {
         const keys = [
           ...new Set([
             ...touched,
+            ...[...movementTargets].map(placeKey),
             ...dependencies.map((dependency) => dependency.key),
             ...changes.edges.flatMap(observationKeys),
             ...bindings.flatMap((binding) => [
@@ -1062,6 +1201,16 @@ export class WorldStore {
         ].sort();
         const versions = new Map<string, number>();
         for (const key of keys) versions.set(key, await lock(tx, worldId, key));
+        if (
+          movementTargets.size &&
+          (
+            await tx.run(
+              "UNWIND $ids AS id MATCH (n:WorldNode {worldId:$worldId,id:id}) WHERE n.fixedPlace RETURN id LIMIT 1",
+              { worldId, ids: [...movementTargets] },
+            )
+          ).records.length
+        )
+          throw new FixedPlaceMovement();
         for (const dependency of dependencies) {
           if (versions.get(dependency.key) !== dependency.version)
             throw new WorldConflict("判断に使用した文脈が変わりました");
@@ -1134,13 +1283,18 @@ export class WorldStore {
               quantity: int(reservations.add.count),
             },
           );
+        const fixedPlaces = new Set(parsed.newFixedPlaces);
         const createNode = (node: WorldNode) =>
           tx.run(
-            "CREATE (:WorldNode {worldId: $worldId, id: $id, kind: $kind, data: $data, knownFrom: $at, recordedAt: datetime()})",
+            "CREATE (n:WorldNode {worldId: $worldId, id: $id, kind: $kind, data: $data, knownFrom: $at, recordedAt: datetime()}) SET n.fixedPlace=$fixed",
             {
               worldId,
               id: node.id,
               kind: node.kind,
+              fixed:
+                node.kind === "existence" && fixedPlaces.has(node.id)
+                  ? true
+                  : null,
               data: JSON.stringify(node),
               at,
             },
@@ -1358,7 +1512,7 @@ export class WorldStore {
           ...(parsed.management ? { management: parsed.management } : {}),
         };
         await tx.run(
-          "CREATE (:WorldReceipt {worldId: $worldId, commitId: $commitId, hash: $hash, data: $data,pendingDelivery:true})",
+          "CREATE (:WorldReceipt {worldId: $worldId, commitId: $commitId, hash: $hash, data: $data,pendingDelivery:true,placePolicy:true})",
           { worldId, commitId, hash, data: JSON.stringify(receipt) },
         );
         return receipt;

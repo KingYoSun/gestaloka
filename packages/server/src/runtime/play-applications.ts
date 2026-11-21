@@ -16,6 +16,7 @@ import { directPlaces } from "../world/locations.js";
 import { atTime, derivedId, type Change } from "../world/model.js";
 import {
   WorldConflict,
+  FixedPlaceMovement,
   type Dependency,
   type WorldContext,
   type WorldStore,
@@ -339,12 +340,17 @@ export class PlayApplications {
             commitId: id,
             at,
             changes: atTime(changes, at),
+            playerAction: true,
           },
           true,
         );
         break;
       } catch (error) {
-        if (share.handoff && error instanceof WorldConflict) {
+        if (
+          share.handoff &&
+          error instanceof WorldConflict &&
+          !(error instanceof FixedPlaceMovement)
+        ) {
           const result = await this.#settled(db, w, row);
           if (result) return result;
           if (attempt === 0) continue;
@@ -363,7 +369,8 @@ export class PlayApplications {
         return this.#finish(db, row, {
           state: "changed",
           message:
-            error instanceof BelongingRejected
+            error instanceof BelongingRejected ||
+            error instanceof FixedPlaceMovement
               ? `${error.message}。対象を確認して申請し直してください`
               : "申請時の前提が変わりました。対象を確認して申請し直してください",
         });
@@ -551,11 +558,13 @@ export class PlayApplications {
         },
       ];
       try {
+        await context.assertMovable(item.id);
+        await context.assertMovable(payment.id);
         const plan = await planBelongings(context, request, w.at, ops);
         await this.store.commit(
           await this.store.claim(w.id, request),
           context,
-          { commitId: request, ...plan },
+          { commitId: request, ...plan, playerAction: true },
           true,
         );
       } catch (error) {

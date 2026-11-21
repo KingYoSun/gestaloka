@@ -385,7 +385,16 @@ export class Blueprints {
         await this.store.commit(
           await this.store.claim(w.id, commit),
           this.store.context(w.id, dependencies),
-          { commitId: commit, at, changes },
+          {
+            commitId: commit,
+            at,
+            changes,
+            playerAction: true,
+            ...(quest.buildingId &&
+            changes.nodes.some((n) => n.id === quest.buildingId)
+              ? { newFixedPlaces: [quest.buildingId] }
+              : {}),
+          },
           true,
           reservations,
         );
@@ -1045,7 +1054,8 @@ export class Blueprints {
           : {};
       if (phase === "build")
         ops.push({ type: "remove", id: item.itemId, ...count });
-      else if (item.heldBy !== quest.buildingId)
+      else if (item.heldBy !== quest.buildingId) {
+        await context.assertMovable(item.itemId);
         ops.push({
           type: "move",
           item: item.itemId,
@@ -1054,6 +1064,7 @@ export class Blueprints {
           basis,
           ...count,
         });
+      }
     }
     const plan = await planBelongings(
       context,

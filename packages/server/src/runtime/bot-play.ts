@@ -22,6 +22,7 @@ import { RuntimeControl, RuntimeStopped } from "./control.js";
 import { ExecutionBudget } from "../execution-budget.js";
 import {
   WorldConflict,
+  FixedPlaceMovement,
   WorldContext,
   type Dependency,
 } from "../world/store.js";
@@ -369,6 +370,8 @@ function rejectAdjudication() {
   );
 }
 function playError(error: unknown) {
+  if (error instanceof FixedPlaceMovement)
+    return new AccessError(409, "FIXED_PLACE", error.message);
   if (error instanceof RuntimeStopped)
     return new AccessError(409, error.code, error.message);
   if (error instanceof WorldConflict)
@@ -4582,6 +4585,10 @@ export class BotPlay {
         ),
         plannedOps: BelongingOp[] = [];
       for (const op of ops) {
+        if (op.type === "locate" || op.type === "move")
+          await context.assertMovable(
+            op.type === "locate" ? op.subjectId : op.item,
+          );
         if (
           (op.type === "locate" && op.subjectId !== actor) ||
           op.type === "create" ||
@@ -4855,6 +4862,8 @@ export class BotPlay {
                 e.target === edge.source
               ) {
                 if (e.source !== actor) externalEffect = true;
+                if (edge.kind === "status" && e.text === "location")
+                  await context.assertMovable(e.source);
                 await affect(e.source);
               }
         } else if (edge.kind === "effect") await affect(edge.target);
@@ -5214,6 +5223,7 @@ export class BotPlay {
     world: string,
     requestId: string,
     plan: Pick<Plan, "context" | "at" | "changes">,
+    newFixedPlaces?: string[],
   ) {
     const prior = await this.store.receipt(world, requestId);
     return (
@@ -5225,6 +5235,8 @@ export class BotPlay {
           commitId: requestId,
           at: plan.at,
           changes: atTime(plan.changes, plan.at),
+          playerAction: true,
+          ...(newFixedPlaces?.length ? { newFixedPlaces } : {}),
         },
         true,
       )
@@ -6247,6 +6259,9 @@ export class BotPlay {
                   actor,
                 );
               else {
+                // 旧版で受け付けた取り分けも、確定前に元の品を再確認する。
+                for (const item of receiving.items ?? [])
+                  if (item.holding) await context.assertMovable(item.itemId);
                 const plan = declined.length
                   ? await planBelongings(
                       context,
@@ -6822,7 +6837,14 @@ export class BotPlay {
                     );
                   }
                 }
-                const receipt = await this.#commit(w.id, input.requestId, plan);
+                const receipt = await this.#commit(
+                  w.id,
+                  input.requestId,
+                  plan,
+                  input.command === "explore"
+                    ? [derivedId(`${input.requestId}:place`)]
+                    : [],
+                );
                 confirmedChanges = receipt.changes;
                 result = {
                   state: "accepted",
