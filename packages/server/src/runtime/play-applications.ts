@@ -24,6 +24,16 @@ import {
 type Db = Pick<pg.Pool, "query">;
 type World = { id: string; at: number };
 type Offer = z.infer<typeof ExchangeOffer>;
+type HandoffOperation = Extract<BelongingOp, { type: "move" | "transfer" }>;
+type HandoffItem = {
+  itemId: string;
+  label: string;
+  seriesId: string | null;
+  ownerIds: string[];
+  holderId: string | null;
+  wholeCount?: number | null;
+};
+export type Handoff = { operations: HandoffOperation[]; items: HandoffItem[] };
 type Share = {
   text: string;
   preview: string[];
@@ -31,6 +41,7 @@ type Share = {
   at: number;
   dependencies: Dependency[];
   items?: ItemOutcome[];
+  handoff?: Handoff;
 };
 type Result = {
   applicationId: string;
@@ -52,10 +63,64 @@ type Row = {
   place: string | null;
   result: Result | null;
 };
+type ReplanHandoff = (input: {
+  sender: string;
+  text: string;
+  deadline: string;
+  recipients: string[];
+  handoff: Handoff;
+}) => Promise<{ context: WorldContext; changes: Change; at: number }>;
 const latest = Number.MAX_SAFE_INTEGER;
 const reject = (code: string, message: string): never => {
   throw new AccessError(409, code, message);
 };
+
+export function isHandoffOperation(op: BelongingOp): op is HandoffOperation {
+  return op.type === "move" || op.type === "transfer";
+}
+
+export async function readHandoff(
+  context: WorldContext,
+  operations: HandoffOperation[],
+  expected?: Handoff,
+): Promise<Handoff> {
+  const wholeItems = new Set(
+    operations.filter((op) => op.count === undefined).map((op) => op.item),
+  );
+  const items = await Promise.all(
+    [...new Set(operations.map((op) => op.item))].map(async (itemId) => {
+      const node = await context.node(itemId);
+      if (node?.kind !== "existence")
+        throw new BelongingRejected("受け渡しの対象が見つかりません");
+      const incoming = await context.relations(itemId, "has", "in", latest);
+      return {
+        itemId,
+        label: node.text,
+        seriesId: node.seriesId ?? null,
+        ownerIds: incoming
+          .filter((e) => !e.role)
+          .map((e) => e.source)
+          .sort(),
+        holderId: incoming.find((e) => e.role === "hold")?.source ?? null,
+        ...(wholeItems.has(itemId) ? { wholeCount: node.count ?? null } : {}),
+      };
+    }),
+  );
+  if (expected) {
+    for (const [index, item] of items.entries()) {
+      const original = expected.items[index]!;
+      if (item.label !== original.label || item.seriesId !== original.seriesId)
+        throw new BelongingRejected("受け渡しの対象の呼称か系列が変わりました");
+      if (item.ownerIds.join(",") !== original.ownerIds.join(","))
+        throw new BelongingRejected("受け渡しの対象の所有者が変わりました");
+      if (item.holderId !== original.holderId)
+        throw new BelongingRejected("受け渡しの対象の保持先が変わりました");
+      if (item.wholeCount !== original.wholeCount)
+        throw new BelongingRejected("全部を渡す物品の個数が変わりました");
+    }
+  }
+  return { operations, items };
+}
 
 export async function itemOutcomeMessage(
   context: WorldContext,
@@ -242,6 +307,7 @@ export class PlayApplications {
     actor: string,
     id: string,
     accept: boolean,
+    replan: ReplanHandoff,
   ) {
     const row = await this.#row(db, world, id);
     if (!row?.share || !row.recipients.includes(actor)) return;
@@ -267,32 +333,64 @@ export class PlayApplications {
         state: "rejected",
         message: "受領者が申請を却下しました",
       });
-    const { dependencies, changes } = row.share,
-      at = Math.max(w.at, row.share.at);
-    try {
-      await this.store.commit(
-        await this.store.claim(w.id, id),
-        this.store.context(w.id, dependencies),
-        {
-          commitId: id,
-          at,
-          changes: {
-            ...changes,
-            edges: changes.edges.map((edge) => ({
-              ...edge,
-              period: { ...edge.period, from: at },
-            })),
+    const share = row.share;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const { context, changes, at } = share.handoff
+          ? await replan({
+              sender: row.sender,
+              text: share.text,
+              deadline: row.deadline!.toISOString(),
+              recipients: row.recipients,
+              handoff: share.handoff,
+            })
+          : {
+              context: this.store.context(w.id, share.dependencies),
+              changes: share.changes,
+              at: Math.max(w.at, share.at),
+            };
+        await this.store.commit(
+          await this.store.claim(w.id, id),
+          context,
+          {
+            commitId: id,
+            at,
+            changes: {
+              ...changes,
+              edges: changes.edges.map((edge) => ({
+                ...edge,
+                period: { ...edge.period, from: at },
+              })),
+            },
           },
-        },
-        true,
-      );
-    } catch (error) {
-      if (!(error instanceof WorldConflict)) throw error;
-      return this.#finish(db, row, {
-        state: "changed",
-        message:
-          "申請時の前提が変わりました。対象を確認して申請し直してください",
-      });
+          true,
+        );
+        break;
+      } catch (error) {
+        if (share.handoff && error instanceof WorldConflict) {
+          const result = await this.#settled(db, w, row);
+          if (result) return result;
+          if (attempt === 0) continue;
+          reject(
+            "WORLD_CHANGED",
+            "受領処理中に状態が変わりました。同じ受領要求を再送してください",
+          );
+        }
+        if (!(
+          error instanceof WorldConflict ||
+          (share.handoff &&
+            (error instanceof BelongingRejected ||
+              error instanceof AccessError))
+        ))
+          throw error;
+        return this.#finish(db, row, {
+          state: "changed",
+          message:
+            error instanceof BelongingRejected
+              ? `${error.message}。対象を確認して申請し直してください`
+              : "申請時の前提が変わりました。対象を確認して申請し直してください",
+        });
+      }
     }
     return this.#confirmed(db, w, row, id);
   }
