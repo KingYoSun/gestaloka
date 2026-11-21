@@ -42,6 +42,13 @@ export class WorldConflict extends Error {}
 
 const nodeKey = (id: string) => `node:${id}`;
 const edgeKey = (id: string) => `edge:${id}`;
+// 関係の索引は種類ごとにある。種類を省いた照合は索引を使えず、世界中の関係を走査する。
+const edgeById = `CALL () { ${RelationKind.options
+  .map(
+    (kind) =>
+      `MATCH ()-[r:${kind} {worldId: $worldId, id: $id}]->() RETURN r.data AS data`,
+  )
+  .join(" UNION ALL ")} } RETURN data`;
 const relationKey = (id: string, kind: RelationKind, direction: Direction) =>
   `relations:${id}:${kind}:${direction}`;
 const edgeKeys = (edge: WorldEdge) => [
@@ -177,10 +184,7 @@ export class WorldContext {
   async edge(id: string): Promise<WorldEdge | undefined> {
     z.uuid().parse(id);
     const stored = await this.#read(edgeKey(id), async (tx) => {
-      const result = await tx.run(
-        "MATCH (:WorldNode {worldId: $worldId})-[r {worldId: $worldId, id: $id}]->() RETURN r.data AS data",
-        { worldId: this.worldId, id },
-      );
+      const result = await tx.run(edgeById, { worldId: this.worldId, id });
       return result.records[0]
         ? WorldEdge.parse(JSON.parse(result.records[0].get("data")))
         : undefined;
@@ -237,9 +241,12 @@ export class WorldContext {
 
   // 行き来の記述(route)で結ばれている場所のうち、同じ呼び名のもの。申請の可否の確認に使い、依存版には含めない。
   async routePlace(name: string) {
+    // 呼び名の一致はTEXT索引で引き、世界中の存在を走査しない。
     const result = await this.driver.executeQuery(
-      `MATCH (n:WorldNode {worldId:$world,kind:'existence'})-[r:status {role:'content'}]->(:WorldNode)
-       WHERE r.data CONTAINS $marker AND r.validTo IS NULL AND n.data CONTAINS $name
+      `MATCH (n:WorldNode) USING TEXT INDEX n:WorldNode(data)
+       WHERE n.data CONTAINS $name AND n.worldId=$world AND n.kind='existence'
+       MATCH (n)-[r:status {role:'content'}]->(:WorldNode)
+       WHERE r.data CONTAINS $marker AND r.validTo IS NULL
        RETURN DISTINCT n.id AS id,n.data AS data ORDER BY id`,
       {
         world: this.worldId,
@@ -654,6 +661,15 @@ export class WorldStore {
     await this.driver.executeQuery(
       "CREATE INDEX WorldReceipt_delivery IF NOT EXISTS FOR (n:WorldReceipt) ON (n.worldId, n.pendingDelivery)",
     );
+    for (const kind of RelationKind.options)
+      await this.driver.executeQuery(
+        `CREATE INDEX WorldEdge_${kind}_identity IF NOT EXISTS FOR ()-[r:${kind}]-() ON (r.worldId, r.id)`,
+      );
+    await this.driver.executeQuery(
+      "CREATE TEXT INDEX WorldNode_data IF NOT EXISTS FOR (n:WorldNode) ON (n.data)",
+    );
+    // 同名確認は索引を指定して引くので、作成中の索引を使わせない。
+    await this.driver.executeQuery("CALL db.awaitIndexes(300)");
   }
 
   context(worldId: string, dependencies: readonly Dependency[] = []) {
@@ -883,10 +899,7 @@ export class WorldStore {
             key: edgeKey(id),
             version: await version(tx, worldId, edgeKey(id)),
           });
-          const result = await tx.run(
-            "MATCH (:WorldNode {worldId: $worldId})-[r {worldId: $worldId, id: $id}]->() RETURN r.data AS data",
-            { worldId, id },
-          );
+          const result = await tx.run(edgeById, { worldId, id });
           const edge = result.records[0]
             ? WorldEdge.parse(JSON.parse(result.records[0].get("data")))
             : undefined;
@@ -1082,7 +1095,7 @@ export class WorldStore {
             period: { ...edge.period, until: at },
           });
           await tx.run(
-            "MATCH (:WorldNode {worldId: $worldId})-[r {worldId: $worldId, id: $id}]->() SET r.validTo = $at, r.data = $data",
+            `MATCH ()-[r:${edge.kind} {worldId: $worldId, id: $id}]->() SET r.validTo = $at, r.data = $data`,
             { worldId, id: edge.id, at, data },
           );
         }
