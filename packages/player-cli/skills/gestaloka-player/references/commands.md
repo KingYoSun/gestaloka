@@ -415,9 +415,13 @@ GMは接続元から見た妥当性でダイスを設定し、サーバーが一
 | `open`           | `shop.stock` に商品ごとの `itemId`、初期在庫数 `stockCount`、一回に売る数 `count`、代価の `paymentSeriesId`、`paymentLabel`、`paymentCount`、掲示文 `text` を書く。                                 |
 | `build-and-open` | `building` と `shop` の両方を書く。                                                                                                                                                                 |
 
-発案者以外を店主にした場合、店主は通知にある `questId` を `blueprint-show` で確認し、同意するなら `blueprint-consent` を送る。発案者は `next` が `blueprint-start` になったら、本人の通常手番でその操作を送る。GMの採否と理由が返り、新たに審査したときは1 SPを使う。選択肢にない遊び方は `report` で提案できる。
+発案者以外を店主にした場合、店主は通知にある `questId` を `blueprint-show` で確認し、同意するなら `blueprint-consent` を送る。発案者は `actions["blueprint-start"].allowed` が `true` になったら着工を申請できる。GMの採否と理由が返り、新たに審査したときは1 SPを使う。選択肢にない遊び方は `report` で提案できる。
 
-現地で `blueprint-list` を開くと、参加できるクエストとその場所で得られた成果を確認できる。`blueprint-show` に進捗と自分の取り置きが出る。提供には案内された `questId`、`quest.phase`、`requirements[].index` と、本人が提供できる品のID・個数を指定する。
+現地で `blueprint-list` を開くと、参加できるクエストとその場所で得られた成果を確認できる。`blueprint-show` では進捗と自分の取り置きのほか、現在地と提供先が `location` に出る。`actions` では操作ごとに `allowed` と、操作できない場合の理由が分かる。
+
+開店用の在庫は、`actions["blueprint-provide"].requirements` に品ごとの提供可能数 `maxCount` が出る。建材や道具を調べる場合は、`blueprint-show` に `provision: { "requirement": 0, "itemId": "品のID" }` も渡す。利用できる品では所持数と取り置き総数も確認できる。最後の提供で開店できない場合は、その理由が `completionBlock` に出る。
+
+提供するには、照会した `questId`、`quest.phase`、要件番号と品のIDを指定し、`maxCount` の範囲で個数を選ぶ。
 
 ```json
 {

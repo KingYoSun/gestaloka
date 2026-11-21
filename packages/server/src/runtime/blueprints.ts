@@ -22,6 +22,7 @@ import type { PlayApplications } from "./play-applications.js";
 
 type Db = Pick<pg.Pool, "query">;
 type World = { id: string; at: number };
+type Context = ReturnType<WorldStore["context"]>;
 type Proposal = z.infer<typeof BlueprintProposal>;
 type Publication = z.infer<typeof BlueprintPublication>;
 type Draft = z.infer<typeof BlueprintDraft>;
@@ -60,6 +61,16 @@ type Contribution = {
   count: number;
   requirement: number;
 };
+type Show = Extract<BlueprintAction, { command: "blueprint-show" }>;
+type Reason = { code: string; message: string };
+type ProvisionCheck = {
+  maxCount: number | null;
+  totalCount?: number;
+  reservedCount?: number;
+  heldBy?: string;
+  reason?: Reason;
+  completionBlock?: Reason;
+};
 type Mutation = {
   quest: Quest;
   commit: string;
@@ -76,6 +87,28 @@ type Mutation = {
 const latest = Number.MAX_SAFE_INTEGER;
 const reject = (message: string): never => {
   throw new AccessError(409, "BLUEPRINT_UNAVAILABLE", message);
+};
+const reason = (code: string, message: string): Reason => ({ code, message });
+const action = (block?: Reason) =>
+  block ? { allowed: false, reason: block } : { allowed: true };
+const wrongPlace = reason(
+  "QUEST_LOCATION_REQUIRED",
+  "設計図に記載された現地へ移動してください",
+);
+const shopStorage = reason(
+  "SHOP_STORAGE_REQUIRED",
+  "店主にこの店を保管先として登録してもらってください",
+);
+const phaseBlock = reason(
+  "QUEST_PHASE",
+  "この段階ではこの操作を受け付けません。クエストの進捗を確認してください",
+);
+const startRestriction = (quest: Quest, actor: string) => {
+  if (quest.phase !== "draft") return phaseBlock;
+  if (actor !== quest.author)
+    return reason("AUTHOR_REQUIRED", "発案者が着工を申請できます");
+  if (!quest.consent)
+    return reason("CONSENT_REQUIRED", "店主の同意を待ってください");
 };
 
 export const isBlueprint = (input: {
@@ -261,40 +294,61 @@ export class Blueprints {
 
   private async validatePlace(w: World, quest: Quest, actor: string) {
     const context = this.store.context(w.id);
-    const place = await context.node(quest.plan.placeId);
-    if (
-      place?.kind !== "existence" ||
-      !(await directPlaces(context, actor)).includes(place.id)
-    )
-      return reject("申請対象の場所に来てから申請してください");
-    if (
-      quest.plan.building &&
-      (await context.routePlace(quest.plan.building.label))
-    )
-      return reject(
-        "その名前の場所が既にあります。建屋には別の名前を指定してください",
-      );
-    if (!quest.plan.building)
-      await this.requireStorage(context, place.id, quest.plan.keeperId);
-    return { context, place };
+    if (!(await directPlaces(context, actor)).includes(quest.plan.placeId))
+      return reject(wrongPlace.message);
+    const site = await this.inspectSite(
+      context,
+      quest,
+      quest.plan.building ? "build" : "open",
+    );
+    if (site.issue) return reject(site.issue.message);
+    return { context, place: site.place };
   }
 
-  private async requireStorage(
-    context: ReturnType<WorldStore["context"]>,
-    place: string,
-    keeper: string,
+  private async usesStorage(context: Context, place: string, actor: string) {
+    return (await context.relations(place, "has", "in", latest)).some(
+      (edge) => edge.role === "use" && edge.source === actor,
+    );
+  }
+
+  private async inspectSite(
+    context: Context,
+    quest: Quest,
+    phase: "build" | "open",
   ) {
+    const id =
+      phase === "open"
+        ? (quest.buildingId ?? quest.plan.placeId)
+        : quest.plan.placeId;
+    const place = await context.node(id);
+    if (place?.kind !== "existence")
+      return {
+        issue: reason(
+          "QUEST_PLACE_CHANGED",
+          "設計図の対象の場所を確認してください",
+        ),
+      };
     if (
-      !(await context.relations(place, "has", "in", latest)).some(
-        (edge) => edge.role === "use" && edge.source === keeper,
-      )
+      phase === "open" &&
+      !(await this.usesStorage(context, id, quest.plan.keeperId))
     )
-      return reject("店主が登録した保管先を指定してください");
+      return { issue: shopStorage };
+    if (
+      phase === "build" &&
+      (await context.routePlace(quest.plan.building!.label))
+    )
+      return {
+        issue: reason(
+          "BUILDING_NAME_TAKEN",
+          "同じ名前の場所があります。建屋には別の名前を指定してください",
+        ),
+      };
+    return { place };
   }
 
   async prepareStart(world: string, w: World, actor: string, id: string) {
     const quest = await this.read(this.pool, world, id);
-    if (quest.author !== actor || quest.phase !== "draft" || !quest.consent)
+    if (startRestriction(quest, actor))
       return reject("店主が同意した設計図を発案者が申請してください");
     const { context, place } = await this.validatePlace(w, quest, actor);
     return {
@@ -416,6 +470,7 @@ export class Blueprints {
     w: World,
     actor: string,
     input: BlueprintAction,
+    startBlock: () => Promise<Reason | undefined>,
     decision?: {
       accepted: boolean;
       reason: string;
@@ -571,7 +626,16 @@ export class Blueprints {
         [quest.id, actor],
       );
       return {
-        ...this.view(quest, actor),
+        ...(await this.show(
+          context,
+          quest,
+          actor,
+          here,
+          local,
+          rows.length > 0,
+          input,
+          startBlock,
+        )),
         contributions: rows.map(({ data }) => data),
       };
     }
@@ -583,12 +647,7 @@ export class Blueprints {
       return this.view(quest, actor);
     }
     if (input.command === "blueprint-start") {
-      if (
-        !decision ||
-        quest.phase !== "draft" ||
-        actor !== quest.author ||
-        !quest.consent
-      )
+      if (!decision || startRestriction(quest, actor))
         return reject("この設計図は着工できません");
       await this.validatePlace(w, quest, actor);
       await this.store.context(w.id, decision.dependencies).validate();
@@ -613,7 +672,6 @@ export class Blueprints {
         ? await this.provision(
             context,
             quest,
-            requirements,
             local ? here : undefined,
             actor,
             input,
@@ -700,51 +758,254 @@ export class Blueprints {
     return "state" in done ? done : this.view(done, actor);
   }
 
-  private async provision(
-    context: ReturnType<WorldStore["context"]>,
+  private async show(
+    context: Context,
     quest: Quest,
-    requirements: Requirement[],
+    actor: string,
+    here: string | undefined,
+    local: boolean,
+    hasContributions: boolean,
+    input: Show,
+    startBlock: () => Promise<Reason | undefined>,
+  ) {
+    const view = this.view(quest, actor);
+    const draft = quest.phase === "draft";
+    const collecting = view.requirements.length > 0;
+    const consent = !draft
+      ? phaseBlock
+      : actor !== quest.plan.keeperId
+        ? reason("KEEPER_REQUIRED", "店主に指定された人物が同意できます")
+        : quest.consent
+          ? reason("CONSENT_ALREADY_GIVEN", "店主の同意を受け付け済みです")
+          : undefined;
+    let start = startRestriction(quest, actor);
+    if (!start)
+      start =
+        here !== quest.plan.placeId
+          ? wrongPlace
+          : ((
+              await this.inspectSite(
+                context,
+                quest,
+                quest.plan.building ? "build" : "open",
+              )
+            ).issue ?? (await startBlock()));
+
+    const selected = input.provision;
+    if (selected && collecting && !view.requirements[selected.requirement])
+      return reject("この段階にある要件の番号を指定してください");
+    const provisions = [];
+    for (const requirement of view.requirements) {
+      const itemId =
+        requirement.itemId ??
+        (selected?.requirement === requirement.index
+          ? selected.itemId
+          : undefined);
+      const assessment = await this.inspectProvision(
+        context,
+        quest,
+        actor,
+        local ? here : undefined,
+        requirement.index,
+        itemId,
+      );
+      const allowed = (assessment.maxCount ?? 0) > 0;
+      provisions.push({
+        requirement: requirement.index,
+        ...(itemId ? { itemId } : {}),
+        remaining: requirement.count - requirement.provided,
+        allowed,
+        ...assessment,
+      });
+    }
+    const provide = !collecting
+      ? phaseBlock
+      : !local
+        ? wrongPlace
+        : provisions.some((item) => item.allowed)
+          ? undefined
+          : provisions.length === 1
+            ? provisions[0]!.reason
+            : reason(
+                "PROVISION_REQUIRED",
+                "必要な品ごとの案内を確認してください",
+              );
+
+    const place = async (id: string) => ({
+      id,
+      label: (await context.node(id))?.text ?? id,
+    });
+    const contributionPlaces = [];
+    for (const id of new Set([
+      quest.plan.placeId,
+      ...(quest.buildingId ? [quest.buildingId] : []),
+    ]))
+      contributionPlaces.push(await place(id));
+    const current = here ? await place(here) : null;
+    await context.validate();
+    return {
+      ...view,
+      location: { current, contributionPlaces },
+      actions: {
+        "blueprint-consent": action(consent),
+        "blueprint-start": action(start),
+        "blueprint-provide": { ...action(provide), requirements: provisions },
+        "blueprint-withdraw": action(
+          !collecting
+            ? phaseBlock
+            : hasContributions
+              ? undefined
+              : reason(
+                  "NO_CONTRIBUTIONS",
+                  "取り下げられる本人の取り置きがありません",
+                ),
+        ),
+        "blueprint-cancel": action(
+          !collecting
+            ? phaseBlock
+            : actor === quest.author || actor === quest.plan.keeperId
+              ? undefined
+              : reason(
+                  "CANCEL_AUTHORITY_REQUIRED",
+                  "発案者または店主が中止できます",
+                ),
+        ),
+      },
+    };
+  }
+
+  private async inspectProvision(
+    context: Context,
+    quest: Quest,
+    actor: string,
+    here: string | undefined,
+    index: number,
+    itemId: string | undefined,
+  ): Promise<ProvisionCheck> {
+    const phase = quest.phase;
+    if (phase !== "build" && phase !== "open")
+      return { maxCount: 0, reason: phaseBlock };
+    const requirements = quest.requirements[phase];
+    const requirement = requirements[index];
+    if (!here) return { maxCount: 0, reason: wrongPlace };
+    if (!requirement)
+      return {
+        maxCount: 0,
+        reason: reason(
+          "REQUIREMENT_REQUIRED",
+          "この段階にある要件の番号を指定してください",
+        ),
+      };
+    const remaining = requirement.count - (quest.totals[index] ?? 0);
+    if (remaining === 0)
+      return {
+        maxCount: 0,
+        reason: reason("REQUIREMENT_FILLED", "この品は必要数に達しています"),
+      };
+    if (!itemId)
+      return {
+        maxCount: null,
+        reason: reason(
+          "ITEM_REQUIRED",
+          "提供したい品のIDを指定して確認してください",
+        ),
+      };
+
+    const mismatch = reason("ITEM_MISMATCH", "要件に合う品を指定してください");
+    if (requirement.itemId && requirement.itemId !== itemId)
+      return {
+        maxCount: 0,
+        reason: mismatch,
+      };
+    const holding = (await context.relations(itemId, "has", "in", latest)).find(
+      (edge) => !edge.role,
+    );
+    if (
+      !holding ||
+      (holding.source !== actor &&
+        !(await this.usesStorage(context, holding.source, actor)))
+    )
+      return {
+        maxCount: 0,
+        reason: reason(
+          "ITEM_ACCESS_REQUIRED",
+          "本人の手持ち品か登録済みの保管先から品を選んでください",
+        ),
+      };
+    if (
+      holding.source !== actor &&
+      holding.source !== here &&
+      !(await directPlaces(context, holding.source)).includes(here)
+    )
+      return {
+        maxCount: 0,
+        reason: reason(
+          "ITEM_STORAGE_NOT_HERE",
+          "この品を出せる保管先に移動してから提供してください",
+        ),
+      };
+
+    const item = await context.node(itemId);
+    if (item?.kind !== "existence" || item.text !== requirement.label)
+      return { maxCount: 0, reason: mismatch };
+    const totalCount = item.count ?? 1;
+    const reservedCount = await context.reserved(itemId);
+    const capacity = Math.min(totalCount - reservedCount, remaining);
+    const finishes =
+      capacity === remaining &&
+      requirements.every(
+        (other, i) => i === index || quest.totals[i] === other.count,
+      );
+    const completionBlock = finishes
+      ? (await this.inspectSite(context, quest, phase)).issue
+      : undefined;
+    // 完成条件が不足している間は、必要数の1個手前まで取り置ける。
+    const maxCount = Math.max(0, capacity - (completionBlock ? 1 : 0));
+    const issue =
+      maxCount > 0
+        ? undefined
+        : (completionBlock ??
+          reason(
+            "ITEM_RESERVED",
+            "取り置きのない分がありません。取り置きの状況を確認してください",
+          ));
+    return {
+      totalCount,
+      reservedCount,
+      maxCount,
+      heldBy: holding.source,
+      ...(issue ? { reason: issue } : {}),
+      ...(completionBlock ? { completionBlock } : {}),
+    };
+  }
+
+  private async provision(
+    context: Context,
+    quest: Quest,
     here: string | undefined,
     actor: string,
     input: Extract<BlueprintAction, { command: "blueprint-provide" }>,
   ) {
-    const requirement = requirements[input.requirement];
-    const item = await context.node(input.itemId);
-    const relations = await context.relations(
+    if (input.phase !== quest.phase) return reject(phaseBlock.message);
+    const check = await this.inspectProvision(
+      context,
+      quest,
+      actor,
+      here,
+      input.requirement,
       input.itemId,
-      "has",
-      "in",
-      latest,
     );
-    const holding = relations.find((edge) => !edge.role);
-    const reserved = await context.reserved(input.itemId);
-    if (
-      !here ||
-      input.phase !== quest.phase ||
-      !requirement ||
-      item?.kind !== "existence" ||
-      !holding ||
-      item.text !== requirement.label ||
-      (requirement.itemId && requirement.itemId !== item.id) ||
-      input.count > (item.count ?? 1) - reserved ||
-      input.count > requirement.count - (quest.totals[input.requirement] ?? 0)
-    )
-      return reject("現地で、必要な品と未提供の範囲内の数量を指定してください");
-    if (holding.source !== actor) {
-      if (
-        holding.source !== here &&
-        !(await directPlaces(context, holding.source)).includes(here)
-      )
-        return reject(
-          "現地にある手持ち品か、本人の保管先にある品を指定してください",
-        );
-      await this.requireStorage(context, holding.source, actor);
-    }
+    if (input.count > (check.maxCount ?? 0) || !check.heldBy)
+      return reject(
+        check.reason?.message ??
+          check.completionBlock?.message ??
+          `この品は${check.maxCount}個まで提供できます。提供する数量を確認してください`,
+      );
     return {
       id: input.requestId,
       actor,
-      itemId: item.id,
-      heldBy: holding.source,
+      itemId: input.itemId,
+      heldBy: check.heldBy,
       count: input.count,
       requirement: input.requirement,
     };
@@ -776,12 +1037,6 @@ export class Blueprints {
         count: (prior?.count ?? 0) + item.count,
       });
     }
-    if (complete && phase === "open")
-      await this.requireStorage(
-        context,
-        quest.buildingId!,
-        quest.plan.keeperId,
-      );
     for (const item of counts.values()) {
       const current = await context.node(item.itemId);
       const count =
@@ -834,8 +1089,7 @@ export class Blueprints {
       const from = await context.node(source);
       const id = derivedId(`blueprint:${quest.id}:building`);
       const building = quest.plan.building!;
-      if (!from || (await context.routePlace(building.label)))
-        return reject("建設地または建屋の名前を確認してください");
+      if (!from) return reject("建設地を確認してください");
       addRoute(
         changes,
         quest.id,

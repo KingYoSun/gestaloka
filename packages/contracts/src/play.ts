@@ -232,7 +232,16 @@ const BlueprintActions = [
     })
     .strict(),
   z
-    .object({ ...request, command: z.literal("blueprint-show"), questId: id })
+    .object({
+      ...request,
+      command: z.literal("blueprint-show"),
+      questId: id,
+      provision: z
+        .object({ requirement: z.number().int().nonnegative(), itemId: id })
+        .strict()
+        .optional()
+        .describe("呼称で指定された建材・道具について、提供可能数を照会する"),
+    })
     .strict(),
   z
     .object({
