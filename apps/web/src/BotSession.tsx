@@ -232,6 +232,7 @@ export function BotSession({
   const mutation = $api.useMutation("post", "/api/worlds/{id}/session"),
     view = query.data ? View.parse(query.data) : undefined;
   // 取得時に既読になるため、プレイヤーが通知を読む操作で取得する。
+  const waiting = $api.useMutation("post", "/api/worlds/{id}/waiting");
   const notices = $api.useMutation("get", "/api/worlds/{id}/notices", {
     onSuccess: () => void query.refetch(),
   });
@@ -293,6 +294,21 @@ export function BotSession({
   const player = view.characters.find(
     ({ actorId }) => actorId === view.viewerId,
   ) ?? { ...view.screen.own, icon: null };
+  // 手動で操作する人物の待機を解除し、新しい接触の対象から外す。CLIのdisconnectと同じ。
+  const release = view.aiControlled === false && (
+    <Button
+      variant="outline"
+      disabled={busy || waiting.isPending || waiting.data?.active === false}
+      onClick={() =>
+        waiting.mutate({
+          params: { path: { id }, query: { actorId: view.viewerId } },
+          body: { active: false },
+        })
+      }
+    >
+      {waiting.data?.active === false ? "待機を解除しました" : "待機を解除する"}
+    </Button>
+  );
   function jump(toEnd: boolean) {
     follow.current = toEnd;
     if (log.current)
@@ -522,9 +538,15 @@ export function BotSession({
           現在のセッションを開く
         </Link>
       ) : !view.sessionId ? (
-        <Button disabled={busy} onClick={() => void send({ command: "start" })}>
-          セッションを開始
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <Button
+            disabled={busy}
+            onClick={() => void send({ command: "start" })}
+          >
+            セッションを開始
+          </Button>
+          {release}
+        </div>
       ) : (
         <>
           <Notice>
@@ -668,6 +690,7 @@ export function BotSession({
               >
                 自分のプレイを終了する
               </Button>
+              {release}
             </div>
           )}
         </>
