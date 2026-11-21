@@ -9,6 +9,11 @@ import { WorldAccess } from "@gestaloka/server/access";
 import { decisionSettings } from "../../packages/server/src/llm/config.js";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
 import { derivedId } from "@gestaloka/server/world";
+import type { Change } from "@gestaloka/contracts";
+import {
+  addRoute,
+  directPlaces,
+} from "../../packages/server/src/world/locations.js";
 import { BotPlay } from "@gestaloka/server/play";
 import { createApp } from "../../apps/api/src/app.js";
 import { cliVersionHeader, playerCli } from "../support/player-cli.js";
@@ -175,6 +180,216 @@ async function fixture() {
       ),
   };
 }
+
+test("固定場所は店主でも動かせず、人物の入退店と店の品の出し入れは確定する", async () => {
+  const f = await fixture();
+  const owner = f.actors[0]!,
+    shop = randomUUID(),
+    chair = randomUUID(),
+    tree = randomUUID();
+  const changes: Change = {
+    nodes: [
+      { id: chair, kind: "existence", text: "椅子" },
+      { id: tree, kind: "existence", text: "鉢植え" },
+    ],
+    edges: [],
+    revisions: [],
+    endEdges: [],
+  };
+  addRoute(
+    changes,
+    randomUUID(),
+    0,
+    { id: f.place, text: "広場" },
+    { id: shop, text: "試験店舗" },
+    "広場から店舗に入れる",
+  );
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    { commitId: randomUUID(), at: 0, changes },
+  );
+  await f.apply([
+    { type: "grant", person: owner, storage: shop, basis: "店主" },
+    { type: "locate", subjectId: shop, text: "広場の中", aboutIds: [f.place] },
+    {
+      type: "grant",
+      person: owner,
+      storage: f.far,
+      basis: "経路のない家の管理者",
+    },
+    { type: "move", item: chair, from: null, to: owner, basis: "手持ち" },
+    { type: "move", item: tree, from: null, to: owner, basis: "手持ち" },
+  ]);
+  await f.move(2, tree);
+  const decisions = { fixed: [f.far], movable: [tree] };
+  const preview = await f.store.protectExistingPlaces(
+    f.graph,
+    f.actors,
+    decisions,
+  );
+  expect(preview).toMatchObject({
+    automatic: 2,
+    reviewedFixed: 1,
+    reviewedMovable: 1,
+    added: 3,
+    applied: false,
+  });
+  const ctx = () => f.store.context(f.graph);
+  await ctx().assertMovable(shop);
+  const old = ctx();
+  await old.assertMovable(f.far);
+  const before = await Promise.all([
+    directPlaces(ctx(), shop),
+    ctx().relations(shop, "has", "in", Number.MAX_SAFE_INTEGER),
+    ctx().relations(shop, "status", "out", Number.MAX_SAFE_INTEGER),
+  ]);
+  await f.store.protectExistingPlaces(f.graph, f.actors, decisions, true);
+  expect(
+    (await f.store.protectExistingPlaces(f.graph, f.actors, decisions, true))
+      .added,
+  ).toBe(0);
+  await expect(old.validate()).rejects.toThrow();
+  const locate = (subjectId: string, to: string) => ({
+    type: "locate",
+    subjectId,
+    aboutIds: [to],
+    text: "移動",
+  });
+  const move = (item: string, from: string | null, to: string) => ({
+    type: "move",
+    item,
+    from,
+    to,
+    basis: "移動",
+  });
+  const update = (operations: unknown[]) =>
+    f.send(0, {
+      command: "update",
+      text: "所在地と品の確認",
+      dependencies: [],
+      operations,
+    });
+  for (const id of [shop, f.far]) {
+    await expect(update([locate(id, f.place)])).rejects.toMatchObject({
+      code: "FIXED_PLACE",
+    });
+    await expect(update([move(id, null, owner)])).rejects.toMatchObject({
+      code: "FIXED_PLACE",
+    });
+  }
+  await expect(
+    update([locate(owner, shop), move(shop, null, owner)]),
+  ).rejects.toMatchObject({ code: "FIXED_PLACE" });
+  await expect(
+    f.send(0, {
+      command: "oppose",
+      text: "店舗を押す",
+      dependencies: [],
+      operations: [locate(shop, f.far)],
+    }),
+  ).rejects.toMatchObject({ code: "FIXED_PLACE" });
+  const [location] = (await ctx().locations(shop)).active;
+  const raw = {
+    nodes: [],
+    revisions: [],
+    endEdges: [],
+    edges: [
+      {
+        id: randomUUID(),
+        kind: "status",
+        role: "about",
+        source: location!.target,
+        target: f.far,
+        text: "direct-place",
+        period: { from: 0 },
+      },
+    ],
+  };
+  await expect(
+    f.send(0, {
+      command: "update",
+      text: "所在の参照を変える",
+      changes: raw,
+      dependencies: [],
+    }),
+  ).rejects.toMatchObject({ code: "FIXED_PLACE" });
+  // 保存済みの差分でも確定時の検査が動く。
+  await expect(
+    f.store.commit(await f.store.claim(f.graph, randomUUID()), ctx(), {
+      commitId: randomUUID(),
+      at: 0,
+      changes: raw,
+      playerAction: true,
+    }),
+  ).rejects.toThrow("固定場所");
+  expect(f.calls).not.toHaveBeenCalled();
+  expect(await directPlaces(ctx(), owner)).toEqual([f.place]);
+  expect(
+    await Promise.all([
+      directPlaces(ctx(), shop),
+      ctx().relations(shop, "has", "in", Number.MAX_SAFE_INTEGER),
+      ctx().relations(shop, "status", "out", Number.MAX_SAFE_INTEGER),
+    ]),
+  ).toEqual(before);
+  await update([locate(owner, shop)]);
+  expect(await directPlaces(ctx(), owner)).toEqual([shop]);
+  await update([move(chair, owner, shop)]);
+  expect((await readBelongings(ctx(), shop)).items.map((i) => i.id)).toContain(
+    chair,
+  );
+  await update([move(chair, shop, owner), move(tree, owner, shop)]);
+  expect((await readBelongings(ctx(), owner)).items.map((i) => i.id)).toContain(
+    chair,
+  );
+  expect((await readBelongings(ctx(), shop)).items.map((i) => i.id)).toContain(
+    tree,
+  );
+  await update([locate(owner, f.place)]);
+  expect(await directPlaces(ctx(), owner)).toEqual([f.place]);
+});
+
+test("受領待ちの物が固定場所と確認された場合、同意後も移動させない", async () => {
+  const f = await fixture();
+  const item = (
+    await f.apply([
+      {
+        type: "create",
+        label: "登録待ちの施設",
+        holder: f.actors[0],
+        basis: "試験",
+      },
+    ])
+  ).changes.nodes.find((n) => n.kind === "existence")!.id;
+  const request = await f.send(0, {
+    command: "update",
+    text: "受け渡しを申請",
+    deferredUntil: new Date(Date.now() + 60000).toISOString(),
+    dependencies: [],
+    operations: [
+      { type: "move", item, from: f.actors[0], to: f.actors[1], basis: "試験" },
+    ],
+  });
+  expect(request.state).toBe("pending");
+  await f.store.protectExistingPlaces(
+    f.graph,
+    f.actors,
+    { fixed: [item], movable: [] },
+    true,
+  );
+  expect(
+    await f.send(1, {
+      command: "receive",
+      applicationId: request.applicationId,
+      accept: true,
+    }),
+  ).toMatchObject({ state: "changed" });
+  expect(
+    (await readBelongings(f.store.context(f.graph), f.actors[0]!)).items.map(
+      (i) => i.id,
+    ),
+  ).toContain(item);
+});
 
 test("設計図の着工だけがGMとSPを使い、建築・開店・不在時の購入を一度ずつ確定する", async () => {
   const f = await fixture();
@@ -417,6 +632,9 @@ test("設計図の着工だけがGMとSPを使い、建築・開店・不在時�
   });
   expect(finished[1]).toMatchObject({ status: "rejected" });
   const shopId = derivedId(`blueprint:${questId}:building`);
+  await expect(f.store.context(f.graph).assertMovable(shopId)).rejects.toThrow(
+    "固定場所",
+  );
   expect(await held(boards[0]!)).toBeUndefined();
   expect(await item(boards[1]!)).toMatchObject({ count: 1 });
   expect(await held(tools[1]!)).toBe(f.actors[1]);
@@ -7754,6 +7972,9 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
     const path = found.result.placeId as string,
       me = (await run("status")).device.actorId as string,
       move = join(cli.directory, "move.json");
+    await expect(
+      f.store.context(f.graph).assertMovable(placed),
+    ).rejects.toThrow("固定場所");
     await writeFile(
       move,
       JSON.stringify({

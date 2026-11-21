@@ -10,6 +10,7 @@ import { entrypoint, task } from "@langchain/langgraph";
 import type { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import { z } from "zod";
 import { WorldStore, Change } from "../world/store.js";
+import { generatedFixedPlaces } from "../world/locations.js";
 import {
   bindingScripts,
   validateBindings,
@@ -22,6 +23,7 @@ const Proposal = z
     changes: Change,
     playerId: z.uuid().nullable().default(null),
     rootIds: z.array(z.uuid()).min(1),
+    fixedPlaceIds: z.array(z.uuid()).optional(),
     report: z.string(),
   })
   .strict()
@@ -230,6 +232,11 @@ export class WorldBuilder {
             commitId: build.commit_id,
             at: 0,
             changes: proposal.changes,
+            newFixedPlaces: generatedFixedPlaces(
+              proposal.changes,
+              proposal.fixedPlaceIds ?? [],
+              proposal.playerId,
+            ),
           }),
         );
         await this.pool.query(

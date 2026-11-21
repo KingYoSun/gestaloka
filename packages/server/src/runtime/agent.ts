@@ -29,7 +29,7 @@ import {
   planBelongings,
 } from "../world/belongings.js";
 import type { LlmClient, ChatMessage } from "../llm/client.js";
-import { locationRecords } from "../world/locations.js";
+import { generatedFixedPlaces, locationRecords } from "../world/locations.js";
 import {
   historyLimit,
   materialLimit,
@@ -154,6 +154,7 @@ const Proposal = z
     resolvedUntil: Time,
     continuation: z.string().optional(),
     newParticipantId: z.uuid().optional(),
+    fixedPlaceIds: z.array(z.uuid()).optional(),
     settledIntentions: z
       .array(
         z.object({ actorId: z.uuid(), reason: z.string().min(1) }).strict(),
@@ -1106,16 +1107,29 @@ export class WorldAgent {
             throw new WorldConflict(error.message);
           throw error;
         }
+        const completeChanges = {
+          nodes: [...changes.nodes, ...planned.nodes],
+          revisions: changes.revisions,
+          edges: [...changes.edges, ...planned.edges],
+          endEdges: [...changes.endEdges, ...planned.endEdges],
+        };
         return ExecutionBudget.commit(() =>
           this.store.commit(lease, context, {
             commitId: row.commit_id,
             at: input.candidate.resolvedUntil,
-            changes: {
-              nodes: [...changes.nodes, ...planned.nodes],
-              revisions: changes.revisions,
-              edges: [...changes.edges, ...planned.edges],
-              endEdges: [...changes.endEdges, ...planned.endEdges],
-            },
+            changes: completeChanges,
+            playerAction:
+              row.request.phase === "participant" ||
+              !!row.request.controlledActorId,
+            ...(row.request.phase === "participant"
+              ? {
+                  newFixedPlaces: generatedFixedPlaces(
+                    completeChanges,
+                    input.candidate.fixedPlaceIds ?? [],
+                    input.candidate.newParticipantId,
+                  ),
+                }
+              : {}),
           }),
         );
       };

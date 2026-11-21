@@ -4,6 +4,56 @@ type Context = Pick<WorldContext, "locations" | "node" | "relations">;
 
 export { LocationOp } from "@gestaloka/contracts";
 
+/** 有効な経路で、content と about の両側に同じ端点が揃うもの。 */
+export function routeEndpoints(edges: Change["edges"]) {
+  const routes = new Map<
+    string,
+    { sources: Set<string>; targets: Set<string> }
+  >();
+  for (const edge of edges) {
+    if (
+      edge.kind !== "status" ||
+      edge.period.until !== undefined ||
+      edge.role !== "content" ||
+      edge.text !== "route"
+    )
+      continue;
+    if (!routes.has(edge.target))
+      routes.set(edge.target, { sources: new Set(), targets: new Set() });
+    routes.get(edge.target)!.sources.add(edge.source);
+  }
+  for (const edge of edges)
+    if (
+      edge.kind === "status" &&
+      edge.role === "about" &&
+      edge.period.until === undefined
+    )
+      routes.get(edge.source)?.targets.add(edge.target);
+  const ids = new Set<string>();
+  for (const { sources, targets } of routes.values())
+    if (
+      sources.size >= 2 &&
+      sources.size === targets.size &&
+      [...sources].every((id) => targets.has(id))
+    )
+      for (const id of sources) ids.add(id);
+  return ids;
+}
+
+export function generatedFixedPlaces(
+  changes: Change,
+  declared: readonly string[],
+  actor?: string | null,
+) {
+  const places = routeEndpoints(changes.edges);
+  for (const id of declared) places.add(id);
+  for (const edge of changes.edges)
+    if (edge.kind === "has" && !edge.role) places.delete(edge.target);
+  return changes.nodes
+    .filter((n) => n.kind === "existence" && n.id !== actor && places.has(n.id))
+    .map((n) => n.id);
+}
+
 const LATEST = Number.MAX_SAFE_INTEGER;
 
 // 最新の始点を持つ所在記録のうち、終わっていないもの。
