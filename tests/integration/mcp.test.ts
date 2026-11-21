@@ -166,7 +166,6 @@ test("世界を限定したMCPでNPC昇格を許可し、報告を読み、対�
       sourceRequestId: source,
       npcIndex: 0,
       description: "そばで暮らす小さな動物",
-      ownerId: actor,
     },
     actor,
   );

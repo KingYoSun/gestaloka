@@ -272,10 +272,10 @@ gestaloka explore --from <場所ID> --label <場所の呼び名> --text <説明>
 
 ## promote-npc
 
-出現記録の指定位置のNPCを昇格申請。必要に応じて所有者を指定。
+出現記録の指定位置のNPCを昇格申請。
 
 ```text
-gestaloka promote-npc --source <発言要求ID> --index <番号> --text <NPCの説明> [--owner <人物ID>]
+gestaloka promote-npc --source <発言要求ID> --index <番号> --text <NPCの説明>
 ```
 
 実行例 `gestaloka promote-npc --source @12ab34cd --index 0 --text '小屋の留鳥'`

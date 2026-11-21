@@ -442,7 +442,6 @@ async function run() {
     "world",
     "target",
     "team",
-    "owner",
     "scene",
     "application",
     "offer",
@@ -764,7 +763,6 @@ async function run() {
                 sourceRequestId: values.source,
                 npcIndex: Number(values.index),
                 description: values.text,
-                ...(values.owner ? { ownerId: values.owner } : {}),
               }
             : {}),
           ...(command === "receive"

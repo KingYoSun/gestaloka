@@ -450,13 +450,6 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
             },
             {
               id: randomUUID(),
-              kind: "has",
-              source: sender,
-              target: item,
-              period: { from: 0 },
-            },
-            {
-              id: randomUUID(),
               kind: "status",
               role: "content",
               text: "route",
@@ -489,7 +482,7 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
     await page.goto(`/worlds/${f.world}/play?actorId=${sender}`);
     await openPlayer();
     await expect(
-      playerDrawer.getByText("手渡す星図（所有者：自分）", { exact: true }),
+      playerDrawer.getByText("手渡す星図", { exact: true }),
     ).toBeVisible();
     await page.keyboard.press("Escape");
     await page.getByText("プレイコマンド", { exact: true }).click();
@@ -514,14 +507,13 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
     await page.getByRole("button", { name: "受け入れる", exact: true }).click();
     await expect(page.getByText(/の手番を待っています/)).toBeVisible();
     await openPlayer();
-    const owner = (await store.context(f.graph).node(sender))!.text;
     await expect(
-      playerDrawer.getByText(`手渡す星図（所有者：${owner}）`, { exact: true }),
+      playerDrawer.getByText("手渡す星図", { exact: true }),
     ).toBeVisible();
     const holders = await store
       .context(f.graph)
       .relations(item, "has", "in", Number.MAX_SAFE_INTEGER);
-    expect(holders.find((edge) => !edge.role)?.source).toBe(sender);
+    expect(holders.find((edge) => edge.role === "hold")?.source).toBe(receiver);
     expect(
       (
         await (

@@ -13,8 +13,6 @@ export const ItemOutcome = z.object({
   label: z.string(),
   count: count.optional(),
   holding: z.object({ fromId: id.nullable(), toId: id }).optional(),
-  ownership: z.object({ fromIds: z.array(id), toId: id }).optional(),
-  ownershipUnrecorded: z.literal(true).optional(),
 });
 export const ExchangeTerms = z
   .object({
@@ -55,7 +53,6 @@ export const LocationOp = z
   })
   .strict();
 
-// 同じ申請で同じ物品に同じ個数を指定した移動と譲渡は、同じ取り分に作用する。
 const part = count
   .optional()
   .describe(
@@ -68,43 +65,30 @@ export const BelongingOp = z.discriminatedUnion("type", [
       type: z.literal("create"),
       label: text,
       count: count.optional().describe("個数。数えないまとまりなら省く"),
-      holder: id,
-      owner: id.optional().describe("所有者。省くと保持先だけが登録される"),
+      holder: id.describe("物品を持つ存在。持つ存在の物になる"),
       basis,
     })
     .strict()
-    .describe("新しい物品を保持者のもとに成立させる"),
+    .describe("新しい物品を持つ存在のもとに成立させる"),
   z
     .object({
       type: z.literal("move"),
       item: id,
-      from: id.nullable().describe("現在の保持者。所在が未記録ならnull"),
+      from: id.nullable().describe("今持っている存在。所在が未記録ならnull"),
       to: id,
       count: part,
       basis,
     })
     .strict()
-    .describe("物品の所在を移す。所有者は変えない"),
-  z
-    .object({
-      type: z.literal("transfer"),
-      item: id,
-      to: id,
-      count: part,
-      basis,
-    })
-    .strict()
-    .describe(
-      "物品の所有者を替える。所有者が未登録なら新しく指定できる。所在は変えない",
-    ),
+    .describe("物品を渡す・置く・預ける。物品は受け取った存在の物になる"),
   z
     .object({ type: z.literal("grant"), person: id, storage: id, basis })
     .strict()
-    .describe("保管先を利用できるようにする"),
+    .describe("家・場所を保管先として登録する"),
   z
     .object({ type: z.literal("revoke"), person: id, storage: id })
     .strict()
-    .describe("保管先の利用を終える"),
+    .describe("保管先の登録を終える"),
   z
     .object({ type: z.literal("learn"), person: id, text, basis })
     .strict()
@@ -136,7 +120,7 @@ export const BelongingOp = z.discriminatedUnion("type", [
       count: count.optional().describe("減らす個数。省くと全部"),
     })
     .strict()
-    .describe("消費・消失した物品、または失った技能の所有・所在・習得を終える"),
+    .describe("消費・消失した物品、または失った技能を除く"),
 ]);
 export type BelongingOp = z.infer<typeof BelongingOp>;
 export const PlaySearch = z.discriminatedUnion("kind", [
@@ -239,7 +223,6 @@ export const PlayCommand = z.discriminatedUnion("command", [
       sourceRequestId: z.uuid(),
       npcIndex: z.number().int().nonnegative(),
       description: text,
-      ownerId: z.uuid().optional(),
     })
     .strict(),
   z
