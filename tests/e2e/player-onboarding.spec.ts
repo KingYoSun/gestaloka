@@ -9,7 +9,7 @@ import { createApp } from "../../apps/api/src/app.js";
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureRuntime } from "../support/provider.js";
 import { fixtureAuth } from "../support/auth.js";
-import { playerCli } from "../support/player-cli.js";
+import { cliVersionHeader, playerCli } from "../support/player-cli.js";
 
 for (const base of ["", "共通の所属と個別の所有物を持つ新しい参加者。"])
   test(`未登録・人物なしから招待で登録し、許可したAIの設定とアイコンをCLIで一度だけ引き継ぐ${base ? "（世界の基本設定あり）" : ""}`, async ({
@@ -295,6 +295,7 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
       const headers = {
         authorization: `Bearer ${secret}`,
         "x-gestaloka-request": "1",
+        ...cliVersionHeader,
       };
       const tampered = await app.inject({
         method: "POST",
