@@ -3553,7 +3553,11 @@ export class BotPlay {
       (await holders(id)).some(
         (e) => e.source === actor && (e.role === "use" || e.role === undefined),
       );
+    // 本人が手に持つ保管先は、本人とともにある。
     const here = async (id: string) =>
+      (await holders(id)).some(
+        (e) => e.role === "hold" && e.source === actor,
+      ) ||
       (await this.#nearby(context, actor)).has(id) ||
       (await locationRecords(context, actor)).some((r) =>
         r.aboutIds.includes(id),

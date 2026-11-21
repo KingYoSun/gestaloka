@@ -35,6 +35,7 @@ export async function playerDistributionRoutes(instance: FastifyInstance) {
     "runtimes",
     "commands",
     "cli",
+    "dice",
     "SKILL",
   ]) {
     for (const path of [name, `${name}.md`, `references/${name}.md`]) {
