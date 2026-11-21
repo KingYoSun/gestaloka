@@ -59,6 +59,7 @@ export async function planBelongings(
   commitId: string,
   requestedAt: number,
   ops: readonly BelongingOp[],
+  destinations?: Map<string, string>,
 ) {
   const change: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
   let at = requestedAt;
@@ -283,10 +284,12 @@ export async function planBelongings(
         }
       }
     if (merged) {
+      destinations?.set(part.item, merged.id);
       await revise(merged);
       if (!part.count) end(await incoming(part.item));
     } else if (part.count) {
       const node = derivedId(`${commitId}:${part.key}:part`);
+      destinations?.set(part.item, node);
       change.nodes.push({
         id: node,
         kind: "existence",
@@ -298,6 +301,7 @@ export async function planBelongings(
       });
       has(`${part.key}:hold`, part.to, node, undefined, part.basis);
     } else {
+      destinations?.set(part.item, part.item);
       end(held);
       has(`${part.key}:hold`, part.to, part.item, undefined, part.basis);
     }

@@ -30,6 +30,8 @@ export const operations = {
       "worldBudgets.put": "世界の予算を変更",
       "worlds.graph": "グラフと履歴を読む",
       "worlds.edit": "世界を直接編集",
+      "blueprints.create": "設計図テンプレートの下書きを作る",
+      "blueprints.publish": "試遊済みの設計図テンプレートを公開",
       "npcs.read": "ユニークNPCの操作担当",
       "npcs.put": "ユニークNPCの操作担当を指定",
       "npcs.promotions": "インスタントNPCの昇格申請",

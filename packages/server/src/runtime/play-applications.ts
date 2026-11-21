@@ -156,7 +156,7 @@ export class PlayApplications {
     CREATE INDEX IF NOT EXISTS play_application_deadline ON play_application(deadline) WHERE result IS NULL;`);
   }
 
-  async #notice(
+  async notice(
     db: Db,
     world: string,
     id: string,
@@ -194,7 +194,7 @@ export class PlayApplications {
       "INSERT INTO play_application(id,world_id,sender,deadline,recipients,share) VALUES($1,$2,$3,$4,$5,$6)",
       [id, world, sender, deadline, recipients, share],
     );
-    await this.#notice(
+    await this.notice(
       db,
       world,
       `${id}:opened`,
@@ -240,7 +240,7 @@ export class PlayApplications {
       outcome,
     ]);
     if (row.share)
-      await this.#notice(
+      await this.notice(
         db,
         row.world_id,
         `${row.id}:result`,
@@ -467,11 +467,15 @@ export class PlayApplications {
       );
     offer.itemLabel = item.text;
     await context.validate();
+    await this.publishOffer(db, world, place, offer);
+    return offer;
+  }
+
+  async publishOffer(db: Db, world: string, place: string, offer: Offer) {
     await db.query(
       "INSERT INTO play_application(id,world_id,sender,offer,place) VALUES($1,$2,$3,$4,$5)",
-      [id, world, sellerId, offer, place],
+      [offer.id, world, offer.sellerId, offer, place],
     );
-    return offer;
   }
 
   async offers(db: Db, world: string, context: WorldContext, actor: string) {
@@ -566,7 +570,7 @@ export class PlayApplications {
       }
     }
     const text = `${offer.itemLabel}×${offer.count}と${offer.paymentLabel}×${offer.paymentCount}の交換が成立しました`;
-    await this.#notice(
+    await this.notice(
       db,
       world,
       `${request}:exchange`,

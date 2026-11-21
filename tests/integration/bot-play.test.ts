@@ -176,6 +176,592 @@ async function fixture() {
   };
 }
 
+test("設計図の着工だけがGMとSPを使い、建築・開店・不在時の購入を一度ずつ確定する", async () => {
+  const f = await fixture();
+  const admin = await auth.person();
+  const db = isolated.databases.postgres;
+  const publish = (mode: "build" | "open" | "build-and-open") =>
+    auth.operations.execute(
+      admin.id,
+      randomUUID(),
+      {
+        operation: "blueprints.publish",
+        worldId: f.world,
+        template: {
+          mode,
+          name: "水辺の店",
+          version: 1,
+          authorId: f.actors[0]!,
+        },
+        reason: "隔離世界でテンプレートを試す",
+      },
+      { players: access.players },
+    );
+  const materials = [
+    { label: "板", count: 2, usage: "consume" as const },
+    { label: "金槌", count: 1, usage: "tool" as const },
+  ];
+  const template = await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    {
+      operation: "blueprints.create",
+      worldId: f.world,
+      reason: "試遊用の下書き",
+      template: {
+        mode: "build-and-open",
+        name: "水辺の店",
+        version: 1,
+        authorId: f.actors[0]!,
+        instructions: "板と金槌を揃えて、桟橋の売店を建てる。",
+        materials,
+        testerIds: [f.actors[1]!],
+      },
+    },
+    { players: access.players },
+  );
+  const publishedList = (actor: number) =>
+    f.send(actor, { command: "blueprint-templates" });
+  expect((await publishedList(0)).templates).not.toContainEqual(
+    expect.objectContaining({ id: template.id }),
+  );
+  const openTemplate = await publish("open");
+  const buildTemplate = await publish("build");
+  const boards = [randomUUID(), randomUUID()];
+  const tools = [randomUUID(), randomUUID()];
+  const stock = randomUUID();
+  const payment = randomUUID();
+  const series = randomUUID();
+  const seed = [
+    ...boards.map((id, i) => ({ id, text: "板", count: 2, actor: i })),
+    ...tools.map((id, i) => ({ id, text: "金槌", count: 1, actor: i })),
+    { id: stock, text: "焼き菓子", count: 2, actor: 1 },
+    { id: payment, text: "銅貨", count: 4, actor: 2, seriesId: series },
+  ];
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      management: {
+        editorId: admin.id,
+        reason: "試遊用の手持ち品",
+        requestHash: "0".repeat(64),
+      },
+      changes: {
+        nodes: seed.map((item) => ({
+          id: item.id,
+          text: item.text,
+          count: item.count,
+          ...("seriesId" in item ? { seriesId: item.seriesId } : {}),
+          kind: "existence",
+        })),
+        edges: seed.map(({ actor, id }) => ({
+          id: randomUUID(),
+          kind: "has",
+          source: f.actors[actor],
+          target: id,
+          period: { from: 0 },
+        })),
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  const authorNotices = await db.query(
+    "SELECT id FROM player_notice WHERE world_id=$1 AND actor_id=$2 AND text LIKE '%原案者%'",
+    [f.world, f.actors[0]],
+  );
+  expect(authorNotices.rowCount).toBe(1);
+  const building = {
+    label: "桟橋の菓子店",
+  };
+  const shop = {
+    stock: [
+      {
+        itemId: stock,
+        stockCount: 2,
+        count: 1,
+        paymentSeriesId: series,
+        paymentCount: 2,
+        paymentLabel: "銅貨",
+        text: "銅貨二枚で菓子一つ",
+      },
+    ],
+  };
+  const plan = {
+    templateId: template.id,
+    placeId: f.place,
+    keeperId: f.actors[1],
+    description: "桟橋に小さな店を組み、焼き菓子を売る",
+    building,
+    shop,
+  };
+  await expect(
+    f.send(2, { command: "blueprint-propose", plan }),
+  ).rejects.toThrow("利用できるテンプレート");
+  await expect(
+    f.send(1, { command: "blueprint-propose", plan }),
+  ).resolves.toMatchObject({ quest: { requirements: { build: materials } } });
+  await expect(
+    f.send(0, {
+      command: "blueprint-propose",
+      plan: { ...plan, building: { ...building, materials: [materials[0]] } },
+    }),
+  ).rejects.toThrow("建築の材料をテンプレートで確認");
+  const questId = randomUUID();
+  await expect(
+    f.send(0, { requestId: questId, command: "blueprint-propose", plan }),
+  ).resolves.toMatchObject({ spentSp: 0, quest: { phase: "draft" } });
+  await expect(
+    f.send(0, { command: "blueprint-start", questId }),
+  ).rejects.toMatchObject({
+    code: "BLUEPRINT_UNAVAILABLE",
+  });
+  expect(f.calls).not.toHaveBeenCalled();
+  await expect(
+    f.send(1, { command: "blueprint-show", questId }),
+  ).resolves.toMatchObject({ next: "blueprint-consent" });
+  await f.send(1, { command: "blueprint-consent", questId });
+  const start = {
+    requestId: randomUUID(),
+    command: "blueprint-start",
+    questId,
+  };
+  const adopted = await f.send(0, start);
+  expect(adopted).toMatchObject({
+    spentSp: 1,
+    dailySp: { remaining: 99 },
+    quest: { phase: "build" },
+    requirements: [{ provided: 0 }, { provided: 0 }],
+  });
+  expect(await f.send(0, start)).toMatchObject({
+    spentSp: 1,
+    dailySp: { remaining: 99 },
+  });
+  const call = await db.query(
+    "SELECT charged_nano::int AS nanos FROM llm_call WHERE operation_id=$1 AND state='complete'",
+    [start.requestId],
+  );
+  expect(call.rowCount).toBe(1);
+  expect(call.rows[0]!.nanos).toBeGreaterThan(0);
+  expect(f.calls.mock.calls.map((args) => args[1])).toEqual([
+    "world-blueprint",
+  ]);
+
+  const provide = (
+    actor: number,
+    requirement: number,
+    itemId: string,
+    count = 1,
+    requestId = randomUUID(),
+  ) =>
+    f.send(actor, {
+      command: "blueprint-provide",
+      questId,
+      phase: itemId === stock ? "open" : "build",
+      requirement,
+      itemId,
+      count,
+      requestId,
+    });
+  const held = async (id: string) =>
+    (
+      await f.store
+        .context(f.graph)
+        .relations(id, "has", "in", Number.MAX_SAFE_INTEGER)
+    ).find((edge) => !edge.role)?.source;
+  const item = (id: string) => f.store.context(f.graph).node(id);
+  const first = randomUUID();
+  expect(await provide(0, 0, boards[0]!, 1, first)).toMatchObject({
+    spentSp: 0,
+    requirements: [{ provided: 1 }, { provided: 0 }],
+  });
+  await expect(
+    f.apply([{ type: "remove", id: boards[0]!, count: 2 }]),
+  ).rejects.toThrow("取り置き");
+  await f.send(0, {
+    command: "blueprint-withdraw",
+    questId,
+    contributionId: first,
+  });
+  await f.apply([{ type: "remove", id: boards[0]!, count: 1 }]);
+  await provide(0, 0, boards[0]!);
+  await provide(1, 0, boards[1]!);
+  const ready = await f.send(1, { command: "blueprint-list" });
+  expect(ready).toMatchObject({
+    quests: [{ requirements: [{ provided: 2 }, { provided: 0 }] }],
+  });
+  const originalCommit = f.store.commit.bind(f.store);
+  const buildCommit = derivedId(`blueprint:${questId}:build`);
+  const interrupted = vi
+    .spyOn(f.store, "commit")
+    .mockImplementationOnce(async (...args) => {
+      await originalCommit(...args);
+      expect(args[2].commitId).toBe(buildCommit);
+      throw new Error("グラフ確定後に応答を中断");
+    });
+  const last = randomUUID();
+  await expect(provide(1, 1, tools[1]!, 1, last)).rejects.toThrow(
+    "グラフ確定後",
+  );
+  interrupted.mockRestore();
+  const finished = await Promise.allSettled([
+    provide(1, 1, tools[1]!, 1, last),
+    provide(0, 1, tools[0]!),
+  ]);
+  expect(finished[0]).toMatchObject({
+    status: "fulfilled",
+    value: { spentSp: 0, quest: { phase: "open" } },
+  });
+  expect(finished[1]).toMatchObject({ status: "rejected" });
+  const shopId = derivedId(`blueprint:${questId}:building`);
+  expect(await held(boards[0]!)).toBeUndefined();
+  expect(await item(boards[1]!)).toMatchObject({ count: 1 });
+  expect(await held(tools[1]!)).toBe(f.actors[1]);
+  expect(
+    await f.store
+      .context(f.graph)
+      .relations(shopId, "has", "in", Number.MAX_SAFE_INTEGER),
+  ).toContainEqual(
+    expect.objectContaining({ role: "use", source: f.actors[1] }),
+  );
+
+  const go = (actor: number, placeId: string, text: string) =>
+    f.send(actor, {
+      command: "update",
+      text,
+      operations: [
+        {
+          type: "locate",
+          subjectId: f.actors[actor],
+          text,
+          aboutIds: [placeId],
+        },
+      ],
+      dependencies: [],
+    });
+  await f.move(2, f.place);
+  const roadside = await f.send(2, {
+    command: "search",
+    query: { kind: "surroundings" },
+  });
+  expect(JSON.stringify(roadside)).toContain(shopId);
+  await go(2, shopId, building.label);
+  expect(await f.send(2, { command: "blueprint-list" })).toMatchObject({
+    quests: [{ quest: { phase: "open", buildingId: shopId } }],
+  });
+  await go(1, shopId, building.label);
+  await f.send(1, {
+    command: "update",
+    text: "完成した店に金槌を置く",
+    dependencies: [],
+    operations: [
+      {
+        type: "move",
+        item: tools[1],
+        from: f.actors[1],
+        to: shopId,
+        basis: "完成した店を保管先として使う",
+      },
+    ],
+  });
+  expect(await held(tools[1]!)).toBe(shopId);
+  await f.send(1, { command: "finish" });
+  await expect(provide(1, 0, stock, 2)).resolves.toMatchObject({
+    spentSp: 0,
+    quest: { phase: "done" },
+  });
+  const view = await f.send(2, {
+    command: "search",
+    query: { kind: "surroundings" },
+  });
+  const [offer] = view.exchangeOffers as { id: string }[];
+  const buying = {
+    command: "exchange",
+    requestId: randomUUID(),
+    offerId: offer!.id,
+    paymentItemId: payment,
+  };
+  expect(await f.send(2, buying)).toMatchObject({ state: "accepted" });
+  expect(await f.send(2, buying)).toMatchObject({ state: "accepted" });
+  expect(await item(stock)).toMatchObject({ count: 1 });
+  expect(await item(payment)).toMatchObject({ count: 2 });
+  const goods = await readBelongings(
+    f.store.context(f.graph),
+    f.actors[2]!,
+    Number.MAX_SAFE_INTEGER,
+  );
+  expect(JSON.stringify(goods)).toContain("焼き菓子");
+  const holdings = await f.store
+    .context(f.graph)
+    .relations(shopId, "has", "out", Number.MAX_SAFE_INTEGER);
+  expect(
+    await Promise.all(
+      holdings.filter((edge) => !edge.role).map(({ target }) => item(target)),
+    ),
+  ).toContainEqual(expect.objectContaining({ count: 2, seriesId: series }));
+  const notices = await db.query(
+    "SELECT actor_id,text FROM player_notice WHERE world_id=$1 AND text LIKE $2",
+    [f.world, `%${shopId}%`],
+  );
+  expect(
+    notices.rows.filter((row) => row.text.includes("建築が完了")),
+  ).toHaveLength(2);
+  expect(
+    notices.rows.filter((row) => row.text.includes("店が開店")),
+  ).toHaveLength(2);
+  expect(f.calls.mock.calls.map((args) => args[1])).toEqual([
+    "world-blueprint",
+  ]);
+
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  try {
+    await auth.operations.execute(
+      admin.id,
+      randomUUID(),
+      {
+        operation: "blueprints.publish",
+        worldId: f.world,
+        reason: "試遊した版を公開",
+        template: { templateId: String(template.id) },
+      },
+      { players: access.players },
+    );
+    expect((await publishedList(2)).templates).toContainEqual(
+      expect.objectContaining({ id: template.id, materials }),
+    );
+    const profile = join(cli.directory, "second-keeper.json");
+    const connected = await cli.run(
+      profile,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (
+        await cli.approve(
+          f.people[2]!.cookie,
+          connected.userCode,
+          `actor:${f.actors[2]}`,
+        )
+      ).statusCode,
+    ).toBe(302);
+    const file = join(cli.directory, "blueprint.json");
+    const play = async (body: object) => {
+      await writeFile(file, JSON.stringify(body), "utf8");
+      const response = await cli.run(
+        profile,
+        "play",
+        "--file",
+        file,
+        "--full-ids",
+      );
+      expect(response.state).not.toBe("error");
+      return response.result;
+    };
+    const templates = await play({ command: "blueprint-templates" });
+    const build = templates.templates.find(
+      (entry: { mode: string }) => entry.mode === "build",
+    );
+    expect(build.id).toBe(buildTemplate.id);
+    await go(2, f.place, "広場");
+    const second = await play({
+      command: "blueprint-propose",
+      plan: {
+        templateId: build.id,
+        placeId: f.place,
+        keeperId: f.actors[2],
+        description: "広場に銅貨を飾った小屋を建てる",
+        building: {
+          label: "広場の小屋",
+          materials: [{ label: "銅貨", count: 1, usage: "consume" }],
+        },
+      },
+    });
+    expect(second.next).toBe("blueprint-start");
+    const secondStart = await play({
+      command: second.next,
+      questId: second.quest.id,
+    });
+    const next = secondStart.requirements[0];
+    expect(next).toMatchObject({ label: "銅貨", count: 1, provided: 0 });
+    const built = await play({
+      command: secondStart.next,
+      questId: second.quest.id,
+      phase: secondStart.quest.phase,
+      requirement: next.index,
+      itemId: payment,
+      count: 1,
+    });
+    expect(built.quest).toMatchObject({
+      phase: "done",
+      template: { authorId: f.actors[0], origin: f.world },
+      contributors: [f.actors[2]],
+    });
+    await go(2, built.quest.buildingId, "広場の小屋");
+    const before = await item(stock);
+    const existing = await play({
+      command: "blueprint-propose",
+      plan: {
+        templateId: openTemplate.id,
+        placeId: built.quest.buildingId,
+        keeperId: f.actors[2],
+        description: "手元の銅貨を一枚置き、二枚との交換を掲示する",
+        shop: { stock: [{ ...shop.stock[0], itemId: payment, stockCount: 1 }] },
+      },
+    });
+    const open = await play({
+      command: existing.next,
+      questId: existing.quest.id,
+    });
+    const opened = await play({
+      command: open.next,
+      questId: existing.quest.id,
+      phase: open.quest.phase,
+      requirement: 0,
+      itemId: payment,
+      count: 1,
+    });
+    expect(opened.quest).toMatchObject({
+      phase: "done",
+      buildingId: built.quest.buildingId,
+    });
+    expect(await item(stock)).toEqual(before);
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+}, 60000);
+
+test("建築後に中止すると、開店用の取り置きだけが解放される", async () => {
+  const f = await fixture();
+  const admin = await auth.person();
+  const mode = "build-and-open";
+  const { id: templateId } = await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    {
+      operation: "blueprints.publish",
+      worldId: f.world,
+      template: { mode, name: "工房", version: 1, authorId: f.actors[0]! },
+      reason: "試遊用",
+    },
+    { players: access.players },
+  );
+  const ids = await f.apply([
+    {
+      type: "create",
+      label: "支柱",
+      holder: f.actors[0],
+      count: 1,
+      basis: "試遊用",
+    },
+    {
+      type: "create",
+      label: "器",
+      holder: f.actors[0],
+      count: 2,
+      basis: "試遊用",
+    },
+  ]);
+  const [beam, cup] = ids.changes.nodes
+    .filter((node) => node.kind === "existence")
+    .map(({ id }) => id);
+  const shop = {
+    stock: [
+      {
+        itemId: cup,
+        stockCount: 2,
+        count: 1,
+        paymentSeriesId: randomUUID(),
+        paymentCount: 1,
+        paymentLabel: "銅貨",
+        text: "銅貨一枚で器一つ",
+      },
+    ],
+  };
+  const plan = {
+    templateId,
+    placeId: f.place,
+    keeperId: f.actors[0],
+    description: "広場に器の工房を建てる",
+    building: {
+      label: "小さな工房",
+      materials: [{ label: "支柱", count: 1, usage: "consume" }],
+    },
+    shop,
+  };
+  const failedId = randomUUID();
+  await f.send(0, {
+    command: "blueprint-propose",
+    requestId: failedId,
+    plan: { ...plan, description: "月を持って来る" },
+  });
+  expect(
+    await f.send(0, { command: "blueprint-start", questId: failedId }),
+  ).toMatchObject({
+    spentSp: 1,
+    quest: { phase: "rejected", reason: "月はこの材料から運べません" },
+  });
+  const questId = randomUUID();
+  await f.send(0, { command: "blueprint-propose", requestId: questId, plan });
+  expect(
+    await f.send(0, { command: "blueprint-start", questId }),
+  ).toMatchObject({
+    spentSp: 1,
+    dailySp: { remaining: 98 },
+  });
+  const give = (itemId: string, phase: string) =>
+    f.send(0, {
+      command: "blueprint-provide",
+      questId,
+      requirement: 0,
+      itemId,
+      count: 1,
+      phase,
+    });
+  const built = await give(beam!, "build");
+  expect(built).toMatchObject({ quest: { phase: "open" } });
+  const building = derivedId(`blueprint:${questId}:building`);
+  await give(cup!, "open");
+  expect(await f.store.context(f.graph).reserved(cup!)).toBe(1);
+  expect(
+    await f.send(0, { command: "blueprint-cancel", questId }),
+  ).toMatchObject({
+    spentSp: 0,
+    quest: { phase: "cancelled", buildingId: building },
+  });
+  const context = f.store.context(f.graph);
+  expect(await context.reserved(cup!)).toBe(0);
+  expect(await context.node(building)).toMatchObject({ text: "小さな工房" });
+  expect(
+    await context.relations(beam!, "has", "in", Number.MAX_SAFE_INTEGER),
+  ).toEqual([]);
+  expect(
+    await context.relations(building, "has", "in", Number.MAX_SAFE_INTEGER),
+  ).toContainEqual(
+    expect.objectContaining({ role: "use", source: f.actors[0] }),
+  );
+  expect(
+    (await f.send(0, { command: "search", query: { kind: "surroundings" } }))
+      .exchangeOffers ?? [],
+  ).toEqual([]);
+  expect(f.calls.mock.calls.map((args) => args[1])).toEqual([
+    "world-blueprint",
+    "world-blueprint",
+  ]);
+});
+
 test("生成を終えた世界のプレイの記録は、確定した現実の時刻で成立する", async () => {
   const f = await fixture();
   await isolated.databases.postgres.query(

@@ -2516,6 +2516,106 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-templates";
+                        /** Format: uuid */
+                        after?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-propose";
+                        plan: {
+                            /** Format: uuid */
+                            templateId: string;
+                            /** Format: uuid */
+                            placeId: string;
+                            /** Format: uuid */
+                            keeperId: string;
+                            description: string;
+                            building?: {
+                                label: string;
+                                materials?: {
+                                    label: string;
+                                    count: number;
+                                    /** @enum {string} */
+                                    usage: "consume" | "tool";
+                                }[];
+                            };
+                            shop?: {
+                                stock: {
+                                    /** Format: uuid */
+                                    itemId: string;
+                                    count: number;
+                                    /** Format: uuid */
+                                    paymentSeriesId: string;
+                                    paymentLabel: string;
+                                    paymentCount: number;
+                                    text: string;
+                                    stockCount: number;
+                                }[];
+                            };
+                        };
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-list";
+                        /** Format: uuid */
+                        after?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-show";
+                        /** Format: uuid */
+                        questId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-consent";
+                        /** Format: uuid */
+                        questId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-start";
+                        /** Format: uuid */
+                        questId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-provide";
+                        /** Format: uuid */
+                        questId: string;
+                        /** @enum {string} */
+                        phase: "build" | "open";
+                        requirement: number;
+                        /** Format: uuid */
+                        itemId: string;
+                        count: number;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-withdraw";
+                        /** Format: uuid */
+                        questId: string;
+                        /** Format: uuid */
+                        contributionId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-cancel";
+                        /** Format: uuid */
+                        questId: string;
+                    } | {
                         text: string;
                         effect?: {
                             /**
@@ -7283,6 +7383,48 @@ export interface paths {
                             worldId: string;
                             /** Format: uuid */
                             before?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "blueprints.create";
+                            /** Format: uuid */
+                            worldId: string;
+                            template: {
+                                /** @enum {string} */
+                                mode: "build" | "open" | "build-and-open";
+                                name: string;
+                                version: number;
+                                /** Format: uuid */
+                                authorId: string;
+                                /** @description プレイヤーに示す使い方と、完成後にできること */
+                                instructions: string;
+                                /** @description 建築に必要な消費材と道具。開店のみの場合は省く */
+                                materials?: {
+                                    label: string;
+                                    count: number;
+                                    /** @enum {string} */
+                                    usage: "consume" | "tool";
+                                }[];
+                                /** @description 原案者と一緒に下書きを試せる人物 */
+                                testerIds?: string[];
+                            };
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "blueprints.publish";
+                            /** Format: uuid */
+                            worldId: string;
+                            template: {
+                                /** @enum {string} */
+                                mode: "build" | "open" | "build-and-open";
+                                name: string;
+                                version: number;
+                                /** Format: uuid */
+                                authorId: string;
+                            } | {
+                                /** Format: uuid */
+                                templateId: string;
+                            };
+                            reason: string;
                         } | {
                             /** @enum {string} */
                             operation: "notices.send";

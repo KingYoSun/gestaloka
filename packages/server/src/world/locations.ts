@@ -1,4 +1,5 @@
 import type { WorldContext } from "./store.js";
+import { derivedId, type Change } from "./model.js";
 type Context = Pick<WorldContext, "locations" | "node" | "relations">;
 
 export { LocationOp } from "@gestaloka/contracts";
@@ -31,4 +32,40 @@ export async function directPlaces(context: Context, actor: string) {
   const ids = new Set(records.map((r) => r.directPlaceId));
   const [id] = ids;
   return ids.size === 1 && id ? [id] : [];
+}
+
+export function addRoute(
+  changes: Change,
+  requestId: string,
+  at: number,
+  source: { id: string; text: string },
+  place: { id: string; text: string },
+  text: string,
+) {
+  const route = derivedId(`${requestId}:route`);
+  changes.nodes.push(
+    { id: place.id, kind: "existence", text: place.text },
+    { id: route, kind: "script", text },
+  );
+  for (const endpoint of [source, place])
+    changes.edges.push(
+      {
+        id: derivedId(`${route}:content:${endpoint.id}`),
+        kind: "status",
+        role: "content",
+        text: "route",
+        source: endpoint.id,
+        target: route,
+        period: { from: at },
+      },
+      {
+        id: derivedId(`${route}:about:${endpoint.id}`),
+        kind: "status",
+        role: "about",
+        text: endpoint.text,
+        source: route,
+        target: endpoint.id,
+        period: { from: at },
+      },
+    );
 }
