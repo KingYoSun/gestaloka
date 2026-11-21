@@ -237,6 +237,24 @@ export const PlayCommand = z.discriminatedUnion("command", [
   z
     .object({
       ...request,
+      command: z.literal("create-batch"),
+      proposals: z
+        .array(
+          z.union([
+            z.object({ text, changes: Change }).strict(),
+            z
+              .object({ text, operations: z.array(BelongingOp).min(1) })
+              .strict(),
+          ]),
+        )
+        .min(1)
+        .max(5),
+      dependencies,
+    })
+    .strict(),
+  z
+    .object({
+      ...request,
       command: z.literal("explore"),
       text: text.describe("新しい場所の様子と、接続元からの行き方"),
       label: text.describe("新しい場所の呼び名"),
