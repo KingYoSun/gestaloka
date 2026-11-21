@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { readBelongings } from "../world/belongings.js";
 import type { ChatMessage } from "./client.js";
 import type { PreparedPrompt } from "./prompt.js";
@@ -23,6 +24,16 @@ export function prepareDicePrompt(
   ) as DiceInput;
   if (!Array.isArray(nodes)) return;
 
+  // 取得経緯は物品が増えるほど入力を膨らませる。申請がID・CLIの短縮ID・呼称で指す物品にだけ付ける。
+  const request = JSON.stringify(action);
+  const shownBasis = ({ id, label, basis }: Item) =>
+    request.includes(id) ||
+    request.includes(
+      "@" + createHash("sha256").update(id).digest("hex").slice(0, 8),
+    ) ||
+    (label !== "" && request.includes(label))
+      ? basis
+      : null;
   const held = nodes.find(({ node }) => node.id === actor)?.belongings;
   const actorSkills = held?.skills ?? [];
   const prefix = JSON.stringify({ premise, actor, actorSkills });
@@ -34,10 +45,12 @@ export function prepareDicePrompt(
   );
   const counts = new Map<string, number>();
   for (const records of belongs)
-    for (const { basis } of [
-      ...records.items,
-      ...records.storages.flatMap(({ items }) => items),
-      ...(split && records === held ? [] : records.skills),
+    for (const basis of [
+      ...[
+        ...records.items,
+        ...records.storages.flatMap(({ items }) => items),
+      ].map(shownBasis),
+      ...(split && records === held ? [] : records.skills).map((s) => s.basis),
     ])
       if (basis && basis.length > 12)
         counts.set(basis, (counts.get(basis) ?? 0) + 1);
@@ -49,13 +62,13 @@ export function prepareDicePrompt(
   );
   const basisValue = (basis: string | null) =>
     basis === null ? null : (references.get(basis) ?? basis);
-  const item = ({ id, label, owners, basis, since, count }: Item) => [
-    id,
-    label,
-    owners,
-    basisValue(basis),
-    since,
-    ...(count === undefined ? [] : [count]),
+  const item = (i: Item) => [
+    i.id,
+    i.label,
+    i.owners,
+    basisValue(shownBasis(i)),
+    i.since,
+    ...(i.count === undefined ? [] : [i.count]),
   ];
   const skill = ({ id, text, basis, since }: Skill) => [
     id,
@@ -96,7 +109,7 @@ export function prepareDicePrompt(
     ...(basisDictionary.length ? { basisDictionary } : {}),
   });
   const instructions =
-    "itemsの列は[id,表示名,所有者,basis,成立時点,個数(任意)]、storagesは[id,表示名,物品行]、skillsは[id,説明,basis,成立時点]。basisが整数ならbasisDictionaryの0始まりの添字。文字列なら取得経緯の原文。consumableの文字列は申請者が保持する物品のIDを指す。物品行から表示名と個数を読む。" +
+    "itemsの列は[id,表示名,所有者,basis,成立時点,個数(任意)]、storagesは[id,表示名,物品行]、skillsは[id,説明,basis,成立時点]。basisが整数ならbasisDictionaryの0始まりの添字。文字列なら取得経緯の原文。物品のbasisがnullなら、取得経緯が未記録か、申請が指さない物品なので省いた。consumableの文字列は申請者が保持する物品のIDを指す。物品行から表示名と個数を読む。" +
     (split
       ? "最初のJSONは世界設定・申請者・申請者の技能(actorSkills)。次のJSONは今回の申請と他の材料。両方を合わせて判定する。"
       : "");
