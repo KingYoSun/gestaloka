@@ -788,6 +788,19 @@ export class Operations {
           input,
         );
       }
+      case "blueprints.create":
+      case "blueprints.publish": {
+        const play = this.#access(context).botPlay;
+        const world = await play.world(input.worldId, db);
+        return input.operation === "blueprints.create"
+          ? play.blueprints.createDraft(
+              db,
+              input.worldId,
+              world,
+              input.template,
+            )
+          : play.blueprints.publish(db, input.worldId, world, input.template);
+      }
       case "notices.send":
         return this.#access(context).botPlay.sendNotice(
           db,

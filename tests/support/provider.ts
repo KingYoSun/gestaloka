@@ -43,7 +43,14 @@ export async function fixtureRuntime(
         endEdges: [],
       });
       let content: unknown;
-      if (user.applicantDescription && user.experiences) {
+      if (user.mode && user.requirements && user.keeper) {
+        content = {
+          accepted: !user.description.includes("月を持って来る"),
+          reason: user.description.includes("月を持って来る")
+            ? "月はこの材料から運べません"
+            : "場所と材料から実現できます",
+        };
+      } else if (user.applicantDescription && user.experiences) {
         content = {
           description: "観測小屋に暮らす動物",
           memory: "小屋で観察者の声を聞いた。",
