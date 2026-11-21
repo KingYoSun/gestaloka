@@ -24,12 +24,11 @@ import {
 type Db = Pick<pg.Pool, "query">;
 type World = { id: string; at: number };
 type Offer = z.infer<typeof ExchangeOffer>;
-type HandoffOperation = Extract<BelongingOp, { type: "move" | "transfer" }>;
+type HandoffOperation = Extract<BelongingOp, { type: "move" }>;
 type HandoffItem = {
   itemId: string;
   label: string;
   seriesId: string | null;
-  ownerIds: string[];
   holderId: string | null;
   wholeCount?: number | null;
 };
@@ -76,7 +75,7 @@ const reject = (code: string, message: string): never => {
 };
 
 export function isHandoffOperation(op: BelongingOp): op is HandoffOperation {
-  return op.type === "move" || op.type === "transfer";
+  return op.type === "move";
 }
 
 export async function readHandoff(
@@ -97,10 +96,6 @@ export async function readHandoff(
         itemId,
         label: node.text,
         seriesId: node.seriesId ?? null,
-        ownerIds: incoming
-          .filter((e) => !e.role)
-          .map((e) => e.source)
-          .sort(),
         holderId: incoming.find((e) => e.role === "hold")?.source ?? null,
         ...(wholeItems.has(itemId) ? { wholeCount: node.count ?? null } : {}),
       };
@@ -111,8 +106,6 @@ export async function readHandoff(
       const original = expected.items[index]!;
       if (item.label !== original.label || item.seriesId !== original.seriesId)
         throw new BelongingRejected("受け渡しの対象の呼称か系列が変わりました");
-      if (item.ownerIds.join(",") !== original.ownerIds.join(","))
-        throw new BelongingRejected("受け渡しの対象の所有者が変わりました");
       if (item.holderId !== original.holderId)
         throw new BelongingRejected("受け渡しの対象の保持先が変わりました");
       if (item.wholeCount !== original.wholeCount)
@@ -131,23 +124,13 @@ export async function itemOutcomeMessage(
     id === viewer ? "あなた" : ((await context.node(id))?.text ?? id);
   return (
     await Promise.all(
-      items.map(async ({ label, holding, ownership, ownershipUnrecorded }) => {
-        if (!holding && !ownership && !ownershipUnrecorded) return "";
-        const item = `「${label}」`;
-        const held = holding
-          ? holding.toId === viewer
-            ? `${item}を手元に置きました。`
-            : `${item}の保持先は${await name(holding.toId)}です。`
-          : `${item}の`;
-        return (
-          held +
-          (ownership
-            ? `所有者は${await name(ownership.toId)}です。`
-            : ownershipUnrecorded
-              ? "所有者は未登録です。"
-              : "所有者の変更はありません。")
-        );
-      }),
+      items.map(async ({ label, holding }) =>
+        !holding
+          ? ""
+          : holding.toId === viewer
+            ? `「${label}」を手元に置きました。`
+            : `「${label}」は${await name(holding.toId)}が持っています。`,
+      ),
     )
   ).join("");
 }
@@ -439,25 +422,24 @@ export class PlayApplications {
     }
   }
 
-  async #ownedStock(
+  async #held(
     context: WorldContext,
     itemId: string,
-    owner: string,
     holder: string,
     count: number,
   ) {
     const item = await context.node(itemId);
-    if (item?.kind !== "existence" || (item.count ?? 1) < count) return;
-    const edges = await context.relations(itemId, "has", "in", latest),
-      owners = edges.filter((edge) => !edge.role);
     if (
-      owners.length === 1 &&
-      owners[0]!.source === owner &&
-      edges.some((edge) => edge.role === "hold" && edge.source === holder)
+      item?.kind === "existence" &&
+      (item.count ?? 1) >= count &&
+      (await context.relations(itemId, "has", "in", latest)).some(
+        (edge) => edge.role === "hold" && edge.source === holder,
+      )
     )
       return item;
   }
 
+  // 売り手が登録した保管先で、その場所にあるもの。品物は保管先が持つ物。
   async #stock(context: WorldContext, offer: Offer, place: string) {
     const storage = await context.relations(
       offer.storageId,
@@ -466,17 +448,11 @@ export class PlayApplications {
       latest,
     );
     if (
-      storage.some((e) => !e.role && e.source === offer.sellerId) &&
+      storage.some((e) => e.role === "use" && e.source === offer.sellerId) &&
       (offer.storageId === place ||
         (await directPlaces(context, offer.storageId))[0] === place)
     )
-      return this.#ownedStock(
-        context,
-        offer.itemId,
-        offer.sellerId,
-        offer.storageId,
-        offer.count,
-      );
+      return this.#held(context, offer.itemId, offer.storageId, offer.count);
   }
 
   async offer(
@@ -493,7 +469,7 @@ export class PlayApplications {
     if (!place || !item || !item.text.trim())
       return reject(
         "EXCHANGE_STOCK",
-        "この場所で本人が所有する保管先と、そこにある本人の在庫を指定してください",
+        "この場所で本人が登録した保管先と、そこにある在庫を指定してください",
       );
     offer.itemLabel = item.text;
     await context.validate();
@@ -546,10 +522,9 @@ export class PlayApplications {
       const item = await this.#stock(context, offer, row.place);
       if (!item || item.text !== offer.itemLabel)
         return reject("EXCHANGE_STOCK", "売り手の在庫が変わりました");
-      const payment = await this.#ownedStock(
+      const payment = await this.#held(
         context,
         paymentItemId,
-        buyer,
         buyer,
         offer.paymentCount,
       );
@@ -569,24 +544,10 @@ export class PlayApplications {
           basis,
         },
         {
-          type: "transfer",
-          item: item.id,
-          to: buyer,
-          ...(item.count ? { count: offer.count } : {}),
-          basis,
-        },
-        {
           type: "move",
           item: payment.id,
           from: buyer,
           to: offer.storageId,
-          ...(payment.count ? { count: offer.paymentCount } : {}),
-          basis,
-        },
-        {
-          type: "transfer",
-          item: payment.id,
-          to: offer.sellerId,
           ...(payment.count ? { count: offer.paymentCount } : {}),
           basis,
         },

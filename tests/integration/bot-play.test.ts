@@ -334,7 +334,6 @@ test("従来形式で保存した時間差の物品受け渡しも受領後に�
         label: "結び紐",
         count: 3,
         holder: seller,
-        owner: seller,
         basis: "試験用",
       },
     ])
@@ -353,7 +352,6 @@ test("従来形式で保存した時間差の物品受け渡しも受領後に�
         count: 1,
         basis: "受け渡し",
       },
-      { type: "transfer", item, to: buyer, count: 1, basis: "受け渡し" },
     ],
   });
   expect(
@@ -371,7 +369,7 @@ test("従来形式で保存した時間差の物品受け渡しも受領後に�
   ).toMatchObject([{ id: item, count: 2 }]);
   expect(
     (await readBelongings(f.store.context(f.graph), buyer)).items,
-  ).toMatchObject([{ label: "結び紐", count: 1, owners: [{ id: buyer }] }]);
+  ).toMatchObject([{ label: "結び紐", count: 1 }]);
 });
 
 async function deferredHandoffFixture() {
@@ -387,14 +385,13 @@ async function deferredHandoffFixture() {
       label,
       count,
       holder,
-      owner: holder,
       basis: "試験用の持ち物",
     })),
   );
   const [source, target] = changes.nodes
     .filter((node) => node.kind === "existence")
     .map((node) => node.id) as [string, string];
-  const transfer = (to: string, count?: number) => [
+  const give = (to: string, count?: number) => [
     {
       type: "move",
       item: source,
@@ -403,7 +400,6 @@ async function deferredHandoffFixture() {
       count,
       basis: "銀貨を渡す",
     },
-    { type: "transfer", item: source, to, count, basis: "銀貨を譲る" },
   ];
   const request = (count?: number) =>
     f.send(0, {
@@ -411,7 +407,7 @@ async function deferredHandoffFixture() {
       text: "銀貨を渡す",
       deferredUntil: new Date(Date.now() + 60_000).toISOString(),
       dependencies: [],
-      operations: transfer(recipient, count),
+      operations: give(recipient, count),
     });
   const accept = (applicationId: unknown, requestId = randomUUID()) =>
     f.send(2, { command: "receive", applicationId, accept: true, requestId });
@@ -428,7 +424,7 @@ async function deferredHandoffFixture() {
     recipient,
     source,
     target,
-    transfer,
+    give,
     request,
     accept,
     read,
@@ -443,7 +439,7 @@ test("別の受け渡しで元の束が減っても、残数が足りれば時�
   const other = await f.send(0, {
     command: "update",
     text: "別の相手に銀貨を渡す",
-    operations: f.transfer(f.other, 300),
+    operations: f.give(f.other, 300),
     dependencies: [],
   });
   expect(other.state).toBe("receiving");
@@ -466,9 +462,7 @@ test("別の受け渡しで元の束が減っても、残数が足りれば時�
     commitId: applicationId,
   });
   expect(await f.amounts()).toEqual([500, 350]);
-  expect((await f.read(f.other)).items).toMatchObject([
-    { count: 300, owners: [{ id: f.other }] },
-  ]);
+  expect((await f.read(f.other)).items).toMatchObject([{ count: 300 }]);
   expect(f.calls).not.toHaveBeenCalled();
 });
 
@@ -536,12 +530,6 @@ test.each([
     operation: { type: "update", count: 750 },
   },
   {
-    condition: "所有者の変更",
-    count: 200,
-    ending: "所有者が変わりました",
-    operation: { type: "transfer" },
-  },
-  {
     condition: "保持先の変更",
     count: 200,
     ending: "保持先が変わりました",
@@ -559,11 +547,7 @@ test.each([
     const fields =
       operation.type === "update"
         ? { id: f.source }
-        : {
-            item: f.source,
-            to: f.other,
-            ...(operation.type === "move" ? { from: f.sender } : {}),
-          };
+        : { item: f.source, to: f.other, from: f.sender };
     await f.apply([{ ...operation, ...fields, basis: "受領前の変更" }]);
     const before = await f.amounts();
     expect(await f.accept(applicationId)).toMatchObject({
@@ -612,7 +596,6 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
       type: "create",
       label: "売店箱",
       holder: seller,
-      owner: seller,
       basis: "試験用",
     },
     {
@@ -620,7 +603,6 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
       label: "銅貨",
       count: 5,
       holder: buyer,
-      owner: buyer,
       basis: "試験用",
     },
     {
@@ -628,7 +610,6 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
       label: "銅貨",
       count: 5,
       holder: other,
-      owner: other,
       basis: "試験用",
     },
     {
@@ -636,7 +617,6 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
       label: "銅貨",
       count: 8,
       holder: buyer,
-      owner: buyer,
       basis: "名前だけが同じ品",
     },
   ]);
@@ -678,8 +658,13 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
       label: "焼き菓子",
       count: 1,
       holder: storage!.id,
-      owner: seller,
       basis: "販売する在庫",
+    },
+    {
+      type: "grant",
+      person: seller,
+      storage: storage!.id,
+      basis: "売店の在庫置き場",
     },
   ]);
   await f.move(2, f.place);
@@ -742,9 +727,7 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
   );
   expect(
     (await readBelongings(f.store.context(f.graph), storage!.id)).items,
-  ).toMatchObject([
-    { label: "銅貨", seriesId, count: 2, owners: [{ id: seller }] },
-  ]);
+  ).toMatchObject([{ label: "銅貨", seriesId, count: 2 }]);
   expect(
     await f.store.context(f.graph).node(orders[1 - winner]!.paymentItemId),
   ).toMatchObject({ count: 5, seriesId });
@@ -2012,7 +1995,6 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
     sourceRequestId: source,
     npcIndex: 0,
     description: "人のそばで穏やかに過ごす小さな動物",
-    ownerId: f.actors[1],
   });
   await f.send(1, { command: "end-turn" });
   await access.botPlay.tickNpcs();
@@ -2064,13 +2046,6 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
     kind: "existence",
     text: "木陰の小さな動物",
   });
-  expect(
-    (
-      await f.store
-        .context(f.graph)
-        .relations(npc, "has", "in", Number.MAX_SAFE_INTEGER)
-    ).some((e) => e.source === f.actors[1] && !e.role),
-  ).toBe(true);
   expect(
     (
       await isolated.databases.postgres.query(
@@ -2543,7 +2518,7 @@ test("個体指定のない旧NPCフラグを無視し、bot担当とサーバ�
   ).toBe(before);
 });
 
-test("保持と所有を区別して返し、所有者未登録の物品に所有者を設定できる", async () => {
+test("作った物品は持つ人物の物になり、渡すと受け取った人物の物になる", async () => {
   const f = await fixture(),
     a = f.actors[0]!,
     b = f.actors[1]!;
@@ -2551,111 +2526,60 @@ test("保持と所有を区別して返し、所有者未登録の物品に所�
   f.calls.mockImplementationOnce(async (id) => answer(id, sure));
   const update = (text: string, operations: unknown[]) =>
     f.send(0, { command: "update", text, operations, dependencies: [] });
-  const make = (label: string, owner?: string) => ({
+  const make = (label: string) => ({
     type: "create",
     label,
     holder: a,
-    ...(owner ? { owner } : {}),
     basis: "拾った",
   });
-  const created = await update("三つの物を拾う", [
+  const created = await update("二つの物を拾う", [
     make("木の札"),
-    make("布袋", a),
-    make("丸い石"),
+    make("布袋"),
   ]);
-  const [tag, bag, stone] = created.items as { itemId: string }[];
+  const [, bag] = created.items as { itemId: string }[];
   expect(created).toMatchObject({
     items: [
-      {
-        label: "木の札",
-        holding: { fromId: null, toId: a },
-        ownershipUnrecorded: true,
-      },
-      {
-        label: "布袋",
-        holding: { fromId: null, toId: a },
-        ownership: { fromIds: [], toId: a },
-      },
-      { label: "丸い石", ownershipUnrecorded: true },
+      { label: "木の札", holding: { fromId: null, toId: a } },
+      { label: "布袋", holding: { fromId: null, toId: a } },
     ],
     action: {
-      message: expect.stringContaining(
-        "「木の札」を手元に置きました。所有者は未登録です。",
-      ),
+      message: expect.stringContaining("「木の札」を手元に置きました。"),
     },
   });
-  const belongs = async (item: string) =>
-    f.store
-      .context(f.graph)
-      .relations(item, "has", "in", Number.MAX_SAFE_INTEGER);
-
-  const assign = await update("木の札の所有者を指定する", [
-    { type: "transfer", item: tag!.itemId, to: b, basis: "所有者の登録" },
+  const given = await update("布袋を渡す", [
+    { type: "move", item: bag!.itemId, from: a, to: b, basis: "渡す" },
   ]);
-  expect(assign).toMatchObject({ state: "receiving" });
-  expect(assign.items).toBeUndefined();
-  expect(await belongs(tag!.itemId)).toMatchObject([
-    { source: a, role: "hold" },
-  ]);
-  const accepted = await f.send(1, {
-    command: "receive",
-    applicationId: assign.applicationId,
-    accept: true,
-  });
-  expect(accepted).toMatchObject({
-    items: [{ itemId: tag!.itemId, ownership: { fromIds: [], toId: b } }],
-    action: {
-      message: expect.stringContaining("「木の札」の所有者はあなたです。"),
-    },
-  });
-  const assigned = await belongs(tag!.itemId);
-  expect(assigned.find((edge) => edge.role === "hold")?.source).toBe(a);
-  expect(assigned.find((edge) => !edge.role)?.source).toBe(b);
-
-  const loan = await update("布袋を貸す", [
-    { type: "move", item: bag!.itemId, from: a, to: b, basis: "貸す" },
-  ]);
-  const borrowed = await f.send(1, {
-    command: "receive",
-    applicationId: loan.applicationId,
-    accept: true,
-  });
-  expect(borrowed).toMatchObject({
+  expect(given).toMatchObject({ state: "receiving" });
+  expect(
+    await f.send(1, {
+      command: "receive",
+      applicationId: given.applicationId,
+      accept: true,
+    }),
+  ).toMatchObject({
     items: [{ itemId: bag!.itemId, holding: { fromId: a, toId: b } }],
-    action: { message: expect.stringContaining("所有者の変更はありません") },
-  });
-  expect((await belongs(bag!.itemId)).find((edge) => !edge.role)?.source).toBe(
-    a,
-  );
-
-  if ((await f.status(0)).actorId === a)
-    await f.send(0, { command: "end-turn" });
-  const claimed = await f.send(1, {
-    command: "update",
-    text: "丸い石を自分のものとして登録する",
-    operations: [
-      { type: "transfer", item: stone!.itemId, to: b, basis: "所有者の登録" },
-    ],
-    dependencies: [],
-  });
-  expect(claimed).toMatchObject({
-    state: "accepted",
-    items: [{ itemId: stone!.itemId, ownership: { fromIds: [], toId: b } }],
+    action: {
+      message: expect.stringContaining("「布袋」を手元に置きました。"),
+    },
   });
   expect(
-    (await belongs(stone!.itemId)).find((edge) => edge.role === "hold")?.source,
-  ).toBe(a);
+    await f.store
+      .context(f.graph)
+      .relations(bag!.itemId, "has", "in", Number.MAX_SAFE_INTEGER),
+  ).toMatchObject([{ source: b, role: "hold" }]);
+  if ((await f.status(0)).actorId === a)
+    await f.send(0, { command: "end-turn" });
   const entries = (await f.status(1)).entries.flatMap(
     (row: { payload: { entries?: { input: string; result: unknown }[] } }) =>
       row.payload.entries ?? [],
   );
   expect(
-    entries.find(({ input }: { input: string }) => input === "三つの物を拾う")
+    entries.find(({ input }: { input: string }) => input === "二つの物を拾う")
       ?.result,
   ).toMatchObject({ items: created.items });
 });
 
-test("目撃した手渡しには対象・所有・保持が残り、合流前の取得結果から参照は渡らない", async () => {
+test("目撃した手渡しには対象と渡した先が残り、合流前の取得結果から参照は渡らない", async () => {
   const f = await fixture(),
     item = randomUUID(),
     key = randomUUID(),
@@ -2695,7 +2619,6 @@ test("目撃した手渡しには対象・所有・保持が残り、合流前�
   await f.move(2, f.place);
   await f.send(2, { command: "contact", targetId: a });
   const give = await update("渡す", [
-    { type: "transfer", item, to: b, basis: "譲渡" },
     { type: "move", item, from: a, to: b, basis: "手渡し" },
   ]);
   expect(give.items).toBeUndefined();
@@ -2718,7 +2641,6 @@ test("目撃した手渡しには対象・所有・保持が残り、合流前�
     {
       itemId: item,
       label: "試験用の帯",
-      ownership: { fromIds: [a], toId: b },
       holding: { fromId: a, toId: b },
     },
   ]);
@@ -3006,15 +2928,16 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
       dependencies: [],
     });
   await f.send(0, { requestId: speech, command: "say", text: "本人の発言" });
+  const invalid = randomUUID();
   await expect(
     make(
-      [{ id: randomUUID(), kind: "script", text: "不正な接続" }],
+      [{ id: invalid, kind: "script", text: "不正な接続" }],
       [
         {
           id: randomUUID(),
           kind: "has",
           source: event,
-          target: f.actors[0],
+          target: invalid,
           period: { from: 0 },
         },
       ],
@@ -3588,6 +3511,7 @@ test("受領は関係する全員の判断を待ち、一人の拒否では全�
           {
             id: randomUUID(),
             kind: "has",
+            role: "use",
             source: f.actors[0]!,
             target: storage,
             period: { from: 0 },
@@ -3644,16 +3568,19 @@ test("受領は関係する全員の判断を待ち、一人の拒否では全�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
-test("利用・所有する保管先には、その場にいるときだけ本人の判断で出し入れでき、拒否の理由に対象の名前が出る", async () => {
+test("登録した保管先と誰も登録していない場所には、その場にいるときだけ本人の判断で出し入れでき、拒否の理由に対象の名前が出る", async () => {
   const f = await fixture();
   const shared = randomUUID(),
     home = randomUUID(),
     others = randomUUID(),
     loose = randomUUID(),
+    square = randomUUID(),
+    route = randomUUID(),
     state = randomUUID();
   const has = (source: string, target: string) => ({
     id: randomUUID(),
     kind: "has" as const,
+    role: "use" as const,
     source,
     target,
     period: { from: 0 },
@@ -3671,11 +3598,22 @@ test("利用・所有する保管先には、その場にいるときだけ本�
           { id: home, kind: "existence", text: "自分の家" },
           { id: others, kind: "existence", text: "相手の家" },
           { id: loose, kind: "existence", text: "誰のものでもない箱" },
+          { id: square, kind: "existence", text: "空き地" },
+          { id: route, kind: "script", text: "空き地は広場とつながる" },
           { id: state, kind: "script", text: "背が高い" },
         ],
         edges: [
           has(f.actors[0]!, home),
           has(f.actors[2]!, others),
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "content",
+            text: "route",
+            source: square,
+            target: route,
+            period: { from: 0 },
+          },
           {
             id: content,
             kind: "status",
@@ -3695,12 +3633,13 @@ test("利用・所有する保管先には、その場にいるときだけ本�
     { type: "create", label: "斧", holder: f.actors[0], basis: "初期" },
     { type: "create", label: "鍬", holder: f.actors[0], basis: "初期" },
     { type: "create", label: "縄", holder: shared, basis: "備え付け" },
+    { type: "create", label: "皿", holder: others, basis: "備え付け" },
   ]);
   const read = () => readBelongings(f.store.context(f.graph), f.actors[0]!);
   const before = await read(),
     axe = before.items.find((i) => i.label === "斧")!.id,
     hoe = before.items.find((i) => i.label === "鍬")!.id,
-    rope = before.storages[0]!.items[0]!.id;
+    rope = before.storages.find((s) => s.id === shared)!.items[0]!.id;
   const update = (body: Record<string, unknown>) =>
     f.send(0, { command: "update", text: "申請", dependencies: [], ...body });
   const move = (item: string, from: string, to: string) =>
@@ -3712,6 +3651,10 @@ test("利用・所有する保管先には、その場にいるときだけ本�
   await expect(move(rope, shared, f.actors[0]!)).rejects.toMatchObject({
     code: "STORAGE_NOT_HERE",
   });
+  await expect(move(axe, f.actors[0]!, square)).rejects.toMatchObject({
+    code: "STORAGE_NOT_HERE",
+    message: expect.stringContaining(`「空き地」（ID: ${square}）`),
+  });
   await expect(move(axe, f.actors[0]!, loose)).rejects.toMatchObject({
     code: "AUTHORITY_REQUIRED",
     message: expect.stringContaining(`「誰のものでもない箱」（ID: ${loose}）`),
@@ -3720,14 +3663,20 @@ test("利用・所有する保管先には、その場にいるときだけ本�
     code: "REMOTE_RECEIVING",
     message: expect.stringContaining(`「人物2」（ID: ${f.actors[2]}）`),
   });
+  const dish = (await readBelongings(f.store.context(f.graph), others))
+    .items[0]!.id;
+  await expect(move(dish, others, f.actors[0]!)).rejects.toMatchObject({
+    code: "STORAGE_NOT_REGISTERED",
+    message: expect.stringContaining(`「相手の家」（ID: ${others}）`),
+  });
   await expect(
     update({ operations: [{ type: "update", id: state, text: "改める" }] }),
   ).rejects.toMatchObject({
     code: "BELONGING_NOT_RECORDED",
     message: expect.stringContaining("changesのrevisions"),
   });
-  // 保管先のある場所にいれば、受領もダイスもなく確定する。
-  for (const place of [shared, home]) {
+  // 保管先や場所にいれば、受領もダイスもなく確定する。
+  for (const place of [shared, home, square]) {
     await update({
       operations: [
         {
@@ -3741,16 +3690,22 @@ test("利用・所有する保管先には、その場にいるときだけ本�
     if (place === shared) {
       await move(axe, f.actors[0]!, shared);
       await move(rope, shared, f.actors[0]!);
-    } else await move(hoe, f.actors[0]!, home);
+    } else if (place === home) await move(hoe, f.actors[0]!, home);
+    else {
+      await move(rope, f.actors[0]!, square);
+      await move(rope, square, f.actors[0]!);
+    }
   }
   const after = await read();
   expect(after.items.map((i) => i.label)).toEqual(["縄"]);
   expect(
     after.storages.map((s) => [s.label, s.items.map((i) => i.label)]),
-  ).toEqual([
-    ["共同倉庫", ["斧"]],
-    ["自分の家", ["鍬"]],
-  ]);
+  ).toEqual(
+    expect.arrayContaining([
+      ["共同倉庫", ["斧"]],
+      ["自分の家", ["鍬"]],
+    ]),
+  );
   // 本人の状態は、changesで本文を改め、関係を終えられる。
   await update({
     changes: {
@@ -3775,19 +3730,35 @@ test("利用・所有する保管先には、その場にいるときだけ本�
     (await f.store.context(f.graph).edge(content))?.period.until,
   ).toBeDefined();
   expect(f.calls).not.toHaveBeenCalled();
+  // 誰も登録していない場所を保管先にする申請は、新しく得る申請としてダイスで判定する。
+  f.calls.mockImplementationOnce(async (id, role) => {
+    expect(role).toBe("world-creation-dice");
+    return answer(id, sure);
+  });
+  await update({
+    operations: [
+      {
+        type: "grant",
+        person: f.actors[0],
+        storage: square,
+        basis: "店を構えた",
+      },
+    ],
+  });
+  expect((await read()).storages.map((s) => s.label)).toContain("空き地");
 });
 
-test("本人が所有して手に持つ保管先には、場所を問わず出し入れできる", async () => {
+test("本人が手に持つ箱には、場所を問わず出し入れできる", async () => {
   const f = await fixture();
   const box = randomUUID(),
     shell = randomUUID(),
     actor = f.actors[0]!;
-  const has = (target: string, role?: "hold") => ({
+  const hold = (target: string) => ({
     id: randomUUID(),
     kind: "has" as const,
+    role: "hold" as const,
     source: actor,
     target,
-    ...(role ? { role } : {}),
     period: { from: 0 },
   });
   await f.store.commit(
@@ -3801,7 +3772,7 @@ test("本人が所有して手に持つ保管先には、場所を問わず出�
           { id: box, kind: "existence", text: "手提げの箱" },
           { id: shell, kind: "existence", text: "貝殻" },
         ],
-        edges: [has(box), has(box, "hold"), has(shell), has(shell, "hold")],
+        edges: [hold(box), hold(shell)],
         revisions: [],
         endEdges: [],
       },
@@ -3814,18 +3785,16 @@ test("本人が所有して手に持つ保管先には、場所を問わず出�
       operations: [{ type: "move", item: shell, from, to, basis: "検証" }],
       dependencies: [],
     });
-  await move(actor, box);
-  expect(
-    (await readBelongings(f.store.context(f.graph), actor)).storages.find(
-      (s) => s.id === box,
-    )?.items,
-  ).toMatchObject([{ id: shell }]);
-  await move(box, actor);
-  expect(
-    (await readBelongings(f.store.context(f.graph), actor)).items.map(
+  const items = async (holder: string) =>
+    (await readBelongings(f.store.context(f.graph), holder)).items.map(
       (i) => i.id,
-    ),
-  ).toContain(shell);
+    );
+  await move(actor, box);
+  expect(await items(box)).toEqual([shell]);
+  expect(await items(actor)).toEqual([box]);
+  await move(box, actor);
+  expect(await items(actor)).toContain(shell);
+  expect(f.calls).not.toHaveBeenCalled();
 });
 
 test("依存版の不一致と運用停止を理由付きエラーにし、失敗した要求で枠を消費しない", async () => {
@@ -6550,7 +6519,6 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
     command: "promote-npc",
     sourceRequestId: caught.requestId,
     npcIndex: 0,
-    ownerId: f.actors[1],
     description: "分かれた鳥",
   });
   f.calls.mockImplementationOnce(async (id) =>
@@ -6570,13 +6538,6 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
   );
   expect(approved).toMatchObject({ state: "approved", npcId: pet });
   expect(await count()).toBe(1);
-  expect(
-    (
-      await f.store
-        .context(f.graph)
-        .relations(f.actors[1]!, "has", "out", Number.MAX_SAFE_INTEGER)
-    ).some((edge) => edge.target === pet),
-  ).toBe(true);
 
   f.calls.mockImplementationOnce(async (id) =>
     answer(id, {
@@ -6741,7 +6702,6 @@ test("持ち物は本人検索で個数つきで読め、ダイスが成功し�
       label: "矢",
       count: 5,
       holder: f.actors[0],
-      owner: f.actors[0],
       basis: "初期設定",
     },
     { type: "create", label: "砥石", holder: f.actors[0], basis: "初期設定" },
@@ -6842,14 +6802,16 @@ test("持ち物は本人検索で個数つきで読め、ダイスが成功し�
   const giving = await f.send(0, {
     command: "update",
     text: "矢を2本贈る",
-    operations: ["transfer", "move"].map((type) => ({
-      type,
-      item: arrows,
-      ...(type === "move" ? { from: f.actors[0] } : {}),
-      to: f.actors[1],
-      count: 2,
-      basis: "贈った",
-    })),
+    operations: [
+      {
+        type: "move",
+        item: arrows,
+        from: f.actors[0],
+        to: f.actors[1],
+        count: 2,
+        basis: "贈った",
+      },
+    ],
     dependencies: [],
   });
   await f.send(1, {
@@ -6988,7 +6950,6 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
         label: "銀貨",
         count: 5,
         holder: f.actors[0],
-        owner: f.actors[0],
         basis: "初期設定",
       },
     ])

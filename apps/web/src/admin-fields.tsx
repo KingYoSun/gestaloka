@@ -88,7 +88,6 @@ export const labels: Record<string, string> = {
   sourceRequestId: "インスタントNPCが出現した発言の要求ID",
   npcIndex: "インスタントNPCの番号（0から）",
   sourceText: "出現時の発言",
-  ownerId: "所有関係を持つ人物ID",
   npcId: "昇格したNPCのID",
   decidedBy: "判断した管理者",
   name: "名称",
