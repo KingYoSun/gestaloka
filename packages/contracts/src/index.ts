@@ -1114,6 +1114,21 @@ export const Operation = z.discriminatedUnion("operation", [
     .strict(),
   z
     .object({
+      operation: z.literal("notices.send"),
+      worldId: z.uuid(),
+      text: z.string().trim().min(1).max(4000),
+      actorIds: z
+        .array(z.uuid())
+        .min(1)
+        .optional()
+        .describe(
+          "宛先の人物。省くと、サーバー担当のNPCを除く、操作中の人物全員",
+        ),
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({
       operation: z.literal("npcs.promotions"),
       worldId: z.uuid(),
       before: z.uuid().optional(),

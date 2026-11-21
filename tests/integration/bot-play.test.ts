@@ -2014,6 +2014,58 @@ test("メモノードは自由な本文で作成し、共有と更新に関係�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test("管理者のお知らせは操作中の人物全員か指定した人物に一度だけ届く", async () => {
+  const f = await fixture(),
+    admin = await auth.person(),
+    send = (requestId: string, actorIds?: string[]) =>
+      auth.operations.execute(
+        admin.id,
+        requestId,
+        {
+          operation: "notices.send",
+          worldId: f.world,
+          text: "全員へのお知らせ",
+          ...(actorIds ? { actorIds } : {}),
+          reason: "仕様変更の案内",
+        },
+        { players: access.players },
+      );
+  const requestId = randomUUID();
+  expect(await send(requestId)).toMatchObject({ actorIds: f.actors });
+  await send(requestId);
+  for (const [i, actor] of f.actors.entries())
+    expect(
+      (await access.notices(f.people[i]!.id, f.world, actor)).notices,
+    ).toMatchObject([{ unread: true, text: "全員へのお知らせ" }]);
+  await send(randomUUID(), [f.actors[1]!]);
+  expect(
+    (await access.notices(f.people[1]!.id, f.world, f.actors[1])).notices,
+  ).toHaveLength(2);
+  expect(
+    (await access.notices(f.people[0]!.id, f.world, f.actors[0])).notices,
+  ).toHaveLength(1);
+  await expect(send(randomUUID(), [randomUUID()])).rejects.toMatchObject({
+    code: "NOTICE_TARGET_NOT_FOUND",
+  });
+  // 応答の形に合わない通知があれば、返せなかった通知を既読にしない。
+  await send(randomUUID(), [f.actors[2]!]);
+  await isolated.databases.postgres.query(
+    "INSERT INTO player_notice(id,world_id,actor_id,created_at,text) VALUES($1,$2,$3,now(),'形の合わない通知')",
+    ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", f.world, f.actors[2]],
+  );
+  await expect(
+    access.notices(f.people[2]!.id, f.world, f.actors[2]),
+  ).rejects.toThrow();
+  expect(
+    (
+      await isolated.databases.postgres.query(
+        "SELECT count(*)::int AS count FROM player_notice WHERE world_id=$1 AND actor_id=$2 AND NOT read",
+        [f.world, f.actors[2]],
+      )
+    ).rows[0].count,
+  ).toBe(2);
+});
+
 test("受容したインスタントNPCだけを昇格申請し、管理者の許可後に一度だけ永続化する", async () => {
   const f = await fixture(),
     admin = await auth.person(),

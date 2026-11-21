@@ -788,6 +788,14 @@ export class Operations {
           input,
         );
       }
+      case "notices.send":
+        return this.#access(context).botPlay.sendNotice(
+          db,
+          input.worldId,
+          requestId,
+          input.text,
+          input.actorIds,
+        );
       case "reports.list":
         return this.#access(context).botPlay.tools.reports(
           db,
