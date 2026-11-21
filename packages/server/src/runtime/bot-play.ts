@@ -5254,6 +5254,8 @@ export class BotPlay {
           )
             reject("TURN_REQUIRED", "申請した手番は終了しました");
         }
+        let sp: ReturnType<BotPlay["dailySp"]> | undefined;
+        const dailySp = () => (sp ??= this.dailySp(world, user, db));
         const result = {
           ...(await this.blueprints.command(
             db,
@@ -5261,10 +5263,28 @@ export class BotPlay {
             w,
             actor,
             input,
+            async () => {
+              const session = await this.current(world, actor, db);
+              if (
+                !session ||
+                session.data.turn !== actor ||
+                session.data.receiving
+              )
+                return {
+                  code: "TURN_REQUIRED",
+                  message: "本人の通常手番になってから着工を申請してください",
+                };
+              const { remaining, resetsAt } = await dailySp();
+              if (remaining <= 0)
+                return {
+                  code: "DAILY_SP_EXHAUSTED",
+                  message: `日次SPの利用可能残量は0です。次の回復は${resetsAt}です`,
+                };
+            },
             blueprintDecision,
           )),
           spentSp: saved.spent,
-          dailySp: await this.dailySp(world, user, db),
+          dailySp: await dailySp(),
         };
         await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [
           input.requestId,
