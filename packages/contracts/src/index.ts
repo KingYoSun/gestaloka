@@ -9,6 +9,8 @@ export {
   BlueprintPublication,
   BlueprintProposal,
   type BlueprintAction,
+  InstallationPolicy,
+  type StorageAction,
   PlayCommand,
   NpcAction,
   ItemOutcome,
