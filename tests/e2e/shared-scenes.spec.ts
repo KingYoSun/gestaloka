@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { test, expect } from "./fixtures.js";
+import { cliVersionHeader } from "../support/player-cli.js";
 import { connectDatabases } from "@gestaloka/server";
 import { WorldStore } from "@gestaloka/server/world";
 import type { Page } from "@playwright/test";
@@ -191,7 +192,7 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
         scrollTop: element.scrollTop,
       }));
     const device = await page.request.post("/api/player-devices", {
-      headers,
+      headers: { ...headers, ...cliVersionHeader },
       data: {
         requestId: randomUUID(),
         worldId: f.world,

@@ -189,11 +189,18 @@ export async function worldRoutes(
       typeof error === "object" &&
       error !== null &&
       "validation" in error &&
-      error.validation
+      Array.isArray(error.validation)
     )
-      return reply
-        .code(400)
-        .send({ code: "INPUT_INVALID", message: "入力を確認してください" });
+      // どの項目が合わないかを返し、古い形の申請も応答から直せるようにする。
+      return reply.code(400).send({
+        code: "INPUT_INVALID",
+        message: `入力を確認してください（${(
+          error.validation as { instancePath?: string; message?: string }[]
+        )
+          .slice(0, 3)
+          .map((v) => `${v.instancePath || "/"}: ${v.message}`)
+          .join("、")}）`,
+      });
     app.log.error(error);
     return reply
       .code(500)

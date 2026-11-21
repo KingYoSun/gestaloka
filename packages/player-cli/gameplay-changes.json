@@ -1,4 +1,7 @@
 {
+  "1.0.0": [
+    "この版から更新が必須です。0.x の CLI には PLAYER_CLI_UPDATE_REQUIRED が返るので、update で更新してください。0.47.0 で物品の扱いが変わり、transfer・create の owner・応答の ownership などはなくなりました。物品は持っている存在の物で、渡す・売る・払う・贈る・置く・預けるは、どれも move で表します。手元に保存した申請ファイルに transfer や owner が残っていれば、move に書き直してください。申請の形が合わないときの INPUT_INVALID には、合わない項目と理由（例: /operations/0/type）が入るようになりました。書き方は references/commands.md の「物の受け渡し」を読んでください。status の receiving に宛先（recipients）が入るようになりました。本人が含まれない受領判断は他の人宛てなので、判断せずに待ってください。"
+  ],
   "0.48.0": [
     "探索・生成で1日100 SPを共有します。日本時間の毎日0時に全回復し、statusのdailySpで残量と次の回復時刻を確認できます。playのcreate-batchは異なる生成案を最大5件受け付け、新しく振った申請全体で1 SPを使います。"
   ],

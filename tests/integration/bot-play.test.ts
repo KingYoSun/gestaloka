@@ -11,7 +11,7 @@ import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
 import { derivedId } from "@gestaloka/server/world";
 import { BotPlay } from "@gestaloka/server/play";
 import { createApp } from "../../apps/api/src/app.js";
-import { playerCli } from "../support/player-cli.js";
+import { cliVersionHeader, playerCli } from "../support/player-cli.js";
 import { join, resolve } from "node:path";
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureRuntime } from "../support/provider.js";
@@ -1284,6 +1284,31 @@ test("HTTPとCLIは本人の手番APIを使い、旧書込を拒否し、同じ�
     });
     expect(old.statusCode).toBe(409);
     expect(old.json().code).toBe("PLAY_API_CHANGED");
+    // 形が合わない申請には、合わない項目と理由を返す。
+    const invalid = await app.inject({
+      method: "POST",
+      url: `/api/worlds/${f.world}/session?actorId=${f.actors[0]}`,
+      headers: { cookie: f.people[0]!.cookie, "x-gestaloka-request": "1" },
+      payload: {
+        requestId: randomUUID(),
+        command: "update",
+        text: "古い形の申請",
+        operations: [
+          {
+            type: "transfer",
+            item: f.actors[1],
+            to: f.actors[1],
+            basis: "旧形式",
+          },
+        ],
+        dependencies: [],
+      },
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json()).toMatchObject({
+      code: "INPUT_INVALID",
+      message: expect.stringContaining("/operations/0/type"),
+    });
     expect(f.calls).not.toHaveBeenCalled();
   } finally {
     await cli.close();
@@ -2439,7 +2464,10 @@ test("CLIの報告は専用枠で送り、失った返答を再送し、変更�
       (
         await app.inject({
           url: `/api/worlds/${randomUUID()}/reports`,
-          headers: { authorization: `Bearer ${credentials.secret}` },
+          headers: {
+            authorization: `Bearer ${credentials.secret}`,
+            ...cliVersionHeader,
+          },
         })
       ).statusCode,
     ).toBe(403);
@@ -5255,6 +5283,7 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
         headers: {
           accept: "text/event-stream",
           authorization: "Bearer " + devices[i]!.secret,
+          ...cliVersionHeader,
         },
       });
       expect(res.status).toBe(200);
@@ -5903,7 +5932,11 @@ test("受領と離席から戻った手番には無操作の期限を数え直�
   elapsed = 599999;
   expect(await f.status(1)).toMatchObject({
     turn: 1,
-    receiving: { applicationId: memo.applicationId },
+    receiving: {
+      applicationId: memo.applicationId,
+      recipients: [f.actors[1]],
+      text: "受領判断の試験",
+    },
   });
   await f.send(1, {
     command: "receive",
@@ -5981,6 +6014,7 @@ test("認可済み端末は人物生成前に一度報告でき、参加後も�
   const headers = {
       authorization: "Bearer " + secret,
       "x-gestaloka-request": "1",
+      ...cliVersionHeader,
     },
     url = "/api/worlds/" + f.world + "/reports";
   const post = () =>

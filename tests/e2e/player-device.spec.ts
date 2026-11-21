@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { test, expect } from "./fixtures.js";
+import { cliVersionHeader } from "../support/player-cli.js";
 
 test("持ち主が確認コードで新規参加を許可し、ブラウザーで解除できる", async ({
   page,
@@ -64,7 +65,7 @@ test("持ち主が確認コードで新規参加を許可し、ブラウザー�
   const id = randomUUID(),
     secret = randomBytes(32).toString("hex");
   const pairing = await page.request.post("/api/player-devices", {
-    headers,
+    headers: { ...headers, ...cliVersionHeader },
     data: { requestId: id, worldId: world, secret },
   });
   expect(pairing.ok(), await pairing.text()).toBe(true);
@@ -87,7 +88,7 @@ test("持ち主が確認コードで新規参加を許可し、ブラウザー�
   await expect(
     page.getByRole("heading", { name: "プレイを許可しました" }),
   ).toBeVisible();
-  const bearer = { authorization: `Bearer ${secret}` };
+  const bearer = { authorization: `Bearer ${secret}`, ...cliVersionHeader };
   expect(
     (
       await (
