@@ -718,6 +718,7 @@ async function run() {
             JSON.parse(await readFile(z.string().parse(values.file), "utf8")),
             true,
           ) as object),
+          ...(values.stealth ? { stealth: true } : {}),
           requestId: id,
         }
       : {

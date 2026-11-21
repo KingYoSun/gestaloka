@@ -2659,6 +2659,9 @@ export interface paths {
                             kind: "surroundings";
                         } | {
                             /** @enum {string} */
+                            kind: "seek";
+                        } | {
+                            /** @enum {string} */
                             kind: "self";
                         } | {
                             /** @enum {string} */
@@ -2717,6 +2720,7 @@ export interface paths {
                         /** @enum {string} */
                         command: "update";
                         text: string;
+                        stealth?: boolean;
                         operations?: ({
                             /** @enum {string} */
                             type: "locate";
@@ -3616,6 +3620,7 @@ export interface paths {
                         /** @enum {string} */
                         command: "oppose";
                         text: string;
+                        stealth?: boolean;
                         operations?: ({
                             /** @enum {string} */
                             type: "locate";
@@ -4321,6 +4326,12 @@ export interface paths {
                                         message: string;
                                     };
                                 }[];
+                                observations?: string[];
+                                stealth?: {
+                                    /** Format: uuid */
+                                    placeId: string;
+                                    place: string;
+                                };
                                 receiving?: {
                                     /** Format: uuid */
                                     applicationId: string;
