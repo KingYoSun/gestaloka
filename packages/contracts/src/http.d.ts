@@ -2572,6 +2572,12 @@ export interface paths {
                         command: "blueprint-show";
                         /** Format: uuid */
                         questId: string;
+                        /** @description 呼称で指定された建材・道具について、提供可能数を照会する */
+                        provision?: {
+                            requirement: number;
+                            /** Format: uuid */
+                            itemId: string;
+                        };
                     } | {
                         /** Format: uuid */
                         requestId: string;
