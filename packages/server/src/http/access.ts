@@ -31,6 +31,7 @@ import {
   ConstructionStateError,
   type WorldConstruction,
 } from "../runtime/construction.js";
+import { worldNow } from "../world/model.js";
 import { WorldScenes, type SceneRow } from "../runtime/scene.js";
 import { sceneAnchors } from "../runtime/scene-data.js";
 import { requireMember } from "./operations.js";
@@ -721,7 +722,7 @@ export class WorldAccess {
       id: row.id,
       viewerId: actorId,
       runId: last?.id ?? null,
-      at: row.at,
+      at: worldNow(row),
       state:
         row.state === "play_paused"
           ? "paused"
@@ -751,7 +752,7 @@ export class WorldAccess {
     );
     return {
       ...(await this.playerData(row, this.pool, grant.actor_id!)),
-      at: scene && scene.state !== "result" ? scene.data.at : row.at,
+      at: scene && scene.state !== "result" ? scene.data.at : worldNow(row),
       error:
         scene?.state === "paused" ||
         (grant.actor_id === row.participant_id && row.state === "play_paused")
@@ -1366,7 +1367,8 @@ export class WorldAccess {
       this.pool,
       actorId,
     );
-    const row = await this.construction.get(id);
+    const row = await this.construction.get(id),
+      now = worldNow(row);
     let cursor: z.infer<typeof Cursor> | undefined;
     const raw = after || before;
     if (raw)
@@ -1387,14 +1389,14 @@ export class WorldAccess {
         context.historyPage(
           grant.actor_id!,
           "see",
-          row.at,
+          now,
           after ? undefined : cursor,
           after ? cursor : undefined,
         ),
         context.historyPage(
           grant.actor_id!,
           "interpret",
-          row.at,
+          now,
           after ? undefined : cursor,
           after ? cursor : undefined,
         ),
@@ -1417,10 +1419,7 @@ export class WorldAccess {
         edge.kind === "interpret"
           ? await context.node(
               edge.target,
-              Math.min(
-                row.at,
-                Math.max(0, (edge.period.until ?? row.at + 1) - 1),
-              ),
+              Math.min(now, Math.max(0, (edge.period.until ?? now + 1) - 1)),
             )
           : undefined;
       items.push({
@@ -1457,7 +1456,7 @@ export class WorldAccess {
     );
     const page = KnowledgePage.parse({
       viewerId: grant.actor_id,
-      at: row.at,
+      at: now,
       items: items.map((item, index) => ({
         ...item,
         characters: characters[index],

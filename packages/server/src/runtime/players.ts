@@ -10,6 +10,7 @@ import { SupersededWorker } from "./agent.js";
 import type { WorldConstruction } from "./construction.js";
 import { playerIcon } from "./player-icons.js";
 import { playerSettings } from "./player-settings.js";
+import { worldNow } from "../world/model.js";
 import type { PlayerCharacter, JoinWorld } from "@gestaloka/contracts";
 import { z } from "zod";
 
@@ -137,13 +138,14 @@ export class WorldPlayers {
       "INSERT INTO world_subject(id,user_id) VALUES($1,$1) ON CONFLICT DO NOTHING",
       [userId],
     );
+    const now = worldNow(world);
     const operationId = await this.construction.agent.create(
       {
         worldId: world.world_id,
         phase: "participant",
         ...(input.name && { participantName: input.name }),
-        at: Number(world.at),
-        until: Number(world.at),
+        at: now,
+        until: now,
         rootIds: world.root_ids,
         actionText: approved
           ? settings
@@ -161,7 +163,7 @@ export class WorldPlayers {
         input.presetId ?? null,
         preset?.version ?? null,
         operationId,
-        world.at,
+        now,
       ],
     );
     await ExecutionBudget.attribute(db, id, userId, { role: "user" });

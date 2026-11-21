@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { z } from "zod";
 import { WorldGraphQuery, Change } from "@gestaloka/contracts";
 import { WorldStore, WorldConflict } from "../world/store.js";
+import { atTime, inGeneration, worldNow } from "../world/model.js";
 import { AccessError } from "./access.js";
 import type { WorldPlayers } from "../runtime/players.js";
 export class WorldManagement {
@@ -12,9 +13,10 @@ export class WorldManagement {
   }
   async world(db: Pick<pg.Pool, "query">, id: string) {
     const r = (
-      await db.query("SELECT world_id,at FROM world_construction WHERE id=$1", [
-        id,
-      ])
+      await db.query(
+        "SELECT world_id,at,state FROM world_construction WHERE id=$1",
+        [id],
+      )
     ).rows[0];
     if (!r?.world_id)
       throw new AccessError(
@@ -22,7 +24,11 @@ export class WorldManagement {
         "WORLD_NOT_FOUND",
         "確定した世界が見つかりません",
       );
-    return { id: r.world_id as string, at: Number(r.at) };
+    return {
+      id: r.world_id as string,
+      at: Number(r.at),
+      state: r.state as string,
+    };
   }
   async read(
     db: Pick<pg.Pool, "query">,
@@ -118,14 +124,18 @@ export class WorldManagement {
           .digest("hex"),
       };
     const prior = await this.store.receipt(world.id, requestId);
+    // 生成を終えた世界はプレイ中なので、送られた時点ではなく確定の時刻で記録する。
+    const live = !inGeneration(world.state),
+      at = live ? worldNow(world) : input.at;
     // Receipts are checked before dependency/time validation on a retransmission.
-    if (!prior && input.at < world.at)
+    if (!prior && !live && input.at < world.at)
       throw new AccessError(
         409,
         "WORLD_TIME_CHANGED",
         "現在以降の時点で改訂し、共有済みの履歴を保持してください",
       );
-    const changes = Change.parse(input.changes),
+    const parsed = Change.parse(input.changes),
+      changes = live ? atTime(parsed, at) : parsed,
       basis = new Set(input.dependencies.map((d) => d.key));
     if (
       new Set(input.dependencies.map((d) => d.key)).size !==
@@ -140,10 +150,8 @@ export class WorldManagement {
       );
     if (
       !prior &&
-      (changes.edges.some((e) => e.period.from < input.at) ||
-        changes.nodes.some(
-          (n) => n.kind === "event" && n.period.from < input.at,
-        ))
+      (changes.edges.some((e) => e.period.from < at) ||
+        changes.nodes.some((n) => n.kind === "event" && n.period.from < at))
     )
       throw new AccessError(
         409,
@@ -156,8 +164,8 @@ export class WorldManagement {
         this.store.context(world.id, input.dependencies),
         {
           commitId: requestId,
-          at: input.at,
-          changes: input.changes,
+          at,
+          changes,
           management,
         },
       );

@@ -4,6 +4,9 @@ import { WORLD_DAY_MS } from "@gestaloka/contracts";
 
 export const worldTime = (at: number) =>
   `${new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 3 }).format(at / (at >= WORLD_DAY_MS ? WORLD_DAY_MS : 1000))}${at >= WORLD_DAY_MS ? "日" : "秒"}`;
+// 世界生成の記録は世界内時間(T0からのミリ秒)、プレイ中の記録は現実の時刻(エポックミリ秒)を持つ。
+export const recordTime = (at: number) =>
+  at >= 1e12 ? createdDate(new Date(at).toISOString()) : `T + ${worldTime(at)}`;
 export const createdDate = (date: string) =>
   new Intl.DateTimeFormat("ja-JP", {
     dateStyle: "medium",

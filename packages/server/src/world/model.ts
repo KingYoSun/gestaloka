@@ -19,6 +19,29 @@ export const derivedId = (value: string) => {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
 };
 
+// 世界内時間は世界生成の間だけ使う。生成を終えた世界の時点は現実の時刻(エポックミリ秒)とする。
+const generating = new Set(["generating", "ready", "running", "paused"]);
+export const inGeneration = (state: string) => generating.has(state);
+export const worldNow = (
+  world: { state: string; at: number | string },
+  now = Date.now(),
+) =>
+  inGeneration(world.state)
+    ? Number(world.at)
+    : Math.max(Number(world.at), now);
+
+// プレイ中の差分は確定の時点で成立させる。申請時やクライアントが付けた時点はここでそろえる。
+export const atTime = (changes: Change, at: number): Change => ({
+  ...changes,
+  nodes: changes.nodes.map((n) =>
+    n.kind === "event" ? { ...n, period: { ...n.period, from: at } } : n,
+  ),
+  edges: changes.edges.map((e) => ({
+    ...e,
+    period: { ...e.period, from: at },
+  })),
+});
+
 // 役割つきhasの現在の集合から導出する要約。正本は関係で、要約は確定時に作り直す。
 export const summaryId = (subject: string, role: BelongingRole) =>
   derivedId(`summary:${subject}:${role}`);
