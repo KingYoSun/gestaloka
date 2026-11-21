@@ -6296,6 +6296,21 @@
                                   "kind": {
                                     "type": "string",
                                     "enum": [
+                                      "seek"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
                                       "self"
                                     ]
                                   }
@@ -6543,6 +6558,9 @@
                       "text": {
                         "type": "string",
                         "minLength": 1
+                      },
+                      "stealth": {
+                        "type": "boolean"
                       },
                       "operations": {
                         "minItems": 1,
@@ -10222,6 +10240,9 @@
                         "type": "string",
                         "minLength": 1
                       },
+                      "stealth": {
+                        "type": "boolean"
+                      },
                       "operations": {
                         "minItems": 1,
                         "type": "array",
@@ -12475,6 +12496,30 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "observations": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "stealth": {
+                          "type": "object",
+                          "properties": {
+                            "placeId": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "place": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "placeId",
+                            "place"
+                          ],
+                          "additionalProperties": false
                         },
                         "receiving": {
                           "type": "object",

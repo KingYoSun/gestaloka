@@ -99,7 +99,9 @@ function actionMessage(
         ? "現在のセッションを継続します"
         : "単独プレイを開始しました";
     case "search":
-      return "検索が完了しました";
+      return input.query.kind === "seek"
+        ? String(result.message)
+        : "検索が完了しました";
     case "contact":
       return !result.joined
         ? "すでに同じセッションにいます"
@@ -139,6 +141,13 @@ function actionMessage(
         ? "新しい場所は見つかりませんでした"
         : "新しい場所を記録しました。placeIdへ移動できます";
     case "update":
+      if (input.stealth && result.stealth) {
+        const { place } = result.stealth as NonNullable<
+          SessionStatus["stealth"]
+        >;
+        return `${place}に到着しました。現在は隠密中です`;
+      }
+    // fall through
     case "create":
     case "create-batch":
       if ((result.outcome as { success?: boolean })?.success === false)
@@ -166,6 +175,24 @@ function actionMessage(
     }
   }
 }
+type Observation = { viewer: string; text: string };
+type StealthAction = {
+  observations: Observation[];
+  stay?: { id: string; placeId: string; discovered: string[] };
+};
+type HiddenStay = {
+  actor_id: string;
+  id: string;
+  place_id: string;
+  discovered: string[];
+};
+type SeekResult = {
+  actorId: string;
+  stayId: string;
+  found: boolean | null;
+  setting?: z.infer<typeof DiceSetting>;
+};
+
 type Entry = {
   actorId: string;
   input: string;
@@ -179,6 +206,7 @@ type SessionStatus = {
   sessionId: string;
   members: { actorId: string; sceneId: string }[];
   characters: TurnParticipant[];
+  stealth?: { placeId: string; place: string };
   turn: number;
   actorId: string | null;
   callsUsed: number;
@@ -200,13 +228,15 @@ type SessionStatus = {
     changes?: Change;
   } | null;
 };
-type IdleSessionStatus = { session: null } & Partial<
-  Record<keyof SessionStatus, never>
->;
+type IdleSessionStatus = {
+  session: null;
+  stealth?: SessionStatus["stealth"];
+} & Partial<Record<Exclude<keyof SessionStatus, "stealth">, never>>;
 type Member = {
   actorId: string;
   sceneId: string;
   userId?: string;
+  lastTurnStartedAt?: string;
   lastServerTurn?: {
     recordId: string;
     members: TurnParticipant[];
@@ -232,6 +262,7 @@ export type Session = {
     turnStartedAt?: string;
     turnActivityAt: string;
     used: number;
+    stealthUsed?: number;
     nextRegular?: string;
     lastInstant?: string;
     wakeRevision?: number;
@@ -268,6 +299,7 @@ type Plan = {
   recipients: string[];
   handoff?: Handoff;
   outcome?: unknown;
+  stealth?: StealthAction;
   instantMembers?: string;
   effectState?: string;
   instantReduction?: z.infer<typeof InstantReductionResult>;
@@ -539,6 +571,16 @@ export class BotPlay {
       CREATE TABLE IF NOT EXISTS bot_request (
       id uuid PRIMARY KEY,actor_id uuid NOT NULL,world_id uuid NOT NULL,hash text NOT NULL,result jsonb,outcome jsonb);
       ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS prepared_turn text;
+      CREATE TABLE IF NOT EXISTS bot_stealth (
+      world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
+      actor_id uuid NOT NULL,id uuid NOT NULL UNIQUE,place_id uuid NOT NULL,discovered uuid[] NOT NULL,
+      PRIMARY KEY(world_id,actor_id,id));
+      CREATE INDEX IF NOT EXISTS bot_stealth_place ON bot_stealth(world_id,place_id);
+      CREATE TABLE IF NOT EXISTS bot_stealth_search (
+      session_id uuid NOT NULL REFERENCES bot_session(id) ON DELETE CASCADE,
+      turn integer NOT NULL,stay_id uuid NOT NULL REFERENCES bot_stealth(id) ON DELETE CASCADE,
+      found boolean NOT NULL,PRIMARY KEY(session_id,turn,stay_id));
+      CREATE INDEX IF NOT EXISTS bot_stealth_search_stay ON bot_stealth_search(stay_id);
       CREATE TABLE IF NOT EXISTS bot_adjudication (
       world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
       actor_id uuid NOT NULL,request_id uuid NOT NULL,owner uuid NOT NULL,
@@ -758,19 +800,35 @@ export class BotPlay {
   }
   // 接触を受けられる待機中のプレイヤーと、その直接の滞在先。照会者の所在地は問わない。
   async players(world: string, actor: string, before?: string) {
-    const rows = await this.#waitingPlayers(world, actor, before);
-    const context = this.store.context((await this.world(world)).id),
-      items = [];
-    for (const { actor_id } of rows.slice(0, 50)) {
-      const [placeId = null] = await this.#places(context, actor_id);
-      items.push({
-        actorId: actor_id,
-        name: (await context.node(actor_id))?.text ?? "人物",
-        placeId,
-        place: placeId && ((await context.node(placeId))?.text ?? null),
-      });
-    }
-    return { items, next: rows.length > 50 ? rows[49]!.actor_id : null };
+    return this.#readPlayWorld(world, async (db) => {
+      const rows = await this.#waitingPlayers(
+        world,
+        actor,
+        before,
+        undefined,
+        db,
+      );
+      const context = this.store.context((await this.world(world, db)).id),
+        items = [];
+      for (const { actor_id } of rows.slice(0, 50)) {
+        const [placeId = null] = (await this.#canSee(
+          db,
+          world,
+          context,
+          actor,
+          actor_id,
+        ))
+          ? await this.#places(context, actor_id)
+          : [];
+        items.push({
+          actorId: actor_id,
+          name: (await context.node(actor_id))?.text ?? "人物",
+          placeId,
+          place: placeId && ((await context.node(placeId))?.text ?? null),
+        });
+      }
+      return { items, next: rows.length > 50 ? rows[49]!.actor_id : null };
+    });
   }
   // 一覧を有効にした世界では、一覧に載る人物とその滞在先を、行く前に調べられる。
   async #listed(
@@ -778,10 +836,11 @@ export class BotPlay {
     context: WorldContext,
     actor: string,
     target: string,
+    db: Db,
   ) {
     if (
       !(
-        await this.pool.query(
+        await db.query(
           "SELECT 1 FROM world_construction WHERE id=$1 AND player_list",
           [world],
         )
@@ -790,14 +849,26 @@ export class BotPlay {
       return false;
     const staying = [];
     for (const subject of await context.locationSubjects(target))
-      if ((await this.#places(context, subject)).includes(target))
+      if (
+        (await this.#canSee(
+          db,
+          world,
+          this.store.context(context.worldId),
+          actor,
+          subject,
+        )) &&
+        (await this.#places(context, subject)).includes(target)
+      )
         staying.push(subject);
     return (
       (
-        await this.#waitingPlayers(world, actor, undefined, [
-          target,
-          ...staying,
-        ])
+        await this.#waitingPlayers(
+          world,
+          actor,
+          undefined,
+          [target, ...staying],
+          db,
+        )
       ).length > 0
     );
   }
@@ -806,9 +877,10 @@ export class BotPlay {
     actor: string,
     before?: string,
     among?: string[],
+    db: Db = this.pool,
   ) {
     return (
-      await this.pool.query<{ actor_id: string }>(
+      await db.query<{ actor_id: string }>(
         `SELECT DISTINCT p.actor_id FROM player_waiting p JOIN app_user u ON u.id=p.user_id AND NOT u.banned
       WHERE p.world_id=$1 AND p.actor_id<>$2 AND p.active AND p.last_seen>=$3 AND ($4::uuid IS NULL OR p.actor_id<$4)
       AND ($5::uuid[] IS NULL OR p.actor_id=ANY($5))
@@ -1804,9 +1876,16 @@ export class BotPlay {
   ) {
     const skipped = reason === "absence" || reason === "idle";
     const d = session.data;
-    const user = d.members.find((m) => m.actorId === d.turn)?.userId;
-    if (user && !skipped)
-      await this.tools.completedTurn(db, user, session.world_id);
+    await db.query(
+      "DELETE FROM bot_stealth_search WHERE session_id=$1 AND turn=$2",
+      [session.id, d.number],
+    );
+    const member = d.members.find((m) => m.actorId === d.turn);
+    if (member && !skipped) {
+      if (d.turnStartedAt) member.lastTurnStartedAt = d.turnStartedAt;
+      if (member.userId)
+        await this.tools.completedTurn(db, member.userId, session.world_id);
+    }
     const turn = await this.#transition(
       db,
       session,
@@ -1871,6 +1950,7 @@ export class BotPlay {
     }
     d.number++;
     d.used = 0;
+    delete d.stealthUsed;
     d.entries = [];
     delete d.npcActions;
     delete d.comment;
@@ -1955,7 +2035,11 @@ export class BotPlay {
         "UPDATE bot_scene SET session_id=$3 WHERE id=$1 AND actor_id=$2",
         [m.sceneId, m.actorId, split.id],
       );
+    const graph = this.store.context(
+      (await this.world(session.world_id, db)).id,
+    );
     for (const m of moving.filter((m) => !m.instant)) {
+      const stay = await this.#hidden(db, session.world_id, graph, m.actorId);
       const from = await this.#transition(
           db,
           session,
@@ -1963,12 +2047,18 @@ export class BotPlay {
           "session-left",
         ),
         to = await this.#transition(db, split, m.actorId, "session-joined");
-      await this.#record(db, session, {
-        transition: { ...from, message: from.name + left },
-      });
-      await this.#record(db, split, {
-        transition: { ...to, message: to.name + joined },
-      });
+      if (!stay)
+        await this.#record(db, session, {
+          transition: { ...from, message: from.name + left },
+        });
+      await this.#record(
+        db,
+        split,
+        {
+          transition: { ...to, message: to.name + joined },
+        },
+        stay ? [m.actorId, ...stay.discovered] : undefined,
+      );
     }
     await db.query("UPDATE bot_session SET data=$2 WHERE id=$1", [
       split.id,
@@ -2072,6 +2162,21 @@ export class BotPlay {
         const moving = [];
         for (const candidate of candidates) {
           const actor = candidate.actor_id;
+          const viewers = [
+            ...target.data.members.map((member) => member.actorId),
+            ...moving.map((member) => member.actorId),
+          ];
+          let visible = true;
+          for (const viewer of viewers) {
+            visible =
+              (await this.#canSee(db, world, context, viewer, actor)) &&
+              (await this.#canSee(db, world, context, actor, viewer));
+            if (!visible) break;
+          }
+          if (!visible) {
+            await this.teams.pending(db, world, actor, true);
+            continue;
+          }
           const blocked =
             !!receiving &&
             (receiving.sender === actor ||
@@ -2349,7 +2454,8 @@ export class BotPlay {
     withClock = false,
   ): Promise<SessionStatus | IdleSessionStatus> {
     const session = await this.current(world, actor, db);
-    if (!session) return { session: null };
+    if (!session)
+      return { session: null, ...(await this.#ownStealth(db, world, actor)) };
     const policy = (
       await db.query<{ turnCalls: number; receiptTimeoutSeconds: number }>(
         `SELECT turn_calls::float8 AS "turnCalls",receipt_timeout_seconds::float8 AS "receiptTimeoutSeconds" FROM session_play_policy WHERE singleton`,
@@ -2385,6 +2491,7 @@ export class BotPlay {
         sceneId,
       })),
       characters,
+      ...(await this.#ownStealth(db, world, actor)),
       turn: session.data.number,
       ...(withClock && session.data.turnStartedAt
         ? { turnStartedAt: session.data.turnStartedAt }
@@ -2394,7 +2501,9 @@ export class BotPlay {
         : session.data.parked
           ? null
           : session.data.turn,
-      callsUsed: session.data.used,
+      callsUsed:
+        session.data.used -
+        (actor === session.data.turn ? 0 : (session.data.stealthUsed ?? 0)),
       callsLimit: policy.turnCalls,
       commentUsed: r
         ? !!r.comments[r.recipients.find((id) => !r.decided.includes(id))!]
@@ -2462,11 +2571,24 @@ export class BotPlay {
             node.kind === "script" && node.type === "memo" ? [node.text] : [],
         )
       : [];
+    const member = d.members.find((m) => m.actorId === viewer)!;
+    const observations = (
+      await db.query<{ text: string }>(
+        `SELECT c.payload->>'observation' AS text
+       FROM bot_record r JOIN bot_chat c ON c.id=r.chat_id
+       WHERE r.scene_id=$1 AND r.actor_id=$2 AND c.payload ? 'observation'
+         AND ($3::timestamptz IS NULL OR c.recorded_at >= $3)
+       ORDER BY r.chat_id`,
+        [member.sceneId, viewer, member.lastTurnStartedAt ?? null],
+      )
+    ).rows.map((row) => row.text);
     return {
       actorId,
       ...(name === undefined ? {} : { name }),
       phase,
       recent: rows.reverse(),
+      ...(observations.length ? { observations } : {}),
+      ...(await this.#ownStealth(db, session.world_id, viewer)),
       ...(receiving ? { receiving } : {}),
       ...(receiving && memoTexts.length
         ? {
@@ -2616,12 +2738,20 @@ export class BotPlay {
     const people = await Promise.all(
       others.map(async (actorId) => {
         const member = session?.data.members.find((m) => m.actorId === actorId);
+        const visible = await this.#canSee(
+          this.pool,
+          world,
+          context,
+          actor,
+          actorId,
+        );
         return {
           actorId,
-          canReceive: !!member && !member.instant,
+          canReceive: visible && !!member && !member.instant,
           profile: member?.instant
             ? [member.instant.description]
-            : placeId &&
+            : visible &&
+                placeId &&
                 (await this.#places(context, actorId)).includes(placeId)
               ? await profile(actorId)
               : [],
@@ -2860,6 +2990,360 @@ export class BotPlay {
     }
     return items;
   }
+  async #readPlayWorld<T>(world: string, read: (db: Db) => Promise<T>) {
+    const db = await this.pool.connect();
+    try {
+      await db.query("BEGIN");
+      await db.query(
+        "SELECT pg_advisory_xact_lock_shared(hashtextextended($1,225))",
+        [world],
+      );
+      const result = await read(db);
+      await db.query("COMMIT");
+      return result;
+    } catch (error) {
+      await db.query("ROLLBACK");
+      throw error;
+    } finally {
+      db.release();
+    }
+  }
+  async #stealthDice(
+    context: WorldContext,
+    request: string,
+    action: unknown,
+    people: string[],
+    places: string[],
+    checks: { key: string; actorId: string }[],
+  ) {
+    if (!checks.length) return {};
+    const dice = z
+      .object({
+        sides: DiceSetting.shape.sides,
+        successThrough: DiceSetting.shape.successThrough,
+      })
+      .strict()
+      .refine((setting) => setting.successThrough < setting.sides);
+    const read = (raw: string) => {
+      const settings = z.record(z.string(), dice).parse(parseOutput(raw));
+      if (
+        Object.keys(settings).length !== checks.length ||
+        checks.some(({ key }) => !settings[key])
+      )
+        throw new Error("指定された判定キーすべてにダイス設定を返してください");
+      return settings;
+    };
+    const response = await this.#ask(
+      request,
+      "world-stealth-dice",
+      [
+        {
+          role: "system",
+          content:
+            "隠密行動のダイス設定をJSONオブジェクトで返す。checksのkeyをキーとし、各値は{sides,successThrough}。1からsidesまでの出目がsuccessThrough以下なら、actionは行為成功、departureとarrivalは目撃、attemptは試みの発見、seekは捜索成功。行為の成否と各人物の発見確率は独立に設定する。指定された現在の材料だけで判断し、出目や物語は返さない。",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            action,
+            places,
+            checks,
+            materials: await Promise.all(
+              [
+                ...new Set([
+                  ...people,
+                  ...places,
+                  ...checks.map((check) => check.actorId),
+                ]),
+              ].map(async (actorId) => {
+                const current = (kind: "status" | "has") =>
+                  context.relations(actorId, kind, "out", latest, latest, {
+                    limit: 32,
+                  });
+                const [node, states, belongings] = await Promise.all([
+                  context.node(actorId),
+                  current("status"),
+                  current("has"),
+                ]);
+                const describe = async (edge: (typeof states)[number]) => ({
+                  role: edge.role,
+                  node: await context.node(edge.target),
+                });
+                return {
+                  node,
+                  states: await Promise.all(
+                    states
+                      .filter((edge) => edge.role === "content")
+                      .map(describe),
+                  ),
+                  belongings: await Promise.all(
+                    belongings
+                      .filter((edge) => !edge.role || edge.role === "skill")
+                      .map(describe),
+                  ),
+                };
+              }),
+            ),
+          }),
+        },
+      ],
+      "resolution",
+      read,
+    );
+    return read(response.content);
+  }
+  async #stealthObservers(
+    world: string,
+    context: WorldContext,
+    places: string[],
+    actor: string,
+  ) {
+    const candidates = new Set<string>();
+    for (const place of places)
+      for (const id of await context.locationSubjects(place))
+        if (id !== actor && (await this.#places(context, id)).includes(place))
+          candidates.add(id);
+    const { rows } = await this.pool.query<{ actor_id: string }>(
+      "SELECT actor_id FROM bot_scene WHERE world_id=$1 AND actor_id=ANY($2::uuid[]) AND NOT closed",
+      [world, [...candidates]],
+    );
+    const session = await this.current(world, actor);
+    return [
+      ...new Set([
+        ...rows.map((row) => row.actor_id),
+        ...(session?.data.members
+          .filter((m) =>
+            m.instant?.places.some((place) => places.includes(place)),
+          )
+          .map((m) => m.actorId) ?? []),
+      ]),
+    ].sort();
+  }
+  async #prepareStealth(
+    world: string,
+    context: WorldContext,
+    actor: string,
+    input: Extract<Input, { command: "update" | "oppose" }>,
+    changes: Change,
+  ) {
+    const op = input.operations![0]!;
+    const source = await this.#places(context, actor);
+    const destination =
+      op.type === "locate" ? (op.directPlaceId ?? op.aboutIds[0]) : undefined;
+    const victim = op.type === "move" ? op.from! : undefined;
+    if (
+      victim &&
+      (!(await this.#places(context, victim)).some((place) =>
+        source.includes(place),
+      ) ||
+        !(await this.#canSee(this.pool, world, context, actor, victim)))
+    )
+      reject(
+        "STEALTH_TARGET_NOT_HERE",
+        "同じ場所にいる人物の物品を指定してください",
+      );
+    const atSource =
+      victim || destination !== source[0]
+        ? await this.#stealthObservers(world, context, source, actor)
+        : [];
+    if (victim && !atSource.includes(victim)) atSource.push(victim);
+    const atDestination =
+      destination && destination !== source[0]
+        ? await this.#stealthObservers(world, context, [destination], actor)
+        : [];
+    const checks = [
+      ...(victim ? [{ key: "action", actorId: actor }] : []),
+      ...atSource.map((id) => ({
+        key: (victim ? "attempt:" : "departure:") + id,
+        actorId: id,
+      })),
+      ...atDestination.map((id) => ({ key: "arrival:" + id, actorId: id })),
+    ];
+    const settings = await this.#stealthDice(
+      context,
+      input.requestId,
+      { actor, text: input.text, operation: op },
+      [actor, ...(op.type === "move" ? [op.item] : [])],
+      [...source, ...(destination ? [destination] : [])],
+      checks,
+    );
+    const passes = async (key: string) => {
+      const saved = await this.#roll(
+        derivedId(`${input.requestId}:stealth:${key}`),
+        settings[key]!,
+      );
+      return saved.roll <= saved.setting.successThrough;
+    };
+    const success = !victim || (await passes("action"));
+    const name = (await context.node(actor))!.text;
+    const observations: Observation[] = [];
+    const discovered: string[] = [];
+    if (op.type === "move") {
+      const victimName = (await context.node(op.from!))!.text;
+      const item = (await context.node(op.item))!.text;
+      for (const viewer of atSource)
+        if (await passes("attempt:" + viewer))
+          observations.push({
+            viewer,
+            text: success
+              ? `${name}が${victimName}から${item}${op.count ? `${op.count}個` : ""}を取った`
+              : `${name}が${victimName}の${item}に手を伸ばした`,
+          });
+    } else if (destination && destination !== source[0]) {
+      const from = source[0] && (await context.node(source[0]))!.text;
+      const to = (await context.node(destination))!.text;
+      for (const viewer of atSource)
+        if (await passes("departure:" + viewer))
+          observations.push({ viewer, text: `${name}が${from}を出た` });
+      for (const viewer of atDestination)
+        if (await passes("arrival:" + viewer)) {
+          discovered.push(viewer);
+          observations.push({ viewer, text: `${name}が${to}に着いた` });
+        }
+    }
+    const location = changes.edges.find(
+      (edge) =>
+        edge.kind === "status" &&
+        edge.role === "content" &&
+        edge.text === "location",
+    );
+    const stay =
+      destination && location
+        ? { id: location.id, placeId: destination, discovered }
+        : undefined;
+    const outcome = { success };
+    const stealth = { observations, ...(stay ? { stay } : {}) };
+    await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
+      input.requestId,
+      { outcome, stealth },
+    ]);
+    return { outcome, stealth };
+  }
+  async #prepareSeek(
+    world: string,
+    graph: string,
+    actor: string,
+    session: Session,
+    request: string,
+  ) {
+    const context = this.store.context(graph);
+    const [place] = await this.#places(context, actor);
+    if (!place) reject("SEARCH_PLACE_REQUIRED", "捜索するには現在地が必要です");
+    const { rows } = await this.pool.query<
+      HiddenStay & { found: boolean | null }
+    >(
+      `SELECT h.*,s.found FROM bot_stealth h
+       LEFT JOIN bot_stealth_search s ON s.stay_id=h.id AND s.session_id=$4 AND s.turn=$5
+       WHERE h.world_id=$1 AND h.place_id=$2 AND h.actor_id<>$3`,
+      [world, place, actor, session.id, session.data.number],
+    );
+    const candidates = [];
+    for (const row of rows)
+      if (
+        (row.found !== null || !row.discovered.includes(actor)) &&
+        (await locationRecords(context, row.actor_id)).some(
+          (location) => location.id === row.id,
+        )
+      )
+        candidates.push(row);
+    const checks = candidates
+      .filter((row) => row.found === null)
+      .map((row) => ({ key: "seek:" + row.actor_id, actorId: row.actor_id }));
+    const settings = await this.#stealthDice(
+      context,
+      request,
+      { actor, kind: "seek" },
+      [actor],
+      [place],
+      checks,
+    );
+    const results: SeekResult[] = candidates.map((row) => ({
+      actorId: row.actor_id,
+      stayId: row.id,
+      found: row.found,
+      ...(row.found === null
+        ? { setting: settings["seek:" + row.actor_id]! }
+        : {}),
+    }));
+    return { context, results };
+  }
+  async #hidden(db: Db, world: string, context: WorldContext, actor: string) {
+    const { rows } = await db.query<HiddenStay>(
+      "SELECT * FROM bot_stealth WHERE world_id=$1 AND actor_id=$2",
+      [world, actor],
+    );
+    if (!rows.length) return;
+    const locations = await locationRecords(context, actor);
+    return rows.find((stay) => locations.some((place) => place.id === stay.id));
+  }
+  async #canSee(
+    db: Db,
+    world: string,
+    context: WorldContext,
+    viewer: string,
+    target: string,
+  ) {
+    if (viewer === target) return true;
+    const stay = await this.#hidden(db, world, context, target);
+    return !stay || stay.discovered.includes(viewer);
+  }
+  async #ownStealth(db: Db, world: string, actor: string) {
+    const context = this.store.context((await this.world(world, db)).id);
+    const stay = await this.#hidden(db, world, context, actor);
+    if (stay)
+      return {
+        stealth: {
+          placeId: stay.place_id,
+          place: (await context.node(stay.place_id))!.text,
+        },
+      };
+    return {};
+  }
+  async #reveal(
+    db: Db,
+    world: string,
+    context: WorldContext,
+    actor: string,
+    viewers: string[],
+  ) {
+    if (!viewers.length) return;
+    const stay = await this.#hidden(db, world, context, actor);
+    if (stay)
+      await db.query(
+        `UPDATE bot_stealth SET discovered=ARRAY(SELECT DISTINCT unnest(discovered || $2::uuid[]))
+         WHERE id=$1`,
+        [stay.id, viewers],
+      );
+  }
+  async #recordStealth(
+    db: Db,
+    world: string,
+    actor: string,
+    observations: Observation[],
+    own: Entry,
+    session: Session,
+  ) {
+    await this.#record(db, session, { entries: [own] }, [actor]);
+    for (const { viewer, text } of observations) {
+      const scene = await this.current(world, viewer, db);
+      const entry = { actorId: actor, input: text, result: {} };
+      if (scene)
+        await this.#record(db, scene, { entries: [entry], observation: text }, [
+          viewer,
+        ]);
+      else {
+        const member = session.data.members.find((m) => m.actorId === viewer);
+        if (!member) continue;
+        await this.#record(
+          db,
+          session,
+          { entries: [entry], observation: text },
+          [viewer],
+        );
+      }
+      await signalTurns(db, world, viewer);
+    }
+  }
   async #places(context: WorldContext, actor: string) {
     return directPlaces(context, actor);
   }
@@ -2883,7 +3367,13 @@ export class BotPlay {
               routes.set(e.target, (await context.node(e.target))!.text);
     return [...routes].map(([id, label]) => ({ id, label }));
   }
-  async contact(context: WorldContext, actor: string, target: string) {
+  async contact(
+    context: WorldContext,
+    actor: string,
+    target: string,
+    world: string,
+    db: Db = this.pool,
+  ) {
     const own = await this.#places(context, actor);
     if (!own.length)
       return {
@@ -2892,28 +3382,51 @@ export class BotPlay {
           "本人の直接の滞在先が未確定です。selfのlocationsを確認してください",
       };
     const other = await this.#places(context, target);
-    return own.some((p) => other.includes(p))
+    return own.some((p) => other.includes(p)) &&
+      (await this.#canSee(db, world, context, actor, target))
       ? { allowed: true, reason: "同じ所在地です" }
       : {
           allowed: false,
           reason: "本人の所在地で接触できることを確認できません",
         };
   }
-  async #nearby(context: WorldContext, actor: string) {
+  async #nearby(
+    context: WorldContext,
+    actor: string,
+    world?: string,
+    db: Db = this.pool,
+  ) {
     const found = await this.#atPlaces(
       context,
       await this.#places(context, actor),
+      world
+        ? (id) =>
+            this.#canSee(
+              db,
+              world,
+              this.store.context(context.worldId),
+              actor,
+              id,
+            )
+        : undefined,
     );
     found.delete(actor);
     return found;
   }
-  async #atPlaces(context: WorldContext, places: string[]) {
+  async #atPlaces(
+    context: WorldContext,
+    places: string[],
+    visible?: (id: string) => Promise<boolean>,
+  ) {
     const found = new Set<string>();
     for (const place of places) {
       found.add(place);
       for (const id of await groundItems(context, place)) found.add(id);
       for (const subject of await context.locationSubjects(place))
-        if ((await directPlaces(context, subject)).includes(place))
+        if (
+          (!visible || (await visible(subject))) &&
+          (await directPlaces(context, subject)).includes(place)
+        )
           found.add(subject);
     }
     return found;
@@ -2924,18 +3437,25 @@ export class BotPlay {
     query: z.infer<typeof PlaySearch>,
     dependencies: Dependency[] = [],
   ) {
-    return (await this.#search(world, actor, query, dependencies)).visible;
+    return this.#readPlayWorld(
+      world,
+      async (db) =>
+        (await this.#search(world, actor, query, dependencies, db)).visible,
+    );
   }
   async #search(
     world: string,
     actor: string,
     query: z.infer<typeof PlaySearch>,
     dependencies: Dependency[] = [],
+    db: Db = this.pool,
   ) {
-    const w = await this.world(world),
+    const w = await this.world(world, db),
       context = this.store.context(w.id, dependencies);
     const at = latest;
     let material: unknown;
+    if (query.kind === "seek")
+      reject("TURN_REQUIRED", "捜索は本人の手番で申請してください");
     if (query.kind === "memos") {
       const memos = [];
       for (const edge of await context.relations(actor, "has", "out", at)) {
@@ -2963,21 +3483,35 @@ export class BotPlay {
           e.observation?.sourceIds.includes(query.targetId),
       );
     } else if (query.kind === "surroundings") {
-      const neighbors = await this.#nearby(context, actor);
+      const neighbors = await this.#nearby(context, actor, world, db);
       const locations = await locationRecords(context, actor);
       for (const location of locations)
         for (const id of location.aboutIds) neighbors.add(id);
-      const contacts = await this.#available(world, [...neighbors]);
+      for (const id of neighbors)
+        if (
+          !(await this.#canSee(
+            db,
+            world,
+            this.store.context(context.worldId),
+            actor,
+            id,
+          ))
+        )
+          neighbors.delete(id);
+      const contacts = await this.#available(world, [...neighbors], db);
+      const here = await this.#places(context, actor);
       // 行き来の記述(route)が、直接の滞在先と結んでいる別の場所。移動先の手がかりで、移動の制限ではない。
       material = {
         locations,
-        routes: await this.#routes(context, await this.#places(context, actor)),
+        routes: await this.#routes(context, here),
         subjects: await Promise.all(
           [...neighbors].map(async (id) => ({
             ...(await context.node(id)),
             contactAvailable:
               contacts.some((r) => r.actor_id === id && r.user_id !== null) &&
-              (await this.contact(context, actor, id)).allowed,
+              (await this.#places(context, id)).some((place) =>
+                here.includes(place),
+              ),
             npc: contacts.find((r) => r.actor_id === id)?.npc ?? false,
             held: await heldItems(context, id, at, actor),
           })),
@@ -2985,9 +3519,17 @@ export class BotPlay {
       };
     } else {
       const target = query.kind === "self" ? actor : query.targetId;
+      const canSee = await this.#canSee(
+        db,
+        world,
+        this.store.context(context.worldId),
+        actor,
+        target,
+      );
       const accessible =
         target === actor ||
-        (await this.#nearby(context, actor)).has(target) ||
+        (canSee &&
+          (await this.#nearby(context, actor, world, db)).has(target)) ||
         (await context.relations(actor, "has", "out", at)).some(
           (e) => e.target === target,
         ) ||
@@ -3008,7 +3550,7 @@ export class BotPlay {
         ).some((states) =>
           states.some((s) => s.about.some((a) => a.target === target)),
         ) ||
-        (await this.#listed(world, context, actor, target));
+        (await this.#listed(world, context, actor, target, db));
       if (!accessible)
         reject(
           "MATERIAL_NOT_AVAILABLE",
@@ -3016,8 +3558,8 @@ export class BotPlay {
         );
       material = {
         node: await context.node(target),
-        locations: await locationRecords(context, target),
-        states: await this.#states(context, target, actor),
+        locations: canSee ? await locationRecords(context, target) : [],
+        states: await this.#states(context, target, actor, canSee),
         ...(target === actor
           ? {
               belongings: await readBelongings(context, actor),
@@ -3092,10 +3634,16 @@ export class BotPlay {
     };
   }
   // viewerを渡すと、対象の本人以外には、その参加者が読める状態だけを返す。判定の材料は渡さずに全部を読む。
-  async #states(context: WorldContext, target: string, viewer?: string) {
+  async #states(
+    context: WorldContext,
+    target: string,
+    viewer?: string,
+    showLocation = true,
+  ) {
     const states = [];
     for (const e of await context.relations(target, "status", "out", latest)) {
-      if (e.role !== "content") continue;
+      if (e.role !== "content" || (!showLocation && e.text === "location"))
+        continue;
       const node = await context.node(e.target);
       if (viewer && viewer !== target && !visibleTo(node, viewer, true))
         continue;
@@ -3725,6 +4273,27 @@ export class BotPlay {
         "DEFERRED_NOT_APPLICABLE",
         "時間差の受領は、メモの共有・更新と物品の移動・譲渡に指定できます",
       );
+    const hidden = "stealth" in input && input.stealth;
+    if (hidden) {
+      const op = input.operations?.[0];
+      if (
+        input.operations?.length !== 1 ||
+        (input.command === "oppose"
+          ? op?.type !== "move" ||
+            !op.from ||
+            op.from === actor ||
+            op.to !== actor
+          : op?.type !== "locate" ||
+            op.subjectId !== actor ||
+            (!op.directPlaceId && op.aboutIds.length !== 1) ||
+            deadline ||
+            input.waitMinutes)
+      )
+        reject(
+          "STEALTH_NOT_APPLICABLE",
+          "隠密は本人だけの移動か、相手から本人への物品移転に指定してください",
+        );
+    }
     if (input.command === "oppose" && input.effect) {
       const plan = await this.#instantAction(
         (await this.current(world, actor))!,
@@ -3753,7 +4322,10 @@ export class BotPlay {
         changes: prior.changes,
         at: prior.at,
         recipients: [],
-        outcome,
+        outcome: hidden ? outcome?.outcome : outcome,
+        ...(hidden
+          ? { stealth: outcome?.stealth ?? { observations: [] } }
+          : {}),
         items: await this.#itemOutcomes(
           this.store.context(w.id),
           input,
@@ -3865,17 +4437,25 @@ export class BotPlay {
       input.operations?.every(isHandoffOperation)
         ? await readHandoff(context, input.operations, expectedHandoff)
         : undefined;
+    const stealthOperation = hidden ? input.operations![0] : undefined;
+    const involved =
+      stealthOperation?.type === "move"
+        ? [actor, stealthOperation.from]
+        : [actor];
+    const actorFilter = hidden ? " AND actor_id=ANY($2::uuid[])" : "";
     const registered = (
       await db.query<{ actor_id: string; controller: string | null }>(
-        "SELECT actor_id,controller FROM bot_npc WHERE world_id=$1",
-        [world],
+        "SELECT actor_id,controller FROM bot_npc WHERE world_id=$1" +
+          actorFilter,
+        hidden ? [world, involved] : [world],
       )
     ).rows;
     const controlled = new Set(
       (
         await db.query<{ actor_id: string }>(
-          "SELECT actor_id FROM world_controlled_actor WHERE world_id=$1",
-          [w.id],
+          "SELECT actor_id FROM world_controlled_actor WHERE world_id=$1" +
+            actorFilter,
+          hidden ? [w.id, involved] : [w.id],
         )
       ).rows.map((r) => r.actor_id),
     );
@@ -3995,7 +4575,11 @@ export class BotPlay {
         });
       }
     } else if ("operations" in input && input.operations) {
-      const ops: BelongingOp[] = input.operations.map((op) => ({ ...op })),
+      const ops: BelongingOp[] = input.operations.map((op) =>
+          hidden && op.type === "move"
+            ? { ...op, basis: "物品の保持が移った" }
+            : { ...op },
+        ),
         plannedOps: BelongingOp[] = [];
       for (const op of ops) {
         if (
@@ -4315,9 +4899,16 @@ export class BotPlay {
       };
       await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
-        outcome,
+        hidden ? { outcome, stealth: { observations: [] } } : outcome,
       ]);
-      return { context, changes: empty(), at, recipients: [], outcome };
+      return {
+        context,
+        changes: empty(),
+        at,
+        recipients: [],
+        outcome,
+        ...(hidden ? { stealth: { observations: [] } } : {}),
+      };
     }
     const recipients = [...parties].filter(
       (id) => id !== actor && controlled.has(id),
@@ -4375,6 +4966,24 @@ export class BotPlay {
         changes,
         at,
         recipients,
+        items: await this.#itemOutcomes(context, input, changes),
+      };
+    }
+    if (hidden) {
+      const adjudicated = await this.#prepareStealth(
+        world,
+        context,
+        actor,
+        input,
+        changes,
+      );
+      if (!adjudicated.outcome.success) changes = empty();
+      return {
+        context,
+        changes,
+        at,
+        recipients: [],
+        ...adjudicated,
         items: await this.#itemOutcomes(context, input, changes),
       };
     }
@@ -5062,7 +5671,8 @@ export class BotPlay {
         "npc-action",
         "promote-npc",
       ].includes(input.command) &&
-      !(input.command === "say" && input.instantNpcs?.length)
+      !(input.command === "say" && input.instantNpcs?.length) &&
+      !(input.command === "search" && input.query.kind === "seek")
     )
       return execute();
     const owner = randomUUID(),
@@ -5134,6 +5744,7 @@ export class BotPlay {
     let promotion: Awaited<ReturnType<BotPlay["preparePromotion"]>> | undefined;
     let appearing: { success: boolean } | undefined;
     let blueprintDecision: BlueprintJudgement | undefined;
+    let seeking: { context: WorldContext; results: SeekResult[] } | undefined;
     const plan = await ExecutionBudget.run(
       this.pool,
       input.requestId,
@@ -5167,6 +5778,14 @@ export class BotPlay {
             )
           )[0];
         }
+        if (input.command === "search" && input.query.kind === "seek")
+          seeking = await this.#prepareSeek(
+            world,
+            w.id,
+            actor,
+            prepared!,
+            input.requestId,
+          );
         return this.#plan(world, actor, user, input);
       },
       w.id,
@@ -5702,13 +6321,88 @@ export class BotPlay {
             endedTurn = { number: d.number, reason: "explicit" };
             await this.#next(db, session);
           } else {
-            if (input.command === "search") {
+            if (seeking) {
+              await seeking.context.validate();
+              const found = [];
+              for (const attempt of seeking.results) {
+                const stay = await this.#hidden(
+                  db,
+                  world,
+                  seeking.context,
+                  attempt.actorId,
+                );
+                if (stay?.id !== attempt.stayId) continue;
+                const key = [session.id, d.number, attempt.stayId];
+                const stored = (
+                  await db.query<{ found: boolean }>(
+                    "SELECT found FROM bot_stealth_search WHERE session_id=$1 AND turn=$2 AND stay_id=$3",
+                    key,
+                  )
+                ).rows[0];
+                if (stored) attempt.found = stored.found;
+                else if (attempt.setting) {
+                  const dieId = derivedId(
+                    `${session.id}:${d.number}:seek:${attempt.stayId}`,
+                  );
+                  const die = await this.#rollIn(db, dieId, attempt.setting);
+                  attempt.found = die.roll <= die.setting.successThrough;
+                  await db.query(
+                    "INSERT INTO bot_stealth_search(session_id,turn,stay_id,found) VALUES($1,$2,$3,$4)",
+                    [...key, attempt.found],
+                  );
+                  await db.query("DELETE FROM bot_dice WHERE id=$1", [dieId]);
+                }
+                if (!attempt.found) continue;
+                await this.#reveal(
+                  db,
+                  world,
+                  seeking.context,
+                  attempt.actorId,
+                  [actor],
+                );
+                const name = (await seeking.context.node(attempt.actorId))!
+                  .text;
+                if (!stored && attempt.setting) {
+                  const place = (await seeking.context.node(stay.place_id))!
+                    .text;
+                  await this.#record(
+                    db,
+                    session,
+                    {
+                      entries: [
+                        {
+                          actorId: attempt.actorId,
+                          input: `${place}で${name}を見つけた`,
+                          result: {},
+                        },
+                      ],
+                    },
+                    [actor],
+                  );
+                }
+                found.push({ actorId: attempt.actorId, name });
+              }
+              result = {
+                found,
+                message: found.length
+                  ? "捜索で人物を発見しました"
+                  : "新たな発見なし",
+              };
+            } else if (input.command === "search") {
+              if (input.query.kind === "seek")
+                throw new Error("捜索の準備がありません");
               if (input.query.kind === "belongings")
                 reject(
                   "SEARCH_KIND_MOVED",
                   "持ち物・保管先・技能は本人検索（search --kind self）のbelongingsに含まれます",
                 );
-              const queried = await this.#search(world, actor, input.query);
+              const queried = await this.#search(
+                world,
+                actor,
+                input.query,
+                [],
+                db,
+              );
               result = queried.visible;
               const members = d.members
                 .filter((m) => !m.instant)
@@ -5738,7 +6432,7 @@ export class BotPlay {
               if (appearance) {
                 const { appearances, ...description } = appearance;
                 // 出現の確定で依存版が進む。本人が次の操作に使えるよう、確定後の素材と版を返す。
-                result = (await this.#search(world, actor, input.query))
+                result = (await this.#search(world, actor, input.query, [], db))
                   .visible;
                 await this.#addInstants(
                   db,
@@ -5876,7 +6570,13 @@ export class BotPlay {
               });
             } else if (input.command === "contact") {
               const context = this.store.context(w.id),
-                contact = await this.contact(context, actor, input.targetId);
+                contact = await this.contact(
+                  context,
+                  actor,
+                  input.targetId,
+                  world,
+                  db,
+                );
               if (!contact.allowed) reject("CONTACT_MISMATCH", contact.reason);
               const available = (
                 await this.#available(world, [input.targetId], db)
@@ -5896,6 +6596,13 @@ export class BotPlay {
                     available.user_id,
                     derivedId(`${input.requestId}:contact:${input.targetId}`),
                   ));
+              await this.#reveal(
+                db,
+                world,
+                context,
+                actor,
+                other.data.members.map((m) => m.actorId),
+              );
               result = { contact: "joined", targetId: input.targetId };
               d.entries.push({
                 actorId: actor,
@@ -5969,6 +6676,13 @@ export class BotPlay {
                 ...(appearing ? { outcome: appearing } : {}),
               };
               await this.#addInstants(db, session, animals, event, actor);
+              await this.#reveal(
+                db,
+                world,
+                this.store.context(w.id),
+                actor,
+                d.members.map((m) => m.actorId),
+              );
               if (animals.length) result.appearances = animals;
               d.entries.push({ actorId: actor, input: input.text, result });
             } else if (plan) {
@@ -6068,6 +6782,26 @@ export class BotPlay {
                 };
                 result = { applicationId: input.requestId, state: "receiving" };
               } else {
+                const stay = plan.stealth?.stay;
+                if (
+                  plan.stealth &&
+                  !(await this.store.receipt(w.id, input.requestId))
+                ) {
+                  await plan.context.validate();
+                  if (stay) {
+                    const current = (
+                      await locationRecords(plan.context, actor)
+                    ).map((place) => place.id);
+                    await this.pool.query(
+                      "DELETE FROM bot_stealth WHERE world_id=$1 AND actor_id=$2 AND NOT (id=ANY($3::uuid[]))",
+                      [world, actor, [...current, stay.id]],
+                    );
+                    await this.pool.query(
+                      "INSERT INTO bot_stealth(world_id,actor_id,id,place_id,discovered) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO NOTHING",
+                      [world, actor, stay.id, stay.placeId, stay.discovered],
+                    );
+                  }
+                }
                 const receipt = await this.#commit(w.id, input.requestId, plan);
                 confirmedChanges = receipt.changes;
                 result = {
@@ -6119,7 +6853,43 @@ export class BotPlay {
                       )
                     ).rows[0]!.due.toISOString(),
                   };
-                if (
+                if (plan.stealth) {
+                  const { observations } = plan.stealth;
+                  if (stay) {
+                    await db.query(
+                      "DELETE FROM bot_stealth WHERE world_id=$1 AND actor_id=$2 AND id<>$3",
+                      [world, actor, stay.id],
+                    );
+                    result.stealth = {
+                      placeId: stay.placeId,
+                      place: (await plan.context.node(stay.placeId))!.text,
+                    };
+                  } else if (input.command === "oppose") {
+                    await this.#reveal(
+                      db,
+                      world,
+                      plan.context,
+                      actor,
+                      observations.map(({ viewer }) => viewer),
+                    );
+                  }
+                  await this.#recordStealth(
+                    db,
+                    world,
+                    actor,
+                    observations,
+                    {
+                      actorId: actor,
+                      input: "text" in input ? input.text : "",
+                      result,
+                    },
+                    session,
+                  );
+                  if (stay && (await this.#apart(db, session, actor)).length) {
+                    endedTurn = { number: d.number, reason: "explicit" };
+                    await this.#next(db, session);
+                  }
+                } else if (
                   !plan.changes.edges.length ||
                   !plan.changes.edges.every((e) => e.kind === "interpret")
                 )
@@ -6159,13 +6929,18 @@ export class BotPlay {
             )
               result.outcome = plan.outcome;
             // Only successful calls consume a slot. Read material never enters chat.
-            if (input.command !== "contact" || session.data.turn === actor) {
+            if (
+              !(plan?.stealth && endedTurn) &&
+              (input.command !== "contact" || session.data.turn === actor)
+            ) {
               if (
                 assignment?.controller === "server" &&
                 session.data.turn === actor
               )
                 (session.data.npcActions ??= []).push({ input, result });
               session.data.used++;
+              if (plan?.stealth)
+                session.data.stealthUsed = (session.data.stealthUsed ?? 0) + 1;
               if (
                 !session.data.receiving &&
                 (await this.#turnCallsExhausted(db, session))
@@ -6184,6 +6959,10 @@ export class BotPlay {
               ? [edge.source]
               : [],
           ) ?? [];
+        await db.query(
+          "DELETE FROM bot_stealth WHERE world_id=$1 AND actor_id=ANY($2::uuid[]) AND actor_id IS DISTINCT FROM $3::uuid",
+          [world, movedActors, plan?.stealth?.stay ? actor : null],
+        );
         if (
           movedActors.some((id) =>
             members.some((m) => !m.instant && m.actorId === id),
@@ -6193,6 +6972,13 @@ export class BotPlay {
         await this.#save(db, session, before);
         if (receiving && !d.receiving)
           movedActors.push(receiving.sender, ...receiving.recipients);
+        if (seeking?.results.some((attempt) => attempt.found))
+          movedActors.push(
+            actor,
+            ...seeking.results
+              .filter((attempt) => attempt.found)
+              .map((attempt) => attempt.actorId),
+          );
         teamArrival = (
           await this.#teamArrivals(
             db,

@@ -3341,6 +3341,361 @@ test("目撃した手渡しには対象と渡した先が残り、合流前の�
     },
   ]);
 });
+async function stealthRolls(request: string, rolls: Record<string, number>) {
+  const db = isolated.databases.postgres;
+  for (const [key, roll] of Object.entries(rolls))
+    await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,$3)", [
+      derivedId(`${request}:stealth:${key}`),
+      { sides: 6, successThrough: 3 },
+      roll,
+    ]);
+}
+
+function stealthGm(f: Awaited<ReturnType<typeof fixture>>) {
+  f.calls.mockImplementation(async (id, role, messages) => {
+    expect(role).toBe("world-stealth-dice");
+    const request = JSON.parse(messages[1]!.content) as {
+      checks: { key: string }[];
+    };
+    expect(JSON.stringify(request)).not.toContain("過去の非公開発言");
+    return answer(
+      id,
+      Object.fromEntries(
+        request.checks.map(({ key }) => [key, { sides: 6, successThrough: 3 }]),
+      ),
+    );
+  });
+}
+
+test("隠密のスリは成否と目撃を独立して判定し、未発見者と後からの合流者のログに痕跡を残さない", async () => {
+  const f = await fixture();
+  const [a, b, c] = f.actors as [string, string, string];
+  await f.apply([
+    { type: "create", holder: b, label: "銀貨", count: 3, basis: "財布の中身" },
+  ]);
+  const coin = (await readBelongings(f.store.context(f.graph), b)).items.find(
+    (item) => item.label === "銀貨",
+  )!.id;
+  const held = async (actor: string) =>
+    (await readBelongings(f.store.context(f.graph), actor)).items.find(
+      (item) => item.label === "銀貨",
+    )?.count ?? 0;
+  await f.send(1, { command: "contact", targetId: a });
+  await f.move(2, f.place);
+  await f.send(0, { command: "say", text: "過去の非公開発言" });
+  await f.send(0, { command: "end-turn" });
+  await f.send(1, { command: "end-turn" });
+  stealthGm(f);
+  const before = (await f.status(1)).entries.length;
+  const graphHistory = vi.spyOn(
+    Object.getPrototypeOf(f.store.context(f.graph)) as ReturnType<
+      typeof f.store.context
+    >,
+    "history",
+  );
+  const attempt = (requestId: string, text: string) =>
+    f.send(0, {
+      requestId,
+      command: "oppose",
+      text,
+      stealth: true,
+      dependencies: [],
+      operations: [
+        { type: "move", item: coin, from: b, to: a, count: 1, basis: text },
+      ],
+    });
+  const successId = randomUUID(),
+    failId = randomUUID();
+  await stealthRolls(successId, {
+    action: 1,
+    ["attempt:" + b]: 6,
+    ["attempt:" + c]: 1,
+  });
+  await stealthRolls(failId, {
+    action: 6,
+    ["attempt:" + b]: 6,
+    ["attempt:" + c]: 1,
+  });
+  const success = await attempt(successId, "財布を抜く動機");
+  expect(success.outcome).toEqual({ success: true });
+  expect(JSON.stringify(success)).not.toContain("目撃");
+  expect(await attempt(successId, "財布を抜く動機")).toEqual(success);
+  expect((await attempt(failId, "失敗した試みの原文")).outcome).toEqual({
+    success: false,
+  });
+  expect(f.calls).toHaveBeenCalledTimes(2);
+  expect(graphHistory).not.toHaveBeenCalled();
+  graphHistory.mockRestore();
+  expect(await held(a)).toBe(1);
+  expect(await held(b)).toBe(2);
+  expect((await f.status(1)).entries.slice(before)).toEqual([]);
+  const reconnected = await access.botStatus(
+    f.people[1]!.id,
+    f.world,
+    b,
+    undefined,
+    `human:reconnect:${randomUUID()}`,
+  );
+  expect(reconnected.entries.slice(before)).toEqual([]);
+  // Cが自分の手番中に目撃し、確認せずに手番を終えても次の起床で読める。
+  await f.send(2, { command: "end-turn" });
+  const wake = await access.waiting(
+    f.people[2]!.id,
+    f.world,
+    c,
+    undefined,
+    undefined,
+    true,
+    true,
+  );
+  expect(wake.context?.observations).toEqual([
+    "人物0が人物1から銀貨1個を取った",
+    "人物0が人物1の銀貨に手を伸ばした",
+  ]);
+  const seen = JSON.stringify((await f.status(2)).entries);
+  for (const secret of [
+    coin,
+    successId,
+    failId,
+    "財布を抜く動機",
+    "失敗した試みの原文",
+    "successThrough",
+  ])
+    expect(seen).not.toContain(secret);
+  await f.move(2, f.far);
+  const unwitnessed = randomUUID();
+  await stealthRolls(unwitnessed, { action: 6, ["attempt:" + b]: 6 });
+  const beforeJoin = (await f.status(2)).entries.length;
+  await attempt(unwitnessed, "誰にも見られなかった原文");
+  await f.move(2, f.place);
+  await f.send(2, { command: "contact", targetId: a });
+  await f.send(0, { command: "end-turn" });
+  const late = (await f.status(2)).entries.slice(beforeJoin);
+  expect(
+    late
+      .flatMap((row) => row.payload.entries ?? [])
+      .map((entry) => entry.input),
+  ).toEqual(["人物0に接触する"]);
+  expect(JSON.stringify(late)).not.toContain("誰にも見られなかった原文");
+  const victim = (await f.status(1)).entries
+    .slice(before)
+    .filter(
+      (row) => row.payload.turn !== undefined || row.payload.entries?.length,
+    );
+  expect(victim).toHaveLength(1);
+  expect(victim[0]!.payload).toMatchObject({
+    entries: [],
+    transition: { publicActivity: false },
+  });
+  await f.send(1, { command: "end-turn" });
+  await f.send(2, { command: "say", text: "人物0が銀貨を取るのを見たよ" });
+  await f.send(2, { command: "end-turn" });
+  expect(JSON.stringify((await f.status(1)).entries.slice(before))).toContain(
+    "人物0が銀貨を取るのを見たよ",
+  );
+});
+
+test("隠密移動の現在地は今回の滞在を発見した相手だけが取得できる", async () => {
+  const f = await fixture();
+  const [a, b, c] = f.actors as [string, string, string];
+  await f.send(1, { command: "contact", targetId: a });
+  const db = isolated.databases.postgres;
+  const warehouse = randomUUID();
+  const setup = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, setup),
+    f.store.context(f.graph),
+    {
+      commitId: setup,
+      at: 0,
+      changes: {
+        nodes: [{ id: warehouse, kind: "existence", text: "倉庫" }],
+        edges: [],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  await db.query("UPDATE world_construction SET player_list=true WHERE id=$1", [
+    f.world,
+  ]);
+  stealthGm(f);
+  const move = async (place: string, roll: number, observer?: string) => {
+    const requestId = randomUUID();
+    if (observer)
+      await stealthRolls(requestId, {
+        ["departure:" + observer]: roll,
+        ["arrival:" + observer]: roll,
+      });
+    return f.send(0, {
+      requestId,
+      command: "update",
+      stealth: true,
+      dependencies: [],
+      text: "密かに移動する",
+      operations: [
+        { type: "locate", subjectId: a, text: "滞在先", aboutIds: [place] },
+      ],
+    });
+  };
+  const first = randomUUID();
+  await stealthRolls(first, { ["departure:" + b]: 1, ["arrival:" + c]: 6 });
+  const listed = async (viewer: string) =>
+    (await access.botPlay.players(f.world, viewer)).items.find(
+      (entry) => entry.actorId === a,
+    );
+  const firstMove = () =>
+    f.send(0, {
+      requestId: first,
+      command: "update",
+      stealth: true,
+      dependencies: [],
+      text: "移動を隠す原文",
+      operations: [
+        { type: "locate", subjectId: a, text: "滞在先", aboutIds: [f.far] },
+      ],
+    });
+  const commit = f.store.commit.bind(f.store);
+  const interrupted = vi
+    .spyOn(f.store, "commit")
+    .mockImplementationOnce(async (...args) => {
+      await commit(...args);
+      throw new Error("世界の確定直後に応答が途切れた");
+    });
+  await expect(firstMove()).rejects.toThrow("世界の確定直後に応答が途切れた");
+  interrupted.mockRestore();
+  expect(await listed(c)).toMatchObject({
+    name: "人物0",
+    placeId: null,
+    place: null,
+  });
+  expect(await firstMove()).toMatchObject({ stealth: { placeId: f.far } });
+  expect((await f.status(0)).stealth).toMatchObject({ placeId: f.far });
+  const departure = JSON.stringify((await f.status(1)).entries);
+  expect(departure).toContain("人物0が広場を出た");
+  expect(departure).not.toContain(f.far);
+  expect(departure).not.toContain("移動を隠す原文");
+  expect(await listed(c)).toMatchObject({
+    name: "人物0",
+    placeId: null,
+    place: null,
+  });
+  const subject = () =>
+    f.send(2, { command: "search", query: { kind: "subject", targetId: a } });
+  const surroundings = () =>
+    f.send(2, { command: "search", query: { kind: "surroundings" } });
+  const contact = () => f.send(2, { command: "contact", targetId: a });
+  expect(JSON.stringify(await surroundings())).not.toContain(a);
+  const hiddenMaterial = (await subject()).material;
+  expect(hiddenMaterial).toMatchObject({ locations: [] });
+  expect(JSON.stringify(hiddenMaterial)).not.toContain(f.far);
+  await expect(contact()).rejects.toMatchObject({ code: "CONTACT_MISMATCH" });
+  expect(f.calls).toHaveBeenCalledTimes(1);
+  const seek = (requestId = randomUUID()) =>
+    f.send(2, { requestId, command: "search", query: { kind: "seek" } });
+  const status = await f.status(2);
+  const session = status.sessionId!,
+    turn = status.turn!;
+  const stay = (
+    await db.query("SELECT id FROM bot_stealth WHERE actor_id=$1", [a])
+  ).rows[0].id;
+  const setSeek = async (number: number, roll: number) => {
+    await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,$3)", [
+      derivedId(`${session}:${number}:seek:${stay}`),
+      { sides: 6, successThrough: 3 },
+      roll,
+    ]);
+  };
+  await setSeek(turn, 6);
+  const request = randomUUID(),
+    missed = await seek(request);
+  expect(missed.found).toEqual([]);
+  expect(await seek(request)).toEqual(missed);
+  expect((await seek()).found).toEqual([]);
+  expect(f.calls).toHaveBeenCalledTimes(2);
+  await f.send(2, { command: "end-turn" });
+  await setSeek(turn + 1, 1);
+  expect((await seek()).found).toEqual([{ actorId: a, name: "人物0" }]);
+  expect(await listed(c)).toMatchObject({ placeId: f.far });
+  expect((await subject()).material).toMatchObject({
+    locations: [{ directPlaceId: f.far }],
+  });
+  // A leaves and returns to the same place without being found on either arrival.
+  expect(await move(warehouse, 6, c)).toMatchObject({
+    stealth: { placeId: warehouse },
+  });
+  expect(await listed(c)).toMatchObject({ placeId: null });
+  expect(JSON.stringify((await subject()).material)).not.toContain(warehouse);
+  expect(await move(f.far, 6, c)).toMatchObject({
+    stealth: { placeId: f.far },
+  });
+  expect(await listed(c)).toMatchObject({ placeId: null });
+  await expect(contact()).rejects.toMatchObject({ code: "CONTACT_MISMATCH" });
+  expect(await f.send(0, { command: "contact", targetId: c })).toMatchObject({
+    contact: "joined",
+  });
+  expect(await listed(c)).toMatchObject({ placeId: f.far });
+});
+
+test("同じ場所のチームメンバーでも隠密移動を発見するまで自動合流しない", async () => {
+  const f = await fixture();
+  const [a, b, c] = f.actors as [string, string, string];
+  await f.send(1, { command: "contact", targetId: a });
+  const teamId = randomUUID();
+  await f.send(0, { requestId: teamId, command: "team-invite", targetId: b });
+  await f.send(1, { command: "team-join", teamId });
+  stealthGm(f);
+  const travel = (actor: string) => ({
+    command: "update",
+    text: "移動する",
+    dependencies: [],
+    operations: [
+      {
+        type: "locate",
+        subjectId: actor,
+        text: "離れた場所",
+        aboutIds: [f.far],
+      },
+    ],
+  });
+  const request = randomUUID();
+  await stealthRolls(request, { ["departure:" + b]: 6, ["arrival:" + c]: 6 });
+  const hidden = await f.send(0, {
+    ...travel(a),
+    requestId: request,
+    stealth: true,
+  });
+  const followed = await f.send(1, travel(b));
+  expect(followed.sessionId).not.toBe(hidden.sessionId);
+  expect(followed.teamArrival).toBeUndefined();
+  const follower = await f.status(1);
+  expect(JSON.stringify(follower.entries)).not.toContain("別の場所にいるため");
+  expect(JSON.stringify(follower.entries)).not.toContain(hidden.sessionId);
+  await expect(
+    f.send(1, { command: "contact", targetId: a }),
+  ).rejects.toMatchObject({ code: "CONTACT_MISMATCH" });
+  const db = isolated.databases.postgres;
+  const stay = (
+    await db.query("SELECT id FROM bot_stealth WHERE actor_id=$1", [a])
+  ).rows[0].id;
+  await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,1)", [
+    derivedId(`${follower.sessionId}:${follower.turn}:seek:${stay}`),
+    { sides: 6, successThrough: 3 },
+  ]);
+  expect(
+    await f.send(1, { command: "search", query: { kind: "seek" } }),
+  ).toMatchObject({
+    found: [{ actorId: a, name: "人物0" }],
+  });
+  expect((await f.status(1)).sessionId).toBe((await f.status(0)).sessionId);
+  expect(JSON.stringify((await f.status(1)).entries)).toContain(
+    "離れた場所で人物0を見つけた",
+  );
+  expect(JSON.stringify((await f.status(0)).entries)).not.toContain(
+    "離れた場所で人物0を見つけた",
+  );
+});
+
 test("対抗行動の0%・100%ではGMも抽選も使わず、不確実な行動だけ一度の設定と抽選を保存する", async () => {
   const f = await fixture(),
     items = [randomUUID(), randomUUID()];

@@ -125,6 +125,7 @@ export const BelongingOp = z.discriminatedUnion("type", [
 export type BelongingOp = z.infer<typeof BelongingOp>;
 export const PlaySearch = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("surroundings") }).strict(),
+  z.object({ kind: z.literal("seek") }).strict(),
   z.object({ kind: z.literal("self") }).strict(),
   z.object({ kind: z.literal("memos") }).strict(),
   z
@@ -310,6 +311,7 @@ export const PlayCommand = z.discriminatedUnion("command", [
       ...request,
       command: z.literal("update"),
       text,
+      stealth: z.boolean().optional(),
       operations: z.array(BelongingOp).min(1).optional(),
       changes: Change.optional(),
       deferredUntil: z.iso.datetime().optional(),
@@ -386,6 +388,7 @@ export const PlayCommand = z.discriminatedUnion("command", [
       ...request,
       command: z.literal("oppose"),
       text,
+      stealth: z.boolean().optional(),
       operations: z.array(BelongingOp).min(1).optional(),
       changes: Change.optional(),
       effect: Effect.optional().describe(
@@ -506,6 +509,8 @@ export const WaitingContextStatus = WaitingStatus.extend({
       name: z.string().optional(),
       phase: z.enum(["turn", "receiving", "waiting-for-return", "parked"]),
       recent: z.array(TransitionRecord).max(3),
+      observations: z.array(z.string()).optional(),
+      stealth: z.object({ placeId: z.uuid(), place: z.string() }).optional(),
       receiving: ReceiptRequest.extend({
         text: z.string(),
         changes: Change,
