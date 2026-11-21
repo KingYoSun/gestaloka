@@ -50,7 +50,13 @@ import {
   searchAppearances,
 } from "./search-appearances.js";
 import { PlayerTools, type PromotionProfile } from "./player-tools.js";
-import { itemOutcomeMessage, PlayApplications } from "./play-applications.js";
+import {
+  isHandoffOperation,
+  itemOutcomeMessage,
+  PlayApplications,
+  readHandoff,
+  type Handoff,
+} from "./play-applications.js";
 import { PlayTeams, type TeamCommand } from "./play-teams.js";
 
 import { playerMaterial } from "./player-material.js";
@@ -245,6 +251,7 @@ type Plan = {
   changes: Change;
   at: number;
   recipients: string[];
+  handoff?: Handoff;
   outcome?: unknown;
   instantMembers?: string;
   effectState?: string;
@@ -3380,6 +3387,10 @@ export class BotPlay {
     world: string,
     actor: string,
     input: Input,
+    {
+      db = this.pool,
+      expectedHandoff,
+    }: { db?: Db; expectedHandoff?: Handoff } = {},
   ): Promise<Plan | undefined> {
     if (input.command === "npc-action") {
       const session = await this.current(world, actor);
@@ -3412,16 +3423,14 @@ export class BotPlay {
       );
     }
     if (!("dependencies" in input)) return;
-    const w = await this.world(world);
+    const w = await this.world(world, db);
     const deadline = deferred(input);
     if (
       deadline &&
       input.command === "update" &&
       (input.waitMinutes ||
         (input.operations
-          ? !input.operations.every(
-              (op) => op.type === "move" || op.type === "transfer",
-            )
+          ? !input.operations.every(isHandoffOperation)
           : !input.changes?.revisions.length ||
             !!input.changes.nodes.length ||
             !!input.changes.edges.length ||
@@ -3471,15 +3480,21 @@ export class BotPlay {
       };
     }
     await context.validate();
+    const handoff =
+      deadline &&
+      input.command === "update" &&
+      input.operations?.every(isHandoffOperation)
+        ? await readHandoff(context, input.operations, expectedHandoff)
+        : undefined;
     const registered = (
-      await this.pool.query<{ actor_id: string; controller: string | null }>(
+      await db.query<{ actor_id: string; controller: string | null }>(
         "SELECT actor_id,controller FROM bot_npc WHERE world_id=$1",
         [world],
       )
     ).rows;
     const controlled = new Set(
       (
-        await this.pool.query<{ actor_id: string }>(
+        await db.query<{ actor_id: string }>(
           "SELECT actor_id FROM world_controlled_actor WHERE world_id=$1",
           [w.id],
         )
@@ -3946,7 +3961,9 @@ export class BotPlay {
         "時間差の受領には、受領を必要とするメモか物品の申請を指定してください",
       );
     if (input.command !== "oppose") {
-      const session = await this.current(world, actor);
+      const session = deadline
+        ? undefined
+        : await this.current(world, actor, db);
       for (const id of recipients) {
         if (registered.some((n) => n.actor_id === id && n.controller === null))
           reject(
@@ -4065,13 +4082,23 @@ export class BotPlay {
         outcome,
       ]);
     }
+    const items = await this.#itemOutcomes(context, input, changes);
+    if (handoff) {
+      for (const item of items) {
+        const count = handoff.items.find(
+          (fact) => fact.itemId === item.itemId,
+        )?.wholeCount;
+        if (item.count === undefined && count != null) item.count = count;
+      }
+    }
     return {
       context,
       changes,
       at,
       recipients: input.command === "oppose" ? [] : recipients,
-      items: await this.#itemOutcomes(context, input, changes),
+      items,
       outcome,
+      ...(handoff ? { handoff } : {}),
       ...(locates ? { locates } : {}),
       ...(fatal.length ? { fatal } : {}),
     };
@@ -4863,6 +4890,31 @@ export class BotPlay {
                   actor,
                   input.applicationId,
                   input.accept,
+                  async ({ sender, text, deadline, recipients, handoff }) => {
+                    const plan = await this.#plan(
+                      world,
+                      sender,
+                      {
+                        command: "update",
+                        requestId: input.applicationId,
+                        text,
+                        operations: handoff.operations,
+                        deferredUntil: deadline,
+                        dependencies: [],
+                      },
+                      { db, expectedHandoff: handoff },
+                    );
+                    if (!plan)
+                      throw new Error("物品の受け渡しを計画できません");
+                    if (
+                      plan.recipients.length !== recipients.length ||
+                      plan.recipients.some((id) => !recipients.includes(id))
+                    )
+                      throw new BelongingRejected(
+                        "受領判断が必要な人物が変わりました",
+                      );
+                    return plan;
+                  },
                 )
               : input.command === "exchange" &&
                   (await this.store.receipt(w.id, input.requestId))
@@ -5529,6 +5581,7 @@ export class BotPlay {
                     changes: plan.changes,
                     dependencies: plan.context.dependencies,
                     ...(plan.items?.length ? { items: plan.items } : {}),
+                    ...(plan.handoff ? { handoff: plan.handoff } : {}),
                   },
                 );
                 result = {
