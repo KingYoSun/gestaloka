@@ -271,11 +271,13 @@ test("参加時の画像を再読込後に再試行し、Web・共通APIの変�
         [world],
       )
     ).rows[0].world_id;
+    // 生成を終えた世界のプレイの記録は現実の時刻で成立する(ADR-073)。
     const store = new WorldStore(db.graph),
-      commit = randomUUID();
+      commit = randomUUID(),
+      now = Date.now();
     await store.commit(await store.claim(graph, commit), store.context(graph), {
       commitId: commit,
-      at: 1,
+      at: now,
       changes: {
         nodes: [],
         revisions: [],
@@ -287,7 +289,7 @@ test("参加時の画像を再読込後に再試行し、Web・共通APIの変�
             source: own.actorId,
             target: other.actorId,
             text: `${other.name}に出会った。`,
-            period: { from: 1 },
+            period: { from: now },
           },
           {
             id: randomUUID(),
@@ -295,14 +297,11 @@ test("参加時の画像を再読込後に再試行し、Web・共通APIの変�
             source: other.actorId,
             target: own.actorId,
             text: `${own.name}に出会った。`,
-            period: { from: 1 },
+            period: { from: now },
           },
         ],
       },
     });
-    await db.postgres.query("UPDATE world_construction SET at=1 WHERE id=$1", [
-      world,
-    ]);
     await page.goto(`/worlds/${world}/play?actorId=${own.actorId}`);
     await page.getByRole("tab", { name: "過去の履歴", exact: true }).click();
     await page.getByText("本人のこれまでの履歴", { exact: true }).click();

@@ -13,7 +13,7 @@ import {
   type BelongingOp,
 } from "../world/belongings.js";
 import { directPlaces } from "../world/locations.js";
-import { derivedId, type Change } from "../world/model.js";
+import { atTime, derivedId, type Change } from "../world/model.js";
 import {
   WorldConflict,
   type Dependency,
@@ -338,13 +338,7 @@ export class PlayApplications {
           {
             commitId: id,
             at,
-            changes: {
-              ...changes,
-              edges: changes.edges.map((edge) => ({
-                ...edge,
-                period: { ...edge.period, from: at },
-              })),
-            },
+            changes: atTime(changes, at),
           },
           true,
         );

@@ -176,6 +176,36 @@ async function fixture() {
   };
 }
 
+test("生成を終えた世界のプレイの記録は、確定した現実の時刻で成立する", async () => {
+  const f = await fixture();
+  await isolated.databases.postgres.query(
+    "UPDATE world_construction SET state='finished' WHERE id=$1",
+    [f.world],
+  );
+  const memo = async (text: string) => {
+    const before = Date.now(),
+      requestId = randomUUID(),
+      sent = await f.send(0, {
+        command: "memo",
+        requestId,
+        text,
+        participants: [],
+        dependencies: [],
+      });
+    const [edge] = await f.store
+      .context(f.graph)
+      .relations(sent.memoId as string, "has", "in", Number.MAX_SAFE_INTEGER);
+    expect(edge!.period.from).toBeGreaterThanOrEqual(before);
+    expect(edge!.period.from).toBeLessThanOrEqual(Date.now());
+    return edge!.period.from;
+  };
+  // 生成時の記録(世界内時間の0)より後ろに、確定の順に並ぶ。
+  const first = await memo("渡し場の水位を見る");
+  expect(await memo("水位が下がったら知らせる")).toBeGreaterThanOrEqual(first);
+  expect(first).toBeGreaterThan(
+    (await f.store.context(f.graph).locations(f.actors[0]!)).latest,
+  );
+});
 test("時間差のメモは退出後も受領でき、全員の承認で一度だけ確定する", async () => {
   const f = await fixture();
   const deferredUntil = new Date(Date.now() + 60_000).toISOString();

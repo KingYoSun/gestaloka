@@ -4,7 +4,7 @@ import type { z } from "zod";
 import type { PlayCommand, PlayerReportInput } from "@gestaloka/contracts";
 import { AccessError } from "../http/access.js";
 import type { WorldConstruction } from "./construction.js";
-import { derivedId, type Change } from "../world/model.js";
+import { derivedId, worldNow, type Change } from "../world/model.js";
 import { locationRecords } from "../world/locations.js";
 import { planBelongings } from "../world/belongings.js";
 import { WorldConflict } from "../world/store.js";
@@ -328,7 +328,7 @@ export class PlayerTools {
               )
             : await locationRecords(context, row.actor_id);
         const at = Math.max(
-          Number(w.at),
+          worldNow(w, this.now().getTime()),
           (await context.latestTime(row.actor_id)) ?? 0,
         );
         const changes: Change = {

@@ -13,7 +13,7 @@ import {
 } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { api, expireSession, ScopeChanged } from "./api.js";
-import { worldTime, Problem } from "./presentation.js";
+import { recordTime, Problem } from "./presentation.js";
 import { RichText } from "./RichText.js";
 import { Button } from "./components/ui/button.js";
 import { Characters } from "./player-icons.js";
@@ -334,7 +334,7 @@ export function History({
                       ? "時刻の記録なし"
                       : entry.at === null
                         ? "送った行動"
-                        : `T + ${worldTime(entry.at)}`}
+                        : recordTime(entry.at)}
                     {entry.kind === "interpretation" ? " · 当時の解釈" : ""}
                   </p>
                   <Characters characters={entry.characters} />

@@ -25,10 +25,12 @@ import {
   type Dependency,
 } from "../world/store.js";
 import {
+  atTime,
   derivedId,
   validateConnection,
   bindingScripts,
   validateBindings,
+  worldNow,
   Change,
 } from "../world/model.js";
 import {
@@ -1001,14 +1003,14 @@ export class BotPlay {
   }
   async world(id: string, db: Db = this.pool) {
     const row = (
-      await db.query<{ world_id: string; at: string }>(
-        "SELECT world_id,at FROM world_construction WHERE id=$1",
+      await db.query<{ world_id: string; at: string; state: string }>(
+        "SELECT world_id,at,state FROM world_construction WHERE id=$1",
         [id],
       )
     ).rows[0];
     if (!row?.world_id)
       reject("WORLD_NOT_FOUND", "確定した世界が見つかりません");
-    return { id: row.world_id, at: Number(row.at) };
+    return { id: row.world_id, at: worldNow(row, this.now().getTime()) };
   }
   async #addInstants(
     db: Db,
@@ -4512,7 +4514,11 @@ export class BotPlay {
       this.store.commit(
         await this.store.claim(world, requestId),
         plan.context,
-        { commitId: requestId, at: plan.at, changes: plan.changes },
+        {
+          commitId: requestId,
+          at: plan.at,
+          changes: atTime(plan.changes, plan.at),
+        },
         true,
       )
     );
@@ -5471,8 +5477,9 @@ export class BotPlay {
                       ops!,
                     )
                   : receiving;
+                // 受け取り待ちの間にも時刻は進むので、受入れが揃った時刻で確定する。
                 const receipt = await this.#commit(w.id, receiving.id, {
-                  at: plan.at,
+                  at: Math.max(plan.at, w.at),
                   changes: plan.changes,
                   context,
                 });
