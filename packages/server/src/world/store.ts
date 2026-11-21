@@ -278,6 +278,59 @@ export class WorldContext {
       return result.records[0]?.get("id") as string | undefined;
     });
   }
+  // 主体の有効な所在記録と、所在記録の最新の始点・最後の時点。終わった記録はDBの中で集計だけに使い、
+  // 移動を重ねても読み出す量を有効な記録の数に保つ。
+  async locations(actor: string) {
+    z.uuid().parse(actor);
+    const stored = await this.#read(
+      relationKey(actor, "status", "out"),
+      async (tx) => {
+        const row = (
+          await tx.run(
+            `MATCH (n:WorldNode {worldId:$world,id:$actor})-[c:status {role:'content'}]->()
+            WHERE c.worldId=$world AND c.data CONTAINS $marker
+            RETURN max(c.validFrom) AS latest,max(coalesce(c.validTo,c.validFrom)) AS last,
+              [x IN collect(c) WHERE x.validTo IS NULL | x.data] AS active`,
+            { world: this.worldId, actor, marker: '"text":"location"' },
+          )
+        ).records[0]!;
+        const time = (key: string) =>
+          row.get(key) === null ? null : Number(row.get(key));
+        return {
+          latest: time("latest"),
+          last: time("last"),
+          active: (row.get("active") as string[]).map((d) =>
+            WorldEdge.parse(JSON.parse(d)),
+          ),
+        };
+      },
+    );
+    const drafts = this.drafts
+      .flatMap((d) => d.changes.edges)
+      .filter(
+        (e) =>
+          e.kind === "status" &&
+          e.source === actor &&
+          e.role === "content" &&
+          e.text === "location",
+      );
+    const times = drafts.flatMap((e) => [e.period.from, e.period.until ?? 0]);
+    return {
+      latest: Math.max(
+        stored.latest ?? -1,
+        ...drafts.map((e) => e.period.from),
+      ),
+      last: Math.max(stored.last ?? 0, ...times),
+      active: [
+        ...new Map(
+          [
+            ...drafts.filter((e) => e.period.until === undefined),
+            ...stored.active,
+          ].map((e) => [e.id, e]),
+        ).values(),
+      ],
+    };
+  }
   async relations(
     id: string,
     kind: RelationKind,

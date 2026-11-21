@@ -7,10 +7,7 @@ import {
   readBelongings,
   type BelongingOp,
 } from "@gestaloka/server/belongings";
-import {
-  readLocations,
-  locationRecords,
-} from "../../packages/server/src/world/locations.js";
+import { locationRecords } from "../../packages/server/src/world/locations.js";
 
 const databases = connectDatabases();
 const store = new WorldStore(databases.graph);
@@ -83,7 +80,15 @@ test("所在地は古いシーン時刻を補正し、旧所在地と参照を�
       commit,
     );
   expect(moved.at).toBe(100);
-  expect(await readLocations(store.context(worldId), person)).toEqual(["門前"]);
+  expect(
+    (await locationRecords(store.context(worldId), person)).map((r) => r.text),
+  ).toEqual(["門前"]);
+  // 終わった所在記録は集計にだけ使い、有効な記録だけを読み出す。
+  expect(await store.context(worldId).locations(person)).toMatchObject({
+    latest: 100,
+    last: 100,
+    active: [{ target: expect.any(String), period: { from: 100 } }],
+  });
   expect(
     await apply(
       10,

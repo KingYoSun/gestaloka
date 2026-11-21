@@ -113,18 +113,11 @@ export async function planBelongings(
           op.directPlaceId ?? (ids.length === 1 ? ids[0] : undefined);
         if (direct && !ids.includes(direct))
           throw new BelongingRejected("直接の滞在先をaboutIdsに含めてください");
-        const history = (
-          await context.history(op.subjectId, "status", "out", LATEST)
-        ).filter((e) => e.role === "content" && e.text === "location");
-        const active = history.filter((e) => e.period.until === undefined);
-        at = Math.max(
-          at,
-          ...history.flatMap((e) => [e.period.from, e.period.until ?? 0]),
-        );
+        const { latest, last, active } = await context.locations(op.subjectId);
+        at = Math.max(at, last);
         if (
           active.length === 1 &&
-          active[0]!.period.from ===
-            Math.max(...history.map((e) => e.period.from)) &&
+          active[0]!.period.from === latest &&
           (await context.node(active[0]!.target))?.text === op.text
         ) {
           const about = (

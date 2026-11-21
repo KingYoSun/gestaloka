@@ -1,33 +1,25 @@
 import type { WorldContext } from "./store.js";
-type Context = Pick<WorldContext, "history" | "node" | "relations">;
+type Context = Pick<WorldContext, "locations" | "node" | "relations">;
 
 export { LocationOp } from "@gestaloka/contracts";
 
-export async function locationRecords(
-  context: Context,
-  actor: string,
-  at = Number.MAX_SAFE_INTEGER,
-) {
-  const records = (await context.history(actor, "status", "out", at)).filter(
-      (e) => e.role === "content" && e.text === "location",
-    ),
-    latest = Math.max(...records.map((e) => e.period.from));
+const LATEST = Number.MAX_SAFE_INTEGER;
+
+// 最新の始点を持つ所在記録のうち、終わっていないもの。
+export async function locationRecords(context: Context, actor: string) {
+  const { latest, active } = await context.locations(actor);
   return Promise.all(
-    records
-      .filter(
-        (e) =>
-          e.period.from === latest &&
-          (e.period.until === undefined || at < e.period.until),
-      )
+    active
+      .filter((e) => e.period.from === latest)
       .map(async (e) => {
         const about = (
-          await context.relations(e.target, "status", "out", at)
+          await context.relations(e.target, "status", "out", LATEST)
         ).filter((a) => a.role === "about");
         const direct = about.filter((a) => a.text === "direct-place");
         return {
           id: e.id,
           at: e.period.from,
-          text: (await context.node(e.target, at))!.text,
+          text: (await context.node(e.target, LATEST))!.text,
           aboutIds: about.map((a) => a.target).sort(),
           directPlaceId: direct.length === 1 ? direct[0]!.target : null,
         };
@@ -39,15 +31,4 @@ export async function directPlaces(context: Context, actor: string) {
   const ids = new Set(records.map((r) => r.directPlaceId));
   const [id] = ids;
   return ids.size === 1 && id ? [id] : [];
-}
-
-// 所在は明示されたstatusだけから読む。自由記述やabout先の種類では判定しない。
-export async function readLocations(
-  context: Context,
-  actor: string,
-  at = Number.MAX_SAFE_INTEGER,
-) {
-  return [
-    ...new Set((await locationRecords(context, actor, at)).map((r) => r.text)),
-  ].sort();
 }
