@@ -2519,6 +2519,73 @@ export interface paths {
                         /** Format: uuid */
                         requestId: string;
                         /** @enum {string} */
+                        command: "storage-list";
+                        /** Format: uuid */
+                        after?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        command: "storage-post";
+                        /** Format: uuid */
+                        itemId: string;
+                        allocations: {
+                            count: number;
+                            /** Format: uuid */
+                            recipientId?: string;
+                        }[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        command: "storage-offers";
+                        /** Format: uuid */
+                        after?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        command: "storage-claim";
+                        /** Format: uuid */
+                        allocationId: string;
+                        count: number;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        command: "storage-withdraw";
+                        /** Format: uuid */
+                        allocationId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        command: "storage-history";
+                        /** Format: uuid */
+                        after?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        command: "storage-relocate";
+                        /** Format: uuid */
+                        placeId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
                         command: "blueprint-templates";
                         /** Format: uuid */
                         after?: string;
@@ -2535,6 +2602,9 @@ export interface paths {
                             /** Format: uuid */
                             keeperId: string;
                             description: string;
+                            product?: {
+                                label: string;
+                            };
                             building?: {
                                 label: string;
                                 materials?: {
@@ -2600,7 +2670,7 @@ export interface paths {
                         /** Format: uuid */
                         questId: string;
                         /** @enum {string} */
-                        phase: "build" | "open";
+                        phase: "build" | "open" | "craft";
                         requirement: number;
                         /** Format: uuid */
                         itemId: string;
@@ -7407,14 +7477,19 @@ export interface paths {
                             worldId: string;
                             template: {
                                 /** @enum {string} */
-                                mode: "build" | "open" | "build-and-open";
+                                mode: "build" | "open" | "build-and-open" | "craft";
                                 name: string;
                                 version: number;
                                 /** Format: uuid */
                                 authorId: string;
+                                /** @description 製作した物を保管先として設置し、許可する利用条件 */
+                                installation?: {
+                                    relocatable: boolean;
+                                    pickup: ("public" | "addressed")[];
+                                };
                                 /** @description プレイヤーに示す使い方と、完成後にできること */
                                 instructions: string;
-                                /** @description 建築に必要な消費材と道具。開店のみの場合は省く */
+                                /** @description 建築・製作に必要な消費材と道具。開店のみの場合は省く */
                                 materials?: {
                                     label: string;
                                     count: number;
@@ -7432,7 +7507,7 @@ export interface paths {
                             worldId: string;
                             template: {
                                 /** @enum {string} */
-                                mode: "build" | "open" | "build-and-open";
+                                mode: "build" | "open" | "build-and-open" | "craft";
                                 name: string;
                                 version: number;
                                 /** Format: uuid */

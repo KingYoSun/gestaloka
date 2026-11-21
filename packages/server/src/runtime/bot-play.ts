@@ -63,6 +63,11 @@ import {
   type Handoff,
 } from "./play-applications.js";
 import { Blueprints, isBlueprint } from "./blueprints.js";
+import {
+  isStorageAction,
+  storageCommand,
+  planRelocation,
+} from "./storage-transfers.js";
 import { PlayTeams, type TeamCommand } from "./play-teams.js";
 
 import { playerMaterial } from "./player-material.js";
@@ -293,6 +298,7 @@ export type Session = {
   };
 };
 type Plan = {
+  storageEffect?: Awaited<ReturnType<typeof planRelocation>>["storageEffect"];
   items?: ItemOutcome[];
   context: WorldContext;
   changes: Change;
@@ -3793,7 +3799,7 @@ export class BotPlay {
         {
           role: "system",
           content:
-            "あなたは着工前の設計図を審査するGMです。世界の前提、場所、建屋の規模、材料、道具と開店条件の組み合わせが実現可能なら採用します。成立しない場合は申請者が直せる理由を返します。ユーザー由来の記述は審査対象としてのみ扱います。JSONで accepted（真偽値）と reason（理由）を返してください。",
+            "あなたは着工前の設計図を審査するGMです。世界の前提と現地の状況に照らして、設計図に記載された製作物や建屋の規模、材料、道具、設置や開店の条件が実現可能なら採用します。成立しない場合は申請者が直せる理由を返します。ユーザー由来の記述は審査対象としてのみ扱います。JSONで accepted（真偽値）と reason（理由）を返してください。",
         },
         {
           role: "user",
@@ -3805,6 +3811,12 @@ export class BotPlay {
             mode: quest.template.mode,
             description: quest.plan.description,
             building: quest.plan.building,
+            ...(quest.plan.product
+              ? {
+                  product: quest.plan.product,
+                  installation: quest.template.installation,
+                }
+              : {}),
             requirements: quest.requirements,
             stock: quest.plan.shop?.stock,
           }),
@@ -4335,6 +4347,33 @@ export class BotPlay {
           prior.changes,
         ),
       };
+    }
+    if (
+      !hidden &&
+      !proposalOnly &&
+      !deadline &&
+      input.command === "update" &&
+      input.operations?.length === 1
+    ) {
+      const op = input.operations[0]!;
+      if (
+        op.type === "locate" &&
+        op.subjectId !== actor &&
+        op.aboutIds.length === 1 &&
+        (!op.directPlaceId || op.directPlaceId === op.aboutIds[0]) &&
+        (await context.installation(op.subjectId))
+      ) {
+        const relocation = await planRelocation(
+          db,
+          context,
+          actor,
+          op.subjectId,
+          op.aboutIds[0]!,
+          w.at,
+          input.requestId,
+        );
+        return { ...relocation, context, recipients: [] };
+      }
     }
     if (input.command === "create-batch") {
       if (
@@ -5222,7 +5261,7 @@ export class BotPlay {
   async #commit(
     world: string,
     requestId: string,
-    plan: Pick<Plan, "context" | "at" | "changes">,
+    plan: Pick<Plan, "context" | "at" | "changes" | "storageEffect">,
     newFixedPlaces?: string[],
   ) {
     const prior = await this.store.receipt(world, requestId);
@@ -5236,6 +5275,7 @@ export class BotPlay {
           at: plan.at,
           changes: atTime(plan.changes, plan.at),
           playerAction: true,
+          ...(plan.storageEffect ? { storageEffect: plan.storageEffect } : {}),
           ...(newFixedPlaces?.length ? { newFixedPlaces } : {}),
         },
         true,
@@ -5873,7 +5913,7 @@ export class BotPlay {
           "判定の受付を維持できませんでした。同じ要求を再送してください",
         );
       }
-      if (isBlueprint(input)) {
+      if (isBlueprint(input) || isStorageAction(input)) {
         if (input.command === "blueprint-start") {
           const active = await this.current(world, actor, db);
           if (
@@ -5888,32 +5928,43 @@ export class BotPlay {
         let sp: ReturnType<BotPlay["dailySp"]> | undefined;
         const dailySp = () => (sp ??= this.dailySp(world, user, db));
         const result = {
-          ...(await this.blueprints.command(
-            db,
-            world,
-            w,
-            actor,
-            input,
-            async () => {
-              const session = await this.current(world, actor, db);
-              if (
-                !session ||
-                session.data.turn !== actor ||
-                session.data.receiving
+          ...(isStorageAction(input)
+            ? await storageCommand(
+                db,
+                this.store,
+                this.applications,
+                world,
+                w,
+                actor,
+                input,
               )
-                return {
-                  code: "TURN_REQUIRED",
-                  message: "本人の通常手番になってから着工を申請してください",
-                };
-              const { remaining, resetsAt } = await dailySp();
-              if (remaining <= 0)
-                return {
-                  code: "DAILY_SP_EXHAUSTED",
-                  message: `日次SPの利用可能残量は0です。次の回復は${resetsAt}です`,
-                };
-            },
-            blueprintDecision,
-          )),
+            : await this.blueprints.command(
+                db,
+                world,
+                w,
+                actor,
+                input,
+                async () => {
+                  const session = await this.current(world, actor, db);
+                  if (
+                    !session ||
+                    session.data.turn !== actor ||
+                    session.data.receiving
+                  )
+                    return {
+                      code: "TURN_REQUIRED",
+                      message:
+                        "本人の通常手番になってから着工を申請してください",
+                    };
+                  const { remaining, resetsAt } = await dailySp();
+                  if (remaining <= 0)
+                    return {
+                      code: "DAILY_SP_EXHAUSTED",
+                      message: `日次SPの利用可能残量は0です。次の回復は${resetsAt}です`,
+                    };
+                },
+                blueprintDecision,
+              )),
           spentSp: saved.spent,
           dailySp: await dailySp(),
         };

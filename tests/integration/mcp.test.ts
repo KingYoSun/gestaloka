@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { beforeEach, afterEach, expect, test, vi } from "vitest";
 import {
   Client,
@@ -197,6 +198,24 @@ test("MCPの専用ツールが同じ設計図の下書きを再送で再利用�
         reason: "試遊済みの版を公開",
       }),
     ).toMatchObject({ id: draft.id, materials: input.template.materials });
+    const definition = JSON.parse(
+      await readFile("examples/blueprints/item-handoff-storage.json", "utf8"),
+    );
+    const crafted = await call("blueprints_create", {
+      requestId: randomUUID(),
+      worldId,
+      reason: "製作テンプレートの試遊",
+      template: { ...definition, authorId },
+    });
+    expect(crafted).toMatchObject({ ...definition, state: "draft" });
+    expect(
+      await call("blueprints_publish", {
+        requestId: randomUUID(),
+        worldId,
+        reason: "隔離環境で確認",
+        template: { templateId: crafted.id },
+      }),
+    ).toMatchObject({ id: crafted.id, installation: definition.installation });
   } finally {
     await client.close();
     await app.close();

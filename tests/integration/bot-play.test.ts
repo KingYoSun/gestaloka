@@ -4,7 +4,11 @@ import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { beforeAll, afterAll, afterEach, expect, test, vi } from "vitest";
-import { PlayCommand, WaitingEvent } from "@gestaloka/contracts";
+import {
+  BlueprintDraft,
+  PlayCommand,
+  WaitingEvent,
+} from "@gestaloka/contracts";
 import { WorldAccess } from "@gestaloka/server/access";
 import { decisionSettings } from "../../packages/server/src/llm/config.js";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
@@ -180,6 +184,456 @@ async function fixture() {
       ),
   };
 }
+
+test("craftの定義から保管先を設置し、管理者不在の無償受領・指定分を保った移設・履歴を確認できる", async () => {
+  const f = await fixture();
+  const admin = await auth.person(),
+    manager = f.actors[0]!,
+    b = f.actors[1]!,
+    c = f.actors[2]!;
+  const definition = BlueprintDraft.parse({
+    ...JSON.parse(
+      await readFile("examples/blueprints/item-handoff-storage.json", "utf8"),
+    ),
+    authorId: manager,
+  });
+  const seed = await f.apply([
+    {
+      type: "create",
+      label: "木板",
+      holder: manager,
+      count: 2,
+      basis: "製作材料",
+    },
+    { type: "create", label: "組立用の木槌", holder: b, basis: "製作道具" },
+    {
+      type: "create",
+      label: "焼き菓子",
+      holder: manager,
+      count: 3,
+      basis: "受け渡し用",
+    },
+    {
+      type: "create",
+      label: "石材",
+      holder: manager,
+      count: 1,
+      basis: "別の製作材料",
+    },
+    {
+      type: "create",
+      label: "布",
+      holder: manager,
+      count: 1,
+      basis: "別の製作材料",
+    },
+  ]);
+  const [wood, hammer, goods, stone, cloth] = seed.changes.nodes
+    .filter((n) => n.kind === "existence")
+    .map((n) => n.id);
+  const db = isolated.databases.postgres;
+  const app = await createApp(
+      access,
+      auth.identity,
+      undefined,
+      auth.operations,
+    ),
+    cli = await playerCli(app);
+  try {
+    const profiles = await Promise.all(
+      f.actors.map(async (actor, i) => {
+        const profile = join(cli.directory, "actor-" + i + ".json");
+        const linked = await cli.run(
+          profile,
+          "connect",
+          "--server",
+          cli.base,
+          "--world",
+          f.world,
+        );
+        expect(
+          (
+            await cli.approve(
+              f.people[i]!.cookie,
+              linked.userCode,
+              "actor:" + actor,
+            )
+          ).statusCode,
+        ).toBe(302);
+        return profile;
+      }),
+    );
+    const play = async (i: number, input: Record<string, unknown>) => {
+      const file = join(cli.directory, randomUUID() + ".json");
+      await writeFile(file, JSON.stringify(input));
+      const result = await cli.run(
+        profiles[i],
+        "play",
+        "--file",
+        file,
+        "--full-ids",
+      );
+      expect(result.state, JSON.stringify(result)).not.toBe("error");
+      return result.result;
+    };
+    const craft = async (
+      template: typeof definition,
+      product: string,
+      items: { actor: number; id: string; count: number }[],
+    ) => {
+      const draft = await auth.operations.execute(
+        admin.id,
+        randomUUID(),
+        {
+          operation: "blueprints.create",
+          worldId: f.world,
+          reason: "隔離試遊",
+          template,
+        },
+        { players: access.players },
+      );
+      const published = await auth.operations.execute(
+        admin.id,
+        randomUUID(),
+        {
+          operation: "blueprints.publish",
+          worldId: f.world,
+          reason: "隔離試遊",
+          template: { templateId: String(draft.id) },
+        },
+        { players: access.players },
+      );
+      expect(
+        (await play(0, { command: "blueprint-templates" })).templates,
+      ).toContainEqual(
+        expect.objectContaining({ id: published.id, mode: "craft" }),
+      );
+      const plan = {
+        templateId: draft.id,
+        placeId: f.place,
+        keeperId: manager,
+        description: template.instructions,
+        product: { label: product },
+      };
+      const { quest } = await play(0, { command: "blueprint-propose", plan });
+      expect(
+        await play(0, { command: "blueprint-start", questId: quest.id }),
+      ).toMatchObject({ quest: { phase: "craft" }, spentSp: 1 });
+      let result;
+      for (const [requirement, item] of items.entries())
+        result = await play(item.actor, {
+          command: "blueprint-provide",
+          questId: quest.id,
+          phase: "craft",
+          requirement,
+          itemId: item.id,
+          count: item.count,
+        });
+      expect(result).toMatchObject({
+        quest: { phase: "done", buildingId: null },
+        spentSp: 0,
+      });
+      return result.quest.productId as string;
+    };
+    const storage = await craft(definition, "広場の棚", [
+      { actor: 0, id: wood!, count: 2 },
+      { actor: 1, id: hammer!, count: 1 },
+    ]);
+    const list = async (i: number) =>
+      (await play(i, { command: "storage-list" })).items;
+    const command = (
+      command: string,
+      storageId = storage,
+      fields: Record<string, unknown> = {},
+    ) => ({ command, storageId, ...fields });
+    const offers = (actor: number, storageId = storage) =>
+      play(actor, command("storage-offers", storageId)).then((x) => x.items);
+    const history = (actor: number) =>
+      play(actor, command("storage-history")).then((x) => x.items);
+    const move = (
+      actor: number,
+      item: string,
+      from: string | null,
+      to: string,
+      count?: number,
+    ) =>
+      f.send(actor, {
+        command: "update",
+        text: "品を移す",
+        dependencies: [],
+        operations: [
+          {
+            type: "move",
+            item,
+            from,
+            to,
+            basis: "受け渡し",
+            ...(count ? { count } : {}),
+          },
+        ],
+      });
+    const bag = (id: string) =>
+      readBelongings(f.store.context(f.graph), id).then((x) => x.items);
+    expect(await list(0)).toContainEqual(
+      expect.objectContaining({ id: storage, label: "広場の棚" }),
+    );
+    expect(await bag(b)).toContainEqual(
+      expect.objectContaining({ id: hammer }),
+    );
+    expect(await bag(manager)).not.toContainEqual(
+      expect.objectContaining({ id: wood }),
+    );
+    expect(await directPlaces(f.store.context(f.graph), storage)).toEqual([
+      f.place,
+    ]);
+    expect(
+      (
+        await f.store
+          .context(f.graph)
+          .relations(storage, "status", "out", Number.MAX_SAFE_INTEGER)
+      ).some((e) => e.text === "route"),
+    ).toBe(false);
+
+    await f.move(2, f.place);
+    await move(0, goods!, manager, storage);
+    const {
+      allocationIds: [pub, priv],
+    } = await play(
+      0,
+      command("storage-post", storage, {
+        itemId: goods,
+        allocations: [{ count: 2 }, { count: 1, recipientId: b }],
+      }),
+    );
+    expect(await f.store.context(f.graph).reserved(goods!)).toBe(3);
+    await expect(move(0, goods!, storage, manager, 1)).rejects.toThrow(
+      "取り置き",
+    );
+    expect(await offers(2)).toHaveLength(1);
+    expect(await offers(1)).toHaveLength(2);
+    const claim = (id: string, count = 1) =>
+      command("storage-claim", storage, { allocationId: id, count });
+    await expect(f.send(2, claim(priv))).rejects.toMatchObject({
+      code: "STORAGE_UNAVAILABLE",
+    });
+    await f.move(0, f.far);
+    await f.send(0, { command: "finish" });
+    expect(await access.botPlay.current(f.world, manager)).toBeUndefined();
+    const first = { ...claim(pub), requestId: randomUUID() };
+    // SQL側の応答を失っても、グラフの確定を再利用し通知を回復できる。
+    vi.spyOn(access.botPlay.applications, "notice").mockRejectedValueOnce(
+      new Error("受領確定後の中断"),
+    );
+    await expect(f.send(2, first)).rejects.toThrow("受領確定後の中断");
+    const { world_id: graph } = await runtime.get(f.world);
+    expect(await f.store.receipt(graph!, first.requestId)).toBeDefined();
+    await access.botPlay.blueprints.recover();
+    expect(
+      (
+        await db.query(
+          "SELECT actor_id FROM player_notice WHERE world_id=$1 AND text LIKE $2 ORDER BY actor_id",
+          [f.world, "%個受け取りました（保管先 " + storage + "）"],
+        )
+      ).rows.map((r) => r.actor_id),
+    ).toEqual([manager, c].sort());
+    expect(await history(1)).toEqual([]);
+    expect(await f.send(2, first)).toMatchObject({
+      type: "claim",
+      count: 1,
+      remaining: 1,
+      spentSp: 0,
+    });
+    expect(await f.send(2, first)).toMatchObject({ remaining: 1 });
+    expect(await offers(1)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: pub, count: 1 }),
+        expect.objectContaining({ id: priv, count: 1 }),
+      ]),
+    );
+    await expect(
+      f.send(2, command("storage-relocate", storage, { placeId: f.far })),
+    ).rejects.toThrow("権限");
+    await f.send(0, { command: "start" });
+    await f.move(0, f.place);
+    for (const op of [
+      { type: "move", item: storage, from: null, to: manager, basis: "運ぶ" },
+      { type: "locate", subjectId: storage, text: "移動", aboutIds: [f.far] },
+    ])
+      await expect(
+        f.send(op.type === "locate" ? 2 : 0, {
+          command: "update",
+          text: "移す",
+          dependencies: [],
+          operations: [op],
+        }),
+      ).rejects.toThrow("移設");
+    expect(
+      await play(0, command("storage-relocate", storage, { placeId: f.far })),
+    ).toMatchObject({ storageId: storage, placeId: f.far, spentSp: 0 });
+    expect(await directPlaces(f.store.context(f.graph), storage)).toEqual([
+      f.far,
+    ]);
+    expect(await list(2)).not.toContainEqual(
+      expect.objectContaining({ id: storage }),
+    );
+    await expect(f.send(2, claim(pub))).rejects.toThrow("設置場所");
+    await f.move(2, f.far);
+    await f.move(1, f.far);
+    expect(await list(1)).toContainEqual(
+      expect.objectContaining({ id: storage }),
+    );
+    expect(await bag(storage)).toContainEqual(
+      expect.objectContaining({ id: goods, count: 2 }),
+    );
+    expect(await offers(2)).toEqual([
+      expect.objectContaining({ id: pub, count: 1 }),
+    ]);
+    const simultaneous = await Promise.allSettled([
+      f.send(2, claim(pub)),
+      f.send(1, claim(pub)),
+    ]);
+    expect(simultaneous.filter((r) => r.status === "fulfilled")).toHaveLength(
+      1,
+    );
+    await play(1, claim(priv));
+    expect(await bag(storage)).toEqual([]);
+    expect(await f.store.context(f.graph).reserved(goods!)).toBe(0);
+    const journal = await history(0);
+    expect(journal).toHaveLength(3);
+    expect(journal).toContainEqual(
+      expect.objectContaining({
+        commitId: first.requestId,
+        sender: manager,
+        receiver: c,
+        count: 1,
+        at: expect.any(String),
+      }),
+    );
+    expect(
+      (await history(2)).every((r: { receiver: string }) => r.receiver === c),
+    ).toBe(true);
+    expect(await history(2)).not.toContainEqual(
+      expect.objectContaining({ receiver: b }),
+    );
+    const notice = await db.query(
+      "SELECT count(*)::int AS n FROM player_notice WHERE world_id=$1 AND text LIKE $2",
+      [f.world, "%個受け取りました（保管先 " + storage + "）"],
+    );
+    expect(notice.rows[0].n).toBe(6);
+
+    await f.move(0, f.far);
+    await f.send(0, {
+      command: "update",
+      text: "空の保管先を戻す",
+      dependencies: [],
+      operations: [
+        {
+          type: "locate",
+          subjectId: storage,
+          text: "広場へ戻す",
+          aboutIds: [f.place],
+        },
+      ],
+    });
+    expect(await list(1)).not.toContainEqual(
+      expect.objectContaining({ id: storage }),
+    );
+    await f.move(0, f.place);
+    expect(await list(0)).toContainEqual(
+      expect.objectContaining({ id: storage }),
+    );
+
+    await f.move(1, f.place);
+    const other = await craft(
+      {
+        ...definition,
+        name: "石の受領台",
+        materials: [{ label: "石材", count: 1, usage: "consume" }],
+        installation: { relocatable: false, pickup: ["public", "addressed"] },
+      },
+      "試験用の受領台",
+      [{ actor: 0, id: stone!, count: 1 }],
+    );
+    await expect(
+      f.send(0, command("storage-relocate", other, { placeId: f.far })),
+    ).rejects.toThrow("権限");
+    const supply = await f.apply([
+      {
+        type: "create",
+        holder: manager,
+        label: "乾物",
+        count: 3,
+        basis: "別の掲示",
+      },
+    ]);
+    const dry = supply.changes.nodes.find((n) => n.kind === "existence")!.id;
+    await move(0, dry, manager, other);
+    const posted = await play(
+      0,
+      command("storage-post", other, {
+        itemId: dry,
+        allocations: [{ count: 1, recipientId: b }, { count: 2 }],
+      }),
+    );
+    await f.move(2, f.place);
+    expect(await offers(2, other)).toHaveLength(1);
+    await expect(
+      f.send(
+        2,
+        command("storage-claim", other, {
+          allocationId: posted.allocationIds[0],
+          count: 1,
+        }),
+      ),
+    ).rejects.toThrow("受け渡し枠");
+    await play(
+      1,
+      command("storage-claim", other, {
+        allocationId: posted.allocationIds[0],
+        count: 1,
+      }),
+    );
+    await play(
+      2,
+      command("storage-claim", other, {
+        allocationId: posted.allocationIds[1],
+        count: 1,
+      }),
+    );
+    await play(
+      0,
+      command("storage-withdraw", other, {
+        allocationId: posted.allocationIds[1],
+      }),
+    );
+    await move(0, dry, other, manager, 1);
+    const { installation: unused, ...base } = definition;
+    expect(unused).toBeDefined();
+    const plain = await craft(
+      {
+        ...base,
+        name: "布の製作",
+        materials: [{ label: "布", count: 1, usage: "consume" }],
+      },
+      "布製の袋",
+      [{ actor: 0, id: cloth!, count: 1 }],
+    );
+    expect(await bag(manager)).toContainEqual(
+      expect.objectContaining({ id: plain, label: "布製の袋" }),
+    );
+    expect(await list(0)).not.toContainEqual(
+      expect.objectContaining({ id: plain }),
+    );
+    expect(f.calls.mock.calls.map((args) => args[1])).toEqual([
+      "world-blueprint",
+      "world-blueprint",
+      "world-blueprint",
+    ]);
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+}, 120000);
 
 test("固定場所は店主でも動かせず、人物の入退店と店の品の出し入れは確定する", async () => {
   const f = await fixture();
