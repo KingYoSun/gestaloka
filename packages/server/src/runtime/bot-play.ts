@@ -5607,21 +5607,30 @@ export class BotPlay {
                 );
               const queried = await this.#search(world, actor, input.query);
               result = queried.visible;
+              const members = d.members
+                .filter((m) => !m.instant)
+                .map((m) => m.actorId);
+              // 物品の出現上限に掛ける人数は、同席者のうちNPCを除いたプレイヤーの数。
+              const { multiplier, players } = (
+                await db.query<{ multiplier: number; players: number }>(
+                  `SELECT instant_npc_multiplier AS multiplier,
+                    (SELECT count(*)::int FROM unnest($2::uuid[]) a(id) WHERE NOT EXISTS
+                      (SELECT 1 FROM bot_npc n WHERE n.world_id=$1 AND n.actor_id=a.id)) AS players
+                  FROM world_construction WHERE id=$1`,
+                  [world, members],
+                )
+              ).rows[0]!;
               const appearance = await searchAppearances(
                 this.store,
                 queried.context,
                 actor,
-                d.members.filter((m) => !m.instant).map((m) => m.actorId),
+                members,
                 input.requestId,
                 w.at,
                 queried.visible.material,
                 d.members.flatMap((m) => (m.instant ? [m.instant] : [])),
-                (
-                  await db.query<{ instant_npc_multiplier: number }>(
-                    "SELECT instant_npc_multiplier FROM world_construction WHERE id=$1",
-                    [world],
-                  )
-                ).rows[0]!.instant_npc_multiplier,
+                multiplier,
+                players,
               );
               if (appearance) {
                 const { appearances, ...description } = appearance;
