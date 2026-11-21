@@ -334,6 +334,25 @@ test("本人の素材を個別表示し、手番終了時に入力・結果・�
   expect(posted.every((p) => p.actorId === actor)).toBe(true);
 });
 
+test("手動で操作する人物の待機を、下部のボタンから解除する", async () => {
+  const released: unknown[] = [];
+  server.use(
+    http.post("*/api/worlds/:id/waiting", async ({ request }) => {
+      released.push({
+        actorId: new URL(request.url).searchParams.get("actorId"),
+        ...((await request.json()) as object),
+      });
+      return json({ state: "standby", active: false, actionable: false });
+    }),
+  );
+  show();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "待機を解除する" }),
+  );
+  await screen.findByRole("button", { name: "待機を解除しました" });
+  expect(released).toEqual([{ actorId: actor, active: false }]);
+});
+
 test("通知の未読をプレイヤー情報に示し、通知タブを開いたときだけ既読にする", async () => {
   view.actorId = peer;
   const reads: (string | null)[] = [];
