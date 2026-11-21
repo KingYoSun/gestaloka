@@ -1434,7 +1434,7 @@ test("同じVMのCLIをView別インスタンスで並列実行し、認可と�
   }
 });
 
-test("シーン外で待機する本人を接触で起こし、在席切れと再開を区別する", async () => {
+test("シーン外で待機する本人を接触で起こし、待機の解除と1日を過ぎた在席切れでは接触できない", async () => {
   const f = await fixture(),
     user = f.people[1]!.id,
     actor = f.actors[1]!,
@@ -1474,7 +1474,7 @@ test("シーン外で待機する本人を接触で起こし、在席切れと�
   expect(
     (await access.waiting(user, f.world, actor, connection, true)).wakeKey,
   ).not.toBe(awake.wakeKey);
-  const now = new Date(Date.now() + 601000);
+  const now = new Date(Date.now() + 86401000);
   vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
   await expect(
     f.send(2, { command: "contact", targetId: actor }),
@@ -1482,6 +1482,62 @@ test("シーン外で待機する本人を接触で起こし、在席切れと�
   await access.waiting(user, f.world, actor, connection, true);
   await f.send(2, { command: "contact", targetId: actor });
   expect((await f.status(2)).sessionId).toBe((await f.status(1)).sessionId);
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("待受が止まった本人にも接触でき、戻ると不在の間の記録から再開する", async () => {
+  const f = await fixture(),
+    user = f.people[1]!.id,
+    actor = f.actors[1]!,
+    connection = "muse-view";
+  await f.send(1, { command: "finish" });
+  await access.waiting(user, f.world, actor, undefined, false);
+  await access.waiting(user, f.world, actor, connection, true);
+  // 実行環境の再起動で待受が止まり、在席期限を過ぎた。待機は解除していない。
+  let now = new Date(Date.now() + 1800000);
+  vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
+  const nearby = await f.send(0, {
+    command: "search",
+    query: { kind: "surroundings" },
+  });
+  expect(JSON.stringify(nearby.material)).toContain('"contactAvailable":true');
+  // 相手の手番は不在のためすぐスキップされ、接触した側が続けられる。
+  const contacted = await f.send(0, { command: "contact", targetId: actor });
+  expect(contacted).toMatchObject({
+    actorId: f.actors[0],
+    actionable: true,
+    action: { message: expect.stringContaining("相手は離席中です") },
+  });
+  expect(JSON.stringify((await f.status(0)).entries)).toContain(
+    "人物1が離席中のため手番をスキップします",
+  );
+  await f.send(0, { command: "say", text: "柵の修理を頼みに来た" });
+  await f.send(0, { command: "end-turn" });
+  expect((await f.status(0)).actorId).toBe(f.actors[0]);
+  // 戻った本人は、接触した側の手番が終わると起き、不在の間の記録を読める。
+  const back = await access.waiting(user, f.world, actor, connection, true);
+  expect(back).toMatchObject({ state: "standby", actionable: false });
+  await f.send(0, { command: "end-turn" });
+  const woke = await access.waiting(user, f.world, actor, connection, true);
+  expect(woke).toMatchObject({ state: "turn", actionable: true });
+  expect(woke.wakeKey).toBeTruthy();
+  expect(JSON.stringify((await f.status(1)).entries)).toContain(
+    "柵の修理を頼みに来た",
+  );
+  // 接触した側が先に去っても、一人残ったセッションは本人が戻った時点で本人の手番になる。
+  await f.send(1, { command: "end-turn" });
+  now = new Date(now.getTime() + 1800000);
+  await f.send(0, { command: "say", text: "明日また来る" });
+  await f.send(0, { command: "finish" });
+  expect(
+    (await access.botPlay.sessions(f.world)).find(
+      (s) => s.holder.actorId === actor,
+    ),
+  ).toMatchObject({ parked: true });
+  const returned = await access.waiting(user, f.world, actor, connection, true);
+  expect(returned).toMatchObject({ state: "turn", actionable: true });
+  expect(returned.wakeKey).not.toBe(woke.wakeKey);
+  expect(JSON.stringify((await f.status(1)).entries)).toContain("明日また来る");
   expect(f.calls).not.toHaveBeenCalled();
 });
 
@@ -1516,10 +1572,15 @@ test("プレイヤーの一覧は、待機中で接触を受けられるプレ�
   await expect(look(f.actors[1]!)).rejects.toMatchObject({
     code: "MATERIAL_NOT_AVAILABLE",
   });
-  await isolated.databases.postgres.query(
-    "UPDATE player_waiting SET last_seen=$3 WHERE world_id=$1 AND actor_id=$2",
-    [f.world, f.actors[0], new Date(Date.now() - 601000)],
-  );
+  // 在席期限を過ぎても、最終更新から1日は接触を受けられるので一覧に残る。
+  const lapse = (ms: number) =>
+    isolated.databases.postgres.query(
+      "UPDATE player_waiting SET last_seen=$3 WHERE world_id=$1 AND actor_id=$2",
+      [f.world, f.actors[0], new Date(Date.now() - ms)],
+    );
+  await lapse(601000);
+  expect((await list()).items).toHaveLength(1);
+  await lapse(86401000);
   expect(await list()).toEqual({ items: [], next: null });
   await expect(look(f.place)).rejects.toMatchObject({
     code: "MATERIAL_NOT_AVAILABLE",

@@ -90,9 +90,11 @@ function actionMessage(
     case "search":
       return "検索が完了しました";
     case "contact":
-      return result.joined
-        ? "セッションに合流しました"
-        : "すでに同じセッションにいます";
+      return !result.joined
+        ? "すでに同じセッションにいます"
+        : owner?.actorId === (result.joined as { actorId: string }).actorId
+          ? "セッションに合流しました。相手は離席中です。発言や行動は記録に残り、相手が戻ったときに読めます"
+          : "セッションに合流しました";
     case "say":
       return (result.outcome as { success?: boolean })?.success === false
         ? "発言・行動を記録しました。その場の存在の登場は判定に失敗しました"
@@ -301,6 +303,9 @@ async function signalTurns(
 }
 const latest = Number.MAX_SAFE_INTEGER;
 const waitLeaseMs = 600000;
+// 待受が止まっても、待機を解除していない人物は最終更新から1日のあいだ接触を受ける。
+// 不在の間の手番はスキップし、本人は戻ったときに記録を読む。
+const contactLeaseMs = 86400000;
 // 時間をかける申請で届く物品の呼称と個数。
 const arrivingItems = (ops: BelongingOp[]) =>
   ops.flatMap((op) =>
@@ -710,7 +715,7 @@ export class BotPlay {
         [
           world,
           actors,
-          new Date(this.now().getTime() - waitLeaseMs).toISOString(),
+          new Date(this.now().getTime() - contactLeaseMs).toISOString(),
         ],
       )
     ).rows;
@@ -777,7 +782,7 @@ export class BotPlay {
         [
           world,
           actor,
-          new Date(this.now().getTime() - waitLeaseMs).toISOString(),
+          new Date(this.now().getTime() - contactLeaseMs).toISOString(),
           before ?? null,
           among ?? null,
         ],
@@ -1501,6 +1506,7 @@ export class BotPlay {
         session.data.number !== before.number)
     ) {
       delete session.data.awayUntil;
+      delete session.data.parked;
       const presence = await this.#turnPresence(db, session);
       // At most one round is recorded while nobody can take a turn.
       for (
@@ -5437,17 +5443,18 @@ export class BotPlay {
               if (!available?.user_id)
                 reject(
                   "PARTNER_NOT_AVAILABLE",
-                  "接触先に在席中の操作担当を確認できません",
+                  "接触先に待機中の操作担当を確認できません",
                 );
-              const other =
-                (await this.current(world, input.targetId, db)) ??
-                (await this.#open(
-                  db,
-                  world,
-                  input.targetId,
-                  available.user_id,
-                  derivedId(`${input.requestId}:contact:${input.targetId}`),
-                ));
+              const current = await this.current(world, input.targetId, db),
+                other =
+                  current ??
+                  (await this.#open(
+                    db,
+                    world,
+                    input.targetId,
+                    available.user_id,
+                    derivedId(`${input.requestId}:contact:${input.targetId}`),
+                  ));
               result = { contact: "joined", targetId: input.targetId };
               d.entries.push({
                 actorId: actor,
@@ -5463,6 +5470,9 @@ export class BotPlay {
                 d.members = d.members.filter((m) => m.actorId !== actor);
                 await this.#save(db, session, before);
                 before = turnState(other);
+                // 新しく開いた、または保留中のセッションでは、相手の手番は接触の時点で始まる。
+                // 相手が不在なら、手番が回る前から離席していた人物としてスキップする。
+                if (!current || current.data.parked) before.turn = "";
                 result.joined = await this.#enter(db, other, member);
                 session = other;
               }
