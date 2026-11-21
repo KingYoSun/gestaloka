@@ -3190,6 +3190,334 @@ export interface paths {
                         /** Format: uuid */
                         requestId: string;
                         /** @enum {string} */
+                        command: "create-batch";
+                        proposals: ({
+                            text: string;
+                            changes: {
+                                nodes: ({
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @description 同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す */
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "existence";
+                                    /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
+                                    count?: number;
+                                    /**
+                                     * Format: uuid
+                                     * @description 管理者が指定する物品の系列ID
+                                     */
+                                    seriesId?: string;
+                                    /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                    viewers?: "all" | string[];
+                                } | {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "script";
+                                    /** @enum {string} */
+                                    type?: "memo";
+                                    spawn?: {
+                                        /** @enum {string} */
+                                        kind: "instant-npc" | "existence" | "script" | "event";
+                                        species: string;
+                                        description: string;
+                                        probability: number;
+                                        minCount: number;
+                                        maxCount: number;
+                                    } | {
+                                        /** @enum {string} */
+                                        kind: "instant-npc" | "existence" | "script" | "event";
+                                        species: string;
+                                        description: string;
+                                        probability: number;
+                                        count: number;
+                                    };
+                                    /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                    viewers?: "all" | string[];
+                                } | {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "event";
+                                    appearances?: {
+                                        /** @enum {string} */
+                                        kind: "instant-npc" | "existence" | "script" | "event";
+                                        species: string;
+                                        description: string;
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
+                                        count?: number;
+                                        /**
+                                         * Format: uuid
+                                         * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
+                                         */
+                                        ruleId?: string;
+                                    }[];
+                                    instantActor?: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** Format: uuid */
+                                        sourceEventId: string;
+                                    };
+                                    instantTarget?: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** Format: uuid */
+                                        sourceEventId: string;
+                                    };
+                                    instantReduction?: {
+                                        /** Format: uuid */
+                                        targetId: string;
+                                        /** @enum {string} */
+                                        kind: "death" | "separation";
+                                        count: number;
+                                        remaining: number;
+                                        /** Format: uuid */
+                                        separatedId?: string;
+                                    };
+                                    period: {
+                                        from: number;
+                                        until?: number;
+                                    };
+                                })[];
+                                /** @default [] */
+                                revisions?: ({
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @description 同一性を参照するための呼称・識別用ラベル。職業・所属・居場所・性質・状態の事実はscriptとstatusで表す */
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "existence";
+                                    /** @description 物品の個数。無い物品は、個数を数えないひとまとまり */
+                                    count?: number;
+                                    /**
+                                     * Format: uuid
+                                     * @description 管理者が指定する物品の系列ID
+                                     */
+                                    seriesId?: string;
+                                    /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                    viewers?: "all" | string[];
+                                } | {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "script";
+                                    /** @enum {string} */
+                                    type?: "memo";
+                                    spawn?: {
+                                        /** @enum {string} */
+                                        kind: "instant-npc" | "existence" | "script" | "event";
+                                        species: string;
+                                        description: string;
+                                        probability: number;
+                                        minCount: number;
+                                        maxCount: number;
+                                    } | {
+                                        /** @enum {string} */
+                                        kind: "instant-npc" | "existence" | "script" | "event";
+                                        species: string;
+                                        description: string;
+                                        probability: number;
+                                        count: number;
+                                    };
+                                    /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
+                                    viewers?: "all" | string[];
+                                } | {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "event";
+                                    appearances?: {
+                                        /** @enum {string} */
+                                        kind: "instant-npc" | "existence" | "script" | "event";
+                                        species: string;
+                                        description: string;
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
+                                        count?: number;
+                                        /**
+                                         * Format: uuid
+                                         * @description 出現させた発生用ノード。個体が死亡したときのドロップの抽選に使う
+                                         */
+                                        ruleId?: string;
+                                    }[];
+                                    instantActor?: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** Format: uuid */
+                                        sourceEventId: string;
+                                    };
+                                    instantTarget?: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** Format: uuid */
+                                        sourceEventId: string;
+                                    };
+                                    instantReduction?: {
+                                        /** Format: uuid */
+                                        targetId: string;
+                                        /** @enum {string} */
+                                        kind: "death" | "separation";
+                                        count: number;
+                                        remaining: number;
+                                        /** Format: uuid */
+                                        separatedId?: string;
+                                    };
+                                    period: {
+                                        from: number;
+                                        until?: number;
+                                    };
+                                })[];
+                                edges: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    kind: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+                                    /** Format: uuid */
+                                    source: string;
+                                    /** Format: uuid */
+                                    target: string;
+                                    /**
+                                     * @description status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する
+                                     * @enum {string}
+                                     */
+                                    role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
+                                    /** @description 関係の内容。seeでは受容本文。status/contentでtext=locationは主体の現在の所在専用のscriptを示し、status/aboutで場所を参照する */
+                                    text?: string;
+                                    period: {
+                                        from: number;
+                                        until?: number;
+                                    };
+                                    observation?: {
+                                        /** @description 受容した側面・範囲。textがない場合は、受容内容の本文も含める */
+                                        aspect: string;
+                                        through: number;
+                                        /** @default [] */
+                                        sourceIds?: string[];
+                                        /** @default [] */
+                                        pathIds?: string[];
+                                        /** @description サーバーが確定時に保存する版。モデルからの値は使用しない */
+                                        versions?: {
+                                            [key: string]: number;
+                                        };
+                                    };
+                                }[];
+                                endEdges: string[];
+                            };
+                        } | {
+                            text: string;
+                            operations: ({
+                                /** @enum {string} */
+                                type: "locate";
+                                /** Format: uuid */
+                                subjectId: string;
+                                text: string;
+                                aboutIds: string[];
+                                /**
+                                 * Format: uuid
+                                 * @description 直接滞在する具体的な場所。複数の場所を参照するときに指定する
+                                 */
+                                directPlaceId?: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "create";
+                                label: string;
+                                /** @description 個数。数えないまとまりなら省く */
+                                count?: number;
+                                /** Format: uuid */
+                                holder: string;
+                                /**
+                                 * Format: uuid
+                                 * @description 所有者。省くと保持先だけが登録される
+                                 */
+                                owner?: string;
+                                /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                                basis: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "move";
+                                /** Format: uuid */
+                                item: string;
+                                /**
+                                 * Format: uuid
+                                 * @description 現在の保持者。所在が未記録ならnull
+                                 */
+                                from: string | null;
+                                /** Format: uuid */
+                                to: string;
+                                /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
+                                count?: number;
+                                /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                                basis: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "transfer";
+                                /** Format: uuid */
+                                item: string;
+                                /** Format: uuid */
+                                to: string;
+                                /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
+                                count?: number;
+                                /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                                basis: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "grant";
+                                /** Format: uuid */
+                                person: string;
+                                /** Format: uuid */
+                                storage: string;
+                                /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                                basis: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "revoke";
+                                /** Format: uuid */
+                                person: string;
+                                /** Format: uuid */
+                                storage: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "learn";
+                                /** Format: uuid */
+                                person: string;
+                                text: string;
+                                /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                                basis: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "update";
+                                /** Format: uuid */
+                                id: string;
+                                text?: string;
+                                /** @description 物品の新しい個数。増やす・新しく付けるときはダイスで判定する */
+                                count?: number;
+                                /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                                basis?: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "remove";
+                                /** Format: uuid */
+                                id: string;
+                                /** @description 減らす個数。省くと全部 */
+                                count?: number;
+                            })[];
+                        })[];
+                        dependencies: {
+                            key: string;
+                            version: number;
+                        }[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
                         command: "explore";
                         /** @description 新しい場所の様子と、接続元からの行き方 */
                         text: string;

@@ -3147,6 +3147,7 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
       });
   await seed(failing);
   const failed = await attempt();
+  expect(failed.spentSp).toBe(0);
   expect(failed.outcome).toEqual({
     success: false,
     setting: { sides: 100, successThrough: 10 },
@@ -3255,6 +3256,7 @@ test("同じ手番で失敗した申請の出し直しは、判断モデルが�
         dependencies: [],
       });
   const first = await again();
+  expect(first.spentSp).toBe(0);
   expect(first.outcome).toEqual({
     success: false,
     setting: dice,
@@ -6063,6 +6065,227 @@ test("認可済み端末は人物生成前に一度報告でき、参加後も�
   }
 });
 
+test("探索と複数案の生成は日次SPを共有し、生成と素材消費は成功した案だけに一度適用する", async () => {
+  const f = await fixture(),
+    db = isolated.databases.postgres,
+    holder = f.actors[0]!;
+  const stock = await f.apply([
+    { type: "create", label: "布", count: 4, holder, basis: "初期設定" },
+  ]);
+  const material = stock.changes.nodes[0]!.id;
+  const setting = {
+    sides: 6,
+    successThrough: 3,
+    consumes: [{ id: material, count: 1 }],
+  };
+  const explore = {
+    command: "explore",
+    text: "水場の先の道",
+    label: "水場",
+    fromId: f.place,
+    dependencies: [],
+  };
+  await expect(f.send(0, { ...explore, fromId: f.far })).rejects.toMatchObject({
+    code: "EXPLORE_SOURCE_REQUIRED",
+  });
+  expect((await f.status(0)).dailySp).toMatchObject({ remaining: 100 });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { sides: 100, successThrough: 100 }),
+  );
+  expect(await f.send(0, explore)).toMatchObject({
+    spentSp: 1,
+    dailySp: { remaining: 99 },
+  });
+  const proposals = ["袋", "帽子", "敷物", "幕"].map((text) => ({
+    text,
+    operations: [{ type: "create", label: text, holder, basis: "製作" }],
+  }));
+  const requestId = randomUUID(),
+    batch = { command: "create-batch", requestId, proposals, dependencies: [] };
+  expect(
+    PlayCommand.safeParse({ ...batch, proposals: [...proposals, ...proposals] })
+      .success,
+  ).toBe(false);
+  await expect(
+    f.send(0, {
+      ...batch,
+      requestId: randomUUID(),
+      proposals: [
+        proposals[0],
+        {
+          text: "歩く",
+          operations: [
+            {
+              type: "locate",
+              subjectId: holder,
+              text: "元の場所",
+              aboutIds: [f.place],
+            },
+          ],
+        },
+      ],
+    }),
+  ).rejects.toMatchObject({ code: "CREATION_REQUIRED" });
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(JSON.parse(String(messages[1]!.content)).proposals).toHaveLength(4);
+    for (const [i, roll] of [1, 6, 2].entries())
+      await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,$3)", [
+        derivedId(derivedId(`${requestId}:proposal:${i}`) + ":creation"),
+        setting,
+        roll,
+      ]);
+    return answer(id, {
+      settings: [
+        setting,
+        setting,
+        setting,
+        { ...setting, consumes: [{ id: material, count: 3 }] },
+      ],
+    });
+  });
+  const created = await f.send(0, batch);
+  expect(created).toMatchObject({
+    spentSp: 1,
+    dailySp: { remaining: 98 },
+    outcome: {
+      proposals: [
+        { roll: 1, success: true },
+        { roll: 6, success: false },
+        { roll: 2, success: true },
+        { success: false, reason: "MATERIAL_SHORTAGE" },
+      ],
+    },
+  });
+  expect(
+    (
+      await db.query("SELECT 1 FROM bot_dice WHERE id=$1", [
+        derivedId(derivedId(`${requestId}:proposal:3`) + ":creation"),
+      ])
+    ).rowCount,
+  ).toBe(0);
+  expect(await f.send(0, batch)).toEqual(created);
+  const items = (await readBelongings(f.store.context(f.graph), holder)).items;
+  expect(items.map((i) => i.label).sort()).toEqual(["布", "敷物", "袋"].sort());
+  expect(items.find((i) => i.id === material)?.count).toBe(2);
+  expect(f.calls).toHaveBeenCalledTimes(2);
+  const failure = randomUUID();
+  f.calls.mockImplementationOnce(async (id) => {
+    await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,6)", [
+      derivedId(failure + ":creation"),
+      setting,
+    ]);
+    return answer(id, setting);
+  });
+  const missed = await f.send(0, {
+    command: "update",
+    requestId: failure,
+    ...proposals[0],
+    dependencies: [],
+  });
+  expect(missed).toMatchObject({
+    spentSp: 1,
+    dailySp: { remaining: 97 },
+    outcome: { success: false },
+  });
+  expect(
+    (await readBelongings(f.store.context(f.graph), holder)).items.find(
+      (i) => i.id === material,
+    )?.count,
+  ).toBe(2);
+});
+
+test("同じ利用者の残り1 SPを同時申請で共有し、使い切った後も移動・結果取得・日次回復ができる", async () => {
+  const f = await fixture(),
+    db = isolated.databases.postgres,
+    user = f.people[0]!.id;
+  const time = vi
+    .spyOn(access.botPlay, "now")
+    .mockReturnValue(new Date("2026-11-20T14:59:59Z"));
+  const { resetsAt } = await access.botPlay.dailySp(f.world, user);
+  expect(resetsAt).toBe("2026-11-20T15:00:00.000Z");
+  await db.query(
+    `INSERT INTO bot_request(id,actor_id,world_id,hash,sp_user,sp_reset) SELECT gen_random_uuid(),$1,$2,'fixture',$3,$4 FROM generate_series(1,99)`,
+    [f.actors[0], f.world, user, resetsAt],
+  );
+  await db.query(
+    "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3)",
+    [user, f.world, f.actors[1]],
+  );
+  const requests = [0, 1].map((i) =>
+    PlayCommand.parse({
+      requestId: randomUUID(),
+      command: "create",
+      text: "作成",
+      changes: {
+        nodes: [{ id: randomUUID(), kind: "existence", text: `道具${i}` }],
+        edges: [],
+        endEdges: [],
+      },
+      dependencies: [],
+    }),
+  );
+  const send = (i: number) =>
+    access.botCommand(user, f.world, requests[i]!, f.actors[i]);
+  f.calls.mockImplementation(async (id, _role, messages) => {
+    const changes = JSON.parse(String(messages[1]!.content)).changes;
+    const i = Number(changes.nodes[0].text.slice(-1));
+    const setting = { sides: 2, successThrough: 1 };
+    await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,2)", [
+      derivedId(requests[i]!.requestId + ":creation"),
+      setting,
+    ]);
+    return answer(id, setting);
+  });
+  const results = await Promise.allSettled([send(0), send(1)]);
+  const winner = results.findIndex((r) => r.status === "fulfilled");
+  expect(winner).toBeGreaterThanOrEqual(0);
+  expect(results[1 - winner]).toMatchObject({
+    status: "rejected",
+    reason: { code: "DAILY_SP_EXHAUSTED" },
+  });
+  expect(f.calls).toHaveBeenCalledTimes(1);
+  expect(await send(winner)).toMatchObject({
+    spentSp: 1,
+    dailySp: { remaining: 0 },
+  });
+  vi.spyOn(runtime.agent.model, "decision", "get").mockReturnValue(
+    decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+  );
+  vi.spyOn(runtime.agent.model, "decide").mockResolvedValue({ f0: 1 });
+  const reused = await access.botCommand(
+    user,
+    f.world,
+    { ...requests[winner]!, requestId: randomUUID() },
+    f.actors[winner],
+  );
+  expect(reused).toMatchObject({
+    spentSp: 0,
+    dailySp: { remaining: 0 },
+    outcome: { repeated: true, roll: 2 },
+  });
+  expect(f.calls).toHaveBeenCalledTimes(1);
+  const moved = await f.send(0, {
+    command: "update",
+    text: "移動",
+    operations: [
+      {
+        type: "locate",
+        subjectId: f.actors[0],
+        text: "離れた場所",
+        aboutIds: [f.far],
+      },
+    ],
+    dependencies: [],
+  });
+  expect(moved).toMatchObject({ spentSp: 0, dailySp: { remaining: 0 } });
+  time.mockReturnValue(new Date(resetsAt));
+  expect(await send(1 - winner)).toMatchObject({
+    spentSp: 1,
+    dailySp: { remaining: 99 },
+  });
+});
+
 test("新しい場所は接続元を指定して申請し、ダイスの成否と行き来の手がかりを残す", async () => {
   const f = await fixture(),
     app = await createApp(access, auth.identity, undefined, auth.operations),
@@ -6817,7 +7040,6 @@ test("持ち物は本人検索で個数つきで読め、ダイスが成功し�
       { ...lost, consumes: [{ id: arrows, label: "矢", count: 1 }] },
     ],
   );
-  f.calls.mockImplementationOnce(async (id) => answer(id, lost));
   expect((await f.send(0, failing)).outcome).toMatchObject({ success: false });
   expect(await count(0, arrows)).toBe(3);
   // 個数を増やす更新はダイスに進む。申請が操作する物品は候補から外れる。減らす更新はダイスを通らない。
@@ -7060,7 +7282,6 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
       { ...lost, consumes: [{ id: coins, label: "銀貨", count: 1 }] },
     ],
   );
-  f.calls.mockImplementationOnce(async (id) => answer(id, lost));
   const failed = await f.send(0, failing);
   expect(failed.outcome).toMatchObject({ success: false });
   expect(failed.arrival).toBeUndefined();

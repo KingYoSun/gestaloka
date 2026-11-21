@@ -59,6 +59,13 @@ const View = z.object({
   actorId: z.string().nullish(),
   turnStartedAt: z.string().optional(),
   screen: PlayScreen,
+  dailySp: z
+    .object({
+      remaining: z.number(),
+      limit: z.number(),
+      resetsAt: z.iso.datetime(),
+    })
+    .optional(),
   callsUsed: z.number().optional(),
   callsLimit: z.number().optional(),
   unreadNotices: z.number().optional(),
@@ -545,6 +552,8 @@ export function BotSession({
                 ? `${personName(view.actorId)}の手番を待っています`
                 : "待機中です"}
             （通常API {view.callsUsed} / {view.callsLimit}回）
+            {view.dailySp &&
+              `探索・生成の残り ${view.dailySp.remaining} / ${view.dailySp.limit} SP（回復 ${realTime(view.dailySp.resetsAt)}）`}
           </Notice>
           {mine && !view.receiving && (
             <div className="flex flex-wrap gap-3">
