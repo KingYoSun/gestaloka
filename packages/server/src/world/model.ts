@@ -42,18 +42,17 @@ export const atTime = (changes: Change, at: number): Change => ({
   })),
 });
 
-// 役割つきhasの現在の集合から導出する要約。正本は関係で、要約は確定時に作り直す。
-export const summaryId = (subject: string, role: BelongingRole) =>
-  derivedId(`summary:${subject}:${role}`);
+// 持つ物品と役割つきhasの現在の集合から導出する要約。正本は関係で、要約は確定時に作り直す。
+// 持つ物品の要約は、既存の要約の同一性を保つためholdの名で導出する。
+export type SummaryKind = "hold" | BelongingRole;
+export const summaryId = (subject: string, kind: SummaryKind) =>
+  derivedId(`summary:${subject}:${kind}`);
 const summaryTitle = {
   hold: "保持している物品",
   use: "利用できる保管先",
   skill: "技能",
 };
-export const summaryText = (
-  role: BelongingRole,
-  targets: readonly WorldNode[],
-) =>
+export const summaryText = (role: SummaryKind, targets: readonly WorldNode[]) =>
   [
     summaryTitle[role],
     ...(targets.length
@@ -121,10 +120,7 @@ export function validateConnection(
           source.kind === "existence" &&
           (edge.role === undefined
             ? target.kind !== "event"
-            : target.kind ===
-              (edge.role === "hold" || edge.role === "use"
-                ? "existence"
-                : "script"))
+            : target.kind === (edge.role === "use" ? "existence" : "script"))
         );
       case "effect":
         return source.kind !== "script" && target.kind === "existence";

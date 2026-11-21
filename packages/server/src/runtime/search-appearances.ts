@@ -229,7 +229,7 @@ export async function searchAppearances(
   if (!rules.size) return;
   const held = new Set(
     (await ctx.relations(actor, "has", "out", latest))
-      .filter((e) => e.role === "hold")
+      .filter((e) => !e.role)
       .map((e) => e.target),
   );
   const places = await directPlaces(ctx, actor);

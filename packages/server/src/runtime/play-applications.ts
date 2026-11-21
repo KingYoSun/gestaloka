@@ -96,7 +96,7 @@ export async function readHandoff(
         itemId,
         label: node.text,
         seriesId: node.seriesId ?? null,
-        holderId: incoming.find((e) => e.role === "hold")?.source ?? null,
+        holderId: incoming.find((e) => !e.role)?.source ?? null,
         ...(wholeItems.has(itemId) ? { wholeCount: node.count ?? null } : {}),
       };
     }),
@@ -427,7 +427,7 @@ export class PlayApplications {
       item?.kind === "existence" &&
       (item.count ?? 1) >= count &&
       (await context.relations(itemId, "has", "in", latest)).some(
-        (edge) => edge.role === "hold" && edge.source === holder,
+        (edge) => !edge.role && edge.source === holder,
       )
     )
       return item;

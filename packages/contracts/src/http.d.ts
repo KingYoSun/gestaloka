@@ -2886,10 +2886,10 @@ export interface paths {
                                 /** Format: uuid */
                                 target: string;
                                 /**
-                                 * @description status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する
+                                 * @description status/interpretはcontentかabout。hasの役割なしは、存在へ向くと物品を持つこと、記述へ向くと記録やメモを持つこと。useは家・場所の保管先の登録。use・skill・summaryと物品を持つhasは実行側だけが記録する
                                  * @enum {string}
                                  */
-                                role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
+                                role?: "content" | "about" | "use" | "skill" | "summary";
                                 /** @description 関係の内容。seeでは受容本文。status/contentでtext=locationは主体の現在の所在専用のscriptを示し、status/aboutで場所を参照する */
                                 text?: string;
                                 period: {
@@ -3141,10 +3141,10 @@ export interface paths {
                                 /** Format: uuid */
                                 target: string;
                                 /**
-                                 * @description status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する
+                                 * @description status/interpretはcontentかabout。hasの役割なしは、存在へ向くと物品を持つこと、記述へ向くと記録やメモを持つこと。useは家・場所の保管先の登録。use・skill・summaryと物品を持つhasは実行側だけが記録する
                                  * @enum {string}
                                  */
-                                role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
+                                role?: "content" | "about" | "use" | "skill" | "summary";
                                 /** @description 関係の内容。seeでは受容本文。status/contentでtext=locationは主体の現在の所在専用のscriptを示し、status/aboutで場所を参照する */
                                 text?: string;
                                 period: {
@@ -3785,10 +3785,10 @@ export interface paths {
                                 /** Format: uuid */
                                 target: string;
                                 /**
-                                 * @description status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する
+                                 * @description status/interpretはcontentかabout。hasの役割なしは、存在へ向くと物品を持つこと、記述へ向くと記録やメモを持つこと。useは家・場所の保管先の登録。use・skill・summaryと物品を持つhasは実行側だけが記録する
                                  * @enum {string}
                                  */
-                                role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
+                                role?: "content" | "about" | "use" | "skill" | "summary";
                                 /** @description 関係の内容。seeでは受容本文。status/contentでtext=locationは主体の現在の所在専用のscriptを示し、status/aboutで場所を参照する */
                                 text?: string;
                                 period: {
@@ -4416,10 +4416,10 @@ export interface paths {
                                             /** Format: uuid */
                                             target: string;
                                             /**
-                                             * @description status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する
+                                             * @description status/interpretはcontentかabout。hasの役割なしは、存在へ向くと物品を持つこと、記述へ向くと記録やメモを持つこと。useは家・場所の保管先の登録。use・skill・summaryと物品を持つhasは実行側だけが記録する
                                              * @enum {string}
                                              */
-                                            role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
+                                            role?: "content" | "about" | "use" | "skill" | "summary";
                                             /** @description 関係の内容。seeでは受容本文。status/contentでtext=locationは主体の現在の所在専用のscriptを示し、status/aboutで場所を参照する */
                                             text?: string;
                                             period: {
@@ -7001,10 +7001,10 @@ export interface paths {
                                     /** Format: uuid */
                                     target: string;
                                     /**
-                                     * @description status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する
+                                     * @description status/interpretはcontentかabout。hasの役割なしは、存在へ向くと物品を持つこと、記述へ向くと記録やメモを持つこと。useは家・場所の保管先の登録。use・skill・summaryと物品を持つhasは実行側だけが記録する
                                      * @enum {string}
                                      */
-                                    role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
+                                    role?: "content" | "about" | "use" | "skill" | "summary";
                                     /** @description 関係の内容。seeでは受容本文。status/contentでtext=locationは主体の現在の所在専用のscriptを示し、status/aboutで場所を参照する */
                                     text?: string;
                                     period: {

@@ -86,7 +86,11 @@ test("statusの対象接続で場所・所属を表し、所有・現実・解�
     ),
   });
   const read = store.context(worldId);
-  expect(await read.relations(actor.id, "has", "out", 0)).toHaveLength(1);
+  expect(
+    (await read.relations(actor.id, "has", "out", 0)).filter(
+      (e) => e.role !== "summary",
+    ),
+  ).toHaveLength(1);
   expect(await read.relations(actor.id, "status", "out", 0)).toHaveLength(2);
   expect(await read.relations(location.id, "status", "out", 0)).toMatchObject([
     { target: village.id, role: "about" },

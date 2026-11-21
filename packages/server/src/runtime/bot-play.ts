@@ -37,6 +37,7 @@ import {
   BelongingOp,
   BelongingRejected,
   planBelongings,
+  belongingEdges,
   heldItems,
   readBelongings,
   visibleTo,
@@ -3502,7 +3503,7 @@ export class BotPlay {
         const relations = changes.edges.filter(
           (edge) => edge.kind === "has" && edge.target === itemId,
         );
-        const holding = relations.find((edge) => edge.role === "hold");
+        const holding = relations.find((edge) => !edge.role);
         if (holding)
           items.set(itemId, {
             itemId,
@@ -3761,7 +3762,7 @@ export class BotPlay {
       if (seen.has(id)) return [];
       seen.add(id);
       const incoming = await holders(id),
-        held = incoming.filter((e) => e.role === "hold");
+        held = incoming.filter((e) => !e.role);
       // 持つ存在がなければ、家・場所の保管先の登録者、記録や技能を持つ人物が判断する。
       const sources = (held.length ? held : incoming).map((e) => e.source);
       for (const kind of ["status", "interpret"] as const)
@@ -3913,7 +3914,7 @@ export class BotPlay {
           }
           const incoming = await holders(id);
           if (op.type === "move") {
-            const held = incoming.find((e) => e.role === "hold");
+            const held = incoming.find((e) => !e.role);
             if (input.command === "oppose" && held?.source === op.to) {
               if (op.from !== held.source) impossible = true;
               else parties.add(op.to);
@@ -4071,26 +4072,12 @@ export class BotPlay {
       const ended = await Promise.all(
         changes.endEdges.map((id) => context.edge(id)),
       );
-      const kinds = new Map(changes.nodes.map((node) => [node.id, node.kind]));
       if (
-        [...changes.edges, ...ended.filter((e) => e !== undefined)].some(
-          (e) =>
-            (e.kind === "has" && e.role !== undefined) ||
-            (e.kind === "status" &&
-              e.role === "content" &&
-              e.text === "location"),
-        ) ||
-        // 物品を持つことは、記述ではなくmoveとcreateで表す。
-        (
-          await Promise.all(
-            changes.edges.map(
-              async (e) =>
-                e.kind === "has" &&
-                (kinds.get(e.target) ??
-                  (await context.node(e.target))?.kind) === "existence",
-            ),
-          )
-        ).some(Boolean)
+        await belongingEdges(
+          context,
+          changes,
+          ended.filter((e) => e !== undefined),
+        )
       )
         reject(
           "INTERNAL_OPERATION_REQUIRED",

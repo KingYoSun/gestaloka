@@ -135,8 +135,9 @@ export const RelationKind = z.enum([
   "status",
 ]);
 export type RelationKind = z.infer<typeof RelationKind>;
-// hasの役割。holdは物品を持つこと（持つ存在の物であること）、useは家・場所の保管先の登録、skillは身につけた技能を表す。
-export const BelongingRole = z.enum(["hold", "use", "skill"]);
+// hasの役割。useは家・場所の保管先の登録、skillは身につけた技能を表す。
+// 役割なしのhasは、存在へ向くと物品を持つこと（持つ存在の物であること）、記述へ向くと記録やメモを持つことを表す。
+export const BelongingRole = z.enum(["use", "skill"]);
 export type BelongingRole = z.infer<typeof BelongingRole>;
 export const WorldEdge = z
   .object({
@@ -148,7 +149,7 @@ export const WorldEdge = z
       .enum(["content", "about", ...BelongingRole.options, "summary"])
       .optional()
       .describe(
-        "status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する",
+        "status/interpretはcontentかabout。hasの役割なしは、存在へ向くと物品を持つこと、記述へ向くと記録やメモを持つこと。useは家・場所の保管先の登録。use・skill・summaryと物品を持つhasは実行側だけが記録する",
       ),
     text: z
       .string()

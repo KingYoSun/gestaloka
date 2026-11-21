@@ -16,6 +16,7 @@ import {
   derivedId,
   summaryId,
   summaryText,
+  type SummaryKind,
 } from "./model.js";
 
 export {
@@ -668,8 +669,15 @@ export class WorldStore {
     await this.driver.executeQuery(
       "CREATE TEXT INDEX WorldNode_data IF NOT EXISTS FOR (n:WorldNode) ON (n.data)",
     );
+    await this.driver.executeQuery(
+      "CREATE INDEX WorldEdge_has_role IF NOT EXISTS FOR ()-[r:has]-() ON (r.role)",
+    );
     // 同名確認は索引を指定して引くので、作成中の索引を使わせない。
     await this.driver.executeQuery("CALL db.awaitIndexes(300)");
+    // ADR-072: 物品を持つ関係は役割なしのhas。旧版が役割holdで記録した関係を書き換える。
+    await this.driver.executeQuery(
+      `MATCH ()-[r:has {role:'hold'}]->() SET r.role = null, r.data = replace(r.data, ',"role":"hold"', '')`,
+    );
   }
 
   context(worldId: string, dependencies: readonly Dependency[] = []) {
@@ -907,13 +915,30 @@ export class WorldStore {
             throw new WorldConflict("終了対象の関係が有効ではありません");
           ended.push(edge);
         }
-        // 役割つきhasの集合か、その対象の本文が変わる主体は、同じ確定で要約を作り直す。
+        // 持つ物品・役割つきhasの集合か、その対象の本文が変わる主体は、同じ確定で要約を作り直す。
         const summaries = new Map<
           string,
-          { role: BelongingRole; edge: WorldEdge }
+          { role: SummaryKind; edge: WorldEdge }
         >();
+        const kinds = new Map(
+          changes.nodes.map((node) => [node.id, node.kind]),
+        );
+        const kindOf = async (id: string) =>
+          kinds.get(id) ??
+          (
+            await tx.run(
+              "MATCH (n:WorldNode {worldId:$worldId,id:$id}) RETURN n.kind AS kind",
+              { worldId, id },
+            )
+          ).records[0]?.get("kind");
+        // 役割なしのhasは、存在へ向くときだけ物品を持つことを表す。
+        const held = async (edge: WorldEdge) =>
+          edge.kind === "has" &&
+          edge.role === undefined &&
+          (await kindOf(edge.target)) === "existence";
         const summarize = (subject: string, value: unknown) => {
-          const role = BelongingRole.safeParse(value).data;
+          const role: SummaryKind | undefined =
+            value === "hold" ? value : BelongingRole.safeParse(value).data;
           if (!role) return;
           const target = summaryId(subject, role);
           summaries.set(target, {
@@ -929,13 +954,15 @@ export class WorldStore {
           });
         };
         for (const edge of [...changes.edges, ...ended])
-          if (edge.kind === "has") summarize(edge.source, edge.role);
+          if (edge.kind === "has")
+            summarize(edge.source, (await held(edge)) ? "hold" : edge.role);
         for (const node of changes.revisions) {
           const key = relationKey(node.id, "has", "in");
           dependencies.push({ key, version: await version(tx, worldId, key) });
           const holders = await tx.run(
-            `MATCH(s:WorldNode)-[r:has {worldId:$worldId}]->(:WorldNode {worldId:$worldId,id:$id})
-            WHERE r.validTo IS NULL AND r.role IS NOT NULL RETURN s.id AS subject,r.role AS role`,
+            `MATCH(s:WorldNode)-[r:has {worldId:$worldId}]->(t:WorldNode {worldId:$worldId,id:$id})
+            WHERE r.validTo IS NULL AND (r.role IS NOT NULL OR t.kind='existence')
+            RETURN s.id AS subject,coalesce(r.role,'hold') AS role`,
             { worldId, id: node.id },
           );
           for (const row of holders.records)
@@ -1100,10 +1127,10 @@ export class WorldStore {
           );
         }
         for (const edge of changes.edges) {
-          if (edge.role !== "hold") continue;
+          if (!(await held(edge))) continue;
           const open = await tx.run(
-            `MATCH()-[r:has {worldId:$worldId,role:'hold'}]->(:WorldNode {worldId:$worldId,id:$id})
-            WHERE r.validTo IS NULL RETURN count(r) AS count`,
+            `MATCH()-[r:has {worldId:$worldId}]->(:WorldNode {worldId:$worldId,id:$id})
+            WHERE r.validTo IS NULL AND r.role IS NULL RETURN count(r) AS count`,
             { worldId, id: edge.target },
           );
           if (Number(open.records[0]!.get("count")) > 1)
@@ -1115,8 +1142,9 @@ export class WorldStore {
         >;
         for (const [id, { role, edge }] of summaries) {
           const targets = await tx.run(
-            `MATCH(:WorldNode {worldId:$worldId,id:$subject})-[r:has {worldId:$worldId,role:$role}]->(t:WorldNode)
-            WHERE r.validTo IS NULL RETURN t.data AS data ORDER BY r.validFrom,r.id`,
+            `MATCH(:WorldNode {worldId:$worldId,id:$subject})-[r:has {worldId:$worldId}]->(t:WorldNode)
+            WHERE r.validTo IS NULL AND ($role='hold' AND r.role IS NULL AND t.kind='existence' OR r.role=$role)
+            RETURN t.data AS data ORDER BY r.validFrom,r.id`,
             { worldId, subject: edge.source, role },
           );
           const node: WorldNode = {
