@@ -1,24 +1,23 @@
 import { expect, test } from "vitest";
-import { readLocations } from "../../packages/server/src/world/locations.js";
+import { locationRecords } from "../../packages/server/src/world/locations.js";
 import type { WorldContext } from "../../packages/server/src/world/store.js";
 
-test("終了した最新の所在から古い所在へ戻らず、別の状態を所在にしない", async () => {
-  const context = {
-    history: async () => [
-      { role: "content", text: "location", target: "old", period: { from: 0 } },
-      {
-        role: "content",
-        text: "location",
-        target: "new",
-        period: { from: 10, until: 20 },
-      },
-      { role: "content", target: "private", period: { from: 30 } },
-    ],
-    relations: async () => [],
-    node: async (id: string) => ({
-      text: id === "new" ? "入口の外" : "私的な状態",
-    }),
-  } as unknown as WorldContext;
-  expect(await readLocations(context, "actor", 15)).toEqual(["入口の外"]);
-  expect(await readLocations(context, "actor", 30)).toEqual([]);
+test("終了した最新の所在から、古い有効な所在へ戻らない", async () => {
+  const old = {
+    id: "edge",
+    role: "content",
+    text: "location",
+    target: "old",
+    period: { from: 0 },
+  };
+  const context = (latest: number) =>
+    ({
+      locations: async () => ({ latest, last: 20, active: [old] }),
+      relations: async () => [],
+      node: async () => ({ text: "入口の外" }),
+    }) as unknown as WorldContext;
+  expect(await locationRecords(context(10), "actor")).toEqual([]);
+  expect(await locationRecords(context(0), "actor")).toMatchObject([
+    { text: "入口の外", at: 0 },
+  ]);
 });
