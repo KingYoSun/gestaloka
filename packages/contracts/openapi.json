@@ -9272,12 +9272,11 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "role": {
-                                            "description": "status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する",
+                                            "description": "status/interpretはcontentかabout。hasの役割なしは、存在へ向くと物品を持つこと、記述へ向くと記録やメモを持つこと。useは家・場所の保管先の登録。use・skill・summaryと物品を持つhasは実行側だけが記録する",
                                             "type": "string",
                                             "enum": [
                                               "content",
                                               "about",
-                                              "hold",
                                               "use",
                                               "skill",
                                               "summary"
