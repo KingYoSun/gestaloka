@@ -1293,6 +1293,31 @@ test("HTTPとCLIは本人の手番APIを使い、旧書込を拒否し、同じ�
     });
     expect(old.statusCode).toBe(409);
     expect(old.json().code).toBe("PLAY_API_CHANGED");
+    // 形が合わない申請には、合わない項目と理由を返す。
+    const invalid = await app.inject({
+      method: "POST",
+      url: `/api/worlds/${f.world}/session?actorId=${f.actors[0]}`,
+      headers: { cookie: f.people[0]!.cookie, "x-gestaloka-request": "1" },
+      payload: {
+        requestId: randomUUID(),
+        command: "update",
+        text: "古い形の申請",
+        operations: [
+          {
+            type: "transfer",
+            item: f.actors[1],
+            to: f.actors[1],
+            basis: "旧形式",
+          },
+        ],
+        dependencies: [],
+      },
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json()).toMatchObject({
+      code: "INPUT_INVALID",
+      message: expect.stringContaining("/operations/0/type"),
+    });
     expect(f.calls).not.toHaveBeenCalled();
   } finally {
     await cli.close();
