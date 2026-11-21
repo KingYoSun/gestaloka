@@ -1,4 +1,7 @@
 {
+  "1.1.1": [
+    "飲む・食べる・燃やすなど、使った後に何も残らないときは、結果の状態を作らずに operations の remove で減らすことを、SKILL.md と references/commands.md の「物を使って何かを変える」に書きました。remove はダイスを振らずに確定し、count を省くと全部なくなります。"
+  ],
   "1.1.0": [
     "設計図を使って建築や開店を進められます。公開テンプレートは play の blueprint-templates、現地のクエストは blueprint-list で確認できます。申請と材料提供の書き方は references/commands.md の「設計図で建てる・開店する」を参照してください。"
   ],
