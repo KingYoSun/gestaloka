@@ -91,7 +91,6 @@ export class PlayerReferences {
           "participants",
           "endEdges",
           "holder",
-          "owner",
           "person",
           "storage",
           "from",

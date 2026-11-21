@@ -821,9 +821,8 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
   );
   await model.ledger.setup();
   const basis = "調査隊と一緒に回収した道具とその由来",
-    owners = [{ id: "owner", label: "持ち主" }],
-    held = { id: "held", label: "ひも", count: 3, owners, basis, since: 2 },
-    stored = { id: "stored", label: "板", owners: [], basis, since: 4 },
+    held = { id: "held", label: "ひも", count: 3, basis, since: 2 },
+    stored = { id: "stored", label: "板", basis, since: 4 },
     skills = [
       { id: "skill", text: "作業手順。".repeat(450), basis: null, since: 5 },
     ];
@@ -905,8 +904,8 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
           { node: { id: "state", text: "濡れている" }, about: ["actor"] },
         ],
         belongings: {
-          items: [["held", "ひも", owners, 0, 2, 3]],
-          storages: [["box", "箱", [["stored", "板", [], 0, 4]]]],
+          items: [["held", "ひも", 0, 2, 3]],
+          storages: [["box", "箱", [["stored", "板", 0, 4]]]],
         },
       },
     ],
@@ -919,8 +918,8 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
   ).nodes[0];
   expect(unreferenced.node.id).toBe("actor");
   expect(belongings).toEqual({
-    items: [["held", "ひも", owners, null, 2, 2]],
-    storages: [["box", "箱", [["stored", "板", [], basis, 4]]]],
+    items: [["held", "ひも", null, 2, 2]],
+    storages: [["box", "箱", [["stored", "板", basis, 4]]]],
   });
   expect(JSON.parse(next.input[1].content[1].text)).not.toHaveProperty(
     "basisDictionary",

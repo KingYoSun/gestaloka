@@ -147,11 +147,11 @@ afterAll(async () => {
   await databases.close();
 });
 
-test("借りた工具を倉庫へ預けても所有者を保ち、携行と保管に二重計上しない", async () => {
+test("工具を倉庫へ預けると倉庫が持ち、携行と保管に二重計上しない", async () => {
   const { worldId, ids, apply, read } = await world("A", "B", "共同倉庫");
   const [a, b, storage] = ids as [string, string, string];
   const created = await apply(1, [
-    { type: "create", label: "工具", holder: a, owner: a, basis: "初期設定" },
+    { type: "create", label: "工具", holder: a, basis: "初期設定" },
     { type: "grant", person: a, storage, basis: "村の取り決め" },
     { type: "grant", person: b, storage, basis: "村の取り決め" },
   ]);
@@ -163,7 +163,7 @@ test("借りた工具を倉庫へ預けても所有者を保ち、携行と保�
     { type: "move", item: tool, from: b, to: storage, basis: "Bが預けた" },
   ]);
 
-  const stock = [{ id: tool, label: "工具", owners: [{ id: a, label: "A" }] }];
+  const stock = [{ id: tool, label: "工具" }];
   expect((await read(a)).items).toEqual([]);
   expect((await read(b)).items).toEqual([]);
   // 利用者はそれぞれの要約に在庫を写さず、倉庫の同じ確定在庫を読む。
@@ -334,7 +334,7 @@ test("既存世界へ事実を追加登録し直しても、事実と要約が�
       at: 5,
       changes: { nodes: [], revisions: [], edges, endEdges: [] },
     });
-  // 役割導入前から成立している所有は、そのまま所有として読む。
+  // 役割導入前の所有は、持ち物にも保管先にも数えない。
   await commit(randomUUID(), [has(a, home), has(a, camera)]);
   expect(await summaries(worldId)).toEqual([]);
 
@@ -344,7 +344,7 @@ test("既存世界へ事実を追加登録し直しても、事実と要約が�
   await commit(randomUUID(), [has(a, home, "use")]);
 
   expect(await read(a)).toMatchObject({
-    items: [{ id: camera, owners: [{ id: a }] }],
+    items: [{ id: camera }],
     storages: [{ id: home, items: [] }],
   });
   expect(await summaries(worldId)).toEqual([
@@ -384,14 +384,7 @@ test("個数つきの物品は一部を渡すと分かれ、渡した先の同�
   const { worldId, ids, apply, read } = await world("A", "B");
   const [a, b] = ids as [string, string];
   const created = await apply(0, [
-    {
-      type: "create",
-      label: "矢",
-      count: 10,
-      holder: a,
-      owner: a,
-      basis: "初期設定",
-    },
+    { type: "create", label: "矢", count: 10, holder: a, basis: "初期設定" },
   ]);
   // 同じ時点の物品は並びが決まらないので、成立の時点を分ける。
   const arrows = created.changes.nodes[0]!.id,
@@ -400,71 +393,57 @@ test("個数つきの物品は一部を渡すと分かれ、渡した先の同�
         { type: "create", label: "水袋", holder: a, basis: "初期設定" },
       ])
     ).changes.nodes[0]!.id;
-  // 貸した3本はBのもとで別の物品になり、所有者はAのまま残る。
-  await apply(2, [
-    { type: "move", item: arrows, from: a, to: b, count: 3, basis: "貸した" },
-  ]);
-  expect((await read(a)).items).toMatchObject([
-    { id: arrows, label: "矢", count: 7 },
-    { id: bag, label: "水袋" },
-  ]);
-  const lent = (await read(b)).items[0]!;
-  expect(lent).toMatchObject({ label: "矢", count: 3, owners: [{ id: a }] });
-  expect(lent.id).not.toBe(arrows);
-  // 同じ個数の譲渡と移動は同じ取り分に作用する。所有者が違う物品には足さない。
   const give = (at: number, count?: number) =>
     apply(at, [
-      {
-        type: "transfer",
-        item: arrows,
-        to: b,
-        ...(count ? { count } : {}),
-        basis: "贈った",
-      },
       {
         type: "move",
         item: arrows,
         from: a,
         to: b,
         ...(count ? { count } : {}),
-        basis: "贈った",
+        basis: "渡した",
       },
     ]);
+  // 渡した3本はBのもとで別の物品になる。
+  await give(2, 3);
+  expect((await read(a)).items).toMatchObject([
+    { id: arrows, label: "矢", count: 7 },
+    { id: bag, label: "水袋" },
+  ]);
+  const given = (await read(b)).items[0]!;
+  expect(given).toMatchObject({ label: "矢", count: 3 });
+  expect(given.id).not.toBe(arrows);
+  // 呼称が同じ物品へは足して、物品を増やさない。全部を渡すと元の物品は持ち物から消える。
   await give(3, 2);
   expect((await read(a)).items[0]).toMatchObject({ id: arrows, count: 5 });
-  expect((await read(b)).items).toMatchObject([
-    { id: lent.id, count: 3, owners: [{ id: a }] },
-    { label: "矢", count: 2, owners: [{ id: b }] },
-  ]);
-  const gift = (await read(b)).items[1]!.id;
-  // 呼称と所有者が同じ物品へは足して、物品を増やさない。全部を渡すと元の物品は持ち物から消える。
-  await give(4, 1);
-  await give(5);
+  expect((await read(b)).items).toMatchObject([{ id: given.id, count: 5 }]);
+  await give(4);
   expect((await read(a)).items).toMatchObject([{ id: bag }]);
-  expect((await read(b)).items).toMatchObject([
-    { id: lent.id, count: 3 },
-    { id: gift, count: 7, owners: [{ id: b }] },
-  ]);
+  expect((await read(b)).items).toMatchObject([{ id: given.id, count: 10 }]);
   expect(
-    (await summaries(worldId)).find(
-      (s) => s.subject === b && s.text.includes(gift),
-    )?.text,
-  ).toContain(`- 矢 ×7〔${gift}〕`);
-  // 個数を指定した消費は個数を減らし、0になれば所有・所在を終える。
-  await apply(6, [{ type: "remove", id: gift, count: 6 }]);
-  expect((await read(b)).items[1]).toMatchObject({ id: gift, count: 1 });
-  await apply(7, [{ type: "remove", id: gift, count: 1 }]);
-  expect((await read(b)).items).toMatchObject([{ id: lent.id }]);
-  expect((await read(b)).items).toHaveLength(1);
+    (await summaries(worldId)).find((s) => s.subject === b)?.text,
+  ).toContain(`- 矢 ×10〔${given.id}〕`);
   // 個数のない物品と、持っている数を超える個数は拒否する。
   await expect(
-    apply(8, [{ type: "remove", id: bag, count: 1 }]),
+    apply(5, [{ type: "remove", id: bag, count: 1 }]),
   ).rejects.toThrow("個数");
   await expect(
-    apply(8, [
-      { type: "move", item: lent.id, from: b, to: a, count: 4, basis: "返す" },
+    apply(5, [
+      {
+        type: "move",
+        item: given.id,
+        from: b,
+        to: a,
+        count: 11,
+        basis: "返す",
+      },
     ]),
   ).rejects.toThrow("個数");
+  // 個数を指定した消費は個数を減らし、0になれば持ち物から消える。
+  await apply(6, [{ type: "remove", id: given.id, count: 9 }]);
+  expect((await read(b)).items).toMatchObject([{ id: given.id, count: 1 }]);
+  await apply(7, [{ type: "remove", id: given.id, count: 1 }]);
+  expect((await read(b)).items).toEqual([]);
   await apply(9, [{ type: "update", id: bag, count: 2 }]);
   expect((await read(a)).items).toMatchObject([
     { id: bag, label: "水袋", count: 2 },

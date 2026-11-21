@@ -137,7 +137,6 @@ test("管理者が画面でNPC昇格を許可し、報告の3つの上限を変�
       sourceRequestId: source,
       npcIndex: 0,
       description: "庭でともに暮らす小さな動物",
-      ownerId: actor,
     },
     actor,
   );

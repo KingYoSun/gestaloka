@@ -8,8 +8,8 @@ import {
 import type { Lease, WorldContext, WorldStore } from "./store.js";
 import type { Dependency } from "./store.js";
 
-// 物品・保管先・技能の事実は、hasの役割で表す。役割なしは所有、holdは所在、
-// useは保管先の利用、skillは技能。要約と所在の一意性は確定処理が保つ。
+// 物品・保管先・技能の事実は、hasの役割で表す。holdは物品を持つこと（持つ存在の物であること）、
+// useは家・場所の保管先の登録、skillは技能。要約と持つ存在の一意性は確定処理が保つ。
 // 所在地はlocate操作で同じ原子的確定を使い、statusのlocation記録として保存する。
 export { BelongingOp } from "@gestaloka/contracts";
 import { BelongingOp } from "@gestaloka/contracts";
@@ -85,17 +85,14 @@ export async function planBelongings(
     await revise({ ...node, count: node.count - count });
     return false;
   };
-  // 同じ物品・同じ個数への移動と譲渡を一つの取り分にまとめ、最後に差分へ変える。
-  const parts = new Map<
-    string,
-    {
-      key: string;
-      item: string;
-      count?: number;
-      hold?: { to: string; basis: string };
-      own?: { to: string; basis: string };
-    }
-  >();
+  // 移す物品の取り分。最後に差分へ変える。
+  const parts: {
+    key: string;
+    item: string;
+    count?: number;
+    to: string;
+    basis: string;
+  }[] = [];
   for (const [index, op] of ops.entries()) {
     if (
       op.type === "locate" &&
@@ -176,31 +173,21 @@ export async function planBelongings(
           ...(op.count ? { count: op.count } : {}),
         });
         has(`${index}:hold`, op.holder, node, "hold", op.basis);
-        if (op.owner) has(`${index}:own`, op.owner, node, undefined, op.basis);
         break;
       }
-      case "move":
-      case "transfer": {
+      case "move": {
         if (
-          op.type === "move" &&
           ((await incoming(op.item)).find((edge) => edge.role === "hold")
             ?.source ?? null) !== op.from
         )
           throw new BelongingRejected("物品の現在の所在が指定と異なります");
-        const id = `${op.item}:${op.count ?? ""}`;
-        let part = parts.get(id);
-        if (!part) {
-          part = {
-            key: `${index}:${op.item}`,
-            item: op.item,
-            ...((await take(op.item, op.count)) ? {} : { count: op.count! }),
-          };
-          parts.set(id, part);
-        }
-        part[op.type === "move" ? "hold" : "own"] = {
+        parts.push({
+          key: `${index}:${op.item}`,
+          item: op.item,
+          ...((await take(op.item, op.count)) ? {} : { count: op.count! }),
           to: op.to,
           basis: op.basis,
-        };
+        });
         break;
       }
       case "grant":
@@ -244,20 +231,17 @@ export async function planBelongings(
         if (await take(op.id, op.count)) end(await incoming(op.id));
     }
   }
-  const moving = new Set([...parts.values()].map((part) => part.item));
-  for (const part of parts.values()) {
+  const moving = new Set(parts.map((part) => part.item));
+  for (const part of parts) {
     const source = (await current(part.item))!,
-      facts = await incoming(part.item),
-      held = facts.filter((edge) => edge.role === "hold"),
-      owned = facts.filter((edge) => !edge.role),
-      owners = part.own ? [part.own.to] : owned.map((edge) => edge.source),
+      held = (await incoming(part.item)).filter((edge) => edge.role === "hold"),
       count =
         part.count ?? (source.kind === "existence" ? source.count : undefined);
-    // 移った先に、呼称と所有者が同じ個数つきの物品があれば、そこへ足して物品を増やさない。
+    // 移った先に、呼称と系列が同じ個数つきの物品があれば、そこへ足して物品を増やさない。
     let merged: WorldNode | undefined;
-    if (part.hold && count)
+    if (count)
       for (const edge of await context.relations(
-        part.hold.to,
+        part.to,
         "has",
         "out",
         LATEST,
@@ -270,13 +254,7 @@ export async function planBelongings(
           node.count &&
           node.text === source.text &&
           node.seriesId ===
-            (source.kind === "existence" ? source.seriesId : undefined) &&
-          JSON.stringify(
-            (await incoming(node.id))
-              .filter((own) => !own.role)
-              .map((own) => own.source)
-              .sort(),
-          ) === JSON.stringify([...owners].sort())
+            (source.kind === "existence" ? source.seriesId : undefined)
         ) {
           merged = { ...node, count: node.count + count };
           break;
@@ -284,10 +262,9 @@ export async function planBelongings(
       }
     if (merged) {
       await revise(merged);
-      if (!part.count) end(facts);
+      if (!part.count) end(await incoming(part.item));
     } else if (part.count) {
-      const node = derivedId(`${commitId}:${part.key}:part`),
-        holder = part.hold?.to ?? held[0]?.source;
+      const node = derivedId(`${commitId}:${part.key}:part`);
       change.nodes.push({
         id: node,
         kind: "existence",
@@ -297,43 +274,10 @@ export async function planBelongings(
           ? { seriesId: source.seriesId }
           : {}),
       });
-      if (holder)
-        has(
-          `${part.key}:hold`,
-          holder,
-          node,
-          "hold",
-          part.hold?.basis ?? held[0]?.text,
-        );
-      for (const owner of owners)
-        has(
-          `${part.key}:own:${owner}`,
-          owner,
-          node,
-          undefined,
-          part.own?.basis ?? owned.find((edge) => edge.source === owner)?.text,
-        );
+      has(`${part.key}:hold`, part.to, node, "hold", part.basis);
     } else {
-      if (part.hold) {
-        end(held);
-        has(
-          `${part.key}:hold`,
-          part.hold.to,
-          part.item,
-          "hold",
-          part.hold.basis,
-        );
-      }
-      if (part.own) {
-        end(owned);
-        has(
-          `${part.key}:own`,
-          part.own.to,
-          part.item,
-          undefined,
-          part.own.basis,
-        );
-      }
+      end(held);
+      has(`${part.key}:hold`, part.to, part.item, "hold", part.basis);
     }
   }
   change.revisions.push(...revised.values());
@@ -434,7 +378,6 @@ export async function readBelongings(
   at = LATEST,
   viewer?: string,
 ) {
-  const text = async (id: string) => (await context.node(id, at))?.text ?? "";
   const facts = async (holder: string, role: WorldEdge["role"]) =>
     (await context.relations(holder, "has", "out", at))
       .filter((edge) => edge.role === role)
@@ -447,38 +390,25 @@ export async function readBelongings(
     for (const edge of await facts(holder, "hold")) {
       const node = await context.node(edge.target, at);
       if (viewer && !visibleTo(node, viewer, true)) continue;
-      const owners = [];
-      for (const own of await context.relations(edge.target, "has", "in", at))
-        if (!own.role)
-          owners.push({ id: own.source, label: await text(own.source) });
       held.push({
         id: edge.target,
         ...labelled(node),
-        owners,
         basis: edge.text ?? null,
         since: edge.period.from,
       });
     }
     return held;
   };
-  // 利用できる保管先と、本人が所有していて物が置いてある存在。
-  const storages = [],
-    listed = new Set<string>();
-  for (const edge of [
-    ...(await facts(subject, "use")),
-    ...(await facts(subject, undefined)),
-  ]) {
+  // 登録した保管先。中身はどこからでも読める。
+  const storages = [];
+  for (const edge of await facts(subject, "use")) {
     const node = await context.node(edge.target, at);
-    if (listed.has(edge.target) || (viewer && !visibleTo(node, viewer, false)))
-      continue;
-    const stored = await items(edge.target);
-    if (!edge.role && !stored.length) continue;
-    listed.add(edge.target);
+    if (viewer && !visibleTo(node, viewer, false)) continue;
     storages.push({
       id: edge.target,
       label: node?.text ?? "",
       ...shown(node),
-      items: stored,
+      items: await items(edge.target),
     });
   }
   const skills = [];

@@ -271,7 +271,7 @@ test("参加時の画像を再読込後に再試行し、Web・共通APIの変�
         [world],
       )
     ).rows[0].world_id;
-    // 生成を終えた世界のプレイの記録は現実の時刻で成立する(ADR-072)。
+    // 生成を終えた世界のプレイの記録は現実の時刻で成立する(ADR-073)。
     const store = new WorldStore(db.graph),
       commit = randomUUID(),
       now = Date.now();

@@ -411,7 +411,7 @@ test("発言の応答待ちに書き始めた次の入力を消さない", async
   expect((field as HTMLTextAreaElement).value).toBe("次の入力");
 });
 
-test("目撃した物品の参照と成立した所有・保持の変化を表示する", async () => {
+test("目撃した物品の参照と渡した先を表示する", async () => {
   view.characters = [
     { actorId: actor, name: "渡す人物", icon: null },
     { actorId: peer, name: "受け取る人物", icon: null },
@@ -431,7 +431,6 @@ test("目撃した物品の参照と成立した所有・保持の変化を表�
                 {
                   itemId: scene,
                   label: "紐",
-                  ownership: { fromIds: [actor], toId: peer },
                   holding: { fromId: actor, toId: peer },
                 },
               ],
@@ -443,58 +442,7 @@ test("目撃した物品の参照と成立した所有・保持の変化を表�
   ];
   show();
   expect(await screen.findByText("紐〈" + scene + "〉")).toBeTruthy();
-  expect(screen.getByText(/所有.*渡す人物.*受け取る人物/)).toBeTruthy();
-  expect(screen.getByText(/保持.*渡す人物.*受け取る人物/)).toBeTruthy();
-});
-test("回収時の所有者未登録を手番履歴と持ち物欄に表示する", async () => {
-  view.belongings = {
-    items: [
-      { id: scene, label: "小石", owners: [] },
-      { label: "縄", owners: [{ id: actor, label: "観測者" }] },
-      { label: "袋", owners: [{ id: peer, label: "貸し手" }] },
-      { label: "古い記録" },
-    ],
-    storages: [],
-    skills: [],
-  };
-  view.entries = [
-    {
-      id: "13",
-      payload: {
-        entries: [
-          {
-            actorId: actor,
-            input: "小石を拾う",
-            result: {
-              state: "accepted",
-              items: [
-                {
-                  itemId: scene,
-                  label: "小石",
-                  holding: { fromId: null, toId: actor },
-                  ownershipUnrecorded: true,
-                },
-              ],
-            },
-          },
-        ],
-      },
-    },
-  ];
-  show();
-  expect(await screen.findByText("所有者は未登録です")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "プレイヤー情報" }));
-  const dialog = await screen.findByRole("dialog", { name: "プレイヤー情報" });
-  fireEvent.mouseDown(within(dialog).getByRole("tab", { name: "所持品" }), {
-    button: 0,
-    ctrlKey: false,
-  });
-  expect(
-    await within(dialog).findByText("小石（所有者：未登録）"),
-  ).toBeTruthy();
-  expect(within(dialog).getByText("縄（所有者：自分）")).toBeTruthy();
-  expect(within(dialog).getByText("袋（所有者：貸し手）")).toBeTruthy();
-  expect(within(dialog).getByText("古い記録")).toBeTruthy();
+  expect(screen.getByText(/渡す人物.*受け取る人物/)).toBeTruthy();
 });
 test("受領判断を表示し、判断後は元の人物の通常手番へ戻る", async () => {
   view.members = [

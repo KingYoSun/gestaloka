@@ -18,7 +18,7 @@
 次の申請ではダイスを振らない。規則と受領判断だけで決まる。
 
 - `say` の発言と、世界を変えない行動の描写
-- `locate`（移動）、`move`（保持者の変更）、`transfer`（所有者の変更）、`grant`・`revoke`（保管先の利用）、`remove`（消費・破棄）、個数を減らす `update`
+- `locate`（移動）、`move`（受け渡し）、登録済みの保管先への `grant`・`revoke`、`remove`（消費・破棄）、個数を減らす `update`
 - 本人の状態の本文を改める `changes.revisions` と、関係を終える `endEdges` だけの申請
 - 本人の解釈だけを記録する申請（`interpret` の関係と、その本文の `script` だけ）
 - `memo`
@@ -61,9 +61,9 @@
 
 ## 申請のパターン
 
-### 物品を作り、本人が所有する
+### 物品を作って手に持つ
 
-`owner` を省くと、所有者が未登録の物ができる。所有者が未登録の物は保管先にならず、公開交換の品にも使えない。後から `transfer` で所有者を登録できるが、本人の物として作るときは、はじめから `owner` に本人を指定する。`basis` に「所有する」と書いても所有にはならない（後述の「添え書き」）。
+作った物は `holder` に指定した存在の物になる。本人の物として作るなら `holder` に本人を指定する。
 
 ```json
 {
@@ -75,7 +75,6 @@
       "label": "釣り竿",
       "count": 1,
       "holder": "本人のID",
-      "owner": "本人のID",
       "basis": "流木の枝に蔓を結んで作った"
     }
   ],
@@ -85,7 +84,7 @@
 
 ### 本人の保管先に直接作る
 
-`holder` に本人が所有する場所や物（自宅、本人の箱など）を指定すると、作った物はそこに置かれる。
+`holder` に本人が登録した保管先（自宅など）や手に持つ箱を指定すると、作った物はそこに置かれる。
 
 ```json
 {
@@ -93,7 +92,6 @@
   "label": "保存用の干し肉",
   "count": 5,
   "holder": "自宅のID",
-  "owner": "本人のID",
   "basis": "台所で燻して作った"
 }
 ```
@@ -147,23 +145,24 @@
 | `TURN_REQUIRED`               | 本人の通常手番ではない。手番が終わった後に申請した。無操作の期限で手番が終わった。`status` で手番を確かめる。                                                                       |
 | `WORLD_CHANGED`               | 検索してから申請するまでに、依存版に含めた記録が変わった。既に終わっている関係を `endEdges` に指定した場合も、このコードになる。`search` し直し、新しい `dependencies` で申請する。 |
 | `REQUEST_CONFLICT`            | 同じ要求IDで中身の違う申請を送った。`play --file` は要求IDを自動で作るので、手で要求IDを付けた場合に起きる。                                                                        |
-| `WAIT_NOT_APPLICABLE`         | `waitMinutes` を、物品の `create` 以外を含む申請や、`changes` の申請に付けた。保持者・所有者に同席者を指定して受領が要る申請に付けた。                                              |
-| `DEFERRED_NOT_APPLICABLE`     | `deferredUntil` を、ダイスで判定する作成を含む申請に付けた。時間差の受領は、受領が要るメモか、物品の `move`・`transfer` だけの申請に使う。                                          |
+| `WAIT_NOT_APPLICABLE`         | `waitMinutes` を、物品の `create` 以外を含む申請や、`changes` の申請に付けた。`holder` に同席者を指定して受領が要る申請に付けた。                                                   |
+| `DEFERRED_NOT_APPLICABLE`     | `deferredUntil` を、ダイスで判定する作成を含む申請に付けた。時間差の受領は、受領が要るメモか、物品の `move` だけの申請に使う。                                                      |
 | `CREATION_ONLY`               | `command: "create"` に `revisions` や `endEdges` を入れた。既存の記録を改めるときは `update` を使う。                                                                               |
-| `INTERNAL_OPERATION_REQUIRED` | `changes` に保持・保管・技能（役割つきの `has`）や所在地を書いた。`operations` の `create`・`move`・`grant`・`learn`・`locate` を使う。                                             |
+| `INTERNAL_OPERATION_REQUIRED` | `changes` に、物品を持つ関係（物品への `has`）、保管先・技能（役割つきの `has`）や所在地を書いた。`operations` の `create`・`move`・`grant`・`learn`・`locate` を使う。             |
 | `SERIES_ADMIN_REQUIRED`       | 物品に `seriesId` を付けた。系列のある物品（通貨など）の個数を増やそうとした。どちらも管理者だけが行える。                                                                          |
 | `TARGET_NOT_FOUND`            | 操作や関係の対象のIDが存在しない。短縮IDの写し間違いや、他のインスタンスの記録から拾ったIDが多い。自分の検索結果のIDを使う。                                                        |
 | `NODE_EXISTS`・`EDGE_EXISTS`  | 新規に作るノード・関係のIDが既にある。`changes` の新しいIDは毎回新しく作る。                                                                                                        |
 | `NODE_CHANGED`                | `revisions` に指定した既存ノードの種別（`kind`）が記録と違う。                                                                                                                      |
 | `EDGE_NOT_FOUND`              | `endEdges` に指定した関係が見つからない。                                                                                                                                           |
 | `CONNECTION_REJECTED`         | 関係の向きや種類が許されない組み合わせになっている（例: 状態の `content` の向きが逆）。                                                                                             |
-| `BELONGING_NOT_RECORDED`      | `operations` の `update` に、保持も所有も記録のない物や、本人・状態のIDを指定した。本人の呼称や状態は `changes` の `revisions` で改める。                                           |
-| `HOLD_CHANGED`                | `move` の `from` が、物品の現在の保持者と違う。誰かが先に動かした。検索し直す。                                                                                                     |
-| `HOLD_NOT_RECORDED`           | 保持者が記録されていない物に、`from` で保持者を指定した。その場に落ちている物は `from: null` で拾う。                                                                               |
+| `BELONGING_NOT_RECORDED`      | `operations` の `update` に、持つ存在が記録されていない物や、本人・状態のIDを指定した。本人の呼称や状態は `changes` の `revisions` で改める。                                       |
+| `HOLD_CHANGED`                | `move` の `from` が、物品を今持っている存在と違う。誰かが先に動かした。検索し直す。                                                                                                 |
+| `HOLD_NOT_RECORDED`           | 持つ存在が記録されていない物に、`from` で持ち主を指定した。その場に落ちている物は `from: null` で拾う。                                                                             |
 | `GROUND_ITEM_NOT_HERE`        | 本人がいない場所に落ちている物を拾おうとした。拾う先を本人以外にした。                                                                                                              |
-| `STORAGE_NOT_HERE`            | 保管先から離れた場所で出し入れしようとした。`locate` で保管先のある場所へ移ってから申請する。本人が手に持つ保管先は、どこでも出し入れできる。                                       |
-| `REMOTE_RECEIVING`            | 受領が要る相手（保持者・所有者に指定した相手、物を持つ相手）が同じセッションにいない。同じ場所で `contact` して合流してから申請する。                                               |
-| `AUTHORITY_REQUIRED`          | 判断できる人物の記録がない物や場所を相手にした。持ち主も利用者も記録されていない箱や場所への `move` で起きる。箱や場所の所有を先に記録するか、本人が利用できる保管先を使う。        |
+| `STORAGE_NOT_HERE`            | 保管先や場所から離れたところで出し入れしようとした。`locate` でその場所へ移ってから申請する。手に持つ箱は、どこでも出し入れできる。                                                 |
+| `STORAGE_NOT_REGISTERED`      | 他人が登録した保管先から物を取り出そうとした。取り出せるのは登録した人物だけなので、渡してもらう。                                                                                  |
+| `REMOTE_RECEIVING`            | 受領が要る相手（物を渡す相手、物を持つ相手、保管先を登録した人物）が同じセッションにいない。同じ場所で `contact` して合流してから申請する。                                         |
+| `AUTHORITY_REQUIRED`          | 判断できる人物の記録がない物を相手にした。誰も持っていない箱など、場所でも保管先でもない存在への `move` で起きる。箱を手に持ってから出し入れするか、場所や保管先を使う。            |
 | `NPC_UNASSIGNED`              | 受領が要るユニークNPCに、操作の担当が指定されていない。運営者に報告する。                                                                                                           |
 | `INSTANT_NPC_NOT_PRESENT`     | `npc-action` に、同席していない個体を指定した。                                                                                                                                     |
 | `NPC_ACTION_NOT_AVAILABLE`    | 出現を見ていない個体か、出現した場所とは別の場所にいるときに、その個体の `npc-action` を申請した。                                                                                  |
@@ -175,14 +174,14 @@
 
 - `outcome.success: false` で `setting` と `roll` がある: ダイスの失敗。何も確定せず、通常枠を1回使う。
 - `outcome.repeated: true`: 同じ手番で失敗した試みの出し直しと判定され、前回の結果が返った。
-- `outcome.reason` が「対象と申請者の作用関係を構築できません」: 対抗行動の対象・保持者が記録と合わないか、出現個体が同じ場所にいない。ダイスは振らない。
+- `outcome.reason` が「対象と申請者の作用関係を構築できません」: 対抗行動の対象や、それを持つ存在が記録と合わないか、出現個体が同じ場所にいない。ダイスは振らない。
 
 ## 添え書き
 
 申請の `text`、操作の `basis`、関係の `text` は、`say` と同じく記述として記録される。GMは判定の材料として読み、他の参加者も読めるが、世界の構造は変えない。
 
-- `basis` に「本人が所有する」と書いても、所有者は記録されない。所有は `create` の `owner` か `transfer` で決まる。
-- `text` に「空き地に置く」と書いても、物品の所在は変わらない。置き場所は `create` の `holder` か `move` の `to` で決まる。
+- `basis` に「貸しただけ」と書いても、返却は守られない。物は受け取った存在の物になる。
+- `text` に「空き地に置く」と書いても、物品の所在は変わらない。物を持つ存在は `create` の `holder` か `move` の `to` で決まる。
 - `text` に「村長の許可を得た」と書いても、受領判断の代わりにはならない。
 
-申請の結果は、応答の `items[].ownership`・`items[].holding` と、`search --kind self` の `belongings`（`items[].owners`）で確かめる。
+申請の結果は、応答の `items[].holding` と、`search --kind self` の `belongings` で確かめる。

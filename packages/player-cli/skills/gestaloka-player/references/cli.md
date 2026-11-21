@@ -70,7 +70,7 @@ gestaloka team invite --target <人物ID> | join --team <チームID> | status |
 
 ## status
 
-現在の手番と未読履歴を照会。運営者が表示を選んだ世界では、creationCriteriaに新規作成のダイスの基準が出る。--sceneは本人の過去シーン、--after 0は先頭。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。
+現在の手番と未読履歴を照会。dailySpに探索・生成の共通残量と次の回復時刻が出る。運営者が表示を選んだ世界では、creationCriteriaに新規作成のダイスの基準が出る。--sceneは本人の過去シーン、--after 0は先頭。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。
 
 ```text
 gestaloka status [--scene <ID>] [--after <カーソル>] [--view <wait|joins>]
@@ -242,7 +242,7 @@ gestaloka finish
 
 ## play
 
-PlayCommand形式の操作を送る。保管先への出し入れはmoveで申請し、本人が保管先のある場所にいる必要がある（離れているとSTORAGE_NOT_HERE）。本人の呼称と状態はupdateのchangesで改める。operationsのupdateが扱うのは物品と技能。グラフ差分を使うメモの更新や対抗行動、時間をかける物品の作成（waitMinutes）の形式は commands.md を参照。
+PlayCommand形式の操作を送る。create-batchでは異なる生成案をproposalsに最大5件指定する。各案にtextと、changesかoperationsの一方を書く。各案を1回振り、成功した案ごとに生成・素材消費する。素材は指定順に使い、残りが足りない案は振らずにMATERIAL_SHORTAGEを返す。outcome.proposalsは指定順の結果、spentSpはこの申請の消費量。新規抽選があれば全案で1 SP。保管先への出し入れはmoveで申請し、本人が保管先のある場所にいる必要がある（離れているとSTORAGE_NOT_HERE）。本人の呼称と状態はupdateのchangesで改める。operationsのupdateが扱うのは物品と技能。グラフ差分を使うメモの更新や対抗行動、時間をかける物品の作成（waitMinutes）の形式は commands.md を参照。
 
 ```text
 gestaloka play --file <JSONファイル>
@@ -262,7 +262,7 @@ gestaloka memo --text <本文> [--participants <人物ID,人物ID>] [--deferred-
 
 ## explore
 
-新しい場所を申請。--fromは接続元で、本人の現在の所在地にある場所を指定する。--textには場所の様子と接続元からの行き方を書く。GMが接続元から見た妥当性でダイスを設定し、サーバーが一度だけ振る。ダイスで失敗しても通常枠を1回使う。成功すると応答のplaceIdへ移動でき、接続元と新しい場所の双方から互いの名前とIDを調べられる。どちらの場所でも、surroundingsのroutesに相手が出る。既にある場所と同じ呼び名は申請できず、EXPLORE_NAME_TAKENと先にある場所のIDが返る。このときGMは呼ばれず、通常枠も使わない。
+新しい場所を申請。新規抽選は1 SP。探索と生成で1人・1ワールドあたり1日100 SPを共有し、日本時間の毎日0時に全回復する。--fromは接続元で、本人の現在の所在地にある場所を指定する。--textには場所の様子と接続元からの行き方を書く。GMが接続元から見た妥当性でダイスを設定し、サーバーが一度だけ振る。ダイスで失敗しても通常枠を1回使う。成功すると応答のplaceIdへ移動でき、接続元と新しい場所の双方から互いの名前とIDを調べられる。どちらの場所でも、surroundingsのroutesに相手が出る。既にある場所と同じ呼び名は申請できず、EXPLORE_NAME_TAKENと先にある場所のIDが返る。このときGMは呼ばれず、通常枠も使わない。
 
 ```text
 gestaloka explore --from <場所ID> --label <場所の呼び名> --text <説明> | --file <本文ファイル>
@@ -272,10 +272,10 @@ gestaloka explore --from <場所ID> --label <場所の呼び名> --text <説明>
 
 ## promote-npc
 
-出現記録の指定位置のNPCを昇格申請。必要に応じて所有者を指定。
+出現記録の指定位置のNPCを昇格申請。
 
 ```text
-gestaloka promote-npc --source <発言要求ID> --index <番号> --text <NPCの説明> [--owner <人物ID>]
+gestaloka promote-npc --source <発言要求ID> --index <番号> --text <NPCの説明>
 ```
 
 実行例 `gestaloka promote-npc --source @12ab34cd --index 0 --text '小屋の留鳥'`

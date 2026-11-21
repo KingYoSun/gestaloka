@@ -31,7 +31,7 @@ import {
   bindingScripts,
   validateBindings,
   worldNow,
-  type Change,
+  Change,
 } from "../world/model.js";
 import {
   BelongingOp,
@@ -131,6 +131,7 @@ function actionMessage(
         : "新しい場所を記録しました。placeIdへ移動できます";
     case "update":
     case "create":
+    case "create-batch":
       if ((result.outcome as { success?: boolean })?.success === false)
         return "新規作成の判定は失敗しました";
       return result.state === "receiving" || result.state === "pending"
@@ -420,6 +421,22 @@ const DiceSetting = z
   })
   .strict()
   .refine((v) => v.successThrough < v.sides);
+const privateInterpretation = (actor: string, changes: Change) =>
+  changes.nodes.every((n) => n.kind === "script") &&
+  changes.edges.length &&
+  changes.edges.every(
+    (e) =>
+      e.kind === "interpret" &&
+      (e.role === "content"
+        ? e.source === actor
+        : changes.nodes.some((n) => n.id === e.source)),
+  );
+type CreationRoll = {
+  success: boolean;
+  setting: z.infer<typeof DiceSetting>;
+  roll: number;
+  repeated?: boolean;
+};
 type Consumable = { id: string; label: string; count?: number };
 function instantReductionText({
   kind,
@@ -514,6 +531,10 @@ export class BotPlay {
       world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
       actor_id uuid NOT NULL,request_id uuid NOT NULL,owner uuid NOT NULL,
       expires_at timestamptz NOT NULL,PRIMARY KEY(world_id,actor_id));
+      ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS creation_rolls jsonb, ADD COLUMN IF NOT EXISTS sp_user uuid, ADD COLUMN IF NOT EXISTS sp_reset timestamptz;
+      ALTER TABLE bot_adjudication ADD COLUMN IF NOT EXISTS sp_user uuid, ADD COLUMN IF NOT EXISTS sp_reset timestamptz;
+      CREATE INDEX IF NOT EXISTS bot_adjudication_sp ON bot_adjudication(world_id,sp_user,sp_reset) WHERE sp_user IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS bot_request_sp ON bot_request(world_id,sp_user,sp_reset) WHERE sp_user IS NOT NULL;
       CREATE TABLE IF NOT EXISTS bot_dice (
       id uuid PRIMARY KEY,setting jsonb NOT NULL,roll integer);
       CREATE TABLE IF NOT EXISTS bot_npc (
@@ -3062,29 +3083,71 @@ export class BotPlay {
     });
     return { targetId: node.id, viewers: input.viewers };
   }
-  async #creation(
+  async dailySp(
+    world: string,
+    user: string,
+    db: Db = this.pool,
+    request?: string,
+  ) {
+    const now = this.now().getTime();
+    // 日本時間の翌日0時。残量照会と消費で同じ期間を使う。
+    const resetsAt = new Date(
+      (Math.floor((now + 9 * 3600000) / 86400000) + 1) * 86400000 - 9 * 3600000,
+    ).toISOString();
+    const { rows } = await db.query<{ used: number }>(
+      `SELECT
+      (SELECT count(*) FROM bot_request WHERE world_id=$1 AND sp_user=$2 AND sp_reset=$3)
+      + (SELECT count(*) FROM bot_adjudication a WHERE world_id=$1 AND sp_user=$2 AND sp_reset=$3 AND request_id IS DISTINCT FROM $4 AND expires_at>clock_timestamp()
+        AND NOT EXISTS (SELECT 1 FROM bot_request r WHERE r.id=a.request_id AND r.sp_user IS NOT NULL)) AS used`,
+      [world, user, resetsAt, request ?? null],
+    );
+    return { remaining: 100 - rows[0]!.used, limit: 100, resetsAt };
+  }
+  async #reserveSp(
+    world: string,
+    actor: string,
+    user: string,
+    request: string,
+  ) {
+    const db = await this.pool.connect();
+    try {
+      await db.query("BEGIN");
+      await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,309))", [
+        world + user,
+      ]);
+      const sp = await this.dailySp(world, user, db, request);
+      if (
+        sp.remaining <= 0 &&
+        !(
+          await db.query(
+            "SELECT 1 FROM bot_request WHERE id=$1 AND sp_user IS NOT NULL",
+            [request],
+          )
+        ).rowCount
+      )
+        reject(
+          "DAILY_SP_EXHAUSTED",
+          `日次SPの利用可能残量は0です。次の回復は${sp.resetsAt}です`,
+        );
+      const claim = await db.query(
+        `UPDATE bot_adjudication SET sp_user=$3,sp_reset=$4 WHERE world_id=$1 AND actor_id=$2 AND request_id=$5 AND expires_at>clock_timestamp()`,
+        [world, actor, user, sp.resetsAt, request],
+      );
+      if (!claim.rowCount) rejectAdjudication();
+      await db.query("COMMIT");
+    } catch (error) {
+      await db.query("ROLLBACK");
+      throw error;
+    } finally {
+      db.release();
+    }
+  }
+  async #previousCreation(
     world: string,
     actor: string,
     requestId: string,
-    context: WorldContext,
     text: string,
-    changes: Change,
-    explore = false,
-    consumable: Consumable[] = [],
-    waitMinutes?: number,
   ) {
-    if (
-      changes.nodes.every((n) => n.kind === "script") &&
-      changes.edges.length &&
-      changes.edges.every(
-        (e) =>
-          e.kind === "interpret" &&
-          (e.role === "content"
-            ? e.source === actor
-            : changes.nodes.some((n) => n.id === e.source)),
-      )
-    )
-      return;
     // 同じ手番でダイスに失敗した申請の出し直しは、GMに設定を作り直させず、前回の結果を返す。
     // 同じ試みかは判断モデルが決める。未設定・呼び出しの失敗・低い確率では、通常どおりGMが設定する。
     const diceId = derivedId(`${requestId}:creation`),
@@ -3096,25 +3159,30 @@ export class BotPlay {
           repeated: boolean;
         }>("SELECT setting,roll,repeated FROM bot_dice WHERE id=$1", [diceId])
       ).rows[0];
-    let repeated:
-      Pick<NonNullable<typeof known>, "setting" | "roll"> | undefined =
-      known?.repeated ? known : undefined;
-    if (!known && model.decision) {
+    if (known && known.roll !== null)
+      return {
+        setting: known.setting,
+        roll: known.roll,
+        success: known.roll <= known.setting.successThrough,
+        ...(known.repeated ? { repeated: true } : {}),
+      };
+    if (model.decision) {
       const failed = (
         (await this.current(world, actor))?.data.entries ?? []
       ).flatMap((e) => {
+        if (e.actorId !== actor) return [];
         const o = (
           e.result as {
-            outcome?: {
-              success: boolean;
-              setting?: z.infer<typeof DiceSetting>;
-              roll: number;
+            outcome?: Partial<CreationRoll> & {
+              proposals?: (Partial<CreationRoll> & { text: string })[];
             };
           }
         ).outcome;
-        return e.actorId === actor && o?.success === false && o.setting
-          ? [{ text: e.input, setting: o.setting, roll: o.roll }]
-          : [];
+        return (o?.proposals ?? [{ ...o, text: e.input }]).flatMap((r) =>
+          r.success === false && r.setting && r.roll !== undefined
+            ? [{ text: r.text, setting: r.setting, roll: r.roll }]
+            : [],
+        );
       });
       const state = { failed: failed.map((f) => f.text), current: text },
         answers =
@@ -3143,71 +3211,173 @@ export class BotPlay {
         failed.find(
           (_, i) => answers[`f${i}`]! >= model.decision!.repeatThreshold,
         );
-      if (same) {
-        await this.pool.query(
-          "INSERT INTO bot_dice(id,setting,roll,repeated) VALUES($1,$2,$3,true) ON CONFLICT DO NOTHING",
-          [diceId, same.setting, same.roll],
-        );
-        repeated = same;
-      }
+      if (same)
+        return {
+          setting: same.setting,
+          roll: same.roll,
+          success: false,
+          repeated: true,
+        };
     }
-    if (repeated)
-      return {
-        setting: repeated.setting,
-        roll: repeated.roll,
-        success: false,
-        repeated: true,
-      };
-    // 世界の起点の記録をすべて渡すと入力が膨らむ。世界の前提は設定文で渡し、材料は申請者と申請が触れる対象に絞る。
-    const premise = (await this.construction.get(world)).initial_prompt;
-    const nodes = await this.#facts(context, [
-      actor,
-      ...changes.revisions.map((n) => n.id),
-      ...changes.edges.flatMap((e) => [e.source, e.target]),
-    ]);
-    const criteria = explore
-      ? exploreCriteria
-      : (
-          await this.pool.query<{ criteria: string }>(
-            "SELECT criteria FROM creation_policy WHERE world_id=$1",
-            [world],
+  }
+  async #creation(
+    world: string,
+    actor: string,
+    user: string,
+    requestId: string,
+    context: WorldContext,
+    proposals: { text: string; changes: Change }[],
+    consumable: Consumable[],
+    explore = false,
+    waitMinutes?: number,
+  ) {
+    type Result =
+      CreationRoll | { success: false; reason: "MATERIAL_SHORTAGE" };
+    const previous = await this.pool.query<{ creation_rolls: Result[] | null }>(
+      "SELECT creation_rolls FROM bot_request WHERE id=$1",
+      [requestId],
+    );
+    if (previous.rows[0]?.creation_rolls)
+      return previous.rows[0].creation_rolls;
+    const batch = proposals.length > 1;
+    const keys = proposals.map((_, i) =>
+      batch ? derivedId(`${requestId}:proposal:${i}`) : requestId,
+    );
+    const repeated = await Promise.all(
+      proposals.map((p, i) =>
+        this.#previousCreation(world, actor, keys[i]!, p.text),
+      ),
+    );
+    const fresh = proposals.flatMap((p, i) =>
+      repeated[i] ? [] : [{ ...p, index: i }],
+    );
+    const settings = new Map<number, z.infer<typeof DiceSetting>>();
+    if (fresh.length) {
+      await this.#reserveSp(world, actor, user, requestId);
+      const premise = (await this.construction.get(world)).initial_prompt;
+      const material = fresh.map(({ text, changes }) => ({ text, changes }));
+      const nodes = await this.#facts(context, [
+        actor,
+        ...fresh.flatMap(({ changes }) => [
+          ...changes.revisions.map((n) => n.id),
+          ...changes.edges.flatMap((e) => [e.source, e.target]),
+        ]),
+      ]);
+      const criteria = explore
+        ? exploreCriteria
+        : (
+            await this.pool.query<{ criteria: string }>(
+              "SELECT criteria FROM creation_policy WHERE world_id=$1",
+              [world],
+            )
+          ).rows[0]?.criteria || defaultCreationCriteria;
+      const Dice = explore ? ExploreDice : DiceSetting;
+      const parseSettings = (raw: string) =>
+        batch
+          ? z
+              .object({ settings: z.array(Dice).length(fresh.length) })
+              .parse(parseOutput(raw)).settings
+          : [Dice.parse(parseOutput(raw))];
+      const response = await this.#ask(
+        derivedId(`${requestId}:creation`),
+        explore ? "world-explore-dice" : "world-creation-dice",
+        [
+          {
+            role: "system",
+            content:
+              "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。" +
+              (consumable.length ? consumePrompt : "") +
+              (batch
+                ? "proposalsの順に各案のダイス設定を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
+                : "") +
+              (waitMinutes ? waitPrompt : "") +
+              "世界の基準: " +
+              criteria,
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              premise,
+              actor,
+              ...(batch ? { proposals: material } : material[0]),
+              nodes,
+              ...(consumable.length ? { consumable } : {}),
+              ...(waitMinutes ? { waitMinutes } : {}),
+            }),
+          },
+        ],
+        "resolution",
+        parseSettings,
+      );
+      parseSettings(response.content).forEach((v, i) =>
+        settings.set(fresh[i]!.index, consumption(v, consumable)),
+      );
+    }
+    const db = await this.pool.connect();
+    try {
+      await db.query("BEGIN");
+      if (fresh.length)
+        await db.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended($1,309))",
+          [world + user],
+        );
+      const saved = (
+        await db.query<{ creation_rolls: Result[] | null }>(
+          "SELECT creation_rolls FROM bot_request WHERE id=$1 FOR UPDATE",
+          [requestId],
+        )
+      ).rows[0]!.creation_rolls;
+      if (saved) {
+        await db.query("COMMIT");
+        return saved;
+      }
+      const rolls: Result[] = [];
+      const used = new Map<string, number>();
+      for (const i of proposals.keys()) {
+        const old = repeated[i];
+        if (old) {
+          rolls.push(old);
+          continue;
+        }
+        const setting = settings.get(i)!;
+        const required = setting.consumes ?? [];
+        if (
+          required.some(
+            (c) =>
+              (used.get(c.id) ?? 0) + (c.count ?? 1) >
+              (consumable.find((item) => item.id === c.id)?.count ?? 1),
           )
-        ).rows[0]?.criteria || defaultCreationCriteria;
-    const Dice = explore ? ExploreDice : DiceSetting;
-    const response = await this.#ask(
-      diceId,
-      explore ? "world-explore-dice" : "world-creation-dice",
-      [
-        {
-          role: "system",
-          content:
-            "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。" +
-            (consumable.length ? consumePrompt : "") +
-            (waitMinutes ? waitPrompt : "") +
-            "世界の基準: " +
-            criteria,
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            premise,
-            actor,
-            text,
-            changes,
-            nodes,
-            ...(consumable.length ? { consumable } : {}),
-            ...(waitMinutes ? { waitMinutes } : {}),
-          }),
-        },
-      ],
-      "resolution",
-      (raw) => Dice.parse(parseOutput(raw)),
-    );
-    const saved = await this.#roll(
-      diceId,
-      consumption(Dice.parse(parseOutput(response.content)), consumable),
-    );
-    return { ...saved, success: saved.roll <= saved.setting.successThrough };
+        ) {
+          rolls.push({ success: false, reason: "MATERIAL_SHORTAGE" });
+          continue;
+        }
+        const die = await this.#rollIn(
+          db,
+          derivedId(`${keys[i]}:creation`),
+          setting,
+        );
+        const success = die.roll <= die.setting.successThrough;
+        rolls.push({ ...die, success });
+        if (success)
+          for (const c of die.setting.consumes ?? [])
+            used.set(c.id, (used.get(c.id) ?? 0) + (c.count ?? 1));
+      }
+      const persisted = await db.query(
+        `UPDATE bot_request r SET creation_rolls=$2,
+        sp_user=CASE WHEN $3 THEN a.sp_user END, sp_reset=CASE WHEN $3 THEN a.sp_reset END
+        FROM bot_adjudication a WHERE r.id=$1 AND a.world_id=r.world_id AND a.actor_id=r.actor_id
+        AND a.request_id=r.id AND a.expires_at>clock_timestamp() AND (NOT $3 OR a.sp_user=$4)`,
+        [requestId, JSON.stringify(rolls), fresh.length > 0, user],
+      );
+      if (!persisted.rowCount) rejectAdjudication();
+      await db.query("COMMIT");
+      return rolls;
+    } catch (error) {
+      await db.query("ROLLBACK");
+      throw error;
+    } finally {
+      db.release();
+    }
   }
   #ask(
     id: string,
@@ -3315,7 +3485,7 @@ export class BotPlay {
     await combined.validate();
     return combined;
   }
-  // 同じ物品・同じ個数の移動と譲渡は一つにまとめる。
+  // 物品ごとに、新しく持った存在と前に持っていた存在を返す。
   async #itemOutcomes(
     context: WorldContext,
     input: { requestId: string; operations?: BelongingOp[] | undefined },
@@ -3323,7 +3493,6 @@ export class BotPlay {
   ): Promise<ItemOutcome[]> {
     if (!input.operations) return [];
     const applied = changes.edges.length || changes.revisions.length,
-      ended = await Promise.all(changes.endEdges.map((id) => context.edge(id))),
       items = new Map<string, ItemOutcome>();
     for (const [index, op] of input.operations.entries()) {
       if (op.type === "create") {
@@ -3334,20 +3503,16 @@ export class BotPlay {
           (edge) => edge.kind === "has" && edge.target === itemId,
         );
         const holding = relations.find((edge) => edge.role === "hold");
-        const ownership = relations.find((edge) => !edge.role);
         if (holding)
           items.set(itemId, {
             itemId,
             label: node.text,
             ...(node.count ? { count: node.count } : {}),
             holding: { fromId: null, toId: holding.source },
-            ...(ownership
-              ? { ownership: { fromIds: [], toId: ownership.source } }
-              : { ownershipUnrecorded: true }),
           });
         continue;
       }
-      if (op.type !== "move" && op.type !== "transfer") continue;
+      if (op.type !== "move") continue;
       const key = `${op.item}:${op.count ?? ""}`,
         item = items.get(key) ?? {
           itemId: op.item,
@@ -3357,48 +3522,24 @@ export class BotPlay {
           ...(op.count ? { count: op.count } : {}),
         };
       items.set(key, item);
-      if (!applied) continue;
-      if (op.type === "move") item.holding = { fromId: op.from, toId: op.to };
-      else {
-        // 全部を譲った物品は所有の関係が終わっている。一部なら元の所有者は変わらない。
-        const former = ended.filter(
-          (e) => e?.kind === "has" && e.target === op.item && !e.role,
-        );
-        item.ownership = {
-          fromIds: (former.length
-            ? former
-            : changes.edges.some(
-                  (e) => e.kind === "has" && e.target === op.item && !e.role,
-                )
-              ? []
-              : (await context.relations(op.item, "has", "in", latest)).filter(
-                  (e) => !e.role,
-                )
-          ).map((e) => e!.source),
-          toId: op.to,
-        };
-      }
+      if (applied) item.holding = { fromId: op.from, toId: op.to };
     }
-    for (const item of items.values())
-      if (
-        item.holding &&
-        !item.ownership &&
-        !item.ownershipUnrecorded &&
-        !(await context.relations(item.itemId, "has", "in", latest)).some(
-          (edge) => !edge.role,
-        )
-      )
-        item.ownershipUnrecorded = true;
     return [...items.values()];
   }
   async #plan(
     world: string,
     actor: string,
+    user: string,
     input: Input,
     {
       db = this.pool,
       expectedHandoff,
-    }: { db?: Db; expectedHandoff?: Handoff } = {},
+      proposalOnly = false,
+    }: {
+      db?: Db;
+      expectedHandoff?: Handoff;
+      proposalOnly?: boolean;
+    } = {},
   ): Promise<Plan | undefined> {
     if (input.command === "npc-action") {
       const session = await this.current(world, actor);
@@ -3487,6 +3628,103 @@ export class BotPlay {
         ),
       };
     }
+    if (input.command === "create-batch") {
+      if (
+        new Set(input.proposals.map(canonical)).size !== input.proposals.length
+      )
+        reject("DUPLICATE_PROPOSAL", "同じ案が重複しています");
+      const proposals = await Promise.all(
+        input.proposals.map(async (proposal, i) => {
+          const requestId = derivedId(`${input.requestId}:proposal:${i}`);
+          const child =
+            "changes" in proposal
+              ? { command: "create" as const, ...proposal }
+              : { command: "update" as const, ...proposal };
+          const plan = await this.#plan(
+            world,
+            actor,
+            user,
+            { ...child, requestId, dependencies: input.dependencies },
+            { proposalOnly: true },
+          );
+          if (!plan)
+            reject(
+              "CREATION_REQUIRED",
+              "各案に新しい生成の申請を指定してください",
+            );
+          return { ...plan, text: proposal.text };
+        }),
+      );
+      const combine = (plans: Plan[]) =>
+        Change.parse({
+          nodes: plans.flatMap((p) => p.changes.nodes),
+          revisions: plans.flatMap((p) => p.changes.revisions),
+          edges: plans.flatMap((p) => p.changes.edges),
+          endEdges: plans.flatMap((p) => p.changes.endEdges),
+        });
+      const allChanges = combine(proposals);
+      const at = Math.max(...proposals.map((p) => p.at));
+      context = await this.#validate(
+        this.store.context(
+          w.id,
+          proposals.flatMap((p) => p.context.dependencies),
+        ),
+        allChanges,
+        at,
+      );
+      const consumable = await this.#consumable(context, actor, allChanges);
+      const rolls = await this.#creation(
+        world,
+        actor,
+        user,
+        input.requestId,
+        context,
+        proposals,
+        consumable,
+      );
+      const successful = proposals.filter((_, i) => rolls[i]!.success);
+      const changes = combine(successful);
+      const amounts = new Map<string, number | undefined>();
+      for (const roll of rolls)
+        if (roll.success)
+          for (const c of roll.setting.consumes ?? [])
+            amounts.set(
+              c.id,
+              c.count === undefined
+                ? undefined
+                : (amounts.get(c.id) ?? 0) + c.count,
+            );
+      const finalAt = await this.#append(
+        context,
+        input.requestId + ":consume",
+        at,
+        changes,
+        [...amounts].map(([id, count]) => ({
+          type: "remove",
+          id,
+          ...(count === undefined ? {} : { count }),
+        })),
+      );
+      const outcome = {
+        success: successful.length > 0,
+        proposals: rolls.map((roll, i) => ({
+          text: proposals[i]!.text,
+          ...roll,
+        })),
+      };
+      await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
+        input.requestId,
+        outcome,
+      ]);
+      return {
+        context,
+        changes,
+        at: finalAt,
+        recipients: [...new Set(successful.flatMap((p) => p.recipients))],
+        items: successful.flatMap((p) => p.items ?? []),
+        outcome,
+      };
+    }
     await context.validate();
     const handoff =
       deadline &&
@@ -3524,11 +3762,8 @@ export class BotPlay {
       seen.add(id);
       const incoming = await holders(id),
         held = incoming.filter((e) => e.role === "hold");
-      const sources = (
-        held.length
-          ? held
-          : incoming.filter((e) => e.role === undefined || e.role === "skill")
-      ).map((e) => e.source);
+      // 持つ存在がなければ、家・場所の保管先の登録者、記録や技能を持つ人物が判断する。
+      const sources = (held.length ? held : incoming).map((e) => e.source);
       for (const kind of ["status", "interpret"] as const)
         for (const e of await context.relations(id, kind, "in", latest))
           if (e.role === "content") sources.push(e.source);
@@ -3546,20 +3781,18 @@ export class BotPlay {
     };
     const named = async (id: string) =>
       `「${(await context.node(id))?.text ?? ""}」（ID: ${id}）`;
-    // 本人が利用できる、または所有する保管先。出し入れは本人の判断で行えるが、その場にいる必要がある。
-    // 人物は、利用の関係があっても本人の判断を経る。
-    const storage = async (id: string | null): Promise<boolean> =>
-      id !== null &&
-      id !== actor &&
-      !controlled.has(id) &&
-      (await holders(id)).some(
-        (e) => e.source === actor && (e.role === "use" || e.role === undefined),
-      );
-    // 本人が手に持つ保管先は、本人とともにある。
+    // 本人が登録した保管先と、誰も登録していない場所。出し入れは本人の判断で行えるが、
+    // その場にいる必要がある。人物は、登録の関係があっても本人の判断を経る。
+    const storage = async (id: string | null): Promise<boolean> => {
+      if (id === null || id === actor || controlled.has(id)) return false;
+      const incoming = await holders(id);
+      return incoming.length
+        ? incoming.some((e) => e.source === actor && e.role === "use")
+        : (await context.relations(id, "status", "out", latest)).some(
+            (e) => e.role === "content" && e.text === "route",
+          );
+    };
     const here = async (id: string) =>
-      (await holders(id)).some(
-        (e) => e.role === "hold" && e.source === actor,
-      ) ||
       (await this.#nearby(context, actor)).has(id) ||
       (await locationRecords(context, actor)).some((r) =>
         r.aboutIds.includes(id),
@@ -3656,7 +3889,6 @@ export class BotPlay {
         if (
           (op.type === "locate" && op.subjectId !== actor) ||
           op.type === "create" ||
-          op.type === "transfer" ||
           op.type === "grant" ||
           op.type === "revoke"
         )
@@ -3664,7 +3896,6 @@ export class BotPlay {
         if (op.type === "locate") await affect(op.subjectId);
         else if (op.type === "create") {
           parties.add(op.holder);
-          if (op.owner) parties.add(op.owner);
           needsCreation = true;
         } else if (op.type === "learn") {
           await affect(op.person);
@@ -3745,7 +3976,22 @@ export class BotPlay {
                 }
                 reject(
                   "STORAGE_NOT_HERE",
-                  `保管先${await named(away)}に物を出し入れするには、本人がその場所にいる必要があります。locateで移動してから申請してください`,
+                  `${await named(away)}に物を出し入れするには、本人がその場所にいる必要があります。locateで移動してから申請してください`,
+                );
+              }
+              // 登録された保管先から取り出せるのは、登録した人物だけ。
+              if (
+                op.from !== null &&
+                !(await storage(op.from)) &&
+                (await holders(op.from)).some((e) => e.role === "use")
+              ) {
+                if (input.command === "oppose") {
+                  impossible = true;
+                  break;
+                }
+                reject(
+                  "STORAGE_NOT_REGISTERED",
+                  `${await named(op.from)}から物を取り出せるのは、保管先を登録した人物だけです`,
                 );
               }
               if (await storage(op.from)) parties.add(actor);
@@ -3755,10 +4001,6 @@ export class BotPlay {
               refs.add(op.to);
               parties.add(actor);
             } else await affect(op.to);
-          } else if (op.type === "transfer") {
-            for (const e of incoming.filter((e) => e.role === undefined))
-              parties.add(e.source);
-            await affect(op.to);
           } else if (op.type === "grant" || op.type === "revoke") {
             if (
               input.command === "oppose" &&
@@ -3768,6 +4010,9 @@ export class BotPlay {
               impossible = true;
               break;
             }
+            // 誰も登録していない家・場所の登録は、新しく得る申請としてダイスで判定する。
+            if (op.type === "grant" && !incoming.some((e) => e.role === "use"))
+              needsCreation = true;
             await affect(op.storage);
             await affect(op.person);
           } else {
@@ -3785,7 +4030,7 @@ export class BotPlay {
               }
               reject(
                 "BELONGING_NOT_RECORDED",
-                "物品・技能の保持または所有は未記録です。operationsのupdateで改められるのは物品と技能です。本人の呼称や状態の本文は、changesのrevisionsで改めてください",
+                "物品・技能を持つ存在が未記録です。operationsのupdateで改められるのは物品と技能です。本人の呼称や状態の本文は、changesのrevisionsで改めてください",
               );
             }
             await affect(id);
@@ -3826,6 +4071,7 @@ export class BotPlay {
       const ended = await Promise.all(
         changes.endEdges.map((id) => context.edge(id)),
       );
+      const kinds = new Map(changes.nodes.map((node) => [node.id, node.kind]));
       if (
         [...changes.edges, ...ended.filter((e) => e !== undefined)].some(
           (e) =>
@@ -3833,7 +4079,18 @@ export class BotPlay {
             (e.kind === "status" &&
               e.role === "content" &&
               e.text === "location"),
-        )
+        ) ||
+        // 物品を持つことは、記述ではなくmoveとcreateで表す。
+        (
+          await Promise.all(
+            changes.edges.map(
+              async (e) =>
+                e.kind === "has" &&
+                (kinds.get(e.target) ??
+                  (await context.node(e.target))?.kind) === "existence",
+            ),
+          )
+        ).some(Boolean)
       )
         reject(
           "INTERNAL_OPERATION_REQUIRED",
@@ -4008,20 +4265,37 @@ export class BotPlay {
         "WAIT_NOT_APPLICABLE",
         "かける時間は、受領を必要としない物品のcreateだけの申請に指定してください",
       );
+    needsCreation &&= !privateInterpretation(actor, changes);
+    if (proposalOnly) {
+      if (!needsCreation)
+        reject(
+          "CREATION_REQUIRED",
+          "各案に生成の判定が必要な操作を指定してください",
+        );
+      return {
+        context,
+        changes,
+        at,
+        recipients,
+        items: await this.#itemOutcomes(context, input, changes),
+      };
+    }
     let outcome: unknown = needsCreation
-      ? await this.#creation(
-          world,
-          actor,
-          input.requestId,
-          context,
-          input.text,
-          changes,
-          input.command === "explore",
-          input.command === "explore"
-            ? []
-            : await this.#consumable(context, actor, changes),
-          wait,
-        )
+      ? (
+          await this.#creation(
+            world,
+            actor,
+            user,
+            input.requestId,
+            context,
+            [{ text: input.text, changes }],
+            input.command === "explore"
+              ? []
+              : await this.#consumable(context, actor, changes),
+            input.command === "explore",
+            wait,
+          )
+        )[0]
       : undefined;
     if (outcome) {
       await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
@@ -4356,27 +4630,31 @@ export class BotPlay {
     const db = await this.pool.connect();
     try {
       await db.query("BEGIN");
-      await db.query(
-        "INSERT INTO bot_dice(id,setting) VALUES($1,$2) ON CONFLICT DO NOTHING",
-        [id, setting],
-      );
-      const row = (
-        await db.query<{
-          setting: z.infer<typeof DiceSetting>;
-          roll: number | null;
-        }>("SELECT * FROM bot_dice WHERE id=$1 FOR UPDATE", [id])
-      ).rows[0]!;
-      const roll = row.roll ?? randomInt(1, row.setting.sides + 1);
-      if (row.roll === null)
-        await db.query("UPDATE bot_dice SET roll=$2 WHERE id=$1", [id, roll]);
+      const die = await this.#rollIn(db, id, setting);
       await db.query("COMMIT");
-      return { setting: row.setting, roll };
+      return die;
     } catch (error) {
       await db.query("ROLLBACK");
       throw error;
     } finally {
       db.release();
     }
+  }
+  async #rollIn(db: Db, id: string, setting: z.infer<typeof DiceSetting>) {
+    await db.query(
+      "INSERT INTO bot_dice(id,setting) VALUES($1,$2) ON CONFLICT DO NOTHING",
+      [id, setting],
+    );
+    const row = (
+      await db.query<{
+        setting: z.infer<typeof DiceSetting>;
+        roll: number | null;
+      }>("SELECT * FROM bot_dice WHERE id=$1 FOR UPDATE", [id])
+    ).rows[0]!;
+    const roll = row.roll ?? randomInt(1, row.setting.sides + 1);
+    if (row.roll === null)
+      await db.query("UPDATE bot_dice SET roll=$2 WHERE id=$1", [id, roll]);
+    return { setting: row.setting, roll };
   }
   async profileExperience(world: string, appearance?: Appearance) {
     const present = appearance
@@ -4557,7 +4835,6 @@ export class BotPlay {
                 applicant: actor,
                 npcIndex: input.npcIndex,
                 description: input.description,
-                ownerId: input.ownerId,
               },
               evidence,
             }),
@@ -4679,6 +4956,7 @@ export class BotPlay {
       ![
         "update",
         "create",
+        "create-batch",
         "explore",
         "oppose",
         "memo",
@@ -4695,7 +4973,7 @@ export class BotPlay {
       `INSERT INTO bot_adjudication(world_id,actor_id,owner,request_id,expires_at)
        SELECT $1::text::uuid,$2,$3,$4,clock_timestamp()+${adjudicationLease}
        FROM (SELECT pg_advisory_xact_lock(hashtextextended($1,225))) AS locked
-       ON CONFLICT(world_id,actor_id) DO UPDATE SET owner=$3,request_id=$4,expires_at=EXCLUDED.expires_at
+       ON CONFLICT(world_id,actor_id) DO UPDATE SET owner=$3,request_id=$4,expires_at=EXCLUDED.expires_at,sp_user=NULL,sp_reset=NULL
        WHERE bot_adjudication.expires_at<=clock_timestamp()`,
       [...key, input.requestId],
     );
@@ -4769,16 +5047,19 @@ export class BotPlay {
             id: derivedId(input.requestId + ":manual:" + i),
             text,
           }));
-          appearing = await this.#creation(
-            world,
-            actor,
-            input.requestId,
-            this.store.context(w.id),
-            input.text,
-            changes,
-          );
+          appearing = (
+            await this.#creation(
+              world,
+              actor,
+              user,
+              input.requestId,
+              this.store.context(w.id),
+              [{ text: input.text, changes }],
+              [],
+            )
+          )[0];
         }
-        return this.#plan(world, actor, input);
+        return this.#plan(world, actor, user, input);
       },
       w.id,
       user,
@@ -4789,9 +5070,15 @@ export class BotPlay {
     let committedRejection: AccessError | undefined;
     try {
       await db.query("BEGIN");
-      await db.query("SELECT id FROM bot_request WHERE id=$1 FOR UPDATE", [
-        input.requestId,
-      ]);
+      const saved = (
+        await db.query<{
+          result: Record<string, unknown> | null;
+          spent: number;
+        }>(
+          "SELECT result,(sp_user IS NOT NULL)::int AS spent FROM bot_request WHERE id=$1 FOR UPDATE",
+          [input.requestId],
+        )
+      ).rows[0]!;
       await requireMember(db, user);
       const assignment = (
         await db.query<{
@@ -4835,15 +5122,9 @@ export class BotPlay {
       await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,225))", [
         world,
       ]);
-      const again = (
-        await db.query<{ result: Record<string, unknown> | null }>(
-          "SELECT result FROM bot_request WHERE id=$1",
-          [input.requestId],
-        )
-      ).rows[0]!.result;
-      if (again) {
+      if (saved.result) {
         await db.query("COMMIT");
-        return this.#replay(world, input, again);
+        return this.#replay(world, input, saved.result);
       }
       const active = await this.#activeAdjudication(db, world, actor);
       if (active?.owner !== adjudicationOwner) {
@@ -4910,6 +5191,7 @@ export class BotPlay {
                     const plan = await this.#plan(
                       world,
                       sender,
+                      user,
                       {
                         command: "update",
                         requestId: input.applicationId,
@@ -5569,19 +5851,11 @@ export class BotPlay {
                           ? ((await plan.context.node(id))?.text ?? id)
                           : "置かれている場所";
                       const hold = item.holding
-                        ? `保持 ${await name(item.holding.fromId)} → ${await name(item.holding.toId)}`
+                        ? `${await name(item.holding.fromId)} → ${await name(item.holding.toId)}`
                         : "";
-                      const own = item.ownership
-                        ? `所有 ${(await Promise.all(item.ownership.fromIds.map(name))).join("・") || "未記録"} → ${await name(item.ownership.toId)}`
-                        : item.ownershipUnrecorded
-                          ? "所有者は未登録"
-                          : item.holding
-                            ? "所有者の変更なし"
-                            : "";
                       return [
                         `${item.label}${item.count ? ` × ${item.count}` : ""}`,
                         hold,
-                        own,
                       ]
                         .filter(Boolean)
                         .join(" / ");
@@ -5731,6 +6005,11 @@ export class BotPlay {
                 );
               }
             }
+            if (
+              plan?.outcome &&
+              (input.command === "create-batch" || result.state === "receiving")
+            )
+              result.outcome = plan.outcome;
             // Only successful calls consume a slot. Read material never enters chat.
             if (input.command !== "contact" || session.data.turn === actor) {
               if (
@@ -5779,6 +6058,8 @@ export class BotPlay {
       result = {
         ...result,
         ...status,
+        spentSp: saved.spent,
+        dailySp: await this.dailySp(world, user, db),
         ...(teamArrival ? { teamArrival } : {}),
       };
       const owner =

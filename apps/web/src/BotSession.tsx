@@ -19,7 +19,6 @@ import { History, type HistoryHandle } from "./History.js";
 import { Link } from "@tanstack/react-router";
 import {
   Belongings,
-  heldItemText,
   itemText,
   PlayLayout,
   PlayerPanel,
@@ -59,6 +58,13 @@ const View = z.object({
   actorId: z.string().nullish(),
   turnStartedAt: z.string().optional(),
   screen: PlayScreen,
+  dailySp: z
+    .object({
+      remaining: z.number(),
+      limit: z.number(),
+      resetsAt: z.iso.datetime(),
+    })
+    .optional(),
   callsUsed: z.number().optional(),
   callsLimit: z.number().optional(),
   unreadNotices: z.number().optional(),
@@ -124,12 +130,10 @@ const View = z.object({
 });
 function PersonalMaterial({
   value,
-  viewerId,
   contact,
   disabled,
 }: {
   value: unknown;
-  viewerId: string;
   contact: (id: string) => void;
   disabled: boolean;
 }) {
@@ -143,12 +147,10 @@ function PersonalMaterial({
     ...(data.states ?? []).map((x) => x.node.text),
     ...(data.interpretations ?? []).map((x) => x.node.text),
     ...(data.locations ?? []).map((x) => x.text),
-    ...(data.belongings?.items ?? []).map((item) =>
-      heldItemText(item, viewerId),
-    ),
+    ...(data.belongings?.items ?? []).map(itemText),
     ...(data.belongings?.storages ?? []).flatMap((x) => [
       x.label,
-      ...x.items.map((item) => heldItemText(item, viewerId)),
+      ...x.items.map(itemText),
     ]),
     ...(data.belongings?.skills ?? []).map((x) => x.text),
   ].filter(Boolean);
@@ -464,21 +466,8 @@ export function BotSession({
                         {item.label}
                         {item.count ? ` ×${item.count}` : ""}〈{item.itemId}〉
                       </span>
-                      {item.ownership ? (
-                        <p>
-                          所有
-                          {item.ownership.fromIds.map(personName).join("、") ||
-                            "未登録"}{" "}
-                          → {personName(item.ownership.toId)}
-                        </p>
-                      ) : item.ownershipUnrecorded ? (
-                        <p>所有者は未登録です</p>
-                      ) : item.holding ? (
-                        <p>所有者の変更なし</p>
-                      ) : null}
                       {item.holding && (
                         <p>
-                          保持
                           {item.holding.fromId
                             ? personName(item.holding.fromId)
                             : "なし"}{" "}
@@ -545,6 +534,8 @@ export function BotSession({
                 ? `${personName(view.actorId)}の手番を待っています`
                 : "待機中です"}
             （通常API {view.callsUsed} / {view.callsLimit}回）
+            {view.dailySp &&
+              `探索・生成の残り ${view.dailySp.remaining} / ${view.dailySp.limit} SP（回復 ${realTime(view.dailySp.resetsAt)}）`}
           </Notice>
           {mine && !view.receiving && (
             <div className="flex flex-wrap gap-3">
@@ -572,7 +563,6 @@ export function BotSession({
           {searchResult !== undefined && (
             <PersonalMaterial
               value={searchResult}
-              viewerId={view.viewerId}
               disabled={busy || !mine || !!view.receiving}
               contact={(targetId) =>
                 void send({ command: "contact", targetId })
