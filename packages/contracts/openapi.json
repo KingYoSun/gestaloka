@@ -6204,13 +6204,8 @@
                                 "holder": {
                                   "type": "string",
                                   "format": "uuid",
-                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                                },
-                                "owner": {
-                                  "description": "所有者。省くと保持先だけが登録される",
-                                  "type": "string",
-                                  "format": "uuid",
-                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "description": "物品を持つ存在。持つ存在の物になる"
                                 },
                                 "basis": {
                                   "type": "string",
@@ -6225,7 +6220,7 @@
                                 "basis"
                               ],
                               "additionalProperties": false,
-                              "description": "新しい物品を保持者のもとに成立させる"
+                              "description": "新しい物品を持つ存在のもとに成立させる"
                             },
                             {
                               "type": "object",
@@ -6243,7 +6238,7 @@
                                 },
                                 "from": {
                                   "nullable": true,
-                                  "description": "現在の保持者。所在が未記録ならnull",
+                                  "description": "今持っている存在。所在が未記録ならnull",
                                   "type": "string",
                                   "format": "uuid",
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
@@ -6274,48 +6269,7 @@
                                 "basis"
                               ],
                               "additionalProperties": false,
-                              "description": "物品の所在を移す。所有者は変えない"
-                            },
-                            {
-                              "type": "object",
-                              "properties": {
-                                "type": {
-                                  "type": "string",
-                                  "enum": [
-                                    "transfer"
-                                  ]
-                                },
-                                "item": {
-                                  "type": "string",
-                                  "format": "uuid",
-                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                                },
-                                "to": {
-                                  "type": "string",
-                                  "format": "uuid",
-                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                                },
-                                "count": {
-                                  "description": "対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける",
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "exclusiveMinimum": true,
-                                  "maximum": 9007199254740991
-                                },
-                                "basis": {
-                                  "type": "string",
-                                  "minLength": 1,
-                                  "description": "この事実が成立した根拠。初期設定、または成立した出来事の内容"
-                                }
-                              },
-                              "required": [
-                                "type",
-                                "item",
-                                "to",
-                                "basis"
-                              ],
-                              "additionalProperties": false,
-                              "description": "物品の所有者を替える。所有者が未登録なら新しく指定できる。所在は変えない"
+                              "description": "物品を渡す・置く・預ける。物品は受け取った存在の物になる"
                             },
                             {
                               "type": "object",
@@ -6349,7 +6303,7 @@
                                 "basis"
                               ],
                               "additionalProperties": false,
-                              "description": "保管先を利用できるようにする"
+                              "description": "家・場所を保管先として登録する"
                             },
                             {
                               "type": "object",
@@ -6377,7 +6331,7 @@
                                 "storage"
                               ],
                               "additionalProperties": false,
-                              "description": "保管先の利用を終える"
+                              "description": "保管先の登録を終える"
                             },
                             {
                               "type": "object",
@@ -6477,7 +6431,7 @@
                                 "id"
                               ],
                               "additionalProperties": false,
-                              "description": "消費・消失した物品、または失った技能の所有・所在・習得を終える"
+                              "description": "消費・消失した物品、または失った技能を除く"
                             }
                           ]
                         }
@@ -7284,7 +7238,7 @@
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                 },
                                 "role": {
-                                  "description": "status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する",
+                                  "description": "status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する",
                                   "type": "string",
                                   "enum": [
                                     "content",
@@ -7522,11 +7476,6 @@
                       "description": {
                         "type": "string",
                         "minLength": 1
-                      },
-                      "ownerId": {
-                        "type": "string",
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                       }
                     },
                     "required": [
@@ -8358,7 +8307,7 @@
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                 },
                                 "role": {
-                                  "description": "status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する",
+                                  "description": "status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する",
                                   "type": "string",
                                   "enum": [
                                     "content",
@@ -9325,7 +9274,7 @@
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
                                           "role": {
-                                            "description": "status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する",
+                                            "description": "status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する",
                                             "type": "string",
                                             "enum": [
                                               "content",
@@ -9515,13 +9464,8 @@
                                           "holder": {
                                             "type": "string",
                                             "format": "uuid",
-                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                                          },
-                                          "owner": {
-                                            "description": "所有者。省くと保持先だけが登録される",
-                                            "type": "string",
-                                            "format": "uuid",
-                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                            "description": "物品を持つ存在。持つ存在の物になる"
                                           },
                                           "basis": {
                                             "type": "string",
@@ -9536,7 +9480,7 @@
                                           "basis"
                                         ],
                                         "additionalProperties": false,
-                                        "description": "新しい物品を保持者のもとに成立させる"
+                                        "description": "新しい物品を持つ存在のもとに成立させる"
                                       },
                                       {
                                         "type": "object",
@@ -9554,7 +9498,7 @@
                                           },
                                           "from": {
                                             "nullable": true,
-                                            "description": "現在の保持者。所在が未記録ならnull",
+                                            "description": "今持っている存在。所在が未記録ならnull",
                                             "type": "string",
                                             "format": "uuid",
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
@@ -9585,48 +9529,7 @@
                                           "basis"
                                         ],
                                         "additionalProperties": false,
-                                        "description": "物品の所在を移す。所有者は変えない"
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "type": {
-                                            "type": "string",
-                                            "enum": [
-                                              "transfer"
-                                            ]
-                                          },
-                                          "item": {
-                                            "type": "string",
-                                            "format": "uuid",
-                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                                          },
-                                          "to": {
-                                            "type": "string",
-                                            "format": "uuid",
-                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                                          },
-                                          "count": {
-                                            "description": "対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける",
-                                            "type": "integer",
-                                            "minimum": 0,
-                                            "exclusiveMinimum": true,
-                                            "maximum": 9007199254740991
-                                          },
-                                          "basis": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "description": "この事実が成立した根拠。初期設定、または成立した出来事の内容"
-                                          }
-                                        },
-                                        "required": [
-                                          "type",
-                                          "item",
-                                          "to",
-                                          "basis"
-                                        ],
-                                        "additionalProperties": false,
-                                        "description": "物品の所有者を替える。所有者が未登録なら新しく指定できる。所在は変えない"
+                                        "description": "物品を渡す・置く・預ける。物品は受け取った存在の物になる"
                                       },
                                       {
                                         "type": "object",
@@ -9660,7 +9563,7 @@
                                           "basis"
                                         ],
                                         "additionalProperties": false,
-                                        "description": "保管先を利用できるようにする"
+                                        "description": "家・場所を保管先として登録する"
                                       },
                                       {
                                         "type": "object",
@@ -9688,7 +9591,7 @@
                                           "storage"
                                         ],
                                         "additionalProperties": false,
-                                        "description": "保管先の利用を終える"
+                                        "description": "保管先の登録を終える"
                                       },
                                       {
                                         "type": "object",
@@ -9788,7 +9691,7 @@
                                           "id"
                                         ],
                                         "additionalProperties": false,
-                                        "description": "消費・消失した物品、または失った技能の所有・所在・習得を終える"
+                                        "description": "消費・消失した物品、または失った技能を除く"
                                       }
                                     ]
                                   }
@@ -9982,13 +9885,8 @@
                                 "holder": {
                                   "type": "string",
                                   "format": "uuid",
-                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                                },
-                                "owner": {
-                                  "description": "所有者。省くと保持先だけが登録される",
-                                  "type": "string",
-                                  "format": "uuid",
-                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "description": "物品を持つ存在。持つ存在の物になる"
                                 },
                                 "basis": {
                                   "type": "string",
@@ -10003,7 +9901,7 @@
                                 "basis"
                               ],
                               "additionalProperties": false,
-                              "description": "新しい物品を保持者のもとに成立させる"
+                              "description": "新しい物品を持つ存在のもとに成立させる"
                             },
                             {
                               "type": "object",
@@ -10021,7 +9919,7 @@
                                 },
                                 "from": {
                                   "nullable": true,
-                                  "description": "現在の保持者。所在が未記録ならnull",
+                                  "description": "今持っている存在。所在が未記録ならnull",
                                   "type": "string",
                                   "format": "uuid",
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
@@ -10052,48 +9950,7 @@
                                 "basis"
                               ],
                               "additionalProperties": false,
-                              "description": "物品の所在を移す。所有者は変えない"
-                            },
-                            {
-                              "type": "object",
-                              "properties": {
-                                "type": {
-                                  "type": "string",
-                                  "enum": [
-                                    "transfer"
-                                  ]
-                                },
-                                "item": {
-                                  "type": "string",
-                                  "format": "uuid",
-                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                                },
-                                "to": {
-                                  "type": "string",
-                                  "format": "uuid",
-                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                                },
-                                "count": {
-                                  "description": "対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける",
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "exclusiveMinimum": true,
-                                  "maximum": 9007199254740991
-                                },
-                                "basis": {
-                                  "type": "string",
-                                  "minLength": 1,
-                                  "description": "この事実が成立した根拠。初期設定、または成立した出来事の内容"
-                                }
-                              },
-                              "required": [
-                                "type",
-                                "item",
-                                "to",
-                                "basis"
-                              ],
-                              "additionalProperties": false,
-                              "description": "物品の所有者を替える。所有者が未登録なら新しく指定できる。所在は変えない"
+                              "description": "物品を渡す・置く・預ける。物品は受け取った存在の物になる"
                             },
                             {
                               "type": "object",
@@ -10127,7 +9984,7 @@
                                 "basis"
                               ],
                               "additionalProperties": false,
-                              "description": "保管先を利用できるようにする"
+                              "description": "家・場所を保管先として登録する"
                             },
                             {
                               "type": "object",
@@ -10155,7 +10012,7 @@
                                 "storage"
                               ],
                               "additionalProperties": false,
-                              "description": "保管先の利用を終える"
+                              "description": "保管先の登録を終える"
                             },
                             {
                               "type": "object",
@@ -10255,7 +10112,7 @@
                                 "id"
                               ],
                               "additionalProperties": false,
-                              "description": "消費・消失した物品、または失った技能の所有・所在・習得を終える"
+                              "description": "消費・消失した物品、または失った技能を除く"
                             }
                           ]
                         }
@@ -11062,7 +10919,7 @@
                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                 },
                                 "role": {
-                                  "description": "status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する",
+                                  "description": "status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する",
                                   "type": "string",
                                   "enum": [
                                     "content",
@@ -13040,7 +12897,7 @@
                                         "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                       },
                                       "role": {
-                                        "description": "status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する",
+                                        "description": "status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する",
                                         "type": "string",
                                         "enum": [
                                           "content",
@@ -19481,7 +19338,7 @@
                                       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                     },
                                     "role": {
-                                      "description": "status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する",
+                                      "description": "status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する",
                                       "type": "string",
                                       "enum": [
                                         "content",

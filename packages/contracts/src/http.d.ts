@@ -2629,13 +2629,11 @@ export interface paths {
                             label: string;
                             /** @description 個数。数えないまとまりなら省く */
                             count?: number;
-                            /** Format: uuid */
-                            holder: string;
                             /**
                              * Format: uuid
-                             * @description 所有者。省くと保持先だけが登録される
+                             * @description 物品を持つ存在。持つ存在の物になる
                              */
-                            owner?: string;
+                            holder: string;
                             /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                             basis: string;
                         } | {
@@ -2645,20 +2643,9 @@ export interface paths {
                             item: string;
                             /**
                              * Format: uuid
-                             * @description 現在の保持者。所在が未記録ならnull
+                             * @description 今持っている存在。所在が未記録ならnull
                              */
                             from: string | null;
-                            /** Format: uuid */
-                            to: string;
-                            /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
-                            count?: number;
-                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
-                            basis: string;
-                        } | {
-                            /** @enum {string} */
-                            type: "transfer";
-                            /** Format: uuid */
-                            item: string;
                             /** Format: uuid */
                             to: string;
                             /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
@@ -2899,7 +2886,7 @@ export interface paths {
                                 /** Format: uuid */
                                 target: string;
                                 /**
-                                 * @description status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する
+                                 * @description status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する
                                  * @enum {string}
                                  */
                                 role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
@@ -2956,8 +2943,6 @@ export interface paths {
                         sourceRequestId: string;
                         npcIndex: number;
                         description: string;
-                        /** Format: uuid */
-                        ownerId?: string;
                     } | {
                         /** Format: uuid */
                         requestId: string;
@@ -3156,7 +3141,7 @@ export interface paths {
                                 /** Format: uuid */
                                 target: string;
                                 /**
-                                 * @description status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する
+                                 * @description status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する
                                  * @enum {string}
                                  */
                                 role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
@@ -3385,7 +3370,7 @@ export interface paths {
                                     /** Format: uuid */
                                     target: string;
                                     /**
-                                     * @description status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する
+                                     * @description status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する
                                      * @enum {string}
                                      */
                                     role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
@@ -3431,13 +3416,11 @@ export interface paths {
                                 label: string;
                                 /** @description 個数。数えないまとまりなら省く */
                                 count?: number;
-                                /** Format: uuid */
-                                holder: string;
                                 /**
                                  * Format: uuid
-                                 * @description 所有者。省くと保持先だけが登録される
+                                 * @description 物品を持つ存在。持つ存在の物になる
                                  */
-                                owner?: string;
+                                holder: string;
                                 /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                                 basis: string;
                             } | {
@@ -3447,20 +3430,9 @@ export interface paths {
                                 item: string;
                                 /**
                                  * Format: uuid
-                                 * @description 現在の保持者。所在が未記録ならnull
+                                 * @description 今持っている存在。所在が未記録ならnull
                                  */
                                 from: string | null;
-                                /** Format: uuid */
-                                to: string;
-                                /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
-                                count?: number;
-                                /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
-                                basis: string;
-                            } | {
-                                /** @enum {string} */
-                                type: "transfer";
-                                /** Format: uuid */
-                                item: string;
                                 /** Format: uuid */
                                 to: string;
                                 /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
@@ -3556,13 +3528,11 @@ export interface paths {
                             label: string;
                             /** @description 個数。数えないまとまりなら省く */
                             count?: number;
-                            /** Format: uuid */
-                            holder: string;
                             /**
                              * Format: uuid
-                             * @description 所有者。省くと保持先だけが登録される
+                             * @description 物品を持つ存在。持つ存在の物になる
                              */
-                            owner?: string;
+                            holder: string;
                             /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                             basis: string;
                         } | {
@@ -3572,20 +3542,9 @@ export interface paths {
                             item: string;
                             /**
                              * Format: uuid
-                             * @description 現在の保持者。所在が未記録ならnull
+                             * @description 今持っている存在。所在が未記録ならnull
                              */
                             from: string | null;
-                            /** Format: uuid */
-                            to: string;
-                            /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
-                            count?: number;
-                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
-                            basis: string;
-                        } | {
-                            /** @enum {string} */
-                            type: "transfer";
-                            /** Format: uuid */
-                            item: string;
                             /** Format: uuid */
                             to: string;
                             /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
@@ -3826,7 +3785,7 @@ export interface paths {
                                 /** Format: uuid */
                                 target: string;
                                 /**
-                                 * @description status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する
+                                 * @description status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する
                                  * @enum {string}
                                  */
                                 role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
@@ -4457,7 +4416,7 @@ export interface paths {
                                             /** Format: uuid */
                                             target: string;
                                             /**
-                                             * @description status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する
+                                             * @description status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する
                                              * @enum {string}
                                              */
                                             role?: "content" | "about" | "hold" | "use" | "skill" | "summary";
@@ -7042,7 +7001,7 @@ export interface paths {
                                     /** Format: uuid */
                                     target: string;
                                     /**
-                                     * @description status/interpretはcontentかabout。hasは役割なしが所有で、hold・use・skill・summaryは実行側だけが記録する
+                                     * @description status/interpretはcontentかabout。hasのholdは物品を持つこと、useは家・場所の保管先の登録。役割なしは記録やメモを持つこと。hold・use・skill・summaryは実行側だけが記録する
                                      * @enum {string}
                                      */
                                     role?: "content" | "about" | "hold" | "use" | "skill" | "summary";

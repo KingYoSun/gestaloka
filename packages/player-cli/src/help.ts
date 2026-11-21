@@ -11,7 +11,6 @@ export const playerOptions = {
   label: { type: "string" },
   source: { type: "string" },
   index: { type: "string" },
-  owner: { type: "string" },
   resume: { type: "boolean" },
   once: { type: "boolean" },
   "after-wake": { type: "string" },
@@ -155,8 +154,8 @@ const commands = {
     "explore --from @12ab34cd --label 森の奥の沢 --text ぶー森の小道を奥へ進むと浅い沢に出る",
   ],
   "promote-npc": [
-    "--source <発言要求ID> --index <番号> --text <NPCの説明> [--owner <人物ID>]",
-    "出現記録の指定位置のNPCを昇格申請。必要に応じて所有者を指定。",
+    "--source <発言要求ID> --index <番号> --text <NPCの説明>",
+    "出現記録の指定位置のNPCを昇格申請。",
     "promote-npc --source @12ab34cd --index 0 --text '小屋の留鳥'",
   ],
   players: [

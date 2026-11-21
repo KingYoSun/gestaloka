@@ -3483,7 +3483,7 @@ export class BotPlay {
     await combined.validate();
     return combined;
   }
-  // 同じ物品・同じ個数の移動と譲渡は一つにまとめる。
+  // 物品ごとに、新しく持った存在と前に持っていた存在を返す。
   async #itemOutcomes(
     context: WorldContext,
     input: { requestId: string; operations?: BelongingOp[] | undefined },
@@ -3491,7 +3491,6 @@ export class BotPlay {
   ): Promise<ItemOutcome[]> {
     if (!input.operations) return [];
     const applied = changes.edges.length || changes.revisions.length,
-      ended = await Promise.all(changes.endEdges.map((id) => context.edge(id))),
       items = new Map<string, ItemOutcome>();
     for (const [index, op] of input.operations.entries()) {
       if (op.type === "create") {
@@ -3502,20 +3501,16 @@ export class BotPlay {
           (edge) => edge.kind === "has" && edge.target === itemId,
         );
         const holding = relations.find((edge) => edge.role === "hold");
-        const ownership = relations.find((edge) => !edge.role);
         if (holding)
           items.set(itemId, {
             itemId,
             label: node.text,
             ...(node.count ? { count: node.count } : {}),
             holding: { fromId: null, toId: holding.source },
-            ...(ownership
-              ? { ownership: { fromIds: [], toId: ownership.source } }
-              : { ownershipUnrecorded: true }),
           });
         continue;
       }
-      if (op.type !== "move" && op.type !== "transfer") continue;
+      if (op.type !== "move") continue;
       const key = `${op.item}:${op.count ?? ""}`,
         item = items.get(key) ?? {
           itemId: op.item,
@@ -3525,38 +3520,8 @@ export class BotPlay {
           ...(op.count ? { count: op.count } : {}),
         };
       items.set(key, item);
-      if (!applied) continue;
-      if (op.type === "move") item.holding = { fromId: op.from, toId: op.to };
-      else {
-        // 全部を譲った物品は所有の関係が終わっている。一部なら元の所有者は変わらない。
-        const former = ended.filter(
-          (e) => e?.kind === "has" && e.target === op.item && !e.role,
-        );
-        item.ownership = {
-          fromIds: (former.length
-            ? former
-            : changes.edges.some(
-                  (e) => e.kind === "has" && e.target === op.item && !e.role,
-                )
-              ? []
-              : (await context.relations(op.item, "has", "in", latest)).filter(
-                  (e) => !e.role,
-                )
-          ).map((e) => e!.source),
-          toId: op.to,
-        };
-      }
+      if (applied) item.holding = { fromId: op.from, toId: op.to };
     }
-    for (const item of items.values())
-      if (
-        item.holding &&
-        !item.ownership &&
-        !item.ownershipUnrecorded &&
-        !(await context.relations(item.itemId, "has", "in", latest)).some(
-          (edge) => !edge.role,
-        )
-      )
-        item.ownershipUnrecorded = true;
     return [...items.values()];
   }
   async #plan(
@@ -3795,11 +3760,8 @@ export class BotPlay {
       seen.add(id);
       const incoming = await holders(id),
         held = incoming.filter((e) => e.role === "hold");
-      const sources = (
-        held.length
-          ? held
-          : incoming.filter((e) => e.role === undefined || e.role === "skill")
-      ).map((e) => e.source);
+      // 持つ存在がなければ、家・場所の保管先の登録者、記録や技能を持つ人物が判断する。
+      const sources = (held.length ? held : incoming).map((e) => e.source);
       for (const kind of ["status", "interpret"] as const)
         for (const e of await context.relations(id, kind, "in", latest))
           if (e.role === "content") sources.push(e.source);
@@ -3817,20 +3779,18 @@ export class BotPlay {
     };
     const named = async (id: string) =>
       `「${(await context.node(id))?.text ?? ""}」（ID: ${id}）`;
-    // 本人が利用できる、または所有する保管先。出し入れは本人の判断で行えるが、その場にいる必要がある。
-    // 人物は、利用の関係があっても本人の判断を経る。
-    const storage = async (id: string | null): Promise<boolean> =>
-      id !== null &&
-      id !== actor &&
-      !controlled.has(id) &&
-      (await holders(id)).some(
-        (e) => e.source === actor && (e.role === "use" || e.role === undefined),
-      );
-    // 本人が手に持つ保管先は、本人とともにある。
+    // 本人が登録した保管先と、誰も登録していない場所。出し入れは本人の判断で行えるが、
+    // その場にいる必要がある。人物は、登録の関係があっても本人の判断を経る。
+    const storage = async (id: string | null): Promise<boolean> => {
+      if (id === null || id === actor || controlled.has(id)) return false;
+      const incoming = await holders(id);
+      return incoming.length
+        ? incoming.some((e) => e.source === actor && e.role === "use")
+        : (await context.relations(id, "status", "out", latest)).some(
+            (e) => e.role === "content" && e.text === "route",
+          );
+    };
     const here = async (id: string) =>
-      (await holders(id)).some(
-        (e) => e.role === "hold" && e.source === actor,
-      ) ||
       (await this.#nearby(context, actor)).has(id) ||
       (await locationRecords(context, actor)).some((r) =>
         r.aboutIds.includes(id),
@@ -3927,7 +3887,6 @@ export class BotPlay {
         if (
           (op.type === "locate" && op.subjectId !== actor) ||
           op.type === "create" ||
-          op.type === "transfer" ||
           op.type === "grant" ||
           op.type === "revoke"
         )
@@ -3935,7 +3894,6 @@ export class BotPlay {
         if (op.type === "locate") await affect(op.subjectId);
         else if (op.type === "create") {
           parties.add(op.holder);
-          if (op.owner) parties.add(op.owner);
           needsCreation = true;
         } else if (op.type === "learn") {
           await affect(op.person);
@@ -4016,7 +3974,22 @@ export class BotPlay {
                 }
                 reject(
                   "STORAGE_NOT_HERE",
-                  `保管先${await named(away)}に物を出し入れするには、本人がその場所にいる必要があります。locateで移動してから申請してください`,
+                  `${await named(away)}に物を出し入れするには、本人がその場所にいる必要があります。locateで移動してから申請してください`,
+                );
+              }
+              // 登録された保管先から取り出せるのは、登録した人物だけ。
+              if (
+                op.from !== null &&
+                !(await storage(op.from)) &&
+                (await holders(op.from)).some((e) => e.role === "use")
+              ) {
+                if (input.command === "oppose") {
+                  impossible = true;
+                  break;
+                }
+                reject(
+                  "STORAGE_NOT_REGISTERED",
+                  `${await named(op.from)}から物を取り出せるのは、保管先を登録した人物だけです`,
                 );
               }
               if (await storage(op.from)) parties.add(actor);
@@ -4026,10 +3999,6 @@ export class BotPlay {
               refs.add(op.to);
               parties.add(actor);
             } else await affect(op.to);
-          } else if (op.type === "transfer") {
-            for (const e of incoming.filter((e) => e.role === undefined))
-              parties.add(e.source);
-            await affect(op.to);
           } else if (op.type === "grant" || op.type === "revoke") {
             if (
               input.command === "oppose" &&
@@ -4039,6 +4008,9 @@ export class BotPlay {
               impossible = true;
               break;
             }
+            // 誰も登録していない家・場所の登録は、新しく得る申請としてダイスで判定する。
+            if (op.type === "grant" && !incoming.some((e) => e.role === "use"))
+              needsCreation = true;
             await affect(op.storage);
             await affect(op.person);
           } else {
@@ -4056,7 +4028,7 @@ export class BotPlay {
               }
               reject(
                 "BELONGING_NOT_RECORDED",
-                "物品・技能の保持または所有は未記録です。operationsのupdateで改められるのは物品と技能です。本人の呼称や状態の本文は、changesのrevisionsで改めてください",
+                "物品・技能を持つ存在が未記録です。operationsのupdateで改められるのは物品と技能です。本人の呼称や状態の本文は、changesのrevisionsで改めてください",
               );
             }
             await affect(id);
@@ -4097,6 +4069,7 @@ export class BotPlay {
       const ended = await Promise.all(
         changes.endEdges.map((id) => context.edge(id)),
       );
+      const kinds = new Map(changes.nodes.map((node) => [node.id, node.kind]));
       if (
         [...changes.edges, ...ended.filter((e) => e !== undefined)].some(
           (e) =>
@@ -4104,7 +4077,18 @@ export class BotPlay {
             (e.kind === "status" &&
               e.role === "content" &&
               e.text === "location"),
-        )
+        ) ||
+        // 物品を持つことは、記述ではなくmoveとcreateで表す。
+        (
+          await Promise.all(
+            changes.edges.map(
+              async (e) =>
+                e.kind === "has" &&
+                (kinds.get(e.target) ??
+                  (await context.node(e.target))?.kind) === "existence",
+            ),
+          )
+        ).some(Boolean)
       )
         reject(
           "INTERNAL_OPERATION_REQUIRED",
@@ -4845,7 +4829,6 @@ export class BotPlay {
                 applicant: actor,
                 npcIndex: input.npcIndex,
                 description: input.description,
-                ownerId: input.ownerId,
               },
               evidence,
             }),
@@ -5861,19 +5844,11 @@ export class BotPlay {
                           ? ((await plan.context.node(id))?.text ?? id)
                           : "置かれている場所";
                       const hold = item.holding
-                        ? `保持 ${await name(item.holding.fromId)} → ${await name(item.holding.toId)}`
+                        ? `${await name(item.holding.fromId)} → ${await name(item.holding.toId)}`
                         : "";
-                      const own = item.ownership
-                        ? `所有 ${(await Promise.all(item.ownership.fromIds.map(name))).join("・") || "未記録"} → ${await name(item.ownership.toId)}`
-                        : item.ownershipUnrecorded
-                          ? "所有者は未登録"
-                          : item.holding
-                            ? "所有者の変更なし"
-                            : "";
                       return [
                         `${item.label}${item.count ? ` × ${item.count}` : ""}`,
                         hold,
-                        own,
                       ]
                         .filter(Boolean)
                         .join(" / ");

@@ -19,7 +19,6 @@ import { History, type HistoryHandle } from "./History.js";
 import { Link } from "@tanstack/react-router";
 import {
   Belongings,
-  heldItemText,
   itemText,
   PlayLayout,
   PlayerPanel,
@@ -131,12 +130,10 @@ const View = z.object({
 });
 function PersonalMaterial({
   value,
-  viewerId,
   contact,
   disabled,
 }: {
   value: unknown;
-  viewerId: string;
   contact: (id: string) => void;
   disabled: boolean;
 }) {
@@ -150,12 +147,10 @@ function PersonalMaterial({
     ...(data.states ?? []).map((x) => x.node.text),
     ...(data.interpretations ?? []).map((x) => x.node.text),
     ...(data.locations ?? []).map((x) => x.text),
-    ...(data.belongings?.items ?? []).map((item) =>
-      heldItemText(item, viewerId),
-    ),
+    ...(data.belongings?.items ?? []).map(itemText),
     ...(data.belongings?.storages ?? []).flatMap((x) => [
       x.label,
-      ...x.items.map((item) => heldItemText(item, viewerId)),
+      ...x.items.map(itemText),
     ]),
     ...(data.belongings?.skills ?? []).map((x) => x.text),
   ].filter(Boolean);
@@ -471,21 +466,8 @@ export function BotSession({
                         {item.label}
                         {item.count ? ` ×${item.count}` : ""}〈{item.itemId}〉
                       </span>
-                      {item.ownership ? (
-                        <p>
-                          所有
-                          {item.ownership.fromIds.map(personName).join("、") ||
-                            "未登録"}{" "}
-                          → {personName(item.ownership.toId)}
-                        </p>
-                      ) : item.ownershipUnrecorded ? (
-                        <p>所有者は未登録です</p>
-                      ) : item.holding ? (
-                        <p>所有者の変更なし</p>
-                      ) : null}
                       {item.holding && (
                         <p>
-                          保持
                           {item.holding.fromId
                             ? personName(item.holding.fromId)
                             : "なし"}{" "}
@@ -581,7 +563,6 @@ export function BotSession({
           {searchResult !== undefined && (
             <PersonalMaterial
               value={searchResult}
-              viewerId={view.viewerId}
               disabled={busy || !mine || !!view.receiving}
               contact={(targetId) =>
                 void send({ command: "contact", targetId })

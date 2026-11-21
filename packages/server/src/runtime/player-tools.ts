@@ -44,7 +44,7 @@ export class PlayerTools {
       CREATE TABLE IF NOT EXISTS npc_promotion (
       id uuid PRIMARY KEY,world_id uuid NOT NULL,user_id uuid NOT NULL,actor_id uuid NOT NULL,
       source_request_id uuid NOT NULL,npc_index integer NOT NULL,label text NOT NULL,description text NOT NULL,source_text text NOT NULL,
-      owner_id uuid,state text NOT NULL DEFAULT 'pending',npc_id uuid,created_at timestamptz NOT NULL,decided_by uuid);
+      state text NOT NULL DEFAULT 'pending',npc_id uuid,created_at timestamptz NOT NULL,decided_by uuid);
       ALTER TABLE npc_promotion ADD COLUMN IF NOT EXISTS auto_review jsonb, ADD COLUMN IF NOT EXISTS profile_chat_id bigint;
       CREATE TABLE IF NOT EXISTS npc_promotion_policy(world_id uuid PRIMARY KEY,condition text NOT NULL,version uuid NOT NULL,admin uuid NOT NULL);
       CREATE TABLE IF NOT EXISTS creation_policy(world_id uuid PRIMARY KEY,criteria text NOT NULL,version uuid NOT NULL,admin uuid NOT NULL);
@@ -186,11 +186,6 @@ export class PlayerTools {
         "INSTANT_NPC_NOT_FOUND",
         "出現したインスタントNPCの番号を確認してください",
       );
-    if (input.ownerId && input.ownerId !== actor)
-      reject(
-        "OWNER_MISMATCH",
-        "所有関係を申請する場合は本人を指定してください",
-      );
     const appearance = (
       source?.appearances as Appearance[] | undefined
     )?.filter((a) => a.kind === "instant-npc")[input.npcIndex];
@@ -212,8 +207,8 @@ export class PlayerTools {
     const { label, eventText } = source;
     try {
       await db.query(
-        `INSERT INTO npc_promotion(id,world_id,user_id,actor_id,source_request_id,npc_index,label,description,source_text,owner_id,created_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        `INSERT INTO npc_promotion(id,world_id,user_id,actor_id,source_request_id,npc_index,label,description,source_text,created_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
         [
           input.requestId,
           world,
@@ -224,7 +219,6 @@ export class PlayerTools {
           label,
           input.description,
           eventText,
-          input.ownerId ?? null,
           this.now().toISOString(),
         ],
       );
@@ -242,7 +236,7 @@ export class PlayerTools {
     const rows = (
       await db.query(
         `SELECT id,actor_id AS "actorId",source_request_id AS "sourceRequestId",npc_index AS "npcIndex",label,description,source_text AS "sourceText",
-      owner_id AS "ownerId",state,npc_id AS "npcId",created_at AS "createdAt",decided_by AS "decidedBy",CASE WHEN $2::uuid IS NULL THEN auto_review END AS "autoReview" FROM npc_promotion
+      state,npc_id AS "npcId",created_at AS "createdAt",decided_by AS "decidedBy",CASE WHEN $2::uuid IS NULL THEN auto_review END AS "autoReview" FROM npc_promotion
       WHERE world_id=$1 AND ($2::uuid IS NULL OR actor_id=$2) AND ($3::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM npc_promotion WHERE world_id=$1 AND id=$3))
       ORDER BY created_at DESC,id DESC LIMIT 51`,
         [world, actor ?? null, before ?? null],
@@ -385,14 +379,6 @@ export class PlayerTools {
             },
           );
         }
-        if (row.owner_id)
-          changes.edges.push({
-            id: derivedId(`${npc}:owner`),
-            kind: "has",
-            source: row.owner_id,
-            target: npc,
-            period: { from: at },
-          });
         if (instant)
           changes.edges.push({
             id: derivedId(npc + ":origin"),
