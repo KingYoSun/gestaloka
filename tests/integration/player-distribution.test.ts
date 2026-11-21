@@ -107,6 +107,7 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
       "skills/gestaloka-player/references/setup.md",
       "skills/gestaloka-player/references/join.md",
       "skills/gestaloka-player/references/runtimes.md",
+      "skills/gestaloka-player/references/dice.md",
     ]) {
       const path = join(folder, "package", file);
       const markdown = await readFile(path, "utf8");

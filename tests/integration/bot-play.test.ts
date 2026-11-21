@@ -3777,6 +3777,57 @@ test("利用・所有する保管先には、その場にいるときだけ本�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test("本人が所有して手に持つ保管先には、場所を問わず出し入れできる", async () => {
+  const f = await fixture();
+  const box = randomUUID(),
+    shell = randomUUID(),
+    actor = f.actors[0]!;
+  const has = (target: string, role?: "hold") => ({
+    id: randomUUID(),
+    kind: "has" as const,
+    source: actor,
+    target,
+    ...(role ? { role } : {}),
+    period: { from: 0 },
+  });
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: [
+          { id: box, kind: "existence", text: "手提げの箱" },
+          { id: shell, kind: "existence", text: "貝殻" },
+        ],
+        edges: [has(box), has(box, "hold"), has(shell), has(shell, "hold")],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  const move = (from: string, to: string) =>
+    f.send(0, {
+      command: "update",
+      text: "箱に出し入れする",
+      operations: [{ type: "move", item: shell, from, to, basis: "検証" }],
+      dependencies: [],
+    });
+  await move(actor, box);
+  expect(
+    (await readBelongings(f.store.context(f.graph), actor)).storages.find(
+      (s) => s.id === box,
+    )?.items,
+  ).toMatchObject([{ id: shell }]);
+  await move(box, actor);
+  expect(
+    (await readBelongings(f.store.context(f.graph), actor)).items.map(
+      (i) => i.id,
+    ),
+  ).toContain(shell);
+});
+
 test("依存版の不一致と運用停止を理由付きエラーにし、失敗した要求で枠を消費しない", async () => {
   const f = await fixture(),
     basis = await f.send(0, { command: "search", query: { kind: "self" } }),

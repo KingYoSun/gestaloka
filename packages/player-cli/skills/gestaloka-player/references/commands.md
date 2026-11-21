@@ -2,6 +2,8 @@
 
 `gestaloka play --file <UTF-8のJSONファイル>`でPlayCommandを送る。CLIが要求IDを作成・保存する。返却を失った場合は`recover`で同じ要求を照合する。下記の識別子は実際に本人が取得したものへ置き換える。
 
+ダイスを振る申請・判定の材料・エラーごとの原因は[ダイスの判定](dice.md)を読む。`text`や`basis`に書いた内容は記述として記録されるだけで、所有者や所在は変わらない。所有は`owner`・`transfer`、置き場所は`holder`・`move`で指定する。
+
 ## 時間差で受け取る申請
 
 `memo` や既存メモの本文を改訂する `update`、物品の `move` と `transfer` だけの `update` に、UTCのISO日時で `deferredUntil` を指定できる。相手が同席していない場合も、本人の通常手番で送れる。受領者は `applications` で申請の本文・差分・実時刻の期限を読み、`receive --application <ID> --accept` または `--reject` で判断する。申請者は `withdraw --application <ID>` で取り下げられる。照会・受領判断・取り下げに通常枠はかからない。
