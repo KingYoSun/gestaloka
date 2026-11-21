@@ -5931,7 +5931,11 @@ test("受領と離席から戻った手番には無操作の期限を数え直�
   elapsed = 599999;
   expect(await f.status(1)).toMatchObject({
     turn: 1,
-    receiving: { applicationId: memo.applicationId },
+    receiving: {
+      applicationId: memo.applicationId,
+      recipients: [f.actors[1]],
+      text: "受領判断の試験",
+    },
   });
   await f.send(1, {
     command: "receive",

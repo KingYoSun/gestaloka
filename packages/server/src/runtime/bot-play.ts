@@ -185,6 +185,7 @@ type SessionStatus = {
   receiving: {
     applicationId: string;
     sender: string;
+    recipients: string[];
     deadline: string;
     text?: string;
     changes?: Change;
@@ -2350,10 +2351,12 @@ export class BotPlay {
         ? { creationCriteria: criteria.criteria || defaultCreationCriteria }
         : {}),
       ...(waitingForReturn ? { waitingForReturn } : {}),
+      // 受領判断は同席者全員に見える。宛先を示し、本文と変更内容は当事者にだけ返す。
       receiving: r
         ? {
             applicationId: r.id,
             sender: r.sender,
+            recipients: r.recipients,
             deadline: r.deadline,
             ...(r.sender === actor || r.recipients.includes(actor)
               ? { text: r.text, changes: r.changes }
