@@ -1,9 +1,14 @@
 import { z } from "zod";
 import { Change, RelationKind } from "./world.js";
+import { BlueprintDraft, BlueprintPublication } from "./play.js";
 export {
   DeferredApplication,
   ExchangeOffer,
   ExchangeTerms,
+  BlueprintDraft,
+  BlueprintPublication,
+  BlueprintProposal,
+  type BlueprintAction,
   PlayCommand,
   NpcAction,
   ItemOutcome,
@@ -1110,6 +1115,25 @@ export const Operation = z.discriminatedUnion("operation", [
       operation: z.literal("reports.list"),
       worldId: z.uuid(),
       before: z.uuid().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("blueprints.create"),
+      worldId: z.uuid(),
+      template: BlueprintDraft,
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("blueprints.publish"),
+      worldId: z.uuid(),
+      template: z.union([
+        BlueprintPublication,
+        z.object({ templateId: z.uuid() }).strict(),
+      ]),
+      reason: operationReason,
     })
     .strict(),
   z

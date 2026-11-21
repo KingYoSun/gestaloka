@@ -131,6 +131,78 @@ const create = async () => {
   return id;
 };
 
+test("MCPの専用ツールが同じ設計図の下書きを再送で再利用し、IDで公開する", async () => {
+  const worldId = await create();
+  const authorId = (await runtime.get(worldId)).actor_id!;
+  const { token } = await delegation(
+    ["blueprints.create", "blueprints.publish"],
+    [worldId],
+  );
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const client = new Client({ name: "blueprint-author", version: "1" });
+  try {
+    await app.listen({ host: "127.0.0.1", port: 18980 });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(auth.operations.mcp.resource), {
+        requestInit: { headers: { authorization: `Bearer ${token}` } },
+      }),
+    );
+    expect((await client.listTools()).tools).toContainEqual(
+      expect.objectContaining({ name: "blueprints_create" }),
+    );
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const result = await client.callTool({ name, arguments: args });
+      expect(result.isError).not.toBe(true);
+      return JSON.parse(
+        result.content.find((part) => part.type === "text")!.text,
+      );
+    };
+    const input = {
+      requestId: randomUUID(),
+      worldId,
+      reason: "試遊用の下書き",
+      template: {
+        name: "川辺の小屋",
+        mode: "build",
+        version: 1,
+        authorId,
+        instructions: "板を持ち寄ると、川辺に保管できる小屋ができる。",
+        materials: [{ label: "板", count: 2, usage: "consume" }],
+      },
+    };
+    const draft = await call("blueprints_create", input);
+    expect(draft).toMatchObject({
+      ...input.template,
+      origin: worldId,
+      state: "draft",
+    });
+    expect(await call("blueprints_create", input)).toEqual(draft);
+    expect(
+      await call("blueprints_create", {
+        ...input,
+        requestId: randomUUID(),
+        template: { ...input.template, name: "丘の小屋" },
+      }),
+    ).not.toMatchObject({ id: draft.id });
+    expect(
+      await call("blueprints_publish", {
+        requestId: randomUUID(),
+        worldId,
+        template: { templateId: draft.id },
+        reason: "試遊済みの版を公開",
+      }),
+    ).toMatchObject({ id: draft.id, materials: input.template.materials });
+  } finally {
+    await client.close();
+    await app.close();
+  }
+});
+
 test("世界を限定したMCPでNPC昇格を許可し、報告を読み、対象外の世界は拒否する", async () => {
   const world = await create(),
     row = await runtime.get(world),

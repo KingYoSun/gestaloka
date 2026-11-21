@@ -133,6 +133,8 @@ export class McpAuthorization {
       "npcs.decidePromotion",
       "reports.list",
       "notices.send",
+      "blueprints.create",
+      "blueprints.publish",
       "costs.read",
       "jobs.list",
       "jobs.read",

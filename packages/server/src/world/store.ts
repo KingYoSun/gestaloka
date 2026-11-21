@@ -40,6 +40,10 @@ export type Receipt = {
   versions?: Record<string, { before: number; after: number }>;
 };
 export class WorldConflict extends Error {}
+export type ItemReservations = {
+  add?: { id: string; itemId: string; count: number };
+  release: string[];
+};
 
 const nodeKey = (id: string) => `node:${id}`;
 const edgeKey = (id: string) => `edge:${id}`;
@@ -339,6 +343,16 @@ export class WorldContext {
       ],
     };
   }
+  async reserved(itemId: string) {
+    return this.#read(relationKey(itemId, "has", "in"), async (tx) => {
+      const { records } = await tx.run(
+        "MATCH (r:WorldItemReservation {worldId:$worldId,itemId:$itemId}) RETURN sum(r.quantity) AS quantity",
+        { worldId: this.worldId, itemId },
+      );
+      return Number(records[0]!.get("quantity"));
+    });
+  }
+
   async relations(
     id: string,
     kind: RelationKind,
@@ -651,6 +665,7 @@ export class WorldStore {
       ["WorldGuard", "key"],
       ["WorldRun", "runId"],
       ["WorldReceipt", "commitId"],
+      ["WorldItemReservation", "id"],
     ]) {
       await this.driver.executeQuery(
         `CREATE CONSTRAINT ${label}_identity IF NOT EXISTS FOR (n:${label}) REQUIRE (n.worldId, n.${field}) IS UNIQUE`,
@@ -658,6 +673,9 @@ export class WorldStore {
     }
     await this.driver.executeQuery(
       "CREATE CONSTRAINT WorldRevision_identity IF NOT EXISTS FOR (n:WorldRevision) REQUIRE (n.worldId, n.nodeId, n.version) IS UNIQUE",
+    );
+    await this.driver.executeQuery(
+      "CREATE INDEX WorldItemReservation_by_item IF NOT EXISTS FOR (r:WorldItemReservation) ON (r.worldId, r.itemId)",
     );
     await this.driver.executeQuery(
       "CREATE INDEX WorldReceipt_delivery IF NOT EXISTS FOR (n:WorldReceipt) ON (n.worldId, n.pendingDelivery)",
@@ -787,6 +805,7 @@ export class WorldStore {
       management?: { editorId: string; reason: string; requestHash: string };
     },
     fromBelongingOperations = false,
+    reservations?: ItemReservations,
   ): Promise<Receipt> {
     const parsed = z
       .object({
@@ -823,6 +842,7 @@ export class WorldStore {
           runId,
           at,
           changes: requestedChange(changes, at),
+          ...(reservations ? { reservations } : {}),
           ...(parsed.management ? { management: parsed.management } : {}),
         }),
       )
@@ -968,7 +988,22 @@ export class WorldStore {
           for (const row of holders.records)
             summarize(row.get("subject"), row.get("role"));
         }
+        const releasing = reservations?.release.length
+          ? (
+              await tx.run(
+                "UNWIND $ids AS id MATCH (r:WorldItemReservation {worldId:$worldId,id:id}) RETURN r.itemId AS item",
+                { worldId, ids: reservations.release },
+              )
+            ).records.map((row) => row.get("item") as string)
+          : [];
+        const reservedItems = [
+          ...releasing,
+          ...(reservations?.add ? [reservations.add.itemId] : []),
+        ];
+        if (releasing.length !== (reservations?.release.length ?? 0))
+          throw new WorldConflict("取り置きはすでに解放されています");
         const touched = new Set([
+          ...reservedItems.map((id) => relationKey(id, "has", "in")),
           ...changes.nodes.map((node) => nodeKey(node.id)),
           ...changes.revisions.map((node) => nodeKey(node.id)),
           ...changes.edges.flatMap(edgeKeys),
@@ -1038,6 +1073,67 @@ export class WorldStore {
           if (versions.get(key) !== 0)
             throw new WorldConflict("同じ同一性を重複作成できません");
         }
+        const moving = new Set(
+          ended
+            .filter((edge) => edge.kind === "has" && !edge.role)
+            .map((edge) => edge.target),
+        );
+        const revisions = new Map(
+          changes.revisions
+            .filter((node) => node.kind === "existence")
+            .map((node) => [node.id, node]),
+        );
+        const changedItems = new Set([
+          ...revisions.keys(),
+          ...moving,
+          ...reservedItems,
+        ]);
+        if (changedItems.size) {
+          const { records } = await tx.run(
+            `UNWIND $ids AS id
+             MATCH (n:WorldNode {worldId:$worldId,id:id,kind:'existence'})
+             OPTIONAL MATCH (r:WorldItemReservation {worldId:$worldId,itemId:id})
+             WHERE NOT r.id IN $ending
+             RETURN id,n.data AS data,sum(r.quantity) AS reserved`,
+            {
+              ids: [...changedItems],
+              worldId,
+              ending: reservations?.release ?? [],
+            },
+          );
+          for (const row of records) {
+            const id: string = row.get("id");
+            const quantity =
+              Number(row.get("reserved")) +
+              (reservations?.add?.itemId === id ? reservations.add.count : 0);
+            if (!quantity) continue;
+            const before = WorldNode.parse(JSON.parse(row.get("data")));
+            const after = revisions.get(id) ?? before;
+            if (
+              after.kind !== "existence" ||
+              (after.count ?? 1) < quantity ||
+              before.text !== after.text ||
+              moving.has(id)
+            )
+              throw new WorldConflict(
+                "クエストで取り置きした物品です。取り置きのない分だけ使えます",
+              );
+          }
+        }
+        if (reservations?.release.length)
+          await tx.run(
+            "UNWIND $ids AS id MATCH (r:WorldItemReservation {worldId:$worldId,id:id}) DELETE r",
+            { worldId, ids: reservations.release },
+          );
+        if (reservations?.add)
+          await tx.run(
+            "CREATE (:WorldItemReservation {worldId:$worldId,id:$id,itemId:$itemId,quantity:$quantity})",
+            {
+              worldId,
+              ...reservations.add,
+              quantity: int(reservations.add.count),
+            },
+          );
         const createNode = (node: WorldNode) =>
           tx.run(
             "CREATE (:WorldNode {worldId: $worldId, id: $id, kind: $kind, data: $data, knownFrom: $at, recordedAt: datetime()})",

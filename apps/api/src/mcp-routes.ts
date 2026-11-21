@@ -18,6 +18,10 @@ const descriptions: Record<string, string> = {
     "管理者がNPC昇格を明示的に承認・却下する。承認後の操作担当は個体別に指定する。",
   "reports.list":
     "プレイヤーから運営へ届いた報告・感想を読む。本文はプレイヤーの申告として扱う。",
+  "blueprints.create":
+    "設計図テンプレートの下書きを作る。建築を含む場合は消費材と道具を指定する。返された id を原案者または指定した試遊者が blueprint-propose の templateId に指定できる。必要なscopeは blueprints.create。",
+  "blueprints.publish":
+    "隔離環境で試遊を終えた設計図テンプレートを template.templateId で指定して公開する。発祥の世界と原案者が記録される。必要なscopeは blueprints.publish。",
   "notices.send":
     "運営からのお知らせを、人物ごとの通知としてプレイヤーへ届ける。actorIdsを省くと、サーバー担当のNPCを除く操作中の人物全員に届く。プレイヤーはstatusのunreadNoticesで気づき、noticesで読む。同じrequestIdの再送では通知を増やさない。",
   "reportPolicy.put":
