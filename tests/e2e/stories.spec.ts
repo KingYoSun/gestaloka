@@ -116,52 +116,64 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
     });
     expect(blocked.status()).toBe(403);
 
-    const deviceId = randomUUID(),
-      secret = randomBytes(32).toString("hex");
-    await db.postgres.query(
-      `INSERT INTO player_device(id,world_id,token_hash,user_code,user_id,actor_id)
+    const connectCli = async (worldId: string) => {
+      const deviceId = randomUUID(),
+        secret = randomBytes(32).toString("hex");
+      await db.postgres.query(
+        `INSERT INTO player_device(id,world_id,token_hash,user_code,user_id,actor_id)
        SELECT $1,id,$3,$1::uuid::text,$4,actor_id FROM world_construction WHERE id=$2`,
-      [
-        deviceId,
-        otherWorld,
-        createHash("sha256").update(secret).digest("hex"),
-        reader.id,
-      ],
-    );
-    const profile = join(directory, "profile.json");
-    await writeFile(
-      profile,
-      JSON.stringify({
-        server: baseURL,
-        worldId: otherWorld,
-        deviceId,
-        secret,
-      }),
-    );
-    const cli = async (...args: string[]) =>
-      JSON.parse(
-        (
-          await promisify(execFile)(process.execPath, [
-            resolve("packages/player-cli/dist/main.js"),
-            "--profile",
-            profile,
-            "--full-ids",
-            "stories",
-            ...args,
-          ])
-        ).stdout,
+        [
+          deviceId,
+          worldId,
+          createHash("sha256").update(secret).digest("hex"),
+          reader.id,
+        ],
       );
+      const profile = join(directory, `${worldId}.json`);
+      await writeFile(
+        profile,
+        JSON.stringify({ server: baseURL, worldId, deviceId, secret }),
+      );
+      return async (...args: string[]) => {
+        const result = await promisify(execFile)(process.execPath, [
+          resolve("packages/player-cli/dist/main.js"),
+          "--profile",
+          profile,
+          "--full-ids",
+          ...args,
+        ]).catch((error: { stdout?: string }) => {
+          if (!error.stdout) throw error;
+          return { stdout: error.stdout };
+        });
+        return JSON.parse(result.stdout);
+      };
+    };
+    const cli = await connectCli(otherWorld);
 
     const visitor = await readerContext.newPage();
     await visitor.goto("/stories");
     await visitor.getByRole("link", { name: "初航海", exact: true }).click();
     await visitor.getByRole("link", { name: "次の話", exact: true }).click();
     await expect(visitor.getByRole("heading", { name: "第2話" })).toBeVisible();
-    const list = await cli("list", "--world", world, "--author", "船主");
+    const list = await cli(
+      "stories",
+      "list",
+      "--world",
+      world,
+      "--author",
+      "船主",
+    );
     expect(list.items.map((story: { id: string }) => story.id)).toEqual([
       storyId,
     ]);
-    const selected = await cli("read", "--story", storyId, "--episode", "2");
+    const selected = await cli(
+      "stories",
+      "read",
+      "--story",
+      storyId,
+      "--episode",
+      "2",
+    );
     expect(
       selected.episodes.map((episode: { number: number }) => episode.number),
     ).toEqual([1, 2]);
@@ -190,23 +202,60 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
       expect(await response.json()).toEqual({ storyId, episode: 3 });
     }
     await grant(reader.id, world);
-    const perspective = await readerContext.request.post(path, {
-      headers,
-      data: {
-        requestId: randomUUID(),
-        title: "出帆",
-        author: "船大工",
-        body: "船主の手が震えていた。",
-      },
+    const writer = await connectCli(world);
+    expect(
+      await writer(
+        "stories",
+        "post",
+        "--story",
+        storyId,
+        "--text",
+        "他の人の続きを書く。",
+      ),
+    ).toMatchObject({ state: "error", code: "STORY_WRITE_FORBIDDEN" });
+    const first = await writer(
+      "stories",
+      "post",
+      "--title",
+      "出帆",
+      "--author",
+      "船大工",
+      "--text",
+      "船主の手が震えていた。",
+    );
+    expect(first.result).toMatchObject({
+      storyId: expect.any(String),
+      episode: 1,
     });
-    expect(perspective.ok(), await perspective.text()).toBe(true);
-    const works = await cli("list", "--world", world);
+    const nextBody = "帆を任された。\n初めて舵を取った。";
+    const file = join(directory, "続話.txt");
+    await writeFile(file, nextBody, "utf8");
+    const next = await writer(
+      "stories",
+      "post",
+      "--story",
+      first.result.storyId,
+      "--file",
+      file,
+    );
+    expect(next.result).toEqual({ storyId: first.result.storyId, episode: 2 });
+    expect(await writer("recover", "--request", next.requestId)).toEqual(next);
+    const works = await cli("stories", "list", "--world", world);
     expect(
       works.items.map((story: { author: string }) => story.author),
     ).toEqual(["船大工", "船主"]);
-    expect((await cli("read", "--story", works.items[0].id)).episode.body).toBe(
-      "船主の手が震えていた。",
+    const published = await cli(
+      "stories",
+      "read",
+      "--story",
+      first.result.storyId,
     );
+    expect(published.episode.body).toBe("船主の手が震えていた。");
+    expect(
+      published.episodes.map((episode: { number: number }) => episode.number),
+    ).toEqual([1, 2]);
+    await page.goto(`/stories/${first.result.storyId}?episode=2`);
+    await expect(page.locator(".story-body")).toHaveText(nextBody);
     expect(await snapshot()).toEqual(before);
   } finally {
     await readerContext.close();

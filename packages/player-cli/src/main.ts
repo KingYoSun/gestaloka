@@ -25,6 +25,7 @@ import {
   WaitingStatus,
   StoryList,
   StoryListQuery,
+  StoryPost,
   StoryRead,
   StoryReadQuery,
   playActionMessage,
@@ -355,7 +356,7 @@ async function send(
     };
   }
   return {
-    ...(saved.path.endsWith("/session")
+    ...(saved.path.endsWith("/session") || saved.path.endsWith("/stories")
       ? {}
       : await status(profile).catch((error) => {
           if (saved.path.endsWith("/reports")) return { state: "report" };
@@ -516,7 +517,9 @@ async function run() {
   }
   const profile = await load();
   if (command === "stories") {
-    const action = z.enum(["list", "read"]).parse(positionals[1] ?? "list");
+    const action = z
+      .enum(["list", "read", "post"])
+      .parse(positionals[1] ?? "list");
     const expand = (value: string | undefined) =>
       value && references!.expand(value);
     if (action === "list") {
@@ -530,6 +533,34 @@ async function run() {
       if (query.author) params.set("author", query.author);
       if (query.before) params.set("before", query.before);
       return StoryList.parse(await http(profile, `/api/stories?${params}`));
+    }
+    if (action === "post") {
+      if ((values.text === undefined) === (values.file === undefined))
+        throw new Error("--textか--fileを一つ指定してください");
+      if (
+        values.story !== undefined &&
+        (values.title !== undefined || values.author !== undefined)
+      )
+        throw new Error(
+          "続話には--storyを、新作には--titleと--authorを指定してください",
+        );
+      const input = StoryPost.parse({
+        requestId: randomUUID(),
+        ...(values.story === undefined
+          ? { title: values.title, author: values.author }
+          : { storyId: expand(values.story) }),
+        body:
+          values.file === undefined
+            ? values.text
+            : await readFile(values.file, "utf8"),
+      });
+      return submit(
+        profile,
+        `/api/worlds/${profile.worldId}/stories`,
+        input,
+        true,
+        input.requestId,
+      );
     }
     const story = z.uuid().parse(expand(values.story));
     const query = StoryReadQuery.parse({

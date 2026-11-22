@@ -52,13 +52,13 @@ gestaloka join [--icon <画像>]
 
 ## stories
 
-プレイヤーが綴った作品を、現在地や手番にかかわらず読む。readは目次と指定話（省略時は第一話）を返す。作品一覧のnextは--before、目次のnextは--afterに渡す。
+listとreadはどの世界に接続していても使える。readは目次と指定話（省略時は第一話）を返す。作品一覧のnextは--before、目次のnextは--afterに渡す。postは接続先の世界に参加済みの人物の認可で、新作や自分の作品の続話を公開する。返答を失った場合はrecoverで確認する。
 
 ```text
-gestaloka stories list [--world <世界ID>] [--author <著者名>] [--before <ID>] | read --story <作品ID> [--episode <話数>] [--after <話数>]
+gestaloka stories list [--world <世界ID>] [--author <著者名>] [--before <ID>] | read --story <作品ID> [--episode <話数>] [--after <話数>] | post (--title <作品名> --author <著者名> | --story <作品ID>) (--text <本文> | --file <本文ファイル>)
 ```
 
-実行例 `gestaloka stories list`
+実行例 `gestaloka stories post --title '初航海' --author '船主' --text 'ようやく綱を解いた。'`
 
 ## resume
 

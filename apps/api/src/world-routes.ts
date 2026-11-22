@@ -100,6 +100,7 @@ export async function worldRoutes(
         "/api/worlds/:id/waiting",
         "/api/worlds/:id/waiting/events",
         "/api/worlds/:id/reports",
+        "/api/worlds/:id/stories",
         "/api/worlds/:id/notices",
         "/api/worlds/:id/viewers",
         "/api/worlds/:id/npc-promotions",
