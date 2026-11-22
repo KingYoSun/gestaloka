@@ -8755,6 +8755,30 @@
                         "type": "string",
                         "minLength": 1
                       },
+                      "materials": {
+                        "description": "成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない",
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "exclusiveMinimum": true,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "id"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
                       "stealth": {
                         "type": "boolean"
                       },
@@ -10537,6 +10561,30 @@
                         "type": "string",
                         "minLength": 1
                       },
+                      "materials": {
+                        "description": "成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない",
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "exclusiveMinimum": true,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "id"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
                       "changes": {
                         "type": "object",
                         "properties": {
@@ -11909,6 +11957,30 @@
                                   "type": "string",
                                   "minLength": 1
                                 },
+                                "materials": {
+                                  "description": "成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない",
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      },
+                                      "count": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "exclusiveMinimum": true,
+                                        "maximum": 9007199254740991
+                                      }
+                                    },
+                                    "required": [
+                                      "id"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
                                 "changes": {
                                   "type": "object",
                                   "properties": {
@@ -13236,6 +13308,30 @@
                                 "text": {
                                   "type": "string",
                                   "minLength": 1
+                                },
+                                "materials": {
+                                  "description": "成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない",
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      },
+                                      "count": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "exclusiveMinimum": true,
+                                        "maximum": 9007199254740991
+                                      }
+                                    },
+                                    "required": [
+                                      "id"
+                                    ],
+                                    "additionalProperties": false
+                                  }
                                 },
                                 "operations": {
                                   "minItems": 1,

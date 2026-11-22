@@ -3,7 +3,15 @@ import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { readFile, readdir, writeFile } from "node:fs/promises";
-import { beforeAll, afterAll, afterEach, expect, test, vi } from "vitest";
+import {
+  beforeAll,
+  afterAll,
+  afterEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from "vitest";
 import {
   BlueprintDraft,
   PlayCommand,
@@ -10145,6 +10153,248 @@ test("認可済み端末は人物生成前に一度報告でき、参加後も�
   } finally {
     await app.close();
   }
+});
+
+describe("現場材料", () => {
+  // サーバーが組み立てた設定はそのまま使い、出目だけ2に固定する。
+  const win = { sides: 100, successThrough: 70 },
+    lose = { ...win, successThrough: 1 };
+  beforeAll(async () => {
+    await isolated.databases.postgres
+      .query(`CREATE FUNCTION fixture_material_roll() RETURNS trigger AS $$
+      BEGIN NEW.roll := 2; RETURN NEW; END $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fixture_material_roll BEFORE INSERT ON bot_dice FOR EACH ROW EXECUTE FUNCTION fixture_material_roll()`);
+  });
+  afterAll(async () => {
+    await isolated.databases.postgres.query(
+      "DROP FUNCTION fixture_material_roll() CASCADE",
+    );
+  });
+  async function workshop(hulls: number) {
+    const f = await fixture(2);
+    const seed = await f.apply([
+      ...Array.from({ length: hulls }, () => ({
+        type: "create",
+        label: "船体",
+        holder: f.place,
+        basis: "建造中",
+      })),
+      {
+        type: "create",
+        label: "板材",
+        count: 2,
+        holder: f.place,
+        basis: "製材済み",
+      },
+      { type: "create", label: "滑車", holder: f.place, basis: "作業用" },
+    ]);
+    const ids = seed.changes.nodes
+      .filter((n) => n.text === "船体")
+      .map((n) => n.id);
+    const board = seed.changes.nodes.find((n) => n.text === "板材")!.id;
+    const plan = (i: number, material?: string, actor = 0) => ({
+      text: `組み方${i}で現場の船体を仕上げる`,
+      ...(material ? { materials: [{ id: material }] } : {}),
+      operations: [
+        {
+          type: "create",
+          holder: f.actors[actor],
+          label: "交易船",
+          basis: "滑車を使って組み上げた",
+        },
+      ],
+    });
+    async function inventory() {
+      const holdings = await Promise.all(
+        [f.place, ...f.actors].map((id) =>
+          readBelongings(f.store.context(f.graph), id),
+        ),
+      );
+      const items = holdings.flatMap((h) => h.items);
+      const count = (label: string) =>
+        items
+          .filter((n) => n.label === label)
+          .reduce((sum, n) => sum + (n.count ?? 1), 0);
+      return {
+        ships: count("交易船"),
+        hulls: count("船体"),
+        boards: count("板材"),
+        tools: count("滑車"),
+      };
+    }
+    return { f, ids, board, plan, inventory };
+  }
+  test("単独の失敗は船体を残し、成功は現地の現物を一度消費して滑車を残す", async () => {
+    const { f, ids, plan, inventory } = await workshop(1);
+    f.calls.mockResolvedValueOnce(answer(randomUUID(), lose));
+    await f.send(0, {
+      command: "update",
+      ...plan(1, ids[0]),
+      dependencies: [],
+    });
+    expect(await inventory()).toEqual({
+      ships: 0,
+      hulls: 1,
+      boards: 2,
+      tools: 1,
+    });
+    // 呼称だけでも現在地で一意なら同じ現物を消費できる。
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { ...win, requiredMaterials: [{ label: "船体" }] }),
+    );
+    await f.send(0, { command: "update", ...plan(2), dependencies: [] });
+    expect(await inventory()).toEqual({
+      ships: 1,
+      hulls: 0,
+      boards: 2,
+      tools: 1,
+    });
+  });
+  test("同じ船体の5案は失敗、成功、材料不足3件で交易船1隻", async () => {
+    const { f, ids, plan, inventory } = await workshop(1);
+    const requestId = randomUUID();
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { settings: [lose, win, win, win, win] }),
+    );
+    const command = {
+      command: "create-batch",
+      requestId,
+      dependencies: [],
+      proposals: Array.from({ length: 5 }, (_, i) => plan(i, ids[0])),
+    };
+    const result = await f.send(0, command);
+    expect(result).toMatchObject({
+      outcome: {
+        proposals: [
+          { roll: 2, success: false },
+          { roll: 2, success: true, setting: { consumes: [{ id: ids[0] }] } },
+          ...Array(3).fill({ success: false, reason: "MATERIAL_SHORTAGE" }),
+        ],
+      },
+    });
+    const missing = [2, 3, 4].map((i) =>
+      derivedId(derivedId(requestId + ":proposal:" + i) + ":creation"),
+    );
+    expect(
+      (
+        await isolated.databases.postgres.query(
+          "SELECT id FROM bot_dice WHERE id=ANY($1::uuid[])",
+          [missing],
+        )
+      ).rowCount,
+    ).toBe(0);
+    expect(await f.send(0, command)).toEqual(result);
+    expect(await inventory()).toEqual({
+      ships: 1,
+      hulls: 0,
+      boards: 2,
+      tools: 1,
+    });
+  });
+  test("船体2件は2隻まで、板材3個の指定は在庫2個のまま材料不足", async () => {
+    const { f, ids, board, plan, inventory } = await workshop(2);
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { settings: [win, win, win] }),
+    );
+    await f.send(0, {
+      command: "create-batch",
+      dependencies: [],
+      proposals: [plan(1, ids[0]), plan(2, ids[1]), plan(3, ids[1])],
+    });
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { ...win, consumes: [{ id: board, count: 3 }] }),
+    );
+    const result = await f.send(0, {
+      command: "update",
+      ...plan(4),
+      materials: [{ id: board, count: 3 }],
+      dependencies: [],
+    });
+    expect(result).toMatchObject({
+      outcome: { reason: "MATERIAL_SHORTAGE", success: false },
+    });
+    expect(await inventory()).toEqual({
+      ships: 2,
+      hulls: 0,
+      boards: 2,
+      tools: 1,
+    });
+  });
+  test("二人が同じ現物から同時に作って再送しても1隻", async () => {
+    const { f, ids, plan, inventory } = await workshop(1);
+    const cmds = [0, 1].map((i) => ({
+      command: "update",
+      requestId: randomUUID(),
+      ...plan(i, ids[0], i),
+      dependencies: [],
+    }));
+    // 両者が同じ在庫を読んでから判定を返す。
+    let enter = 0,
+      release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    f.calls.mockImplementation(async (id) => {
+      if (++enter === 2) release();
+      await barrier;
+      return answer(id, win);
+    });
+    const sent = await Promise.allSettled(cmds.map((cmd, i) => f.send(i, cmd)));
+    expect(enter).toBe(2);
+    const winner = sent.findIndex(
+      (r) =>
+        r.status === "fulfilled" &&
+        (r.value.outcome as { success?: boolean })?.success,
+    );
+    expect(winner).toBeGreaterThanOrEqual(0);
+    expect(await f.send(winner, cmds[winner]!)).toEqual(
+      (sent[winner] as PromiseFulfilledResult<unknown>).value,
+    );
+    const retry = await Promise.allSettled([
+      f.send(1 - winner, cmds[1 - winner]!),
+    ]);
+    expect(retry[0]).not.toMatchObject({
+      status: "fulfilled",
+      value: { outcome: { success: true } },
+    });
+    expect(await inventory()).toEqual({
+      ships: 1,
+      hulls: 0,
+      boards: 2,
+      tools: 1,
+    });
+  });
+  test("自由入力の現物が二つあると材料の指定を求め、振らずに現物を残す", async () => {
+    const { f, plan, inventory } = await workshop(2);
+    const requestId = randomUUID();
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { ...win, requiredMaterials: [{ label: "船体" }] }),
+    );
+    expect(
+      await f.send(0, {
+        command: "update",
+        requestId,
+        ...plan(1),
+        dependencies: [],
+      }),
+    ).toMatchObject({
+      outcome: { success: false, reason: "MATERIAL_ID_REQUIRED" },
+    });
+    expect(
+      (
+        await isolated.databases.postgres.query(
+          "SELECT id FROM bot_dice WHERE id=$1",
+          [derivedId(requestId + ":creation")],
+        )
+      ).rowCount,
+    ).toBe(0);
+    expect(await inventory()).toEqual({
+      ships: 0,
+      hulls: 2,
+      boards: 2,
+      tools: 1,
+    });
+  });
 });
 
 test("探索と複数案の生成は日次SPを共有し、生成と素材消費は成功した案だけに一度適用する", async () => {
