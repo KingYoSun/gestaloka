@@ -286,12 +286,27 @@ function actionMessage(
       }
     // fall through
     case "create":
-    case "create-batch":
-      if ((result.outcome as { success?: boolean })?.success === false)
-        return "新規作成の判定は失敗しました";
+    case "create-batch": {
+      const outcome = result.outcome as
+        | {
+            success?: boolean;
+            reason?: string;
+            proposals?: { reason?: string }[];
+          }
+        | undefined;
+      if (
+        [outcome, ...(outcome?.proposals ?? [])].some(
+          (p) => p?.reason === "MATERIAL_ID_REQUIRED",
+        )
+      )
+        return "材料を特定できない案は振っていません。対象の物品IDをmaterialsに指定してください";
+      if (outcome?.reason === "MATERIAL_SHORTAGE")
+        return "使える材料が足りないため、作成できませんでした";
+      if (outcome?.success === false) return "新規作成の判定は失敗しました";
       return result.state === "receiving" || result.state === "pending"
         ? "申請を受け付けました。受領判断を待っています"
         : "申請した変更を確定しました";
+    }
     case "offer":
       return "この場所に交換条件を公開しました";
     case "exchange":
@@ -680,6 +695,30 @@ type CreationRoll = {
   repeated?: boolean;
 };
 type Consumable = { id: string; label: string; count?: number };
+type Material = { id: string; count?: number | undefined };
+const WorkDice = DiceSetting.safeExtend({
+  requiredMaterials: z
+    .array(
+      z.union([
+        z
+          .object({
+            id: z.uuid(),
+            count: z.number().int().positive().safe().optional(),
+          })
+          .strict(),
+        z
+          .object({
+            label: z.string().trim().min(1),
+            count: z.number().int().positive().safe().optional(),
+          })
+          .strict(),
+      ]),
+    )
+    .nullable()
+    .optional(),
+});
+const workMaterialPrompt =
+  "本文とchangesの作業内容から、既存の物品を加工・組み込み・使い切る場合は、その必須材料をrequiredMaterialsに指定する。作業後も残る道具、技能、設計図、単に作業する場所は材料にしない。明示されたmaterialsは必須。対象のIDが申請で指定されていれば{id,count}、呼称だけなら{label,count}で返す。同名の現物から勝手に一つ選ばない。どの材料を指すかも不明ならrequiredMaterials:null、既存品を使わない申請なら[]。成果物が新しく作られることだけを理由に、加工元の現物を省かない。";
 function instantReductionText({
   kind,
   count,
@@ -5347,19 +5386,74 @@ export class BotPlay {
     user: string,
     requestId: string,
     context: WorldContext,
-    proposals: { text: string; changes: Change }[],
+    proposals: {
+      text: string;
+      changes: Change;
+      materials?: Material[] | undefined;
+    }[],
     consumable: Consumable[],
     explore = false,
     waitMinutes?: number,
   ) {
     type Result =
-      CreationRoll | { success: false; reason: "MATERIAL_SHORTAGE" };
+      | CreationRoll
+      | {
+          success: false;
+          reason: "MATERIAL_SHORTAGE" | "MATERIAL_ID_REQUIRED";
+        };
+    const work = proposals.some((p) => p.materials !== undefined);
+    const stock = new Map(consumable.map((item) => [item.id, item]));
+    const touched = await this.#touchedItems(
+      context,
+      proposals.map((p) => p.changes),
+    );
+    let places: string[] | undefined;
+    const currentPlaces = async () =>
+      (places ??= await directPlaces(context, actor));
+    const readMaterial = async (id: string) => {
+      if (touched.has(id)) return;
+      const known = stock.get(id);
+      if (known) return known;
+      const held = await context.holding(id);
+      if (!held || !(await currentPlaces()).includes(held.source)) return;
+      if (
+        (await context.inventoryActors(context.worldId, [held.source, id])).size
+      )
+        return;
+      const access = await context.storageAccess(held.source, actor);
+      if (access.registered && !access.allowed) return;
+      if ((await context.storageAccess(id, actor)).registered) return;
+      const node = await context.node(id);
+      if (node?.kind !== "existence" || !visibleTo(node, actor, true)) return;
+      await context.assertMovable(id);
+      const item = {
+        id,
+        label: node.text,
+        ...(node.count !== undefined ? { count: node.count } : {}),
+      };
+      stock.set(id, item);
+      return item;
+    };
+    const validateSaved = async (saved: Result[]) => {
+      const used = new Map<string, number>();
+      for (const roll of saved) {
+        if (!work || !roll.success) continue;
+        for (const c of roll.setting.consumes ?? []) {
+          const item = await readMaterial(c.id);
+          const total = (used.get(c.id) ?? 0) + (c.count ?? 1);
+          if (!item || total > (item.count ?? 1))
+            reject("MATERIAL_SHORTAGE", "判定で使う材料が足りません");
+          used.set(c.id, total);
+        }
+      }
+      return saved;
+    };
     const previous = await this.pool.query<{ creation_rolls: Result[] | null }>(
       "SELECT creation_rolls FROM bot_request WHERE id=$1",
       [requestId],
     );
     if (previous.rows[0]?.creation_rolls)
-      return previous.rows[0].creation_rolls;
+      return validateSaved(previous.rows[0].creation_rolls);
     const batch = proposals.length > 1;
     const keys = proposals.map((_, i) =>
       batch ? derivedId(`${requestId}:proposal:${i}`) : requestId,
@@ -5373,19 +5467,41 @@ export class BotPlay {
       repeated[i] ? [] : [{ ...p, index: i }],
     );
     const settings = new Map<number, z.infer<typeof DiceSetting>>();
+    const unresolved = new Set<number>();
+    const shortages = new Set<number>();
     if (fresh.length) {
       await this.#reserveSp(world, actor, user, requestId);
       const premise = (await this.construction.get(world)).initial_prompt;
       const targets = await Promise.all(
         fresh.map((p) => this.#newStorages(context, p.changes)),
       );
-      const material = fresh.map(({ text, changes }, i) => ({
-        text,
-        changes,
-        ...(targets[i]!.length ? { storageIds: targets[i] } : {}),
-      }));
+      const material = await Promise.all(
+        fresh.map(async ({ text, changes, materials }, i) => ({
+          text,
+          changes,
+          ...(materials?.length
+            ? {
+                materials: await Promise.all(
+                  materials.map(async (m) => {
+                    const item = await readMaterial(m.id);
+                    return {
+                      ...m,
+                      label: item?.label,
+                      available: item ? (item.count ?? 1) : 0,
+                    };
+                  }),
+                ),
+              }
+            : {}),
+          ...(targets[i]!.length ? { storageIds: targets[i] } : {}),
+        })),
+      );
       const nodes = await this.#facts(context, [
         actor,
+        ...material.flatMap(
+          (p) =>
+            p.materials?.filter((m) => m.available > 0).map((m) => m.id) ?? [],
+        ),
         ...fresh.flatMap(({ changes }) => [
           ...changes.revisions.map((n) => n.id),
           ...changes.edges.flatMap((e) => [e.source, e.target]),
@@ -5399,7 +5515,7 @@ export class BotPlay {
               [world],
             )
           ).rows[0]?.criteria || defaultCreationCriteria;
-      const Dice = explore ? ExploreDice : DiceSetting;
+      const Dice = explore ? ExploreDice : work ? WorkDice : DiceSetting;
       // 本文をGMが決めるのは、すぐに成立する単独の申請に限る。
       const decides = !explore && !batch && !waitMinutes;
       const parseSettings = (raw: string) => {
@@ -5436,6 +5552,7 @@ export class BotPlay {
             content:
               "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。" +
               (consumable.length ? consumePrompt : "") +
+              (work ? workMaterialPrompt : "") +
               (decides ? decidePrompt : "") +
               (batch
                 ? "proposalsの順に各案のダイス設定を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
@@ -5462,15 +5579,56 @@ export class BotPlay {
         "resolution",
         parseSettings,
       );
-      parseSettings(response.content).forEach((v, i) =>
-        settings.set(
-          fresh[i]!.index,
-          decision(
-            consumption(v, consumable),
-            decides ? fresh[i]!.changes : undefined,
-          ),
-        ),
-      );
+      for (const [i, v] of parseSettings(response.content).entries()) {
+        const p = fresh[i]!;
+        const { requiredMaterials, ...dice } = v as z.infer<typeof WorkDice>;
+        const setting = decision(
+          consumption(dice, consumable),
+          decides ? p.changes : undefined,
+        );
+        const used = new Map((setting.consumes ?? []).map((c) => [c.id, c]));
+        if (requiredMaterials === null) unresolved.add(p.index);
+        const required = new Map<string, number>();
+        for (const m of [
+          ...(p.materials ?? []),
+          ...(requiredMaterials ?? []),
+        ]) {
+          let id: string;
+          if ("id" in m) id = m.id;
+          else {
+            const ids = (p.materials ?? [])
+              .filter((item) => stock.get(item.id)?.label === m.label)
+              .map((item) => item.id);
+            if (!ids.length) {
+              ids.push(
+                ...consumable
+                  .filter((item) => item.label === m.label)
+                  .map((item) => item.id),
+              );
+              for (const place of await currentPlaces())
+                ids.push(...(await context.materialIds(place, m.label)));
+            }
+            if (ids.length !== 1) {
+              unresolved.add(p.index);
+              continue;
+            }
+            id = ids[0]!;
+          }
+          required.set(id, Math.max(required.get(id) ?? 0, m.count ?? 1));
+        }
+        for (const [id, count] of required) {
+          const item = await readMaterial(id);
+          if (!item || count > (item.count ?? 1)) shortages.add(p.index);
+          else
+            used.set(id, {
+              id,
+              label: item.label,
+              ...(item.count === undefined ? {} : { count }),
+            });
+        }
+        if (used.size) setting.consumes = [...used.values()];
+        settings.set(p.index, setting);
+      }
     }
     const db = await this.pool.connect();
     try {
@@ -5488,7 +5646,7 @@ export class BotPlay {
       ).rows[0]!.creation_rolls;
       if (saved) {
         await db.query("COMMIT");
-        return saved;
+        return validateSaved(saved);
       }
       const rolls: Result[] = [];
       const used = new Map<string, number>();
@@ -5499,12 +5657,17 @@ export class BotPlay {
           continue;
         }
         const setting = settings.get(i)!;
+        if (unresolved.has(i)) {
+          rolls.push({ success: false, reason: "MATERIAL_ID_REQUIRED" });
+          continue;
+        }
         const required = setting.consumes ?? [];
         if (
+          shortages.has(i) ||
           required.some(
             (c) =>
               (used.get(c.id) ?? 0) + (c.count ?? 1) >
-              (consumable.find((item) => item.id === c.id)?.count ?? 1),
+              (stock.get(c.id)?.count ?? 1),
           )
         ) {
           rolls.push({ success: false, reason: "MATERIAL_SHORTAGE" });
@@ -5526,7 +5689,12 @@ export class BotPlay {
         sp_user=CASE WHEN $3 THEN a.sp_user END, sp_reset=CASE WHEN $3 THEN a.sp_reset END
         FROM bot_adjudication a WHERE r.id=$1 AND a.world_id=r.world_id AND a.actor_id=r.actor_id
         AND a.request_id=r.id AND a.expires_at>clock_timestamp() AND (NOT $3 OR a.sp_user=$4)`,
-        [requestId, JSON.stringify(rolls), fresh.length > 0, user],
+        [
+          requestId,
+          JSON.stringify(rolls),
+          fresh.some((p) => "roll" in rolls[p.index]!),
+          user,
+        ],
       );
       if (!persisted.rowCount) rejectAdjudication();
       await db.query("COMMIT");
@@ -6175,7 +6343,11 @@ export class BotPlay {
               "CREATION_REQUIRED",
               "各案に新しい生成の申請を指定してください",
             );
-          return { ...plan, text: proposal.text };
+          return {
+            ...plan,
+            text: proposal.text,
+            materials: proposal.materials ?? [],
+          };
         }),
       );
       const combine = (plans: Plan[]) =>
@@ -6975,6 +7147,11 @@ export class BotPlay {
         "かける時間は、受領を必要としない物品のcreateだけの申請に指定してください",
       );
     needsCreation &&= !privateInterpretation(actor, changes);
+    if ("materials" in input && input.materials?.length && !needsCreation)
+      reject(
+        "CREATION_REQUIRED",
+        "材料は新規作成の判定を伴う申請に指定してください",
+      );
     const consumable =
       (needsCreation && input.command !== "explore") ||
       input.command === "oppose"
@@ -6994,21 +7171,30 @@ export class BotPlay {
           "operations" in input ? (input.operations ?? []) : [],
         );
       } catch (error) {
-        if (!(error instanceof InventoryCapacityExceeded) || !consumable.length)
-          throw error;
-        const afterConsumption = structuredClone(changes);
-        await this.#append(
-          context,
-          input.requestId + ":capacity",
-          at,
-          afterConsumption,
-          consumable.map((item) => ({ type: "remove", id: item.id })),
-        );
-        try {
-          await context.checkInventory(afterConsumption);
-        } catch (failure) {
-          if (failure instanceof InventoryCapacityExceeded) throw error;
-          throw failure;
+        if (!(error instanceof InventoryCapacityExceeded)) throw error;
+        // 現場の材料が空ける枠はGMの判定時に決まる。確定時は消費と作成を合わせて容量を検査する。
+        const usesSite =
+          needsCreation &&
+          (input.command === "update" || input.command === "create") &&
+          (await directPlaces(context, actor)).includes(
+            error.capacity.holderId,
+          );
+        if (!usesSite) {
+          if (!consumable.length) throw error;
+          const afterConsumption = structuredClone(changes);
+          await this.#append(
+            context,
+            input.requestId + ":capacity",
+            at,
+            afterConsumption,
+            consumable.map((item) => ({ type: "remove", id: item.id })),
+          );
+          try {
+            await context.checkInventory(afterConsumption);
+          } catch (failure) {
+            if (failure instanceof InventoryCapacityExceeded) throw error;
+            throw failure;
+          }
         }
       }
     }
@@ -7052,7 +7238,16 @@ export class BotPlay {
             user,
             input.requestId,
             context,
-            [{ text: input.text, changes }],
+            [
+              {
+                text: input.text,
+                changes,
+                materials:
+                  input.command === "update" || input.command === "create"
+                    ? (input.materials ?? [])
+                    : undefined,
+              },
+            ],
             consumable,
             input.command === "explore",
             wait,
@@ -7227,14 +7422,20 @@ export class BotPlay {
     actor: string,
     changes: Change,
   ): Promise<Consumable[]> {
-    const touched = new Set([
-      ...changes.revisions.map((n) => n.id),
-      ...changes.edges.map((e) => e.target),
-      ...(
-        await Promise.all(changes.endEdges.map((id) => context.edge(id)))
-      ).map((e) => e?.target),
-    ]);
+    const touched = await this.#touchedItems(context, [changes]);
     return (await heldItems(context, actor)).filter((i) => !touched.has(i.id));
+  }
+  async #touchedItems(context: WorldContext, changes: Change[]) {
+    const ended = await Promise.all(
+      changes.flatMap((c) => c.endEdges).map((id) => context.edge(id)),
+    );
+    return new Set([
+      ...changes.flatMap((c) => [
+        ...c.revisions.map((n) => n.id),
+        ...c.edges.map((e) => e.target),
+      ]),
+      ...ended.map((e) => e?.target),
+    ]);
   }
   // ダイスの成功で決まった所在・物品の操作を、申請と同じ確定に加える。
   async #append(

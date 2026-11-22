@@ -3001,6 +3001,12 @@ export interface paths {
                         /** @enum {string} */
                         command: "update";
                         text: string;
+                        /** @description 成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない */
+                        materials?: {
+                            /** Format: uuid */
+                            id: string;
+                            count?: number;
+                        }[];
                         stealth?: boolean;
                         operations?: ({
                             /** @enum {string} */
@@ -3426,6 +3432,12 @@ export interface paths {
                         /** @enum {string} */
                         command: "create";
                         text: string;
+                        /** @description 成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない */
+                        materials?: {
+                            /** Format: uuid */
+                            id: string;
+                            count?: number;
+                        }[];
                         changes: {
                             nodes: ({
                                 /** Format: uuid */
@@ -3739,6 +3751,12 @@ export interface paths {
                         command: "create-batch";
                         proposals: ({
                             text: string;
+                            /** @description 成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない */
+                            materials?: {
+                                /** Format: uuid */
+                                id: string;
+                                count?: number;
+                            }[];
                             changes: {
                                 nodes: ({
                                     /** Format: uuid */
@@ -4043,6 +4061,12 @@ export interface paths {
                             };
                         } | {
                             text: string;
+                            /** @description 成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない */
+                            materials?: {
+                                /** Format: uuid */
+                                id: string;
+                                count?: number;
+                            }[];
                             operations: ({
                                 /** @enum {string} */
                                 type: "locate";

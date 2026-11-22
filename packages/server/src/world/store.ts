@@ -566,6 +566,23 @@ export class WorldContext {
         : undefined;
     });
   }
+  // 自由入力の呼称を現物に結び付ける。2件あれば曖昧なのでそれ以上は読まない。
+  async materialIds(holder: string, label: string) {
+    return this.#read(relationKey(holder, "has", "out"), async (tx) => {
+      const { records } = await tx.run(
+        `MATCH (n:WorldNode) USING TEXT INDEX n:WorldNode(data)
+         WHERE n.worldId=$world AND n.kind='existence' AND n.data CONTAINS $text
+         MATCH (:WorldNode {worldId:$world,id:$holder})-[h:has]->(n)
+         WHERE h.validTo IS NULL AND h.role IS NULL RETURN DISTINCT n.id AS id LIMIT 2`,
+        {
+          world: this.worldId,
+          holder,
+          text: '"text":' + JSON.stringify(label),
+        },
+      );
+      return records.map((row) => row.get("id") as string);
+    });
+  }
   async storageAccess(id: string, actor: string) {
     return this.#read(relationKey(id, "has", "in"), async (tx) => {
       const { records } = await tx.run(
