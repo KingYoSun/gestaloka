@@ -291,6 +291,28 @@ select {
 .play-page {
   max-width: 1280px;
 }
+.stories nav a,
+.stories .page-title > a {
+  margin-inline-end: 1rem;
+}
+.stories .story-body {
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+  margin-block: 1.5rem;
+}
+.story-form {
+  margin-block: 2rem;
+}
+.story-form fieldset {
+  display: grid;
+  gap: 1rem;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.story-form button {
+  justify-self: start;
+}
 .play-layout {
   display: grid;
   grid-template-areas: "left toolbar right" "left center right";

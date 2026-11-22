@@ -23,6 +23,10 @@ import {
   WaitingContextStatus,
   WaitingEvent,
   WaitingStatus,
+  StoryList,
+  StoryListQuery,
+  StoryRead,
+  StoryReadQuery,
   playActionMessage,
 } from "@gestaloka/contracts";
 
@@ -416,7 +420,7 @@ async function run() {
           ]),
     );
   journal = `${profilePath}.requests`;
-  const grouped = ["team", "companion", "vehicle"].includes(command);
+  const grouped = ["team", "companion", "vehicle", "stories"].includes(command);
   if (positionals.length > (grouped ? 2 : 1))
     throw new Error("コマンドは1つ指定してください（helpを参照）");
   if (command === "version")
@@ -511,6 +515,34 @@ async function run() {
     );
   }
   const profile = await load();
+  if (command === "stories") {
+    const action = z.enum(["list", "read"]).parse(positionals[1] ?? "list");
+    const expand = (value: string | undefined) =>
+      value && references!.expand(value);
+    if (action === "list") {
+      const query = StoryListQuery.parse({
+        worldId: expand(values.world),
+        author: values.author,
+        before: expand(values.before),
+      });
+      const params = new URLSearchParams();
+      if (query.worldId) params.set("worldId", query.worldId);
+      if (query.author) params.set("author", query.author);
+      if (query.before) params.set("before", query.before);
+      return StoryList.parse(await http(profile, `/api/stories?${params}`));
+    }
+    const story = z.uuid().parse(expand(values.story));
+    const query = StoryReadQuery.parse({
+      episode: values.episode,
+      after: values.after,
+    });
+    const params = new URLSearchParams();
+    if (query.episode) params.set("episode", query.episode);
+    if (query.after) params.set("after", query.after);
+    return StoryRead.parse(
+      await http(profile, `/api/stories/${story}?${params}`),
+    );
+  }
   if (
     values.scene &&
     !["status", "result", "history", "recover"].includes(command)

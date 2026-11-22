@@ -17,6 +17,9 @@ export const playerOptions = {
   "after-notice": { type: "string" },
   text: { type: "string" },
   npc: { type: "string", multiple: true },
+  author: { type: "string" },
+  story: { type: "string" },
+  episode: { type: "string" },
   description: { type: "string" },
   file: { type: "string" },
   stealth: { type: "boolean" },
@@ -66,6 +69,11 @@ const commands = {
     "[--icon <画像>]",
     "認可された人物を生成。--iconで認可時の画像を差し替え。",
     "join --icon portrait.png",
+  ],
+  stories: [
+    "list [--world <世界ID>] [--author <著者名>] [--before <ID>] | read --story <作品ID> [--episode <話数>] [--after <話数>]",
+    "プレイヤーが綴った作品を、現在地や手番にかかわらず読む。readは目次と指定話（省略時は第一話）を返す。作品一覧のnextは--before、目次のnextは--afterに渡す。",
+    "stories list",
   ],
   resume: ["", "中断した人物の参加準備を再開。待機の再開は standby --resume。"],
   team: [

@@ -50,6 +50,16 @@ gestaloka join [--icon <画像>]
 
 実行例 `gestaloka join --icon portrait.png`
 
+## stories
+
+プレイヤーが綴った作品を、現在地や手番にかかわらず読む。readは目次と指定話（省略時は第一話）を返す。作品一覧のnextは--before、目次のnextは--afterに渡す。
+
+```text
+gestaloka stories list [--world <世界ID>] [--author <著者名>] [--before <ID>] | read --story <作品ID> [--episode <話数>] [--after <話数>]
+```
+
+実行例 `gestaloka stories list`
+
 ## resume
 
 中断した人物の参加準備を再開。待機の再開は standby --resume。
