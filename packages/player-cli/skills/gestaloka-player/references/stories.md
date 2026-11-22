@@ -31,10 +31,17 @@ gestaloka stories post --story <作品ID> --file episode-2.txt --image harbor.pn
 ```sh
 gestaloka stories list
 gestaloka stories list --world <世界ID> --author "船主"
+gestaloka stories list --player <プレイヤーID> --since 2026-11-01 --sort title
+gestaloka stories list --title "初航海" --sort oldest
 gestaloka stories read --story <作品ID>
 gestaloka stories read --story <作品ID> --episode 2 --image harbor.webp
+gestaloka stories read --story <作品ID> --until 2026-11-30 --sort newest
 ```
 
 `read` は目次と指定した話の本文を返します。話数を省くと第一話が開きます。添付画像のある話には `episode.hasImage` が表示されます。`--image` に新しいファイル名を渡すと WebP 画像を保存できます。
 
-一覧の続きは応答の `next` を `list --before` に渡します。目次の続きは `read` の応答の `next` を `read --after` に渡します。
+作品名と著者名は入力と一致する作品を探します。作品の `player` を `--player` に渡すと、同じプレイヤーが別の著者名で書いた作品も見つかります。作品を並べる順序は、新しい順の `newest`、古い順の `oldest`、プレイヤーごとの `player`、著者名順の `author`、作品名順の `title` から選べます。
+
+`--since` と `--until` には日本時間の日付を指定します。両端の日を含めて絞り込みます。作品一覧では第一話の公開日、連載の目次では各話の公開日を使います。目次の並びは、指定がなければ話数順です。
+
+同じ絞り込みと並び順を保ったまま、作品一覧の `next` は `list --before` に、目次の `next` は `read --after` に渡します。

@@ -522,17 +522,29 @@ async function run() {
       .parse(positionals[1] ?? "list");
     const expand = (value: string | undefined) =>
       value && references!.expand(value);
+    const filters = {
+      since: values.since,
+      until: values.until,
+      sort: values.sort,
+    };
+    const params = (query: Record<string, string | undefined>) => {
+      const search = new URLSearchParams();
+      for (const [key, value] of Object.entries(query))
+        if (value !== undefined) search.set(key, value);
+      return search;
+    };
     if (action === "list") {
       const query = StoryListQuery.parse({
+        ...filters,
         worldId: expand(values.world),
         author: values.author,
+        player: values.player,
+        title: values.title,
         before: expand(values.before),
       });
-      const params = new URLSearchParams();
-      if (query.worldId) params.set("worldId", query.worldId);
-      if (query.author) params.set("author", query.author);
-      if (query.before) params.set("before", query.before);
-      return StoryList.parse(await http(profile, `/api/stories?${params}`));
+      return StoryList.parse(
+        await http(profile, `/api/stories?${params(query)}`),
+      );
     }
     if (action === "post") {
       if ((values.text === undefined) === (values.file === undefined))
@@ -567,16 +579,13 @@ async function run() {
     }
     const story = z.uuid().parse(expand(values.story));
     const query = StoryReadQuery.parse({
+      ...filters,
       episode: values.episode,
       after: values.after,
       image: values.image === undefined ? undefined : "1",
     });
-    const params = new URLSearchParams();
-    if (query.episode) params.set("episode", query.episode);
-    if (query.after) params.set("after", query.after);
-    if (query.image) params.set("image", query.image);
     const result = StoryRead.parse(
-      await http(profile, `/api/stories/${story}?${params}`),
+      await http(profile, `/api/stories/${story}?${params(query)}`),
     );
     if (values.image === undefined) return result;
     const { image, ...episode } = result.episode;

@@ -100,7 +100,10 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
     await page.goto(`/worlds/${world}`);
     await page.getByRole("link", { name: "この世界の STORIES" }).click();
     await page.getByRole("link", { name: "この世界の物語を書く" }).click();
-    await page.getByLabel("作品名").fill("初航海");
+    await expect(
+      page.getByRole("heading", { name: "物語を書く", exact: true }),
+    ).toBeVisible();
+    await page.getByLabel("作品名", { exact: true }).fill("初航海");
     await page.getByLabel("著者名").fill("船主");
     await page.getByLabel("本文").fill("あの冗談でようやく綱を解けた。");
     await page.getByLabel("添付画像（任意）").setInputFiles(cover);
@@ -192,13 +195,18 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
     await expect(visitor.locator(".story-body")).toHaveText(
       selected.episode.body,
     );
-    const webTimestamp = await visitor.locator("time").getAttribute("datetime");
+    const webTimestamp = await visitor
+      .locator("article time")
+      .getAttribute("datetime");
     // CLI は現地時刻を秒単位で表示する。
     expect(Math.floor(Date.parse(webTimestamp!) / 1000)).toBe(
       Date.parse(selected.episode.publishedAt) / 1000,
     );
     await expect(
-      visitor.getByRole("link", { name: selected.story.author, exact: true }),
+      visitor.getByRole("link", {
+        name: `${selected.story.author}のプレイヤーの作品`,
+        exact: true,
+      }),
     ).toBeVisible();
 
     const payload = {
@@ -291,6 +299,72 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
       width: 64,
       height: 32,
     });
+    await db.postgres.query(
+      "UPDATE player_story SET published_at=CASE WHEN id=$1 THEN '2026-01-02T14:59:59Z'::timestamptz ELSE '2026-01-02T15:00:00Z'::timestamptz END WHERE id IN ($1,$2)",
+      [storyId, first.result.storyId],
+    );
+    await db.postgres.query(
+      "UPDATE player_story_episode SET published_at=CASE WHEN number=1 THEN '2026-01-02T14:59:59Z'::timestamptz ELSE '2026-01-02T15:00:00Z'::timestamptz END WHERE story_id=$1",
+      [first.result.storyId],
+    );
+    const filtered = await cli(
+      "stories",
+      "list",
+      "--player",
+      published.story.player,
+      "--title",
+      "出帆",
+      "--since",
+      "2026-01-03",
+      "--until",
+      "2026-01-03",
+      "--sort",
+      "title",
+    );
+    expect(filtered.items.map((item: { id: string }) => item.id)).toEqual([
+      first.result.storyId,
+    ]);
+    const sorted = await cli(
+      "stories",
+      "list",
+      "--world",
+      world,
+      "--sort",
+      "oldest",
+    );
+    expect(sorted.items.map((item: { id: string }) => item.id)).toEqual([
+      storyId,
+      first.result.storyId,
+    ]);
+    const toc = await cli(
+      "stories",
+      "read",
+      "--story",
+      first.result.storyId,
+      "--since",
+      "2026-01-03",
+      "--sort",
+      "newest",
+    );
+    expect(
+      toc.episodes.map((entry: { number: number }) => entry.number),
+    ).toEqual([2]);
+
+    await page.getByLabel("目次の並び順").selectOption("newest");
+    await page.getByRole("button", { name: "目次に適用" }).click();
+    await expect(page.locator("section li a")).toHaveText(["第2話", "第1話"]);
+    await page
+      .getByRole("link", { name: "船大工のプレイヤーの作品", exact: true })
+      .click();
+    await page.getByLabel("作品名", { exact: true }).fill("出帆");
+    await page.getByLabel("開始日").fill("2026-01-03");
+    await page.getByLabel("終了日").fill("2026-01-03");
+    await page.getByLabel("作品の並び順").selectOption("title");
+    await page.getByRole("button", { name: "作品に適用" }).click();
+    await expect(
+      page.getByRole("region", { name: "作品一覧" }).getByRole("heading"),
+    ).toHaveText(["出帆"]);
+    await expect(page).toHaveURL(/since=2026-01-03/);
     const guide = await page.request.get("/api/player-cli/stories.md");
     expect(guide.ok()).toBe(true);
     expect(await guide.text()).toContain("stories post --story");

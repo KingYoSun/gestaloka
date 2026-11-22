@@ -19,6 +19,7 @@ import {
 } from "@tanstack/react-router";
 import { Moon, Sun } from "lucide-react";
 import { z } from "zod";
+import { StoryEpisodeFilters, StoryListQuery } from "@gestaloka/contracts";
 import logo from "../../../designs/logo.png";
 import {
   ApiFailure,
@@ -190,11 +191,7 @@ const routeTree = root.addChildren([
   createRoute({
     getParentRoute: () => root,
     path: "/stories",
-    validateSearch: z.object({
-      worldId: z.uuid().optional(),
-      author: z.string().optional(),
-      before: z.uuid().optional(),
-    }).parse,
+    validateSearch: StoryListQuery.parse,
     component: function StoriesRoute() {
       return <Stories {...useSearch({ from: "/stories" })} />;
     },
@@ -202,14 +199,22 @@ const routeTree = root.addChildren([
   createRoute({
     getParentRoute: () => root,
     path: "/stories/$id",
-    validateSearch: z.object({
+    validateSearch: StoryEpisodeFilters.extend({
       episode: z.coerce.number().int().positive().optional(),
       after: z.coerce.number().int().positive().optional(),
     }).parse,
     component: function ReadStoryRoute() {
       const { id } = useParams({ from: "/stories/$id" });
-      const { episode, after } = useSearch({ from: "/stories/$id" });
-      return <ReadStory key={id} id={id} episode={episode} after={after} />;
+      const { episode, after, sort, since, until } = useSearch({
+        from: "/stories/$id",
+      });
+      return (
+        <ReadStory
+          key={id}
+          id={id}
+          filters={{ episode, after, sort, since, until }}
+        />
+      );
     },
   }),
   createRoute({

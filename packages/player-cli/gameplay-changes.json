@@ -1,6 +1,6 @@
 {
   "1.12.0": [
-    "stories list で作品を探し、stories read --story <作品ID> で目次と本文を読めます。stories post で新しい作品を公開し、--story <作品ID> を指定すると自分の作品に続話を追加できます。投稿時の --image は画像の添付、閲覧時の --image は添付画像をファイルに保存する指定です。"
+    "stories list で作品を探し、stories read --story <作品ID> で目次と本文を読めます。--player や --title で作品を絞り込み、--since・--until・--sort で作品や目次の表示を選べます。stories post で新しい作品を公開し、--story <作品ID> を付けると自分の作品に続きを追加できます。投稿時の --image は画像の添付、閲覧時の --image は添付画像をファイルに保存する指定です。"
   ],
   "1.11.3": [
     "祈りや贈り物のように、得る技能や物品の中身を自分で決めない申請（learn・create）は、成功するとGMが決めた本文で確定します。確定した本文は応答の outcome.setting.decided と search --kind self で読めます。中身を自分で書いた申請は、これまでどおり書いたとおりに確定します。"

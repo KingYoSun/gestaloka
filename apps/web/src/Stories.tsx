@@ -1,7 +1,12 @@
 import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { STORY_IMAGE_MAX_BYTES } from "@gestaloka/contracts";
+import {
+  STORY_IMAGE_MAX_BYTES,
+  StoryEpisodeFilters,
+  StoryListQuery,
+} from "@gestaloka/contracts";
+import type { z } from "zod";
 import { $api, api } from "./api.js";
 import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
@@ -9,12 +14,35 @@ import { Textarea } from "./components/ui/textarea.js";
 import { createdDate, Notice, Problem } from "./presentation.js";
 import { readImageFile } from "./player-icons.js";
 
-type Filters = { worldId?: string; author?: string; before?: string };
+type Dates = { since?: string | undefined; until?: string | undefined };
+const field = (form: FormData, name: string) =>
+  String(form.get(name) ?? "").trim() || undefined;
+
+function DateFields({ since, until }: Dates) {
+  return (
+    <fieldset className="story-dates">
+      <legend>公開日（日本時間）</legend>
+      <label>
+        開始日
+        <Input name="since" type="date" defaultValue={since} />
+      </label>
+      <label>
+        終了日
+        <Input name="until" type="date" defaultValue={until} />
+      </label>
+    </fieldset>
+  );
+}
 
 function Byline({
   story,
 }: {
-  story: { worldId: string; worldTitle: string; author: string };
+  story: {
+    worldId: string;
+    worldTitle: string;
+    author: string;
+    player?: string;
+  };
 }) {
   return (
     <p className="record-meta">
@@ -22,19 +50,35 @@ function Byline({
         {story.worldTitle || "世界の作品"}
       </Link>
       {" · "}
-      <Link to="/stories" search={{ author: story.author }}>
+      <Link
+        to="/stories"
+        search={
+          story.player ? { player: story.player } : { author: story.author }
+        }
+        aria-label={`${story.author}のプレイヤーの作品`}
+      >
         {story.author}
       </Link>
     </p>
   );
 }
 
-export function Stories({ worldId, author, before }: Filters) {
+export function Stories({
+  before,
+  ...filters
+}: z.infer<typeof StoryListQuery>) {
+  const { worldId, author, player, title, since, until, sort } = filters;
+  const navigate = useNavigate();
   const query = $api.useQuery("get", "/api/stories", {
     params: {
       query: {
         ...(worldId && { worldId }),
         ...(author && { author }),
+        ...(player && { player }),
+        ...(title && { title }),
+        ...(since && { since }),
+        ...(until && { until }),
+        ...(sort && { sort }),
         ...(before && { before }),
       },
     },
@@ -50,9 +94,58 @@ export function Stories({ worldId, author, before }: Filters) {
         ) : (
           <Link to="/">世界を選んで書く</Link>
         )}
-        {(worldId || author) && <Link to="/stories">すべての作品</Link>}
-        {author && <p>著者 {author}</p>}
+        {(worldId || player || author || title || since || until) && (
+          <Link to="/stories">すべての作品</Link>
+        )}
       </header>
+      <form
+        className="story-filters"
+        aria-label="作品の絞り込み"
+        key={JSON.stringify(filters)}
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          const search = StoryListQuery.parse({
+            worldId,
+            player,
+            author: field(form, "author"),
+            title: field(form, "title"),
+            since: field(form, "since"),
+            until: field(form, "until"),
+            sort: field(form, "sort"),
+          });
+          void navigate({ to: "/stories", search });
+        }}
+      >
+        {player && (
+          <p>
+            プレイヤーで絞り込み中{" "}
+            <Link to="/stories" search={{ ...filters, player: undefined }}>
+              解除
+            </Link>
+          </p>
+        )}
+        <label>
+          著者名
+          <Input name="author" defaultValue={author} />
+        </label>
+        <label>
+          作品名
+          <Input name="title" defaultValue={title} />
+        </label>
+        <DateFields since={since} until={until} />
+        <label>
+          作品の並び順
+          <select name="sort" defaultValue={sort ?? "newest"}>
+            <option value="newest">公開日が新しい順</option>
+            <option value="oldest">公開日が古い順</option>
+            <option value="player">プレイヤーごと</option>
+            <option value="author">著者名順</option>
+            <option value="title">作品名順</option>
+          </select>
+        </label>
+        <Button>作品に適用</Button>
+      </form>
       {query.error ? (
         <Problem error={query.error} />
       ) : !query.data ? (
@@ -70,20 +163,25 @@ export function Stories({ worldId, author, before }: Filters) {
                     </Link>
                   </h2>
                   <Byline story={story} />
+                  {story.publishedAt && (
+                    <time className="record-meta" dateTime={story.publishedAt}>
+                      {createdDate(story.publishedAt)}
+                    </time>
+                  )}
                 </div>
               </article>
             ))}
           </section>
           <nav aria-label="作品一覧のページ">
             {before && (
-              <Link to="/stories" search={{ worldId, author }}>
+              <Link to="/stories" search={filters}>
                 最初のページ
               </Link>
             )}
             {query.data.next && (
               <Link
                 to="/stories"
-                search={{ worldId, author, before: query.data.next }}
+                search={{ ...filters, before: query.data.next }}
               >
                 次のページ
               </Link>
@@ -97,13 +195,16 @@ export function Stories({ worldId, author, before }: Filters) {
 
 export function ReadStory({
   id,
-  episode,
-  after,
+  filters,
 }: {
   id: string;
-  episode: number | undefined;
-  after: number | undefined;
+  filters: z.infer<typeof StoryEpisodeFilters> & {
+    episode: number | undefined;
+    after: number | undefined;
+  };
 }) {
+  const { episode, after, since, until, sort } = filters;
+  const navigate = useNavigate();
   const query = $api.useQuery("get", "/api/stories/{id}", {
     params: {
       path: { id },
@@ -111,6 +212,9 @@ export function ReadStory({
         image: "1",
         ...(episode && { episode: String(episode) }),
         ...(after && { after: String(after) }),
+        ...(since && { since }),
+        ...(until && { until }),
+        ...(sort && { sort }),
       },
     },
   });
@@ -147,7 +251,7 @@ export function ReadStory({
               <Link
                 to="/stories/$id"
                 params={{ id }}
-                search={{ episode: data.episode.number - 1, after }}
+                search={{ ...filters, episode: data.episode.number - 1 }}
               >
                 前の話
               </Link>
@@ -156,7 +260,7 @@ export function ReadStory({
               <Link
                 to="/stories/$id"
                 params={{ id }}
-                search={{ episode: data.episode.number + 1, after }}
+                search={{ ...filters, episode: data.episode.number + 1 }}
               >
                 次の話
               </Link>
@@ -164,25 +268,63 @@ export function ReadStory({
           </nav>
           <section>
             <h2>目次</h2>
+            <form
+              className="story-filters"
+              aria-label="目次の絞り込み"
+              key={JSON.stringify({ since, until, sort })}
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = new FormData(event.currentTarget);
+                const search = StoryEpisodeFilters.parse({
+                  since: field(form, "since"),
+                  until: field(form, "until"),
+                  sort: field(form, "sort"),
+                });
+                void navigate({
+                  to: "/stories/$id",
+                  params: { id },
+                  search: { ...search, episode },
+                });
+              }}
+            >
+              <DateFields since={since} until={until} />
+              <label>
+                目次の並び順
+                <select name="sort" defaultValue={sort ?? "number"}>
+                  <option value="number">話数順</option>
+                  <option value="newest">公開日が新しい順</option>
+                  <option value="oldest">公開日が古い順</option>
+                </select>
+              </label>
+              <Button>目次に適用</Button>
+            </form>
+            {!data.episodes.length && <p>条件に合う話はありません。</p>}
             <ul>
-              {data.episodes.map(({ number }) => (
+              {data.episodes.map(({ number, publishedAt }) => (
                 <li key={number}>
                   <Link
                     to="/stories/$id"
                     params={{ id }}
-                    search={{ episode: number, after }}
+                    search={{ ...filters, episode: number }}
                     aria-current={
                       number === data.episode.number ? "page" : undefined
                     }
                   >
                     第{number}話
-                  </Link>
+                  </Link>{" "}
+                  <time className="record-meta" dateTime={publishedAt}>
+                    {createdDate(publishedAt)}
+                  </time>
                 </li>
               ))}
             </ul>
             <nav aria-label="目次のページ">
               {after !== undefined && (
-                <Link to="/stories/$id" params={{ id }} search={{ episode }}>
+                <Link
+                  to="/stories/$id"
+                  params={{ id }}
+                  search={{ ...filters, after: undefined }}
+                >
                   目次の最初へ
                 </Link>
               )}
@@ -190,7 +332,7 @@ export function ReadStory({
                 <Link
                   to="/stories/$id"
                   params={{ id }}
-                  search={{ episode, after: data.next }}
+                  search={{ ...filters, after: data.next }}
                 >
                   目次の次のページ
                 </Link>

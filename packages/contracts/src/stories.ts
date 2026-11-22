@@ -10,12 +10,32 @@ const episodeQuery = z
   .regex(/^[1-9][0-9]{0,9}$/)
   .refine((value) => episodeNumber.safeParse(Number(value)).success);
 
-export const StoryListQuery = z.object({
+const StoryDates = z.object({
+  since: z.iso.date().optional(),
+  until: z.iso.date().optional(),
+});
+export const StoryListSort = z.enum([
+  "newest",
+  "oldest",
+  "player",
+  "author",
+  "title",
+]);
+export const StoryEpisodeFilters = StoryDates.extend({
+  sort: z.enum(["number", "newest", "oldest"]).optional(),
+});
+export const StoryListQuery = StoryDates.extend({
   worldId: z.uuid().optional(),
   author: title.optional(),
+  player: z
+    .string()
+    .regex(/^[0-9a-f]{32}$/)
+    .optional(),
+  title: title.optional(),
+  sort: StoryListSort.optional(),
   before: z.uuid().optional(),
 });
-export const StoryReadQuery = z.object({
+export const StoryReadQuery = StoryEpisodeFilters.extend({
   after: episodeQuery.optional(),
   episode: episodeQuery.optional(),
   image: z.literal("1").optional(),
@@ -32,6 +52,8 @@ const Story = z.object({
   worldTitle: z.string(),
   title: z.string(),
   author: z.string(),
+  player: z.string().optional(),
+  publishedAt: z.iso.datetime().optional(),
   mine: z.boolean(),
 });
 const Episode = z.object({

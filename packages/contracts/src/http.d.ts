@@ -291,8 +291,13 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
+                    since?: string;
+                    until?: string;
                     worldId?: string;
                     author?: string;
+                    player?: string;
+                    title?: string;
+                    sort?: "newest" | "oldest" | "player" | "author" | "title";
                     before?: string;
                 };
                 header?: never;
@@ -316,6 +321,9 @@ export interface paths {
                                 worldTitle: string;
                                 title: string;
                                 author: string;
+                                player?: string;
+                                /** Format: date-time */
+                                publishedAt?: string;
                                 mine: boolean;
                             }[];
                             /** Format: uuid */
@@ -434,6 +442,9 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
+                    since?: string;
+                    until?: string;
+                    sort?: "number" | "newest" | "oldest";
                     after?: string;
                     episode?: string;
                     image?: "1";
@@ -461,6 +472,9 @@ export interface paths {
                                 worldTitle: string;
                                 title: string;
                                 author: string;
+                                player?: string;
+                                /** Format: date-time */
+                                publishedAt?: string;
                                 mine: boolean;
                             };
                             episodes: {

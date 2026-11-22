@@ -52,10 +52,10 @@ gestaloka join [--icon <画像>]
 
 ## stories
 
-listとreadはどの世界に接続していても使える。readは目次と指定話（省略時は第一話）を返す。postは接続先の世界で新作や自分の作品の続話を公開する。画像の添付と保存、一覧や目次の続きは [STORIES](stories.md) を参照。
+listとreadはどの世界に接続していても使える。公開日は--sinceと--untilにYYYY-MM-DDで指定する。postは接続先の世界で作品を公開する。絞り込み、画像の添付と保存は [STORIES](stories.md) を参照。
 
 ```text
-gestaloka stories list [--world <世界ID>] [--author <著者名>] [--before <ID>] | read --story <作品ID> [--episode <話数>] [--after <話数>] [--image <保存先.webp>] | post (--title <作品名> --author <著者名> | --story <作品ID>) (--text <本文> | --file <本文ファイル>) [--image <画像ファイル>]
+gestaloka stories list [--world <世界ID>] [--player <プレイヤーID>] [--author <著者名>] [--title <作品名>] [--sort newest|oldest|player|author|title] [--before <ID>] | read --story <作品ID> [--episode <話数>] [--sort number|newest|oldest] [--after <話数>] [--image <保存先.webp>] | post (--title <作品名> --author <著者名> | --story <作品ID>) (--text <本文> | --file <本文ファイル>) [--image <画像ファイル>]
 ```
 
 実行例 `gestaloka stories post --title '初航海' --author '船主' --text 'ようやく綱を解いた。'`
