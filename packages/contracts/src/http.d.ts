@@ -2776,6 +2776,39 @@ export interface paths {
                         /** Format: uuid */
                         questId: string;
                     } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "vehicle-request-control";
+                        /** Format: uuid */
+                        vehicleId: string;
+                        oppose?: boolean;
+                        /** Format: uuid */
+                        applicationId?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "vehicle-board";
+                        /** Format: uuid */
+                        vehicleId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "vehicle-leave";
+                        /** Format: uuid */
+                        vehicleId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "vehicle-travel";
+                        /** Format: uuid */
+                        vehicleId: string;
+                        /** Format: uuid */
+                        destinationId: string;
+                    } | {
                         text: string;
                         effect?: {
                             /**
@@ -2833,6 +2866,10 @@ export interface paths {
                         query: ({
                             /** @enum {string} */
                             kind: "surroundings";
+                            /** Format: uuid */
+                            vehicleAfter?: string;
+                            /** Format: uuid */
+                            passengerAfter?: string;
                         } | {
                             /** @enum {string} */
                             kind: "seek";
@@ -5217,6 +5254,7 @@ export interface paths {
                                     /** Format: date-time */
                                     at: string;
                                     message: string;
+                                    code?: string;
                                     rejectedBy?: {
                                         /** Format: uuid */
                                         actorId: string;

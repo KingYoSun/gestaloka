@@ -415,7 +415,7 @@ async function run() {
           ]),
     );
   journal = `${profilePath}.requests`;
-  const grouped = command === "team" || command === "companion";
+  const grouped = ["team", "companion", "vehicle"].includes(command);
   if (positionals.length > (grouped ? 2 : 1))
     throw new Error("コマンドは1つ指定してください（helpを参照）");
   if (command === "version")
@@ -455,6 +455,8 @@ async function run() {
     "source",
     "before",
     "from",
+    "vehicle-after",
+    "passenger-after",
   ] as const)
     if (values[key]) values[key] = references.expand(values[key]!);
   for (const key of ["participants", "to"] as const)
@@ -716,16 +718,18 @@ async function run() {
     !(
       command === "team"
         ? ["invite", "join", "status", "leave"]
-        : [
-            "request",
-            "follow",
-            "wait",
-            "return",
-            "move",
-            "home",
-            "dismiss",
-            "status",
-          ]
+        : command === "vehicle"
+          ? ["board", "leave", "request-control", "travel"]
+          : [
+              "request",
+              "follow",
+              "wait",
+              "return",
+              "move",
+              "home",
+              "dismiss",
+              "status",
+            ]
     ).includes(action ?? "")
   )
     throw new Error(playerHelp(command));
@@ -750,7 +754,25 @@ async function run() {
                 query: {
                   kind: values.kind,
                   ...(values.target ? { targetId: values.target } : {}),
+                  ...(values["vehicle-after"]
+                    ? { vehicleAfter: values["vehicle-after"] }
+                    : {}),
+                  ...(values["passenger-after"]
+                    ? { passengerAfter: values["passenger-after"] }
+                    : {}),
                 },
+              }
+            : {}),
+          ...(command === "vehicle"
+            ? {
+                vehicleId: values.target,
+                ...(action === "travel" ? { destinationId: values.place } : {}),
+                ...(action === "request-control"
+                  ? {
+                      oppose: values.oppose,
+                      applicationId: values.application,
+                    }
+                  : {}),
               }
             : {}),
           ...(["contact", "draw", "draw-configure"].includes(command) ||
