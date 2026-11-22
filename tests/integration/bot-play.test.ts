@@ -668,6 +668,47 @@ test("乗り物の性質を持つプレイヤーは自分で移動し、操縦�
   });
 });
 
+test("人物の乗り物は車内を分けず、本人と乗客が車外の人物と同席して一緒に移る", async () => {
+  const f = await fixture();
+  const [vehicleId, rider, outsider] = f.actors as [string, string, string];
+  await f.move(2, f.place);
+  const cart = await vehicleFixture(f);
+  await vehicleFixture(f, { npcId: vehicleId });
+  const sessions = () =>
+    Promise.all(f.actors.map(async (_, i) => (await f.status(i)).sessionId));
+
+  await f.send(2, { command: "vehicle-board", vehicleId: cart });
+  await expect(
+    f.send(1, { command: "contact", targetId: outsider }),
+  ).rejects.toMatchObject({ code: "CONTACT_MISMATCH" });
+  await f.send(2, { command: "vehicle-leave", vehicleId: cart });
+
+  await f.send(1, { command: "vehicle-board", vehicleId });
+  await f.send(1, { command: "contact", targetId: outsider });
+  await f.send(0, { command: "contact", targetId: outsider });
+  const together = await sessions();
+  expect(new Set(together).size).toBe(1);
+  await expect(
+    f.send(2, { command: "search", query: { kind: "surroundings" } }),
+  ).resolves.toMatchObject({
+    material: {
+      subjects: expect.arrayContaining([
+        expect.objectContaining({ id: vehicleId, contactAvailable: true }),
+        expect.objectContaining({ id: rider, contactAvailable: true }),
+      ]),
+    },
+  });
+
+  await giveTurn(f, 0);
+  await f.send(0, locate(vehicleId, f.far));
+  const [moved, riding, staying] = await sessions();
+  expect(riding).toBe(moved);
+  expect(staying).not.toBe(moved);
+  expect(await directPlaces(f.store.context(f.graph), rider)).toEqual([
+    vehicleId,
+  ]);
+});
+
 test("コンパニオン自身に乗る・降りる操作は自己参照を作らず、NPCの手番で自分の乗客を運べる", async () => {
   const f = await fixture();
   const [actor, npcId, companionId] = f.actors as [string, string, string];
@@ -934,9 +975,6 @@ test("隔離試遊で配布用CLIから自動運転の乗り物に乗り、到�
       vehicleId: npcId,
       directPlaceId: npcId,
     });
-    await expect(
-      f.send(2, { command: "contact", targetId: actor }),
-    ).rejects.toMatchObject({ code: "CONTACT_MISMATCH" });
     await game(
       "say",
       "--text",
@@ -12510,14 +12548,11 @@ test.each(["普通の乗り物", "乗り物のNPC", "乗客が残るNPC"])(
     expect(await session(0)).toBe(await session(1));
     expect(await status()).toMatchObject({ companions: [{ mode: "follow" }] });
     await f.send(0, { command: "vehicle-leave", vehicleId });
-    const waited = kind === "乗客が残るNPC";
-    expect(await status()).toMatchObject({
-      companions: [{ mode: waited ? "wait" : "follow" }],
-    });
-    expect((await session(0)) === (await session(1))).toBe(!waited);
+    expect(await status()).toMatchObject({ companions: [{ mode: "follow" }] });
+    expect(await session(0)).toBe(await session(1));
     await giveTurn(f, 0);
     await f.send(0, locate(owner, f.place));
-    expect(await at(npc)).toEqual([waited ? f.far : f.place]);
+    expect(await at(npc)).toEqual([f.place]);
   },
 );
 
