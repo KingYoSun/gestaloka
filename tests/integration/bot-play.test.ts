@@ -7223,12 +7223,18 @@ test("CLIは短縮IDを次の操作に使え、本人の未読手だけをアイ
       f.actors[0],
     );
     const file = join(cli.directory, "memo.json");
+    const recipients = [
+      target,
+      first.characters.find(
+        (character: { name: string }) => character.name === "人物2",
+      ).actorId,
+    ];
     await writeFile(
       file,
       JSON.stringify({
         command: "memo",
         text: original,
-        participants: [target],
+        participants: recipients,
         dependencies: nearby.result.dependencies
           .filter((d: { key: string }) => d.key.startsWith("node:"))
           .slice(0, 1),
@@ -7237,6 +7243,11 @@ test("CLIは短縮IDを次の操作に使え、本人の未読手だけをアイ
     const pending = await run("play", "--file", file);
     expect(pending.result.receiving.applicationId).toMatch(/^@/);
     expect(pending.result.receiving.text).toBe(original);
+    expect((await run("status")).receiving).toMatchObject({
+      sender: first.viewerId,
+      recipients,
+      text: original,
+    });
   } finally {
     await cli.close();
     await app.close();
@@ -7423,6 +7434,18 @@ test("メモ本文を判断中の本人だけへ渡し、申請者の復帰で�
       dependencies: [],
     });
   const first = await apply(1, 2);
+  for (const i of [1, 2])
+    expect(await f.status(i)).toMatchObject({
+      viewerId: f.actors[i],
+      actorId: f.actors[1],
+      receiving: {
+        recipients: [f.actors[1], f.actors[2]],
+        text,
+        changes: {
+          nodes: expect.arrayContaining([expect.objectContaining({ text })]),
+        },
+      },
+    });
   expect(await waiting(1)).toMatchObject({
     actionable: true,
     context: {
@@ -7627,6 +7650,33 @@ test.each([
       };
       const { applicationId, deadline, changes } = receiving;
       expect(changes).toBeDefined();
+      const compact = await cli.run(profile, "status");
+      expect(compact.viewerId).toMatch(/^@[0-9a-f]+$/);
+      const sender = compact.characters.find(
+        (character: { name: string }) => character.name === "人物0",
+      ).actorId;
+      expect(sender).toMatch(/^@[0-9a-f]+$/);
+      expect(compact.receiving).toMatchObject({
+        sender,
+        recipients: [compact.viewerId],
+        text,
+      });
+      expect(await run("status")).toMatchObject({
+        viewerId: f.actors[1],
+        receiving: {
+          applicationId,
+          sender: f.actors[0],
+          recipients: [f.actors[1]],
+          text,
+          changes,
+        },
+      });
+      expect((await f.status(2)).receiving).toEqual({
+        applicationId,
+        sender: f.actors[0],
+        recipients: [f.actors[1]],
+        deadline,
+      });
       const receive = {
         command: "receive",
         requestId: randomUUID(),

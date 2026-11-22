@@ -1,4 +1,7 @@
 {
+  "1.4.1": [
+    "status の受領申請では、送信者（receiving.sender）と宛先（receiving.recipients）も短縮IDで表示します。宛先の一覧に自分の viewerId があるか、そのまま照合できます。status --full-ids では完全なUUIDを確認できます。"
+  ],
   "1.4.0": [
     "同じセッションにいるユニークNPCに、companion request で付いてきてもらえるよう頼めます。GMが二人の記録と最近の出来事から同行を認めるかを決め、1 SPを使います。認められたNPCは本人の移動に付いてきます（follow）。wait でその場に残し、move・return で指定の場所や帰る場所（home で指定）へ向かわせ、dismiss で関係を終えます。companionはプレイヤーと離れて自立して行動することはできず、その場で何をするかはNPC本人が決めます。companionは3体までです。使い方は help companion と SKILL.md を参照してください。"
   ],
