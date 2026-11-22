@@ -485,6 +485,13 @@ test("他人の所持と操縦権には明示したときだけ対抗し、相�
     actorId: actor,
   });
   expect(await context().node(fuel.id)).toHaveProperty("count", 1);
+  const duplicate = randomUUID();
+  const callsUsed = (await f.status(0)).callsUsed;
+  await expect(
+    claim(0, { oppose: true, requestId: duplicate }),
+  ).resolves.toMatchObject({ state: "accepted", operatorId: actor, callsUsed });
+  expect(await f.store.receipt(f.graph, duplicate)).toBeUndefined();
+  expect(rolls()).toHaveLength(4);
 });
 
 test("容器の所持者と現操縦者が同一なら一回だけ対抗し、申請者自身の所持は維持する", async () => {

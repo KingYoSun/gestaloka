@@ -455,6 +455,7 @@ type Plan = {
   locates?: BelongingOp[];
   vehicleControl?: VehicleApplication;
   vehicleResult?: Record<string, unknown>;
+  vehicleUnchanged?: true;
   boardings?: Boarding[];
 };
 function turnOwner(data: Session["data"]) {
@@ -5170,7 +5171,8 @@ export class BotPlay {
     const base = { context, at, changes, recipients: [] };
     const operator = await vehicleOperator(context, vehicleId);
     const result = { vehicleId, operatorId: actor };
-    if (operator?.actorId === actor) return { ...base, vehicleResult: result };
+    if (operator?.actorId === actor)
+      return { ...base, vehicleResult: result, vehicleUnchanged: true };
 
     const position = await vehiclePosition(context, vehicleId);
     const [direct] = await directPlaces(context, actor);
@@ -8420,6 +8422,9 @@ export class BotPlay {
                   : {}),
                 ...(plan.drawReview.repeated ? { repeated: true } : {}),
               };
+            } else if (plan?.vehicleUnchanged) {
+              await plan.context.validate();
+              result = { state: "accepted", ...plan.vehicleResult };
             } else if (plan) {
               if (
                 plan.instantMembers &&
@@ -8751,6 +8756,7 @@ export class BotPlay {
               result.outcome = plan.outcome;
             // Only successful calls consume a slot. Read material never enters chat.
             if (
+              !plan?.vehicleUnchanged &&
               !(plan?.stealth && endedTurn) &&
               (input.command !== "contact" || session.data.turn === actor)
             ) {
