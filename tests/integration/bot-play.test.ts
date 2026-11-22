@@ -22,6 +22,7 @@ import {
 import { BotPlay } from "@gestaloka/server/play";
 import { createApp } from "../../apps/api/src/app.js";
 import { cliVersionHeader, playerCli } from "../support/player-cli.js";
+import { localTime } from "../../packages/player-cli/src/references.js";
 import { join, resolve } from "node:path";
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureRuntime } from "../support/provider.js";
@@ -8264,7 +8265,8 @@ test.each([
         file,
         ...(alone ? ["--depart-alone-on-timeout"] : []),
       );
-      const { applicationId, deadline } = submitted.result.receiving;
+      const { applicationId } = submitted.result.receiving;
+      const { deadline } = (await f.status(0)).receiving!;
       if (legacy)
         await isolated.databases.postgres.query(
           "UPDATE bot_session SET data=data #- '{receiving,parallel}' WHERE id=$1",
@@ -9581,7 +9583,7 @@ test.each([
           context: {
             receiving: {
               applicationId,
-              deadline,
+              deadline: localTime("", deadline),
               changes,
               text,
               senderId: f.actors[0],
@@ -9722,7 +9724,7 @@ test("受領期限切れのCLI履歴で判断の手番だった本人と同席�
           recipientIds: recipients,
           decisionHolderId: f.actors[1],
           pendingRecipientIds: [f.actors[1], f.actors[2]],
-          deadline,
+          deadline: localTime("", deadline),
           viewerMessage,
         },
       });
