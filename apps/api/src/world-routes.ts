@@ -54,6 +54,7 @@ import {
   StoryRead,
   StoryPost,
   StoryReceipt,
+  STORY_IMAGE_MAX_BYTES,
 } from "@gestaloka/contracts";
 import {
   AccessError,
@@ -264,6 +265,9 @@ export async function worldRoutes(
   app.post(
     "/api/worlds/:id/stories",
     {
+      bodyLimit:
+        instance.initialConfig.bodyLimit! +
+        4 * Math.ceil(STORY_IMAGE_MAX_BYTES / 3),
       schema: {
         params: ResourceId,
         body: StoryPost,

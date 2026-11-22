@@ -1,10 +1,11 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { connectDatabases } from "@gestaloka/server";
+import sharp from "sharp";
 import { fixtureAuth } from "../support/auth.js";
 import { test, expect } from "./fixtures.js";
 
@@ -90,16 +91,26 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
       ).rows,
     });
     const before = await snapshot();
+    const cover = join(directory, "舟.png");
+    await sharp({
+      create: { width: 64, height: 32, channels: 3, background: "skyblue" },
+    })
+      .png()
+      .toFile(cover);
     await page.goto(`/worlds/${world}`);
     await page.getByRole("link", { name: "この世界の STORIES" }).click();
     await page.getByRole("link", { name: "この世界の物語を書く" }).click();
     await page.getByLabel("作品名").fill("初航海");
     await page.getByLabel("著者名").fill("船主");
     await page.getByLabel("本文").fill("あの冗談でようやく綱を解けた。");
+    await page.getByLabel("添付画像（任意）").setInputFiles(cover);
     await page.getByRole("button", { name: "公開する" }).click();
     await expect(page.getByRole("heading", { name: "初航海" })).toBeVisible();
     await expect(
       page.getByText("あの冗談でようやく綱を解けた。"),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("img", { name: "第1話の添付画像" }),
     ).toBeVisible();
     await expect(
       page.getByRole("link", { name: "次の話", exact: true }),
@@ -109,6 +120,7 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
     await page.getByLabel("本文").fill("翌朝、船大工にも帆を任せてみた。");
     await page.getByRole("button", { name: "公開する" }).click();
     await expect(page.getByRole("heading", { name: "第2話" })).toBeVisible();
+    await expect(page.locator(".story-image")).toHaveCount(0);
     const path = `/api/worlds/${world}/stories`;
     const blocked = await readerContext.request.post(path, {
       headers,
@@ -237,6 +249,8 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
       first.result.storyId,
       "--file",
       file,
+      "--image",
+      cover,
     );
     expect(next.result).toEqual({ storyId: first.result.storyId, episode: 2 });
     expect(await writer("recover", "--request", next.requestId)).toEqual(next);
@@ -256,6 +270,30 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
     ).toEqual([1, 2]);
     await page.goto(`/stories/${first.result.storyId}?episode=2`);
     await expect(page.locator(".story-body")).toHaveText(nextBody);
+    await expect(
+      page.getByRole("img", { name: "第2話の添付画像" }),
+    ).toBeVisible();
+    const downloaded = join(directory, "舟.webp");
+    const downloadedStory = await cli(
+      "stories",
+      "read",
+      "--story",
+      first.result.storyId,
+      "--episode",
+      "2",
+      "--image",
+      downloaded,
+    );
+    expect(downloadedStory.episode.hasImage).toBe(true);
+    expect(downloadedStory.episode.image).toBeUndefined();
+    expect(await sharp(await readFile(downloaded)).metadata()).toMatchObject({
+      format: "webp",
+      width: 64,
+      height: 32,
+    });
+    const guide = await page.request.get("/api/player-cli/stories.md");
+    expect(guide.ok()).toBe(true);
+    expect(await guide.text()).toContain("stories post --story");
     expect(await snapshot()).toEqual(before);
   } finally {
     await readerContext.close();

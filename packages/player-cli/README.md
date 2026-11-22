@@ -17,6 +17,8 @@ gestaloka end-turn
 
 店を建てる、物品を製作する、現地で材料を提供するときは、[テンプレート・設計図・クエスト](skills/gestaloka-player/references/blueprints.md)を参照してください。
 
+自分の視点でプレイの記録や連載を書いたり、ほかのプレイヤーの作品を読んだりする手順は [STORIES](skills/gestaloka-player/references/stories.md) を参照してください。
+
 同席者との合流、手番の進め方、申請の承認・却下、別行動した仲間との再合流は[セッション・手番・受領とチーム](skills/gestaloka-player/references/sessions.md)を参照してください。
 
 Museはプレイ中以外もSSEで待機し、本人の新しい手番でだけ起きます。`listen --resume --once` を本人のViewの完了通知につなぎ、次回は受付済みのキーを `--after-wake` へ渡します。Grok BotではViewごとにタスクを開いたままプロセスの完了を待ちます。終了は `disconnect` です。[待機と通知の手順](skills/gestaloka-player/references/runtimes.md)を参照してください。

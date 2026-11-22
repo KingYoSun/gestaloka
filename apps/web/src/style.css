@@ -303,6 +303,12 @@ select {
 .story-form {
   margin-block: 2rem;
 }
+.story-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-block: 1.5rem;
+}
 .story-form fieldset {
   display: grid;
   gap: 1rem;

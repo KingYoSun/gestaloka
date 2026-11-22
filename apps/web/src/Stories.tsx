@@ -1,13 +1,13 @@
 import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import type { StoryPost } from "@gestaloka/contracts";
-import type { z } from "zod";
+import { STORY_IMAGE_MAX_BYTES } from "@gestaloka/contracts";
 import { $api, api } from "./api.js";
 import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { createdDate, Notice, Problem } from "./presentation.js";
+import { readImageFile } from "./player-icons.js";
 
 type Filters = { worldId?: string; author?: string; before?: string };
 
@@ -108,6 +108,7 @@ export function ReadStory({
     params: {
       path: { id },
       query: {
+        image: "1",
         ...(episode && { episode: String(episode) }),
         ...(after && { after: String(after) }),
       },
@@ -133,6 +134,13 @@ export function ReadStory({
               {createdDate(data.episode.publishedAt)}
             </time>
             <p className="plain-text story-body">{data.episode.body}</p>
+            {data.episode.image && (
+              <img
+                className="story-image"
+                src={`data:image/webp;base64,${data.episode.image}`}
+                alt={`第${data.episode.number}話の添付画像`}
+              />
+            )}
           </article>
           <nav aria-label="前後の話">
             {data.episode.number > 1 && (
@@ -225,15 +233,27 @@ function StoryForm({
   const [body, setBody] = useState("");
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
+  const imageInput = useRef<HTMLInputElement>(null);
   const last = useRef<{ input: string; id: string } | null>(null);
   const post = useMutation({
-    mutationFn: async (input: z.infer<typeof StoryPost>) =>
-      (
+    mutationFn: async (file: File | undefined) => {
+      if (file && file.size > STORY_IMAGE_MAX_BYTES)
+        throw new Error("5MiB以下の画像を指定してください。");
+      const image = file ? { image: await readImageFile(file) } : {};
+      const input = {
+        ...(storyId ? { storyId, body } : { title, author, body }),
+        ...image,
+      };
+      const key = JSON.stringify(input);
+      if (last.current?.input !== key)
+        last.current = { input: key, id: crypto.randomUUID() };
+      return (
         await api.POST("/api/worlds/{id}/stories", {
           params: { path: { id: worldId } },
-          body: input,
+          body: { ...input, requestId: last.current.id },
         })
-      ).data!,
+      ).data!;
+    },
     onSuccess: async (result) => {
       setBody("");
       last.current = null;
@@ -253,11 +273,7 @@ function StoryForm({
       className="story-form"
       onSubmit={(event) => {
         event.preventDefault();
-        const input = storyId ? { storyId, body } : { title, author, body };
-        const key = JSON.stringify(input);
-        if (last.current?.input !== key)
-          last.current = { input: key, id: crypto.randomUUID() };
-        post.mutate({ ...input, requestId: last.current.id });
+        post.mutate(imageInput.current?.files?.[0]);
       }}
     >
       {storyId ? <h2>続きを書く</h2> : <h1>物語を書く</h1>}
@@ -291,6 +307,15 @@ function StoryForm({
             value={body}
             onChange={(e) => setBody(e.target.value)}
           />
+        </label>
+        <label>
+          添付画像（任意）
+          <Input
+            ref={imageInput}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+          />
+          <small>JPEG・PNG・WebPの静止画、5MiBまで</small>
         </label>
         <Button
           disabled={

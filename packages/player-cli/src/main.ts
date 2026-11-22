@@ -553,6 +553,9 @@ async function run() {
           values.file === undefined
             ? values.text
             : await readFile(values.file, "utf8"),
+        ...(values.image === undefined
+          ? {}
+          : { image: (await readFile(values.image)).toString("base64") }),
       });
       return submit(
         profile,
@@ -566,13 +569,20 @@ async function run() {
     const query = StoryReadQuery.parse({
       episode: values.episode,
       after: values.after,
+      image: values.image === undefined ? undefined : "1",
     });
     const params = new URLSearchParams();
     if (query.episode) params.set("episode", query.episode);
     if (query.after) params.set("after", query.after);
-    return StoryRead.parse(
+    if (query.image) params.set("image", query.image);
+    const result = StoryRead.parse(
       await http(profile, `/api/stories/${story}?${params}`),
     );
+    if (values.image === undefined) return result;
+    const { image, ...episode } = result.episode;
+    if (!image) throw new Error("この話に添付画像はありません");
+    await writeFile(values.image, Buffer.from(image, "base64"), { flag: "wx" });
+    return { ...result, episode, imageFile: values.image };
   }
   if (
     values.scene &&

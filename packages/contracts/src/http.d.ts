@@ -436,6 +436,7 @@ export interface paths {
                 query?: {
                     after?: string;
                     episode?: string;
+                    image?: "1";
                 };
                 header?: never;
                 path: {
@@ -472,6 +473,9 @@ export interface paths {
                                 /** Format: date-time */
                                 publishedAt: string;
                                 body: string;
+                                hasImage?: boolean;
+                                /** Format: byte */
+                                image?: string;
                             };
                             hasNextEpisode: boolean;
                             next: number | null;
@@ -602,15 +606,19 @@ export interface paths {
                     "application/json": {
                         /** Format: uuid */
                         requestId: string;
+                        body: string;
+                        /** Format: byte */
+                        image?: string;
                         title: string;
                         author: string;
-                        body: string;
                     } | {
                         /** Format: uuid */
                         requestId: string;
+                        body: string;
+                        /** Format: byte */
+                        image?: string;
                         /** Format: uuid */
                         storyId: string;
-                        body: string;
                     };
                 };
             };

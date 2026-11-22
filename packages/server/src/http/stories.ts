@@ -1,5 +1,8 @@
 import type pg from "pg";
 import type { z } from "zod";
+import { STORY_IMAGE_MAX_BYTES } from "@gestaloka/contracts";
+import { staticWebp } from "../runtime/player-icons.js";
+import { AccessError } from "./access.js";
 import type {
   StoryList,
   StoryListQuery,
@@ -22,7 +25,8 @@ export async function setupStories(pool: pg.Pool) {
     story_id uuid NOT NULL REFERENCES player_story(id) ON DELETE CASCADE,
     number integer NOT NULL, request_id uuid NOT NULL UNIQUE, body text NOT NULL,
     published_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(story_id,number)
-  );`);
+  );
+  ALTER TABLE player_story_episode ADD COLUMN IF NOT EXISTS image text;`);
 }
 
 const columns = `id,world_id AS "worldId",world_title AS "worldTitle",title,author,author_id=$1 AS mine`;
@@ -77,11 +81,14 @@ export class Stories {
         body: string;
         published_at: Date;
         next: boolean;
+        has_image: boolean;
+        image: string | null;
       }>(
-        `SELECT number,body,published_at,EXISTS (
+        `SELECT number,body,published_at,image IS NOT NULL AS has_image,
+         CASE WHEN $3::boolean THEN image END AS image,EXISTS (
           SELECT 1 FROM player_story_episode WHERE story_id=$1 AND number>$2
         ) AS next FROM player_story_episode WHERE story_id=$1 AND number=$2`,
-        [id, Number(query.episode ?? 1)],
+        [id, Number(query.episode ?? 1), query.image === "1"],
       ),
     ]);
     const story = stories.rows[0],
@@ -98,6 +105,8 @@ export class Stories {
         number: selected.number,
         body: selected.body,
         publishedAt: selected.published_at.toISOString(),
+        hasImage: selected.has_image,
+        ...(selected.image === null ? {} : { image: selected.image }),
       },
       hasNextEpisode: selected.next,
       next: page.rows.length > pageSize ? episodes.at(-1)!.number : null,
@@ -105,6 +114,19 @@ export class Stories {
   }
 
   async post(user: string, world: string, input: z.infer<typeof StoryPost>) {
+    const image =
+      input.image === undefined
+        ? null
+        : await staticWebp(input.image, STORY_IMAGE_MAX_BYTES, 1600).then(
+            (bytes) => bytes.toString("base64"),
+            () => {
+              throw new AccessError(
+                400,
+                "STORY_IMAGE_INVALID",
+                "JPEG・PNG・WebPの静止画を指定してください（5MiB以下、長辺4096px以下）",
+              );
+            },
+          );
     const db = await this.pool.connect();
     const storyId = "storyId" in input ? input.storyId : input.requestId;
     try {
@@ -141,18 +163,19 @@ export class Stories {
         return "conflict";
       if ("storyId" in input && input.requestId === storyId) return "conflict";
       const inserted = await db.query<{ number: number }>(
-        `INSERT INTO player_story_episode(story_id,number,request_id,body)
+        `INSERT INTO player_story_episode(story_id,number,request_id,body,image)
          VALUES($1,coalesce((SELECT number FROM player_story_episode
-           WHERE story_id=$1 ORDER BY number DESC LIMIT 1),0)+1,$2,$3)
+           WHERE story_id=$1 ORDER BY number DESC LIMIT 1),0)+1,$2,$3,$4)
          ON CONFLICT(request_id) DO NOTHING RETURNING number`,
-        [storyId, input.requestId, input.body],
+        [storyId, input.requestId, input.body, image],
       );
       const episode =
         inserted.rows[0] ??
         (
           await db.query<{ number: number }>(
-            `SELECT number FROM player_story_episode WHERE request_id=$2 AND story_id=$1 AND body=$3`,
-            [storyId, input.requestId, input.body],
+            `SELECT number FROM player_story_episode WHERE request_id=$2 AND story_id=$1 AND body=$3
+             AND image IS NOT DISTINCT FROM $4::text`,
+            [storyId, input.requestId, input.body, image],
           )
         ).rows[0];
       if (!episode) return "conflict";

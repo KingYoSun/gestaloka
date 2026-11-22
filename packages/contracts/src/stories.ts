@@ -2,6 +2,8 @@ import { z } from "zod";
 
 const title = z.string().trim().min(1);
 const body = z.string().refine((text) => text.trim().length > 0);
+export const STORY_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const image = z.base64().max(4 * Math.ceil(STORY_IMAGE_MAX_BYTES / 3));
 const episodeNumber = z.number().int().positive().max(2147483647);
 const episodeQuery = z
   .string()
@@ -16,10 +18,12 @@ export const StoryListQuery = z.object({
 export const StoryReadQuery = z.object({
   after: episodeQuery.optional(),
   episode: episodeQuery.optional(),
+  image: z.literal("1").optional(),
 });
+const post = z.object({ requestId: z.uuid(), body, image: image.optional() });
 export const StoryPost = z.union([
-  z.object({ requestId: z.uuid(), title, author: title, body }).strict(),
-  z.object({ requestId: z.uuid(), storyId: z.uuid(), body }).strict(),
+  post.extend({ title, author: title }).strict(),
+  post.extend({ storyId: z.uuid() }).strict(),
 ]);
 
 const Story = z.object({
@@ -41,7 +45,11 @@ export const StoryList = z.object({
 export const StoryRead = z.object({
   story: Story,
   episodes: z.array(Episode),
-  episode: Episode.extend({ body }),
+  episode: Episode.extend({
+    body,
+    hasImage: z.boolean().optional(),
+    image: z.base64().optional(),
+  }),
   hasNextEpisode: z.boolean(),
   next: episodeNumber.nullable(),
 });
