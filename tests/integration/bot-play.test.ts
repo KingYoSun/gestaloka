@@ -5801,7 +5801,7 @@ test("隠密中の対抗行動は所持・負傷・死亡を確定し、行為�
     "致命傷を負って死亡している",
     true,
   );
-  expect((await f.status(1)).members.map((member) => member.actorId)).toEqual([
+  expect((await f.status(1)).members?.map((member) => member.actorId)).toEqual([
     victim,
   ]);
   expect(await directPlaces(f.store.context(f.graph), victim)).toEqual([f.far]);
