@@ -10,7 +10,7 @@
 | `update` の `operations` にある `learn`（技能の習得）               | 作成の判定 |
 | `update` の `operations` の `update` で個数を増やす・新しく付ける   | 作成の判定 |
 | `create`、または `update` の `changes` で新しいノード・関係を加える | 作成の判定 |
-| `say` の `instantNpcs`（その場の存在を新しく登場させる）            | 作成の判定 |
+| `say` の `--npc`（その場に人物や生き物を新しく登場させる）          | 作成の判定 |
 | `explore`（新しい場所）                                             | 場所の判定 |
 | `oppose`（受領を経ない対抗行動）で、他人や外界に作用する            | 対抗の判定 |
 | `npc-action` と `oppose` の `effect`（出現個体への作用）            | 対抗の判定 |

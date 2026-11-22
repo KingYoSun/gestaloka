@@ -4116,6 +4116,9 @@ test("同じVMのCLIをView別インスタンスで並列実行し、認可と�
       ).deviceId,
     ).toBe(defaultConnection.id);
     expect(f.calls).not.toHaveBeenCalled();
+    f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+    const appeared = await run(1, "say", "--text", "鳥が現れる", "--npc", "鳥");
+    expect(appeared.result.instantNpcs).toEqual(["鳥"]);
   } finally {
     await cli.close();
     await app.close();
