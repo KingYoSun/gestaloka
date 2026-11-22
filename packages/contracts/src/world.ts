@@ -102,6 +102,10 @@ export const WorldNode = z.discriminatedUnion("kind", [
         .optional()
         .describe("物品の個数。無い物品は、個数を数えないひとまとまり"),
       seriesId: z.uuid().optional().describe("管理者が指定する物品の系列ID"),
+      unitsPerSlot: z
+        .union([z.number().int().positive().safe(), z.literal("unlimited")])
+        .optional(),
+      storageLimitSlots: z.number().int().positive().safe().optional(),
       viewers,
     })
     .strict(),

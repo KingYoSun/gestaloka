@@ -228,7 +228,20 @@ export class WorldAgent {
     readonly checkpointer: PostgresSaver,
     readonly model: LlmClient,
   ) {
-    this.store = new WorldStore(graph);
+    this.store = new WorldStore(
+      graph,
+      async (worldId, ids) =>
+        new Set(
+          (
+            await pool.query<{ actor_id: string }>(
+              `SELECT actor_id FROM world_controlled_actor WHERE world_id=$1 AND actor_id=ANY($2::uuid[])
+         UNION SELECT n.actor_id FROM bot_npc n JOIN world_construction c ON c.id=n.world_id
+         WHERE c.world_id=$1 AND n.actor_id=ANY($2::uuid[])`,
+              [worldId, ids],
+            )
+          ).rows.map((row) => row.actor_id),
+        ),
+    );
   }
 
   async setup() {

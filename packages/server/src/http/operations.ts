@@ -1299,6 +1299,21 @@ export class Operations {
         ).rows[0];
         if (!row)
           throw new AccessError(404, "WORLD_NOT_FOUND", "世界が見つかりません");
+        if (input.inventoryCapacity !== undefined) {
+          const construction = this.#access(context).construction;
+          const graph = (await construction.get(input.worldId)).world_id;
+          if (!graph)
+            throw new AccessError(
+              409,
+              "WORLD_NOT_READY",
+              "世界の構築が終わっていません",
+            );
+          await construction.agent.store.configureInventory(
+            graph,
+            input.inventoryCapacity,
+          );
+          row.inventoryCapacity = input.inventoryCapacity;
+        }
         return row;
       }
       case "presets.put": {

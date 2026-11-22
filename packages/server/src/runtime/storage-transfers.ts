@@ -1,7 +1,11 @@
 import type pg from "pg";
 import type { StorageAction } from "@gestaloka/contracts";
 import { AccessError } from "../http/access.js";
-import { planBelongings } from "../world/belongings.js";
+import {
+  checkBelongingCapacity,
+  planBelongings,
+  type BelongingOp,
+} from "../world/belongings.js";
 import { directPlaces } from "../world/locations.js";
 import { derivedId, type Change } from "../world/model.js";
 import type {
@@ -347,7 +351,7 @@ export async function storageCommand(
       if (item?.kind !== "existence" || item.text !== slot.label)
         return reject("品の状態が変わりました");
       await context.assertMovable(slot.itemId);
-      const plan = await planBelongings(context, request, at, [
+      const operations: BelongingOp[] = [
         {
           type: "move",
           item: slot.itemId,
@@ -356,7 +360,15 @@ export async function storageCommand(
           ...(item.count ? { count: input.count } : {}),
           basis: "現地での無償受領",
         },
-      ]);
+      ];
+      const plan = await planBelongings(context, request, at, operations);
+      await checkBelongingCapacity(
+        context,
+        request,
+        plan.at,
+        plan.changes,
+        operations,
+      );
       changes = plan.changes;
       at = plan.at;
       const remaining = slot.count - input.count;

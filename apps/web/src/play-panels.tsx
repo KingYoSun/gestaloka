@@ -24,13 +24,16 @@ const Item = z.object({
   count: z.number().optional(),
   seriesId: z.uuid().optional(),
 });
+const Capacity = z.object({ usedSlots: z.number(), limitSlots: z.number() });
 export const Belongings = z.object({
   items: z.array(Item),
+  capacity: Capacity.optional(),
   storages: z.array(
     z.object({
       id: z.uuid().optional(),
       label: z.string(),
       items: z.array(Item),
+      capacity: Capacity.optional(),
     }),
   ),
   skills: z.array(z.object({ text: z.string() })),
@@ -270,6 +273,12 @@ export function PlayerPanel({
           />
         </Tabs.Content>
         <Tabs.Content value="items">
+          {belongings?.capacity && (
+            <p className="muted">
+              使用枠 {belongings.capacity.usedSlots}/
+              {belongings.capacity.limitSlots}
+            </p>
+          )}
           <TextList
             items={belongings?.items.map(itemText) ?? []}
             empty="所持品はありません"
@@ -277,9 +286,14 @@ export function PlayerPanel({
         </Tabs.Content>
         <Tabs.Content value="storage">
           {belongings?.storages.length ? (
-            belongings.storages.map(({ label, items }, i) => (
+            belongings.storages.map(({ label, items, capacity }, i) => (
               <section className="play-storage" key={i}>
                 <h3>{label}</h3>
+                {capacity && (
+                  <p className="muted">
+                    使用枠 {capacity.usedSlots}/{capacity.limitSlots}
+                  </p>
+                )}
                 <TextList
                   items={items.map(itemText)}
                   empty="保管品はありません"

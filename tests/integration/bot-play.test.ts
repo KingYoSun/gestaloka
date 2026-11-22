@@ -280,6 +280,7 @@ test("craftの定義から保管先を設置し、管理者不在の無償受領
       template: typeof definition,
       product: string,
       items: { actor: number; id: string; count: number }[],
+      legacy = false,
     ) => {
       const draft = await auth.operations.execute(
         admin.id,
@@ -319,6 +320,24 @@ test("craftの定義から保管先を設置し、管理者不在の無償受領
       expect(
         await play(0, { command: "blueprint-start", questId: quest.id }),
       ).toMatchObject({ quest: { phase: "craft" }, spentSp: 1 });
+      if (legacy) {
+        await db.query(
+          "UPDATE blueprint_quest SET data=data-'storageLimitSlots' WHERE id=$1",
+          [quest.id],
+        );
+        expect(
+          await auth.operations.execute(
+            admin.id,
+            randomUUID(),
+            {
+              operation: "worlds.graph",
+              worldId: f.world,
+              query: { kind: "inventory", minCount: 1 },
+            },
+            { players: access.players },
+          ),
+        ).toMatchObject({ pendingLegacyStorages: 1 });
+      }
       let result;
       for (const [requirement, item] of items.entries())
         result = await play(item.actor, {
@@ -333,12 +352,27 @@ test("craftの定義から保管先を設置し、管理者不在の無償受領
         quest: { phase: "done", buildingId: null },
         spentSp: 0,
       });
+      if (legacy)
+        expect(
+          await f.store.context(f.graph).node(result.quest.productId),
+        ).toMatchObject({ storageLimitSlots: 150 });
       return result.quest.productId as string;
     };
+    f.calls.mockImplementationOnce(async (id, role) => {
+      expect(role).toBe("world-blueprint");
+      return answer(id, {
+        accepted: true,
+        reason: "設置できる",
+        storageLimitSlots: 28,
+      });
+    });
     const storage = await craft(definition, "広場の棚", [
       { actor: 0, id: wood!, count: 2 },
       { actor: 1, id: hammer!, count: 1 },
     ]);
+    expect(await f.store.context(f.graph).node(storage)).toMatchObject({
+      storageLimitSlots: 28,
+    });
     const list = async (i: number) =>
       (await play(i, { command: "storage-list" })).items;
     const command = (
@@ -553,6 +587,7 @@ test("craftの定義から保管先を設置し、管理者不在の無償受領
       },
       "試験用の受領台",
       [{ actor: 0, id: stone!, count: 1 }],
+      true,
     );
     await expect(
       f.send(0, command("storage-relocate", other, { placeId: f.far })),
@@ -2191,14 +2226,14 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
     {
       type: "create",
       label: "銅貨",
-      count: 5,
+      count: 100000,
       holder: buyer,
       basis: "試験用",
     },
     {
       type: "create",
       label: "銅貨",
-      count: 5,
+      count: 100000,
       holder: other,
       basis: "試験用",
     },
@@ -2218,6 +2253,7 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
     [payment!, otherPayment!].map(async ({ id }) => ({
       ...(await context.node(id)),
       seriesId,
+      unitsPerSlot: "unlimited",
     })),
   );
   const admin = await auth.person(),
@@ -2256,7 +2292,105 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
       storage: storage!.id,
       basis: "売店の在庫置き場",
     },
+    {
+      type: "create",
+      label: "銅貨",
+      count: 1000000,
+      holder: storage!.id,
+      basis: "釣り銭",
+    },
+    {
+      type: "create",
+      label: "日用品",
+      count: 1480,
+      holder: storage!.id,
+      basis: "試験用",
+    },
+    {
+      type: "create",
+      label: "携行品",
+      count: 130,
+      holder: buyer,
+      basis: "試験用",
+    },
+    {
+      type: "create",
+      label: "携行品",
+      count: 130,
+      holder: other,
+      basis: "試験用",
+    },
   ]);
+  const till = stock.changes.nodes.find((n) => n.text === "銅貨")!;
+  const settingsRequest = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, settingsRequest),
+    f.store.context(f.graph),
+    {
+      commitId: settingsRequest,
+      at: 0,
+      changes: {
+        nodes: [],
+        edges: [],
+        endEdges: [],
+        revisions: [{ ...till, seriesId, unitsPerSlot: "unlimited" }],
+      },
+      management: {
+        editorId: admin.id,
+        reason: "通貨の枠設定",
+        requestHash: "b".repeat(64),
+      },
+    },
+  );
+  await f.store.configureInventory(f.graph, true);
+  const coin = await f.apply([
+    {
+      type: "move",
+      item: till.id,
+      from: storage!.id,
+      to: buyer,
+      count: 1,
+      basis: "釣り銭",
+    },
+  ]);
+  expect(coin.changes.revisions).toContainEqual(
+    expect.objectContaining({
+      id: payment!.id,
+      count: 100001,
+      unitsPerSlot: "unlimited",
+    }),
+  );
+  expect(await f.store.context(f.graph).inventorySlots(buyer)).toBe(15);
+  expect(await f.store.context(f.graph).inventorySlots(storage!.id)).toBe(150);
+  const audit = (standard: boolean) =>
+    auth.operations.execute(
+      admin.id,
+      randomUUID(),
+      {
+        operation: "worlds.graph",
+        worldId: f.world,
+        query: { kind: "inventory", minCount: 1000, standard },
+      },
+      { players: access.players },
+    );
+  expect(await audit(true)).toMatchObject({
+    largeStacks: expect.arrayContaining([
+      expect.objectContaining({ id: till.id, slots: 100000 }),
+    ]),
+  });
+  expect(await audit(false)).toMatchObject({
+    holders: expect.arrayContaining([
+      expect.objectContaining({
+        id: storage!.id,
+        usedSlots: 150,
+        freeSlots: 0,
+        excessSlots: 0,
+      }),
+    ]),
+    largeStacks: expect.arrayContaining([
+      expect.objectContaining({ id: till.id, slots: 1, seriesId }),
+    ]),
+  });
   await f.move(2, f.place);
   const itemId = stock.changes.nodes.find((n) => n.text === "焼き菓子")!.id;
   const offerId = randomUUID();
@@ -2288,6 +2422,19 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
   await expect(f.send(1, exchange(fake!.id))).rejects.toMatchObject({
     code: "EXCHANGE_PAYMENT",
   });
+  await expect(f.send(1, exchange(payment!.id))).rejects.toMatchObject({
+    code: "INVENTORY_CAPACITY_EXCEEDED",
+    inventory: {
+      capacity: { holderId: buyer, usedSlots: 15, projectedSlots: 16 },
+    },
+  });
+  expect(await f.store.context(f.graph).node(till.id)).toMatchObject({
+    count: 999999,
+  });
+  expect(await f.store.context(f.graph).node(payment!.id)).toMatchObject({
+    count: 100001,
+  });
+  await f.apply([{ type: "remove", id: fake!.id }]);
   const orders = [exchange(payment!.id), exchange(otherPayment!.id)];
   const bought = await Promise.allSettled(
     orders.map((order, index) => f.send(index + 1, order)),
@@ -2311,16 +2458,25 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
       expect.objectContaining({
         id: orders[winner]!.paymentItemId,
         seriesId,
-        count: 3,
+        count: winner === 0 ? 99999 : 99998,
       }),
     ]),
   );
   expect(
     (await readBelongings(f.store.context(f.graph), storage!.id)).items,
-  ).toMatchObject([{ label: "銅貨", seriesId, count: 2 }]);
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        label: "銅貨",
+        seriesId,
+        count: 1000001,
+        unitsPerSlot: "unlimited",
+      }),
+    ]),
+  );
   expect(
     await f.store.context(f.graph).node(orders[1 - winner]!.paymentItemId),
-  ).toMatchObject({ count: 5, seriesId });
+  ).toMatchObject({ count: winner === 0 ? 100000 : 100001, seriesId });
   expect(
     (await access.notices(f.people[0]!.id, f.world, seller)).notices,
   ).toHaveLength(1);
@@ -2330,10 +2486,28 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
       text: "銅貨の個数を書き換える",
       dependencies: [],
       operations: [
-        { type: "update", id: orders[winner]!.paymentItemId, count: 10 },
+        { type: "update", id: orders[winner]!.paymentItemId, count: 200000 },
       ],
     }),
   ).rejects.toMatchObject({ code: "UPDATE_REJECTED" });
+  const change = await f.apply([
+    {
+      type: "move",
+      item: till.id,
+      from: storage!.id,
+      to: f.far,
+      count: 1,
+      basis: "釣り銭の取り分け",
+    },
+  ]);
+  expect(change.changes.nodes).toContainEqual(
+    expect.objectContaining({
+      kind: "existence",
+      count: 1,
+      seriesId,
+      unitsPerSlot: "unlimited",
+    }),
+  );
   expect(f.calls).not.toHaveBeenCalled();
 });
 
@@ -5759,7 +5933,10 @@ test("登録した保管先と誰も登録していない場所には、その�
   // 誰も登録していない場所を保管先にする申請は、新しく得る申請としてダイスで判定する。
   f.calls.mockImplementationOnce(async (id, role) => {
     expect(role).toBe("world-creation-dice");
-    return answer(id, sure);
+    return answer(id, {
+      ...sure,
+      storageLimits: [{ storageId: square, limitSlots: 83 }],
+    });
   });
   await update({
     operations: [
@@ -5772,6 +5949,208 @@ test("登録した保管先と誰も登録していない場所には、その�
     ],
   });
   expect((await read()).storages.map((s) => s.label)).toContain("空き地");
+  expect(
+    (await read()).storages.find((s) => s.id === square)?.capacity,
+  ).toEqual({
+    usedSlots: 0,
+    limitSlots: 83,
+  });
+});
+
+test("手持ちの容量と受入可能数をHTTPとCLIへ返す", async () => {
+  const f = await fixture();
+  const actor = f.actors[0]!;
+  const create = (label: string, holder: string, count?: number) => ({
+    type: "create",
+    label,
+    holder,
+    count,
+    basis: "検証",
+  });
+  const seed = await f.apply([
+    { type: "grant", person: actor, storage: f.place, basis: "検証" },
+    ...Array.from({ length: 14 }, (_, i) => create(`道具${i}`, actor)),
+    create("薬草", actor, 7),
+    create("薬草", f.place, 8),
+    create("石", f.place),
+  ]);
+  const nodes = seed.changes.nodes.filter((n) => n.kind === "existence");
+  const herbs = nodes[15]!,
+    stone = nodes[16]!;
+  const admin = await auth.person();
+  expect(
+    await auth.operations.execute(
+      admin.id,
+      randomUUID(),
+      {
+        operation: "worlds.configure",
+        worldId: f.world,
+        title: "容量試験",
+        description: "",
+        published: false,
+        accepting: false,
+        inventoryCapacity: true,
+      },
+      { players: access.players },
+    ),
+  ).toMatchObject({ inventoryCapacity: true });
+  const move = (item: string, count?: number) => ({
+    command: "update",
+    requestId: randomUUID(),
+    text: "拾う",
+    dependencies: [],
+    operations: [
+      { type: "move", item, from: f.place, to: actor, count, basis: "検証" },
+    ],
+  });
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/worlds/${f.world}/session?actorId=${actor}`,
+      headers: { cookie: f.people[0]!.cookie, "x-gestaloka-request": "1" },
+      payload: move(herbs.id, 4),
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    const expected = {
+      code: "INVENTORY_CAPACITY_EXCEEDED",
+      capacity: {
+        holderId: actor,
+        usedSlots: 15,
+        limitSlots: 15,
+        projectedSlots: 16,
+      },
+      item: { itemId: herbs.id, requestedCount: 4, maxAcceptableCount: 3 },
+    };
+    expect(response.json()).toMatchObject(expected);
+    const profile = join(cli.directory, "inventory.json");
+    const connection = await cli.run(
+      profile,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (
+        await cli.approve(
+          f.people[0]!.cookie,
+          connection.userCode,
+          `actor:${actor}`,
+        )
+      ).statusCode,
+    ).toBe(302);
+    const file = join(cli.directory, "pickup.json");
+    await writeFile(file, JSON.stringify(move(herbs.id, 4)));
+    expect(
+      await cli.run(profile, "play", "--file", file, "--full-ids"),
+    ).toMatchObject(expected);
+    await expect(f.send(0, move(stone.id))).rejects.toMatchObject({
+      code: expected.code,
+    });
+    expect(f.calls).not.toHaveBeenCalled();
+    expect((await f.status(0)).callsUsed).toBe(0);
+    await f.send(0, move(herbs.id, 3));
+    expect(await readBelongings(f.store.context(f.graph), actor)).toMatchObject(
+      {
+        capacity: { usedSlots: 15, limitSlots: 15 },
+        items: expect.arrayContaining([
+          expect.objectContaining({ label: "薬草", count: 10, slots: 1 }),
+        ]),
+      },
+    );
+    await f.apply([
+      { type: "remove", id: nodes[12]!.id },
+      { type: "remove", id: nodes[13]!.id },
+      { type: "update", id: nodes[14]!.id, count: 30 },
+    ]);
+    await expect(
+      f.send(0, {
+        command: "update",
+        text: "薬草を箱にまとめる",
+        dependencies: [],
+        operations: [
+          {
+            type: "move",
+            item: nodes[14]!.id,
+            from: actor,
+            to: nodes[0]!.id,
+            count: 29,
+            basis: "検証",
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: expected.code,
+      inventory: { item: { requestedCount: 29, maxAcceptableCount: 20 } },
+    });
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
+
+test("箱による枠の節約を防ぎ、共同保管先の最後の1枠を原子的に確定する", async () => {
+  const f = await fixture();
+  const [a, b] = f.actors as [string, string];
+  const create = (label: string, holder: string, count?: number) => ({
+    type: "create",
+    label,
+    holder,
+    count,
+    basis: "検証",
+  });
+  const first = await f.apply([
+    { type: "grant", person: a, storage: f.far, basis: "共同利用" },
+    { type: "grant", person: b, storage: f.far, basis: "共同利用" },
+    create("在庫", f.far, 1490),
+    create("箱", a),
+    create("工具", a),
+    create("手持ち", a, 140),
+    create("贈り物", b),
+  ]);
+  const [, box, tool, , gift] = first.changes.nodes.filter(
+    (n) => n.kind === "existence",
+  );
+  const move = (item: string, from: string, to: string) => ({
+    type: "move",
+    item,
+    from,
+    to,
+    basis: "検証",
+  });
+  await f.store.configureInventory(f.graph, true);
+  await f.apply([move(tool!.id, a, box!.id)]);
+  const ctx = () => f.store.context(f.graph);
+  expect(await ctx().inventorySlots(a)).toBe(16);
+  await expect(f.apply([create("新しい道具", a)])).rejects.toMatchObject({
+    capacity: { usedSlots: 16, projectedSlots: 17, limitSlots: 15 },
+  });
+  await expect(f.apply([move(box!.id, a, f.far)])).rejects.toMatchObject({
+    capacity: { usedSlots: 149, projectedSlots: 151, limitSlots: 150 },
+  });
+  expect(await ctx().inventorySlots(a)).toBe(16);
+  await f.apply([{ type: "remove", id: tool!.id }]);
+  expect(await ctx().inventorySlots(a)).toBe(15);
+  const results = await Promise.allSettled([
+    f.apply([move(box!.id, a, f.far)]),
+    f.apply([move(gift!.id, b, f.far)]),
+  ]);
+  expect(results.map((result) => result.status).sort()).toEqual([
+    "fulfilled",
+    "rejected",
+  ]);
+  expect(await ctx().inventorySlots(f.far)).toBe(150);
+  expect(await ctx().inventorySlots(a)).toBe(
+    results[0]!.status === "fulfilled" ? 14 : 15,
+  );
 });
 
 test("本人が手に持つ箱には、場所を問わず出し入れできる", async () => {

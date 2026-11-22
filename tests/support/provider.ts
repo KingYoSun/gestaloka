@@ -49,6 +49,9 @@ export async function fixtureRuntime(
           reason: user.description.includes("月を持って来る")
             ? "月はこの材料から運べません"
             : "場所と材料から実現できます",
+          ...(user.building || user.installation
+            ? { storageLimitSlots: 150 }
+            : {}),
         };
       } else if (user.applicantDescription && user.experiences) {
         content = {
@@ -61,7 +64,21 @@ export async function fixtureRuntime(
         )
       ) {
         // 成功範囲が面数未満という制約の中で、実質的に必ず成功する設定。
-        content = { sides: 2147483647, successThrough: 2147483646 };
+        const dice = (proposal: Record<string, unknown>) => ({
+          sides: 2147483647,
+          successThrough: 2147483646,
+          ...(Array.isArray(proposal.storageIds)
+            ? {
+                storageLimits: proposal.storageIds.map((storageId) => ({
+                  storageId,
+                  limitSlots: 150,
+                })),
+              }
+            : {}),
+        });
+        content = Array.isArray(user.proposals)
+          ? { settings: user.proposals.map(dice) }
+          : dice(user);
       } else if (user.initialPrompt) {
         const actor = randomUUID(),
           place = randomUUID(),

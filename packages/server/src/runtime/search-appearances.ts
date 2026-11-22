@@ -91,6 +91,8 @@ export async function recordAppearances(
         if (
           node?.kind === "existence" &&
           node.count &&
+          !node.seriesId &&
+          (node.unitsPerSlot ?? 10) === 10 &&
           ((await ctx.latestTime(id)) ?? 0) <= at &&
           (!known ||
             node.count > known.count! ||

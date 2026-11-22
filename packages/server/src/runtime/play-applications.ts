@@ -10,6 +10,7 @@ import { AccessError } from "../http/access.js";
 import {
   BelongingRejected,
   planBelongings,
+  checkBelongingCapacity,
   type BelongingOp,
 } from "../world/belongings.js";
 import { directPlaces } from "../world/locations.js";
@@ -561,6 +562,13 @@ export class PlayApplications {
         await context.assertMovable(item.id);
         await context.assertMovable(payment.id);
         const plan = await planBelongings(context, request, w.at, ops);
+        await checkBelongingCapacity(
+          context,
+          request,
+          plan.at,
+          plan.changes,
+          ops,
+        );
         await this.store.commit(
           await this.store.claim(w.id, request),
           context,

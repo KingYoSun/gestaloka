@@ -147,9 +147,13 @@ function PersonalMaterial({
     ...(data.states ?? []).map((x) => x.node.text),
     ...(data.interpretations ?? []).map((x) => x.node.text),
     ...(data.locations ?? []).map((x) => x.text),
+    data.belongings?.capacity &&
+      `手持ちの使用枠 ${data.belongings.capacity.usedSlots}/${data.belongings.capacity.limitSlots}`,
     ...(data.belongings?.items ?? []).map(itemText),
     ...(data.belongings?.storages ?? []).flatMap((x) => [
-      x.label,
+      x.capacity
+        ? `${x.label}（使用枠 ${x.capacity.usedSlots}/${x.capacity.limitSlots}）`
+        : x.label,
       ...x.items.map(itemText),
     ]),
     ...(data.belongings?.skills ?? []).map((x) => x.text),

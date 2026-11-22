@@ -7738,6 +7738,28 @@
                                       "format": "uuid",
                                       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                     },
+                                    "unitsPerSlot": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": [
+                                            "unlimited"
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    "storageLimitSlots": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
+                                    },
                                     "viewers": {
                                       "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
                                       "anyOf": [
@@ -8302,6 +8324,28 @@
                                       "type": "string",
                                       "format": "uuid",
                                       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    },
+                                    "unitsPerSlot": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": [
+                                            "unlimited"
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    "storageLimitSlots": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
                                     },
                                     "viewers": {
                                       "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
@@ -9168,6 +9212,28 @@
                                       "format": "uuid",
                                       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                     },
+                                    "unitsPerSlot": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": [
+                                            "unlimited"
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    "storageLimitSlots": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
+                                    },
                                     "viewers": {
                                       "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
                                       "anyOf": [
@@ -9732,6 +9798,28 @@
                                       "type": "string",
                                       "format": "uuid",
                                       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    },
+                                    "unitsPerSlot": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": [
+                                            "unlimited"
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    "storageLimitSlots": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
                                     },
                                     "viewers": {
                                       "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
@@ -10496,6 +10584,28 @@
                                                 "format": "uuid",
                                                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                               },
+                                              "unitsPerSlot": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "exclusiveMinimum": true,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "unlimited"
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              "storageLimitSlots": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "exclusiveMinimum": true,
+                                                "maximum": 9007199254740991
+                                              },
                                               "viewers": {
                                                 "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
                                                 "anyOf": [
@@ -11060,6 +11170,28 @@
                                                 "type": "string",
                                                 "format": "uuid",
                                                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                              },
+                                              "unitsPerSlot": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "exclusiveMinimum": true,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "unlimited"
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              "storageLimitSlots": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "exclusiveMinimum": true,
+                                                "maximum": 9007199254740991
                                               },
                                               "viewers": {
                                                 "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
@@ -12505,6 +12637,28 @@
                                       "format": "uuid",
                                       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                     },
+                                    "unitsPerSlot": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": [
+                                            "unlimited"
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    "storageLimitSlots": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
+                                    },
                                     "viewers": {
                                       "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
                                       "anyOf": [
@@ -13069,6 +13223,28 @@
                                       "type": "string",
                                       "format": "uuid",
                                       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    },
+                                    "unitsPerSlot": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": [
+                                            "unlimited"
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    "storageLimitSlots": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
                                     },
                                     "viewers": {
                                       "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
@@ -14187,6 +14363,54 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "capacity": {
+                      "type": "object",
+                      "properties": {
+                        "holderId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "usedSlots": {
+                          "type": "number"
+                        },
+                        "limitSlots": {
+                          "type": "number"
+                        },
+                        "projectedSlots": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "holderId",
+                        "usedSlots",
+                        "limitSlots",
+                        "projectedSlots"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "item": {
+                      "type": "object",
+                      "properties": {
+                        "itemId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "requestedCount": {
+                          "type": "number"
+                        },
+                        "maxAcceptableCount": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "itemId",
+                        "requestedCount",
+                        "maxAcceptableCount"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -14868,6 +15092,28 @@
                                             "format": "uuid",
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
+                                          "unitsPerSlot": {
+                                            "anyOf": [
+                                              {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "exclusiveMinimum": true,
+                                                "maximum": 9007199254740991
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "unlimited"
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          "storageLimitSlots": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "exclusiveMinimum": true,
+                                            "maximum": 9007199254740991
+                                          },
                                           "viewers": {
                                             "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
                                             "anyOf": [
@@ -15432,6 +15678,28 @@
                                             "type": "string",
                                             "format": "uuid",
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                          },
+                                          "unitsPerSlot": {
+                                            "anyOf": [
+                                              {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "exclusiveMinimum": true,
+                                                "maximum": 9007199254740991
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "unlimited"
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          "storageLimitSlots": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "exclusiveMinimum": true,
+                                            "maximum": 9007199254740991
                                           },
                                           "viewers": {
                                             "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
@@ -21371,6 +21639,31 @@
                                   "kind": {
                                     "type": "string",
                                     "enum": [
+                                      "inventory"
+                                    ]
+                                  },
+                                  "minCount": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "exclusiveMinimum": true,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "standard": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "minCount"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
                                       "edge"
                                     ]
                                   },
@@ -21669,6 +21962,28 @@
                                           "type": "string",
                                           "format": "uuid",
                                           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "unitsPerSlot": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "exclusiveMinimum": true,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "string",
+                                              "enum": [
+                                                "unlimited"
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        "storageLimitSlots": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
                                         },
                                         "viewers": {
                                           "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
@@ -22234,6 +22549,28 @@
                                           "type": "string",
                                           "format": "uuid",
                                           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "unitsPerSlot": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "exclusiveMinimum": true,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "string",
+                                              "enum": [
+                                                "unlimited"
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        "storageLimitSlots": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "exclusiveMinimum": true,
+                                          "maximum": 9007199254740991
                                         },
                                         "viewers": {
                                           "description": "本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ",
@@ -24787,6 +25124,10 @@
                             "type": "string",
                             "format": "uuid",
                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "inventoryCapacity": {
+                            "description": "所持・保管枠の制限を有効にする",
+                            "type": "boolean"
                           },
                           "title": {
                             "type": "string",
