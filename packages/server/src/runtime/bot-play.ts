@@ -1113,18 +1113,21 @@ export class BotPlay {
     await signalTurns(db, world, actor);
     return session;
   }
-  async tickNpcs(world?: string) {
+  async tickNpcs(world?: string, paused = () => false) {
+    if (paused()) return;
     const active = await this.pool.query<Session>(
       "SELECT * FROM bot_session WHERE data ? 'nextRegular' AND NOT (data ? 'receiving') AND NOT (data ? 'parked') AND ($1::uuid IS NULL OR world_id=$1)",
       [world ?? null],
     );
-    for (const session of active.rows)
+    for (const session of active.rows) {
+      if (paused()) return;
       if (
         session.data.members.some(
           (m) => m.actorId === session.data.turn && m.instant,
         )
       )
         await this.#instantTurn(session);
+    }
     const assigned = (
       await this.pool.query<{
         world_id: string;
@@ -1140,6 +1143,7 @@ export class BotPlay {
     // サーバー担当は、プレイヤーか外部botの人物が同席している間だけ行動を選ぶ。
     const servers = new Set(assigned.map((n) => n.world_id + n.actor_id));
     for (const npc of assigned) {
+      if (paused()) return;
       const current = await this.current(npc.world_id, npc.actor_id);
       if (
         !current?.data.members.some(
@@ -1153,6 +1157,7 @@ export class BotPlay {
         `npc:${npc.assignment_id}:${current.id}:${status.turn}:${status.callsUsed}:${status.commentUsed}:${current.data.receiving?.id ?? "normal"}`,
       );
       const world = await this.world(npc.world_id);
+      if (paused()) return;
       await ExecutionBudget.run(
         this.pool,
         requestId,

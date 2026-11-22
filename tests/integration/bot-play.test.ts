@@ -26,6 +26,12 @@ import { join, resolve } from "node:path";
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureRuntime } from "../support/provider.js";
 import { fixtureAuth } from "../support/auth.js";
+import { approvedTransport, modelEnvironment } from "../support/model.js";
+import { startPlayLoop } from "../../apps/worker/src/play-loop.js";
+import {
+  withDrainedWorker,
+  workerSocket,
+} from "../../apps/worker/src/deployment.js";
 import { vehicleOperator } from "../../packages/server/src/runtime/vehicles.js";
 
 const isolated = isolatedDatabases();
@@ -8170,6 +8176,139 @@ test("CLIは招待を受けた本人が短縮IDでチームに加入し、離脱
     await app.close();
   }
 });
+
+test.each([false, true])(
+  "NPCの対抗判定中のワーカー交換（待機上限超過=%s）",
+  async (timeout) => {
+    const f = await fixture(),
+      source = randomUUID();
+    await f.send(1, { command: "contact", targetId: f.actors[0] });
+    f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+    await f.send(0, {
+      command: "say",
+      requestId: source,
+      text: "鳥が飛んできた",
+      instantNpcs: ["鳥"],
+    });
+    const { sessionId, turn } = await f.send(0, { command: "end-turn" });
+    const bird = derivedId(source + ":manual:0");
+    const request = derivedId(`instant:${sessionId}:${bird}:${turn}`);
+    let release!: () => void,
+      diceCalls = 0;
+    const gate = new Promise<void>((done) => {
+      release = done;
+    });
+    const db = isolated.databases.postgres;
+    const model = new LlmClient(
+      db,
+      modelEnvironment(randomUUID()),
+      approvedTransport(async () => {
+        diceCalls++;
+        await gate;
+        return Response.json({
+          id: randomUUID(),
+          model: "gemini-3.8-flash",
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({ ...sure, observable: null }),
+              },
+            },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        });
+      }),
+    );
+    await model.ledger.setup();
+    f.calls.mockImplementation((...args) =>
+      args[1] === "world-server-npc"
+        ? Promise.resolve(
+            answer(args[0], {
+              text: "帽子に触れる",
+              effect: { targetId: f.actors[0], state: "帽子が揺れる" },
+            }),
+          )
+        : model.complete(...args),
+    );
+    const path = workerSocket(process.pid);
+    let paused = () => false;
+    const play = {
+      expire: () => access.botPlay.expire(f.world),
+      tickNpcs: (_?: string, stopping = () => false) => {
+        paused = stopping;
+        return access.botPlay.tickNpcs(f.world, stopping);
+      },
+    };
+    let stop = await startPlayLoop(play, path);
+    let replaced = false;
+    const ledger = () =>
+      db.query(
+        "SELECT state,response IS NOT NULL AS saved FROM llm_call WHERE response_id=$1 AND request->>'role'='world-opposition-dice'",
+        [request],
+      );
+    try {
+      await vi.waitFor(() => expect(diceCalls).toBe(1), { timeout: 10000 });
+      expect((await ledger()).rows).toEqual([
+        { state: "pending", saved: false },
+      ]);
+      const hold = spawn(process.execPath, [
+        resolve("apps/worker/dist/deployment.js"),
+        "hold",
+        path,
+      ]);
+      const deployment = withDrainedWorker(
+        hold,
+        async () => {
+          expect((await ledger()).rows).toEqual([
+            { state: "complete", saved: true },
+          ]);
+          expect((await f.status(1)).actorId).toBe(f.actors[1]);
+          await stop();
+          stop = await startPlayLoop(play, path);
+          replaced = true;
+        },
+        timeout ? 1200 : 10000,
+      );
+      const completed = timeout
+        ? expect(deployment).rejects.toThrow("待ちが上限")
+        : deployment;
+      await vi.waitFor(() => expect(paused()).toBe(true));
+      expect(replaced).toBe(false);
+      if (timeout) {
+        await completed;
+        await vi.waitFor(() => expect(paused()).toBe(false));
+        expect((await f.status(1)).actorId).toBe(bird);
+      }
+      release();
+      await completed;
+      await vi.waitFor(
+        async () => expect((await f.status(1)).actorId).toBe(f.actors[1]),
+        { timeout: 10000 },
+      );
+      await access.botPlay.tickNpcs(f.world);
+      expect(replaced).toBe(!timeout);
+      expect(diceCalls).toBe(1);
+      expect((await ledger()).rows).toEqual([
+        { state: "complete", saved: true },
+      ]);
+      expect(await f.store.receipt(f.graph, request)).toBeDefined();
+      const status = await f.status(1);
+      expect(status.turn).toBe(Number(turn) + 1);
+      expect(
+        status.entries.filter(
+          ({ payload }) =>
+            payload.transition?.turn === turn &&
+            payload.transition.actorId === bird &&
+            payload.transition.type === "turn-ended",
+        ),
+      ).toHaveLength(1);
+    } finally {
+      release();
+      await stop();
+    }
+  },
+);
 
 test("出現個体の手番中は本人だけが動き、外界への作用と昇格前の経験を引き継ぐ", async () => {
   const f = await fixture(),

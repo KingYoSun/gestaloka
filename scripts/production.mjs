@@ -5,6 +5,10 @@ import {
   renderDeployment,
 } from "../infra/production/config.mjs";
 import { command } from "../infra/production/engine.mjs";
+import {
+  deployWorker,
+  WorkerDrainError,
+} from "../apps/worker/dist/deployment.js";
 
 const [action, directory, argument] = process.argv.slice(2);
 if (!directory)
@@ -78,11 +82,25 @@ if (action === "init") {
       await compose("build");
       console.log("公開用イメージを作成しました。");
       break;
-    case "up":
-      await seed();
-      await compose("up", "-d", "--no-build", "--wait");
-      console.log("起動しました。");
+    case "up": {
+      const worker = (
+        await compose("ps", "--status", "running", "-q", "worker")
+      )
+        .toString()
+        .trim();
+      try {
+        await deployWorker(worker, async () => {
+          await seed();
+          await compose("up", "-d", "--no-build", "--wait");
+        });
+        console.log("起動しました。");
+      } catch (error) {
+        if (!(error instanceof WorkerDrainError)) throw error;
+        console.error(error.message);
+        process.exitCode = 75;
+      }
       break;
+    }
     case "stop":
       await compose("stop");
       console.log("停止しました。");
