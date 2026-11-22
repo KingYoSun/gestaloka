@@ -158,16 +158,13 @@ export class PlayCompanions {
       fail("COMPANION_LIMIT", `companionは${limit}体までです`);
   }
 
-  // GMが同行を認めた関係を、NPCの状態として記録して索引に加える。
-  async form(
-    db: Db,
-    world: string,
+  // 同行の関係をNPCの状態として記録する差分。
+  async relation(
     context: WorldContext,
     requestId: string,
     at: number,
     actor: string,
     npc: string,
-    commit: (context: WorldContext, changes: Change) => Promise<unknown>,
   ) {
     const person = (await context.node(actor))!;
     const changes = empty();
@@ -181,9 +178,13 @@ export class PlayCompanions {
       `${person.text}に同行している`,
       person,
     );
-    await commit(context, changes);
+    return changes;
+  }
+
+  // 成立した関係を索引に加える。受領の再送でも二重に加えない。
+  async index(db: Db, world: string, npc: string, actor: string) {
     await db.query(
-      "INSERT INTO bot_companion(world_id,npc_id,actor_id) VALUES($1,$2,$3)",
+      "INSERT INTO bot_companion(world_id,npc_id,actor_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
       [world, npc, actor],
     );
   }
@@ -212,7 +213,11 @@ export class PlayCompanions {
   ) {
     const npc = "targetId" in input ? input.targetId : undefined;
     let message = "companionの状態を取得しました";
-    if (npc && input.command !== "companion-request")
+    // 同行しているNPC本人は、自分から関係を終えられる。
+    if (input.command === "companion-dismiss" && npc === actor) {
+      if (!(await this.of(db, world, actor)))
+        fail("COMPANION_REQUIRED", "同行している相手がいません");
+    } else if (npc && input.command !== "companion-request")
       await this.mine(db, world, actor, npc);
     switch (input.command) {
       case "companion-follow":

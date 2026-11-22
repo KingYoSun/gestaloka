@@ -550,6 +550,26 @@ async function setNpc(
   );
 }
 
+// 外部botが担当するNPCへの同行申請は、本人の受領で成立する。
+async function accompany(
+  f: Awaited<ReturnType<typeof fixture>>,
+  targetId: string,
+  text: string,
+  accept = true,
+) {
+  const sent = await f.send(0, {
+    command: "companion-request",
+    targetId,
+    text,
+  });
+  await f.send(f.actors.indexOf(targetId), {
+    command: "receive",
+    applicationId: sent.applicationId,
+    accept,
+  });
+  return sent;
+}
+
 async function giveTurn(
   f: Awaited<ReturnType<typeof fixture>>,
   target: number,
@@ -677,15 +697,8 @@ test("コンパニオン自身に乗る・降りる操作は自己参照を作�
   await f.send(1, { command: "contact", targetId: actor });
   await f.send(2, { command: "contact", targetId: actor });
   await giveTurn(f, 0);
-  f.calls.mockImplementation(async (id) =>
-    answer(id, { accepted: true, reason: "同行に合意した" }),
-  );
   for (const targetId of [npcId, companionId])
-    await f.send(0, {
-      command: "companion-request",
-      targetId,
-      text: "一緒に移動したい",
-    });
+    await accompany(f, targetId, "一緒に移動したい");
   const at = (id: string) => directPlaces(f.store.context(f.graph), id);
   await f.send(0, { command: "vehicle-board", vehicleId: npcId });
   expect(await at(npcId)).toEqual([f.place]);
@@ -11590,12 +11603,38 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
         .material as { locations: { directPlaceId: string }[] }
     ).locations.map((l) => l.directPlaceId);
   // 死亡判定が無効な世界では、候補を渡さず、成功しても同席は変わらない。
+  // GMが返した状態は、同席している対象の人物にだけ残る。
   await configure("death_judgment", false);
-  fatalDice(f.actors[1]!, "道具", "mortal");
+  const wound = { id: f.actors[1]!, text: "肩に切り傷がある。" };
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const sent = JSON.parse(String(messages[1]!.content));
+    expect(sent.affected).toEqual([f.actors[1]]);
+    expect(sent).not.toHaveProperty("mortal");
+    return answer(id, {
+      ...sure,
+      fatal: [f.actors[1]],
+      states: [wound, { id: f.actors[2], text: "無関係" }],
+    });
+  });
   const spared = await f.send(0, attack(0));
-  expect(spared.outcome).toMatchObject({ success: true });
+  expect(spared.outcome).toMatchObject({
+    success: true,
+    setting: { states: [wound] },
+  });
   expect(spared.outcome).not.toHaveProperty("setting.fatal");
   expect(await present(0)).toEqual(f.actors);
+  const states = async (i: number) =>
+    (
+      await Promise.all(
+        (
+          await f.store
+            .context(f.graph)
+            .relations(f.actors[i]!, "status", "out", Number.MAX_SAFE_INTEGER)
+        ).map((e) => f.store.context(f.graph).node(e.target)),
+      )
+    ).map((n) => n?.text);
+  expect(await states(1)).toContain(wound.text);
+  expect(await states(2)).not.toContain("無関係");
   // 設定された場所へ移り、セッションから外れる。
   await configure("death_judgment", true);
   await configure("death_criteria", "致命傷で死亡する");
@@ -12025,10 +12064,11 @@ test("GMが同行を認めたユニークNPCは、本人の移動に付いてき
     ctx = () => f.store.context(f.graph),
     judged = () =>
       f.calls.mock.calls.filter((c) => c[1] === "world-companion").length;
-  await db.query(
-    "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,'bot',$3,$4)",
-    [f.world, npc, f.people[1]!.id, randomUUID()],
-  );
+  // GMが判断するのはサーバー担当のNPC。試験では管理者が手番を代行する。
+  await setNpc(f, 1, "server");
+  await db.query("UPDATE app_user SET role='admin' WHERE id=$1", [
+    f.people[1]!.id,
+  ]);
   const request = (text: string) =>
     f.send(0, { command: "companion-request", targetId: npc, text });
   const locate = (subjectId: string, to: string) =>
@@ -12170,6 +12210,37 @@ test("GMが同行を認めたユニークNPCは、本人の移動に付いてき
   expect(judged()).toBe(2);
 });
 
+test("外部botが担当するNPCへの同行申請は本人の受領で決まり、成立後は本人から終えられる", async () => {
+  const f = await fixture(),
+    [player, npc] = f.actors as [string, string],
+    ctx = () => f.store.context(f.graph),
+    owned = async () =>
+      (await f.send(0, { command: "companion-status" })).companions;
+  await setNpc(f, 1, "bot");
+  await f.send(1, { command: "contact", targetId: player });
+  await giveTurn(f, 0);
+  // 却下すれば成立しない。GMは呼ばず、SPも使わない。
+  expect(await accompany(f, npc, "一緒に来て", false)).toMatchObject({
+    state: "receiving",
+    spentSp: 0,
+  });
+  expect(await owned()).toEqual([]);
+  expect(await ctx().marked(npc, "status", "companion")).toEqual([]);
+  // 同行していないNPCは、関係を終える操作を使えない。
+  const leave = () =>
+    f.send(1, { command: "companion-dismiss", targetId: npc });
+  await expect(leave()).rejects.toMatchObject({ code: "COMPANION_REQUIRED" });
+  // 承認すれば、関係がグラフに残り、追従で一覧に出る。
+  await accompany(f, npc, "一緒に来て");
+  expect(await owned()).toMatchObject([{ targetId: npc, mode: "follow" }]);
+  expect(await ctx().marked(npc, "status", "companion")).toHaveLength(1);
+  expect(f.calls).not.toHaveBeenCalled();
+  // NPC本人が関係を終えると、一覧とグラフから消える。
+  await leave();
+  expect(await owned()).toEqual([]);
+  expect(await ctx().marked(npc, "status", "companion")).toEqual([]);
+});
+
 test("CLIのcompanionは操作ごとに対象と場所を送り、一覧を返す", async () => {
   const f = await fixture(),
     db = isolated.databases.postgres,
@@ -12234,11 +12305,7 @@ async function companionFixture() {
   const [owner, npc, friend] = f.actors as [string, string, string];
   await setNpc(f, 1, "bot");
   await f.send(1, { command: "contact", targetId: owner });
-  f.calls.mockImplementation(async (id) =>
-    answer(id, { accepted: true, reason: "道案内に同行する" }),
-  );
-  const request = (targetId: string) =>
-    f.send(0, { command: "companion-request", targetId, text: "一緒に歩こう" });
+  const request = (targetId: string) => accompany(f, targetId, "一緒に歩こう");
   await request(npc);
   const mode = (command: "follow" | "wait") =>
     f.send(0, { command: "companion-" + command, targetId: npc });
