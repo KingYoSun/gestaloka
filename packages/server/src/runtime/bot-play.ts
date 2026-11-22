@@ -1242,7 +1242,15 @@ export class BotPlay {
             .map((m) => m.actorId);
           const commands = z.union(
             PlayCommand.options
-              .filter((option) => !("npcId" in option.shape) || npcIds.length)
+              // 受領判断中に受け付けるのは、受領の返答と一度のコメントだけ。
+              .filter((option) =>
+                status.receiving
+                  ? option.shape.command.safeParse(
+                      status.commentUsed ? "receive" : "comment",
+                    ).success ||
+                    option.shape.command.safeParse("receive").success
+                  : !("npcId" in option.shape) || npcIds.length,
+              )
               .map((option) =>
                 "npcId" in option.shape
                   ? option.safeExtend({ npcId: z.enum(npcIds) })
@@ -1303,19 +1311,16 @@ export class BotPlay {
               npc.assignment_id,
             );
           } catch (error) {
-            if (
-              !(error instanceof AccessError) ||
-              !["COMPANION_WAITING", "COMPANION_FOLLOWING"].includes(error.code)
-            )
-              throw error;
+            // 断られた選択は同じ手番で問い直さず、受領を断るか手番を渡す。
+            if (!(error instanceof AccessError)) throw error;
             await this.submit(
               npc.world_id,
               npc.actor_id,
               {
-                ...(command.command === "receive"
+                ...(status.receiving
                   ? {
                       command: "receive" as const,
-                      applicationId: command.applicationId,
+                      applicationId: status.receiving.applicationId,
                       accept: false,
                     }
                   : { command: "end-turn" as const }),

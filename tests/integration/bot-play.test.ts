@@ -12608,3 +12608,51 @@ test("追従の再開・シーンの再開で同席者の受領判断を取り�
     accept: true,
   });
 });
+
+test("サーバー担当NPCは断られた選択を問い直さず、受領判断中は返答と一度のコメントだけを選べる", async () => {
+  const f = await fixture();
+  const npc = f.actors[1]!;
+  await f.send(0, { command: "contact", targetId: npc });
+  await giveTurn(f, 1);
+  await auth.operations.execute(
+    (await auth.person()).id,
+    randomUUID(),
+    {
+      operation: "npcs.put",
+      worldId: f.world,
+      actorId: npc,
+      controller: "server",
+      reason: "隔離試験の担当を切り替える",
+    },
+    { players: access.players },
+  );
+  const offered: string[][] = [];
+  const choose = (...choices: object[]) =>
+    f.calls.mockImplementation(async (id, _role, messages) => {
+      const schema = JSON.parse(String(messages[1]!.content)).commandSchema;
+      offered.push(
+        schema.anyOf.map(
+          (o: { properties: { command: { const: string } } }) =>
+            o.properties.command.const,
+        ),
+      );
+      return answer(id, choices[offered.length - 1]);
+    });
+  choose({ command: "vehicle-board", vehicleId: randomUUID() });
+  await access.botPlay.tickNpcs(f.world);
+  await access.botPlay.tickNpcs(f.world);
+  expect(offered).toHaveLength(1);
+  expect((await f.status(0)).actorId).not.toBe(npc);
+
+  await giveTurn(f, 0);
+  const invited = await f.send(0, locate(npc, f.far));
+  offered.length = 0;
+  choose(
+    { command: "comment", text: "少し考える" },
+    { command: "receive", applicationId: invited.applicationId, accept: true },
+  );
+  await access.botPlay.tickNpcs(f.world);
+  await access.botPlay.tickNpcs(f.world);
+  expect(offered).toEqual([["receive", "comment"], ["receive"]]);
+  expect(await directPlaces(f.store.context(f.graph), npc)).toEqual([f.far]);
+});
