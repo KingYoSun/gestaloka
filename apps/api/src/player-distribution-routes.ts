@@ -42,6 +42,21 @@ export async function playerCliRelease() {
 
 export async function playerDistributionRoutes(instance: FastifyInstance) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
+  app.get(
+    "/api/player-cli/",
+    { schema: { hide: true } },
+    async (_request, reply) =>
+      reply
+        .type("text/html; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .header("Referrer-Policy", "no-referrer")
+        .send(
+          await readFile(
+            new URL("../player-cli-index.html", import.meta.url),
+            "utf8",
+          ),
+        ),
+  );
   for (const file of [...referenceGuide.options, "SKILL.md"]) {
     for (const path of [basename(file, ".md"), file, `references/${file}`]) {
       app.get(
