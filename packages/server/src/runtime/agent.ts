@@ -16,7 +16,9 @@ import {
   type Dependency,
   type WorldContext,
 } from "../world/store.js";
+import { StartingItem } from "@gestaloka/contracts";
 import {
+  derivedId,
   bindingScripts,
   validateBindings,
   validateConnection,
@@ -37,6 +39,9 @@ import {
 } from "./state-selection.js";
 
 const Time = z.number().int().nonnegative().safe();
+// 世界の設定から参加者へ渡す物品のID。確定は、このIDに限って系列の指定を受け付ける。
+const startingItemId = (commitId: string, index: number) =>
+  derivedId(`${commitId}:starting:${index}`);
 export const IntentResult = z
   .object({ actionText: z.string().min(1) })
   .strict();
@@ -57,6 +62,7 @@ export const Interaction = z
     actorId: z.uuid().optional(),
     controlledActorId: z.uuid().optional(),
     participantName: z.string().optional(),
+    startingItems: z.array(StartingItem).optional(),
     controlledActionText: z.string().optional(),
     triggerEdgeIds: z.array(z.uuid()).optional(),
     actionText: z.string(),
@@ -957,6 +963,23 @@ export class WorldAgent {
         throw new BelongingRejected(
           "既存の所在はこの参加より後の時点に記録されています",
         );
+      for (const [i, item] of (row.request.startingItems ?? []).entries()) {
+        const { label, ...rest } = item,
+          id = startingItemId(row.commit_id, i);
+        planned.changes.nodes.push({
+          id,
+          kind: "existence",
+          text: label,
+          ...rest,
+        });
+        planned.changes.edges.push({
+          id: derivedId(`${id}:hold`),
+          kind: "has",
+          source: proposal.newParticipantId!,
+          target: id,
+          period: { from: proposal.resolvedUntil },
+        });
+      }
       return planned.changes;
     } catch (error) {
       if (!(error instanceof BelongingRejected)) throw error;
@@ -1134,6 +1157,9 @@ export class WorldAgent {
             playerAction:
               row.request.phase === "participant" ||
               !!row.request.controlledActorId,
+            seriesGrants: (row.request.startingItems ?? []).map((_, i) =>
+              startingItemId(row.commit_id, i),
+            ),
             ...(row.request.phase === "participant"
               ? {
                   newFixedPlaces: generatedFixedPlaces(

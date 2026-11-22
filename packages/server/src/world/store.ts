@@ -1238,6 +1238,7 @@ export class WorldStore {
       newFixedPlaces?: string[];
       storageEffect?: StorageEffect;
       management?: { editorId: string; reason: string; requestHash: string };
+      seriesGrants?: string[];
     },
     fromBelongingOperations = false,
     reservations?: ItemReservations,
@@ -1258,6 +1259,7 @@ export class WorldStore {
           })
           .strict()
           .optional(),
+        seriesGrants: z.array(z.uuid()).optional(),
       })
       .strict()
       .parse(input);
@@ -1269,6 +1271,7 @@ export class WorldStore {
       changes.nodes.some(
         (node) =>
           node.kind === "existence" &&
+          !parsed.seriesGrants?.includes(node.id) &&
           (node.seriesId ||
             node.unitsPerSlot !== undefined ||
             node.storageLimitSlots !== undefined),

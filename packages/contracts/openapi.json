@@ -767,6 +767,55 @@
                     "playerSettings": {
                       "type": "string"
                     },
+                    "startingItems": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "物品の呼称"
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "exclusiveMinimum": true,
+                            "maximum": 9007199254740991,
+                            "description": "個数"
+                          },
+                          "seriesId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                            "description": "物品の系列ID"
+                          },
+                          "unitsPerSlot": {
+                            "description": "1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠",
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "unlimited"
+                                ]
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "count",
+                          "seriesId"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
                     "createdAt": {
                       "type": "string",
                       "format": "date-time",
@@ -1100,6 +1149,55 @@
                     },
                     "playerSettings": {
                       "type": "string"
+                    },
+                    "startingItems": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "物品の呼称"
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "exclusiveMinimum": true,
+                            "maximum": 9007199254740991,
+                            "description": "個数"
+                          },
+                          "seriesId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                            "description": "物品の系列ID"
+                          },
+                          "unitsPerSlot": {
+                            "description": "1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠",
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "unlimited"
+                                ]
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "count",
+                          "seriesId"
+                        ],
+                        "additionalProperties": false
+                      }
                     },
                     "createdAt": {
                       "type": "string",
@@ -1496,6 +1594,55 @@
                     },
                     "playerSettings": {
                       "type": "string"
+                    },
+                    "startingItems": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "物品の呼称"
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "exclusiveMinimum": true,
+                            "maximum": 9007199254740991,
+                            "description": "個数"
+                          },
+                          "seriesId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                            "description": "物品の系列ID"
+                          },
+                          "unitsPerSlot": {
+                            "description": "1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠",
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "unlimited"
+                                ]
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "count",
+                          "seriesId"
+                        ],
+                        "additionalProperties": false
+                      }
                     },
                     "createdAt": {
                       "type": "string",
@@ -25329,6 +25476,57 @@
                             "minimum": 0,
                             "exclusiveMinimum": true,
                             "maximum": 9007199254740991
+                          },
+                          "startingItems": {
+                            "description": "参加する人物が最初から手に持つ系列つきの物品。設定後に始まる参加から適用する。省略すると現在の設定を保つ",
+                            "maxItems": 12,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "description": "物品の呼称"
+                                },
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true,
+                                  "maximum": 9007199254740991,
+                                  "description": "個数"
+                                },
+                                "seriesId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                                  "description": "物品の系列ID"
+                                },
+                                "unitsPerSlot": {
+                                  "description": "1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠",
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "unlimited"
+                                      ]
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "label",
+                                "count",
+                                "seriesId"
+                              ],
+                              "additionalProperties": false
+                            }
                           },
                           "deathJudgment": {
                             "description": "プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。死亡した人物はセッションから外れ、deathPlaceIdの場所へ移る。省略すると現在の設定を保つ",
