@@ -310,6 +310,35 @@ export const PlayCommand = z.discriminatedUnion("command", [
   z
     .object({
       ...request,
+      command: z.enum(["companion-request", "companion-order"]),
+      targetId: id,
+      text,
+    })
+    .strict(),
+  z
+    .object({
+      ...request,
+      command: z.enum([
+        "companion-follow",
+        "companion-wait",
+        "companion-return",
+        "companion-dismiss",
+      ]),
+      targetId: id,
+    })
+    .strict(),
+  z
+    .object({
+      ...request,
+      command: z.enum(["companion-move", "companion-home"]),
+      targetId: id,
+      placeId: id,
+    })
+    .strict(),
+  z.object({ ...request, command: z.literal("companion-status") }).strict(),
+  z
+    .object({
+      ...request,
       command: z.literal("say"),
       text,
       instantNpcs: z.array(text).default([]),

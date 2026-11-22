@@ -361,6 +361,32 @@ export class WorldContext {
     if (fixed) throw new FixedPlaceMovement();
   }
 
+  // 主体から記述への有効なcontentのうち、名目が一致するもの。絞り込みはDBの中で行い、ほかの関係を読み出さない。
+  async marked(id: string, kind: "status" | "interpret", text: string) {
+    z.uuid().parse(id);
+    const stored = await this.#read(relationKey(id, kind, "out"), async (tx) =>
+      (
+        await tx.run(
+          `MATCH (:WorldNode {worldId:$world,id:$id})-[c:${kind} {role:'content'}]->()
+          WHERE c.worldId=$world AND c.validTo IS NULL AND c.data CONTAINS $marker RETURN c.data AS data`,
+          {
+            world: this.worldId,
+            id,
+            marker: JSON.stringify({ text }).slice(1, -1),
+          },
+        )
+      ).records.map((r) => WorldEdge.parse(JSON.parse(r.get("data")))),
+    );
+    return this.#merge(
+      stored,
+      id,
+      kind,
+      "out",
+      (e) =>
+        e.role === "content" && e.text === text && e.period.until === undefined,
+      (a, b) => a.id.localeCompare(b.id),
+    ).filter((e) => e.text === text);
+  }
   async reserved(itemId: string) {
     return this.#read(relationKey(itemId, "has", "in"), async (tx) => {
       const { records } = await tx.run(

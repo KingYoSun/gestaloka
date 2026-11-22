@@ -2710,6 +2710,35 @@ export interface paths {
                         /** Format: uuid */
                         requestId: string;
                         /** @enum {string} */
+                        command: "companion-request" | "companion-order";
+                        /** Format: uuid */
+                        targetId: string;
+                        text: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "companion-follow" | "companion-wait" | "companion-return" | "companion-dismiss";
+                        /** Format: uuid */
+                        targetId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "companion-move" | "companion-home";
+                        /** Format: uuid */
+                        targetId: string;
+                        /** Format: uuid */
+                        placeId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "companion-status";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
                         command: "say";
                         text: string;
                         /** @default [] */

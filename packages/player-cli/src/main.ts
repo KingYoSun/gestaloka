@@ -413,7 +413,8 @@ async function run() {
           ]),
     );
   journal = `${profilePath}.requests`;
-  if (positionals.length > (command === "team" ? 2 : 1))
+  const grouped = command === "team" || command === "companion";
+  if (positionals.length > (grouped ? 2 : 1))
     throw new Error("コマンドは1つ指定してください（helpを参照）");
   if (command === "version")
     return {
@@ -442,6 +443,7 @@ async function run() {
     "world",
     "target",
     "team",
+    "place",
     "scene",
     "application",
     "offer",
@@ -705,12 +707,26 @@ async function run() {
     );
   }
   const id = randomUUID();
-  const teamAction = positionals[1];
+  const action = positionals[1];
   if (
-    command === "team" &&
-    !["invite", "join", "status", "leave"].includes(teamAction ?? "")
+    grouped &&
+    !(
+      command === "team"
+        ? ["invite", "join", "status", "leave"]
+        : [
+            "request",
+            "follow",
+            "wait",
+            "return",
+            "move",
+            "home",
+            "order",
+            "dismiss",
+            "status",
+          ]
+    ).includes(action ?? "")
   )
-    throw new Error(playerHelp("team"));
+    throw new Error(playerHelp(command));
   const body = PlayCommand.parse(
     command === "play"
       ? {
@@ -723,8 +739,8 @@ async function run() {
         }
       : {
           requestId: id,
-          command: command === "team" ? `team-${teamAction}` : command,
-          ...(command === "team" && teamAction === "join"
+          command: grouped ? `${command}-${action}` : command,
+          ...(command === "team" && action === "join"
             ? { teamId: values.team }
             : {}),
           ...(command === "search"
@@ -736,10 +752,15 @@ async function run() {
               }
             : {}),
           ...(command === "contact" ||
-          (command === "team" && teamAction === "invite")
+          (command === "team" && action === "invite") ||
+          (command === "companion" && action !== "status")
             ? { targetId: values.target }
             : {}),
-          ...(["say", "comment", "memo", "explore"].includes(command)
+          ...(command === "companion" && ["move", "home"].includes(action!)
+            ? { placeId: values.place }
+            : {}),
+          ...(["say", "comment", "memo", "explore"].includes(command) ||
+          (command === "companion" && ["request", "order"].includes(action!))
             ? {
                 text: values.file
                   ? await readFile(values.file, "utf8")

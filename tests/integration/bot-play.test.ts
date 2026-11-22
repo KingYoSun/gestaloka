@@ -8893,3 +8893,230 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
   expect((await f.status(0)).unreadNotices).toBeUndefined();
   expect((await waiting()).noticeKey).toBeNull();
 });
+
+test("GMが同行を認めたユニークNPCは、本人の移動に付いてきて、待機・移動・帰還・指示・解除を本人が選べる", async () => {
+  const f = await fixture(),
+    db = isolated.databases.postgres,
+    model = runtime.agent.model,
+    [player, npc, other] = f.actors as [string, string, string],
+    ctx = () => f.store.context(f.graph),
+    judged = () =>
+      f.calls.mock.calls.filter((c) => c[1] === "world-companion").length;
+  await db.query(
+    "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,'bot',$3,$4)",
+    [f.world, npc, f.people[1]!.id, randomUUID()],
+  );
+  const request = (text: string) =>
+    f.send(0, { command: "companion-request", targetId: npc, text });
+  const locate = (subjectId: string, to: string) =>
+    f.send(0, {
+      command: "update",
+      text: "移動する",
+      dependencies: [],
+      operations: [{ type: "locate", subjectId, text: "移動", aboutIds: [to] }],
+    });
+  const pass = async () => {
+    await f.send(0, { command: "end-turn" });
+    await f.send(1, { command: "end-turn" });
+  };
+  // 別のセッションにいる相手、他人のcompanion、4体目は、GMを呼ばずに拒否する。
+  await expect(request("一緒に来て")).rejects.toMatchObject({
+    code: "COMPANION_TARGET_UNAVAILABLE",
+  });
+  await f.send(1, { command: "contact", targetId: player });
+  expect((await f.status(0)).actorId).toBe(player);
+  await db.query(
+    "INSERT INTO bot_companion(world_id,npc_id,actor_id) VALUES($1,$2,$3)",
+    [f.world, npc, other],
+  );
+  await expect(request("一緒に来て")).rejects.toMatchObject({
+    code: "COMPANION_TAKEN",
+  });
+  await db.query("DELETE FROM bot_companion WHERE world_id=$1", [f.world]);
+  for (let i = 0; i < 3; i++)
+    await db.query(
+      "INSERT INTO bot_companion(world_id,npc_id,actor_id) VALUES($1,$2,$3)",
+      [f.world, randomUUID(), player],
+    );
+  await expect(request("一緒に来て")).rejects.toMatchObject({
+    code: "COMPANION_LIMIT",
+  });
+  await db.query("DELETE FROM bot_companion WHERE world_id=$1", [f.world]);
+  expect(judged()).toBe(0);
+
+  // 却下された同じ手番の出し直しは、判断モデルが同じ試みと認めれば前回の却下を返し、SPを使わない。
+  vi.spyOn(model, "decision", "get").mockReturnValue(
+    decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+  );
+  const decide = vi.spyOn(model, "decide").mockResolvedValue({ f0: 0.95 });
+  f.calls.mockImplementation(async (id) =>
+    answer(id, { accepted: false, reason: "まだ信頼していない" }),
+  );
+  expect(await request("一緒に来て")).toMatchObject({
+    outcome: { accepted: false, reason: "まだ信頼していない" },
+    spentSp: 1,
+    dailySp: { remaining: 99 },
+    companions: [],
+  });
+  expect(decide).not.toHaveBeenCalled();
+  expect(await request("頼むから一緒に来てほしい")).toMatchObject({
+    outcome: { accepted: false, repeated: true },
+    spentSp: 0,
+    dailySp: { remaining: 99 },
+  });
+  expect(decide).toHaveBeenCalledTimes(1);
+  expect(judged()).toBe(1);
+
+  // 次の手番には新しい申請としてGMが判断する。成立すると関係がグラフに残り、追従で一覧に出る。
+  await pass();
+  f.calls.mockImplementation(async (id) =>
+    answer(id, { accepted: true, reason: "助けられた恩がある" }),
+  );
+  const formed = await request("一緒に来て");
+  expect(formed).toMatchObject({
+    outcome: { accepted: true },
+    spentSp: 1,
+    dailySp: { remaining: 98 },
+    companions: [
+      { targetId: npc, name: "人物1", mode: "follow", placeId: f.place },
+    ],
+  });
+  expect(decide).toHaveBeenCalledTimes(1);
+  expect(await ctx().marked(npc, "status", "companion")).toHaveLength(1);
+
+  // 追従中は本人の移動と同じ確定で移り、手番の後も同じセッションに残る。
+  await locate(player, f.far);
+  expect(await directPlaces(ctx(), npc)).toEqual([f.far]);
+  await f.send(0, { command: "end-turn" });
+  expect((await f.status(1)).sessionId).toBe((await f.status(0)).sessionId);
+  await f.send(1, { command: "end-turn" });
+
+  // 待機中は移らない。帰る場所と指定の場所へは、受領判断なしに向かわせる。
+  await f.send(0, { command: "companion-wait", targetId: npc });
+  await locate(player, f.place);
+  expect(await directPlaces(ctx(), npc)).toEqual([f.far]);
+  await expect(
+    f.send(0, { command: "companion-return", targetId: npc }),
+  ).rejects.toMatchObject({ code: "COMPANION_HOME_REQUIRED" });
+  expect(
+    (
+      await f.send(0, {
+        command: "companion-home",
+        targetId: npc,
+        placeId: f.place,
+      })
+    ).companions,
+  ).toMatchObject([{ mode: "wait", homeId: f.place, placeId: f.far }]);
+  expect(
+    await f.send(0, { command: "companion-return", targetId: npc }),
+  ).toMatchObject({ state: "accepted" });
+  expect(await directPlaces(ctx(), npc)).toEqual([f.place]);
+  await f.send(0, {
+    command: "companion-move",
+    targetId: npc,
+    placeId: f.far,
+  });
+  expect(await directPlaces(ctx(), npc)).toEqual([f.far]);
+
+  // 指示は、NPCの自己照会に最新の指示として出る。
+  await f.send(0, {
+    command: "companion-order",
+    targetId: npc,
+    text: "橋を見張っていて",
+  });
+  expect(
+    await access.botPlay.search(f.world, npc, { kind: "self" }),
+  ).toMatchObject({
+    companionOf: { actorId: player, mode: "wait", order: "橋を見張っていて" },
+  });
+  expect(
+    await access.botPlay.search(f.world, player, { kind: "self" }),
+  ).toMatchObject({ companions: [{ targetId: npc }] });
+
+  // 解除すると一覧とグラフの関係が終わり、移動させられなくなる。
+  expect(
+    (await f.send(0, { command: "companion-dismiss", targetId: npc }))
+      .companions,
+  ).toEqual([]);
+  expect(await ctx().marked(npc, "status", "companion")).toEqual([]);
+  await expect(
+    f.send(0, { command: "companion-move", targetId: npc, placeId: f.place }),
+  ).rejects.toMatchObject({ code: "COMPANION_REQUIRED" });
+
+  // 出現個体は、先に昇格させる必要がある。
+  const source = randomUUID();
+  f.calls.mockImplementation(async (id) => answer(id, sure));
+  await f.send(0, {
+    requestId: source,
+    command: "say",
+    text: "小鳥が現れる",
+    instantNpcs: ["小鳥"],
+  });
+  await expect(
+    f.send(0, {
+      command: "companion-request",
+      targetId: derivedId(source + ":manual:0"),
+      text: "ついてきて",
+    }),
+  ).rejects.toMatchObject({ code: "COMPANION_PROMOTION_REQUIRED" });
+  expect(judged()).toBe(2);
+});
+
+test("CLIのcompanionは操作ごとに対象・場所・指示を送り、一覧を返す", async () => {
+  const f = await fixture(),
+    db = isolated.databases.postgres,
+    npc = f.actors[1]!;
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  const run = (...args: string[]) =>
+    cli.run(join(cli.directory, "companion.json"), ...args);
+  try {
+    const connection = await run(
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    await cli.approve(
+      f.people[0]!.cookie,
+      connection.userCode,
+      `actor:${f.actors[0]}`,
+    );
+    await db.query(
+      "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,'bot',$3,$4)",
+      [f.world, npc, f.people[1]!.id, randomUUID()],
+    );
+    await db.query(
+      "INSERT INTO bot_companion(world_id,npc_id,actor_id) VALUES($1,$2,$3)",
+      [f.world, npc, f.actors[0]],
+    );
+    expect(await run("companion", "status")).toMatchObject({
+      result: { companions: [{ name: "人物1", mode: "follow" }] },
+    });
+    await run("companion", "wait", "--target", npc);
+    await run("companion", "home", "--target", npc, "--place", f.place);
+    expect(
+      await run("companion", "order", "--target", npc, "--text", "待っていて"),
+    ).toMatchObject({
+      result: {
+        companions: [
+          {
+            name: "人物1",
+            mode: "wait",
+            order: "待っていて",
+            homeId: expect.stringMatching(/^@[a-f0-9]+$/),
+          },
+        ],
+      },
+    });
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
