@@ -32,6 +32,7 @@ import {
   type WorldConstruction,
 } from "../runtime/construction.js";
 import { worldNow } from "../world/model.js";
+import { WorldConflict } from "../world/store.js";
 import { WorldScenes, type SceneRow } from "../runtime/scene.js";
 import { sceneAnchors } from "../runtime/scene-data.js";
 import { requireMember } from "./operations.js";
@@ -323,6 +324,33 @@ export class WorldAccess {
       actorId,
       connectionId,
     );
+    // 世界が更新されたら画面の読み取りをやり直す。期限処理と配達は再実行しない。
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.#readBotStatus(
+          subject,
+          id,
+          viewerId,
+          screen,
+          sceneId,
+          connectionId,
+          after,
+        );
+      } catch (error) {
+        if (!screen || !(error instanceof WorldConflict) || attempt >= 3)
+          throw error;
+      }
+    }
+  }
+  async #readBotStatus(
+    subject: string,
+    id: string,
+    viewerId: string,
+    screen: boolean,
+    sceneId?: string,
+    connectionId?: string,
+    after?: string,
+  ) {
     const status = await this.botPlay.status(id, viewerId, this.pool, screen);
     const history = await this.botPlay.history(
       id,

@@ -13,7 +13,7 @@ import { WorldAccess } from "@gestaloka/server/access";
 import { LlmClient } from "@gestaloka/server/llm";
 import { decisionSettings } from "../../packages/server/src/llm/config.js";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
-import { derivedId } from "@gestaloka/server/world";
+import { derivedId, WorldContext } from "@gestaloka/server/world";
 import type { Change } from "@gestaloka/contracts";
 import {
   addRoute,
@@ -11961,6 +11961,37 @@ test.each(["確定", "失敗"])(
     });
   },
 );
+
+test("観戦画面の読み取り中に人物が移動すると、新しい現在地を返す", async () => {
+  const f = await fixture(1);
+  await f.send(0, { command: "finish" });
+  const validate = WorldContext.prototype.validate;
+  vi.spyOn(WorldContext.prototype, "validate").mockImplementationOnce(
+    async function (this: WorldContext) {
+      await f.move(0, f.far);
+      await validate.call(this);
+    },
+  );
+  const expire = vi.spyOn(access.botPlay, "expire");
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/worlds/${f.world}/session?view=screen&actorId=${f.actors[0]}`,
+      headers: { cookie: f.people[0]!.cookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().screen.place).toBe("離れた場所");
+    expect(expire).toHaveBeenCalledTimes(1);
+  } finally {
+    await app.close();
+  }
+});
 
 test("時間をかける物品の作成は、届く時刻を過ぎてから成立し、本人あての通知になる", async () => {
   const f = await fixture();
