@@ -191,6 +191,8 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
         pageScroll: window.scrollY,
         scrollTop: element.scrollTop,
       }));
+    const pageFits = () =>
+      page.evaluate(() => document.documentElement.scrollHeight <= innerHeight);
     const device = await page.request.post("/api/player-devices", {
       headers: { ...headers, ...cliVersionHeader },
       data: {
@@ -211,8 +213,16 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
       page.getByRole("heading", { name: "2人のセッション" }),
     ).toBeVisible();
     const players = page.getByRole("complementary", { name: "プレイヤー情報" });
-    await expect(players.getByText("プロフィールの記録 40")).toBeAttached();
+    const lastProfile = players.getByText("プロフィールの記録 40");
+    await expect(lastProfile).toBeAttached();
+    expect(await pageFits()).toBe(true);
     const desktopPosition = await logPosition();
+    await lastProfile.scrollIntoViewIfNeeded();
+    await expect(lastProfile).toBeInViewport();
+    expect(
+      await players.evaluate((element) => element.scrollTop),
+    ).toBeGreaterThan(0);
+    expect(await logPosition()).toEqual(desktopPosition);
     await players.getByRole("tab", { name: "所持品" }).click();
     expect(await logPosition()).toEqual(desktopPosition);
     await page.getByRole("button", { name: "操作", exact: true }).click();
@@ -369,6 +379,7 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     await swipe(drawer, 170, 35);
     await expect(drawer).toBeHidden();
     await expect(page.locator(".play-drawer-trigger:visible")).toHaveCount(2);
+    expect(await pageFits()).toBe(true);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
