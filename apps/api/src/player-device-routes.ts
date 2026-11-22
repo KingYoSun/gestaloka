@@ -206,7 +206,7 @@ export async function playerDeviceRoutes(
       return authPage(
         reply,
         "AIにプレイを許可する",
-        `<p>${escape(world.title || world.id)}</p><p>${escape(world.description)}</p><p>AIから届いた確認のことばが <strong>${code}</strong> と同じか確かめてください。</p><p>${proposed ? "表示されている人物として遊び、顔の画像を変え、その人物が知っていることを読むのを許可します。" : "選んだ村民として遊び、顔の画像を変え、その村民が知っていることを読むのを許可します。新しく参加する場合は、その一人だけに許可します。"}</p><form method="post" action="/auth/player">${csrf}<input type="hidden" name="code" value="${code}">${choices.join("<br>")}${choices.length ? "<button>この人物のプレイを許可する</button>" : "<p>選択できる人物・参加設定がありません。</p>"}</form>${people.next ? `<a href="?code=${code}&before=${people.next}${presetsBefore ? `&presetsBefore=${presetsBefore}` : ""}">次の人物へ</a>` : ""}${presets.next ? `<a href="?code=${code}&presetsBefore=${presets.next}${before ? `&before=${before}` : ""}">次の参加設定へ</a>` : ""}`,
+        `<p>${escape(world.title || world.id)}</p><p>${escape(world.description)}</p><p>AIから届いた確認のことばが <strong>${code}</strong> と同じか確かめてください。</p><p>${proposed ? "表示されている人物として遊び、顔の画像を変え、その人物が知っていることを読むのを許可します。" : "選んだ村民として遊び、顔の画像を変え、その村民が知っていることを読むのを許可します。新しく参加する場合は、その一人だけに許可します。"}</p><p>この世界の STORIES に物語や続話を公開することも許可します。</p><form method="post" action="/auth/player">${csrf}<input type="hidden" name="code" value="${code}">${choices.join("<br>")}${choices.length ? "<button>この人物のプレイを許可する</button>" : "<p>選択できる人物・参加設定がありません。</p>"}</form>${people.next ? `<a href="?code=${code}&before=${people.next}${presetsBefore ? `&presetsBefore=${presetsBefore}` : ""}">次の人物へ</a>` : ""}${presets.next ? `<a href="?code=${code}&presetsBefore=${presets.next}${before ? `&before=${before}` : ""}">次の参加設定へ</a>` : ""}`,
       );
     },
   );

@@ -52,10 +52,11 @@ export const api = createFetchClient<paths>({
   cache: "no-store",
   headers: { "X-Gestaloka-Request": "1" },
   fetch: async (request: Request) => {
+    const path = new URL(request.url).pathname;
+    const storyRequest =
+      /^\/api\/(?:stories(?:\/|$)|worlds\/[^/]+\/stories$)/.test(path);
     const epoch = session.epoch,
-      protectedPath = !["/api/health", "/api/player-cli/latest"].includes(
-        new URL(request.url).pathname,
-      );
+      protectedPath = !["/api/health", "/api/player-cli/latest"].includes(path);
     if (session.error && protectedPath) throw new ScopeChanged();
     const response = await fetch(request);
     if (epoch !== session.epoch) throw new ScopeChanged();
@@ -64,7 +65,12 @@ export const api = createFetchClient<paths>({
       protectedPath &&
       session.id &&
       ((response.ok && identity !== session.id) ||
-        [401, 403, 404].includes(response.status))
+        ([401, 403, 404].includes(response.status) &&
+          !(
+            storyRequest &&
+            identity === session.id &&
+            response.status !== 401
+          )))
     ) {
       expireSession();
       throw new ScopeChanged();

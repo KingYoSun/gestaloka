@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Change, RelationKind, StartingItem } from "./world.js";
 import { BlueprintDraft, BlueprintPublication } from "./play.js";
+export * from "./stories.js";
 export {
   DrawReward,
   DrawTable,

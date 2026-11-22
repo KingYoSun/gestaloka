@@ -228,6 +228,9 @@ export function Participation({ id }: { id: string }) {
       <div className="page-title">
         <h1>{world.data?.title || "世界への参加"}</h1>
         <p className="plain-text">{world.data?.description}</p>
+        <Link to="/stories" search={{ worldId: id }}>
+          この世界の STORIES
+        </Link>
       </div>
       {world.error && <Problem error={world.error} />}
       <section>
