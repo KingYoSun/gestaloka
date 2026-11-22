@@ -411,6 +411,7 @@ export type Session = {
     used: number;
     stealthUsed?: number;
     nextRegular?: string;
+    instantsLeft?: number;
     lastInstant?: string;
     wakeRevision?: number;
     lastTransitionId?: string;
@@ -1627,6 +1628,19 @@ export class BotPlay {
           );
         }
         if (effectState && previous) changes.endEdges.push(previous.relationId);
+        else if (effectState && nearby)
+          // 同じ個体が同じ対象へ繰り返した作用は、前回の状態を置き換えて積み上げない。
+          for (const { relation, about } of await this.#states(
+            context,
+            effect.targetId,
+          ))
+            for (const e of about) {
+              const node = await context.node(e.target);
+              if (node?.kind === "event" && node.instantActor?.id === actorId) {
+                changes.endEdges.push(relation.id);
+                break;
+              }
+            }
         const reduction = outcome.success
           ? saved.setting.instantReduction
           : undefined;
@@ -2218,25 +2232,34 @@ export class BotPlay {
         ? d.members.filter((m) => m.instant)
         : [];
     if (!regular.length) delete d.nextRegular;
-    else if (d.nextRegular) {
-      d.turn =
-        regular.find((m) => m.actorId === d.nextRegular)?.actorId ??
-        regular[0]!.actorId;
-      delete d.nextRegular;
-    } else {
+    else {
       const next =
+        d.nextRegular ??
         regular[
           (regular.findIndex((m) => m.actorId === d.turn) + 1) % regular.length
         ]!.actorId;
-      if (instant.length) {
+      // 出現個体は通常の同席者が一巡するごとに、同席者の人数までを前回の続きから順に動く。
+      const left = d.nextRegular
+        ? (d.instantsLeft ?? 0)
+        : next === regular[0]!.actorId
+          ? Math.min(instant.length, regular.length)
+          : 0;
+      if (instant.length && left) {
         d.nextRegular = next;
+        d.instantsLeft = left - 1;
         d.turn =
           instant[
             (instant.findIndex((m) => m.actorId === d.lastInstant) + 1) %
               instant.length
           ]!.actorId;
         d.lastInstant = d.turn;
-      } else d.turn = next;
+      } else {
+        d.turn =
+          regular.find((m) => m.actorId === next)?.actorId ??
+          regular[0]!.actorId;
+        delete d.nextRegular;
+        delete d.instantsLeft;
+      }
     }
     d.number++;
     d.used = 0;

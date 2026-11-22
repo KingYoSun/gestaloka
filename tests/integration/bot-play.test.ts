@@ -4711,6 +4711,7 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
   });
   await f.send(1, { command: "end-turn" });
   await access.botPlay.tickNpcs();
+  await access.botPlay.tickNpcs();
   const npc = derivedId(source + ":manual:0");
   expect(await f.store.context(f.graph).node(npc)).toBeUndefined();
   await expect(
@@ -7838,12 +7839,14 @@ test("同じ検索の外れは確定し、発生判定1回の個体を1枠にま
   const [group] = hit.appearances as { id: string }[];
   expect(await f.store.context(f.graph).node(group!.id)).toBeUndefined();
   await f.send(0, { command: "end-turn" });
+  await f.send(1, { command: "end-turn" });
   expect((await f.status(1)).actorId).toBe(group!.id);
   f.calls.mockImplementationOnce(async (id, _role, messages) => {
     expect(JSON.parse(String(messages[1]!.content)).npc.count).toBe(2);
     return answer(id, { text: "岸に佇む" });
   });
   await access.botPlay.tickNpcs();
+  await f.send(0, { command: "end-turn" });
   await expect(
     f.send(1, {
       command: "promote-npc",
@@ -7886,8 +7889,7 @@ test("別の場所へ移って手番を終えた人物は別のセッション�
   };
   const ids = (status: { characters?: { actorId: string }[] }) =>
     status.characters!.map((c) => c.actorId);
-  expect((await f.send(0, { command: "end-turn" })).actorId).toBe(bird);
-  await peck(1);
+  expect((await f.send(0, { command: "end-turn" })).actorId).toBe(f.actors[1]);
   await f.move(1, f.far);
   await f.send(1, { command: "end-turn" });
   const stay = await f.status(0),
@@ -7901,6 +7903,87 @@ test("別の場所へ移って手番を終えた人物は別のセッション�
   await peck(0);
   await f.move(0, f.far);
   expect(ids(await f.send(0, { command: "end-turn" }))).toEqual([f.actors[0]]);
+});
+test("出現個体は同席者が一巡するごとに人数まで続きから動き、同じ対象への作用は前回の状態を置き換える", async () => {
+  const f = await fixture(),
+    source = randomUUID(),
+    seed = randomUUID(),
+    wheel = randomUUID(),
+    intact = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, seed),
+    f.store.context(f.graph),
+    {
+      at: 0,
+      commitId: seed,
+      changes: {
+        nodes: [
+          { id: wheel, kind: "existence", text: "水車" },
+          { id: intact, kind: "script", text: "羽根は無傷" },
+        ],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "content",
+            source: wheel,
+            target: intact,
+            period: { from: 0 },
+          },
+        ],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  await f.apply([
+    { type: "locate", subjectId: wheel, text: "広場", aboutIds: [f.place] },
+  ]);
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+  await f.send(0, {
+    command: "say",
+    requestId: source,
+    text: "鳥たちが降りてきた",
+    instantNpcs: ["鳥", "鴨", "鷺"],
+  });
+  const [bird, duck, heron] = [0, 1, 2].map((i) =>
+    derivedId(`${source}:manual:${i}`),
+  );
+  const act = async (text: string, mark?: string) => {
+    f.calls.mockImplementationOnce(async (id) =>
+      answer(
+        id,
+        mark ? { text, effect: { targetId: wheel, state: mark } } : { text },
+      ),
+    );
+    if (mark)
+      f.calls.mockImplementationOnce(async (id) =>
+        answer(id, { ...sure, observable: mark }),
+      );
+    await access.botPlay.tickNpcs();
+    return (await f.status(0)).actorId;
+  };
+  // 2人が一巡すると、3体のうち2体までが動き、次の巡は続きの個体から動く。
+  expect((await f.send(0, { command: "end-turn" })).actorId).toBe(f.actors[1]);
+  expect((await f.send(1, { command: "end-turn" })).actorId).toBe(bird);
+  expect(await act("羽根をつつく", "羽根につつき跡が一つある")).toBe(duck);
+  expect(await act("水辺で休む")).toBe(f.actors[0]);
+  expect((await f.send(0, { command: "end-turn" })).actorId).toBe(f.actors[1]);
+  expect((await f.send(1, { command: "end-turn" })).actorId).toBe(heron);
+  expect(await act("首を伸ばす")).toBe(bird);
+  expect(await act("羽根をつつく", "羽根につつき跡が二つある")).toBe(
+    f.actors[0],
+  );
+  const context = f.store.context(f.graph);
+  const states = await Promise.all(
+    (await context.relations(wheel, "status", "out", Number.MAX_SAFE_INTEGER))
+      .filter((e) => e.text !== "location")
+      .map(async (e) => (await context.node(e.target))?.text),
+  );
+  expect(states.sort()).toEqual(
+    ["羽根につつき跡が二つある", "羽根は無傷"].sort(),
+  );
 });
 test.each([false, true])(
   "出現場所の全員が移ると、確定直後に個体が外れて同じ手番が続く（同行者あり: %s）",
@@ -8399,7 +8482,8 @@ test.each([false, true])(
       text: "鳥が飛んできた",
       instantNpcs: ["鳥"],
     });
-    const { sessionId, turn } = await f.send(0, { command: "end-turn" });
+    await f.send(0, { command: "end-turn" });
+    const { sessionId, turn } = await f.send(1, { command: "end-turn" });
     const bird = derivedId(source + ":manual:0");
     const request = derivedId(`instant:${sessionId}:${bird}:${turn}`);
     let release!: () => void,
@@ -8472,7 +8556,7 @@ test.each([false, true])(
           expect((await ledger()).rows).toEqual([
             { state: "complete", saved: true },
           ]);
-          expect((await f.status(1)).actorId).toBe(f.actors[1]);
+          expect((await f.status(1)).actorId).toBe(f.actors[0]);
           await stop();
           stop = await startPlayLoop(play, path);
           replaced = true;
@@ -8492,7 +8576,7 @@ test.each([false, true])(
       release();
       await completed;
       await vi.waitFor(
-        async () => expect((await f.status(1)).actorId).toBe(f.actors[1]),
+        async () => expect((await f.status(1)).actorId).toBe(f.actors[0]),
         { timeout: 10000 },
       );
       await access.botPlay.tickNpcs(f.world);
@@ -8585,8 +8669,10 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
   const failed = await f.send(0, unreachable);
   expect(failed.outcome).toMatchObject({ success: false });
   expect(await f.send(0, unreachable)).toEqual(failed);
-  const next = await f.send(0, { command: "end-turn" });
+  await f.send(0, { command: "end-turn" });
+  const next = await f.send(1, { command: "end-turn" });
   const request = derivedId(`instant:${next.sessionId}:${bear}:${next.turn}`);
+  const peer = derivedId(source + ":manual:1");
   await isolated.databases.postgres.query(
     "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,1)",
     [request, { sides: 2, successThrough: 1 }],
@@ -8637,7 +8723,7 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
     release();
     await ticking;
   }
-  expect((await f.status(0)).actorId).toBe(f.actors[1]);
+  expect((await f.status(0)).actorId).toBe(peer);
   const receipt = await f.store.receipt(f.graph, request);
   expect(receipt?.changes.nodes).toContainEqual(
     expect.objectContaining({
@@ -8645,6 +8731,11 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
     }),
   );
   expect(await f.store.context(f.graph).node(bear)).toBeUndefined();
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { text: "草地へ去る", departs: true }),
+  );
+  await access.botPlay.tickNpcs();
+  await f.send(0, { command: "end-turn" });
   const pending = await f.send(1, {
     command: "promote-npc",
     sourceRequestId: source,
@@ -8672,11 +8763,7 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
     },
     { players: access.players },
   );
-  const peer = derivedId(source + ":manual:1");
-  expect((await f.send(1, { command: "end-turn" })).actorId).toBe(peer);
-  f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { text: "草地へ去る", departs: true }),
-  );
+  expect((await f.send(1, { command: "end-turn" })).actorId).toBe(bear);
   f.calls.mockImplementationOnce(async (id, _role, messages) => {
     expect((await f.status(0)).actorId).toBe(bear);
     const content = JSON.stringify(messages);
@@ -11293,7 +11380,8 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
     }),
   );
 
-  const next = await f.send(0, { command: "end-turn" });
+  await f.send(0, { command: "end-turn" });
+  const next = await f.send(1, { command: "end-turn" });
   expect(next.actorId).toBe(group!.id);
   f.calls
     .mockImplementationOnce(async (id, _role, messages) => {
@@ -11303,8 +11391,11 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
         effect: { targetId: pet, state: "羽が乱れる" },
       });
     })
-    .mockImplementationOnce(async (id) => answer(id, sure));
+    .mockImplementationOnce(async (id) => answer(id, sure))
+    .mockImplementationOnce(async (id) => answer(id, { text: "羽を整える" }));
   await access.botPlay.tickNpcs();
+  await access.botPlay.tickNpcs();
+  await f.send(0, { command: "end-turn" });
   const pending = await f.send(1, {
     command: "promote-npc",
     sourceRequestId: caught.requestId,
