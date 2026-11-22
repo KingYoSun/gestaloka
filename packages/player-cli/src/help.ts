@@ -16,6 +16,7 @@ export const playerOptions = {
   "after-wake": { type: "string" },
   "after-notice": { type: "string" },
   text: { type: "string" },
+  npc: { type: "string", multiple: true },
   description: { type: "string" },
   file: { type: "string" },
   stealth: { type: "boolean" },
@@ -132,9 +133,9 @@ const commands = {
     "contact --target @12ab34cd",
   ],
   say: [
-    "--text <発言> | --file <本文ファイル>",
-    "自分の発言と、世界を変えない行動の描写を記録。物を取る・作る・渡す・使う・食べると述べても世界の物と持ち物は変わらないため、物を動かす・減らすときは play --file で申請する。ほかの人物を動かしたと述べても、その人物の居場所と行動は変わらない。--file指定時はファイルの本文を使用。",
-    "say --text '川岸を眺めます'",
+    "(--text <発言> | --file <本文ファイル>) [--npc <個体の説明>]...",
+    "自分の発言と、世界を変えない行動の描写を記録。物を取る・作る・渡す・使う・食べると述べても世界の物と持ち物は変わらないため、物を動かす・減らすときは play --file で申請する。ほかの人物を動かしたと述べても、その人物の居場所と行動は変わらない。--file指定時はファイルの本文を使用。--npcを付けると、その場に新しい人物や生き物を登場させる申請になり、1体ごとに繰り返し指定できる。GMが設定するダイスで判定し、新規抽選は1 SP。成功すると個体が同席者に加わり、応答のinstantNpcsに出る。失敗すると発言だけが記録される。[NPCの出現・昇格・同行](npcs.md)",
+    "say --text '水盤に小鳥が降りてきた' --npc '足に白い羽根のある小鳥'",
   ],
   comment: [
     "--text <コメント> | --file <本文ファイル>",

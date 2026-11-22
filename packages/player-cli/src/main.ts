@@ -794,6 +794,7 @@ async function run() {
                   : values.text,
               }
             : {}),
+          ...(command === "say" ? { instantNpcs: values.npc } : {}),
           ...(command === "draw-configure"
             ? { description: values.description }
             : {}),
