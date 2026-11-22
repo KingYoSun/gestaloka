@@ -7,6 +7,7 @@ import {
   type BelongingOp,
 } from "../world/belongings.js";
 import { directPlaces } from "../world/locations.js";
+import { checkVehicleTravel, isVehicle } from "./vehicles.js";
 import { derivedId, type Change } from "../world/model.js";
 import type {
   ItemReservations,
@@ -94,6 +95,7 @@ export async function deliverPickups(
 
 export async function planRelocation(
   db: Pick<pg.Pool, "query">,
+  world: string,
   context: ReturnType<WorldStore["context"]>,
   actor: string,
   storageId: string,
@@ -102,6 +104,34 @@ export async function planRelocation(
   request: string,
 ) {
   const site = await context.installation(storageId);
+  if (site && (await isVehicle(context, storageId))) {
+    const vehicleResult = await checkVehicleTravel(
+      db,
+      world,
+      context,
+      actor,
+      storageId,
+      placeId,
+    );
+    const plan = await planBelongings(context, request, at, [
+      {
+        type: "locate",
+        subjectId: storageId,
+        text: "乗り物で移動する",
+        aboutIds: [placeId],
+      },
+    ]);
+    return {
+      ...plan,
+      vehicleResult,
+      storageEffect: {
+        type: "relocate" as const,
+        storageId,
+        managerId: site.manager,
+        placeId,
+      },
+    };
+  }
   if (site?.manager !== actor || !site.policy.relocatable)
     return reject("この保管先を移設する権限がありません");
   const [here] = await directPlaces(context, actor);
@@ -219,6 +249,7 @@ export async function storageCommand(
   if (input.command === "storage-relocate") {
     const plan = await planRelocation(
       db,
+      world,
       context,
       actor,
       storageId,
