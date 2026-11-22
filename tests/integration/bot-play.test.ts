@@ -10461,7 +10461,14 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
   await f.store.configureInventory(f.graph, true);
   await later.expire(f.world);
   expect(await held()).not.toContainEqual({ label: "ミルク", count: 10 });
-  expect(await arriving()).toMatchObject([{ dueAt: arrival.dueAt }]);
+  expect(
+    (
+      await isolated.databases.postgres.query(
+        "SELECT due FROM bot_arrival WHERE id=$1",
+        [first.requestId],
+      )
+    ).rows,
+  ).toMatchObject([{ due: new Date(dueAt) }]);
   await f.apply([
     {
       type: "remove",
