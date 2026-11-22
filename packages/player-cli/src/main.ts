@@ -735,16 +735,19 @@ async function run() {
                 },
               }
             : {}),
-          ...(command === "contact" ||
+          ...(["contact", "draw", "draw-configure"].includes(command) ||
           (command === "team" && teamAction === "invite")
             ? { targetId: values.target }
             : {}),
-          ...(["say", "comment", "memo", "explore"].includes(command)
+          ...(["say", "comment", "memo", "explore", "draw"].includes(command)
             ? {
                 text: values.file
                   ? await readFile(values.file, "utf8")
                   : values.text,
               }
+            : {}),
+          ...(command === "draw-configure"
+            ? { description: values.description }
             : {}),
           ...(command === "memo"
             ? {

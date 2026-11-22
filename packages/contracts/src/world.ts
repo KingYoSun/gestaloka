@@ -108,7 +108,7 @@ export const WorldNode = z.discriminatedUnion("kind", [
     .object({
       ...Content,
       kind: z.literal("script"),
-      type: z.literal("memo").optional(),
+      type: z.enum(["memo", "draw-source"]).optional(),
       spawn: SpawnRule.optional(),
       viewers,
     })

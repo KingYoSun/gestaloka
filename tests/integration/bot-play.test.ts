@@ -8313,6 +8313,298 @@ test("同じ利用者の残り1 SPを同時申請で共有し、使い切った�
   });
 });
 
+test("抽選器を審査し、別の人物が結果を受け取り、同席者の履歴に残す", async () => {
+  const f = await fixture();
+  const [creator, visitor] = f.actors;
+  const shrine = (
+    await f.apply([
+      {
+        type: "create",
+        holder: visitor,
+        label: "旅の祠",
+        basis: "検証用の持ち物",
+      },
+    ])
+  ).changes.nodes[0]!.id;
+  const search = (i: number, targetId: string) =>
+    f.send(i, {
+      command: "search",
+      query: { kind: "subject", targetId },
+    });
+  const configure = (targetId: string, description: string) =>
+    f.send(0, { command: "draw-configure", targetId, description });
+  const draw = (i: number, targetId: string) =>
+    f.send(i, { command: "draw", targetId });
+  expect(() => configure(f.place, "  ")).toThrow();
+  expect(f.calls).not.toHaveBeenCalled();
+  await f.send(1, { command: "contact", targetId: creator });
+  await expect(draw(1, f.place)).rejects.toMatchObject({
+    code: "TURN_REQUIRED",
+  });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { accepted: false, reason: "由来が不明です" }),
+  );
+  expect(await configure(f.place, "何でも出る")).toMatchObject({
+    accepted: false,
+    state: "rejected",
+    reason: "由来が不明です",
+    spentSp: 0,
+  });
+  expect((await search(0, f.place)).material).not.toHaveProperty("draw");
+  vi.spyOn(runtime.agent.model, "decision", "get").mockReturnValue(
+    decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+  );
+  const jev = vi
+    .spyOn(runtime.agent.model, "decide")
+    .mockResolvedValueOnce({ f0: 1 });
+  expect(await configure(f.place, "どんな物でも得られる")).toMatchObject({
+    accepted: false,
+    reason: "由来が不明です",
+    repeated: true,
+    spentSp: 0,
+  });
+  expect(jev).toHaveBeenCalledWith(
+    expect.any(String),
+    "world-draw-repeat",
+    expect.any(Object),
+    expect.any(Object),
+  );
+  expect(f.calls).toHaveBeenCalledTimes(1);
+  jev.mockResolvedValueOnce({ f0: 0 });
+  f.calls.mockImplementation(async (id, role, messages) => {
+    if (role === "world-draw-review")
+      return answer(id, { accepted: true, reason: "範囲が明確です" });
+    expect(role).toBe("world-draw");
+    const material = JSON.parse(String(messages[1]!.content));
+    expect(JSON.stringify(messages)).not.toMatch(/幻の王冠|看板の下/);
+    return answer(
+      id,
+      material.target === "旅の祠"
+        ? {
+            kind: "skill",
+            text: "乾いた木材の空洞を、表面を叩いた音で聞き分けられる",
+          }
+        : { kind: "item", label: "片側だけの真鍮の蝶番" },
+    );
+  });
+  const description = "ガラクタの中から道具の部品が一つ見つかる";
+  expect(await configure(f.place, description)).toMatchObject({
+    accepted: true,
+    state: "confirmed",
+    spentSp: 0,
+  });
+  const pending = await configure(
+    shrine,
+    "旅の祈りで木工に関わる小さな技能を授かる",
+  );
+  expect(pending).toMatchObject({
+    accepted: true,
+    state: "receiving",
+    spentSp: 0,
+  });
+  await f.send(1, {
+    command: "receive",
+    applicationId: pending.applicationId,
+    accept: true,
+  });
+  await f.send(0, { command: "say", text: "幻の王冠が出ますように" });
+  await expect(draw(0, shrine)).rejects.toMatchObject({
+    code: "DRAW_NOT_IN_REACH",
+  });
+  await f.send(0, { command: "end-turn" });
+  const nearby = await f.send(1, {
+    command: "search",
+    query: { kind: "surroundings" },
+  });
+  expect(nearby.material).toMatchObject({
+    subjects: expect.arrayContaining([
+      expect.objectContaining({
+        id: f.place,
+        draw: expect.objectContaining({
+          mode: "gm",
+          description,
+          spCost: 1,
+          available: true,
+        }),
+      }),
+    ]),
+  });
+  expect((await search(1, shrine)).material).toMatchObject({
+    draw: { available: true, spCost: 1 },
+  });
+  expect(
+    f.calls.mock.calls.filter(([, role]) => role === "world-draw"),
+  ).toHaveLength(0);
+  const request = {
+    command: "draw",
+    requestId: randomUUID(),
+    targetId: f.place,
+    text: "看板の下を探る。幻の王冠が欲しい",
+  };
+  const beforeDraw = (await f.status(1)).callsUsed;
+  const commit = f.store.commit.bind(f.store);
+  vi.spyOn(f.store, "commit").mockImplementationOnce(async (...args) => {
+    await commit(...args);
+    throw new Error("グラフ確定後に接続が切れた");
+  });
+  await expect(f.send(1, request)).rejects.toThrow(
+    "グラフ確定後に接続が切れた",
+  );
+  const item = await f.send(1, request);
+  expect(item).toMatchObject({
+    reward: { kind: "item", label: "片側だけの真鍮の蝶番" },
+    spentSp: 1,
+    dailySp: { remaining: 99 },
+  });
+  expect(item.callsUsed).toBe(Number(beforeDraw) + 1);
+  expect(await f.send(1, request)).toEqual(item);
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  const profile = join(cli.directory, "draw.json");
+  let skill;
+  try {
+    const connected = await cli.run(
+      profile,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    await cli.approve(
+      f.people[1]!.cookie,
+      connected.userCode,
+      `actor:${visitor}`,
+    );
+    cli.dropNextResponse("draw");
+    const lost = await cli.run(
+      profile,
+      "draw",
+      "--target",
+      shrine,
+      "--full-ids",
+    );
+    expect(lost.state).toBe("error");
+    const recovered = await cli.run(profile, "recover", "--full-ids");
+    expect(recovered.requestId).toBe(lost.requestId);
+    skill = recovered.result;
+  } finally {
+    await cli.close();
+  }
+  expect(skill).toMatchObject({
+    reward: { kind: "skill" },
+    spentSp: 1,
+    dailySp: { remaining: 98 },
+  });
+  expect(
+    await readBelongings(f.store.context(f.graph), visitor!),
+  ).toMatchObject({
+    items: expect.arrayContaining([
+      expect.objectContaining({ id: (item.reward as { id: string }).id }),
+    ]),
+    skills: [
+      expect.objectContaining({
+        id: (skill.reward as { id: string }).id,
+        text: expect.stringContaining("乾いた木材"),
+      }),
+    ],
+  });
+  await f.send(1, { command: "end-turn" });
+  const witness = JSON.stringify((await f.status(0)).entries);
+  expect(witness).toContain("看板の下を探る");
+  expect(witness).toContain("片側だけの真鍮の蝶番");
+  expect(witness).toContain("乾いた木材");
+  expect(
+    f.calls.mock.calls.filter(([, role]) => role === "world-draw"),
+  ).toHaveLength(2);
+});
+
+test("現地に置かれた物品から引け、共有残量1 SPで競合しても一件だけ生成する", async () => {
+  const f = await fixture();
+  const user = f.people[0]!.id;
+  const db = isolated.databases.postgres;
+  const box = (
+    await f.apply([
+      {
+        type: "create",
+        holder: f.place,
+        label: "福箱",
+        basis: "広場に置かれた箱",
+      },
+    ])
+  ).changes.nodes[0]!.id;
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { accepted: true, reason: "成立する" }),
+  );
+  expect(
+    await f.send(0, {
+      command: "draw-configure",
+      targetId: box,
+      description: "色のついた石が出る",
+    }),
+  ).toMatchObject({ state: "confirmed" });
+  expect(
+    (await f.send(0, { command: "search", query: { kind: "surroundings" } }))
+      .material,
+  ).toMatchObject({
+    subjects: expect.arrayContaining([
+      expect.objectContaining({
+        id: f.place,
+        held: expect.arrayContaining([
+          expect.objectContaining({
+            id: box,
+            draw: expect.objectContaining({ available: true }),
+          }),
+        ]),
+      }),
+    ]),
+  });
+  await expect(
+    f.send(2, { command: "draw", targetId: box }),
+  ).rejects.toMatchObject({ code: "DRAW_NOT_IN_REACH" });
+  const { resetsAt } = await access.botPlay.dailySp(f.world, user);
+  await db.query(
+    `INSERT INTO bot_request(id,actor_id,world_id,hash,sp_user,sp_reset) SELECT gen_random_uuid(),$1,$2,'fixture',$3,$4 FROM generate_series(1,99)`,
+    [f.actors[0], f.world, user, resetsAt],
+  );
+  await db.query(
+    "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3)",
+    [user, f.world, f.actors[1]],
+  );
+  const requests = [0, 1].map(() =>
+    PlayCommand.parse({
+      command: "draw",
+      requestId: randomUUID(),
+      targetId: box,
+    }),
+  );
+  const send = (i: number) =>
+    access.botCommand(user, f.world, requests[i]!, f.actors[i]);
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { kind: "item", label: "青い小石" }),
+  );
+  const results = await Promise.allSettled([send(0), send(1)]);
+  const winner = results.findIndex(({ status }) => status === "fulfilled");
+  expect(winner).toBeGreaterThanOrEqual(0);
+  expect(results[1 - winner]).toMatchObject({
+    status: "rejected",
+    reason: { code: "DAILY_SP_EXHAUSTED" },
+  });
+  expect(results[winner]).toMatchObject({
+    status: "fulfilled",
+    value: { dailySp: { remaining: 0 }, spentSp: 1 },
+  });
+  expect({ status: "fulfilled", value: await send(winner) }).toEqual(
+    results[winner],
+  );
+  expect(f.calls).toHaveBeenCalledTimes(2);
+});
+
 test("新しい場所は接続元を指定して申請し、ダイスの成否と行き来の手がかりを残す", async () => {
   const f = await fixture(),
     app = await createApp(access, auth.identity, undefined, auth.operations),

@@ -16,6 +16,7 @@ export const playerOptions = {
   "after-wake": { type: "string" },
   "after-notice": { type: "string" },
   text: { type: "string" },
+  description: { type: "string" },
   file: { type: "string" },
   stealth: { type: "boolean" },
   after: { type: "string" },
@@ -100,6 +101,14 @@ const commands = {
     "--kind <surroundings|self|history|subject|memos|seek> [--target <ID>]",
     "本人の手番で素材を検索。seekは今いる場所を捜索し、発見した相手の名前とIDを返す。subjectには対象IDを指定し、historyには必要に応じて相手を指定。selfのbelongingsに、本人の持ち物・保管先の中身・技能が出る。surroundingsのsubjects[].heldに、同じ場所にいる相手が手にしている物が出る。surroundingsのroutesに、直接滞在している場所と行き来の記述で結ばれた場所の名前(label)とIDが出る。移動の手がかりで、載っていない場所へも移動を申請できる。",
     "search --kind subject --target @12ab34cd",
+  ],
+  "draw-configure": [
+    "--target <対象ID> --description <説明>",
+    "既存の場所・物品を抽選器にする申請。得られる結果の範囲を説明する。GMの審査は0 SP。必要な受領がそろうと公開される。",
+  ],
+  draw: [
+    "--target <対象ID> [--text <行動>]",
+    "本人の通常手番に、現在地・現地に置かれた物品・手持ちの抽選器から一件引く。searchで説明・利用条件・消費を確認できる。1 SP。",
   ],
   contact: [
     "--target <人物ID>",

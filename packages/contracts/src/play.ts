@@ -353,6 +353,22 @@ export const PlayCommand = z.discriminatedUnion("command", [
   z
     .object({
       ...request,
+      command: z.literal("draw-configure"),
+      targetId: id,
+      description: text.describe("この抽選器から繰り返し得られる結果の範囲"),
+    })
+    .strict(),
+  z
+    .object({
+      ...request,
+      command: z.literal("draw"),
+      targetId: id,
+      text: text.optional().describe("同席者に伝える行動の描写"),
+    })
+    .strict(),
+  z
+    .object({
+      ...request,
       command: z.literal("search"),
       // 旧版のCLIが送るbelongingsは受け付けて、本人検索へ誘導する。
       query: z.union([

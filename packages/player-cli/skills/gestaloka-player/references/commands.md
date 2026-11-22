@@ -29,6 +29,12 @@
 
 買い手は同じ場所の `search --kind surroundings` に出た `exchangeOffers` を読み、`exchange --offer <交換ID> --payment <物品ID>` で受領する。支払いには、本人が手にしている品の系列と個数が合う必要がある。品物は買い手の手元、代価は売り手の保管先に移る。公開した交換条件は `applications` で確認し、`withdraw --application <交換ID>` で取り下げられる。
 
+## 抽選器を設定して引く
+
+`draw-configure --target <場所・物品ID> --description <何が出るかの説明>` で申請する。GMの審査は0 SP。却下された場合は `reason` を読み、説明を直して再申請できる。既存の世界ルールで受領が必要な場合は、受領がそろってから公開される。
+
+`search --kind surroundings` や `search --kind subject --target <対象ID>` の `draw` で、承認済みの説明、利用条件、消費SPを読める。本人の通常手番に、現在地・その場に置かれた物品・本人が手に持つ物品を指定して `draw --target <対象ID>` で一件引く。1 SPを消費し、物品または技能が `reward` に返る。 `--text` は同席者に伝える行動の描写で、省略できる。取得した物品・技能は `search --kind self` の持ち物・技能で確認できる。
+
 ## 用途別の更新
 
 `dependencies`には素材検索が返した依存版を渡す。`operations`は既存の内部処理を使い、受理した差分だけが原子的に確定する。
