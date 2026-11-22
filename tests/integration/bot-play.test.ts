@@ -4535,7 +4535,7 @@ test("バックグラウンドのlistenが待機を維持し、後から来た�
       runtime,
       () =>
         new Date(Date.parse((ordered.arrival as { dueAt: string }).dueAt) + 1),
-    ).expire(f.world);
+    ).deliverArrivals(f.world);
     await vi.waitFor(
       () =>
         expect(events).toContainEqual(
@@ -8555,6 +8555,35 @@ test("CLIは招待を受けた本人が短縮IDでチームに加入し、離脱
   }
 });
 
+test("到着処理を待っている間も期限処理とNPC手番を進める", async () => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const play = {
+    deliverArrivals: vi.fn(() => pending),
+    expire: vi.fn(async () => {}),
+    tickNpcs: vi.fn(async () => {}),
+  };
+  const stop = await startPlayLoop(play);
+  try {
+    await vi.waitFor(
+      () => expect(play.deliverArrivals).toHaveBeenCalledOnce(),
+      {
+        timeout: 5000,
+      },
+    );
+    await vi.waitFor(() => expect(play.tickNpcs).toHaveBeenCalledTimes(2), {
+      timeout: 5000,
+    });
+    expect(play.expire).toHaveBeenCalledTimes(2);
+    expect(play.deliverArrivals).toHaveBeenCalledOnce();
+  } finally {
+    release();
+    await stop();
+  }
+});
+
 test.each([false, true])(
   "NPCの対抗判定中のワーカー交換（待機上限超過=%s）",
   async (timeout) => {
@@ -8613,6 +8642,7 @@ test.each([false, true])(
     const path = workerSocket(process.pid);
     let paused = () => false;
     const play = {
+      deliverArrivals: () => access.botPlay.deliverArrivals(f.world),
       expire: () => access.botPlay.expire(f.world),
       tickNpcs: (_?: string, stopping = () => false) => {
         paused = stopping;
@@ -12049,7 +12079,9 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
   // 届く時刻の前の定期処理では何も変わらない。
   const user = f.people[0]!.id,
     waiting = () => access.waiting(user, f.world, f.actors[0], "view", true);
-  await new BotPlay(runtime, () => new Date(dueAt - 1)).expire(f.world);
+  await new BotPlay(runtime, () => new Date(dueAt - 1)).deliverArrivals(
+    f.world,
+  );
   expect(await held()).toHaveLength(1);
   expect((await f.status(0)).unreadNotices).toBeUndefined();
   expect((await waiting()).noticeKey).toBeNull();
@@ -12065,7 +12097,10 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
     },
   ]);
   await f.store.configureInventory(f.graph, true);
-  await later.expire(f.world);
+  const claim = vi.spyOn(f.store, "claim"),
+    commit = derivedId(first.requestId + ":arrival");
+  await later.deliverArrivals(f.world);
+  expect(claim).not.toHaveBeenCalledWith(f.graph, commit);
   expect(await held()).not.toContainEqual({ label: "ミルク", count: 10 });
   expect(
     (
@@ -12081,8 +12116,11 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
       id: filler.changes.nodes.find((n) => n.kind === "existence")!.id,
     },
   ]);
-  await later.expire(f.world);
-  await later.expire(f.world);
+  await Promise.all([
+    later.deliverArrivals(f.world),
+    later.deliverArrivals(f.world),
+  ]);
+  expect(claim.mock.calls.filter(([, id]) => id === commit)).toHaveLength(1);
   expect(await held()).toEqual(
     expect.arrayContaining([
       { label: "銀貨", count: 3 },

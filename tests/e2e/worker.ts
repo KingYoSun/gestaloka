@@ -8,7 +8,10 @@ const scenes = new WorldScenes(runtime);
 await scenes.setup();
 const play = new BotPlay(runtime);
 await play.setup();
-const timer = setInterval(() => void play.expire().catch(console.error), 1000);
+const timer = setInterval(() => {
+  void play.expire().catch(console.error);
+  void play.deliverArrivals().catch(console.error);
+}, 1000);
 timer.unref();
 const players = new WorldPlayers(runtime);
 await players.setup();
