@@ -2723,6 +2723,24 @@ export interface paths {
                         /** Format: uuid */
                         requestId: string;
                         /** @enum {string} */
+                        command: "draw-configure";
+                        /** Format: uuid */
+                        targetId: string;
+                        /** @description この抽選器から繰り返し得られる結果の範囲 */
+                        description: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "draw";
+                        /** Format: uuid */
+                        targetId: string;
+                        /** @description 同席者に伝える行動の描写 */
+                        text?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
                         command: "search";
                         query: ({
                             /** @enum {string} */
@@ -2927,7 +2945,7 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "script";
                                 /** @enum {string} */
-                                type?: "memo";
+                                type?: "memo" | "draw-source";
                                 spawn?: {
                                     /** @enum {string} */
                                     kind: "instant-npc" | "existence" | "script" | "event";
@@ -3018,7 +3036,7 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "script";
                                 /** @enum {string} */
-                                type?: "memo";
+                                type?: "memo" | "draw-source";
                                 spawn?: {
                                     /** @enum {string} */
                                     kind: "instant-npc" | "existence" | "script" | "event";
@@ -3182,7 +3200,7 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "script";
                                 /** @enum {string} */
-                                type?: "memo";
+                                type?: "memo" | "draw-source";
                                 spawn?: {
                                     /** @enum {string} */
                                     kind: "instant-npc" | "existence" | "script" | "event";
@@ -3273,7 +3291,7 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "script";
                                 /** @enum {string} */
-                                type?: "memo";
+                                type?: "memo" | "draw-source";
                                 spawn?: {
                                     /** @enum {string} */
                                     kind: "instant-npc" | "existence" | "script" | "event";
@@ -3411,7 +3429,7 @@ export interface paths {
                                     /** @enum {string} */
                                     kind: "script";
                                     /** @enum {string} */
-                                    type?: "memo";
+                                    type?: "memo" | "draw-source";
                                     spawn?: {
                                         /** @enum {string} */
                                         kind: "instant-npc" | "existence" | "script" | "event";
@@ -3502,7 +3520,7 @@ export interface paths {
                                     /** @enum {string} */
                                     kind: "script";
                                     /** @enum {string} */
-                                    type?: "memo";
+                                    type?: "memo" | "draw-source";
                                     spawn?: {
                                         /** @enum {string} */
                                         kind: "instant-npc" | "existence" | "script" | "event";
@@ -3827,7 +3845,7 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "script";
                                 /** @enum {string} */
-                                type?: "memo";
+                                type?: "memo" | "draw-source";
                                 spawn?: {
                                     /** @enum {string} */
                                     kind: "instant-npc" | "existence" | "script" | "event";
@@ -3918,7 +3936,7 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "script";
                                 /** @enum {string} */
-                                type?: "memo";
+                                type?: "memo" | "draw-source";
                                 spawn?: {
                                     /** @enum {string} */
                                     kind: "instant-npc" | "existence" | "script" | "event";
@@ -4464,7 +4482,7 @@ export interface paths {
                                             /** @enum {string} */
                                             kind: "script";
                                             /** @enum {string} */
-                                            type?: "memo";
+                                            type?: "memo" | "draw-source";
                                             spawn?: {
                                                 /** @enum {string} */
                                                 kind: "instant-npc" | "existence" | "script" | "event";
@@ -4555,7 +4573,7 @@ export interface paths {
                                             /** @enum {string} */
                                             kind: "script";
                                             /** @enum {string} */
-                                            type?: "memo";
+                                            type?: "memo" | "draw-source";
                                             spawn?: {
                                                 /** @enum {string} */
                                                 kind: "instant-npc" | "existence" | "script" | "event";
@@ -7049,7 +7067,7 @@ export interface paths {
                                     /** @enum {string} */
                                     kind: "script";
                                     /** @enum {string} */
-                                    type?: "memo";
+                                    type?: "memo" | "draw-source";
                                     spawn?: {
                                         /** @enum {string} */
                                         kind: "instant-npc" | "existence" | "script" | "event";
@@ -7140,7 +7158,7 @@ export interface paths {
                                     /** @enum {string} */
                                     kind: "script";
                                     /** @enum {string} */
-                                    type?: "memo";
+                                    type?: "memo" | "draw-source";
                                     spawn?: {
                                         /** @enum {string} */
                                         kind: "instant-npc" | "existence" | "script" | "event";

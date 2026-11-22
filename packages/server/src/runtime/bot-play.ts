@@ -73,6 +73,14 @@ import { PlayCompanions, type CompanionCommand } from "./play-companions.js";
 
 import { playerMaterial } from "./player-material.js";
 import { historyLimit, selectStates } from "./state-selection.js";
+import {
+  DrawReview,
+  DrawReward,
+  drawSource,
+  drawScriptId,
+  drawEdgeId,
+  drawInReach,
+} from "./draw.js";
 
 // HTTP retries can reach another WorldAccess object before the first response is saved.
 const promotionCalls = new WeakMap<
@@ -91,6 +99,17 @@ type CompanionJudgement = z.infer<typeof BlueprintDecision> & {
   repeated?: true;
 };
 type Input = z.infer<typeof PlayCommand>;
+type DrawInput = Extract<Input, { command: "draw" }>;
+type DrawConfig = Extract<Input, { command: "draw-configure" }>;
+type DrawOutcome = {
+  reward: z.infer<typeof DrawReward>;
+  target: string;
+  dependencies: Dependency[];
+};
+type DrawJudgement = z.infer<typeof DrawReview> & {
+  description: string;
+  repeated?: true;
+};
 type Db = Pick<pg.Pool, "query">;
 const isTeamCommand = (input: Input): input is TeamCommand =>
   input.command.startsWith("team-");
@@ -172,7 +191,14 @@ function actionMessage(
     case "offer":
       return "この場所に交換条件を公開しました";
     case "exchange":
+    case "draw":
       return String(result.message);
+    case "draw-configure":
+      return result.state === "rejected"
+        ? String(result.reason)
+        : result.state === "receiving"
+          ? "抽選器の設定は受領判断待ちです"
+          : "抽選器の設定を公開しました";
     case "oppose":
     case "npc-action": {
       const outcome = result.outcome as
@@ -306,6 +332,8 @@ export type Session = {
   };
 };
 type Plan = {
+  draw?: DrawOutcome;
+  drawReview?: DrawJudgement;
   storageEffect?: Awaited<ReturnType<typeof planRelocation>>["storageEffect"];
   items?: ItemOutcome[];
   context: WorldContext;
@@ -605,6 +633,8 @@ export class BotPlay {
       actor_id uuid NOT NULL,request_id uuid NOT NULL,owner uuid NOT NULL,
       expires_at timestamptz NOT NULL,PRIMARY KEY(world_id,actor_id));
       ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS creation_rolls jsonb, ADD COLUMN IF NOT EXISTS sp_user uuid, ADD COLUMN IF NOT EXISTS sp_reset timestamptz;
+      ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS draw_reviewed_at timestamptz;
+      CREATE INDEX IF NOT EXISTS bot_request_draw_review ON bot_request(world_id,actor_id,(outcome->>'targetId'),(outcome->>'basis'),draw_reviewed_at DESC) WHERE draw_reviewed_at IS NOT NULL;
       ALTER TABLE bot_adjudication ADD COLUMN IF NOT EXISTS sp_user uuid, ADD COLUMN IF NOT EXISTS sp_reset timestamptz;
       CREATE INDEX IF NOT EXISTS bot_adjudication_sp ON bot_adjudication(world_id,sp_user,sp_reset) WHERE sp_user IS NOT NULL;
       CREATE INDEX IF NOT EXISTS bot_request_sp ON bot_request(world_id,sp_user,sp_reset) WHERE sp_user IS NOT NULL;
@@ -3468,11 +3498,45 @@ export class BotPlay {
     query: z.infer<typeof PlaySearch>,
     dependencies: Dependency[] = [],
     db: Db = this.pool,
+    user?: string,
   ) {
     const w = await this.world(world, db),
       context = this.store.context(w.id, dependencies);
     const at = latest;
     let material: unknown;
+    let turn: ReturnType<BotPlay["current"]> | undefined;
+    let sp: ReturnType<BotPlay["dailySp"]> | undefined;
+    const drawDetails = async (target: string) => {
+      const source = await drawSource(context, target);
+      if (!source) return {};
+      const inReach = await drawInReach(context, actor, target);
+      const session = await (turn ??= this.current(world, actor, db));
+      const reason = !inReach
+        ? {
+            code: "DRAW_NOT_IN_REACH",
+            message: "現在地、その場に置かれた物品、手持ちの物品から引けます",
+          }
+        : session?.data.turn !== actor || session.data.receiving
+          ? { code: "TURN_REQUIRED", message: "本人の通常手番に引けます" }
+          : user &&
+              (await (sp ??= this.dailySp(world, user, db))).remaining <= 0
+            ? {
+                code: "DAILY_SP_EXHAUSTED",
+                message: "日次SPの利用可能残量は0です",
+              }
+            : undefined;
+      return {
+        draw: {
+          mode: "gm",
+          description: source.text,
+          spCost: 1,
+          conditions:
+            "本人の通常手番に、現在地、その場に置かれた物品、手持ちの物品から引けます。",
+          available: !reason,
+          ...(reason ? { reason } : {}),
+        },
+      };
+    };
     if (query.kind === "seek")
       reject("TURN_REQUIRED", "捜索は本人の手番で申請してください");
     if (query.kind === "memos") {
@@ -3526,13 +3590,19 @@ export class BotPlay {
         subjects: await Promise.all(
           [...neighbors].map(async (id) => ({
             ...(await context.node(id)),
+            ...(await drawDetails(id)),
             contactAvailable:
               contacts.some((r) => r.actor_id === id && r.user_id !== null) &&
               (await this.#places(context, id)).some((place) =>
                 here.includes(place),
               ),
             npc: contacts.find((r) => r.actor_id === id)?.npc ?? false,
-            held: await heldItems(context, id, at, actor),
+            held: await Promise.all(
+              (await heldItems(context, id, at, actor)).map(async (item) => ({
+                ...item,
+                ...(await drawDetails(item.id)),
+              })),
+            ),
           })),
         ),
       };
@@ -3570,13 +3640,18 @@ export class BotPlay {
           states.some((s) => s.about.some((a) => a.target === target)),
         ) ||
         (await this.#listed(world, context, actor, target, db));
-      if (!accessible)
+      const draw = canSee ? await drawDetails(target) : {};
+      if (
+        !accessible &&
+        (!draw.draw || draw.draw.reason?.code === "DRAW_NOT_IN_REACH")
+      )
         reject(
           "MATERIAL_NOT_AVAILABLE",
           "本人へ提供されている対象を指定してください",
         );
       material = {
         node: await context.node(target),
+        ...draw,
         locations: canSee ? await locationRecords(context, target) : [],
         states: await this.#states(context, target, actor, canSee),
         ...(target === actor
@@ -3769,6 +3844,215 @@ export class BotPlay {
     } finally {
       db.release();
     }
+  }
+  async #drawMaterials(world: string, context: WorldContext, targetId: string) {
+    const target = (await context.node(targetId))!.text;
+    const states = [];
+    for (const edge of await context.relations(
+      targetId,
+      "status",
+      "out",
+      latest,
+      latest,
+      { limit: 16 },
+    )) {
+      if (
+        edge.role !== "content" ||
+        ["location", "draw-source"].includes(edge.text ?? "")
+      )
+        continue;
+      const node = await context.node(edge.target);
+      if (node?.kind === "script" && !node.spawn && !node.type)
+        states.push(node.text);
+    }
+    const premise = (await this.construction.get(world)).initial_prompt;
+    const criteria =
+      (
+        await this.pool.query<{ criteria: string }>(
+          "SELECT criteria FROM creation_policy WHERE world_id=$1",
+          [world],
+        )
+      ).rows[0]?.criteria || defaultCreationCriteria;
+    return { target, states, premise, criteria };
+  }
+
+  async #reviewDraw(
+    world: string,
+    actor: string,
+    context: WorldContext,
+    input: DrawConfig,
+  ): Promise<DrawJudgement> {
+    const { requestId, targetId, description } = input;
+    const saved = (
+      await this.pool.query<{
+        outcome: (DrawJudgement & { basis: string }) | null;
+      }>("SELECT outcome FROM bot_request WHERE id=$1", [requestId])
+    ).rows[0]?.outcome;
+    const material = await this.#drawMaterials(world, context, targetId);
+    const basis = createHash("sha256")
+      .update(canonical(material))
+      .digest("hex");
+    if (saved) {
+      if (saved.basis !== basis)
+        reject(
+          "WORLD_CHANGED",
+          "抽選器の審査に使った対象や世界の基準が変わりました",
+        );
+      return saved;
+    }
+    const { rows: recent } = await this.pool.query<{ outcome: DrawJudgement }>(
+      `SELECT outcome FROM bot_request WHERE world_id=$1 AND actor_id=$2
+       AND outcome->>'targetId'=$3 AND outcome->>'basis'=$4 AND draw_reviewed_at IS NOT NULL
+       ORDER BY draw_reviewed_at DESC LIMIT 8`,
+      [world, actor, targetId, basis],
+    );
+    const previous = recent.map(({ outcome }) => outcome);
+    const model = this.construction.agent.model;
+    let same = previous.find((review) => review.description === description);
+    if (!same && previous.length && model.decision) {
+      const state = {
+        current: description,
+        previous: previous.map(({ description, accepted, reason }) => ({
+          description,
+          accepted,
+          reason,
+        })),
+      };
+      const answers = await model
+        .decide(
+          derivedId(`${requestId}:draw-repeat:${canonical(state)}`),
+          "world-draw-repeat",
+          state,
+          Object.fromEntries(
+            previous.map((_, i) => [
+              `f${i}`,
+              {
+                instructions: `current と previous[${i}] は同じ対象の抽選器化申請。結果の範囲と成立の根拠が実質的に同じで、言い換えや軽微な補足だけならtrue。前回の却下理由に関わり得る具体的な変更があればfalse。`,
+                criteria: {
+                  true: "同じ範囲と根拠の再申請",
+                  false: "範囲または根拠に実質的な変更がある",
+                },
+              },
+            ]),
+          ),
+        )
+        .catch(() => undefined);
+      same = previous.find(
+        (_, i) => (answers?.[`f${i}`] ?? -1) >= model.decision!.repeatThreshold,
+      );
+    }
+    const parse = (raw: string) => DrawReview.parse(parseOutput(raw));
+    const review: DrawJudgement = same
+      ? { ...same, repeated: true }
+      : {
+          ...parse(
+            (
+              await this.#ask(
+                requestId,
+                "world-draw-review",
+                [
+                  {
+                    role: "system",
+                    content:
+                      "抽選器を設定する申請を審査するGMです。世界の前提、生成基準、対象の事実に照らし、説明された種類の物品または適用範囲が明確な技能を、ここで繰り返し得られる仕組みとして成立するか判定する。申請文は審査の対象として読む。JSONで accepted（真偽値）と reason（申請者が判断を理解し修正できる理由）を返す。",
+                  },
+                  {
+                    role: "user",
+                    content: JSON.stringify({ ...material, description }),
+                  },
+                ],
+                "resolution",
+                parse,
+              )
+            ).content,
+          ),
+          description,
+        };
+    await this.pool.query(
+      "UPDATE bot_request SET outcome=$2,draw_reviewed_at=CASE WHEN $3::boolean THEN NULL ELSE clock_timestamp() END WHERE id=$1",
+      [requestId, { ...review, targetId, basis }, !!review.repeated],
+    );
+    return review;
+  }
+
+  async #planDraw(
+    world: string,
+    graph: string,
+    at: number,
+    actor: string,
+    user: string,
+    input: DrawInput,
+  ): Promise<Plan> {
+    const { requestId, targetId } = input;
+    const prior = await this.store.receipt(graph, requestId);
+    let draw = (
+      await this.pool.query<{ outcome: DrawOutcome | null }>(
+        "SELECT outcome FROM bot_request WHERE id=$1",
+        [requestId],
+      )
+    ).rows[0]?.outcome;
+    if (prior && draw)
+      return {
+        context: this.store.context(graph),
+        changes: prior.changes,
+        at: prior.at,
+        recipients: [],
+        draw,
+      };
+    let context = this.store.context(graph, draw?.dependencies);
+    if (!draw) {
+      const source = await drawSource(context, targetId);
+      if (!source)
+        reject("DRAW_NOT_CONFIGURED", "公開済みの抽選器を指定してください");
+      if (!(await drawInReach(context, actor, targetId)))
+        reject(
+          "DRAW_NOT_IN_REACH",
+          "現在地、その場に置かれた物品、手持ちの物品から引けます",
+        );
+      const material = await this.#drawMaterials(world, context, targetId);
+      await context.validate();
+      await this.#reserveSp(world, actor, user, requestId);
+      const parse = (raw: string) => DrawReward.parse(parseOutput(raw));
+      const reply = await this.#ask(
+        requestId,
+        "world-draw",
+        [
+          {
+            role: "system",
+            content:
+              "承認された説明の範囲で、引くたびに得られうる物品または技能を一件具体化するGMです。対象と世界の基準に合わせ、使い道や次の行動を考えられる具体性を持たせる。JSONは物品なら {kind:'item',label:呼称}、技能なら {kind:'skill',text:できることとその適用範囲}。文章は日本語とし、取得後の解釈や利用者の行動を決めない。",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({ ...material, description: source.text }),
+          },
+        ],
+        "resolution",
+        parse,
+      );
+      draw = {
+        reward: parse(reply.content),
+        target: material.target,
+        dependencies: context.dependencies,
+      };
+      const persisted = await this.pool.query(
+        `UPDATE bot_request r SET outcome=$2,sp_user=a.sp_user,sp_reset=a.sp_reset
+         FROM bot_adjudication a WHERE r.id=$1 AND a.world_id=r.world_id AND a.actor_id=r.actor_id
+         AND a.request_id=r.id AND a.expires_at>clock_timestamp() AND a.sp_user=$3`,
+        [requestId, draw, user],
+      );
+      if (!persisted.rowCount) rejectAdjudication();
+    }
+    const basis = `「${draw.target}」からの抽選`;
+    const reward = draw.reward;
+    const operations: BelongingOp[] = [
+      reward.kind === "item"
+        ? { type: "create", holder: actor, label: reward.label, basis }
+        : { type: "learn", person: actor, text: reward.text, basis },
+    ];
+    const planned = await planBelongings(context, requestId, at, operations);
+    context = await this.#validate(context, planned.changes, planned.at);
+    return { ...planned, context, recipients: [], draw };
   }
   async #judgeBlueprint(
     world: string,
@@ -4292,16 +4576,39 @@ export class BotPlay {
     await context.validate();
     return result;
   }
-  async #validate(context: WorldContext, changes: Change, at: number) {
+  async #validate(
+    context: WorldContext,
+    changes: Change,
+    at: number,
+    configuringDraw = false,
+  ) {
+    const guardDraw = (node: Awaited<ReturnType<WorldContext["node"]>>) => {
+      if (
+        !configuringDraw &&
+        node?.kind === "script" &&
+        node.type === "draw-source"
+      )
+        reject(
+          "DRAW_CONFIGURATION_REQUIRED",
+          "抽選器の設定にはdraw-configureを使用してください",
+        );
+    };
     for (const node of changes.nodes)
       if (await context.node(node.id))
         reject("NODE_EXISTS", "新規ノードの同一性は既に存在します");
-    for (const node of changes.revisions)
-      if ((await context.node(node.id))?.kind !== node.kind)
+      else guardDraw(node);
+    for (const node of changes.revisions) {
+      const original = await context.node(node.id);
+      if (original?.kind !== node.kind)
         reject("NODE_CHANGED", "改訂する既存ノードの種別を確認してください");
-    for (const id of changes.endEdges)
-      if (!(await context.edge(id)))
-        reject("EDGE_NOT_FOUND", "終了する関係が見つかりません");
+      guardDraw(original);
+      guardDraw(node);
+    }
+    for (const id of changes.endEdges) {
+      const edge = await context.edge(id);
+      if (!edge) reject("EDGE_NOT_FOUND", "終了する関係が見つかりません");
+      guardDraw(await context.node(edge.target));
+    }
     const draft = new WorldContext(
       this.store.driver,
       context.worldId,
@@ -4316,6 +4623,8 @@ export class BotPlay {
           target = await draft.node(edge.target);
         if (!source || !target)
           reject("TARGET_NOT_FOUND", "関係の接続先が存在しません");
+        guardDraw(target);
+        guardDraw(source);
         validateConnection(edge, source, target);
       }
       const ended = await Promise.all(
@@ -4426,8 +4735,16 @@ export class BotPlay {
         w.at,
       );
     }
-    if (!("dependencies" in input)) return;
+    const configuringDraw = input.command === "draw-configure";
+    if (
+      !("dependencies" in input) &&
+      !configuringDraw &&
+      input.command !== "draw"
+    )
+      return;
     const w = await this.world(world, db);
+    if (input.command === "draw")
+      return this.#planDraw(world, w.id, w.at, actor, user, input);
     const deadline = deferred(input);
     if (
       deadline &&
@@ -4483,7 +4800,10 @@ export class BotPlay {
       ]);
       return plan;
     }
-    let context = this.store.context(w.id, input.dependencies);
+    let context = this.store.context(
+      w.id,
+      "dependencies" in input ? input.dependencies : [],
+    );
     const prior = await this.store.receipt(w.id, input.requestId);
     if (prior) {
       const outcome = (
@@ -4496,7 +4816,12 @@ export class BotPlay {
         changes: prior.changes,
         at: prior.at,
         recipients: [],
-        outcome: hidden ? outcome?.outcome : outcome,
+        ...(configuringDraw ? { drawReview: outcome as DrawJudgement } : {}),
+        outcome: configuringDraw
+          ? undefined
+          : hidden
+            ? outcome?.outcome
+            : outcome,
         ...(hidden
           ? { stealth: outcome?.stealth ?? { observations: [] } }
           : {}),
@@ -4644,23 +4969,42 @@ export class BotPlay {
         ? [actor, stealthOperation.from]
         : [actor];
     const actorFilter = hidden ? " AND actor_id=ANY($2::uuid[])" : "";
-    const registered = (
-      await db.query<{ actor_id: string; controller: string | null }>(
-        "SELECT actor_id,controller FROM bot_npc WHERE world_id=$1" +
-          actorFilter,
-        hidden ? [world, involved] : [world],
-      )
-    ).rows;
+    const registered = configuringDraw
+      ? []
+      : (
+          await db.query<{ actor_id: string; controller: string | null }>(
+            "SELECT actor_id,controller FROM bot_npc WHERE world_id=$1" +
+              actorFilter,
+            hidden ? [world, involved] : [world],
+          )
+        ).rows;
     const controlled = new Set(
-      (
-        await db.query<{ actor_id: string }>(
-          "SELECT actor_id FROM world_controlled_actor WHERE world_id=$1" +
-            actorFilter,
-          hidden ? [w.id, involved] : [w.id],
-        )
-      ).rows.map((r) => r.actor_id),
+      configuringDraw
+        ? []
+        : (
+            await db.query<{ actor_id: string }>(
+              "SELECT actor_id FROM world_controlled_actor WHERE world_id=$1" +
+                actorFilter,
+              hidden ? [w.id, involved] : [w.id],
+            )
+          ).rows.map((r) => r.actor_id),
     );
     for (const r of registered) controlled.add(r.actor_id);
+    const isControlled = async (id: string) => {
+      if (!configuringDraw || controlled.has(id)) return controlled.has(id);
+      const { rows } = await db.query<{
+        actor_id: string;
+        controller: string | null;
+        npc: boolean;
+      }>(
+        `SELECT actor_id,controller,true AS npc FROM bot_npc WHERE world_id=$1 AND actor_id=$3
+         UNION ALL SELECT actor_id,NULL,false FROM world_controlled_actor WHERE world_id=$2 AND actor_id=$3`,
+        [world, w.id, id],
+      );
+      for (const row of rows) if (row.npc) registered.push(row);
+      if (rows.length) controlled.add(id);
+      return !!rows.length;
+    };
     const parties = new Set<string>(),
       refs = new Set<string>();
     const holders = async (id: string) =>
@@ -4671,7 +5015,7 @@ export class BotPlay {
       id: string,
       seen = new Set<string>(),
     ): Promise<string[]> => {
-      if (controlled.has(id) || id === actor) return [id];
+      if (id === actor || (await isControlled(id))) return [id];
       if (seen.has(id)) return [];
       seen.add(id);
       const incoming = await holders(id),
@@ -4719,7 +5063,40 @@ export class BotPlay {
       impossible = false,
       fatal: string[] = [],
       locates: BelongingOp[] | undefined;
-    if (input.command === "explore") {
+    if (configuringDraw) {
+      const { targetId, description } = input;
+      const target = await context.node(targetId);
+      if (
+        target?.kind !== "existence" ||
+        targetId === actor ||
+        (await isControlled(targetId))
+      )
+        reject(
+          "DRAW_TARGET_REQUIRED",
+          "既存の場所または物品を指定してください",
+        );
+      await affect(targetId);
+      const source = await drawSource(context, targetId);
+      const script = {
+        id: drawScriptId(targetId),
+        kind: "script" as const,
+        type: "draw-source" as const,
+        text: description,
+      };
+      if (source) changes.revisions.push(script);
+      else {
+        changes.nodes.push(script);
+        changes.edges.push({
+          id: drawEdgeId(targetId),
+          kind: "status",
+          role: "content",
+          text: "draw-source",
+          source: targetId,
+          target: script.id,
+          period: { from: at },
+        });
+      }
+    } else if (input.command === "explore") {
       const source = await context.node(input.fromId);
       if (
         source?.kind !== "existence" ||
@@ -5115,7 +5492,7 @@ export class BotPlay {
     }
     if (!impossible) {
       try {
-        context = await this.#validate(context, changes, at);
+        context = await this.#validate(context, changes, at, configuringDraw);
       } catch (error) {
         if (
           input.command !== "oppose" ||
@@ -5176,11 +5553,18 @@ export class BotPlay {
       const unowned = [...parties].filter(
         (id) => id !== actor && !controlled.has(id),
       );
-      if (!needsCreation && unowned.length)
+      if (!needsCreation && !configuringDraw && unowned.length)
         reject(
           "AUTHORITY_REQUIRED",
           `${(await Promise.all(unowned.map(named))).join("・")}は本人の操作範囲になく、判断できる人物の記録もありません。本人の居場所は条件ではありません`,
         );
+    }
+    if (configuringDraw) {
+      const drawReview = await this.#reviewDraw(world, actor, context, input);
+      if (!drawReview.accepted)
+        return { context, at, changes: empty(), recipients: [], drawReview };
+      (changes.nodes[0] ?? changes.revisions[0])!.text = drawReview.description;
+      return { context, at, changes, recipients, drawReview };
     }
     const wait = input.command === "update" ? input.waitMinutes : undefined;
     if (
@@ -5904,8 +6288,10 @@ export class BotPlay {
         owner,
       );
     const active = await this.#activeAdjudication(this.pool, world, actor);
+    const drawCommand =
+      input.command === "draw" || input.command === "draw-configure";
     if (active)
-      return active.request_id === input.requestId
+      return active.request_id === input.requestId && !drawCommand
         ? execute(active.owner)
         : rejectAdjudication();
     if (
@@ -5920,6 +6306,8 @@ export class BotPlay {
         "memo",
         "npc-action",
         "promote-npc",
+        "draw-configure",
+        "draw",
       ].includes(input.command) &&
       !(input.command === "say" && input.instantNpcs?.length) &&
       !(input.command === "search" && input.query.kind === "seek")
@@ -5938,7 +6326,8 @@ export class BotPlay {
     );
     if (!acquired.rowCount) {
       const active = await this.#activeAdjudication(this.pool, world, actor);
-      if (active?.request_id === input.requestId) return execute(active.owner);
+      if (active?.request_id === input.requestId && !drawCommand)
+        return execute(active.owner);
       rejectAdjudication();
     }
     const heartbeat = setInterval(() => {
@@ -6759,6 +7148,7 @@ export class BotPlay {
                 input.query,
                 [],
                 db,
+                user,
               );
               result = queried.visible;
               const members = d.members
@@ -6789,8 +7179,9 @@ export class BotPlay {
               if (appearance) {
                 const { appearances, ...description } = appearance;
                 // 出現の確定で依存版が進む。本人が次の操作に使えるよう、確定後の素材と版を返す。
-                result = (await this.#search(world, actor, input.query, [], db))
-                  .visible;
+                result = (
+                  await this.#search(world, actor, input.query, [], db, user)
+                ).visible;
                 await this.#addInstants(
                   db,
                   session,
@@ -7042,6 +7433,18 @@ export class BotPlay {
               );
               if (animals.length) result.appearances = animals;
               d.entries.push({ actorId: actor, input: input.text, result });
+            } else if (
+              plan?.drawReview &&
+              !plan.drawReview.accepted &&
+              input.command === "draw-configure"
+            ) {
+              result = {
+                targetId: input.targetId,
+                accepted: false,
+                state: "rejected",
+                reason: plan.drawReview.reason,
+                ...(plan.drawReview.repeated ? { repeated: true } : {}),
+              };
             } else if (plan) {
               if (
                 plan.instantMembers &&
@@ -7049,6 +7452,11 @@ export class BotPlay {
               )
                 reject("WORLD_CHANGED", "NPCの同席者が変わりました");
               const deadline = deferred(input);
+              const entryText = plan.drawReview
+                ? `抽選器の設定を申請した。説明：${plan.drawReview.description}`
+                : "text" in input
+                  ? (input.text ?? "")
+                  : "";
               for (const recipient of deadline ? [] : plan.recipients)
                 if (!d.members.some((m) => m.actorId === recipient))
                   reject(
@@ -7089,7 +7497,7 @@ export class BotPlay {
                   deadline,
                   plan.recipients,
                   {
-                    text: input.text,
+                    text: entryText,
                     preview,
                     at: plan.at,
                     changes: plan.changes,
@@ -7115,7 +7523,7 @@ export class BotPlay {
                 d.entries.push({
                   applicationId: input.requestId,
                   actorId: actor,
-                  input: "text" in input ? input.text : "",
+                  input: entryText,
                   result: {
                     applicationId: input.requestId,
                     state: "receiving",
@@ -7134,10 +7542,16 @@ export class BotPlay {
                   ...(plan.items?.length ? { items: plan.items } : {}),
                   at: plan.at,
                   dependencies: plan.context.dependencies,
-                  text: "text" in input ? input.text : "",
+                  text: entryText,
                   ...(plan.locates ? { locates: plan.locates } : {}),
                 };
                 result = { applicationId: input.requestId, state: "receiving" };
+                if (input.command === "draw-configure")
+                  result = {
+                    ...result,
+                    targetId: input.targetId,
+                    accepted: true,
+                  };
               } else {
                 const stay = plan.stealth?.stay;
                 if (
@@ -7195,6 +7609,26 @@ export class BotPlay {
                       }
                     : {}),
                 };
+                if (input.command === "draw-configure")
+                  result = {
+                    ...result,
+                    targetId: input.targetId,
+                    accepted: true,
+                    state: "confirmed",
+                    ...(plan.drawReview?.repeated ? { repeated: true } : {}),
+                  };
+                if (input.command === "draw" && plan.draw) {
+                  const { reward, target } = plan.draw;
+                  result = {
+                    ...result,
+                    targetId: input.targetId,
+                    reward: { ...reward, id: receipt.changes.nodes[0]!.id },
+                    message:
+                      reward.kind === "item"
+                        ? `「${target}」から「${reward.label}」が出てきた。`
+                        : `「${target}」から技能を授かった。${reward.text}`,
+                  };
+                }
                 if (
                   input.command === "update" &&
                   input.waitMinutes &&
@@ -7244,7 +7678,7 @@ export class BotPlay {
                     observations,
                     {
                       actorId: actor,
-                      input: "text" in input ? input.text : "",
+                      input: entryText,
                       result,
                     },
                     session,
@@ -7260,7 +7694,9 @@ export class BotPlay {
                   d.entries.push({
                     actorId:
                       input.command === "npc-action" ? input.npcId : actor,
-                    input: "text" in input ? input.text : "",
+                    input:
+                      entryText ||
+                      (plan.draw ? `「${plan.draw.target}」で抽選した。` : ""),
                     ...(plan.items?.length
                       ? { itemWitnesses: d.members.map((m) => m.actorId) }
                       : {}),

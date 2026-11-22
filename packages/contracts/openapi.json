@@ -6557,6 +6557,71 @@
                       "command": {
                         "type": "string",
                         "enum": [
+                          "draw-configure"
+                        ]
+                      },
+                      "targetId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "description": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "この抽選器から繰り返し得られる結果の範囲"
+                      }
+                    },
+                    "required": [
+                      "requestId",
+                      "command",
+                      "targetId",
+                      "description"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "requestId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "command": {
+                        "type": "string",
+                        "enum": [
+                          "draw"
+                        ]
+                      },
+                      "targetId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "text": {
+                        "description": "同席者に伝える行動の描写",
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "requestId",
+                      "command",
+                      "targetId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "requestId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "command": {
+                        "type": "string",
+                        "enum": [
                           "search"
                         ]
                       },
@@ -7354,7 +7419,8 @@
                                     "type": {
                                       "type": "string",
                                       "enum": [
-                                        "memo"
+                                        "memo",
+                                        "draw-source"
                                       ]
                                     },
                                     "spawn": {
@@ -7738,7 +7804,8 @@
                                     "type": {
                                       "type": "string",
                                       "enum": [
-                                        "memo"
+                                        "memo",
+                                        "draw-source"
                                       ]
                                     },
                                     "spawn": {
@@ -8422,7 +8489,8 @@
                                     "type": {
                                       "type": "string",
                                       "enum": [
-                                        "memo"
+                                        "memo",
+                                        "draw-source"
                                       ]
                                     },
                                     "spawn": {
@@ -8806,7 +8874,8 @@
                                     "type": {
                                       "type": "string",
                                       "enum": [
-                                        "memo"
+                                        "memo",
+                                        "draw-source"
                                       ]
                                     },
                                     "spawn": {
@@ -9388,7 +9457,8 @@
                                               "type": {
                                                 "type": "string",
                                                 "enum": [
-                                                  "memo"
+                                                  "memo",
+                                                  "draw-source"
                                                 ]
                                               },
                                               "spawn": {
@@ -9772,7 +9842,8 @@
                                               "type": {
                                                 "type": "string",
                                                 "enum": [
-                                                  "memo"
+                                                  "memo",
+                                                  "draw-source"
                                                 ]
                                               },
                                               "spawn": {
@@ -11035,7 +11106,8 @@
                                     "type": {
                                       "type": "string",
                                       "enum": [
-                                        "memo"
+                                        "memo",
+                                        "draw-source"
                                       ]
                                     },
                                     "spawn": {
@@ -11419,7 +11491,8 @@
                                     "type": {
                                       "type": "string",
                                       "enum": [
-                                        "memo"
+                                        "memo",
+                                        "draw-source"
                                       ]
                                     },
                                     "spawn": {
@@ -13036,7 +13109,8 @@
                                           "type": {
                                             "type": "string",
                                             "enum": [
-                                              "memo"
+                                              "memo",
+                                              "draw-source"
                                             ]
                                           },
                                           "spawn": {
@@ -13420,7 +13494,8 @@
                                           "type": {
                                             "type": "string",
                                             "enum": [
-                                              "memo"
+                                              "memo",
+                                              "draw-source"
                                             ]
                                           },
                                           "spawn": {
@@ -19476,7 +19551,8 @@
                                         "type": {
                                           "type": "string",
                                           "enum": [
-                                            "memo"
+                                            "memo",
+                                            "draw-source"
                                           ]
                                         },
                                         "spawn": {
@@ -19860,7 +19936,8 @@
                                         "type": {
                                           "type": "string",
                                           "enum": [
-                                            "memo"
+                                            "memo",
+                                            "draw-source"
                                           ]
                                         },
                                         "spawn": {

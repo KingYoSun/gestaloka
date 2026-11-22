@@ -162,6 +162,22 @@ gestaloka search --kind <surroundings|self|history|subject|memos|seek> [--target
 
 実行例 `gestaloka search --kind subject --target @12ab34cd`
 
+## draw-configure
+
+既存の場所・物品を抽選器にする申請。得られる結果の範囲を説明する。GMの審査は0 SP。必要な受領がそろうと公開される。
+
+```text
+gestaloka draw-configure --target <対象ID> --description <説明>
+```
+
+## draw
+
+本人の通常手番に、現在地・現地に置かれた物品・手持ちの抽選器から一件引く。searchで説明・利用条件・消費を確認できる。1 SP。
+
+```text
+gestaloka draw --target <対象ID> [--text <行動>]
+```
+
 ## contact
 
 同じ具体的な場所にいる相手と合流を申請。返答のactionableとactionMessageで、接触後に本人の操作が必要かを確認。

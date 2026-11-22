@@ -750,7 +750,7 @@ async function run() {
                 },
               }
             : {}),
-          ...(command === "contact" ||
+          ...(["contact", "draw", "draw-configure"].includes(command) ||
           (command === "team" && action === "invite") ||
           (command === "companion" && action !== "status")
             ? { targetId: values.target }
@@ -758,13 +758,16 @@ async function run() {
           ...(command === "companion" && ["move", "home"].includes(action!)
             ? { placeId: values.place }
             : {}),
-          ...(["say", "comment", "memo", "explore"].includes(command) ||
+          ...(["say", "comment", "memo", "explore", "draw"].includes(command) ||
           (command === "companion" && action === "request")
             ? {
                 text: values.file
                   ? await readFile(values.file, "utf8")
                   : values.text,
               }
+            : {}),
+          ...(command === "draw-configure"
+            ? { description: values.description }
             : {}),
           ...(command === "memo"
             ? {
