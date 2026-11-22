@@ -563,11 +563,10 @@ async function accompany(
     targetId,
     text,
   });
-  await f.send(f.actors.indexOf(targetId), {
-    command: "receive",
-    applicationId: sent.applicationId,
-    accept,
-  });
+  await f.send(
+    f.actors.findIndex((id) => id === targetId),
+    { command: "receive", applicationId: sent.applicationId, accept },
+  );
   return sent;
 }
 
