@@ -1286,6 +1286,30 @@ export const Operation = z.discriminatedUnion("operation", [
         .boolean()
         .optional()
         .describe("所持・保管枠の制限を有効にする"),
+      inventoryLimits: z
+        .object({
+          carrySlots: z
+            .number()
+            .int()
+            .positive()
+            .safe()
+            .describe("人物の手持ち枠"),
+          storageSlots: z
+            .number()
+            .int()
+            .positive()
+            .safe()
+            .describe("保管庫の標準枠"),
+          unitsPerSlot: z
+            .number()
+            .int()
+            .positive()
+            .safe()
+            .describe("物品の1枠あたりの標準個数"),
+        })
+        .partial()
+        .strict()
+        .optional(),
       title: z.string().trim().min(1),
       description: z.string(),
       playerSettings: z.string().optional(),

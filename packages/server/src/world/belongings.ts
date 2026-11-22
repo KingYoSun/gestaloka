@@ -8,11 +8,9 @@ import {
 import type { Lease, WorldContext, WorldStore } from "./store.js";
 import type { Dependency } from "./store.js";
 import {
-  carrySlots,
   InventoryCapacityExceeded,
   inventoryStackKey,
   itemSlots,
-  storageSlots,
   unitsPerSlot,
 } from "./inventory.js";
 
@@ -265,6 +263,7 @@ export async function planBelongings(
     }
   }
   const moving = new Set(parts.map((part) => part.item));
+  let stackSize: number | undefined;
   for (const part of parts) {
     const source = (await current(part.item))!,
       held = (await incoming(part.item)).filter((edge) => !edge.role),
@@ -273,11 +272,13 @@ export async function planBelongings(
     // 移った先に、呼称と系列が同じ個数つきの物品があれば、そこへ足して物品を増やさない。
     let merged: WorldNode | undefined;
     if (count && source.kind === "existence") {
-      const key = inventoryStackKey(source, part.to)!;
+      const standard = (stackSize ??= (await context.inventoryLimits())
+        .unitsPerSlot);
+      const key = inventoryStackKey(source, standard, part.to)!;
       const pending = change.nodes.find(
         (node) =>
           node.kind === "existence" &&
-          inventoryStackKey(node, part.to) === key &&
+          inventoryStackKey(node, standard, part.to) === key &&
           change.edges.some(
             (edge) =>
               !edge.role && edge.target === node.id && edge.source === part.to,
@@ -297,7 +298,7 @@ export async function planBelongings(
             node.kind !== "existence" ||
             moving.has(node.id) ||
             released.has(node.id) ||
-            inventoryStackKey(node, part.to) !== key
+            inventoryStackKey(node, standard, part.to) !== key
           )
             continue;
           if (
@@ -312,7 +313,7 @@ export async function planBelongings(
       if (
         candidate?.kind === "existence" &&
         candidate.count &&
-        inventoryStackKey(candidate, part.to) === key
+        inventoryStackKey(candidate, standard, part.to) === key
       )
         merged = { ...candidate, count: candidate.count + count };
     }
@@ -434,7 +435,10 @@ export async function checkBelongingCapacity(
         op.from &&
         (await reaches(op.from))
       ) {
-        const size = unitsPerSlot(item);
+        const size = unitsPerSlot(
+          item,
+          (await context.inventoryLimits()).unitsPerSlot,
+        );
         if (size !== "unlimited" && size > 1) {
           // 同じ保持者の中で分けると、移動前後の端数で合計枠が上下する。
           // 端数が変わる区間ごとに、指定数を下回る最大の候補を試す。
@@ -583,6 +587,7 @@ export async function readBelongings(
   viewer?: string,
   includeCapacity = !viewer && at === LATEST,
 ) {
+  const limits = includeCapacity ? await context.inventoryLimits() : undefined;
   const facts = async (holder: string, role: WorldEdge["role"]) =>
     (await context.relations(holder, "has", "out", at))
       .filter((edge) => edge.role === role)
@@ -602,10 +607,12 @@ export async function readBelongings(
       held.push({
         id: edge.target,
         ...labelled(node),
-        ...(includeCapacity
+        ...(limits
           ? {
-              slots: itemSlots(node),
-              ...(node.count ? { unitsPerSlot: unitsPerSlot(node) } : {}),
+              slots: itemSlots(node, limits.unitsPerSlot),
+              ...(node.count
+                ? { unitsPerSlot: unitsPerSlot(node, limits.unitsPerSlot) }
+                : {}),
             }
           : {}),
         basis: edge.text ?? null,
@@ -624,15 +631,15 @@ export async function readBelongings(
       label: node?.text ?? "",
       ...shown(node),
       items: await items(edge.target),
-      ...(!includeCapacity
+      ...(!limits
         ? {}
         : {
             capacity: {
               usedSlots: await context.inventorySlots(edge.target),
               limitSlots:
                 node?.kind === "existence"
-                  ? (node.storageLimitSlots ?? storageSlots)
-                  : storageSlots,
+                  ? (node.storageLimitSlots ?? limits.storageSlots)
+                  : limits.storageSlots,
             },
           }),
     });
@@ -653,12 +660,12 @@ export async function readBelongings(
     items: await items(subject),
     storages,
     skills,
-    ...(!includeCapacity
+    ...(!limits
       ? {}
       : {
           capacity: {
             usedSlots: await context.inventorySlots(subject),
-            limitSlots: carrySlots,
+            limitSlots: limits.carrySlots,
           },
         }),
   };

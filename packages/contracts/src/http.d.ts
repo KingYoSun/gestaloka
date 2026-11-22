@@ -8294,6 +8294,14 @@ export interface paths {
                             worldId: string;
                             /** @description 所持・保管枠の制限を有効にする */
                             inventoryCapacity?: boolean;
+                            inventoryLimits?: {
+                                /** @description 人物の手持ち枠 */
+                                carrySlots?: number;
+                                /** @description 保管庫の標準枠 */
+                                storageSlots?: number;
+                                /** @description 物品の1枠あたりの標準個数 */
+                                unitsPerSlot?: number;
+                            };
                             title: string;
                             description: string;
                             playerSettings?: string;

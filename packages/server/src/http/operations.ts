@@ -750,10 +750,22 @@ export class Operations {
           next: rows.length > 50 ? rows[49].id : null,
         };
       }
-      case "worlds.read":
+      case "worlds.read": {
+        const access = this.#access(context);
+        const world = await access.status(actor!, input.worldId);
+        const graph = (await access.construction.get(input.worldId)).world_id;
+        if (!graph) return { world };
+        const { limits, enabled } = await access.construction.agent.store
+          .context(graph)
+          .inventorySettings();
         return {
-          world: await this.#access(context).status(actor!, input.worldId),
+          world: {
+            ...world,
+            inventoryLimits: limits,
+            inventoryCapacity: enabled,
+          },
         };
+      }
       case "worlds.records":
         return this.#access(context).records(
           actor!,
@@ -1299,7 +1311,10 @@ export class Operations {
         ).rows[0];
         if (!row)
           throw new AccessError(404, "WORLD_NOT_FOUND", "世界が見つかりません");
-        if (input.inventoryCapacity !== undefined) {
+        if (
+          input.inventoryCapacity !== undefined ||
+          input.inventoryLimits !== undefined
+        ) {
           const construction = this.#access(context).construction;
           const graph = (await construction.get(input.worldId)).world_id;
           if (!graph)
@@ -1308,11 +1323,14 @@ export class Operations {
               "WORLD_NOT_READY",
               "世界の構築が終わっていません",
             );
-          await construction.agent.store.configureInventory(
-            graph,
-            input.inventoryCapacity,
-          );
-          row.inventoryCapacity = input.inventoryCapacity;
+          const { limits, enabled } =
+            await construction.agent.store.configureInventory(
+              graph,
+              input.inventoryCapacity,
+              input.inventoryLimits,
+            );
+          row.inventoryCapacity = enabled;
+          row.inventoryLimits = limits;
         }
         return row;
       }

@@ -664,7 +664,7 @@ test("craftの定義から保管先を設置し、管理者不在の無償受領
             type: "create",
             holder: manager,
             label: "道具",
-            count: remaining * 10,
+            count: remaining * 30,
             basis: "手持ちを埋める",
           },
         ]);
@@ -2337,21 +2337,21 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
     {
       type: "create",
       label: "日用品",
-      count: 1480,
+      count: 4440,
       holder: storage!.id,
       basis: "試験用",
     },
     {
       type: "create",
       label: "携行品",
-      count: 280,
+      count: 840,
       holder: buyer,
       basis: "試験用",
     },
     {
       type: "create",
       label: "携行品",
-      count: 280,
+      count: 840,
       holder: other,
       basis: "試験用",
     },
@@ -2410,7 +2410,7 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
     );
   expect(await audit(true)).toMatchObject({
     largeStacks: expect.arrayContaining([
-      expect.objectContaining({ id: till.id, slots: 100000 }),
+      expect.objectContaining({ id: till.id, slots: 33334 }),
     ]),
   });
   expect(await audit(false)).toMatchObject({
@@ -6005,7 +6005,7 @@ test("手持ちの容量と受入可能数をHTTPとCLIへ返す", async () => {
   const seed = await f.apply([
     { type: "grant", person: actor, storage: f.place, basis: "検証" },
     ...Array.from({ length: 29 }, (_, i) => create(`道具${i}`, actor)),
-    create("薬草", actor, 7),
+    create("薬草", actor, 27),
     create("薬草", f.place, 8),
     create("石", f.place),
   ]);
@@ -6099,14 +6099,19 @@ test("手持ちの容量と受入可能数をHTTPとCLIへ返す", async () => {
       {
         capacity: { usedSlots: 30, limitSlots: 30 },
         items: expect.arrayContaining([
-          expect.objectContaining({ label: "薬草", count: 10, slots: 1 }),
+          expect.objectContaining({
+            label: "薬草",
+            count: 30,
+            unitsPerSlot: 30,
+            slots: 1,
+          }),
         ]),
       },
     );
     await f.apply([
       { type: "remove", id: nodes[27]!.id },
       { type: "remove", id: nodes[28]!.id },
-      { type: "update", id: heldHerbs.id, count: 30 },
+      { type: "update", id: heldHerbs.id, count: 90 },
     ]);
     await expect(
       f.send(0, {
@@ -6119,14 +6124,14 @@ test("手持ちの容量と受入可能数をHTTPとCLIへ返す", async () => {
             item: heldHerbs.id,
             from: actor,
             to: nodes[0]!.id,
-            count: 29,
+            count: 89,
             basis: "検証",
           },
         ],
       }),
     ).rejects.toMatchObject({
       code: expected.code,
-      inventory: { item: { requestedCount: 29, maxAcceptableCount: 20 } },
+      inventory: { item: { requestedCount: 89, maxAcceptableCount: 60 } },
     });
   } finally {
     await cli.close();
@@ -6147,10 +6152,10 @@ test("箱による枠の節約を防ぎ、共同保管先の最後の1枠を原�
   const first = await f.apply([
     { type: "grant", person: a, storage: f.far, basis: "共同利用" },
     { type: "grant", person: b, storage: f.far, basis: "共同利用" },
-    create("在庫", f.far, 1490),
+    create("在庫", f.far, 4470),
     create("箱", a),
     create("工具", a),
-    create("手持ち", a, 290),
+    create("手持ち", a, 870),
     create("贈り物", b),
   ]);
   const [, box, tool, , gift] = first.changes.nodes.filter(
@@ -6188,20 +6193,122 @@ test("箱による枠の節約を防ぎ、共同保管先の最後の1枠を原�
   expect(await ctx().inventorySlots(a)).toBe(
     results[0]!.status === "fulfilled" ? 29 : 30,
   );
-  const stocked = await f.apply([create("採集品", f.actors[2]!, 297)]);
+  const stocked = await f.apply([create("採集品", f.actors[2]!, 897)]);
   const itemId = stocked.changes.nodes.find((n) => n.kind === "existence")!.id;
   await expect(
     f.send(2, {
       command: "update",
       text: "採集品を4個増やす",
       dependencies: [],
-      operations: [{ type: "update", id: itemId, count: 301 }],
+      operations: [{ type: "update", id: itemId, count: 901 }],
     }),
   ).rejects.toMatchObject({
     code: "INVENTORY_CAPACITY_EXCEEDED",
     inventory: { item: { itemId, requestedCount: 4, maxAcceptableCount: 3 } },
   });
   expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("運営が世界ごとの容量を変更すると照会と既存在庫・合流の判定に反映される", async () => {
+  const f = await fixture();
+  const actor = f.actors[0]!,
+    admin = await auth.person();
+  const seeded = await f.apply([
+    { type: "grant", person: actor, storage: f.place, basis: "保管庫" },
+    { type: "create", holder: actor, label: "鉱石", count: 80, basis: "検証" },
+    {
+      type: "create",
+      holder: f.place,
+      label: "鉱石",
+      count: 41,
+      basis: "検証",
+    },
+  ]);
+  const stock = seeded.changes.nodes.find(
+    (node) => node.kind === "existence" && node.count === 41,
+  )!;
+  const old = f.store.context(f.graph);
+  expect(await readBelongings(old, actor)).toMatchObject({
+    capacity: { usedSlots: 3, limitSlots: 30 },
+    storages: [{ id: f.place, capacity: { usedSlots: 2, limitSlots: 150 } }],
+  });
+  const configure = (inventoryLimits: {
+    carrySlots?: number;
+    storageSlots?: number;
+    unitsPerSlot?: number;
+  }) =>
+    auth.operations.execute(
+      admin.id,
+      randomUUID(),
+      {
+        operation: "worlds.configure",
+        worldId: f.world,
+        title: "容量の設定",
+        description: "",
+        reason: "隔離試験",
+        published: false,
+        accepting: false,
+        inventoryCapacity: true,
+        inventoryLimits,
+      },
+      { players: access.players },
+    );
+  await expect(
+    configure({ carrySlots: 4, storageSlots: 2, unitsPerSlot: 20 }),
+  ).resolves.toMatchObject({
+    inventoryCapacity: true,
+    inventoryLimits: { carrySlots: 4, storageSlots: 2, unitsPerSlot: 20 },
+  });
+  await expect(old.validate()).rejects.toThrow();
+  const context = () => f.store.context(f.graph);
+  expect(await readBelongings(context(), actor)).toMatchObject({
+    capacity: { usedSlots: 4, limitSlots: 4 },
+    storages: [{ id: f.place, capacity: { usedSlots: 3, limitSlots: 2 } }],
+  });
+  const take = () =>
+    f.send(0, {
+      command: "update",
+      text: "鉱石を5個取り出す",
+      dependencies: [],
+      operations: [
+        {
+          type: "move",
+          item: stock.id,
+          from: f.place,
+          to: actor,
+          count: 5,
+          basis: "検証",
+        },
+      ],
+    });
+  await expect(take()).rejects.toMatchObject({
+    code: "INVENTORY_CAPACITY_EXCEEDED",
+  });
+  await expect(configure({ unitsPerSlot: 50 })).resolves.toMatchObject({
+    inventoryLimits: { carrySlots: 4, storageSlots: 2, unitsPerSlot: 50 },
+  });
+  await take();
+  expect(await readBelongings(context(), actor)).toMatchObject({
+    capacity: { usedSlots: 2, limitSlots: 4 },
+    items: [{ label: "鉱石", count: 85, slots: 2, unitsPerSlot: 50 }],
+    storages: [{ id: f.place, capacity: { usedSlots: 1, limitSlots: 2 } }],
+  });
+  const audit = await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    {
+      operation: "worlds.graph",
+      worldId: f.world,
+      query: { kind: "inventory", minCount: 1 },
+    },
+    { players: access.players },
+  );
+  expect(audit).toMatchObject({
+    limits: { carrySlots: 4, storageSlots: 2, unitsPerSlot: 50 },
+    holders: expect.arrayContaining([
+      expect.objectContaining({ id: actor, usedSlots: 2, limitSlots: 4 }),
+    ]),
+  });
 });
 
 test("本人が手に持つ箱には、場所を問わず出し入れできる", async () => {
@@ -10454,7 +10561,7 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
     {
       type: "create",
       label: "道具",
-      count: 290,
+      count: 870,
       holder: f.actors[0],
       basis: "手持ちを埋める",
     },

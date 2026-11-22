@@ -25129,6 +25129,33 @@
                             "description": "所持・保管枠の制限を有効にする",
                             "type": "boolean"
                           },
+                          "inventoryLimits": {
+                            "type": "object",
+                            "properties": {
+                              "carrySlots": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991,
+                                "description": "人物の手持ち枠"
+                              },
+                              "storageSlots": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991,
+                                "description": "保管庫の標準枠"
+                              },
+                              "unitsPerSlot": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991,
+                                "description": "物品の1枠あたりの標準個数"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
                           "title": {
                             "type": "string",
                             "minLength": 1

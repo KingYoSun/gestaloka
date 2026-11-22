@@ -5,10 +5,13 @@ import { z } from "zod";
 import { InstallationPolicy } from "@gestaloka/contracts";
 import { routeEndpoints } from "./locations.js";
 import {
+  defaultInventoryLimits,
   initializeInventory,
   inventoryChange,
   inventoryStackKey,
+  inventoryState,
   saveInventory,
+  type InventoryLimits,
 } from "./inventory.js";
 import {
   Change,
@@ -167,7 +170,10 @@ export class WorldContext {
   }
 
   async inventoryRead<T>(
-    fn: (tx: ManagedTransaction, enabled: boolean) => Promise<T>,
+    fn: (
+      tx: ManagedTransaction,
+      state: Awaited<ReturnType<typeof initializeInventory>>,
+    ) => Promise<T>,
   ) {
     const session = this.driver.session();
     try {
@@ -181,7 +187,8 @@ export class WorldContext {
   }
 
   async checkInventory(changes: Change) {
-    await this.inventoryRead(async (tx, enabled) => {
+    await this.inventoryLimits();
+    await this.inventoryRead(async (tx, { enabled, limits }) => {
       if (!enabled) return;
       const ended: WorldEdge[] = [];
       for (const id of changes.endEdges) {
@@ -198,9 +205,18 @@ export class WorldContext {
         changes,
         ended,
         (ids) => this.inventoryActors(this.worldId, ids),
+        limits,
         true,
       );
     });
+  }
+
+  async inventorySettings() {
+    return this.#read("inventory", (tx) => inventoryState(tx, this.worldId));
+  }
+
+  async inventoryLimits() {
+    return (await this.inventorySettings()).limits;
   }
 
   async inventorySlots(id: string) {
@@ -228,8 +244,12 @@ export class WorldContext {
 
   async prepareInventory() {
     const { records } = await this.driver.executeQuery(
-      "MATCH (g:WorldGuard {worldId:$worldId,key:'inventory',inventoryReady:true}) RETURN g.key",
-      { worldId: this.worldId },
+      `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
+       WHERE g.inventoryCacheUnits=coalesce(g.inventoryUnitsPerSlot,$defaultUnits) RETURN g.key`,
+      {
+        worldId: this.worldId,
+        defaultUnits: defaultInventoryLimits.unitsPerSlot,
+      },
       { routing: "READ" },
     );
     if (!records.length) await this.inventoryRead(async () => {});
@@ -916,12 +936,33 @@ export class WorldStore {
     );
   }
 
-  async configureInventory(worldId: string, enabled: boolean) {
-    await this.context(worldId).inventoryRead(async (tx) => {
+  async configureInventory(
+    worldId: string,
+    enabled?: boolean,
+    limits?: { [K in keyof InventoryLimits]?: number | undefined },
+  ) {
+    return this.context(worldId).inventoryRead(async (tx, state) => {
+      const next = {
+        carrySlots: limits?.carrySlots ?? state.limits.carrySlots,
+        storageSlots: limits?.storageSlots ?? state.limits.storageSlots,
+        unitsPerSlot: limits?.unitsPerSlot ?? state.limits.unitsPerSlot,
+      };
+      const active = enabled ?? state.enabled;
+      if (
+        active === state.enabled &&
+        next.carrySlots === state.limits.carrySlots &&
+        next.storageSlots === state.limits.storageSlots &&
+        next.unitsPerSlot === state.limits.unitsPerSlot
+      )
+        return state;
       await tx.run(
-        "MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'}) SET g.inventoryEnabled=$enabled",
-        { worldId, enabled },
+        `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
+         SET g.inventoryEnabled=$enabled, g.inventoryCarrySlots=$carrySlots,
+          g.inventoryStorageSlots=$storageSlots, g.inventoryUnitsPerSlot=$unitsPerSlot,
+          g.version=g.version+1`,
+        { worldId, enabled: active, ...next },
       );
+      return initializeInventory(tx, worldId);
     });
   }
 
@@ -1282,7 +1323,12 @@ export class WorldStore {
         const inventoryTouched =
           changes.revisions.some((node) => node.kind === "existence") ||
           [...changes.edges, ...ended].some((edge) => edge.kind === "has");
-        if (inventoryTouched) await lock(tx, worldId, "inventory");
+        let inventorySettings:
+          Awaited<ReturnType<typeof initializeInventory>> | undefined;
+        if (inventoryTouched) {
+          await lock(tx, worldId, "inventory");
+          inventorySettings = await initializeInventory(tx, worldId);
+        }
         // 持つ物品・役割つきhasの集合か、その対象の本文が変わる主体は、同じ確定で要約を作り直す。
         const summaries = new Map<
           string,
@@ -1342,8 +1388,17 @@ export class WorldStore {
               row.get("role") === "hold" &&
               node.kind === "existence" &&
               prior.kind === "existence" &&
-              inventoryStackKey(prior, holder) !==
-                inventoryStackKey(node, holder)
+              inventorySettings &&
+              inventoryStackKey(
+                prior,
+                inventorySettings.limits.unitsPerSlot,
+                holder,
+              ) !==
+                inventoryStackKey(
+                  node,
+                  inventorySettings.limits.unitsPerSlot,
+                  holder,
+                )
             )
               stackHolders.add(relationKey(holder, "has", "out"));
           }
@@ -1563,14 +1618,15 @@ export class WorldStore {
             },
           );
         const inventory =
-          inventoryTouched &&
+          inventorySettings &&
           (await inventoryChange(
             tx,
             worldId,
             changes,
             ended,
             (ids) => context.inventoryActors(worldId, ids),
-            (await initializeInventory(tx, worldId)) && !parsed.management,
+            inventorySettings.limits,
+            inventorySettings.enabled && !parsed.management,
           ));
         const fixedPlaces = new Set(parsed.newFixedPlaces);
         const createNode = (node: WorldNode) =>

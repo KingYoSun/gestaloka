@@ -20,7 +20,7 @@ import {
 import { canonical } from "../llm/prompt.js";
 import type { PlayApplications } from "./play-applications.js";
 import { deliverPickups } from "./storage-transfers.js";
-import { InventoryCapacityExceeded, storageSlots } from "../world/inventory.js";
+import { InventoryCapacityExceeded } from "../world/inventory.js";
 
 type Db = Pick<pg.Pool, "query">;
 type World = { id: string; at: number };
@@ -740,7 +740,13 @@ export class Blueprints {
         decision.accepted &&
         (quest.plan.building || quest.template.installation)
       )
-        quest.storageLimitSlots = decision.storageLimitSlots ?? storageSlots;
+        quest.storageLimitSlots =
+          decision.storageLimitSlots ??
+          (
+            await this.store
+              .context(w.id, decision.dependencies)
+              .inventoryLimits()
+          ).storageSlots;
       quest.phase = !decision.accepted
         ? "rejected"
         : quest.plan.product
@@ -1224,7 +1230,11 @@ export class Blueprints {
         kind: "existence",
         text: quest.plan.product!.label,
         ...(quest.template.installation
-          ? { storageLimitSlots: quest.storageLimitSlots ?? storageSlots }
+          ? {
+              storageLimitSlots:
+                quest.storageLimitSlots ??
+                (await context.inventoryLimits()).storageSlots,
+            }
           : {}),
       });
       if (!quest.template.installation)
@@ -1251,7 +1261,9 @@ export class Blueprints {
       );
       const node = changes.nodes.find((node) => node.id === id);
       if (node?.kind === "existence")
-        node.storageLimitSlots = quest.storageLimitSlots ?? storageSlots;
+        node.storageLimitSlots =
+          quest.storageLimitSlots ??
+          (await context.inventoryLimits()).storageSlots;
       changes.edges.push({
         id: derivedId(`blueprint:${quest.id}:storage`),
         kind: "has",
