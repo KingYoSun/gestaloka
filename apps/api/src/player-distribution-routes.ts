@@ -19,6 +19,7 @@ const referenceGuide = z.enum([
   "inventory.md",
   "sessions.md",
   "npcs.md",
+  "vehicles.md",
 ]);
 const sendGuide = async (reply: FastifyReply, name: string) =>
   reply
