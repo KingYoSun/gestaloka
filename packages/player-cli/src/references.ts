@@ -69,11 +69,11 @@ export class PlayerReferences {
       cache.set(id, short);
       return short;
     };
-    const walk = (v: unknown, key: string): unknown => {
-      if (Array.isArray(v)) return v.map((x) => walk(x, key));
+    const walk = (v: unknown, key: string, parent = ""): unknown => {
+      if (Array.isArray(v)) return v.map((x) => walk(x, key, parent));
       if (v && typeof v === "object")
         return Object.fromEntries(
-          Object.entries(v).map(([k, x]) => [k, walk(x, k)]),
+          Object.entries(v).map(([k, x]) => [k, walk(x, k, key)]),
         );
       if (typeof v !== "string") return v;
       if (key === "key" && /^(node|edge|relations):/.test(v)) {
@@ -83,6 +83,9 @@ export class PlayerReferences {
       }
       if (
         /(?:Id|Ids)$/.test(key) ||
+        (!input &&
+          parent === "receiving" &&
+          (key === "sender" || key === "recipients")) ||
         [
           "next",
           "id",
