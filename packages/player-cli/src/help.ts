@@ -19,11 +19,14 @@ export const playerOptions = {
   description: { type: "string" },
   file: { type: "string" },
   stealth: { type: "boolean" },
+  oppose: { type: "boolean" },
   after: { type: "string" },
   view: { type: "string" },
   before: { type: "string" },
   scene: { type: "string" },
   kind: { type: "string" },
+  "vehicle-after": { type: "string" },
+  "passenger-after": { type: "string" },
   target: { type: "string" },
   team: { type: "string" },
   place: { type: "string" },
@@ -73,6 +76,11 @@ const commands = {
     "同席中のユニークNPCに同行を頼む。本人の通常手番にrequestで新たな判断を求めると1 SPを使う。成立後は追従・待機・移動・帰る場所を選べる。[NPCの出現・昇格・同行](npcs.md)",
     "companion follow --target <NPCのID>",
   ],
+  vehicle: [
+    "<board|leave|request-control|travel> --target <乗り物ID> [--place <移動先ID>] [--oppose] [--application <申請ID>]",
+    "周囲の検索で見つけた乗り物に乗ると、降りるまで乗り物と一緒に移動します。boardで乗り、leaveで現在地に降ります。request-controlで専用の操縦権を申請し、travelで移動先を指定します。自分のコンパニオンは既存の同行関係で動かせます。所持者・現操縦者・乗り物のNPC本人に対抗する場合は--opposeを指定します。NPCの承認を受けた申請の続きには--applicationで申請IDを渡します。",
+    "vehicle travel --target <乗り物ID> --place <移動先ID>",
+  ],
   status: [
     "[--scene <ID>] [--after <カーソル>] [--view <wait|joins>]",
     "現在の手番と未読履歴を照会。dailySpに探索・生成の共通残量と次の回復時刻が出る。運営者が表示を選んだ世界では、creationCriteriaに新規作成のダイスの基準が出る。--sceneは本人の過去シーン、--after 0は先頭。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。",
@@ -105,8 +113,8 @@ const commands = {
   ],
   start: ["", "本人の通常手番を単独で開始。"],
   search: [
-    "--kind <surroundings|self|history|subject|memos|seek> [--target <ID>]",
-    "本人の手番で素材を検索。seekは今いる場所を捜索し、発見した相手の名前とIDを返す。subjectには対象IDを指定し、historyには必要に応じて相手を指定。selfのbelongingsに、本人の持ち物・保管先の中身・技能が出る。surroundingsのsubjects[].heldに、同じ場所にいる相手が手にしている物が出る。surroundingsのroutesに、直接滞在している場所と行き来の記述で結ばれた場所の名前(label)とIDが出る。移動の手がかりで、載っていない場所へも移動を申請できる。",
+    "--kind <surroundings|self|history|subject|memos|seek> [--target <ID>] [--vehicle-after <ID>] [--passenger-after <ID>]",
+    "本人の手番で素材を検索。seekは今いる場所を捜索し、発見した相手の名前とIDを返す。subjectには対象IDを指定し、historyには必要に応じて相手を指定。selfのbelongingsに本人の持ち物・保管先の中身・技能が、乗車中はrideに乗り物と現在地が出る。surroundingsのsubjects[].heldには同じ場所の相手が手にしている物が出る。routesには現在地からの経路が出る。乗車中は乗り物の現在地から調べる。vehiclesとpassengersに続きがあれば、それぞれのnextを--vehicle-afterまたは--passenger-afterに渡す。",
     "search --kind subject --target @12ab34cd",
   ],
   "draw-configure": [

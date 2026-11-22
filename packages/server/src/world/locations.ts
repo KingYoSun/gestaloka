@@ -26,6 +26,7 @@ export function routeEndpoints(edges: Change["edges"]) {
     if (
       edge.kind === "status" &&
       edge.role === "about" &&
+      edge.text !== "route-requires" &&
       edge.period.until === undefined
     )
       routes.get(edge.source)?.targets.add(edge.target);

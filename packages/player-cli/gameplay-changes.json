@@ -1,4 +1,7 @@
 {
+  "1.8.0": [
+    "乗り物の乗降・操縦権の申請・運行を vehicle で行えます。乗っている間は乗り物と一緒に移動します。使い方は help vehicle を参照してください。"
+  ],
   "1.7.1": [
     "持ち物・保管・取引は references/inventory.md、セッション・手番・受領とチームは references/sessions.md、NPCの出現・昇格・同行は references/npcs.md にまとめました。"
   ],

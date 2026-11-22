@@ -75,6 +75,21 @@ import {
 } from "./storage-transfers.js";
 import { PlayTeams, type TeamCommand } from "./play-teams.js";
 import { PlayCompanions, type CompanionCommand } from "./play-companions.js";
+import {
+  assignOperator,
+  checkLocation,
+  destinationOf,
+  holdingActor,
+  isVehicle,
+  requireVehicleHere,
+  ride,
+  vehicleLocate,
+  vehicleNpc,
+  vehicleOperator,
+  vehiclePageSize,
+  vehiclePosition,
+  type Locate,
+} from "./vehicles.js";
 
 import { playerMaterial } from "./player-material.js";
 import { historyLimit, selectStates } from "./state-selection.js";
@@ -113,6 +128,20 @@ type CompanionJudgement = z.infer<typeof BlueprintDecision> & {
   repeated?: true;
 };
 type Input = z.infer<typeof PlayCommand>;
+type VehicleControl = Extract<Input, { command: "vehicle-request-control" }>;
+type VehicleApplication = {
+  vehicleId: string;
+  operatorId: string;
+  oppositionRequired: boolean;
+};
+function vehicleMovement(input: Input) {
+  return input.command === "vehicle-board" ||
+    input.command === "vehicle-leave" ||
+    input.command === "vehicle-travel"
+    ? input
+    : undefined;
+}
+type Boarding = { subjectId: string; vehicleId: string };
 type DrawInput = Extract<Input, { command: "draw" }>;
 type DrawConfig = Extract<Input, { command: "draw-configure" }>;
 type DrawPublish = Extract<Input, { command: "draw-table-publish" }>;
@@ -206,14 +235,21 @@ function actionMessage(
       return "セッションを分離し、単独プレイを続けます";
     case "finish":
       return "プレイを終了し、履歴を確定しました";
-    case "receive":
+    case "receive": {
+      const application = result.application as {
+        state: string;
+        code?: string;
+        message?: string;
+      };
+      if (application.code && application.message) return application.message;
       if (!input.accept)
-        return (result.application as { state: string }).state === "rejected"
+        return application.state === "rejected"
           ? "あなたの却下を受け付け、申請は却下されました"
           : "あなたの却下を受け付けました。あなたは移動しません";
-      return (result.application as { state: string }).state === "waiting"
+      return application.state === "waiting"
         ? `あなたの承認を受け付けました。申請は${owner?.name ?? "次の受領者"}の判断待ちです`
         : "あなたの承認を受け付け、申請は確定しました";
+    }
     case "promote-npc":
       return result.state === "approved"
         ? "NPCの昇格が承認されました"
@@ -226,6 +262,18 @@ function actionMessage(
       return (result.outcome as { success?: boolean })?.success === false
         ? "新しい場所は見つかりませんでした"
         : "新しい場所を記録しました。placeIdへ移動できます";
+    case "vehicle-board":
+      return "乗りました。降りるまで乗り物と一緒に移動します";
+    case "vehicle-leave":
+      return "乗り物から降りました";
+    case "vehicle-travel":
+      return "乗り物が目的地に到着しました";
+    case "vehicle-request-control":
+      return result.state === "receiving"
+        ? "NPCの承認を待っています"
+        : result.state === "rejected"
+          ? "対抗判定に失敗しました"
+          : "操縦権を確認しました";
     case "update":
       if (input.stealth && result.stealth) {
         const { place } = result.stealth as NonNullable<
@@ -382,6 +430,7 @@ export type Session = {
       // 所在の変更だけの申請では、却下した同行者を除いて確定する。
       locates?: BelongingOp[];
       declined?: string[];
+      vehicleControl?: VehicleApplication;
     };
   };
 };
@@ -404,6 +453,10 @@ type Plan = {
   fatal?: string[];
   appearances?: Appearance[];
   locates?: BelongingOp[];
+  vehicleControl?: VehicleApplication;
+  vehicleResult?: Record<string, unknown>;
+  vehicleUnchanged?: true;
+  boardings?: Boarding[];
 };
 function turnOwner(data: Session["data"]) {
   const receipt = data.receiving;
@@ -1170,7 +1223,7 @@ export class BotPlay {
               {
                 role: "system",
                 content:
-                  "あなたは明示的に担当を指定された一人のユニークNPCです。自分自身の発言・行動の描写にはsayを使います。発言の中で物を使った・食べた・渡したと述べても、持ち物は変わりません。npc-actionは他の出現個体について申請するコマンドです。本人に提供された素材とセッションの入力・結果から、本人として次のAPIコマンドを一つ選びます。通常手番の開始時、sinceLastTurnには前回の自分の公開行動、その後に届いた発言・結果・コメント、同席者の増減があります。退出はセッションからの退出で、世界内の移動を意味しません。前回応じた声と新しい呼びかけを区別してください。今応じることや自分からしたいことがなければ、何も発言せずend-turnを選べます。currentTurnはこの手番で既に実行した操作とその結果です。発言・行動を終え、続けて行う別の目的がなければend-turnで次の人物へ渡してください。世界の裁定や他人の私的な解釈を代作しません。requestIdはサーバーが設定します。commandSchemaに従うJSONだけを返します。",
+                  "あなたは明示的に担当を指定された一人のユニークNPCです。自分自身の発言・行動の描写にはsayを使います。発言の中で物を使った・食べた・渡したと述べても、持ち物は変わりません。自分が乗り物（self.material.vehicle）なら、自ら運行するときは自分のIDをvehicleIdに指定してvehicle-travelを使えます。npc-actionは他の出現個体について申請するコマンドです。本人に提供された素材とセッションの入力・結果から、本人として次のAPIコマンドを一つ選びます。通常手番の開始時、sinceLastTurnには前回の自分の公開行動、その後に届いた発言・結果・コメント、同席者の増減があります。退出はセッションからの退出で、世界内の移動を意味しません。前回応じた声と新しい呼びかけを区別してください。今応じることや自分からしたいことがなければ、何も発言せずend-turnを選べます。currentTurnはこの手番で既に実行した操作とその結果です。発言・行動を終え、続けて行う別の目的がなければend-turnで次の人物へ渡してください。世界の裁定や他人の私的な解釈を代作しません。requestIdはサーバーが設定します。commandSchemaに従うJSONだけを返します。",
               },
               {
                 role: "user",
@@ -2426,21 +2479,25 @@ export class BotPlay {
       outcome,
       turn: session.data.number,
       at: this.now().toISOString(),
-      message: `${memo ? "メモ" : "申請"}${
-        {
-          accepted: r.declined?.length
-            ? "が確定しました（承認した人だけ移動）"
-            : "が確定しました（全員が承認）",
-          rejected: "が却下されました",
-          expired: "の受領判断が期限切れになりました",
-          cancelled:
-            "の受領判断は、関係する参加者が退出したため成立しませんでした",
-        }[outcome]
-      }${
-        state === "accepted" && items?.length
-          ? `。${await itemOutcomeMessage(this.store.context((await this.world(session.world_id)).id), items)}`
-          : ""
-      }`,
+      ...(typeof extra.code === "string" ? { code: extra.code } : {}),
+      message:
+        typeof extra.message === "string"
+          ? extra.message
+          : `${memo ? "メモ" : "申請"}${
+              {
+                accepted: r.declined?.length
+                  ? "が確定しました（承認した人だけ移動）"
+                  : "が確定しました（全員が承認）",
+                rejected: "が却下されました",
+                expired: "の受領判断が期限切れになりました",
+                cancelled:
+                  "の受領判断は、関係する参加者が退出したため成立しませんでした",
+              }[outcome]
+            }${
+              state === "accepted" && items?.length
+                ? `。${await itemOutcomeMessage(this.store.context((await this.world(session.world_id)).id), items)}`
+                : ""
+            }`,
     };
     const rejectedBy = rejectingActor
       ? (await this.#characters(session, db)).find(
@@ -3477,6 +3534,11 @@ export class BotPlay {
     }
   }
   async #places(context: WorldContext, actor: string) {
+    if (
+      (await isVehicle(context, actor)) &&
+      (await context.locationSubjects(actor, latest, { limit: 1 })).length
+    )
+      return [actor];
     return directPlaces(context, actor);
   }
   async #routes(context: WorldContext, here: string[]) {
@@ -3495,7 +3557,11 @@ export class BotPlay {
             "out",
             latest,
           ))
-            if (e.role === "about" && !here.includes(e.target))
+            if (
+              e.role === "about" &&
+              e.text !== "route-requires" &&
+              !here.includes(e.target)
+            )
               routes.set(e.target, (await context.node(e.target))!.text);
     return [...routes].map(([id, label]) => ({ id, label }));
   }
@@ -3554,7 +3620,13 @@ export class BotPlay {
     for (const place of places) {
       found.add(place);
       for (const id of await groundItems(context, place)) found.add(id);
-      for (const subject of await context.locationSubjects(place))
+      for (const subject of await context.locationSubjects(
+        place,
+        latest,
+        (await isVehicle(context, place))
+          ? { limit: vehiclePageSize }
+          : undefined,
+      ))
         if (
           (!visible || (await visible(subject))) &&
           (await directPlaces(context, subject)).includes(place)
@@ -3672,10 +3744,69 @@ export class BotPlay {
           neighbors.delete(id);
       const contacts = await this.#available(world, [...neighbors], db);
       const here = await this.#places(context, actor);
-      // 行き来の記述(route)が、直接の滞在先と結んでいる別の場所。移動先の手がかりで、移動の制限ではない。
+      const aboard = await ride(context, actor);
+      const driving = !aboard && (await isVehicle(context, actor));
+      const outside = aboard
+        ? aboard.outerPlaceId
+        : driving
+          ? (await vehiclePosition(context, actor)).placeId
+          : here[0];
+      const cabin = aboard?.vehicleId ?? (driving ? actor : undefined);
+      const vehicleIds = outside
+        ? await context.vehiclesAt(outside, actor, query.vehicleAfter)
+        : [];
+      const passengerIds = cabin
+        ? await context.locationSubjects(cabin, latest, {
+            after: query.passengerAfter,
+            limit: vehiclePageSize + 1,
+          })
+        : [];
+      const visible = async (ids: string[]) =>
+        (
+          await Promise.all(
+            ids
+              .slice(0, vehiclePageSize)
+              .map(async (id) =>
+                (await this.#canSee(db, world, context, actor, id))
+                  ? id
+                  : undefined,
+              ),
+          )
+        ).filter((id): id is string => !!id);
       material = {
         locations,
-        routes: await this.#routes(context, here),
+        routes: await this.#routes(context, outside ? [outside] : []),
+        ...(vehicleIds.length
+          ? {
+              vehicles: {
+                items: await Promise.all(
+                  (await visible(vehicleIds)).map(async (vehicleId) => ({
+                    vehicleId,
+                    label: (await context.node(vehicleId))!.text,
+                    placeId: outside,
+                  })),
+                ),
+                next: vehicleIds[vehiclePageSize]
+                  ? vehicleIds[vehiclePageSize - 1]
+                  : null,
+              },
+            }
+          : {}),
+        ...(cabin
+          ? {
+              passengers: {
+                items: await Promise.all(
+                  (await visible(passengerIds)).map(async (actorId) => ({
+                    actorId,
+                    name: (await context.node(actorId))!.text,
+                  })),
+                ),
+                next: passengerIds[vehiclePageSize]
+                  ? passengerIds[vehiclePageSize - 1]
+                  : null,
+              },
+            }
+          : {}),
         subjects: await Promise.all(
           [...neighbors].map(async (id) => ({
             ...(await context.node(id)),
@@ -3697,6 +3828,7 @@ export class BotPlay {
       };
     } else {
       const target = query.kind === "self" ? actor : query.targetId;
+      const aboard = target === actor ? await ride(context, actor) : undefined;
       const canSee = await this.#canSee(
         db,
         world,
@@ -3746,6 +3878,15 @@ export class BotPlay {
         ...(target === actor
           ? {
               belongings: await readBelongings(context, actor),
+              ...(aboard ? { ride: aboard } : {}),
+              ...((await isVehicle(context, actor))
+                ? {
+                    vehicle: {
+                      vehicleId: actor,
+                      placeId: (await vehiclePosition(context, actor)).placeId,
+                    },
+                  }
+                : {}),
               interpretations: await Promise.all(
                 (await context.relations(actor, "interpret", "out", at))
                   .filter((e) => e.role === "content")
@@ -5015,6 +5156,162 @@ export class BotPlay {
     }
     return [...items.values()];
   }
+  async #planVehicleControl(
+    db: Db,
+    world: string,
+    actor: string,
+    input: VehicleControl,
+    context: WorldContext,
+    at: number,
+  ): Promise<Plan> {
+    const { vehicleId, requestId } = input;
+    if (!(await isVehicle(context, vehicleId)))
+      reject("VEHICLE_NOT_FOUND", "乗り物を指定してください");
+    const changes = empty();
+    const base = { context, at, changes, recipients: [] };
+    const operator = await vehicleOperator(context, vehicleId);
+    const result = { vehicleId, operatorId: actor };
+    if (operator?.actorId === actor)
+      return { ...base, vehicleResult: result, vehicleUnchanged: true };
+
+    const position = await vehiclePosition(context, vehicleId);
+    const [direct] = await directPlaces(context, actor);
+    requireVehicleHere(
+      direct === vehicleId ? position.placeId : direct,
+      position.placeId,
+    );
+    const holder = await holdingActor(db, world, context, actor, position);
+    const npc = await vehicleNpc(db, world, vehicleId);
+    const others = new Set(
+      [holder, operator?.actorId].filter(
+        (id): id is string => !!id && id !== actor,
+      ),
+    );
+    if (input.applicationId) {
+      const approval = await db.query(
+        `SELECT 1 FROM bot_request WHERE id=$1 AND world_id=$2 AND actor_id=$3
+         AND outcome->>'vehicleApproval'=$4 AND outcome->>'approvalUsed' IS NULL`,
+        [input.applicationId, world, actor, vehicleId],
+      );
+      if (!input.oppose || !npc || !approval.rowCount)
+        reject(
+          "VEHICLE_APPROVAL_INVALID",
+          "この乗り物について本人が承認を受けた申請を指定してください",
+        );
+    } else if (npc && vehicleId !== actor) {
+      if (input.oppose) others.add(vehicleId);
+      else {
+        if (!npc.controller)
+          reject(
+            "NPC_UNASSIGNED",
+            "対象のユニークNPCには操作担当が指定されていません",
+          );
+        const session = await this.current(world, actor, db);
+        if (
+          !session?.data.members.some((member) => member.actorId === vehicleId)
+        )
+          reject(
+            "REMOTE_RECEIVING",
+            "対象NPCと同じセッションで操縦を申請してください",
+          );
+        if (!others.size)
+          assignOperator(changes, requestId, at, vehicleId, actor);
+        return {
+          ...base,
+          recipients: [vehicleId],
+          vehicleControl: { ...result, oppositionRequired: !!others.size },
+        };
+      }
+    }
+    if (others.size && !input.oppose)
+      reject(
+        "VEHICLE_OPPOSITION_REQUIRED",
+        "他者の所持または操縦権があります。対抗するには --oppose を指定してください",
+      );
+
+    if (holder && holder !== actor && position.holding) {
+      const placement = await planBelongings(context, requestId, at, [
+        {
+          type: "locate",
+          subjectId: vehicleId,
+          text: "現在の場所に残る",
+          aboutIds: [position.placeId!],
+        },
+      ]);
+      Object.assign(changes, placement.changes);
+      at = placement.at;
+      changes.endEdges.push(position.holding.id);
+    }
+    if (operator) changes.endEdges.push(...operator.edges);
+    assignOperator(changes, requestId, at, vehicleId, actor);
+
+    let outcome: Plan["outcome"];
+    if (others.size) {
+      const items = await this.#consumable(context, actor, changes);
+      const consumes = new Map<string, number | undefined>();
+      const contests = [];
+      for (const opponentId of others) {
+        const roll = await this.#oppositionRoll(
+          derivedId(`${requestId}:vehicle-opposition:${opponentId}`),
+          actor,
+          "乗り物の専用操縦権を取得するため、指定された相手の所持または操縦に対抗する",
+          changes,
+          await this.#facts(context, [actor, vehicleId, opponentId]),
+          items,
+          undefined,
+          [],
+          "",
+          undefined,
+          opponentId,
+        );
+        const success = roll.roll <= roll.setting.successThrough;
+        contests.push({
+          opponentId,
+          success,
+          setting: roll.setting,
+          roll: roll.roll,
+        });
+        if (!success) continue;
+        for (const { id, count } of roll.setting.consumes ?? []) {
+          const index = items.findIndex((item) => item.id === id);
+          const item = items[index]!;
+          consumes.set(
+            id,
+            count === undefined ? undefined : (consumes.get(id) ?? 0) + count,
+          );
+          if (count === undefined || count === item.count)
+            items.splice(index, 1);
+          else item.count = item.count! - count;
+        }
+      }
+      const success = contests.every((contest) => contest.success);
+      outcome = { success, contests };
+      if (!success)
+        return {
+          ...base,
+          changes: empty(),
+          outcome,
+          vehicleResult: { state: "rejected", vehicleId },
+        };
+      at = await this.#append(
+        context,
+        `${requestId}:consume`,
+        at,
+        changes,
+        [...consumes].map(([id, count]) => ({ type: "remove", id, count })),
+      );
+    }
+    return {
+      ...base,
+      at,
+      outcome,
+      vehicleResult: {
+        ...result,
+        ...(operator ? { previousOperatorId: operator.actorId } : {}),
+      },
+    };
+  }
+
   async #plan(
     world: string,
     actor: string,
@@ -5024,10 +5321,12 @@ export class BotPlay {
       db = this.pool,
       expectedHandoff,
       proposalOnly = false,
+      vehicleResponse = false,
     }: {
       db?: Db;
       expectedHandoff?: Handoff;
       proposalOnly?: boolean;
+      vehicleResponse?: boolean;
     } = {},
   ): Promise<Plan | undefined> {
     if (input.command === "npc-action") {
@@ -5058,6 +5357,64 @@ export class BotPlay {
         input.requestId,
         context,
         w.at,
+      );
+    }
+    const movement = vehicleMovement(input);
+    if (movement || input.command === "vehicle-request-control") {
+      const w = await this.world(world, db);
+      const context = this.store.context(w.id);
+      const prior = await this.store.receipt(w.id, input.requestId);
+      if (prior) {
+        const { rows } = await db.query(
+          "SELECT outcome FROM bot_request WHERE id=$1",
+          [input.requestId],
+        );
+        const saved = rows[0]?.outcome;
+        return {
+          context,
+          changes: prior.changes,
+          at: prior.at,
+          recipients: [],
+          vehicleResult: saved?.vehicleResult,
+          outcome: saved?.outcome,
+        };
+      }
+      if (input.command === "vehicle-request-control")
+        return this.#planVehicleControl(db, world, actor, input, context, w.at);
+      const { vehicleId } = movement!;
+      if (!(await isVehicle(context, vehicleId)))
+        reject("VEHICLE_NOT_FOUND", "乗り物を指定してください");
+      let op = vehicleLocate(
+        actor,
+        vehicleId,
+        input.command === "vehicle-travel" ? input.destinationId : undefined,
+      );
+      if (input.command === "vehicle-leave") {
+        const aboard = await ride(context, actor);
+        if (aboard?.vehicleId !== vehicleId || !aboard.outerPlaceId)
+          reject(
+            "VEHICLE_NOT_ABOARD",
+            "現在乗っている乗り物を指定してください",
+          );
+        op = {
+          type: "locate",
+          subjectId: actor,
+          text: "乗り物から降りる",
+          aboutIds: [aboard.outerPlaceId],
+        };
+      }
+      return this.#plan(
+        world,
+        actor,
+        user,
+        {
+          command: "update",
+          requestId: input.requestId,
+          text: op.text,
+          operations: [op],
+          dependencies: context.dependencies,
+        },
+        { db, vehicleResponse: true },
       );
     }
     const configuringDraw = isDrawConfiguration(input);
@@ -5142,6 +5499,7 @@ export class BotPlay {
         at: prior.at,
         recipients: [],
         ...(configuringDraw ? { drawReview: outcome as DrawJudgement } : {}),
+
         outcome: configuringDraw
           ? undefined
           : hidden
@@ -5167,13 +5525,14 @@ export class BotPlay {
       const op = input.operations[0]!;
       if (
         op.type === "locate" &&
-        op.subjectId !== actor &&
         op.aboutIds.length === 1 &&
         (!op.directPlaceId || op.directPlaceId === op.aboutIds[0]) &&
-        (await context.installation(op.subjectId))
+        (await context.installation(op.subjectId)) &&
+        (op.subjectId !== actor || (await isVehicle(context, actor)))
       ) {
         const relocation = await planRelocation(
           db,
+          world,
           context,
           actor,
           op.subjectId,
@@ -5297,7 +5656,11 @@ export class BotPlay {
         ? [actor, stealthOperation.from]
         : [actor];
     const actorFilter = hidden ? " AND actor_id=ANY($2::uuid[])" : "";
-    const registered = configuringDraw
+    const resolveActorsOnDemand =
+      configuringDraw ||
+      ("operations" in input &&
+        input.operations?.every((op) => op.type === "locate"));
+    const registered = resolveActorsOnDemand
       ? []
       : (
           await db.query<{ actor_id: string; controller: string | null }>(
@@ -5307,7 +5670,7 @@ export class BotPlay {
           )
         ).rows;
     const controlled = new Set(
-      configuringDraw
+      resolveActorsOnDemand
         ? []
         : (
             await db.query<{ actor_id: string }>(
@@ -5319,7 +5682,8 @@ export class BotPlay {
     );
     for (const r of registered) controlled.add(r.actor_id);
     const isControlled = async (id: string) => {
-      if (!configuringDraw || controlled.has(id)) return controlled.has(id);
+      if (!resolveActorsOnDemand || controlled.has(id))
+        return controlled.has(id);
       const { rows } = await db.query<{
         actor_id: string;
         controller: string | null;
@@ -5374,9 +5738,10 @@ export class BotPlay {
       const incoming = await holders(id);
       return incoming.length
         ? incoming.some((e) => e.source === actor && e.role === "use")
-        : (await context.relations(id, "status", "out", latest)).some(
-            (e) => e.role === "content" && e.text === "route",
-          );
+        : (await isVehicle(context, id)) ||
+            (await context.relations(id, "status", "out", latest)).some(
+              (e) => e.role === "content" && e.text === "route",
+            );
     };
     const here = async (id: string) =>
       (await this.#nearby(context, actor)).has(id) ||
@@ -5391,6 +5756,8 @@ export class BotPlay {
       impossible = false,
       fatal: string[] = [],
       locates: BelongingOp[] | undefined;
+    const boardings: Boarding[] = [];
+    let vehicleResult: Plan["vehicleResult"];
     let drawTable: DrawTable | undefined;
     let drawDescription = "";
     if (configuringDraw) {
@@ -5533,22 +5900,26 @@ export class BotPlay {
         );
       if (own && !hidden) {
         const session = await this.current(world, actor, db),
-          origin = await this.#places(context, actor);
+          origin = await directPlaces(context, actor);
         for (const c of companions)
           if (
             c.mode === "follow" &&
+            c.npc_id !== destinationOf(own) &&
+            !origin.includes(c.npc_id) &&
             !ops.some(
               (op) => op.type === "locate" && op.subjectId === c.npc_id,
             ) &&
             session?.data.members.some(
               (m) => m.actorId === c.npc_id && !m.instant,
             ) &&
-            (await this.#places(context, c.npc_id)).some((p) =>
+            (await directPlaces(context, c.npc_id)).some((p) =>
               origin.includes(p),
             )
           )
             ops.push({ ...own, subjectId: c.npc_id });
       }
+      const deployments = new Map<string, Locate>();
+      const release: string[] = [];
       for (const op of ops) {
         if (op.type === "locate" || op.type === "move")
           await context.assertMovable(
@@ -5565,7 +5936,24 @@ export class BotPlay {
         )
           externalEffect = true;
         if (op.type === "locate") {
-          if (!accompanying) await affect(op.subjectId);
+          const location = await checkLocation(db, world, context, actor, op);
+          if (location.board) {
+            boardings.push({
+              subjectId: op.subjectId,
+              vehicleId: location.board.vehicleId,
+            });
+            if (
+              location.deploy &&
+              !deployments.has(location.deploy.subjectId)
+            ) {
+              await context.assertMovable(location.deploy.subjectId);
+              deployments.set(location.deploy.subjectId, location.deploy);
+              release.push(location.release!);
+            }
+          }
+          if (vehicleResponse && plannedOps.length === 0)
+            vehicleResult = location.board ?? location.leave ?? location.travel;
+          if (!accompanying && !location.travel) await affect(op.subjectId);
         } else if (op.type === "create") {
           parties.add(op.holder);
           needsCreation = true;
@@ -5711,14 +6099,12 @@ export class BotPlay {
         plannedOps.push(op);
       }
       if (!impossible) {
-        const plan = await planBelongings(
-          context,
-          input.requestId,
-          at,
-          plannedOps,
-        );
+        const plan = await planBelongings(context, input.requestId, at, [
+          ...deployments.values(),
+          ...plannedOps,
+        ]);
         changes = plan.changes;
-        changes.endEdges.push(...pickupEdges);
+        changes.endEdges.push(...pickupEdges, ...release);
         at = plan.at;
         if (
           input.command === "update" &&
@@ -5749,6 +6135,39 @@ export class BotPlay {
       const ended = await Promise.all(
         changes.endEdges.map((id) => context.edge(id)),
       );
+      for (const edge of [...changes.edges, ...ended]) {
+        if (edge?.kind !== "status") continue;
+        const operator =
+          edge.role === "content" && edge.text === "operator"
+            ? edge
+            : edge.role === "about"
+              ? (
+                  await context.relations(edge.source, "status", "in", latest)
+                ).find((e) => e.role === "content" && e.text === "operator")
+              : undefined;
+        if (!operator) continue;
+        const plan = await this.#planVehicleControl(
+          db,
+          world,
+          actor,
+          {
+            command: "vehicle-request-control",
+            requestId: input.requestId,
+            vehicleId: operator.source,
+          },
+          context,
+          at,
+        );
+        if (plan.vehicleControl?.oppositionRequired)
+          reject(
+            "VEHICLE_OPPOSITION_REQUIRED",
+            "操縦権への対抗は vehicle request-control --oppose で申請してください",
+          );
+        reject(
+          "VEHICLE_CONTROL_OPERATION_REQUIRED",
+          "操縦権の取得には vehicle request-control を使ってください",
+        );
+      }
       if (
         await belongingEdges(
           context,
@@ -6142,6 +6561,8 @@ export class BotPlay {
       outcome,
       ...(handoff ? { handoff } : {}),
       ...(locates ? { locates } : {}),
+      ...(boardings.length ? { boardings } : {}),
+      ...(vehicleResult ? { vehicleResult } : {}),
       ...(fatal.length ? { fatal } : {}),
     };
   }
@@ -6294,6 +6715,7 @@ export class BotPlay {
     mortal: string[] = [],
     deathCriteria = "",
     group?: { count: number; allowSeparation: boolean },
+    opponentId?: string,
   ) {
     function readDecision(raw: string) {
       const { setting, observable } = read(parseOutput(raw)),
@@ -6370,6 +6792,7 @@ export class BotPlay {
           content: JSON.stringify({
             actor,
             action,
+            ...(opponentId ? { opponentId } : {}),
             changes,
             materials,
             ...(consumable.length ? { consumable } : {}),
@@ -6693,6 +7116,16 @@ export class BotPlay {
       input.command === "companion-return"
     )
       input = await this.#companionLocate(world, actor, input);
+    if (input.command === "storage-relocate") {
+      const context = this.store.context((await this.world(world)).id);
+      if (await isVehicle(context, input.storageId))
+        input = {
+          command: "vehicle-travel",
+          requestId: input.requestId,
+          vehicleId: input.storageId,
+          destinationId: input.placeId,
+        };
+    }
     if (
       expectedAssignment &&
       (
@@ -6726,6 +7159,10 @@ export class BotPlay {
         "create-batch",
         "blueprint-start",
         "companion-request",
+        "vehicle-request-control",
+        "vehicle-board",
+        "vehicle-leave",
+        "vehicle-travel",
         "explore",
         "oppose",
         "memo",
@@ -6898,7 +7335,20 @@ export class BotPlay {
             prepared!,
             input.requestId,
           );
-        return this.#plan(world, actor, user, input);
+        const planned = await this.#plan(world, actor, user, input);
+        if (planned?.vehicleResult) {
+          await this.pool.query(
+            "UPDATE bot_request SET outcome=$2 WHERE id=$1 AND result IS NULL",
+            [
+              input.requestId,
+              {
+                vehicleResult: planned.vehicleResult,
+                outcome: planned.outcome,
+              },
+            ],
+          );
+        }
+        return planned;
       },
       w.id,
       user,
@@ -7428,9 +7878,25 @@ export class BotPlay {
               }
             | undefined;
           let moved: string[] = [];
-          if (!input.accept && !receiving.locates) {
+          if (
+            input.accept &&
+            receiving.vehicleControl &&
+            !(await this.store.receipt(w.id, receiving.id))
+          ) {
+            try {
+              await this.store.context(w.id, receiving.dependencies).validate();
+            } catch (error) {
+              if (!(error instanceof WorldConflict)) throw error;
+              settled = await this.#settle(db, session, "rejected", {
+                code: "WORLD_CHANGED",
+                message:
+                  "乗り物の所在や操縦権が変わりました。現在の状態を確かめてから申請し直してください",
+              });
+            }
+          }
+          if (!settled && !input.accept && !receiving.locates) {
             settled = await this.#settle(db, session, "rejected", {}, actor);
-          } else {
+          } else if (!settled) {
             receiving.decided.push(actor);
             if (!input.accept) (receiving.declined ??= []).push(actor);
             if (
@@ -7450,27 +7916,53 @@ export class BotPlay {
                   {},
                   actor,
                 );
-              else {
+              else if (receiving.vehicleControl?.oppositionRequired) {
+                await db.query(
+                  "UPDATE bot_request SET outcome=$2 WHERE id=$1",
+                  [
+                    receiving.id,
+                    { vehicleApproval: receiving.vehicleControl.vehicleId },
+                  ],
+                );
+                settled = await this.#settle(db, session, "rejected", {
+                  code: "VEHICLE_OPPOSITION_REQUIRED",
+                  message:
+                    "NPCは承認しました。他者への対抗を続ける場合は --oppose とこの申請IDを指定してください",
+                });
+              } else {
                 // 旧版で受け付けた取り分けも、確定前に元の品を再確認する。
                 for (const item of receiving.items ?? [])
                   if (item.holding) await context.assertMovable(item.itemId);
                 const plan = declined.length
-                  ? await planBelongings(
-                      context,
-                      receiving.id,
-                      receiving.at,
-                      ops!,
-                    )
+                  ? (await this.#plan(
+                      world,
+                      receiving.sender,
+                      user,
+                      {
+                        command: "update",
+                        requestId: receiving.id,
+                        text: receiving.text,
+                        operations: ops!,
+                        dependencies: receiving.dependencies,
+                      },
+                      { db },
+                    ))!
                   : receiving;
                 // 受け取り待ちの間にも時刻は進むので、受入れが揃った時刻で確定する。
                 const receipt = await this.#commit(w.id, receiving.id, {
                   at: Math.max(plan.at, w.at),
                   changes: plan.changes,
-                  context,
+                  context: "context" in plan ? plan.context : context,
                 });
                 confirmedChanges = receipt.changes;
                 settled = await this.#settle(db, session, "accepted", {
                   commitId: receipt.commitId,
+                  ...(receiving.vehicleControl
+                    ? {
+                        vehicleId: receiving.vehicleControl.vehicleId,
+                        operatorId: receiving.vehicleControl.operatorId,
+                      }
+                    : {}),
                   ...(declined.length ? { declined } : {}),
                 });
                 moved = (ops ?? []).flatMap((op) =>
@@ -7495,6 +7987,14 @@ export class BotPlay {
               }
             : {
                 ...settled!.result,
+                ...(settled?.result.outcome === "accepted" &&
+                receiving.vehicleControl &&
+                !receiving.vehicleControl.oppositionRequired
+                  ? {
+                      vehicleId: receiving.vehicleControl.vehicleId,
+                      operatorId: receiving.vehicleControl.operatorId,
+                    }
+                  : {}),
                 state:
                   settled!.result.outcome === "accepted"
                     ? "confirmed"
@@ -7513,11 +8013,9 @@ export class BotPlay {
                 result: {
                   applicationId: input.applicationId,
                   ...(settled?.items?.length ? { items: settled.items } : {}),
-                  state: input.accept
-                    ? d.receiving
-                      ? "receiving"
-                      : "accepted"
-                    : "rejected",
+                  state: d.receiving
+                    ? "receiving"
+                    : (settled?.result.outcome ?? "rejected"),
                 },
               },
             ],
@@ -7929,6 +8427,9 @@ export class BotPlay {
                   : {}),
                 ...(plan.drawReview.repeated ? { repeated: true } : {}),
               };
+            } else if (plan?.vehicleUnchanged) {
+              await plan.context.validate();
+              result = { state: "accepted", ...plan.vehicleResult };
             } else if (plan) {
               if (
                 plan.instantMembers &&
@@ -7943,22 +8444,38 @@ export class BotPlay {
                 reviewedSource?.kind === "script"
                   ? reviewedSource.drawTable
                   : undefined;
-              const entryText = plan.drawReview
-                ? [
-                    `抽選器の設定を申請した。説明：${plan.drawReview.description}`,
-                    ...(reviewedTable && plan.recipients.length
-                      ? [
-                          JSON.stringify({
-                            entries: reviewedTable.entries,
-                            price: reviewedTable.price,
-                            spCost: drawSpCost(reviewedTable),
-                          }),
-                        ]
-                      : []),
-                  ].join("\n")
-                : "text" in input
-                  ? (input.text ?? "")
-                  : "";
+              const entryText = plan.vehicleControl
+                ? `「${(await plan.context.node(plan.vehicleControl.vehicleId))?.text ?? "乗り物"}」の操縦を申請する`
+                : plan.drawReview
+                  ? [
+                      `抽選器の設定を申請した。説明：${plan.drawReview.description}`,
+                      ...(reviewedTable && plan.recipients.length
+                        ? [
+                            JSON.stringify({
+                              entries: reviewedTable.entries,
+                              price: reviewedTable.price,
+                              spCost: drawSpCost(reviewedTable),
+                            }),
+                          ]
+                        : []),
+                    ].join("\n")
+                  : "text" in input
+                    ? (input.text ?? "")
+                    : vehicleMovement(input) ||
+                        input.command === "vehicle-request-control"
+                      ? "乗り物を操作する"
+                      : "";
+              if (
+                plan.boardings?.length &&
+                !(await this.store.receipt(w.id, input.requestId))
+              ) {
+                const current = this.store.context(w.id);
+                for (const { subjectId, vehicleId } of plan.boardings) {
+                  const [here] = await directPlaces(current, subjectId);
+                  const { placeId } = await vehiclePosition(current, vehicleId);
+                  if (here !== vehicleId) requireVehicleHere(here, placeId);
+                }
+              }
               for (const recipient of deadline ? [] : plan.recipients)
                 if (!d.members.some((m) => m.actorId === recipient))
                   reject(
@@ -8046,6 +8563,9 @@ export class BotPlay {
                   dependencies: plan.context.dependencies,
                   text: entryText,
                   ...(plan.locates ? { locates: plan.locates } : {}),
+                  ...(plan.vehicleControl
+                    ? { vehicleControl: plan.vehicleControl }
+                    : {}),
                 };
                 result = { applicationId: input.requestId, state: "receiving" };
                 if (isDrawConfiguration(input))
@@ -8090,6 +8610,7 @@ export class BotPlay {
                 result = {
                   state: "accepted",
                   commitId: receipt.commitId,
+                  ...plan.vehicleResult,
                   ...(plan.items?.length ? { items: plan.items } : {}),
                   ...(plan.outcome ? { outcome: plan.outcome } : {}),
                   ...(input.command === "explore" && plan.changes.nodes[0]
@@ -8114,6 +8635,15 @@ export class BotPlay {
                       }
                     : {}),
                 };
+                if (
+                  input.command === "vehicle-request-control" &&
+                  input.applicationId &&
+                  result.operatorId
+                )
+                  await db.query(
+                    "UPDATE bot_request SET outcome=outcome || jsonb_build_object('approvalUsed',true) WHERE id=$1",
+                    [input.applicationId],
+                  );
                 if (isDrawConfiguration(input))
                   result = {
                     ...result,
@@ -8231,6 +8761,7 @@ export class BotPlay {
               result.outcome = plan.outcome;
             // Only successful calls consume a slot. Read material never enters chat.
             if (
+              !plan?.vehicleUnchanged &&
               !(plan?.stealth && endedTurn) &&
               (input.command !== "contact" || session.data.turn === actor)
             ) {
