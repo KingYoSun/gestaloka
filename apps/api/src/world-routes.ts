@@ -175,7 +175,7 @@ export async function worldRoutes(
         );
     }
   });
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof IdentityError)
       return reply
         .code(error.status)
@@ -204,7 +204,7 @@ export async function worldRoutes(
           .map((v) => `${v.instancePath || "/"}: ${v.message}`)
           .join("、")}）`,
       });
-    app.log.error(error);
+    console.error(request.method, request.routeOptions.url, error);
     return reply
       .code(500)
       .send({ code: "INTERNAL_ERROR", message: "処理を完了できませんでした" });
