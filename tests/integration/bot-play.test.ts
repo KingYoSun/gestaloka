@@ -11777,6 +11777,62 @@ test("持ち物は本人検索で個数つきで読め、ダイスが成功し�
   });
   expect((await held(0)).map((i) => i.id)).not.toContain(stone);
   expect((await held(0)).map((i) => i.id)).toContain(shield);
+  // 申請者が中身を決めていない技能と物品は、成功時の本文をGMが決める。申請が作らないノードは変わらない。
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(messages[0]?.content).toContain("decided:[{id,text}]");
+    const { changes } = JSON.parse(String(messages[1]!.content)) as {
+      changes: { nodes: { id: string; kind: string }[] };
+    };
+    return answer(id, {
+      ...sure,
+      decided: [
+        ...changes.nodes.map((n) => ({
+          id: n.id,
+          text:
+            n.kind === "script"
+              ? "水呼び: 近くの水の在り処が分かる"
+              : "祠の小石",
+        })),
+        { id: shield, text: "別の物" },
+      ],
+    });
+  });
+  const prayer = {
+      requestId: randomUUID(),
+      command: "update",
+      text: "祠に祈り、授かりを委ねる",
+      operations: [
+        {
+          type: "learn",
+          person: f.actors[0],
+          text: "祠が決める技能を1つ",
+          basis: "祈った",
+        },
+        {
+          type: "create",
+          label: "祠が決める何か",
+          holder: f.actors[0],
+          basis: "祈った",
+        },
+      ],
+      dependencies: [],
+    },
+    granted = await f.send(0, prayer);
+  expect(
+    (
+      granted.outcome as { setting: { decided: { text: string }[] } }
+    ).setting.decided.map((d) => d.text),
+  ).toEqual(["水呼び: 近くの水の在り処が分かる", "祠の小石"]);
+  expect(granted.items).toMatchObject([{ label: "祠の小石" }]);
+  expect(await f.send(0, prayer)).toEqual(granted);
+  const own = await readBelongings(f.store.context(f.graph), f.actors[0]!);
+  expect(own.skills.map((s) => s.text)).toEqual([
+    "水呼び: 近くの水の在り処が分かる",
+  ]);
+  expect(own.items.map((i) => i.label)).toEqual(
+    expect.arrayContaining(["祠の小石", "盾"]),
+  );
 });
 
 test.each(["確定", "失敗"])(

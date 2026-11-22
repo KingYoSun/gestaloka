@@ -655,6 +655,11 @@ const DiceSetting = z
           .strict(),
       )
       .optional(),
+    decided: z
+      .array(
+        z.object({ id: z.uuid(), text: z.string().trim().min(1) }).strict(),
+      )
+      .optional(),
   })
   .strict()
   .refine((v) => v.successThrough < v.sides);
@@ -691,6 +696,8 @@ function instantReductionText({
 }
 const consumePrompt =
   "consumableは申請者が手に持つ物品である。この行動が成功したときに使い切る・減る物品を選び、consumes:[{id,count}]に返す。countは減る個数で、個数のない物品やまるごと失う物品では省く。行動がその物品を減らさないなら選ばず、該当がなければ空配列。";
+const decidePrompt =
+  "changes.nodesのうち申請者が新しく得る技能・物品で、その中身を申請者が決めず、相手・場所・偶然などに委ねているものがあれば、成功したときに確定する本文をdecided:[{id,text}]に返す。技能はできることとその適用範囲、物品は呼称とし、対象と世界の基準に合わせて、使い道や次の行動を考えられる具体性を持たせる。申請者が中身を書いているものは選ばず、該当がなければ空配列。";
 const waitPrompt =
   "waitMinutesは申請者がこの作成にかける実時間（分）で、成功すると物品はその時間の後に成立する。その場にない物の取り寄せや手間のかかる製作のように、時間をかけるほど成立しやすい申請では、かける時間に応じて成功範囲を広げる。";
 // GMが選んだ消費を、申請者が手に持つ物品と、その個数までに限る。
@@ -715,6 +722,17 @@ function consumption(
   const dice = { ...setting };
   delete dice.consumes;
   return { ...dice, ...(consumes.length ? { consumes } : {}) };
+}
+// GMが決めた本文を、申請が新しく持たせる技能・物品に限る。
+function decision(setting: z.infer<typeof DiceSetting>, changes?: Change) {
+  const decided = (setting.decided ?? []).filter(
+    ({ id }) =>
+      changes?.nodes.some((n) => n.id === id) &&
+      changes.edges.some((e) => e.kind === "has" && e.target === id),
+  );
+  const dice = { ...setting };
+  delete dice.decided;
+  return { ...dice, ...(decided.length ? { decided } : {}) };
 }
 const ExploreDice = z
   .object({
@@ -5380,6 +5398,8 @@ export class BotPlay {
             )
           ).rows[0]?.criteria || defaultCreationCriteria;
       const Dice = explore ? ExploreDice : DiceSetting;
+      // 本文をGMが決めるのは、すぐに成立する単独の申請に限る。
+      const decides = !explore && !batch && !waitMinutes;
       const parseSettings = (raw: string) => {
         const values = batch
           ? z
@@ -5414,6 +5434,7 @@ export class BotPlay {
             content:
               "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。" +
               (consumable.length ? consumePrompt : "") +
+              (decides ? decidePrompt : "") +
               (batch
                 ? "proposalsの順に各案のダイス設定を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
                 : "") +
@@ -5440,7 +5461,13 @@ export class BotPlay {
         parseSettings,
       );
       parseSettings(response.content).forEach((v, i) =>
-        settings.set(fresh[i]!.index, consumption(v, consumable)),
+        settings.set(
+          fresh[i]!.index,
+          decision(
+            consumption(v, consumable),
+            decides ? fresh[i]!.changes : undefined,
+          ),
+        ),
       );
     }
     const db = await this.pool.connect();
@@ -7041,6 +7068,8 @@ export class BotPlay {
       };
       if (!dice.success)
         return { context, changes: empty(), at, recipients: [], outcome };
+      for (const { id, text } of dice.setting.decided ?? [])
+        changes.nodes.find((n) => n.id === id)!.text = text;
       await this.#saveStorageLimits(context, changes, dice.setting);
       // 時間をかける申請の物品は届く時刻に成立させる。ここでは消費だけを確定する。
       if (wait) changes = empty();
