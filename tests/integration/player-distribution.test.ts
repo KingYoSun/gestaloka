@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { promisify } from "node:util";
@@ -33,6 +33,23 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
     );
     expect(pkg.version).toBe(release.version);
     expect(pkg.engines.node).toBe(release.node);
+    const indexUrl = "/api/player-cli/";
+    const index = await app.inject(indexUrl);
+    expect(index.statusCode).toBe(200);
+    expect(index.headers["content-type"]).toContain("text/html");
+    const linkedGuides = Array.from(
+      index.body.matchAll(/href="([^"]+)"/g),
+      ([, file]) => file,
+    );
+    const packagedGuides = await readdir(
+      join(folder, "package/skills/gestaloka-player/references"),
+    );
+    expect(linkedGuides.sort()).toEqual([...packagedGuides, "SKILL.md"].sort());
+    for (const file of linkedGuides) {
+      const guide = await app.inject(indexUrl + file);
+      expect(guide.statusCode, file).toBe(200);
+      expect(guide.headers["content-type"], file).toContain("text/markdown");
+    }
     const help = await promisify(execFile)(
       process.execPath,
       [join(folder, "package/dist/main.js"), "help"],
