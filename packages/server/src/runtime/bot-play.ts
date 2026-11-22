@@ -461,6 +461,13 @@ type Plan = {
   vehicleUnchanged?: true;
   boardings?: Boarding[];
 };
+function deciding(session: Session, actors: string[]) {
+  const r = session.data.receiving;
+  return (
+    !!r && actors.some((id) => r.sender === id || r.recipients.includes(id))
+  );
+}
+
 function turnOwner(data: Session["data"]) {
   const receipt = data.receiving;
   return receipt
@@ -1084,6 +1091,7 @@ export class BotPlay {
     actor: string,
     user: string,
     id: string,
+    target?: Session,
   ): Promise<Session> {
     const legacy = (
       await db.query<{ id: string }>(
@@ -1092,11 +1100,12 @@ export class BotPlay {
       )
     ).rows[0];
     const at = this.now().toISOString();
-    const session: Session = {
+    const member = { actorId: actor, sceneId: legacy?.id ?? id, userId: user };
+    const session: Session = target ?? {
       id,
       world_id: world,
       data: {
-        members: [{ actorId: actor, sceneId: legacy?.id ?? id, userId: user }],
+        members: [member],
         turn: actor,
         number: 1,
         turnStartedAt: at,
@@ -1105,14 +1114,21 @@ export class BotPlay {
         entries: [],
       },
     };
-    await db.query(
-      "INSERT INTO bot_session(id,world_id,data) VALUES($1,$2,$3)",
-      [session.id, world, session.data],
-    );
+    if (!target)
+      await db.query(
+        "INSERT INTO bot_session(id,world_id,data) VALUES($1,$2,$3)",
+        [session.id, world, session.data],
+      );
     await db.query(
       "INSERT INTO bot_scene(id,actor_id,world_id,session_id) VALUES($1,$2,$3,$4)",
-      [session.data.members[0]!.sceneId, actor, world, session.id],
+      [member.sceneId, actor, world, session.id],
     );
+    if (target) {
+      const before = turnState(target);
+      if (target.data.parked) before.turn = "";
+      await this.#enter(db, target, member);
+      await this.#save(db, target, before);
+    }
     await signalTurns(db, world, actor);
     return session;
   }
@@ -2386,12 +2402,6 @@ export class BotPlay {
   ) {
     const before = turnState(source);
     const ids = moving.map((m) => m.actorId);
-    const receipt = source.data.receiving;
-    if (
-      receipt &&
-      [receipt.sender, ...receipt.recipients].some((id) => ids.includes(id))
-    )
-      await this.#settle(db, source, "cancelled");
     const ended = ids.includes(source.data.turn)
       ? await this.#next(db, source, reason, ids)
       : undefined;
@@ -2427,6 +2437,7 @@ export class BotPlay {
     context: WorldContext,
     actors: string[],
     request: string,
+    requestedNpc?: string,
   ) {
     let changed = false;
     for (const c of await this.companions.following(db, world, actors)) {
@@ -2435,27 +2446,48 @@ export class BotPlay {
         !(await this.#places(context, c.npc_id)).some((p) => place.includes(p))
       ) {
         await this.companions.setMode(db, world, c.npc_id, "wait");
-        await this.#settlePlaces(db, world, [c.npc_id], request);
         changed = true;
         continue;
       }
       const target = await this.current(world, c.actor_id, db);
       if (!target || target.data.members.some((m) => m.actorId === c.npc_id))
         continue;
-      let source = await this.current(world, c.npc_id, db);
+      const source = await this.current(world, c.npc_id, db);
+      if (source && deciding(source, [c.npc_id])) {
+        // 別の会話にいる旧データの照合で、進行中の受領を取り消さない。
+        if (requestedNpc === c.npc_id)
+          reject(
+            "COMPANION_RECEIVING",
+            "コンパニオンの受領判断が終わってから追従を再開してください",
+          );
+        await this.companions.setMode(db, world, c.npc_id, "wait");
+        changed = true;
+        continue;
+      }
       if (!source) {
         const { rows } = await db.query<{ user_id: string | null }>(
           "SELECT user_id FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
           [world, c.npc_id],
         );
-        if (!rows[0]?.user_id) continue;
-        source = await this.#open(
+        if (!rows[0]?.user_id) {
+          if (requestedNpc === c.npc_id)
+            reject(
+              "NPC_UNASSIGNED",
+              "対象のユニークNPCには操作担当が指定されていません",
+            );
+          await this.companions.setMode(db, world, c.npc_id, "wait");
+          continue;
+        }
+        await this.#open(
           db,
           world,
           c.npc_id,
           rows[0].user_id,
           derivedId(request + ":companion:" + c.npc_id),
+          target,
         );
+        changed = true;
+        continue;
       }
       const before = turnState(target);
       await this.#transfer(
@@ -2488,13 +2520,10 @@ export class BotPlay {
         continue;
       const before = turnState(session);
       const apart = await this.#apart(db, session, id);
-      const receiving = session.data.receiving;
       if (
-        receiving &&
-        apart.some(
-          (m) =>
-            receiving.sender === m.actorId ||
-            receiving.recipients.includes(m.actorId),
+        deciding(
+          session,
+          apart.map((m) => m.actorId),
         )
       )
         await this.#settle(db, session, "cancelled");
@@ -2590,7 +2619,6 @@ export class BotPlay {
           candidates[0]!.actor_id,
           db,
         ))!;
-        const receiving = source.data.receiving;
         const moving: Member[] = [];
         for (const candidate of candidates) {
           const actor = candidate.actor_id;
@@ -2610,13 +2638,10 @@ export class BotPlay {
             continue;
           }
           const party = await this.#party(db, source, actor);
-          const blocked =
-            !!receiving &&
-            party.some(
-              (m) =>
-                receiving.sender === m.actorId ||
-                receiving.recipients.includes(m.actorId),
-            );
+          const blocked = deciding(
+            source,
+            party.map((m) => m.actorId),
+          );
           await this.teams.pending(db, world, actor, blocked);
           if (blocked) {
             results.set(actor, {
@@ -7918,31 +7943,36 @@ export class BotPlay {
             );
           }
         }
-        if (input.command === "companion-status")
-          await this.#syncFollowers(
-            db,
-            world,
-            context,
-            [actor],
-            input.requestId,
-          );
-        const companion = await this.companions.command(
+        const action = await this.companions.command(
           db,
           world,
-          () => this.store.context(w.id),
+          context,
           actor,
           input,
           w.at,
           commit,
         );
-        if (input.command === "companion-follow")
+        if (
+          input.command === "companion-follow" ||
+          input.command === "companion-status"
+        )
           await this.#syncFollowers(
             db,
             world,
             context,
             [actor],
             input.requestId,
+            input.command === "companion-follow" ? input.targetId : undefined,
           );
+        const companion = {
+          action,
+          companions: await this.companions.list(
+            db,
+            world,
+            this.store.context(w.id),
+            actor,
+          ),
+        };
         const result = companionDecision
           ? {
               ...companion,
@@ -8156,7 +8186,25 @@ export class BotPlay {
         | undefined;
       if (input.command === "start") {
         if (!session) {
-          session = await this.#open(db, world, actor, user, input.requestId);
+          let resume: Session | undefined;
+          const context = this.store.context(w.id);
+          for (const c of await this.companions.owned(db, world, actor)) {
+            if (
+              c.mode !== "follow" ||
+              !(await this.contact(context, actor, c.npc_id, world, db)).allowed
+            )
+              continue;
+            resume = await this.current(world, c.npc_id, db);
+            if (resume) break;
+          }
+          session = await this.#open(
+            db,
+            world,
+            actor,
+            user,
+            input.requestId,
+            resume,
+          );
           teamArrival = (
             await this.#teamArrivals(
               db,

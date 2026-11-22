@@ -12253,3 +12253,49 @@ test("旧版で別の会話に残った追従は現地で再合流し、遠方�
   await f.send(0, { command: "end-turn" });
   await recorded(f, "船が着いたよ", [0, 1]);
 });
+
+test("追従の再開・シーンの再開で同席者の受領判断を取り消さない", async () => {
+  const { f, owner, npc, mode, session } = await companionFixture();
+  await mode("wait");
+  await f.move(2, f.place);
+  await f.send(2, { command: "contact", targetId: owner });
+  await f.send(0, { command: "leave" });
+  await giveTurn(f, 2);
+  const propose = () =>
+    f.send(2, {
+      command: "memo",
+      text: "港で会おう",
+      participants: [npc],
+      dependencies: [],
+    });
+  const pending = await propose();
+  await expect(mode("follow")).rejects.toMatchObject({
+    code: "COMPANION_RECEIVING",
+  });
+  expect((await f.status(1)).receiving?.applicationId).toBe(
+    pending.applicationId,
+  );
+  await f.send(1, {
+    command: "receive",
+    applicationId: pending.applicationId,
+    accept: true,
+  });
+  await mode("follow");
+  expect(await session(0)).toBe(await session(1));
+  await giveTurn(f, 2);
+  await f.send(2, { command: "contact", targetId: owner });
+  await f.send(0, { command: "finish" });
+  await giveTurn(f, 2);
+  const ongoing = await propose();
+  const anchor = await session(2);
+  await f.send(0, { command: "start" });
+  expect(await session(0)).toBe(anchor);
+  expect((await f.status(1)).receiving?.applicationId).toBe(
+    ongoing.applicationId,
+  );
+  await f.send(1, {
+    command: "receive",
+    applicationId: ongoing.applicationId,
+    accept: true,
+  });
+});

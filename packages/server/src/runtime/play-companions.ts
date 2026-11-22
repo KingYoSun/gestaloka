@@ -201,18 +201,16 @@ export class PlayCompanions {
     return undefined;
   }
 
-  // 確定の後に読む一覧は、確定で進んだ版を読む新しい文脈で作る。
   async command(
     db: Db,
     world: string,
-    contexts: () => WorldContext,
+    context: WorldContext,
     actor: string,
     input: CompanionCommand,
     at: number,
     commit: (context: WorldContext, changes: Change) => Promise<unknown>,
   ) {
-    const npc = "targetId" in input ? input.targetId : undefined,
-      context = contexts();
+    const npc = "targetId" in input ? input.targetId : undefined;
     let message = "companionの状態を取得しました";
     if (npc && input.command !== "companion-request")
       await this.mine(db, world, actor, npc);
@@ -277,10 +275,7 @@ export class PlayCompanions {
         break;
       }
     }
-    return {
-      companions: await this.list(db, world, contexts(), actor),
-      action: { command: input.command, message },
-    };
+    return { command: input.command, message };
   }
 
   async list(db: Db, world: string, context: WorldContext, actor: string) {
