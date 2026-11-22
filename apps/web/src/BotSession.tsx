@@ -1,5 +1,5 @@
-import { useLayoutEffect, useState, useRef } from "react";
-import { ArrowDownToLine, ArrowUpToLine } from "lucide-react";
+import { memo, useState, useRef } from "react";
+import { ArrowDownToLine, ArrowUpToLine, Inbox, PenLine } from "lucide-react";
 import { z } from "zod";
 import {
   ItemOutcome,
@@ -135,6 +135,94 @@ const View = z.object({
     )
     .default([]),
 });
+type Session = z.infer<typeof View>;
+const parseView = (data: unknown) => View.parse(data);
+// 取得のたびに同じ内容の行は同じ参照になるため、追加された記録だけを描画する。
+const LogRow = memo(function LogRow({
+  row,
+  characters,
+  fresh,
+}: {
+  row: Session["entries"][number];
+  characters: Session["characters"];
+  fresh: boolean;
+}) {
+  const name = (id: string) => characters.find((c) => c.actorId === id)?.name;
+  const at = row.recordedAt ?? row.payload.transition?.at;
+  return (
+    <div className="play-log-row" data-fresh={fresh || undefined}>
+      <div>
+        <article className="rounded-lg border bg-card px-6 py-5">
+          <p className="record-meta">
+            {at ? <time dateTime={at}>{realTime(at)}</time> : "時刻の記録なし"}
+          </p>
+          {row.payload.entries?.map((entry, i) => (
+            <div key={i}>
+              <p className="record-meta">
+                {entry.label ?? name(entry.actorId) ?? "参加者"}
+              </p>
+              <RichText text={entry.input} />
+              <p className="muted">
+                結果：
+                {entry.result.outcome
+                  ? entry.result.outcome.success
+                    ? (entry.result.effectState ?? "成立しました")
+                    : "不成立でした"
+                  : entry.result.state === "rejected"
+                    ? "拒否しました"
+                    : entry.result.state === "failed"
+                      ? "成立しませんでした"
+                      : entry.result.state === "receiving"
+                        ? "受領判断中です"
+                        : entry.result?.state === "pending"
+                          ? "管理者の許可待ちです"
+                          : "受理しました"}
+              </p>
+              {entry.result.items?.map((item) => (
+                <div key={item.itemId}>
+                  <span>
+                    {item.label}
+                    {item.count ? ` ×${item.count}` : ""}〈{item.itemId}〉
+                  </span>
+                  {item.holding && (
+                    <p>
+                      {item.holding.fromId
+                        ? (name(item.holding.fromId) ?? item.holding.fromId)
+                        : "なし"}{" "}
+                      → {name(item.holding.toId) ?? item.holding.toId}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+          {row.payload.comment && <p>ターンコメント：{row.payload.comment}</p>}
+          {row.payload.reason && <p>{row.payload.reason}</p>}
+          {row.payload.transition && (
+            <p className="record-meta">{row.payload.transition.message}</p>
+          )}
+        </article>
+      </div>
+    </div>
+  );
+});
+function LogRows({
+  entries,
+  characters,
+}: Pick<Session, "entries" | "characters">) {
+  // 開いた時点より後に届いた記録だけを、現れる演出の対象にする。
+  const [shown] = useState(() => Number(entries.at(-1)?.id ?? 0));
+  return [...entries]
+    .reverse()
+    .map((row) => (
+      <LogRow
+        key={row.id}
+        row={row}
+        characters={characters}
+        fresh={Number(row.id) > shown}
+      />
+    ));
+}
 function PersonalMaterial({
   value,
   contact,
@@ -220,7 +308,6 @@ export function BotSession({
   const history = useRef<HistoryHandle>(null);
   const editorRequest = useRef<string>(null);
   const log = useRef<HTMLDivElement>(null);
-  const follow = useRef(!sceneId);
   const [pending, save] = usePending(
     pendingKey(`${id}:${actorId ?? "selected"}`, "bot-turn"),
     PlayCommand,
@@ -238,20 +325,15 @@ export function BotSession({
         },
       },
     },
-    { refetchInterval: 1000 },
+    { refetchInterval: 1000, select: parseView },
   );
   const mutation = $api.useMutation("post", "/api/worlds/{id}/session"),
-    view = query.data ? View.parse(query.data) : undefined;
+    view = query.data;
   // 取得時に既読になるため、プレイヤーが通知を読む操作で取得する。
   const waiting = $api.useMutation("post", "/api/worlds/{id}/waiting");
   const notices = $api.useMutation("get", "/api/worlds/{id}/notices", {
     onSuccess: () => void query.refetch(),
   });
-  const newest = view?.entries.at(-1)?.id;
-  useLayoutEffect(() => {
-    if (newest && follow.current && log.current)
-      log.current.scrollTop = log.current.scrollHeight;
-  }, [newest]);
   const execute = async (body: z.infer<typeof PlayCommand>) => {
     save(body);
     try {
@@ -320,11 +402,28 @@ export function BotSession({
       {waiting.data?.active === false ? "待機を解除しました" : "待機を解除する"}
     </Button>
   );
-  function jump(toEnd: boolean) {
-    follow.current = toEnd;
-    if (log.current)
-      log.current.scrollTop = toEnd ? log.current.scrollHeight : 0;
-  }
+  const jump = (toEnd: boolean) =>
+    log.current?.scrollTo({ top: toEnd ? log.current.scrollHeight : 0 });
+  // 新しい記録を上に積むため、現在の状態はログの先頭に置く。
+  const state =
+    !archive &&
+    view.sessionId &&
+    (mine
+      ? "あなたの手番です"
+      : view.actorId
+        ? `${personName(view.actorId)}の手番を待っています`
+        : "待機中です") + (view.receiving ? "（受領判断中）" : "");
+  const feedback = (
+    <>
+      {mutation.error && <Problem error={mutation.error} />}
+      {pending && !mutation.isPending && (
+        <Button onClick={() => void send()}>保存した同じ要求で確認する</Button>
+      )}
+      {typeof mutation.data?.message === "string" && (
+        <Notice>{mutation.data.message}</Notice>
+      )}
+    </>
+  );
   return (
     <PlayLayout
       unreadNotices={unreadNotices}
@@ -394,127 +493,258 @@ export function BotSession({
           </Button>
         </>
       }
+      actions={
+        archive
+          ? []
+          : [
+              {
+                label: "受領と交換",
+                icon: <Inbox />,
+                badge: view.screen.applications.filter((a) => a.awaitingYou)
+                  .length,
+                content: (
+                  <>
+                    {feedback}
+                    <PlayApplications
+                      actorId={view.viewerId}
+                      screen={view.screen}
+                      canAct={!!view.sessionId && mine && !view.receiving}
+                      busy={busy}
+                      send={(raw) => void send(raw)}
+                    />
+                  </>
+                ),
+              },
+              {
+                label: "操作",
+                icon: <PenLine />,
+                content: (
+                  <>
+                    {feedback}
+                    {view.aiControlled === false && (
+                      <PlayCommandEditor
+                        actorId={view.viewerId}
+                        disabled={busy}
+                        selection={
+                          view.sessionId
+                            ? {
+                                screen: view.screen,
+                                characters: view.characters,
+                                canAct: mine && !view.receiving,
+                              }
+                            : undefined
+                        }
+                        response={mutation.data}
+                        execute={(command) => {
+                          editorRequest.current = command.requestId;
+                          void execute(command);
+                        }}
+                      />
+                    )}
+                    {!view.sessionId ? (
+                      <div className="flex flex-wrap gap-3">
+                        <Button
+                          disabled={busy}
+                          onClick={() => void send({ command: "start" })}
+                        >
+                          セッションを開始
+                        </Button>
+                        {release}
+                      </div>
+                    ) : (
+                      <>
+                        <Notice>
+                          通常API {view.callsUsed} / {view.callsLimit}回{" "}
+                          {view.dailySp &&
+                            `探索・生成の残り ${view.dailySp.remaining} / ${view.dailySp.limit} SP（回復 ${realTime(view.dailySp.resetsAt)}）`}
+                        </Notice>
+                        {mine && !view.receiving && (
+                          <div className="flex flex-wrap gap-3">
+                            <Button
+                              disabled={busy}
+                              onClick={() =>
+                                void send({
+                                  command: "search",
+                                  query: { kind: "surroundings" },
+                                })
+                              }
+                            >
+                              周囲を見る
+                            </Button>
+                            <Button
+                              disabled={busy}
+                              onClick={() =>
+                                void send({
+                                  command: "search",
+                                  query: { kind: "self" },
+                                })
+                              }
+                            >
+                              自分の情報
+                            </Button>
+                          </div>
+                        )}
+                        {searchResult !== undefined && (
+                          <PersonalMaterial
+                            value={searchResult}
+                            disabled={busy || !mine || !!view.receiving}
+                            contact={(targetId) =>
+                              void send({ command: "contact", targetId })
+                            }
+                          />
+                        )}
+                        {view.receiving?.progress && (
+                          <p>
+                            承認 {view.receiving.progress.approved}人、辞退{" "}
+                            {view.receiving.progress.declined}人、回答待ち{" "}
+                            {view.receiving.progress.pending}人
+                          </p>
+                        )}
+                        {view.receiving && mine && (
+                          <section className="space-y-3">
+                            <RichText
+                              text={view.receiving.text ?? "受領判断"}
+                            />
+                            {view.receiving.preview?.map((line, i) => (
+                              <p key={i}>{line}</p>
+                            ))}
+                            <p>
+                              受領判断の期限：
+                              {new Date(
+                                view.receiving.deadline,
+                              ).toLocaleString()}
+                            </p>
+                            <div className="flex flex-wrap gap-3">
+                              <Button
+                                disabled={busy}
+                                onClick={() =>
+                                  void send({
+                                    command: "receive",
+                                    applicationId:
+                                      view.receiving!.applicationId,
+                                    accept: true,
+                                  })
+                                }
+                              >
+                                受け入れる
+                              </Button>
+                              <Button
+                                disabled={busy}
+                                onClick={() =>
+                                  void send({
+                                    command: "receive",
+                                    applicationId:
+                                      view.receiving!.applicationId,
+                                    accept: false,
+                                  })
+                                }
+                              >
+                                拒否する
+                              </Button>
+                            </div>
+                          </section>
+                        )}
+                        {mine && (
+                          <form
+                            className="space-y-3"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              void send({ command: "say", text });
+                            }}
+                          >
+                            <label>
+                              {view.receiving
+                                ? "ターンコメント"
+                                : "発言・ターンコメント"}
+                              <Textarea
+                                aria-label={
+                                  view.receiving
+                                    ? "ターンコメント"
+                                    : "発言・ターンコメント"
+                                }
+                                value={text}
+                                onChange={(e) => setText(e.target.value)}
+                              />
+                            </label>
+                            <div className="flex flex-wrap gap-3">
+                              {!view.receiving && (
+                                <Button
+                                  type="submit"
+                                  disabled={busy || !text.trim()}
+                                >
+                                  発言する
+                                </Button>
+                              )}
+                              <Button
+                                type="button"
+                                disabled={
+                                  busy || !text.trim() || view.commentUsed
+                                }
+                                onClick={() =>
+                                  void send({ command: "comment", text })
+                                }
+                              >
+                                ターンコメントを付ける
+                              </Button>
+                              {!view.receiving && (
+                                <Button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void send({ command: "end-turn" })
+                                  }
+                                >
+                                  手番を終える
+                                </Button>
+                              )}
+                            </div>
+                          </form>
+                        )}
+                        {view.aiControlled === false && (
+                          <div className="flex flex-wrap gap-3">
+                            {view.members.length > 1 && (
+                              <Button
+                                variant="outline"
+                                disabled={busy}
+                                onClick={() => void send({ command: "leave" })}
+                              >
+                                セッションを離れて続ける
+                              </Button>
+                            )}
+                            <Button
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void send({ command: "finish" })}
+                            >
+                              自分のプレイを終了する
+                            </Button>
+                            {release}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
+                ),
+              },
+            ]
+      }
     >
-      {mutation.error && <Problem error={mutation.error} />}
-      {pending && !mutation.isPending && (
-        <Button onClick={() => void send()}>保存した同じ要求で確認する</Button>
-      )}
-      {!archive && (
-        <>
-          <PlayApplications
-            actorId={view.viewerId}
-            screen={view.screen}
-            canAct={!!view.sessionId && mine && !view.receiving}
-            busy={busy}
-            send={(raw) => void send(raw)}
-          />
-          {typeof mutation.data?.message === "string" && (
-            <Notice>{mutation.data.message}</Notice>
-          )}
-        </>
-      )}
-      {!archive && view.aiControlled === false && (
-        <PlayCommandEditor
-          actorId={view.viewerId}
-          disabled={busy}
-          selection={
-            view.sessionId
-              ? {
-                  screen: view.screen,
-                  characters: view.characters,
-                  canAct: mine && !view.receiving,
-                }
-              : undefined
-          }
-          response={mutation.data}
-          execute={(command) => {
-            editorRequest.current = command.requestId;
-            void execute(command);
-          }}
-        />
-      )}
       <div
-        className="play-log space-y-4"
+        className="play-log"
         aria-label="セッションのチャット"
         role="region"
         tabIndex={0}
         ref={log}
-        onScroll={(event) => {
-          const node = event.currentTarget;
-          follow.current =
-            node.scrollHeight - node.scrollTop - node.clientHeight < 32;
-        }}
       >
+        {state && (
+          <div className="play-log-state" key={state}>
+            <Notice>{state}</Notice>
+          </div>
+        )}
         {view.entries.length === 0 && (
           <p className="muted">表示できるプレイログはまだありません</p>
         )}
-        {view.entries.map((row) => {
-          const at = row.recordedAt ?? row.payload.transition?.at;
-          return (
-            <article
-              className="rounded-lg border bg-card px-6 py-5"
-              key={row.id}
-            >
-              <p className="record-meta">
-                {at ? (
-                  <time dateTime={at}>{realTime(at)}</time>
-                ) : (
-                  "時刻の記録なし"
-                )}
-              </p>
-              {row.payload.entries?.map((entry, i) => (
-                <div key={i}>
-                  <p className="record-meta">
-                    {entry.label ??
-                      view.characters.find((c) => c.actorId === entry.actorId)
-                        ?.name ??
-                      "参加者"}
-                  </p>
-                  <RichText text={entry.input} />
-                  <p className="muted">
-                    結果：
-                    {entry.result.outcome
-                      ? entry.result.outcome.success
-                        ? (entry.result.effectState ?? "成立しました")
-                        : "不成立でした"
-                      : entry.result.state === "rejected"
-                        ? "拒否しました"
-                        : entry.result.state === "failed"
-                          ? "成立しませんでした"
-                          : entry.result.state === "receiving"
-                            ? "受領判断中です"
-                            : entry.result?.state === "pending"
-                              ? "管理者の許可待ちです"
-                              : "受理しました"}
-                  </p>
-                  {entry.result.items?.map((item) => (
-                    <div key={item.itemId}>
-                      <span>
-                        {item.label}
-                        {item.count ? ` ×${item.count}` : ""}〈{item.itemId}〉
-                      </span>
-                      {item.holding && (
-                        <p>
-                          {item.holding.fromId
-                            ? personName(item.holding.fromId)
-                            : "なし"}{" "}
-                          → {personName(item.holding.toId)}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ))}
-              {row.payload.comment && (
-                <p>ターンコメント：{row.payload.comment}</p>
-              )}
-              {row.payload.reason && <p>{row.payload.reason}</p>}
-              {row.payload.transition && (
-                <p className="record-meta">{row.payload.transition.message}</p>
-              )}
-            </article>
-          );
-        })}
+        <LogRows entries={view.entries} characters={view.characters} />
         {view.legacy.length > 0 && sceneId && (
           <details className="initial-setting" open={archive}>
             <summary>引き継いだシーンの記録</summary>
@@ -539,7 +769,7 @@ export function BotSession({
           </details>
         )}
       </div>
-      {archive ? (
+      {archive && (
         <Link
           to="/worlds/$id/play"
           params={{ id }}
@@ -548,170 +778,6 @@ export function BotSession({
         >
           現在のセッションを開く
         </Link>
-      ) : !view.sessionId ? (
-        <div className="flex flex-wrap gap-3">
-          <Button
-            disabled={busy}
-            onClick={() => void send({ command: "start" })}
-          >
-            セッションを開始
-          </Button>
-          {release}
-        </div>
-      ) : (
-        <>
-          <Notice>
-            {mine
-              ? "あなたの手番です"
-              : view.actorId
-                ? `${personName(view.actorId)}の手番を待っています`
-                : "待機中です"}
-            （通常API {view.callsUsed} / {view.callsLimit}回）
-            {view.dailySp &&
-              `探索・生成の残り ${view.dailySp.remaining} / ${view.dailySp.limit} SP（回復 ${realTime(view.dailySp.resetsAt)}）`}
-          </Notice>
-          {mine && !view.receiving && (
-            <div className="flex flex-wrap gap-3">
-              <Button
-                disabled={busy}
-                onClick={() =>
-                  void send({
-                    command: "search",
-                    query: { kind: "surroundings" },
-                  })
-                }
-              >
-                周囲を見る
-              </Button>
-              <Button
-                disabled={busy}
-                onClick={() =>
-                  void send({ command: "search", query: { kind: "self" } })
-                }
-              >
-                自分の情報
-              </Button>
-            </div>
-          )}
-          {searchResult !== undefined && (
-            <PersonalMaterial
-              value={searchResult}
-              disabled={busy || !mine || !!view.receiving}
-              contact={(targetId) =>
-                void send({ command: "contact", targetId })
-              }
-            />
-          )}
-          {view.receiving?.progress && (
-            <p>
-              承認 {view.receiving.progress.approved}人、辞退{" "}
-              {view.receiving.progress.declined}人、回答待ち{" "}
-              {view.receiving.progress.pending}人
-            </p>
-          )}
-          {view.receiving && mine && (
-            <section className="space-y-3">
-              <RichText text={view.receiving.text ?? "受領判断"} />
-              {view.receiving.preview?.map((line, i) => (
-                <p key={i}>{line}</p>
-              ))}
-              <p>
-                受領判断の期限：
-                {new Date(view.receiving.deadline).toLocaleString()}
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  disabled={busy}
-                  onClick={() =>
-                    void send({
-                      command: "receive",
-                      applicationId: view.receiving!.applicationId,
-                      accept: true,
-                    })
-                  }
-                >
-                  受け入れる
-                </Button>
-                <Button
-                  disabled={busy}
-                  onClick={() =>
-                    void send({
-                      command: "receive",
-                      applicationId: view.receiving!.applicationId,
-                      accept: false,
-                    })
-                  }
-                >
-                  拒否する
-                </Button>
-              </div>
-            </section>
-          )}
-          {mine && (
-            <form
-              className="space-y-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void send({ command: "say", text });
-              }}
-            >
-              <label>
-                {view.receiving ? "ターンコメント" : "発言・ターンコメント"}
-                <Textarea
-                  aria-label={
-                    view.receiving ? "ターンコメント" : "発言・ターンコメント"
-                  }
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                />
-              </label>
-              <div className="flex flex-wrap gap-3">
-                {!view.receiving && (
-                  <Button type="submit" disabled={busy || !text.trim()}>
-                    発言する
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  disabled={busy || !text.trim() || view.commentUsed}
-                  onClick={() => void send({ command: "comment", text })}
-                >
-                  ターンコメントを付ける
-                </Button>
-                {!view.receiving && (
-                  <Button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void send({ command: "end-turn" })}
-                  >
-                    手番を終える
-                  </Button>
-                )}
-              </div>
-            </form>
-          )}
-          {view.aiControlled === false && (
-            <div className="flex flex-wrap gap-3">
-              {view.members.length > 1 && (
-                <Button
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void send({ command: "leave" })}
-                >
-                  セッションを離れて続ける
-                </Button>
-              )}
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => void send({ command: "finish" })}
-              >
-                自分のプレイを終了する
-              </Button>
-              {release}
-            </div>
-          )}
-        </>
       )}
     </PlayLayout>
   );
