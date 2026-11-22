@@ -1,5 +1,6 @@
-import { readFile, writeFile, rename } from "node:fs/promises";
+import { glob, readFile, writeFile, rename } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
+import { basename } from "node:path";
 
 const root = new URL("../artifacts/player-cli/", import.meta.url);
 const pkg = JSON.parse(
@@ -27,25 +28,16 @@ if (
   );
 const filename = `gestaloka-player-cli-${pkg.version}.tgz`;
 const bytes = await readFile(new URL(filename, root));
-for (const name of [
-  "join",
-  "setup",
-  "runtimes",
-  "commands",
-  "cli",
-  "dice",
-  "draw",
-  "blueprints",
-  "SKILL",
-]) {
+const skill = new URL(
+  "../packages/player-cli/skills/gestaloka-player/",
+  import.meta.url,
+);
+for await (const file of glob(["SKILL.md", "references/*.md"], {
+  cwd: skill,
+})) {
   await writeFile(
-    new URL(`${name}.md`, root),
-    await readFile(
-      new URL(
-        `../packages/player-cli/skills/gestaloka-player/${name === "SKILL" ? "" : "references/"}${name}.md`,
-        import.meta.url,
-      ),
-    ),
+    new URL(basename(file), root),
+    await readFile(new URL(file, skill)),
     { mode: 0o644 },
   );
 }
