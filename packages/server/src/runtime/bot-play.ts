@@ -342,6 +342,7 @@ type Entry = {
   label?: string;
   applicationId?: string;
   itemWitnesses?: string[];
+  speechWitnesses?: string[];
 };
 type TurnParticipant = { actorId: string; name: string; count?: number };
 type SessionStatus = {
@@ -429,6 +430,7 @@ export type Session = {
       text: string;
       // 所在の変更だけの申請では、却下した同行者を除いて確定する。
       locates?: BelongingOp[];
+      mixedMoves?: Locate[];
       declined?: string[];
       vehicleControl?: VehicleApplication;
     };
@@ -453,6 +455,7 @@ type Plan = {
   fatal?: string[];
   appearances?: Appearance[];
   locates?: BelongingOp[];
+  mixedMoves?: Locate[];
   vehicleControl?: VehicleApplication;
   vehicleResult?: Record<string, unknown>;
   vehicleUnchanged?: true;
@@ -1228,7 +1231,7 @@ export class BotPlay {
               {
                 role: "system",
                 content:
-                  "あなたは明示的に担当を指定された一人のユニークNPCです。自分自身の発言・行動の描写にはsayを使います。発言の中で物を使った・食べた・渡したと述べても、持ち物は変わりません。自分が乗り物（self.material.vehicle）なら、自ら運行するときは自分のIDをvehicleIdに指定してvehicle-travelを使えます。npc-actionは他の出現個体について申請するコマンドです。本人に提供された素材とセッションの入力・結果から、本人として次のAPIコマンドを一つ選びます。通常手番の開始時、sinceLastTurnには前回の自分の公開行動、その後に届いた発言・結果・コメント、同席者の増減があります。退出はセッションからの退出で、世界内の移動を意味しません。前回応じた声と新しい呼びかけを区別してください。今応じることや自分からしたいことがなければ、何も発言せずend-turnを選べます。currentTurnはこの手番で既に実行した操作とその結果です。発言・行動を終え、続けて行う別の目的がなければend-turnで次の人物へ渡してください。世界の裁定や他人の私的な解釈を代作しません。requestIdはサーバーが設定します。commandSchemaに従うJSONだけを返します。",
+                  "あなたは明示的に担当を指定された一人のユニークNPCです。自分自身の発言・行動の描写にはsayを使います。発言の中で物を使った・食べた・渡したと述べても、持ち物は変わりません。self.material.companion があれば、wait中はその場で、follow中は同行相手と一緒に行動します。自分だけの出発は選べません。自分が乗り物（self.material.vehicle）なら、自ら運行するときは自分のIDをvehicleIdに指定してvehicle-travelを使えます。npc-actionは他の出現個体について申請するコマンドです。本人に提供された素材とセッションの入力・結果から、本人として次のAPIコマンドを一つ選びます。通常手番の開始時、sinceLastTurnには前回の自分の公開行動、その後に届いた発言・結果・コメント、同席者の増減があります。退出はセッションからの退出で、世界内の移動を意味しません。前回応じた声と新しい呼びかけを区別してください。今応じることや自分からしたいことがなければ、何も発言せずend-turnを選べます。currentTurnはこの手番で既に実行した操作とその結果です。発言・行動を終え、続けて行う別の目的がなければend-turnで次の人物へ渡してください。世界の裁定や他人の私的な解釈を代作しません。requestIdはサーバーが設定します。commandSchemaに従うJSONだけを返します。",
               },
               {
                 role: "user",
@@ -1256,13 +1259,37 @@ export class BotPlay {
             ...(parseOutput(completion.content) as object),
             requestId,
           });
-          await this.submit(
-            npc.world_id,
-            npc.actor_id,
-            command,
-            npc.user_id,
-            npc.assignment_id,
-          );
+          try {
+            await this.submit(
+              npc.world_id,
+              npc.actor_id,
+              command,
+              npc.user_id,
+              npc.assignment_id,
+            );
+          } catch (error) {
+            if (
+              !(error instanceof AccessError) ||
+              !["COMPANION_WAITING", "COMPANION_FOLLOWING"].includes(error.code)
+            )
+              throw error;
+            await this.submit(
+              npc.world_id,
+              npc.actor_id,
+              {
+                ...(command.command === "receive"
+                  ? {
+                      command: "receive" as const,
+                      applicationId: command.applicationId,
+                      accept: false,
+                    }
+                  : { command: "end-turn" as const }),
+                requestId: derivedId(requestId + ":stay"),
+              },
+              npc.user_id,
+              npc.assignment_id,
+            );
+          }
         },
         world.id,
         npc.user_id,
@@ -1810,13 +1837,43 @@ export class BotPlay {
     );
   }
   async current(world: string, actor: string, db: Db = this.pool) {
-    return (
+    const session = (
       await db.query<Session>(
         `SELECT s.* FROM bot_scene p JOIN bot_session s ON s.id=p.session_id
       WHERE p.world_id=$1 AND p.actor_id=$2 AND NOT p.closed`,
         [world, actor],
       )
     ).rows[0];
+    if (!session) return undefined;
+    // 更新前から継続する手番の発言は、すでに確定済みの観測から聞き手を復元する。
+    let context: WorldContext | undefined;
+    for (const [index, entry] of session.data.entries.entries()) {
+      const result = entry.result as {
+        commitId?: string;
+        instantNpcs?: unknown;
+      } | null;
+      if (
+        entry.speechWitnesses ||
+        !result?.commitId ||
+        !Array.isArray(result.instantNpcs)
+      )
+        continue;
+      context ??= this.store.context((await this.world(world, db)).id);
+      const seen = await context.relations(
+        derivedId(result.commitId + ":speech"),
+        "see",
+        "in",
+        latest,
+      );
+      if (seen.length)
+        entry.speechWitnesses = [
+          ...seen.map((edge) => edge.source),
+          ...session.data.members
+            .filter((m) => m.instant && (m.joinedAfterEntries ?? 0) <= index)
+            .map((m) => m.actorId),
+        ];
+    }
+    return session;
   }
   async #save(db: Db, session: Session, before: ReturnType<typeof turnState>) {
     if (
@@ -1937,9 +1994,9 @@ export class BotPlay {
     payload: Record<string, unknown>,
     viewers?: readonly string[],
   ) {
-    const witnesses = (
-      Array.isArray(payload.entries) ? (payload.entries as Entry[]) : []
-    ).map((e) => e.itemWitnesses);
+    const witnesses = Array.isArray(payload.entries)
+      ? (payload.entries as Entry[])
+      : [];
     if (Array.isArray(payload.entries)) {
       const context = this.store.context(
         (await this.world(session.world_id, db)).id,
@@ -1981,17 +2038,31 @@ export class BotPlay {
         if (
           skip ||
           hideComment ||
-          witnesses.some((ids) => ids && !ids.includes(member.actorId))
+          witnesses.some(
+            (e) =>
+              (e.itemWitnesses && !e.itemWitnesses.includes(member.actorId)) ||
+              (e.speechWitnesses &&
+                !e.speechWitnesses.includes(member.actorId)),
+          )
         ) {
           const entries = (payload.entries as Entry[])
-            .map((entry, i) => {
-              if (!witnesses[i] || witnesses[i]!.includes(member.actorId))
-                return entry;
+            .slice(skip)
+            .flatMap((entry, i) => {
+              const original = witnesses[skip + i]!;
+              if (
+                original.speechWitnesses &&
+                !original.speechWitnesses.includes(member.actorId)
+              )
+                return [];
+              if (
+                !original.itemWitnesses ||
+                original.itemWitnesses.includes(member.actorId)
+              )
+                return [entry];
               const result = { ...(entry.result as Record<string, unknown>) };
               delete result.items;
-              return { ...entry, result };
-            })
-            .slice(skip);
+              return [{ ...entry, result }];
+            });
           visibleId = (
             await db.query(
               "INSERT INTO bot_chat(session_id,payload,recorded_at) VALUES($1,$2,$3) RETURNING id",
@@ -2054,7 +2125,7 @@ export class BotPlay {
   async #next(
     db: Db,
     session: Session,
-    reason?: "absence" | "idle" | "contact" | "team",
+    reason?: "absence" | "idle" | "contact" | "team" | "companion",
     departingActors: string[] = [],
   ) {
     const skipped = reason === "absence" || reason === "idle";
@@ -2098,6 +2169,7 @@ export class BotPlay {
       ...(d.comment ? { comment: d.comment } : {}),
       transition,
     });
+    d.entries = [];
     if ((!reason || reason === "idle") && !departingActors.length)
       await this.#separate(db, session, d.turn);
     const regular = d.members.filter(
@@ -2134,7 +2206,6 @@ export class BotPlay {
     d.number++;
     d.used = 0;
     delete d.stealthUsed;
-    d.entries = [];
     delete d.npcActions;
     delete d.comment;
     delete d.lastReceipt;
@@ -2159,12 +2230,18 @@ export class BotPlay {
         )
       : [];
   }
-  async #separate(db: Db, session: Session, pivot: string) {
+  async #separate(
+    db: Db,
+    session: Session,
+    pivot: string,
+    moving?: Member[],
+    id?: string,
+  ) {
     await this.#split(
       db,
       session,
-      await this.#apart(db, session, pivot),
-      derivedId(`${session.id}:${session.data.number}:${pivot}:separate`),
+      moving ?? (await this.#apart(db, session, pivot)),
+      id ?? derivedId(`${session.id}:${session.data.number}:${pivot}:separate`),
       "が別の場所にいるため、セッションを分けました",
       "は別の場所のセッションで続けます",
     );
@@ -2172,6 +2249,12 @@ export class BotPlay {
   // 死亡した人物をセッションから外す。所在の移動は、死亡を確定した差分に含めている。
   async #expel(db: Db, session: Session, ids: string[], request: string) {
     const d = session.data;
+    for (const pair of await this.companions.following(
+      db,
+      session.world_id,
+      ids,
+    ))
+      await this.companions.setMode(db, session.world_id, pair.npc_id, "wait");
     for (const id of ids)
       await this.#split(
         db,
@@ -2194,14 +2277,16 @@ export class BotPlay {
   ) {
     const d = session.data;
     if (!moving.length) return;
-    d.members = d.members.filter((m) => !moving.includes(m));
+    await this.#depart(db, session, moving);
     const at = this.now().toISOString();
     const split: Session = {
       id,
       world_id: session.world_id,
       data: {
         members: moving,
-        turn: moving.find((m) => !m.instant)!.actorId,
+        turn:
+          moving.find((m) => m.actorId === d.turn)?.actorId ??
+          moving.find((m) => !m.instant)!.actorId,
         number: 1,
         turnStartedAt: at,
         turnActivityAt: at,
@@ -2249,11 +2334,24 @@ export class BotPlay {
     ]);
     await signalTurns(db, session.world_id, ...moving.map((m) => m.actorId));
   }
-  async #enter(db: Db, session: Session, member: Member, team = false) {
-    if (team) {
-      member.joinedAfterEntries = session.data.entries.length;
-      member.joinedAfterComment = !!session.data.comment;
+  // 手番の途中で退出する人にも、在席中に聞いた発言を一度だけ届ける。
+  async #depart(db: Db, session: Session, moving: Member[]) {
+    const d = session.data;
+    for (const member of moving) {
+      const entries = d.entries
+        .slice(member.joinedAfterEntries ?? 0)
+        .filter((e) => e.speechWitnesses?.includes(member.actorId));
+      if (entries.length)
+        await this.#record(db, session, { entries }, [member.actorId]);
+      delete member.joinedAfterEntries;
+      delete member.joinedAfterComment;
     }
+    d.members = d.members.filter((m) => !moving.includes(m));
+  }
+
+  async #enter(db: Db, session: Session, member: Member, team = false) {
+    member.joinedAfterEntries = session.data.entries.length;
+    member.joinedAfterComment = !!session.data.comment;
     session.data.members.push(member);
     await db.query(
       "UPDATE bot_scene SET session_id=$3 WHERE id=$1 AND actor_id=$2",
@@ -2272,6 +2370,153 @@ export class BotPlay {
     await this.#record(db, session, { transition });
     return transition;
   }
+  async #party(db: Db, session: Session, actor: string) {
+    const ids = new Set([actor]);
+    for (const c of await this.companions.owned(db, session.world_id, actor))
+      if (c.mode === "follow") ids.add(c.npc_id);
+    return session.data.members.filter((m) => ids.has(m.actorId));
+  }
+
+  async #transfer(
+    db: Db,
+    source: Session,
+    target: Session,
+    moving: Member[],
+    reason: "contact" | "team" | "companion",
+  ) {
+    const before = turnState(source);
+    const ids = moving.map((m) => m.actorId);
+    const receipt = source.data.receiving;
+    if (
+      receipt &&
+      [receipt.sender, ...receipt.recipients].some((id) => ids.includes(id))
+    )
+      await this.#settle(db, source, "cancelled");
+    const ended = ids.includes(source.data.turn)
+      ? await this.#next(db, source, reason, ids)
+      : undefined;
+    await this.#depart(db, source, moving);
+    await this.#removeUnoccupiedInstants(db, source);
+    const joins = new Map<string, { actorId: string; message: string }>();
+    for (const member of moving) {
+      const departure = await this.#transition(
+        db,
+        source,
+        member.actorId,
+        "session-left",
+      );
+      await this.#record(db, source, {
+        transition: {
+          ...departure,
+          message: departure.name + "が別のセッションへ移りました",
+        },
+      });
+      joins.set(
+        member.actorId,
+        await this.#enter(db, target, member, reason === "team"),
+      );
+    }
+    await this.#save(db, source, before);
+    return { ended, joins };
+  }
+
+  // 過去の保存状態、再開、乗降、遠隔での帰還にも同じ所在・同席の判定を使う。
+  async #syncFollowers(
+    db: Db,
+    world: string,
+    context: WorldContext,
+    actors: string[],
+    request: string,
+  ) {
+    let changed = false;
+    for (const c of await this.companions.following(db, world, actors)) {
+      const place = await this.#places(context, c.actor_id);
+      if (
+        !(await this.#places(context, c.npc_id)).some((p) => place.includes(p))
+      ) {
+        await this.companions.setMode(db, world, c.npc_id, "wait");
+        await this.#settlePlaces(db, world, [c.npc_id], request);
+        changed = true;
+        continue;
+      }
+      const target = await this.current(world, c.actor_id, db);
+      if (!target || target.data.members.some((m) => m.actorId === c.npc_id))
+        continue;
+      let source = await this.current(world, c.npc_id, db);
+      if (!source) {
+        const { rows } = await db.query<{ user_id: string | null }>(
+          "SELECT user_id FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
+          [world, c.npc_id],
+        );
+        if (!rows[0]?.user_id) continue;
+        source = await this.#open(
+          db,
+          world,
+          c.npc_id,
+          rows[0].user_id,
+          derivedId(request + ":companion:" + c.npc_id),
+        );
+      }
+      const before = turnState(target);
+      await this.#transfer(
+        db,
+        source,
+        target,
+        [source.data.members.find((m) => m.actorId === c.npc_id)!],
+        "companion",
+      );
+      await this.#save(db, target, before);
+      changed = true;
+    }
+    return changed;
+  }
+
+  // 所在を変えた人物が別のセッションにいても、次の発言より前に出発側の同席を解く。
+  async #settlePlaces(
+    db: Db,
+    world: string,
+    actors: string[],
+    request: string,
+  ) {
+    const ended = new Map<string, number>();
+    for (const id of new Set(actors)) {
+      const session = await this.current(world, id, db);
+      if (
+        !session ||
+        !session.data.members.some((member) => member.actorId !== id)
+      )
+        continue;
+      const before = turnState(session);
+      const apart = await this.#apart(db, session, id);
+      const receiving = session.data.receiving;
+      if (
+        receiving &&
+        apart.some(
+          (m) =>
+            receiving.sender === m.actorId ||
+            receiving.recipients.includes(m.actorId),
+        )
+      )
+        await this.#settle(db, session, "cancelled");
+      if (apart.some((member) => member.actorId === session.data.turn)) {
+        await this.#next(db, session);
+        ended.set(session.id, before.number);
+      } else if (apart.length) {
+        await this.#separate(
+          db,
+          session,
+          id,
+          apart,
+          derivedId(request + ":separate:" + id),
+        );
+      }
+      await this.#removeUnoccupiedInstants(db, session);
+      if (apart.length || before.size !== session.data.members.length)
+        await this.#save(db, session, before);
+    }
+    return ended;
+  }
+
   async #teamArrivals(
     db: Db,
     world: string,
@@ -2281,9 +2526,13 @@ export class BotPlay {
   ) {
     const results = new Map<string, TeamArrival>();
     if (!actors.length) return results;
+    const related = await this.companions.following(db, world, actors);
+    const participants = [
+      ...new Set([...actors, ...related.map((c) => c.actor_id)]),
+    ];
     const arrivals = new Set<string>();
     const points = new Map<string, { team: string; place: string }>();
-    for (const member of await this.teams.members(db, world, actors)) {
+    for (const member of await this.teams.members(db, world, participants)) {
       const [place = null] = await this.#places(context, member.actor_id);
       const moved = place !== member.place_id;
       if (moved) await this.teams.arrived(db, world, member.actor_id, place);
@@ -2342,7 +2591,7 @@ export class BotPlay {
           db,
         ))!;
         const receiving = source.data.receiving;
-        const moving = [];
+        const moving: Member[] = [];
         for (const candidate of candidates) {
           const actor = candidate.actor_id;
           const viewers = [
@@ -2360,10 +2609,14 @@ export class BotPlay {
             await this.teams.pending(db, world, actor, true);
             continue;
           }
+          const party = await this.#party(db, source, actor);
           const blocked =
             !!receiving &&
-            (receiving.sender === actor ||
-              receiving.recipients.includes(actor));
+            party.some(
+              (m) =>
+                receiving.sender === m.actorId ||
+                receiving.recipients.includes(m.actorId),
+            );
           await this.teams.pending(db, world, actor, blocked);
           if (blocked) {
             results.set(actor, {
@@ -2372,41 +2625,18 @@ export class BotPlay {
               message: "現在の受領判断が終わるとチームへの合流を確認します",
             });
           } else {
-            moving.push(
-              source.data.members.find((member) => member.actorId === actor)!,
-            );
+            moving.push(...party.filter((m) => !moving.includes(m)));
           }
         }
         if (!moving.length) continue;
-        const sourceBefore = turnState(source);
-        const leaving = moving.map((member) => member.actorId);
-        if (leaving.includes(source.data.turn))
-          await this.#next(db, source, "team", leaving);
-        source.data.members = source.data.members.filter(
-          (member) => !leaving.includes(member.actorId),
-        );
-        await this.#removeUnoccupiedInstants(db, source);
+        await this.#transfer(db, source, target, moving, "team");
         for (const member of moving) {
-          const departure = await this.#transition(
-            db,
-            source,
-            member.actorId,
-            "session-left",
-          );
-          await this.#record(db, source, {
-            transition: {
-              ...departure,
-              message: `${departure.name}がチームのセッションへ移りました`,
-            },
-          });
-          await this.#enter(db, target, member, true);
           results.set(member.actorId, {
             state: "joined",
             sessionId: target.id,
             message: "チームのセッションに合流しました",
           });
         }
-        await this.#save(db, source, sourceBefore);
       }
       if (before.size !== target.data.members.length)
         await this.#save(db, target, before);
@@ -3853,6 +4083,10 @@ export class BotPlay {
     } else {
       const target = query.kind === "self" ? actor : query.targetId;
       const aboard = target === actor ? await ride(context, actor) : undefined;
+      const companion =
+        target === actor
+          ? await this.companions.of(db, world, actor)
+          : undefined;
       const canSee = await this.#canSee(
         db,
         world,
@@ -3903,6 +4137,14 @@ export class BotPlay {
           ? {
               belongings: await readBelongings(context, actor),
               ...(aboard ? { ride: aboard } : {}),
+              ...(companion
+                ? {
+                    companion: {
+                      ownerId: companion.actor_id,
+                      mode: companion.mode,
+                    },
+                  }
+                : {}),
               ...((await isVehicle(context, actor))
                 ? {
                     vehicle: {
@@ -4604,6 +4846,15 @@ export class BotPlay {
       input.targetId,
       session.data.members,
     );
+    const context = this.store.context(w.id);
+    if (
+      !(await this.contact(context, actor, input.targetId, world, this.pool))
+        .allowed
+    )
+      reject(
+        "COMPANION_NOT_HERE",
+        "同じ場所にいる相手に同行を申請してください",
+      );
     const rejected = (
       await this.pool.query<{ outcome: CompanionJudgement }>(
         `SELECT outcome FROM bot_request WHERE world_id=$1 AND actor_id=$2 AND prepared_turn=$3 AND id<>$4
@@ -4638,8 +4889,14 @@ export class BotPlay {
       ]);
       return decision;
     }
-    const context = this.store.context(w.id);
+    const member = session.data.members.find(
+      (m) => m.actorId === input.targetId,
+    )!;
     const material = {
+      currentSpeech: session.data.entries
+        .slice(member.joinedAfterEntries ?? 0)
+        .filter((e) => e.speechWitnesses?.includes(input.targetId))
+        .map((e) => ({ actorId: e.actorId, text: e.input })),
       premise: (await this.construction.get(world)).initial_prompt,
       applicant: actor,
       npc: input.targetId,
@@ -5787,6 +6044,7 @@ export class BotPlay {
       impossible = false,
       fatal: string[] = [],
       locates: BelongingOp[] | undefined;
+    let mixedMoves: Locate[] | undefined;
     const boardings: Boarding[] = [];
     let vehicleResult: Plan["vehicleResult"];
     let drawTable: DrawTable | undefined;
@@ -5919,36 +6177,11 @@ export class BotPlay {
             : { ...op },
         ),
         plannedOps: BelongingOp[] = [];
-      // 本人のcompanionは同行の判断を済ませているので、所在を本人の判断で移せる。
-      // 追従中のcompanionは、同じセッション・同じ場所から本人と一緒に移る（ADR-076）。
+      // 明示的に操作できるのは本人のcompanion。自動追従は受領を含む確定時に加える。
       const companions =
-          input.command === "update"
-            ? await this.companions.owned(db, world, actor)
-            : [],
-        own = ops.find(
-          (op): op is Extract<BelongingOp, { type: "locate" }> =>
-            op.type === "locate" && op.subjectId === actor,
-        );
-      if (own && !hidden) {
-        const session = await this.current(world, actor, db),
-          origin = await directPlaces(context, actor);
-        for (const c of companions)
-          if (
-            c.mode === "follow" &&
-            c.npc_id !== destinationOf(own) &&
-            !origin.includes(c.npc_id) &&
-            !ops.some(
-              (op) => op.type === "locate" && op.subjectId === c.npc_id,
-            ) &&
-            session?.data.members.some(
-              (m) => m.actorId === c.npc_id && !m.instant,
-            ) &&
-            (await directPlaces(context, c.npc_id)).some((p) =>
-              origin.includes(p),
-            )
-          )
-            ops.push({ ...own, subjectId: c.npc_id });
-      }
+        input.command === "update" && ops.some((op) => op.type === "locate")
+          ? await this.companions.owned(db, world, actor)
+          : [];
       const deployments = new Map<string, Locate>();
       const release: string[] = [];
       for (const op of ops) {
@@ -6142,6 +6375,10 @@ export class BotPlay {
           plannedOps.every((op) => op.type === "locate")
         )
           locates = plannedOps;
+        else if (input.command === "update")
+          mixedMoves = plannedOps.filter(
+            (op): op is Locate => op.type === "locate",
+          );
       }
     } else {
       changes = input.changes!;
@@ -6592,6 +6829,7 @@ export class BotPlay {
       outcome,
       ...(handoff ? { handoff } : {}),
       ...(locates ? { locates } : {}),
+      ...(mixedMoves?.length ? { mixedMoves } : {}),
       ...(boardings.length ? { boardings } : {}),
       ...(vehicleResult ? { vehicleResult } : {}),
       ...(fatal.length ? { fatal } : {}),
@@ -6711,6 +6949,95 @@ export class BotPlay {
       })),
     );
   }
+  async #checkCompanionDeparture(
+    db: Db,
+    world: string,
+    context: WorldContext,
+    actor: string,
+    moves: Locate[],
+    proposedBy?: string,
+  ) {
+    if (!moves.length) return;
+    const companion = await this.companions.of(db, world, actor);
+    if (!companion || proposedBy === companion.actor_id) return;
+    const [here] = await directPlaces(context, actor);
+    for (const move of moves) {
+      if (move.subjectId !== actor && move.subjectId !== here) continue;
+      const to = destinationOf(move);
+      const [from] = await directPlaces(context, move.subjectId);
+      if (to && to === from) continue;
+      if (companion.mode === "wait")
+        reject(
+          "COMPANION_WAITING",
+          "待機中は自分から出発できません。その場で行動してください",
+        );
+      const [ownerPlace] = await directPlaces(context, companion.actor_id);
+      if (
+        ownerPlace !== move.subjectId &&
+        ownerPlace !== to &&
+        !moves.some(
+          (op) =>
+            op.subjectId === companion.actor_id && destinationOf(op) === to,
+        )
+      )
+        reject(
+          "COMPANION_FOLLOWING",
+          "追従中は同行相手と一緒に移動してください",
+        );
+    }
+  }
+
+  async #commitMoves(
+    db: Db,
+    world: string,
+    graph: string,
+    actor: string,
+    request: string,
+    ops: BelongingOp[],
+    plan: Pick<Plan, "context" | "at" | "changes" | "storageEffect">,
+    fixed?: string[],
+  ) {
+    if (ops.length) {
+      const prior = await this.store.receipt(graph, request);
+      if (prior) return prior;
+      const moves = new Map(
+        ops
+          .filter((op): op is Locate => op.type === "locate")
+          .map((op) => [op.subjectId, op]),
+      );
+      await this.#checkCompanionDeparture(db, world, plan.context, actor, [
+        ...moves.values(),
+      ]);
+      const follows: Locate[] = [];
+      for (const c of await this.companions.following(db, world, [
+        ...moves.keys(),
+      ])) {
+        const move = moves.get(c.actor_id);
+        if (!move || moves.has(c.npc_id) || destinationOf(move) === c.npc_id)
+          continue;
+        const origin = await directPlaces(plan.context, c.actor_id);
+        if (
+          !(await directPlaces(plan.context, c.npc_id)).some((p) =>
+            origin.includes(p),
+          )
+        )
+          continue;
+        const next = { ...move, subjectId: c.npc_id };
+        await plan.context.assertMovable(c.npc_id);
+        await checkLocation(db, world, plan.context, c.actor_id, next);
+        follows.push(next);
+      }
+      plan.at = await this.#append(
+        plan.context,
+        request + ":follow",
+        plan.at,
+        plan.changes,
+        follows,
+      );
+    }
+    return this.#commit(graph, request, plan, fixed);
+  }
+
   async #commit(
     world: string,
     requestId: string,
@@ -7535,6 +7862,22 @@ export class BotPlay {
         return result;
       }
       if (isCompanionCommand(input)) {
+        const context = this.store.context(w.id);
+        if (input.command === "companion-follow") {
+          await this.companions.mine(db, world, actor, input.targetId);
+          const contact = await this.contact(
+            context,
+            actor,
+            input.targetId,
+            world,
+            db,
+          );
+          if (!contact.allowed)
+            reject(
+              "COMPANION_NOT_HERE",
+              "同じ場所で追従を再開できます。迎えに行くか、companion moveで呼び戻してください",
+            );
+        }
         const commit = (context: WorldContext, changes: Change) =>
           this.#commit(w.id, input.requestId, { context, at: w.at, changes });
         if (input.command === "companion-request") {
@@ -7548,6 +7891,14 @@ export class BotPlay {
           )
             reject("TURN_REQUIRED", "申請した手番は終了しました");
           if (companionDecision!.accepted) {
+            if (
+              !(await this.contact(context, actor, input.targetId, world, db))
+                .allowed
+            )
+              reject(
+                "COMPANION_NOT_HERE",
+                "同じ場所にいる相手に同行を申請してください",
+              );
             await this.companions.check(
               db,
               world,
@@ -7567,6 +7918,14 @@ export class BotPlay {
             );
           }
         }
+        if (input.command === "companion-status")
+          await this.#syncFollowers(
+            db,
+            world,
+            context,
+            [actor],
+            input.requestId,
+          );
         const companion = await this.companions.command(
           db,
           world,
@@ -7576,6 +7935,14 @@ export class BotPlay {
           w.at,
           commit,
         );
+        if (input.command === "companion-follow")
+          await this.#syncFollowers(
+            db,
+            world,
+            context,
+            [actor],
+            input.requestId,
+          );
         const result = companionDecision
           ? {
               ...companion,
@@ -7708,6 +8075,21 @@ export class BotPlay {
         return result;
       }
       let session = await this.current(world, actor, db);
+      // 旧版の会話で取り残されていた人を、次の発言・接触の聞き手を決める前に照合する。
+      if (session && (input.command === "contact" || input.command === "say")) {
+        const participants = session.data.members.map((m) => m.actorId);
+        if (input.command === "contact") participants.push(input.targetId);
+        if (
+          await this.#syncFollowers(
+            db,
+            world,
+            this.store.context(w.id),
+            participants,
+            input.requestId,
+          )
+        )
+          session = await this.current(world, actor, db);
+      }
       if (session) {
         const wasOwnTurn = session.data.turn === actor;
         const wasReceiving = !!session.data.receiving;
@@ -7785,12 +8167,19 @@ export class BotPlay {
             )
           ).get(actor);
         }
+        await this.#syncFollowers(
+          db,
+          world,
+          this.store.context(w.id),
+          [actor],
+          input.requestId,
+        );
       } else {
         if (!session)
           reject("SESSION_REQUIRED", "本人のセッションを開始してください");
         let before = turnState(session);
         const d = session.data,
-          { receiving, members } = d;
+          { receiving } = d;
         let confirmedChanges: Change | undefined;
         const member = d.members.find((m) => m.actorId === actor);
         if (member) member.userId = user;
@@ -7832,7 +8221,7 @@ export class BotPlay {
             },
           });
           const member = d.members.find((m) => m.actorId === actor)!;
-          d.members = d.members.filter((m) => m.actorId !== actor);
+          await this.#depart(db, session, [member]);
           if (input.command === "finish") {
             const { legacy, entries } = await this.history(
                 world,
@@ -7895,13 +8284,23 @@ export class BotPlay {
               "RECEIVING_TURN_REQUIRED",
               "本人の受領判断を指定してください",
             );
+          if (input.accept)
+            await this.#checkCompanionDeparture(
+              db,
+              world,
+              this.store.context(w.id),
+              actor,
+              (receiving.locates ?? receiving.mixedMoves ?? []).filter(
+                (op): op is Locate => op.type === "locate",
+              ),
+              receiving.sender,
+            );
           let settled:
             | {
                 items: ItemOutcome[] | undefined;
                 result: z.infer<typeof ReceiptResult>;
               }
             | undefined;
-          let moved: string[] = [];
           if (
             input.accept &&
             receiving.vehicleControl &&
@@ -7973,11 +8372,19 @@ export class BotPlay {
                     ))!
                   : receiving;
                 // 受け取り待ちの間にも時刻は進むので、受入れが揃った時刻で確定する。
-                const receipt = await this.#commit(w.id, receiving.id, {
-                  at: Math.max(plan.at, w.at),
-                  changes: plan.changes,
-                  context: "context" in plan ? plan.context : context,
-                });
+                const receipt = await this.#commitMoves(
+                  db,
+                  world,
+                  w.id,
+                  receiving.sender,
+                  receiving.id,
+                  ops ?? receiving.mixedMoves ?? [],
+                  {
+                    at: Math.max(plan.at, w.at),
+                    changes: plan.changes,
+                    context: "context" in plan ? plan.context : context,
+                  },
+                );
                 confirmedChanges = receipt.changes;
                 settled = await this.#settle(db, session, "accepted", {
                   commitId: receipt.commitId,
@@ -7989,9 +8396,6 @@ export class BotPlay {
                     : {}),
                   ...(declined.length ? { declined } : {}),
                 });
-                moved = (ops ?? []).flatMap((op) =>
-                  op.type === "locate" ? [op.subjectId] : [],
-                );
               }
             }
           }
@@ -8044,20 +8448,9 @@ export class BotPlay {
               },
             ],
           });
-          // まとめて移動した時点で、移動した同席者を別のセッションへ分ける。
-          // 申請者も移ったなら、申請者の手番を記録してから分ける。
-          const apart = moved.length
-            ? await this.#apart(db, session, moved[0]!)
-            : [];
-          if (apart.some((m) => m.actorId === d.turn)) {
-            endedTurn = { number: d.number, reason: "explicit" };
+          if (!d.receiving && (await this.#turnCallsExhausted(db, session))) {
+            endedTurn = { number: d.number, reason: "limit" };
             await this.#next(db, session);
-          } else {
-            if (apart.length) await this.#separate(db, session, moved[0]!);
-            if (!d.receiving && (await this.#turnCallsExhausted(db, session))) {
-              endedTurn = { number: d.number, reason: "limit" };
-              await this.#next(db, session);
-            }
           }
         } else {
           if (receiving || d.turn !== actor)
@@ -8361,18 +8754,28 @@ export class BotPlay {
                 result,
               });
               if (other.id !== session.id) {
+                if (
+                  (await this.companions.of(db, world, actor))?.mode ===
+                  "follow"
+                )
+                  reject(
+                    "COMPANION_FOLLOWING",
+                    "追従中は同行相手と一緒に合流してください",
+                  );
                 await context.validate();
                 d.used++;
                 endedTurn = { number: d.number, reason: "contact" };
-                result.previousTurn = await this.#next(db, session, "contact");
-                const member = d.members.find((m) => m.actorId === actor)!;
-                d.members = d.members.filter((m) => m.actorId !== actor);
-                await this.#save(db, session, before);
                 before = turnState(other);
-                // 新しく開いた、または保留中のセッションでは、相手の手番は接触の時点で始まる。
-                // 相手が不在なら、手番が回る前から離席していた人物としてスキップする。
                 if (!current || current.data.parked) before.turn = "";
-                result.joined = await this.#enter(db, other, member);
+                const transfer = await this.#transfer(
+                  db,
+                  session,
+                  other,
+                  await this.#party(db, session, actor),
+                  "contact",
+                );
+                result.previousTurn = transfer.ended;
+                result.joined = transfer.joins.get(actor);
                 session = other;
               }
             } else if (input.command === "say") {
@@ -8400,7 +8803,21 @@ export class BotPlay {
                 target: event,
                 period: { from: w.at },
               });
-              for (const member of d.members.filter((m) => !m.instant))
+              const listeners: string[] = [];
+              const location = this.store.context(w.id);
+              const here = await this.#places(location, actor);
+              for (const member of d.members) {
+                const places =
+                  member.instant?.places ??
+                  (await this.#places(location, member.actorId));
+                if (
+                  here.length &&
+                  places.length &&
+                  !places.some((p) => here.includes(p))
+                )
+                  continue;
+                listeners.push(member.actorId);
+                if (member.instant) continue;
                 changes.edges.push({
                   id: derivedId(`${event}:${member.actorId}`),
                   kind: "see",
@@ -8415,8 +8832,9 @@ export class BotPlay {
                     pathIds: [],
                   },
                 });
+              }
               const receipt = await this.#commit(w.id, input.requestId, {
-                context: this.store.context(w.id),
+                context: location,
                 at: w.at,
                 changes,
               });
@@ -8432,10 +8850,15 @@ export class BotPlay {
                 world,
                 this.store.context(w.id),
                 actor,
-                d.members.map((m) => m.actorId),
+                listeners,
               );
               if (animals.length) result.appearances = animals;
-              d.entries.push({ actorId: actor, input: input.text, result });
+              d.entries.push({
+                actorId: actor,
+                input: input.text,
+                result,
+                speechWitnesses: [...listeners, ...animals.map((a) => a.id)],
+              });
             } else if (
               plan?.drawReview &&
               !plan.drawReview.accepted &&
@@ -8587,6 +9010,7 @@ export class BotPlay {
                   dependencies: plan.context.dependencies,
                   text: entryText,
                   ...(plan.locates ? { locates: plan.locates } : {}),
+                  ...(plan.mixedMoves ? { mixedMoves: plan.mixedMoves } : {}),
                   ...(plan.vehicleControl
                     ? { vehicleControl: plan.vehicleControl }
                     : {}),
@@ -8608,6 +9032,16 @@ export class BotPlay {
                   !(await this.store.receipt(w.id, input.requestId))
                 ) {
                   await plan.context.validate();
+                  if (stay && input.command === "update")
+                    await this.#checkCompanionDeparture(
+                      db,
+                      world,
+                      plan.context,
+                      actor,
+                      (input.operations ?? []).filter(
+                        (op): op is Locate => op.type === "locate",
+                      ),
+                    );
                   if (stay) {
                     const current = (
                       await locationRecords(plan.context, actor)
@@ -8622,9 +9056,13 @@ export class BotPlay {
                     );
                   }
                 }
-                const receipt = await this.#commit(
+                const receipt = await this.#commitMoves(
+                  db,
+                  world,
                   w.id,
+                  actor,
                   input.requestId,
+                  plan.locates ?? plan.mixedMoves ?? [],
                   plan,
                   input.command === "explore"
                     ? [derivedId(`${input.requestId}:place`)]
@@ -8819,13 +9257,35 @@ export class BotPlay {
           "DELETE FROM bot_stealth WHERE world_id=$1 AND actor_id=ANY($2::uuid[]) AND actor_id IS DISTINCT FROM $3::uuid",
           [world, movedActors, plan?.stealth?.stay ? actor : null],
         );
-        if (
-          movedActors.some((id) =>
-            members.some((m) => !m.instant && m.actorId === id),
-          )
-        )
-          await this.#removeUnoccupiedInstants(db, session);
         await this.#save(db, session, before);
+        const context = this.store.context(w.id);
+        // 乗客が増減すると、乗り物自身の会話の場所も車内・車外の間で切り替わる。
+        const affected = new Set(movedActors);
+        if (confirmedChanges && movedActors.length) {
+          const endedEdges = await Promise.all(
+            confirmedChanges.endEdges.map((id) => context.edge(id)),
+          );
+          const places = new Set(
+            [...confirmedChanges.edges, ...endedEdges].flatMap((e) =>
+              e?.kind === "status" &&
+              e.role === "about" &&
+              e.text === "direct-place"
+                ? [e.target]
+                : [],
+            ),
+          );
+          for (const place of places)
+            if (await isVehicle(context, place)) affected.add(place);
+          const ended = await this.#settlePlaces(
+            db,
+            world,
+            [...affected],
+            input.requestId,
+          );
+          const number = ended.get(session.id);
+          if (number !== undefined)
+            endedTurn ??= { number, reason: "explicit" };
+        }
         if (receiving && !d.receiving)
           movedActors.push(receiving.sender, ...receiving.recipients);
         if (seeking?.results.some((attempt) => attempt.found))
@@ -8843,6 +9303,17 @@ export class BotPlay {
             movedActors,
           )
         ).get(actor);
+        if (
+          affected.size ||
+          ["contact", "leave", "finish"].includes(input.command)
+        )
+          await this.#syncFollowers(
+            db,
+            world,
+            context,
+            [actor, ...affected],
+            input.requestId,
+          );
       }
       const status = await this.status(world, actor, db);
       result = {

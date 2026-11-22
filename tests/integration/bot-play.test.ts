@@ -79,7 +79,7 @@ afterAll(async () => {
       { world },
     );
   await isolated.close();
-});
+}, 120000);
 
 async function fixture(playerCount = 3) {
   const admin = await auth.person(),
@@ -11870,4 +11870,386 @@ test("CLIのcompanionは操作ごとに対象と場所を送り、一覧を返�
     await cli.close();
     await app.close();
   }
+});
+
+type PlayFixture = Awaited<ReturnType<typeof fixture>>;
+
+async function companionFixture() {
+  const f = await fixture();
+  const [owner, npc, friend] = f.actors as [string, string, string];
+  await setNpc(f, 1, "bot");
+  await f.send(1, { command: "contact", targetId: owner });
+  f.calls.mockImplementation(async (id) =>
+    answer(id, { accepted: true, reason: "道案内に同行する" }),
+  );
+  const request = (targetId: string) =>
+    f.send(0, { command: "companion-request", targetId, text: "一緒に歩こう" });
+  await request(npc);
+  const mode = (command: "follow" | "wait") =>
+    f.send(0, { command: "companion-" + command, targetId: npc });
+  const status = () => f.send(0, { command: "companion-status" });
+  const at = (who: string) => directPlaces(f.store.context(f.graph), who);
+  const session = async (i: number) => (await f.status(i)).sessionId;
+  return { f, owner, npc, friend, request, mode, status, at, session };
+}
+
+async function heard(
+  f: PlayFixture,
+  speaker: number,
+  text: string,
+  listeners: number[],
+) {
+  const requestId = randomUUID();
+  const speech = { command: "say", requestId, text };
+  const result = await f.send(speaker, speech);
+  expect(await f.send(speaker, speech)).toEqual(result);
+  const edges = await f.store
+    .context(f.graph)
+    .relations(
+      derivedId(requestId + ":speech"),
+      "see",
+      "in",
+      Number.MAX_SAFE_INTEGER,
+    );
+  expect(edges.map((edge) => edge.source).sort()).toEqual(
+    listeners.map((i) => f.actors[i]).sort(),
+  );
+}
+
+async function recorded(f: PlayFixture, text: string, listeners: number[]) {
+  for (const i of [0, 1, 2]) {
+    const entries = (await f.status(i)).entries.flatMap(
+      (row: { payload: { entries?: { input: string }[] } }) =>
+        row.payload.entries ?? [],
+    );
+    expect(
+      entries.filter((entry: { input: string }) => entry.input === text),
+    ).toHaveLength(listeners.includes(i) ? 1 : 0);
+  }
+}
+
+test.each(["接触", "チーム到着"])(
+  "追従したまま%sし、合流後の発言だけを観測し記録する",
+  async (how) => {
+    const { f, owner, npc, friend, at, session } = await companionFixture();
+    if (how === "接触") await f.move(2, f.place);
+    await heard(f, 2, "旗が青に変わった", [2]);
+    if (how === "接触") {
+      await f.send(0, { command: "contact", targetId: friend });
+    } else {
+      const teamId = randomUUID();
+      await f.send(2, {
+        command: "team-invite",
+        requestId: teamId,
+        targetId: owner,
+      });
+      await f.send(0, { command: "team-join", teamId });
+      await f.send(0, locate(owner, f.far));
+    }
+    expect(await session(1)).toBe(await session(2));
+    expect(await session(0)).toBe(await session(2));
+    await heard(f, 2, "次の船が来た", [0, 1, 2]);
+    await f.send(2, { command: "end-turn" });
+    await recorded(f, "旗が青に変わった", [2]);
+    await recorded(f, "次の船が来た", [0, 1, 2]);
+    await giveTurn(f, 0);
+    const destination = how === "接触" ? f.far : f.place;
+    await f.send(0, locate(owner, destination));
+    expect(await at(npc)).toEqual([destination]);
+    expect(await session(0)).toBe(await session(1));
+  },
+);
+
+test.each(["本人の提案", "仲間の提案", "承認前に待機", "本人が却下"])(
+  "一括移動の確定時に承認と追従を照合する（%s）",
+  async (how) => {
+    const { f, owner, npc, friend, mode, at, session } =
+      await companionFixture();
+    await f.move(2, f.place);
+    await f.send(2, { command: "contact", targetId: owner });
+    const proposer = how === "仲間の提案" || how === "本人が却下" ? 2 : 0;
+    await giveTurn(f, proposer);
+    const move = await f.send(proposer, {
+      command: "update",
+      text: "一緒に出発",
+      dependencies: [],
+      operations: [owner, friend].flatMap(
+        (actor) => locate(actor, f.far).operations,
+      ),
+    });
+    expect(move.state).toBe("receiving");
+    if (how === "承認前に待機") await mode("wait");
+    const receipt = {
+      command: "receive",
+      requestId: randomUUID(),
+      applicationId: move.applicationId,
+      accept: how !== "本人が却下",
+    };
+    const result = await f.send(2 - proposer, receipt);
+    expect(result.application).toMatchObject({ state: "confirmed" });
+    expect(await f.send(2 - proposer, receipt)).toEqual(result);
+    const accompanied = how !== "承認前に待機";
+    expect(await at(owner)).toEqual([how === "本人が却下" ? f.place : f.far]);
+    expect(await at(npc)).toEqual([
+      accompanied && how !== "本人が却下" ? f.far : f.place,
+    ]);
+    expect((await session(1)) === (await session(0))).toBe(accompanied);
+  },
+);
+
+test("帰還・呼び戻し・追従再開で、その時に聞けた発言だけが各人の履歴に一度ずつ残る", async () => {
+  const { f, owner, npc, friend, mode, status, at, session } =
+    await companionFixture();
+  await heard(f, 0, "出発前の相談", [0, 1]);
+  // 更新前から続く手番でも、退出者の聞いた発言はグラフから復元できる。
+  await isolated.databases.postgres.query(
+    "UPDATE bot_session SET data=data #- '{entries,0,speechWitnesses}' WHERE id=$1",
+    [await session(0)],
+  );
+  await f.send(0, { command: "companion-home", targetId: npc, placeId: f.far });
+  await f.send(0, { command: "companion-return", targetId: npc });
+  expect(await session(1)).not.toBe(await session(0));
+  expect(await status()).toMatchObject({
+    companions: [{ mode: "wait", placeId: f.far }],
+  });
+  await expect(mode("follow")).rejects.toMatchObject({
+    code: "COMPANION_NOT_HERE",
+  });
+  await heard(f, 0, "帰還後の相談", [0]);
+  await f.send(0, { command: "end-turn" });
+  await recorded(f, "出発前の相談", [0, 1]);
+  await recorded(f, "帰還後の相談", [0]);
+  await f.send(2, { command: "contact", targetId: npc });
+  await giveTurn(f, 2);
+  await heard(f, 2, "呼び戻し前の知らせ", [1, 2]);
+  await f.send(0, {
+    command: "companion-move",
+    targetId: npc,
+    placeId: f.place,
+  });
+  await heard(f, 2, "呼び戻し後の知らせ", [2]);
+  await f.send(2, { command: "end-turn" });
+  await recorded(f, "呼び戻し前の知らせ", [1, 2]);
+  await recorded(f, "呼び戻し後の知らせ", [2]);
+  expect(await at(friend)).toEqual([f.far]);
+  await mode("follow");
+  expect(await session(1)).toBe(await session(0));
+  await heard(f, 0, "ふたりで出発", [0, 1]);
+  await f.send(0, locate(owner, f.far));
+  expect(await at(npc)).toEqual([f.far]);
+  await f.send(0, { command: "end-turn" });
+  await recorded(f, "ふたりで出発", [0, 1]);
+});
+
+test("二人目を迎えた後も、待受の再接続とシーンの終了・再開を経て全員で同行する", async () => {
+  const { f, owner, npc, friend, request, at, session } =
+    await companionFixture();
+  await setNpc(f, 2, "bot");
+  await f.move(2, f.place);
+  await f.send(0, { command: "contact", targetId: friend });
+  await giveTurn(f, 0);
+  await request(friend);
+  const user = f.people[0]!.id;
+  for (const active of [false, true])
+    await access.waiting(user, f.world, owner, "human:" + user, active);
+  expect(await session(0)).toBe(await session(1));
+  expect(await session(0)).toBe(await session(2));
+  const oldScene = (await f.status(1)).sceneId;
+  await f.send(0, { command: "finish" });
+  await f.send(0, { command: "start" });
+  expect((await f.status(1)).sceneId).toBe(oldScene);
+  await giveTurn(f, 0);
+  await f.send(0, locate(owner, f.far));
+  for (const i of [1, 2]) expect(await session(i)).toBe(await session(0));
+  expect(await at(npc)).toEqual([f.far]);
+  expect(await at(friend)).toEqual([f.far]);
+});
+
+test.each(["普通の乗り物", "乗り物のNPC", "乗客が残るNPC"])(
+  "乗降と運行の後の所在・同席・モードを照合する（%s）",
+  async (kind) => {
+    const { f, owner, npc, status, at, session } = await companionFixture();
+    const vehicleId =
+      kind === "普通の乗り物"
+        ? await vehicleFixture(f)
+        : await vehicleFixture(f, { npcId: npc });
+    if (vehicleId !== npc)
+      await f.send(0, { command: "vehicle-request-control", vehicleId });
+    await f.send(0, { command: "vehicle-board", vehicleId });
+    if (kind === "乗客が残るNPC") {
+      await f.move(2, f.place);
+      await f.send(2, { command: "vehicle-board", vehicleId });
+      await f.send(2, { command: "contact", targetId: owner });
+    }
+    if (vehicleId === npc)
+      await f.send(0, {
+        command: "companion-move",
+        targetId: npc,
+        placeId: f.far,
+      });
+    else
+      await f.send(0, {
+        command: "vehicle-travel",
+        vehicleId,
+        destinationId: f.far,
+      });
+    expect(await at(vehicleId)).toEqual([f.far]);
+    expect(await session(0)).toBe(await session(1));
+    expect(await status()).toMatchObject({ companions: [{ mode: "follow" }] });
+    await f.send(0, { command: "vehicle-leave", vehicleId });
+    const waited = kind === "乗客が残るNPC";
+    expect(await status()).toMatchObject({
+      companions: [{ mode: waited ? "wait" : "follow" }],
+    });
+    expect((await session(0)) === (await session(1))).toBe(!waited);
+    await giveTurn(f, 0);
+    await f.send(0, locate(owner, f.place));
+    expect(await at(npc)).toEqual([waited ? f.far : f.place]);
+  },
+);
+
+test("待機をNPC自身が読み、現地で話せるが自分からは出発しない", async () => {
+  const { f, owner, npc, at, mode } = await companionFixture();
+  await f.move(2, f.place);
+  await f.send(2, { command: "contact", targetId: owner });
+  await mode("wait");
+  await f.send(0, locate(owner, f.far));
+  await giveTurn(f, 1);
+  await giveTurn(f, 2);
+  const invited = await f.send(2, locate(npc, f.far));
+  await expect(
+    f.send(1, {
+      command: "receive",
+      applicationId: invited.applicationId,
+      accept: true,
+    }),
+  ).rejects.toMatchObject({ code: "COMPANION_WAITING" });
+  await f.send(1, {
+    command: "receive",
+    applicationId: invited.applicationId,
+    accept: false,
+  });
+  await giveTurn(f, 1);
+  const self = await f.send(1, { command: "search", query: { kind: "self" } });
+  expect(self.material).toMatchObject({
+    companion: { ownerId: owner, mode: "wait" },
+  });
+  await heard(f, 1, "ここで待つよ", [1, 2]);
+  await expect(f.send(1, locate(npc, f.far))).rejects.toMatchObject({
+    code: "COMPANION_WAITING",
+  });
+  await auth.operations.execute(
+    (await auth.person()).id,
+    randomUUID(),
+    {
+      operation: "npcs.put",
+      worldId: f.world,
+      actorId: npc,
+      controller: "server",
+      reason: "隔離試験の担当を切り替える",
+    },
+    { players: access.players },
+  );
+  f.calls.mockImplementation(async (id, role, messages) => {
+    expect(role).toBe("world-server-npc");
+    expect(
+      JSON.parse(String(messages[1]!.content)).self.material.companion.mode,
+    ).toBe("wait");
+    return answer(id, locate(npc, f.far));
+  });
+  await access.botPlay.tickNpcs(f.world);
+  expect(await at(npc)).toEqual([f.place]);
+  expect((await f.status(2)).actorId).toBe(f.actors[2]);
+  await recorded(f, "ここで待つよ", [1, 2]);
+});
+
+test.each(["本人の移動", "同席者の提案を承認"])(
+  "通常プレイヤーの到着直後の発言は出発地へ届かない（%s）",
+  async (how) => {
+    const f = await fixture();
+    const traveler = f.actors[0]!;
+    await f.send(1, { command: "contact", targetId: traveler });
+    if (how === "本人の移動") {
+      await f.send(0, locate(traveler, f.far));
+    } else {
+      await giveTurn(f, 1);
+      const move = await f.send(1, locate(traveler, f.far));
+      await f.send(0, {
+        command: "receive",
+        applicationId: move.applicationId,
+        accept: true,
+      });
+    }
+    expect((await f.status(0)).sessionId).not.toBe(
+      (await f.status(1)).sessionId,
+    );
+    await heard(f, 0, "次の渡しは東岸から出る", [0]);
+    await f.send(0, { command: "end-turn" });
+    await recorded(f, "次の渡しは東岸から出る", [0]);
+  },
+);
+
+test.each(["接触", "チーム加入"])(
+  "通常プレイヤーの途中参加では発言時の観測と履歴が一致する（%s）",
+  async (how) => {
+    const f = await fixture();
+    await heard(f, 0, "旗が青に変わった", [0]);
+    if (how === "接触")
+      await f.send(1, { command: "contact", targetId: f.actors[0] });
+    else {
+      const teamId = randomUUID();
+      await f.send(0, {
+        command: "team-invite",
+        targetId: f.actors[1],
+        requestId: teamId,
+      });
+      await f.send(1, { command: "team-join", teamId });
+    }
+    await heard(f, 0, "鐘が二つ鳴った", [0, 1]);
+    await f.send(0, { command: "end-turn" });
+    await recorded(f, "旗が青に変わった", [0]);
+    await recorded(f, "鐘が二つ鳴った", [0, 1]);
+  },
+);
+
+test("同行判断に同じ手番ですでに相手が聞いた発言を渡す", async () => {
+  const f = await fixture();
+  const [owner, npc] = f.actors as [string, string, string];
+  await setNpc(f, 1, "bot");
+  await heard(f, 0, "会う前のひとり言", [0]);
+  await f.send(1, { command: "contact", targetId: owner });
+  await heard(f, 0, "橋で荷札を渡します", [0, 1]);
+  f.calls.mockImplementation(async (id, role, messages) => {
+    expect(role).toBe("world-companion");
+    const material = JSON.parse(String(messages[1]!.content));
+    expect(material.currentSpeech).toEqual([
+      { actorId: owner, text: "橋で荷札を渡します" },
+    ]);
+    return answer(id, { accepted: true, reason: "渡し場へ同行する" });
+  });
+  await f.send(0, {
+    command: "companion-request",
+    targetId: npc,
+    text: "一緒に来て",
+  });
+});
+
+test("旧版で別の会話に残った追従は現地で再合流し、遠方なら待機になる", async () => {
+  const f = await fixture();
+  const [owner, near, far] = f.actors as [string, string, string];
+  for (const i of [1, 2]) await setNpc(f, i, "bot");
+  await isolated.databases.postgres.query(
+    "INSERT INTO bot_companion(world_id,npc_id,actor_id) VALUES ($1,$2,$4),($1,$3,$4)",
+    [f.world, near, far, owner],
+  );
+  await heard(f, 0, "船が着いたよ", [0, 1]);
+  const result = await f.send(0, { command: "companion-status" });
+  expect(result.companions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ targetId: near, mode: "follow" }),
+      expect.objectContaining({ targetId: far, mode: "wait" }),
+    ]),
+  );
+  await f.send(0, { command: "end-turn" });
+  await recorded(f, "船が着いたよ", [0, 1]);
 });
