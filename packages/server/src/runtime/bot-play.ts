@@ -2450,6 +2450,21 @@ export class BotPlay {
     const r = session.data.receiving!;
     const state =
       outcome === "expired" || outcome === "cancelled" ? "failed" : outcome;
+    const recipient = turnOwner(session.data);
+    if (state === "failed") {
+      await this.#record(db, session, {
+        applicationId: r.id,
+        state,
+        reason:
+          outcome === "expired"
+            ? "受領判断の期限が切れました"
+            : "関係する参加者が退出しました",
+        senderId: r.sender,
+        recipientIds: r.recipients,
+        deadline: r.deadline,
+        ...(outcome === "expired" ? { decisionHolderId: recipient } : {}),
+      });
+    }
     const entry = session.data.entries.find((e) => e.applicationId === r.id)!;
     const items =
       state === "accepted"
@@ -2521,7 +2536,6 @@ export class BotPlay {
         ...r.recipients,
       ]);
     }
-    const recipient = turnOwner(session.data);
     if (recipient && (outcome === "expired" || outcome === "cancelled")) {
       const sender = (await this.#characters(session, db)).find(
         (member) => member.actorId === r.sender,
@@ -2555,11 +2569,6 @@ export class BotPlay {
     let idleExpired = false;
     if (r) {
       if (new Date(r.deadline) > now) return;
-      await this.#record(db, session, {
-        applicationId: r.id,
-        state: "failed",
-        reason: "受領判断の期限が切れました",
-      });
       await this.#settle(db, session, "expired");
       if (await this.#turnCallsExhausted(db, session))
         await this.#next(db, session);
@@ -2884,6 +2893,16 @@ export class BotPlay {
         [selected, actor, after ?? "0"],
       )
     ).rows;
+    for (const { payload } of entries) {
+      if (!payload.decisionHolderId) continue;
+      if (payload.decisionHolderId === actor)
+        payload.viewerMessage = "あなたの判断待ちでした。";
+      else if (
+        payload.senderId !== actor &&
+        !payload.recipientIds.includes(actor)
+      )
+        payload.viewerMessage = "あなたの返答は不要でした。";
+    }
     if (after !== undefined)
       return {
         sceneId: selected,
@@ -7787,14 +7806,7 @@ export class BotPlay {
             receiving &&
             (receiving.sender === actor ||
               receiving.recipients.includes(actor));
-          if (cancelled) {
-            await this.#record(db, session, {
-              applicationId: receiving.id,
-              state: "failed",
-              reason: "関係する参加者が退出しました",
-            });
-            await this.#settle(db, session, "cancelled");
-          }
+          if (cancelled) await this.#settle(db, session, "cancelled");
           if (d.turn === actor) {
             endedTurn = { number: d.number, reason: input.command };
             await this.#next(db, session);
