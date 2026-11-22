@@ -5552,6 +5552,10 @@ test("隠密のスリは成否と目撃を独立して判定し、未発見者�
   graphHistory.mockRestore();
   expect(await held(a)).toBe(1);
   expect(await held(b)).toBe(2);
+  for (const person of [a, b])
+    expect(
+      JSON.stringify(await readBelongings(f.store.context(f.graph), person)),
+    ).not.toContain("財布を抜く動機");
   expect((await f.status(1)).entries.slice(before)).toEqual([]);
   const reconnected = await access.botStatus(
     f.people[1]!.id,
@@ -5617,6 +5621,212 @@ test("隠密のスリは成否と目撃を独立して判定し、未発見者�
   expect(JSON.stringify((await f.status(1)).entries.slice(before))).toContain(
     "人物0が銀貨を取るのを見たよ",
   );
+});
+
+test("隠密中の対抗行動は所持・負傷・死亡を確定し、行為の目撃者だけに主体を伝える", async () => {
+  const f = await fixture(4);
+  const [actor, victim, witness, late] = f.actors as [
+    string,
+    string,
+    string,
+    string,
+  ];
+  await f.move(0, f.far);
+  await f.move(2, f.place);
+  await f.move(3, f.far);
+  const coin = (
+    await f.apply([
+      {
+        type: "create",
+        holder: victim,
+        label: "銀貨",
+        count: 3,
+        basis: "初期所持",
+      },
+    ])
+  ).changes.nodes[0]!.id;
+  const cause = (
+    await f.apply([
+      { type: "create", holder: actor, label: "霧トカゲ", basis: "初期所持" },
+    ])
+  ).changes.nodes[0]!.id;
+  stealthGm(f);
+  const arrival = randomUUID();
+  await stealthRolls(arrival, {
+    ["departure:" + late]: 6,
+    ["arrival:" + victim]: 1,
+    ["arrival:" + witness]: 6,
+  });
+  expect(
+    await f.send(0, {
+      requestId: arrival,
+      command: "update",
+      stealth: true,
+      text: "隠密で広場へ行く",
+      operations: [
+        { type: "locate", subjectId: actor, text: "広場", aboutIds: [f.place] },
+      ],
+      dependencies: [],
+    }),
+  ).toMatchObject({ stealth: { placeId: f.place } });
+  expect(JSON.stringify((await f.status(1)).entries)).toContain(
+    "人物0が広場に着いた",
+  );
+  await f.send(1, { command: "contact", targetId: actor });
+
+  const attempt = async (
+    text: string,
+    fields: Record<string, unknown>,
+    publicState?: string,
+    fatal = false,
+  ) => {
+    const requestId = randomUUID();
+    const input = {
+      requestId,
+      command: "oppose",
+      text,
+      ...fields,
+      dependencies: [],
+    };
+    await stealthRolls(requestId, {
+      ["attempt:" + victim]: 6,
+      ["attempt:" + witness]: 1,
+    });
+    await isolated.databases.postgres.query(
+      "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,1)",
+      [requestId, fatal ? { ...sure, fatal: [victim] } : sure],
+    );
+    f.calls.mockImplementation(async (id, role, messages) => {
+      if (role === "world-creation-dice") return answer(id, sure);
+      expect(role).toBe("world-opposition-dice");
+      const { perception } = JSON.parse(messages[1]!.content) as {
+        perception: { states: string[]; about: string[]; observers: string[] };
+      };
+      expect(perception.observers).toEqual([victim, witness].sort());
+      return answer(id, {
+        ...sure,
+        ...(fatal ? { fatal: [victim] } : {}),
+        perception: {
+          states: Object.fromEntries(
+            perception.states.map((state) => [state, publicState!]),
+          ),
+          about: [],
+          observation: text,
+          witnesses: Object.fromEntries(
+            perception.observers.map((viewer) => [
+              viewer,
+              { sides: 6, successThrough: 3 },
+            ]),
+          ),
+        },
+      });
+    });
+    if (fatal) {
+      const commit = f.store.commit.bind(f.store);
+      const interrupted = vi
+        .spyOn(f.store, "commit")
+        .mockImplementationOnce(async (...args) => {
+          await commit(...args);
+          throw new Error("世界の確定後に接続が切れた");
+        });
+      await expect(f.send(0, input)).rejects.toThrow(
+        "世界の確定後に接続が切れた",
+      );
+      interrupted.mockRestore();
+    }
+    const result = await f.send(0, input);
+    expect(result.outcome).toMatchObject({ success: true });
+    expect(await f.send(0, input)).toEqual(result);
+  };
+  const before = (await f.status(1)).entries.length;
+  const theft = "人物0が銀貨を取った";
+  await attempt(theft, {
+    operations: [
+      {
+        type: "move",
+        item: coin,
+        from: victim,
+        to: actor,
+        count: 1,
+        basis: theft,
+      },
+    ],
+  });
+  const inventory = await access.botPlay.search(f.world, victim, {
+    kind: "self",
+  });
+  expect(inventory.material).toMatchObject({
+    belongings: { items: [{ id: coin, label: "銀貨", count: 2 }] },
+  });
+  expect(JSON.stringify(inventory.material)).not.toContain(theft);
+  const stolen = await readBelongings(f.store.context(f.graph), actor);
+  expect(stolen.items).toContainEqual(
+    expect.objectContaining({ label: "銀貨", count: 1 }),
+  );
+  expect(JSON.stringify(stolen)).not.toContain(theft);
+
+  const wound: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  const wounded = "霧トカゲが襲い、腕に深い傷がある";
+  mark(wound, victim, wounded, [{ id: cause }, { id: actor }]);
+  await attempt(wounded, { changes: wound }, "腕に深い傷がある");
+  await f.send(0, { command: "end-turn" });
+  const examine = async (i: number) =>
+    JSON.stringify(
+      (
+        await f.send(i, {
+          command: "search",
+          query: {
+            kind: i === 1 ? "self" : "subject",
+            ...(i === 1 ? {} : { targetId: victim }),
+          },
+        })
+      ).material,
+    );
+  expect(await examine(1)).toContain("腕に深い傷がある");
+  await f.send(1, { command: "end-turn" });
+  await f.move(3, f.place);
+  const woundSeenLate = await examine(3);
+  expect(woundSeenLate).toContain("腕に深い傷がある");
+  for (const secret of ["霧トカゲ", cause, actor])
+    expect(woundSeenLate).not.toContain(secret);
+  await f.move(3, f.far);
+
+  await isolated.databases.postgres.query(
+    "UPDATE world_construction SET death_place_id=$2 WHERE id=$1",
+    [f.world, f.far],
+  );
+  const killed = "霧トカゲが致命傷を負わせた";
+  await attempt(
+    killed,
+    {
+      changes: {
+        nodes: [],
+        revisions: [{ ...wound.nodes[0], text: killed }],
+        edges: [],
+        endEdges: [],
+      },
+    },
+    "致命傷を負って死亡している",
+    true,
+  );
+  expect((await f.status(1)).members?.map((member) => member.actorId)).toEqual([
+    victim,
+  ]);
+  expect(await directPlaces(f.store.context(f.graph), victim)).toEqual([f.far]);
+  const after = await examine(3);
+  expect(after).toContain("致命傷を負って死亡している");
+  for (const secret of ["霧トカゲ", cause, actor])
+    expect(after).not.toContain(secret);
+  const victimHistory = JSON.stringify(
+    (await f.status(1)).entries.slice(before),
+  );
+  const witnessHistory = JSON.stringify((await f.status(2)).entries);
+  const lateHistory = JSON.stringify((await f.status(3)).entries);
+  for (const action of [theft, wounded, killed]) {
+    expect(victimHistory).not.toContain(action);
+    expect(lateHistory).not.toContain(action);
+    expect(witnessHistory.match(new RegExp(action, "g"))).toHaveLength(2); // 本文と目撃欄
+  }
 });
 
 test("隠密移動の現在地は今回の滞在を発見した相手だけが取得できる", async () => {

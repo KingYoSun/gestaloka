@@ -335,10 +335,15 @@ function actionMessage(
     }
   }
 }
-type Observation = { viewer: string; text: string };
+type Observation = { viewer: string; text: string; unattributed?: true };
 type StealthAction = {
   observations: Observation[];
   stay?: { id: string; placeId: string; discovered: string[] };
+};
+type OppositionPerception = {
+  states: string[];
+  about: string[];
+  observers: string[];
 };
 type HiddenStay = {
   actor_id: string;
@@ -678,6 +683,21 @@ const DiceSetting = z
   })
   .strict()
   .refine((v) => v.successThrough < v.sides);
+const WitnessDice = z
+  .object({
+    sides: DiceSetting.shape.sides,
+    successThrough: DiceSetting.shape.successThrough,
+  })
+  .strict()
+  .refine((setting) => setting.successThrough < setting.sides);
+const Perception = z
+  .object({
+    states: z.record(z.uuid(), z.string().trim().min(1)),
+    about: z.array(z.uuid()),
+    observation: z.string().trim().min(1).nullable(),
+    witnesses: z.record(z.uuid(), WitnessDice),
+  })
+  .strict();
 const privateInterpretation = (actor: string, changes: Change) =>
   changes.nodes.every((n) => n.kind === "script") &&
   changes.edges.length &&
@@ -1546,6 +1566,7 @@ export class BotPlay {
     request: string,
     context: WorldContext,
     at: number,
+    concealed = false,
   ): Promise<Plan> {
     const instant = (id: string) =>
       session.data.members.find((m) => m.actorId === id)?.instant;
@@ -1572,6 +1593,12 @@ export class BotPlay {
     let effectState: string | null = null;
     const prior = await this.store.receipt(context.worldId, request);
     if (prior) {
+      const stealth = (
+        await this.pool.query<{ stealth: StealthAction | null }>(
+          "SELECT outcome->'stealth' AS stealth FROM bot_request WHERE id=$1",
+          [request],
+        )
+      ).rows[0]?.stealth;
       const state = prior.changes.nodes.find(
         (n) => n.id === derivedId(request + ":state"),
       );
@@ -1590,6 +1617,7 @@ export class BotPlay {
         changes: prior.changes,
         at: prior.at,
         recipients: [],
+        ...(stealth ? { stealth } : {}),
         outcome: dice
           ? { success, ...dice }
           : effect
@@ -1619,6 +1647,9 @@ export class BotPlay {
           : undefined;
     let fatal: string[] = [],
       appearances: Appearance[] = [];
+    let stealth: StealthAction | undefined = concealed
+      ? { observations: [] }
+      : undefined;
     let instantReduction: Plan["instantReduction"];
     if (effect) {
       const nearby =
@@ -1672,6 +1703,15 @@ export class BotPlay {
           victim?.count === undefined
             ? undefined
             : { count: victim.count, allowSeparation: !npc },
+          undefined,
+          concealed
+            ? await this.#oppositionPerception(
+                session,
+                context,
+                actorId,
+                changes,
+              )
+            : undefined,
         );
         outcome = {
           setting: saved.setting,
@@ -1680,6 +1720,11 @@ export class BotPlay {
         };
         if (outcome.success) {
           effectState = saved.observable;
+          if (saved.perception)
+            stealth = await this.#oppositionObservations(
+              request,
+              saved.perception,
+            );
           fatal = saved.setting.fatal ?? [];
           at = await this.#consume(
             context,
@@ -1753,15 +1798,21 @@ export class BotPlay {
       request,
       {
         id: event,
-        text: effect
-          ? action.text +
-            (outcome.success
-              ? "。結果：" +
-                (instantReduction
-                  ? instantReductionText(instantReduction)
-                  : effect.state)
-              : "。作用は成立しなかった")
-          : action.text,
+        text: concealed
+          ? instantReduction
+            ? instantReductionText(instantReduction)
+            : outcome.success
+              ? "対象に作用があった"
+              : "作用は成立しなかった"
+          : effect
+            ? action.text +
+              (outcome.success
+                ? "。結果：" +
+                  (instantReduction
+                    ? instantReductionText(instantReduction)
+                    : effect.state)
+                : "。作用は成立しなかった")
+            : action.text,
         ...(cause ? { instantActor: cause } : {}),
         ...(instantReduction ? { instantReduction } : {}),
         ...(victim
@@ -1779,7 +1830,7 @@ export class BotPlay {
     );
     if (!npc) link({ kind: "happen", source: actorId, target: event });
     for (const member of session.data.members)
-      if (!member.instant)
+      if (!member.instant && (!concealed || member.actorId === actorId))
         link({ kind: "see", source: member.actorId, target: event });
     if (effect && outcome.success && !victim)
       link({ kind: "effect", source: event, target: effect.targetId });
@@ -1800,6 +1851,7 @@ export class BotPlay {
       at,
       recipients: [],
       outcome,
+      ...(stealth ? { stealth } : {}),
       instantMembers: JSON.stringify(session.data.members),
       ...(instantReduction
         ? {
@@ -3816,15 +3868,10 @@ export class BotPlay {
     checks: { key: string; actorId: string }[],
   ) {
     if (!checks.length) return {};
-    const dice = z
-      .object({
-        sides: DiceSetting.shape.sides,
-        successThrough: DiceSetting.shape.successThrough,
-      })
-      .strict()
-      .refine((setting) => setting.successThrough < setting.sides);
     const read = (raw: string) => {
-      const settings = z.record(z.string(), dice).parse(parseOutput(raw));
+      const settings = z
+        .record(z.string(), WitnessDice)
+        .parse(parseOutput(raw));
       if (
         Object.keys(settings).length !== checks.length ||
         checks.some(({ key }) => !settings[key])
@@ -4123,25 +4170,97 @@ export class BotPlay {
     session: Session,
   ) {
     await this.#record(db, session, { entries: [own] }, [actor]);
-    for (const { viewer, text } of observations) {
+    for (const { viewer, text, unattributed } of observations) {
       const scene = await this.current(world, viewer, db);
-      const entry = { actorId: actor, input: text, result: {} };
-      if (scene)
-        await this.#record(db, scene, { entries: [entry], observation: text }, [
-          viewer,
-        ]);
+      const entry = {
+        actorId: unattributed ? viewer : actor,
+        ...(unattributed ? { label: "目撃" } : {}),
+        input: text,
+        result: {},
+      };
+      const payload = { entries: [entry], observation: text };
+      if (scene) await this.#record(db, scene, payload, [viewer]);
       else {
         const member = session.data.members.find((m) => m.actorId === viewer);
         if (!member) continue;
-        await this.#record(
-          db,
-          session,
-          { entries: [entry], observation: text },
-          [viewer],
-        );
+        await this.#record(db, session, payload, [viewer]);
       }
       await signalTurns(db, world, viewer);
     }
+  }
+  async #oppositionPerception(
+    session: Session,
+    context: WorldContext,
+    actor: string,
+    changes: Change,
+    splitItems: ReadonlySet<string> = new Set(),
+  ): Promise<OppositionPerception> {
+    const written = new Set(
+      [...changes.nodes, ...changes.revisions].map(({ id }) => id),
+    );
+    const copies = new Map<string, string>();
+    for (const edge of changes.edges) {
+      if (
+        edge.kind !== "status" ||
+        edge.role !== "content" ||
+        written.has(edge.target)
+      )
+        continue;
+      const state = await context.node(edge.target);
+      if (state?.kind !== "script") continue;
+      // 新しい主体へ結ぶ状態文は、既存の主体が読む記録を巻き込まずに確定する。
+      const id = copies.get(state.id) ?? derivedId(`${edge.id}:visible-state`);
+      if (!copies.has(state.id)) changes.nodes.push({ ...state, id });
+      copies.set(state.id, id);
+      edge.target = id;
+    }
+    for (const edge of changes.edges)
+      if (edge.kind === "status" && edge.role === "about")
+        edge.source = copies.get(edge.source) ?? edge.source;
+    const states = changes.nodes
+      .filter(({ id }) => !splitItems.has(id))
+      .map(({ id }) => id);
+    for (const node of changes.revisions)
+      if ((await context.node(node.id))?.text !== node.text)
+        states.push(node.id);
+    return {
+      states,
+      about: changes.edges
+        .filter(
+          (edge) =>
+            edge.kind === "status" &&
+            edge.role === "about" &&
+            edge.text !== "direct-place" &&
+            edge.target !== actor,
+        )
+        .map(({ id }) => id),
+      observers: await this.#stealthObservers(
+        session.world_id,
+        context,
+        await this.#places(context, actor),
+        actor,
+      ),
+    };
+  }
+  async #oppositionObservations(
+    request: string,
+    perception: z.infer<typeof Perception>,
+  ): Promise<StealthAction> {
+    const observations: Observation[] = [];
+    if (perception.observation)
+      for (const [viewer, setting] of Object.entries(perception.witnesses)) {
+        const saved = await this.#roll(
+          derivedId(`${request}:stealth:attempt:${viewer}`),
+          setting,
+        );
+        if (saved.roll <= saved.setting.successThrough)
+          observations.push({
+            viewer,
+            text: perception.observation,
+            unattributed: true,
+          });
+      }
+    return { observations };
   }
   // 人物の乗り物は車内を分けない。乗っている人も、乗り物のいる場所にいるものとして扱う。
   async #carrier(context: WorldContext, id: string) {
@@ -6259,25 +6378,32 @@ export class BotPlay {
           "隠密は本人だけの移動か、相手から本人への物品移転に指定してください",
         );
     }
+    let context = this.store.context(
+      w.id,
+      "dependencies" in input ? input.dependencies : [],
+    );
+    const concealed =
+      input.command === "oppose" &&
+      (hidden || !!(await this.#hidden(db, world, context, actor)));
+    const moveDestinations = concealed ? new Map<string, string>() : undefined;
     if (input.command === "oppose" && input.effect) {
       const plan = await this.#instantAction(
         (await this.current(world, actor))!,
         actor,
         { text: input.text, effect: input.effect },
         input.requestId,
-        this.store.context(w.id, input.dependencies),
+        context,
         w.at,
+        concealed,
       );
       await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
-        plan.outcome,
+        plan.stealth
+          ? { outcome: plan.outcome, stealth: plan.stealth }
+          : plan.outcome,
       ]);
       return plan;
     }
-    let context = this.store.context(
-      w.id,
-      "dependencies" in input ? input.dependencies : [],
-    );
     const prior = await this.store.receipt(w.id, input.requestId);
     if (prior) {
       const outcome = (
@@ -6294,11 +6420,14 @@ export class BotPlay {
 
         outcome: configuringDraw
           ? undefined
-          : hidden
+          : outcome?.stealth
             ? outcome?.outcome
             : outcome,
-        ...(hidden
-          ? { stealth: outcome?.stealth ?? { observations: [] } }
+        ...(outcome?.stealth ? { stealth: outcome.stealth } : {}),
+        ...(outcome?.stealth &&
+        outcome.outcome?.success &&
+        outcome.outcome.setting?.fatal
+          ? { fatal: outcome.outcome.setting.fatal }
           : {}),
         items: await this.#itemOutcomes(
           this.store.context(w.id),
@@ -6680,7 +6809,7 @@ export class BotPlay {
       }
     } else if ("operations" in input && input.operations) {
       const ops: BelongingOp[] = input.operations.map((op) =>
-          hidden && op.type === "move"
+          concealed && op.type === "move"
             ? { ...op, basis: "物品の保持が移った" }
             : { ...op },
         ),
@@ -6871,10 +7000,13 @@ export class BotPlay {
         plannedOps.push(op);
       }
       if (!impossible) {
-        const plan = await planBelongings(context, input.requestId, at, [
-          ...deployments.values(),
-          ...plannedOps,
-        ]);
+        const plan = await planBelongings(
+          context,
+          input.requestId,
+          at,
+          [...deployments.values(), ...plannedOps],
+          moveDestinations,
+        );
         changes = plan.changes;
         changes.endEdges.push(...pickupEdges, ...release);
         at = plan.at;
@@ -6889,7 +7021,7 @@ export class BotPlay {
           );
       }
     } else {
-      changes = input.changes!;
+      changes = concealed ? structuredClone(input.changes!) : input.changes!;
       if (
         changes.nodes.some(
           (node) =>
@@ -7090,7 +7222,9 @@ export class BotPlay {
       };
       await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
-        hidden ? { outcome, stealth: { observations: [] } } : outcome,
+        hidden || concealed
+          ? { outcome, stealth: { observations: [] } }
+          : outcome,
       ]);
       return {
         context,
@@ -7098,7 +7232,7 @@ export class BotPlay {
         at,
         recipients: [],
         outcome,
-        ...(hidden ? { stealth: { observations: [] } } : {}),
+        ...(hidden || concealed ? { stealth: { observations: [] } } : {}),
       };
     }
     const recipients = [...parties].filter(
@@ -7271,16 +7405,25 @@ export class BotPlay {
         )[0]
       : undefined;
     if (outcome) {
-      await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
-        input.requestId,
-        outcome,
-      ]);
       const dice = outcome as {
         success: boolean;
         setting: z.infer<typeof DiceSetting>;
       };
+      const stealth =
+        concealed && !dice.success ? { observations: [] } : undefined;
+      await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
+        input.requestId,
+        stealth ? { outcome, stealth } : outcome,
+      ]);
       if (!dice.success)
-        return { context, changes: empty(), at, recipients: [], outcome };
+        return {
+          context,
+          changes: empty(),
+          at,
+          recipients: [],
+          outcome,
+          ...(stealth ? { stealth } : {}),
+        };
       for (const { id, text } of dice.setting.decided ?? [])
         changes.nodes.find((n) => n.id === id)!.text = text;
       await this.#saveStorageLimits(context, changes, dice.setting);
@@ -7294,6 +7437,7 @@ export class BotPlay {
         dice.setting,
       );
     }
+    let stealth: StealthAction | undefined;
     if (input.command === "oppose") {
       let success = !externalEffect && [...parties].every((id) => id === actor);
       if (!success) {
@@ -7303,6 +7447,15 @@ export class BotPlay {
           ...refs,
         ]);
         const session = (await this.current(world, actor))!;
+        const perception = concealed
+          ? await this.#oppositionPerception(
+              session,
+              context,
+              actor,
+              changes,
+              new Set(moveDestinations?.values()),
+            )
+          : undefined;
         const saved = await this.#oppositionRoll(
           input.requestId,
           actor,
@@ -7312,8 +7465,49 @@ export class BotPlay {
           await this.#consumable(context, actor, changes),
           undefined,
           ...(await this.#mortal(session, recipients)),
+          undefined,
+          undefined,
+          perception,
         );
         success = saved.roll <= saved.setting.successThrough;
+        if (saved.perception) {
+          stealth = success
+            ? await this.#oppositionObservations(
+                input.requestId,
+                saved.perception,
+              )
+            : { observations: [] };
+          for (const node of [...changes.nodes, ...changes.revisions])
+            node.text = saved.perception.states[node.id] ?? node.text;
+          const about = new Set(saved.perception.about);
+          const locations = new Set(
+            changes.edges
+              .filter(
+                (edge) =>
+                  edge.kind === "status" &&
+                  edge.role === "content" &&
+                  edge.text === "location",
+              )
+              .map(({ target }) => target),
+          );
+          changes.edges = changes.edges.filter(
+            (edge) =>
+              edge.kind !== "see" &&
+              (edge.kind !== "status" ||
+                edge.role !== "about" ||
+                (edge.text === "direct-place" && locations.has(edge.source)) ||
+                about.has(edge.id)),
+          );
+          for (const edge of changes.edges)
+            if (
+              edge.kind !== "status" ||
+              !(
+                (edge.text === "location" && locations.has(edge.target)) ||
+                (edge.text === "direct-place" && locations.has(edge.source))
+              )
+            )
+              delete edge.text;
+        }
         if (success) {
           fatal = saved.setting.fatal ?? [];
           at = await this.#relocateDead(
@@ -7341,7 +7535,7 @@ export class BotPlay {
       if (!success) changes = empty();
       await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
-        outcome,
+        stealth ? { outcome, stealth } : outcome,
       ]);
     }
     const items = await this.#itemOutcomes(context, input, changes);
@@ -7360,6 +7554,7 @@ export class BotPlay {
       recipients: input.command === "oppose" ? [] : recipients,
       items,
       outcome,
+      ...(stealth ? { stealth } : {}),
       ...(handoff ? { handoff } : {}),
       ...(locates ? { locates } : {}),
       ...(mixedMoves?.length ? { mixedMoves } : {}),
@@ -7619,9 +7814,31 @@ export class BotPlay {
     deathCriteria = "",
     group?: { count: number; allowSeparation: boolean },
     opponentId?: string,
+    perception?: OppositionPerception,
   ) {
     function readDecision(raw: string) {
-      const { setting, observable } = read(parseOutput(raw)),
+      const parsed = parseOutput(raw);
+      const separated = perception
+        ? z.object({ perception: Perception }).passthrough().parse(parsed)
+        : undefined;
+      const reported = separated?.perception;
+      if (reported && perception) {
+        const matches = (ids: string[], values: Record<string, unknown>) =>
+          Object.keys(values).length === ids.length &&
+          ids.every((id) => Object.hasOwn(values, id));
+        if (
+          !matches(perception.states, reported.states) ||
+          !matches(perception.observers, reported.witnesses) ||
+          reported.about.some((id) => !perception.about.includes(id))
+        )
+          throw new Error("状態、参照と目撃判定を指定されたIDで返してください");
+      }
+      const dice = separated
+        ? Object.fromEntries(
+            Object.entries(separated).filter(([key]) => key !== "perception"),
+          )
+        : parsed;
+      const { setting, observable } = read(dice),
         fatal = setting.fatal?.filter((id) => mortal.includes(id));
       delete setting.fatal;
       const reduction = setting.instantReduction;
@@ -7638,6 +7855,7 @@ export class BotPlay {
           consumable,
         ),
         observable,
+        perception: reported,
       };
     }
     function read(result: unknown) {
@@ -7668,7 +7886,7 @@ export class BotPlay {
       return { setting: DiceSetting.parse(dice), observable };
     }
     const response = await this.#ask(
-      derivedId(`${requestId}:dice-setting`),
+      derivedId(`${requestId}:dice-setting${perception ? ":stealth" : ""}`),
       "world-opposition-dice",
       [
         {
@@ -7688,7 +7906,10 @@ export class BotPlay {
                   : "") +
                 "countは一団の個体数以下の正の整数。数が減らなければ省く。"
               : "") +
-            (consumable.length ? consumePrompt : ""),
+            (consumable.length ? consumePrompt : "") +
+            (perception
+              ? "隠密中の行動。成功時に使うperceptionも返す。形式は{states:{状態・物品ID:本文},about:[関係ID],observation:文字列またはnull,witnesses:{人物ID:{sides,successThrough}}}。statesはperception.statesの全IDについて、対象を後から調べるだけで確認できる結果を書く。名前・種別・呼び名や参照を含め、攻撃や移転を起こした主体、使用者、経緯、原因の断定は入れない。傷や破損、変化した性質は残す。物品の呼称は物自体が分かるように書く。aboutは指定された関係のうち、その結果だけから確認できる参照を選ぶ。observationは行為そのものを見たときに分かる内容を書き、実行者が見えるなら呼称を含める。私的な動機や目撃だけでは分からない指示者は含めない。目撃できる内容がなければnull。witnessesは指定された全observersに対して、到着を見たかと独立に今回の行為に気づく確率を設定する。"
+              : ""),
         },
         {
           role: "user",
@@ -7702,15 +7923,20 @@ export class BotPlay {
             ...(mortal.length ? { mortal } : {}),
             ...(mortal.length && deathCriteria ? { deathCriteria } : {}),
             ...(group ? { group } : {}),
+            ...(perception ? { perception } : {}),
           }),
         },
       ],
       "resolution",
       readDecision,
     );
-    const { setting, observable } = readDecision(response.content),
+    const {
+        setting,
+        observable,
+        perception: reported,
+      } = readDecision(response.content),
       saved = await this.#roll(requestId, setting);
-    return { ...saved, observable };
+    return { ...saved, observable, perception: reported };
   }
   async #roll(id: string, setting: z.infer<typeof DiceSetting>) {
     const db = await this.pool.connect();
@@ -9698,7 +9924,7 @@ export class BotPlay {
                       placeId: stay.placeId,
                       place: (await plan.context.node(stay.placeId))!.text,
                     };
-                  } else if (input.command === "oppose") {
+                  } else if (input.command === "oppose" && input.stealth) {
                     await this.#reveal(
                       db,
                       world,
