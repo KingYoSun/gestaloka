@@ -852,6 +852,23 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
     accepting: true,
     reason: "受付再開",
   });
+  const startingItems = [
+    { label: "架空の硬貨", count: 100000, seriesId: randomUUID() },
+  ];
+  const configure = (items?: typeof startingItems) =>
+    auth.operations.execute(scene.subject, randomUUID(), {
+      operation: "worlds.configure",
+      worldId: scene.id,
+      title: "共有の世界",
+      description: "参加用",
+      published: true,
+      accepting: true,
+      ...(items && { startingItems: items }),
+      reason: "参加時の物品",
+    });
+  expect(await configure(startingItems)).toMatchObject({ startingItems });
+  // 省略すると現在の設定を保つ。
+  expect(await configure()).toMatchObject({ startingItems });
   expect((await join(one.cookie, randomUUID(), 2)).statusCode).toBe(409);
   const repeated = await Promise.all([
     join(one.cookie, id1),
@@ -859,12 +876,14 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
   ]);
   expect(repeated.map((r) => r.statusCode)).toEqual([200, 200]);
   expect(repeated[0]!.json()).toEqual(repeated[1]!.json());
-  const oldSettings = (
+  const joinRequest = (
     await databases.postgres.query(
       "SELECT o.request FROM world_join j JOIN world_operation o ON o.id=j.operation_id WHERE j.id=$1",
       [id1],
     )
-  ).rows[0].request.actionText;
+  ).rows[0].request;
+  expect(joinRequest.startingItems).toEqual(startingItems);
+  const oldSettings = joinRequest.actionText;
   await auth.operations.execute(scene.subject, randomUUID(), {
     operation: "presets.put",
     presetId,

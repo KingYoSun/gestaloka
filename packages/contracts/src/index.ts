@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Change, RelationKind } from "./world.js";
+import { Change, RelationKind, StartingItem } from "./world.js";
 import { BlueprintDraft, BlueprintPublication } from "./play.js";
 export {
   DrawReward,
@@ -47,6 +47,7 @@ export {
   WorldEdge,
   RelationKind,
   BelongingRole,
+  StartingItem,
 } from "./world.js";
 
 export const Health = z.object({
@@ -131,6 +132,7 @@ export const WorldStatus = z.object({
   id: z.uuid(),
   prompt: z.string(),
   playerSettings: z.string().optional(),
+  startingItems: z.array(StartingItem).optional(),
   createdAt: z.iso.datetime(),
   state: z.enum([
     "generating",
@@ -1328,6 +1330,13 @@ export const Operation = z.discriminatedUnion("operation", [
         .optional()
         .describe(
           "検索で出現した個体が同じ場所に同時に同席できる数を、発生用ノードの発生数（maxCount、旧形式はcount）の何倍までにするか。既定は2。省略すると現在の設定を保つ",
+        ),
+      startingItems: z
+        .array(StartingItem)
+        .max(12)
+        .optional()
+        .describe(
+          "参加する人物が最初から手に持つ系列つきの物品。設定後に始まる参加から適用する。省略すると現在の設定を保つ",
         ),
       deathJudgment: z
         .boolean()

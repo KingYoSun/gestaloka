@@ -621,6 +621,7 @@ export class WorldAccess {
       id: row.id,
       prompt: row.initial_prompt,
       playerSettings: row.player_settings,
+      startingItems: row.starting_items,
       createdAt: row.created_at.toISOString(),
       state: row.state,
       at: row.at,

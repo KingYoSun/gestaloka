@@ -8,6 +8,7 @@ belongingsは文字列の配列です。1件の操作を表すJSONオブジェ�
 - 人物が保管先を利用できるようになった: {"type":"grant","person":"人物のID","storage":"保管先のID","basis":"根拠"}。
 - 人物が保管先を利用できなくなった: {"type":"revoke","person":"人物のID","storage":"保管先のID"}。
 - 人物が技能を身につけた: {"type":"learn","person":"人物のID","text":"何をどこまでできるか","basis":"根拠"}。
+- requestのstartingItemsにある物品は、参加と同時にサーバーが参加者の手持ちとして成立させる。同じ物品をcreateしない。
 - 参加時に人物の所在地を登録する: {"type":"locate","subjectId":"人物のID","text":"所在地だけの記述","aboutIds":["場所のID"],"directPlaceId":"直接滞在する場所のID"}。シーン内では各eventのlocationsへ結果時点の所在地を記し、同じ更新をbelongingsに重ねない。
 - 物品の呼称、または技能の内容と範囲が変わった: {"type":"update","id":"物品または技能のID","text":"新しい内容"}。技能の根拠が変わる場合はbasisを加える。
 - 物品を使い切った・失った、または技能を失った: {"type":"remove","id":"物品または技能のID"}。

@@ -433,6 +433,19 @@ export interface paths {
                             id: string;
                             prompt: string;
                             playerSettings?: string;
+                            startingItems?: {
+                                /** @description 物品の呼称 */
+                                label: string;
+                                /** @description 個数 */
+                                count: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 物品の系列ID
+                                 */
+                                seriesId: string;
+                                /** @description 1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠 */
+                                unitsPerSlot?: number | "unlimited";
+                            }[];
                             /** Format: date-time */
                             createdAt: string;
                             /** @enum {string} */
@@ -584,6 +597,19 @@ export interface paths {
                             id: string;
                             prompt: string;
                             playerSettings?: string;
+                            startingItems?: {
+                                /** @description 物品の呼称 */
+                                label: string;
+                                /** @description 個数 */
+                                count: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 物品の系列ID
+                                 */
+                                seriesId: string;
+                                /** @description 1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠 */
+                                unitsPerSlot?: number | "unlimited";
+                            }[];
                             /** Format: date-time */
                             createdAt: string;
                             /** @enum {string} */
@@ -755,6 +781,19 @@ export interface paths {
                             id: string;
                             prompt: string;
                             playerSettings?: string;
+                            startingItems?: {
+                                /** @description 物品の呼称 */
+                                label: string;
+                                /** @description 個数 */
+                                count: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 物品の系列ID
+                                 */
+                                seriesId: string;
+                                /** @description 1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠 */
+                                unitsPerSlot?: number | "unlimited";
+                            }[];
                             /** Format: date-time */
                             createdAt: string;
                             /** @enum {string} */
@@ -8352,6 +8391,20 @@ export interface paths {
                             playerList?: boolean;
                             /** @description 検索で出現した個体が同じ場所に同時に同席できる数を、発生用ノードの発生数（maxCount、旧形式はcount）の何倍までにするか。既定は2。省略すると現在の設定を保つ */
                             instantNpcMultiplier?: number;
+                            /** @description 参加する人物が最初から手に持つ系列つきの物品。設定後に始まる参加から適用する。省略すると現在の設定を保つ */
+                            startingItems?: {
+                                /** @description 物品の呼称 */
+                                label: string;
+                                /** @description 個数 */
+                                count: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 物品の系列ID
+                                 */
+                                seriesId: string;
+                                /** @description 1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠 */
+                                unitsPerSlot?: number | "unlimited";
+                            }[];
                             /** @description プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。死亡した人物はセッションから外れ、deathPlaceIdの場所へ移る。省略すると現在の設定を保つ */
                             deathJudgment?: boolean;
                             /** @description 人物の死亡を判定するGMへ渡す、この世界の条件文。空なら行動と結果だけから判定する。省略すると現在の設定を保つ */
