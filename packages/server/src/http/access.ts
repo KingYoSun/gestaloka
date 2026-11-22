@@ -9,6 +9,7 @@ import type {
 import type { NpcModeCommand } from "@gestaloka/contracts";
 import { RuntimeStopped } from "../runtime/control.js";
 import { PlayerDevices } from "./player-devices.js";
+import { Stories, setupStories } from "./stories.js";
 import { McpOrigin } from "./mcp-origin.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -71,11 +72,13 @@ export class WorldAccess {
   readonly devices: PlayerDevices;
   readonly scenes: WorldScenes;
   readonly players: WorldPlayers;
+  readonly stories: Stories;
   constructor(readonly construction: WorldConstruction) {
     this.botPlay = new BotPlay(construction);
     this.devices = new PlayerDevices(construction.pool);
     this.scenes = new WorldScenes(construction);
     this.players = new WorldPlayers(construction);
+    this.stories = new Stories(construction.pool);
   }
   get pool() {
     return this.construction.pool;
@@ -146,6 +149,7 @@ export class WorldAccess {
     await setupInitialPresentations(this.pool);
     await this.players.setup();
     await this.devices.setup();
+    await setupStories(this.pool);
     await this.pool.query(`INSERT INTO world_controlled_actor(world_id,actor_id)
       SELECT c.world_id,a.actor_id FROM world_access a JOIN world_construction c ON c.id=a.construction_id
       WHERE a.role='player' AND a.actor_id IS NOT NULL AND c.world_id IS NOT NULL ON CONFLICT DO NOTHING`);
