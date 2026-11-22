@@ -5,6 +5,12 @@ import { z } from "zod";
 import { InstallationPolicy } from "@gestaloka/contracts";
 import { routeEndpoints } from "./locations.js";
 import {
+  initializeInventory,
+  inventoryChange,
+  inventoryStackKey,
+  saveInventory,
+} from "./inventory.js";
+import {
   Change,
   RelationKind,
   WorldEdge,
@@ -30,6 +36,7 @@ export {
   derivedId,
 } from "./model.js";
 type Direction = "in" | "out";
+type InventoryActors = (worldId: string, ids: string[]) => Promise<Set<string>>;
 export type Lease = { worldId: string; runId: string; generation: number };
 export type Dependency = { key: string; version: number };
 const storageBase = { storageId: z.uuid() };
@@ -149,6 +156,7 @@ export class WorldContext {
     readonly worldId: string,
     dependencies: readonly Dependency[] = [],
     readonly drafts: readonly { at: number; changes: Change }[] = [],
+    readonly inventoryActors: InventoryActors = async () => new Set(),
   ) {
     z.uuid().parse(worldId);
     for (const dependency of dependencies)
@@ -156,6 +164,75 @@ export class WorldContext {
   }
   get dependencies(): Dependency[] {
     return [...this.#dependencies].map(([key, version]) => ({ key, version }));
+  }
+
+  async inventoryRead<T>(
+    fn: (tx: ManagedTransaction, enabled: boolean) => Promise<T>,
+  ) {
+    const session = this.driver.session();
+    try {
+      return await session.executeWrite(async (tx) => {
+        await lock(tx, this.worldId, "inventory");
+        return fn(tx, await initializeInventory(tx, this.worldId));
+      });
+    } finally {
+      await session.close();
+    }
+  }
+
+  async checkInventory(changes: Change) {
+    await this.inventoryRead(async (tx, enabled) => {
+      if (!enabled) return;
+      const ended: WorldEdge[] = [];
+      for (const id of changes.endEdges) {
+        const { records } = await tx.run(edgeById, {
+          worldId: this.worldId,
+          id,
+        });
+        if (records[0])
+          ended.push(WorldEdge.parse(JSON.parse(records[0].get("data"))));
+      }
+      await inventoryChange(
+        tx,
+        this.worldId,
+        changes,
+        ended,
+        (ids) => this.inventoryActors(this.worldId, ids),
+        true,
+      );
+    });
+  }
+
+  async inventorySlots(id: string) {
+    await this.prepareInventory();
+    return this.#read(`inventory:${id}`, async (tx) => {
+      const { records } = await tx.run(
+        "MATCH (n:WorldNode {worldId:$worldId,id:$id}) RETURN coalesce(n.inventorySlots,0) AS slots",
+        { worldId: this.worldId, id },
+      );
+      return Number(records[0]?.get("slots") ?? 0);
+    });
+  }
+
+  async mergeCandidate(holder: string, key: string, exclude: string[]) {
+    await this.prepareInventory();
+    return this.#read(relationKey(holder, "has", "out"), async (tx) => {
+      const { records } = await tx.run(
+        `MATCH (n:WorldNode {worldId:$worldId,inventoryStackKey:$key})
+         WHERE NOT n.id IN $exclude RETURN n.id AS id ORDER BY n.id LIMIT 1`,
+        { worldId: this.worldId, key, exclude },
+      );
+      return records[0]?.get("id") as string | undefined;
+    });
+  }
+
+  async prepareInventory() {
+    const { records } = await this.driver.executeQuery(
+      "MATCH (g:WorldGuard {worldId:$worldId,key:'inventory',inventoryReady:true}) RETURN g.key",
+      { worldId: this.worldId },
+      { routing: "READ" },
+    );
+    if (!records.length) await this.inventoryRead(async () => {});
   }
 
   async validate() {
@@ -773,7 +850,10 @@ export class WorldStore {
     worldId: string;
     drafts: readonly { at: number; changes: Change }[];
   }>();
-  constructor(readonly driver: Driver) {}
+  constructor(
+    readonly driver: Driver,
+    readonly inventoryActors?: InventoryActors,
+  ) {}
 
   async setup() {
     for (const [label, field] of [
@@ -801,6 +881,7 @@ export class WorldStore {
       "FOR (n:WorldPickup) ON (n.worldId,n.storageId,n.receiver,n.commitId)",
       "FOR (n:WorldPickup) ON (n.noticePending)",
       "FOR (n:WorldPickup) ON (n.worldId,n.noticePending)",
+      "FOR (n:WorldNode) ON (n.worldId,n.inventoryStackKey)",
     ])
       await this.driver.executeQuery("CREATE INDEX IF NOT EXISTS " + index);
     await this.driver.executeQuery(
@@ -831,7 +912,17 @@ export class WorldStore {
       worldId,
       dependencies,
       scope?.worldId === worldId ? scope.drafts : [],
+      this.inventoryActors,
     );
+  }
+
+  async configureInventory(worldId: string, enabled: boolean) {
+    await this.context(worldId).inventoryRead(async (tx) => {
+      await tx.run(
+        "MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'}) SET g.inventoryEnabled=$enabled",
+        { worldId, enabled },
+      );
+    });
   }
 
   /** 管理者による一度の移行。候補の抽出は通常のプレイ・起動から呼び出さない。 */
@@ -1046,7 +1137,13 @@ export class WorldStore {
     if (
       !parsed.management &&
       !fromBelongingOperations &&
-      changes.nodes.some((node) => node.kind === "existence" && node.seriesId)
+      changes.nodes.some(
+        (node) =>
+          node.kind === "existence" &&
+          (node.seriesId ||
+            node.unitsPerSlot !== undefined ||
+            node.storageLimitSlots !== undefined),
+      )
     )
       throw new WorldConflict(
         "新しい物品へ系列を付けるには管理者の確定が必要です",
@@ -1145,6 +1242,23 @@ export class WorldStore {
                 );
               node.seriesId = original.seriesId;
             }
+            if (
+              node.unitsPerSlot !== undefined &&
+              node.unitsPerSlot !== original.unitsPerSlot
+            )
+              throw new WorldConflict(
+                "1枠あたりの個数の変更には管理者の確定が必要です",
+              );
+            node.unitsPerSlot = original.unitsPerSlot;
+            if (original.storageLimitSlots !== undefined)
+              node.storageLimitSlots = original.storageLimitSlots;
+            if (
+              !fromBelongingOperations &&
+              node.storageLimitSlots !== original.storageLimitSlots
+            )
+              throw new WorldConflict(
+                "保管枠の設定には保管先の登録または管理者の確定が必要です",
+              );
           }
           revised.push({
             node: original,
@@ -1165,6 +1279,10 @@ export class WorldStore {
             throw new WorldConflict("終了対象の関係が有効ではありません");
           ended.push(edge);
         }
+        const inventoryTouched =
+          changes.revisions.some((node) => node.kind === "existence") ||
+          [...changes.edges, ...ended].some((edge) => edge.kind === "has");
+        if (inventoryTouched) await lock(tx, worldId, "inventory");
         // 持つ物品・役割つきhasの集合か、その対象の本文が変わる主体は、同じ確定で要約を作り直す。
         const summaries = new Map<
           string,
@@ -1206,7 +1324,8 @@ export class WorldStore {
         for (const edge of [...changes.edges, ...ended])
           if (edge.kind === "has")
             summarize(edge.source, (await held(edge)) ? "hold" : edge.role);
-        for (const node of changes.revisions) {
+        const stackHolders = new Set<string>();
+        for (const [index, node] of changes.revisions.entries()) {
           const key = relationKey(node.id, "has", "in");
           dependencies.push({ key, version: await version(tx, worldId, key) });
           const holders = await tx.run(
@@ -1215,8 +1334,19 @@ export class WorldStore {
             RETURN s.id AS subject,coalesce(r.role,'hold') AS role`,
             { worldId, id: node.id },
           );
-          for (const row of holders.records)
+          for (const row of holders.records) {
             summarize(row.get("subject"), row.get("role"));
+            const prior = revised[index]!.node;
+            const holder = row.get("subject") as string;
+            if (
+              row.get("role") === "hold" &&
+              node.kind === "existence" &&
+              prior.kind === "existence" &&
+              inventoryStackKey(prior, holder) !==
+                inventoryStackKey(node, holder)
+            )
+              stackHolders.add(relationKey(holder, "has", "out"));
+          }
         }
         const releasing = reservations?.release.length
           ? (
@@ -1234,6 +1364,7 @@ export class WorldStore {
         if (releasing.length !== (reservations?.release.length ?? 0))
           throw new WorldConflict("取り置きはすでに解放されています");
         const touched = new Set([
+          ...stackHolders,
           ...(parsed.storageEffect?.type === "install" ||
           parsed.storageEffect?.type === "relocate"
             ? [placeKey(parsed.storageEffect.storageId)]
@@ -1431,6 +1562,16 @@ export class WorldStore {
               })),
             },
           );
+        const inventory =
+          inventoryTouched &&
+          (await inventoryChange(
+            tx,
+            worldId,
+            changes,
+            ended,
+            (ids) => context.inventoryActors(worldId, ids),
+            (await initializeInventory(tx, worldId)) && !parsed.management,
+          ));
         const fixedPlaces = new Set(parsed.newFixedPlaces);
         const createNode = (node: WorldNode) =>
           tx.run(
@@ -1546,6 +1687,17 @@ export class WorldStore {
           await tx.run(
             `MATCH ()-[r:${edge.kind} {worldId: $worldId, id: $id}]->() SET r.validTo = $at, r.data = $data`,
             { worldId, id: edge.id, at, data },
+          );
+        }
+        if (inventory) {
+          await saveInventory(tx, worldId, inventory);
+          await tx.run(
+            `UNWIND $keys AS key MERGE (g:WorldGuard {worldId:$worldId,key:key})
+             SET g.version=coalesce(g.version,0)+1`,
+            {
+              worldId,
+              keys: [...inventory.slots.keys()].map((id) => `inventory:${id}`),
+            },
           );
         }
         for (const edge of changes.edges) {

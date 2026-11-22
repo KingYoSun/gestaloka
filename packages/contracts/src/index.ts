@@ -63,6 +63,23 @@ export const ApiError = z.object({
   message: z.string(),
   callsUsed: z.number().int().optional(),
 });
+export const PlayError = ApiError.extend({
+  capacity: z
+    .object({
+      holderId: z.uuid(),
+      usedSlots: z.number(),
+      limitSlots: z.number(),
+      projectedSlots: z.number(),
+    })
+    .optional(),
+  item: z
+    .object({
+      itemId: z.uuid(),
+      requestedCount: z.number(),
+      maxAcceptableCount: z.number(),
+    })
+    .optional(),
+});
 export const PlayerCliRelease = z.object({
   version: z.string(),
   node: z.string(),
@@ -792,6 +809,13 @@ export const BackupConfiguration = z
   .strict();
 const worldTime = z.number().int().nonnegative().safe();
 export const WorldGraphQuery = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("inventory"),
+      minCount: z.number().int().positive().safe(),
+      standard: z.boolean().optional(),
+    })
+    .strict(),
   z.object({ kind: z.literal("edge"), id: z.uuid() }).strict(),
   z.object({ kind: z.literal("nodes"), after: z.uuid().optional() }).strict(),
   z
@@ -1258,6 +1282,10 @@ export const Operation = z.discriminatedUnion("operation", [
     .object({
       operation: z.literal("worlds.configure"),
       worldId: z.uuid(),
+      inventoryCapacity: z
+        .boolean()
+        .optional()
+        .describe("所持・保管枠の制限を有効にする"),
       title: z.string().trim().min(1),
       description: z.string(),
       playerSettings: z.string().optional(),

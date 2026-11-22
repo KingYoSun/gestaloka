@@ -7,6 +7,14 @@ import {
 } from "./model.js";
 import type { Lease, WorldContext, WorldStore } from "./store.js";
 import type { Dependency } from "./store.js";
+import {
+  carrySlots,
+  InventoryCapacityExceeded,
+  inventoryStackKey,
+  itemSlots,
+  storageSlots,
+  unitsPerSlot,
+} from "./inventory.js";
 
 // 物品・保管先・技能の事実はhasで表す。役割なしは物品を持つこと（持つ存在の物であること）、
 // useは家・場所の保管先の登録、skillは技能。要約と持つ存在の一意性は確定処理が保つ。
@@ -62,6 +70,7 @@ export async function planBelongings(
   destinations?: Map<string, string>,
 ) {
   const change: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  const released = new Set<string>();
   let at = requestedAt;
   const incoming = async (target: string) =>
     (await context.relations(target, "has", "in", LATEST)).filter(
@@ -86,6 +95,7 @@ export async function planBelongings(
   const end = (edges: WorldEdge[]) => {
     at = Math.max(at, ...edges.map((edge) => edge.period.from));
     change.endEdges.push(...edges.map((edge) => edge.id));
+    for (const edge of edges) if (!edge.role) released.add(edge.target);
   };
   // 同じ確定で改訂する物品・技能。個数の増減はここに重ね、ノードごとに一度だけ改訂する。
   const revised = new Map<string, WorldNode>();
@@ -262,30 +272,56 @@ export async function planBelongings(
         part.count ?? (source.kind === "existence" ? source.count : undefined);
     // 移った先に、呼称と系列が同じ個数つきの物品があれば、そこへ足して物品を増やさない。
     let merged: WorldNode | undefined;
-    if (count)
-      for (const edge of await context.relations(
-        part.to,
-        "has",
-        "out",
-        LATEST,
-      )) {
-        const node = await current(edge.target);
-        if (
-          !edge.role &&
-          !moving.has(edge.target) &&
-          node?.kind === "existence" &&
-          node.count &&
-          node.text === source.text &&
-          node.seriesId ===
-            (source.kind === "existence" ? source.seriesId : undefined)
-        ) {
-          merged = { ...node, count: node.count + count };
-          break;
+    if (count && source.kind === "existence") {
+      const key = inventoryStackKey(source, part.to)!;
+      const pending = change.nodes.find(
+        (node) =>
+          node.kind === "existence" &&
+          inventoryStackKey(node, part.to) === key &&
+          change.edges.some(
+            (edge) =>
+              !edge.role && edge.target === node.id && edge.source === part.to,
+          ),
+      );
+      const match =
+        pending?.id ??
+        (await context.mergeCandidate(part.to, key, [
+          ...moving,
+          ...released,
+          ...revised.keys(),
+        ]));
+      let candidate = pending ?? (match ? await current(match) : undefined);
+      if (!candidate)
+        for (const node of revised.values()) {
+          if (
+            node.kind !== "existence" ||
+            moving.has(node.id) ||
+            released.has(node.id) ||
+            inventoryStackKey(node, part.to) !== key
+          )
+            continue;
+          if (
+            (await incoming(node.id)).some(
+              (edge) => !edge.role && edge.source === part.to,
+            )
+          ) {
+            candidate = node;
+            break;
+          }
         }
-      }
+      if (
+        candidate?.kind === "existence" &&
+        candidate.count &&
+        inventoryStackKey(candidate, part.to) === key
+      )
+        merged = { ...candidate, count: candidate.count + count };
+    }
     if (merged) {
       destinations?.set(part.item, merged.id);
-      await revise(merged);
+      const mergedId = merged.id;
+      const added = change.nodes.findIndex((node) => node.id === mergedId);
+      if (added >= 0) change.nodes[added] = merged;
+      else await revise(merged);
       if (!part.count) end(await incoming(part.item));
     } else if (part.count) {
       const node = derivedId(`${commitId}:${part.key}:part`);
@@ -298,6 +334,9 @@ export async function planBelongings(
         ...(source.kind === "existence" && source.seriesId
           ? { seriesId: source.seriesId }
           : {}),
+        ...(source.kind === "existence" && source.unitsPerSlot !== undefined
+          ? { unitsPerSlot: source.unitsPerSlot }
+          : {}),
       });
       has(`${part.key}:hold`, part.to, node, undefined, part.basis);
     } else {
@@ -309,6 +348,142 @@ export async function planBelongings(
   change.revisions.push(...revised.values());
   for (const edge of change.edges) edge.period = { from: at };
   return { at, changes: change };
+}
+
+export async function checkBelongingCapacity(
+  context: WorldContext,
+  requestId: string,
+  at: number,
+  changes: Change,
+  operations: readonly BelongingOp[],
+) {
+  try {
+    await context.checkInventory(changes);
+  } catch (error) {
+    if (!(error instanceof InventoryCapacityExceeded)) throw error;
+    const reaches = async (start: string) => {
+      const seen = new Set<string>();
+      let id: string | undefined = start;
+      while (id && !seen.has(id)) {
+        if (id === error.capacity.holderId) return true;
+        seen.add(id);
+        id = (await context.relations(id, "has", "in", LATEST)).find(
+          (edge) => !edge.role,
+        )?.source;
+      }
+      return false;
+    };
+    for (const [index, op] of operations.entries()) {
+      if (op.type !== "move" && op.type !== "create" && op.type !== "update")
+        continue;
+      const itemId =
+        op.type === "move"
+          ? op.item
+          : op.type === "update"
+            ? op.id
+            : derivedId(`${requestId}:${index}:node`);
+      const item =
+        op.type === "create" ? undefined : await context.node(itemId);
+      const previousCount =
+        op.type === "update" && item?.kind === "existence"
+          ? (item.count ?? 0)
+          : 0;
+      const holder =
+        op.type === "move"
+          ? op.to
+          : op.type === "create"
+            ? op.holder
+            : (await context.relations(itemId, "has", "in", LATEST)).find(
+                (edge) => !edge.role,
+              )?.source;
+      const requestedCount =
+        op.type === "update"
+          ? (op.count ?? 0) - previousCount
+          : (op.count ??
+            (item?.kind === "existence" ? item.count : undefined) ??
+            1);
+      if (!holder || requestedCount <= 0 || !(await reaches(holder))) continue;
+      let low = 0,
+        high = requestedCount;
+      const fits = async (count: number) => {
+        const plan = await planBelongings(
+          context,
+          requestId,
+          at,
+          operations.map((other) =>
+            other === op ? { ...op, count: previousCount + count } : other,
+          ),
+        );
+        try {
+          await context.checkInventory(plan.changes);
+          return true;
+        } catch (failure) {
+          if (!(failure instanceof InventoryCapacityExceeded)) throw failure;
+          return false;
+        }
+      };
+      while (high - low > 1) {
+        const count = low + Math.floor((high - low) / 2);
+        if (await fits(count)) low = count;
+        else high = count;
+      }
+      if (
+        op.type === "move" &&
+        item?.kind === "existence" &&
+        item.count &&
+        op.from &&
+        (await reaches(op.from))
+      ) {
+        const size = unitsPerSlot(item);
+        if (size !== "unlimited" && size > 1) {
+          // 同じ保持者の中で分けると、移動前後の端数で合計枠が上下する。
+          // 端数が変わる区間ごとに、指定数を下回る最大の候補を試す。
+          const destinations = new Map<string, string>();
+          const plan = await planBelongings(
+            context,
+            requestId,
+            at,
+            operations,
+            destinations,
+          );
+          const dest = [...plan.changes.nodes, ...plan.changes.revisions].find(
+            (n) => n.id === destinations.get(op.item),
+          );
+          const previous =
+            dest?.kind === "existence" && dest.count
+              ? dest.count - requestedCount
+              : 0;
+          const upper = requestedCount - 1;
+          const remainders = [
+            upper % size,
+            0,
+            size - 1,
+            (item.count % size) - 1,
+            size - (previous % size),
+          ];
+          const candidates = remainders
+            .filter((r) => r >= 0 && r < size)
+            .map((r) => {
+              const inBlock = upper - (upper % size) + r;
+              return inBlock <= upper ? inBlock : inBlock - size;
+            });
+          for (const count of [...new Set(candidates)].sort((a, b) => b - a))
+            if (count > low && (await fits(count))) {
+              low = count;
+              break;
+            }
+        }
+      }
+      error.item = {
+        itemId,
+        requestedCount,
+        maxAcceptableCount: low,
+      };
+      error.message = `${op.type === "create" ? op.label : (item?.text ?? "この品")}はあと${low}個まで持てます。`;
+      break;
+    }
+    throw error;
+  }
 }
 
 // 同じcommitIdの再送には保存済みの結果を返す。競合はWorldConflictとして呼出し側へ返る。
@@ -406,6 +581,7 @@ export async function readBelongings(
   subject: string,
   at = LATEST,
   viewer?: string,
+  includeCapacity = !viewer && at === LATEST,
 ) {
   const facts = async (holder: string, role: WorldEdge["role"]) =>
     (await context.relations(holder, "has", "out", at))
@@ -426,6 +602,12 @@ export async function readBelongings(
       held.push({
         id: edge.target,
         ...labelled(node),
+        ...(includeCapacity
+          ? {
+              slots: itemSlots(node),
+              ...(node.count ? { unitsPerSlot: unitsPerSlot(node) } : {}),
+            }
+          : {}),
         basis: edge.text ?? null,
         since: edge.period.from,
       });
@@ -442,6 +624,17 @@ export async function readBelongings(
       label: node?.text ?? "",
       ...shown(node),
       items: await items(edge.target),
+      ...(!includeCapacity
+        ? {}
+        : {
+            capacity: {
+              usedSlots: await context.inventorySlots(edge.target),
+              limitSlots:
+                node?.kind === "existence"
+                  ? (node.storageLimitSlots ?? storageSlots)
+                  : storageSlots,
+            },
+          }),
     });
   }
   const skills = [];
@@ -456,5 +649,17 @@ export async function readBelongings(
       since: edge.period.from,
     });
   }
-  return { items: await items(subject), storages, skills };
+  return {
+    items: await items(subject),
+    storages,
+    skills,
+    ...(!includeCapacity
+      ? {}
+      : {
+          capacity: {
+            usedSlots: await context.inventorySlots(subject),
+            limitSlots: carrySlots,
+          },
+        }),
+  };
 }

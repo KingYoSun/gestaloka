@@ -96,6 +96,8 @@ async function http(
         {
           code: data.code ?? "HTTP_ERROR",
           callsUsed: data.callsUsed,
+          capacity: data.capacity,
+          item: data.item,
         },
       );
     return data;
@@ -831,6 +833,8 @@ try {
       code: (error as { code?: string }).code ?? "CLI_ERROR",
       message: error instanceof Error ? error.message : String(error),
       callsUsed: (error as { callsUsed?: number }).callsUsed,
+      capacity: (error as { capacity?: unknown }).capacity,
+      item: (error as { item?: unknown }).item,
     }),
   );
   process.exitCode = 1;

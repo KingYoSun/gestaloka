@@ -3024,6 +3024,8 @@ export interface paths {
                                  * @description 管理者が指定する物品の系列ID
                                  */
                                 seriesId?: string;
+                                unitsPerSlot?: number | "unlimited";
+                                storageLimitSlots?: number;
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                 viewers?: "all" | string[];
                             } | {
@@ -3155,6 +3157,8 @@ export interface paths {
                                  * @description 管理者が指定する物品の系列ID
                                  */
                                 seriesId?: string;
+                                unitsPerSlot?: number | "unlimited";
+                                storageLimitSlots?: number;
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                 viewers?: "all" | string[];
                             } | {
@@ -3359,6 +3363,8 @@ export interface paths {
                                  * @description 管理者が指定する物品の系列ID
                                  */
                                 seriesId?: string;
+                                unitsPerSlot?: number | "unlimited";
+                                storageLimitSlots?: number;
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                 viewers?: "all" | string[];
                             } | {
@@ -3490,6 +3496,8 @@ export interface paths {
                                  * @description 管理者が指定する物品の系列ID
                                  */
                                 seriesId?: string;
+                                unitsPerSlot?: number | "unlimited";
+                                storageLimitSlots?: number;
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                 viewers?: "all" | string[];
                             } | {
@@ -3668,6 +3676,8 @@ export interface paths {
                                      * @description 管理者が指定する物品の系列ID
                                      */
                                     seriesId?: string;
+                                    unitsPerSlot?: number | "unlimited";
+                                    storageLimitSlots?: number;
                                     /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                     viewers?: "all" | string[];
                                 } | {
@@ -3799,6 +3809,8 @@ export interface paths {
                                      * @description 管理者が指定する物品の系列ID
                                      */
                                     seriesId?: string;
+                                    unitsPerSlot?: number | "unlimited";
+                                    storageLimitSlots?: number;
                                     /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                     viewers?: "all" | string[];
                                 } | {
@@ -4164,6 +4176,8 @@ export interface paths {
                                  * @description 管理者が指定する物品の系列ID
                                  */
                                 seriesId?: string;
+                                unitsPerSlot?: number | "unlimited";
+                                storageLimitSlots?: number;
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                 viewers?: "all" | string[];
                             } | {
@@ -4295,6 +4309,8 @@ export interface paths {
                                  * @description 管理者が指定する物品の系列ID
                                  */
                                 seriesId?: string;
+                                unitsPerSlot?: number | "unlimited";
+                                storageLimitSlots?: number;
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                 viewers?: "all" | string[];
                             } | {
@@ -4598,6 +4614,19 @@ export interface paths {
                             code: string;
                             message: string;
                             callsUsed?: number;
+                            capacity?: {
+                                /** Format: uuid */
+                                holderId: string;
+                                usedSlots: number;
+                                limitSlots: number;
+                                projectedSlots: number;
+                            };
+                            item?: {
+                                /** Format: uuid */
+                                itemId: string;
+                                requestedCount: number;
+                                maxAcceptableCount: number;
+                            };
                         };
                     };
                 };
@@ -4881,6 +4910,8 @@ export interface paths {
                                              * @description 管理者が指定する物品の系列ID
                                              */
                                             seriesId?: string;
+                                            unitsPerSlot?: number | "unlimited";
+                                            storageLimitSlots?: number;
                                             /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                             viewers?: "all" | string[];
                                         } | {
@@ -5012,6 +5043,8 @@ export interface paths {
                                              * @description 管理者が指定する物品の系列ID
                                              */
                                             seriesId?: string;
+                                            unitsPerSlot?: number | "unlimited";
+                                            storageLimitSlots?: number;
                                             /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                             viewers?: "all" | string[];
                                         } | {
@@ -7471,6 +7504,11 @@ export interface paths {
                             worldId: string;
                             query: {
                                 /** @enum {string} */
+                                kind: "inventory";
+                                minCount: number;
+                                standard?: boolean;
+                            } | {
+                                /** @enum {string} */
                                 kind: "edge";
                                 /** Format: uuid */
                                 id: string;
@@ -7546,6 +7584,8 @@ export interface paths {
                                      * @description 管理者が指定する物品の系列ID
                                      */
                                     seriesId?: string;
+                                    unitsPerSlot?: number | "unlimited";
+                                    storageLimitSlots?: number;
                                     /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                     viewers?: "all" | string[];
                                 } | {
@@ -7677,6 +7717,8 @@ export interface paths {
                                      * @description 管理者が指定する物品の系列ID
                                      */
                                     seriesId?: string;
+                                    unitsPerSlot?: number | "unlimited";
+                                    storageLimitSlots?: number;
                                     /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
                                     viewers?: "all" | string[];
                                 } | {
@@ -8250,6 +8292,8 @@ export interface paths {
                             operation: "worlds.configure";
                             /** Format: uuid */
                             worldId: string;
+                            /** @description 所持・保管枠の制限を有効にする */
+                            inventoryCapacity?: boolean;
                             title: string;
                             description: string;
                             playerSettings?: string;

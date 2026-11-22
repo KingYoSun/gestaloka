@@ -5,6 +5,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "@fastify/type-provider-zod";
 import {
   ApiError,
+  PlayError,
   PlayCommand,
   PlayResponse,
   PlayerReportInput,
@@ -184,6 +185,8 @@ export async function worldRoutes(
         code: error.code,
         message: error.message,
         callsUsed: error.callsUsed,
+        capacity: error.inventory?.capacity,
+        item: error.inventory?.item,
       });
     if (
       typeof error === "object" &&
@@ -462,7 +465,7 @@ export async function worldRoutes(
         params: ResourceId,
         querystring: ActorQuery,
         body: PlayCommand,
-        response: { 200: PlayResponse, ...errors },
+        response: { 200: PlayResponse, ...errors, 409: PlayError },
       },
     },
     async (request) =>

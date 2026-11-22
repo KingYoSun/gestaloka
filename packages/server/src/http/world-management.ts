@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { z } from "zod";
 import { WorldGraphQuery, Change } from "@gestaloka/contracts";
 import { WorldStore, WorldConflict } from "../world/store.js";
+import { inventoryAudit } from "../world/inventory.js";
 import { atTime, inGeneration, worldNow } from "../world/model.js";
 import { AccessError } from "./access.js";
 import type { WorldPlayers } from "../runtime/players.js";
@@ -50,6 +51,35 @@ export class WorldManagement {
         dependencies: context.dependencies,
       };
     const graph = this.store.driver;
+    if (q.kind === "inventory") {
+      const { rows } = await db.query<{ actor_id: string }>(
+        "SELECT actor_id FROM world_controlled_actor WHERE world_id=$1 UNION SELECT actor_id FROM bot_npc WHERE world_id=$2",
+        [world.id, id],
+      );
+      const pending = await db.query(
+        `SELECT count(*)::int AS count FROM blueprint_quest
+         WHERE world=$1 AND NOT (data ? 'storageLimitSlots')
+         AND (data->>'phase'='build' OR (data->>'phase'='craft' AND data->'template'->'installation' IS NOT NULL))`,
+        [id],
+      );
+      const session = graph.session();
+      try {
+        return {
+          ...(await session.executeRead((tx) =>
+            inventoryAudit(
+              tx,
+              world.id,
+              rows.map((r) => r.actor_id),
+              q.minCount,
+              q.standard ?? false,
+            ),
+          )),
+          pendingLegacyStorages: pending.rows[0].count,
+        };
+      } finally {
+        await session.close();
+      }
+    }
     if (q.kind === "nodes") {
       const r = await graph.executeQuery(
         "MATCH(n:WorldNode {worldId:$world}) WHERE $after IS NULL OR n.id>$after RETURN n.id AS id ORDER BY id LIMIT 51",
