@@ -68,6 +68,16 @@ gestaloka team invite --target <人物ID> | join --team <チームID> | status |
 
 実行例 `gestaloka team status`
 
+## companion
+
+ユニークNPCに付いてきてもらう。requestは同じセッションにいるユニークNPCへの同行の申請で、本人の通常手番に1 SPを使う。GMが二人の記録と最近の出来事から同行を認めるかを決め、ダイスは振らない。同じ手番に却下された同じ相手への出し直しは、前回の結果が返りSPを使わない。companionは3体まで、1体のNPCは1人のcompanionにしかなれない。出現個体は先に昇格が必要。follow（既定）は本人の移動に付いてくる。waitはその場に残る。moveは指定の場所へ、returnはhomeで指定した帰る場所へ向かわせる。moveとreturnは本人の通常手番に所在の変更として確定し、通常枠を1回使う。dismissで関係を終える。companionはプレイヤーと離れて自立して行動することはできない。本人が選べるのは追従・待機と、指定の場所や帰る場所への移動だけで、その場で何をするかはNPC本人が決める。request以外はSPを使わず、move・return以外は手番も要らない。
+
+```text
+gestaloka companion request --target <NPCのID> --text <頼み方> | follow|wait|return|dismiss --target <NPCのID> | move|home --target <NPCのID> --place <場所ID> | status
+```
+
+実行例 `gestaloka companion follow --target <NPCのID>`
+
 ## status
 
 現在の手番と未読履歴を照会。dailySpに探索・生成の共通残量と次の回復時刻が出る。運営者が表示を選んだ世界では、creationCriteriaに新規作成のダイスの基準が出る。--sceneは本人の過去シーン、--after 0は先頭。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。
