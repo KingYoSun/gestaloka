@@ -37,6 +37,7 @@ export async function playerDistributionRoutes(instance: FastifyInstance) {
     "cli",
     "dice",
     "draw",
+    "blueprints",
     "SKILL",
   ]) {
     for (const path of [name, `${name}.md`, `references/${name}.md`]) {
@@ -54,7 +55,7 @@ export async function playerDistributionRoutes(instance: FastifyInstance) {
         hide: true,
         params: z.object({
           version: z.string(),
-          guide: z.enum(["join.md", "setup.md", "draw.md"]),
+          guide: z.enum(["join.md", "setup.md", "draw.md", "blueprints.md"]),
         }),
       },
     },
