@@ -1,6 +1,6 @@
 # ADR-076 NPCをプレイヤーのcompanionにする
 
-状態: 採用。2026年11月22日のユーザー判断を記録する。
+状態: 採用。2026年11月22日のユーザー判断を記録する。外部botが担当するNPCの成立と解除は、[ADR-079](ADR-079-companion-consent-of-operated-npc.md)で改めた。
 
 ## 背景
 

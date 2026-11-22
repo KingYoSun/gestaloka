@@ -460,6 +460,8 @@ export type Session = {
       declined?: string[];
       parallel?: { departAloneOnTimeout: boolean };
       vehicleControl?: VehicleApplication;
+      // 受領されたら、このNPCを申請者のcompanionにする。
+      companion?: string;
     };
   };
 };
@@ -484,6 +486,7 @@ type Plan = {
   locates?: BelongingOp[];
   mixedMoves?: Locate[];
   vehicleControl?: VehicleApplication;
+  companion?: string;
   vehicleResult?: Record<string, unknown>;
   vehicleUnchanged?: true;
   boardings?: Boarding[];
@@ -654,6 +657,12 @@ const DiceSetting = z
     sides: z.number().int().min(2).max(2147483647),
     successThrough: z.number().int().positive(),
     fatal: z.array(z.uuid()).optional(),
+    // 成功したときに対象の人物へ残る状態。
+    states: z
+      .array(
+        z.object({ id: z.uuid(), text: z.string().trim().min(1) }).strict(),
+      )
+      .optional(),
     instantReduction: InstantReduction.optional(),
     storageLimits: z
       .array(
@@ -3127,6 +3136,8 @@ export class BotPlay {
         };
       }
     }
+    if (r.companion)
+      await this.companions.index(db, world, r.companion, r.sender);
     // 再送時は確定した移動を参照し、未回答者の扱いも復元する。
     const moved = new Set(
       receipt.changes.edges.flatMap((edge) =>
@@ -5338,6 +5349,62 @@ export class BotPlay {
     return index < 0 ? undefined : index;
   }
   // NPCが申請者に同行するかをGMが判断する。同じ手番に同じNPCへ却下された申請の出し直しは、前回の結果を返す。
+  async #companionAvailable(
+    world: string,
+    w: { id: string },
+    actor: string,
+    target: string,
+    session: Session,
+  ) {
+    await this.companions.check(
+      this.pool,
+      world,
+      actor,
+      target,
+      session.data.members,
+    );
+    const context = this.store.context(w.id);
+    if (!(await this.contact(context, actor, target, world, this.pool)).allowed)
+      reject(
+        "COMPANION_NOT_HERE",
+        "同じ場所にいる相手に同行を申請してください",
+      );
+    return context;
+  }
+  // 外部botが担当するNPCへの同行申請は、GMではなく本人の受領で決める（ADR-079）。
+  async #companionApplication(
+    world: string,
+    w: { id: string; at: number },
+    actor: string,
+    input: Extract<CompanionCommand, { text: string }>,
+    session: Session,
+  ): Promise<Plan | undefined> {
+    const { rowCount } = await this.pool.query(
+      "SELECT 1 FROM bot_npc WHERE world_id=$1 AND actor_id=$2 AND controller='bot'",
+      [world, input.targetId],
+    );
+    if (!rowCount) return;
+    const context = await this.#companionAvailable(
+      world,
+      w,
+      actor,
+      input.targetId,
+      session,
+    );
+    return {
+      context,
+      at: w.at,
+      changes: await this.companions.relation(
+        context,
+        input.requestId,
+        w.at,
+        actor,
+        input.targetId,
+      ),
+      recipients: [input.targetId],
+      companion: input.targetId,
+    };
+  }
   async #judgeCompanion(
     world: string,
     w: { id: string; at: number },
@@ -5353,22 +5420,13 @@ export class BotPlay {
       )
     ).rows[0]?.outcome;
     if (saved) return saved;
-    await this.companions.check(
-      this.pool,
+    const context = await this.#companionAvailable(
       world,
+      w,
       actor,
       input.targetId,
-      session.data.members,
+      session,
     );
-    const context = this.store.context(w.id);
-    if (
-      !(await this.contact(context, actor, input.targetId, world, this.pool))
-        .allowed
-    )
-      reject(
-        "COMPANION_NOT_HERE",
-        "同じ場所にいる相手に同行を申請してください",
-      );
     const rejected = (
       await this.pool.query<{ outcome: CompanionJudgement }>(
         `SELECT outcome FROM bot_request WHERE world_id=$1 AND actor_id=$2 AND prepared_turn=$3 AND id<>$4
@@ -7497,6 +7555,9 @@ export class BotPlay {
           undefined,
           undefined,
           perception,
+          recipients.filter((id) =>
+            session.data.members.some((m) => m.actorId === id && !m.instant),
+          ),
         );
         success = saved.roll <= saved.setting.successThrough;
         if (saved.perception) {
@@ -7539,6 +7600,18 @@ export class BotPlay {
         }
         if (success) {
           fatal = saved.setting.fatal ?? [];
+          for (const { id, text } of saved.setting.states ?? []) {
+            const state = derivedId(`${input.requestId}:state:${id}`);
+            changes.nodes.push({ id: state, kind: "script", text });
+            changes.edges.push({
+              id: derivedId(`${state}:content`),
+              kind: "status",
+              role: "content",
+              source: id,
+              target: state,
+              period: { from: at },
+            });
+          }
           at = await this.#relocateDead(
             session,
             context,
@@ -7844,6 +7917,7 @@ export class BotPlay {
     group?: { count: number; allowSeparation: boolean },
     opponentId?: string,
     perception?: OppositionPerception,
+    affected: string[] = [],
   ) {
     function readDecision(raw: string) {
       const parsed = parseOutput(raw);
@@ -7868,8 +7942,10 @@ export class BotPlay {
           )
         : parsed;
       const { setting, observable } = read(dice),
-        fatal = setting.fatal?.filter((id) => mortal.includes(id));
+        fatal = setting.fatal?.filter((id) => mortal.includes(id)),
+        states = setting.states?.filter((s) => affected.includes(s.id));
       delete setting.fatal;
+      delete setting.states;
       const reduction = setting.instantReduction;
       if (!group) delete setting.instantReduction;
       else if (
@@ -7880,7 +7956,11 @@ export class BotPlay {
         throw new Error("一団の個体数と許可された変更の範囲で判定してください");
       return {
         setting: consumption(
-          { ...setting, ...(fatal?.length ? { fatal } : {}) },
+          {
+            ...setting,
+            ...(fatal?.length ? { fatal } : {}),
+            ...(states?.length ? { states } : {}),
+          },
           consumable,
         ),
         observable,
@@ -7921,12 +8001,15 @@ export class BotPlay {
         {
           role: "system",
           content:
-            "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {sides:整数,successThrough:整数}。1からsidesまでの一様な出目がsuccessThrough以下なら成功。1<=successThrough<sides。成否、出目、物語、追加の変更は生成しない。" +
+            "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {sides:整数,successThrough:整数}。1からsidesまでの一様な出目がsuccessThrough以下なら成功。1<=successThrough<sides。成否、出目、物語は生成しない。変更は以下で求められた項目だけを返す。" +
             (proposedState === undefined
               ? ""
               : "NPCの外界への作用ではさらにobservableを返す。後から対象だけを調べた人が何がどうなったかを読めるよう、changes.stateから変化後の状態を述べる箇所を文末または句読点まで原文で抜き出す。部位名だけに切り詰めない。行為者、経緯、原因の推測を除く。観察可能な箇所がなければnull。") +
             (mortal.length
               ? "この行動が成功したときに死亡する対象を、mortalのIDから選んでfatal:[ID]に返す。行動と結果が対象の死を意味するときだけ選び、該当がなければ空配列。deathCriteriaがあれば、この世界で人物が死亡する条件として従う。"
+              : "") +
+            (affected.length
+              ? "この行動が成功したときに人物へ残る変化があれば、affectedのIDごとにstates:[{id,text}]を返す。textには、後からその人物だけを調べた人が何がどうなったかを読める変化後の状態を一文で書く。行為者、経緯、原因の推測を除く。行動と結果から読み取れる変化だけを書き、残る変化がなければ空配列。"
               : "") +
             (group
               ? "対象が一団の場合、行動が成功したときに減る個体がいればinstantReductionを返す。死亡なら{kind:'death',count:死亡数}。" +
@@ -7951,6 +8034,7 @@ export class BotPlay {
             ...(consumable.length ? { consumable } : {}),
             ...(mortal.length ? { mortal } : {}),
             ...(mortal.length && deathCriteria ? { deathCriteria } : {}),
+            ...(affected.length ? { affected } : {}),
             ...(group ? { group } : {}),
             ...(perception ? { perception } : {}),
           }),
@@ -8457,7 +8541,15 @@ export class BotPlay {
           );
         if (input.command === "promote-npc")
           promotion = await this.preparePromotion(world, actor, input);
-        if (input.command === "companion-request")
+        if (input.command === "companion-request") {
+          const application = await this.#companionApplication(
+            world,
+            w,
+            actor,
+            input,
+            prepared!,
+          );
+          if (application) return application;
           companionDecision = await this.#judgeCompanion(
             world,
             w,
@@ -8466,6 +8558,7 @@ export class BotPlay {
             input,
             prepared!,
           );
+        }
         if (input.command === "say" && input.instantNpcs?.length) {
           const changes = empty();
           changes.nodes = input.instantNpcs.map((text, i) => ({
@@ -8661,7 +8754,7 @@ export class BotPlay {
         await db.query("COMMIT");
         return result;
       }
-      if (isCompanionCommand(input)) {
+      if (isCompanionCommand(input) && !plan) {
         const context = this.store.context(w.id);
         if (input.command === "companion-follow") {
           await this.companions.mine(db, world, actor, input.targetId);
@@ -8706,16 +8799,18 @@ export class BotPlay {
               input.targetId,
               active.data.members,
             );
-            await this.companions.form(
-              db,
-              world,
-              this.store.context(w.id),
-              input.requestId,
-              w.at,
-              actor,
-              input.targetId,
-              commit,
+            const current = this.store.context(w.id);
+            await commit(
+              current,
+              await this.companions.relation(
+                current,
+                input.requestId,
+                w.at,
+                actor,
+                input.targetId,
+              ),
             );
+            await this.companions.index(db, world, input.targetId, actor);
           }
         }
         const action = await this.companions.command(
@@ -9679,7 +9774,9 @@ export class BotPlay {
                         : []),
                     ].join("\n")
                   : "text" in input
-                    ? (input.text ?? "")
+                    ? plan.companion
+                      ? `自分のcompanionとして同行してほしいと申請する。「${input.text}」`
+                      : (input.text ?? "")
                     : vehicleMovement(input) ||
                         input.command === "vehicle-request-control"
                       ? "乗り物を操作する"
@@ -9826,6 +9923,7 @@ export class BotPlay {
                   ...(plan.vehicleControl
                     ? { vehicleControl: plan.vehicleControl }
                     : {}),
+                  ...(plan.companion ? { companion: plan.companion } : {}),
                 };
                 result = { applicationId: input.requestId, state: "receiving" };
                 if (isDrawConfiguration(input))
