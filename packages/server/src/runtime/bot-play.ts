@@ -84,7 +84,7 @@ import {
   requireVehicleHere,
   ride,
   vehicleLocate,
-  vehicleNpc,
+  vehiclePerson,
   vehicleOperator,
   vehiclePageSize,
   vehiclePosition,
@@ -2961,7 +2961,7 @@ export class BotPlay {
         settled: await this.#settle(db, session, "rejected", {
           code: "VEHICLE_OPPOSITION_REQUIRED",
           message:
-            "NPCは承認しました。他者への対抗を続ける場合は --oppose とこの申請IDを指定してください",
+            "乗り物本人は承認しました。他者への対抗を続ける場合は --oppose とこの申請IDを指定してください",
         }),
       };
     }
@@ -5760,7 +5760,7 @@ export class BotPlay {
       position.placeId,
     );
     const holder = await holdingActor(db, world, context, actor, position);
-    const npc = await vehicleNpc(db, world, vehicleId);
+    const person = await vehiclePerson(db, world, context.worldId, vehicleId);
     const others = new Set(
       [holder, operator?.actorId].filter(
         (id): id is string => !!id && id !== actor,
@@ -5772,15 +5772,15 @@ export class BotPlay {
          AND outcome->>'vehicleApproval'=$4 AND outcome->>'approvalUsed' IS NULL`,
         [input.applicationId, world, actor, vehicleId],
       );
-      if (!input.oppose || !npc || !approval.rowCount)
+      if (!input.oppose || !person || !approval.rowCount)
         reject(
           "VEHICLE_APPROVAL_INVALID",
           "この乗り物について本人が承認を受けた申請を指定してください",
         );
-    } else if (npc && vehicleId !== actor) {
+    } else if (person && vehicleId !== actor) {
       if (input.oppose) others.add(vehicleId);
       else {
-        if (!npc.controller)
+        if (person.npc && !person.controller)
           reject(
             "NPC_UNASSIGNED",
             "対象のユニークNPCには操作担当が指定されていません",
@@ -5791,7 +5791,7 @@ export class BotPlay {
         )
           reject(
             "REMOTE_RECEIVING",
-            "対象NPCと同じセッションで操縦を申請してください",
+            "乗り物本人と同じセッションで操縦を申請してください",
           );
         if (!others.size)
           assignOperator(changes, requestId, at, vehicleId, actor);

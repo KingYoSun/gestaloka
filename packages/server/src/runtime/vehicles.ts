@@ -99,10 +99,18 @@ export async function ride(context: WorldContext, actor: string) {
   return { vehicleId, directPlaceId: vehicleId, outerPlaceId: placeId ?? null };
 }
 
-export async function vehicleNpc(db: Db, world: string, id: string) {
-  const { rows } = await db.query<{ controller: string | null }>(
-    "SELECT controller FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
-    [world, id],
+// 自分で判断できる人物。NPCか、プレイヤーが操作する人物。
+export async function vehiclePerson(
+  db: Db,
+  world: string,
+  graph: string,
+  id: string,
+) {
+  const { rows } = await db.query<{ controller: string | null; npc: boolean }>(
+    `SELECT controller,true AS npc FROM bot_npc WHERE world_id=$1 AND actor_id=$3
+     UNION ALL SELECT NULL,false FROM world_controlled_actor WHERE world_id=$2 AND actor_id=$3
+     ORDER BY npc DESC LIMIT 1`,
+    [world, graph, id],
   );
   return rows[0];
 }
@@ -126,13 +134,10 @@ export async function holdingActor(
     }
   }
   const { root } = position;
-  if (!root) return undefined;
-  if (root === actor || (await vehicleNpc(db, world, root))) return root;
-  const { rowCount } = await db.query(
-    "SELECT 1 FROM world_controlled_actor WHERE world_id=$1 AND actor_id=$2",
-    [context.worldId, root],
-  );
-  return rowCount ? root : undefined;
+  return root &&
+    (root === actor || (await vehiclePerson(db, world, context.worldId, root)))
+    ? root
+    : undefined;
 }
 
 export function requireVehicleHere(
@@ -205,10 +210,9 @@ export async function checkVehicleTravel(
     "SELECT actor_id FROM bot_companion WHERE world_id=$1 AND npc_id=$2",
     [world, vehicleId],
   );
-  const selfDriving =
-    actor === vehicleId && (await vehicleNpc(db, world, vehicleId));
+  // 乗り物自身の移動は自走として扱う。
   if (
-    !selfDriving &&
+    actor !== vehicleId &&
     rows[0]?.actor_id !== actor &&
     ((await vehicleOperator(context, vehicleId))?.actorId !== actor ||
       !(await directPlaces(context, actor)).includes(vehicleId))
