@@ -63,7 +63,7 @@
 
 買い手が `receive --application <申請ID> --accept` で受け入れると、品と代価が同時に移る。却下・期限切れならどちらも元の手元に残る。成立した受け渡しは結果の `items[].holding` と本人検索で確かめる。値段は当事者が決め、必要なら成立した値をメモに残せる。`REMOTE_RECEIVING` なら先に同じ場所で合流する。誰が判断するかと、受領後に戻る手番は[セッション・手番・受領とチーム](sessions.md)で確認できる。
 
-置き手紙や置き土産なら、贈る品の `move` だけを残し、`update` の `deferredUntil` にUTCのISO日時で受け取り期限を指定する。相手は `applications` から申請を開いて `receive` で判断する。受領が揃った時点で品や個数などの条件が有効なら確定する。送り手はそれまで `withdraw --application <申請ID>` で取り下げられ、結果は当事者の `notices` に届く。
+置き手紙や置き土産なら、贈る品の `move` だけを残し、`update` の `deferredUntil` にZか `+09:00` のようなUTCとの差を付けたISO日時で受け取り期限を指定する。相手は `applications` から申請を開いて `receive` で判断する。受領が揃った時点で品や個数などの条件が有効なら確定する。送り手はそれまで `withdraw --application <申請ID>` で取り下げられ、結果は当事者の `notices` に届く。
 
 ## 店に交換条件を出す
 

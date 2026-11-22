@@ -190,6 +190,11 @@ const show = () =>
       )}
     />,
   );
+// 申請と操作は、画面下部のボタンから開くダイアログの中にある。
+const open = async (name: string) =>
+  fireEvent.click(
+    await screen.findByRole("button", { name }, { timeout: 5000 }),
+  );
 
 test("セッションの外で申請を開き、受領を確定する", async () => {
   delete view.sessionId;
@@ -231,11 +236,8 @@ test("セッションの外で申請を開き、受領を確定する", async ()
     }),
   );
   show();
-  await screen.findByText(
-    "水位が下がったら渡し場を確認する",
-    {},
-    { timeout: 5000 },
-  );
+  await open("受領と交換（1件）");
+  await screen.findByText("水位が下がったら渡し場を確認する");
   fireEvent.click(screen.getByRole("button", { name: "承認する" }));
   await screen.findByText("申請を確定しました");
   await waitFor(() =>
@@ -274,6 +276,7 @@ test("検索結果とセッションのチャットに同じ出現描写を表�
     }),
   );
   show();
+  await open("操作");
   fireEvent.click(await screen.findByRole("button", { name: "周囲を見る" }));
   const search = (await screen.findByText("自分への検索結果")).parentElement!;
   const chat = screen.getByLabelText("セッションのチャット");
@@ -291,6 +294,7 @@ test("本人の素材を個別表示し、手番終了時に入力・結果・�
     { name: "1人のセッション" },
     { timeout: 5000 },
   );
+  await open("操作");
   fireEvent.click(screen.getByRole("button", { name: "自分の情報" }));
   await screen.findByText("本人だけに返った素材");
   const arriving = screen.getByText("届く予定").parentElement!;
@@ -329,7 +333,10 @@ test("本人の素材を個別表示し、手番終了時に入力・結果・�
   fireEvent.click(
     screen.getByRole("button", { name: "自分のプレイを終了する" }),
   );
-  await screen.findByRole("heading", { name: "本人のシーンを終了しました" });
+  await screen.findByRole("heading", {
+    name: "本人のシーンを終了しました",
+    hidden: true,
+  });
   expect(chat.textContent).toContain("記録の方法を提案する");
   expect(posted.every((p) => p.actorId === actor)).toBe(true);
 });
@@ -346,6 +353,7 @@ test("手動で操作する人物の待機を、下部のボタンから解除�
     }),
   );
   show();
+  await open("操作");
   fireEvent.click(
     await screen.findByRole("button", { name: "待機を解除する" }),
   );
@@ -413,6 +421,7 @@ test("発言の応答待ちに書き始めた次の入力を消さない", async
     }),
   );
   show();
+  await open("操作");
   const field = await screen.findByRole("textbox", {
     name: "発言・ターンコメント",
   });
@@ -478,6 +487,7 @@ test("受領判断を表示し、判断後は元の人物の通常手番へ戻�
     deadline: new Date(Date.now() + 600000).toISOString(),
   };
   show();
+  await open("操作");
   await screen.findByRole("button", { name: "受け入れる" });
   expect(screen.queryByRole("button", { name: "自分の情報" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "拒否する" }));
@@ -487,6 +497,7 @@ test("受領判断を表示し、判断後は元の人物の通常手番へ戻�
 
 test("応答喪失後は保存した同じ要求を再送し、入力を重ねない", async () => {
   const first = show();
+  await open("操作");
   await screen.findByLabelText("発言・ターンコメント");
   drop = true;
   fireEvent.change(screen.getByLabelText("発言・ターンコメント"), {
@@ -496,6 +507,7 @@ test("応答喪失後は保存した同じ要求を再送し、入力を重ね�
   await screen.findByRole("button", { name: "保存した同じ要求で確認する" });
   first.unmount();
   show();
+  await open("操作");
   fireEvent.click(
     await screen.findByRole("button", { name: "保存した同じ要求で確認する" }),
   );
@@ -508,6 +520,7 @@ test("応答喪失後は保存した同じ要求を再送し、入力を重ね�
 
 test("コマンド欄はJSONとコマンドの形式を検証し、入力中の発言と分けて送る", async () => {
   show();
+  await open("操作");
   const speech = await screen.findByLabelText("発言・ターンコメント");
   fireEvent.change(speech, { target: { value: "観測を続ける" } });
   fireEvent.click(screen.getByText("プレイコマンド", { exact: true }));
@@ -536,4 +549,33 @@ test("コマンド欄はJSONとコマンドの形式を検証し、入力中の�
   ]);
   expect(posted[0]?.requestId).not.toBe(scene);
   expect((speech as HTMLTextAreaElement).value).toBe("観測を続ける");
+});
+
+test("新しい記録を、表示済みの行を作り直さずにログの先頭へ足す", async () => {
+  const row = (id: string, input: string) => ({
+    id,
+    payload: { entries: [{ actorId: peer, input, result: {} }] },
+  });
+  view.actorId = peer;
+  view.characters = [
+    { actorId: actor, name: "観測者", icon: null },
+    { actorId: peer, name: "相手", icon: null },
+  ];
+  view.entries = [row("1", "最初の記録")];
+  show();
+  const chat = await screen.findByLabelText(
+    "セッションのチャット",
+    {},
+    { timeout: 5000 },
+  );
+  const shown = (await within(chat).findByText("最初の記録")).closest(
+    ".play-log-row",
+  )!;
+  expect(chat.firstElementChild?.textContent).toBe("相手の手番を待っています");
+  view.entries = [row("1", "最初の記録"), row("2", "次の記録")];
+  await within(chat).findByText("次の記録", {}, { timeout: 3000 });
+  const rows = [...chat.querySelectorAll<HTMLElement>(".play-log-row")];
+  expect(rows.map((node) => node.dataset.fresh)).toEqual(["true", undefined]);
+  expect(rows[0]!.textContent).toContain("次の記録");
+  expect(rows[1]).toBe(shown);
 });

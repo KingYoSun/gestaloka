@@ -302,6 +302,20 @@ select {
     );
   gap: 16px;
   align-items: start;
+  padding-bottom: calc(56px + env(safe-area-inset-bottom));
+}
+.play-actions {
+  position: fixed;
+  z-index: 20;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+}
+.play-actions button {
+  position: relative;
+  background: var(--card);
 }
 .play-toolbar {
   grid-area: toolbar;
@@ -355,12 +369,30 @@ select {
   gap: 16px;
 }
 .play-log {
-  max-height: 65dvh;
-  min-height: min(360px, 48dvh);
+  height: 65dvh;
   overflow: auto;
-  overflow-anchor: none;
   overscroll-behavior-y: contain;
   scrollbar-gutter: stable;
+}
+/* 新しい記録は高さを広げながら現れ、既存の記録を下へ押し下げる。 */
+.play-log-row {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+.play-log-row > div {
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 16px;
+}
+.play-log-row[data-fresh],
+.play-log-state {
+  animation: play-log-in 0.4s ease-out;
+}
+@keyframes play-log-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
 }
 .play-profile {
   font-weight: 700;
@@ -473,6 +505,8 @@ select {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .play-log-row,
+  .play-log-state,
   .scene-person-button[aria-current="true"],
   .scene-person-button[aria-current="true"]::before {
     animation: none;
@@ -538,7 +572,6 @@ select {
 @media (max-width: 940px) {
   .play-layout {
     display: block;
-    padding-bottom: calc(56px + env(safe-area-inset-bottom));
   }
   .play-aside {
     display: none;
