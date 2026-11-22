@@ -5987,6 +5987,7 @@ test("手持ちの容量と受入可能数をHTTPとCLIへ返す", async () => {
         worldId: f.world,
         title: "容量試験",
         description: "",
+        reason: "隔離した世界で有効化する",
         published: false,
         accepting: false,
         inventoryCapacity: true,
