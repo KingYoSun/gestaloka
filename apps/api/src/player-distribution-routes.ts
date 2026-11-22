@@ -7,6 +7,19 @@ import { ApiError, PlayerCliRelease } from "@gestaloka/contracts";
 import { AccessError } from "@gestaloka/server/access";
 
 const root = new URL("../../../artifacts/player-cli/", import.meta.url);
+const referenceGuide = z.enum([
+  "join.md",
+  "setup.md",
+  "runtimes.md",
+  "commands.md",
+  "cli.md",
+  "dice.md",
+  "draw.md",
+  "blueprints.md",
+  "inventory.md",
+  "sessions.md",
+  "npcs.md",
+]);
 const sendGuide = async (reply: FastifyReply, name: string) =>
   reply
     .type("text/markdown; charset=utf-8")
@@ -29,22 +42,12 @@ export async function playerCliRelease() {
 
 export async function playerDistributionRoutes(instance: FastifyInstance) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
-  for (const name of [
-    "join",
-    "setup",
-    "runtimes",
-    "commands",
-    "cli",
-    "dice",
-    "draw",
-    "blueprints",
-    "SKILL",
-  ]) {
-    for (const path of [name, `${name}.md`, `references/${name}.md`]) {
+  for (const file of [...referenceGuide.options, "SKILL.md"]) {
+    for (const path of [basename(file, ".md"), file, `references/${file}`]) {
       app.get(
         `/api/player-cli/${path}`,
         { schema: { hide: true } },
-        async (_request, reply) => sendGuide(reply, `${name}.md`),
+        async (_request, reply) => sendGuide(reply, file),
       );
     }
   }
@@ -55,7 +58,7 @@ export async function playerDistributionRoutes(instance: FastifyInstance) {
         hide: true,
         params: z.object({
           version: z.string(),
-          guide: z.enum(["join.md", "setup.md", "draw.md", "blueprints.md"]),
+          guide: referenceGuide,
         }),
       },
     },

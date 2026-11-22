@@ -60,7 +60,7 @@ gestaloka resume
 
 ## team
 
-同行する仲間を招待・承諾し、所属と招待を確認する。仲間と同じ地点に着くと自動でセッションに合流する。チームから離脱しても、その場の会話は続けられる。
+プレイヤー同士でチームを組む。招待を承諾した仲間は同じ地点で再合流できる。team leaveの後もその場の会話は続く。[セッション・手番・受領とチーム](sessions.md)
 
 ```text
 gestaloka team invite --target <人物ID> | join --team <チームID> | status | leave
@@ -70,7 +70,7 @@ gestaloka team invite --target <人物ID> | join --team <チームID> | status |
 
 ## companion
 
-ユニークNPCに付いてきてもらう。requestは同じセッションにいるユニークNPCへの同行の申請で、本人の通常手番に1 SPを使う。GMが二人の記録と最近の出来事から同行を認めるかを決め、ダイスは振らない。同じ手番に却下された同じ相手への出し直しは、前回の結果が返りSPを使わない。companionは3体まで、1体のNPCは1人のcompanionにしかなれない。出現個体は先に昇格が必要。follow（既定）は本人の移動に付いてくる。waitはその場に残る。moveは指定の場所へ、returnはhomeで指定した帰る場所へ向かわせる。moveとreturnは本人の通常手番に所在の変更として確定し、通常枠を1回使う。dismissで関係を終える。companionはプレイヤーと離れて自立して行動することはできない。本人が選べるのは追従・待機と、指定の場所や帰る場所への移動だけで、その場で何をするかはNPC本人が決める。request以外はSPを使わず、move・return以外は手番も要らない。
+同席中のユニークNPCに同行を頼む。本人の通常手番にrequestで新たな判断を求めると1 SPを使う。成立後は追従・待機・移動・帰る場所を選べる。[NPCの出現・昇格・同行](npcs.md)
 
 ```text
 gestaloka companion request --target <NPCのID> --text <頼み方> | follow|wait|return|dismiss --target <NPCのID> | move|home --target <NPCのID> --place <場所ID> | status
@@ -220,7 +220,7 @@ gestaloka comment --text <コメント> | --file <本文ファイル>
 
 ## receive
 
-本人の受領判断。起床応答やstatusの申請IDで承認・却下を指定。承認後は次の受領者が判断し、全員が承認すると確定する。却下・期限切れ・申請関係者の退出でも申請が終わる。所在の変更だけの申請では、却下した人は移動せず、全員の判断がそろった時点で申請者と承認した人の移動が確定する。申請者が残り、通常枠があれば申請者の元の手番に戻る。申請者の枠が尽きた場合や、申請者自身が退出した場合は、その席から残った参加者の手番順へ進む。離席中の人は通常の規則で飛ばし、インスタントNPCは通常の順序で手番を取る。申請と関係のない人の退出では現在の受領者が続ける。応答のdecisionに自分の判断の受付、applicationに申請全体の状態が出る。却下した人は申請者へのreceiptResultに出る。
+本人に判断が回った申請を承認・却下する。応答のdecisionで自分の判断、applicationで申請全体の状態を確認する。移動の承認や元の手番への復帰は[セッション・手番・受領とチーム](sessions.md)を参照。
 
 ```text
 gestaloka receive --application <申請ID> (--accept | --reject)
@@ -246,7 +246,7 @@ gestaloka withdraw --application <申請IDまたは交換ID>
 
 ## exchange
 
-その場所の交換を、手持ちの指定物品で受領する。交換条件は search --kind surroundings の exchangeOffers で確認。
+現地で公開中の交換条件を選び、手持ちの支払い品を指定して買う。在庫・代価と不在時の受け渡しは[持ち物・保管・取引](inventory.md)を参照。
 
 ```text
 gestaloka exchange --offer <交換ID> --payment <物品ID>
@@ -308,10 +308,10 @@ gestaloka explore --from <場所ID> --label <場所の呼び名> --text <説明>
 
 ## promote-npc
 
-出現記録の指定位置のNPCを昇格申請。
+本人が見聞きした出現記録から1体を選び、ユニークNPCへの昇格を申請する。結果はpromotionsで確認できる。[NPCの出現・昇格・同行](npcs.md)
 
 ```text
-gestaloka promote-npc --source <発言要求ID> --index <番号> --text <NPCの説明>
+gestaloka promote-npc --source <出現元の要求ID> --index <番号> --text <NPCの説明>
 ```
 
 実行例 `gestaloka promote-npc --source @12ab34cd --index 0 --text '小屋の留鳥'`
