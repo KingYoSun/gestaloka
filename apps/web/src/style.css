@@ -321,6 +321,12 @@ select {
   height: auto;
   margin-block: 1.5rem;
 }
+.story-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block: 0.75rem;
+}
 .story-filters {
   display: flex;
   flex-wrap: wrap;

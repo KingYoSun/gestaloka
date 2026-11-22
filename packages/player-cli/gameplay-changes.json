@@ -1,4 +1,7 @@
 {
+  "1.14.0": [
+    "stories edit で自分の作品や各話を修正し、stories delete で削除できます。--episode-title で各話にタイトルを付けられます。stories bookmark で作品を保存し、stories list --bookmarked で一覧を読めます。"
+  ],
   "1.13.0": [
     "製作に使い切る手持ちや現在地の物品を、作成申請と一括申請の各案で materials に指定できます。失敗した案の材料は残ります。同じ現物は在庫の分だけ使えます。"
   ],

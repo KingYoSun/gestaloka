@@ -351,7 +351,10 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
     ).toEqual([2]);
 
     await page.getByLabel("目次の並び順").selectOption("newest");
-    await page.getByRole("button", { name: "目次に適用" }).click();
+    await page
+      .getByRole("form", { name: "目次の絞り込み" })
+      .getByRole("button", { name: "一覧に適用" })
+      .click();
     await expect(page.locator("section li a")).toHaveText(["第2話", "第1話"]);
     await page
       .getByRole("link", { name: "船大工のプレイヤーの作品", exact: true })
@@ -360,7 +363,7 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
     await page.getByLabel("開始日").fill("2026-01-03");
     await page.getByLabel("終了日").fill("2026-01-03");
     await page.getByLabel("作品の並び順").selectOption("title");
-    await page.getByRole("button", { name: "作品に適用" }).click();
+    await page.getByRole("button", { name: "一覧に適用" }).click();
     await expect(
       page.getByRole("region", { name: "作品一覧" }).getByRole("heading"),
     ).toHaveText(["出帆"]);
@@ -368,6 +371,160 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
     const guide = await page.request.get("/api/player-cli/stories.md");
     expect(guide.ok()).toBe(true);
     expect(await guide.text()).toContain("stories post --story");
+    expect(await guide.text()).toContain("stories edit --story");
+
+    await page.goto(`/stories/${storyId}`);
+    await expect(
+      page.locator("article .story-image + .story-body"),
+    ).toBeVisible();
+    const firstPublishedAt = await page
+      .locator("article time")
+      .getAttribute("datetime");
+    await page.getByRole("button", { name: "作品・第1話を編集" }).click();
+    await page.getByLabel("作品名", { exact: true }).fill("初航海の記録");
+    await page.getByLabel("著者名", { exact: true }).fill("若い船主");
+    await page.getByLabel("各話のタイトル（任意）").fill("出航の日");
+    await page
+      .getByRole("textbox", { name: "本文", exact: true })
+      .fill("冗談を聞いて、綱を解いた。");
+    await page.getByLabel("添付画像を削除", { exact: true }).check();
+    await page.getByRole("button", { name: "修正を保存" }).click();
+    await expect(
+      page.getByRole("heading", { name: "初航海の記録", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator(".story-body")).toHaveText(
+      "冗談を聞いて、綱を解いた。",
+    );
+    await expect(page.locator("article h2")).toContainText("出航の日");
+    await expect(page.locator("section li a").first()).toContainText(
+      "出航の日",
+    );
+    await expect(page.locator(".story-image")).toHaveCount(0);
+    await expect(page.locator("article time")).toHaveAttribute(
+      "datetime",
+      firstPublishedAt!,
+    );
+    expect(
+      await writer(
+        "stories",
+        "edit",
+        "--story",
+        storyId,
+        "--title",
+        "別人による変更",
+      ),
+    ).toMatchObject({ code: "STORY_WRITE_FORBIDDEN" });
+    const revised = await writer(
+      "stories",
+      "edit",
+      "--story",
+      first.result.storyId,
+      "--episode",
+      "2",
+      "--text",
+      "初めて舵を取った朝。",
+      "--episode-title",
+      "初めての舵",
+      "--clear",
+    );
+    expect(revised.result).toEqual({
+      storyId: first.result.storyId,
+      episode: 2,
+    });
+    expect(await writer("recover", "--request", revised.requestId)).toEqual(
+      revised,
+    );
+    expect(await writer("recover", "--request", next.requestId)).toEqual(next);
+    const revisedRead = await cli(
+      "stories",
+      "read",
+      "--story",
+      first.result.storyId,
+      "--episode",
+      "2",
+    );
+    expect(revisedRead.episode).toMatchObject({
+      number: 2,
+      title: "初めての舵",
+      body: "初めて舵を取った朝。",
+      hasImage: false,
+    });
+    expect(revisedRead.episodes[1]).toEqual({
+      ...toc.episodes[0],
+      title: "初めての舵",
+    });
+
+    await page.getByRole("button", { name: "ブックマークに追加" }).click();
+    await expect(
+      page.getByRole("button", { name: "ブックマークを解除" }),
+    ).toBeVisible();
+    expect((await cli("stories", "list", "--bookmarked")).items).toEqual([]);
+    expect(await cli("stories", "bookmark", "--story", storyId)).toEqual({
+      bookmarked: true,
+    });
+    await visitor.goto("/stories?bookmarked=1");
+    await expect(
+      visitor.getByRole("link", { name: "初航海の記録" }),
+    ).toBeVisible();
+    expect(
+      await cli("stories", "bookmark", "--story", storyId, "--clear"),
+    ).toEqual({ bookmarked: false });
+    expect((await cli("stories", "list", "--bookmarked")).items).toEqual([]);
+
+    const deleted = await writer(
+      "stories",
+      "delete",
+      "--story",
+      first.result.storyId,
+      "--episode",
+      "1",
+    );
+    expect(deleted.result).toMatchObject({ episode: 1, deleted: "episode" });
+    expect(await writer("recover", "--request", deleted.requestId)).toEqual(
+      deleted,
+    );
+    const remaining = await cli(
+      "stories",
+      "read",
+      "--story",
+      first.result.storyId,
+    );
+    expect(remaining.episode.number).toBe(2);
+    expect(
+      remaining.episodes.map((entry: { number: number }) => entry.number),
+    ).toEqual([2]);
+    expect(remaining.previousEpisode).toBeNull();
+    expect(
+      await cli(
+        "stories",
+        "read",
+        "--story",
+        first.result.storyId,
+        "--episode",
+        "1",
+      ),
+    ).toMatchObject({ code: "STORY_NOT_FOUND" });
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "作品を削除", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "STORIES", exact: true }),
+    ).toBeVisible();
+    expect(await cli("stories", "read", "--story", storyId)).toMatchObject({
+      code: "STORY_NOT_FOUND",
+    });
+    expect(
+      (
+        await writer(
+          "stories",
+          "delete",
+          "--story",
+          first.result.storyId,
+          "--episode",
+          "2",
+        )
+      ).result,
+    ).toMatchObject({ deleted: "story" });
+    expect((await cli("stories", "list", "--world", world)).items).toEqual([]);
     expect(await snapshot()).toEqual(before);
   } finally {
     await readerContext.close();

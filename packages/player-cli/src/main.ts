@@ -26,6 +26,9 @@ import {
   StoryList,
   StoryListQuery,
   StoryPost,
+  StoryEdit,
+  StoryDelete,
+  StoryBookmark,
   StoryRead,
   StoryReadQuery,
   playActionMessage,
@@ -518,7 +521,7 @@ async function run() {
   const profile = await load();
   if (command === "stories") {
     const action = z
-      .enum(["list", "read", "post"])
+      .enum(["list", "read", "post", "edit", "delete", "bookmark"])
       .parse(positionals[1] ?? "list");
     const expand = (value: string | undefined) =>
       value && references!.expand(value);
@@ -540,35 +543,87 @@ async function run() {
         author: values.author,
         player: values.player,
         title: values.title,
+        bookmarked: values.bookmarked ? "1" : undefined,
         before: expand(values.before),
       });
       return StoryList.parse(
         await http(profile, `/api/stories?${params(query)}`),
       );
     }
-    if (action === "post") {
-      if ((values.text === undefined) === (values.file === undefined))
+    if (action === "bookmark") {
+      const story = z.uuid().parse(expand(values.story));
+      return StoryBookmark.parse(
+        await http(profile, `/api/stories/${story}/bookmark`, {
+          bookmarked: !values.clear,
+        }),
+      );
+    }
+    if (action === "delete") {
+      const input = StoryDelete.parse({
+        operation: "delete",
+        requestId: randomUUID(),
+        storyId: expand(values.story),
+        episode:
+          values.episode === undefined ? undefined : Number(values.episode),
+      });
+      return submit(
+        profile,
+        `/api/worlds/${profile.worldId}/stories`,
+        input,
+        true,
+        input.requestId,
+      );
+    }
+    if (action === "post" || action === "edit") {
+      const editing = action === "edit";
+      if (
+        (values.text !== undefined && values.file !== undefined) ||
+        (!editing && values.text === undefined && values.file === undefined)
+      )
         throw new Error("--textか--fileを一つ指定してください");
       if (
+        !editing &&
         values.story !== undefined &&
         (values.title !== undefined || values.author !== undefined)
       )
         throw new Error(
           "続話には--storyを、新作には--titleと--authorを指定してください",
         );
-      const input = StoryPost.parse({
+      if (values.clear && (!editing || values.image !== undefined))
+        throw new Error("画像を削除する修正には--clearを指定してください");
+      const content = {
         requestId: randomUUID(),
-        ...(values.story === undefined
-          ? { title: values.title, author: values.author }
-          : { storyId: expand(values.story) }),
         body:
           values.file === undefined
             ? values.text
             : await readFile(values.file, "utf8"),
-        ...(values.image === undefined
-          ? {}
-          : { image: (await readFile(values.image)).toString("base64") }),
-      });
+        image: values.clear
+          ? null
+          : values.image === undefined
+            ? undefined
+            : (await readFile(values.image)).toString("base64"),
+      };
+      const input = editing
+        ? StoryEdit.parse({
+            ...content,
+            operation: "edit",
+            storyId: expand(values.story),
+            episode:
+              values.episode === undefined ? undefined : Number(values.episode),
+            title: values.title,
+            author: values.author,
+            episodeTitle:
+              values["episode-title"] === undefined
+                ? undefined
+                : values["episode-title"].trim() || null,
+          })
+        : StoryPost.parse({
+            ...content,
+            episodeTitle: values["episode-title"],
+            ...(values.story === undefined
+              ? { title: values.title, author: values.author }
+              : { storyId: expand(values.story) }),
+          });
       return submit(
         profile,
         `/api/worlds/${profile.worldId}/stories`,

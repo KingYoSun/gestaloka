@@ -53,6 +53,9 @@ import {
   StoryList,
   StoryRead,
   StoryPost,
+  StoryEdit,
+  StoryDelete,
+  StoryBookmark,
   StoryReceipt,
   STORY_IMAGE_MAX_BYTES,
 } from "@gestaloka/contracts";
@@ -93,8 +96,10 @@ export async function worldRoutes(
     let id: string;
     if (request.headers.authorization) {
       const route = request.routeOptions.url ?? "";
-      const storyRead =
-        route === "/api/stories" || route === "/api/stories/:id";
+      const storyLibrary =
+        route === "/api/stories" ||
+        route === "/api/stories/:id" ||
+        route === "/api/stories/:id/bookmark";
       const allowed = [
         "/api/worlds/:id/scene",
         "/api/worlds/:id/session",
@@ -114,7 +119,7 @@ export async function worldRoutes(
         "/api/worlds/:id/scene/inbox",
       ];
       if (
-        !(storyRead || allowed.includes(route)) ||
+        !(storyLibrary || allowed.includes(route)) ||
         !["GET", "POST"].includes(request.method)
       )
         throw new AccessError(
@@ -126,12 +131,12 @@ export async function worldRoutes(
       const query = request.query as { actorId?: string };
       const device = await service().devices.authorize(
         request.headers.authorization,
-        storyRead ? undefined : params.id,
+        storyLibrary ? undefined : params.id,
         query.actorId,
       );
       if (
         !device.actor_id &&
-        !storyRead &&
+        !storyLibrary &&
         request.routeOptions.url !== "/api/worlds/:id/reports"
       )
         throw new AccessError(
@@ -139,7 +144,7 @@ export async function worldRoutes(
           "PLAYER_JOIN_REQUIRED",
           "参加完了を確認してください",
         );
-      if (device.actor_id && !storyRead) query.actorId = device.actor_id;
+      if (device.actor_id && !storyLibrary) query.actorId = device.actor_id;
       deviceIds.set(request, device.id);
       id = device.user_id!;
     } else id = (await identity.session(request.headers.cookie)).userId;
@@ -172,6 +177,7 @@ export async function worldRoutes(
     if (
       !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
       (request.url.startsWith("/api/worlds") ||
+        request.url.startsWith("/api/stories/") ||
         request.url.startsWith("/api/session"))
     ) {
       if (
@@ -263,6 +269,26 @@ export async function worldRoutes(
     },
   );
   app.post(
+    "/api/stories/:id/bookmark",
+    {
+      schema: {
+        params: ResourceId,
+        body: StoryBookmark,
+        response: { 200: StoryBookmark, ...errors },
+      },
+    },
+    async (request) => {
+      const result = await service().stories.bookmark(
+        await subject(request),
+        request.params.id,
+        request.body.bookmarked,
+      );
+      if (!result)
+        throw new AccessError(404, "STORY_NOT_FOUND", "作品が見つかりません");
+      return result;
+    },
+  );
+  app.post(
     "/api/worlds/:id/stories",
     {
       bodyLimit:
@@ -270,7 +296,7 @@ export async function worldRoutes(
         4 * Math.ceil(STORY_IMAGE_MAX_BYTES / 3),
       schema: {
         params: ResourceId,
-        body: StoryPost,
+        body: z.union([StoryPost, StoryEdit, StoryDelete]),
         response: { 200: StoryReceipt, ...errors },
       },
     },
@@ -284,13 +310,19 @@ export async function worldRoutes(
         throw new AccessError(
           403,
           "STORY_WRITE_FORBIDDEN",
-          "参加した世界で新しい作品を投稿するか、ご自身の作品に続きを追加してください",
+          "参加した世界で新しい作品を投稿するか、ご自身の作品を操作してください",
         );
       if (result === "conflict")
         throw new AccessError(
           409,
           "STORY_REQUEST_CONFLICT",
           "同じ投稿IDで異なる内容が送られました",
+        );
+      if (result === "missing")
+        throw new AccessError(
+          404,
+          "STORY_NOT_FOUND",
+          "作品または指定した話が見つかりません",
         );
       return result;
     },
