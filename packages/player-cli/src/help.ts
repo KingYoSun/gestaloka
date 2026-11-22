@@ -171,7 +171,7 @@ const commands = {
     "play --file action.json",
   ],
   memo: [
-    "--text <本文> [--participants <人物ID,人物ID>] [--deferred-until <UTCのISO日時>]",
+    "--text <本文> [--participants <人物ID,人物ID>] [--deferred-until <ZかUTCとの差を付けたISO日時>]",
     "本人と指定した人物に関連するメモを申請。期限を指定すると、相手は別セッションから手番外に判断できる。applicationsで内容を読み、receiveで承認・却下する。",
     "memo --text '次に川岸で会う' --participants @12ab34cd",
   ],
