@@ -10,10 +10,12 @@ import { WorldConstruction } from "@gestaloka/server/construction";
 import { BotPlay } from "@gestaloka/server/play";
 import { WorldScenes } from "@gestaloka/server/scene";
 import { WorldPlayers } from "@gestaloka/server/players";
+import { startPlayLoop } from "./play-loop.js";
 
 const databases = connectDatabases();
 databases.queue.on("error", (error) => console.error(error));
 let monitor: RuntimeMonitor | undefined;
+let stopPlay: (() => Promise<void>) | undefined;
 try {
   await databases.verify();
   await databases.checkpointer.setup();
@@ -43,21 +45,6 @@ try {
   await construction.work();
   const play = new BotPlay(construction);
   await play.setup();
-  let playing = false;
-  const tickPlay = async () => {
-    if (playing) return;
-    playing = true;
-    try {
-      await play.expire();
-      await play.tickNpcs();
-    } finally {
-      playing = false;
-    }
-  };
-  const playTimer = setInterval(() => {
-    void tickPlay().catch(console.error);
-  }, 1000);
-  playTimer.unref();
   const players = new WorldPlayers(construction);
   await players.setup();
   await players.work();
@@ -73,16 +60,19 @@ try {
     process.env.OPERATIONS_TOKEN_SECRET!,
   );
   monitor.start();
+  stopPlay = await startPlayLoop(play);
   console.log("World construction worker ready");
 } catch (error) {
   await databases.queue.stop();
   await databases.close();
   throw error;
 }
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.once(signal, () => {
-    void Promise.all([databases.queue.stop(), monitor?.stop()]).then(() =>
-      databases.close(),
-    );
+let shutdown: Promise<void> | undefined;
+for (const signal of ["SIGINT", "SIGTERM"] as const)
+  process.on(signal, () => {
+    shutdown ??= Promise.all([
+      stopPlay?.(),
+      databases.queue.stop(),
+      monitor?.stop(),
+    ]).then(() => databases.close());
   });
-}

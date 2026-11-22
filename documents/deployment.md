@@ -42,6 +42,14 @@ CADDY_TLS_MODE=internal
 
 `CADDY_TLS_MODE=internal` ではCaddyの内部CAが証明書を発行します。前段のプロキシにはそのCAを信頼する設定が必要です。`auto` はCaddyの自動HTTPSを使います。未指定時は本番で `auto`、試験環境で `internal` です。待受の指定を省くと、ポートはプロファイルの値、アドレスは本番で `0.0.0.0`、試験環境で `127.0.0.1` になります。再描画で生成される `BIND_ADDRESS`・`HTTP_PORT`・`HTTPS_PORT` はComposeが読み取ります。
 
+## NPC手番を引き継ぐデプロイ
+
+`pnpm production up` は、稼働中の旧ワーカーへ新しいNPC手番の受付停止を求める。処理中の手番があれば、モデル応答と手番の確定を待ってからコンテナを交換する。4分以内に準備が整わなければ終了コード75を返す。旧ワーカーは処理を続け、遅れて届いた応答も保存する。
+
+Compose を直接呼ぶ配置スクリプトでは、`docker compose ps --status running -q worker` で得たコンテナIDと Compose の引数を `node apps/worker/dist/deployment.js compose "$worker" …` に渡す。新規起動時のIDは空文字列でよい。終了コード75のときは交換前なので、旧コンテナを再作成せずに配置を見送る。イメージを戻す際の交換にも同じ手順を使う。準備完了ログをパイプで確認する場合は `grep -F 'World construction worker ready' >/dev/null` で最後まで読む。
+
+停止準備に未対応の旧版が稼働中の場合も75で終了する。初回は、実行中の処理を完了させて旧ワーカーを停止した状態で新版を起動する。
+
 ## 判断モデル
 
 同じ手番でダイスに失敗した申請の出し直しを見分けるには、配置先の `deployment.env` に判断モデルを設定し、`api` と `worker` を作り直します（[ADR-061](adr/ADR-061-decision-model-and-repeated-applications.md)）。キーは管理画面に保存したOpenRouterのキーを使います。空欄なら判断APIを呼びません。
