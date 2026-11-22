@@ -7,7 +7,7 @@ import {
   PlayerCharacter,
 } from "@gestaloka/contracts";
 import type { paths } from "@gestaloka/contracts/http";
-import { $api, ApiFailure, pendingKey } from "./api.js";
+import { $api, ApiFailure, errorMessage, pendingKey } from "./api.js";
 import { usePending } from "./forms.js";
 import { Button } from "./components/ui/button.js";
 import { Textarea } from "./components/ui/textarea.js";
@@ -367,8 +367,12 @@ export function BotSession({
     execute(
       pending ?? PlayCommand.parse({ ...raw, requestId: crypto.randomUUID() }),
     );
-  if (query.error) return <Problem error={query.error} />;
-  if (!view) return <Notice>セッションを読み込んでいます</Notice>;
+  if (!view)
+    return query.error ? (
+      <Problem error={query.error} />
+    ) : (
+      <Notice>セッションを読み込んでいます</Notice>
+    );
   const unreadNotices = view.unreadNotices ?? 0;
   const readNotices = () => {
     if (!notices.isPending)
@@ -729,6 +733,19 @@ export function BotSession({
             ]
       }
     >
+      <div
+        role="status"
+        className="pointer-events-none fixed inset-x-4 top-4 z-50 flex justify-end"
+      >
+        {query.error && (
+          <div className="max-w-sm rounded-lg border bg-popover px-4 py-3 text-sm text-popover-foreground shadow-md">
+            <p className="font-semibold text-destructive">
+              セッションを更新できませんでした
+            </p>
+            <p>{errorMessage(query.error)}</p>
+          </div>
+        )}
+      </div>
       <div
         className="play-log"
         aria-label="セッションのチャット"
