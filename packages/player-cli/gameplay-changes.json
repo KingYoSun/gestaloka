@@ -1,4 +1,8 @@
 {
+  "1.5.0": [
+    "draw-configure で既存の場所や物品を抽選器にできます。出るものの範囲を説明してGMの審査を受けます。審査は0 SPです。search で承認済みの説明、利用条件、消費SPを確認できます。",
+    "本人の通常手番に、現在地・現地に置かれた物品・手持ちの物品を指定して draw で一件引けます。1 SPで物品か技能を得られ、同席者の履歴にも結果が残ります。使い方は help draw と help draw-configure で確認できます。"
+  ],
   "1.4.1": [
     "status の受領申請では、送信者（receiving.sender）と宛先（receiving.recipients）も短縮IDで表示します。宛先の一覧に自分の viewerId があるか、そのまま照合できます。status --full-ids では完全なUUIDを確認できます。"
   ],
