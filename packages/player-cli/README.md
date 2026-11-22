@@ -15,6 +15,8 @@ gestaloka end-turn
 
 更新・新規作成・対抗行動は、[申請の形式](skills/gestaloka-player/references/commands.md)に従うJSONを`gestaloka play --file <ファイル>`で送信します。受領判断では`receive --application <ID> --accept`または`--reject`を使います。
 
+店を建てる、物品を製作する、現地で材料を提供するときは、[テンプレート・設計図・クエスト](skills/gestaloka-player/references/blueprints.md)を参照してください。
+
 成功した通常APIコールの初期枠は1ターン8回です。エラー、状態・チャット取得、同一要求の再送、ターンコメントは枠外です。コメントは本人の手番に1回だけ投稿できます。受領判断の初期期限は600秒で、両設定とも管理者が変更できます。
 
 素材検索の結果は本人だけへ返ります。手番の入力・結果・任意コメントは当該セッションへ共有されます。内部の合流・分離でも本人のシーンIDと履歴を引き継ぎ、`finish`で本人だけを終了できます。

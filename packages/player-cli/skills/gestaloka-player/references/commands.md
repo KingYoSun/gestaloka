@@ -411,56 +411,11 @@ GMは接続元から見た妥当性でダイスを設定し、サーバーが一
 
 ## 設計図で建てる・開店する
 
-各操作は `play --file action.json` で送る。`blueprint-templates` の `templates` で公開版のID、進行形式（`mode`）、完成後の効果を確認し、テンプレートを選ぶ。建築は道から入れる場所と店主の保管先を作る。開店は指定場所の在庫を交換に出す。建築から開店まで進める形式では、先に入店と保管ができ、在庫が揃ってから営業が始まる。
-
-`blueprint-propose` の `plan` に `templateId`、`placeId`、`keeperId`、`description` を入れる。建築の場合、`placeId` は接続元の場所、既存店で開店する場合は店主が登録した保管先。現地に移動して申請する。
-
-テンプレートの応答に `materials` がある場合は、その材料と道具を使う。申請の `building` には建屋の `label` を書く。MCPで作った下書きは、発祥の世界で原案者と指定された試遊者が、受け取ったIDを `templateId` に指定して試せる。
-
-| 進行形式（`mode`） | 追加する項目                                                                                                                                                                                        |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `build`            | `building` に建屋の `label` を書く。テンプレートに材料の指定がなければ `materials` に、品の呼称 `label`、必要数 `count`、消費するなら `usage: "consume"`、使用後に残すなら `usage: "tool"` を書く。 |
-| `open`             | `shop.stock` に商品ごとの `itemId`、初期在庫数 `stockCount`、一回に売る数 `count`、代価の `paymentSeriesId`、`paymentLabel`、`paymentCount`、掲示文 `text` を書く。                                 |
-| `build-and-open`   | `building` と `shop` の両方を書く。                                                                                                                                                                 |
-
-発案者以外を店主にした場合、店主は通知にある `questId` を `blueprint-show` で確認し、同意するなら `blueprint-consent` を送る。発案者は `actions["blueprint-start"].allowed` が `true` になったら着工を申請できる。GMの採否と理由が返り、新たに審査したときは1 SPを使う。選択肢にない遊び方は `report` で提案できる。
-
-現地で `blueprint-list` を開くと、参加できるクエストとその場所で得られた成果を確認できる。`blueprint-show` では進捗と自分の取り置きのほか、現在地と提供先が `location` に出る。`actions` では操作ごとに `allowed` と、操作できない場合の理由が分かる。
-
-開店用の在庫は、`actions["blueprint-provide"].requirements` に品ごとの提供可能数 `maxCount` が出る。建材や道具を調べる場合は、`blueprint-show` に `provision: { "requirement": 0, "itemId": "品のID" }` も渡す。利用できる品では所持数と取り置き総数も確認できる。最後の提供で開店できない場合は、その理由が `completionBlock` に出る。
-
-提供するには、照会した `questId`、`quest.phase`、要件番号と品のIDを指定し、`maxCount` の範囲で個数を選ぶ。
-
-```json
-{
-  "command": "blueprint-provide",
-  "questId": "11111111-1111-4111-a111-111111111111",
-  "phase": "build",
-  "requirement": 0,
-  "itemId": "22222222-2222-4222-a222-222222222222",
-  "count": 2
-}
-```
-
-未確定分は `blueprint-withdraw` に `questId` と本人の `contributionId` を指定して取り下げられる。発案者と店主は `blueprint-cancel` で中止できる。建築完了後の中止では建屋が残り、開店に向けた取り置きが解放される。完成通知の場所IDを使って入店し、開店した店では周囲検索から公開交換を確認できる。
+公開テンプレートを選んで現地の設計図を記入すると、採用後はほかの人もクエストに材料を提供できる。申請例と参加手順は[テンプレート・設計図・クエスト](blueprints.md)を参照。
 
 ## 製作と現地での受け渡し
 
-`blueprint-templates` で `mode: "craft"` の版を選ぶ。`blueprint-propose` の `plan` には `templateId`、`placeId`、`keeperId`（管理者）、`description` と `product: { "label": "今回製作する物の名前" }` を指定する。同意と着工を経て、`blueprint-show` の案内に従って `phase: "craft"` で材料・道具を提供する。必要数が揃うと `quest.productId` が返る。設置する定義では、空の保管先が現地にできた時点で製作が完了する。設置を指定していない品は管理者の手持ちになる。
-
-以下の操作は `play --file` で送る。`storageId` は製作した保管先のID。管理者は現地で通常の `update` の `move` を使って手持ちの品を保管先に入れ、移動後の実物IDを確認する。
-
-| 操作               | 入力と結果                                                                                                                                               |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `storage-list`     | 現在地の設置済み保管先を表示する。                                                                                                                       |
-| `storage-post`     | 管理者が `storageId`、`itemId` と `allocations` を指定する。例えば `[{"count":2},{"count":1,"recipientId":"受取人のID"}]` で公開2個・指定1個を取り置く。 |
-| `storage-offers`   | 現地で `storageId` を指定する。公開枠と自分宛ての枠、預けた本人には自分が掲示した枠が返る。`items[].id` が受領枠のID。                                   |
-| `storage-claim`    | 現地で `storageId`、`allocationId`、`count` を指定して受け取る。管理者が退出した後も使える。                                                             |
-| `storage-withdraw` | 預けた本人が現地で `storageId` と `allocationId` を指定すると、枠の残りを解放する。品は保管先に残る。                                                    |
-| `storage-relocate` | 移設を許す定義では、管理者が現地で `storageId` と移設先の `placeId` を指定する。中身と枠を同じIDで移設先から使える。                                     |
-| `storage-history`  | `storageId` を指定して、自分が預けた品、または自分が受け取った品について、受領者・数量・確定時刻を確認する。                                             |
-
-一覧に続きがある場合は返った `next` を `after` に渡す。掲示、受領、取り下げ、移設、照会の消費SPは0。無償の受領と店での有償の公開交換は、それぞれの掲示条件に従う。
+製作した保管先では、現地に来た人に品を無償で渡せる。掲示・受領・移設の操作は[製作した保管先で品を受け渡す](blueprints.md#製作した保管先で品を受け渡す)を参照。
 
 ## 検索による出現
 
