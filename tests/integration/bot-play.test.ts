@@ -75,7 +75,7 @@ afterAll(async () => {
   await isolated.close();
 });
 
-async function fixture() {
+async function fixture(playerCount = 3) {
   const admin = await auth.person(),
     world = (
       await access.create(admin.id, {
@@ -87,11 +87,9 @@ async function fixture() {
   await runtime.tick(world);
   const graph = (await runtime.get(world)).world_id!;
   graphs.push(graph);
-  const people = await Promise.all([
-    auth.person("user"),
-    auth.person("user"),
-    auth.person("user"),
-  ]);
+  const people = await Promise.all(
+    Array.from({ length: playerCount }, () => auth.person("user")),
+  );
   const actors = people.map(() => randomUUID()),
     place = randomUUID(),
     far = randomUUID();
@@ -152,7 +150,7 @@ async function fixture() {
       ],
     });
   };
-  for (let i = 0; i < 3; i++) await move(i, i === 2 ? far : place);
+  for (const i of people.keys()) await move(i, i === 2 ? far : place);
   const send = (i: number, input: Record<string, unknown>) =>
     access.botCommand(
       people[i]!.id,
@@ -162,7 +160,7 @@ async function fixture() {
     );
   const status = (i: number) =>
     access.botStatus(people[i]!.id, world, actors[i]);
-  for (let i = 0; i < 3; i++) await send(i, { command: "start" });
+  for (const i of people.keys()) await send(i, { command: "start" });
   const calls = vi.spyOn(runtime.agent.model, "complete");
   return {
     world,
@@ -9130,6 +9128,92 @@ test.each([
   },
   20000,
 );
+
+test("受領期限切れのCLI履歴で判断の手番だった本人と同席者にそれぞれの立場を伝える", async () => {
+  const f = await fixture(5);
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  try {
+    await f.move(2, f.place);
+    for (const target of [1, 2, 3, 4])
+      await f.send(target, { command: "contact", targetId: f.actors[0] });
+    let now = new Date();
+    vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
+    const recipients = f.actors.slice(1, 4);
+    const { applicationId } = await f.send(0, {
+      command: "memo",
+      text: "共同で調べる場所の候補",
+      participants: recipients,
+      dependencies: [],
+    });
+    await f.send(1, { command: "receive", applicationId, accept: true });
+    const { deadline } = (await f.status(2)).receiving!;
+    now = new Date(Date.parse(deadline) + 1);
+    for (const [i, viewerMessage] of [
+      [2, "あなたの判断待ちでした。"],
+      [4, "あなたの返答は不要でした。"],
+    ] as const) {
+      const profile = join(cli.directory, `player-${i}.json`);
+      const connection = await cli.run(
+        profile,
+        "connect",
+        "--server",
+        cli.base,
+        "--world",
+        f.world,
+      );
+      await cli.approve(
+        f.people[i]!.cookie,
+        connection.userCode,
+        `actor:${f.actors[i]}`,
+      );
+      const compact = await cli.run(profile, "status");
+      const entry = compact.entries.find(
+        ({ payload }: { payload: { viewerMessage?: string } }) =>
+          payload.viewerMessage === viewerMessage,
+      );
+      expect(entry?.payload).toMatchObject({
+        reason: "受領判断の期限が切れました",
+        applicationId: expect.stringMatching(/^@/),
+      });
+      const full = await cli.run(
+        profile,
+        "status",
+        "--after",
+        "0",
+        "--full-ids",
+      );
+      expect(full.entries).toContainEqual({
+        ...entry,
+        payload: {
+          applicationId,
+          state: "failed",
+          reason: "受領判断の期限が切れました",
+          senderId: f.actors[0],
+          recipientIds: recipients,
+          decisionHolderId: f.actors[2],
+          deadline,
+          viewerMessage,
+        },
+      });
+    }
+    for (const i of [0, 1, 3]) {
+      const entry = (await f.status(i)).entries.find(
+        ({ payload }) => payload.applicationId === applicationId,
+      );
+      expect(entry?.payload).toMatchObject({ decisionHolderId: f.actors[2] });
+      expect(entry!.payload).not.toHaveProperty("viewerMessage");
+    }
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
 
 test("通常枠の最後の接触で、返答は次の手番の持ち主と操作不要を返す", async () => {
   const f = await fixture();
