@@ -36,6 +36,8 @@
 
 ## 相手が後から受け取るとき
 
+同席していても、手番をスキップされる離席中の相手を宛先にした同席受領は、申請の時点で `RECIPIENT_AWAY` になる。
+
 相手が不在なら、メモの新規作成・本文改訂、または物品の `move` だけの申請に、UTCのISO日時で期限（`deferredUntil`）を付けられる。メモを送るCLIは `memo --text <本文> --participants <人物ID> --deferred-until <期限>`。受け手は別のセッションやシーン終了後でも `applications` から内容を読み、`receive` で判断する。申請者は `withdraw --application <申請ID>` で取り下げられる。照会・受領・取り下げに通常枠は使わず、結果は `notices` で読める。[持ち物・保管・取引](inventory.md)
 
 ## いま一緒に移動する

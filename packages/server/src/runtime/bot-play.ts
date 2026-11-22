@@ -9169,6 +9169,28 @@ export class BotPlay {
                     "REMOTE_RECEIVING",
                     "受領者は同じセッションにいる必要があります",
                   );
+              // 手番をスキップされる離席中の相手は、同席の受領期限まで答えられない。
+              const presence =
+                deadline || !plan.recipients.length
+                  ? new Map<string, number | null>()
+                  : await this.#turnPresence(db, session);
+              const away = plan.recipients.filter(
+                (id) => presence.has(id) && presence.get(id) !== null,
+              );
+              if (away.length)
+                reject(
+                  "RECIPIENT_AWAY",
+                  `${(
+                    await Promise.all(
+                      away.map(
+                        async (id) =>
+                          `${(await plan.context.node(id))?.text ?? "参加者"}（${id}）`,
+                      ),
+                    )
+                  ).join(
+                    "、",
+                  )}は離席中のため、同席の受領に答えられません。物やメモは deferredUntil を付けた申請なら、相手が戻ってから受け取れます。移動は離席中の人を外して申請してください`,
+                );
               if (deadline && "text" in input) {
                 const preview = [
                   ...[...plan.changes.nodes, ...plan.changes.revisions].flatMap(

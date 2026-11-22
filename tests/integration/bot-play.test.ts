@@ -3783,6 +3783,59 @@ test("遠隔受領は即時拒否し、同席者の承認・退出・無応答�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test("離席中の同席者を宛先にした同席受領は申請時に断り、戻れば受け付ける", async () => {
+  const f = await fixture();
+  const item = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: [{ id: item, kind: "existence", text: "渡す道具" }],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "has",
+            source: f.actors[0]!,
+            target: item,
+            period: { from: 0 },
+          },
+        ],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  const give = () =>
+    f.send(0, {
+      command: "update",
+      text: "道具を渡す",
+      operations: [
+        {
+          type: "move",
+          item,
+          from: f.actors[0],
+          to: f.actors[1],
+          basis: "手渡す",
+        },
+      ],
+      dependencies: [],
+    });
+  const ready = (active: boolean) =>
+    access.waiting(f.people[1]!.id, f.world, f.actors[1], undefined, active);
+  await ready(false);
+  const away = give();
+  await expect(away).rejects.toMatchObject({ code: "RECIPIENT_AWAY" });
+  await expect(away).rejects.toThrow(`人物1（${f.actors[1]}）は離席中`);
+  expect((await f.status(0)).receiving).toBeNull();
+  await ready(true);
+  expect(await give()).toMatchObject({ state: "receiving" });
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
 test("HTTPとCLIは本人の手番APIを使い、旧書込を拒否し、同じ要求を復元する", async () => {
   const f = await fixture(),
     app = await createApp(access, auth.identity, undefined, auth.operations),
