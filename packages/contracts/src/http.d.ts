@@ -297,6 +297,7 @@ export interface paths {
                     author?: string;
                     player?: string;
                     title?: string;
+                    bookmarked?: "1";
                     sort?: "newest" | "oldest" | "player" | "author" | "title";
                     before?: string;
                 };
@@ -325,6 +326,7 @@ export interface paths {
                                 /** Format: date-time */
                                 publishedAt?: string;
                                 mine: boolean;
+                                bookmarked?: boolean;
                             }[];
                             /** Format: uuid */
                             next: string | null;
@@ -476,22 +478,27 @@ export interface paths {
                                 /** Format: date-time */
                                 publishedAt?: string;
                                 mine: boolean;
+                                bookmarked?: boolean;
                             };
                             episodes: {
                                 number: number;
                                 /** Format: date-time */
                                 publishedAt: string;
+                                title?: string;
                             }[];
                             episode: {
                                 number: number;
                                 /** Format: date-time */
                                 publishedAt: string;
+                                title?: string;
                                 body: string;
                                 hasImage?: boolean;
                                 /** Format: byte */
                                 image?: string;
                             };
                             hasNextEpisode: boolean;
+                            previousEpisode?: number | null;
+                            nextEpisode?: number | null;
                             next: number | null;
                         };
                     };
@@ -597,7 +604,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/worlds/{id}/stories": {
+    "/api/stories/{id}/bookmark": {
         parameters: {
             query?: never;
             header?: never;
@@ -618,11 +625,148 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        bookmarked: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            bookmarked: boolean;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worlds/{id}/stories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": ({
                         /** Format: uuid */
                         requestId: string;
                         body: string;
                         /** Format: byte */
                         image?: string;
+                        episodeTitle?: string;
                         title: string;
                         author: string;
                     } | {
@@ -631,8 +775,31 @@ export interface paths {
                         body: string;
                         /** Format: byte */
                         image?: string;
+                        episodeTitle?: string;
                         /** Format: uuid */
                         storyId: string;
+                    }) | {
+                        /** @enum {string} */
+                        operation: "edit";
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storyId: string;
+                        episode?: number;
+                        episodeTitle?: string | null;
+                        title?: string;
+                        author?: string;
+                        body?: string;
+                        /** Format: byte */
+                        image?: string | null;
+                    } | {
+                        /** @enum {string} */
+                        operation: "delete";
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storyId: string;
+                        episode?: number;
                     };
                 };
             };
@@ -647,6 +814,8 @@ export interface paths {
                             /** Format: uuid */
                             storyId: string;
                             episode: number;
+                            /** @enum {string} */
+                            deleted?: "story" | "episode";
                         };
                     };
                 };

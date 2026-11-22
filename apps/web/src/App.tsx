@@ -191,7 +191,12 @@ const routeTree = root.addChildren([
   createRoute({
     getParentRoute: () => root,
     path: "/stories",
-    validateSearch: StoryListQuery.parse,
+    validateSearch: StoryListQuery.extend({
+      bookmarked: z
+        .union([z.literal("1"), z.literal(1)])
+        .transform(() => "1" as const)
+        .optional(),
+    }).parse,
     component: function StoriesRoute() {
       return <Stories {...useSearch({ from: "/stories" })} />;
     },
