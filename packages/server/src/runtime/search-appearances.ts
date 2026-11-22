@@ -1,7 +1,9 @@
 import { randomInt } from "node:crypto";
+import type { z } from "zod";
 import type {
   Appearance,
   Change,
+  ExchangeOffer,
   WorldEdge,
   WorldNode,
 } from "@gestaloka/contracts";
@@ -183,6 +185,40 @@ export async function deathDrops(
       drops.push(...appear(request + ":" + node.id, node.spawn, count));
     }
   return drops;
+}
+// 個体の発生用ノードへspawn-tradeで結ばれた品物を、公開交換と同じ形で返す。個体はノードを
+// 持たないので在庫は無く、受領のたびに品物が生まれて代価が消える。
+export async function instantTrades(
+  ctx: WorldContext,
+  sellers: { actorId: string; ruleId?: string }[],
+) {
+  const offers: z.infer<typeof ExchangeOffer>[] = [];
+  for (const { actorId, ruleId } of sellers)
+    for (const edge of ruleId
+      ? await ctx.relations(ruleId, "status", "in", latest)
+      : []) {
+      const node = about(edge, "spawn-trade")
+        ? await ctx.node(edge.source)
+        : undefined;
+      if (node?.kind !== "script" || node.spawn?.kind !== "existence") continue;
+      const { species, description, price } = node.spawn;
+      if (!price) continue;
+      const id = derivedId(`trade:${actorId}:${node.id}`),
+        itemLabel = species + "：" + description;
+      offers.push({
+        id,
+        sellerId: actorId,
+        storageId: actorId,
+        itemId: id,
+        itemLabel,
+        count: "count" in node.spawn ? node.spawn.count : node.spawn.maxCount,
+        paymentSeriesId: price.seriesId,
+        paymentLabel: price.label,
+        paymentCount: price.count,
+        text: node.text.trim() || itemLabel,
+      });
+    }
+  return offers;
 }
 
 const appearanceAnnouncement = (appearances: Appearance[]) =>
