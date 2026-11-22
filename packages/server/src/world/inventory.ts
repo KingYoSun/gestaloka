@@ -3,11 +3,16 @@ import type { ManagedTransaction } from "neo4j-driver";
 import type { Change, WorldEdge, WorldNode } from "./model.js";
 
 type Item = Extract<WorldNode, { kind: "existence" }>;
-export const storageSlots = 150;
-export const carrySlots = 15;
-export const unitsPerSlot = (item: Item) => item.unitsPerSlot ?? 10;
-export function itemSlots(item: Item) {
-  const perSlot = unitsPerSlot(item);
+export const defaultInventoryLimits = {
+  carrySlots: 30,
+  storageSlots: 150,
+  unitsPerSlot: 30,
+};
+export type InventoryLimits = typeof defaultInventoryLimits;
+export const unitsPerSlot = (item: Item, standard: number) =>
+  item.unitsPerSlot ?? standard;
+export function itemSlots(item: Item, standard: number) {
+  const perSlot = unitsPerSlot(item, standard);
   return item.count === undefined || perSlot === "unlimited"
     ? 1
     : Math.ceil(item.count / perSlot);
@@ -41,7 +46,11 @@ type InventoryNode = {
   storage: boolean;
 };
 
-export const inventoryStackKey = (item: Item, parent?: string) =>
+export const inventoryStackKey = (
+  item: Item,
+  standard: number,
+  parent?: string,
+) =>
   item.count && parent
     ? createHash("sha256")
         .update(
@@ -49,7 +58,7 @@ export const inventoryStackKey = (item: Item, parent?: string) =>
             parent,
             item.text,
             item.seriesId ?? null,
-            unitsPerSlot(item),
+            unitsPerSlot(item, standard),
           ]),
         )
         .digest("hex")
@@ -83,12 +92,14 @@ async function inventorySnapshot(
 
 function snapshotTotals(
   items: Awaited<ReturnType<typeof inventorySnapshot>>,
+  stackSize: number,
   standard = false,
 ) {
   const total = new Map<string, number>();
   for (const { item, parent } of items.values()) {
     const slots = itemSlots(
       standard ? { ...item, unitsPerSlot: undefined } : item,
+      stackSize,
     );
     const seen = new Set([item.id]);
     for (let p = parent; p && !seen.has(p); p = items.get(p)?.parent ?? null) {
@@ -106,16 +117,19 @@ export async function inventoryAudit(
   minCount: number,
   standard: boolean,
 ) {
+  const { limits, enabled } = await inventoryState(tx, worldId);
   const items = await inventorySnapshot(tx, worldId, actors);
-  const totals = snapshotTotals(items, standard);
+  const totals = snapshotTotals(items, limits.unitsPerSlot, standard);
   const people = new Set(actors);
   return {
+    limits,
+    enabled,
     holders: [...items.values()]
       .filter(({ item, storage }) => storage || people.has(item.id))
       .map(({ item, storage }) => {
         const limitSlots = storage
-          ? (item.storageLimitSlots ?? storageSlots)
-          : carrySlots;
+          ? (item.storageLimitSlots ?? limits.storageSlots)
+          : limits.carrySlots;
         const usedSlots = totals.get(item.id) ?? 0;
         return {
           id: item.id,
@@ -135,11 +149,40 @@ export async function inventoryAudit(
         holderId: parent,
         count: item.count,
         seriesId: item.seriesId,
-        unitsPerSlot: standard ? 10 : unitsPerSlot(item),
+        unitsPerSlot: standard
+          ? limits.unitsPerSlot
+          : unitsPerSlot(item, limits.unitsPerSlot),
         slots: itemSlots(
           standard ? { ...item, unitsPerSlot: undefined } : item,
+          limits.unitsPerSlot,
         ),
       })),
+  };
+}
+
+export async function inventoryState(tx: ManagedTransaction, worldId: string) {
+  const { records } = await tx.run(
+    `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
+     RETURN CASE WHEN g.inventoryReady THEN null ELSE g.inventoryCacheUnits END AS cacheUnits,
+       coalesce(g.inventoryEnabled,false) AS enabled,
+       g.inventoryCarrySlots AS carrySlots,g.inventoryStorageSlots AS storageSlots,g.inventoryUnitsPerSlot AS unitsPerSlot`,
+    { worldId },
+  );
+  const row = records[0];
+  return {
+    enabled: Boolean(row?.get("enabled")),
+    cacheUnits: Number(row?.get("cacheUnits") ?? 0),
+    limits: {
+      carrySlots: Number(
+        row?.get("carrySlots") ?? defaultInventoryLimits.carrySlots,
+      ),
+      storageSlots: Number(
+        row?.get("storageSlots") ?? defaultInventoryLimits.storageSlots,
+      ),
+      unitsPerSlot: Number(
+        row?.get("unitsPerSlot") ?? defaultInventoryLimits.unitsPerSlot,
+      ),
+    },
   };
 }
 
@@ -147,14 +190,10 @@ export async function initializeInventory(
   tx: ManagedTransaction,
   worldId: string,
 ) {
-  const { records } = await tx.run(
-    `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
-     RETURN coalesce(g.inventoryReady,false) AS ready, coalesce(g.inventoryEnabled,false) AS enabled`,
-    { worldId },
-  );
-  if (!records[0]?.get("ready")) {
+  const { limits, enabled, cacheUnits } = await inventoryState(tx, worldId);
+  if (cacheUnits !== limits.unitsPerSlot) {
     const items = await inventorySnapshot(tx, worldId);
-    const total = snapshotTotals(items);
+    const total = snapshotTotals(items, limits.unitsPerSlot);
     await tx.run(
       `UNWIND $rows AS row MATCH (n:WorldNode {worldId:$worldId,id:row.id})
        SET n.inventorySlots=row.slots,n.inventoryStackKey=row.stack`,
@@ -166,6 +205,7 @@ export async function initializeInventory(
           stack: items.has(id)
             ? inventoryStackKey(
                 items.get(id)!.item,
+                limits.unitsPerSlot,
                 items.get(id)!.parent ?? undefined,
               )
             : null,
@@ -173,11 +213,12 @@ export async function initializeInventory(
       },
     );
     await tx.run(
-      "MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'}) SET g.inventoryReady=true",
-      { worldId },
+      `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
+       SET g.inventoryCacheUnits=$stackSize REMOVE g.inventoryReady`,
+      { worldId, stackSize: limits.unitsPerSlot },
     );
   }
-  return Boolean(records[0]?.get("enabled"));
+  return { limits, enabled };
 }
 
 // Propagate the difference for each changed node through the final containment
@@ -189,6 +230,7 @@ export async function inventoryChange(
   change: Change,
   ended: readonly WorldEdge[],
   actors: (ids: string[]) => Promise<Set<string>>,
+  limits: InventoryLimits,
   enforce: boolean,
 ) {
   const isHolding = (e: WorldEdge) => e.kind === "has" && !e.role;
@@ -250,15 +292,21 @@ export async function inventoryChange(
     const next = items.get(id) ?? prior.item;
     if (!next) continue;
     const to = await nextParent(id);
-    const oldSlots = prior.item ? itemSlots(prior.item) : 0;
+    const oldSlots = prior.item
+      ? itemSlots(prior.item, limits.unitsPerSlot)
+      : 0;
     if (prior.parent === to) {
-      const delta = itemSlots(next) - oldSlots;
+      const delta = itemSlots(next, limits.unitsPerSlot) - oldSlots;
       if (delta) await add(to, delta, new Set([id]));
     } else {
       await add(prior.parent, -(oldSlots + prior.used), new Set([id]));
-      await add(to, itemSlots(next) + prior.used, new Set([id]));
+      await add(
+        to,
+        itemSlots(next, limits.unitsPerSlot) + prior.used,
+        new Set([id]),
+      );
     }
-    stack.set(id, inventoryStackKey(next, to));
+    stack.set(id, inventoryStackKey(next, limits.unitsPerSlot, to));
   }
   const registering = new Set(
     change.edges
@@ -278,9 +326,9 @@ export async function inventoryChange(
       const next = items.get(holderId) ?? old.item;
       const limitSlots =
         old.storage || registering.has(holderId)
-          ? (next?.storageLimitSlots ?? storageSlots)
+          ? (next?.storageLimitSlots ?? limits.storageSlots)
           : people.has(holderId)
-            ? carrySlots
+            ? limits.carrySlots
             : undefined;
       const projectedSlots = old.used + delta;
       if (

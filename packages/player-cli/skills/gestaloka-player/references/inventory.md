@@ -27,7 +27,7 @@
 
 個数つきの品は `move.count` で一部を渡せる。省略すると全部が移る。同じ呼称・系列の品は移動先の束にまとまることがあるので、移した後に品のIDと個数を確認する。`remove.count` でも一部を消費できる。個数のない品はひとまとまりとして扱い、`count` を省く。個数を増やす更新や、初めて個数を付ける更新は[ダイスの判定](dice.md)を受ける。
 
-容量を使う世界では、手持ちは15枠で、持ち歩く箱とその中身も数える。個数つきの品は標準で10個までが1枠、`unitsPerSlot` が `"unlimited"` の品は残っている間は1枠。保管先の枠はその登録者全員で共有する。本人検索の `capacity.usedSlots` と `capacity.limitSlots` で手持ちと各保管先の使用枠・上限を確認する。`INVENTORY_CAPACITY_EXCEEDED` が返り、`item.maxAcceptableCount` が正の数なら、その個数まで減らして申請できる。
+容量の初期値は手持ち30枠、保管先150枠、個数つきの品は30個で1枠。実際の値は世界の運営設定による。持ち歩く箱は中身も数え、保管先の枠は登録者全員で共有する。`unitsPerSlot` が `"unlimited"` の品は残っている間は1枠。本人検索の `capacity.usedSlots` と `capacity.limitSlots` で使用枠と上限を確認できる。容量不足で `item.maxAcceptableCount` が返った場合は、その個数を上限に申請し直せる。
 
 ## 手渡しと対面売買
 

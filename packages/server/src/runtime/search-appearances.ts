@@ -83,7 +83,8 @@ export async function recordAppearances(
   appearances: Appearance[],
 ) {
   const stacks = new Map<string, Extract<WorldNode, { kind: "existence" }>>();
-  if (appearances.some((a) => a.kind === "existence"))
+  if (appearances.some((a) => a.kind === "existence")) {
+    const standard = (await ctx.inventoryLimits()).unitsPerSlot;
     for (const place of places)
       for (const id of await groundItems(ctx, place)) {
         const node = await ctx.node(id);
@@ -92,7 +93,7 @@ export async function recordAppearances(
           node?.kind === "existence" &&
           node.count &&
           !node.seriesId &&
-          (node.unitsPerSlot ?? 10) === 10 &&
+          (node.unitsPerSlot ?? standard) === standard &&
           ((await ctx.latestTime(id)) ?? 0) <= at &&
           (!known ||
             node.count > known.count! ||
@@ -100,6 +101,7 @@ export async function recordAppearances(
         )
           stacks.set(node.text, node);
       }
+  }
   const added = new Map<string, Extract<WorldNode, { kind: "existence" }>>();
   for (const a of appearances) {
     const stack =
