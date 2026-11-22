@@ -551,7 +551,7 @@ test("コマンド欄はJSONとコマンドの形式を検証し、入力中の�
   expect((speech as HTMLTextAreaElement).value).toBe("観測を続ける");
 });
 
-test("新しい記録を、表示済みの行を作り直さずにログの先頭へ足す", async () => {
+test("定期更新に失敗してもログを保ち、次の更新で新しい記録を先頭へ足す", async () => {
   const row = (id: string, input: string) => ({
     id,
     payload: { entries: [{ actorId: peer, input, result: {} }] },
@@ -572,8 +572,20 @@ test("新しい記録を、表示済みの行を作り直さずにログの先�
     ".play-log-row",
   )!;
   expect(chat.firstElementChild?.textContent).toBe("相手の手番を待っています");
+  server.use(
+    http.get(
+      "*/api/worlds/:id/session",
+      () =>
+        json({ code: "INTERNAL_ERROR", message: "更新に失敗しました" }, 500),
+      { once: true },
+    ),
+  );
+  await screen.findByText("更新に失敗しました", {}, { timeout: 3000 });
+  expect(screen.getByLabelText("セッションのチャット")).toBe(chat);
+  expect(shown.isConnected).toBe(true);
   view.entries = [row("1", "最初の記録"), row("2", "次の記録")];
   await within(chat).findByText("次の記録", {}, { timeout: 3000 });
+  expect(screen.queryByText("更新に失敗しました")).toBeNull();
   const rows = [...chat.querySelectorAll<HTMLElement>(".play-log-row")];
   expect(rows.map((node) => node.dataset.fresh)).toEqual(["true", undefined]);
   expect(rows[0]!.textContent).toContain("次の記録");

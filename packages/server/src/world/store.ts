@@ -186,9 +186,12 @@ export class WorldContext {
     }
   }
 
-  async checkInventory(changes: Change) {
+  async checkInventory(changes: Change, { readOnly = false } = {}) {
     await this.inventoryLimits();
-    await this.inventoryRead(async (tx, { enabled, limits }) => {
+    const check = async (
+      tx: ManagedTransaction,
+      { enabled, limits }: Awaited<ReturnType<typeof initializeInventory>>,
+    ) => {
       if (!enabled) return;
       const ended: WorldEdge[] = [];
       for (const id of changes.endEdges) {
@@ -208,7 +211,17 @@ export class WorldContext {
         limits,
         true,
       );
-    });
+    };
+    if (!readOnly) return this.inventoryRead(check);
+    await this.prepareInventory();
+    const session = this.driver.session();
+    try {
+      await session.executeRead(async (tx) =>
+        check(tx, await inventoryState(tx, this.worldId)),
+      );
+    } finally {
+      await session.close();
+    }
   }
 
   async inventorySettings() {
@@ -564,6 +577,23 @@ export class WorldContext {
       return records[0]
         ? WorldEdge.parse(JSON.parse(records[0].get("data")))
         : undefined;
+    });
+  }
+  // 自由入力の呼称を現物に結び付ける。2件あれば曖昧なのでそれ以上は読まない。
+  async materialIds(holder: string, label: string) {
+    return this.#read(relationKey(holder, "has", "out"), async (tx) => {
+      const { records } = await tx.run(
+        `MATCH (n:WorldNode) USING TEXT INDEX n:WorldNode(data)
+         WHERE n.worldId=$world AND n.kind='existence' AND n.data CONTAINS $text
+         MATCH (:WorldNode {worldId:$world,id:$holder})-[h:has]->(n)
+         WHERE h.validTo IS NULL AND h.role IS NULL RETURN DISTINCT n.id AS id LIMIT 2`,
+        {
+          world: this.worldId,
+          holder,
+          text: '"text":' + JSON.stringify(label),
+        },
+      );
+      return records.map((row) => row.get("id") as string);
     });
   }
   async storageAccess(id: string, actor: string) {
@@ -1238,6 +1268,7 @@ export class WorldStore {
       newFixedPlaces?: string[];
       storageEffect?: StorageEffect;
       management?: { editorId: string; reason: string; requestHash: string };
+      seriesGrants?: string[];
     },
     fromBelongingOperations = false,
     reservations?: ItemReservations,
@@ -1258,6 +1289,7 @@ export class WorldStore {
           })
           .strict()
           .optional(),
+        seriesGrants: z.array(z.uuid()).optional(),
       })
       .strict()
       .parse(input);
@@ -1269,6 +1301,7 @@ export class WorldStore {
       changes.nodes.some(
         (node) =>
           node.kind === "existence" &&
+          !parsed.seriesGrants?.includes(node.id) &&
           (node.seriesId ||
             node.unitsPerSlot !== undefined ||
             node.storageLimitSlots !== undefined),

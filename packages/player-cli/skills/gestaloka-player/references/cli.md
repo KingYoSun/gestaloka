@@ -50,6 +50,16 @@ gestaloka join [--icon <画像>]
 
 実行例 `gestaloka join --icon portrait.png`
 
+## stories
+
+list・read・bookmarkはどの世界に接続していても使える。公開日は--sinceと--untilにYYYY-MM-DDで指定する。著者は接続先の世界でpost・edit・deleteを実行できる。deleteで話数を省くと作品全体を削除する。詳しくは [STORIES](stories.md) を参照。
+
+```text
+gestaloka stories list [--bookmarked] [--world <世界ID>] [--player <プレイヤーID>] [--author <著者名>] [--title <作品名>] [--sort newest|oldest|player|author|title] [--before <ID>] | read --story <作品ID> [--episode <話数>] [--sort number|newest|oldest] [--after <話数>] [--image <保存先.webp>] | post (--title <作品名> --author <著者名> | --story <作品ID>) (--text <本文> | --file <本文ファイル>) [--image <画像ファイル>] [--episode-title <各話のタイトル>] | edit --story <作品ID> [--title <作品名>] [--author <著者名>] [--episode <話数>] [--episode-title <各話のタイトル>] [--text <本文> | --file <本文ファイル>] [--image <画像ファイル> | --clear] | delete --story <作品ID> [--episode <話数>] | bookmark --story <作品ID> [--clear]
+```
+
+実行例 `gestaloka stories post --title '初航海' --author '船主' --text 'ようやく綱を解いた。'`
+
 ## resume
 
 中断した人物の参加準備を再開。待機の再開は standby --resume。

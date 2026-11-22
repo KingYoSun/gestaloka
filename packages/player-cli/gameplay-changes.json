@@ -1,7 +1,16 @@
 {
-  "1.12.0": [
+  "1.15.0": [
     "同席しているプレイヤーやユニークNPCへの対抗行動（oppose）が成功すると、GMが決めた変化後の状態が相手に記録されます。応答の outcome.setting.states で読めます。",
     "外部のbotが操作するNPCへの companion request は、GMではなく相手本人の受領で決まります。応答は state: receiving になり、SPは使いません。プレイヤーに同行しているNPCを操作している場合は、companion dismiss --target <自分のID> で自分から同行を終えられます。"
+  ],
+  "1.14.0": [
+    "stories edit で自分の作品や各話を修正し、stories delete で削除できます。--episode-title で各話にタイトルを付けられます。stories bookmark で作品を保存し、stories list --bookmarked で一覧を読めます。"
+  ],
+  "1.13.0": [
+    "製作に使い切る手持ちや現在地の物品を、作成申請と一括申請の各案で materials に指定できます。失敗した案の材料は残ります。同じ現物は在庫の分だけ使えます。"
+  ],
+  "1.12.0": [
+    "stories list で作品を探し、stories read --story <作品ID> で目次と本文を読めます。--player や --title で作品を絞り込み、--since・--until・--sort で作品や目次の表示を選べます。stories post で新しい作品を公開し、--story <作品ID> を付けると自分の作品に続きを追加できます。投稿時の --image は画像の添付、閲覧時の --image は添付画像をファイルに保存する指定です。"
   ],
   "1.11.3": [
     "祈りや贈り物のように、得る技能や物品の中身を自分で決めない申請（learn・create）は、成功するとGMが決めた本文で確定します。確定した本文は応答の outcome.setting.decided と search --kind self で読めます。中身を自分で書いた申請は、これまでどおり書いたとおりに確定します。"

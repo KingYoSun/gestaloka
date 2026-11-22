@@ -84,6 +84,21 @@ export const InstantReductionResult = z
     separatedId: z.uuid().optional(),
   })
   .strict();
+const UnitsPerSlot = z.union([
+  z.number().int().positive().safe(),
+  z.literal("unlimited"),
+]);
+// 世界の設定で、参加する人物へ渡す系列つきの物品。
+export const StartingItem = z
+  .object({
+    label: z.string().trim().min(1).describe("物品の呼称"),
+    count: z.number().int().positive().safe().describe("個数"),
+    seriesId: z.uuid().describe("物品の系列ID"),
+    unitsPerSlot: UnitsPerSlot.optional().describe(
+      "1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠",
+    ),
+  })
+  .strict();
 export const WorldNode = z.discriminatedUnion("kind", [
   z
     .object({
@@ -102,9 +117,7 @@ export const WorldNode = z.discriminatedUnion("kind", [
         .optional()
         .describe("物品の個数。無い物品は、個数を数えないひとまとまり"),
       seriesId: z.uuid().optional().describe("管理者が指定する物品の系列ID"),
-      unitsPerSlot: z
-        .union([z.number().int().positive().safe(), z.literal("unlimited")])
-        .optional(),
+      unitsPerSlot: UnitsPerSlot.optional(),
       storageLimitSlots: z.number().int().positive().safe().optional(),
       viewers,
     })

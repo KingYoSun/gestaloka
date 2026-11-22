@@ -286,12 +286,27 @@ function actionMessage(
       }
     // fall through
     case "create":
-    case "create-batch":
-      if ((result.outcome as { success?: boolean })?.success === false)
-        return "新規作成の判定は失敗しました";
+    case "create-batch": {
+      const outcome = result.outcome as
+        | {
+            success?: boolean;
+            reason?: string;
+            proposals?: { reason?: string }[];
+          }
+        | undefined;
+      if (
+        [outcome, ...(outcome?.proposals ?? [])].some(
+          (p) => p?.reason === "MATERIAL_ID_REQUIRED",
+        )
+      )
+        return "材料を特定できない案は振っていません。対象の物品IDをmaterialsに指定してください";
+      if (outcome?.reason === "MATERIAL_SHORTAGE")
+        return "使える材料が足りないため、作成できませんでした";
+      if (outcome?.success === false) return "新規作成の判定は失敗しました";
       return result.state === "receiving" || result.state === "pending"
         ? "申請を受け付けました。受領判断を待っています"
         : "申請した変更を確定しました";
+    }
     case "offer":
       return "この場所に交換条件を公開しました";
     case "exchange":
@@ -320,10 +335,15 @@ function actionMessage(
     }
   }
 }
-type Observation = { viewer: string; text: string };
+type Observation = { viewer: string; text: string; unattributed?: true };
 type StealthAction = {
   observations: Observation[];
   stay?: { id: string; placeId: string; discovered: string[] };
+};
+type OppositionPerception = {
+  states: string[];
+  about: string[];
+  observers: string[];
 };
 type HiddenStay = {
   actor_id: string;
@@ -672,6 +692,21 @@ const DiceSetting = z
   })
   .strict()
   .refine((v) => v.successThrough < v.sides);
+const WitnessDice = z
+  .object({
+    sides: DiceSetting.shape.sides,
+    successThrough: DiceSetting.shape.successThrough,
+  })
+  .strict()
+  .refine((setting) => setting.successThrough < setting.sides);
+const Perception = z
+  .object({
+    states: z.record(z.uuid(), z.string().trim().min(1)),
+    about: z.array(z.uuid()),
+    observation: z.string().trim().min(1).nullable(),
+    witnesses: z.record(z.uuid(), WitnessDice),
+  })
+  .strict();
 const privateInterpretation = (actor: string, changes: Change) =>
   changes.nodes.every((n) => n.kind === "script") &&
   changes.edges.length &&
@@ -689,6 +724,30 @@ type CreationRoll = {
   repeated?: boolean;
 };
 type Consumable = { id: string; label: string; count?: number };
+type Material = { id: string; count?: number | undefined };
+const WorkDice = DiceSetting.safeExtend({
+  requiredMaterials: z
+    .array(
+      z.union([
+        z
+          .object({
+            id: z.uuid(),
+            count: z.number().int().positive().safe().optional(),
+          })
+          .strict(),
+        z
+          .object({
+            label: z.string().trim().min(1),
+            count: z.number().int().positive().safe().optional(),
+          })
+          .strict(),
+      ]),
+    )
+    .nullable()
+    .optional(),
+});
+const workMaterialPrompt =
+  "本文とchangesの作業内容から、既存の物品を加工・組み込み・使い切る場合は、その必須材料をrequiredMaterialsに指定する。作業後も残る道具、技能、設計図、単に作業する場所は材料にしない。明示されたmaterialsは必須。対象のIDが申請で指定されていれば{id,count}、呼称だけなら{label,count}で返す。同名の現物から勝手に一つ選ばない。どの材料を指すかも不明ならrequiredMaterials:null、既存品を使わない申請なら[]。成果物が新しく作られることだけを理由に、加工元の現物を省かない。";
 function instantReductionText({
   kind,
   count,
@@ -1516,6 +1575,7 @@ export class BotPlay {
     request: string,
     context: WorldContext,
     at: number,
+    concealed = false,
   ): Promise<Plan> {
     const instant = (id: string) =>
       session.data.members.find((m) => m.actorId === id)?.instant;
@@ -1542,6 +1602,12 @@ export class BotPlay {
     let effectState: string | null = null;
     const prior = await this.store.receipt(context.worldId, request);
     if (prior) {
+      const stealth = (
+        await this.pool.query<{ stealth: StealthAction | null }>(
+          "SELECT outcome->'stealth' AS stealth FROM bot_request WHERE id=$1",
+          [request],
+        )
+      ).rows[0]?.stealth;
       const state = prior.changes.nodes.find(
         (n) => n.id === derivedId(request + ":state"),
       );
@@ -1560,6 +1626,7 @@ export class BotPlay {
         changes: prior.changes,
         at: prior.at,
         recipients: [],
+        ...(stealth ? { stealth } : {}),
         outcome: dice
           ? { success, ...dice }
           : effect
@@ -1589,6 +1656,9 @@ export class BotPlay {
           : undefined;
     let fatal: string[] = [],
       appearances: Appearance[] = [];
+    let stealth: StealthAction | undefined = concealed
+      ? { observations: [] }
+      : undefined;
     let instantReduction: Plan["instantReduction"];
     if (effect) {
       const nearby =
@@ -1642,6 +1712,15 @@ export class BotPlay {
           victim?.count === undefined
             ? undefined
             : { count: victim.count, allowSeparation: !npc },
+          undefined,
+          concealed
+            ? await this.#oppositionPerception(
+                session,
+                context,
+                actorId,
+                changes,
+              )
+            : undefined,
         );
         outcome = {
           setting: saved.setting,
@@ -1650,6 +1729,11 @@ export class BotPlay {
         };
         if (outcome.success) {
           effectState = saved.observable;
+          if (saved.perception)
+            stealth = await this.#oppositionObservations(
+              request,
+              saved.perception,
+            );
           fatal = saved.setting.fatal ?? [];
           at = await this.#consume(
             context,
@@ -1723,15 +1807,21 @@ export class BotPlay {
       request,
       {
         id: event,
-        text: effect
-          ? action.text +
-            (outcome.success
-              ? "。結果：" +
-                (instantReduction
-                  ? instantReductionText(instantReduction)
-                  : effect.state)
-              : "。作用は成立しなかった")
-          : action.text,
+        text: concealed
+          ? instantReduction
+            ? instantReductionText(instantReduction)
+            : outcome.success
+              ? "対象に作用があった"
+              : "作用は成立しなかった"
+          : effect
+            ? action.text +
+              (outcome.success
+                ? "。結果：" +
+                  (instantReduction
+                    ? instantReductionText(instantReduction)
+                    : effect.state)
+                : "。作用は成立しなかった")
+            : action.text,
         ...(cause ? { instantActor: cause } : {}),
         ...(instantReduction ? { instantReduction } : {}),
         ...(victim
@@ -1749,7 +1839,7 @@ export class BotPlay {
     );
     if (!npc) link({ kind: "happen", source: actorId, target: event });
     for (const member of session.data.members)
-      if (!member.instant)
+      if (!member.instant && (!concealed || member.actorId === actorId))
         link({ kind: "see", source: member.actorId, target: event });
     if (effect && outcome.success && !victim)
       link({ kind: "effect", source: event, target: effect.targetId });
@@ -1770,6 +1860,7 @@ export class BotPlay {
       at,
       recipients: [],
       outcome,
+      ...(stealth ? { stealth } : {}),
       instantMembers: JSON.stringify(session.data.members),
       ...(instantReduction
         ? {
@@ -3544,54 +3635,71 @@ export class BotPlay {
     };
   }
   // 届く時刻を過ぎた申請の物品を成立させ、本人あての通知を作る。
-  async #arrive(world?: string) {
+  async deliverArrivals(world?: string) {
     const due = (
-      await this.pool.query<{
-        id: string;
-        world_id: string;
-        operations: BelongingOp[];
-      }>(
-        "SELECT id,world_id,operations FROM bot_arrival WHERE ($1::uuid IS NULL OR world_id=$1) AND due<=$2 ORDER BY due,id",
+      await this.pool.query<{ id: string }>(
+        "SELECT id FROM bot_arrival WHERE ($1::uuid IS NULL OR world_id=$1) AND due<=$2 ORDER BY due,id",
         [world ?? null, this.now()],
       )
     ).rows;
-    for (const row of due) {
-      const w = await this.world(row.world_id),
-        context = this.store.context(w.id),
-        commitId = derivedId(row.id + ":arrival"),
-        plan = await planBelongings(context, commitId, w.at, row.operations);
-      let receipt;
+    for (const { id } of due) {
+      const db = await this.pool.connect();
       try {
-        receipt = await this.#commit(w.id, commitId, { ...plan, context });
+        await db.query("BEGIN");
+        await this.#deliverArrival(db, id);
+        await db.query("COMMIT");
       } catch (error) {
-        // 到着予定を保存したまま、ほかの到着と手番の期限処理を進める。
-        if (error instanceof InventoryCapacityExceeded) continue;
-        throw error;
+        await db.query("ROLLBACK");
+        if (!(error instanceof InventoryCapacityExceeded)) throw error;
+      } finally {
+        db.release();
       }
-      const items = await this.#itemOutcomes(
+    }
+  }
+  async #deliverArrival(db: Db, id: string) {
+    const row = (
+      await db.query<{ world_id: string; operations: BelongingOp[] }>(
+        "SELECT world_id,operations FROM bot_arrival WHERE id=$1 FOR UPDATE SKIP LOCKED",
+        [id],
+      )
+    ).rows[0];
+    if (!row) return;
+    const w = await this.world(row.world_id, db),
+      context = this.store.context(w.id),
+      commitId = derivedId(id + ":arrival");
+    let receipt = await this.store.receipt(w.id, commitId);
+    if (!receipt) {
+      const plan = await planBelongings(
         context,
-        { requestId: commitId, operations: row.operations },
-        receipt.changes,
+        commitId,
+        w.at,
+        row.operations,
       );
-      await this.pool.query(
-        `WITH done AS (DELETE FROM bot_arrival WHERE id=$1 RETURNING world_id,actor_id),
+      // 所持枠が空くまで確定を試みず、到着予定を残す。
+      await context.checkInventory(plan.changes, { readOnly: true });
+      receipt = await this.#commit(w.id, commitId, { ...plan, context });
+    }
+    const items = await this.#itemOutcomes(
+      context,
+      { requestId: commitId, operations: row.operations },
+      receipt.changes,
+    );
+    await db.query(
+      `WITH done AS (DELETE FROM bot_arrival WHERE id=$1 RETURNING world_id,actor_id),
         noticed AS (INSERT INTO player_notice(id,world_id,actor_id,created_at,text) SELECT $2,world_id,actor_id,$3,$4 FROM done RETURNING world_id,actor_id)
         SELECT pg_notify('gestaloka_turn',world_id::text||':'||actor_id::text) FROM noticed`,
-        [
-          row.id,
-          derivedId(row.id + ":notice"),
-          this.now(),
-          arrivingItems(row.operations)
-            .map(
-              (item) => item.label + (item.count ? `（${item.count}個）` : ""),
-            )
-            .join("、") +
-            "が届きました。" +
-            (await itemOutcomeMessage(context, items)) +
-            "search --kind self の belongings で確かめられます",
-        ],
-      );
-    }
+      [
+        id,
+        derivedId(id + ":notice"),
+        this.now(),
+        arrivingItems(row.operations)
+          .map((item) => item.label + (item.count ? `（${item.count}個）` : ""))
+          .join("、") +
+          "が届きました。" +
+          (await itemOutcomeMessage(context, items)) +
+          "search --kind self の belongings で確かめられます",
+      ],
+    );
   }
   // 未読の通知があることを、プレイの応答に添える。
   async unread(
@@ -3640,7 +3748,6 @@ export class BotPlay {
   async expire(world?: string) {
     await this.blueprints.recover(world);
     await this.applications.expire(world);
-    await this.#arrive(world);
     const now = this.now();
     const sessions = (
       await this.pool.query<Session>(
@@ -3772,15 +3879,10 @@ export class BotPlay {
     checks: { key: string; actorId: string }[],
   ) {
     if (!checks.length) return {};
-    const dice = z
-      .object({
-        sides: DiceSetting.shape.sides,
-        successThrough: DiceSetting.shape.successThrough,
-      })
-      .strict()
-      .refine((setting) => setting.successThrough < setting.sides);
     const read = (raw: string) => {
-      const settings = z.record(z.string(), dice).parse(parseOutput(raw));
+      const settings = z
+        .record(z.string(), WitnessDice)
+        .parse(parseOutput(raw));
       if (
         Object.keys(settings).length !== checks.length ||
         checks.some(({ key }) => !settings[key])
@@ -4079,25 +4181,97 @@ export class BotPlay {
     session: Session,
   ) {
     await this.#record(db, session, { entries: [own] }, [actor]);
-    for (const { viewer, text } of observations) {
+    for (const { viewer, text, unattributed } of observations) {
       const scene = await this.current(world, viewer, db);
-      const entry = { actorId: actor, input: text, result: {} };
-      if (scene)
-        await this.#record(db, scene, { entries: [entry], observation: text }, [
-          viewer,
-        ]);
+      const entry = {
+        actorId: unattributed ? viewer : actor,
+        ...(unattributed ? { label: "目撃" } : {}),
+        input: text,
+        result: {},
+      };
+      const payload = { entries: [entry], observation: text };
+      if (scene) await this.#record(db, scene, payload, [viewer]);
       else {
         const member = session.data.members.find((m) => m.actorId === viewer);
         if (!member) continue;
-        await this.#record(
-          db,
-          session,
-          { entries: [entry], observation: text },
-          [viewer],
-        );
+        await this.#record(db, session, payload, [viewer]);
       }
       await signalTurns(db, world, viewer);
     }
+  }
+  async #oppositionPerception(
+    session: Session,
+    context: WorldContext,
+    actor: string,
+    changes: Change,
+    splitItems: ReadonlySet<string> = new Set(),
+  ): Promise<OppositionPerception> {
+    const written = new Set(
+      [...changes.nodes, ...changes.revisions].map(({ id }) => id),
+    );
+    const copies = new Map<string, string>();
+    for (const edge of changes.edges) {
+      if (
+        edge.kind !== "status" ||
+        edge.role !== "content" ||
+        written.has(edge.target)
+      )
+        continue;
+      const state = await context.node(edge.target);
+      if (state?.kind !== "script") continue;
+      // 新しい主体へ結ぶ状態文は、既存の主体が読む記録を巻き込まずに確定する。
+      const id = copies.get(state.id) ?? derivedId(`${edge.id}:visible-state`);
+      if (!copies.has(state.id)) changes.nodes.push({ ...state, id });
+      copies.set(state.id, id);
+      edge.target = id;
+    }
+    for (const edge of changes.edges)
+      if (edge.kind === "status" && edge.role === "about")
+        edge.source = copies.get(edge.source) ?? edge.source;
+    const states = changes.nodes
+      .filter(({ id }) => !splitItems.has(id))
+      .map(({ id }) => id);
+    for (const node of changes.revisions)
+      if ((await context.node(node.id))?.text !== node.text)
+        states.push(node.id);
+    return {
+      states,
+      about: changes.edges
+        .filter(
+          (edge) =>
+            edge.kind === "status" &&
+            edge.role === "about" &&
+            edge.text !== "direct-place" &&
+            edge.target !== actor,
+        )
+        .map(({ id }) => id),
+      observers: await this.#stealthObservers(
+        session.world_id,
+        context,
+        await this.#places(context, actor),
+        actor,
+      ),
+    };
+  }
+  async #oppositionObservations(
+    request: string,
+    perception: z.infer<typeof Perception>,
+  ): Promise<StealthAction> {
+    const observations: Observation[] = [];
+    if (perception.observation)
+      for (const [viewer, setting] of Object.entries(perception.witnesses)) {
+        const saved = await this.#roll(
+          derivedId(`${request}:stealth:attempt:${viewer}`),
+          setting,
+        );
+        if (saved.roll <= saved.setting.successThrough)
+          observations.push({
+            viewer,
+            text: perception.observation,
+            unattributed: true,
+          });
+      }
+    return { observations };
   }
   // 人物の乗り物は車内を分けない。乗っている人も、乗り物のいる場所にいるものとして扱う。
   async #carrier(context: WorldContext, id: string) {
@@ -5405,19 +5579,74 @@ export class BotPlay {
     user: string,
     requestId: string,
     context: WorldContext,
-    proposals: { text: string; changes: Change }[],
+    proposals: {
+      text: string;
+      changes: Change;
+      materials?: Material[] | undefined;
+    }[],
     consumable: Consumable[],
     explore = false,
     waitMinutes?: number,
   ) {
     type Result =
-      CreationRoll | { success: false; reason: "MATERIAL_SHORTAGE" };
+      | CreationRoll
+      | {
+          success: false;
+          reason: "MATERIAL_SHORTAGE" | "MATERIAL_ID_REQUIRED";
+        };
+    const work = proposals.some((p) => p.materials !== undefined);
+    const stock = new Map(consumable.map((item) => [item.id, item]));
+    const touched = await this.#touchedItems(
+      context,
+      proposals.map((p) => p.changes),
+    );
+    let places: string[] | undefined;
+    const currentPlaces = async () =>
+      (places ??= await directPlaces(context, actor));
+    const readMaterial = async (id: string) => {
+      if (touched.has(id)) return;
+      const known = stock.get(id);
+      if (known) return known;
+      const held = await context.holding(id);
+      if (!held || !(await currentPlaces()).includes(held.source)) return;
+      if (
+        (await context.inventoryActors(context.worldId, [held.source, id])).size
+      )
+        return;
+      const access = await context.storageAccess(held.source, actor);
+      if (access.registered && !access.allowed) return;
+      if ((await context.storageAccess(id, actor)).registered) return;
+      const node = await context.node(id);
+      if (node?.kind !== "existence" || !visibleTo(node, actor, true)) return;
+      await context.assertMovable(id);
+      const item = {
+        id,
+        label: node.text,
+        ...(node.count !== undefined ? { count: node.count } : {}),
+      };
+      stock.set(id, item);
+      return item;
+    };
+    const validateSaved = async (saved: Result[]) => {
+      const used = new Map<string, number>();
+      for (const roll of saved) {
+        if (!work || !roll.success) continue;
+        for (const c of roll.setting.consumes ?? []) {
+          const item = await readMaterial(c.id);
+          const total = (used.get(c.id) ?? 0) + (c.count ?? 1);
+          if (!item || total > (item.count ?? 1))
+            reject("MATERIAL_SHORTAGE", "判定で使う材料が足りません");
+          used.set(c.id, total);
+        }
+      }
+      return saved;
+    };
     const previous = await this.pool.query<{ creation_rolls: Result[] | null }>(
       "SELECT creation_rolls FROM bot_request WHERE id=$1",
       [requestId],
     );
     if (previous.rows[0]?.creation_rolls)
-      return previous.rows[0].creation_rolls;
+      return validateSaved(previous.rows[0].creation_rolls);
     const batch = proposals.length > 1;
     const keys = proposals.map((_, i) =>
       batch ? derivedId(`${requestId}:proposal:${i}`) : requestId,
@@ -5431,19 +5660,41 @@ export class BotPlay {
       repeated[i] ? [] : [{ ...p, index: i }],
     );
     const settings = new Map<number, z.infer<typeof DiceSetting>>();
+    const unresolved = new Set<number>();
+    const shortages = new Set<number>();
     if (fresh.length) {
       await this.#reserveSp(world, actor, user, requestId);
       const premise = (await this.construction.get(world)).initial_prompt;
       const targets = await Promise.all(
         fresh.map((p) => this.#newStorages(context, p.changes)),
       );
-      const material = fresh.map(({ text, changes }, i) => ({
-        text,
-        changes,
-        ...(targets[i]!.length ? { storageIds: targets[i] } : {}),
-      }));
+      const material = await Promise.all(
+        fresh.map(async ({ text, changes, materials }, i) => ({
+          text,
+          changes,
+          ...(materials?.length
+            ? {
+                materials: await Promise.all(
+                  materials.map(async (m) => {
+                    const item = await readMaterial(m.id);
+                    return {
+                      ...m,
+                      label: item?.label,
+                      available: item ? (item.count ?? 1) : 0,
+                    };
+                  }),
+                ),
+              }
+            : {}),
+          ...(targets[i]!.length ? { storageIds: targets[i] } : {}),
+        })),
+      );
       const nodes = await this.#facts(context, [
         actor,
+        ...material.flatMap(
+          (p) =>
+            p.materials?.filter((m) => m.available > 0).map((m) => m.id) ?? [],
+        ),
         ...fresh.flatMap(({ changes }) => [
           ...changes.revisions.map((n) => n.id),
           ...changes.edges.flatMap((e) => [e.source, e.target]),
@@ -5457,7 +5708,7 @@ export class BotPlay {
               [world],
             )
           ).rows[0]?.criteria || defaultCreationCriteria;
-      const Dice = explore ? ExploreDice : DiceSetting;
+      const Dice = explore ? ExploreDice : work ? WorkDice : DiceSetting;
       // 本文をGMが決めるのは、すぐに成立する単独の申請に限る。
       const decides = !explore && !batch && !waitMinutes;
       const parseSettings = (raw: string) => {
@@ -5494,6 +5745,7 @@ export class BotPlay {
             content:
               "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。" +
               (consumable.length ? consumePrompt : "") +
+              (work ? workMaterialPrompt : "") +
               (decides ? decidePrompt : "") +
               (batch
                 ? "proposalsの順に各案のダイス設定を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
@@ -5520,15 +5772,56 @@ export class BotPlay {
         "resolution",
         parseSettings,
       );
-      parseSettings(response.content).forEach((v, i) =>
-        settings.set(
-          fresh[i]!.index,
-          decision(
-            consumption(v, consumable),
-            decides ? fresh[i]!.changes : undefined,
-          ),
-        ),
-      );
+      for (const [i, v] of parseSettings(response.content).entries()) {
+        const p = fresh[i]!;
+        const { requiredMaterials, ...dice } = v as z.infer<typeof WorkDice>;
+        const setting = decision(
+          consumption(dice, consumable),
+          decides ? p.changes : undefined,
+        );
+        const used = new Map((setting.consumes ?? []).map((c) => [c.id, c]));
+        if (requiredMaterials === null) unresolved.add(p.index);
+        const required = new Map<string, number>();
+        for (const m of [
+          ...(p.materials ?? []),
+          ...(requiredMaterials ?? []),
+        ]) {
+          let id: string;
+          if ("id" in m) id = m.id;
+          else {
+            const ids = (p.materials ?? [])
+              .filter((item) => stock.get(item.id)?.label === m.label)
+              .map((item) => item.id);
+            if (!ids.length) {
+              ids.push(
+                ...consumable
+                  .filter((item) => item.label === m.label)
+                  .map((item) => item.id),
+              );
+              for (const place of await currentPlaces())
+                ids.push(...(await context.materialIds(place, m.label)));
+            }
+            if (ids.length !== 1) {
+              unresolved.add(p.index);
+              continue;
+            }
+            id = ids[0]!;
+          }
+          required.set(id, Math.max(required.get(id) ?? 0, m.count ?? 1));
+        }
+        for (const [id, count] of required) {
+          const item = await readMaterial(id);
+          if (!item || count > (item.count ?? 1)) shortages.add(p.index);
+          else
+            used.set(id, {
+              id,
+              label: item.label,
+              ...(item.count === undefined ? {} : { count }),
+            });
+        }
+        if (used.size) setting.consumes = [...used.values()];
+        settings.set(p.index, setting);
+      }
     }
     const db = await this.pool.connect();
     try {
@@ -5546,7 +5839,7 @@ export class BotPlay {
       ).rows[0]!.creation_rolls;
       if (saved) {
         await db.query("COMMIT");
-        return saved;
+        return validateSaved(saved);
       }
       const rolls: Result[] = [];
       const used = new Map<string, number>();
@@ -5557,12 +5850,17 @@ export class BotPlay {
           continue;
         }
         const setting = settings.get(i)!;
+        if (unresolved.has(i)) {
+          rolls.push({ success: false, reason: "MATERIAL_ID_REQUIRED" });
+          continue;
+        }
         const required = setting.consumes ?? [];
         if (
+          shortages.has(i) ||
           required.some(
             (c) =>
               (used.get(c.id) ?? 0) + (c.count ?? 1) >
-              (consumable.find((item) => item.id === c.id)?.count ?? 1),
+              (stock.get(c.id)?.count ?? 1),
           )
         ) {
           rolls.push({ success: false, reason: "MATERIAL_SHORTAGE" });
@@ -5584,7 +5882,12 @@ export class BotPlay {
         sp_user=CASE WHEN $3 THEN a.sp_user END, sp_reset=CASE WHEN $3 THEN a.sp_reset END
         FROM bot_adjudication a WHERE r.id=$1 AND a.world_id=r.world_id AND a.actor_id=r.actor_id
         AND a.request_id=r.id AND a.expires_at>clock_timestamp() AND (NOT $3 OR a.sp_user=$4)`,
-        [requestId, JSON.stringify(rolls), fresh.length > 0, user],
+        [
+          requestId,
+          JSON.stringify(rolls),
+          fresh.some((p) => "roll" in rolls[p.index]!),
+          user,
+        ],
       );
       if (!persisted.rowCount) rejectAdjudication();
       await db.query("COMMIT");
@@ -6133,25 +6436,32 @@ export class BotPlay {
           "隠密は本人だけの移動か、相手から本人への物品移転に指定してください",
         );
     }
+    let context = this.store.context(
+      w.id,
+      "dependencies" in input ? input.dependencies : [],
+    );
+    const concealed =
+      input.command === "oppose" &&
+      (hidden || !!(await this.#hidden(db, world, context, actor)));
+    const moveDestinations = concealed ? new Map<string, string>() : undefined;
     if (input.command === "oppose" && input.effect) {
       const plan = await this.#instantAction(
         (await this.current(world, actor))!,
         actor,
         { text: input.text, effect: input.effect },
         input.requestId,
-        this.store.context(w.id, input.dependencies),
+        context,
         w.at,
+        concealed,
       );
       await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
-        plan.outcome,
+        plan.stealth
+          ? { outcome: plan.outcome, stealth: plan.stealth }
+          : plan.outcome,
       ]);
       return plan;
     }
-    let context = this.store.context(
-      w.id,
-      "dependencies" in input ? input.dependencies : [],
-    );
     const prior = await this.store.receipt(w.id, input.requestId);
     if (prior) {
       const outcome = (
@@ -6168,11 +6478,14 @@ export class BotPlay {
 
         outcome: configuringDraw
           ? undefined
-          : hidden
+          : outcome?.stealth
             ? outcome?.outcome
             : outcome,
-        ...(hidden
-          ? { stealth: outcome?.stealth ?? { observations: [] } }
+        ...(outcome?.stealth ? { stealth: outcome.stealth } : {}),
+        ...(outcome?.stealth &&
+        outcome.outcome?.success &&
+        outcome.outcome.setting?.fatal
+          ? { fatal: outcome.outcome.setting.fatal }
           : {}),
         items: await this.#itemOutcomes(
           this.store.context(w.id),
@@ -6233,7 +6546,11 @@ export class BotPlay {
               "CREATION_REQUIRED",
               "各案に新しい生成の申請を指定してください",
             );
-          return { ...plan, text: proposal.text };
+          return {
+            ...plan,
+            text: proposal.text,
+            materials: proposal.materials ?? [],
+          };
         }),
       );
       const combine = (plans: Plan[]) =>
@@ -6550,7 +6867,7 @@ export class BotPlay {
       }
     } else if ("operations" in input && input.operations) {
       const ops: BelongingOp[] = input.operations.map((op) =>
-          hidden && op.type === "move"
+          concealed && op.type === "move"
             ? { ...op, basis: "物品の保持が移った" }
             : { ...op },
         ),
@@ -6741,10 +7058,13 @@ export class BotPlay {
         plannedOps.push(op);
       }
       if (!impossible) {
-        const plan = await planBelongings(context, input.requestId, at, [
-          ...deployments.values(),
-          ...plannedOps,
-        ]);
+        const plan = await planBelongings(
+          context,
+          input.requestId,
+          at,
+          [...deployments.values(), ...plannedOps],
+          moveDestinations,
+        );
         changes = plan.changes;
         changes.endEdges.push(...pickupEdges, ...release);
         at = plan.at;
@@ -6759,7 +7079,7 @@ export class BotPlay {
           );
       }
     } else {
-      changes = input.changes!;
+      changes = concealed ? structuredClone(input.changes!) : input.changes!;
       if (
         changes.nodes.some(
           (node) =>
@@ -6960,7 +7280,9 @@ export class BotPlay {
       };
       await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
-        hidden ? { outcome, stealth: { observations: [] } } : outcome,
+        hidden || concealed
+          ? { outcome, stealth: { observations: [] } }
+          : outcome,
       ]);
       return {
         context,
@@ -6968,7 +7290,7 @@ export class BotPlay {
         at,
         recipients: [],
         outcome,
-        ...(hidden ? { stealth: { observations: [] } } : {}),
+        ...(hidden || concealed ? { stealth: { observations: [] } } : {}),
       };
     }
     const recipients = [...parties].filter(
@@ -7033,6 +7355,11 @@ export class BotPlay {
         "かける時間は、受領を必要としない物品のcreateだけの申請に指定してください",
       );
     needsCreation &&= !privateInterpretation(actor, changes);
+    if ("materials" in input && input.materials?.length && !needsCreation)
+      reject(
+        "CREATION_REQUIRED",
+        "材料は新規作成の判定を伴う申請に指定してください",
+      );
     const consumable =
       (needsCreation && input.command !== "explore") ||
       input.command === "oppose"
@@ -7052,21 +7379,30 @@ export class BotPlay {
           "operations" in input ? (input.operations ?? []) : [],
         );
       } catch (error) {
-        if (!(error instanceof InventoryCapacityExceeded) || !consumable.length)
-          throw error;
-        const afterConsumption = structuredClone(changes);
-        await this.#append(
-          context,
-          input.requestId + ":capacity",
-          at,
-          afterConsumption,
-          consumable.map((item) => ({ type: "remove", id: item.id })),
-        );
-        try {
-          await context.checkInventory(afterConsumption);
-        } catch (failure) {
-          if (failure instanceof InventoryCapacityExceeded) throw error;
-          throw failure;
+        if (!(error instanceof InventoryCapacityExceeded)) throw error;
+        // 現場の材料が空ける枠はGMの判定時に決まる。確定時は消費と作成を合わせて容量を検査する。
+        const usesSite =
+          needsCreation &&
+          (input.command === "update" || input.command === "create") &&
+          (await directPlaces(context, actor)).includes(
+            error.capacity.holderId,
+          );
+        if (!usesSite) {
+          if (!consumable.length) throw error;
+          const afterConsumption = structuredClone(changes);
+          await this.#append(
+            context,
+            input.requestId + ":capacity",
+            at,
+            afterConsumption,
+            consumable.map((item) => ({ type: "remove", id: item.id })),
+          );
+          try {
+            await context.checkInventory(afterConsumption);
+          } catch (failure) {
+            if (failure instanceof InventoryCapacityExceeded) throw error;
+            throw failure;
+          }
         }
       }
     }
@@ -7110,7 +7446,16 @@ export class BotPlay {
             user,
             input.requestId,
             context,
-            [{ text: input.text, changes }],
+            [
+              {
+                text: input.text,
+                changes,
+                materials:
+                  input.command === "update" || input.command === "create"
+                    ? (input.materials ?? [])
+                    : undefined,
+              },
+            ],
             consumable,
             input.command === "explore",
             wait,
@@ -7118,16 +7463,25 @@ export class BotPlay {
         )[0]
       : undefined;
     if (outcome) {
-      await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
-        input.requestId,
-        outcome,
-      ]);
       const dice = outcome as {
         success: boolean;
         setting: z.infer<typeof DiceSetting>;
       };
+      const stealth =
+        concealed && !dice.success ? { observations: [] } : undefined;
+      await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
+        input.requestId,
+        stealth ? { outcome, stealth } : outcome,
+      ]);
       if (!dice.success)
-        return { context, changes: empty(), at, recipients: [], outcome };
+        return {
+          context,
+          changes: empty(),
+          at,
+          recipients: [],
+          outcome,
+          ...(stealth ? { stealth } : {}),
+        };
       for (const { id, text } of dice.setting.decided ?? [])
         changes.nodes.find((n) => n.id === id)!.text = text;
       await this.#saveStorageLimits(context, changes, dice.setting);
@@ -7141,6 +7495,7 @@ export class BotPlay {
         dice.setting,
       );
     }
+    let stealth: StealthAction | undefined;
     if (input.command === "oppose") {
       let success = !externalEffect && [...parties].every((id) => id === actor);
       if (!success) {
@@ -7150,6 +7505,15 @@ export class BotPlay {
           ...refs,
         ]);
         const session = (await this.current(world, actor))!;
+        const perception = concealed
+          ? await this.#oppositionPerception(
+              session,
+              context,
+              actor,
+              changes,
+              new Set(moveDestinations?.values()),
+            )
+          : undefined;
         const saved = await this.#oppositionRoll(
           input.requestId,
           actor,
@@ -7161,11 +7525,50 @@ export class BotPlay {
           ...(await this.#mortal(session, recipients)),
           undefined,
           undefined,
+          perception,
           recipients.filter((id) =>
             session.data.members.some((m) => m.actorId === id && !m.instant),
           ),
         );
         success = saved.roll <= saved.setting.successThrough;
+        if (saved.perception) {
+          stealth = success
+            ? await this.#oppositionObservations(
+                input.requestId,
+                saved.perception,
+              )
+            : { observations: [] };
+          for (const node of [...changes.nodes, ...changes.revisions])
+            node.text = saved.perception.states[node.id] ?? node.text;
+          const about = new Set(saved.perception.about);
+          const locations = new Set(
+            changes.edges
+              .filter(
+                (edge) =>
+                  edge.kind === "status" &&
+                  edge.role === "content" &&
+                  edge.text === "location",
+              )
+              .map(({ target }) => target),
+          );
+          changes.edges = changes.edges.filter(
+            (edge) =>
+              edge.kind !== "see" &&
+              (edge.kind !== "status" ||
+                edge.role !== "about" ||
+                (edge.text === "direct-place" && locations.has(edge.source)) ||
+                about.has(edge.id)),
+          );
+          for (const edge of changes.edges)
+            if (
+              edge.kind !== "status" ||
+              !(
+                (edge.text === "location" && locations.has(edge.target)) ||
+                (edge.text === "direct-place" && locations.has(edge.source))
+              )
+            )
+              delete edge.text;
+        }
         if (success) {
           fatal = saved.setting.fatal ?? [];
           for (const { id, text } of saved.setting.states ?? []) {
@@ -7205,7 +7608,7 @@ export class BotPlay {
       if (!success) changes = empty();
       await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
-        outcome,
+        stealth ? { outcome, stealth } : outcome,
       ]);
     }
     const items = await this.#itemOutcomes(context, input, changes);
@@ -7224,6 +7627,7 @@ export class BotPlay {
       recipients: input.command === "oppose" ? [] : recipients,
       items,
       outcome,
+      ...(stealth ? { stealth } : {}),
       ...(handoff ? { handoff } : {}),
       ...(locates ? { locates } : {}),
       ...(mixedMoves?.length ? { mixedMoves } : {}),
@@ -7302,14 +7706,20 @@ export class BotPlay {
     actor: string,
     changes: Change,
   ): Promise<Consumable[]> {
-    const touched = new Set([
-      ...changes.revisions.map((n) => n.id),
-      ...changes.edges.map((e) => e.target),
-      ...(
-        await Promise.all(changes.endEdges.map((id) => context.edge(id)))
-      ).map((e) => e?.target),
-    ]);
+    const touched = await this.#touchedItems(context, [changes]);
     return (await heldItems(context, actor)).filter((i) => !touched.has(i.id));
+  }
+  async #touchedItems(context: WorldContext, changes: Change[]) {
+    const ended = await Promise.all(
+      changes.flatMap((c) => c.endEdges).map((id) => context.edge(id)),
+    );
+    return new Set([
+      ...changes.flatMap((c) => [
+        ...c.revisions.map((n) => n.id),
+        ...c.edges.map((e) => e.target),
+      ]),
+      ...ended.map((e) => e?.target),
+    ]);
   }
   // ダイスの成功で決まった所在・物品の操作を、申請と同じ確定に加える。
   async #append(
@@ -7477,10 +7887,32 @@ export class BotPlay {
     deathCriteria = "",
     group?: { count: number; allowSeparation: boolean },
     opponentId?: string,
+    perception?: OppositionPerception,
     affected: string[] = [],
   ) {
     function readDecision(raw: string) {
-      const { setting, observable } = read(parseOutput(raw)),
+      const parsed = parseOutput(raw);
+      const separated = perception
+        ? z.object({ perception: Perception }).passthrough().parse(parsed)
+        : undefined;
+      const reported = separated?.perception;
+      if (reported && perception) {
+        const matches = (ids: string[], values: Record<string, unknown>) =>
+          Object.keys(values).length === ids.length &&
+          ids.every((id) => Object.hasOwn(values, id));
+        if (
+          !matches(perception.states, reported.states) ||
+          !matches(perception.observers, reported.witnesses) ||
+          reported.about.some((id) => !perception.about.includes(id))
+        )
+          throw new Error("状態、参照と目撃判定を指定されたIDで返してください");
+      }
+      const dice = separated
+        ? Object.fromEntries(
+            Object.entries(separated).filter(([key]) => key !== "perception"),
+          )
+        : parsed;
+      const { setting, observable } = read(dice),
         fatal = setting.fatal?.filter((id) => mortal.includes(id)),
         states = setting.states?.filter((s) => affected.includes(s.id));
       delete setting.fatal;
@@ -7503,6 +7935,7 @@ export class BotPlay {
           consumable,
         ),
         observable,
+        perception: reported,
       };
     }
     function read(result: unknown) {
@@ -7533,7 +7966,7 @@ export class BotPlay {
       return { setting: DiceSetting.parse(dice), observable };
     }
     const response = await this.#ask(
-      derivedId(`${requestId}:dice-setting`),
+      derivedId(`${requestId}:dice-setting${perception ? ":stealth" : ""}`),
       "world-opposition-dice",
       [
         {
@@ -7556,7 +7989,10 @@ export class BotPlay {
                   : "") +
                 "countは一団の個体数以下の正の整数。数が減らなければ省く。"
               : "") +
-            (consumable.length ? consumePrompt : ""),
+            (consumable.length ? consumePrompt : "") +
+            (perception
+              ? "隠密中の行動。成功時に使うperceptionも返す。形式は{states:{状態・物品ID:本文},about:[関係ID],observation:文字列またはnull,witnesses:{人物ID:{sides,successThrough}}}。statesはperception.statesの全IDについて、対象を後から調べるだけで確認できる結果を書く。名前・種別・呼び名や参照を含め、攻撃や移転を起こした主体、使用者、経緯、原因の断定は入れない。傷や破損、変化した性質は残す。物品の呼称は物自体が分かるように書く。aboutは指定された関係のうち、その結果だけから確認できる参照を選ぶ。observationは行為そのものを見たときに分かる内容を書き、実行者が見えるなら呼称を含める。私的な動機や目撃だけでは分からない指示者は含めない。目撃できる内容がなければnull。witnessesは指定された全observersに対して、到着を見たかと独立に今回の行為に気づく確率を設定する。"
+              : ""),
         },
         {
           role: "user",
@@ -7571,15 +8007,20 @@ export class BotPlay {
             ...(mortal.length && deathCriteria ? { deathCriteria } : {}),
             ...(affected.length ? { affected } : {}),
             ...(group ? { group } : {}),
+            ...(perception ? { perception } : {}),
           }),
         },
       ],
       "resolution",
       readDecision,
     );
-    const { setting, observable } = readDecision(response.content),
+    const {
+        setting,
+        observable,
+        perception: reported,
+      } = readDecision(response.content),
       saved = await this.#roll(requestId, setting);
-    return { ...saved, observable };
+    return { ...saved, observable, perception: reported };
   }
   async #roll(id: string, setting: z.infer<typeof DiceSetting>) {
     const db = await this.pool.connect();
@@ -9581,7 +10022,7 @@ export class BotPlay {
                       placeId: stay.placeId,
                       place: (await plan.context.node(stay.placeId))!.text,
                     };
-                  } else if (input.command === "oppose") {
+                  } else if (input.command === "oppose" && input.stealth) {
                     await this.#reveal(
                       db,
                       world,

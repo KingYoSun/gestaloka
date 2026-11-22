@@ -9,6 +9,7 @@ import type {
 import type { NpcModeCommand } from "@gestaloka/contracts";
 import { RuntimeStopped } from "../runtime/control.js";
 import { PlayerDevices } from "./player-devices.js";
+import { Stories, setupStories } from "./stories.js";
 import { McpOrigin } from "./mcp-origin.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -32,6 +33,7 @@ import {
   type WorldConstruction,
 } from "../runtime/construction.js";
 import { worldNow } from "../world/model.js";
+import { WorldConflict } from "../world/store.js";
 import { WorldScenes, type SceneRow } from "../runtime/scene.js";
 import { sceneAnchors } from "../runtime/scene-data.js";
 import { requireMember } from "./operations.js";
@@ -71,11 +73,13 @@ export class WorldAccess {
   readonly devices: PlayerDevices;
   readonly scenes: WorldScenes;
   readonly players: WorldPlayers;
+  readonly stories: Stories;
   constructor(readonly construction: WorldConstruction) {
     this.botPlay = new BotPlay(construction);
     this.devices = new PlayerDevices(construction.pool);
     this.scenes = new WorldScenes(construction);
     this.players = new WorldPlayers(construction);
+    this.stories = new Stories(construction.pool);
   }
   get pool() {
     return this.construction.pool;
@@ -146,6 +150,7 @@ export class WorldAccess {
     await setupInitialPresentations(this.pool);
     await this.players.setup();
     await this.devices.setup();
+    await setupStories(this.pool);
     await this.pool.query(`INSERT INTO world_controlled_actor(world_id,actor_id)
       SELECT c.world_id,a.actor_id FROM world_access a JOIN world_construction c ON c.id=a.construction_id
       WHERE a.role='player' AND a.actor_id IS NOT NULL AND c.world_id IS NOT NULL ON CONFLICT DO NOTHING`);
@@ -323,6 +328,33 @@ export class WorldAccess {
       actorId,
       connectionId,
     );
+    // 世界が更新されたら画面の読み取りをやり直す。期限処理と配達は再実行しない。
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.#readBotStatus(
+          subject,
+          id,
+          viewerId,
+          screen,
+          sceneId,
+          connectionId,
+          after,
+        );
+      } catch (error) {
+        if (!screen || !(error instanceof WorldConflict) || attempt >= 3)
+          throw error;
+      }
+    }
+  }
+  async #readBotStatus(
+    subject: string,
+    id: string,
+    viewerId: string,
+    screen: boolean,
+    sceneId?: string,
+    connectionId?: string,
+    after?: string,
+  ) {
     const status = await this.botPlay.status(id, viewerId, this.pool, screen);
     const history = await this.botPlay.history(
       id,
@@ -621,6 +653,7 @@ export class WorldAccess {
       id: row.id,
       prompt: row.initial_prompt,
       playerSettings: row.player_settings,
+      startingItems: row.starting_items,
       createdAt: row.created_at.toISOString(),
       state: row.state,
       at: row.at,

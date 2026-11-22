@@ -3,7 +3,15 @@ import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { readFile, readdir, writeFile } from "node:fs/promises";
-import { beforeAll, afterAll, afterEach, expect, test, vi } from "vitest";
+import {
+  beforeAll,
+  afterAll,
+  afterEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from "vitest";
 import {
   BlueprintDraft,
   PlayCommand,
@@ -13,7 +21,7 @@ import { WorldAccess } from "@gestaloka/server/access";
 import { LlmClient } from "@gestaloka/server/llm";
 import { decisionSettings } from "../../packages/server/src/llm/config.js";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
-import { derivedId } from "@gestaloka/server/world";
+import { derivedId, WorldContext } from "@gestaloka/server/world";
 import type { Change } from "@gestaloka/contracts";
 import {
   addRoute,
@@ -4547,7 +4555,7 @@ test("バックグラウンドのlistenが待機を維持し、後から来た�
       runtime,
       () =>
         new Date(Date.parse((ordered.arrival as { dueAt: string }).dueAt) + 1),
-    ).expire(f.world);
+    ).deliverArrivals(f.world);
     await vi.waitFor(
       () =>
         expect(events).toContainEqual(
@@ -5556,6 +5564,10 @@ test("隠密のスリは成否と目撃を独立して判定し、未発見者�
   graphHistory.mockRestore();
   expect(await held(a)).toBe(1);
   expect(await held(b)).toBe(2);
+  for (const person of [a, b])
+    expect(
+      JSON.stringify(await readBelongings(f.store.context(f.graph), person)),
+    ).not.toContain("財布を抜く動機");
   expect((await f.status(1)).entries.slice(before)).toEqual([]);
   const reconnected = await access.botStatus(
     f.people[1]!.id,
@@ -5621,6 +5633,212 @@ test("隠密のスリは成否と目撃を独立して判定し、未発見者�
   expect(JSON.stringify((await f.status(1)).entries.slice(before))).toContain(
     "人物0が銀貨を取るのを見たよ",
   );
+});
+
+test("隠密中の対抗行動は所持・負傷・死亡を確定し、行為の目撃者だけに主体を伝える", async () => {
+  const f = await fixture(4);
+  const [actor, victim, witness, late] = f.actors as [
+    string,
+    string,
+    string,
+    string,
+  ];
+  await f.move(0, f.far);
+  await f.move(2, f.place);
+  await f.move(3, f.far);
+  const coin = (
+    await f.apply([
+      {
+        type: "create",
+        holder: victim,
+        label: "銀貨",
+        count: 3,
+        basis: "初期所持",
+      },
+    ])
+  ).changes.nodes[0]!.id;
+  const cause = (
+    await f.apply([
+      { type: "create", holder: actor, label: "霧トカゲ", basis: "初期所持" },
+    ])
+  ).changes.nodes[0]!.id;
+  stealthGm(f);
+  const arrival = randomUUID();
+  await stealthRolls(arrival, {
+    ["departure:" + late]: 6,
+    ["arrival:" + victim]: 1,
+    ["arrival:" + witness]: 6,
+  });
+  expect(
+    await f.send(0, {
+      requestId: arrival,
+      command: "update",
+      stealth: true,
+      text: "隠密で広場へ行く",
+      operations: [
+        { type: "locate", subjectId: actor, text: "広場", aboutIds: [f.place] },
+      ],
+      dependencies: [],
+    }),
+  ).toMatchObject({ stealth: { placeId: f.place } });
+  expect(JSON.stringify((await f.status(1)).entries)).toContain(
+    "人物0が広場に着いた",
+  );
+  await f.send(1, { command: "contact", targetId: actor });
+
+  const attempt = async (
+    text: string,
+    fields: Record<string, unknown>,
+    publicState?: string,
+    fatal = false,
+  ) => {
+    const requestId = randomUUID();
+    const input = {
+      requestId,
+      command: "oppose",
+      text,
+      ...fields,
+      dependencies: [],
+    };
+    await stealthRolls(requestId, {
+      ["attempt:" + victim]: 6,
+      ["attempt:" + witness]: 1,
+    });
+    await isolated.databases.postgres.query(
+      "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,1)",
+      [requestId, fatal ? { ...sure, fatal: [victim] } : sure],
+    );
+    f.calls.mockImplementation(async (id, role, messages) => {
+      if (role === "world-creation-dice") return answer(id, sure);
+      expect(role).toBe("world-opposition-dice");
+      const { perception } = JSON.parse(messages[1]!.content) as {
+        perception: { states: string[]; about: string[]; observers: string[] };
+      };
+      expect(perception.observers).toEqual([victim, witness].sort());
+      return answer(id, {
+        ...sure,
+        ...(fatal ? { fatal: [victim] } : {}),
+        perception: {
+          states: Object.fromEntries(
+            perception.states.map((state) => [state, publicState!]),
+          ),
+          about: [],
+          observation: text,
+          witnesses: Object.fromEntries(
+            perception.observers.map((viewer) => [
+              viewer,
+              { sides: 6, successThrough: 3 },
+            ]),
+          ),
+        },
+      });
+    });
+    if (fatal) {
+      const commit = f.store.commit.bind(f.store);
+      const interrupted = vi
+        .spyOn(f.store, "commit")
+        .mockImplementationOnce(async (...args) => {
+          await commit(...args);
+          throw new Error("世界の確定後に接続が切れた");
+        });
+      await expect(f.send(0, input)).rejects.toThrow(
+        "世界の確定後に接続が切れた",
+      );
+      interrupted.mockRestore();
+    }
+    const result = await f.send(0, input);
+    expect(result.outcome).toMatchObject({ success: true });
+    expect(await f.send(0, input)).toEqual(result);
+  };
+  const before = (await f.status(1)).entries.length;
+  const theft = "人物0が銀貨を取った";
+  await attempt(theft, {
+    operations: [
+      {
+        type: "move",
+        item: coin,
+        from: victim,
+        to: actor,
+        count: 1,
+        basis: theft,
+      },
+    ],
+  });
+  const inventory = await access.botPlay.search(f.world, victim, {
+    kind: "self",
+  });
+  expect(inventory.material).toMatchObject({
+    belongings: { items: [{ id: coin, label: "銀貨", count: 2 }] },
+  });
+  expect(JSON.stringify(inventory.material)).not.toContain(theft);
+  const stolen = await readBelongings(f.store.context(f.graph), actor);
+  expect(stolen.items).toContainEqual(
+    expect.objectContaining({ label: "銀貨", count: 1 }),
+  );
+  expect(JSON.stringify(stolen)).not.toContain(theft);
+
+  const wound: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  const wounded = "霧トカゲが襲い、腕に深い傷がある";
+  mark(wound, victim, wounded, [{ id: cause }, { id: actor }]);
+  await attempt(wounded, { changes: wound }, "腕に深い傷がある");
+  await f.send(0, { command: "end-turn" });
+  const examine = async (i: number) =>
+    JSON.stringify(
+      (
+        await f.send(i, {
+          command: "search",
+          query: {
+            kind: i === 1 ? "self" : "subject",
+            ...(i === 1 ? {} : { targetId: victim }),
+          },
+        })
+      ).material,
+    );
+  expect(await examine(1)).toContain("腕に深い傷がある");
+  await f.send(1, { command: "end-turn" });
+  await f.move(3, f.place);
+  const woundSeenLate = await examine(3);
+  expect(woundSeenLate).toContain("腕に深い傷がある");
+  for (const secret of ["霧トカゲ", cause, actor])
+    expect(woundSeenLate).not.toContain(secret);
+  await f.move(3, f.far);
+
+  await isolated.databases.postgres.query(
+    "UPDATE world_construction SET death_place_id=$2 WHERE id=$1",
+    [f.world, f.far],
+  );
+  const killed = "霧トカゲが致命傷を負わせた";
+  await attempt(
+    killed,
+    {
+      changes: {
+        nodes: [],
+        revisions: [{ ...wound.nodes[0], text: killed }],
+        edges: [],
+        endEdges: [],
+      },
+    },
+    "致命傷を負って死亡している",
+    true,
+  );
+  expect((await f.status(1)).members?.map((member) => member.actorId)).toEqual([
+    victim,
+  ]);
+  expect(await directPlaces(f.store.context(f.graph), victim)).toEqual([f.far]);
+  const after = await examine(3);
+  expect(after).toContain("致命傷を負って死亡している");
+  for (const secret of ["霧トカゲ", cause, actor])
+    expect(after).not.toContain(secret);
+  const victimHistory = JSON.stringify(
+    (await f.status(1)).entries.slice(before),
+  );
+  const witnessHistory = JSON.stringify((await f.status(2)).entries);
+  const lateHistory = JSON.stringify((await f.status(3)).entries);
+  for (const action of [theft, wounded, killed]) {
+    expect(victimHistory).not.toContain(action);
+    expect(lateHistory).not.toContain(action);
+    expect(witnessHistory.match(new RegExp(action, "g"))).toHaveLength(2); // 本文と目撃欄
+  }
 });
 
 test("隠密移動の現在地は今回の滞在を発見した相手だけが取得できる", async () => {
@@ -8567,6 +8785,35 @@ test("CLIは招待を受けた本人が短縮IDでチームに加入し、離脱
   }
 });
 
+test("到着処理を待っている間も期限処理とNPC手番を進める", async () => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const play = {
+    deliverArrivals: vi.fn(() => pending),
+    expire: vi.fn(async () => {}),
+    tickNpcs: vi.fn(async () => {}),
+  };
+  const stop = await startPlayLoop(play);
+  try {
+    await vi.waitFor(
+      () => expect(play.deliverArrivals).toHaveBeenCalledOnce(),
+      {
+        timeout: 5000,
+      },
+    );
+    await vi.waitFor(() => expect(play.tickNpcs).toHaveBeenCalledTimes(2), {
+      timeout: 5000,
+    });
+    expect(play.expire).toHaveBeenCalledTimes(2);
+    expect(play.deliverArrivals).toHaveBeenCalledOnce();
+  } finally {
+    release();
+    await stop();
+  }
+});
+
 test.each([false, true])(
   "NPCの対抗判定中のワーカー交換（待機上限超過=%s）",
   async (timeout) => {
@@ -8625,6 +8872,7 @@ test.each([false, true])(
     const path = workerSocket(process.pid);
     let paused = () => false;
     const play = {
+      deliverArrivals: () => access.botPlay.deliverArrivals(f.world),
       expire: () => access.botPlay.expire(f.world),
       tickNpcs: (_?: string, stopping = () => false) => {
         paused = stopping;
@@ -10127,6 +10375,248 @@ test("認可済み端末は人物生成前に一度報告でき、参加後も�
   } finally {
     await app.close();
   }
+});
+
+describe("現場材料", () => {
+  // サーバーが組み立てた設定はそのまま使い、出目だけ2に固定する。
+  const win = { sides: 100, successThrough: 70 },
+    lose = { ...win, successThrough: 1 };
+  beforeAll(async () => {
+    await isolated.databases.postgres
+      .query(`CREATE FUNCTION fixture_material_roll() RETURNS trigger AS $$
+      BEGIN NEW.roll := 2; RETURN NEW; END $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fixture_material_roll BEFORE INSERT ON bot_dice FOR EACH ROW EXECUTE FUNCTION fixture_material_roll()`);
+  });
+  afterAll(async () => {
+    await isolated.databases.postgres.query(
+      "DROP FUNCTION fixture_material_roll() CASCADE",
+    );
+  });
+  async function workshop(hulls: number) {
+    const f = await fixture(2);
+    const seed = await f.apply([
+      ...Array.from({ length: hulls }, () => ({
+        type: "create",
+        label: "船体",
+        holder: f.place,
+        basis: "建造中",
+      })),
+      {
+        type: "create",
+        label: "板材",
+        count: 2,
+        holder: f.place,
+        basis: "製材済み",
+      },
+      { type: "create", label: "滑車", holder: f.place, basis: "作業用" },
+    ]);
+    const ids = seed.changes.nodes
+      .filter((n) => n.text === "船体")
+      .map((n) => n.id);
+    const board = seed.changes.nodes.find((n) => n.text === "板材")!.id;
+    const plan = (i: number, material?: string, actor = 0) => ({
+      text: `組み方${i}で現場の船体を仕上げる`,
+      ...(material ? { materials: [{ id: material }] } : {}),
+      operations: [
+        {
+          type: "create",
+          holder: f.actors[actor],
+          label: "交易船",
+          basis: "滑車を使って組み上げた",
+        },
+      ],
+    });
+    async function inventory() {
+      const holdings = await Promise.all(
+        [f.place, ...f.actors].map((id) =>
+          readBelongings(f.store.context(f.graph), id),
+        ),
+      );
+      const items = holdings.flatMap((h) => h.items);
+      const count = (label: string) =>
+        items
+          .filter((n) => n.label === label)
+          .reduce((sum, n) => sum + (n.count ?? 1), 0);
+      return {
+        ships: count("交易船"),
+        hulls: count("船体"),
+        boards: count("板材"),
+        tools: count("滑車"),
+      };
+    }
+    return { f, ids, board, plan, inventory };
+  }
+  test("単独の失敗は船体を残し、成功は現地の現物を一度消費して滑車を残す", async () => {
+    const { f, ids, plan, inventory } = await workshop(1);
+    f.calls.mockResolvedValueOnce(answer(randomUUID(), lose));
+    await f.send(0, {
+      command: "update",
+      ...plan(1, ids[0]),
+      dependencies: [],
+    });
+    expect(await inventory()).toEqual({
+      ships: 0,
+      hulls: 1,
+      boards: 2,
+      tools: 1,
+    });
+    // 呼称だけでも現在地で一意なら同じ現物を消費できる。
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { ...win, requiredMaterials: [{ label: "船体" }] }),
+    );
+    await f.send(0, { command: "update", ...plan(2), dependencies: [] });
+    expect(await inventory()).toEqual({
+      ships: 1,
+      hulls: 0,
+      boards: 2,
+      tools: 1,
+    });
+  });
+  test("同じ船体の5案は失敗、成功、材料不足3件で交易船1隻", async () => {
+    const { f, ids, plan, inventory } = await workshop(1);
+    const requestId = randomUUID();
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { settings: [lose, win, win, win, win] }),
+    );
+    const command = {
+      command: "create-batch",
+      requestId,
+      dependencies: [],
+      proposals: Array.from({ length: 5 }, (_, i) => plan(i, ids[0])),
+    };
+    const result = await f.send(0, command);
+    expect(result).toMatchObject({
+      outcome: {
+        proposals: [
+          { roll: 2, success: false },
+          { roll: 2, success: true, setting: { consumes: [{ id: ids[0] }] } },
+          ...Array(3).fill({ success: false, reason: "MATERIAL_SHORTAGE" }),
+        ],
+      },
+    });
+    const missing = [2, 3, 4].map((i) =>
+      derivedId(derivedId(requestId + ":proposal:" + i) + ":creation"),
+    );
+    expect(
+      (
+        await isolated.databases.postgres.query(
+          "SELECT id FROM bot_dice WHERE id=ANY($1::uuid[])",
+          [missing],
+        )
+      ).rowCount,
+    ).toBe(0);
+    expect(await f.send(0, command)).toEqual(result);
+    expect(await inventory()).toEqual({
+      ships: 1,
+      hulls: 0,
+      boards: 2,
+      tools: 1,
+    });
+  });
+  test("船体2件は2隻まで、板材3個の指定は在庫2個のまま材料不足", async () => {
+    const { f, ids, board, plan, inventory } = await workshop(2);
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { settings: [win, win, win] }),
+    );
+    await f.send(0, {
+      command: "create-batch",
+      dependencies: [],
+      proposals: [plan(1, ids[0]), plan(2, ids[1]), plan(3, ids[1])],
+    });
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { ...win, consumes: [{ id: board, count: 3 }] }),
+    );
+    const result = await f.send(0, {
+      command: "update",
+      ...plan(4),
+      materials: [{ id: board, count: 3 }],
+      dependencies: [],
+    });
+    expect(result).toMatchObject({
+      outcome: { reason: "MATERIAL_SHORTAGE", success: false },
+    });
+    expect(await inventory()).toEqual({
+      ships: 2,
+      hulls: 0,
+      boards: 2,
+      tools: 1,
+    });
+  });
+  test("二人が同じ現物から同時に作って再送しても1隻", async () => {
+    const { f, ids, plan, inventory } = await workshop(1);
+    const cmds = [0, 1].map((i) => ({
+      command: "update",
+      requestId: randomUUID(),
+      ...plan(i, ids[0], i),
+      dependencies: [],
+    }));
+    // 両者が同じ在庫を読んでから判定を返す。
+    let enter = 0,
+      release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    f.calls.mockImplementation(async (id) => {
+      if (++enter === 2) release();
+      await barrier;
+      return answer(id, win);
+    });
+    const sent = await Promise.allSettled(cmds.map((cmd, i) => f.send(i, cmd)));
+    expect(enter).toBe(2);
+    const winner = sent.findIndex(
+      (r) =>
+        r.status === "fulfilled" &&
+        (r.value.outcome as { success?: boolean })?.success,
+    );
+    expect(winner).toBeGreaterThanOrEqual(0);
+    expect(await f.send(winner, cmds[winner]!)).toEqual(
+      (sent[winner] as PromiseFulfilledResult<unknown>).value,
+    );
+    const retry = await Promise.allSettled([
+      f.send(1 - winner, cmds[1 - winner]!),
+    ]);
+    expect(retry[0]).not.toMatchObject({
+      status: "fulfilled",
+      value: { outcome: { success: true } },
+    });
+    expect(await inventory()).toEqual({
+      ships: 1,
+      hulls: 0,
+      boards: 2,
+      tools: 1,
+    });
+  });
+  test("自由入力の現物が二つあると材料の指定を求め、振らずに現物を残す", async () => {
+    const { f, plan, inventory } = await workshop(2);
+    const requestId = randomUUID();
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { ...win, requiredMaterials: [{ label: "船体" }] }),
+    );
+    expect(
+      await f.send(0, {
+        command: "update",
+        requestId,
+        ...plan(1),
+        dependencies: [],
+      }),
+    ).toMatchObject({
+      outcome: { success: false, reason: "MATERIAL_ID_REQUIRED" },
+    });
+    expect(
+      (
+        await isolated.databases.postgres.query(
+          "SELECT id FROM bot_dice WHERE id=$1",
+          [derivedId(requestId + ":creation")],
+        )
+      ).rowCount,
+    ).toBe(0);
+    expect(await inventory()).toEqual({
+      ships: 0,
+      hulls: 2,
+      boards: 2,
+      tools: 1,
+    });
+  });
 });
 
 test("探索と複数案の生成は日次SPを共有し、生成と素材消費は成功した案だけに一度適用する", async () => {
@@ -12000,6 +12490,37 @@ test.each(["確定", "失敗"])(
   },
 );
 
+test("観戦画面の読み取り中に人物が移動すると、新しい現在地を返す", async () => {
+  const f = await fixture(1);
+  await f.send(0, { command: "finish" });
+  const validate = WorldContext.prototype.validate;
+  vi.spyOn(WorldContext.prototype, "validate").mockImplementationOnce(
+    async function (this: WorldContext) {
+      await f.move(0, f.far);
+      await validate.call(this);
+    },
+  );
+  const expire = vi.spyOn(access.botPlay, "expire");
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/worlds/${f.world}/session?view=screen&actorId=${f.actors[0]}`,
+      headers: { cookie: f.people[0]!.cookie },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().screen.place).toBe("離れた場所");
+    expect(expire).toHaveBeenCalledTimes(1);
+  } finally {
+    await app.close();
+  }
+});
+
 test("時間をかける物品の作成は、届く時刻を過ぎてから成立し、本人あての通知になる", async () => {
   const f = await fixture();
   const coins = (
@@ -12087,7 +12608,9 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
   // 届く時刻の前の定期処理では何も変わらない。
   const user = f.people[0]!.id,
     waiting = () => access.waiting(user, f.world, f.actors[0], "view", true);
-  await new BotPlay(runtime, () => new Date(dueAt - 1)).expire(f.world);
+  await new BotPlay(runtime, () => new Date(dueAt - 1)).deliverArrivals(
+    f.world,
+  );
   expect(await held()).toHaveLength(1);
   expect((await f.status(0)).unreadNotices).toBeUndefined();
   expect((await waiting()).noticeKey).toBeNull();
@@ -12103,7 +12626,10 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
     },
   ]);
   await f.store.configureInventory(f.graph, true);
-  await later.expire(f.world);
+  const claim = vi.spyOn(f.store, "claim"),
+    commit = derivedId(first.requestId + ":arrival");
+  await later.deliverArrivals(f.world);
+  expect(claim).not.toHaveBeenCalledWith(f.graph, commit);
   expect(await held()).not.toContainEqual({ label: "ミルク", count: 10 });
   expect(
     (
@@ -12119,8 +12645,11 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
       id: filler.changes.nodes.find((n) => n.kind === "existence")!.id,
     },
   ]);
-  await later.expire(f.world);
-  await later.expire(f.world);
+  await Promise.all([
+    later.deliverArrivals(f.world),
+    later.deliverArrivals(f.world),
+  ]);
+  expect(claim.mock.calls.filter(([, id]) => id === commit)).toHaveLength(1);
   expect(await held()).toEqual(
     expect.arrayContaining([
       { label: "銀貨", count: 3 },

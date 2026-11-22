@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { PgBoss } from "pg-boss";
 import { z } from "zod";
-import { ConstructionDuration } from "@gestaloka/contracts";
+import { ConstructionDuration, type StartingItem } from "@gestaloka/contracts";
 import { WorldBuilder } from "./build.js";
 import { WorldAgent, SupersededWorker, type WorldProposal } from "./agent.js";
 import { ExecutionBudget } from "../execution-budget.js";
@@ -51,6 +51,7 @@ export type Construction = {
   accepting: boolean;
   player_list: boolean;
   instant_npc_multiplier: number;
+  starting_items: z.infer<typeof StartingItem>[];
   death_judgment: boolean;
   death_criteria: string;
   death_place_id: string | null;
@@ -104,6 +105,7 @@ export class WorldConstruction {
       ADD COLUMN IF NOT EXISTS accepting boolean NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS player_list boolean NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS instant_npc_multiplier integer NOT NULL DEFAULT 2,
+      ADD COLUMN IF NOT EXISTS starting_items jsonb NOT NULL DEFAULT '[]',
       ADD COLUMN IF NOT EXISTS death_judgment boolean NOT NULL DEFAULT true,
       ADD COLUMN IF NOT EXISTS death_criteria text NOT NULL DEFAULT '',
       ADD COLUMN IF NOT EXISTS death_place_id uuid;`);
