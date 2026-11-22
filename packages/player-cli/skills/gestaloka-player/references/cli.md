@@ -172,10 +172,10 @@ gestaloka draw-configure --target <対象ID> --description <説明>
 
 ## draw
 
-本人の通常手番に、現在地・現地に置かれた物品・手持ちの抽選器から一件引く。searchで説明・利用条件・消費を確認できる。1 SP。
+本人の通常手番に、現在地・現地に置かれた物品・手持ちの抽選器から一件引く。searchで説明・利用条件・消費SP・代価を確認する。有料の固定表では公開版IDと代価の物品IDを指定する。固定表の管理手順はdraw.mdを参照。
 
 ```text
-gestaloka draw --target <対象ID> [--text <行動>]
+gestaloka draw --target <対象ID> [--text <行動>] [--table-version <公開版ID> --payment <物品ID>]
 ```
 
 ## contact
@@ -374,3 +374,5 @@ gestaloka recover [--request <要求ID>]
 - --help は使い方を表示する。helpと同じく接続・認可を必要としない。
 
 グラフを更新する申請の形式は [世界への申請](commands.md) を参照してください。
+
+抽選器の設定と固定表の作り方は [抽選器で遊ぶ](draw.md) を参照してください。

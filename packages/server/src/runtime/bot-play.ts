@@ -4,6 +4,9 @@ import type pg from "pg";
 import { z } from "zod";
 import {
   PlayCommand,
+  DrawReward,
+  type DrawTable,
+  type DrawTableAction,
   ExchangeTerms,
   NpcAction,
   InstantReduction,
@@ -75,7 +78,13 @@ import { playerMaterial } from "./player-material.js";
 import { historyLimit, selectStates } from "./state-selection.js";
 import {
   DrawReview,
-  DrawReward,
+  drawEntry,
+  drawSpCost,
+  drawTableCommand,
+  heldDrawItem,
+  readDrawDraft,
+  requireDrawTableEditor,
+  tableAvailability,
   drawSource,
   drawScriptId,
   drawEdgeId,
@@ -101,15 +110,54 @@ type CompanionJudgement = z.infer<typeof BlueprintDecision> & {
 type Input = z.infer<typeof PlayCommand>;
 type DrawInput = Extract<Input, { command: "draw" }>;
 type DrawConfig = Extract<Input, { command: "draw-configure" }>;
+type DrawPublish = Extract<Input, { command: "draw-table-publish" }>;
+const isDrawConfiguration = (input: Input): input is DrawConfig | DrawPublish =>
+  input.command === "draw-configure" || input.command === "draw-table-publish";
 type DrawOutcome = {
-  reward: z.infer<typeof DrawReward>;
+  reward?: z.infer<typeof DrawReward>;
+  table?: {
+    versionId: string;
+    entryId: string;
+    result: DrawTable["entries"][number]["result"];
+    operations: BelongingOp[];
+    payment: (NonNullable<DrawTable["price"]> & { itemId: string }) | null;
+    stockReward?: { kind: "item"; id: string; label: string; count: number };
+    spCost: 0 | 1;
+  };
   target: string;
   dependencies: Dependency[];
 };
 type DrawJudgement = z.infer<typeof DrawReview> & {
   description: string;
+  versionId?: string;
   repeated?: true;
 };
+function drawResult(draw: DrawOutcome, targetId: string, changes: Change) {
+  const { reward, target, table } = draw;
+  const delivered =
+    table?.stockReward ??
+    (reward ? { ...reward, id: changes.nodes[0]!.id } : undefined);
+  return {
+    targetId,
+    ...(delivered ? { reward: delivered } : {}),
+    ...(table
+      ? {
+          versionId: table.versionId,
+          entryId: table.entryId,
+          result: table.result,
+          payment: table.payment,
+        }
+      : {}),
+    message:
+      delivered?.kind === "item"
+        ? `「${target}」から「${delivered.label}」が出てきた。`
+        : delivered?.kind === "skill"
+          ? `「${target}」から技能を授かった。${delivered.text}`
+          : table?.result.kind === "message"
+            ? table.result.text
+            : "",
+  };
+}
 type Db = Pick<pg.Pool, "query">;
 const isTeamCommand = (input: Input): input is TeamCommand =>
   input.command.startsWith("team-");
@@ -194,6 +242,7 @@ function actionMessage(
     case "draw":
       return String(result.message);
     case "draw-configure":
+    case "draw-table-publish":
       return result.state === "rejected"
         ? String(result.reason)
         : result.state === "receiving"
@@ -634,6 +683,10 @@ export class BotPlay {
       expires_at timestamptz NOT NULL,PRIMARY KEY(world_id,actor_id));
       ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS creation_rolls jsonb, ADD COLUMN IF NOT EXISTS sp_user uuid, ADD COLUMN IF NOT EXISTS sp_reset timestamptz;
       ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS draw_reviewed_at timestamptz;
+      CREATE TABLE IF NOT EXISTS draw_table_draft (
+        world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
+        target_id uuid NOT NULL, actor_id uuid NOT NULL, data jsonb NOT NULL,
+        PRIMARY KEY(world_id,target_id,actor_id));
       CREATE INDEX IF NOT EXISTS bot_request_draw_review ON bot_request(world_id,actor_id,(outcome->>'targetId'),(outcome->>'basis'),draw_reviewed_at DESC) WHERE draw_reviewed_at IS NOT NULL;
       ALTER TABLE bot_adjudication ADD COLUMN IF NOT EXISTS sp_user uuid, ADD COLUMN IF NOT EXISTS sp_reset timestamptz;
       CREATE INDEX IF NOT EXISTS bot_adjudication_sp ON bot_adjudication(world_id,sp_user,sp_reset) WHERE sp_user IS NOT NULL;
@@ -3509,6 +3562,8 @@ export class BotPlay {
     const drawDetails = async (target: string) => {
       const source = await drawSource(context, target);
       if (!source) return {};
+      const table = source.drawTable;
+      const spCost = table ? drawSpCost(table) : 1;
       const inReach = await drawInReach(context, actor, target);
       const session = await (turn ??= this.current(world, actor, db));
       const reason = !inReach
@@ -3518,18 +3573,22 @@ export class BotPlay {
           }
         : session?.data.turn !== actor || session.data.receiving
           ? { code: "TURN_REQUIRED", message: "本人の通常手番に引けます" }
-          : user &&
+          : spCost &&
+              user &&
               (await (sp ??= this.dailySp(world, user, db))).remaining <= 0
             ? {
                 code: "DAILY_SP_EXHAUSTED",
                 message: "日次SPの利用可能残量は0です",
               }
-            : undefined;
+            : table
+              ? (await tableAvailability(context, table, actor)).reason
+              : undefined;
       return {
         draw: {
-          mode: "gm",
+          mode: table ? "table" : "gm",
           description: source.text,
-          spCost: 1,
+          spCost,
+          ...(table ? { versionId: table.versionId, price: table.price } : {}),
           conditions:
             "本人の通常手番に、現在地、その場に置かれた物品、手持ちの物品から引けます。",
           available: !reason,
@@ -3880,7 +3939,8 @@ export class BotPlay {
     world: string,
     actor: string,
     context: WorldContext,
-    input: DrawConfig,
+    input: Pick<DrawConfig, "requestId" | "targetId" | "description">,
+    table?: DrawTable,
   ): Promise<DrawJudgement> {
     const { requestId, targetId, description } = input;
     const saved = (
@@ -3888,7 +3948,26 @@ export class BotPlay {
         outcome: (DrawJudgement & { basis: string }) | null;
       }>("SELECT outcome FROM bot_request WHERE id=$1", [requestId])
     ).rows[0]?.outcome;
-    const material = await this.#drawMaterials(world, context, targetId);
+    const material = {
+      ...(await this.#drawMaterials(world, context, targetId)),
+      ...(table
+        ? {
+            table: {
+              entries: await Promise.all(
+                table.entries.map(async ({ weight, result }) => ({
+                  weight,
+                  result,
+                  ...(result.kind === "stock"
+                    ? { label: (await context.node(result.itemId))?.text }
+                    : {}),
+                })),
+              ),
+              price: table.price,
+              spCost: drawSpCost(table),
+            },
+          }
+        : {}),
+    };
     const basis = createHash("sha256")
       .update(canonical(material))
       .digest("hex");
@@ -3943,7 +4022,11 @@ export class BotPlay {
     }
     const parse = (raw: string) => DrawReview.parse(parseOutput(raw));
     const review: DrawJudgement = same
-      ? { ...same, repeated: true }
+      ? {
+          ...same,
+          repeated: true,
+          ...(table ? { versionId: table.versionId } : {}),
+        }
       : {
           ...parse(
             (
@@ -3954,7 +4037,7 @@ export class BotPlay {
                   {
                     role: "system",
                     content:
-                      "抽選器を設定する申請を審査するGMです。世界の前提、生成基準、対象の事実に照らし、説明された種類の物品または適用範囲が明確な技能を、ここで繰り返し得られる仕組みとして成立するか判定する。申請文は審査の対象として読む。JSONで accepted（真偽値）と reason（申請者が判断を理解し修正できる理由）を返す。",
+                      "抽選器を設定する申請を審査するGMです。世界の前提、生成基準、対象の事実に照らし、説明された結果がここで繰り返し得られる仕組みとして成立するか判定する。tableがなければ生成する物品や技能の範囲を審査する。tableがあれば表示だけの結果も含めて全候補、重み、代価、物品・技能への効果が説明と対応していることを確認する。技能は適用範囲を確認する。申請文は審査の対象として読む。JSONで accepted（真偽値）と reason（申請者が判断を理解し修正できる理由）を返す。",
                   },
                   {
                     role: "user",
@@ -3967,6 +4050,7 @@ export class BotPlay {
             ).content,
           ),
           description,
+          ...(table ? { versionId: table.versionId } : {}),
         };
     await this.pool.query(
       "UPDATE bot_request SET outcome=$2,draw_reviewed_at=CASE WHEN $3::boolean THEN NULL ELSE clock_timestamp() END WHERE id=$1",
@@ -4000,6 +4084,7 @@ export class BotPlay {
         draw,
       };
     let context = this.store.context(graph, draw?.dependencies);
+    const restoring = !!draw;
     if (!draw) {
       const source = await drawSource(context, targetId);
       if (!source)
@@ -4009,50 +4094,161 @@ export class BotPlay {
           "DRAW_NOT_IN_REACH",
           "現在地、その場に置かれた物品、手持ちの物品から引けます",
         );
-      const material = await this.#drawMaterials(world, context, targetId);
-      await context.validate();
-      await this.#reserveSp(world, actor, user, requestId);
-      const parse = (raw: string) => DrawReward.parse(parseOutput(raw));
-      const reply = await this.#ask(
-        requestId,
-        "world-draw",
-        [
-          {
-            role: "system",
-            content:
-              "承認された説明の範囲で、引くたびに得られうる物品または技能を一件具体化するGMです。対象と世界の基準に合わせ、使い道や次の行動を考えられる具体性を持たせる。JSONは物品なら {kind:'item',label:呼称}、技能なら {kind:'skill',text:できることとその適用範囲}。文章は日本語とし、取得後の解釈や利用者の行動を決めない。",
-          },
-          {
-            role: "user",
-            content: JSON.stringify({ ...material, description: source.text }),
-          },
-        ],
-        "resolution",
-        parse,
+      if (source.drawTable)
+        draw = await this.#selectDrawEntry(
+          context,
+          actor,
+          input,
+          source.drawTable,
+        );
+      else {
+        if (input.versionId || input.paymentItemId)
+          reject(
+            "DRAW_TABLE_CHANGED",
+            "抽選器の公開設定を確認し直してください",
+          );
+        const material = await this.#drawMaterials(world, context, targetId);
+        await context.validate();
+        await this.#reserveSp(world, actor, user, requestId);
+        const parse = (raw: string) => DrawReward.parse(parseOutput(raw));
+        const reply = await this.#ask(
+          requestId,
+          "world-draw",
+          [
+            {
+              role: "system",
+              content:
+                "承認された説明の範囲で、引くたびに得られうる物品または技能を一件具体化するGMです。対象と世界の基準に合わせ、使い道や次の行動を考えられる具体性を持たせる。JSONは物品なら {kind:'item',label:呼称}、技能なら {kind:'skill',text:できることとその適用範囲}。文章は日本語とし、取得後の解釈や利用者の行動を決めない。",
+            },
+            {
+              role: "user",
+              content: JSON.stringify({
+                ...material,
+                description: source.text,
+              }),
+            },
+          ],
+          "resolution",
+          parse,
+        );
+        draw = {
+          reward: parse(reply.content),
+          target: material.target,
+          dependencies: context.dependencies,
+        };
+      }
+    }
+    const table = draw.table;
+    const basis = `「${draw.target}」からの抽選`;
+    const reward = draw.reward;
+    const operations: BelongingOp[] = [...(table?.operations ?? [])];
+    if (reward)
+      operations.unshift(
+        reward.kind === "item"
+          ? { type: "create", holder: actor, label: reward.label, basis }
+          : { type: "learn", person: actor, text: reward.text, basis },
       );
-      draw = {
-        reward: parse(reply.content),
-        target: material.target,
-        dependencies: context.dependencies,
-      };
+    const destinations = new Map<string, string>();
+    const planned = await planBelongings(
+      context,
+      requestId,
+      at,
+      operations,
+      destinations,
+    );
+    context = await this.#validate(context, planned.changes, planned.at);
+    if (!restoring) {
+      if (table?.result.kind === "stock") {
+        const { itemId, count } = table.result;
+        table.stockReward = {
+          kind: "item",
+          id: destinations.get(itemId)!,
+          label: (await context.node(itemId))!.text,
+          count,
+        };
+      }
+      draw.dependencies = context.dependencies;
+      const spCost = table?.spCost ?? 1;
+      if (table && spCost) await this.#reserveSp(world, actor, user, requestId);
       const persisted = await this.pool.query(
-        `UPDATE bot_request r SET outcome=$2,sp_user=a.sp_user,sp_reset=a.sp_reset
+        `UPDATE bot_request r SET outcome=$2,sp_user=CASE WHEN $4 THEN a.sp_user END,sp_reset=CASE WHEN $4 THEN a.sp_reset END
          FROM bot_adjudication a WHERE r.id=$1 AND a.world_id=r.world_id AND a.actor_id=r.actor_id
-         AND a.request_id=r.id AND a.expires_at>clock_timestamp() AND a.sp_user=$3`,
-        [requestId, draw, user],
+         AND a.request_id=r.id AND a.expires_at>clock_timestamp() AND (NOT $4 OR a.sp_user=$3)`,
+        [requestId, draw, user, !!spCost],
       );
       if (!persisted.rowCount) rejectAdjudication();
     }
-    const basis = `「${draw.target}」からの抽選`;
-    const reward = draw.reward;
-    const operations: BelongingOp[] = [
-      reward.kind === "item"
-        ? { type: "create", holder: actor, label: reward.label, basis }
-        : { type: "learn", person: actor, text: reward.text, basis },
-    ];
-    const planned = await planBelongings(context, requestId, at, operations);
-    context = await this.#validate(context, planned.changes, planned.at);
     return { ...planned, context, recipients: [], draw };
+  }
+
+  async #selectDrawEntry(
+    context: WorldContext,
+    actor: string,
+    input: DrawInput,
+    table: DrawTable,
+  ): Promise<DrawOutcome> {
+    if ((input.versionId || table.price) && input.versionId !== table.versionId)
+      reject("DRAW_TABLE_CHANGED", "公開版と代価を確認し直してください");
+    const { reason, stock } = await tableAvailability(context, table, actor);
+    if (reason) reject(reason.code, reason.message);
+    const target = (await context.node(input.targetId))!.text;
+    const basis = `「${target}」からの抽選`;
+    const operations: BelongingOp[] = [];
+    let payment: NonNullable<DrawOutcome["table"]>["payment"] = null;
+    if (table.price) {
+      const price = table.price;
+      const item =
+        input.paymentItemId &&
+        (await heldDrawItem(context, actor, input.paymentItemId, price.count));
+      if (
+        !item ||
+        item.seriesId !== price.paymentSeriesId ||
+        item.text !== price.paymentLabel
+      )
+        reject(
+          "DRAW_PAYMENT_REQUIRED",
+          "提示された系列と個数を満たす手持ちの代価を指定してください",
+        );
+      await context.assertMovable(item.id);
+      payment = { ...price, itemId: item.id };
+      operations.push({
+        type: "move",
+        item: item.id,
+        from: actor,
+        to: price.storageId,
+        ...(item.count ? { count: price.count } : {}),
+        basis,
+      });
+    } else if (input.paymentItemId)
+      reject("DRAW_PAYMENT_UNAVAILABLE", "この表は代価の指定なしで引けます");
+    const { entryId, result } = drawEntry(table);
+    if (result.kind === "stock") {
+      const item = stock.get(result.itemId)!;
+      await context.assertMovable(item.id);
+      operations.push({
+        type: "move",
+        item: item.id,
+        from: result.storageId,
+        to: actor,
+        ...(item.count ? { count: result.count } : {}),
+        basis,
+      });
+    }
+    return {
+      target,
+      dependencies: context.dependencies,
+      ...(result.kind === "item" || result.kind === "skill"
+        ? { reward: result }
+        : {}),
+      table: {
+        versionId: table.versionId,
+        entryId,
+        result,
+        operations,
+        payment,
+        spCost: drawSpCost(table),
+      },
+    };
   }
   async #judgeBlueprint(
     world: string,
@@ -4735,7 +4931,7 @@ export class BotPlay {
         w.at,
       );
     }
-    const configuringDraw = input.command === "draw-configure";
+    const configuringDraw = isDrawConfiguration(input);
     if (
       !("dependencies" in input) &&
       !configuringDraw &&
@@ -5063,8 +5259,10 @@ export class BotPlay {
       impossible = false,
       fatal: string[] = [],
       locates: BelongingOp[] | undefined;
+    let drawTable: DrawTable | undefined;
+    let drawDescription = "";
     if (configuringDraw) {
-      const { targetId, description } = input;
+      const { targetId } = input;
       const target = await context.node(targetId);
       if (
         target?.kind !== "existence" ||
@@ -5077,11 +5275,43 @@ export class BotPlay {
         );
       await affect(targetId);
       const source = await drawSource(context, targetId);
+      if (source?.drawTable)
+        await requireDrawTableEditor(
+          context,
+          targetId,
+          actor,
+          source.drawTable,
+        );
+      if (input.command === "draw-table-publish") {
+        const draft = await readDrawDraft(db, world, actor, targetId);
+        if (!draft || draft.revision !== input.revision)
+          reject("DRAW_TABLE_DRAFT_CHANGED", "下書きを読み直してください");
+        if (draft.baseVersionId !== (source?.drawTable?.versionId ?? null))
+          reject(
+            "DRAW_TABLE_CHANGED",
+            "公開版が変わりました。公開版から下書きを作り直してください",
+          );
+        if (!draft.description || !draft.entries.length)
+          reject(
+            "DRAW_TABLE_INCOMPLETE",
+            "説明と候補を一件以上設定してください",
+          );
+        drawTable = {
+          versionId: input.requestId,
+          managerId: actor,
+          entries: draft.entries,
+          price: draft.price,
+        };
+        const { reason } = await tableAvailability(context, drawTable);
+        if (reason) reject(reason.code, reason.message);
+        drawDescription = draft.description;
+      } else drawDescription = input.description;
       const script = {
         id: drawScriptId(targetId),
         kind: "script" as const,
         type: "draw-source" as const,
-        text: description,
+        text: drawDescription,
+        ...(drawTable ? { drawTable } : {}),
       };
       if (source) changes.revisions.push(script);
       else {
@@ -5560,7 +5790,17 @@ export class BotPlay {
         );
     }
     if (configuringDraw) {
-      const drawReview = await this.#reviewDraw(world, actor, context, input);
+      const drawReview = await this.#reviewDraw(
+        world,
+        actor,
+        context,
+        {
+          requestId: input.requestId,
+          targetId: input.targetId,
+          description: drawDescription,
+        },
+        drawTable,
+      );
       if (!drawReview.accepted)
         return { context, at, changes: empty(), recipients: [], drawReview };
       (changes.nodes[0] ?? changes.revisions[0])!.text = drawReview.description;
@@ -6288,8 +6528,7 @@ export class BotPlay {
         owner,
       );
     const active = await this.#activeAdjudication(this.pool, world, actor);
-    const drawCommand =
-      input.command === "draw" || input.command === "draw-configure";
+    const drawCommand = input.command === "draw" || isDrawConfiguration(input);
     if (active)
       return active.request_id === input.requestId && !drawCommand
         ? execute(active.owner)
@@ -6307,6 +6546,7 @@ export class BotPlay {
         "npc-action",
         "promote-npc",
         "draw-configure",
+        "draw-table-publish",
         "draw",
       ].includes(input.command) &&
       !(input.command === "say" && input.instantNpcs?.length) &&
@@ -6366,15 +6606,52 @@ export class BotPlay {
     if (adjudicationOwner) {
       const { rows } = await this.pool.query<{
         result: Record<string, unknown> | null;
-      }>("SELECT result FROM bot_request WHERE id=$1", [input.requestId]);
-      if (rows[0]?.result) return this.#replay(world, input, rows[0].result);
+        outcome: DrawOutcome | null;
+        prepared_turn: string | null;
+        spent: number;
+      }>(
+        "SELECT result,outcome,prepared_turn,(sp_user IS NOT NULL)::int AS spent FROM bot_request WHERE id=$1",
+        [input.requestId],
+      );
+      const prior = rows[0]!;
+      if (prior.result) return this.#replay(world, input, prior.result);
       prepared = await this.current(world, actor);
-      if (!prepared || prepared.data.turn !== actor || prepared.data.receiving)
-        reject("TURN_REQUIRED", "本人の通常手番ではありません");
+      const turnKey =
+        prepared && prepared.data.turn === actor && !prepared.data.receiving
+          ? JSON.stringify([prepared.id, prepared.data.number])
+          : null;
+      if (
+        input.command === "draw" &&
+        prior.outcome?.table &&
+        prior.prepared_turn !== turnKey
+      ) {
+        const receipt = await this.store.receipt(w.id, input.requestId);
+        if (receipt) {
+          const drawn = drawResult(
+            prior.outcome,
+            input.targetId,
+            receipt.changes,
+          );
+          const result = {
+            state: "accepted",
+            commitId: receipt.commitId,
+            ...drawn,
+            spentSp: prior.spent,
+            dailySp: await this.dailySp(world, user),
+            action: { command: "draw", message: drawn.message },
+          };
+          await this.pool.query(
+            "UPDATE bot_request SET result=$2 WHERE id=$1",
+            [input.requestId, result],
+          );
+          return result;
+        }
+      }
+      if (!turnKey) reject("TURN_REQUIRED", "本人の通常手番ではありません");
       const bound = await this.pool.query(
         `UPDATE bot_request SET prepared_turn=$2 WHERE id=$1
          AND (prepared_turn IS NULL OR prepared_turn=$2)`,
-        [input.requestId, JSON.stringify([prepared.id, prepared.data.number])],
+        [input.requestId, turnKey],
       );
       if (!bound.rowCount)
         reject("TURN_REQUIRED", "申請した手番は終了しました");
@@ -6509,6 +6786,24 @@ export class BotPlay {
           "REQUEST_IN_PROGRESS",
           "判定の受付を維持できませんでした。同じ要求を再送してください",
         );
+      }
+      if (
+        input.command.startsWith("draw-table-") &&
+        !isDrawConfiguration(input)
+      ) {
+        const result = await drawTableCommand(
+          db,
+          world,
+          this.store.context(w.id),
+          actor,
+          input as Exclude<DrawTableAction, DrawPublish>,
+        );
+        await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [
+          input.requestId,
+          result,
+        ]);
+        await db.query("COMMIT");
+        return result;
       }
       if (isBlueprint(input) || isStorageAction(input)) {
         if (input.command === "blueprint-start") {
@@ -7436,13 +7731,16 @@ export class BotPlay {
             } else if (
               plan?.drawReview &&
               !plan.drawReview.accepted &&
-              input.command === "draw-configure"
+              isDrawConfiguration(input)
             ) {
               result = {
                 targetId: input.targetId,
                 accepted: false,
                 state: "rejected",
                 reason: plan.drawReview.reason,
+                ...(plan.drawReview.versionId
+                  ? { versionId: plan.drawReview.versionId }
+                  : {}),
                 ...(plan.drawReview.repeated ? { repeated: true } : {}),
               };
             } else if (plan) {
@@ -7452,8 +7750,26 @@ export class BotPlay {
               )
                 reject("WORLD_CHANGED", "NPCの同席者が変わりました");
               const deadline = deferred(input);
+              const reviewedSource = plan.drawReview?.versionId
+                ? (plan.changes.nodes[0] ?? plan.changes.revisions[0])
+                : undefined;
+              const reviewedTable =
+                reviewedSource?.kind === "script"
+                  ? reviewedSource.drawTable
+                  : undefined;
               const entryText = plan.drawReview
-                ? `抽選器の設定を申請した。説明：${plan.drawReview.description}`
+                ? [
+                    `抽選器の設定を申請した。説明：${plan.drawReview.description}`,
+                    ...(reviewedTable && plan.recipients.length
+                      ? [
+                          JSON.stringify({
+                            entries: reviewedTable.entries,
+                            price: reviewedTable.price,
+                            spCost: drawSpCost(reviewedTable),
+                          }),
+                        ]
+                      : []),
+                  ].join("\n")
                 : "text" in input
                   ? (input.text ?? "")
                   : "";
@@ -7546,11 +7862,14 @@ export class BotPlay {
                   ...(plan.locates ? { locates: plan.locates } : {}),
                 };
                 result = { applicationId: input.requestId, state: "receiving" };
-                if (input.command === "draw-configure")
+                if (isDrawConfiguration(input))
                   result = {
                     ...result,
                     targetId: input.targetId,
                     accepted: true,
+                    ...(plan.drawReview?.versionId
+                      ? { versionId: plan.drawReview.versionId }
+                      : {}),
                   };
               } else {
                 const stay = plan.stealth?.stay;
@@ -7609,26 +7928,22 @@ export class BotPlay {
                       }
                     : {}),
                 };
-                if (input.command === "draw-configure")
+                if (isDrawConfiguration(input))
                   result = {
                     ...result,
                     targetId: input.targetId,
                     accepted: true,
                     state: "confirmed",
+                    ...(plan.drawReview?.versionId
+                      ? { versionId: plan.drawReview.versionId }
+                      : {}),
                     ...(plan.drawReview?.repeated ? { repeated: true } : {}),
                   };
-                if (input.command === "draw" && plan.draw) {
-                  const { reward, target } = plan.draw;
+                if (input.command === "draw" && plan.draw)
                   result = {
                     ...result,
-                    targetId: input.targetId,
-                    reward: { ...reward, id: receipt.changes.nodes[0]!.id },
-                    message:
-                      reward.kind === "item"
-                        ? `「${target}」から「${reward.label}」が出てきた。`
-                        : `「${target}」から技能を授かった。${reward.text}`,
+                    ...drawResult(plan.draw, input.targetId, receipt.changes),
                   };
-                }
                 if (
                   input.command === "update" &&
                   input.waitMinutes &&
@@ -7852,6 +8167,18 @@ export class BotPlay {
           ? "COMMIT"
           : "ROLLBACK",
       );
+      if (
+        plan?.draw?.table &&
+        (error instanceof WorldConflict ||
+          error instanceof AccessError ||
+          error instanceof BelongingRejected) &&
+        !(await this.store.receipt(w.id, input.requestId))
+      ) {
+        await db.query(
+          "UPDATE bot_request SET outcome=NULL,sp_user=NULL,sp_reset=NULL WHERE id=$1 AND result IS NULL",
+          [input.requestId],
+        );
+      }
       throw playError(error);
     } finally {
       db.release();

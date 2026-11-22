@@ -34,6 +34,7 @@ for (const name of [
   "commands",
   "cli",
   "dice",
+  "draw",
   "SKILL",
 ]) {
   await writeFile(

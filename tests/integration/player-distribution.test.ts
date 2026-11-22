@@ -94,6 +94,17 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
     }
     const linked = await app.inject("/api/player-cli/setup.md");
     expect(linked.body).toBe(setup.body);
+    const draw = await app.inject(
+      `/api/player-cli/docs/${release.version}/draw.md`,
+    );
+    expect(draw.statusCode).toBe(200);
+    expect(draw.body).toContain("銅貨を受け取る福引を作る");
+    expect(draw.body).toBe(
+      await readFile(
+        join(folder, "package/skills/gestaloka-player/references/draw.md"),
+        "utf8",
+      ),
+    );
     const old = await app.inject(
       "/api/player-cli/docs/0.0.1/join.md?world=00000000-0000-4000-8000-000000000001",
     );

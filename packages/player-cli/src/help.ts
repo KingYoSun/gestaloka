@@ -31,6 +31,7 @@ export const playerOptions = {
   "deferred-until": { type: "string" },
   offer: { type: "string" },
   payment: { type: "string" },
+  "table-version": { type: "string" },
   request: { type: "string" },
   icon: { type: "string" },
   character: { type: "string" },
@@ -113,8 +114,8 @@ const commands = {
     "既存の場所・物品を抽選器にする申請。得られる結果の範囲を説明する。GMの審査は0 SP。必要な受領がそろうと公開される。",
   ],
   draw: [
-    "--target <対象ID> [--text <行動>]",
-    "本人の通常手番に、現在地・現地に置かれた物品・手持ちの抽選器から一件引く。searchで説明・利用条件・消費を確認できる。1 SP。",
+    "--target <対象ID> [--text <行動>] [--table-version <公開版ID> --payment <物品ID>]",
+    "本人の通常手番に、現在地・現地に置かれた物品・手持ちの抽選器から一件引く。searchで説明・利用条件・消費SP・代価を確認する。有料の固定表では公開版IDと代価の物品IDを指定する。固定表の管理手順はdraw.mdを参照。",
   ],
   contact: [
     "--target <人物ID>",
@@ -252,6 +253,7 @@ export function commandGuide() {
     "## 共通オプション",
     common.map((option) => `- ${option}`).join("\n"),
     "グラフを更新する申請の形式は [世界への申請](commands.md) を参照してください。",
+    "抽選器の設定と固定表の作り方は [抽選器で遊ぶ](draw.md) を参照してください。",
     "",
   ].join("\n\n");
 }

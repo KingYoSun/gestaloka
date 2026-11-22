@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DrawTable } from "./draw.js";
 
 const Time = z.number().int().nonnegative().safe();
 const Period = z
@@ -109,10 +110,15 @@ export const WorldNode = z.discriminatedUnion("kind", [
       ...Content,
       kind: z.literal("script"),
       type: z.enum(["memo", "draw-source"]).optional(),
+      drawTable: DrawTable.optional(),
       spawn: SpawnRule.optional(),
       viewers,
     })
-    .strict(),
+    .strict()
+    .refine(
+      (node) => !node.drawTable || node.type === "draw-source",
+      "固定表は抽選器に指定してください",
+    ),
   z
     .object({
       ...Content,

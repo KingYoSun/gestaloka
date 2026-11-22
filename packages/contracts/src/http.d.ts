@@ -2518,6 +2518,90 @@ export interface paths {
                     "application/json": {
                         /** Format: uuid */
                         requestId: string;
+                        /** Format: uuid */
+                        targetId: string;
+                        /** @enum {string} */
+                        command: "draw-table-edit";
+                        fromPublished?: boolean;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        targetId: string;
+                        /** @enum {string} */
+                        command: "draw-table-show";
+                        /** @enum {string} */
+                        view: "draft" | "published";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        targetId: string;
+                        revision: number;
+                        /** @enum {string} */
+                        command: "draw-table-settings";
+                        description: string;
+                        price: {
+                            /** Format: uuid */
+                            storageId: string;
+                            /** Format: uuid */
+                            paymentSeriesId: string;
+                            paymentLabel: string;
+                            count: number;
+                        } | null;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        targetId: string;
+                        revision: number;
+                        /** @enum {string} */
+                        command: "draw-table-put";
+                        /** Format: uuid */
+                        entryId?: string;
+                        weight?: number;
+                        result: {
+                            /** @enum {string} */
+                            kind: "item";
+                            label: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "skill";
+                            text: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "message";
+                            text: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "stock";
+                            /** Format: uuid */
+                            storageId: string;
+                            /** Format: uuid */
+                            itemId: string;
+                            count: number;
+                        };
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        targetId: string;
+                        revision: number;
+                        /** @enum {string} */
+                        command: "draw-table-remove";
+                        /** Format: uuid */
+                        entryId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        targetId: string;
+                        revision: number;
+                        /** @enum {string} */
+                        command: "draw-table-publish";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
                         /** @enum {string} */
                         command: "storage-list";
                         /** Format: uuid */
@@ -2735,6 +2819,10 @@ export interface paths {
                         command: "draw";
                         /** Format: uuid */
                         targetId: string;
+                        /** Format: uuid */
+                        versionId?: string;
+                        /** Format: uuid */
+                        paymentItemId?: string;
                         /** @description 同席者に伝える行動の描写 */
                         text?: string;
                     } | {
@@ -2946,6 +3034,46 @@ export interface paths {
                                 kind: "script";
                                 /** @enum {string} */
                                 type?: "memo" | "draw-source";
+                                drawTable?: {
+                                    /** Format: uuid */
+                                    versionId: string;
+                                    /** Format: uuid */
+                                    managerId: string;
+                                    entries: {
+                                        /** Format: uuid */
+                                        entryId: string;
+                                        weight: number;
+                                        result: {
+                                            /** @enum {string} */
+                                            kind: "item";
+                                            label: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "skill";
+                                            text: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "message";
+                                            text: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "stock";
+                                            /** Format: uuid */
+                                            storageId: string;
+                                            /** Format: uuid */
+                                            itemId: string;
+                                            count: number;
+                                        };
+                                    }[];
+                                    price: {
+                                        /** Format: uuid */
+                                        storageId: string;
+                                        /** Format: uuid */
+                                        paymentSeriesId: string;
+                                        paymentLabel: string;
+                                        count: number;
+                                    } | null;
+                                };
                                 spawn?: {
                                     /** @enum {string} */
                                     kind: "instant-npc" | "existence" | "script" | "event";
@@ -3037,6 +3165,46 @@ export interface paths {
                                 kind: "script";
                                 /** @enum {string} */
                                 type?: "memo" | "draw-source";
+                                drawTable?: {
+                                    /** Format: uuid */
+                                    versionId: string;
+                                    /** Format: uuid */
+                                    managerId: string;
+                                    entries: {
+                                        /** Format: uuid */
+                                        entryId: string;
+                                        weight: number;
+                                        result: {
+                                            /** @enum {string} */
+                                            kind: "item";
+                                            label: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "skill";
+                                            text: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "message";
+                                            text: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "stock";
+                                            /** Format: uuid */
+                                            storageId: string;
+                                            /** Format: uuid */
+                                            itemId: string;
+                                            count: number;
+                                        };
+                                    }[];
+                                    price: {
+                                        /** Format: uuid */
+                                        storageId: string;
+                                        /** Format: uuid */
+                                        paymentSeriesId: string;
+                                        paymentLabel: string;
+                                        count: number;
+                                    } | null;
+                                };
                                 spawn?: {
                                     /** @enum {string} */
                                     kind: "instant-npc" | "existence" | "script" | "event";
@@ -3201,6 +3369,46 @@ export interface paths {
                                 kind: "script";
                                 /** @enum {string} */
                                 type?: "memo" | "draw-source";
+                                drawTable?: {
+                                    /** Format: uuid */
+                                    versionId: string;
+                                    /** Format: uuid */
+                                    managerId: string;
+                                    entries: {
+                                        /** Format: uuid */
+                                        entryId: string;
+                                        weight: number;
+                                        result: {
+                                            /** @enum {string} */
+                                            kind: "item";
+                                            label: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "skill";
+                                            text: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "message";
+                                            text: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "stock";
+                                            /** Format: uuid */
+                                            storageId: string;
+                                            /** Format: uuid */
+                                            itemId: string;
+                                            count: number;
+                                        };
+                                    }[];
+                                    price: {
+                                        /** Format: uuid */
+                                        storageId: string;
+                                        /** Format: uuid */
+                                        paymentSeriesId: string;
+                                        paymentLabel: string;
+                                        count: number;
+                                    } | null;
+                                };
                                 spawn?: {
                                     /** @enum {string} */
                                     kind: "instant-npc" | "existence" | "script" | "event";
@@ -3292,6 +3500,46 @@ export interface paths {
                                 kind: "script";
                                 /** @enum {string} */
                                 type?: "memo" | "draw-source";
+                                drawTable?: {
+                                    /** Format: uuid */
+                                    versionId: string;
+                                    /** Format: uuid */
+                                    managerId: string;
+                                    entries: {
+                                        /** Format: uuid */
+                                        entryId: string;
+                                        weight: number;
+                                        result: {
+                                            /** @enum {string} */
+                                            kind: "item";
+                                            label: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "skill";
+                                            text: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "message";
+                                            text: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "stock";
+                                            /** Format: uuid */
+                                            storageId: string;
+                                            /** Format: uuid */
+                                            itemId: string;
+                                            count: number;
+                                        };
+                                    }[];
+                                    price: {
+                                        /** Format: uuid */
+                                        storageId: string;
+                                        /** Format: uuid */
+                                        paymentSeriesId: string;
+                                        paymentLabel: string;
+                                        count: number;
+                                    } | null;
+                                };
                                 spawn?: {
                                     /** @enum {string} */
                                     kind: "instant-npc" | "existence" | "script" | "event";
@@ -3430,6 +3678,46 @@ export interface paths {
                                     kind: "script";
                                     /** @enum {string} */
                                     type?: "memo" | "draw-source";
+                                    drawTable?: {
+                                        /** Format: uuid */
+                                        versionId: string;
+                                        /** Format: uuid */
+                                        managerId: string;
+                                        entries: {
+                                            /** Format: uuid */
+                                            entryId: string;
+                                            weight: number;
+                                            result: {
+                                                /** @enum {string} */
+                                                kind: "item";
+                                                label: string;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "skill";
+                                                text: string;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "message";
+                                                text: string;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "stock";
+                                                /** Format: uuid */
+                                                storageId: string;
+                                                /** Format: uuid */
+                                                itemId: string;
+                                                count: number;
+                                            };
+                                        }[];
+                                        price: {
+                                            /** Format: uuid */
+                                            storageId: string;
+                                            /** Format: uuid */
+                                            paymentSeriesId: string;
+                                            paymentLabel: string;
+                                            count: number;
+                                        } | null;
+                                    };
                                     spawn?: {
                                         /** @enum {string} */
                                         kind: "instant-npc" | "existence" | "script" | "event";
@@ -3521,6 +3809,46 @@ export interface paths {
                                     kind: "script";
                                     /** @enum {string} */
                                     type?: "memo" | "draw-source";
+                                    drawTable?: {
+                                        /** Format: uuid */
+                                        versionId: string;
+                                        /** Format: uuid */
+                                        managerId: string;
+                                        entries: {
+                                            /** Format: uuid */
+                                            entryId: string;
+                                            weight: number;
+                                            result: {
+                                                /** @enum {string} */
+                                                kind: "item";
+                                                label: string;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "skill";
+                                                text: string;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "message";
+                                                text: string;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "stock";
+                                                /** Format: uuid */
+                                                storageId: string;
+                                                /** Format: uuid */
+                                                itemId: string;
+                                                count: number;
+                                            };
+                                        }[];
+                                        price: {
+                                            /** Format: uuid */
+                                            storageId: string;
+                                            /** Format: uuid */
+                                            paymentSeriesId: string;
+                                            paymentLabel: string;
+                                            count: number;
+                                        } | null;
+                                    };
                                     spawn?: {
                                         /** @enum {string} */
                                         kind: "instant-npc" | "existence" | "script" | "event";
@@ -3846,6 +4174,46 @@ export interface paths {
                                 kind: "script";
                                 /** @enum {string} */
                                 type?: "memo" | "draw-source";
+                                drawTable?: {
+                                    /** Format: uuid */
+                                    versionId: string;
+                                    /** Format: uuid */
+                                    managerId: string;
+                                    entries: {
+                                        /** Format: uuid */
+                                        entryId: string;
+                                        weight: number;
+                                        result: {
+                                            /** @enum {string} */
+                                            kind: "item";
+                                            label: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "skill";
+                                            text: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "message";
+                                            text: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "stock";
+                                            /** Format: uuid */
+                                            storageId: string;
+                                            /** Format: uuid */
+                                            itemId: string;
+                                            count: number;
+                                        };
+                                    }[];
+                                    price: {
+                                        /** Format: uuid */
+                                        storageId: string;
+                                        /** Format: uuid */
+                                        paymentSeriesId: string;
+                                        paymentLabel: string;
+                                        count: number;
+                                    } | null;
+                                };
                                 spawn?: {
                                     /** @enum {string} */
                                     kind: "instant-npc" | "existence" | "script" | "event";
@@ -3937,6 +4305,46 @@ export interface paths {
                                 kind: "script";
                                 /** @enum {string} */
                                 type?: "memo" | "draw-source";
+                                drawTable?: {
+                                    /** Format: uuid */
+                                    versionId: string;
+                                    /** Format: uuid */
+                                    managerId: string;
+                                    entries: {
+                                        /** Format: uuid */
+                                        entryId: string;
+                                        weight: number;
+                                        result: {
+                                            /** @enum {string} */
+                                            kind: "item";
+                                            label: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "skill";
+                                            text: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "message";
+                                            text: string;
+                                        } | {
+                                            /** @enum {string} */
+                                            kind: "stock";
+                                            /** Format: uuid */
+                                            storageId: string;
+                                            /** Format: uuid */
+                                            itemId: string;
+                                            count: number;
+                                        };
+                                    }[];
+                                    price: {
+                                        /** Format: uuid */
+                                        storageId: string;
+                                        /** Format: uuid */
+                                        paymentSeriesId: string;
+                                        paymentLabel: string;
+                                        count: number;
+                                    } | null;
+                                };
                                 spawn?: {
                                     /** @enum {string} */
                                     kind: "instant-npc" | "existence" | "script" | "event";
@@ -4483,6 +4891,46 @@ export interface paths {
                                             kind: "script";
                                             /** @enum {string} */
                                             type?: "memo" | "draw-source";
+                                            drawTable?: {
+                                                /** Format: uuid */
+                                                versionId: string;
+                                                /** Format: uuid */
+                                                managerId: string;
+                                                entries: {
+                                                    /** Format: uuid */
+                                                    entryId: string;
+                                                    weight: number;
+                                                    result: {
+                                                        /** @enum {string} */
+                                                        kind: "item";
+                                                        label: string;
+                                                    } | {
+                                                        /** @enum {string} */
+                                                        kind: "skill";
+                                                        text: string;
+                                                    } | {
+                                                        /** @enum {string} */
+                                                        kind: "message";
+                                                        text: string;
+                                                    } | {
+                                                        /** @enum {string} */
+                                                        kind: "stock";
+                                                        /** Format: uuid */
+                                                        storageId: string;
+                                                        /** Format: uuid */
+                                                        itemId: string;
+                                                        count: number;
+                                                    };
+                                                }[];
+                                                price: {
+                                                    /** Format: uuid */
+                                                    storageId: string;
+                                                    /** Format: uuid */
+                                                    paymentSeriesId: string;
+                                                    paymentLabel: string;
+                                                    count: number;
+                                                } | null;
+                                            };
                                             spawn?: {
                                                 /** @enum {string} */
                                                 kind: "instant-npc" | "existence" | "script" | "event";
@@ -4574,6 +5022,46 @@ export interface paths {
                                             kind: "script";
                                             /** @enum {string} */
                                             type?: "memo" | "draw-source";
+                                            drawTable?: {
+                                                /** Format: uuid */
+                                                versionId: string;
+                                                /** Format: uuid */
+                                                managerId: string;
+                                                entries: {
+                                                    /** Format: uuid */
+                                                    entryId: string;
+                                                    weight: number;
+                                                    result: {
+                                                        /** @enum {string} */
+                                                        kind: "item";
+                                                        label: string;
+                                                    } | {
+                                                        /** @enum {string} */
+                                                        kind: "skill";
+                                                        text: string;
+                                                    } | {
+                                                        /** @enum {string} */
+                                                        kind: "message";
+                                                        text: string;
+                                                    } | {
+                                                        /** @enum {string} */
+                                                        kind: "stock";
+                                                        /** Format: uuid */
+                                                        storageId: string;
+                                                        /** Format: uuid */
+                                                        itemId: string;
+                                                        count: number;
+                                                    };
+                                                }[];
+                                                price: {
+                                                    /** Format: uuid */
+                                                    storageId: string;
+                                                    /** Format: uuid */
+                                                    paymentSeriesId: string;
+                                                    paymentLabel: string;
+                                                    count: number;
+                                                } | null;
+                                            };
                                             spawn?: {
                                                 /** @enum {string} */
                                                 kind: "instant-npc" | "existence" | "script" | "event";
@@ -7068,6 +7556,46 @@ export interface paths {
                                     kind: "script";
                                     /** @enum {string} */
                                     type?: "memo" | "draw-source";
+                                    drawTable?: {
+                                        /** Format: uuid */
+                                        versionId: string;
+                                        /** Format: uuid */
+                                        managerId: string;
+                                        entries: {
+                                            /** Format: uuid */
+                                            entryId: string;
+                                            weight: number;
+                                            result: {
+                                                /** @enum {string} */
+                                                kind: "item";
+                                                label: string;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "skill";
+                                                text: string;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "message";
+                                                text: string;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "stock";
+                                                /** Format: uuid */
+                                                storageId: string;
+                                                /** Format: uuid */
+                                                itemId: string;
+                                                count: number;
+                                            };
+                                        }[];
+                                        price: {
+                                            /** Format: uuid */
+                                            storageId: string;
+                                            /** Format: uuid */
+                                            paymentSeriesId: string;
+                                            paymentLabel: string;
+                                            count: number;
+                                        } | null;
+                                    };
                                     spawn?: {
                                         /** @enum {string} */
                                         kind: "instant-npc" | "existence" | "script" | "event";
@@ -7159,6 +7687,46 @@ export interface paths {
                                     kind: "script";
                                     /** @enum {string} */
                                     type?: "memo" | "draw-source";
+                                    drawTable?: {
+                                        /** Format: uuid */
+                                        versionId: string;
+                                        /** Format: uuid */
+                                        managerId: string;
+                                        entries: {
+                                            /** Format: uuid */
+                                            entryId: string;
+                                            weight: number;
+                                            result: {
+                                                /** @enum {string} */
+                                                kind: "item";
+                                                label: string;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "skill";
+                                                text: string;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "message";
+                                                text: string;
+                                            } | {
+                                                /** @enum {string} */
+                                                kind: "stock";
+                                                /** Format: uuid */
+                                                storageId: string;
+                                                /** Format: uuid */
+                                                itemId: string;
+                                                count: number;
+                                            };
+                                        }[];
+                                        price: {
+                                            /** Format: uuid */
+                                            storageId: string;
+                                            /** Format: uuid */
+                                            paymentSeriesId: string;
+                                            paymentLabel: string;
+                                            count: number;
+                                        } | null;
+                                    };
                                     spawn?: {
                                         /** @enum {string} */
                                         kind: "instant-npc" | "existence" | "script" | "event";
