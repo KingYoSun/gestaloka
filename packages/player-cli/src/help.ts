@@ -78,7 +78,7 @@ const commands = {
   ],
   vehicle: [
     "<board|leave|request-control|travel> --target <乗り物ID> [--place <移動先ID>] [--oppose] [--application <申請ID>]",
-    "周囲の検索で見つけた乗り物に乗ると、降りるまで乗り物と一緒に移動します。boardで乗り、leaveで現在地に降ります。request-controlで専用の操縦権を申請し、travelで移動先を指定します。自分のコンパニオンは既存の同行関係で動かせます。所持者・現操縦者・乗り物のNPC本人に対抗する場合は--opposeを指定します。NPCの承認を受けた申請の続きには--applicationで申請IDを渡します。",
+    "周囲の検索で見つけた乗り物に乗ると、降りるまで乗り物と一緒に移動します。boardで乗り、leaveで現在地に降ります。request-controlで専用の操縦権を申請し、travelで移動先を指定します。自分のコンパニオンは既存の同行関係で動かせます。所持者・現操縦者・乗り物のNPC本人に対抗する場合は--opposeを指定します。NPCの承認を受けた申請の続きには--applicationで申請IDを渡します。設定の申請と操作例は[乗り物の設定・乗降・操縦](vehicles.md)を参照してください。",
     "vehicle travel --target <乗り物ID> --place <移動先ID>",
   ],
   status: [
