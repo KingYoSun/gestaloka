@@ -379,7 +379,7 @@ export const PlayCommand = z.discriminatedUnion("command", [
   z
     .object({
       ...request,
-      command: z.enum(["companion-request", "companion-order"]),
+      command: z.literal("companion-request"),
       targetId: id,
       text,
     })

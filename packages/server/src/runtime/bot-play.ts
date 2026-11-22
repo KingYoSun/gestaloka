@@ -3626,12 +3626,8 @@ export class BotPlay {
         "MATERIAL_NOT_AVAILABLE",
         "本人へ提供されている対象を指定してください",
       );
-    const companions =
-      query.kind === "self"
-        ? await this.companions.self(db, world, context, actor)
-        : {};
     await context.validate();
-    return { visible: { ...visible, ...companions }, context };
+    return { visible, context };
   }
   async #physicalStates(
     context: WorldContext,

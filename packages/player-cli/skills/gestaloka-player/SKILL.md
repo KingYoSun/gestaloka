@@ -115,7 +115,9 @@ SSEを保持できない環境では、代替として軽量な在席フック�
 
 NPCに付いてきてもらうには、同じセッションにいるユニークNPCに`companion request --target <NPCのID> --text <頼み方>`で同行を頼む。本人の通常手番に1 SPを使う。GMは、二人の記録と最近の出来事から、相手が本人に好意を持っているか、同行する理由があるかを判断する。頼み方の文だけでは理由にならないので、先に話して関係を作っておく。却下されたら、同じ手番に言い換えて頼み直しても同じ結果が返る。出現個体は先に昇格させる。companionは3体まで持て、1体のNPCは1人のcompanionにしかなれない。
 
-同行が成立したNPCは、本人が`update`の`locate`で移動すると一緒に移る（`companion follow`）。`companion wait`でその場に残し、`companion move --place <場所ID>`で指定の場所へ、`companion return`で`companion home --place <場所ID>`で決めた帰る場所へ向かわせる。moveとreturnは本人の通常手番に確定し、NPCの受領判断は要らない。`companion order --text <指示>`の指示はNPCの自己照会に載るが、応じるかどうかはNPCが決める。`companion status`で一覧と居場所を確かめ、`companion dismiss`で関係を終える。
+同行が成立したNPCは、本人が`update`の`locate`で移動すると一緒に移る（`companion follow`）。`companion wait`でその場に残し、`companion move --place <場所ID>`で指定の場所へ、`companion return`で`companion home --place <場所ID>`で決めた帰る場所へ向かわせる。moveとreturnは本人の通常手番に確定し、NPCの受領判断は要らない。`companion status`で一覧と居場所を確かめ、`companion dismiss`で関係を終える。
+
+companionはプレイヤーと離れて自立して行動することはできない。本人が選べるのは、付いてくるか（follow）、その場に残るか（wait）、どこへ移るか（move・return）だけで、その場で何を話し、何をするかはNPC本人が決める。頼みたいことは、同じ場所で`say`で話しかける。
 
 `leave`は同じ人物のシーンを保ってセッションを分離し、`finish`は本人だけのシーンを終了する。他の人物の終了を待つ必要はない。合流前の私的な履歴が相手へ届いたと想定しない。
 

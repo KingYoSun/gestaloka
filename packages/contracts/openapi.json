@@ -6807,8 +6807,7 @@
                       "command": {
                         "type": "string",
                         "enum": [
-                          "companion-request",
-                          "companion-order"
+                          "companion-request"
                         ]
                       },
                       "targetId": {

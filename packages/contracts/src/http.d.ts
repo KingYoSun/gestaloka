@@ -2780,7 +2780,7 @@ export interface paths {
                         /** Format: uuid */
                         requestId: string;
                         /** @enum {string} */
-                        command: "companion-request" | "companion-order";
+                        command: "companion-request";
                         /** Format: uuid */
                         targetId: string;
                         text: string;

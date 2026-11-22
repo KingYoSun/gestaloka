@@ -9348,7 +9348,7 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
   expect((await waiting()).noticeKey).toBeNull();
 });
 
-test("GMが同行を認めたユニークNPCは、本人の移動に付いてきて、待機・移動・帰還・指示・解除を本人が選べる", async () => {
+test("GMが同行を認めたユニークNPCは、本人の移動に付いてきて、待機・移動・帰還・解除を本人が選べる", async () => {
   const f = await fixture(),
     db = isolated.databases.postgres,
     model = runtime.agent.model,
@@ -9472,21 +9472,6 @@ test("GMが同行を認めたユニークNPCは、本人の移動に付いてき
   });
   expect(await directPlaces(ctx(), npc)).toEqual([f.far]);
 
-  // 指示は、NPCの自己照会に最新の指示として出る。
-  await f.send(0, {
-    command: "companion-order",
-    targetId: npc,
-    text: "橋を見張っていて",
-  });
-  expect(
-    await access.botPlay.search(f.world, npc, { kind: "self" }),
-  ).toMatchObject({
-    companionOf: { actorId: player, mode: "wait", order: "橋を見張っていて" },
-  });
-  expect(
-    await access.botPlay.search(f.world, player, { kind: "self" }),
-  ).toMatchObject({ companions: [{ targetId: npc }] });
-
   // 解除すると一覧とグラフの関係が終わり、移動させられなくなる。
   expect(
     (await f.send(0, { command: "companion-dismiss", targetId: npc }))
@@ -9516,7 +9501,7 @@ test("GMが同行を認めたユニークNPCは、本人の移動に付いてき
   expect(judged()).toBe(2);
 });
 
-test("CLIのcompanionは操作ごとに対象・場所・指示を送り、一覧を返す", async () => {
+test("CLIのcompanionは操作ごとに対象と場所を送り、一覧を返す", async () => {
   const f = await fixture(),
     db = isolated.databases.postgres,
     npc = f.actors[1]!;
@@ -9554,16 +9539,14 @@ test("CLIのcompanionは操作ごとに対象・場所・指示を送り、一�
       result: { companions: [{ name: "人物1", mode: "follow" }] },
     });
     await run("companion", "wait", "--target", npc);
-    await run("companion", "home", "--target", npc, "--place", f.place);
     expect(
-      await run("companion", "order", "--target", npc, "--text", "待っていて"),
+      await run("companion", "home", "--target", npc, "--place", f.place),
     ).toMatchObject({
       result: {
         companions: [
           {
             name: "人物1",
             mode: "wait",
-            order: "待っていて",
             homeId: expect.stringMatching(/^@[a-f0-9]+$/),
           },
         ],

@@ -720,7 +720,6 @@ async function run() {
             "return",
             "move",
             "home",
-            "order",
             "dismiss",
             "status",
           ]
@@ -760,7 +759,7 @@ async function run() {
             ? { placeId: values.place }
             : {}),
           ...(["say", "comment", "memo", "explore"].includes(command) ||
-          (command === "companion" && ["request", "order"].includes(action!))
+          (command === "companion" && action === "request")
             ? {
                 text: values.file
                   ? await readFile(values.file, "utf8")

@@ -15,7 +15,6 @@ type Companion = {
   npc_id: string;
   actor_id: string;
   mode: "follow" | "wait";
-  order_text: string | null;
 };
 
 const latest = Number.MAX_SAFE_INTEGER,
@@ -65,14 +64,14 @@ const described = (
 };
 
 // プレイヤーに付いてくるNPC（ADR-076）。関係そのものは共有グラフのstatusに置き、
-// 追従か待機か・最新の指示と、プレイヤーとNPCの双方からの索引をこの表に置く。
+// 追従か待機かと、プレイヤーとNPCの双方からの索引をこの表に置く。
 export class PlayCompanions {
   async setup(db: Db) {
     await db.query(`CREATE TABLE IF NOT EXISTS bot_companion (
       world_id uuid NOT NULL REFERENCES world_construction(id),
       npc_id uuid NOT NULL, actor_id uuid NOT NULL,
       mode text NOT NULL DEFAULT 'follow' CHECK(mode IN ('follow','wait')),
-      order_text text, PRIMARY KEY(world_id,npc_id));
+      PRIMARY KEY(world_id,npc_id));
       CREATE INDEX IF NOT EXISTS bot_companion_actor ON bot_companion(world_id,actor_id);`);
   }
 
@@ -213,13 +212,6 @@ export class PlayCompanions {
             : "その場で待つようにしました";
         break;
       }
-      case "companion-order":
-        await db.query(
-          "UPDATE bot_companion SET order_text=$3 WHERE world_id=$1 AND npc_id=$2",
-          [world, npc, input.text],
-        );
-        message = "指示を伝えました。応じるかどうかは本人が決めます";
-        break;
       case "companion-home": {
         const place = await context.node(input.placeId);
         if (place?.kind !== "existence")
@@ -287,25 +279,8 @@ export class PlayCompanions {
           mode: row.mode,
           ...(placeId ? { placeId } : {}),
           ...(homeId ? { homeId } : {}),
-          ...(row.order_text ? { order: row.order_text } : {}),
         };
       }),
     );
-  }
-
-  // 自己照会に載せる情報。プレイヤーには自分のcompanion、NPCには同行先と最新の指示。
-  async self(db: Db, world: string, context: WorldContext, actor: string) {
-    const row = await this.#of(db, world, actor);
-    if (row)
-      return {
-        companionOf: {
-          actorId: row.actor_id,
-          name: (await context.node(row.actor_id))?.text ?? "人物",
-          mode: row.mode,
-          ...(row.order_text ? { order: row.order_text } : {}),
-        },
-      };
-    const companions = await this.list(db, world, context, actor);
-    return companions.length ? { companions } : {};
   }
 }
