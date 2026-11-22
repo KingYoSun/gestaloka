@@ -238,6 +238,7 @@ function actionMessage(
     case "receive": {
       const application = result.application as {
         state: string;
+        pending?: number;
         code?: string;
         message?: string;
       };
@@ -247,7 +248,9 @@ function actionMessage(
           ? "あなたの却下を受け付け、申請は却下されました"
           : "あなたの却下を受け付けました。あなたは移動しません";
       return application.state === "waiting"
-        ? `あなたの承認を受け付けました。申請は${owner?.name ?? "次の受領者"}の判断待ちです`
+        ? application.pending === undefined
+          ? `あなたの承認を受け付けました。申請は${owner?.name ?? "次の受領者"}の判断待ちです`
+          : `あなたの承認を受け付けました。あと${application.pending}人の回答を待っています`
         : "あなたの承認を受け付け、申請は確定しました";
     }
     case "promote-npc":
@@ -367,6 +370,7 @@ type SessionStatus = {
     sender: string;
     recipients: string[];
     deadline: string;
+    progress?: { approved: number; declined: number; pending: number };
     text?: string;
     changes?: Change;
   } | null;
@@ -432,6 +436,7 @@ export type Session = {
       locates?: BelongingOp[];
       mixedMoves?: Locate[];
       declined?: string[];
+      parallel?: { departAloneOnTimeout: boolean };
       vehicleControl?: VehicleApplication;
     };
   };
@@ -468,10 +473,18 @@ function deciding(session: Session, actors: string[]) {
   );
 }
 
-function turnOwner(data: Session["data"]) {
+type Receipt = NonNullable<Session["data"]["receiving"]>;
+
+function awaitingReceipt(receipt: Receipt, actor: string) {
+  return receipt.recipients.includes(actor) && !receipt.decided.includes(actor);
+}
+
+function turnOwner(data: Session["data"], viewer?: string) {
   const receipt = data.receiving;
   return receipt
-    ? receipt.recipients.find((id) => !receipt.decided.includes(id))
+    ? receipt.parallel && viewer && awaitingReceipt(receipt, viewer)
+      ? viewer
+      : receipt.recipients.find((id) => !receipt.decided.includes(id))
     : data.turn;
 }
 function turnState(session: Session) {
@@ -484,6 +497,7 @@ function turnState(session: Session) {
     transition: session.data.lastTransitionId,
     awayUntil: session.data.awayUntil,
     used: session.data.used,
+    decisions: session.data.receiving?.decided.length,
     comment: session.data.comment,
     key: JSON.stringify([
       session.id,
@@ -924,7 +938,7 @@ export class BotPlay {
     if (!session) return { ...base, state: "standby" };
     const d = session.data,
       r = d.receiving,
-      current = turnOwner(d);
+      current = turnOwner(d, actor);
     const turn = {
       sessionId: session.id,
       turn: d.number,
@@ -932,7 +946,11 @@ export class BotPlay {
         ? { context: await this.#wakeContext(db, session, actor) }
         : {}),
     };
-    if (current !== actor || d.parked)
+    if (
+      current !== actor ||
+      d.parked ||
+      (r && Date.parse(r.deadline) <= now.getTime())
+    )
       return {
         ...base,
         state: "standby",
@@ -946,7 +964,7 @@ export class BotPlay {
             d.number,
             actor,
             r?.id ?? "normal",
-            d.wakeRevision ?? 0,
+            r?.parallel ? 0 : (d.wakeRevision ?? 0),
             presence.generation,
           ]),
         )
@@ -1943,6 +1961,7 @@ export class BotPlay {
       session.data.wakeRevision = (session.data.wakeRevision ?? 0) + 1;
     }
     const feedChanged =
+      before.decisions !== after.decisions ||
       before.transition !== after.transition ||
       before.awayUntil !== after.awayUntil;
     if (wakeChanged || feedChanged)
@@ -2503,6 +2522,47 @@ export class BotPlay {
     return changed;
   }
 
+  async #afterMoves(
+    db: Db,
+    world: string,
+    context: WorldContext,
+    requestId: string,
+    changes?: Change,
+    stealthActor?: string,
+  ) {
+    const movedActors =
+      changes?.edges.flatMap((edge) =>
+        edge.kind === "status" &&
+        edge.role === "content" &&
+        edge.text === "location"
+          ? [edge.source]
+          : [],
+      ) ?? [];
+    const affected = new Set(movedActors);
+    if (!changes || !movedActors.length)
+      return { movedActors, affected, ended: new Map<string, number>() };
+    await db.query(
+      "DELETE FROM bot_stealth WHERE world_id=$1 AND actor_id=ANY($2::uuid[]) AND actor_id IS DISTINCT FROM $3::uuid",
+      [world, movedActors, stealthActor ?? null],
+    );
+    // 乗客が増減すると、乗り物自身の会話の場所も切り替わる。
+    const endedEdges = await Promise.all(
+      changes.endEdges.map((id) => context.edge(id)),
+    );
+    const places = new Set(
+      [...changes.edges, ...endedEdges].flatMap((edge) =>
+        edge?.kind === "status" &&
+        edge.role === "about" &&
+        edge.text === "direct-place"
+          ? [edge.target]
+          : [],
+      ),
+    );
+    for (const place of places)
+      if (await isVehicle(context, place)) affected.add(place);
+    const ended = await this.#settlePlaces(db, world, [...affected], requestId);
+    return { movedActors, affected, ended };
+  }
   // 所在を変えた人物が別のセッションにいても、次の発言より前に出発側の同席を解く。
   async #settlePlaces(
     db: Db,
@@ -2711,6 +2771,12 @@ export class BotPlay {
     const state =
       outcome === "expired" || outcome === "cancelled" ? "failed" : outcome;
     const recipient = turnOwner(session.data);
+    const pending = r.parallel
+      ? r.recipients.filter((id) => awaitingReceipt(r, id))
+      : recipient
+        ? [recipient]
+        : [];
+    const unanswered = extra.unanswered as string[] | undefined;
     if (state === "failed") {
       await this.#record(db, session, {
         applicationId: r.id,
@@ -2722,7 +2788,12 @@ export class BotPlay {
         senderId: r.sender,
         recipientIds: r.recipients,
         deadline: r.deadline,
-        ...(outcome === "expired" ? { decisionHolderId: recipient } : {}),
+        ...(outcome === "expired"
+          ? {
+              decisionHolderId: recipient,
+              ...(r.parallel ? { pendingRecipientIds: pending } : {}),
+            }
+          : {}),
       });
     }
     const entry = session.data.entries.find((e) => e.applicationId === r.id)!;
@@ -2755,6 +2826,7 @@ export class BotPlay {
       turn: session.data.number,
       at: this.now().toISOString(),
       ...(typeof extra.code === "string" ? { code: extra.code } : {}),
+      ...(unanswered?.length ? { unanswered } : {}),
       message:
         typeof extra.message === "string"
           ? extra.message
@@ -2796,23 +2868,156 @@ export class BotPlay {
         ...r.recipients,
       ]);
     }
-    if (recipient && (outcome === "expired" || outcome === "cancelled")) {
+    const noticeRecipients =
+      outcome === "expired" || outcome === "cancelled"
+        ? pending
+        : (unanswered ?? []);
+    if (noticeRecipients.length) {
       const sender = (await this.#characters(session, db)).find(
         (member) => member.actorId === r.sender,
       )?.name;
-      await db.query(
-        `INSERT INTO player_notice(id,world_id,actor_id,created_at,text) VALUES($1,$2,$3,$4,$5)`,
-        [
-          derivedId(`${r.id}:receipt-notice:${recipient}`),
-          session.world_id,
-          recipient,
-          result.at,
-          `${sender ?? "申請者"}からの申請（${r.id}）「${r.text}」。${result.message}`,
-        ],
-      );
+      for (const recipient of noticeRecipients)
+        await db.query(
+          `INSERT INTO player_notice(id,world_id,actor_id,created_at,text) VALUES($1,$2,$3,$4,$5)`,
+          [
+            derivedId(`${r.id}:receipt-notice:${recipient}`),
+            session.world_id,
+            recipient,
+            result.at,
+            `${sender ?? "申請者"}からの申請（${r.id}）「${r.text}」。${result.message}`,
+          ],
+        );
     }
     delete session.data.receiving;
     return { items, result };
+  }
+  async #completeReceipt(db: Db, session: Session, rejectingActor?: string) {
+    const r = session.data.receiving!;
+    const world = session.world_id;
+    const w = await this.world(world, db);
+    const prior = await this.store.receipt(w.id, r.id);
+    const timedOut = rejectingActor === undefined;
+    const unanswered = timedOut
+      ? r.recipients.filter((id) => awaitingReceipt(r, id))
+      : [];
+    const declined = r.declined ?? [];
+    const staying = [...declined, ...unanswered];
+    const ops = r.locates?.filter(
+      (op) => op.type === "locate" && !staying.includes(op.subjectId),
+    );
+    if (
+      !prior &&
+      timedOut &&
+      (!r.parallel ||
+        !ops?.length ||
+        (!r.parallel.departAloneOnTimeout &&
+          r.decided.length === declined.length))
+    )
+      return { settled: await this.#settle(db, session, "expired") };
+    if (!prior && ops && !ops.length)
+      return {
+        settled: await this.#settle(
+          db,
+          session,
+          "rejected",
+          {},
+          rejectingActor,
+        ),
+      };
+    if (!prior && r.vehicleControl?.oppositionRequired) {
+      await db.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
+        r.id,
+        { vehicleApproval: r.vehicleControl.vehicleId },
+      ]);
+      return {
+        settled: await this.#settle(db, session, "rejected", {
+          code: "VEHICLE_OPPOSITION_REQUIRED",
+          message:
+            "NPCは承認しました。他者への対抗を続ける場合は --oppose とこの申請IDを指定してください",
+        }),
+      };
+    }
+    let receipt = prior;
+    if (!receipt) {
+      const context = this.store.context(w.id, r.dependencies);
+      try {
+        for (const item of r.items ?? [])
+          if (item.holding) await context.assertMovable(item.itemId);
+        const plan = staying.length
+          ? (await this.#plan(
+              world,
+              r.sender,
+              session.data.members.find(
+                (member) => member.actorId === r.sender,
+              )!.userId!,
+              {
+                command: "update",
+                requestId: r.id,
+                text: r.text,
+                operations: ops!,
+                dependencies: r.dependencies,
+              },
+              { db },
+            ))!
+          : undefined;
+        receipt = await this.#commitMoves(
+          db,
+          world,
+          w.id,
+          r.sender,
+          r.id,
+          ops ?? r.mixedMoves ?? [],
+          {
+            at: Math.max(plan?.at ?? r.at, w.at),
+            changes: plan?.changes ?? r.changes,
+            context: plan?.context ?? context,
+          },
+          undefined,
+          r.parallel ? staying : [],
+        );
+      } catch (error) {
+        const failure = playError(error);
+        if (!timedOut || !(failure instanceof AccessError)) throw error;
+        return {
+          settled: await this.#settle(db, session, "rejected", {
+            code: failure.code,
+            message: failure.message,
+          }),
+        };
+      }
+    }
+    // 再送時は確定した移動を参照し、未回答者の扱いも復元する。
+    const moved = new Set(
+      receipt.changes.edges.flatMap((edge) =>
+        edge.kind === "status" &&
+        edge.role === "content" &&
+        edge.text === "location"
+          ? [edge.source]
+          : [],
+      ),
+    );
+    const missed = unanswered.filter((id) => !moved.has(id));
+    return {
+      changes: receipt.changes,
+      settled: await this.#settle(db, session, "accepted", {
+        commitId: receipt.commitId,
+        ...(r.vehicleControl
+          ? {
+              vehicleId: r.vehicleControl.vehicleId,
+              operatorId: r.vehicleControl.operatorId,
+            }
+          : {}),
+        ...(declined.length ? { declined } : {}),
+        ...(missed.length
+          ? {
+              unanswered: missed,
+              message: r.recipients.some((id) => moved.has(id))
+                ? "受領期限に達したため、申請者と承認した同行者の移動を確定しました"
+                : "受領期限に達したため、申請者が単独で出発しました",
+            }
+          : {}),
+      }),
+    };
   }
   async #turnCallsExhausted(db: Db, session: Session) {
     const { rows } = await db.query(
@@ -2827,9 +3032,11 @@ export class BotPlay {
     const now = this.now();
     const before = turnState(session);
     let idleExpired = false;
+    let changes: Change | undefined;
     if (r) {
       if (new Date(r.deadline) > now) return;
-      await this.#settle(db, session, "expired");
+      if (r.parallel) ({ changes } = await this.#completeReceipt(db, session));
+      else await this.#settle(db, session, "expired");
       if (await this.#turnCallsExhausted(db, session))
         await this.#next(db, session);
     }
@@ -2874,13 +3081,30 @@ export class BotPlay {
       before.awayUntil !== d.awayUntil
     )
       await this.#save(db, session, before);
-    if (r)
-      await this.#teamArrivals(
+    if (r) {
+      const world = session.world_id;
+      const context = this.store.context((await this.world(world, db)).id);
+      const { movedActors, affected } = await this.#afterMoves(
         db,
-        session.world_id,
-        this.store.context((await this.world(session.world_id, db)).id),
-        [r.sender, ...r.recipients],
+        world,
+        context,
+        r.id,
+        changes,
       );
+      await this.#teamArrivals(db, world, context, [
+        ...movedActors,
+        r.sender,
+        ...r.recipients,
+      ]);
+      if (affected.size)
+        await this.#syncFollowers(
+          db,
+          world,
+          context,
+          [r.sender, ...affected],
+          r.id,
+        );
+    }
     return idleExpired;
   }
   async #characters(session: Session, db: Db) {
@@ -2947,17 +3171,15 @@ export class BotPlay {
       ...(withClock && session.data.turnStartedAt
         ? { turnStartedAt: session.data.turnStartedAt }
         : {}),
-      actorId: r
-        ? r.recipients.find((id) => !r.decided.includes(id))!
-        : session.data.parked
-          ? null
-          : session.data.turn,
+      actorId: session.data.parked
+        ? null
+        : (turnOwner(session.data, actor) ?? null),
       callsUsed:
         session.data.used -
         (actor === session.data.turn ? 0 : (session.data.stealthUsed ?? 0)),
       callsLimit: policy.turnCalls,
       commentUsed: r
-        ? !!r.comments[r.recipients.find((id) => !r.decided.includes(id))!]
+        ? !!r.comments[turnOwner(session.data, actor)!]
         : !!session.data.comment,
       ...(criteria
         ? { creationCriteria: criteria.criteria || defaultCreationCriteria }
@@ -2970,6 +3192,15 @@ export class BotPlay {
             sender: r.sender,
             recipients: r.recipients,
             deadline: r.deadline,
+            ...(r.parallel && r.sender === actor
+              ? {
+                  progress: {
+                    approved: r.decided.length - (r.declined?.length ?? 0),
+                    declined: r.declined?.length ?? 0,
+                    pending: r.recipients.length - r.decided.length,
+                  },
+                }
+              : {}),
             ...(r.sender === actor || r.recipients.includes(actor)
               ? { text: r.text, changes: r.changes }
               : {}),
@@ -2979,7 +3210,7 @@ export class BotPlay {
   }
   async #wakeContext(db: Db, session: Session, viewer: string) {
     const d = session.data;
-    const actorId = d.parked ? null : (turnOwner(d) ?? null);
+    const actorId = d.parked ? null : (turnOwner(d, viewer) ?? null);
     const characters = actorId ? await this.#characters(session, db) : [];
     const name = characters.find((person) => person.actorId === actorId)?.name;
     const phase = d.parked
@@ -3103,7 +3334,11 @@ export class BotPlay {
       message:
         current?.waitingForReturn?.message ??
         (participant
-          ? `${participant.name}${current?.receiving ? "が受領判断中" : "の手番中"}`
+          ? current?.receiving
+            ? participant.actorId === actor
+              ? "あなたの受領判断が必要です"
+              : "受領判断を待っています"
+            : `${participant.name}の手番中`
           : undefined),
       waitingForReturn: current?.waitingForReturn,
       ...(receiptResults.length ? { receiptResults } : {}),
@@ -3154,8 +3389,11 @@ export class BotPlay {
       )
     ).rows;
     for (const { payload } of entries) {
-      if (!payload.decisionHolderId) continue;
-      if (payload.decisionHolderId === actor)
+      if (!payload.decisionHolderId && !payload.pendingRecipientIds) continue;
+      if (
+        payload.pendingRecipientIds?.includes(actor) ||
+        payload.decisionHolderId === actor
+      )
         payload.viewerMessage = "あなたの判断待ちでした。";
       else if (
         payload.senderId !== actor &&
@@ -7021,6 +7259,7 @@ export class BotPlay {
     ops: BelongingOp[],
     plan: Pick<Plan, "context" | "at" | "changes" | "storageEffect">,
     fixed?: string[],
+    staying: string[] = [],
   ) {
     if (ops.length) {
       const prior = await this.store.receipt(graph, request);
@@ -7038,7 +7277,12 @@ export class BotPlay {
         ...moves.keys(),
       ])) {
         const move = moves.get(c.actor_id);
-        if (!move || moves.has(c.npc_id) || destinationOf(move) === c.npc_id)
+        if (
+          !move ||
+          moves.has(c.npc_id) ||
+          staying.includes(c.npc_id) ||
+          destinationOf(move) === c.npc_id
+        )
           continue;
         const origin = await directPlaces(plan.context, c.actor_id);
         if (
@@ -8311,11 +8555,7 @@ export class BotPlay {
           if (d.members.length && !d.members.some((m) => m.actorId === d.turn))
             d.turn = d.members[0]!.actorId;
         } else if (input.command === "comment" && receiving) {
-          if (
-            receiving.recipients.find(
-              (id) => !receiving.decided.includes(id),
-            ) !== actor
-          )
+          if (turnOwner(d, actor) !== actor)
             reject("TURN_REQUIRED", "本人の受領判断の手番ではありません");
           if (receiving.comments[actor])
             reject("COMMENT_USED", "この手番のコメントは投稿済みです");
@@ -8324,9 +8564,7 @@ export class BotPlay {
           if (
             !receiving ||
             receiving.id !== input.applicationId ||
-            receiving.recipients.find(
-              (id) => !receiving.decided.includes(id),
-            ) !== actor
+            turnOwner(d, actor) !== actor
           )
             reject(
               "RECEIVING_TURN_REQUIRED",
@@ -8373,78 +8611,13 @@ export class BotPlay {
             if (
               receiving.recipients.every((id) => receiving.decided.includes(id))
             ) {
-              const declined = receiving.declined ?? [],
-                ops = receiving.locates?.filter(
-                  (op) =>
-                    op.type === "locate" && !declined.includes(op.subjectId),
-                ),
-                context = this.store.context(w.id, receiving.dependencies);
-              if (ops && !ops.length)
-                settled = await this.#settle(
-                  db,
-                  session,
-                  "rejected",
-                  {},
-                  actor,
-                );
-              else if (receiving.vehicleControl?.oppositionRequired) {
-                await db.query(
-                  "UPDATE bot_request SET outcome=$2 WHERE id=$1",
-                  [
-                    receiving.id,
-                    { vehicleApproval: receiving.vehicleControl.vehicleId },
-                  ],
-                );
-                settled = await this.#settle(db, session, "rejected", {
-                  code: "VEHICLE_OPPOSITION_REQUIRED",
-                  message:
-                    "NPCは承認しました。他者への対抗を続ける場合は --oppose とこの申請IDを指定してください",
-                });
-              } else {
-                // 旧版で受け付けた取り分けも、確定前に元の品を再確認する。
-                for (const item of receiving.items ?? [])
-                  if (item.holding) await context.assertMovable(item.itemId);
-                const plan = declined.length
-                  ? (await this.#plan(
-                      world,
-                      receiving.sender,
-                      user,
-                      {
-                        command: "update",
-                        requestId: receiving.id,
-                        text: receiving.text,
-                        operations: ops!,
-                        dependencies: receiving.dependencies,
-                      },
-                      { db },
-                    ))!
-                  : receiving;
-                // 受け取り待ちの間にも時刻は進むので、受入れが揃った時刻で確定する。
-                const receipt = await this.#commitMoves(
-                  db,
-                  world,
-                  w.id,
-                  receiving.sender,
-                  receiving.id,
-                  ops ?? receiving.mixedMoves ?? [],
-                  {
-                    at: Math.max(plan.at, w.at),
-                    changes: plan.changes,
-                    context: "context" in plan ? plan.context : context,
-                  },
-                );
-                confirmedChanges = receipt.changes;
-                settled = await this.#settle(db, session, "accepted", {
-                  commitId: receipt.commitId,
-                  ...(receiving.vehicleControl
-                    ? {
-                        vehicleId: receiving.vehicleControl.vehicleId,
-                        operatorId: receiving.vehicleControl.operatorId,
-                      }
-                    : {}),
-                  ...(declined.length ? { declined } : {}),
-                });
-              }
+              const completion = await this.#completeReceipt(
+                db,
+                session,
+                actor,
+              );
+              settled = completion.settled;
+              confirmedChanges = completion.changes;
             }
           }
           result.decision = {
@@ -8459,6 +8632,12 @@ export class BotPlay {
                 applicationId: receiving.id,
                 state: "waiting",
                 nextActorId: turnOwner(d),
+                ...(receiving.parallel
+                  ? {
+                      pending:
+                        receiving.recipients.length - receiving.decided.length,
+                    }
+                  : {}),
                 deadline: receiving.deadline,
               }
             : {
@@ -8971,6 +9150,19 @@ export class BotPlay {
                   if (here !== vehicleId) requireVehicleHere(here, placeId);
                 }
               }
+              if (
+                input.command === "update" &&
+                input.departAloneOnTimeout &&
+                (!plan.locates ||
+                  !plan.recipients.length ||
+                  !plan.locates.some(
+                    (op) => op.type === "locate" && op.subjectId === actor,
+                  ))
+              )
+                reject(
+                  "INPUT_INVALID",
+                  "単独出発の指定には、本人と同行者の移動を申請してください",
+                );
               for (const recipient of deadline ? [] : plan.recipients)
                 if (!d.members.some((m) => m.actorId === recipient))
                   reject(
@@ -9049,6 +9241,11 @@ export class BotPlay {
                   recipients: plan.recipients,
                   decided: [],
                   comments: {},
+                  parallel: {
+                    departAloneOnTimeout:
+                      input.command === "update" &&
+                      input.departAloneOnTimeout === true,
+                  },
                   deadline: new Date(
                     this.now().getTime() + timeout * 1000,
                   ).toISOString(),
@@ -9293,47 +9490,18 @@ export class BotPlay {
             }
           }
         }
-        const movedActors =
-          confirmedChanges?.edges.flatMap((edge) =>
-            edge.kind === "status" &&
-            edge.role === "content" &&
-            edge.text === "location"
-              ? [edge.source]
-              : [],
-          ) ?? [];
-        await db.query(
-          "DELETE FROM bot_stealth WHERE world_id=$1 AND actor_id=ANY($2::uuid[]) AND actor_id IS DISTINCT FROM $3::uuid",
-          [world, movedActors, plan?.stealth?.stay ? actor : null],
-        );
         await this.#save(db, session, before);
         const context = this.store.context(w.id);
-        // 乗客が増減すると、乗り物自身の会話の場所も車内・車外の間で切り替わる。
-        const affected = new Set(movedActors);
-        if (confirmedChanges && movedActors.length) {
-          const endedEdges = await Promise.all(
-            confirmedChanges.endEdges.map((id) => context.edge(id)),
-          );
-          const places = new Set(
-            [...confirmedChanges.edges, ...endedEdges].flatMap((e) =>
-              e?.kind === "status" &&
-              e.role === "about" &&
-              e.text === "direct-place"
-                ? [e.target]
-                : [],
-            ),
-          );
-          for (const place of places)
-            if (await isVehicle(context, place)) affected.add(place);
-          const ended = await this.#settlePlaces(
-            db,
-            world,
-            [...affected],
-            input.requestId,
-          );
-          const number = ended.get(session.id);
-          if (number !== undefined)
-            endedTurn ??= { number, reason: "explicit" };
-        }
+        const { movedActors, affected, ended } = await this.#afterMoves(
+          db,
+          world,
+          context,
+          input.requestId,
+          confirmedChanges,
+          plan?.stealth?.stay ? actor : undefined,
+        );
+        const number = ended.get(session.id);
+        if (number !== undefined) endedTurn ??= { number, reason: "explicit" };
         if (receiving && !d.receiving)
           movedActors.push(receiving.sender, ...receiving.recipients);
         if (seeking?.results.some((attempt) => attempt.found))

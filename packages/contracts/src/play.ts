@@ -471,6 +471,12 @@ export const PlayCommand = z.discriminatedUnion("command", [
       operations: z.array(BelongingOp).min(1).optional(),
       changes: Change.optional(),
       deferredUntil: z.iso.datetime().optional(),
+      departAloneOnTimeout: z
+        .boolean()
+        .optional()
+        .describe(
+          "同行者の承認がなく、未回答のまま期限に達したら単独で出発する",
+        ),
       waitMinutes: count
         .optional()
         .describe(
@@ -625,6 +631,7 @@ export const ReceiptResult = z.object({
   message: z.string(),
   code: z.string().optional(),
   rejectedBy: z.object({ actorId: z.uuid(), name: z.string() }).optional(),
+  unanswered: z.array(z.uuid()).optional(),
 });
 export function playActionMessage(
   actionable: boolean,

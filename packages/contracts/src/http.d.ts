@@ -3350,6 +3350,8 @@ export interface paths {
                         };
                         /** Format: date-time */
                         deferredUntil?: string;
+                        /** @description 同行者の承認がなく、未回答のまま期限に達したら単独で出発する */
+                        departAloneOnTimeout?: boolean;
                         /** @description 物品のcreateだけの申請にかける実時間（分）。ダイスの材料になり、成功すると物品はこの時間の後に成立する */
                         waitMinutes?: number;
                         dependencies: {
@@ -5260,6 +5262,7 @@ export interface paths {
                                         actorId: string;
                                         name: string;
                                     };
+                                    unanswered?: string[];
                                 };
                             };
                         };
