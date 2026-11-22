@@ -8,7 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { cliVersion, update } from "./update.js";
 import { fileURLToPath } from "node:url";
-import { PlayerReferences } from "./references.js";
+import { PlayerReferences, localTime, utcTime } from "./references.js";
 import {
   PlayerDeviceCode,
   PlayCommand,
@@ -57,6 +57,7 @@ let references: PlayerReferences | undefined, pendingCursor: string | undefined;
 const render = (value: unknown) =>
   JSON.stringify(
     !references || values["full-ids"] ? value : references.convert(value),
+    localTime,
   );
 async function save(path: string, data: unknown) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
@@ -810,7 +811,7 @@ async function run() {
                   values.participants?.split(",").map((v) => v.trim()) ?? [],
                 dependencies: [],
                 ...(values["deferred-until"]
-                  ? { deferredUntil: values["deferred-until"] }
+                  ? { deferredUntil: utcTime(values["deferred-until"]) }
                   : {}),
               }
             : {}),

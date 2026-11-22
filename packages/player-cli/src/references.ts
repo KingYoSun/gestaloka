@@ -1,6 +1,31 @@
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
+// 出力する時刻は、Nodeが決めた現地時刻（TZ環境変数が優先）にオフセットを付けて示す。
+// 値の全体がUTCのISO日時である文字列だけを置き換え、本文中の時刻表現には触れない。
+export const localTime = (_key: string, v: unknown) => {
+  if (
+    typeof v !== "string" ||
+    !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/.test(v)
+  )
+    return v;
+  const at = new Date(v),
+    offset = -at.getTimezoneOffset(),
+    two = (n: number) => String(Math.trunc(n)).padStart(2, "0");
+  return (
+    new Date(at.getTime() + offset * 60000).toISOString().slice(0, 19) +
+    (offset < 0 ? "-" : "+") +
+    two(Math.abs(offset) / 60) +
+    ":" +
+    two(Math.abs(offset) % 60)
+  );
+};
+// 入力の時刻はオフセット付きも受け付け、UTCへ直して送る。ゾーンのない日時はサーバーが拒否する。
+export const utcTime = (v: string) =>
+  /(Z|[+-]\d\d:\d\d)$/.test(v) && !Number.isNaN(Date.parse(v))
+    ? new Date(v).toISOString()
+    : v;
+
 // Store only IDs (no material, dialogue or credentials). The DB lives alongside
 // this View's request journal, so commands and the background listener agree.
 export class PlayerReferences {
@@ -76,6 +101,7 @@ export class PlayerReferences {
           Object.entries(v).map(([k, x]) => [k, walk(x, k, key)]),
         );
       if (typeof v !== "string") return v;
+      if (input && key === "deferredUntil") return utcTime(v);
       if (key === "key" && /^(node|edge|relations):/.test(v)) {
         const parts = v.split(":");
         parts[1] = convertId(parts[1]!);
