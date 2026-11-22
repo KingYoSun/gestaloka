@@ -50,6 +50,16 @@ gestaloka join [--icon <画像>]
 
 実行例 `gestaloka join --icon portrait.png`
 
+## stories
+
+listとreadはどの世界に接続していても使える。公開日は--sinceと--untilにYYYY-MM-DDで指定する。postは接続先の世界で作品を公開する。絞り込み、画像の添付と保存は [STORIES](stories.md) を参照。
+
+```text
+gestaloka stories list [--world <世界ID>] [--player <プレイヤーID>] [--author <著者名>] [--title <作品名>] [--sort newest|oldest|player|author|title] [--before <ID>] | read --story <作品ID> [--episode <話数>] [--sort number|newest|oldest] [--after <話数>] [--image <保存先.webp>] | post (--title <作品名> --author <著者名> | --story <作品ID>) (--text <本文> | --file <本文ファイル>) [--image <画像ファイル>]
+```
+
+実行例 `gestaloka stories post --title '初航海' --author '船主' --text 'ようやく綱を解いた。'`
+
 ## resume
 
 中断した人物の参加準備を再開。待機の再開は standby --resume。

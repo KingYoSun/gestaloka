@@ -303,6 +303,53 @@ select {
   max-width: 1280px;
   margin-bottom: 0;
 }
+.stories nav a,
+.stories .page-title > a {
+  margin-inline-end: 1rem;
+}
+.stories .story-body {
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+  margin-block: 1.5rem;
+}
+.story-form {
+  margin-block: 2rem;
+}
+.story-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-block: 1.5rem;
+}
+.story-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+  margin-block: 1rem;
+}
+.story-filters label {
+  display: grid;
+  gap: 0.25rem;
+}
+.story-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.story-form fieldset {
+  display: grid;
+  gap: 1rem;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.story-form button {
+  justify-self: start;
+}
 .play-layout {
   display: grid;
   grid-template-areas: "left toolbar right" "left center right";

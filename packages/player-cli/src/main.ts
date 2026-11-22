@@ -23,6 +23,11 @@ import {
   WaitingContextStatus,
   WaitingEvent,
   WaitingStatus,
+  StoryList,
+  StoryListQuery,
+  StoryPost,
+  StoryRead,
+  StoryReadQuery,
   playActionMessage,
 } from "@gestaloka/contracts";
 
@@ -351,7 +356,7 @@ async function send(
     };
   }
   return {
-    ...(saved.path.endsWith("/session")
+    ...(saved.path.endsWith("/session") || saved.path.endsWith("/stories")
       ? {}
       : await status(profile).catch((error) => {
           if (saved.path.endsWith("/reports")) return { state: "report" };
@@ -416,7 +421,7 @@ async function run() {
           ]),
     );
   journal = `${profilePath}.requests`;
-  const grouped = ["team", "companion", "vehicle"].includes(command);
+  const grouped = ["team", "companion", "vehicle", "stories"].includes(command);
   if (positionals.length > (grouped ? 2 : 1))
     throw new Error("コマンドは1つ指定してください（helpを参照）");
   if (command === "version")
@@ -511,6 +516,83 @@ async function run() {
     );
   }
   const profile = await load();
+  if (command === "stories") {
+    const action = z
+      .enum(["list", "read", "post"])
+      .parse(positionals[1] ?? "list");
+    const expand = (value: string | undefined) =>
+      value && references!.expand(value);
+    const filters = {
+      since: values.since,
+      until: values.until,
+      sort: values.sort,
+    };
+    const params = (query: Record<string, string | undefined>) => {
+      const search = new URLSearchParams();
+      for (const [key, value] of Object.entries(query))
+        if (value !== undefined) search.set(key, value);
+      return search;
+    };
+    if (action === "list") {
+      const query = StoryListQuery.parse({
+        ...filters,
+        worldId: expand(values.world),
+        author: values.author,
+        player: values.player,
+        title: values.title,
+        before: expand(values.before),
+      });
+      return StoryList.parse(
+        await http(profile, `/api/stories?${params(query)}`),
+      );
+    }
+    if (action === "post") {
+      if ((values.text === undefined) === (values.file === undefined))
+        throw new Error("--textか--fileを一つ指定してください");
+      if (
+        values.story !== undefined &&
+        (values.title !== undefined || values.author !== undefined)
+      )
+        throw new Error(
+          "続話には--storyを、新作には--titleと--authorを指定してください",
+        );
+      const input = StoryPost.parse({
+        requestId: randomUUID(),
+        ...(values.story === undefined
+          ? { title: values.title, author: values.author }
+          : { storyId: expand(values.story) }),
+        body:
+          values.file === undefined
+            ? values.text
+            : await readFile(values.file, "utf8"),
+        ...(values.image === undefined
+          ? {}
+          : { image: (await readFile(values.image)).toString("base64") }),
+      });
+      return submit(
+        profile,
+        `/api/worlds/${profile.worldId}/stories`,
+        input,
+        true,
+        input.requestId,
+      );
+    }
+    const story = z.uuid().parse(expand(values.story));
+    const query = StoryReadQuery.parse({
+      ...filters,
+      episode: values.episode,
+      after: values.after,
+      image: values.image === undefined ? undefined : "1",
+    });
+    const result = StoryRead.parse(
+      await http(profile, `/api/stories/${story}?${params(query)}`),
+    );
+    if (values.image === undefined) return result;
+    const { image, ...episode } = result.episode;
+    if (!image) throw new Error("この話に添付画像はありません");
+    await writeFile(values.image, Buffer.from(image, "base64"), { flag: "wx" });
+    return { ...result, episode, imageFile: values.image };
+  }
   if (
     values.scene &&
     !["status", "result", "history", "recover"].includes(command)

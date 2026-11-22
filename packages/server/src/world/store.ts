@@ -186,9 +186,12 @@ export class WorldContext {
     }
   }
 
-  async checkInventory(changes: Change) {
+  async checkInventory(changes: Change, { readOnly = false } = {}) {
     await this.inventoryLimits();
-    await this.inventoryRead(async (tx, { enabled, limits }) => {
+    const check = async (
+      tx: ManagedTransaction,
+      { enabled, limits }: Awaited<ReturnType<typeof initializeInventory>>,
+    ) => {
       if (!enabled) return;
       const ended: WorldEdge[] = [];
       for (const id of changes.endEdges) {
@@ -208,7 +211,17 @@ export class WorldContext {
         limits,
         true,
       );
-    });
+    };
+    if (!readOnly) return this.inventoryRead(check);
+    await this.prepareInventory();
+    const session = this.driver.session();
+    try {
+      await session.executeRead(async (tx) =>
+        check(tx, await inventoryState(tx, this.worldId)),
+      );
+    } finally {
+      await session.close();
+    }
   }
 
   async inventorySettings() {
