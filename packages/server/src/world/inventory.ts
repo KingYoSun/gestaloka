@@ -4,7 +4,7 @@ import type { Change, WorldEdge, WorldNode } from "./model.js";
 
 type Item = Extract<WorldNode, { kind: "existence" }>;
 export const storageSlots = 150;
-export const carrySlots = 15;
+export const carrySlots = 30;
 export const unitsPerSlot = (item: Item) => item.unitsPerSlot ?? 10;
 export function itemSlots(item: Item) {
   const perSlot = unitsPerSlot(item);

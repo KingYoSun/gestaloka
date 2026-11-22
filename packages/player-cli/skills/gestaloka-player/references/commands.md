@@ -156,7 +156,7 @@
 
 物品は個数（`count`）を持てる。個数のない物品は、数えないひとまとまりとして扱う。本人の持ち物と個数は`search --kind self`の`material.belongings`で読む。
 
-手持ちは15枠で、持ち歩く箱とその中身も数える。保管先の枠は利用者全員で共有する。本人検索では、手持ちと各保管先の `capacity.usedSlots` と `capacity.limitSlots` を確認できる。個数つきの物品は標準で10個までが1枠で、`unitsPerSlot` が `"unlimited"` の品は残数があれば1枠を使う。
+手持ちは30枠で、持ち歩く箱とその中身も数える。保管先の枠は利用者全員で共有する。本人検索では、手持ちと各保管先の `capacity.usedSlots` と `capacity.limitSlots` を確認できる。個数つきの物品は標準で10個までが1枠で、`unitsPerSlot` が `"unlimited"` の品は残数があれば1枠を使う。
 
 容量不足では `INVENTORY_CAPACITY_EXCEEDED` が返る。移動できる個数が `item.maxAcceptableCount` に出ていれば、その値に合わせて `move.count` を指定し直せる。
 

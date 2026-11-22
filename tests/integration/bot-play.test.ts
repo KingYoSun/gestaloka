@@ -657,7 +657,7 @@ test("craftの定義から保管先を設置し、管理者不在の無償受領
       false,
       async (questId) => {
         const ctx = () => f.store.context(f.graph);
-        const remaining = 15 - (await ctx().inventorySlots(manager));
+        const remaining = 30 - (await ctx().inventorySlots(manager));
         const filler = await f.apply([
           { type: "update", id: cloth!, count: 2 },
           {
@@ -2344,14 +2344,14 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
     {
       type: "create",
       label: "携行品",
-      count: 130,
+      count: 280,
       holder: buyer,
       basis: "試験用",
     },
     {
       type: "create",
       label: "携行品",
-      count: 130,
+      count: 280,
       holder: other,
       basis: "試験用",
     },
@@ -2395,7 +2395,7 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
       unitsPerSlot: "unlimited",
     }),
   );
-  expect(await f.store.context(f.graph).inventorySlots(buyer)).toBe(15);
+  expect(await f.store.context(f.graph).inventorySlots(buyer)).toBe(30);
   expect(await f.store.context(f.graph).inventorySlots(storage!.id)).toBe(150);
   const audit = (standard: boolean) =>
     auth.operations.execute(
@@ -2460,7 +2460,7 @@ test("公開交換は売り手の退出中も系列を照合し、最後の在�
   await expect(f.send(1, exchange(payment!.id))).rejects.toMatchObject({
     code: "INVENTORY_CAPACITY_EXCEEDED",
     inventory: {
-      capacity: { holderId: buyer, usedSlots: 15, projectedSlots: 16 },
+      capacity: { holderId: buyer, usedSlots: 30, projectedSlots: 31 },
     },
   });
   expect(await f.store.context(f.graph).node(till.id)).toMatchObject({
@@ -6004,14 +6004,15 @@ test("手持ちの容量と受入可能数をHTTPとCLIへ返す", async () => {
   });
   const seed = await f.apply([
     { type: "grant", person: actor, storage: f.place, basis: "検証" },
-    ...Array.from({ length: 14 }, (_, i) => create(`道具${i}`, actor)),
+    ...Array.from({ length: 29 }, (_, i) => create(`道具${i}`, actor)),
     create("薬草", actor, 7),
     create("薬草", f.place, 8),
     create("石", f.place),
   ]);
   const nodes = seed.changes.nodes.filter((n) => n.kind === "existence");
-  const herbs = nodes[15]!,
-    stone = nodes[16]!;
+  const heldHerbs = nodes[29]!,
+    herbs = nodes[30]!,
+    stone = nodes[31]!;
   const admin = await auth.person();
   expect(
     await auth.operations.execute(
@@ -6058,9 +6059,9 @@ test("手持ちの容量と受入可能数をHTTPとCLIへ返す", async () => {
       code: "INVENTORY_CAPACITY_EXCEEDED",
       capacity: {
         holderId: actor,
-        usedSlots: 15,
-        limitSlots: 15,
-        projectedSlots: 16,
+        usedSlots: 30,
+        limitSlots: 30,
+        projectedSlots: 31,
       },
       item: { itemId: herbs.id, requestedCount: 4, maxAcceptableCount: 3 },
     };
@@ -6096,16 +6097,16 @@ test("手持ちの容量と受入可能数をHTTPとCLIへ返す", async () => {
     await f.send(0, move(herbs.id, 3));
     expect(await readBelongings(f.store.context(f.graph), actor)).toMatchObject(
       {
-        capacity: { usedSlots: 15, limitSlots: 15 },
+        capacity: { usedSlots: 30, limitSlots: 30 },
         items: expect.arrayContaining([
           expect.objectContaining({ label: "薬草", count: 10, slots: 1 }),
         ]),
       },
     );
     await f.apply([
-      { type: "remove", id: nodes[12]!.id },
-      { type: "remove", id: nodes[13]!.id },
-      { type: "update", id: nodes[14]!.id, count: 30 },
+      { type: "remove", id: nodes[27]!.id },
+      { type: "remove", id: nodes[28]!.id },
+      { type: "update", id: heldHerbs.id, count: 30 },
     ]);
     await expect(
       f.send(0, {
@@ -6115,7 +6116,7 @@ test("手持ちの容量と受入可能数をHTTPとCLIへ返す", async () => {
         operations: [
           {
             type: "move",
-            item: nodes[14]!.id,
+            item: heldHerbs.id,
             from: actor,
             to: nodes[0]!.id,
             count: 29,
@@ -6149,7 +6150,7 @@ test("箱による枠の節約を防ぎ、共同保管先の最後の1枠を原�
     create("在庫", f.far, 1490),
     create("箱", a),
     create("工具", a),
-    create("手持ち", a, 140),
+    create("手持ち", a, 290),
     create("贈り物", b),
   ]);
   const [, box, tool, , gift] = first.changes.nodes.filter(
@@ -6165,16 +6166,16 @@ test("箱による枠の節約を防ぎ、共同保管先の最後の1枠を原�
   await f.store.configureInventory(f.graph, true);
   await f.apply([move(tool!.id, a, box!.id)]);
   const ctx = () => f.store.context(f.graph);
-  expect(await ctx().inventorySlots(a)).toBe(16);
+  expect(await ctx().inventorySlots(a)).toBe(31);
   await expect(f.apply([create("新しい道具", a)])).rejects.toMatchObject({
-    capacity: { usedSlots: 16, projectedSlots: 17, limitSlots: 15 },
+    capacity: { usedSlots: 31, projectedSlots: 32, limitSlots: 30 },
   });
   await expect(f.apply([move(box!.id, a, f.far)])).rejects.toMatchObject({
     capacity: { usedSlots: 149, projectedSlots: 151, limitSlots: 150 },
   });
-  expect(await ctx().inventorySlots(a)).toBe(16);
+  expect(await ctx().inventorySlots(a)).toBe(31);
   await f.apply([{ type: "remove", id: tool!.id }]);
-  expect(await ctx().inventorySlots(a)).toBe(15);
+  expect(await ctx().inventorySlots(a)).toBe(30);
   const results = await Promise.allSettled([
     f.apply([move(box!.id, a, f.far)]),
     f.apply([move(gift!.id, b, f.far)]),
@@ -6185,16 +6186,16 @@ test("箱による枠の節約を防ぎ、共同保管先の最後の1枠を原�
   ]);
   expect(await ctx().inventorySlots(f.far)).toBe(150);
   expect(await ctx().inventorySlots(a)).toBe(
-    results[0]!.status === "fulfilled" ? 14 : 15,
+    results[0]!.status === "fulfilled" ? 29 : 30,
   );
-  const stocked = await f.apply([create("採集品", f.actors[2]!, 147)]);
+  const stocked = await f.apply([create("採集品", f.actors[2]!, 297)]);
   const itemId = stocked.changes.nodes.find((n) => n.kind === "existence")!.id;
   await expect(
     f.send(2, {
       command: "update",
       text: "採集品を4個増やす",
       dependencies: [],
-      operations: [{ type: "update", id: itemId, count: 151 }],
+      operations: [{ type: "update", id: itemId, count: 301 }],
     }),
   ).rejects.toMatchObject({
     code: "INVENTORY_CAPACITY_EXCEEDED",
@@ -10453,7 +10454,7 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
     {
       type: "create",
       label: "道具",
-      count: 140,
+      count: 290,
       holder: f.actors[0],
       basis: "手持ちを埋める",
     },
