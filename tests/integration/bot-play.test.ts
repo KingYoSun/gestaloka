@@ -281,6 +281,7 @@ test("craftの定義から保管先を設置し、管理者不在の無償受領
       product: string,
       items: { actor: number; id: string; count: number }[],
       legacy = false,
+      beforeProvide?: (questId: string) => Promise<void>,
     ) => {
       const draft = await auth.operations.execute(
         admin.id,
@@ -338,6 +339,7 @@ test("craftの定義から保管先を設置し、管理者不在の無償受領
           ),
         ).toMatchObject({ pendingLegacyStorages: 1 });
       }
+      await beforeProvide?.(quest.id);
       let result;
       for (const [requirement, item] of items.entries())
         result = await play(item.actor, {
@@ -652,6 +654,39 @@ test("craftの定義から保管先を設置し、管理者不在の無償受領
       },
       "布製の袋",
       [{ actor: 0, id: cloth!, count: 1 }],
+      false,
+      async (questId) => {
+        const ctx = () => f.store.context(f.graph);
+        const remaining = 15 - (await ctx().inventorySlots(manager));
+        const filler = await f.apply([
+          { type: "update", id: cloth!, count: 2 },
+          {
+            type: "create",
+            holder: manager,
+            label: "道具",
+            count: remaining * 10,
+            basis: "手持ちを埋める",
+          },
+        ]);
+        await f.store.configureInventory(f.graph, true);
+        await expect(
+          f.send(0, {
+            command: "blueprint-provide",
+            questId,
+            phase: "craft",
+            requirement: 0,
+            itemId: cloth!,
+            count: 1,
+          }),
+        ).rejects.toMatchObject({ code: "INVENTORY_CAPACITY_EXCEEDED" });
+        expect(await ctx().node(cloth!)).toMatchObject({ count: 2 });
+        await f.apply([
+          {
+            type: "remove",
+            id: filler.changes.nodes.find((n) => n.kind === "existence")!.id,
+          },
+        ]);
+      },
     );
     expect(await bag(manager)).toContainEqual(
       expect.objectContaining({ id: plain, label: "布製の袋" }),
@@ -6152,6 +6187,20 @@ test("箱による枠の節約を防ぎ、共同保管先の最後の1枠を原�
   expect(await ctx().inventorySlots(a)).toBe(
     results[0]!.status === "fulfilled" ? 14 : 15,
   );
+  const stocked = await f.apply([create("採集品", f.actors[2]!, 147)]);
+  const itemId = stocked.changes.nodes.find((n) => n.kind === "existence")!.id;
+  await expect(
+    f.send(2, {
+      command: "update",
+      text: "採集品を4個増やす",
+      dependencies: [],
+      operations: [{ type: "update", id: itemId, count: 151 }],
+    }),
+  ).rejects.toMatchObject({
+    code: "INVENTORY_CAPACITY_EXCEEDED",
+    inventory: { item: { itemId, requestedCount: 4, maxAcceptableCount: 3 } },
+  });
+  expect(f.calls).not.toHaveBeenCalled();
 });
 
 test("本人が手に持つ箱には、場所を問わず出し入れできる", async () => {
@@ -10400,6 +10449,25 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
   expect((await waiting()).noticeKey).toBeNull();
   // 過ぎた後の定期処理で成立する。繰り返しても物品と通知は増えない。
   const later = new BotPlay(runtime, () => new Date(dueAt + 1));
+  const filler = await f.apply([
+    {
+      type: "create",
+      label: "道具",
+      count: 140,
+      holder: f.actors[0],
+      basis: "手持ちを埋める",
+    },
+  ]);
+  await f.store.configureInventory(f.graph, true);
+  await later.expire(f.world);
+  expect(await held()).not.toContainEqual({ label: "ミルク", count: 10 });
+  expect(await arriving()).toMatchObject([{ dueAt: arrival.dueAt }]);
+  await f.apply([
+    {
+      type: "remove",
+      id: filler.changes.nodes.find((n) => n.kind === "existence")!.id,
+    },
+  ]);
   await later.expire(f.world);
   await later.expire(f.world);
   expect(await held()).toEqual(

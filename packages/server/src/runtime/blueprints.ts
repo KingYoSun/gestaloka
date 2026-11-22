@@ -20,7 +20,7 @@ import {
 import { canonical } from "../llm/prompt.js";
 import type { PlayApplications } from "./play-applications.js";
 import { deliverPickups } from "./storage-transfers.js";
-import { storageSlots } from "../world/inventory.js";
+import { InventoryCapacityExceeded, storageSlots } from "../world/inventory.js";
 
 type Db = Pick<pg.Pool, "query">;
 type World = { id: string; at: number };
@@ -434,8 +434,21 @@ export class Blueprints {
           reservations,
         );
     } catch (error) {
-      if (!(error instanceof WorldConflict)) throw error;
-      result = { state: "conflict", reason: error.message };
+      if (!(
+        error instanceof WorldConflict ||
+        error instanceof InventoryCapacityExceeded
+      ))
+        throw error;
+      result = {
+        state: "conflict",
+        reason: error.message,
+        ...(error instanceof InventoryCapacityExceeded
+          ? {
+              code: "INVENTORY_CAPACITY_EXCEEDED",
+              capacity: error.capacity,
+            }
+          : {}),
+      };
     }
     if (result === quest) {
       if (added && !released.includes(added.id))
@@ -809,6 +822,7 @@ export class Blueprints {
       released,
       complete,
     );
+    await context.checkInventory(plan.changes);
     const mutation: Mutation = {
       ...plan,
       quest,

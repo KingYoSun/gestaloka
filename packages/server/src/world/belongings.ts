@@ -373,11 +373,36 @@ export async function checkBelongingCapacity(
       }
       return false;
     };
-    for (const op of operations) {
-      if (op.type !== "move" || !(await reaches(op.to))) continue;
-      const item = await context.node(op.item);
+    for (const [index, op] of operations.entries()) {
+      if (op.type !== "move" && op.type !== "create" && op.type !== "update")
+        continue;
+      const itemId =
+        op.type === "move"
+          ? op.item
+          : op.type === "update"
+            ? op.id
+            : derivedId(`${requestId}:${index}:node`);
+      const item =
+        op.type === "create" ? undefined : await context.node(itemId);
+      const previousCount =
+        op.type === "update" && item?.kind === "existence"
+          ? (item.count ?? 0)
+          : 0;
+      const holder =
+        op.type === "move"
+          ? op.to
+          : op.type === "create"
+            ? op.holder
+            : (await context.relations(itemId, "has", "in", LATEST)).find(
+                (edge) => !edge.role,
+              )?.source;
       const requestedCount =
-        op.count ?? (item?.kind === "existence" ? item.count : undefined) ?? 1;
+        op.type === "update"
+          ? (op.count ?? 0) - previousCount
+          : (op.count ??
+            (item?.kind === "existence" ? item.count : undefined) ??
+            1);
+      if (!holder || requestedCount <= 0 || !(await reaches(holder))) continue;
       let low = 0,
         high = requestedCount;
       const fits = async (count: number) => {
@@ -385,7 +410,9 @@ export async function checkBelongingCapacity(
           context,
           requestId,
           at,
-          operations.map((other) => (other === op ? { ...op, count } : other)),
+          operations.map((other) =>
+            other === op ? { ...op, count: previousCount + count } : other,
+          ),
         );
         try {
           await context.checkInventory(plan.changes);
@@ -401,6 +428,7 @@ export async function checkBelongingCapacity(
         else high = count;
       }
       if (
+        op.type === "move" &&
         item?.kind === "existence" &&
         item.count &&
         op.from &&
@@ -447,11 +475,11 @@ export async function checkBelongingCapacity(
         }
       }
       error.item = {
-        itemId: op.item,
+        itemId,
         requestedCount,
         maxAcceptableCount: low,
       };
-      error.message = `${item?.text ?? "この品"}はあと${low}個まで持てます。`;
+      error.message = `${op.type === "create" ? op.label : (item?.text ?? "この品")}はあと${low}個まで持てます。`;
       break;
     }
     throw error;
@@ -553,6 +581,7 @@ export async function readBelongings(
   subject: string,
   at = LATEST,
   viewer?: string,
+  includeCapacity = !viewer && at === LATEST,
 ) {
   const facts = async (holder: string, role: WorldEdge["role"]) =>
     (await context.relations(holder, "has", "out", at))
@@ -573,8 +602,12 @@ export async function readBelongings(
       held.push({
         id: edge.target,
         ...labelled(node),
-        slots: itemSlots(node),
-        ...(node.count ? { unitsPerSlot: unitsPerSlot(node) } : {}),
+        ...(includeCapacity
+          ? {
+              slots: itemSlots(node),
+              ...(node.count ? { unitsPerSlot: unitsPerSlot(node) } : {}),
+            }
+          : {}),
         basis: edge.text ?? null,
         since: edge.period.from,
       });
@@ -591,7 +624,7 @@ export async function readBelongings(
       label: node?.text ?? "",
       ...shown(node),
       items: await items(edge.target),
-      ...(viewer
+      ...(!includeCapacity
         ? {}
         : {
             capacity: {
@@ -620,7 +653,7 @@ export async function readBelongings(
     items: await items(subject),
     storages,
     skills,
-    ...(viewer
+    ...(!includeCapacity
       ? {}
       : {
           capacity: {

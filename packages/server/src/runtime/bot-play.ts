@@ -2937,7 +2937,14 @@ export class BotPlay {
         context = this.store.context(w.id),
         commitId = derivedId(row.id + ":arrival"),
         plan = await planBelongings(context, commitId, w.at, row.operations);
-      const receipt = await this.#commit(w.id, commitId, { ...plan, context });
+      let receipt;
+      try {
+        receipt = await this.#commit(w.id, commitId, { ...plan, context });
+      } catch (error) {
+        // 到着予定を保存したまま、ほかの到着と手番の期限処理を進める。
+        if (error instanceof InventoryCapacityExceeded) continue;
+        throw error;
+      }
       const items = await this.#itemOutcomes(
         context,
         { requestId: commitId, operations: row.operations },
@@ -4879,7 +4886,15 @@ export class BotPlay {
         states,
         omittedStates: all.length - states.length,
         ...(node.kind === "existence"
-          ? { belongings: await readBelongings(context, id) }
+          ? {
+              belongings: await readBelongings(
+                context,
+                id,
+                latest,
+                undefined,
+                false,
+              ),
+            }
           : {}),
       });
     }
