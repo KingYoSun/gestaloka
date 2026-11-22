@@ -3535,52 +3535,60 @@ export class BotPlay {
   // 届く時刻を過ぎた申請の物品を成立させ、本人あての通知を作る。
   async #arrive(world?: string) {
     const due = (
-      await this.pool.query<{
-        id: string;
-        world_id: string;
-        operations: BelongingOp[];
-      }>(
-        "SELECT id,world_id,operations FROM bot_arrival WHERE ($1::uuid IS NULL OR world_id=$1) AND due<=$2 ORDER BY due,id",
+      await this.pool.query<{ id: string }>(
+        "SELECT id FROM bot_arrival WHERE ($1::uuid IS NULL OR world_id=$1) AND due<=$2 ORDER BY due,id",
         [world ?? null, this.now()],
       )
     ).rows;
-    for (const row of due) {
-      const w = await this.world(row.world_id),
-        context = this.store.context(w.id),
-        commitId = derivedId(row.id + ":arrival"),
-        plan = await planBelongings(context, commitId, w.at, row.operations);
-      let receipt;
+    for (const { id } of due) {
+      const db = await this.pool.connect();
       try {
-        receipt = await this.#commit(w.id, commitId, { ...plan, context });
+        await db.query("BEGIN");
+        await this.#deliverArrival(db, id);
+        await db.query("COMMIT");
       } catch (error) {
-        // 到着予定を保存したまま、ほかの到着と手番の期限処理を進める。
-        if (error instanceof InventoryCapacityExceeded) continue;
-        throw error;
+        await db.query("ROLLBACK");
+        if (!(error instanceof InventoryCapacityExceeded)) throw error;
+      } finally {
+        db.release();
       }
-      const items = await this.#itemOutcomes(
-        context,
-        { requestId: commitId, operations: row.operations },
-        receipt.changes,
-      );
-      await this.pool.query(
-        `WITH done AS (DELETE FROM bot_arrival WHERE id=$1 RETURNING world_id,actor_id),
+    }
+  }
+  async #deliverArrival(db: Db, id: string) {
+    // APIとワーカーが同じ到着予定を見つけても、確定と通知は一方に任せる。
+    const {
+      rows: [row],
+    } = await db.query<{ world_id: string; operations: BelongingOp[] }>(
+      "SELECT world_id,operations FROM bot_arrival WHERE id=$1 FOR UPDATE SKIP LOCKED",
+      [id],
+    );
+    if (!row) return;
+    const w = await this.world(row.world_id, db),
+      context = this.store.context(w.id),
+      commitId = derivedId(id + ":arrival"),
+      plan = await planBelongings(context, commitId, w.at, row.operations),
+      receipt = await this.#commit(w.id, commitId, { ...plan, context });
+    const items = await this.#itemOutcomes(
+      context,
+      { requestId: commitId, operations: row.operations },
+      receipt.changes,
+    );
+    await db.query(
+      `WITH done AS (DELETE FROM bot_arrival WHERE id=$1 RETURNING world_id,actor_id),
         noticed AS (INSERT INTO player_notice(id,world_id,actor_id,created_at,text) SELECT $2,world_id,actor_id,$3,$4 FROM done RETURNING world_id,actor_id)
         SELECT pg_notify('gestaloka_turn',world_id::text||':'||actor_id::text) FROM noticed`,
-        [
-          row.id,
-          derivedId(row.id + ":notice"),
-          this.now(),
-          arrivingItems(row.operations)
-            .map(
-              (item) => item.label + (item.count ? `（${item.count}個）` : ""),
-            )
-            .join("、") +
-            "が届きました。" +
-            (await itemOutcomeMessage(context, items)) +
-            "search --kind self の belongings で確かめられます",
-        ],
-      );
-    }
+      [
+        id,
+        derivedId(id + ":notice"),
+        this.now(),
+        arrivingItems(row.operations)
+          .map((item) => item.label + (item.count ? `（${item.count}個）` : ""))
+          .join("、") +
+          "が届きました。" +
+          (await itemOutcomeMessage(context, items)) +
+          "search --kind self の belongings で確かめられます",
+      ],
+    );
   }
   // 未読の通知があることを、プレイの応答に添える。
   async unread(

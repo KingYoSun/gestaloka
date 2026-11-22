@@ -12065,7 +12065,40 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
     },
   ]);
   await f.store.configureInventory(f.graph, true);
-  await later.expire(f.world);
+  // 観戦の定期更新が到着を確定する間に、ワーカーも同じ到着を見つける。
+  const claim = f.store.claim.bind(f.store);
+  let claimed!: () => void, release!: () => void;
+  const ready = new Promise<void>((resolve) => (claimed = resolve));
+  const resume = new Promise<void>((resolve) => (release = resolve));
+  vi.spyOn(f.store, "claim").mockImplementationOnce(async (...args) => {
+    const lease = await claim(...args);
+    claimed();
+    await resume;
+    return lease;
+  });
+  const clock = vi
+    .spyOn(access.botPlay, "now")
+    .mockReturnValue(new Date(dueAt + 1));
+  const refresh = access.botStatus(
+    user,
+    f.world,
+    f.actors[0],
+    undefined,
+    undefined,
+    undefined,
+    true,
+  );
+  try {
+    await ready;
+    await later.expire(f.world);
+  } finally {
+    release();
+    clock.mockRestore();
+  }
+  expect(await refresh).toMatchObject({
+    viewerId: f.actors[0],
+    screen: { own: { actorId: f.actors[0] } },
+  });
   expect(await held()).not.toContainEqual({ label: "ミルク", count: 10 });
   expect(
     (
