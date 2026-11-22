@@ -99,12 +99,19 @@ export function PlayLayout({
   left,
   right,
   toolbar,
+  actions,
   children,
   unreadNotices,
 }: {
   left: ReactNode;
   right: ReactNode;
   toolbar: ReactNode;
+  actions: {
+    label: string;
+    icon: ReactNode;
+    badge?: number;
+    content: ReactNode;
+  }[];
   children: ReactNode;
   unreadNotices: number;
 }) {
@@ -190,6 +197,35 @@ export function PlayLayout({
         {left}
       </aside>
       <div className="play-center">{children}</div>
+      <div className="play-actions">
+        {actions.map(({ label, icon, badge, content }) => (
+          <Dialog.Root key={label}>
+            <Dialog.Trigger asChild>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                className="play-icon"
+                aria-label={badge ? `${label}（${badge}件）` : label}
+                title={label}
+              >
+                {icon}
+                {!!badge && (
+                  <span
+                    className="play-unread absolute -top-1 -right-1"
+                    aria-hidden="true"
+                  >
+                    {badge}
+                  </span>
+                )}
+              </Button>
+            </Dialog.Trigger>
+            <PanelDialog title={label}>
+              <div className="space-y-4">{content}</div>
+            </PanelDialog>
+          </Dialog.Root>
+        ))}
+      </div>
       <aside className="play-aside" data-side="right" aria-label="シーン情報">
         {right}
       </aside>

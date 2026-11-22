@@ -281,6 +281,643 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    since?: string;
+                    until?: string;
+                    worldId?: string;
+                    author?: string;
+                    player?: string;
+                    title?: string;
+                    bookmarked?: "1";
+                    sort?: "newest" | "oldest" | "player" | "author" | "title";
+                    before?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: uuid */
+                                worldId: string;
+                                worldTitle: string;
+                                title: string;
+                                author: string;
+                                player?: string;
+                                /** Format: date-time */
+                                publishedAt?: string;
+                                mine: boolean;
+                                bookmarked?: boolean;
+                            }[];
+                            /** Format: uuid */
+                            next: string | null;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stories/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    since?: string;
+                    until?: string;
+                    sort?: "number" | "newest" | "oldest";
+                    after?: string;
+                    episode?: string;
+                    image?: "1";
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            story: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: uuid */
+                                worldId: string;
+                                worldTitle: string;
+                                title: string;
+                                author: string;
+                                player?: string;
+                                /** Format: date-time */
+                                publishedAt?: string;
+                                mine: boolean;
+                                bookmarked?: boolean;
+                            };
+                            episodes: {
+                                number: number;
+                                /** Format: date-time */
+                                publishedAt: string;
+                                title?: string;
+                            }[];
+                            episode: {
+                                number: number;
+                                /** Format: date-time */
+                                publishedAt: string;
+                                title?: string;
+                                body: string;
+                                hasImage?: boolean;
+                                /** Format: byte */
+                                image?: string;
+                            };
+                            hasNextEpisode: boolean;
+                            previousEpisode?: number | null;
+                            nextEpisode?: number | null;
+                            next: number | null;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stories/{id}/bookmark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        bookmarked: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            bookmarked: boolean;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worlds/{id}/stories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": ({
+                        /** Format: uuid */
+                        requestId: string;
+                        body: string;
+                        /** Format: byte */
+                        image?: string;
+                        episodeTitle?: string;
+                        title: string;
+                        author: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        body: string;
+                        /** Format: byte */
+                        image?: string;
+                        episodeTitle?: string;
+                        /** Format: uuid */
+                        storyId: string;
+                    }) | {
+                        /** @enum {string} */
+                        operation: "edit";
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storyId: string;
+                        episode?: number;
+                        episodeTitle?: string | null;
+                        title?: string;
+                        author?: string;
+                        body?: string;
+                        /** Format: byte */
+                        image?: string | null;
+                    } | {
+                        /** @enum {string} */
+                        operation: "delete";
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storyId: string;
+                        episode?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            storyId: string;
+                            episode: number;
+                            /** @enum {string} */
+                            deleted?: "story" | "episode";
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/worlds": {
         parameters: {
             query?: never;
@@ -433,6 +1070,19 @@ export interface paths {
                             id: string;
                             prompt: string;
                             playerSettings?: string;
+                            startingItems?: {
+                                /** @description 物品の呼称 */
+                                label: string;
+                                /** @description 個数 */
+                                count: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 物品の系列ID
+                                 */
+                                seriesId: string;
+                                /** @description 1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠 */
+                                unitsPerSlot?: number | "unlimited";
+                            }[];
                             /** Format: date-time */
                             createdAt: string;
                             /** @enum {string} */
@@ -584,6 +1234,19 @@ export interface paths {
                             id: string;
                             prompt: string;
                             playerSettings?: string;
+                            startingItems?: {
+                                /** @description 物品の呼称 */
+                                label: string;
+                                /** @description 個数 */
+                                count: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 物品の系列ID
+                                 */
+                                seriesId: string;
+                                /** @description 1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠 */
+                                unitsPerSlot?: number | "unlimited";
+                            }[];
                             /** Format: date-time */
                             createdAt: string;
                             /** @enum {string} */
@@ -755,6 +1418,19 @@ export interface paths {
                             id: string;
                             prompt: string;
                             playerSettings?: string;
+                            startingItems?: {
+                                /** @description 物品の呼称 */
+                                label: string;
+                                /** @description 個数 */
+                                count: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 物品の系列ID
+                                 */
+                                seriesId: string;
+                                /** @description 1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠 */
+                                unitsPerSlot?: number | "unlimited";
+                            }[];
                             /** Format: date-time */
                             createdAt: string;
                             /** @enum {string} */
@@ -2962,6 +3638,12 @@ export interface paths {
                         /** @enum {string} */
                         command: "update";
                         text: string;
+                        /** @description 成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない */
+                        materials?: {
+                            /** Format: uuid */
+                            id: string;
+                            count?: number;
+                        }[];
                         stealth?: boolean;
                         operations?: ({
                             /** @enum {string} */
@@ -3415,6 +4097,12 @@ export interface paths {
                         /** @enum {string} */
                         command: "create";
                         text: string;
+                        /** @description 成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない */
+                        materials?: {
+                            /** Format: uuid */
+                            id: string;
+                            count?: number;
+                        }[];
                         changes: {
                             nodes: ({
                                 /** Format: uuid */
@@ -3756,6 +4444,12 @@ export interface paths {
                         command: "create-batch";
                         proposals: ({
                             text: string;
+                            /** @description 成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない */
+                            materials?: {
+                                /** Format: uuid */
+                                id: string;
+                                count?: number;
+                            }[];
                             changes: {
                                 nodes: ({
                                     /** Format: uuid */
@@ -4088,6 +4782,12 @@ export interface paths {
                             };
                         } | {
                             text: string;
+                            /** @description 成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない */
+                            materials?: {
+                                /** Format: uuid */
+                                id: string;
+                                count?: number;
+                            }[];
                             operations: ({
                                 /** @enum {string} */
                                 type: "locate";
@@ -8520,6 +9220,20 @@ export interface paths {
                             playerList?: boolean;
                             /** @description 検索で出現した個体が同じ場所に同時に同席できる数を、発生用ノードの発生数（maxCount、旧形式はcount）の何倍までにするか。既定は2。省略すると現在の設定を保つ */
                             instantNpcMultiplier?: number;
+                            /** @description 参加する人物が最初から手に持つ系列つきの物品。設定後に始まる参加から適用する。省略すると現在の設定を保つ */
+                            startingItems?: {
+                                /** @description 物品の呼称 */
+                                label: string;
+                                /** @description 個数 */
+                                count: number;
+                                /**
+                                 * Format: uuid
+                                 * @description 物品の系列ID
+                                 */
+                                seriesId: string;
+                                /** @description 1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠 */
+                                unitsPerSlot?: number | "unlimited";
+                            }[];
                             /** @description プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。死亡した人物はセッションから外れ、deathPlaceIdの場所へ移る。省略すると現在の設定を保つ */
                             deathJudgment?: boolean;
                             /** @description 人物の死亡を判定するGMへ渡す、この世界の条件文。空なら行動と結果だけから判定する。省略すると現在の設定を保つ */

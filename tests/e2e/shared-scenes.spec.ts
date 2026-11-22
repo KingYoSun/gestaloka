@@ -191,6 +191,8 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
         pageScroll: window.scrollY,
         scrollTop: element.scrollTop,
       }));
+    const pageFits = () =>
+      page.evaluate(() => document.documentElement.scrollHeight <= innerHeight);
     const device = await page.request.post("/api/player-devices", {
       headers: { ...headers, ...cliVersionHeader },
       data: {
@@ -211,10 +213,19 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
       page.getByRole("heading", { name: "2人のセッション" }),
     ).toBeVisible();
     const players = page.getByRole("complementary", { name: "プレイヤー情報" });
-    await expect(players.getByText("プロフィールの記録 40")).toBeAttached();
+    const lastProfile = players.getByText("プロフィールの記録 40");
+    await expect(lastProfile).toBeAttached();
+    expect(await pageFits()).toBe(true);
     const desktopPosition = await logPosition();
+    await lastProfile.scrollIntoViewIfNeeded();
+    await expect(lastProfile).toBeInViewport();
+    expect(
+      await players.evaluate((element) => element.scrollTop),
+    ).toBeGreaterThan(0);
+    expect(await logPosition()).toEqual(desktopPosition);
     await players.getByRole("tab", { name: "所持品" }).click();
     expect(await logPosition()).toEqual(desktopPosition);
+    await page.getByRole("button", { name: "操作", exact: true }).click();
     for (const action of [
       leave,
       finish,
@@ -224,6 +235,7 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     ]) {
       await expect(action).toHaveCount(0);
     }
+    await page.keyboard.press("Escape");
     await page.goto("/auth/player");
     await page.getByRole("button", { name: "許可を解除する" }).click();
     await page.goto(play);
@@ -258,6 +270,7 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
       page.getByRole("dialog", { name: "隣接する場所" }),
     ).toBeVisible();
     await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "操作", exact: true }).click();
     await page.getByRole("button", { name: "自分の情報", exact: true }).click();
     await expect(
       page.getByText("自分への検索結果", { exact: true }),
@@ -295,6 +308,7 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
       "datetime",
       /^\d{4}-\d{2}-\d{2}T/,
     );
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "最上部へ移動" }).click();
     await expect
       .poll(() => log.evaluate((element) => element.scrollTop))
@@ -365,6 +379,7 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     await swipe(drawer, 170, 35);
     await expect(drawer).toBeHidden();
     await expect(page.locator(".play-drawer-trigger:visible")).toHaveCount(2);
+    expect(await pageFits()).toBe(true);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -374,16 +389,24 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
       path: "artifacts/screenshots/bot-session-mobile.png",
       fullPage: true,
     });
+    await page.getByRole("button", { name: "操作", exact: true }).click();
     await leave.click();
     await expect(
-      page.getByRole("heading", { name: "1人のセッション" }),
+      page.getByRole("heading", {
+        name: "1人のセッション",
+        includeHidden: true,
+      }),
     ).toBeVisible();
     await field.fill("単独で観測を続ける");
     await page.getByRole("button", { name: "発言する", exact: true }).click();
     await finish.click();
     await expect(
-      page.getByRole("heading", { name: "本人のシーンを終了しました" }),
+      page.getByRole("heading", {
+        name: "本人のシーンを終了しました",
+        includeHidden: true,
+      }),
     ).toBeVisible();
+    await page.keyboard.press("Escape");
     await f.call(actor, { command: "start" });
     await page
       .getByRole("button", { name: "プレイヤー情報", exact: true })
@@ -485,6 +508,7 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
       playerDrawer.getByText("手渡す星図", { exact: true }),
     ).toBeVisible();
     await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "操作", exact: true }).click();
     await page.getByText("プレイコマンド", { exact: true }).click();
     await page.getByLabel("手渡す物品").selectOption({ label: "手渡す星図" });
     await page.getByLabel("渡す相手").selectOption(receiver);
@@ -495,6 +519,7 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
       }),
     ).toBeVisible();
     await page.goto(`/worlds/${f.world}/play?actorId=${receiver}`);
+    await page.getByRole("button", { name: "操作", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "受け入れる", exact: true }),
     ).toBeVisible();
@@ -506,6 +531,7 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
       .click();
     await page.getByRole("button", { name: "受け入れる", exact: true }).click();
     await expect(page.getByText(/の手番を待っています/)).toBeVisible();
+    await page.keyboard.press("Escape");
     await openPlayer();
     await expect(
       playerDrawer.getByText("手渡す星図", { exact: true }),
@@ -536,12 +562,14 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
     ).toBeVisible();
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "操作", exact: true }).click();
     await page.getByText("プレイコマンド", { exact: true }).click();
     await page.getByLabel("移動先").selectOption({ label: "星を観測する丘" });
     await page.getByRole("button", { name: "移動する", exact: true }).click();
     await expect(
       page.getByText("申請した変更を確定しました", { exact: true }),
     ).toBeVisible();
+    await page.keyboard.press("Escape");
     await openScene();
     await expect(
       sceneDrawer.getByText("星を観測する丘", { exact: true }),

@@ -632,6 +632,71 @@ test("新規参加は同一性から始め、追加照会で状態と履歴を�
   ).toHaveLength(1);
 });
 
+test("世界の設定で渡す物品は、手持ち枠の制限が有効でも系列つきで参加者の手持ちになる", async () => {
+  const scene = await fixture();
+  await store.configureInventory(scene.worldId, true);
+  const newcomer = node("existence", "新しい村民"),
+    membership = node("script", "この村の村民である"),
+    coin = {
+      label: "架空の硬貨",
+      count: 100000,
+      seriesId: randomUUID(),
+      unitsPerSlot: "unlimited" as const,
+    };
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async () =>
+      response(
+        proposal(
+          changes(
+            [newcomer, membership],
+            [
+              edge("status", newcomer, membership, undefined, "content"),
+              edge("status", membership, scene.place, undefined, "about"),
+            ],
+          ),
+          { newParticipantId: newcomer.id },
+        ),
+      ),
+    );
+  const runtime = await agent(transport);
+  const id = await runtime.create({
+    worldId: scene.worldId,
+    phase: "participant",
+    at: 0,
+    until: 1000,
+    rootIds: [scene.place.id],
+    startingItems: [coin],
+    actionText: "別の村民として参加する",
+  });
+  operations.push(id);
+  await runtime.run(id);
+  const context = store.context(scene.worldId),
+    held = (await context.relations(newcomer.id, "has", "out", 1000)).filter(
+      (e) => !e.role,
+    );
+  expect(held).toHaveLength(1);
+  const { label, ...rest } = coin;
+  expect(await context.node(held[0]!.target)).toMatchObject({
+    kind: "existence",
+    text: label,
+    ...rest,
+  });
+  // 渡す物品として指定していない新しい物品は、系列を名乗れない。
+  const forged = { ...node("existence", label), seriesId: coin.seriesId };
+  await expect(
+    store.commit(
+      await store.claim(scene.worldId, randomUUID()),
+      store.context(scene.worldId),
+      {
+        commitId: randomUUID(),
+        at: 1000,
+        changes: changes([forged], [edge("has", newcomer, forged)]),
+      },
+    ),
+  ).rejects.toThrow("管理者の確定が必要です");
+});
+
 test("多くの関係を持つ起点でも、世界時間の進行で渡す入力は上限のある件数に収まり、続きを取得できる", async () => {
   const scene = await fixture(),
     count = 25;

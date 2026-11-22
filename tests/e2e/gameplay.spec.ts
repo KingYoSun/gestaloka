@@ -189,11 +189,15 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
     .click();
   await participate(page);
 
+  await page.getByRole("button", { name: "操作", exact: true }).click();
   await page
     .getByRole("button", { name: "セッションを開始", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "1人のセッション" }),
+    page.getByRole("heading", {
+      name: "1人のセッション",
+      includeHidden: true,
+    }),
   ).toBeVisible();
   await page.getByLabel("発言・ターンコメント").fill("周囲の音に耳を澄ませる");
   await page.getByRole("button", { name: "発言する", exact: true }).click();
@@ -205,7 +209,10 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
     .getByRole("button", { name: "自分のプレイを終了する", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "本人のシーンを終了しました" }),
+    page.getByRole("heading", {
+      name: "本人のシーンを終了しました",
+      includeHidden: true,
+    }),
   ).toBeVisible();
 });
 
@@ -472,7 +479,7 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
     fullPage: true,
   });
   await page.setViewportSize({ width: 375, height: 812 });
-  await expect(page.getByRole("button", { name: "発言する" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "操作" })).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: "現在のセッションを開く", exact: true }),
   ).toBeVisible();

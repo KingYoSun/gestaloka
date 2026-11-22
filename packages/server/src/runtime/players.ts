@@ -6,7 +6,7 @@ import type pg from "pg";
 import { AccessError } from "../http/access.js";
 import { requireMember } from "../http/operations.js";
 import { ExecutionBudget } from "../execution-budget.js";
-import { SupersededWorker } from "./agent.js";
+import { SupersededWorker, type Interaction } from "./agent.js";
 import type { WorldConstruction } from "./construction.js";
 import { playerIcon } from "./player-icons.js";
 import { playerSettings } from "./player-settings.js";
@@ -86,6 +86,7 @@ export class WorldPlayers {
         accepting: boolean;
         state: string;
         player_settings: string;
+        starting_items: NonNullable<Interaction["startingItems"]>;
       }>("SELECT * FROM world_construction WHERE id=$1 FOR SHARE", [
         input.worldId,
       ])
@@ -147,6 +148,9 @@ export class WorldPlayers {
         at: now,
         until: now,
         rootIds: world.root_ids,
+        ...(world.starting_items.length && {
+          startingItems: world.starting_items,
+        }),
         actionText: approved
           ? settings
           : playerSettings(world.player_settings, settings),

@@ -9,6 +9,16 @@ const id = z.uuid(),
     "この事実が成立した根拠。初期設定、または成立した出来事の内容",
   ),
   count = z.number().int().positive().safe();
+const materials = z
+  .array(z.object({ id, count: count.optional() }).strict())
+  .refine(
+    (items) => new Set(items.map((item) => item.id)).size === items.length,
+    "同じ材料は必要数をまとめて指定してください",
+  )
+  .optional()
+  .describe(
+    "成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない",
+  );
 export const ItemOutcome = z.object({
   itemId: id,
   label: z.string(),
@@ -467,6 +477,7 @@ export const PlayCommand = z.discriminatedUnion("command", [
       ...request,
       command: z.literal("update"),
       text,
+      materials,
       stealth: z.boolean().optional(),
       operations: z.array(BelongingOp).min(1).optional(),
       changes: Change.optional(),
@@ -513,6 +524,7 @@ export const PlayCommand = z.discriminatedUnion("command", [
       ...request,
       command: z.literal("create"),
       text,
+      materials,
       changes: Change,
       dependencies,
     })
@@ -524,9 +536,13 @@ export const PlayCommand = z.discriminatedUnion("command", [
       proposals: z
         .array(
           z.union([
-            z.object({ text, changes: Change }).strict(),
+            z.object({ text, materials, changes: Change }).strict(),
             z
-              .object({ text, operations: z.array(BelongingOp).min(1) })
+              .object({
+                text,
+                materials,
+                operations: z.array(BelongingOp).min(1),
+              })
               .strict(),
           ]),
         )

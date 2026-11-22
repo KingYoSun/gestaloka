@@ -100,6 +100,15 @@ export function iconDraft(
 export const iconDraftKey = (world: string, player: string) =>
   pendingKey(`${world}:${player}`, "icon");
 
+export function readImageFile(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1]!);
+    reader.onerror = () => reject(new Error("画像を読み込めませんでした。"));
+    reader.readAsDataURL(file);
+  });
+}
+
 export function IconPicker({
   onChange,
   onReading,
@@ -131,15 +140,7 @@ export function IconPicker({
             onReading(true);
             if (file.size > PLAYER_ICON_MAX_BYTES)
               throw new Error("5MiB以下の画像を指定してください。");
-            const image = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () =>
-                resolve(String(reader.result).split(",")[1]!);
-              reader.onerror = () =>
-                reject(new Error("画像を読み込めませんでした。"));
-              reader.readAsDataURL(file);
-            });
-            onChange(image);
+            onChange(await readImageFile(file));
           } catch (error) {
             onChange(null);
             setError(error as Error);

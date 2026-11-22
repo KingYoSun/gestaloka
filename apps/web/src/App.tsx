@@ -14,10 +14,12 @@ import {
   Outlet,
   RouterProvider,
   useParams,
+  useSearch,
   type RouterHistory,
 } from "@tanstack/react-router";
 import { Moon, Sun } from "lucide-react";
 import { z } from "zod";
+import { StoryEpisodeFilters, StoryListQuery } from "@gestaloka/contracts";
 import logo from "../../../designs/logo.png";
 import {
   ApiFailure,
@@ -53,6 +55,15 @@ const Catalog = lazy(() =>
 );
 const Participation = lazy(() =>
   import("./participation.js").then((m) => ({ default: m.Participation })),
+);
+const Stories = lazy(() =>
+  import("./Stories.js").then((m) => ({ default: m.Stories })),
+);
+const ReadStory = lazy(() =>
+  import("./Stories.js").then((m) => ({ default: m.ReadStory })),
+);
+const WriteStory = lazy(() =>
+  import("./Stories.js").then((m) => ({ default: m.WriteStory })),
 );
 
 function ThemeButton() {
@@ -98,6 +109,7 @@ function Shell() {
         </Link>
         <nav>
           <Link to="/">世界一覧</Link>
+          {surface === "user" && <Link to="/stories">STORIES</Link>}
           {surface === "user" && <a href="/auth/player">AIへのプレイ許可</a>}
           {surface === "admin" && (
             <Link to="/operations/$section" params={{ section: "users" }}>
@@ -176,6 +188,48 @@ const routeTree = root.addChildren([
     component: OperationsRoute,
   }),
   createRoute({ getParentRoute: () => root, path: "/", component: HomeRoute }),
+  createRoute({
+    getParentRoute: () => root,
+    path: "/stories",
+    validateSearch: StoryListQuery.extend({
+      bookmarked: z
+        .union([z.literal("1"), z.literal(1)])
+        .transform(() => "1" as const)
+        .optional(),
+    }).parse,
+    component: function StoriesRoute() {
+      return <Stories {...useSearch({ from: "/stories" })} />;
+    },
+  }),
+  createRoute({
+    getParentRoute: () => root,
+    path: "/stories/$id",
+    validateSearch: StoryEpisodeFilters.extend({
+      episode: z.coerce.number().int().positive().optional(),
+      after: z.coerce.number().int().positive().optional(),
+    }).parse,
+    component: function ReadStoryRoute() {
+      const { id } = useParams({ from: "/stories/$id" });
+      const { episode, after, sort, since, until } = useSearch({
+        from: "/stories/$id",
+      });
+      return (
+        <ReadStory
+          key={id}
+          id={id}
+          filters={{ episode, after, sort, since, until }}
+        />
+      );
+    },
+  }),
+  createRoute({
+    getParentRoute: () => root,
+    path: "/stories/write/$id",
+    component: function WriteStoryRoute() {
+      const { id } = useParams({ from: "/stories/write/$id" });
+      return <WriteStory key={id} id={id} />;
+    },
+  }),
   createRoute({
     getParentRoute: () => root,
     path: "/worlds/$id",
