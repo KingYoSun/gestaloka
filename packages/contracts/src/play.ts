@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Change } from "./world.js";
+import { DrawTableActions } from "./draw.js";
 
 const request = { requestId: z.uuid() },
   text = z.string().trim().min(1);
@@ -346,6 +347,7 @@ const StorageActions = [
 ] as const;
 export type StorageAction = z.infer<(typeof StorageActions)[number]>;
 export const PlayCommand = z.discriminatedUnion("command", [
+  ...DrawTableActions,
   ...StorageActions,
   ...BlueprintActions,
   NpcAction.extend({ ...request, command: z.literal("npc-action"), npcId: id }),
@@ -363,6 +365,8 @@ export const PlayCommand = z.discriminatedUnion("command", [
       ...request,
       command: z.literal("draw"),
       targetId: id,
+      versionId: id.optional(),
+      paymentItemId: id.optional(),
       text: text.optional().describe("同席者に伝える行動の描写"),
     })
     .strict(),

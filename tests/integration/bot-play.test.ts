@@ -8574,6 +8574,368 @@ test("抽選器を審査し、別の人物が結果を受け取り、同席者�
   ).toHaveLength(2);
 });
 
+async function fixedTableFixture() {
+  const f = await fixture();
+  const send = (
+    command: string,
+    fields: Record<string, unknown> = {},
+    actor = 0,
+  ) => f.send(actor, { command, targetId: f.place, ...fields });
+  let revision = 0;
+  const edit = async (fromPublished = false) => {
+    const result = await send("draw-table-edit", { fromPublished });
+    revision = Number(result.revision);
+    return result;
+  };
+  const change = async (command: string, fields: Record<string, unknown>) => {
+    const result = await send(command, { revision, ...fields });
+    revision = Number(result.revision);
+    return result;
+  };
+  const settings = (description: string, price: unknown = null) =>
+    change("draw-table-settings", { description, price });
+  const put = (result: unknown, fields: Record<string, unknown> = {}) =>
+    change("draw-table-put", { result, ...fields });
+  const publish = () => send("draw-table-publish", { revision });
+  const approve = () =>
+    f.calls.mockImplementationOnce(async (id, role) => {
+      expect(role).toBe("world-draw-review");
+      return answer(id, { accepted: true, reason: "候補と説明が対応する" });
+    });
+  await edit();
+  return { ...f, send, edit, change, settings, put, publish, approve };
+}
+
+test("固定表の下書きで重み・候補・確率を確認し、審査の却下後も公開版で引ける", async () => {
+  const f = await fixedTableFixture();
+  await f.settings("札を一枚引く");
+  await expect(f.publish()).rejects.toMatchObject({
+    code: "DRAW_TABLE_INCOMPLETE",
+  });
+  const entry = (text: string) => ({ kind: "message", text });
+  const first = await f.put(entry("吉"));
+  const second = await f.put(entry("小吉"));
+  const third = await f.put(entry("大吉"));
+  expect(third.entries).toMatchObject([
+    { probability: 1 / 3 },
+    { probability: 1 / 3 },
+    { probability: 1 / 3 },
+  ]);
+  expect(
+    await f.put(entry("小吉"), {
+      entryId: (second.entries as { entryId: string }[])[1]!.entryId,
+      weight: 2,
+    }),
+  ).toMatchObject({
+    totalWeight: 4,
+    entries: [
+      { probability: 0.25 },
+      { probability: 0.5 },
+      { probability: 0.25 },
+    ],
+  });
+  const firstId = (first.entries as { entryId: string }[])[0]!.entryId;
+  f.approve();
+  const published = await f.publish();
+  expect(published).toMatchObject({
+    state: "confirmed",
+    accepted: true,
+    spentSp: 0,
+  });
+  await expect(f.send("draw-table-edit", {}, 1)).rejects.toMatchObject({
+    code: "DRAW_TABLE_AUTHORITY",
+  });
+  await f.edit(true);
+  await f.change("draw-table-remove", { entryId: firstId });
+  expect(
+    await f.send("draw-table-show", { view: "published" }, 1),
+  ).toMatchObject({
+    versionId: published.versionId,
+    totalWeight: 4,
+    entries: [{ weight: 1 }, { weight: 2 }, { weight: 1 }],
+  });
+  const requestId = randomUUID();
+  const drawn = await f.send("draw", { requestId, text: "大吉を出す" }, 1);
+  expect(drawn).toMatchObject({
+    versionId: published.versionId,
+    spentSp: 0,
+    payment: null,
+    result: { kind: "message" },
+  });
+  expect(f.calls).toHaveBeenCalledTimes(1);
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-draw-review");
+    expect(JSON.parse(String(messages[1]!.content)).table.entries).toHaveLength(
+      2,
+    );
+    return answer(id, { accepted: false, reason: "説明を補ってください" });
+  });
+  expect(await f.publish()).toMatchObject({ state: "rejected" });
+  expect(await f.send("draw", {}, 1)).toMatchObject({
+    versionId: published.versionId,
+    spentSp: 0,
+  });
+  f.approve();
+  await f.settings("二種類の札から一枚引く");
+  const replacement = await f.publish();
+  expect(replacement).toMatchObject({ state: "confirmed" });
+  expect(await f.send("draw", { requestId, text: "大吉を出す" }, 1)).toEqual(
+    drawn,
+  );
+  expect((await f.send("draw", {}, 1)).versionId).toBe(replacement.versionId);
+});
+
+test("固定表の有料福引は払出しと代価を一度だけ確定し、在庫が戻るまで止まる", async () => {
+  const f = await fixedTableFixture();
+  const [manager, visitor, otherVisitor] = f.actors;
+  const coin = randomUUID(),
+    otherCoin = randomUUID(),
+    series = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      management: {
+        editorId: (await auth.person()).id,
+        reason: "検証用の通貨系列",
+        requestHash: "b".repeat(64),
+      },
+      changes: {
+        nodes: [coin, otherCoin].map((id) => ({
+          id,
+          kind: "existence",
+          text: "銅貨",
+          seriesId: series,
+          count: 2,
+        })),
+        edges: [
+          [visitor!, coin],
+          [otherVisitor!, otherCoin],
+        ].map(([source, target]) => ({
+          id: randomUUID(),
+          kind: "has",
+          source: source!,
+          target: target!,
+          period: { from: 0 },
+        })),
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  const prize = (
+    await f.apply([
+      {
+        type: "grant",
+        person: manager,
+        storage: f.place,
+        basis: "景品の保管先",
+      },
+      {
+        type: "create",
+        holder: f.place,
+        label: "真鍮の鈴",
+        basis: "福引の在庫",
+      },
+    ])
+  ).changes.nodes[0]!.id;
+  const price = {
+    storageId: f.place,
+    paymentSeriesId: series,
+    paymentLabel: "銅貨",
+    count: 1,
+  };
+  await f.settings("銅貨1枚で鈴を一つ受け取る", price);
+  const prizeEntry = {
+    kind: "stock",
+    storageId: f.place,
+    itemId: prize,
+    count: 1,
+  };
+  const added = await f.put(prizeEntry);
+  f.approve();
+  const { versionId } = await f.publish();
+  await expect(
+    f.send("draw", { versionId: randomUUID(), paymentItemId: coin }, 1),
+  ).rejects.toMatchObject({
+    code: "DRAW_TABLE_CHANGED",
+  });
+  await expect(f.send("draw", { versionId }, 1)).rejects.toMatchObject({
+    code: "DRAW_PAYMENT_REQUIRED",
+  });
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  let oldRequest: string | undefined;
+  try {
+    const profile = join(cli.directory, "paid-draw.json");
+    const connection = await cli.run(
+      profile,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    await cli.approve(
+      f.people[1]!.cookie,
+      connection.userCode,
+      `actor:${visitor}`,
+    );
+    const search = await cli.run(
+      profile,
+      "search",
+      "--kind",
+      "subject",
+      "--target",
+      f.place,
+    );
+    expect(search.result.material.draw).toMatchObject({
+      mode: "table",
+      available: true,
+      price: { count: 1 },
+      spCost: 0,
+    });
+    cli.dropNextResponse("draw");
+    const lost = await cli.run(
+      profile,
+      "draw",
+      "--target",
+      f.place,
+      "--table-version",
+      search.result.material.draw.versionId,
+      "--payment",
+      coin,
+      "--full-ids",
+    );
+    expect(lost.state).toBe("error");
+    oldRequest = lost.requestId;
+    const recovered = await cli.run(profile, "recover", "--full-ids");
+    expect(recovered.result).toMatchObject({
+      versionId,
+      spentSp: 0,
+      reward: { id: prize, label: "真鍮の鈴" },
+      payment: { itemId: coin, count: 1 },
+    });
+    expect(await f.store.context(f.graph).node(coin)).toMatchObject({
+      count: 1,
+    });
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+  await expect(
+    f.send("draw", { versionId, paymentItemId: coin }, 1),
+  ).rejects.toMatchObject({ code: "DRAW_STOCK_UNAVAILABLE" });
+  expect(await f.store.context(f.graph).node(coin)).toMatchObject({ count: 1 });
+  await f.apply([
+    {
+      type: "move",
+      item: prize,
+      from: visitor,
+      to: f.place,
+      basis: "景品の補充",
+    },
+  ]);
+  await f.edit(true);
+  await f.put(prizeEntry, { entryId: added.entryId, weight: 2 });
+  f.approve();
+  const updated = await f.publish();
+  expect(
+    await f.send(
+      "draw",
+      { requestId: oldRequest, versionId, paymentItemId: coin },
+      1,
+    ),
+  ).toMatchObject({
+    versionId,
+    reward: { id: prize },
+    payment: { itemId: coin, count: 1 },
+  });
+  expect(await f.store.context(f.graph).node(coin)).toMatchObject({ count: 1 });
+  await f.move(2, f.place);
+  const attempts = await Promise.allSettled(
+    [coin, otherCoin].map((paymentItemId, index) =>
+      f.send(
+        "draw",
+        { versionId: updated.versionId, paymentItemId },
+        index + 1,
+      ),
+    ),
+  );
+  expect(attempts.filter(({ status }) => status === "fulfilled")).toHaveLength(
+    1,
+  );
+  expect(attempts.find(({ status }) => status === "fulfilled")).toMatchObject({
+    value: { versionId: updated.versionId, reward: { id: prize }, spentSp: 0 },
+  });
+  expect(["WORLD_CHANGED", "DRAW_STOCK_UNAVAILABLE"]).toContain(
+    (
+      attempts.find(
+        ({ status }) => status === "rejected",
+      ) as PromiseRejectedResult
+    ).reason.code,
+  );
+  expect(f.calls).toHaveBeenCalledTimes(2);
+});
+
+test("固定表は新しい技能が一件でも含まれると1 SPを使い、再送で技能とSPを重ねない", async () => {
+  const f = await fixedTableFixture();
+  await f.settings("触れた木材の中の空洞を音で知る技を授ける");
+  expect(
+    await f.put({ kind: "skill", text: "木材の中の空洞を音で知る" }),
+  ).toMatchObject({ spCost: 1 });
+  f.approve();
+  await f.publish();
+  const requestId = randomUUID();
+  const commit = f.store.commit.bind(f.store);
+  vi.spyOn(f.store, "commit").mockImplementationOnce(async (...args) => {
+    await commit(...args);
+    throw new Error("グラフ確定後に接続が切れた");
+  });
+  await expect(f.send("draw", { requestId }, 1)).rejects.toThrow(
+    "グラフ確定後に接続が切れた",
+  );
+  const drawn = await f.send("draw", { requestId }, 1);
+  expect(drawn).toMatchObject({
+    spentSp: 1,
+    dailySp: { remaining: 99 },
+    reward: { kind: "skill" },
+  });
+  expect(await f.send("draw", { requestId }, 1)).toEqual(drawn);
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
+test("固定表の32件上限と不正な重みを審査前に検査する", async () => {
+  const f = await fixedTableFixture();
+  const input = { kind: "message", text: "はずれ" };
+  for (const weight of [0, -1, 1.5])
+    expect(() =>
+      PlayCommand.parse({
+        requestId: randomUUID(),
+        targetId: f.place,
+        command: "draw-table-put",
+        revision: 1,
+        result: input,
+        weight,
+      }),
+    ).toThrow();
+  for (let i = 0; i < 32; i++) await f.put(input);
+  await expect(f.put(input)).rejects.toMatchObject({
+    code: "DRAW_TABLE_LIMIT",
+  });
+  expect(await f.send("draw-table-show", { view: "draft" })).toMatchObject({
+    totalWeight: 32,
+  });
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
 test("現地に置かれた物品から引け、共有残量1 SPで競合しても一件だけ生成する", async () => {
   const f = await fixture();
   const user = f.people[0]!.id;

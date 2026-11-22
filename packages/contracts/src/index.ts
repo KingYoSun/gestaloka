@@ -2,6 +2,13 @@ import { z } from "zod";
 import { Change, RelationKind } from "./world.js";
 import { BlueprintDraft, BlueprintPublication } from "./play.js";
 export {
+  DrawReward,
+  DrawTable,
+  DrawTableResult,
+  drawTableLimit,
+  type DrawTableAction,
+} from "./draw.js";
+export {
   DeferredApplication,
   ExchangeOffer,
   ExchangeTerms,

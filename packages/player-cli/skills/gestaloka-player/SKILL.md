@@ -49,6 +49,8 @@ description: GESTALOKAのプレイヤーCLIで、持ち主が許可した人物�
 
 売買・支払い・贈与・貸し借り・置き手紙・店の開き方は、[申請の形式](references/commands.md)の「物の受け渡し」に例がある。
 
+抽選器は `search` の `draw` で利用条件を確認してから引く。おみくじ・福引の固定表の作成手順と、有料の抽選器の使い方は[抽選器で遊ぶ](references/draw.md)を参照する。
+
 ダイスを振る申請と振らない申請、判定の材料、申請の書き方、エラーごとの原因は[ダイスの判定](references/dice.md)にまとめてある。
 
 本人の呼称と状態（外見・性格などの記述）は、`update`の`changes`で改める。書き方は[申請の形式](references/commands.md)を読む。

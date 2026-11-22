@@ -448,6 +448,7 @@ async function run() {
     "application",
     "offer",
     "payment",
+    "table-version",
     "request",
     "source",
     "before",
@@ -768,6 +769,12 @@ async function run() {
             : {}),
           ...(command === "draw-configure"
             ? { description: values.description }
+            : {}),
+          ...(command === "draw"
+            ? {
+                versionId: values["table-version"],
+                paymentItemId: values.payment,
+              }
             : {}),
           ...(command === "memo"
             ? {
