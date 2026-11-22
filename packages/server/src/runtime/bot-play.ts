@@ -5656,7 +5656,11 @@ export class BotPlay {
         ? [actor, stealthOperation.from]
         : [actor];
     const actorFilter = hidden ? " AND actor_id=ANY($2::uuid[])" : "";
-    const registered = configuringDraw
+    const resolveActorsOnDemand =
+      configuringDraw ||
+      ("operations" in input &&
+        input.operations?.every((op) => op.type === "locate"));
+    const registered = resolveActorsOnDemand
       ? []
       : (
           await db.query<{ actor_id: string; controller: string | null }>(
@@ -5666,7 +5670,7 @@ export class BotPlay {
           )
         ).rows;
     const controlled = new Set(
-      configuringDraw
+      resolveActorsOnDemand
         ? []
         : (
             await db.query<{ actor_id: string }>(
@@ -5678,7 +5682,8 @@ export class BotPlay {
     );
     for (const r of registered) controlled.add(r.actor_id);
     const isControlled = async (id: string) => {
-      if (!configuringDraw || controlled.has(id)) return controlled.has(id);
+      if (!resolveActorsOnDemand || controlled.has(id))
+        return controlled.has(id);
       const { rows } = await db.query<{
         actor_id: string;
         controller: string | null;
