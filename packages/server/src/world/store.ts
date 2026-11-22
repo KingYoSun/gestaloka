@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { int, type Driver, type ManagedTransaction } from "neo4j-driver";
 import { z } from "zod";
+import { InstallationPolicy } from "@gestaloka/contracts";
 import { routeEndpoints } from "./locations.js";
 import {
   Change,
@@ -31,7 +32,55 @@ export {
 type Direction = "in" | "out";
 export type Lease = { worldId: string; runId: string; generation: number };
 export type Dependency = { key: string; version: number };
+const storageBase = { storageId: z.uuid() };
+const StorageEffect = z.discriminatedUnion("type", [
+  z.object({
+    ...storageBase,
+    type: z.literal("install"),
+    placeId: z.uuid(),
+    managerId: z.uuid(),
+    policy: InstallationPolicy,
+  }),
+  z.object({
+    ...storageBase,
+    type: z.literal("relocate"),
+    placeId: z.uuid(),
+    managerId: z.uuid(),
+  }),
+  z.object({
+    ...storageBase,
+    type: z.literal("post"),
+    allocationIds: z.array(z.uuid()),
+  }),
+  z.object({
+    ...storageBase,
+    type: z.literal("withdraw"),
+    allocationId: z.uuid(),
+  }),
+  z.object({
+    ...storageBase,
+    type: z.literal("claim"),
+    allocationId: z.uuid(),
+    sender: z.uuid(),
+    receiver: z.uuid(),
+    itemId: z.uuid(),
+    label: z.string(),
+    count: z.number().int().positive(),
+    remaining: z.number().int().nonnegative(),
+  }),
+]);
+export type StorageEffect = z.infer<typeof StorageEffect>;
+export type PickupAllocation = {
+  id: string;
+  itemId: string;
+  count: number;
+  storageId: string;
+  sender: string;
+  recipient: string;
+  label: string;
+};
 export type Receipt = {
+  storageEffect?: StorageEffect;
   management?: { editorId: string; reason: string; requestHash: string };
   commitId: string;
   runId: string;
@@ -48,6 +97,7 @@ export class FixedPlaceMovement extends WorldConflict {
 }
 export type ItemReservations = {
   add?: { id: string; itemId: string; count: number };
+  allocations?: PickupAllocation[];
   release: string[];
 };
 
@@ -353,10 +403,15 @@ export class WorldContext {
   async assertMovable(id: string) {
     const fixed = await this.#read(placeKey(id), async (tx) => {
       const result = await tx.run(
-        "MATCH (n:WorldNode {worldId:$world,id:$id}) RETURN n.fixedPlace AS fixed",
+        "MATCH (n:WorldNode {worldId:$world,id:$id}) RETURN n.fixedPlace AS fixed, n:InstalledStorage AS installed",
         { world: this.worldId, id },
       );
-      return result.records[0]?.get("fixed") === true;
+      const row = result.records[0];
+      if (row?.get("installed"))
+        throw new WorldConflict(
+          "設置済み保管先の移動には管理者の移設操作を使ってください",
+        );
+      return row?.get("fixed") === true;
     });
     if (fixed) throw new FixedPlaceMovement();
   }
@@ -394,6 +449,23 @@ export class WorldContext {
         { worldId: this.worldId, itemId },
       );
       return Number(records[0]!.get("quantity"));
+    });
+  }
+
+  async installation(id: string) {
+    return this.#read(placeKey(id), async (tx) => {
+      const { records } = await tx.run(
+        "MATCH (n:WorldNode:InstalledStorage {worldId:$world,id:$id}) RETURN n.manager AS manager,n.place AS place,n.policy AS policy",
+        { world: this.worldId, id },
+      );
+      const row = records[0];
+      return (
+        row && {
+          manager: row.get("manager") as string,
+          place: row.get("place") as string,
+          policy: InstallationPolicy.parse(JSON.parse(row.get("policy"))),
+        }
+      );
     });
   }
 
@@ -721,6 +793,16 @@ export class WorldStore {
     await this.driver.executeQuery(
       "CREATE INDEX WorldItemReservation_by_item IF NOT EXISTS FOR (r:WorldItemReservation) ON (r.worldId, r.itemId)",
     );
+    for (const index of [
+      "FOR (n:InstalledStorage) ON (n.worldId,n.place,n.id)",
+      "FOR (n:WorldItemReservation) ON (n.worldId,n.storageId,n.recipient,n.id)",
+      "FOR (n:WorldItemReservation) ON (n.worldId,n.storageId,n.sender,n.id)",
+      "FOR (n:WorldPickup) ON (n.worldId,n.storageId,n.sender,n.commitId)",
+      "FOR (n:WorldPickup) ON (n.worldId,n.storageId,n.receiver,n.commitId)",
+      "FOR (n:WorldPickup) ON (n.noticePending)",
+      "FOR (n:WorldPickup) ON (n.worldId,n.noticePending)",
+    ])
+      await this.driver.executeQuery("CREATE INDEX IF NOT EXISTS " + index);
     await this.driver.executeQuery(
       "CREATE INDEX WorldReceipt_delivery IF NOT EXISTS FOR (n:WorldReceipt) ON (n.worldId, n.pendingDelivery)",
     );
@@ -934,6 +1016,7 @@ export class WorldStore {
       changes: unknown;
       playerAction?: boolean;
       newFixedPlaces?: string[];
+      storageEffect?: StorageEffect;
       management?: { editorId: string; reason: string; requestHash: string };
     },
     fromBelongingOperations = false,
@@ -946,6 +1029,7 @@ export class WorldStore {
         changes: Change,
         playerAction: z.boolean().optional(),
         newFixedPlaces: z.array(z.uuid()).optional(),
+        storageEffect: StorageEffect.optional(),
         management: z
           .object({
             editorId: z.uuid(),
@@ -979,6 +1063,9 @@ export class WorldStore {
             changes: requestedChange(changes, at),
             ...(fixedPlaces?.length ? { newFixedPlaces: fixedPlaces } : {}),
             ...(reservations ? { reservations } : {}),
+            ...(parsed.storageEffect
+              ? { storageEffect: parsed.storageEffect }
+              : {}),
             ...(parsed.management ? { management: parsed.management } : {}),
           }),
         )
@@ -1139,13 +1226,18 @@ export class WorldStore {
               )
             ).records.map((row) => row.get("item") as string)
           : [];
-        const reservedItems = [
-          ...releasing,
-          ...(reservations?.add ? [reservations.add.itemId] : []),
+        const additions = [
+          ...(reservations?.add ? [reservations.add] : []),
+          ...(reservations?.allocations ?? []),
         ];
+        const reservedItems = [...releasing, ...additions.map((a) => a.itemId)];
         if (releasing.length !== (reservations?.release.length ?? 0))
           throw new WorldConflict("取り置きはすでに解放されています");
         const touched = new Set([
+          ...(parsed.storageEffect?.type === "install" ||
+          parsed.storageEffect?.type === "relocate"
+            ? [placeKey(parsed.storageEffect.storageId)]
+            : []),
           ...reservedItems.map((id) => relationKey(id, "has", "in")),
           ...changes.nodes.map((node) => nodeKey(node.id)),
           ...changes.revisions.map((node) => nodeKey(node.id)),
@@ -1166,11 +1258,14 @@ export class WorldStore {
           }
         }
         const movementTargets = new Set<string>();
+        const changedStorageUsers = new Set<string>();
         const changedAbout = new Set<string>();
         if (parsed.playerAction) {
           for (const edge of [...changes.edges, ...ended]) {
             if (edge.kind === "has" && !edge.role)
               movementTargets.add(edge.target);
+            if (edge.kind === "has" && edge.role === "use")
+              changedStorageUsers.add(edge.target);
             if (
               edge.kind === "status" &&
               edge.role === "content" &&
@@ -1217,6 +1312,7 @@ export class WorldStore {
           ...new Set([
             ...touched,
             ...[...movementTargets].map(placeKey),
+            ...[...changedStorageUsers].map(placeKey),
             ...dependencies.map((dependency) => dependency.key),
             ...changes.edges.flatMap(observationKeys),
             ...bindings.flatMap((binding) => [
@@ -1237,6 +1333,28 @@ export class WorldStore {
           ).records.length
         )
           throw new FixedPlaceMovement();
+        const installedTargets = [
+          ...new Set([...movementTargets, ...changedStorageUsers]),
+        ];
+        if (
+          installedTargets.length &&
+          (
+            await tx.run(
+              "UNWIND $ids AS id MATCH (n:WorldNode:InstalledStorage {worldId:$worldId,id:id}) WHERE $allowed IS NULL OR id <> $allowed RETURN id LIMIT 1",
+              {
+                worldId,
+                ids: installedTargets,
+                allowed:
+                  parsed.storageEffect?.type === "relocate"
+                    ? parsed.storageEffect.storageId
+                    : null,
+              },
+            )
+          ).records.length
+        )
+          throw new WorldConflict(
+            "設置済み保管先の登録を確認してください。移動には管理者の移設操作を使ってください",
+          );
         for (const dependency of dependencies) {
           if (versions.get(dependency.key) !== dependency.version)
             throw new WorldConflict("判断に使用した文脈が変わりました");
@@ -1280,7 +1398,9 @@ export class WorldStore {
             const id: string = row.get("id");
             const quantity =
               Number(row.get("reserved")) +
-              (reservations?.add?.itemId === id ? reservations.add.count : 0);
+              additions
+                .filter((a) => a.itemId === id)
+                .reduce((n, a) => n + a.count, 0);
             if (!quantity) continue;
             const before = WorldNode.parse(JSON.parse(row.get("data")));
             const after = revisions.get(id) ?? before;
@@ -1300,13 +1420,15 @@ export class WorldStore {
             "UNWIND $ids AS id MATCH (r:WorldItemReservation {worldId:$worldId,id:id}) DELETE r",
             { worldId, ids: reservations.release },
           );
-        if (reservations?.add)
+        if (additions.length)
           await tx.run(
-            "CREATE (:WorldItemReservation {worldId:$worldId,id:$id,itemId:$itemId,quantity:$quantity})",
+            "UNWIND $entries AS entry CREATE (r:WorldItemReservation) SET r=entry,r.worldId=$worldId",
             {
               worldId,
-              ...reservations.add,
-              quantity: int(reservations.add.count),
+              entries: additions.map(({ count, ...entry }) => ({
+                ...entry,
+                quantity: int(count),
+              })),
             },
           );
         const fixedPlaces = new Set(parsed.newFixedPlaces);
@@ -1363,6 +1485,30 @@ export class WorldStore {
             },
           );
         for (const node of changes.nodes) await createNode(node);
+        const storageEffect = parsed.storageEffect;
+        if (storageEffect?.type === "install") {
+          if (
+            !changes.nodes.some(
+              (n) => n.kind === "existence" && n.id === storageEffect.storageId,
+            )
+          )
+            throw new WorldConflict("新規の物品を設置してください");
+          await tx.run(
+            "MATCH(n:WorldNode {worldId:$worldId,id:$storageId}) SET n:InstalledStorage,n.place=$placeId,n.manager=$managerId,n.policy=$policy",
+            {
+              worldId,
+              ...storageEffect,
+              policy: JSON.stringify(storageEffect.policy),
+            },
+          );
+        } else if (storageEffect?.type === "relocate") {
+          const moved = await tx.run(
+            "MATCH(n:WorldNode:InstalledStorage {worldId:$worldId,id:$storageId,manager:$managerId}) WHERE NOT coalesce(n.fixedPlace,false) SET n.place=$placeId RETURN n.id",
+            { worldId, ...storageEffect },
+          );
+          if (!moved.records.length)
+            throw new WorldConflict("保管先の移設権限がありません");
+        }
         for (const [index, node] of changes.revisions.entries())
           await reviseNode(revised[index]!, node, at);
         const endpointIds = [
@@ -1516,6 +1662,7 @@ export class WorldStore {
           );
         }
         const receipt: Receipt = {
+          ...(storageEffect ? { storageEffect } : {}),
           commitId,
           runId,
           at,
@@ -1541,6 +1688,20 @@ export class WorldStore {
           "CREATE (:WorldReceipt {worldId: $worldId, commitId: $commitId, hash: $hash, data: $data,pendingDelivery:true,placePolicy:true})",
           { worldId, commitId, hash, data: JSON.stringify(receipt) },
         );
+        if (storageEffect?.type === "claim")
+          await tx.run(
+            "MATCH(r:WorldReceipt {worldId:$worldId,commitId:$commitId}) SET r:WorldPickup,r.noticePending=true,r.storageId=$storageId,r.sender=$sender,r.receiver=$receiver,r.pickup=$pickup",
+            {
+              worldId,
+              commitId,
+              ...storageEffect,
+              pickup: JSON.stringify({
+                ...storageEffect,
+                at: receipt.committedAt,
+                commitId,
+              }),
+            },
+          );
         return receipt;
       });
     } finally {

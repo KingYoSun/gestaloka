@@ -19,6 +19,7 @@ import {
 } from "../world/store.js";
 import { canonical } from "../llm/prompt.js";
 import type { PlayApplications } from "./play-applications.js";
+import { deliverPickups } from "./storage-transfers.js";
 
 type Db = Pick<pg.Pool, "query">;
 type World = { id: string; at: number };
@@ -28,7 +29,7 @@ type Publication = z.infer<typeof BlueprintPublication>;
 type Draft = z.infer<typeof BlueprintDraft>;
 type Offer = z.infer<typeof ExchangeOffer>;
 type Template = Publication &
-  Partial<Pick<Draft, "instructions" | "materials">> & {
+  Partial<Pick<Draft, "instructions" | "materials" | "installation">> & {
     id: string;
     origin: string;
     author: string;
@@ -45,9 +46,15 @@ type Quest = {
   author: string;
   template: Template;
   plan: Proposal;
-  requirements: { build: Requirement[]; open: Requirement[] };
+  requirements: {
+    build: Requirement[];
+    open: Requirement[];
+    craft?: Requirement[];
+  };
   totals: number[];
-  phase: "draft" | "rejected" | "build" | "open" | "done" | "cancelled";
+  productId?: string;
+  phase:
+    "craft" | "draft" | "rejected" | "build" | "open" | "done" | "cancelled";
   consent: boolean;
   buildingId: string | null;
   contributors: string[];
@@ -103,12 +110,17 @@ const phaseBlock = reason(
   "QUEST_PHASE",
   "この段階ではこの操作を受け付けません。クエストの進捗を確認してください",
 );
+const keeperTitle = (template: Template) =>
+  template.mode === "craft" ? "管理者" : "店主";
 const startRestriction = (quest: Quest, actor: string) => {
   if (quest.phase !== "draft") return phaseBlock;
   if (actor !== quest.author)
     return reason("AUTHOR_REQUIRED", "発案者が着工を申請できます");
   if (!quest.consent)
-    return reason("CONSENT_REQUIRED", "店主の同意を待ってください");
+    return reason(
+      "CONSENT_REQUIRED",
+      `${keeperTitle(quest.template)}の同意を待ってください`,
+    );
 };
 
 export const isBlueprint = (input: {
@@ -222,6 +234,10 @@ export class Blueprints {
     w: World,
     input: Publication | { templateId: string },
   ) {
+    if ("mode" in input && input.mode === "craft")
+      return reject(
+        "製作の材料と利用条件を下書きで設定してから、その版のIDを公開してください",
+      );
     const template =
       "templateId" in input
         ? (
@@ -272,8 +288,10 @@ export class Blueprints {
 
   private view(quest: Quest, actor: string) {
     const requirements =
-      quest.phase === "build" || quest.phase === "open"
-        ? quest.requirements[quest.phase].map((item, index) => ({
+      quest.phase === "build" ||
+      quest.phase === "open" ||
+      quest.phase === "craft"
+        ? (quest.requirements[quest.phase] ?? []).map((item, index) => ({
             ...item,
             index,
             provided: quest.totals[index] ?? 0,
@@ -299,7 +317,7 @@ export class Blueprints {
     const site = await this.inspectSite(
       context,
       quest,
-      quest.plan.building ? "build" : "open",
+      quest.plan.product ? "craft" : quest.plan.building ? "build" : "open",
     );
     if (site.issue) return reject(site.issue.message);
     return { context, place: site.place };
@@ -314,7 +332,7 @@ export class Blueprints {
   private async inspectSite(
     context: Context,
     quest: Quest,
-    phase: "build" | "open",
+    phase: "build" | "open" | "craft",
   ) {
     const id =
       phase === "open"
@@ -349,7 +367,9 @@ export class Blueprints {
   async prepareStart(world: string, w: World, actor: string, id: string) {
     const quest = await this.read(this.pool, world, id);
     if (startRestriction(quest, actor))
-      return reject("店主が同意した設計図を発案者が申請してください");
+      return reject(
+        `${keeperTitle(quest.template)}が同意した設計図を発案者が申請してください`,
+      );
     const { context, place } = await this.validatePlace(w, quest, actor);
     return {
       quest,
@@ -390,6 +410,19 @@ export class Blueprints {
             at,
             changes,
             playerAction: true,
+            ...(quest.productId &&
+            quest.template.installation &&
+            changes.nodes.some((n) => n.id === quest.productId)
+              ? {
+                  storageEffect: {
+                    type: "install" as const,
+                    storageId: quest.productId,
+                    placeId: quest.plan.placeId,
+                    managerId: quest.plan.keeperId,
+                    policy: quest.template.installation,
+                  },
+                }
+              : {}),
             ...(quest.buildingId &&
             changes.nodes.some((n) => n.id === quest.buildingId)
               ? { newFixedPlaces: [quest.buildingId] }
@@ -438,6 +471,7 @@ export class Blueprints {
   }
 
   async recover(world?: string) {
+    await deliverPickups(this.pool, this.store, this.applications, world);
     const { rows } = await this.pool.query<{
       world: string;
       quest: string;
@@ -498,6 +532,20 @@ export class Blueprints {
             build: "入店と保管",
             open: "在庫と公開交換",
             "build-and-open": "入店・保管の後に公開交換",
+            craft: data.installation
+              ? [
+                  "保管先を製作・設置",
+                  ...(data.installation.relocatable
+                    ? ["管理者による移設"]
+                    : []),
+                  ...(data.installation.pickup.includes("public")
+                    ? ["公開分の無償受領"]
+                    : []),
+                  ...(data.installation.pickup.includes("addressed")
+                    ? ["本人宛ての無償受領"]
+                    : []),
+                ].join("、")
+              : "物品を製作して受け取る",
           }[data.mode],
         })),
         next: rows[20] ? rows[19]!.data.id : null,
@@ -550,13 +598,17 @@ export class Blueprints {
 
       if (
         !template ||
-        !!plan.building !== (template.mode !== "open") ||
-        !!plan.shop !== (template.mode !== "build") ||
+        !!plan.product !== (template.mode === "craft") ||
+        !!plan.building !==
+          (template.mode === "build" || template.mode === "build-and-open") ||
+        !!plan.shop !==
+          (template.mode === "open" || template.mode === "build-and-open") ||
+        (template.mode === "craft" && !materials?.length) ||
         new Set(plan.shop?.stock.map((item) => item.itemId)).size !==
           (plan.shop?.stock.length ?? 0)
       )
         return reject(
-          "選んだテンプレートに対応する建築または開店の情報を記入してください",
+          "選んだテンプレートの進行形式に必要な情報を記入してください",
         );
       if (
         !(
@@ -566,7 +618,9 @@ export class Blueprints {
           )
         ).rowCount
       )
-        return reject("この世界で操作される人物を店主に指定してください");
+        return reject(
+          `この世界で操作される人物を${keeperTitle(template)}に指定してください`,
+        );
       const open: Requirement[] = [];
       for (const terms of plan.shop?.stock ?? []) {
         const item = await context.node(terms.itemId);
@@ -590,7 +644,10 @@ export class Blueprints {
         author: actor,
         template,
         plan,
-        requirements: { build: materials ?? [], open },
+        requirements:
+          template.mode === "craft"
+            ? { build: [], open: [], craft: materials! }
+            : { build: materials ?? [], open },
         totals: [],
         phase: "draft",
         consent: plan.keeperId === actor,
@@ -608,7 +665,7 @@ export class Blueprints {
           world,
           quest.id,
           [plan.keeperId],
-          `店主になる同意を求められています。設計図 ${quest.id} を blueprint-show で確認できます`,
+          `${keeperTitle(template)}になる同意を求められています。設計図 ${quest.id} を blueprint-show で確認できます`,
         );
       return this.view(quest, actor);
     }
@@ -650,7 +707,9 @@ export class Blueprints {
     }
     if (input.command === "blueprint-consent") {
       if (quest.phase !== "draft" || quest.plan.keeperId !== actor)
-        return reject("店主に指定された人物だけが着工前に同意できます");
+        return reject(
+          `${keeperTitle(quest.template)}に指定された人物だけが着工前に同意できます`,
+        );
       quest.consent = true;
       await this.write(db, quest);
       return this.view(quest, actor);
@@ -663,19 +722,25 @@ export class Blueprints {
       quest.reason = decision.reason;
       quest.phase = !decision.accepted
         ? "rejected"
-        : quest.plan.building
-          ? "build"
-          : "open";
-      if (decision.accepted && !quest.plan.building)
+        : quest.plan.product
+          ? "craft"
+          : quest.plan.building
+            ? "build"
+            : "open";
+      if (decision.accepted && quest.template.mode === "open")
         quest.buildingId = quest.plan.placeId;
       await this.write(db, quest);
       return this.view(quest, actor);
     }
-    if (quest.phase !== "build" && quest.phase !== "open")
+    if (
+      quest.phase !== "build" &&
+      quest.phase !== "open" &&
+      quest.phase !== "craft"
+    )
       return reject("材料を集めているクエストを指定してください");
 
     const phase = quest.phase;
-    const requirements = quest.requirements[phase];
+    const requirements = quest.requirements[phase] ?? [];
     const added: Contribution | undefined =
       input.command === "blueprint-provide"
         ? await this.provision(
@@ -702,7 +767,10 @@ export class Blueprints {
       quest.totals[item.requirement]! -= item.count;
     }
     if (input.command === "blueprint-cancel") {
-      if (!member) return reject("発案者または店主が中止できます");
+      if (!member)
+        return reject(
+          `発案者または${keeperTitle(quest.template)}が中止できます`,
+        );
       quest.phase = "cancelled";
       quest.totals = [];
     }
@@ -783,9 +851,15 @@ export class Blueprints {
     const consent = !draft
       ? phaseBlock
       : actor !== quest.plan.keeperId
-        ? reason("KEEPER_REQUIRED", "店主に指定された人物が同意できます")
+        ? reason(
+            "KEEPER_REQUIRED",
+            `${keeperTitle(quest.template)}に指定された人物が同意できます`,
+          )
         : quest.consent
-          ? reason("CONSENT_ALREADY_GIVEN", "店主の同意を受け付け済みです")
+          ? reason(
+              "CONSENT_ALREADY_GIVEN",
+              `${keeperTitle(quest.template)}の同意を受け付け済みです`,
+            )
           : undefined;
     let start = startRestriction(quest, actor);
     if (!start)
@@ -796,7 +870,11 @@ export class Blueprints {
               await this.inspectSite(
                 context,
                 quest,
-                quest.plan.building ? "build" : "open",
+                quest.plan.product
+                  ? "craft"
+                  : quest.plan.building
+                    ? "build"
+                    : "open",
               )
             ).issue ?? (await startBlock()));
 
@@ -876,7 +954,7 @@ export class Blueprints {
               ? undefined
               : reason(
                   "CANCEL_AUTHORITY_REQUIRED",
-                  "発案者または店主が中止できます",
+                  `発案者または${keeperTitle(quest.template)}が中止できます`,
                 ),
         ),
       },
@@ -892,9 +970,9 @@ export class Blueprints {
     itemId: string | undefined,
   ): Promise<ProvisionCheck> {
     const phase = quest.phase;
-    if (phase !== "build" && phase !== "open")
+    if (phase !== "build" && phase !== "open" && phase !== "craft")
       return { maxCount: 0, reason: phaseBlock };
-    const requirements = quest.requirements[phase];
+    const requirements = quest.requirements[phase] ?? [];
     const requirement = requirements[index];
     if (!here) return { maxCount: 0, reason: wrongPlace };
     if (!requirement)
@@ -1024,7 +1102,7 @@ export class Blueprints {
     context: ReturnType<WorldStore["context"]>,
     w: World,
     quest: Quest,
-    phase: "build" | "open",
+    phase: "build" | "open" | "craft",
     request: string,
     added: Contribution | undefined,
     released: Contribution[],
@@ -1038,7 +1116,7 @@ export class Blueprints {
     const completion = complete ? [...released, ...(added ? [added] : [])] : [];
     const counts = new Map<string, Contribution>();
     for (const item of completion) {
-      if (quest.requirements[phase][item.requirement]?.usage === "tool")
+      if (quest.requirements[phase]?.[item.requirement]?.usage === "tool")
         continue;
       const prior = counts.get(item.itemId);
       counts.set(item.itemId, {
@@ -1052,7 +1130,7 @@ export class Blueprints {
         current?.kind === "existence" && current.count
           ? { count: item.count }
           : {};
-      if (phase === "build")
+      if (phase !== "open")
         ops.push({ type: "remove", id: item.itemId, ...count });
       else if (item.heldBy !== quest.buildingId) {
         await context.assertMovable(item.itemId);
@@ -1064,6 +1142,27 @@ export class Blueprints {
           basis,
           ...count,
         });
+      }
+    }
+    if (complete && phase === "craft") {
+      const product = (quest.productId = derivedId(
+        `blueprint:${quest.id}:product`,
+      ));
+      if (quest.template.installation) {
+        ops.push(
+          {
+            type: "locate",
+            subjectId: product,
+            text: basis,
+            aboutIds: [source],
+          },
+          {
+            type: "grant",
+            person: quest.plan.keeperId,
+            storage: product,
+            basis,
+          },
+        );
       }
     }
     const plan = await planBelongings(
@@ -1096,7 +1195,23 @@ export class Blueprints {
         ...completion.map((item) => item.actor),
       ]),
     ];
-    if (phase === "build") {
+    if (phase === "craft") {
+      const id = quest.productId!;
+      changes.nodes.push({
+        id,
+        kind: "existence",
+        text: quest.plan.product!.label,
+      });
+      if (!quest.template.installation)
+        changes.edges.push({
+          id: derivedId(request + ":hold"),
+          kind: "has",
+          source: quest.plan.keeperId,
+          target: id,
+          text: basis,
+          period: { from: at },
+        });
+    } else if (phase === "build") {
       const from = await context.node(source);
       const id = derivedId(`blueprint:${quest.id}:building`);
       const building = quest.plan.building!;
@@ -1146,7 +1261,7 @@ export class Blueprints {
       notice: {
         id: `blueprint:${quest.id}:${phase}`,
         actors: [quest.author, quest.plan.keeperId, ...quest.contributors],
-        text: `${phase === "build" ? "建築が完了しました" : "店が開店しました"}。場所 ${quest.buildingId}。設計図 ${quest.id}`,
+        text: `${phase === "craft" ? "製作が完了しました" : phase === "build" ? "建築が完了しました" : "店が開店しました"}。${phase === "craft" ? "物品" : "場所"} ${quest.productId ?? quest.buildingId}。設計図 ${quest.id}`,
       },
     };
   }

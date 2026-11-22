@@ -252,7 +252,7 @@ gestaloka finish
 
 ## play
 
-PlayCommand形式の操作を送る。--stealthは本人だけのlocateか、相手の物品を本人に移すopposeに指定する。移動先や行為は発見した相手にだけ伝わる。設計図は blueprint-templates で公開版、blueprint-list で現地のクエストを読む。申請から材料提供までの形式は commands.md の「設計図で建てる・開店する」を参照。create-batchでは異なる生成案をproposalsに最大5件指定する。各案にtextと、changesかoperationsの一方を書く。各案を1回振り、成功した案ごとに生成・素材消費する。素材は指定順に使い、残りが足りない案は振らずにMATERIAL_SHORTAGEを返す。outcome.proposalsは指定順の結果、spentSpはこの申請の消費量。新規抽選があれば全案で1 SP。保管先への出し入れはmoveで申請し、本人が保管先のある場所にいる必要がある（離れているとSTORAGE_NOT_HERE）。本人の呼称と状態はupdateのchangesで改める。operationsのupdateが扱うのは物品と技能。グラフ差分を使うメモの更新や対抗行動、時間をかける物品の作成（waitMinutes）の形式は commands.md を参照。
+PlayCommand形式の操作を送る。--stealthは本人だけのlocateか、相手の物品を本人に移すopposeに指定する。移動先や行為は発見した相手にだけ伝わる。設計図は blueprint-templates で公開版、blueprint-list で現地のクエストを読む。申請から材料提供までの形式は commands.md の「設計図で建てる・開店する」を参照。物品の製作と無償受領は「製作と現地での受け渡し」を参照。create-batchでは異なる生成案をproposalsに最大5件指定する。各案にtextと、changesかoperationsの一方を書く。各案を1回振り、成功した案ごとに生成・素材消費する。素材は指定順に使い、残りが足りない案は振らずにMATERIAL_SHORTAGEを返す。outcome.proposalsは指定順の結果、spentSpはこの申請の消費量。新規抽選があれば全案で1 SP。保管先への出し入れはmoveで申請し、本人が保管先のある場所にいる必要がある（離れているとSTORAGE_NOT_HERE）。本人の呼称と状態はupdateのchangesで改める。operationsのupdateが扱うのは物品と技能。グラフ差分を使うメモの更新や対抗行動、時間をかける物品の作成（waitMinutes）の形式は commands.md を参照。
 
 ```text
 gestaloka play --file <JSONファイル> [--stealth]

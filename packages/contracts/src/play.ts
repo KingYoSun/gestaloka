@@ -150,7 +150,13 @@ const Effect = z
 export const NpcAction = z
   .object({ text, effect: Effect.optional(), departs: z.boolean().optional() })
   .strict();
-const BlueprintMode = z.enum(["build", "open", "build-and-open"]);
+const BlueprintMode = z.enum(["build", "open", "build-and-open", "craft"]);
+export const InstallationPolicy = z
+  .object({
+    relocatable: z.boolean(),
+    pickup: z.array(z.enum(["public", "addressed"])),
+  })
+  .strict();
 export const BlueprintPublication = z
   .object({
     mode: BlueprintMode,
@@ -167,27 +173,36 @@ const BlueprintMaterial = z
   })
   .strict();
 export const BlueprintDraft = BlueprintPublication.extend({
+  installation: InstallationPolicy.optional().describe(
+    "製作した物を保管先として設置し、許可する利用条件",
+  ),
   instructions: text.describe("プレイヤーに示す使い方と、完成後にできること"),
   materials: z
     .array(BlueprintMaterial)
     .nonempty()
     .optional()
-    .describe("建築に必要な消費材と道具。開店のみの場合は省く"),
+    .describe("建築・製作に必要な消費材と道具。開店のみの場合は省く"),
   testerIds: z
     .array(id)
     .optional()
     .describe("原案者と一緒に下書きを試せる人物"),
-}).refine(
-  (template) =>
-    (template.mode === "open") === (template.materials === undefined),
-  "建築を含むテンプレートに材料を指定してください",
-);
+})
+  .refine(
+    (template) =>
+      (template.mode === "open") === (template.materials === undefined),
+    "建築・製作のテンプレートに材料を指定してください",
+  )
+  .refine(
+    (template) => !template.installation || template.mode === "craft",
+    "物品の設置は製作テンプレートで指定してください",
+  );
 export const BlueprintProposal = z
   .object({
     templateId: id,
     placeId: id,
     keeperId: id,
     description: text,
+    product: z.object({ label: text }).strict().optional(),
     building: z
       .object({
         label: text,
@@ -258,7 +273,7 @@ const BlueprintActions = [
       ...request,
       command: z.literal("blueprint-provide"),
       questId: id,
-      phase: z.enum(["build", "open"]),
+      phase: z.enum(["build", "open", "craft"]),
       requirement: z.number().int().nonnegative(),
       itemId: id,
       count,
@@ -277,7 +292,61 @@ const BlueprintActions = [
     .strict(),
 ] as const;
 export type BlueprintAction = z.infer<(typeof BlueprintActions)[number]>;
+const storage = { ...request, storageId: id };
+const StorageActions = [
+  z
+    .object({
+      ...request,
+      command: z.literal("storage-list"),
+      after: id.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...storage,
+      command: z.literal("storage-post"),
+      itemId: id,
+      allocations: z
+        .array(z.object({ count, recipientId: id.optional() }).strict())
+        .nonempty(),
+    })
+    .strict(),
+  z
+    .object({
+      ...storage,
+      command: z.literal("storage-offers"),
+      after: id.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...storage,
+      command: z.literal("storage-claim"),
+      allocationId: id,
+      count,
+    })
+    .strict(),
+  z
+    .object({
+      ...storage,
+      command: z.literal("storage-withdraw"),
+      allocationId: id,
+    })
+    .strict(),
+  z
+    .object({
+      ...storage,
+      command: z.literal("storage-history"),
+      after: id.optional(),
+    })
+    .strict(),
+  z
+    .object({ ...storage, command: z.literal("storage-relocate"), placeId: id })
+    .strict(),
+] as const;
+export type StorageAction = z.infer<(typeof StorageActions)[number]>;
 export const PlayCommand = z.discriminatedUnion("command", [
+  ...StorageActions,
   ...BlueprintActions,
   NpcAction.extend({ ...request, command: z.literal("npc-action"), npcId: id }),
   z.object({ ...request, command: z.literal("start") }).strict(),

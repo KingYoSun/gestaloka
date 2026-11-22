@@ -1,0 +1,11 @@
+{
+  "name": "新しい物品受け渡し用の家具の製作と設置",
+  "version": 1,
+  "mode": "craft",
+  "instructions": "設置場所と管理者を決め、木板と組立用の木槌を持ち寄る。完成したら管理者が現地で品を家具に置き、誰でも受け取れる個数と、指定した人物のために残す個数を掲示する。受取人は現地で必要な分を受け取れる。管理者は中身と取り置きを保ったまま家具を移設できる。",
+  "materials": [
+    { "label": "木板", "count": 2, "usage": "consume" },
+    { "label": "組立用の木槌", "count": 1, "usage": "tool" }
+  ],
+  "installation": { "relocatable": true, "pickup": ["public", "addressed"] }
+}
