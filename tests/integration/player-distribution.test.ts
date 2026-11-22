@@ -97,6 +97,9 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
     for (const [file, heading] of [
       ["draw.md", "銅貨を受け取る福引を作る"],
       ["blueprints.md", "テンプレート・設計図・クエスト"],
+      ["inventory.md", "持ち物・保管・取引"],
+      ["sessions.md", "セッション・手番・受領とチーム"],
+      ["npcs.md", "NPCの出現・昇格・同行"],
     ] as const) {
       const guide = await app.inject(
         `/api/player-cli/docs/${release.version}/${file}`,
@@ -109,6 +112,14 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
           "utf8",
         ),
       );
+      for (const link of guide.body.matchAll(
+        /\]\(([^)#]+\.md)(?:#[^)]*)?\)/g,
+      )) {
+        const target = await app.inject(
+          `/api/player-cli/docs/${release.version}/${link[1]}`,
+        );
+        expect(target.statusCode, link[1]).toBe(200);
+      }
     }
     const old = await app.inject(
       "/api/player-cli/docs/0.0.1/join.md?world=00000000-0000-4000-8000-000000000001",
