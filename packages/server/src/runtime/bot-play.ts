@@ -2573,21 +2573,13 @@ export class BotPlay {
       "DELETE FROM bot_stealth WHERE world_id=$1 AND actor_id=ANY($2::uuid[]) AND actor_id IS DISTINCT FROM $3::uuid",
       [world, movedActors, stealthActor ?? null],
     );
-    // 乗客が増減すると、乗り物自身の会話の場所も切り替わる。
-    const endedEdges = await Promise.all(
-      changes.endEdges.map((id) => context.edge(id)),
-    );
-    const places = new Set(
-      [...changes.edges, ...endedEdges].flatMap((edge) =>
-        edge?.kind === "status" &&
-        edge.role === "about" &&
-        edge.text === "direct-place"
-          ? [edge.target]
-          : [],
-      ),
-    );
-    for (const place of places)
-      if (await isVehicle(context, place)) affected.add(place);
+    // 人物の乗り物が動くと、乗っている人の同席も出発側から解く。
+    for (const id of movedActors)
+      if (await this.#carrier(context, id))
+        for (const rider of await context.locationSubjects(id, latest, {
+          limit: vehiclePageSize,
+        }))
+          affected.add(rider);
     const ended = await this.#settlePlaces(db, world, [...affected], requestId);
     return { movedActors, affected, ended };
   }
@@ -4078,13 +4070,18 @@ export class BotPlay {
       await signalTurns(db, world, viewer);
     }
   }
-  async #places(context: WorldContext, actor: string) {
-    if (
-      (await isVehicle(context, actor)) &&
-      (await context.locationSubjects(actor, latest, { limit: 1 })).length
-    )
-      return [actor];
-    return directPlaces(context, actor);
+  // 人物の乗り物は車内を分けない。乗っている人も、乗り物のいる場所にいるものとして扱う。
+  async #carrier(context: WorldContext, id: string) {
+    return (
+      (await isVehicle(context, id)) &&
+      !!(await vehiclePerson(this.pool, context.worldId, id))
+    );
+  }
+  async #places(context: WorldContext, actor: string): Promise<string[]> {
+    const places = await directPlaces(context, actor);
+    return places[0] && (await this.#carrier(context, places[0]))
+      ? this.#places(context, places[0])
+      : places;
   }
   async #routes(context: WorldContext, here: string[]) {
     const routes = new Map<string, string>();
@@ -4162,9 +4159,7 @@ export class BotPlay {
     visible?: (id: string) => Promise<boolean>,
   ) {
     const found = new Set<string>();
-    for (const place of places) {
-      found.add(place);
-      for (const id of await groundItems(context, place)) found.add(id);
+    const add = async (place: string) => {
       for (const subject of await context.locationSubjects(
         place,
         latest,
@@ -4175,8 +4170,15 @@ export class BotPlay {
         if (
           (!visible || (await visible(subject))) &&
           (await directPlaces(context, subject)).includes(place)
-        )
+        ) {
           found.add(subject);
+          if (await this.#carrier(context, subject)) await add(subject);
+        }
+    };
+    for (const place of places) {
+      found.add(place);
+      for (const id of await groundItems(context, place)) found.add(id);
+      await add(place);
     }
     return found;
   }
@@ -5759,8 +5761,8 @@ export class BotPlay {
       direct === vehicleId ? position.placeId : direct,
       position.placeId,
     );
-    const holder = await holdingActor(db, world, context, actor, position);
-    const person = await vehiclePerson(db, world, context.worldId, vehicleId);
+    const holder = await holdingActor(db, context, actor, position);
+    const person = await vehiclePerson(db, context.worldId, vehicleId);
     const others = new Set(
       [holder, operator?.actorId].filter(
         (id): id is string => !!id && id !== actor,

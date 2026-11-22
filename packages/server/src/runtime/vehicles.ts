@@ -100,24 +100,19 @@ export async function ride(context: WorldContext, actor: string) {
 }
 
 // 自分で判断できる人物。NPCか、プレイヤーが操作する人物。
-export async function vehiclePerson(
-  db: Db,
-  world: string,
-  graph: string,
-  id: string,
-) {
+export async function vehiclePerson(db: Db, graph: string, id: string) {
   const { rows } = await db.query<{ controller: string | null; npc: boolean }>(
-    `SELECT controller,true AS npc FROM bot_npc WHERE world_id=$1 AND actor_id=$3
-     UNION ALL SELECT NULL,false FROM world_controlled_actor WHERE world_id=$2 AND actor_id=$3
+    `SELECT n.controller,true AS npc FROM bot_npc n JOIN world_construction c ON c.id=n.world_id
+     WHERE c.world_id=$1 AND n.actor_id=$2
+     UNION ALL SELECT NULL,false FROM world_controlled_actor WHERE world_id=$1 AND actor_id=$2
      ORDER BY npc DESC LIMIT 1`,
-    [world, graph, id],
+    [graph, id],
   );
   return rows[0];
 }
 
 export async function holdingActor(
   db: Db,
-  world: string,
   context: WorldContext,
   actor: string,
   position: Awaited<ReturnType<typeof vehiclePosition>>,
@@ -135,7 +130,7 @@ export async function holdingActor(
   }
   const { root } = position;
   return root &&
-    (root === actor || (await vehiclePerson(db, world, context.worldId, root)))
+    (root === actor || (await vehiclePerson(db, context.worldId, root)))
     ? root
     : undefined;
 }
@@ -280,7 +275,7 @@ export async function checkLocation(
     if (from !== to) requireVehicleHere(from, position.placeId);
     const holding = position.holding;
     if (holding) {
-      const holder = await holdingActor(db, world, context, actor, position);
+      const holder = await holdingActor(db, context, actor, position);
       if (holder && holder !== actor)
         vehicleError(
           "VEHICLE_NOT_DEPLOYED",
