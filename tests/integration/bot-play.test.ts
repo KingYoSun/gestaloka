@@ -10,6 +10,7 @@ import {
   WaitingEvent,
 } from "@gestaloka/contracts";
 import { WorldAccess } from "@gestaloka/server/access";
+import { LlmClient } from "@gestaloka/server/llm";
 import { decisionSettings } from "../../packages/server/src/llm/config.js";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
 import { derivedId } from "@gestaloka/server/world";
@@ -25,6 +26,7 @@ import { join, resolve } from "node:path";
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureRuntime } from "../support/provider.js";
 import { fixtureAuth } from "../support/auth.js";
+import { vehicleOperator } from "../../packages/server/src/runtime/vehicles.js";
 
 const isolated = isolatedDatabases();
 let runtime: Awaited<ReturnType<typeof fixtureRuntime>>["runtime"],
@@ -184,6 +186,792 @@ async function fixture() {
       ),
   };
 }
+
+function mark(
+  change: Change,
+  source: string,
+  marker: string,
+  about: { id: string; text?: string }[] = [],
+) {
+  const script = randomUUID();
+  change.nodes.push({ id: script, kind: "script", text: marker });
+  change.edges.push(
+    {
+      id: randomUUID(),
+      kind: "status",
+      role: "content",
+      source,
+      target: script,
+      text: marker,
+      period: { from: 0 },
+    },
+    ...about.map(({ id, text }) => ({
+      id: randomUUID(),
+      kind: "status" as const,
+      role: "about" as const,
+      source: script,
+      target: id,
+      ...(text ? { text } : {}),
+      period: { from: 0 },
+    })),
+  );
+}
+
+async function vehicleFixture(
+  f: Awaited<ReturnType<typeof fixture>>,
+  {
+    npcId,
+    holder,
+    route = false,
+  }: { npcId?: string; holder?: string; route?: boolean } = {},
+) {
+  const vehicleId = npcId ?? randomUUID();
+  const changes: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  if (!npcId)
+    changes.nodes.push({ id: vehicleId, kind: "existence", text: "台車" });
+  mark(changes, vehicleId, "vehicle");
+  if (holder)
+    changes.edges.push({
+      id: randomUUID(),
+      kind: "has",
+      source: holder,
+      target: vehicleId,
+      period: { from: 0 },
+    });
+  if (route) {
+    const capability = randomUUID();
+    const script = randomUUID();
+    changes.nodes.push(
+      { id: capability, kind: "existence", text: "溝を越えられる" },
+      { id: script, kind: "script", text: "溝を越える区間" },
+    );
+    for (const place of [f.place, f.far]) {
+      changes.edges.push(
+        {
+          id: randomUUID(),
+          kind: "status",
+          role: "content",
+          source: place,
+          target: script,
+          text: "route",
+          period: { from: 0 },
+        },
+        {
+          id: randomUUID(),
+          kind: "status",
+          role: "about",
+          source: script,
+          target: place,
+          period: { from: 0 },
+        },
+      );
+    }
+    changes.edges.push({
+      id: randomUUID(),
+      kind: "status",
+      role: "about",
+      source: script,
+      target: capability,
+      text: "route-requires",
+      period: { from: 0 },
+    });
+    mark(changes, vehicleId, "capability", [{ id: capability }]);
+  }
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes,
+    },
+  );
+  if (!holder && !npcId)
+    await f.apply([
+      {
+        type: "locate",
+        subjectId: vehicleId,
+        aboutIds: [f.place],
+        text: "広場",
+      },
+    ]);
+  return vehicleId;
+}
+
+const locate = (subjectId: string, placeId: string) => ({
+  command: "update",
+  text: "移動する",
+  dependencies: [],
+  operations: [
+    { type: "locate", subjectId, aboutIds: [placeId], text: "移動先" },
+  ],
+});
+
+test("乗降と運行は専用操作とlocateで同じ所在になり、通行条件と出発後の乗り場を照合する", async () => {
+  const f = await fixture();
+  const [driver, passenger, outside] = f.actors as [string, string, string];
+  const vehicleId = await vehicleFixture(f, { route: true });
+  await f.move(2, f.place);
+  const at = (id: string) => directPlaces(f.store.context(f.graph), id);
+  const search = (i: number, kind: "self" | "surroundings") =>
+    f.send(i, { command: "search", query: { kind } });
+  await expect(f.send(2, locate(outside, f.far))).rejects.toMatchObject({
+    code: "ROUTE_REQUIREMENT_UNMET",
+  });
+  await expect(search(1, "surroundings")).resolves.toMatchObject({
+    material: {
+      vehicles: { items: [{ vehicleId, placeId: f.place }], next: null },
+    },
+  });
+  await expect(
+    f.send(0, { command: "vehicle-request-control", vehicleId }),
+  ).resolves.toMatchObject({
+    state: "accepted",
+    vehicleId,
+    operatorId: driver,
+  });
+  await expect(
+    f.send(0, { command: "vehicle-board", vehicleId }),
+  ).resolves.toMatchObject({
+    state: "accepted",
+    directPlaceId: vehicleId,
+    outerPlaceId: f.place,
+  });
+  await f.send(1, locate(passenger, vehicleId));
+  await expect(f.send(1, locate(vehicleId, f.far))).rejects.toMatchObject({
+    code: "VEHICLE_CONTROL_REQUIRED",
+  });
+  const bag = (
+    await f.apply([
+      { type: "create", label: "隊の荷物", holder: driver, basis: "積み荷" },
+    ])
+  ).changes.nodes[0]!;
+  await f.send(0, {
+    command: "update",
+    text: "荷を積む",
+    dependencies: [],
+    operations: [
+      {
+        type: "move",
+        item: bag.id,
+        from: driver,
+        to: vehicleId,
+        basis: "積み荷",
+      },
+    ],
+  });
+  await expect(
+    f.send(0, { command: "vehicle-travel", vehicleId, destinationId: f.far }),
+  ).resolves.toMatchObject({
+    state: "accepted",
+    vehicleId,
+    fromId: f.place,
+    destinationId: f.far,
+  });
+  expect(await at(passenger)).toEqual([vehicleId]);
+  await expect(search(1, "self")).resolves.toMatchObject({
+    material: {
+      ride: { vehicleId, directPlaceId: vehicleId, outerPlaceId: f.far },
+    },
+  });
+  await expect(search(1, "surroundings")).resolves.toMatchObject({
+    material: {
+      routes: [{ id: f.place }],
+      passengers: {
+        items: expect.arrayContaining([{ actorId: driver, name: "人物0" }]),
+      },
+    },
+  });
+  await expect(
+    f.send(2, { command: "vehicle-board", vehicleId }),
+  ).rejects.toMatchObject({ code: "VEHICLE_NOT_HERE" });
+  await expect(f.send(2, locate(outside, vehicleId))).rejects.toMatchObject({
+    code: "VEHICLE_NOT_HERE",
+  });
+  await expect(f.send(1, locate(passenger, f.place))).rejects.toMatchObject({
+    code: "VEHICLE_NOT_HERE",
+  });
+  await expect(
+    f.send(1, { command: "vehicle-leave", vehicleId }),
+  ).resolves.toMatchObject({ state: "accepted", directPlaceId: f.far });
+  await f.send(0, locate(vehicleId, f.place));
+  expect(await at(passenger)).toEqual([f.far]);
+  expect(await at(driver)).toEqual([vehicleId]);
+  await f.send(0, locate(driver, f.place));
+  expect(await at(driver)).toEqual([f.place]);
+  expect((await f.store.context(f.graph).holding(bag.id))?.source).toBe(
+    vehicleId,
+  );
+});
+
+test("他人の所持と操縦権には明示したときだけ対抗し、相手別の出目で一括確定する", async () => {
+  const f = await fixture();
+  const [actor, operator, holder] = f.actors as [string, string, string];
+  const db = isolated.databases.postgres;
+  await f.move(2, f.place);
+  const vehicleId = await vehicleFixture(f);
+  const claim = (i: number, fields: object = {}) =>
+    f.send(i, { command: "vehicle-request-control", vehicleId, ...fields });
+  await claim(1);
+  await f.apply([
+    { type: "move", from: null, to: holder, item: vehicleId, basis: "運ぶ" },
+  ]);
+  const fuel = (
+    await f.apply([
+      {
+        type: "create",
+        label: "道具の材料",
+        holder: actor,
+        count: 3,
+        basis: "手持ち",
+      },
+    ])
+  ).changes.nodes[0]!;
+  const rolls = () =>
+    f.calls.mock.calls.filter((args) => args[1] === "world-opposition-dice");
+  for (const flag of [{}, { oppose: false }])
+    await expect(claim(0, flag)).rejects.toMatchObject({
+      code: "VEHICLE_OPPOSITION_REQUIRED",
+    });
+  expect(rolls()).toHaveLength(0);
+  const setting = {
+    sides: 2,
+    successThrough: 1,
+    consumes: [{ id: fuel.id, count: 1 }],
+  };
+  f.calls.mockImplementation(async (id) => answer(id, setting));
+  const prepare = async (requestId: string, failures: string[] = []) => {
+    for (const opponent of [operator, holder])
+      await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,$3)", [
+        derivedId(`${requestId}:vehicle-opposition:${opponent}`),
+        setting,
+        failures.includes(opponent) ? 2 : 1,
+      ]);
+  };
+  const context = () => f.store.context(f.graph);
+  const failedId = randomUUID();
+  await prepare(failedId, [operator]);
+  await expect(
+    claim(0, { oppose: true, requestId: failedId }),
+  ).resolves.toMatchObject({
+    state: "rejected",
+    outcome: {
+      success: false,
+      contests: expect.arrayContaining([
+        expect.objectContaining({ opponentId: holder, success: true }),
+        expect.objectContaining({ opponentId: operator, success: false }),
+      ]),
+    },
+  });
+  expect(await vehicleOperator(context(), vehicleId)).toMatchObject({
+    actorId: operator,
+  });
+  expect((await context().holding(vehicleId))?.source).toBe(holder);
+  expect(await context().node(fuel.id)).toHaveProperty("count", 3);
+  const requestId = randomUUID();
+  await prepare(requestId);
+  const expected = await claim(0, { oppose: true, requestId });
+  expect(expected).toMatchObject({
+    state: "accepted",
+    operatorId: actor,
+    previousOperatorId: operator,
+    outcome: { success: true },
+  });
+  expect(await claim(0, { oppose: true, requestId })).toEqual(expected);
+  expect(rolls()).toHaveLength(4);
+  expect(await context().holding(vehicleId)).toBeUndefined();
+  expect(await directPlaces(context(), vehicleId)).toEqual([f.place]);
+  expect(await vehicleOperator(context(), vehicleId)).toMatchObject({
+    actorId: actor,
+  });
+  expect(await context().node(fuel.id)).toHaveProperty("count", 1);
+  const duplicate = randomUUID();
+  const callsUsed = (await f.status(0)).callsUsed;
+  await expect(
+    claim(0, { oppose: true, requestId: duplicate }),
+  ).resolves.toMatchObject({ state: "accepted", operatorId: actor, callsUsed });
+  expect(await f.store.receipt(f.graph, duplicate)).toBeUndefined();
+  expect(rolls()).toHaveLength(4);
+});
+
+test("容器の所持者と現操縦者が同一なら一回だけ対抗し、申請者自身の所持は維持する", async () => {
+  const f = await fixture();
+  const [actor, other] = f.actors as [string, string, string];
+  const vehicleId = await vehicleFixture(f);
+  await f.send(1, { command: "vehicle-request-control", vehicleId });
+  const box = (
+    await f.apply([
+      { type: "create", label: "箱", holder: other, basis: "携行" },
+    ])
+  ).changes.nodes[0]!;
+  await f.apply([
+    { type: "move", item: vehicleId, from: null, to: box.id, basis: "保管" },
+  ]);
+  f.calls.mockImplementation(async (id) => answer(id, sure));
+  await expect(
+    f.send(0, { command: "vehicle-request-control", vehicleId, oppose: true }),
+  ).resolves.toMatchObject({
+    operatorId: actor,
+    previousOperatorId: other,
+    outcome: { contests: [expect.objectContaining({ opponentId: other })] },
+  });
+  const context = () => f.store.context(f.graph);
+  expect(await context().holding(vehicleId)).toBeUndefined();
+  expect((await context().holding(box.id))?.source).toBe(other);
+  await f.apply([
+    { type: "move", item: vehicleId, from: null, to: other, basis: "携行" },
+  ]);
+  const hold = await context().holding(vehicleId);
+  await expect(
+    f.send(1, { command: "vehicle-request-control", vehicleId, oppose: true }),
+  ).resolves.toMatchObject({
+    operatorId: other,
+    previousOperatorId: actor,
+    outcome: { contests: [expect.objectContaining({ opponentId: actor })] },
+  });
+  expect(await context().holding(vehicleId)).toEqual(hold);
+  expect(
+    f.calls.mock.calls.filter((args) => args[1] === "world-opposition-dice"),
+  ).toHaveLength(2);
+});
+
+async function setNpc(
+  f: Awaited<ReturnType<typeof fixture>>,
+  i: number,
+  controller: "bot" | "server",
+) {
+  await isolated.databases.postgres.query(
+    "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,$3,$4,$5)",
+    [f.world, f.actors[i], controller, f.people[i]!.id, randomUUID()],
+  );
+}
+
+async function giveTurn(
+  f: Awaited<ReturnType<typeof fixture>>,
+  target: number,
+) {
+  for (let i = 0; i < f.actors.length; i++) {
+    const status = await f.status(target);
+    if (status.actorId === f.actors[target]) return;
+    await f.send(
+      f.actors.findIndex((id) => id === status.actorId),
+      { command: "end-turn" },
+    );
+  }
+  throw new Error("手番を渡せませんでした");
+}
+
+test("乗り物のNPCの却下で終了し、承認済みの申請から第三者だけに対抗できる", async () => {
+  const f = await fixture();
+  const [actor, npcId, incumbent] = f.actors as [string, string, string];
+  await setNpc(f, 1, "bot");
+  await f.move(2, f.place);
+  const vehicleId = await vehicleFixture(f, { npcId });
+  const claim = (i: number, fields: object = {}) =>
+    f.send(i, { command: "vehicle-request-control", vehicleId, ...fields });
+  const opposeCalls = () =>
+    f.calls.mock.calls.filter((args) => args[1] === "world-opposition-dice");
+  await expect(claim(0)).rejects.toMatchObject({ code: "REMOTE_RECEIVING" });
+  await f.send(1, { command: "contact", targetId: actor });
+  await giveTurn(f, 0);
+  const declined = randomUUID();
+  await expect(claim(0, { requestId: declined })).resolves.toMatchObject({
+    state: "receiving",
+    applicationId: declined,
+  });
+  await expect(
+    f.send(1, { command: "receive", applicationId: declined, accept: false }),
+  ).resolves.toMatchObject({ application: { state: "rejected" } });
+  expect(opposeCalls()).toHaveLength(0);
+  expect(
+    await vehicleOperator(f.store.context(f.graph), vehicleId),
+  ).toBeUndefined();
+
+  f.calls.mockImplementation(async (id) => answer(id, sure));
+  await expect(claim(2, { oppose: true })).resolves.toMatchObject({
+    state: "accepted",
+    operatorId: incumbent,
+  });
+  const approval = randomUUID();
+  await claim(0, { requestId: approval });
+  await expect(
+    f.send(1, { command: "receive", applicationId: approval, accept: true }),
+  ).resolves.toMatchObject({
+    application: {
+      code: "VEHICLE_OPPOSITION_REQUIRED",
+      applicationId: approval,
+    },
+  });
+  expect(opposeCalls()).toHaveLength(1);
+  await expect(
+    claim(0, { oppose: true, applicationId: declined }),
+  ).rejects.toMatchObject({ code: "VEHICLE_APPROVAL_INVALID" });
+  await expect(
+    claim(0, { oppose: true, applicationId: approval }),
+  ).resolves.toMatchObject({
+    state: "accepted",
+    operatorId: actor,
+    previousOperatorId: incumbent,
+    outcome: {
+      success: true,
+      contests: [expect.objectContaining({ opponentId: incumbent })],
+    },
+  });
+  expect(opposeCalls()).toHaveLength(2);
+});
+
+test("コンパニオン自身に乗る・降りる操作は自己参照を作らず、NPCの手番で自分の乗客を運べる", async () => {
+  const f = await fixture();
+  const [actor, npcId, companionId] = f.actors as [string, string, string];
+  await setNpc(f, 1, "bot");
+  await setNpc(f, 2, "bot");
+  await f.move(2, f.place);
+  await vehicleFixture(f, { npcId, route: true });
+  await f.send(1, { command: "contact", targetId: actor });
+  await f.send(2, { command: "contact", targetId: actor });
+  await giveTurn(f, 0);
+  f.calls.mockImplementation(async (id) =>
+    answer(id, { accepted: true, reason: "同行に合意した" }),
+  );
+  for (const targetId of [npcId, companionId])
+    await f.send(0, {
+      command: "companion-request",
+      targetId,
+      text: "一緒に移動したい",
+    });
+  const at = (id: string) => directPlaces(f.store.context(f.graph), id);
+  await f.send(0, { command: "vehicle-board", vehicleId: npcId });
+  expect(await at(npcId)).toEqual([f.place]);
+  expect(await at(companionId)).toEqual([npcId]);
+  await f.send(0, { command: "companion-wait", targetId: companionId });
+  await giveTurn(f, 1);
+  expect((await f.status(1)).sessionId).toBe((await f.status(0)).sessionId);
+  await f.send(1, locate(npcId, f.far));
+  expect(await at(npcId)).toEqual([f.far]);
+  expect(await at(actor)).toEqual([npcId]);
+  expect(
+    await vehicleOperator(f.store.context(f.graph), npcId),
+  ).toBeUndefined();
+  await giveTurn(f, 0);
+  await f.send(0, { command: "vehicle-leave", vehicleId: npcId });
+  expect(await at(companionId)).toEqual([npcId]);
+  await giveTurn(f, 0);
+  await f.send(0, {
+    command: "companion-move",
+    targetId: npcId,
+    placeId: f.place,
+  });
+  expect(await at(npcId)).toEqual([f.place]);
+  expect(await at(companionId)).toEqual([npcId]);
+  expect(await at(actor)).toEqual([f.far]);
+});
+
+test("登録済みの保管先を守り、携行した乗り物は現在地で出して乗れる", async () => {
+  const f = await fixture();
+  const [actor, other] = f.actors as [string, string];
+  const box = (
+    await f.apply([
+      { type: "create", label: "箱", holder: actor, basis: "手持ち" },
+    ])
+  ).changes.nodes[0]!;
+  const vehicleId = await vehicleFixture(f, { holder: box.id });
+  const context = () => f.store.context(f.graph);
+  await f.send(0, locate(actor, f.far));
+  await expect(
+    f.send(1, { command: "vehicle-request-control", vehicleId, oppose: true }),
+  ).rejects.toMatchObject({ code: "VEHICLE_NOT_HERE" });
+  await expect(
+    f.send(0, { command: "vehicle-request-control", vehicleId }),
+  ).resolves.toMatchObject({ operatorId: actor });
+  expect((await context().holding(vehicleId))?.source).toBe(box.id);
+  await f.send(0, locate(actor, vehicleId));
+  expect(await context().holding(vehicleId)).toBeUndefined();
+  expect(await directPlaces(context(), vehicleId)).toEqual([f.far]);
+  const registered = await vehicleFixture(f, { holder: f.place });
+  await f.apply([
+    { type: "grant", person: actor, storage: f.place, basis: "保管先" },
+  ]);
+  await expect(
+    f.send(1, {
+      command: "vehicle-request-control",
+      vehicleId: registered,
+      oppose: true,
+    }),
+  ).rejects.toMatchObject({ code: "STORAGE_NOT_REGISTERED" });
+  expect((await context().holding(registered))?.source).toBe(f.place);
+  expect(await vehicleOperator(context(), registered)).toBeUndefined();
+  expect(f.calls).not.toHaveBeenCalled();
+  expect(await directPlaces(context(), other)).toEqual([f.place]);
+});
+
+test.each(["専用コマンド", "locate"])(
+  "%sで乗車と出発の両方が申請されると確定順に従う",
+  async (entry) => {
+    const f = await fixture();
+    const [, rider] = f.actors as [string, string, string];
+    const vehicleId = await vehicleFixture(f);
+    await f.send(0, { command: "vehicle-request-control", vehicleId });
+    await f.send(0, { command: "vehicle-board", vehicleId });
+    const travel = (destinationId: string, requestId = randomUUID()) =>
+      f.send(0, {
+        requestId,
+        ...(entry === "locate"
+          ? locate(vehicleId, destinationId)
+          : { command: "vehicle-travel", vehicleId, destinationId }),
+      });
+    const board = (requestId = randomUUID()) =>
+      f.send(1, {
+        requestId,
+        ...(entry === "locate"
+          ? locate(rider, vehicleId)
+          : { command: "vehicle-board", vehicleId }),
+      });
+    const race = async (
+      first: (requestId: ReturnType<typeof randomUUID>) => Promise<unknown>,
+      second: () => Promise<unknown>,
+    ) => {
+      const firstId = randomUUID();
+      let enter!: () => void;
+      let resume!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      const paused = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      const commit = f.store.commit.bind(f.store);
+      const hook = vi
+        .spyOn(f.store, "commit")
+        .mockImplementation(async (...args) => {
+          if (args[2].commitId === firstId) {
+            enter();
+            await paused;
+          }
+          return commit(...args);
+        });
+      const pending = first(firstId);
+      try {
+        await Promise.race([entered, pending]);
+        const after = second();
+        resume();
+        return await Promise.allSettled([pending, after]);
+      } finally {
+        resume();
+        hook.mockRestore();
+      }
+    };
+    expect(
+      (await race(board, () => travel(f.far))).map((r) => r.status),
+    ).toEqual(["fulfilled", "fulfilled"]);
+    await expect(
+      f.send(1, { command: "search", query: { kind: "self" } }),
+    ).resolves.toMatchObject({
+      material: { ride: { vehicleId, outerPlaceId: f.far } },
+    });
+    await travel(f.place);
+    await f.send(1, { command: "vehicle-leave", vehicleId });
+    const [departure, boarding] = await race((id) => travel(f.far, id), board);
+    expect(departure).toMatchObject({ status: "fulfilled" });
+    expect(boarding).toMatchObject({
+      status: "rejected",
+      reason: { code: "VEHICLE_NOT_HERE" },
+    });
+    expect(await directPlaces(f.store.context(f.graph), rider)).toEqual([
+      f.place,
+    ]);
+  },
+);
+
+test("別セッションの二人が同じ乗り物を並行して申請しても専用の操縦者は一人だけ", async () => {
+  const f = await fixture();
+  const vehicleId = await vehicleFixture(f);
+  const requests = [0, 1].map((i) =>
+    f.send(i, { command: "vehicle-request-control", vehicleId }),
+  );
+  const settled = await Promise.allSettled(requests);
+  const winner = settled.findIndex((r) => r.status === "fulfilled");
+  expect(winner).toBeGreaterThanOrEqual(0);
+  expect(settled[1 - winner]).toMatchObject({ status: "rejected" });
+  const context = f.store.context(f.graph);
+  expect(await context.marked(vehicleId, "status", "operator")).toHaveLength(1);
+  expect(await vehicleOperator(context, vehicleId)).toMatchObject({
+    actorId: f.actors[winner],
+  });
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("隔離試遊で配布用CLIから自動運転の乗り物に乗り、到着先で降りる", async () => {
+  const f = await fixture();
+  const [actor, npcId, bystander] = f.actors as [string, string, string];
+  const db = isolated.databases.postgres;
+  await setNpc(f, 1, "bot");
+  await vehicleFixture(f, { npcId, route: true });
+  const request = randomUUID();
+  const context = f.store.context(f.graph);
+  await f.store.commit(await f.store.claim(f.graph, request), context, {
+    commitId: request,
+    at: (await runtime.get(f.world)).at,
+    changes: {
+      nodes: [],
+      edges: [],
+      endEdges: [],
+      revisions: [
+        {
+          id: npcId,
+          kind: "existence",
+          text: "コハク号。広場と作業場を往復する話せる乗合車。乗客が作業場へ行きたがったら、自分で運行できる。",
+        },
+        { id: f.far, kind: "existence", text: "作業場" },
+      ],
+    },
+  });
+  await f.move(2, f.place);
+  const cart = await vehicleFixture(f);
+  await f.send(2, { command: "vehicle-request-control", vehicleId: cart });
+  await f.send(1, { command: "contact", targetId: actor });
+  await giveTurn(f, 0);
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  const run = (...args: string[]) =>
+    cli.run(join(cli.directory, "vehicle.json"), ...args, "--full-ids");
+  const game = (...args: string[]) =>
+    run(...args).then((value) => value.result);
+  try {
+    const connection = await run(
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (
+        await cli.approve(
+          f.people[0]!.cookie,
+          connection.userCode,
+          `actor:${actor}`,
+        )
+      ).statusCode,
+    ).toBe(302);
+    expect(
+      await run("vehicle", "request-control", "--target", cart),
+    ).toMatchObject({
+      code: "VEHICLE_OPPOSITION_REQUIRED",
+    });
+    f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+    const takeover = await game(
+      "vehicle",
+      "request-control",
+      "--target",
+      cart,
+      "--oppose",
+    );
+    expect(takeover).toMatchObject({
+      state: "accepted",
+      operatorId: actor,
+      previousOperatorId: bystander,
+    });
+    const found = await game("search", "--kind", "surroundings");
+    expect(found.material.vehicles.items).toContainEqual(
+      expect.objectContaining({ vehicleId: npcId }),
+    );
+    const boarded = await game("vehicle", "board", "--target", npcId);
+    expect(boarded).toMatchObject({
+      state: "accepted",
+      vehicleId: npcId,
+      directPlaceId: npcId,
+    });
+    await expect(
+      f.send(2, { command: "contact", targetId: actor }),
+    ).rejects.toMatchObject({ code: "CONTACT_MISMATCH" });
+    await game(
+      "say",
+      "--text",
+      "作業場までお願いします。着いたら荷下ろしを手伝います。",
+    );
+    await game("end-turn");
+    await auth.operations.execute(
+      (await auth.person()).id,
+      randomUUID(),
+      {
+        operation: "npcs.put",
+        worldId: f.world,
+        actorId: npcId,
+        controller: "server",
+        reason: "隔離試遊のコハク号をサーバー担当にする",
+      },
+      { players: access.players },
+    );
+    const actual = process.env.GESTALOKA_VEHICLE_TRIAL === "1";
+    const model = actual
+      ? new LlmClient(db, {
+          ...process.env,
+          LLM_BUDGET_ID: "vehicle-351-trial",
+          LLM_BUDGET_USD: "1",
+          LLM_MAX_OUTPUT_TOKENS: "4096",
+          LLM_RESOLUTION_MAX_OUTPUT_TOKENS: "4096",
+        })
+      : undefined;
+    await model?.ledger.setup();
+    const choices: string[] = [];
+    const models = new Set<string>();
+    f.calls.mockImplementation(async (...args) => {
+      const response = model
+        ? await model.complete(...args)
+        : answer(
+            args[0],
+            choices.length
+              ? { command: "end-turn" }
+              : {
+                  command: "vehicle-travel",
+                  vehicleId: npcId,
+                  destinationId: f.far,
+                },
+          );
+      choices.push(JSON.parse(response.content).command);
+      models.add(response.model);
+      return response;
+    });
+    for (let i = 0; i < 6 && (await f.status(0)).actorId === npcId; i++)
+      await access.botPlay.tickNpcs(f.world);
+    const self = await game("search", "--kind", "self");
+    const outside = await directPlaces(f.store.context(f.graph), bystander);
+    expect(self.material.ride).toMatchObject({
+      vehicleId: npcId,
+      outerPlaceId: f.far,
+    });
+    expect(outside).toEqual([f.place]);
+    const after = await game("vehicle", "leave", "--target", npcId);
+    expect(after).toMatchObject({ state: "accepted", directPlaceId: f.far });
+    if (actual) {
+      const path = resolve("artifacts/vehicle-351/playtest.json");
+      await writeFile(
+        path,
+        JSON.stringify(
+          {
+            models: [...models],
+            choices,
+            takeover: takeover.state,
+            rode: boarded.directPlaceId === npcId,
+            arrived: self.material.ride.outerPlaceId === f.far,
+            bystanderStayed: outside[0] === f.place,
+            gotOff: after.directPlaceId === f.far,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    }
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+}, 120000);
 
 test("craftの定義から保管先を設置し、管理者不在の無償受領・指定分を保った移設・履歴を確認できる", async () => {
   const f = await fixture();
@@ -357,11 +1145,13 @@ test("craftの定義から保管先を設置し、管理者不在の無償受領
       if (legacy)
         expect(
           await f.store.context(f.graph).node(result.quest.productId),
-        ).toMatchObject({ storageLimitSlots: 150 });
+        ).toMatchObject({ storageLimitSlots: 175 });
       return result.quest.productId as string;
     };
-    f.calls.mockImplementationOnce(async (id, role) => {
+    await f.store.configureInventory(f.graph, undefined, { storageSlots: 175 });
+    f.calls.mockImplementationOnce(async (id, role, messages) => {
       expect(role).toBe("world-blueprint");
+      expect(messages[0]?.content).toContain("標準的な家の175枠");
       return answer(id, {
         accepted: true,
         reason: "設置できる",
@@ -6232,11 +7022,14 @@ test("運営が世界ごとの容量を変更すると照会と既存在庫・�
     capacity: { usedSlots: 3, limitSlots: 30 },
     storages: [{ id: f.place, capacity: { usedSlots: 2, limitSlots: 150 } }],
   });
-  const configure = (inventoryLimits: {
-    carrySlots?: number;
-    storageSlots?: number;
-    unitsPerSlot?: number;
-  }) =>
+  const configure = (
+    inventoryLimits: {
+      carrySlots?: number;
+      storageSlots?: number;
+      unitsPerSlot?: number;
+    },
+    inventoryCapacity?: boolean,
+  ) =>
     auth.operations.execute(
       admin.id,
       randomUUID(),
@@ -6248,13 +7041,13 @@ test("運営が世界ごとの容量を変更すると照会と既存在庫・�
         reason: "隔離試験",
         published: false,
         accepting: false,
-        inventoryCapacity: true,
+        ...(inventoryCapacity === undefined ? {} : { inventoryCapacity }),
         inventoryLimits,
       },
       { players: access.players },
     );
   await expect(
-    configure({ carrySlots: 4, storageSlots: 2, unitsPerSlot: 20 }),
+    configure({ carrySlots: 4, storageSlots: 2, unitsPerSlot: 20 }, true),
   ).resolves.toMatchObject({
     inventoryCapacity: true,
     inventoryLimits: { carrySlots: 4, storageSlots: 2, unitsPerSlot: 20 },
@@ -6284,7 +7077,38 @@ test("運営が世界ごとの容量を変更すると照会と既存在庫・�
   await expect(take()).rejects.toMatchObject({
     code: "INVENTORY_CAPACITY_EXCEEDED",
   });
+  const carried = seeded.changes.nodes.find(
+    (node) => node.kind === "existence" && node.count === 80,
+  )!;
+  await expect(
+    f.send(0, {
+      command: "update",
+      text: "鉱石を20個預ける",
+      dependencies: [],
+      operations: [
+        {
+          type: "move",
+          item: carried.id,
+          from: actor,
+          to: f.place,
+          count: 20,
+          basis: "検証",
+        },
+      ],
+    }),
+  ).rejects.toMatchObject({
+    code: "INVENTORY_CAPACITY_EXCEEDED",
+    inventory: {
+      capacity: {
+        holderId: f.place,
+        usedSlots: 3,
+        limitSlots: 2,
+        projectedSlots: 4,
+      },
+    },
+  });
   await expect(configure({ unitsPerSlot: 50 })).resolves.toMatchObject({
+    inventoryCapacity: true,
     inventoryLimits: { carrySlots: 4, storageSlots: 2, unitsPerSlot: 50 },
   });
   await take();

@@ -245,7 +245,8 @@ export class WorldContext {
   async prepareInventory() {
     const { records } = await this.driver.executeQuery(
       `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
-       WHERE g.inventoryCacheUnits=coalesce(g.inventoryUnitsPerSlot,$defaultUnits) RETURN g.key`,
+       WHERE NOT coalesce(g.inventoryReady,false)
+         AND g.inventoryCacheUnits=coalesce(g.inventoryUnitsPerSlot,$defaultUnits) RETURN g.key`,
       {
         worldId: this.worldId,
         defaultUnits: defaultInventoryLimits.unitsPerSlot,
@@ -418,15 +419,29 @@ export class WorldContext {
       ?.get("id") as string | undefined;
   }
 
-  async locationSubjects(place: string, at = Number.MAX_SAFE_INTEGER) {
+  async locationSubjects(
+    place: string,
+    at = Number.MAX_SAFE_INTEGER,
+    direct?: { after?: string | undefined; limit: number },
+  ) {
     z.uuid().parse(place);
     return this.#read(relationKey(place, "status", "in"), async (tx) => {
       const result = await tx.run(
         `MATCH (p:WorldNode {worldId:$world,id:$place})<-[a:status {role:'about'}]-(s:WorldNode)<-[c:status {role:'content'}]-(n:WorldNode)
         WHERE c.data CONTAINS $marker AND c.validFrom<=$at AND (c.validTo IS NULL OR $at<c.validTo)
         AND a.validFrom<=$at AND (a.validTo IS NULL OR $at<a.validTo)
-        RETURN DISTINCT n.id AS id`,
-        { world: this.worldId, place, at, marker: '"text":"location"' },
+        AND (NOT $direct OR a.data CONTAINS '"text":"direct-place"')
+        AND ($after IS NULL OR n.id>$after)
+        RETURN DISTINCT n.id AS id ${direct ? (direct.limit === 1 && !direct.after ? "LIMIT $limit" : "ORDER BY id LIMIT $limit") : ""}`,
+        {
+          world: this.worldId,
+          place,
+          at,
+          marker: '"text":"location"',
+          direct: !!direct,
+          after: direct?.after ?? null,
+          limit: int(direct?.limit ?? 21),
+        },
       );
       return result.records.map((r) => r.get("id") as string);
     });
@@ -538,6 +553,75 @@ export class WorldContext {
         e.role === "content" && e.text === text && e.period.until === undefined,
       (a, b) => a.id.localeCompare(b.id),
     ).filter((e) => e.text === text);
+  }
+  async holding(id: string) {
+    return this.#read(relationKey(id, "has", "in"), async (tx) => {
+      const { records } = await tx.run(
+        `MATCH ()-[h:has]->(:WorldNode {worldId:$world,id:$id})
+         WHERE h.validTo IS NULL AND h.role IS NULL RETURN h.data AS data LIMIT 1`,
+        { world: this.worldId, id },
+      );
+      return records[0]
+        ? WorldEdge.parse(JSON.parse(records[0].get("data")))
+        : undefined;
+    });
+  }
+  async storageAccess(id: string, actor: string) {
+    return this.#read(relationKey(id, "has", "in"), async (tx) => {
+      const { records } = await tx.run(
+        `MATCH (s:WorldNode {worldId:$world,id:$id})
+         RETURN EXISTS { MATCH ()-[h:has {role:'use'}]->(s) WHERE h.validTo IS NULL } AS registered,
+           EXISTS { MATCH (:WorldNode {worldId:$world,id:$actor})-[h:has {role:'use'}]->(s)
+                    WHERE h.validTo IS NULL } AS allowed`,
+        { world: this.worldId, id, actor },
+      );
+      return {
+        registered: records[0]?.get("registered") === true,
+        allowed: records[0]?.get("allowed") === true,
+      };
+    });
+  }
+  async routesBetween(from: string, to: string) {
+    return this.#read(relationKey(from, "status", "out"), async (tx) => {
+      const { records } = await tx.run(
+        `MATCH (:WorldNode {worldId:$world,id:$from})-[r:status {role:'content'}]->(s)
+         MATCH (s)-[a:status {role:'about'}]->(:WorldNode {worldId:$world,id:$to})
+         WHERE r.validTo IS NULL AND r.data CONTAINS '"text":"route"'
+           AND a.validTo IS NULL AND NOT a.data CONTAINS '"text":"route-requires"'
+         RETURN DISTINCT s.id AS id`,
+        { world: this.worldId, from, to },
+      );
+      return records.map((r) => r.get("id") as string);
+    });
+  }
+  async vehiclesAt(place: string, actor: string, after?: string) {
+    return this.#read(relationKey(place, "status", "in"), async (tx) => {
+      const { records } = await tx.run(
+        `MATCH (p:WorldNode {worldId:$world,id:$place})
+         CALL (p) {
+           MATCH (p)<-[a:status {role:'about'}]-()<- [c:status {role:'content'}]-(v)
+           WHERE a.validTo IS NULL AND a.data CONTAINS '"text":"direct-place"'
+             AND c.validTo IS NULL AND c.data CONTAINS '"text":"location"'
+             AND NOT EXISTS { MATCH ()-[h:has]->(v) WHERE h.role IS NULL AND h.validTo IS NULL }
+           RETURN v
+           UNION
+           UNWIND [p.id,$actor] AS holder
+           MATCH path=(:WorldNode {worldId:$world,id:holder})-[:has*1..]->(v)
+           WHERE all(h IN relationships(path) WHERE h.validTo IS NULL AND h.role IS NULL)
+             AND none(s IN nodes(path)[0..-1] WHERE
+               EXISTS { MATCH ()-[u:has {role:'use'}]->(s) WHERE u.validTo IS NULL }
+               AND NOT EXISTS { MATCH (:WorldNode {worldId:$world,id:$actor})-[u:has {role:'use'}]->(s) WHERE u.validTo IS NULL })
+           RETURN v
+         }
+         WITH DISTINCT v WHERE v.id>$after AND EXISTS {
+           MATCH (v)-[mark:status {role:'content'}]->()
+           WHERE mark.validTo IS NULL AND mark.data CONTAINS '"text":"vehicle"'
+         }
+         RETURN v.id AS id ORDER BY id LIMIT 21`,
+        { world: this.worldId, place, actor, after: after ?? "" },
+      );
+      return records.map((r) => r.get("id") as string);
+    });
   }
   async reserved(itemId: string) {
     return this.#read(relationKey(itemId, "has", "in"), async (tx) => {
@@ -948,19 +1032,23 @@ export class WorldStore {
         unitsPerSlot: limits?.unitsPerSlot ?? state.limits.unitsPerSlot,
       };
       const active = enabled ?? state.enabled;
-      if (
-        active === state.enabled &&
-        next.carrySlots === state.limits.carrySlots &&
-        next.storageSlots === state.limits.storageSlots &&
-        next.unitsPerSlot === state.limits.unitsPerSlot
-      )
-        return state;
+      const changed =
+        active !== state.enabled ||
+        next.carrySlots !== state.limits.carrySlots ||
+        next.storageSlots !== state.limits.storageSlots ||
+        next.unitsPerSlot !== state.limits.unitsPerSlot;
+      if (!changed && !limits) return state;
       await tx.run(
         `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
          SET g.inventoryEnabled=$enabled, g.inventoryCarrySlots=$carrySlots,
           g.inventoryStorageSlots=$storageSlots, g.inventoryUnitsPerSlot=$unitsPerSlot,
-          g.version=g.version+1`,
-        { worldId, enabled: active, ...next },
+          g.version=g.version+$versionIncrease`,
+        {
+          worldId,
+          enabled: active,
+          ...next,
+          versionIncrease: int(changed ? 1 : 0),
+        },
       );
       return initializeInventory(tx, worldId);
     });
@@ -1765,6 +1853,27 @@ export class WorldStore {
           );
           if (Number(open.records[0]!.get("count")) > 1)
             throw new Error("同じ物品の所在を同時に複数成立させられません");
+        }
+        for (const id of new Set(
+          changes.edges
+            .filter(
+              (e) =>
+                e.kind === "status" &&
+                e.role === "content" &&
+                e.text === "operator",
+            )
+            .map((e) => e.source),
+        )) {
+          const { records } = await tx.run(
+            `MATCH (:WorldNode {worldId:$worldId,id:$id})-[r:status {role:'content'}]->()
+             WHERE r.validTo IS NULL AND r.data CONTAINS '"text":"operator"'
+             RETURN count(r) AS count`,
+            { worldId, id },
+          );
+          if (Number(records[0]!.get("count")) > 1)
+            throw new WorldConflict(
+              "乗り物の専用操縦権は同時に一つだけ有効です",
+            );
         }
         const derived = { nodes: [], revisions: [], edges: [] } as Pick<
           Change,

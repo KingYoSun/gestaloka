@@ -163,7 +163,8 @@ export async function inventoryAudit(
 export async function inventoryState(tx: ManagedTransaction, worldId: string) {
   const { records } = await tx.run(
     `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
-     RETURN g.inventoryCacheUnits AS cacheUnits, coalesce(g.inventoryEnabled,false) AS enabled,
+     RETURN CASE WHEN g.inventoryReady THEN null ELSE g.inventoryCacheUnits END AS cacheUnits,
+       coalesce(g.inventoryEnabled,false) AS enabled,
        g.inventoryCarrySlots AS carrySlots,g.inventoryStorageSlots AS storageSlots,g.inventoryUnitsPerSlot AS unitsPerSlot`,
     { worldId },
   );
@@ -212,7 +213,8 @@ export async function initializeInventory(
       },
     );
     await tx.run(
-      "MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'}) SET g.inventoryCacheUnits=$stackSize",
+      `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
+       SET g.inventoryCacheUnits=$stackSize REMOVE g.inventoryReady`,
       { worldId, stackSize: limits.unitsPerSlot },
     );
   }

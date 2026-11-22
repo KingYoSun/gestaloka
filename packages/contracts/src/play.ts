@@ -125,7 +125,13 @@ export const BelongingOp = z.discriminatedUnion("type", [
 ]);
 export type BelongingOp = z.infer<typeof BelongingOp>;
 export const PlaySearch = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("surroundings") }).strict(),
+  z
+    .object({
+      kind: z.literal("surroundings"),
+      vehicleAfter: id.optional(),
+      passengerAfter: id.optional(),
+    })
+    .strict(),
   z.object({ kind: z.literal("seek") }).strict(),
   z.object({ kind: z.literal("self") }).strict(),
   z.object({ kind: z.literal("memos") }).strict(),
@@ -350,6 +356,29 @@ export const PlayCommand = z.discriminatedUnion("command", [
   ...DrawTableActions,
   ...StorageActions,
   ...BlueprintActions,
+  z
+    .object({
+      ...request,
+      command: z.literal("vehicle-request-control"),
+      vehicleId: id,
+      oppose: z.boolean().optional(),
+      applicationId: id.optional(),
+    })
+    .strict(),
+  z
+    .object({ ...request, command: z.literal("vehicle-board"), vehicleId: id })
+    .strict(),
+  z
+    .object({ ...request, command: z.literal("vehicle-leave"), vehicleId: id })
+    .strict(),
+  z
+    .object({
+      ...request,
+      command: z.literal("vehicle-travel"),
+      vehicleId: id,
+      destinationId: id,
+    })
+    .strict(),
   NpcAction.extend({ ...request, command: z.literal("npc-action"), npcId: id }),
   z.object({ ...request, command: z.literal("start") }).strict(),
   z
@@ -594,6 +623,7 @@ export const ReceiptResult = z.object({
   turn: z.number().int(),
   at: z.iso.datetime(),
   message: z.string(),
+  code: z.string().optional(),
   rejectedBy: z.object({ actorId: z.uuid(), name: z.string() }).optional(),
 });
 export function playActionMessage(
