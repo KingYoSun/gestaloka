@@ -624,6 +624,49 @@ test("乗り物のNPCの却下で終了し、承認済みの申請から第三�
   expect(opposeCalls()).toHaveLength(2);
 });
 
+test("乗り物の性質を持つプレイヤーは自分で移動し、操縦の申請を本人が受領する", async () => {
+  const f = await fixture();
+  const [vehicleId, rider, third] = f.actors as [string, string, string];
+  await vehicleFixture(f, { npcId: vehicleId });
+  const at = (id: string) => directPlaces(f.store.context(f.graph), id);
+  const operator = async () =>
+    (await vehicleOperator(f.store.context(f.graph), vehicleId))?.actorId;
+  const claim = (i: number, fields: object = {}) =>
+    f.send(i, { command: "vehicle-request-control", vehicleId, ...fields });
+  await f.send(1, { command: "vehicle-board", vehicleId });
+  await f.send(0, locate(vehicleId, f.far));
+  expect(await at(vehicleId)).toEqual([f.far]);
+  expect(await at(rider)).toEqual([vehicleId]);
+
+  await expect(claim(1)).rejects.toMatchObject({ code: "REMOTE_RECEIVING" });
+  await f.send(0, { command: "contact", targetId: rider });
+  for (const accept of [false, true]) {
+    await giveTurn(f, 1);
+    const applicationId = randomUUID();
+    await expect(claim(1, { requestId: applicationId })).resolves.toMatchObject(
+      { state: "receiving", applicationId },
+    );
+    await expect(
+      f.send(0, { command: "receive", applicationId, accept }),
+    ).resolves.toMatchObject({
+      application: { state: accept ? "confirmed" : "rejected" },
+    });
+    expect(await operator()).toBe(accept ? rider : undefined);
+  }
+  expect(f.calls).not.toHaveBeenCalled();
+
+  f.calls.mockImplementation(async (id) => answer(id, sure));
+  await expect(claim(2, { oppose: true })).resolves.toMatchObject({
+    operatorId: third,
+    outcome: {
+      contests: expect.arrayContaining([
+        expect.objectContaining({ opponentId: vehicleId }),
+        expect.objectContaining({ opponentId: rider }),
+      ]),
+    },
+  });
+});
+
 test("コンパニオン自身に乗る・降りる操作は自己参照を作らず、NPCの手番で自分の乗客を運べる", async () => {
   const f = await fixture();
   const [actor, npcId, companionId] = f.actors as [string, string, string];
