@@ -741,6 +741,9 @@ async function run() {
             true,
           ) as object),
           ...(values.stealth ? { stealth: true } : {}),
+          ...(values["depart-alone-on-timeout"]
+            ? { departAloneOnTimeout: true }
+            : {}),
           requestId: id,
         }
       : {

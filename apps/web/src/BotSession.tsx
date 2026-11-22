@@ -79,6 +79,13 @@ const View = z.object({
       applicationId: z.string(),
       text: z.string().optional(),
       preview: z.array(z.string()).optional(),
+      progress: z
+        .object({
+          approved: z.number(),
+          declined: z.number(),
+          pending: z.number(),
+        })
+        .optional(),
       deadline: z.string(),
     })
     .nullable()
@@ -594,6 +601,13 @@ export function BotSession({
                 void send({ command: "contact", targetId })
               }
             />
+          )}
+          {view.receiving?.progress && (
+            <p>
+              承認 {view.receiving.progress.approved}人、辞退{" "}
+              {view.receiving.progress.declined}人、回答待ち{" "}
+              {view.receiving.progress.pending}人
+            </p>
           )}
           {view.receiving && mine && (
             <section className="space-y-3">

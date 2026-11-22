@@ -7987,6 +7987,162 @@ test("同行者の所在をまとめて申請すると承認した人だけが�
   expect(c.characters!.map((m) => m.actorId)).toEqual([f.actors[2], bird]);
   expect(c.actorId).toBe(f.actors[2]);
 });
+test.each([
+  { approvals: [2, 3], alone: false, legacy: false, moved: [0, 2, 3] },
+  { approvals: [], alone: false, legacy: false, moved: [] },
+  { approvals: [], alone: true, legacy: false, moved: [0] },
+  { approvals: [1], alone: false, legacy: true, moved: [] },
+])(
+  "同席の出発申請をCLIで試遊する（$moved・旧形式 $legacy）",
+  async ({ approvals, alone, legacy, moved }) => {
+    const f = await fixture(5);
+    await f.move(2, f.place);
+    for (const i of [1, 2, 3, 4])
+      await f.send(i, { command: "contact", targetId: f.actors[0] });
+    const app = await createApp(
+      access,
+      auth.identity,
+      undefined,
+      auth.operations,
+    );
+    const cli = await playerCli(app);
+    try {
+      const profile = join(cli.directory, "sender.json");
+      const connection = await cli.run(
+        profile,
+        "connect",
+        "--server",
+        cli.base,
+        "--world",
+        f.world,
+      );
+      await cli.approve(
+        f.people[0]!.cookie,
+        connection.userCode,
+        "actor:" + f.actors[0],
+      );
+      const file = join(cli.directory, "departure.json");
+      await writeFile(
+        file,
+        JSON.stringify({
+          command: "update",
+          text: "一緒に離れた場所へ出発する",
+          operations: f.actors.slice(0, 4).map((subjectId) => ({
+            type: "locate",
+            subjectId,
+            text: "離れた場所",
+            aboutIds: [f.far],
+          })),
+          dependencies: [],
+        }),
+      );
+      const submitted = await cli.run(
+        profile,
+        "play",
+        "--full-ids",
+        "--file",
+        file,
+        ...(alone ? ["--depart-alone-on-timeout"] : []),
+      );
+      const { applicationId, deadline } = submitted.result.receiving;
+      if (legacy)
+        await isolated.databases.postgres.query(
+          "UPDATE bot_session SET data=data #- '{receiving,parallel}' WHERE id=$1",
+          [submitted.result.sessionId],
+        );
+      const watch = (i: number) =>
+        access.waiting(
+          f.people[i]!.id,
+          f.world,
+          f.actors[i],
+          undefined,
+          true,
+          true,
+          true,
+        );
+      const waiting = await watch(3);
+      if (legacy) expect(waiting).toMatchObject({ actionable: false });
+      else
+        expect(waiting).toMatchObject({
+          actionable: true,
+          state: "receiving",
+          context: {
+            receiving: {
+              applicationId,
+              text: "一緒に離れた場所へ出発する",
+              deadline,
+            },
+          },
+        });
+      expect(await watch(4)).toMatchObject({ actionable: false });
+      expect((await watch(4)).context).not.toHaveProperty("receiving");
+      await Promise.all(
+        approvals.map((i) =>
+          f.send(i, {
+            command: "receive",
+            applicationId,
+            accept: true,
+          }),
+        ),
+      );
+      const { progress } = (await f.status(0)).receiving!;
+      if (legacy) {
+        expect(progress).toBeUndefined();
+        expect(await watch(2)).toMatchObject({ actionable: true });
+      } else {
+        expect(progress).toEqual({
+          approved: approvals.length,
+          declined: 0,
+          pending: 3 - approvals.length,
+        });
+        if (approvals.length)
+          expect(await watch(2)).toMatchObject({ actionable: false });
+      }
+
+      vi.spyOn(access.botPlay, "now").mockReturnValue(new Date(deadline));
+      const late = f.send(legacy ? 2 : 1, {
+        command: "receive",
+        applicationId,
+        accept: true,
+      });
+      await Promise.all([
+        expect(late).rejects.toMatchObject({ code: "RECEIVING_TURN_REQUIRED" }),
+        access.botPlay.expire(f.world),
+      ]);
+
+      const context = f.store.context(f.graph);
+      const there = await context.locationSubjects(f.far);
+      const here = await context.locationSubjects(f.place);
+      expect(f.actors.filter((id) => there.includes(id))).toEqual(
+        moved.map((i) => f.actors[i]),
+      );
+      expect(f.actors.filter((id) => here.includes(id))).toEqual(
+        f.actors.filter((_, i) => !moved.includes(i)),
+      );
+      const states = await Promise.all(f.actors.map((_, i) => f.status(i)));
+      for (const state of states) expect(state.receiving).toBeNull();
+      for (const i of moved)
+        expect(states[i]!.sessionId).toBe(states[0]!.sessionId);
+      if (moved.length)
+        expect(states[1]!.sessionId).not.toBe(states[0]!.sessionId);
+      for (const i of [0, 1, 2, 3]) {
+        const results = states[i]!.entries.flatMap(({ payload }) =>
+          payload.receiptResult?.applicationId === applicationId
+            ? [payload.receiptResult]
+            : [],
+        );
+        expect(results).toHaveLength(1);
+        expect(results[0]).toMatchObject({
+          outcome: moved.length ? "accepted" : "expired",
+        });
+      }
+    } finally {
+      await cli.close();
+      await app.close();
+    }
+  },
+);
+
 test("チームは別々に到着しても先着者の進行で続き、合流前の記録は本人にだけ残る", async () => {
   const f = await fixture();
   const [scout, follower, local] = f.actors as [string, string, string];
@@ -8908,7 +9064,7 @@ test("SSEは受領者だけに判断を知らせ、切断中に戻った元手�
     await app.close();
   }
 }, 20000);
-test("メモ本文を判断中の本人だけへ渡し、申請者の復帰で承認・却下・期限切れを照合する", async () => {
+test("メモ本文を未回答の宛先に渡し、申請者の復帰で承認・却下・期限切れを照合する", async () => {
   const f = await fixture();
   await f.move(2, f.place);
   await f.send(1, { command: "contact", targetId: f.actors[0] });
@@ -8935,7 +9091,7 @@ test("メモ本文を判断中の本人だけへ渡し、申請者の復帰で�
   for (const i of [1, 2])
     expect(await f.status(i)).toMatchObject({
       viewerId: f.actors[i],
-      actorId: f.actors[1],
+      actorId: f.actors[i],
       receiving: {
         recipients: [f.actors[1], f.actors[2]],
         text,
@@ -8954,8 +9110,12 @@ test("メモ本文を判断中の本人だけへ渡し、申請者の復帰で�
       },
     },
   });
-  for (const i of [0, 2])
-    expect(JSON.stringify(await waiting(i))).not.toContain(text);
+  expect(JSON.stringify(await waiting(0))).not.toContain(text);
+  const secondWake = await waiting(2);
+  expect(secondWake).toMatchObject({
+    actionable: true,
+    context: { receiptRequest: { memoTexts: [text] } },
+  });
   await expect(
     f.send(1, { command: "comment", text: "受領判断中のコメント" }),
   ).resolves.toMatchObject({
@@ -8974,7 +9134,7 @@ test("メモ本文を判断中の本人だけへ渡し、申請者の復帰で�
   });
   expect((await waiting(0)).context).not.toHaveProperty("receiptResult");
   expect(JSON.stringify(await waiting(1))).not.toContain(text);
-  expect((await waiting(2)).context?.receiptRequest?.memoTexts).toEqual([text]);
+  expect((await waiting(2)).wakeKey).toBe(secondWake.wakeKey);
 
   const requestId = randomUUID();
   const decide = {
@@ -9284,16 +9444,17 @@ test("受領期限切れのCLI履歴で判断の手番だった本人と同席�
     let now = new Date();
     vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
     const recipients = f.actors.slice(1, 4);
-    const { applicationId } = await f.send(0, {
+    const { applicationId, memoId } = await f.send(0, {
       command: "memo",
       text: "共同で調べる場所の候補",
       participants: recipients,
       dependencies: [],
     });
-    await f.send(1, { command: "receive", applicationId, accept: true });
+    await f.send(3, { command: "receive", applicationId, accept: true });
     const { deadline } = (await f.status(2)).receiving!;
     now = new Date(Date.parse(deadline) + 1);
     for (const [i, viewerMessage] of [
+      [1, "あなたの判断待ちでした。"],
       [2, "あなたの判断待ちでした。"],
       [4, "あなたの返答は不要でした。"],
     ] as const) {
@@ -9335,19 +9496,23 @@ test("受領期限切れのCLI履歴で判断の手番だった本人と同席�
           reason: "受領判断の期限が切れました",
           senderId: f.actors[0],
           recipientIds: recipients,
-          decisionHolderId: f.actors[2],
+          decisionHolderId: f.actors[1],
+          pendingRecipientIds: [f.actors[1], f.actors[2]],
           deadline,
           viewerMessage,
         },
       });
     }
-    for (const i of [0, 1, 3]) {
+    for (const i of [0, 3]) {
       const entry = (await f.status(i)).entries.find(
         ({ payload }) => payload.applicationId === applicationId,
       );
-      expect(entry?.payload).toMatchObject({ decisionHolderId: f.actors[2] });
+      expect(entry?.payload).toMatchObject({ decisionHolderId: f.actors[1] });
       expect(entry!.payload).not.toHaveProperty("viewerMessage");
     }
+    expect(
+      await f.store.context(f.graph).node(memoId as string),
+    ).toBeUndefined();
   } finally {
     await cli.close();
     await app.close();
