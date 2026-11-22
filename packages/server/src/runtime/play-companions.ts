@@ -84,7 +84,25 @@ export class PlayCompanions {
     ).rows;
   }
 
-  async #of(db: Db, world: string, npc: string) {
+  async following(db: Db, world: string, actors: string[]) {
+    if (!actors.length) return [];
+    return (
+      await db.query<Companion>(
+        `SELECT * FROM bot_companion WHERE world_id=$1 AND mode='follow'
+       AND (actor_id=ANY($2::uuid[]) OR npc_id=ANY($2::uuid[])) ORDER BY npc_id`,
+        [world, actors],
+      )
+    ).rows;
+  }
+
+  async setMode(db: Db, world: string, npc: string, mode: Companion["mode"]) {
+    await db.query(
+      "UPDATE bot_companion SET mode=$3 WHERE world_id=$1 AND npc_id=$2",
+      [world, npc, mode],
+    );
+  }
+
+  async of(db: Db, world: string, npc: string) {
     return (
       await db.query<Companion>(
         "SELECT * FROM bot_companion WHERE world_id=$1 AND npc_id=$2",
@@ -95,7 +113,7 @@ export class PlayCompanions {
 
   // 本人のcompanionであることを確かめる。
   async mine(db: Db, world: string, actor: string, npc: string) {
-    const row = await this.#of(db, world, npc);
+    const row = await this.of(db, world, npc);
     if (row?.actor_id !== actor)
       fail("COMPANION_REQUIRED", "本人のcompanionを指定してください");
     return row!;
@@ -128,7 +146,7 @@ export class PlayCompanions {
         "COMPANION_TARGET_UNAVAILABLE",
         "同じセッションにいるユニークNPCを指定してください",
       );
-    const owner = await this.#of(db, world, target);
+    const owner = await this.of(db, world, target);
     if (owner)
       fail(
         "COMPANION_TAKEN",
@@ -183,18 +201,16 @@ export class PlayCompanions {
     return undefined;
   }
 
-  // 確定の後に読む一覧は、確定で進んだ版を読む新しい文脈で作る。
   async command(
     db: Db,
     world: string,
-    contexts: () => WorldContext,
+    context: WorldContext,
     actor: string,
     input: CompanionCommand,
     at: number,
     commit: (context: WorldContext, changes: Change) => Promise<unknown>,
   ) {
-    const npc = "targetId" in input ? input.targetId : undefined,
-      context = contexts();
+    const npc = "targetId" in input ? input.targetId : undefined;
     let message = "companionの状態を取得しました";
     if (npc && input.command !== "companion-request")
       await this.mine(db, world, actor, npc);
@@ -202,10 +218,7 @@ export class PlayCompanions {
       case "companion-follow":
       case "companion-wait": {
         const mode = input.command === "companion-follow" ? "follow" : "wait";
-        await db.query(
-          "UPDATE bot_companion SET mode=$3 WHERE world_id=$1 AND npc_id=$2",
-          [world, npc, mode],
-        );
+        await this.setMode(db, world, npc!, mode);
         message =
           mode === "follow"
             ? "本人の移動に付いてくるようにしました"
@@ -262,10 +275,7 @@ export class PlayCompanions {
         break;
       }
     }
-    return {
-      companions: await this.list(db, world, contexts(), actor),
-      action: { command: input.command, message },
-    };
+    return { command: input.command, message };
   }
 
   async list(db: Db, world: string, context: WorldContext, actor: string) {
