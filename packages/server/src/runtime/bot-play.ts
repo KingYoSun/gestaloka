@@ -1,5 +1,6 @@
 import { ModelCallInProgress } from "../llm/budget.js";
 import { createHash, randomInt, randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 import { z } from "zod";
 import {
@@ -9289,14 +9290,10 @@ export class BotPlay {
         connectionId,
         owner,
       );
-    const active = await this.#activeAdjudication(this.pool, world, actor);
+    let active = await this.#activeAdjudication(this.pool, world, actor);
     const drawCommand = input.command === "draw" || isDrawConfiguration(input);
-    if (active)
-      return active.request_id === input.requestId && !drawCommand
-        ? execute(active.owner)
-        : rejectAdjudication();
-    if (
-      ![
+    const adjudicated =
+      [
         "update",
         "create",
         "create-batch",
@@ -9314,27 +9311,37 @@ export class BotPlay {
         "draw-configure",
         "draw-table-publish",
         "draw",
-      ].includes(input.command) &&
-      !(input.command === "say" && input.instantNpcs?.length) &&
-      !(input.command === "search" && input.query.kind === "seek")
-    )
-      return execute();
+      ].includes(input.command) ||
+      (input.command === "say" && input.instantNpcs?.length) ||
+      (input.command === "search" && input.query.kind === "seek");
     const owner = randomUUID(),
       key = [world, actor, owner];
-    // Serialize claiming with command commits using the same short world lock.
-    const acquired = await this.pool.query(
-      `INSERT INTO bot_adjudication(world_id,actor_id,owner,request_id,expires_at)
-       SELECT $1::text::uuid,$2,$3,$4,clock_timestamp()+${adjudicationLease}
-       FROM (SELECT pg_advisory_xact_lock(hashtextextended($1,225))) AS locked
-       ON CONFLICT(world_id,actor_id) DO UPDATE SET owner=$3,request_id=$4,expires_at=EXCLUDED.expires_at,sp_user=NULL,sp_reset=NULL
-       WHERE bot_adjudication.expires_at<=clock_timestamp()`,
-      [...key, input.requestId],
-    );
-    if (!acquired.rowCount) {
-      const active = await this.#activeAdjudication(this.pool, world, actor);
-      if (active?.request_id === input.requestId && !drawCommand)
-        return execute(active.owner);
-      rejectAdjudication();
+    for (;;) {
+      if (active) {
+        if (active.request_id !== input.requestId || drawCommand)
+          rejectAdjudication();
+        // 再送は判定を組み立て直さず、処理中の要求の確定を待つ。
+        await delay(100);
+      } else {
+        if (!adjudicated) return execute();
+        // Serialize claiming with command commits using the same short world lock.
+        const acquired = await this.pool.query(
+          `INSERT INTO bot_adjudication(world_id,actor_id,owner,request_id,expires_at)
+         SELECT $1::text::uuid,$2,$3,$4,clock_timestamp()+${adjudicationLease}
+         FROM (SELECT pg_advisory_xact_lock(hashtextextended($1,225))) AS locked
+         ON CONFLICT(world_id,actor_id) DO UPDATE SET owner=$3,request_id=$4,expires_at=EXCLUDED.expires_at,sp_user=NULL,sp_reset=NULL
+         WHERE bot_adjudication.expires_at<=clock_timestamp()`,
+          [...key, input.requestId],
+        );
+        if (acquired.rowCount) break;
+      }
+      const next = await this.#activeAdjudication(this.pool, world, actor);
+      const { rows } = await this.pool.query<{
+        result: Record<string, unknown> | null;
+      }>("SELECT result FROM bot_request WHERE id=$1", [input.requestId]);
+      if (rows[0]?.result) return this.#replay(world, input, rows[0].result);
+      if (!active && !next) rejectAdjudication();
+      active = next;
     }
     const heartbeat = setInterval(() => {
       void this.pool
