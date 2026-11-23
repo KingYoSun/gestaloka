@@ -8962,12 +8962,17 @@ export interface paths {
                                 /** Format: uuid */
                                 callId?: string;
                                 /** @enum {string} */
-                                view: "summary" | "calls" | "timeline";
+                                view: "summary" | "calls" | "timeline" | "groups";
                                 /**
                                  * @default day
                                  * @enum {string}
                                  */
                                 interval?: "hour" | "day" | "month";
+                                /** @enum {string} */
+                                by?: "user" | "task" | "model";
+                                /** @enum {string} */
+                                order?: "calls" | "cost";
+                                limit?: number;
                                 after?: string;
                             };
                         } | {
