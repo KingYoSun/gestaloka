@@ -5,6 +5,7 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
+import type { z } from "zod";
 import { Operation } from "@gestaloka/contracts";
 import { WorldAccess } from "@gestaloka/server/access";
 import type { McpPrincipal } from "@gestaloka/server/mcp";
@@ -314,6 +315,101 @@ test("世界を限定したMCPでNPC昇格を許可し、報告を読み、対�
     await client.close();
     await app.close();
   }
+});
+
+test("STORIESの作品・各話・投稿状況は、閲覧条件とMCPの対象世界をともに満たす世界から読む", async () => {
+  const world = await create(),
+    neighbor = await create(),
+    unjoined = randomUUID(),
+    subject = randomUUID(),
+    db = isolated.databases.postgres;
+  await db.query("INSERT INTO world_subject(id,user_id) VALUES($1,$2)", [
+    subject,
+    admin,
+  ]);
+  for (const id of [world, neighbor])
+    await db.query(
+      "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3)",
+      [subject, id, randomUUID()],
+    );
+  const publish = async (worldId: string, episodes: string[]) => {
+    const id = randomUUID();
+    await db.query(
+      "INSERT INTO player_story(id,world_id,world_title,author_id,author,title) VALUES($1,$2,'村',$3,'船主','航海記')",
+      [id, worldId, admin],
+    );
+    for (const [index, body] of episodes.entries())
+      await db.query(
+        "INSERT INTO player_story_episode(story_id,number,request_id,body) VALUES($1,$2,$3,$4)",
+        [id, index + 1, index ? randomUUID() : id, body],
+      );
+    return id;
+  };
+  const story = await publish(world, ["帆を揚げた。", "岸を離れた。"]),
+    nearby = await publish(neighbor, ["隣の港に着いた。"]),
+    hidden = await publish(unjoined, ["参加していない村の話。"]);
+  const scopes = ["stories.list", "stories.read", "stories.stats"];
+  const limited = (await delegation(scopes, [world])).principal,
+    open = (await delegation(scopes)).principal;
+  const run = (
+    principal: McpPrincipal,
+    input: Extract<
+      z.infer<typeof Operation>,
+      { operation: `stories.${string}` }
+    >,
+  ) => auth.operations.execute(admin, randomUUID(), input, { mcp: principal });
+
+  expect(
+    await run(limited, { operation: "stories.list", worldId: world }),
+  ).toEqual({
+    items: [
+      expect.objectContaining({
+        id: story,
+        publishedAt: expect.any(String),
+        updatedAt: expect.any(String),
+      }),
+    ],
+    next: null,
+  });
+  expect(
+    await run(limited, {
+      operation: "stories.read",
+      storyId: story,
+      episode: "2",
+    }),
+  ).toMatchObject({
+    episodes: [{ number: 1 }, { number: 2 }],
+    episode: { number: 2, body: "岸を離れた。" },
+  });
+  expect(
+    await run(limited, { operation: "stories.stats", worldId: world }),
+  ).toMatchObject({
+    stories: 1,
+    episodes: 2,
+    firstEpisodes: 1,
+    continuedEpisodes: 1,
+    players: 1,
+  });
+  for (const input of [
+    { operation: "stories.list" },
+    { operation: "stories.list", worldId: neighbor },
+    { operation: "stories.read", storyId: nearby },
+    { operation: "stories.stats", worldId: neighbor },
+  ] as const)
+    await expect(run(limited, input)).rejects.toMatchObject({
+      code: "MCP_TARGET_DENIED",
+    });
+
+  const listed = await run(open, { operation: "stories.list" });
+  expect((listed.items as { id: string }[]).map(({ id }) => id).sort()).toEqual(
+    [story, nearby].sort(),
+  );
+  await expect(
+    run(open, { operation: "stories.read", storyId: hidden }),
+  ).rejects.toMatchObject({ code: "STORY_NOT_FOUND" });
+  expect(
+    await run(open, { operation: "stories.stats", worldId: unjoined }),
+  ).toMatchObject({ stories: 0, episodes: 0, players: 0 });
 });
 
 test("要求の受付照会にも元の操作のscopeが必要となる", async () => {

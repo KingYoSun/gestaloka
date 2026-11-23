@@ -36,6 +36,7 @@ import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureRuntime } from "../support/provider.js";
 import { fixtureAuth } from "../support/auth.js";
 import { approvedTransport, modelEnvironment } from "../support/model.js";
+import { createCountedClient } from "../support/token-counting.js";
 import { startPlayLoop } from "../../apps/worker/src/play-loop.js";
 import {
   withDrainedWorker,
@@ -11222,6 +11223,135 @@ describe("現場材料", () => {
     await isolated.databases.postgres.query(
       "DROP FUNCTION fixture_material_roll() CASCADE",
     );
+  });
+  test("技能の習得後も、生成判定に以前のキャッシュ境界と新しい技能の根拠が残る", async () => {
+    const f = await fixture(1),
+      actor = f.actors[0]!;
+    await isolated.databases.postgres.query(
+      "UPDATE world_construction SET state='finished' WHERE id=$1",
+      [f.world],
+    );
+    await f.apply([
+      ...Array.from({ length: 12 }, (_, i) => ({
+        type: "learn",
+        person: actor,
+        text: `仕立ての手順${i + 1}。${"織物が波打たないように布の張りを確かめる。".repeat(25)}`,
+        basis: `作業台を使う組合員と第${i + 1}の手順を練習した。`,
+      })),
+      {
+        type: "create",
+        holder: actor,
+        label: "麻布",
+        count: 9,
+        basis: "厚手に織った",
+      },
+    ]);
+    const read = () => readBelongings(f.store.context(f.graph), actor);
+    const expected = (await read()).skills;
+    const learnedText = "雨よけを作るため、継ぎ目を折り返して縫える。";
+    const learnedBasis = "荷覆いの試作で折り返し幅を考えた。";
+    const transport = vi.fn<typeof fetch>().mockImplementation(async () =>
+      Response.json({
+        id: randomUUID(),
+        model: "gpt-6.1-terra",
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            content: [{ type: "output_text", text: JSON.stringify(win) }],
+          },
+        ],
+        usage: { input_tokens: 6000, output_tokens: 20 },
+      }),
+    );
+    const model = createCountedClient(
+      isolated.databases.postgres,
+      {
+        LLM_BUDGET_ID: randomUUID(),
+        LLM_PROVIDER: "openai",
+        LLM_API: "responses",
+        LLM_MODEL: "gpt-6.1-terra",
+        OPENAI_API_KEY: "test-key",
+      },
+      transport,
+    );
+    await model.ledger.setup();
+    const decision = () =>
+      f.calls.mockImplementationOnce((...args) => model.complete(...args));
+    decision();
+    const learn = await f.send(0, {
+      command: "update",
+      text: "折り返して縫う手順を練習する。",
+      operations: [
+        {
+          type: "learn",
+          person: actor,
+          text: learnedText,
+          basis: learnedBasis,
+        },
+      ],
+      dependencies: [],
+    });
+    expect(learn.outcome).toMatchObject({ success: true, roll: 2 });
+    const { items, skills } = await read();
+    expect(skills.slice(0, -1)).toEqual(expected);
+    expect(skills.at(-1)).toMatchObject({
+      text: learnedText,
+      basis: learnedBasis,
+    });
+
+    const cloth = items.find(({ label }) => label === "麻布")!.id;
+    const craft = {
+      command: "update",
+      requestId: randomUUID(),
+      text: "継ぎ目を折り返して縫い、麻布二枚の覆いを作る。",
+      operations: [
+        { type: "create", holder: actor, label: "雨よけ", basis: learnedText },
+      ],
+      materials: [{ id: cloth, count: 2 }],
+      dependencies: [],
+    };
+    decision();
+    const crafted = await f.send(0, craft);
+    expect(crafted.outcome).toMatchObject({
+      success: true,
+      roll: 2,
+      setting: { consumes: [{ id: cloth, count: 2 }] },
+    });
+    expect(await f.send(0, craft)).toEqual(crafted);
+    expect((await read()).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: cloth, count: 7 }),
+        expect.objectContaining({ label: "雨よけ" }),
+      ]),
+    );
+
+    const sent = transport.mock.calls.map(([, options]) => {
+      const { input } = JSON.parse(String(options?.body)) as {
+        input: {
+          role: string;
+          content: { text: string; prompt_cache_breakpoint?: unknown }[];
+        }[];
+      };
+      const user = input.find(({ role }) => role === "user")!;
+      const [prefix] = user.content
+        .map(({ text }) => text)
+        .join("")
+        .split("\n", 1);
+      let text = "";
+      const boundaries = input.flatMap(({ content }) =>
+        content.flatMap((block) => {
+          text += block.text;
+          return block.prompt_cache_breakpoint ? [text] : [];
+        }),
+      );
+      return { skills: JSON.parse(prefix!).actorSkills, boundaries };
+    });
+    expect(sent).toHaveLength(2);
+    expect(sent[0]!.skills).toEqual(expected);
+    expect(sent[1]!.skills).toEqual(skills);
+    expect(sent[0]!.boundaries.at(-1)).toBeDefined();
+    expect(sent[1]!.boundaries).toContain(sent[0]!.boundaries.at(-1));
   });
   test("生成判定は現在地と明示した保管先の明細を残し、遠隔の明細は呼称と個数を渡す", async () => {
     const f = await fixture(1),

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Change, RelationKind, StartingItem } from "./world.js";
 import { BlueprintDraft, BlueprintPublication } from "./play.js";
+import { StoryDates, StoryListQuery, StoryReadQuery } from "./stories.js";
 export * from "./stories.js";
 export {
   DrawReward,
@@ -1171,6 +1172,23 @@ export const Operation = z.discriminatedUnion("operation", [
       operation: z.literal("reports.list"),
       worldId: z.uuid(),
       before: z.uuid().optional(),
+    })
+    .strict(),
+  z
+    .object({ operation: z.literal("stories.list"), ...StoryListQuery.shape })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("stories.read"),
+      storyId: z.uuid(),
+      ...StoryReadQuery.omit({ image: true }).shape,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("stories.stats"),
+      worldId: z.uuid(),
+      ...StoryDates.shape,
     })
     .strict(),
   z

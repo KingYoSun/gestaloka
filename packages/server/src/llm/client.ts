@@ -767,6 +767,7 @@ export class LlmClient {
             provider === "openai" &&
               api === "responses" &&
               openAiExplicitCache(model),
+            role === "world-creation-dice",
           )
         : undefined;
     const prompt =

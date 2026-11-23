@@ -17,6 +17,7 @@ import type pg from "pg";
 import { derivedId } from "../world/model.js";
 import { z } from "zod";
 import { AccessError, WorldAccess } from "./access.js";
+import { Stories } from "./stories.js";
 import { PlayerTools } from "../runtime/player-tools.js";
 import type { WorldPlayers } from "../runtime/players.js";
 import { ModelLimits } from "../llm/limits.js";
@@ -598,6 +599,12 @@ export class Operations {
           input.joinId,
         ])
       ).rows[0]?.construction_id;
+    if (input.operation === "stories.read")
+      worldId = (
+        await db.query("SELECT world_id FROM player_story WHERE id=$1", [
+          input.storyId,
+        ])
+      ).rows[0]?.world_id;
     await this.mcp.check(db, p, input.operation, worldId, lock);
   }
   async #audit(
@@ -792,6 +799,12 @@ export class Operations {
           input,
         );
       }
+      case "stories.list":
+        return new Stories(this.pool).list(actor!, input);
+      case "stories.read":
+        return new Stories(this.pool).read(actor!, input.storyId, input);
+      case "stories.stats":
+        return new Stories(this.pool).stats(actor!, input);
       case "blueprints.create":
       case "blueprints.publish": {
         const play = this.#access(context).botPlay;

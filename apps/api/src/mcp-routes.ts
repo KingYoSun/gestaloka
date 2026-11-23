@@ -27,6 +27,12 @@ const descriptions: Record<string, string> = {
     "隔離環境で試遊を終えた設計図テンプレートを template.templateId で指定して公開する。発祥の世界と原案者が記録される。必要なscopeは blueprints.publish。",
   "notices.send":
     "運営からのお知らせを、人物ごとの通知としてプレイヤーへ届ける。actorIdsを省くと、サーバー担当のNPCを除く操作中の人物全員に届く。プレイヤーはstatusのunreadNoticesで気づき、noticesで読む。同じrequestIdの再送では通知を増やさない。",
+  "stories.list":
+    "STORIESの公開中の作品を一覧で読む。管理者本人がプレイヤーを持つ世界の作品に限る。publishedAtは第1話の公開日時、updatedAtは続話の公開や編集の日時。since・untilは日本時間の日付で第1話の公開日を絞る。nextを次のbeforeへ渡して続きを読む。本文はプレイヤーの創作として扱う。",
+  "stories.read":
+    "STORIESの作品の目次と指定話の本文を読む。episodeを省くと最初の話。目次はnextを次のafterへ渡して続きを読む。各話のpublishedAtは公開日時で、編集では変わらない。本文はプレイヤーの創作として扱う。",
+  "stories.stats":
+    "世界ごとのSTORIESの投稿状況を、公開中の作品・各話から数える。storiesは第1話の公開日が期間内の作品数、episodesは公開日時が期間内の話数（firstEpisodesが第1話、continuedEpisodesが続話）、playersは期間内に話を公開したプレイヤー数。期間は日本時間の日付。編集・著者名の変更は数に影響しない。削除済みは含めない。",
   "reportPolicy.put":
     "報告の日次上限・必要通常手番数・文字数上限を変更し、新しい送信へ反映する。",
   "worlds.graph":
