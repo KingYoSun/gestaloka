@@ -14432,3 +14432,87 @@ test("失敗した判定はファンブルを一度だけ振り、本人に残�
   expect(down).toMatchObject({ text: "尻もちをついている。" });
   expect(down!.period.until! - down!.period.from).toBe(300000);
 });
+
+test("登録済みの人物に起きることを名指しする作成は、本人を参照しない限り判定の後で断る", async () => {
+  const f = await fixture();
+  const [actor, present] = f.actors as [string, string, string];
+  const items = async (id: string) =>
+    (await readBelongings(f.store.context(f.graph), id)).items;
+  const named = (individuals: string[]) =>
+    f.calls.mockImplementationOnce(async (id, role, messages) => {
+      expect(role).toBe("world-creation-dice");
+      expect(messages[0]!.content).toContain("individuals:[");
+      return answer(id, { ...sure, individuals });
+    });
+  const create = (label: string) => ({
+    requestId: randomUUID(),
+    command: "update",
+    text: `${label}を手に入れる`,
+    operations: [{ type: "create", label, holder: actor, basis: "検証" }],
+    dependencies: [],
+  });
+  const refused = { code: "PERSON_REFERENCE_REQUIRED" };
+  // 離れた場所にいる人物を呼称の一部で名指しすると、ダイスを振らず、何も作らず、通常枠も使わない。
+  const corpse = create("倒れた人物2");
+  named(["物2"]);
+  await expect(f.send(0, corpse)).rejects.toMatchObject({
+    ...refused,
+    message: expect.stringContaining("「人物2」"),
+  });
+  // 同じ要求の再送は同じ呼び出しになり、同じ結果を返す。
+  named(["物2"]);
+  await expect(f.send(0, corpse)).rejects.toMatchObject(refused);
+  expect(f.calls.mock.calls[1]![0]).toBe(f.calls.mock.calls[0]![0]);
+  expect(await items(actor)).toEqual([]);
+  expect((await f.status(0)).callsUsed).toBe(0);
+  expect(
+    (
+      await isolated.databases.postgres.query(
+        "SELECT 1 FROM bot_dice WHERE id=$1",
+        [derivedId(`${corpse.requestId}:creation`)],
+      )
+    ).rowCount,
+  ).toBe(0);
+  // 人物と同じ名前の個体を登場させる発言も断る。
+  named(["人物2"]);
+  await expect(
+    f.send(0, {
+      command: "say",
+      text: "人物2が現れる",
+      instantNpcs: ["人物2"],
+    }),
+  ).rejects.toMatchObject(refused);
+  // 人物の呼称に一致しない名前と申請者本人は、これまでどおりダイスへ進む。
+  named(["森の主", "人物0"]);
+  const made = await f.send(0, create("森の主の牙"));
+  expect(made.outcome).toMatchObject({ success: true });
+  expect(JSON.stringify(made.outcome)).not.toContain("individuals");
+  expect((await items(actor)).map((i) => i.label)).toEqual(["森の主の牙"]);
+  // 申請が参照している同席者は、名指しされても断らない。
+  await f.send(1, { command: "contact", targetId: actor });
+  await f.apply([
+    { type: "create", label: "硬貨", holder: present, basis: "検証" },
+  ]);
+  const coin = (await items(present))[0]!.id;
+  f.calls.mockImplementation(async (id, role) =>
+    answer(
+      id,
+      role === "world-creation-dice"
+        ? { ...sure, individuals: ["人物1"] }
+        : sure,
+    ),
+  );
+  expect(
+    (
+      await f.send(0, {
+        command: "oppose",
+        text: "人物1を突き飛ばして硬貨を奪い、落ちた切れ端を拾う",
+        dependencies: [],
+        operations: [
+          { type: "move", item: coin, from: present, to: actor, basis: "奪う" },
+          { type: "create", label: "切れ端", holder: actor, basis: "拾う" },
+        ],
+      })
+    ).outcome,
+  ).toMatchObject({ success: true });
+});
