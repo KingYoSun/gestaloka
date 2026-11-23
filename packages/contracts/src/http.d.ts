@@ -9306,6 +9306,8 @@ export interface paths {
                             operation: "worlds.configure";
                             /** Format: uuid */
                             worldId: string;
+                            /** @description この世界のアカウントごとの日次SP上限。既定は100。省略すると現在の設定を保つ */
+                            dailySpLimit?: number;
                             /** @description 所持・保管枠の制限を有効にする */
                             inventoryCapacity?: boolean;
                             inventoryLimits?: {
