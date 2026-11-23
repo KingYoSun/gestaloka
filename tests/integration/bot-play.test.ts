@@ -7437,6 +7437,52 @@ test("登録した保管先と誰も登録していない場所には、その�
     (await f.store.context(f.graph).edge(content))?.period.until,
   ).toBeDefined();
   expect(f.calls).toHaveBeenCalledTimes(2);
+  // 申請者が持たない物品への申請でも、その物品の成立時と現在の保持の経緯が判定に届く。
+  await f.apply([
+    { type: "create", label: "杭", holder: f.actors[0], basis: "削り出した" },
+  ]);
+  const stake = (await read()).items.find((i) => i.label === "杭")!.id;
+  await move(stake, f.actors[0]!, square);
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    const facts = JSON.parse(messages[1]!.content).nodes as {
+      node: { id: string };
+    }[];
+    expect(facts.find((fact) => fact.node.id === stake)).toMatchObject({
+      held: { by: square, label: "空き地", basis: "検証" },
+      origin: { basis: "削り出した" },
+    });
+    // 状態を付ける対象そのものをGMが材料に挙げても、成功時に失わせない。
+    return answer(id, {
+      ...sure,
+      requiredMaterials: [{ id: stake, count: 1 }],
+    });
+  });
+  const waxed = randomUUID();
+  expect(
+    (
+      await update({
+        changes: {
+          nodes: [{ id: waxed, kind: "script", text: "先を焼き締めてある" }],
+          revisions: [],
+          edges: [
+            {
+              id: randomUUID(),
+              kind: "status",
+              role: "content",
+              source: stake,
+              target: waxed,
+              period: { from: 0 },
+            },
+          ],
+          endEdges: [],
+        },
+      })
+    ).outcome,
+  ).toMatchObject({ success: true });
+  expect(f.calls).toHaveBeenCalledTimes(3);
+  await move(stake, square, f.actors[0]!);
+  await f.apply([{ type: "remove", id: stake }]);
   // 誰も登録していない場所を保管先にする申請は、新しく得る申請としてダイスで判定する。
   f.calls.mockImplementationOnce(async (id, role) => {
     expect(role).toBe("world-creation-dice");
