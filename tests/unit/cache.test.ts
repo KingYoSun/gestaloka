@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { preparePrompt } from "../../packages/server/src/llm/prompt.js";
+import { prepareDicePrompt } from "../../packages/server/src/llm/dice-prompt.js";
 import {
   cacheMessages,
   geminiCachePlan,
@@ -67,4 +68,56 @@ test("Geminiは履歴と現在の問いが増えても同じ背景を再利用�
       .map((c) => c.parts.map((p) => p.text).join(""))
       .join("") + first.tail.map((m) => m.content).join(""),
   ).toBe(original);
+});
+
+test("技能を追加しても以前の技能の境界を再利用でき、判定に渡す本文は同じ", () => {
+  const skills = Array.from({ length: 29 }, (_, index) => ({
+    id: `skill-${index}`,
+    text: "応用できる条件と手順。".repeat(15),
+    basis: "記録に基づいて習得した",
+    since: index,
+  }));
+  const skillInput = (length: number, partition: boolean) =>
+    cacheMessages(
+      prepareDicePrompt(
+        [
+          { role: "system", content: "判定の指示" },
+          {
+            role: "user",
+            content: JSON.stringify({
+              premise: "世界の前提",
+              actor: "actor",
+              text: "技能を使う",
+              nodes: [
+                {
+                  node: { id: "actor" },
+                  belongings: {
+                    items: [],
+                    storages: [],
+                    skills: skills.slice(0, length),
+                  },
+                },
+              ],
+            }),
+          },
+        ],
+        true,
+        partition,
+      )!,
+    );
+  const contents = (length: number, partition: boolean) =>
+    skillInput(length, partition).at(-1)!.content;
+  const first = contents(28, true),
+    appended = contents(29, true);
+  expect(appended.slice(0, 3)).toEqual(first.slice(0, 3));
+  expect(first[2]?.cacheBoundary).toBe(true);
+  expect(appended[2]?.cacheBoundary).toBe(true);
+  expect(appended.filter(({ cacheBoundary }) => cacheBoundary)).toHaveLength(4);
+  expect(appended.at(-1)).not.toHaveProperty("cacheBoundary");
+  expect(appended.map(({ text }) => text).join("")).toBe(
+    contents(29, false)
+      .map(({ text }) => text)
+      .join(""),
+  );
+  expect(skillInput(29, true)[0]).toEqual(skillInput(29, false)[0]);
 });
