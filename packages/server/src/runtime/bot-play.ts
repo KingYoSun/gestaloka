@@ -935,6 +935,8 @@ const diceStatePrompt =
   "同じ対象の確定済みの状態（states）が矛盾するときは、状態が有効になった時点（since）が新しい記述を、矛盾する範囲の判定に使う。同じ時点の記述には新旧の差をつけない。申請中の変化は成功前の状態に含めない。";
 const stateEndsPrompt =
   "人物の状態が終了する場合は、申請の意図と状態の本文を照合し、成功時に終了する現在の状態のrelationIdをendEdgesに返す。候補は対象人物のstatesでrelationIdが付いたもの。申請の終了IDが別の性質を指す場合は意図に合う状態だけを選ぶ。終了するものがなければ空配列。";
+const deathStatePrompt =
+  "人物の死亡や、人物として動くこと・話すことが戻らない機能の停止は状態に含めない。死亡はfatalでだけ表す。";
 const minutesPrompt =
   "minutesはその状態が自然に続く実時間（分）で、何もしなくても時間の経過で終わる状態にだけ付ける。自然には終わらない状態では省く。";
 export const defaultFumbleCriteria =
@@ -6373,15 +6375,28 @@ export class BotPlay {
         settings.set(p.index, setting);
       }
       // 登録済みの人物に起きることは、本人を参照する申請（受領・対抗行動）でだけ確定する。
-      if (named.length) {
+      // 人物と同じ呼称の存在を新しく作る申請は、GMが名指しと判断しなくても同じく断る。
+      const labels = explore
+        ? []
+        : fresh.flatMap((p) =>
+            p.changes.nodes.flatMap((n) =>
+              n.kind === "existence" ? [n.text] : [],
+            ),
+          );
+      if (named.length || labels.length) {
         const { rows } = await this.pool.query<{ actor_id: string }>(
           "SELECT actor_id FROM world_controlled_actor WHERE world_id=$1 UNION SELECT actor_id FROM bot_npc WHERE world_id=$2",
           [context.worldId, world],
         );
         const known = new Set([...touching, ...referenced]);
-        const persons = await context.named(
-          rows.map((r) => r.actor_id).filter((id) => !known.has(id)),
-          named,
+        const persons = (
+          await context.named(
+            rows.map((r) => r.actor_id).filter((id) => !known.has(id)),
+            [...named, ...labels],
+          )
+        ).filter(
+          (text) =>
+            labels.includes(text) || named.some((name) => text.includes(name)),
         );
         if (persons.length)
           reject(
@@ -8460,6 +8475,32 @@ export class BotPlay {
               delete edge.text;
         }
         if (success) {
+          // 相手の人物に残る状態はGMだけが決める。申請者が変更に書いた他人の状態は記録しない。
+          const others = new Set(recipients),
+            state = (e: Change["edges"][number]) =>
+              e.kind === "status" &&
+              e.role === "content" &&
+              e.text !== "location" &&
+              e.text !== "operator",
+            dropped = new Set(
+              changes.edges
+                .filter((e) => state(e) && others.has(e.source))
+                .map((e) => e.target),
+            );
+          for (const node of changes.revisions)
+            if (
+              (await context.relations(node.id, "status", "in", latest)).some(
+                (e) => state(e) && others.has(e.source),
+              )
+            )
+              dropped.add(node.id);
+          changes.edges = changes.edges.filter(
+            (e) => !dropped.has(e.target) && !dropped.has(e.source),
+          );
+          changes.nodes = changes.nodes.filter((n) => !dropped.has(n.id));
+          changes.revisions = changes.revisions.filter(
+            (n) => !dropped.has(n.id),
+          );
           changes = await settleStateEnds(
             context,
             at,
@@ -8469,30 +8510,8 @@ export class BotPlay {
             statusReview,
           );
           fatal = saved.setting.fatal ?? [];
-          for (const { id, ...state } of saved.setting.states ?? []) {
-            const recorded = [...changes.nodes, ...changes.revisions].some(
-              (n) =>
-                n.text === state.text &&
-                (changes.edges.some(
-                  (e) =>
-                    e.kind === "status" &&
-                    e.role === "content" &&
-                    e.source === id &&
-                    e.target === n.id,
-                ) ||
-                  materials
-                    .find((f) => f.node.id === id)
-                    ?.states.some((s) => s.node?.id === n.id)),
-            );
-            if (!recorded)
-              addState(
-                changes,
-                `${input.requestId}:state:${id}`,
-                id,
-                at,
-                state,
-              );
-          }
+          for (const { id, ...state } of saved.setting.states ?? [])
+            addState(changes, `${input.requestId}:state:${id}`, id, at, state);
           await this.#endDeathStates(session, context, at, changes, fatal);
           at = await this.#relocateDead(
             session,
@@ -8926,12 +8945,16 @@ export class BotPlay {
             (stateEnds.length ? stateEndsPrompt : "") +
             (proposedState === undefined
               ? ""
-              : "NPCの外界への作用ではさらにobservableを返す。後から対象だけを調べた人が何がどうなったかを読めるよう、changes.stateから変化後の状態を述べる箇所を文末または句読点まで原文で抜き出す。部位名だけに切り詰めない。行為者、経緯、原因の推測を除く。観察可能な箇所がなければnull。") +
+              : "NPCの外界への作用ではさらにobservableを返す。後から対象だけを調べた人が何がどうなったかを読めるよう、changes.stateから変化後の状態を述べる箇所を文末または句読点まで原文で抜き出す。部位名だけに切り詰めない。行為者、経緯、原因の推測を除く。" +
+                deathStatePrompt +
+                "観察可能な箇所がなければnull。") +
             (mortal.length
               ? "この行動が成功したときに死亡する対象を、mortalのIDから選んでfatal:[ID]に返す。行動と結果が対象の死を意味するときだけ選び、該当がなければ空配列。deathCriteriaがあれば、この世界で人物が死亡する条件として従う。"
               : "") +
             (affected.length
-              ? "この行動が成功したときに人物へ残る変化のうち、changesで既に記録されるものを除いてaffectedのIDごとにstates:[{id,text}]を返す。対象ごとに一件とし、後からその人物だけを調べた人が何がどうなったかを読める一文で書く。行為者、経緯、原因の推測を除く。追加する変化がなければ空配列。各状態にはminutesを加えてよい。" +
+              ? "この行動が成功したときに人物へ残る変化を、affectedのIDごとにstates:[{id,text}]で返す。申請者がchangesに書いた他人の状態は記録されないので、残る変化はここに書く。対象ごとに一件とし、後からその人物だけを調べた人が何がどうなったかを読める一文で書く。行為者、経緯、原因の推測を除く。" +
+                deathStatePrompt +
+                "追加する変化がなければ空配列。各状態にはminutesを加えてよい。" +
                 minutesPrompt
               : "") +
             fumble +

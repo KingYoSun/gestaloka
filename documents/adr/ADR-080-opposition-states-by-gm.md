@@ -1,6 +1,6 @@
 # ADR-080 対抗行動が成功したとき、GMが人物に残る状態を決める
 
-状態: 採用。2026年11月23日のユーザー判断を記録する。対抗ダイスでGMが返す内容（[ADR-064](ADR-064-instant-npc-death-and-drops.md)、[ADR-065](ADR-065-person-death-penalty.md)、[ADR-066](ADR-066-item-count-and-consumption.md)）に、人物の状態を加える。
+状態: 採用。2026年11月23日のユーザー判断を記録する。申請者が変更に書いた相手の状態の扱いは、[ADR-085](ADR-085-opposition-states-only-from-gm.md)で改めた。対抗ダイスでGMが返す内容（[ADR-064](ADR-064-instant-npc-death-and-drops.md)、[ADR-065](ADR-065-person-death-penalty.md)、[ADR-066](ADR-066-item-count-and-consumption.md)）に、人物の状態を加える。
 
 ## 問題
 
