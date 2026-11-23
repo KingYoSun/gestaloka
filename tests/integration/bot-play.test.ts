@@ -4839,7 +4839,9 @@ test("管理者のお知らせは操作中の人物全員か指定した人物�
         { players: access.players },
       );
   const requestId = randomUUID();
-  expect(await send(requestId)).toMatchObject({ actorIds: f.actors });
+  expect(
+    ((await send(requestId)) as { actorIds: string[] }).actorIds.sort(),
+  ).toEqual([...f.actors].sort());
   await send(requestId);
   for (const [i, actor] of f.actors.entries())
     expect(
