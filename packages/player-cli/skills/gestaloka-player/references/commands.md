@@ -43,7 +43,7 @@
 | create         | label, count任意, holder, basis          | 新しい物品。holderの物になる |
 | move           | item, from, to, count任意, basis         | 受け渡し。toの物になる       |
 | grant / revoke | person, storage。grantにはbasis          | 家・場所の保管先の登録       |
-| learn          | person, text, basis                      | 技能とできる範囲             |
+| learn          | person, text, basis, consumeSkillIds任意 | 技能の習得・発展・統合       |
 | update         | id, text任意, count任意, basis任意       | 物品の呼称・個数、技能の内容 |
 | remove         | id, count任意                            | 消費・破棄・技能の喪失       |
 
@@ -192,6 +192,8 @@ GMがダイスを設定する申請（新規作成、個数を増やす更新、
 自由な性質・関係を新しく記録する場合は、`command: "create"`、`text`、`changes`、`dependencies`を指定する。`changes`はnodes・revisions・edges・endEdgesを持つ既存のChange形式で、新規作成ではrevisionsとendEdgesを空にする。物品を持つこと・保管先・技能・所在地は用途別の更新を使う。自分で行動する人物や生き物は、`create`ではなく`say`の`--npc`で登場させる（[NPCの出現・昇格・同行](npcs.md)）。通常の発言と移動など規則で判断できる作成はGMを呼ばない。判断が残る作成では、GMが世界の基準に従ってダイスを設定し、サーバーが一度だけ振る。物品の `create`、技能の `learn`、`say` の `instantNpcs` も同じ扱いになる。応答の `outcome` に成否・ダイス設定・出目が入る。失敗しても行動として記録されて通常枠を1回使い、何も作られない。`say` では発言だけが記録され、`instantNpcs` は空で返る。同じ要求の再送は同じ結果を返す。
 
 異なる生成案をまとめるには、`play --file batch.json` で次の形式を送る。`proposals` の各案には `text` と、単発の申請と同じ `changes` または `operations` を指定する。最大5案で、探索は単発の `explore` を使う。素材は案の指定順に使う。先の案が失敗すれば次の案に使え、成功して残りが足りなくなった案には、ダイスを振らず `MATERIAL_SHORTAGE` を返す。
+
+技能枠も案の指定順に数えます。先の案が成功して空いた枠は次の案に使えます。枠が足りない案は `SKILL_CAPACITY_EXCEEDED` になります。
 
 ```json
 {

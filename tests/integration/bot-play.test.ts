@@ -11176,6 +11176,85 @@ test("抽選器を審査し、別の人物が結果を受け取り、同席者�
   ).toHaveLength(2);
 });
 
+test("技能枠が満杯でも元技能を本人が選んだときだけ作成判定し、成功時だけ入れ替える", async () => {
+  const f = await fixture(2);
+  const actor = f.actors[0]!,
+    other = f.actors[1]!;
+  const skill = (person: string, text: string, consumeSkillIds?: string[]) => ({
+    type: "learn",
+    person,
+    text,
+    basis: "星と潮の観測を続けた",
+    ...(consumeSkillIds ? { consumeSkillIds } : {}),
+  });
+  await f.apply([
+    skill(actor, "星位の測定"),
+    skill(actor, "潮流の観測"),
+    skill(other, "測量"),
+  ]);
+  await f.store.configureInventory(f.graph, false, { skillSlots: 2 });
+  const list = (person: string) =>
+    readBelongings(f.store.context(f.graph), person);
+  const ids = (await list(actor)).skills.map((s) => s.id);
+  const request = (op: ReturnType<typeof skill>, text = op.text) => ({
+    requestId: randomUUID(),
+    command: "update",
+    text,
+    operations: [op],
+    dependencies: [],
+  });
+  await expect(
+    f.send(0, request(skill(actor, "帆を縫う"))),
+  ).rejects.toMatchObject({ code: "SKILL_CAPACITY_EXCEEDED" });
+  await expect(
+    f.send(
+      0,
+      request(skill(other, "測量の応用", [(await list(other)).skills[0]!.id])),
+    ),
+  ).rejects.toMatchObject({ code: "UPDATE_REJECTED" });
+  await expect(
+    f.send(
+      0,
+      request(skill(actor, "測量の応用", [(await list(other)).skills[0]!.id])),
+    ),
+  ).rejects.toMatchObject({ code: "UPDATE_REJECTED" });
+  expect(() =>
+    PlayCommand.parse(request(skill(actor, "重複", [ids[0]!, ids[0]!]))),
+  ).toThrow();
+  expect(f.calls).not.toHaveBeenCalled();
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(
+      JSON.parse(String(messages[1]!.content)).learning[0].consumeSkillIds,
+    ).toEqual(ids);
+    expect(JSON.stringify(messages)).toContain("潮流の観測");
+    return answer(id, { sides: 2147483647, successThrough: 1 });
+  });
+  const lost = await f.send(0, request(skill(actor, "遠洋航海", ids)));
+  expect(lost.outcome).toMatchObject({ success: false });
+  expect((await list(actor)).skills.map((s) => s.id)).toEqual(ids);
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const node = JSON.parse(String(messages[1]!.content)).changes.nodes[0];
+    return answer(id, {
+      ...sure,
+      decided: [{ id: node.id, text: "星位と潮流から夜の沿岸航路を選べる" }],
+    });
+  });
+  const next = request(
+    skill(actor, "観測を合わせた沿岸技能を師匠に委ねる", ids),
+  );
+  const won = await f.send(0, next);
+  expect(won.outcome).toMatchObject({ success: true });
+  expect(await f.send(0, next)).toEqual(won);
+  expect((await list(actor)).skills.map((s) => s.text)).toEqual([
+    "星位と潮流から夜の沿岸航路を選べる",
+  ]);
+  expect((await list(actor)).skillCapacity).toEqual({
+    usedSlots: 1,
+    limitSlots: 2,
+  });
+});
+
 async function fixedTableFixture() {
   const f = await fixture();
   const send = (
@@ -11485,6 +11564,67 @@ test("固定表の有料福引は払出しと代価を一度だけ確定し、�
     ).reason.code,
   );
   expect(f.calls).toHaveBeenCalledTimes(2);
+});
+
+test("技能枠が足りない一括申請では、先の案の確定結果を使って次に振れる案を決める", async () => {
+  const f = await fixture(1);
+  const actor = f.actors[0]!;
+  await f.store.configureInventory(f.graph, false, { skillSlots: 1 });
+  const proposals = ["星を見る", "潮を読む"].map((text) => ({
+    text,
+    operations: [{ type: "learn", person: actor, text, basis: "実習" }],
+  }));
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { settings: [sure, sure] }),
+  );
+  const command = {
+    command: "create-batch",
+    requestId: randomUUID(),
+    proposals,
+    dependencies: [],
+  };
+  const result = await f.send(0, command);
+  expect(result).toMatchObject({
+    spentSp: 1,
+    outcome: {
+      proposals: [
+        { success: true },
+        { success: false, reason: "SKILL_CAPACITY_EXCEEDED" },
+      ],
+    },
+  });
+  expect(await f.send(0, command)).toEqual(result);
+  await expect(
+    f.send(0, { ...command, requestId: randomUUID() }),
+  ).rejects.toMatchObject({ code: "SKILL_CAPACITY_EXCEEDED" });
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
+test("技能枠が満杯なら混合表も抽選前に知らせ、技能を含まない表は引ける", async () => {
+  const f = await fixedTableFixture();
+  await f.store.configureInventory(f.graph, false, { skillSlots: 1 });
+  await f.apply([
+    { type: "learn", person: f.actors[1], text: "実習", basis: "習得済み" },
+  ]);
+  await f.settings("技能か札を授ける");
+  await f.put({ kind: "message", text: "白い札" });
+  const skillEntry = await f.put({ kind: "skill", text: "水位を読む" });
+  f.approve();
+  await f.publish();
+  const before = await f.status(1);
+  await expect(f.send("draw", {}, 1)).rejects.toMatchObject({
+    code: "SKILL_CAPACITY_EXCEEDED",
+    inventory: { capacity: { usedSlots: 1, limitSlots: 1 } },
+  });
+  expect((await f.status(1)).dailySp).toEqual(before.dailySp);
+  await f.edit(true);
+  await f.settings("札を授ける");
+  await f.change("draw-table-remove", {
+    entryId: (skillEntry.entries as { entryId: string }[])[1]!.entryId,
+  });
+  f.approve();
+  await f.publish();
+  expect(await f.send("draw", {}, 1)).toMatchObject({ spentSp: 0 });
 });
 
 test("固定表は新しい技能が一件でも含まれると1 SPを使い、再送で技能とSPを重ねない", async () => {

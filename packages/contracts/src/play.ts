@@ -101,7 +101,22 @@ export const BelongingOp = z.discriminatedUnion("type", [
     .strict()
     .describe("保管先の登録を終える"),
   z
-    .object({ type: z.literal("learn"), person: id, text, basis })
+    .object({
+      type: z.literal("learn"),
+      person: id,
+      text,
+      basis,
+      consumeSkillIds: z
+        .array(id)
+        .refine(
+          (ids) => new Set(ids).size === ids.length,
+          "同じ元技能は一度だけ指定してください",
+        )
+        .optional()
+        .describe(
+          "成功時に消費する本人の習得済み技能ID。1件で発展、複数で統合できる",
+        ),
+    })
     .strict()
     .describe("できることとその範囲を技能として記録する"),
   z

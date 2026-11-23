@@ -28,6 +28,7 @@ const Capacity = z.object({ usedSlots: z.number(), limitSlots: z.number() });
 export const Belongings = z.object({
   items: z.array(Item),
   capacity: Capacity.optional(),
+  skillCapacity: Capacity.optional(),
   storages: z.array(
     z.object({
       id: z.uuid().optional(),
@@ -36,7 +37,7 @@ export const Belongings = z.object({
       capacity: Capacity.optional(),
     }),
   ),
-  skills: z.array(z.object({ text: z.string() })),
+  skills: z.array(z.object({ id: z.uuid().optional(), text: z.string() })),
 });
 const Profile = z.object({ actorId: z.string(), profile: z.array(z.string()) });
 export const PlayScreen = z.object({
@@ -345,6 +346,12 @@ export function PlayerPanel({
           )}
         </Tabs.Content>
         <Tabs.Content value="skills">
+          {belongings?.skillCapacity && (
+            <p>
+              使用枠 {belongings.skillCapacity.usedSlots}/
+              {belongings.skillCapacity.limitSlots}
+            </p>
+          )}
           <TextList
             items={belongings?.skills.map(({ text }) => text) ?? []}
             empty="技能の記録がありません"

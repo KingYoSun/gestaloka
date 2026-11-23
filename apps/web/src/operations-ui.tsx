@@ -101,8 +101,10 @@ export function WorldBudgetSettings({ id }: { id: string }) {
 export function Publication({
   id,
   initial,
+  skillSlots,
 }: {
   id: string;
+  skillSlots?: number | undefined;
   initial: z.infer<typeof WorldStatus>["publication"] & {
     playerSettings?: string;
   };
@@ -121,6 +123,7 @@ export function Publication({
       className="form-panel"
       onSubmit={(e) => {
         e.preventDefault();
+        const limit = new FormData(e.currentTarget).get("skillSlots");
         mutation.mutate({
           body: {
             requestId: crypto.randomUUID(),
@@ -128,6 +131,9 @@ export function Publication({
               operation: "worlds.configure",
               worldId: id,
               ...value,
+              ...(limit && Number(limit) !== skillSlots
+                ? { inventoryLimits: { skillSlots: Number(limit) } }
+                : {}),
               reason: "管理画面から公開・参加受付を変更",
             },
           },
@@ -135,6 +141,21 @@ export function Publication({
       }}
     >
       <h2>公開・参加受付</h2>
+      {skillSlots !== undefined && (
+        <>
+          <Label htmlFor="world-skill-slots">人物ごとの技能枠</Label>
+          <Input
+            key={skillSlots}
+            id="world-skill-slots"
+            name="skillSlots"
+            type="number"
+            min={1}
+            step={1}
+            required
+            defaultValue={skillSlots}
+          />
+        </>
+      )}
       <Label htmlFor="public-title">公開用の名称</Label>
       <Input
         id="public-title"

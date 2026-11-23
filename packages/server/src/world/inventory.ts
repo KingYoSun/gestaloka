@@ -1,10 +1,16 @@
 import { createHash } from "node:crypto";
 import type { ManagedTransaction } from "neo4j-driver";
-import type { Change, WorldEdge, WorldNode } from "./model.js";
+import {
+  summaryId,
+  type Change,
+  type WorldEdge,
+  type WorldNode,
+} from "./model.js";
 
 type Item = Extract<WorldNode, { kind: "existence" }>;
 export const defaultInventoryLimits = {
   carrySlots: 30,
+  skillSlots: 50,
   storageSlots: 150,
   unitsPerSlot: 30,
 };
@@ -29,6 +35,82 @@ export type CapacityItem = {
   requestedCount: number;
   maxAcceptableCount: number;
 };
+
+export class SkillCapacityExceeded extends Error {
+  readonly code = "SKILL_CAPACITY_EXCEEDED";
+  constructor(readonly capacity: Capacity) {
+    super(
+      `技能の空き枠が足りません（現在${capacity.usedSlots}/${capacity.limitSlots}枠、習得後${capacity.projectedSlots}枠）。元技能を選んで発展・統合できます。`,
+    );
+  }
+}
+
+export async function usedSkillSlots(
+  tx: ManagedTransaction,
+  worldId: string,
+  holderId: string,
+) {
+  // 旧版の要約に件数がないときだけ、その人物の現在の関係から読む。
+  const { records } = await tx.run(
+    `MATCH (s:WorldNode {worldId:$worldId,id:$summary})
+     RETURN coalesce(s.skillSlots, COUNT { (:WorldNode {worldId:$worldId,id:$holderId})-[h:has {role:'skill'}]->() WHERE h.validTo IS NULL }) AS used`,
+    { worldId, holderId, summary: summaryId(holderId, "skill") },
+  );
+  return Number(records[0]?.get("used") ?? 0);
+}
+
+export function skillCapacityError(
+  holderId: string,
+  usedSlots: number,
+  limitSlots: number,
+  delta: number,
+) {
+  const projectedSlots = usedSlots + delta;
+  if (delta > 0 && projectedSlots > limitSlots)
+    return new SkillCapacityExceeded({
+      holderId,
+      usedSlots,
+      limitSlots,
+      projectedSlots,
+    });
+}
+
+export function skillDeltas(
+  edges: WorldEdge[],
+  ended: readonly (WorldEdge | undefined)[],
+) {
+  const deltas = new Map<string, number>();
+  const add = (edge: WorldEdge, delta: number) => {
+    if (
+      edge.kind === "has" &&
+      edge.role === "skill" &&
+      edge.period.until === undefined
+    )
+      deltas.set(edge.source, (deltas.get(edge.source) ?? 0) + delta);
+  };
+  for (const edge of edges) add(edge, 1);
+  for (const edge of ended) if (edge) add(edge, -1);
+  return deltas;
+}
+
+export async function checkSkillChange(
+  tx: ManagedTransaction,
+  worldId: string,
+  edges: WorldEdge[],
+  ended: readonly WorldEdge[],
+  limit: number,
+) {
+  for (const [holder, delta] of skillDeltas(edges, ended)) {
+    if (delta <= 0) continue;
+    const error = skillCapacityError(
+      holder,
+      await usedSkillSlots(tx, worldId, holder),
+      limit,
+      delta,
+    );
+    if (error) throw error;
+  }
+}
 
 export class InventoryCapacityExceeded extends Error {
   item?: CapacityItem;
@@ -165,7 +247,7 @@ export async function inventoryState(tx: ManagedTransaction, worldId: string) {
     `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
      RETURN CASE WHEN g.inventoryReady THEN null ELSE g.inventoryCacheUnits END AS cacheUnits,
        coalesce(g.inventoryEnabled,false) AS enabled,
-       g.inventoryCarrySlots AS carrySlots,g.inventoryStorageSlots AS storageSlots,g.inventoryUnitsPerSlot AS unitsPerSlot`,
+       g.inventoryCarrySlots AS carrySlots,g.inventoryStorageSlots AS storageSlots,g.inventoryUnitsPerSlot AS unitsPerSlot,g.skillSlots AS skillSlots`,
     { worldId },
   );
   const row = records[0];
@@ -173,6 +255,9 @@ export async function inventoryState(tx: ManagedTransaction, worldId: string) {
     enabled: Boolean(row?.get("enabled")),
     cacheUnits: Number(row?.get("cacheUnits") ?? 0),
     limits: {
+      skillSlots: Number(
+        row?.get("skillSlots") ?? defaultInventoryLimits.skillSlots,
+      ),
       carrySlots: Number(
         row?.get("carrySlots") ?? defaultInventoryLimits.carrySlots,
       ),

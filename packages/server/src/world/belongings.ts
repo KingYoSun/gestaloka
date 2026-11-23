@@ -193,6 +193,16 @@ export async function planBelongings(
       case "learn": {
         const node = derivedId(`${commitId}:${index}:node`);
         if (op.type === "learn") {
+          for (const id of op.consumeSkillIds ?? []) {
+            const skill = (await incoming(id)).find(
+              (edge) => edge.source === op.person && edge.role === "skill",
+            );
+            if (!skill || change.endEdges.includes(skill.id))
+              throw new BelongingRejected(
+                "消費する元技能には、本人が現在習得している別々の技能を指定してください",
+              );
+            end([skill]);
+          }
           change.nodes.push({ id: node, kind: "script", text: op.text });
           has(`${index}:skill`, op.person, node, "skill", op.basis);
           break;
@@ -357,9 +367,10 @@ export async function checkBelongingCapacity(
   at: number,
   changes: Change,
   operations: readonly BelongingOp[],
+  deferSkills = false,
 ) {
   try {
-    await context.checkInventory(changes);
+    await context.checkInventory(changes, { deferSkills });
   } catch (error) {
     if (!(error instanceof InventoryCapacityExceeded)) throw error;
     const reaches = async (start: string) => {
@@ -416,7 +427,7 @@ export async function checkBelongingCapacity(
           ),
         );
         try {
-          await context.checkInventory(plan.changes);
+          await context.checkInventory(plan.changes, { deferSkills });
           return true;
         } catch (failure) {
           if (!(failure instanceof InventoryCapacityExceeded)) throw failure;
@@ -666,6 +677,10 @@ export async function readBelongings(
           capacity: {
             usedSlots: await context.inventorySlots(subject),
             limitSlots: limits.carrySlots,
+          },
+          skillCapacity: {
+            usedSlots: skills.length,
+            limitSlots: limits.skillSlots,
           },
         }),
   };

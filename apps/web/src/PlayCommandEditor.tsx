@@ -58,6 +58,7 @@ export function PlayCommandEditor({
   execute: (command: z.infer<typeof PlayCommand>) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const [sourceIds, setSourceIds] = useState<string[]>([]);
   const [error, setError] = useState<Error>();
   const action = Action.safeParse(response?.action);
   const places = selection?.screen.neighbors ?? [];
@@ -74,6 +75,13 @@ export function PlayCommandEditor({
     .filter(({ actorId }) => recipientIds.has(actorId))
     .map(({ actorId, name }) => ({ id: actorId, label: name }));
   const cannotAct = disabled || !selection?.canAct;
+  const holdings = selection?.screen.belongings;
+  const capacity = holdings?.skillCapacity;
+  const skills =
+    holdings?.skills.flatMap((s) =>
+      s.id ? [{ id: s.id, text: s.text }] : [],
+    ) ?? [];
+  const sources = skills.filter((skill) => sourceIds.includes(skill.id));
   function update(text: string, operation: BelongingOp) {
     execute(
       PlayCommand.parse({
@@ -123,6 +131,78 @@ export function PlayCommandEditor({
   return (
     <details className="rounded-lg border bg-secondary p-4">
       <summary>プレイコマンド</summary>
+      {capacity && (
+        <details className="mt-3">
+          <summary>
+            技能を習得する（{capacity.usedSlots}/{capacity.limitSlots}枠）
+          </summary>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              const text = String(data.get("skill")).trim();
+              const basis = String(data.get("basis")).trim();
+              if (cannotAct || !text || !basis) return;
+              update(basis, {
+                type: "learn",
+                person: actorId,
+                text,
+                basis,
+                ...(sources.length
+                  ? { consumeSkillIds: sources.map((s) => s.id) }
+                  : {}),
+              });
+            }}
+          >
+            <fieldset disabled={cannotAct} className="mt-3 grid gap-3">
+              <label>
+                習得する技能と使える範囲
+                <Textarea name="skill" required />
+              </label>
+              <label>
+                どのように身につけるか
+                <Textarea name="basis" required />
+              </label>
+              {skills.length > 0 && (
+                <fieldset className="grid gap-1">
+                  <legend>成功時に消費する技能（任意）</legend>
+                  {skills.map((skill) => (
+                    <label key={skill.id}>
+                      <input
+                        type="checkbox"
+                        checked={sourceIds.includes(skill.id)}
+                        onChange={(e) =>
+                          setSourceIds(
+                            e.target.checked
+                              ? [...sourceIds, skill.id]
+                              : sourceIds.filter((id) => id !== skill.id),
+                          )
+                        }
+                      />{" "}
+                      {skill.text}
+                    </label>
+                  ))}
+                </fieldset>
+              )}
+              <p aria-live="polite">
+                成功後の使用枠 {capacity.usedSlots + 1 - sources.length}/
+                {capacity.limitSlots}
+              </p>
+              {capacity.usedSlots >= capacity.limitSlots && !sources.length && (
+                <p>元技能を選ぶと、満枠でも発展・統合を申請できます。</p>
+              )}
+              <Button
+                type="submit"
+                disabled={
+                  capacity.usedSlots >= capacity.limitSlots && !sources.length
+                }
+              >
+                習得を申請する
+              </Button>
+            </fieldset>
+          </form>
+        </details>
+      )}
       {places.length > 0 && (
         <form
           onSubmit={(event) => {

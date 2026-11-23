@@ -337,6 +337,7 @@ export function Manage({ id }: { id: string }) {
       )}
       <Publication
         id={id}
+        skillSlots={world.inventoryLimits?.skillSlots}
         initial={{
           ...world.publication,
           playerSettings: world.playerSettings ?? "",

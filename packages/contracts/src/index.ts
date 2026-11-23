@@ -129,7 +129,27 @@ export const WorldCommand = z.discriminatedUnion("command", [
     })
     .strict(),
 ]);
+const InventoryLimits = z.object({
+  carrySlots: z.number().int().positive().safe().describe("人物の手持ち枠"),
+  storageSlots: z.number().int().positive().safe().describe("保管庫の標準枠"),
+  unitsPerSlot: z
+    .number()
+    .int()
+    .positive()
+    .safe()
+    .describe("物品の1枠あたりの標準個数"),
+  skillSlots: z
+    .number()
+    .int()
+    .positive()
+    .safe()
+    .describe(
+      "人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する",
+    ),
+});
 export const WorldStatus = z.object({
+  inventoryLimits: InventoryLimits.optional(),
+  inventoryCapacity: z.boolean().optional(),
   id: z.uuid(),
   prompt: z.string(),
   playerSettings: z.string().optional(),
@@ -1289,30 +1309,7 @@ export const Operation = z.discriminatedUnion("operation", [
         .boolean()
         .optional()
         .describe("所持・保管枠の制限を有効にする"),
-      inventoryLimits: z
-        .object({
-          carrySlots: z
-            .number()
-            .int()
-            .positive()
-            .safe()
-            .describe("人物の手持ち枠"),
-          storageSlots: z
-            .number()
-            .int()
-            .positive()
-            .safe()
-            .describe("保管庫の標準枠"),
-          unitsPerSlot: z
-            .number()
-            .int()
-            .positive()
-            .safe()
-            .describe("物品の1枠あたりの標準個数"),
-        })
-        .partial()
-        .strict()
-        .optional(),
+      inventoryLimits: InventoryLimits.partial().strict().optional(),
       title: z.string().trim().min(1),
       description: z.string(),
       playerSettings: z.string().optional(),

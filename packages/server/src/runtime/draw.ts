@@ -39,6 +39,15 @@ export const drawSpCost = (table: Pick<DrawTable, "entries">) =>
 const totalWeight = (entries: DrawTable["entries"]) =>
   entries.reduce((sum, { weight }) => sum + BigInt(weight), 0n);
 
+export const drawSkillCapacity = (
+  context: WorldContext,
+  actor: string,
+  table?: DrawTable,
+) =>
+  !table || table.entries.some(({ result }) => result.kind === "skill")
+    ? context.skillCapacityError(actor)
+    : undefined;
+
 export function drawEntry(table: DrawTable) {
   const total = totalWeight(table.entries);
   const limit = ((1n << 64n) / total) * total;

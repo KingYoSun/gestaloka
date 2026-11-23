@@ -744,7 +744,13 @@ export class WorldAccess {
   }
   async status(subject: string, id: string) {
     await this.authorize(subject, id, "admin");
-    return this.statusData(await this.construction.get(id));
+    const row = await this.construction.get(id);
+    const world = this.statusData(row);
+    if (!row.world_id) return world;
+    const { limits, enabled } = await this.construction.agent.store
+      .context(row.world_id)
+      .inventorySettings();
+    return { ...world, inventoryLimits: limits, inventoryCapacity: enabled };
   }
   async playerData(
     row: Awaited<ReturnType<WorldConstruction["get"]>>,

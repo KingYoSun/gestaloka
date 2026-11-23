@@ -48,7 +48,12 @@ import {
   readBelongings,
   visibleTo,
 } from "../world/belongings.js";
-import { InventoryCapacityExceeded } from "../world/inventory.js";
+import {
+  InventoryCapacityExceeded,
+  SkillCapacityExceeded,
+  skillDeltas,
+  skillCapacityError,
+} from "../world/inventory.js";
 import { addRoute, directPlaces, locationRecords } from "../world/locations.js";
 import { canonical, parseOutput } from "../llm/prompt.js";
 import type { WorldConstruction } from "./construction.js";
@@ -98,6 +103,7 @@ import {
   DrawReview,
   drawEntry,
   drawSpCost,
+  drawSkillCapacity,
   drawTableCommand,
   heldDrawItem,
   readDrawDraft,
@@ -568,6 +574,8 @@ function rejectAdjudication() {
   );
 }
 function playError(error: unknown) {
+  if (error instanceof SkillCapacityExceeded)
+    return new AccessError(409, error.code, error.message, undefined, error);
   if (error instanceof InventoryCapacityExceeded)
     return new AccessError(
       409,
@@ -4461,9 +4469,10 @@ export class BotPlay {
                 code: "DAILY_SP_EXHAUSTED",
                 message: "日次SPの利用可能残量は0です",
               }
-            : table
-              ? (await tableAvailability(context, table, actor)).reason
-              : undefined;
+            : ((await drawSkillCapacity(context, actor, table)) ??
+              (table
+                ? (await tableAvailability(context, table, actor)).reason
+                : undefined));
       return {
         draw: {
           mode: table ? "table" : "gm",
@@ -4473,7 +4482,9 @@ export class BotPlay {
           conditions:
             "本人の通常手番に、現在地、その場に置かれた物品、手持ちの物品から引けます。",
           available: !reason,
-          ...(reason ? { reason } : {}),
+          ...(reason
+            ? { reason: { code: reason.code, message: reason.message } }
+            : {}),
         },
       };
     };
@@ -5056,6 +5067,8 @@ export class BotPlay {
           "DRAW_NOT_IN_REACH",
           "現在地、その場に置かれた物品、手持ちの物品から引けます",
         );
+      const full = await drawSkillCapacity(context, actor, source.drawTable);
+      if (full) throw full;
       if (source.drawTable)
         draw = await this.#selectDrawEntry(
           context,
@@ -5612,6 +5625,7 @@ export class BotPlay {
       text: string;
       changes: Change;
       materials?: Material[] | undefined;
+      operations?: BelongingOp[] | undefined;
     }[],
     consumable: Consumable[],
     explore = false,
@@ -5621,7 +5635,10 @@ export class BotPlay {
       | CreationRoll
       | {
           success: false;
-          reason: "MATERIAL_SHORTAGE" | "MATERIAL_ID_REQUIRED";
+          reason:
+            | "MATERIAL_SHORTAGE"
+            | "MATERIAL_ID_REQUIRED"
+            | "SKILL_CAPACITY_EXCEEDED";
         };
     const work = proposals.some((p) => p.materials !== undefined);
     const stock = new Map(consumable.map((item) => [item.id, item]));
@@ -5677,6 +5694,46 @@ export class BotPlay {
     if (previous.rows[0]?.creation_rolls)
       return validateSaved(previous.rows[0].creation_rolls);
     const batch = proposals.length > 1;
+    // 一括では先の案が成功したときだけ、その案が使った枠・空けた枠を次の案へ渡す。
+    const deltas =
+      batch &&
+      proposals.some((p) => p.changes.edges.some((e) => e.role === "skill"))
+        ? await Promise.all(
+            proposals.map(async ({ changes }) =>
+              skillDeltas(
+                changes.edges,
+                await Promise.all(
+                  changes.endEdges.map((id) => context.edge(id)),
+                ),
+              ),
+            ),
+          )
+        : [];
+    const usedSlots = new Map<string, number>();
+    for (const delta of deltas)
+      for (const holder of delta.keys())
+        if (!usedSlots.has(holder))
+          usedSlots.set(holder, await context.usedSkillSlots(holder));
+    const limitSlots = usedSlots.size
+      ? (await context.inventoryLimits()).skillSlots
+      : 0;
+    const full = (i: number) => {
+      for (const [holder, delta] of deltas[i] ?? []) {
+        const error = skillCapacityError(
+          holder,
+          usedSlots.get(holder)!,
+          limitSlots,
+          delta,
+        );
+        if (error) return error;
+      }
+    };
+    const applySlots = (i: number) => {
+      for (const [holder, delta] of deltas[i] ?? [])
+        usedSlots.set(holder, usedSlots.get(holder)! + delta);
+    };
+    const firstFull = full(0);
+    if (firstFull && proposals.every((_, i) => full(i))) throw firstFull;
     const keys = proposals.map((_, i) =>
       batch ? derivedId(`${requestId}:proposal:${i}`) : requestId,
     );
@@ -5698,25 +5755,31 @@ export class BotPlay {
         fresh.map((p) => this.#newStorages(context, p.changes)),
       );
       const material = await Promise.all(
-        fresh.map(async ({ text, changes, materials }, i) => ({
-          text,
-          changes,
-          ...(materials?.length
-            ? {
-                materials: await Promise.all(
-                  materials.map(async (m) => {
-                    const item = await readMaterial(m.id);
-                    return {
-                      ...m,
-                      label: item?.label,
-                      available: item ? (item.count ?? 1) : 0,
-                    };
-                  }),
-                ),
-              }
-            : {}),
-          ...(targets[i]!.length ? { storageIds: targets[i] } : {}),
-        })),
+        fresh.map(async ({ text, changes, materials, operations }, i) => {
+          const learning = operations?.filter(
+            (op) => op.type === "learn" && op.consumeSkillIds?.length,
+          );
+          return {
+            text,
+            changes,
+            ...(learning?.length ? { learning } : {}),
+            ...(materials?.length
+              ? {
+                  materials: await Promise.all(
+                    materials.map(async (m) => {
+                      const item = await readMaterial(m.id);
+                      return {
+                        ...m,
+                        label: item?.label,
+                        available: item ? (item.count ?? 1) : 0,
+                      };
+                    }),
+                  ),
+                }
+              : {}),
+            ...(targets[i]!.length ? { storageIds: targets[i] } : {}),
+          };
+        }),
       );
       const nodes = await this.#facts(context, [
         actor,
@@ -5775,6 +5838,9 @@ export class BotPlay {
               "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。" +
               (consumable.length ? consumePrompt : "") +
               (work ? workMaterialPrompt : "") +
+              (material.some((p) => p.learning)
+                ? "learningは本人が選んだ技能の発展・統合の申請。consumeSkillIdsで示された習得済み技能の本文と根拠、申請のtextとbasisから、引き継ぐ能力と新しく必要な応用・習熟を世界の基準に照らして判定する。中身を委ねられた技能は、その適用範囲と新たにできることを具体化する。"
+                : "") +
               (decides ? decidePrompt : "") +
               (batch
                 ? "proposalsの順に各案のダイス設定を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
@@ -5873,9 +5939,14 @@ export class BotPlay {
       const rolls: Result[] = [];
       const used = new Map<string, number>();
       for (const i of proposals.keys()) {
+        if (full(i)) {
+          rolls.push({ success: false, reason: "SKILL_CAPACITY_EXCEEDED" });
+          continue;
+        }
         const old = repeated[i];
         if (old) {
           rolls.push(old);
+          if (old.success) applySlots(i);
           continue;
         }
         const setting = settings.get(i)!;
@@ -5902,9 +5973,11 @@ export class BotPlay {
         );
         const success = die.roll <= die.setting.successThrough;
         rolls.push({ ...die, success });
-        if (success)
+        if (success) {
+          applySlots(i);
           for (const c of die.setting.consumes ?? [])
             used.set(c.id, (used.get(c.id) ?? 0) + (c.count ?? 1));
+        }
       }
       const persisted = await db.query(
         `UPDATE bot_request r SET creation_rolls=$2,
@@ -6318,12 +6391,12 @@ export class BotPlay {
     {
       db = this.pool,
       expectedHandoff,
-      proposalOnly = false,
+      batchSize = 0,
       vehicleResponse = false,
     }: {
       db?: Db;
       expectedHandoff?: Handoff;
-      proposalOnly?: boolean;
+      batchSize?: number;
       vehicleResponse?: boolean;
     } = {},
   ): Promise<Plan | undefined> {
@@ -6525,7 +6598,7 @@ export class BotPlay {
     }
     if (
       !hidden &&
-      !proposalOnly &&
+      !batchSize &&
       !deadline &&
       input.command === "update" &&
       input.operations?.length === 1
@@ -6568,7 +6641,7 @@ export class BotPlay {
             actor,
             user,
             { ...child, requestId, dependencies: input.dependencies },
-            { proposalOnly: true },
+            { batchSize: input.proposals.length },
           );
           if (!plan)
             reject(
@@ -6579,6 +6652,8 @@ export class BotPlay {
             ...plan,
             text: proposal.text,
             materials: proposal.materials ?? [],
+            operations:
+              "operations" in proposal ? proposal.operations : undefined,
           };
         }),
       );
@@ -6946,6 +7021,11 @@ export class BotPlay {
           parties.add(op.holder);
           needsCreation = true;
         } else if (op.type === "learn") {
+          if (op.consumeSkillIds?.length && op.person !== actor)
+            reject(
+              "UPDATE_REJECTED",
+              "消費する技能は習得する本人が指定してください",
+            );
           await affect(op.person);
           needsCreation = true;
         } else {
@@ -7406,6 +7486,7 @@ export class BotPlay {
           at,
           changes,
           "operations" in input ? (input.operations ?? []) : [],
+          batchSize > 1,
         );
       } catch (error) {
         if (!(error instanceof InventoryCapacityExceeded)) throw error;
@@ -7435,7 +7516,7 @@ export class BotPlay {
         }
       }
     }
-    if (proposalOnly) {
+    if (batchSize) {
       if (!needsCreation)
         reject(
           "CREATION_REQUIRED",
@@ -7479,6 +7560,8 @@ export class BotPlay {
               {
                 text: input.text,
                 changes,
+                operations:
+                  "operations" in input ? input.operations : undefined,
                 materials:
                   input.command === "update" || input.command === "create"
                     ? (input.materials ?? [])

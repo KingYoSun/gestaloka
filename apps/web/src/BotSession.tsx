@@ -251,6 +251,8 @@ function PersonalMaterial({
         : x.label,
       ...x.items.map(itemText),
     ]),
+    data.belongings?.skillCapacity &&
+      `技能の使用枠 ${data.belongings.skillCapacity.usedSlots}/${data.belongings.skillCapacity.limitSlots}`,
     ...(data.belongings?.skills ?? []).map((x) => x.text),
   ].filter(Boolean);
   return (
