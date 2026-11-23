@@ -132,6 +132,7 @@ export class McpAuthorization {
       "creationPolicy.put",
       "npcs.decidePromotion",
       "reports.list",
+      "activity.read",
       "notices.send",
       "blueprints.create",
       "blueprints.publish",
