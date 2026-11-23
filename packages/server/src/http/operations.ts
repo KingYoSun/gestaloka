@@ -1316,8 +1316,8 @@ export class Operations {
       case "worlds.configure": {
         const row = (
           await db.query(
-            `UPDATE world_construction SET public_title=$2,public_description=$3,published=$4,accepting=$5,player_settings=coalesce($6,player_settings),player_list=coalesce($7,player_list),instant_npc_multiplier=coalesce($8,instant_npc_multiplier),starting_items=coalesce($13::jsonb,starting_items),death_judgment=coalesce($9,death_judgment),death_criteria=coalesce($10,death_criteria),death_place_id=CASE WHEN $11 THEN $12 ELSE death_place_id END WHERE id=$1
-          RETURNING id,public_title AS title,public_description AS description,player_settings AS "playerSettings",published,accepting,player_list AS "playerList",instant_npc_multiplier AS "instantNpcMultiplier",starting_items AS "startingItems",death_judgment AS "deathJudgment",death_criteria AS "deathCriteria",death_place_id AS "deathPlaceId"`,
+            `UPDATE world_construction SET public_title=$2,public_description=$3,published=$4,accepting=$5,player_settings=coalesce($6,player_settings),player_list=coalesce($7,player_list),instant_npc_multiplier=coalesce($8,instant_npc_multiplier),starting_items=coalesce($13::jsonb,starting_items),daily_sp_limit=coalesce($14,daily_sp_limit),death_judgment=coalesce($9,death_judgment),death_criteria=coalesce($10,death_criteria),death_place_id=CASE WHEN $11 THEN $12 ELSE death_place_id END WHERE id=$1
+          RETURNING id,public_title AS title,public_description AS description,player_settings AS "playerSettings",published,accepting,player_list AS "playerList",instant_npc_multiplier AS "instantNpcMultiplier",starting_items AS "startingItems",daily_sp_limit AS "dailySpLimit",death_judgment AS "deathJudgment",death_criteria AS "deathCriteria",death_place_id AS "deathPlaceId"`,
             [
               input.worldId,
               input.title,
@@ -1332,6 +1332,7 @@ export class Operations {
               input.deathPlaceId !== undefined,
               input.deathPlaceId ?? null,
               input.startingItems ? JSON.stringify(input.startingItems) : null,
+              input.dailySpLimit ?? null,
             ],
           )
         ).rows[0];

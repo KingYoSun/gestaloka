@@ -105,6 +105,7 @@ export class WorldConstruction {
       ADD COLUMN IF NOT EXISTS accepting boolean NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS player_list boolean NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS instant_npc_multiplier integer NOT NULL DEFAULT 2,
+      ADD COLUMN IF NOT EXISTS daily_sp_limit integer NOT NULL DEFAULT 100 CHECK (daily_sp_limit > 0),
       ADD COLUMN IF NOT EXISTS starting_items jsonb NOT NULL DEFAULT '[]',
       ADD COLUMN IF NOT EXISTS death_judgment boolean NOT NULL DEFAULT true,
       ADD COLUMN IF NOT EXISTS death_criteria text NOT NULL DEFAULT '',

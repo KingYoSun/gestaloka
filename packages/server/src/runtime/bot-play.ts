@@ -5108,14 +5108,16 @@ export class BotPlay {
     const resetsAt = new Date(
       (Math.floor((now + 9 * 3600000) / 86400000) + 1) * 86400000 - 9 * 3600000,
     ).toISOString();
-    const { rows } = await db.query<{ used: number }>(
+    const { rows } = await db.query<{ used: number; sp_limit: number }>(
       `SELECT
+      coalesce((SELECT daily_sp_limit FROM world_construction WHERE id=$1),100) AS sp_limit,
       (SELECT count(*) FROM bot_request WHERE world_id=$1 AND sp_user=$2 AND sp_reset=$3)
       + (SELECT count(*) FROM bot_adjudication a WHERE world_id=$1 AND sp_user=$2 AND sp_reset=$3 AND request_id IS DISTINCT FROM $4 AND expires_at>clock_timestamp()
         AND NOT EXISTS (SELECT 1 FROM bot_request r WHERE r.id=a.request_id AND r.sp_user IS NOT NULL)) AS used`,
       [world, user, resetsAt, request ?? null],
     );
-    return { remaining: 100 - rows[0]!.used, limit: 100, resetsAt };
+    const { used, sp_limit: limit } = rows[0]!;
+    return { remaining: Math.max(0, limit - used), limit, resetsAt };
   }
   async #reserveSp(
     world: string,

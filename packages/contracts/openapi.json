@@ -28043,6 +28043,13 @@
                             "format": "uuid",
                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                           },
+                          "dailySpLimit": {
+                            "description": "この世界のアカウントごとの日次SP上限。既定は100。省略すると現在の設定を保つ",
+                            "type": "integer",
+                            "minimum": 0,
+                            "exclusiveMinimum": true,
+                            "maximum": 2147483647
+                          },
                           "inventoryCapacity": {
                             "description": "所持・保管枠の制限を有効にする",
                             "type": "boolean"
