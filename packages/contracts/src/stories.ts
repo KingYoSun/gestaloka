@@ -10,7 +10,7 @@ const episodeQuery = z
   .regex(/^[1-9][0-9]{0,9}$/)
   .refine((value) => episodeNumber.safeParse(Number(value)).success);
 
-const StoryDates = z.object({
+export const StoryDates = z.object({
   since: z.iso.date().optional(),
   until: z.iso.date().optional(),
 });

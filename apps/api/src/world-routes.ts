@@ -253,20 +253,12 @@ export async function worldRoutes(
         response: { 200: StoryRead, ...errors },
       },
     },
-    async (request) => {
-      const result = await service().stories.read(
+    async (request) =>
+      service().stories.read(
         await subject(request),
         request.params.id,
         request.query,
-      );
-      if (!result)
-        throw new AccessError(
-          404,
-          "STORY_NOT_FOUND",
-          "作品または指定した話が見つかりません",
-        );
-      return result;
-    },
+      ),
   );
   app.post(
     "/api/stories/:id/bookmark",
