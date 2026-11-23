@@ -7658,7 +7658,15 @@ test("登録した保管先と誰も登録していない場所には、その�
     expect(JSON.parse(messages[1]!.content)).toMatchObject({
       allowApply: true,
     });
-    return answer(id, { apply: true, endEdges: [] });
+    // 同じ指示にある他の出力の空配列が付いても、確定として読む。
+    return answer(id, {
+      apply: true,
+      endEdges: [],
+      consumes: [],
+      requiredMaterials: [],
+      decided: [],
+      individuals: [],
+    });
   });
   await update({
     changes: {
@@ -7676,6 +7684,22 @@ test("登録した保管先と誰も登録していない場所には、その�
     [f.actors[0]!, "改めた名前"],
   ] as const)
     expect(await f.store.context(f.graph).node(id)).toMatchObject({ text });
+  // 確定とダイス設定が混ざった応答は、問い直さずにダイスで判定する。
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { apply: true, endEdges: [], ...sure }),
+  );
+  const mixed = await update({
+    changes: {
+      nodes: [],
+      revisions: [{ id: state, kind: "script", text: "背が少し縮んだ" }],
+      edges: [],
+      endEdges: [],
+    },
+  });
+  expect(mixed.outcome).toMatchObject({ success: true, setting: sure });
+  expect(await f.store.context(f.graph).node(state)).toMatchObject({
+    text: "背が少し縮んだ",
+  });
   f.calls.mockImplementationOnce(async (id) =>
     answer(id, { apply: true, endEdges: [content] }),
   );
@@ -7685,7 +7709,7 @@ test("登録した保管先と誰も登録していない場所には、その�
   expect(
     (await f.store.context(f.graph).edge(content))?.period.until,
   ).toBeDefined();
-  expect(f.calls).toHaveBeenCalledTimes(2);
+  expect(f.calls).toHaveBeenCalledTimes(3);
   // 申請者が持たない物品への申請でも、その物品の成立時と現在の保持の経緯が判定に届く。
   await f.apply([
     { type: "create", label: "杭", holder: f.actors[0], basis: "削り出した" },
@@ -7729,7 +7753,7 @@ test("登録した保管先と誰も登録していない場所には、その�
       })
     ).outcome,
   ).toMatchObject({ success: true });
-  expect(f.calls).toHaveBeenCalledTimes(3);
+  expect(f.calls).toHaveBeenCalledTimes(4);
   await move(stake, square, f.actors[0]!);
   await f.apply([{ type: "remove", id: stake }]);
   // 誰も登録していない場所を保管先にする申請は、新しく得る申請としてダイスで判定する。

@@ -793,6 +793,19 @@ function addFumble(
 const ApplyStatus = z
   .object({ apply: z.literal(true), endEdges: z.array(z.uuid()) })
   .strict();
+// 状態変更の確定には、同じ指示にある他の出力の空配列が付くことがある。それらは読まない。
+// ダイス設定を伴う応答は、不確実な変化としてダイスで判定する。
+function applyChoice(raw: unknown) {
+  if (!raw || typeof raw !== "object" || !("apply" in raw)) return raw;
+  const { apply, ...rest } = raw as Record<string, unknown>;
+  if ("sides" in rest) return rest;
+  return Object.fromEntries(
+    Object.entries({ apply, ...rest }).filter(
+      ([key, v]) =>
+        key === "endEdges" || !(v === null || (Array.isArray(v) && !v.length)),
+    ),
+  );
+}
 type AppliedStatus = {
   success: true;
   endEdges: string[];
@@ -6172,9 +6185,9 @@ export class BotPlay {
               .parse(parseOutput(raw)).settings
           : [parseOutput(raw)];
         return values.map((rawValue, i) => {
-          const value = (allowApply[i] ? ApplyStatus.or(Dice) : Dice).parse(
-            rawValue,
-          );
+          const value = allowApply[i]
+            ? ApplyStatus.or(Dice).parse(applyChoice(rawValue))
+            : Dice.parse(rawValue);
           const review = fresh[i]!.statusReview;
           const ends = "endEdges" in value ? value.endEdges : undefined;
           validateStateEnds(
