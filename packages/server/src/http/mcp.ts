@@ -1,7 +1,11 @@
 import { randomUUID, createHash } from "node:crypto";
 import type pg from "pg";
 import { z } from "zod";
-import { Operation, McpClientConfiguration } from "@gestaloka/contracts";
+import {
+  Operation,
+  McpClientConfiguration,
+  isReadOnlyOperation,
+} from "@gestaloka/contracts";
 import { AccessError } from "./access.js";
 import type { McpPermission } from "./mcp-origin.js";
 export const MCP_CONNECT = "mcp.connect";
@@ -88,7 +92,7 @@ export class McpAuthorization {
   async clients(db: Database, before?: string) {
     const rows = (
       await db.query(
-        "SELECT id,configuration,version,updated_by,updated_at FROM mcp_client WHERE ($1::uuid IS NULL OR id<$1) ORDER BY id DESC LIMIT 51",
+        'SELECT id,configuration,advertised_read_scopes AS "advertisedReadScopes",version,updated_by,updated_at FROM mcp_client WHERE ($1::uuid IS NULL OR id<$1) ORDER BY id DESC LIMIT 51',
         [before ?? null],
       )
     ).rows;
@@ -103,6 +107,7 @@ export class McpAuthorization {
     configuration: z.infer<typeof McpClientConfiguration>,
     expectedVersion: number,
     actor: string,
+    advertisedReadScopes?: string[],
   ) {
     if (configuration.scopes.some((s) => !operationNames.includes(s)))
       throw new AccessError(
@@ -157,9 +162,14 @@ export class McpAuthorization {
         "世界を限定する場合は、対象世界を指定する操作だけをscopeに指定してください",
       );
     const previous = (
-      await db.query("SELECT version FROM mcp_client WHERE id=$1 FOR UPDATE", [
-        id,
-      ])
+      await db.query<{
+        version: number;
+        advertised_read_scopes: string[] | null;
+        same_configuration: boolean;
+      }>(
+        "SELECT version,advertised_read_scopes,configuration=$2::jsonb AS same_configuration FROM mcp_client WHERE id=$1 FOR UPDATE",
+        [id, configuration],
+      )
     ).rows[0];
     if ((previous?.version ?? 0) !== expectedVersion)
       throw new AccessError(
@@ -167,6 +177,18 @@ export class McpAuthorization {
         "SETTINGS_CHANGED",
         "クライアントの設定版を読み直してください",
       );
+    const canAdvertise = (scope: string) =>
+      configuration.scopes.includes(scope) && isReadOnlyOperation(scope);
+    if (advertisedReadScopes?.some((scope) => !canAdvertise(scope)))
+      throw new AccessError(
+        409,
+        "MCP_ADVERTISED_SCOPE_DENIED",
+        "このクライアントに許可した読み取り権限だけを通知できます",
+      );
+    const scopes =
+      advertisedReadScopes === undefined
+        ? (previous?.advertised_read_scopes ?? []).filter(canAdvertise)
+        : [...new Set(advertisedReadScopes)];
     const client = {
       client_id: id,
       client_name: configuration.name,
@@ -177,22 +199,31 @@ export class McpAuthorization {
       scope: [MCP_CONNECT, "offline_access", ...configuration.scopes].join(" "),
       audience: [this.resource],
     };
-    try {
-      await this.hydra(`admin/clients/${id}`, "PUT", client);
-    } catch (error) {
-      if (
-        !(error instanceof AccessError) ||
-        error.code !== "MCP_AUTH_NOT_FOUND"
-      )
-        throw error;
-      await this.hydra("admin/clients", "POST", client);
+    if (!previous?.same_configuration || advertisedReadScopes === undefined) {
+      try {
+        await this.hydra(`admin/clients/${id}`, "PUT", client);
+      } catch (error) {
+        if (
+          !(error instanceof AccessError) ||
+          error.code !== "MCP_AUTH_NOT_FOUND"
+        )
+          throw error;
+        await this.hydra("admin/clients", "POST", client);
+      }
     }
     await db.query(
-      `INSERT INTO mcp_client(id,configuration,version,updated_by) VALUES($1,$2,1,$3)
-      ON CONFLICT(id) DO UPDATE SET configuration=$2,version=mcp_client.version+1,updated_by=$3,updated_at=now()`,
-      [id, configuration, actor],
+      `INSERT INTO mcp_client(id,configuration,version,updated_by,advertised_read_scopes) VALUES($1,$2,1,$3,$4)
+      ON CONFLICT(id) DO UPDATE SET configuration=$2,version=mcp_client.version+1,updated_by=$3,updated_at=now(),advertised_read_scopes=$4`,
+      [id, configuration, actor, scopes],
     );
-    return { clientId: id, version: expectedVersion + 1, configuration };
+    return {
+      clientId: id,
+      version: expectedVersion + 1,
+      configuration,
+      ...(advertisedReadScopes === undefined
+        ? {}
+        : { advertisedReadScopes: scopes }),
+    };
   }
   async consent(data: Consent) {
     const row = (
@@ -264,7 +295,7 @@ export class McpAuthorization {
   }
   async verify(
     authorization?: string,
-  ): Promise<McpPrincipal & { registeredScopes: string[] }> {
+  ): Promise<McpPrincipal & { advertisedReadScopes: string[] }> {
     const bearer = authorization?.match(/^Bearer (\S+)$/i)?.[1];
     if (!bearer)
       throw new AccessError(
@@ -320,12 +351,12 @@ export class McpAuthorization {
       scopes: token.scope.split(" "),
       worldIds: grant.world_ids,
     };
-    const registeredScopes = await this.check(
-      this.pool,
-      principal,
-      MCP_CONNECT,
+    const row = await this.check(this.pool, principal, MCP_CONNECT);
+    const advertisedReadScopes = (row.advertised_read_scopes ?? []).filter(
+      (scope) =>
+        row.configuration.scopes.includes(scope) && isReadOnlyOperation(scope),
     );
-    return { ...principal, registeredScopes };
+    return { ...principal, advertisedReadScopes };
   }
   async check(
     db: Database,
@@ -335,8 +366,16 @@ export class McpAuthorization {
     lock = false,
   ) {
     const row = (
-      await db.query(
-        `SELECT c.configuration,g.scopes,g.world_ids,g.revoked,u.role,u.banned FROM mcp_grant g JOIN mcp_client c ON c.id=g.client_id JOIN app_user u ON u.id=g.user_id
+      await db.query<{
+        configuration: z.infer<typeof McpClientConfiguration>;
+        advertised_read_scopes: string[] | null;
+        scopes: string[];
+        world_ids: string[] | null;
+        revoked: boolean;
+        role: string;
+        banned: boolean;
+      }>(
+        `SELECT c.configuration,c.advertised_read_scopes,g.scopes,g.world_ids,g.revoked,u.role,u.banned FROM mcp_grant g JOIN mcp_client c ON c.id=g.client_id JOIN app_user u ON u.id=g.user_id
       WHERE g.id=$1 AND g.user_id=$2 AND c.id=$3${lock ? " FOR SHARE OF g,c,u" : ""}`,
         [p.grantId, p.userId, p.clientId],
       )
@@ -368,7 +407,7 @@ export class McpAuthorization {
           "MCP_TARGET_DENIED",
           "許可された世界IDを指定してください",
         );
-    return row.configuration.scopes as string[];
+    return row;
   }
   async worlds(db: Database, p: McpPrincipal) {
     const row = (

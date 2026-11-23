@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/client";
 import type { z } from "zod";
 import { Operation } from "@gestaloka/contracts";
+import { RuntimeControl } from "@gestaloka/server";
 import { WorldAccess } from "@gestaloka/server/access";
 import type { McpPrincipal } from "@gestaloka/server/mcp";
 import { fixtureRuntime } from "../support/provider.js";
@@ -565,8 +566,21 @@ test("外部SDKのMCP接続で全共通操作を列挙し、認証・scope・再
     { token, principal } = await delegation(granted, null, admin, [
       ...granted,
       ...readScopes,
+      "jobs.list",
     ]),
     user = (await auth.person("user")).id;
+  const db = isolated.databases.postgres;
+  await db.query("ALTER TABLE mcp_client DROP COLUMN advertised_read_scopes");
+  await RuntimeControl.setup(db);
+  const stored = (await auth.operations.mcp.clients(db)).items[0];
+  expect(stored.advertisedReadScopes).toEqual(readScopes);
+  const update = {
+    operation: "mcp.clients.put" as const,
+    clientId: principal.clientId,
+    configuration: stored.configuration,
+    expectedVersion: stored.version,
+    reason: "通知する読み取り権限の変更",
+  };
   const app = await createApp(
     access,
     auth.identity,
@@ -610,12 +624,44 @@ test("外部SDKのMCP接続で全共通操作を列挙し、認証・scope・再
           scopes: ["mcp.connect", tool.name.replaceAll("_", ".")],
         },
       ]);
+    for (const scope of ["users.role", "costs.read"])
+      await expect(
+        auth.operations.execute(admin, randomUUID(), {
+          ...update,
+          advertisedReadScopes: [scope],
+        }),
+      ).rejects.toMatchObject({ code: "MCP_ADVERTISED_SCOPE_DENIED" });
+    const nextScopes = [...readScopes, "jobs.list"];
+    await auth.operations.execute(admin, randomUUID(), {
+      ...update,
+      advertisedReadScopes: nextScopes,
+    });
+    await auth.operations.execute(admin, randomUUID(), {
+      ...update,
+      expectedVersion: update.expectedVersion + 1,
+    });
+    expect(
+      (await auth.operations.mcp.clients(db)).items[0].advertisedReadScopes,
+    ).toEqual(nextScopes);
+    expect(
+      (await client.listTools()).tools.find((t) => t.name === "jobs_list")
+        ?._meta?.securitySchemes,
+    ).toEqual([{ type: "oauth2", scopes: ["mcp.connect", "jobs.list"] }]);
     await expect(
       client.callTool({
         name: "stories_stats",
         arguments: { requestId: randomUUID(), worldId: randomUUID() },
       }),
     ).rejects.toThrow("stories.stats");
+    await auth.operations.execute(admin, randomUUID(), {
+      ...update,
+      expectedVersion: update.expectedVersion + 2,
+      advertisedReadScopes: [],
+    });
+    await RuntimeControl.setup(db);
+    expect(
+      (await client.listTools()).tools.some((t) => t._meta?.securitySchemes),
+    ).toBe(false);
     const id = randomUUID(),
       args = {
         requestId: id,

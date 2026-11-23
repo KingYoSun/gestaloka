@@ -725,7 +725,7 @@ test("管理者・scope・世界制限をAPIとMCPの共通操作で適用する
   );
   vi.spyOn(auth.operations.mcp, "verify").mockResolvedValue({
     ...principal,
-    registeredScopes: scopes,
+    advertisedReadScopes: [],
   });
   const list = await app.inject({
     method: "POST",

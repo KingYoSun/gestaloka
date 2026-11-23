@@ -23952,6 +23952,12 @@
                             ],
                             "additionalProperties": false
                           },
+                          "advertisedReadScopes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
                           "expectedVersion": {
                             "type": "integer",
                             "minimum": 0,

@@ -632,7 +632,14 @@ test("MCP登録・認可失効とバックアップ画面の受付・進捗を�
   await page
     .getByLabel("Callback URL（1行に1件）", { exact: true })
     .fill("http://127.0.0.1:18999/callback");
-  await page.getByLabel("worlds.graph", { exact: true }).check();
+  const allowedScopes = page.getByRole("group", { name: "許可する操作" });
+  const advertisedScopes = page.getByRole("group", {
+    name: "Web版ChatGPTに通知する読み取り権限",
+  });
+  await allowedScopes.getByLabel("worlds.graph", { exact: true }).check();
+  await allowedScopes.getByLabel("worlds.edit", { exact: true }).check();
+  await expect(advertisedScopes.getByLabel("worlds.edit")).toHaveCount(0);
+  await advertisedScopes.getByLabel("worlds.graph", { exact: true }).check();
   await page
     .getByLabel("操作の理由", { exact: true })
     .fill("クライアントを登録");
@@ -651,13 +658,22 @@ test("MCP登録・認可失効とバックアップ画面の受付・進捗を�
   expect(clients).toMatchObject([
     {
       id: clientId,
+      advertisedReadScopes: ["worlds.graph"],
       configuration: {
         enabled: true,
-        scopes: ["worlds.graph"],
+        scopes: ["worlds.graph", "worlds.edit"],
         worldIds: null,
       },
     },
   ]);
+  await page.getByRole("button", { name: "別の操作を始める" }).click();
+  await page.getByLabel("操作を選択").selectOption("mcp.clients.list");
+  await page
+    .getByRole("button", { name: "この記録を入力に使う", exact: true })
+    .click();
+  await expect(
+    advertisedScopes.getByLabel("worlds.graph", { exact: true }),
+  ).toBeChecked();
   const grant = randomUUID();
   await isolated.databases.postgres.query(
     "INSERT INTO mcp_grant(id,client_id,user_id,scopes,world_ids,consent_hash) VALUES($1,$2,$3,$4,NULL,$5)",

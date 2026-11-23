@@ -1,4 +1,4 @@
-import { Operation } from "@gestaloka/contracts";
+import { Operation, isReadOnlyOperation } from "@gestaloka/contracts";
 import type { z } from "zod";
 export type Command = z.infer<typeof Operation>;
 export type Name = Command["operation"];
@@ -193,9 +193,7 @@ export const catalog: Partial<Record<Name, string>> = Object.assign(
   ...Object.values(operations).map((v) => v[1]),
 );
 export const readOnly = (name: string) =>
-  /\.(read|list|records|graph|samples|notifications|jobs|job|uses|select|history|evaluation|settings|promotions|stats)$/.test(
-    name,
-  );
+  name === "inspection.select" || isReadOnlyOperation(name);
 export const schemas = Object.fromEntries(
   Operation.options.map((s) => [s.shape.operation.value, s]),
 ) as {

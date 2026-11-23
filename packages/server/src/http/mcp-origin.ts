@@ -6,7 +6,12 @@ export class McpOrigin {
   static async setup(db: Pick<pg.Pool, "query">) {
     await db.query(`CREATE TABLE IF NOT EXISTS mcp_client(id uuid PRIMARY KEY,configuration jsonb NOT NULL,version integer NOT NULL,updated_by uuid,updated_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS mcp_grant(id uuid PRIMARY KEY,client_id uuid NOT NULL REFERENCES mcp_client(id),user_id uuid NOT NULL,scopes text[] NOT NULL,world_ids uuid[],revoked boolean NOT NULL DEFAULT false,consent_hash text UNIQUE NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
-      CREATE TABLE IF NOT EXISTS mcp_execution(kind text NOT NULL,id uuid NOT NULL,permission jsonb,PRIMARY KEY(kind,id));`);
+      CREATE TABLE IF NOT EXISTS mcp_execution(kind text NOT NULL,id uuid NOT NULL,permission jsonb,PRIMARY KEY(kind,id));
+      ALTER TABLE mcp_client ADD COLUMN IF NOT EXISTS advertised_read_scopes text[];
+      UPDATE mcp_client SET advertised_read_scopes = ARRAY(
+        SELECT scope FROM jsonb_array_elements_text(configuration->'scopes') AS s(scope)
+        WHERE scope IN ('activity.read','playUsage.read','stories.list','stories.read','stories.stats')
+      ) WHERE advertised_read_scopes IS NULL;`);
   }
   static get current() {
     return current.getStore();
