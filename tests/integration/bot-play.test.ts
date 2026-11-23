@@ -5945,9 +5945,15 @@ test("隠密中の対抗行動は所持・負傷・死亡を確定し、行為�
       ["attempt:" + victim]: 6,
       ["attempt:" + witness]: 1,
     });
+    // 相手に残る負傷はGMが返す。申請者が変更に書いた相手の状態は記録されない。
+    const setting = {
+      ...sure,
+      ...(fatal ? { fatal: [victim] } : {}),
+      ...(publicState ? { states: [{ id: victim, text: publicState }] } : {}),
+    };
     await isolated.databases.postgres.query(
       "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,1)",
-      [requestId, fatal ? { ...sure, fatal: [victim] } : sure],
+      [requestId, setting],
     );
     f.calls.mockImplementation(async (id, role, messages) => {
       if (role === "world-creation-dice") return answer(id, sure);
@@ -5957,8 +5963,7 @@ test("隠密中の対抗行動は所持・負傷・死亡を確定し、行為�
       };
       expect(perception.observers).toEqual([victim, witness].sort());
       return answer(id, {
-        ...sure,
-        ...(fatal ? { fatal: [victim] } : {}),
+        ...setting,
         perception: {
           states: Object.fromEntries(
             perception.states.map((state) => [state, publicState!]),
@@ -6052,12 +6057,16 @@ test("隠密中の対抗行動は所持・負傷・死亡を確定し、行為�
   await attempt(
     killed,
     {
-      changes: {
-        nodes: [],
-        revisions: [{ ...wound.nodes[0], text: killed }],
-        edges: [],
-        endEdges: [],
-      },
+      operations: [
+        {
+          type: "move",
+          item: coin,
+          from: victim,
+          to: actor,
+          count: 1,
+          basis: killed,
+        },
+      ],
     },
     "致命傷を負って死亡している",
     true,
@@ -6066,8 +6075,10 @@ test("隠密中の対抗行動は所持・負傷・死亡を確定し、行為�
     victim,
   ]);
   expect(await directPlaces(f.store.context(f.graph), victim)).toEqual([f.far]);
+  // 死亡は復帰として扱い、判定で付いた負傷も死亡で付いた状態も現在の状態に残さない。
   const after = await examine(3);
-  expect(after).toContain("致命傷を負って死亡している");
+  expect(after).not.toContain("腕に深い傷がある");
+  expect(after).not.toContain("致命傷を負って死亡している");
   for (const secret of ["霧トカゲ", cause, actor])
     expect(after).not.toContain(secret);
   const victimHistory = JSON.stringify(
@@ -6329,13 +6340,16 @@ test("対抗と本人の状態変更は一度の判断で該当する関係だ�
     changes: binding,
     dependencies: [],
   };
+  // 相手に残る状態はGMが返したものだけ。申請者が変更に書いた相手の状態は記録しない。
+  const tied = "手首に旗の紐がきつく絡んでいる";
   f.calls.mockImplementationOnce(async (id, role, messages) => {
     expect(role).toBe("world-opposition-dice");
+    expect(messages[0]!.content).toContain("死亡はfatalでだけ表す");
     expect(messages[1]!.content).toContain(raised);
     return answer(id, {
       ...sure,
       endEdges: [raised],
-      states: [{ id: target, text: binding.nodes[0]!.text }],
+      states: [{ id: target, text: tied }],
     });
   });
   const applied = await f.send(0, bind);
@@ -6343,12 +6357,15 @@ test("対抗と本人の状態変更は一度の判断で該当する関係だ�
   expect(await f.send(0, bind)).toEqual(applied);
   expect(await active(raised)).toBe(false);
   expect(await active(about)).toBe(false);
-  expect((await f.store.context(f.graph).edge(bound))?.source).toBe(target);
+  expect(await f.store.context(f.graph).edge(bound)).toBeUndefined();
   expect(
-    await f.store
-      .context(f.graph)
-      .node(derivedId(`${bind.requestId}:state:${target}`)),
+    await f.store.context(f.graph).node(binding.nodes[0]!.id),
   ).toBeUndefined();
+  const gmState = derivedId(`${bind.requestId}:state:${target}`),
+    tiedEdge = derivedId(`${gmState}:content`);
+  expect(await f.store.context(f.graph).node(gmState)).toMatchObject({
+    text: tied,
+  });
   expect(f.calls).toHaveBeenCalledTimes(1);
   await f.send(0, { command: "end-turn" });
 
@@ -6370,17 +6387,15 @@ test("対抗と本人の状態変更は一度の判断で該当する関係だ�
               node: expect.objectContaining({ text: "袖に青い刺繍がある" }),
             }),
             expect.objectContaining({
-              relationId: bound,
-              node: expect.objectContaining({
-                text: "手首に旗の紐が絡んでいる",
-              }),
+              relationId: tiedEdge,
+              node: expect.objectContaining({ text: tied }),
             }),
           ]),
         );
         expect(() =>
           validate!(JSON.stringify({ apply: true, endEdges: [raised] })),
         ).toThrow();
-        const setting = { sides: 6, successThrough: 3, endEdges: [bound] };
+        const setting = { sides: 6, successThrough: 3, endEdges: [tiedEdge] };
         await isolated.databases.postgres.query(
           "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,$3)",
           [derivedId(requestId + ":creation"), setting, roll],
@@ -6401,10 +6416,11 @@ test("対抗と本人の状態変更は一度の判断で該当する関係だ�
     expect(result.spentSp).toBe(1);
     expect(await f.send(1, update)).toEqual(result);
     expect(await active(profile)).toBe(true);
-    expect(await active(bound)).toBe(!success);
-    expect(await active(binding.edges[1]!.id)).toBe(!success);
+    expect(await active(tiedEdge)).toBe(!success);
     if (success)
-      expect((await f.store.context(f.graph).edge(bound))?.period.until).toBe(
+      expect(
+        (await f.store.context(f.graph).edge(tiedEdge))?.period.until,
+      ).toBe(
         (await f.store.context(f.graph).edge(changes.edges[0]!.id))?.period
           .from,
       );
@@ -15325,8 +15341,8 @@ test("登録済みの人物に起きることを名指しする作成は、本�
       )
     ).rowCount,
   ).toBe(0);
-  // 人物と同じ名前の個体を登場させる発言も断る。
-  named(["人物2"]);
+  // 人物と同じ名前の個体を登場させる発言は、GMが名指しと判断しなくても断る。
+  named([]);
   await expect(
     f.send(0, {
       command: "say",
