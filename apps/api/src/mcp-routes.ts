@@ -6,6 +6,16 @@ import type { Operations } from "@gestaloka/server/operations";
 import { MCP_CONNECT } from "@gestaloka/server/mcp";
 import { AccessError } from "@gestaloka/server/access";
 import type { WorldAccess } from "@gestaloka/server/access";
+
+// ChatGPT requests the union of advertised scopes and its configured defaults.
+const advertisedScopes = new Set([
+  "activity.read",
+  "playUsage.read",
+  "stories.list",
+  "stories.read",
+  "stories.stats",
+]);
+
 const descriptions: Record<string, string> = {
   "creationPolicy.read":
     "世界ごとの新規作成のダイス基準とファンブルの基準を確認する。",
@@ -144,11 +154,16 @@ export async function mcpRoutes(
                 descriptions[name] ??
                 `共通運用操作 ${name}。必要なscopeは ${name}。同じ要求の再送には同じrequestIdを使う。`,
               inputSchema: schema,
-              _meta: {
-                securitySchemes: [
-                  { type: "oauth2", scopes: [MCP_CONNECT, name] },
-                ],
-              },
+              ...(advertisedScopes.has(name) &&
+              principal.registeredScopes.includes(name)
+                ? {
+                    _meta: {
+                      securitySchemes: [
+                        { type: "oauth2", scopes: [MCP_CONNECT, name] },
+                      ],
+                    },
+                  }
+                : {}),
             },
             async (args) => {
               const { requestId, ...input } = args;
