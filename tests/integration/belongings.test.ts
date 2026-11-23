@@ -387,6 +387,13 @@ test("技能の習得・範囲変更・除去の前後で、当時の一覧と�
     { type: "learn", person: a, text: "刃物を研げる", basis: "初期設定" },
   ]);
   const skill = learned.changes.nodes[0]!.id;
+  // 習得済みと同じ本文の習得は、技能を増やさず既存の技能として扱う。
+  await apply(15, [
+    { type: "learn", person: a, text: "刃物を研げる", basis: "再び研いだ" },
+  ]);
+  expect((await read(a)).skills).toMatchObject([
+    { id: skill, basis: "初期設定" },
+  ]);
   await apply(20, [
     {
       type: "update",

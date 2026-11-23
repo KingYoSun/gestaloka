@@ -203,6 +203,19 @@ export async function planBelongings(
               );
             end([skill]);
           }
+          // 本人が同じ本文の技能を持っていれば、新しく作らずその技能として扱う。
+          const held = (
+            await context.relations(op.person, "has", "out", LATEST)
+          ).filter(
+            (edge) =>
+              edge.role === "skill" && !change.endEdges.includes(edge.id),
+          );
+          if (
+            (await Promise.all(held.map((edge) => current(edge.target)))).some(
+              (skill) => skill?.text === op.text,
+            )
+          )
+            break;
           change.nodes.push({ id: node, kind: "script", text: op.text });
           has(`${index}:skill`, op.person, node, "skill", op.basis);
           break;

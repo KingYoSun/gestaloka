@@ -12096,21 +12096,24 @@ test.each(["update", "create-batch"])(
     const f = await fixture(1);
     const actor = f.actors[0]!;
     await f.store.configureInventory(f.graph, false, { skillSlots: 1 });
-    const proposals = ["星を見る", "潮を読む"].map((text) => ({
-      text,
-      operations: [{ type: "learn", person: actor, text, basis: "実習" }],
-    }));
+    const request = (texts: string[]) => {
+      const proposals = texts.map((text) => ({
+        text,
+        operations: [{ type: "learn", person: actor, text, basis: "実習" }],
+      }));
+      return {
+        command: commandName,
+        requestId: randomUUID(),
+        ...(commandName === "update"
+          ? { text: "実習", operations: proposals.flatMap((p) => p.operations) }
+          : { proposals }),
+        dependencies: [],
+      };
+    };
     f.calls.mockImplementationOnce(async (id) =>
       answer(id, { settings: [sure, sure] }),
     );
-    const command = {
-      command: commandName,
-      requestId: randomUUID(),
-      ...(commandName === "update"
-        ? { text: "実習", operations: proposals.flatMap((p) => p.operations) }
-        : { proposals }),
-      dependencies: [],
-    };
+    const command = request(["星を見る", "潮を読む"]);
     const result = await f.send(0, command);
     expect(result).toMatchObject({
       spentSp: 1,
@@ -12122,8 +12125,9 @@ test.each(["update", "create-batch"])(
       },
     });
     expect(await f.send(0, command)).toEqual(result);
+    // 習得済みの「星を見る」は枠を使わずまとまるため、未習得の技能だけで満杯を確かめる。
     await expect(
-      f.send(0, { ...command, requestId: randomUUID() }),
+      f.send(0, request(["潮を読む", "波を聞く"])),
     ).rejects.toMatchObject({ code: "SKILL_CAPACITY_EXCEEDED" });
     expect(f.calls).toHaveBeenCalledTimes(1);
   },
