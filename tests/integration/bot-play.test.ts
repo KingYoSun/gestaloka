@@ -11070,6 +11070,80 @@ describe("現場材料", () => {
       "DROP FUNCTION fixture_material_roll() CASCADE",
     );
   });
+  test("技能の判定中に同じ申請を再送すると確定を待ち、GMを一度だけ呼ぶ", async () => {
+    const f = await fixture(1),
+      actor = f.actors[0]!,
+      db = isolated.databases.postgres;
+    await db.query(
+      "UPDATE world_construction SET state='finished' WHERE id=$1",
+      [f.world],
+    );
+    let reached!: () => void, release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+        reached = resolve;
+      }),
+      gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    f.calls.mockImplementation(async (id, role) => {
+      expect(role).toBe("world-creation-dice");
+      reached();
+      await gate;
+      return answer(id, { settings: [win, win, win] });
+    });
+    const names = ["研磨", "面取り", "目止め"];
+    const input = {
+      command: "update",
+      requestId: randomUUID(),
+      text: "木工の仕上げを三つ練習する",
+      operations: names.map((text) => ({
+        type: "learn",
+        person: actor,
+        text,
+        basis: "端材で繰り返し練習した",
+      })),
+      dependencies: [],
+    };
+    const first = f.send(0, input);
+    void first.catch(() => {});
+    let retry: typeof first | undefined;
+    try {
+      await waiting;
+      const query = vi.spyOn(db, "query");
+      retry = f.send(0, input);
+      void retry.catch(() => {});
+      await vi.waitFor(
+        () => {
+          expect(query).toHaveBeenCalledWith(
+            "SELECT result FROM bot_request WHERE id=$1",
+            [input.requestId],
+          );
+        },
+        { timeout: 3000 },
+      );
+      expect(f.calls).toHaveBeenCalledTimes(1);
+      await expect(
+        f.send(0, { ...input, requestId: randomUUID() }),
+      ).rejects.toMatchObject({ code: "REQUEST_IN_PROGRESS" });
+    } finally {
+      release();
+      await Promise.allSettled([first, retry]);
+    }
+
+    const result = await first;
+    expect(result).toMatchObject({ state: "accepted", spentSp: 1 });
+    const saved = { commitId: result.commitId, outcome: result.outcome };
+    expect(await retry).toMatchObject(saved);
+    expect(await f.send(0, input)).toMatchObject(saved);
+    expect(f.calls).toHaveBeenCalledTimes(1);
+    const { skills } = await readBelongings(f.store.context(f.graph), actor);
+    expect(skills.map(({ text }) => text).sort()).toEqual([...names].sort());
+    expect(
+      await access.botPlay.dailySp(f.world, f.people[0]!.id),
+    ).toMatchObject({
+      remaining: 99,
+    });
+  });
   test("技能の習得後も、生成判定に以前のキャッシュ境界と新しい技能の根拠が残る", async () => {
     const f = await fixture(1),
       actor = f.actors[0]!;
