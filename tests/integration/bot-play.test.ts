@@ -11069,6 +11069,114 @@ describe("現場材料", () => {
       "DROP FUNCTION fixture_material_roll() CASCADE",
     );
   });
+  test("生成判定は現在地と明示した保管先の明細を残し、遠隔の明細は呼称と個数を渡す", async () => {
+    const f = await fixture(1),
+      actor = f.actors[0]!;
+    const seed = await f.apply([
+      { type: "grant", person: actor, storage: f.place, basis: "作業台" },
+      { type: "grant", person: actor, storage: f.far, basis: "対岸の保管先" },
+      {
+        type: "create",
+        holder: f.place,
+        label: "織物",
+        count: 9,
+        basis: "荷覆い用に密に織った",
+      },
+      {
+        type: "create",
+        holder: f.far,
+        label: "厚板",
+        count: 3,
+        basis: "対岸で程度をそろえて製材した",
+      },
+    ]);
+    const cloth = seed.changes.nodes.find((n) => n.text === "織物")!.id,
+      board = seed.changes.nodes.find((n) => n.text === "厚板")!.id;
+    const remoteDetails = [
+      f.far,
+      "離れた場所",
+      [[board, "厚板", null, expect.any(Number), 3]],
+    ];
+    const work = async (
+      text: string,
+      label: string,
+      options: {
+        materials?: { id: string; count: number }[];
+        waitMinutes?: number;
+      } = {},
+    ) => {
+      const result = await f.send(0, {
+        command: "update",
+        text,
+        ...options,
+        operations: [{ type: "create", label, holder: actor, basis: text }],
+        dependencies: [],
+      });
+      const call = f.calls.mock.calls.findLast(
+        ([, role]) => role === "world-creation-dice",
+      )![0];
+      const saved = (await runtime.agent.model.ledger.input(call)) as {
+        request: { messages: { role: string; content: string }[] };
+      };
+      const sent = JSON.parse(
+        saved.request.messages.find(({ role }) => role === "user")!.content,
+      ) as {
+        storageStockNote?: string;
+        nodes: { node: { id: string }; belongings: { storages: unknown[] } }[];
+      };
+      return {
+        result,
+        storageStockNote: sent.storageStockNote,
+        storages: sent.nodes.find(({ node }) => node.id === actor)!.belongings
+          .storages,
+      };
+    };
+
+    const first = await work("布を二つ切って作業台に敷く", "作業台の覆い", {
+      materials: [{ id: cloth, count: 2 }],
+    });
+    expect(first.storages).toEqual(
+      expect.arrayContaining([
+        [
+          f.place,
+          "広場",
+          [[cloth, "織物", "荷覆い用に密に織った", expect.any(Number), 9]],
+        ],
+        [f.far, "離れた場所", [[null, "厚板", null, null, 3]]],
+      ]),
+    );
+    expect(first.storageStockNote).toContain("遠隔");
+    expect(first.result.outcome).toMatchObject({
+      success: true,
+      setting: { consumes: [{ id: cloth, count: 2 }] },
+    });
+    const context = f.store.context(f.graph);
+    expect(await context.node(cloth)).toMatchObject({ count: 7 });
+    expect(await context.node(board)).toMatchObject({ count: 3 });
+
+    const referenced = await work(
+      "離れた場所の備えを考慮して標識を作る",
+      "備えの標識",
+    );
+    expect(referenced.storages).toContainEqual(remoteDetails);
+    const delivery = await work(
+      "届くまで時間をかけて道具を取り寄せる",
+      "取り寄せの道具",
+      {
+        waitMinutes: 30,
+      },
+    );
+    expect(delivery.storages).toContainEqual(remoteDetails);
+
+    await f.move(0, f.far);
+    const afterMove = await work("作業の手順に使う目印を作る", "手順の目印");
+    expect(afterMove.storages).toEqual(
+      expect.arrayContaining([
+        [f.place, "広場", [[null, "織物", null, null, 7]]],
+        remoteDetails,
+      ]),
+    );
+  });
   async function workshop(hulls: number) {
     const f = await fixture(2);
     const seed = await f.apply([

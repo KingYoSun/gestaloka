@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { CostQuery, CostReport } from "@gestaloka/contracts";
 import { ExecutionBudget } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
+import { diceStoragePlace } from "../../packages/server/src/llm/dice-prompt.js";
 import { ModelSettings } from "../../packages/server/src/llm/settings.js";
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureAuth } from "../support/auth.js";
@@ -824,6 +825,12 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
     held = { id: "held", label: "ひも", count: 3, basis, since: 2 },
     tool = { id: "tool", label: "金づち", basis: null, since: 3 },
     stored = { id: "stored", label: "板", basis, since: 4 },
+    bolts = { id: "bolts", label: "ねじ", count: 7, basis: null, since: 6 },
+    vise = { id: "vise", label: "万力", basis: null, since: 7 },
+    extraRows = [
+      ["bolts", "ねじ", null, 6, 7],
+      ["vise", "万力", null, 7],
+    ],
     skills = [
       { id: "skill", text: "作業手順。".repeat(450), basis: null, since: 5 },
     ];
@@ -832,10 +839,12 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
     count: number,
     skillText = skills[0]!.text,
     allHeld = false,
+    place?: string,
   ) => [
     { role: "system" as const, content: "ダイスの設定をJSONで返す。" },
     {
       role: "user" as const,
+      ...(place ? { [diceStoragePlace]: place } : {}),
       content: JSON.stringify({
         premise: "世界の前提",
         actor: "actor",
@@ -849,7 +858,9 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
             ],
             belongings: {
               items: [{ ...held, count }, tool],
-              storages: [{ id: "box", label: "箱", items: [stored] }],
+              storages: [
+                { id: "box", label: "箱", items: [stored, bolts, vise] },
+              ],
               skills: [{ ...skills[0], text: skillText }],
             },
           },
@@ -870,7 +881,7 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
   await model.complete(
     randomUUID(),
     "world-creation-dice",
-    input(`${storedRef.slice(0, 9)}で別の工作`, 2),
+    input(`${storedRef.slice(0, 9)}で別の工作`, 2, undefined, false, "here"),
   );
   await model.complete(
     randomUUID(),
@@ -882,12 +893,17 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
     "world-creation-dice",
     input("短い技能で工作する", 2, "鑿を使う", true),
   );
-  await model.complete(id, "world-creation-dice", first);
+  await model.complete(
+    id,
+    "world-creation-dice",
+    input("ひもと板で工作する", 3, undefined, false, "here"),
+  );
   expect(transport).toHaveBeenCalledTimes(4);
   const [original, next, changed, short] = transport.mock.calls.map(
     ([, options]) => JSON.parse(String(options?.body)),
   );
   const prefix = original.input[1].content[0];
+  expect(original.input[0]).toEqual(next.input[0]);
   expect(prefix).toEqual(next.input[1].content[0]);
   expect(prefix).not.toEqual(changed.input[1].content[0]);
   expect(prefix.prompt_cache_breakpoint).toEqual({ mode: "explicit" });
@@ -916,7 +932,7 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
             ["held", "ひも", 0, 2, 3],
             ["tool", "金づち", null, 3],
           ],
-          storages: [["box", "箱", [["stored", "板", 0, 4]]]],
+          storages: [["box", "箱", [["stored", "板", 0, 4], ...extraRows]]],
         },
       },
     ],
@@ -924,25 +940,33 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
     basisDictionary: [basis],
   });
   // 申請が指さない物品には取得経緯を付けない。短縮IDで指した物品には付ける。
-  const { belongings, ...unreferenced } = JSON.parse(
-    next.input[1].content[1].text,
-  ).nodes[0];
+  const nextInput = JSON.parse(next.input[1].content[1].text);
+  expect(nextInput.storageStockNote).toContain("遠隔保管先");
+  const { belongings, ...unreferenced } = nextInput.nodes[0];
   expect(unreferenced.node.id).toBe("actor");
   expect(belongings).toEqual({
     items: [
       ["held", "ひも", null, 2, 2],
       ["tool", "金づち", null, 3],
     ],
-    storages: [["box", "箱", [["stored", "板", basis, 4]]]],
+    storages: [
+      [
+        "box",
+        "箱",
+        [
+          ["stored", "板", basis, 4],
+          [null, "ねじ", null, null, 7],
+          [null, "万力", null, null],
+        ],
+      ],
+    ],
   });
-  expect(JSON.parse(next.input[1].content[1].text)).not.toHaveProperty(
-    "basisDictionary",
-  );
+  expect(nextInput).not.toHaveProperty("basisDictionary");
   const shortInput = JSON.parse(short.input[1].content[0].text);
   expect(shortInput.consumable).toBe(true);
   expect(shortInput.nodes[0].belongings).toEqual({
     items: belongings.items,
-    storages: [["box", "箱", [["stored", "板", null, 4]]]],
+    storages: [["box", "箱", [["stored", "板", null, 4], ...extraRows]]],
     skills: [["skill", "鑿を使う", null, 5]],
   });
   expect(await model.ledger.input(id)).toMatchObject({ sourceMessages: first });

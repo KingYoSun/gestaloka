@@ -6,6 +6,7 @@ import type { PreparedPrompt } from "./prompt.js";
 type Belongings = Awaited<ReturnType<typeof readBelongings>>;
 type Item = Belongings["items"][number];
 type Skill = Belongings["skills"][number];
+export const diceStoragePlace = Symbol.for("gestaloka.diceStoragePlace");
 type DiceInput = {
   premise: string;
   actor: string;
@@ -26,14 +27,13 @@ export function prepareDicePrompt(
 
   // 取得経緯は物品が増えるほど入力を膨らませる。申請がID・CLIの短縮ID・呼称で指す物品にだけ付ける。
   const request = JSON.stringify(action);
-  const shownBasis = ({ id, label, basis }: Item) =>
+  const mentions = ({ id, label }: Pick<Item, "id" | "label">) =>
     request.includes(id) ||
     request.includes(
       "@" + createHash("sha256").update(id).digest("hex").slice(0, 8),
     ) ||
-    (label !== "" && request.includes(label))
-      ? basis
-      : null;
+    (label !== "" && request.includes(label));
+  const shownBasis = (item: Item) => (mentions(item) ? item.basis : null);
   const held = nodes.find(({ node }) => node.id === actor)?.belongings;
   const actorSkills = held?.skills ?? [];
   const prefix = JSON.stringify({ premise, actor, actorSkills });
@@ -75,17 +75,33 @@ export function prepareDicePrompt(
     basisValue(basis),
     since,
   ];
+  const place = input[diceStoragePlace];
+  let summarized = false;
+  const storage = ({ id, label, items }: Belongings["storages"][number]) => {
+    const remote = place && place !== id && !mentions({ id, label });
+    return [
+      id,
+      label,
+      items.map((row) => {
+        if (!remote || mentions(row)) return item(row);
+        summarized = true;
+        return [
+          null,
+          row.label,
+          null,
+          null,
+          ...(row.count === undefined ? [] : [row.count]),
+        ];
+      }),
+    ];
+  };
   const packedNodes = nodes.map(({ belongings, ...facts }) =>
     belongings
       ? {
           ...facts,
           belongings: {
             items: belongings.items.map(item),
-            storages: belongings.storages.map(({ id, label, items }) => [
-              id,
-              label,
-              items.map(item),
-            ]),
+            storages: belongings.storages.map(storage),
             ...(split && belongings === held
               ? {}
               : { skills: belongings.skills.map(skill) }),
@@ -114,6 +130,12 @@ export function prepareDicePrompt(
       ? { consumable: allHeldConsumable ? true : packedConsumable }
       : {}),
     ...(basisDictionary.length ? { basisDictionary } : {}),
+    ...(summarized
+      ? {
+          storageStockNote:
+            "遠隔保管先の品には表示名と個数だけを示す行がある。",
+        }
+      : {}),
   });
   const instructions =
     "itemsの列は[id,表示名,basis,成立時点,個数(任意)]、storagesは[id,表示名,物品行]、skillsは[id,説明,basis,成立時点]。basisが整数ならbasisDictionaryの0始まりの添字。文字列なら取得経緯の原文。物品のbasisがnullなら、取得経緯が未記録か、申請が指さない物品なので省いた。nodesの物品のheldは現在それを持つ存在(by,label)と取得経緯、originはその物品が最初に成立したときの経緯。" +
