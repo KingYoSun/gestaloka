@@ -757,6 +757,8 @@ type CreationRoll = {
   repeated?: boolean;
   fumble?: Fumble;
 };
+// 判定で付いた状態の関係の印。死亡の確定で終える対象になる。
+const judged = "judged";
 // 人物に残る状態を加える。続く時間があれば、その時点で終わる関係にする。
 function addState(
   changes: Change,
@@ -771,6 +773,7 @@ function addState(
     id: derivedId(`${state}:content`),
     kind: "status",
     role: "content",
+    text: judged,
     source: person,
     target: state,
     period: { from: at, ...(minutes ? { until: at + minutes * 60000 } : {}) },
@@ -2095,9 +2098,11 @@ export class BotPlay {
         source: effect.targetId,
         target: state,
         role: "content",
+        text: judged,
       });
       link({ kind: "status", source: state, target: event, role: "about" });
     }
+    await this.#endDeathStates(session, context, at, changes, fatal);
     return {
       context,
       changes,
@@ -8468,6 +8473,7 @@ export class BotPlay {
                 state,
               );
           }
+          await this.#endDeathStates(session, context, at, changes, fatal);
           at = await this.#relocateDead(
             session,
             context,
@@ -8551,6 +8557,32 @@ export class BotPlay {
         : [],
       policy.death_criteria,
     ];
+  }
+  // 死亡は復帰として扱う。死亡した人物の、判定で付いた状態と期限のある状態を終え、死亡を確定した
+  // 差分で付く状態は終わった関係として記録する。所在は変えない。差分に状態をすべて加えた後に呼ぶ。
+  async #endDeathStates(
+    session: Session,
+    context: WorldContext,
+    at: number,
+    changes: Change,
+    fatal: string[],
+  ) {
+    const state = (e: Change["edges"][number]) =>
+      e.kind === "status" && e.role === "content" && e.text !== "location";
+    for (const id of fatal) {
+      if (session.data.members.every((m) => m.actorId !== id || m.instant))
+        continue;
+      for (const e of await context.relations(id, "status", "out", at))
+        if (
+          state(e) &&
+          (e.text === judged || e.period.until !== undefined) &&
+          !changes.endEdges.includes(e.id)
+        )
+          changes.endEdges.push(e.id);
+      for (const e of changes.edges)
+        if (e.source === id && state(e))
+          e.period = { from: e.period.from, until: e.period.from };
+    }
   }
   // 死亡した人物を、世界に設定された場所か本人の最初の所在地へ移す差分を、同じ確定に加える。
   async #relocateDead(
