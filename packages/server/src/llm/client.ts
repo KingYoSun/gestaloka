@@ -29,7 +29,7 @@ import {
   renderCachedPrompt,
   openAiExplicitCache,
 } from "./cache.js";
-import { prepareDicePrompt } from "./dice-prompt.js";
+import { diceStoragePlace, prepareDicePrompt } from "./dice-prompt.js";
 import {
   settings,
   budgetSettings,
@@ -47,6 +47,7 @@ export { MODEL_VERSION, llmApiKey, type LlmTarget } from "./config.js";
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
+  [diceStoragePlace]?: string | undefined;
 };
 export type Connection = {
   baseUrl: string;

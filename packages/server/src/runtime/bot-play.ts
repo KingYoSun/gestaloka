@@ -56,6 +56,7 @@ import {
 } from "../world/inventory.js";
 import { addRoute, directPlaces, locationRecords } from "../world/locations.js";
 import { canonical, parseOutput } from "../llm/prompt.js";
+import { diceStoragePlace } from "../llm/dice-prompt.js";
 import type { WorldConstruction } from "./construction.js";
 import {
   groundItems,
@@ -6186,6 +6187,19 @@ export class BotPlay {
       const storageReference = targets.some((ids) => ids.length)
         ? (await context.inventoryLimits()).storageSlots
         : undefined;
+      // 送信時だけ使い、再送の呼出しIDと保存する元入力には含めない。
+      const storagePlace =
+        !explore &&
+        !waitMinutes &&
+        !hasUnrolledChanges &&
+        !fresh.some((p) => p.operations?.some((op) => op.type === "locate")) &&
+        nodes.some(
+          (node) =>
+            "belongings" in node &&
+            node.belongings?.storages.some(({ items }) => items.length),
+        )
+          ? (await currentPlaces())[0]
+          : undefined;
       const response = await this.#ask(
         derivedId(`${requestId}:creation`),
         explore ? "world-explore-dice" : "world-creation-dice",
@@ -6227,6 +6241,7 @@ export class BotPlay {
           },
           {
             role: "user",
+            [diceStoragePlace]: storagePlace,
             content: JSON.stringify(
               compact
                 ? {
