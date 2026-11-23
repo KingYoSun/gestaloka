@@ -14555,6 +14555,8 @@ test("失敗した判定はファンブルを一度だけ振り、本人に残�
   const made = await f.send(0, craft());
   expect(made.outcome).toMatchObject({ success: true });
   expect(made.outcome).not.toHaveProperty("fumble");
+  // 振らなかったファンブルの設定は、起きたように読めないよう結果に載せない。
+  expect(made.outcome).not.toHaveProperty("setting.fumble");
   expect(await states(0)).toHaveLength(1);
   // 期限の前は本人の状態として読め、期限を過ぎると現在の状態から外れる。
   let now = new Date(wound!.period.until! - 1);
@@ -14621,10 +14623,13 @@ test("失敗した判定はファンブルを一度だけ振り、本人に残�
   f.calls.mockImplementationOnce(async (id) =>
     answer(id, {
       ...sure,
+      fumble: { through: most, text: "足首をひねっている。" },
       states: [{ id: target, text: "尻もちをついている。", minutes: 5 }],
     }),
   );
-  expect((await f.send(0, shove())).outcome).toMatchObject({ success: true });
+  const pushed = (await f.send(0, shove())).outcome;
+  expect(pushed).toMatchObject({ success: true });
+  expect(pushed).not.toHaveProperty("setting.fumble");
   const [down] = await states(1);
   expect(down).toMatchObject({ text: "尻もちをついている。" });
   expect(down!.period.until! - down!.period.from).toBe(300000);

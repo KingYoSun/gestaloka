@@ -6363,18 +6363,8 @@ export class BotPlay {
       }
       const rolls: Result[] = [];
       const used = new Map<string, number>();
-      // 出し直しで返す前回の結果では、ファンブルを振らない。
-      const settle = async (i: number, die: CreationRoll) =>
-        die.repeated
-          ? die
-          : {
-              ...die,
-              ...(await this.#fumble(
-                db,
-                derivedId(`${keys[i]}:creation`),
-                die,
-              )),
-            };
+      const settle = (i: number, die: CreationRoll) =>
+        this.#fumble(db, derivedId(`${keys[i]}:creation`), die);
       for (const i of proposals.keys()) {
         if (full(i)) {
           rolls.push({ success: false, reason: "SKILL_CAPACITY_EXCEEDED" });
@@ -8913,10 +8903,13 @@ export class BotPlay {
     const db = await this.pool.connect();
     try {
       await db.query("BEGIN");
-      const die = await this.#rollIn(db, id, setting),
-        fumble = await this.#fumble(db, id, die);
+      const die = await this.#fumble(
+        db,
+        id,
+        await this.#rollIn(db, id, setting),
+      );
       await db.query("COMMIT");
-      return { ...die, ...fumble };
+      return die;
     } catch (error) {
       await db.query("ROLLBACK");
       throw error;
@@ -8936,18 +8929,22 @@ export class BotPlay {
     );
   }
   // 失敗した判定にファンブルの設定があれば、同じ面数でもう一度振る。
-  async #fumble(
-    db: Db,
-    id: string,
-    die: { setting: z.infer<typeof DiceSetting>; roll: number },
-  ): Promise<{ fumble?: Fumble }> {
-    const { sides, successThrough, fumble } = die.setting;
-    if (!fumble || die.roll <= successThrough) return {};
+  // 出し直しで返す前回の結果では振らない。振らなかった判定の結果には、ファンブルの設定を載せない。
+  async #fumble<
+    T extends {
+      setting: z.infer<typeof DiceSetting>;
+      roll: number;
+      repeated?: boolean;
+    },
+  >(db: Db, id: string, die: T): Promise<T & { fumble?: Fumble }> {
+    const { fumble, ...setting } = die.setting;
+    if (!fumble || die.repeated || die.roll <= setting.successThrough)
+      return { ...die, setting };
     const { roll } = await this.#rollIn(db, derivedId(`${id}:fumble`), {
-      sides,
+      sides: setting.sides,
       successThrough: fumble.through,
     });
-    return { fumble: { roll, success: roll <= fumble.through } };
+    return { ...die, fumble: { roll, success: roll <= fumble.through } };
   }
   async #rollIn(db: Db, id: string, setting: z.infer<typeof DiceSetting>) {
     await db.query(
