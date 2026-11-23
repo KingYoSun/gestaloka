@@ -1220,6 +1220,13 @@ export const Operation = z.discriminatedUnion("operation", [
     .strict(),
   z
     .object({
+      operation: z.literal("activity.read"),
+      worldId: z.uuid(),
+      days: z.array(z.iso.date()).min(1).max(2),
+    })
+    .strict(),
+  z
+    .object({
       operation: z.literal("blueprints.create"),
       worldId: z.uuid(),
       template: BlueprintDraft,

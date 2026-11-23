@@ -36,6 +36,7 @@ export class PlayerTools {
       CREATE TABLE IF NOT EXISTS player_report_usage (
       user_id uuid NOT NULL,world_id uuid NOT NULL,day date NOT NULL,turns bigint NOT NULL DEFAULT 0,sent bigint NOT NULL DEFAULT 0,
       PRIMARY KEY(user_id,world_id,day));
+      CREATE INDEX IF NOT EXISTS player_report_usage_world_day ON player_report_usage(world_id,day);
       CREATE TABLE IF NOT EXISTS player_report (
       id uuid PRIMARY KEY,world_id uuid NOT NULL,user_id uuid NOT NULL,actor_id uuid,text text NOT NULL,
       created_at timestamptz NOT NULL);
@@ -56,12 +57,90 @@ export class PlayerTools {
   #day(now = this.now()) {
     return new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10);
   }
-  async completedTurn(db: Db, user: string, world: string) {
+  // サーバー担当NPCの手番は、操作担当の管理者の通常手番に数えない。
+  async completedTurn(db: Db, user: string, world: string, actor: string) {
     await db.query(
-      `INSERT INTO player_report_usage(user_id,world_id,day,turns) VALUES($1,$2,$3,1)
+      `INSERT INTO player_report_usage(user_id,world_id,day,turns) SELECT $1,$2,$3,1
+      WHERE NOT EXISTS(SELECT 1 FROM bot_npc WHERE world_id=$2 AND actor_id=$4 AND controller='server')
       ON CONFLICT(user_id,world_id,day) DO UPDATE SET turns=player_report_usage.turns+1`,
-      [user, world, this.#day()],
+      [user, world, this.#day(), actor],
     );
+  }
+  // 日本時間の日ごとに、通常手番を完了したアカウントを母数として生成GMの利用回数を数える。
+  async activity(db: Db, world: string, days: string[]) {
+    const now = this.now();
+    const median = (values: number[]) => {
+      const sorted = [...values].sort((a, b) => a - b),
+        half = sorted.length / 2;
+      return sorted.length
+        ? (sorted[Math.ceil(half) - 1]! + sorted[Math.floor(half)]!) / 2
+        : null;
+    };
+    const read = async (day: string) => {
+      const from = new Date(`${day}T00:00:00+09:00`),
+        end = new Date(from.getTime() + 86400000),
+        to = end < now ? end : now;
+      const active = new Map(
+        (
+          await db.query<{ user: string; turns: number }>(
+            `SELECT user_id AS user,turns::float8 AS turns FROM player_report_usage
+            WHERE world_id=$1 AND day=$2 AND turns>0`,
+            [world, day],
+          )
+        ).rows.map((r) => [r.user, r.turns]),
+      );
+      // サーバー担当NPCの申請による呼出しは、操作担当の管理者に付いていても数えない。
+      const used = new Map(
+        (
+          await db.query<{ user: string; calls: number }>(
+            `SELECT c.user_id AS user,count(*)::float8 AS calls
+            FROM world_build b JOIN llm_call c ON c.world_id=b.world_id
+            LEFT JOIN bot_request r ON r.id=c.operation_id
+            WHERE b.run_id=$1 AND c.created_at>=$2 AND c.created_at<$3
+            AND c.state='complete' AND c.user_id IS NOT NULL
+            AND c.request->>'role' IN ('world-creation-dice','world-explore-dice')
+            AND NOT EXISTS(SELECT 1 FROM bot_npc n WHERE n.world_id=$1 AND n.actor_id=r.actor_id AND n.controller='server')
+            GROUP BY 1`,
+            [world, from, to],
+          )
+        ).rows.map((r) => [r.user, r.calls]),
+      );
+      const counts = [...active.keys()].map((user) => used.get(user) ?? 0),
+        outside = [...used].filter(([user]) => !active.has(user));
+      return [
+        active,
+        {
+          day,
+          from: from.toISOString(),
+          to: to.toISOString(),
+          accounts: active.size,
+          turns: [...active.values()].reduce((a, b) => a + b, 0),
+          generation: {
+            zeroAccounts: counts.filter((n) => !n).length,
+            median: median(counts),
+            usedAccounts: counts.filter(Boolean).length,
+            usedMedian: median(counts.filter(Boolean)),
+            withoutTurns: {
+              accounts: outside.length,
+              calls: outside.reduce((a, [, n]) => a + n, 0),
+            },
+          },
+        },
+      ] as const;
+    };
+    const results = await Promise.all(days.map(read));
+    const [first, second] = results.map(([users]) => users);
+    return {
+      worldId: world,
+      asOf: now.toISOString(),
+      granularity: "JST日",
+      basis:
+        "accountsは、その日に通常手番を1回以上完了した利用者アカウント数。同じ利用者の複数人物は1件と数え、外部botが操作した人物の手番を含む。手番スキップと報告だけの日は数えない。サーバー担当NPCの手番は数えないが、この扱いの導入前の日は操作担当の管理者アカウントに混在しうる。generationは完了した生成GM（新規作成・探索のダイス判定）の呼出し数で、母数は同じaccounts。withoutTurnsは、その日に通常手番を完了せず生成GMだけを使ったアカウントで、母数と中央値に含めない。日別の保存値のため、当日はfromからtoまでの累計となり、当日の過去時刻の値は復元できない。",
+      days: results.map(([, day]) => day),
+      ...(second
+        ? { bothDays: [...first!.keys()].filter((u) => second.has(u)).length }
+        : {}),
+    };
   }
   async reportStatus(
     db: Db,

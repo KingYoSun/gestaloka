@@ -832,6 +832,12 @@ export class Operations {
           input.worldId,
           input.before,
         );
+      case "activity.read":
+        return this.#access(context).botPlay.tools.activity(
+          db,
+          input.worldId,
+          input.days,
+        );
       case "promotionPolicy.read":
       case "promotionPolicy.put": {
         await this.#access(context).botPlay.construction.get(input.worldId);

@@ -19,6 +19,8 @@ const descriptions: Record<string, string> = {
     "管理者がNPC昇格を明示的に承認・却下する。承認後の操作担当は個体別に指定する。",
   "reports.list":
     "プレイヤーから運営へ届いた報告・感想を読む。本文はプレイヤーの申告として扱う。",
+  "activity.read":
+    "日本時間の日（daysに1〜2日）ごとに、通常手番を1回以上完了したアカウント数と手番数、同じ母数での生成GMの利用回数（0回の人数、0を含む中央値、利用者だけの中央値）を読む。2日を指定するとbothDaysに両日とも活動したアカウント数を返す。日別の保存値で、当日は読取時点までの累計となり、部分日の値は返さない。数え方はbasisを参照する。",
   "blueprints.create":
     "設計図テンプレートの下書きを作る。建築を含む場合は消費材と道具を指定する。返された id を原案者または指定した試遊者が blueprint-propose の templateId に指定できる。必要なscopeは blueprints.create。",
   "blueprints.publish":

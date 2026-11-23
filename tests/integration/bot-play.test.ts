@@ -5177,6 +5177,160 @@ test("報告の日次枠は日本時間で切り替わり、管理者が3つの�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test("通常手番を完了したアカウントを母数に、生成GMが0回の人を含む中央値と2日の再訪を読む", async () => {
+  const f = await fixture(6),
+    admin = await auth.person(),
+    db = isolated.databases.postgres,
+    [p0, p1, , p3, p4] = f.people.map((p) => p.id) as [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+    ];
+  let now = new Date("2026-11-17T03:00:00Z");
+  vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
+  // サーバー担当はプレイヤーの同席中だけ動くため、前日に人物2をp1へ合流させてから担当を切り替える。
+  await f.move(2, f.place);
+  await f.send(2, { command: "contact", targetId: f.actors[1] });
+  await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    {
+      operation: "npcs.put",
+      worldId: f.world,
+      actorId: f.actors[2]!,
+      controller: "server",
+      reason: "隔離試験のサーバー担当",
+    },
+    { players: access.players },
+  );
+  f.calls.mockImplementation(async (id) => answer(id, { command: "end-turn" }));
+  const turns = async (i: number, n: number) => {
+    for (let k = 0; k < n; k++) {
+      if ((await f.status(i)).actorId !== f.actors[i])
+        await access.botPlay.tickNpcs(f.world);
+      await f.send(i, { command: "end-turn" });
+    }
+  };
+  now = new Date("2026-11-18T03:00:00Z");
+  const budget = `activity-${randomUUID()}`;
+  await db.query("INSERT INTO llm_budget(id,limit_nano) VALUES($1,NULL)", [
+    budget,
+  ]);
+  const gm = async (
+    user: string,
+    at: string,
+    n = 1,
+    operation: string | null = null,
+  ) => {
+    for (let k = 0; k < n; k++)
+      await db.query(
+        `INSERT INTO llm_call(id,budget_id,hash,reserved_nano,request,state,created_at,world_id,user_id,operation_id)
+        VALUES($1,$2,'h',0,$3,'complete',$4,$5,$6,$7)`,
+        [
+          randomUUID(),
+          budget,
+          { role: k % 2 ? "world-explore-dice" : "world-creation-dice" },
+          at,
+          f.graph,
+          user,
+          operation,
+        ],
+      );
+  };
+  // 11月18日（日本時間）: p0は2手番・生成3回、p1は1手番・生成0回、p4は1手番・生成1回。
+  await turns(0, 2);
+  await turns(1, 1);
+  await turns(4, 1);
+  await gm(p0, "2026-11-18T01:00:00Z", 2);
+  await gm(p0, "2026-11-18T14:59:59Z");
+  await gm(p4, "2026-11-18T05:00:00Z");
+  // p3は報告だけで、手番を終えずに生成だけを使う。
+  await access.report(
+    p3,
+    f.world,
+    { requestId: randomUUID(), text: "報告だけを送る" },
+    f.actors[3],
+  );
+  await gm(p3, "2026-11-18T06:00:00Z", 2);
+  // サーバー担当の手番と申請による生成は、操作担当の管理者に付いても数えない。
+  await access.botPlay.tickNpcs(f.world);
+  expect(
+    (
+      await db.query(
+        `SELECT 1 FROM bot_chat c JOIN bot_session s ON s.id=c.session_id
+        WHERE s.world_id=$1 AND c.recorded_at>='2026-11-17T15:00:00Z' AND c.payload->'transition'->>'type'='turn-ended' AND c.payload->'transition'->>'actorId'=$2`,
+        [f.world, f.actors[2]],
+      )
+    ).rowCount,
+  ).toBeGreaterThan(0);
+  const npcRequest = randomUUID();
+  await db.query(
+    "INSERT INTO bot_request(id,actor_id,world_id,hash) VALUES($1,$2,$3,'h')",
+    [npcRequest, f.actors[2], f.world],
+  );
+  await gm(admin.id, "2026-11-18T07:00:00Z", 1, npcRequest);
+  // 11月19日: p0・p1・p3・p5が1手番ずつ。生成はp1が5回、p3が2回。
+  now = new Date("2026-11-19T10:00:00Z");
+  for (const i of [0, 1, 3, 5]) await turns(i, 1);
+  await gm(p1, "2026-11-18T15:00:00Z");
+  await gm(p1, "2026-11-19T02:00:00Z", 4);
+  await gm(p3, "2026-11-19T03:00:00Z", 2);
+  const read = async (days: string[]) =>
+    (await auth.operations.execute(
+      admin.id,
+      randomUUID(),
+      { operation: "activity.read", worldId: f.world, days },
+      { players: access.players },
+    )) as { asOf: string; basis: string; days: unknown[] };
+  const result = await read(["2026-11-18", "2026-11-19"]);
+  expect(result).toMatchObject({
+    granularity: "JST日",
+    bothDays: 2,
+    days: [
+      {
+        day: "2026-11-18",
+        from: "2026-11-17T15:00:00.000Z",
+        to: "2026-11-18T15:00:00.000Z",
+        accounts: 3,
+        turns: 4,
+        generation: {
+          zeroAccounts: 1,
+          median: 1,
+          usedAccounts: 2,
+          usedMedian: 2,
+          withoutTurns: { accounts: 1, calls: 2 },
+        },
+      },
+      {
+        day: "2026-11-19",
+        from: "2026-11-18T15:00:00.000Z",
+        to: "2026-11-19T15:00:00.000Z",
+        accounts: 4,
+        turns: 4,
+        generation: {
+          zeroAccounts: 2,
+          median: 1,
+          usedAccounts: 2,
+          usedMedian: 3.5,
+          withoutTurns: { accounts: 0, calls: 0 },
+        },
+      },
+    ],
+  });
+  expect(result.basis).toContain("外部bot");
+  // 当日は日の始まりから読取時点までの累計として範囲を示す。
+  const today = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10),
+    current = await read([today]);
+  expect(current).not.toHaveProperty("bothDays");
+  expect(current.days[0]).toMatchObject({
+    from: new Date(`${today}T00:00:00+09:00`).toISOString(),
+    to: current.asOf,
+  });
+});
+
 test("報告枠は実際に手番を終えたユーザーと世界に属し、受領判断だけでは増えない", async () => {
   const f = await fixture(),
     g = await fixture(),

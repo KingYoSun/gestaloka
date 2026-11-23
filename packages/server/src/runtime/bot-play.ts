@@ -2561,7 +2561,12 @@ export class BotPlay {
     if (member && !skipped) {
       if (d.turnStartedAt) member.lastTurnStartedAt = d.turnStartedAt;
       if (member.userId)
-        await this.tools.completedTurn(db, member.userId, session.world_id);
+        await this.tools.completedTurn(
+          db,
+          member.userId,
+          session.world_id,
+          member.actorId,
+        );
     }
     const turn = await this.#transition(
       db,

@@ -9124,6 +9124,12 @@ export interface paths {
                             until?: string;
                         } | {
                             /** @enum {string} */
+                            operation: "activity.read";
+                            /** Format: uuid */
+                            worldId: string;
+                            days: string[];
+                        } | {
+                            /** @enum {string} */
                             operation: "blueprints.create";
                             /** Format: uuid */
                             worldId: string;
