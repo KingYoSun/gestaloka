@@ -8977,6 +8977,17 @@ export interface paths {
                             };
                         } | {
                             /** @enum {string} */
+                            operation: "playUsage.read";
+                            query: {
+                                /** Format: uuid */
+                                worldId: string;
+                                /** Format: date-time */
+                                from: string;
+                                /** Format: date-time */
+                                to: string;
+                            };
+                        } | {
+                            /** @enum {string} */
                             operation: "models.read";
                         } | {
                             /** @enum {string} */
@@ -9122,6 +9133,12 @@ export interface paths {
                             since?: string;
                             /** Format: date */
                             until?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "activity.read";
+                            /** Format: uuid */
+                            worldId: string;
+                            days: string[];
                         } | {
                             /** @enum {string} */
                             operation: "blueprints.create";

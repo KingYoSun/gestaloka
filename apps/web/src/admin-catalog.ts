@@ -54,6 +54,7 @@ export const operations = {
     "報告・感想",
     {
       "reports.list": "プレイヤーからの報告・感想",
+      "activity.read": "通常手番で活動したアカウントと生成GMの利用",
       "notices.send": "プレイヤーへお知らせを送る",
       "reportPolicy.read": "報告・感想の送信枠",
       "reportPolicy.put": "報告・感想の上限を変更",
@@ -99,7 +100,10 @@ export const operations = {
   ],
   costs: [
     "費用の計算額",
-    { "costs.read": "費用の集計・明細・時系列・利用者/処理/モデル別" },
+    {
+      "costs.read": "費用の集計・明細・時系列・利用者/処理/モデル別",
+      "playUsage.read": "生成申請・元案・消費SP・成立件数の日別集計",
+    },
   ],
   runtime: [
     "メンテナンス・監視",

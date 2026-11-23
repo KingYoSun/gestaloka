@@ -20,6 +20,7 @@ import {
 import { WorldAccess } from "@gestaloka/server/access";
 import { LlmClient } from "@gestaloka/server/llm";
 import { decisionSettings } from "../../packages/server/src/llm/config.js";
+import { readPlayUsage } from "../../packages/server/src/runtime/play-usage.js";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
 import { derivedId, WorldContext } from "@gestaloka/server/world";
 import type { Change } from "@gestaloka/contracts";
@@ -5177,6 +5178,160 @@ test("報告の日次枠は日本時間で切り替わり、管理者が3つの�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test("通常手番を完了したアカウントを母数に、生成GMが0回の人を含む中央値と2日の再訪を読む", async () => {
+  const f = await fixture(6),
+    admin = await auth.person(),
+    db = isolated.databases.postgres,
+    [p0, p1, , p3, p4] = f.people.map((p) => p.id) as [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+    ];
+  let now = new Date("2026-11-17T03:00:00Z");
+  vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
+  // サーバー担当はプレイヤーの同席中だけ動くため、前日に人物2をp1へ合流させてから担当を切り替える。
+  await f.move(2, f.place);
+  await f.send(2, { command: "contact", targetId: f.actors[1] });
+  await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    {
+      operation: "npcs.put",
+      worldId: f.world,
+      actorId: f.actors[2]!,
+      controller: "server",
+      reason: "隔離試験のサーバー担当",
+    },
+    { players: access.players },
+  );
+  f.calls.mockImplementation(async (id) => answer(id, { command: "end-turn" }));
+  const turns = async (i: number, n: number) => {
+    for (let k = 0; k < n; k++) {
+      if ((await f.status(i)).actorId !== f.actors[i])
+        await access.botPlay.tickNpcs(f.world);
+      await f.send(i, { command: "end-turn" });
+    }
+  };
+  now = new Date("2026-11-18T03:00:00Z");
+  const budget = `activity-${randomUUID()}`;
+  await db.query("INSERT INTO llm_budget(id,limit_nano) VALUES($1,NULL)", [
+    budget,
+  ]);
+  const gm = async (
+    user: string,
+    at: string,
+    n = 1,
+    operation: string | null = null,
+  ) => {
+    for (let k = 0; k < n; k++)
+      await db.query(
+        `INSERT INTO llm_call(id,budget_id,hash,reserved_nano,request,state,created_at,world_id,user_id,operation_id)
+        VALUES($1,$2,'h',0,$3,'complete',$4,$5,$6,$7)`,
+        [
+          randomUUID(),
+          budget,
+          { role: k % 2 ? "world-explore-dice" : "world-creation-dice" },
+          at,
+          f.graph,
+          user,
+          operation,
+        ],
+      );
+  };
+  // 11月18日（日本時間）: p0は2手番・生成3回、p1は1手番・生成0回、p4は1手番・生成1回。
+  await turns(0, 2);
+  await turns(1, 1);
+  await turns(4, 1);
+  await gm(p0, "2026-11-18T01:00:00Z", 2);
+  await gm(p0, "2026-11-18T14:59:59Z");
+  await gm(p4, "2026-11-18T05:00:00Z");
+  // p3は報告だけで、手番を終えずに生成だけを使う。
+  await access.report(
+    p3,
+    f.world,
+    { requestId: randomUUID(), text: "報告だけを送る" },
+    f.actors[3],
+  );
+  await gm(p3, "2026-11-18T06:00:00Z", 2);
+  // サーバー担当の手番と申請による生成は、操作担当の管理者に付いても数えない。
+  await access.botPlay.tickNpcs(f.world);
+  expect(
+    (
+      await db.query(
+        `SELECT 1 FROM bot_chat c JOIN bot_session s ON s.id=c.session_id
+        WHERE s.world_id=$1 AND c.recorded_at>='2026-11-17T15:00:00Z' AND c.payload->'transition'->>'type'='turn-ended' AND c.payload->'transition'->>'actorId'=$2`,
+        [f.world, f.actors[2]],
+      )
+    ).rowCount,
+  ).toBeGreaterThan(0);
+  const npcRequest = randomUUID();
+  await db.query(
+    "INSERT INTO bot_request(id,actor_id,world_id,hash) VALUES($1,$2,$3,'h')",
+    [npcRequest, f.actors[2], f.world],
+  );
+  await gm(admin.id, "2026-11-18T07:00:00Z", 1, npcRequest);
+  // 11月19日: p0・p1・p3・p5が1手番ずつ。生成はp1が5回、p3が2回。
+  now = new Date("2026-11-19T10:00:00Z");
+  for (const i of [0, 1, 3, 5]) await turns(i, 1);
+  await gm(p1, "2026-11-18T15:00:00Z");
+  await gm(p1, "2026-11-19T02:00:00Z", 4);
+  await gm(p3, "2026-11-19T03:00:00Z", 2);
+  const read = async (days: string[]) =>
+    (await auth.operations.execute(
+      admin.id,
+      randomUUID(),
+      { operation: "activity.read", worldId: f.world, days },
+      { players: access.players },
+    )) as { asOf: string; basis: string; days: unknown[] };
+  const result = await read(["2026-11-18", "2026-11-19"]);
+  expect(result).toMatchObject({
+    granularity: "JST日",
+    bothDays: 2,
+    days: [
+      {
+        day: "2026-11-18",
+        from: "2026-11-17T15:00:00.000Z",
+        to: "2026-11-18T15:00:00.000Z",
+        accounts: 3,
+        turns: 4,
+        generation: {
+          zeroAccounts: 1,
+          median: 1,
+          usedAccounts: 2,
+          usedMedian: 2,
+          withoutTurns: { accounts: 1, calls: 2 },
+        },
+      },
+      {
+        day: "2026-11-19",
+        from: "2026-11-18T15:00:00.000Z",
+        to: "2026-11-19T15:00:00.000Z",
+        accounts: 4,
+        turns: 4,
+        generation: {
+          zeroAccounts: 2,
+          median: 1,
+          usedAccounts: 2,
+          usedMedian: 3.5,
+          withoutTurns: { accounts: 0, calls: 0 },
+        },
+      },
+    ],
+  });
+  expect(result.basis).toContain("外部bot");
+  // 当日は日の始まりから読取時点までの累計として範囲を示す。
+  const today = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10),
+    current = await read([today]);
+  expect(current).not.toHaveProperty("bothDays");
+  expect(current.days[0]).toMatchObject({
+    from: new Date(`${today}T00:00:00+09:00`).toISOString(),
+    to: current.asOf,
+  });
+});
+
 test("報告枠は実際に手番を終えたユーザーと世界に属し、受領判断だけでは増えない", async () => {
   const f = await fixture(),
     g = await fixture(),
@@ -6667,15 +6822,23 @@ test("要約中の昇格再送は最初の判定を待ち、保留で先に確�
     });
   const first = apply();
   await vi.waitFor(() => expect(profiles).toBe(1));
+  const query = vi.spyOn(isolated.databases.postgres, "query");
   const duplicate = apply();
   try {
-    await vi.waitFor(() => expect(reviews).toBe(2));
+    await vi.waitFor(() =>
+      expect(query).toHaveBeenCalledWith(
+        "SELECT result FROM bot_request WHERE id=$1",
+        [requestId],
+      ),
+    );
+    expect(reviews).toBe(1);
   } finally {
     release();
   }
   const [a, b] = await Promise.all([first, duplicate]);
   expect(a.state).toBe("approved");
   expect(a).toEqual(b);
+  expect(reviews).toBe(1);
   expect(profiles).toBe(1);
 });
 test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人の解釈をチャットへ同報しない", async () => {
@@ -11070,6 +11233,80 @@ describe("現場材料", () => {
       "DROP FUNCTION fixture_material_roll() CASCADE",
     );
   });
+  test("技能の判定中に同じ申請を再送すると確定を待ち、GMを一度だけ呼ぶ", async () => {
+    const f = await fixture(1),
+      actor = f.actors[0]!,
+      db = isolated.databases.postgres;
+    await db.query(
+      "UPDATE world_construction SET state='finished' WHERE id=$1",
+      [f.world],
+    );
+    let reached!: () => void, release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+        reached = resolve;
+      }),
+      gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    f.calls.mockImplementation(async (id, role) => {
+      expect(role).toBe("world-creation-dice");
+      reached();
+      await gate;
+      return answer(id, { settings: [win, win, win] });
+    });
+    const names = ["研磨", "面取り", "目止め"];
+    const input = {
+      command: "update",
+      requestId: randomUUID(),
+      text: "木工の仕上げを三つ練習する",
+      operations: names.map((text) => ({
+        type: "learn",
+        person: actor,
+        text,
+        basis: "端材で繰り返し練習した",
+      })),
+      dependencies: [],
+    };
+    const first = f.send(0, input);
+    void first.catch(() => {});
+    let retry: typeof first | undefined;
+    try {
+      await waiting;
+      const query = vi.spyOn(db, "query");
+      retry = f.send(0, input);
+      void retry.catch(() => {});
+      await vi.waitFor(
+        () => {
+          expect(query).toHaveBeenCalledWith(
+            "SELECT result FROM bot_request WHERE id=$1",
+            [input.requestId],
+          );
+        },
+        { timeout: 3000 },
+      );
+      expect(f.calls).toHaveBeenCalledTimes(1);
+      await expect(
+        f.send(0, { ...input, requestId: randomUUID() }),
+      ).rejects.toMatchObject({ code: "REQUEST_IN_PROGRESS" });
+    } finally {
+      release();
+      await Promise.allSettled([first, retry]);
+    }
+
+    const result = await first;
+    expect(result).toMatchObject({ state: "accepted", spentSp: 1 });
+    const saved = { commitId: result.commitId, outcome: result.outcome };
+    expect(await retry).toMatchObject(saved);
+    expect(await f.send(0, input)).toMatchObject(saved);
+    expect(f.calls).toHaveBeenCalledTimes(1);
+    const { skills } = await readBelongings(f.store.context(f.graph), actor);
+    expect(skills.map(({ text }) => text).sort()).toEqual([...names].sort());
+    expect(
+      await access.botPlay.dailySp(f.world, f.people[0]!.id),
+    ).toMatchObject({
+      remaining: 99,
+    });
+  });
   test("技能の習得後も、生成判定に以前のキャッシュ境界と新しい技能の根拠が残る", async () => {
     const f = await fixture(1),
       actor = f.actors[0]!;
@@ -11652,6 +11889,127 @@ describe("現場材料", () => {
       hulls: 0,
       boards: 2,
       tools: 1,
+    });
+  });
+  test("申請の利用量を日・利用者・コマンド別に数え、旧記録は日単位で扱う", async () => {
+    const { f, ids, plan } = await workshop(2);
+    const db = isolated.databases.postgres,
+      user = f.people[0]!.id,
+      batchId = randomUUID(),
+      updateId = randomUUID();
+    const first = plan(1, ids[0]);
+    // 技能ごとに分けた出目は3つでも、元案は2案。2案目は材料不足で振らない。
+    const batch = {
+      command: "create-batch",
+      requestId: batchId,
+      dependencies: [],
+      proposals: [
+        {
+          ...first,
+          operations: [
+            ...first.operations,
+            ...["帆縫い", "操舵"].map((text) => ({
+              type: "learn",
+              person: f.actors[0],
+              text,
+              basis: "指導を受けた",
+            })),
+          ],
+        },
+        plan(2, ids[0]),
+      ],
+    };
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { settings: [win, lose, win, win] }),
+    );
+    await f.send(0, batch);
+    await f.send(0, batch);
+    f.calls.mockResolvedValueOnce(answer(randomUUID(), lose));
+    await f.send(0, {
+      command: "update",
+      requestId: updateId,
+      ...plan(3, ids[1]),
+      dependencies: [],
+    });
+    // 抽選前の拒否はSPを使わず、出目もない。
+    await expect(
+      f.send(0, {
+        command: "create-batch",
+        dependencies: [],
+        proposals: [plan(4), plan(4)],
+      }),
+    ).rejects.toMatchObject({ code: "DUPLICATE_PROPOSAL" });
+    // 生成GMの呼出しは呼出しごとのoperation_idを持ち、元の要求IDはresponse_idに残る。
+    await db.query(
+      `INSERT INTO llm_call(id,budget_id,hash,reserved_nano,request,world_id,response_id,operation_id)
+       SELECT $1,id,'fixture',0,'{}',$2,$3,$4 FROM llm_budget LIMIT 1`,
+      [randomUUID(), f.graph, batchId, randomUUID()],
+    );
+    const { resetsAt } = await access.botPlay.dailySp(f.world, user);
+    const day = {
+      worldId: f.world,
+      from: new Date(Date.parse(resetsAt) - 86400000).toISOString(),
+      to: resetsAt,
+    };
+    const read = (query: typeof day) => readPlayUsage(db, f.store, query);
+    const date = new Date(Date.parse(day.from) + 9 * 3600000)
+      .toISOString()
+      .slice(0, 10);
+    const base = {
+      date,
+      userId: user,
+      rolledIncomplete: 0,
+      notRolled: 0,
+      originalsUnknown: 0,
+      batchSizes: {},
+      results: { succeeded: 0, partial: 0, failed: 0 },
+      gmCalls: 0,
+    };
+    const batchRow = {
+      ...base,
+      command: "create-batch",
+      requests: 2,
+      completed: 1,
+      notRolled: 1,
+      originals: 2,
+      originalsUnknown: 1,
+      batchSizes: { 2: 1 },
+      rolls: { fresh: 3, reused: 0, unrolled: 1, succeeded: 2 },
+      results: { ...base.results, partial: 1 },
+      spentSp: 1,
+      gmCalls: 1,
+      changes: { receipts: 1, existences: 1, items: 1, skills: 1 },
+    };
+    const updateRow = {
+      ...base,
+      command: "update",
+      requests: 1,
+      completed: 1,
+      originals: 1,
+      rolls: { fresh: 1, reused: 0, unrolled: 0, succeeded: 0 },
+      results: { ...base.results, failed: 1 },
+      spentSp: 1,
+    };
+    expect(await read(day)).toMatchObject({
+      rows: [batchRow, updateRow],
+      missing: { timeOfDay: 0 },
+    });
+    // 受付時刻・利用者・コマンドのない旧記録は、SPの消費日と結果から同じ行へ戻す。
+    await db.query(
+      "UPDATE bot_request SET received_at=NULL,user_id=NULL,command=NULL WHERE id=$1",
+      [updateId],
+    );
+    expect((await read(day)).rows).toMatchObject([batchRow, updateRow]);
+    // 日の一部だけの期間では、時刻の分からない旧記録を欠測として数える。
+    const hour = {
+      ...day,
+      to: new Date(
+        Math.min(Date.now() + 3600000, Date.parse(resetsAt) - 1),
+      ).toISOString(),
+    };
+    expect(await read(hour)).toMatchObject({
+      rows: [batchRow],
+      missing: { timeOfDay: 1 },
     });
   });
   test("船体2件は2隻まで、板材3個の指定は在庫2個のまま材料不足", async () => {

@@ -1270,13 +1270,15 @@ export class WorldStore {
     worldId: string,
     commitId: string,
   ): Promise<Receipt | undefined> {
+    return (await this.receipts(worldId, [commitId]))[0];
+  }
+
+  async receipts(worldId: string, commitIds: string[]): Promise<Receipt[]> {
     const result = await this.driver.executeQuery(
-      "MATCH (r:WorldReceipt {worldId: $worldId, commitId: $commitId}) RETURN r.data AS data",
-      { worldId, commitId },
+      "UNWIND $commitIds AS commitId MATCH (r:WorldReceipt {worldId: $worldId, commitId: commitId}) RETURN r.data AS data",
+      { worldId, commitIds },
     );
-    return result.records[0]
-      ? (JSON.parse(result.records[0].get("data")) as Receipt)
-      : undefined;
+    return result.records.map((r) => JSON.parse(r.get("data")) as Receipt);
   }
 
   async pendingReceipts(worldId: string): Promise<Receipt[]> {

@@ -1,5 +1,6 @@
 import { ModelCallInProgress } from "../llm/budget.js";
 import { createHash, randomInt, randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 import { z } from "zod";
 import {
@@ -958,7 +959,7 @@ const consumePrompt =
 const decidePrompt =
   "changes.nodesのうち申請者が新しく得る技能・物品で、その中身を申請者が決めず、相手・場所・偶然などに委ねているものがあれば、成功したときに確定する本文をdecided:[{id,text}]に返す。技能はできることとその適用範囲、物品は呼称とし、対象と世界の基準に合わせて、使い道や次の行動を考えられる具体性を持たせる。申請者が中身を書いているものは選ばず、該当がなければ空配列。";
 const individualsPrompt =
-  "申請が成立すると、固有の名前で呼ばれる特定の個人（人物・生き物）が、新しくその場へ登場する・呼び寄せられる、拘束される、傷つく、死ぬ、またはその身柄・遺体・体の一部が誰かの手に入ることになるなら、その名前を、敬称を付けずに申請の表記のままindividuals:[文字列]に返す。申請者本人、種類だけで呼ばれる相手、一緒に行動するだけの相手、名前が出るだけで本人には何も起きない個人は含めない。該当がなければ空配列。";
+  "申請が成立すると、特定の個人（人物・生き物）が、新しくその場へ登場する・呼び寄せられる、拘束される、傷つく、死ぬ、またはその身柄・遺体・体の一部が誰かの手に入ることになるなら、その呼び名を、敬称を付けずにindividuals:[文字列]に返す。特定の個人には、固有の名前で呼ばれる相手のほか、役職・肩書き・身元でただ一人に決まる相手を含める。固有の名前は申請の表記のまま、役職・肩書き・身元は「村長」「家の主」のように所属や説明を除いた語で返す。申請者本人、種類だけで呼ばれて誰とも決まらない相手（例: 通りがかりの狩人、一羽の小鳥）、一緒に行動するだけの相手、名前が出るだけで本人には何も起きない個人は含めない。該当がなければ空配列。";
 const waitPrompt =
   "waitMinutesは申請者がこの作成にかける実時間（分）で、成功すると物品はその時間の後に成立する。その場にない物の取り寄せや手間のかかる製作のように、時間をかけるほど成立しやすい申請では、かける時間に応じて成功範囲を広げる。";
 // GMが選んだ消費を、申請者が手に持つ物品と、その個数までに限る。
@@ -1072,6 +1073,9 @@ export class BotPlay {
       ALTER TABLE bot_adjudication ADD COLUMN IF NOT EXISTS sp_user uuid, ADD COLUMN IF NOT EXISTS sp_reset timestamptz;
       CREATE INDEX IF NOT EXISTS bot_adjudication_sp ON bot_adjudication(world_id,sp_user,sp_reset) WHERE sp_user IS NOT NULL;
       CREATE INDEX IF NOT EXISTS bot_request_sp ON bot_request(world_id,sp_user,sp_reset) WHERE sp_user IS NOT NULL;
+      ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS received_at timestamptz, ADD COLUMN IF NOT EXISTS user_id uuid, ADD COLUMN IF NOT EXISTS command text;
+      ALTER TABLE bot_request ALTER COLUMN received_at SET DEFAULT now();
+      CREATE INDEX IF NOT EXISTS bot_request_received ON bot_request(world_id,received_at);
       CREATE TABLE IF NOT EXISTS bot_dice (
       id uuid PRIMARY KEY,setting jsonb NOT NULL,roll integer);
       CREATE TABLE IF NOT EXISTS bot_npc (
@@ -2566,7 +2570,12 @@ export class BotPlay {
     if (member && !skipped) {
       if (d.turnStartedAt) member.lastTurnStartedAt = d.turnStartedAt;
       if (member.userId)
-        await this.tools.completedTurn(db, member.userId, session.world_id);
+        await this.tools.completedTurn(
+          db,
+          member.userId,
+          session.world_id,
+          member.actorId,
+        );
     }
     const turn = await this.#transition(
       db,
@@ -9262,8 +9271,8 @@ export class BotPlay {
   ) {
     const hash = createHash("sha256").update(canonical(input)).digest("hex");
     await this.pool.query(
-      "INSERT INTO bot_request(id,actor_id,world_id,hash) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
-      [input.requestId, actor, world, hash],
+      "INSERT INTO bot_request(id,actor_id,world_id,hash,user_id,command) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
+      [input.requestId, actor, world, hash, user, input.command],
     );
     const saved = (
       await this.pool.query<{
@@ -9316,14 +9325,10 @@ export class BotPlay {
         connectionId,
         owner,
       );
-    const active = await this.#activeAdjudication(this.pool, world, actor);
+    let active = await this.#activeAdjudication(this.pool, world, actor);
     const drawCommand = input.command === "draw" || isDrawConfiguration(input);
-    if (active)
-      return active.request_id === input.requestId && !drawCommand
-        ? execute(active.owner)
-        : rejectAdjudication();
-    if (
-      ![
+    const adjudicated =
+      [
         "update",
         "create",
         "create-batch",
@@ -9341,27 +9346,37 @@ export class BotPlay {
         "draw-configure",
         "draw-table-publish",
         "draw",
-      ].includes(input.command) &&
-      !(input.command === "say" && input.instantNpcs?.length) &&
-      !(input.command === "search" && input.query.kind === "seek")
-    )
-      return execute();
+      ].includes(input.command) ||
+      (input.command === "say" && input.instantNpcs?.length) ||
+      (input.command === "search" && input.query.kind === "seek");
     const owner = randomUUID(),
       key = [world, actor, owner];
-    // Serialize claiming with command commits using the same short world lock.
-    const acquired = await this.pool.query(
-      `INSERT INTO bot_adjudication(world_id,actor_id,owner,request_id,expires_at)
-       SELECT $1::text::uuid,$2,$3,$4,clock_timestamp()+${adjudicationLease}
-       FROM (SELECT pg_advisory_xact_lock(hashtextextended($1,225))) AS locked
-       ON CONFLICT(world_id,actor_id) DO UPDATE SET owner=$3,request_id=$4,expires_at=EXCLUDED.expires_at,sp_user=NULL,sp_reset=NULL
-       WHERE bot_adjudication.expires_at<=clock_timestamp()`,
-      [...key, input.requestId],
-    );
-    if (!acquired.rowCount) {
-      const active = await this.#activeAdjudication(this.pool, world, actor);
-      if (active?.request_id === input.requestId && !drawCommand)
-        return execute(active.owner);
-      rejectAdjudication();
+    for (;;) {
+      if (active) {
+        if (active.request_id !== input.requestId || drawCommand)
+          rejectAdjudication();
+        // 再送は判定を組み立て直さず、処理中の要求の確定を待つ。
+        await delay(100);
+      } else {
+        if (!adjudicated) return execute();
+        // Serialize claiming with command commits using the same short world lock.
+        const acquired = await this.pool.query(
+          `INSERT INTO bot_adjudication(world_id,actor_id,owner,request_id,expires_at)
+         SELECT $1::text::uuid,$2,$3,$4,clock_timestamp()+${adjudicationLease}
+         FROM (SELECT pg_advisory_xact_lock(hashtextextended($1,225))) AS locked
+         ON CONFLICT(world_id,actor_id) DO UPDATE SET owner=$3,request_id=$4,expires_at=EXCLUDED.expires_at,sp_user=NULL,sp_reset=NULL
+         WHERE bot_adjudication.expires_at<=clock_timestamp()`,
+          [...key, input.requestId],
+        );
+        if (acquired.rowCount) break;
+      }
+      const next = await this.#activeAdjudication(this.pool, world, actor);
+      const { rows } = await this.pool.query<{
+        result: Record<string, unknown> | null;
+      }>("SELECT result FROM bot_request WHERE id=$1", [input.requestId]);
+      if (rows[0]?.result) return this.#replay(world, input, rows[0].result);
+      if (!active && !next) rejectAdjudication();
+      active = next;
     }
     const heartbeat = setInterval(() => {
       void this.pool
