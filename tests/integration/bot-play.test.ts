@@ -10571,6 +10571,232 @@ describe("現場材料", () => {
     }
     return { f, ids, board, plan, inventory };
   }
+  test.each([true, false])(
+    "技能だけの申請では各出目を保存し、成功した技能だけGMの決定を反映する（成功あり %s）",
+    async (learned) => {
+      const f = await fixture(1),
+        person = f.actors[0]!,
+        requestId = randomUUID();
+      f.calls.mockImplementationOnce(async (id, role, messages) => {
+        expect(role).toBe("world-creation-dice");
+        const { proposals } = JSON.parse(String(messages[1]!.content));
+        expect(proposals.map((p: { text: string }) => p.text)).toEqual([
+          "泉の精から授かる技能",
+          "水鏡",
+        ]);
+        return answer(id, {
+          settings: [
+            {
+              ...(learned ? win : lose),
+              decided: [
+                { id: proposals[0].changes.nodes[0].id, text: "伏流水を探る" },
+              ],
+            },
+            lose,
+          ],
+        });
+      });
+      const request = {
+        requestId,
+        command: "update",
+        text: "泉の精に教えを乞う",
+        dependencies: [],
+        operations: ["泉の精から授かる技能", "水鏡"].map((text) => ({
+          type: "learn",
+          person,
+          text,
+          basis: "泉で教わった",
+        })),
+      };
+      const result = await f.send(0, request);
+      expect(result).toMatchObject({
+        spentSp: 1,
+        outcome: {
+          success: learned,
+          proposals: [
+            { person, roll: 2, success: learned },
+            { person, roll: 2, success: false },
+          ],
+        },
+      });
+      expect(result.action).toMatchObject({
+        message: expect.stringContaining("「水鏡」は出目2で失敗"),
+      });
+      expect(await f.send(0, request)).toEqual(result);
+      const dice = [0, 1].map((i) =>
+        derivedId(derivedId(requestId + ":proposal:" + i) + ":creation"),
+      );
+      expect(
+        (
+          await isolated.databases.postgres.query(
+            "SELECT id FROM bot_dice WHERE id=ANY($1::uuid[])",
+            [dice],
+          )
+        ).rowCount,
+      ).toBe(2);
+      expect(
+        (await readBelongings(f.store.context(f.graph), person)).skills.map(
+          (s) => s.text,
+        ),
+      ).toEqual(learned ? ["伏流水を探る"] : []);
+    },
+  );
+  test.each([true, false])(
+    "技能を個別に判定し、船体は製作が成功したときだけ消費する（製作成功 %s）",
+    async (built) => {
+      const { f, ids, plan, inventory } = await workshop(1);
+      const person = f.actors[0]!;
+      const craft = plan(1, ids[0]);
+      const request = {
+        ...craft,
+        command: "update",
+        requestId: randomUUID(),
+        dependencies: [],
+        operations: [
+          {
+            type: "learn",
+            person,
+            text: "帆を繕う",
+            basis: "仕立てを練習した",
+          },
+          ...craft.operations,
+          {
+            type: "learn",
+            person,
+            text: "風を読む",
+            basis: "風向きを観察した",
+          },
+        ],
+      };
+      f.calls.mockImplementationOnce(async (id, role, messages) => {
+        expect(role).toBe("world-creation-dice");
+        const { proposals } = JSON.parse(String(messages[1]!.content));
+        expect(proposals).toHaveLength(3);
+        expect(proposals[0].materials).toBeUndefined();
+        expect(proposals[1].materials).toBeUndefined();
+        expect(proposals[2].materials).toMatchObject([
+          { id: ids[0], available: 1 },
+        ]);
+        return answer(id, { settings: [win, lose, built ? win : lose] });
+      });
+      const result = await f.send(0, request);
+      expect(result).toMatchObject({
+        spentSp: 1,
+        outcome: {
+          success: true,
+          proposals: [
+            { text: "帆を繕う", roll: 2, success: true },
+            { text: "風を読む", roll: 2, success: false },
+            { text: craft.text, roll: 2, success: built },
+          ],
+        },
+      });
+      expect(await f.send(0, request)).toEqual(result);
+      expect((await f.status(0)).callsUsed).toBe(1);
+      expect(
+        (await readBelongings(f.store.context(f.graph), person)).skills.map(
+          (s) => s.text,
+        ),
+      ).toEqual(["帆を繕う"]);
+      expect(await inventory()).toEqual({
+        ships: built ? 1 : 0,
+        hulls: built ? 0 : 1,
+        boards: 2,
+        tools: 1,
+      });
+    },
+  );
+  test("すべての技能に失敗しても移動はダイスなしで成立する", async () => {
+    const f = await fixture(1),
+      person = f.actors[0]!;
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { settings: [lose, lose] }),
+    );
+    const result = await f.send(0, {
+      command: "update",
+      text: "稽古をしながら移動する",
+      dependencies: [],
+      operations: [
+        {
+          type: "locate",
+          subjectId: person,
+          text: "離れた場所",
+          aboutIds: [f.far],
+          directPlaceId: f.far,
+        },
+        ...["足運び", "呼吸法"].map((text) => ({
+          type: "learn",
+          person,
+          text,
+          basis: "稽古した",
+        })),
+      ],
+    });
+    expect(result.outcome).toMatchObject({
+      success: true,
+      proposals: [
+        { roll: 2, success: false },
+        { roll: 2, success: false },
+        { success: true },
+      ],
+    });
+    expect(
+      (result.outcome as { proposals: object[] }).proposals[2],
+    ).not.toHaveProperty("roll");
+    expect(await directPlaces(f.store.context(f.graph), person)).toEqual([
+      f.far,
+    ]);
+    expect(
+      (await readBelongings(f.store.context(f.graph), person)).skills,
+    ).toHaveLength(0);
+  });
+  test("一括の各案で技能の成否と船体の残数を独立に扱う", async () => {
+    const { f, ids, plan, inventory } = await workshop(1);
+    const first = plan(1, ids[0]),
+      second = plan(2, ids[0]);
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { settings: [win, lose, win, win] }),
+    );
+    const result = await f.send(0, {
+      command: "create-batch",
+      dependencies: [],
+      proposals: [
+        {
+          ...first,
+          operations: [
+            ...first.operations,
+            ...["帆縫い", "操舵"].map((text) => ({
+              type: "learn",
+              person: f.actors[0],
+              text,
+              basis: "指導を受けた",
+            })),
+          ],
+        },
+        second,
+      ],
+    });
+    expect(result.outcome).toMatchObject({
+      proposals: [
+        {
+          text: first.text,
+          success: true,
+          proposals: [
+            { roll: 2, success: true },
+            { roll: 2, success: false },
+            { roll: 2, success: true },
+          ],
+        },
+        { text: second.text, success: false, reason: "MATERIAL_SHORTAGE" },
+      ],
+    });
+    expect(await inventory()).toEqual({
+      ships: 1,
+      hulls: 0,
+      boards: 2,
+      tools: 1,
+    });
+  });
   test("単独の失敗は船体を残し、成功は現地の現物を一度消費して滑車を残す", async () => {
     const { f, ids, plan, inventory } = await workshop(1);
     f.calls.mockResolvedValueOnce(answer(randomUUID(), lose));
@@ -11566,39 +11792,44 @@ test("固定表の有料福引は払出しと代価を一度だけ確定し、�
   expect(f.calls).toHaveBeenCalledTimes(2);
 });
 
-test("技能枠が足りない一括申請では、先の案の確定結果を使って次に振れる案を決める", async () => {
-  const f = await fixture(1);
-  const actor = f.actors[0]!;
-  await f.store.configureInventory(f.graph, false, { skillSlots: 1 });
-  const proposals = ["星を見る", "潮を読む"].map((text) => ({
-    text,
-    operations: [{ type: "learn", person: actor, text, basis: "実習" }],
-  }));
-  f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { settings: [sure, sure] }),
-  );
-  const command = {
-    command: "create-batch",
-    requestId: randomUUID(),
-    proposals,
-    dependencies: [],
-  };
-  const result = await f.send(0, command);
-  expect(result).toMatchObject({
-    spentSp: 1,
-    outcome: {
-      proposals: [
-        { success: true },
-        { success: false, reason: "SKILL_CAPACITY_EXCEEDED" },
-      ],
-    },
-  });
-  expect(await f.send(0, command)).toEqual(result);
-  await expect(
-    f.send(0, { ...command, requestId: randomUUID() }),
-  ).rejects.toMatchObject({ code: "SKILL_CAPACITY_EXCEEDED" });
-  expect(f.calls).toHaveBeenCalledTimes(1);
-});
+test.each(["update", "create-batch"])(
+  "技能枠が足りない %s では、先の判定結果を使って次に振れる技能を決める",
+  async (commandName) => {
+    const f = await fixture(1);
+    const actor = f.actors[0]!;
+    await f.store.configureInventory(f.graph, false, { skillSlots: 1 });
+    const proposals = ["星を見る", "潮を読む"].map((text) => ({
+      text,
+      operations: [{ type: "learn", person: actor, text, basis: "実習" }],
+    }));
+    f.calls.mockImplementationOnce(async (id) =>
+      answer(id, { settings: [sure, sure] }),
+    );
+    const command = {
+      command: commandName,
+      requestId: randomUUID(),
+      ...(commandName === "update"
+        ? { text: "実習", operations: proposals.flatMap((p) => p.operations) }
+        : { proposals }),
+      dependencies: [],
+    };
+    const result = await f.send(0, command);
+    expect(result).toMatchObject({
+      spentSp: 1,
+      outcome: {
+        proposals: [
+          { success: true },
+          { success: false, reason: "SKILL_CAPACITY_EXCEEDED" },
+        ],
+      },
+    });
+    expect(await f.send(0, command)).toEqual(result);
+    await expect(
+      f.send(0, { ...command, requestId: randomUUID() }),
+    ).rejects.toMatchObject({ code: "SKILL_CAPACITY_EXCEEDED" });
+    expect(f.calls).toHaveBeenCalledTimes(1);
+  },
+);
 
 test("技能枠が満杯なら混合表も抽選前に知らせ、技能を含まない表は引ける", async () => {
   const f = await fixedTableFixture();
