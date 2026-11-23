@@ -31,14 +31,25 @@ export const worldNow = (
     : Math.max(Number(world.at), now);
 
 // プレイ中の差分は確定の時点で成立させる。申請時やクライアントが付けた時点はここでそろえる。
-export const atTime = (changes: Change, at: number): Change => ({
+export const atTime = (
+  changes: Change,
+  at: number,
+  keepLength = false,
+): Change => ({
   ...changes,
   nodes: changes.nodes.map((n) =>
     n.kind === "event" ? { ...n, period: { ...n.period, from: at } } : n,
   ),
+  // keepLengthでは、終了時点のある関係を、続く長さを保って確定の時点へ移す。
   edges: changes.edges.map((e) => ({
     ...e,
-    period: { ...e.period, from: at },
+    period: {
+      ...e.period,
+      from: at,
+      ...(keepLength && e.period.until !== undefined
+        ? { until: e.period.until - e.period.from + at }
+        : {}),
+    },
   })),
 });
 

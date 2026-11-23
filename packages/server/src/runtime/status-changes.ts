@@ -45,6 +45,7 @@ export async function directStatusReview(
   people: ReadonlySet<string>,
   changes: Change,
   ended: WorldEdge[],
+  at: number,
 ): Promise<StatusReview | undefined> {
   const status = [...changes.edges, ...ended].filter(
     (e) => e.kind === "status",
@@ -79,7 +80,7 @@ export async function directStatusReview(
       scripts.has(e.target),
   );
   const endingScripts = new Set(ends.map((e) => e.target));
-  if (ends.some((e) => e.period.until !== undefined))
+  if (ends.some((e) => (e.period.until ?? Infinity) <= at))
     throw new WorldConflict("終了対象の状態はすでに終了しています");
   return {
     subjects: [...subjects],
@@ -108,6 +109,7 @@ export async function directStatusReview(
 // 最後のcontentが終わるときは、同じ記述のaboutも同時に閉じる。
 export async function settleStateEnds(
   context: WorldContext,
+  at: number,
   changes: Change,
   selected: readonly string[] | undefined,
   subjects: readonly string[],
@@ -127,7 +129,7 @@ export async function settleStateEnds(
     const edge = await context.edge(id);
     if (
       !edge ||
-      edge.period.until !== undefined ||
+      (edge.period.until ?? Infinity) <= at ||
       !subjects.includes(edge.source) ||
       !editableStatus(edge, await context.node(edge.target))
     )

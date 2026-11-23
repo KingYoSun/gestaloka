@@ -340,7 +340,7 @@ export class PlayApplications {
           {
             commitId: id,
             at,
-            changes: atTime(changes, at),
+            changes: atTime(changes, at, true),
             playerAction: true,
           },
           true,

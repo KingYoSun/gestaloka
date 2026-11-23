@@ -12681,14 +12681,37 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
   });
   const split = { kind: "separation", count: 1, stays: true };
   const missed = attempt("そっと手を伸ばす", "手の届くところにいる");
-  const miss = { sides: 2, successThrough: 1, instantReduction: split };
+  const miss = {
+    sides: 2,
+    successThrough: 1,
+    instantReduction: split,
+    fumble: { through: 1, text: "指先をつつかれて血がにじんでいる。" },
+  };
   await isolated.databases.postgres.query(
-    "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,2)",
-    [missed.requestId, miss],
+    "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,2),($3,$4,1)",
+    [
+      missed.requestId,
+      miss,
+      derivedId(`${missed.requestId}:fumble`),
+      { sides: 2, successThrough: 1 },
+    ],
   );
-  f.calls.mockImplementationOnce(async (id) => answer(id, miss));
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    expect(messages[0]!.content).toContain("fumble:{through");
+    return answer(id, miss);
+  });
   const failed = await f.send(0, missed);
-  expect(failed.outcome).toMatchObject({ success: false });
+  expect(failed.outcome).toMatchObject({
+    success: false,
+    fumble: { roll: 1, success: true },
+  });
+  expect(
+    (
+      await f.store
+        .context(f.graph)
+        .node(derivedId(`${missed.requestId}:fumble`))
+    )?.text,
+  ).toBe(miss.fumble.text);
   expect(failed.instantReduction).toBeUndefined();
   expect(failed.appearances).toBeUndefined();
   expect(await f.send(0, missed)).toEqual(failed);
@@ -14183,4 +14206,168 @@ test("サーバー担当NPCは断られた選択を問い直さず、受領判�
   await access.botPlay.tickNpcs(f.world);
   expect(offered).toEqual([["receive", "comment"], ["receive"]]);
   expect(await directPlaces(f.store.context(f.graph), npc)).toEqual([f.far]);
+});
+
+test("失敗した判定はファンブルを一度だけ振り、本人に残った状態は期限まで続いて早めに終えられる", async () => {
+  const f = await fixture(2);
+  const [actor, target] = f.actors as [string, string];
+  const most = sure.successThrough;
+  // 生成を終えた世界では、記録の時点が現実の時刻になる。
+  await isolated.databases.postgres.query(
+    "UPDATE world_construction SET state='finished' WHERE id=$1",
+    [f.world],
+  );
+  const states = async (i: number) => {
+    const context = f.store.context(f.graph);
+    return Promise.all(
+      (
+        await context.relations(
+          f.actors[i]!,
+          "status",
+          "out",
+          Date.now(),
+          Number.MAX_SAFE_INTEGER,
+        )
+      )
+        .filter((e) => e.role === "content" && e.text !== "location")
+        .map(async (e) => ({
+          id: e.id,
+          period: e.period,
+          text: (await context.node(e.target))?.text,
+        })),
+    );
+  };
+  const self = async () =>
+    (
+      (await f.send(0, { command: "search", query: { kind: "self" } }))
+        .material as { states: { relation: { id: string } }[] }
+    ).states.map((s) => s.relation.id);
+  const craft = () => ({
+    requestId: randomUUID(),
+    command: "update",
+    text: "刃こぼれした鉈で薪を急いで割る",
+    operations: [
+      { type: "create", label: "薪", holder: actor, basis: "割った" },
+    ],
+    dependencies: [],
+  });
+  const cut = { through: 30, text: "右手に浅い切り傷がある。", minutes: 60 };
+  // GMが返したファンブルは、成功ダイスが失敗したときだけ振る。出目が範囲内なら本人の状態になる。
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(messages[0]!.content).toContain("fumble:{through");
+    return answer(id, {
+      sides: sure.sides,
+      successThrough: 1,
+      fumble: { ...cut, through: most },
+    });
+  });
+  const first = craft(),
+    slipped = await f.send(0, first);
+  expect(slipped.outcome).toMatchObject({
+    success: false,
+    fumble: { success: true },
+    setting: { fumble: { text: cut.text, minutes: 60 } },
+  });
+  expect(await f.send(0, first)).toEqual(slipped);
+  const [wound] = await states(0);
+  expect(await states(0)).toHaveLength(1);
+  expect(wound).toMatchObject({ text: cut.text });
+  expect(wound!.period.until! - wound!.period.from).toBe(3600000);
+  // 2回目の出目が範囲を超えれば残らない。成功した判定では2回目を振らない。
+  const missed = craft(),
+    die = derivedId(`${missed.requestId}:creation`);
+  await isolated.databases.postgres.query(
+    "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,50),($3,$4,31)",
+    [
+      die,
+      { sides: 100, successThrough: 10, fumble: cut },
+      derivedId(`${die}:fumble`),
+      { sides: 100, successThrough: 30 },
+    ],
+  );
+  expect((await f.send(0, missed)).outcome).toMatchObject({
+    success: false,
+    roll: 50,
+    fumble: { roll: 31, success: false },
+  });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { ...sure, fumble: { ...cut, through: most } }),
+  );
+  const made = await f.send(0, craft());
+  expect(made.outcome).toMatchObject({ success: true });
+  expect(made.outcome).not.toHaveProperty("fumble");
+  expect(await states(0)).toHaveLength(1);
+  // 期限の前は本人の状態として読め、期限を過ぎると現在の状態から外れる。
+  let now = new Date(wound!.period.until! - 1);
+  const clock = vi.spyOn(access.botPlay, "now").mockImplementation(() => now);
+  expect(await self()).toContain(wound!.id);
+  now = new Date(wound!.period.until!);
+  expect(await self()).not.toContain(wound!.id);
+  clock.mockRestore();
+  // 期限の前に、本人が終了を申請できる。
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    expect(messages[1]!.content).toContain(wound!.id);
+    return answer(id, { ...sure, endEdges: [wound!.id] });
+  });
+  const healed = await f.send(0, {
+    command: "update",
+    text: "傷口を洗って布で縛り、手当てを終える",
+    changes: { nodes: [], revisions: [], edges: [], endEdges: [wound!.id] },
+    dependencies: [],
+  });
+  expect(healed.outcome).toMatchObject({ success: true });
+  expect(await states(0)).toEqual([]);
+  expect(
+    (await f.store.context(f.graph).edge(wound!.id))?.period.until,
+  ).toBeLessThan(wound!.period.until!);
+  // 対抗の判定でも、失敗した本人にだけ残る。成功時に相手へ残る状態には期限を付けられる。
+  await f.send(1, { command: "contact", targetId: actor });
+  const shove = () => ({
+    requestId: randomUUID(),
+    command: "oppose",
+    text: "相手に体当たりして突き飛ばす",
+    changes: {
+      nodes: [],
+      revisions: [],
+      endEdges: [],
+      edges: [
+        {
+          id: randomUUID(),
+          kind: "effect",
+          source: actor,
+          target,
+          period: { from: 0 },
+        },
+      ],
+    },
+    dependencies: [],
+  });
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-opposition-dice");
+    expect(messages[0]!.content).toContain("fumble:{through");
+    return answer(id, {
+      sides: sure.sides,
+      successThrough: 1,
+      fumble: { through: most, text: "足首をひねっている。" },
+    });
+  });
+  expect((await f.send(0, shove())).outcome).toMatchObject({
+    success: false,
+    fumble: { success: true },
+  });
+  const [sprain] = await states(0);
+  expect(sprain).toMatchObject({ text: "足首をひねっている。" });
+  expect(sprain!.period.until).toBeUndefined();
+  expect(await states(1)).toEqual([]);
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, {
+      ...sure,
+      states: [{ id: target, text: "尻もちをついている。", minutes: 5 }],
+    }),
+  );
+  expect((await f.send(0, shove())).outcome).toMatchObject({ success: true });
+  const [down] = await states(1);
+  expect(down).toMatchObject({ text: "尻もちをついている。" });
+  expect(down!.period.until! - down!.period.from).toBe(300000);
 });
