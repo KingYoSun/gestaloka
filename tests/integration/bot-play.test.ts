@@ -1811,6 +1811,91 @@ test("受領待ちの物が固定場所と確認された場合、同意後も�
   ).toContain(item);
 });
 
+test("同じセッションの受領は申請者が検索で見た周囲の変化では止まらず、渡す物が変わっていれば却下として決着する", async () => {
+  const f = await fixture();
+  const holding = async (i: number) =>
+    (await readBelongings(f.store.context(f.graph), f.actors[i]!)).items.map(
+      (item) => item.id,
+    );
+  const create = async (label: string, holder: number) =>
+    (
+      await f.apply([
+        { type: "create", label, holder: f.actors[holder], basis: "試験" },
+      ])
+    ).changes.nodes.find((n) => n.kind === "existence")!.id;
+  const give = async (item: string) =>
+    f.send(0, {
+      command: "update",
+      text: "受け渡しを申請",
+      dependencies: (
+        await f.send(0, { command: "search", query: { kind: "surroundings" } })
+      ).dependencies,
+      operations: [
+        {
+          type: "move",
+          item,
+          from: f.actors[0],
+          to: f.actors[1],
+          basis: "試験",
+        },
+      ],
+    });
+  const approve = (applicationId: unknown) =>
+    f.send(1, { command: "receive", applicationId, accept: true });
+  const first = await create("部品の束", 0),
+    second = await create("工具", 0);
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+
+  const sent = await give(first);
+  expect(sent).toMatchObject({ state: "receiving" });
+  await f.move(2, f.place);
+  await create("別の物", 1);
+  expect(await approve(sent.applicationId)).toMatchObject({
+    application: { state: "confirmed" },
+  });
+  expect(await holding(1)).toContain(first);
+
+  const stale = await give(second);
+  expect(stale).toMatchObject({ state: "receiving" });
+  await f.apply([
+    {
+      type: "move",
+      item: second,
+      from: f.actors[0],
+      to: f.actors[2],
+      basis: "試験",
+    },
+  ]);
+  expect(await approve(stale.applicationId)).toMatchObject({
+    application: {
+      applicationId: stale.applicationId,
+      state: "rejected",
+      code: "WORLD_CHANGED",
+      message: "申請時の前提が変わりました。対象を確認して申請し直してください",
+    },
+  });
+  expect((await f.status(1)).receiving).toBeNull();
+  expect(
+    (
+      await access.waiting(
+        f.people[0]!.id,
+        f.world,
+        f.actors[0],
+        undefined,
+        undefined,
+        true,
+        true,
+      )
+    ).context,
+  ).toMatchObject({
+    receiptResult: {
+      applicationId: stale.applicationId,
+      code: "WORLD_CHANGED",
+    },
+  });
+  expect(await holding(1)).not.toContain(second);
+});
+
 test("設計図の着工だけがGMとSPを使い、建築・開店・不在時の購入を一度ずつ確定する", async () => {
   const f = await fixture();
   const admin = await auth.person();
