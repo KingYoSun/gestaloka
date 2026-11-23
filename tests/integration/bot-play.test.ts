@@ -12288,6 +12288,69 @@ test("探索と複数案の生成は日次SPを共有し、生成と素材消費
   ).toBe(2);
 });
 
+test("世界別のSP上限を下げた当日も消費を引き継ぎ、翌日に新しい上限まで回復する", async () => {
+  const f = await fixture();
+  const other = await fixture();
+  const db = isolated.databases.postgres;
+  const user = f.people[0]!.id;
+  const admin = await auth.person();
+  const time = vi
+    .spyOn(access.botPlay, "now")
+    .mockReturnValue(new Date("2026-11-20T14:59:59Z"));
+  const { resetsAt } = await access.botPlay.dailySp(f.world, user);
+  try {
+    await db.query(
+      `INSERT INTO bot_request(id,actor_id,world_id,hash,sp_user,sp_reset)
+       SELECT gen_random_uuid(),$1,$2,'fixture',$3,$4 FROM generate_series(1,51)`,
+      [f.actors[0], f.world, user, resetsAt],
+    );
+    expect((await f.status(0)).dailySp).toMatchObject({
+      limit: 100,
+      remaining: 49,
+    });
+    const configure = {
+      operation: "worlds.configure" as const,
+      worldId: f.world,
+      title: "日次SP試験",
+      description: "",
+      published: false,
+      accepting: false,
+      reason: "日次SP上限を確認する",
+    };
+    for (const input of [{ ...configure, dailySpLimit: 50 }, configure])
+      expect(
+        await auth.operations.execute(admin.id, randomUUID(), input, {
+          players: access.players,
+        }),
+      ).toMatchObject({ dailySpLimit: 50 });
+    expect((await f.status(0)).dailySp).toEqual({
+      limit: 50,
+      remaining: 0,
+      resetsAt,
+    });
+    expect((await other.status(0)).dailySp).toMatchObject({
+      limit: 100,
+      remaining: 100,
+    });
+    await expect(
+      f.send(0, {
+        command: "explore",
+        text: "水場へ通じる道を探す",
+        label: "水場",
+        fromId: f.place,
+        dependencies: [],
+      }),
+    ).rejects.toMatchObject({ code: "DAILY_SP_EXHAUSTED" });
+    time.mockReturnValue(new Date("2026-11-20T15:00:00Z"));
+    expect((await f.status(0)).dailySp).toMatchObject({
+      limit: 50,
+      remaining: 50,
+    });
+  } finally {
+    time.mockRestore();
+  }
+});
+
 test("同じ利用者の残り1 SPを同時申請で共有し、使い切った後も移動・結果取得・日次回復ができる", async () => {
   const f = await fixture(),
     db = isolated.databases.postgres,

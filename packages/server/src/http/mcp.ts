@@ -262,7 +262,9 @@ export class McpAuthorization {
     ).rows[0];
     return row.id as string;
   }
-  async verify(authorization?: string): Promise<McpPrincipal> {
+  async verify(
+    authorization?: string,
+  ): Promise<McpPrincipal & { registeredScopes: string[] }> {
     const bearer = authorization?.match(/^Bearer (\S+)$/i)?.[1];
     if (!bearer)
       throw new AccessError(
@@ -318,8 +320,12 @@ export class McpAuthorization {
       scopes: token.scope.split(" "),
       worldIds: grant.world_ids,
     };
-    await this.check(this.pool, principal, MCP_CONNECT);
-    return principal;
+    const registeredScopes = await this.check(
+      this.pool,
+      principal,
+      MCP_CONNECT,
+    );
+    return { ...principal, registeredScopes };
   }
   async check(
     db: Database,
@@ -362,6 +368,7 @@ export class McpAuthorization {
           "MCP_TARGET_DENIED",
           "許可された世界IDを指定してください",
         );
+    return row.configuration.scopes as string[];
   }
   async worlds(db: Database, p: McpPrincipal) {
     const row = (

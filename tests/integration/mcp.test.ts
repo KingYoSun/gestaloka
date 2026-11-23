@@ -26,6 +26,7 @@ async function delegation(
   scopes: string[],
   worldIds: string[] | null = null,
   userId = admin,
+  registeredScopes = scopes,
 ) {
   const clientId = randomUUID();
   await auth.operations.execute(admin, randomUUID(), {
@@ -35,7 +36,7 @@ async function delegation(
       name: "試験クライアント",
       enabled: true,
       redirectUris: ["http://127.0.0.1:18981/callback"],
-      scopes,
+      scopes: registeredScopes,
       worldIds,
     },
     expectedVersion: 0,
@@ -553,7 +554,18 @@ test("外部MCPクライアントが世界を構築・完了・読取・編集�
   }
 });
 test("外部SDKのMCP接続で全共通操作を列挙し、認証・scope・再送・監査を適用する", async () => {
-  const { token, principal } = await delegation(["users.list", "users.role"]),
+  const readScopes = [
+      "activity.read",
+      "playUsage.read",
+      "stories.list",
+      "stories.read",
+      "stories.stats",
+    ],
+    granted = ["users.list", "users.role"],
+    { token, principal } = await delegation(granted, null, admin, [
+      ...granted,
+      ...readScopes,
+    ]),
     user = (await auth.person("user")).id;
   const app = await createApp(
     access,
@@ -587,13 +599,23 @@ test("外部SDKのMCP接続で全共通操作を列挙し、認証・scope・再
         .map((s) => s.shape.operation.value.replaceAll(".", "_"))
         .sort(),
     );
-    for (const tool of tools.tools)
+    const tagged = tools.tools.filter((t) => t._meta?.securitySchemes);
+    expect(tagged.map((t) => t.name).sort()).toEqual(
+      readScopes.map((scope) => scope.replaceAll(".", "_")).sort(),
+    );
+    for (const tool of tagged)
       expect(tool._meta?.securitySchemes).toEqual([
         {
           type: "oauth2",
           scopes: ["mcp.connect", tool.name.replaceAll("_", ".")],
         },
       ]);
+    await expect(
+      client.callTool({
+        name: "stories_stats",
+        arguments: { requestId: randomUUID(), worldId: randomUUID() },
+      }),
+    ).rejects.toThrow("stories.stats");
     const id = randomUUID(),
       args = {
         requestId: id,
@@ -665,6 +687,9 @@ test("外部SDKのMCP接続で全共通操作を列挙し、認証・scope・再
           },
         ),
       );
+      expect(
+        (await second.listTools()).tools.some((t) => t._meta?.securitySchemes),
+      ).toBe(false);
       const afterConsent = await second.callTool({
         name: "users_ban",
         arguments: ban,

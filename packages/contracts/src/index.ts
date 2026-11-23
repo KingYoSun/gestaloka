@@ -1411,6 +1411,13 @@ export const Operation = z.discriminatedUnion("operation", [
     .object({
       operation: z.literal("worlds.configure"),
       worldId: z.uuid(),
+      dailySpLimit: z
+        .int32()
+        .positive()
+        .optional()
+        .describe(
+          "この世界のアカウントごとの日次SP上限。既定は100。省略すると現在の設定を保つ",
+        ),
       inventoryCapacity: z
         .boolean()
         .optional()
