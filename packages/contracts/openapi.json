@@ -26532,7 +26532,8 @@
                                 "enum": [
                                   "summary",
                                   "calls",
-                                  "timeline"
+                                  "timeline",
+                                  "groups"
                                 ]
                               },
                               "interval": {
@@ -26543,6 +26544,26 @@
                                   "day",
                                   "month"
                                 ]
+                              },
+                              "by": {
+                                "type": "string",
+                                "enum": [
+                                  "user",
+                                  "task",
+                                  "model"
+                                ]
+                              },
+                              "order": {
+                                "type": "string",
+                                "enum": [
+                                  "calls",
+                                  "cost"
+                                ]
+                              },
+                              "limit": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 50
                               },
                               "after": {
                                 "type": "string"
