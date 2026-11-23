@@ -6667,15 +6667,23 @@ test("要約中の昇格再送は最初の判定を待ち、保留で先に確�
     });
   const first = apply();
   await vi.waitFor(() => expect(profiles).toBe(1));
+  const query = vi.spyOn(isolated.databases.postgres, "query");
   const duplicate = apply();
   try {
-    await vi.waitFor(() => expect(reviews).toBe(2));
+    await vi.waitFor(() =>
+      expect(query).toHaveBeenCalledWith(
+        "SELECT result FROM bot_request WHERE id=$1",
+        [requestId],
+      ),
+    );
+    expect(reviews).toBe(1);
   } finally {
     release();
   }
   const [a, b] = await Promise.all([first, duplicate]);
   expect(a.state).toBe("approved");
   expect(a).toEqual(b);
+  expect(reviews).toBe(1);
   expect(profiles).toBe(1);
 });
 test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人の解釈をチャットへ同報しない", async () => {
