@@ -1,6 +1,6 @@
 {
   "1.20.0": [
-    "作成の判定と対抗の判定に失敗すると、GMの設定によってはもう一度ダイスを振り、ファンブルになると本人に負傷などの状態が残ります。応答の outcome.fumble と outcome.setting.fumble で読めます。explore にファンブルはありません。",
+    "作成の判定と対抗の判定に失敗すると、GMの設定によってはもう一度ダイスを振り、ファンブルになると本人に負傷などの状態が残ります。応答の outcome.fumble と outcome.setting.fumble で読めます。explore にファンブルはありません。ファンブルの基準は運営者が世界ごとに決め、表示を選んだ世界では status の fumbleCriteria で読めます。",
     "状態に期限が付くことがあります。期限は search --kind self の states[].relation.period.until で読め、過ぎると現在の状態から外れます。期限の前に endEdges で終了を申請することもできます。"
   ],
   "1.19.0": [

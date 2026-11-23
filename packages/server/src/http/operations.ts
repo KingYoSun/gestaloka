@@ -1,5 +1,8 @@
 import { ModelCallInProgress } from "../llm/budget.js";
-import { defaultCreationCriteria } from "../runtime/bot-play.js";
+import {
+  defaultCreationCriteria,
+  defaultFumbleCriteria,
+} from "../runtime/bot-play.js";
 import type { PromotionProfile } from "../runtime/player-tools.js";
 import { RuntimeMonitor } from "../runtime/monitor.js";
 import { Backups } from "../runtime/backups.js";
@@ -838,23 +841,30 @@ export class Operations {
         await this.#access(context).botPlay.construction.get(input.worldId);
         if (input.operation === "creationPolicy.put")
           await db.query(
-            "INSERT INTO creation_policy(world_id,criteria,version,admin,shown) VALUES($1,$2,$3,$4,coalesce($5,false)) ON CONFLICT(world_id) DO UPDATE SET criteria=EXCLUDED.criteria,version=EXCLUDED.version,admin=EXCLUDED.admin,shown=coalesce($5,creation_policy.shown)",
+            "INSERT INTO creation_policy(world_id,criteria,version,admin,shown,fumble_criteria) VALUES($1,$2,$3,$4,coalesce($5,false),coalesce($6,'')) ON CONFLICT(world_id) DO UPDATE SET criteria=EXCLUDED.criteria,version=EXCLUDED.version,admin=EXCLUDED.admin,shown=coalesce($5,creation_policy.shown),fumble_criteria=coalesce($6,creation_policy.fumble_criteria)",
             [
               input.worldId,
               input.criteria,
               requestId,
               actor,
               input.shown ?? null,
+              input.fumbleCriteria ?? null,
             ],
           );
         return {
           ...((
             await db.query(
-              "SELECT criteria,version,shown FROM creation_policy WHERE world_id=$1",
+              `SELECT criteria,version,shown,fumble_criteria AS "fumbleCriteria" FROM creation_policy WHERE world_id=$1`,
               [input.worldId],
             )
-          ).rows[0] ?? { criteria: "", version: null, shown: false }),
+          ).rows[0] ?? {
+            criteria: "",
+            version: null,
+            shown: false,
+            fumbleCriteria: "",
+          }),
           defaultCriteria: defaultCreationCriteria,
+          defaultFumbleCriteria,
         };
       }
       case "npcs.promotions":

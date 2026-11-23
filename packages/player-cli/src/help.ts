@@ -101,7 +101,7 @@ const commands = {
   ],
   status: [
     "[--scene <ID>] [--after <カーソル>] [--view <wait|joins>]",
-    "現在の手番と未読履歴を照会。dailySpに探索・生成の共通残量と次の回復時刻が出る。運営者が表示を選んだ世界では、creationCriteriaに新規作成のダイスの基準が出る。--sceneに本人のプレイ履歴のIDを指定すると、その履歴を読める。--after 0は先頭から。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。",
+    "現在の手番と未読履歴を照会。dailySpに探索・生成の共通残量と次の回復時刻が出る。運営者が表示を選んだ世界では、creationCriteriaに新規作成のダイスの基準、fumbleCriteriaにファンブルの基準が出る。--sceneに本人のプレイ履歴のIDを指定すると、その履歴を読める。--after 0は先頭から。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。",
     "status --view wait",
   ],
   result: [

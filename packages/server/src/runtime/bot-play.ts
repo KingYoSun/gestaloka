@@ -390,6 +390,7 @@ type SessionStatus = {
   callsLimit: number;
   commentUsed: boolean;
   creationCriteria?: string;
+  fumbleCriteria?: string;
   turnStartedAt?: string;
   waitingForReturn?: TurnParticipant & {
     deadline: string;
@@ -915,9 +916,14 @@ const stateEndsPrompt =
   "人物の状態が終了する場合は、申請の意図と状態の本文を照合し、成功時に終了する現在の状態のrelationIdをendEdgesに返す。候補は対象人物のstatesでrelationIdが付いたもの。申請の終了IDが別の性質を指す場合は意図に合う状態だけを選ぶ。終了するものがなければ空配列。";
 const minutesPrompt =
   "minutesはその状態が自然に続く実時間（分）で、何もしなくても時間の経過で終わる状態にだけ付ける。自然には終わらない状態では省く。";
-const fumblePrompt =
-  "この行動が失敗したうえ、さらに悪い結果として申請者本人に変化が残り得るなら、同じ応答にfumble:{through:整数,text:文字列,minutes:整数}を加える。失敗したときだけ同じ面数でもう一度振り、出目がthrough以下ならtextを申請者本人の状態として記録する。1<=through<sides。throughは、行動そのものの危険、申請に書かれた進め方、本人の状態と持ち物から決める。textは変化後の本人の状態を、後から本人だけを調べた人が読める一文で書き、経緯や原因の推測を除く。部位や程度は一つに決め、複数の候補を並べない。死亡は含めない。残る変化がなければfumbleを省く。" +
-  minutesPrompt;
+export const defaultFumbleCriteria =
+  "行動そのものの危険、申請に書かれた進め方、本人の状態と持ち物から、失敗がさらに悪い結果になる見込みをダイスの基準値で設定する。本人に残る変化がなければ設定しない";
+const fumblePrompt = (criteria: string) =>
+  "ファンブルの基準に照らして、この行動が失敗したうえ、さらに悪い結果として申請者本人に変化が残り得るなら、同じ応答にfumble:{through:整数,text:文字列,minutes:整数}を加える。失敗したときだけ同じ面数でもう一度振り、出目がthrough以下ならtextを申請者本人の状態として記録する。1<=through<sides。textは変化後の本人の状態を、後から本人だけを調べた人が読める一文で書き、経緯や原因の推測を除く。部位や程度は一つに決め、複数の候補を並べない。死亡は含めない。該当しなければfumbleを省く。" +
+  minutesPrompt +
+  "ファンブルの基準: " +
+  criteria +
+  "。";
 const selfStatusPrompt =
   "本人の直接の状態変更について、変更前の本文と対象、申請した変更、確定した記録を照合する。表記の訂正や、同じ状態について付与後に成立した結果の反映には再度ダイスを振らず、allowApplyがtrueなら{apply:true,endEdges:[関係ID]}を返す。身体や世界にまだ成立していない不確実な変化は同じ応答でダイス設定を返す。追記・改訂・終了の形式や自己申告だけを成立の根拠にしない。";
 function stateRelations(
@@ -1920,7 +1926,7 @@ export class BotPlay {
           [],
           stateRelations(facts, subjects),
           !!person && !!previous,
-          !npc,
+          npc ? "" : await this.#fumblePrompt(session.world_id),
         );
         outcome = {
           setting: saved.setting,
@@ -3503,8 +3509,8 @@ export class BotPlay {
     ).rows[0]!;
     // 運営者が表示を選んだ世界では、新規作成のダイスの基準を申請の前に読める。
     const criteria = (
-      await db.query<{ criteria: string }>(
-        "SELECT criteria FROM creation_policy WHERE world_id=$1 AND shown",
+      await db.query<{ criteria: string; fumble: string }>(
+        "SELECT criteria,fumble_criteria AS fumble FROM creation_policy WHERE world_id=$1 AND shown",
         [world],
       )
     ).rows[0];
@@ -3547,7 +3553,10 @@ export class BotPlay {
         ? !!r.comments[turnOwner(session.data, actor)!]
         : !!session.data.comment,
       ...(criteria
-        ? { creationCriteria: criteria.criteria || defaultCreationCriteria }
+        ? {
+            creationCriteria: criteria.criteria || defaultCreationCriteria,
+            fumbleCriteria: criteria.fumble || defaultFumbleCriteria,
+          }
         : {}),
       ...(waitingForReturn ? { waitingForReturn } : {}),
       // 受領判断は同席者全員に見える。宛先を示し、本文と変更内容は当事者にだけ返す。
@@ -6179,7 +6188,7 @@ export class BotPlay {
                   ? "learningは本人が選んだ技能の発展・統合の申請。consumeSkillIdsで示された習得済み技能の本文と根拠、申請のtextとbasisから、引き継ぐ能力と新しく必要な応用・習熟を世界の基準に照らして判定する。中身を委ねられた技能は、その適用範囲と新たにできることを具体化する。"
                   : "") +
                 (decides ? decidePrompt : "") +
-                (explore ? "" : fumblePrompt) +
+                (explore ? "" : await this.#fumblePrompt(world)) +
                 (fresh.some((p) => p.requestText)
                   ? "requestTextは元の申請の経緯。各案の技能や製作はその案のchangesだけを判定し、別の案で使う材料をこの案に割り当てない。"
                   : "") +
@@ -8293,7 +8302,7 @@ export class BotPlay {
           affected,
           stateRelations(materials, stateSubjects),
           !!statusReview?.requestedEnds.length,
-          true,
+          await this.#fumblePrompt(world),
         );
         success = saved.roll <= saved.setting.successThrough;
         failed = saved;
@@ -8685,7 +8694,7 @@ export class BotPlay {
     affected: string[] = [],
     stateEnds: string[] = [],
     requireStateEnds = false,
-    fumbles = false,
+    fumble = "",
   ) {
     function readDecision(raw: string) {
       const parsed = parseOutput(raw);
@@ -8783,7 +8792,7 @@ export class BotPlay {
               ? "この行動が成功したときに人物へ残る変化のうち、changesで既に記録されるものを除いてaffectedのIDごとにstates:[{id,text}]を返す。対象ごとに一件とし、後からその人物だけを調べた人が何がどうなったかを読める一文で書く。行為者、経緯、原因の推測を除く。追加する変化がなければ空配列。各状態にはminutesを加えてよい。" +
                 minutesPrompt
               : "") +
-            (fumbles ? fumblePrompt : "") +
+            fumble +
             (group
               ? "対象が一団の場合、行動が成功したときに減る個体がいればinstantReductionを返す。死亡なら{kind:'death',count:死亡数}。" +
                 (group.allowSeparation
@@ -8838,6 +8847,17 @@ export class BotPlay {
     } finally {
       db.release();
     }
+  }
+  // ファンブルの指示。基準の文は世界ごとに運営者が決め、空欄なら既定の基準を使う。
+  async #fumblePrompt(world: string) {
+    return fumblePrompt(
+      (
+        await this.pool.query<{ criteria: string }>(
+          "SELECT fumble_criteria AS criteria FROM creation_policy WHERE world_id=$1",
+          [world],
+        )
+      ).rows[0]?.criteria || defaultFumbleCriteria,
+    );
   }
   // 失敗した判定にファンブルの設定があれば、同じ面数でもう一度振る。
   async #fumble(

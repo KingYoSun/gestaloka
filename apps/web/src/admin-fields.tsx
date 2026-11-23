@@ -94,6 +94,7 @@ export const labels: Record<string, string> = {
   promotionId: "NPC昇格申請ID",
   condition: "自動昇格の条件（空欄で手動のみ）",
   criteria: "新規作成のダイス基準（空欄で既定）",
+  fumbleCriteria: "ファンブルの基準（空欄で既定、省略で現状維持）",
   shown: "基準の文をプレイヤーへ表示",
   approve: "昇格を承認する（オフは却下）",
   sourceRequestId: "インスタントNPCが出現した発言の要求ID",

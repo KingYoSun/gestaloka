@@ -6662,10 +6662,13 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
       ) as Promise<{
         criteria: string;
         defaultCriteria: string;
+        fumbleCriteria: string;
+        defaultFumbleCriteria: string;
         shown: boolean;
       }>;
   const unset = await policy({ operation: "creationPolicy.read" });
   expect(unset.criteria).toBe("");
+  expect(unset.fumbleCriteria).toBe("");
   expect(unset.shown).toBe(false);
   const free = (id: string) =>
     make(
@@ -6683,6 +6686,7 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
     );
   f.calls.mockImplementation(async (id, _role, messages) => {
     expect(messages[0]?.content).toContain(unset.defaultCriteria);
+    expect(messages[0]?.content).toContain(unset.defaultFumbleCriteria);
     expect(messages[0]?.content).toContain("since）が新しい記述");
     const input = JSON.parse(String(messages[1]!.content));
     expect(Object.keys(input)).toEqual([
@@ -6711,14 +6715,20 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
     }),
   ).toMatchObject({ shown: true });
   expect((await f.status(0)).creationCriteria).toBe(unset.defaultCriteria);
+  expect((await f.status(0)).fumbleCriteria).toBe(unset.defaultFumbleCriteria);
   expect(
     await policy({
       operation: "creationPolicy.put",
       criteria: "この世界だけの基準",
+      fumbleCriteria: "この世界だけのファンブル基準",
       reason: "世界ごとの基準を設定",
     }),
   ).toMatchObject({ shown: true });
   expect((await f.status(0)).creationCriteria).toBe("この世界だけの基準");
+  expect((await f.status(0)).fumbleCriteria).toBe(
+    "この世界だけのファンブル基準",
+  );
+  // ファンブルの基準を省いた設定は、現在のファンブルの基準を保つ。
   await policy({
     operation: "creationPolicy.put",
     criteria: "この世界だけの基準",
@@ -6728,6 +6738,7 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
   expect((await f.status(0)).creationCriteria).toBeUndefined();
   f.calls.mockImplementation(async (id, _role, messages) => {
     expect(messages[0]?.content).toContain("この世界だけの基準");
+    expect(messages[0]?.content).toContain("この世界だけのファンブル基準");
     return answer(id, { sides: 100, successThrough: 10 });
   });
   const failing = randomUUID(),
