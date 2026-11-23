@@ -905,12 +905,14 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
   const prefix = original.input[1].content[0];
   expect(original.input[0]).toEqual(next.input[0]);
   expect(prefix).toEqual(next.input[1].content[0]);
-  expect(prefix).not.toEqual(changed.input[1].content[0]);
+  expect(JSON.parse(changed.input[1].content[0].text).actorSkills).toEqual([
+    { ...skills[0], text: skills[0]!.text + "変更" },
+  ]);
   expect(prefix.prompt_cache_breakpoint).toEqual({ mode: "explicit" });
   expect(original.input[0].content[0]).not.toHaveProperty(
     "prompt_cache_breakpoint",
   );
-  expect(JSON.parse(prefix.text)).toEqual({
+  expect(JSON.parse(prefix.text + "]}")).toEqual({
     premise: "世界の前提",
     actor: "actor",
     actorSkills: skills,
@@ -918,7 +920,9 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
   expect(original.input[1].content[1]).not.toHaveProperty(
     "prompt_cache_breakpoint",
   );
-  expect(JSON.parse(original.input[1].content[1].text)).toEqual({
+  const current = (request: { input: { content: { text: string }[] }[] }) =>
+    JSON.parse(request.input[1]!.content.at(-1)!.text.slice(2));
+  expect(current(original)).toEqual({
     text: "ひもと板で工作する",
     changes: { nodes: [] },
     nodes: [
@@ -940,7 +944,7 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
     basisDictionary: [basis],
   });
   // 申請が指さない物品には取得経緯を付けない。短縮IDで指した物品には付ける。
-  const nextInput = JSON.parse(next.input[1].content[1].text);
+  const nextInput = current(next);
   expect(nextInput.storageStockNote).toContain("遠隔保管先");
   const { belongings, ...unreferenced } = nextInput.nodes[0];
   expect(unreferenced.node.id).toBe("actor");

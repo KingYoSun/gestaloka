@@ -17,6 +17,7 @@ type DiceInput = {
 export function prepareDicePrompt(
   messages: ChatMessage[],
   cacheSkills: boolean,
+  partitionSkills = false,
 ): PreparedPrompt | undefined {
   const input = messages.find((message) => message.role === "user");
   if (!input) return;
@@ -145,6 +146,32 @@ export function prepareDicePrompt(
     (split
       ? "最初のJSONは世界設定・申請者・申請者の技能(actorSkills)。次のJSONは今回の申請と他の材料。両方を合わせて判定する。"
       : "");
+  const skillBlocks = [
+    { type: "text" as const, text: prefix, cacheBoundary: true as const },
+  ];
+  let suffix = "\n" + current;
+  if (split && partitionSkills) {
+    // 技能が増えても前の境界を残す。最後の境界は技能の末尾に置く。
+    const header = JSON.stringify({ premise, actor, actorSkills: [] }).slice(
+      0,
+      -2,
+    );
+    skillBlocks.length = 0;
+    let start = 0;
+    for (const size of [4, 8, 16, actorSkills.length]) {
+      if (start === actorSkills.length) break;
+      const end = Math.min(start + size, actorSkills.length);
+      skillBlocks.push({
+        type: "text",
+        text:
+          (start ? "," : header) +
+          JSON.stringify(actorSkills.slice(start, end)).slice(1, -1),
+        cacheBoundary: true,
+      });
+      start = end;
+    }
+    suffix = "]}" + suffix;
+  }
   return {
     system: [
       {
@@ -167,10 +194,7 @@ export function prepareDicePrompt(
           : {
               role: message.role,
               content: split
-                ? [
-                    { type: "text", text: prefix, cacheBoundary: true },
-                    { type: "text", text: "\n" + current },
-                  ]
+                ? [...skillBlocks, { type: "text", text: suffix }]
                 : current,
             },
       ),
