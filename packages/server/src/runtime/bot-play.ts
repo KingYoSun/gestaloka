@@ -5948,7 +5948,12 @@ export class BotPlay {
             | "MATERIAL_ID_REQUIRED"
             | "SKILL_CAPACITY_EXCEEDED";
         };
-    const work = proposals.some((p) => p.materials !== undefined);
+    // 材料を指定しない本人の状態だけの変更は製作ではないので、材料を求めない。
+    const work = proposals.some(
+      (p) =>
+        p.materials !== undefined &&
+        !(p.statusReview?.onlyStateCreation && !p.materials.length),
+    );
     const stock = new Map(consumable.map((item) => [item.id, item]));
     const touched = await this.#touchedItems(
       context,

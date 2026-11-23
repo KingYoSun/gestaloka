@@ -7674,6 +7674,8 @@ test("登録した保管先と誰も登録していない場所には、その�
     expect(JSON.parse(messages[1]!.content)).toMatchObject({
       allowApply: true,
     });
+    // 材料を指定しない本人の状態だけの変更では、製作の材料を求めない。
+    expect(messages[0]!.content).not.toContain("requiredMaterials");
     // 同じ指示にある他の出力の空配列が付いても、確定として読む。
     return answer(id, {
       apply: true,
