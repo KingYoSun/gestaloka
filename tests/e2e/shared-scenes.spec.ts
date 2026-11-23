@@ -231,7 +231,6 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
       finish,
       page.getByText("プレイコマンド", { exact: true }),
       page.getByRole("button", { name: "分離して続ける", exact: true }),
-      page.getByRole("button", { name: "本人のシーンを終了", exact: true }),
     ]) {
       await expect(action).toHaveCount(0);
     }
@@ -250,7 +249,7 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
       "過去の履歴",
       "通知",
     ]);
-    const scene = page.getByRole("complementary", { name: "シーン情報" });
+    const scene = page.getByRole("complementary", { name: "セッション情報" });
     await expect(scene.getByRole("listitem")).toHaveCount(2);
     const current = scene.getByRole("button", {
       name: /プロフィール（手番中）/,
@@ -339,7 +338,7 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     await expect(leftTrigger).toHaveCSS("left", "12px");
     await expect(rightTrigger).toHaveCSS("right", "12px");
     await rightTrigger.click();
-    const sceneDrawer = page.getByRole("dialog", { name: "シーン情報" });
+    const sceneDrawer = page.getByRole("dialog", { name: "セッション情報" });
     await expect(sceneDrawer).toBeVisible();
     await expect(sceneDrawer.locator(".turn-clock")).toHaveText(
       /^\d{2,}:\d{2}$/,
@@ -402,7 +401,7 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
     await finish.click();
     await expect(
       page.getByRole("heading", {
-        name: "本人のシーンを終了しました",
+        name: "今回のプレイを終了しました",
         includeHidden: true,
       }),
     ).toBeVisible();
@@ -550,9 +549,9 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
       ).actorId,
     ).toBe(sender);
     await page.goto(`/worlds/${f.world}/play?actorId=${sender}`);
-    const sceneDrawer = page.getByRole("dialog", { name: "シーン情報" });
+    const sceneDrawer = page.getByRole("dialog", { name: "セッション情報" });
     const openScene = () =>
-      page.getByRole("button", { name: "シーン情報", exact: true }).click();
+      page.getByRole("button", { name: "セッション情報", exact: true }).click();
     await openScene();
     await sceneDrawer.getByRole("button", { name: "隣接する場所" }).click();
     await expect(

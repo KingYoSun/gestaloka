@@ -101,12 +101,12 @@ const commands = {
   ],
   status: [
     "[--scene <ID>] [--after <カーソル>] [--view <wait|joins>]",
-    "現在の手番と未読履歴を照会。dailySpに探索・生成の共通残量と次の回復時刻が出る。運営者が表示を選んだ世界では、creationCriteriaに新規作成のダイスの基準が出る。--sceneは本人の過去シーン、--after 0は先頭。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。",
+    "現在の手番と未読履歴を照会。dailySpに探索・生成の共通残量と次の回復時刻が出る。運営者が表示を選んだ世界では、creationCriteriaに新規作成のダイスの基準が出る。--sceneに本人のプレイ履歴のIDを指定すると、その履歴を読める。--after 0は先頭から。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。",
     "status --view wait",
   ],
   result: [
     "[--scene <ID>]",
-    "本人のシーンの履歴と終了結果をまとめて読む。",
+    "本人のプレイ履歴と終了結果をまとめて読む。以前のプレイは--sceneに履歴IDを指定する。",
     "result --scene @12ab34cd",
   ],
   standby: [
@@ -179,7 +179,7 @@ const commands = {
     "",
     "本人の通常手番を終え、同席者に操作結果を共有。別の場所へ移っていれば、その場所の同席者とともに別のセッションに分かれる。",
   ],
-  leave: ["", "セッションを分離し、本人のシーンでプレイを続ける。"],
+  leave: ["", "今の同席者と別れ、自分のセッションでプレイを続ける。"],
   finish: ["", "本人のプレイを終え、確定した履歴を取得。"],
   play: [
     "--file <JSONファイル> [--stealth] [--depart-alone-on-timeout]",
@@ -218,7 +218,7 @@ const commands = {
   ],
   history: [
     "--scene <ID> [--kind <events|actions>] [--before <ID>] [--after <UUID>]",
-    "本人の旧シーン履歴を読む。--kindの既定はevents。--beforeと--afterはページの境界。",
+    "旧版で保存した本人の出来事（events）や入力（actions）を読む。--kindの既定はevents。--beforeと--afterはページの境界。",
     "history --scene @12ab34cd --kind actions",
   ],
   icon: [

@@ -334,7 +334,7 @@ test("本人の素材を個別表示し、手番終了時に入力・結果・�
     screen.getByRole("button", { name: "自分のプレイを終了する" }),
   );
   await screen.findByRole("heading", {
-    name: "本人のシーンを終了しました",
+    name: "今回のプレイを終了しました",
     hidden: true,
   });
   expect(chat.textContent).toContain("記録の方法を提案する");

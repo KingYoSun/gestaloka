@@ -982,7 +982,7 @@ export class WorldAccess {
       throw new AccessError(
         404,
         "SCENE_NOT_FOUND",
-        "利用できるシーンが見つかりません",
+        "閲覧できるプレイ履歴が見つかりません",
       );
     if (
       row &&
@@ -1031,7 +1031,7 @@ export class WorldAccess {
       throw new AccessError(
         404,
         "SCENE_NOT_FOUND",
-        "利用できるシーンが見つかりません",
+        "閲覧できるプレイ履歴が見つかりません",
       );
     if (session)
       row.count =

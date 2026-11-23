@@ -3520,7 +3520,7 @@ export class BotPlay {
         [selected, actor, world],
       )
     ).rows[0];
-    if (!valid) reject("SCENE_NOT_FOUND", "本人のシーンを指定してください");
+    if (!valid) reject("SCENE_NOT_FOUND", "本人のプレイ履歴を指定してください");
     const entries = (
       await db.query(
         `SELECT c.id,c.payload${withClock ? ',c.recorded_at AS "recordedAt"' : ""} FROM bot_record r JOIN bot_chat c ON c.id=r.chat_id

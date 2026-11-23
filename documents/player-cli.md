@@ -10,9 +10,9 @@ pnpm build:server
 pnpm build:player-cli
 ```
 
-`artifacts/player-cli/gestaloka-player-cli-0.10.0.tgz`をMuseへ渡します。公開npmレジストリへの登録は不要です。tarballには公開契約を含む実行ファイル・ヘルプ・README・共通プレイ用スキルを収録し、実行時のnpm依存はありません。
+`artifacts/player-cli/gestaloka-player-cli-<版番号>.tgz`をMuseへ渡します。公開npmレジストリへの登録は不要です。tarballには公開契約を含む実行ファイル・ヘルプ・README・共通プレイ用スキルを収録し、実行時のnpm依存はありません。
 
-Muse・Grok Botで共有シーンを試遊する際は、[共通スキル](../packages/player-cli/skills/gestaloka-player/SKILL.md)と[実機の確認項目](player-bot-verification.md)を使います。
+Muse・Grok Botで一緒に遊ぶ手順は[セッション・手番・受領とチーム](../packages/player-cli/skills/gestaloka-player/references/sessions.md)を参照してください。
 
 ## AI向けの公開案内と最新版API
 
@@ -43,9 +43,9 @@ Muse・Grok Botで共有シーンを試遊する際は、[共通スキル](../pa
 1. 同梱READMEの導入手順でtarballをインストールし、持ち主が指定した公開URLと村のURLまたはIDで`connect`を実行する。
 2. 持ち主が認可URLを手元のブラウザーで開き、確認コードを照合して新規参加を許可する。別ユーザーのMuseでも同じ村への接続・許可を行う。
 3. 両方のMuseで`join`と`status`を実行し、異なる`device.actorId`が返ることを確認する。表示された人物IDを以後の報告に使う。
-4. AのMuseで`prepare`・`start`・`act`・`finish`を実行する。処理中は`status`で照会し、`finished`になった後にリザルトを読む。
-5. BのMuseで後続のシーンを準備する。提示された観測・あらすじから、状況や人物・関係の解釈、今後の予想、選択の意味がどう変わったかを原文とともに記録する。B自身の見聞から一手を入力し、終了後にAでも続きを読む。特定の返答・結末を期待値にしない。
-6. 一手の送信後にCLIまたはMuseを再起動する。保存したプロファイルを使って`status`と`recover --request <保存した要求ID>`を実行し、同じ人物・シーン・要求結果へ戻ることを確認する。`act`を新規に打ち直さない。
+4. Bで`standby --resume`を実行する。Aはセッションに未参加なら`start`し、自分の手番で`search --kind surroundings`を読む。同じ場所にいるBに`contact --target <Bの人物ID>`で接触する。
+5. 両者が`status`で自分の手番を確認する。手番の側が`say --text <発言>`で話し、`end-turn`で相手に手番を渡す。相手も自分の履歴を読み、自分の見聞から行動を選ぶ。それぞれの人物にとって、どの言葉や出来事が次の判断に影響したかを記録する。
+6. 発言に使ったCLIまたはMuseを再起動し、同じプロファイルで`status`と`recover --request <発言の要求ID>`を実行する。本人の履歴と先ほどの要求結果を確認する。各自の手番で`finish`し、`result --scene <finishが返したsceneId>`で今回の履歴を読み返す。
 7. 持ち主がWebから許可を解除し、そのMuseの`status`・`recover`が拒否されることを確認する。
 
 ## 開発時の検証
@@ -58,7 +58,7 @@ pnpm test:integration
 
 `tests/integration/participants.test.ts`は、実DBとHTTPを使い、呼出しごとに別のCLIプロセスを起動します。モデル応答は試験用で、外部LLMへ送信しません。通信の応答を捨てた後の再照合、2ユーザーの人物と履歴の分離、双方の確定後の参照、認可解除を確認します。固定した文字列はデータの到達を追跡する印であり、物語品質の評価ではありません。
 
-## 確認記録
+## 当時の版での試遊記録
 
 2026年11月8日時点。
 
