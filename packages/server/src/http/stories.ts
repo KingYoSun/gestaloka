@@ -66,6 +66,11 @@ export async function setupStories(pool: pg.Pool) {
 }
 
 const playerKey = "md5('stories:' || author_id::text)";
+const playerWorlds = (user: string) => `SELECT a.construction_id
+  FROM world_access a JOIN world_subject s ON s.id=a.subject_id
+  WHERE s.user_id=${user} AND s.active AND a.role='player' AND a.actor_id IS NOT NULL`;
+const inPlayerWorld = `world_id IN (${playerWorlds("$1")})`;
+const readableStory = `deleted_at IS NULL AND ${inPlayerWorld}`;
 const bookmarked = `EXISTS (SELECT 1 FROM player_story_bookmark
   WHERE user_id=$1 AND story_id=player_story.id)`;
 const columns = `id,world_id AS "worldId",world_title AS "worldTitle",title,author,
@@ -109,7 +114,7 @@ export class Stories {
     query: z.infer<typeof StoryListQuery>,
   ): Promise<z.infer<typeof StoryList>> {
     const values = [user];
-    const filters = ["deleted_at IS NULL", ...dateWhere(values, query)];
+    const filters = [readableStory, ...dateWhere(values, query)];
     if (query.bookmarked) filters.push(bookmarked);
     if (query.worldId) filters.push(`world_id=$${values.push(query.worldId)}`);
     if (query.player)
@@ -124,7 +129,7 @@ export class Stories {
     const descending = sort === "newest";
     if (query.before)
       filters.push(
-        `(${order.join(",")})${descending ? "<" : ">"}(SELECT ${order.join(",")} FROM player_story WHERE id=$${values.push(query.before)})`,
+        `(${order.join(",")})${descending ? "<" : ">"}(SELECT ${order.join(",")} FROM player_story WHERE id=$${values.push(query.before)} AND ${inPlayerWorld})`,
       );
     const { rows } = await this.pool.query<StoryRow>(
       `SELECT ${columns} FROM player_story WHERE ${filters.join(" AND ")}
@@ -140,6 +145,13 @@ export class Stories {
     id: string,
     query: z.infer<typeof StoryReadQuery>,
   ): Promise<z.infer<typeof StoryRead> | undefined> {
+    const {
+      rows: [story],
+    } = await this.pool.query<StoryRow>(
+      `SELECT ${columns} FROM player_story WHERE id=$2 AND ${readableStory}`,
+      [user, id],
+    );
+    if (!story) return undefined;
     const values: (string | number)[] = [id];
     const filters = [
       "story_id=$1",
@@ -158,11 +170,7 @@ export class Stories {
       );
     }
     const direction = descending ? "DESC" : "ASC";
-    const [stories, page, entry] = await Promise.all([
-      this.pool.query<StoryRow>(
-        `SELECT ${columns} FROM player_story WHERE id=$2 AND deleted_at IS NULL`,
-        [user, id],
-      ),
+    const [page, entry] = await Promise.all([
       this.pool.query<{
         number: number;
         published_at: Date;
@@ -193,9 +201,8 @@ export class Stories {
         [id, query.episode ?? null, query.image === "1"],
       ),
     ]);
-    const story = stories.rows[0],
-      selected = entry.rows[0];
-    if (!story || !selected) return undefined;
+    const selected = entry.rows[0];
+    if (!selected) return undefined;
     const episodes = page.rows.slice(0, pageSize).map((row) => ({
       number: row.number,
       publishedAt: row.published_at.toISOString(),
@@ -224,7 +231,7 @@ export class Stories {
       const {
         rows: [result],
       } = await this.pool.query<{ available: boolean }>(
-        `WITH available AS (SELECT id FROM player_story WHERE id=$2 AND deleted_at IS NULL),
+        `WITH available AS (SELECT id FROM player_story WHERE id=$2 AND ${readableStory}),
          saved AS (
            INSERT INTO player_story_bookmark(user_id,story_id) SELECT $1,id FROM available
            ON CONFLICT DO NOTHING
@@ -294,11 +301,7 @@ export class Stories {
         await db.query(
           `INSERT INTO player_story(id,world_id,world_title,author_id,author,title)
            SELECT $1,c.id,c.public_title,$3,$4,$5 FROM world_construction c
-           WHERE c.id=$2 AND EXISTS (
-             SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id
-             WHERE a.construction_id=c.id AND a.role='player' AND a.actor_id IS NOT NULL
-               AND s.active AND s.user_id=$3
-           ) ON CONFLICT(id) DO NOTHING`,
+           WHERE c.id=$2 AND c.id IN (${playerWorlds("$3")}) ON CONFLICT(id) DO NOTHING`,
           [storyId, world, user, input.author, input.title],
         );
       }

@@ -60,10 +60,23 @@ test("旧版で公開した話の再送は修正の前後で同じ結果を返�
     expect(
       await stories.post(user, world, { ...second, body: "別の本文" }),
     ).toBe("conflict");
+    await db.query("INSERT INTO world_subject VALUES($1,$1,true)", [user]);
+    await db.query("INSERT INTO world_access VALUES($1,$2,'player',$3)", [
+      world,
+      user,
+      randomUUID(),
+    ]);
     expect(await stories.read(user, storyId, { episode: "2" })).toMatchObject({
       story: { title: "初航海の記録" },
       episode: { body: "港を出た。" },
     });
+    await stories.bookmark(user, storyId, true);
+    await db.query("UPDATE world_subject SET active=false WHERE id=$1", [user]);
+    expect(await stories.list(user, { bookmarked: "1" })).toEqual({
+      items: [],
+      next: null,
+    });
+    expect(await stories.read(user, storyId, { image: "1" })).toBeUndefined();
   } finally {
     await isolated.close();
   }

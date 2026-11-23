@@ -9,7 +9,7 @@ import sharp from "sharp";
 import { fixtureAuth } from "../support/auth.js";
 import { test, expect } from "./fixtures.js";
 
-test("STORIES を一行から公開し、別の世界からも連載を読める", async ({
+test("STORIES を一行から公開し、同じ世界にプレイヤーを持つアカウントが連載を読める", async ({
   page,
   browser,
   baseURL,
@@ -167,6 +167,22 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
 
     const visitor = await readerContext.newPage();
     await visitor.goto("/stories");
+    await expect(
+      visitor.getByText("条件に合う作品はありません。"),
+    ).toBeVisible();
+    await visitor.goto(`/stories/${storyId}`);
+    await expect(
+      visitor.getByText("作品または指定した話が見つかりません"),
+    ).toBeVisible();
+    expect((await cli("stories", "list", "--world", world)).items).toEqual([]);
+    expect(await cli("stories", "read", "--story", storyId)).toMatchObject({
+      code: "STORY_NOT_FOUND",
+    });
+    expect(await cli("stories", "bookmark", "--story", storyId)).toMatchObject({
+      code: "STORY_NOT_FOUND",
+    });
+    await grant(reader.id, world);
+    await visitor.goto("/stories");
     await visitor.getByRole("link", { name: "初航海", exact: true }).click();
     await visitor.getByRole("link", { name: "次の話", exact: true }).click();
     await expect(visitor.getByRole("heading", { name: "第2話" })).toBeVisible();
@@ -221,7 +237,6 @@ test("STORIES を一行から公開し、別の世界からも連載を読める
       expect(response.ok(), await response.text()).toBe(true);
       expect(await response.json()).toEqual({ storyId, episode: 3 });
     }
-    await grant(reader.id, world);
     const writer = await connectCli(world);
     expect(
       await writer(
