@@ -9798,6 +9798,33 @@
                                               "minimum": 0,
                                               "maximum": 1
                                             },
+                                            "price": {
+                                              "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                              "type": "object",
+                                              "properties": {
+                                                "seriesId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "exclusiveMinimum": true,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "seriesId",
+                                                "label",
+                                                "count"
+                                              ],
+                                              "additionalProperties": false
+                                            },
                                             "minCount": {
                                               "type": "integer",
                                               "minimum": 0,
@@ -9845,6 +9872,33 @@
                                               "type": "number",
                                               "minimum": 0,
                                               "maximum": 1
+                                            },
+                                            "price": {
+                                              "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                              "type": "object",
+                                              "properties": {
+                                                "seriesId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "exclusiveMinimum": true,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "seriesId",
+                                                "label",
+                                                "count"
+                                              ],
+                                              "additionalProperties": false
                                             },
                                             "count": {
                                               "type": "integer",
@@ -10385,6 +10439,33 @@
                                               "minimum": 0,
                                               "maximum": 1
                                             },
+                                            "price": {
+                                              "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                              "type": "object",
+                                              "properties": {
+                                                "seriesId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "exclusiveMinimum": true,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "seriesId",
+                                                "label",
+                                                "count"
+                                              ],
+                                              "additionalProperties": false
+                                            },
                                             "minCount": {
                                               "type": "integer",
                                               "minimum": 0,
@@ -10432,6 +10513,33 @@
                                               "type": "number",
                                               "minimum": 0,
                                               "maximum": 1
+                                            },
+                                            "price": {
+                                              "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                              "type": "object",
+                                              "properties": {
+                                                "seriesId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "exclusiveMinimum": true,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "seriesId",
+                                                "label",
+                                                "count"
+                                              ],
+                                              "additionalProperties": false
                                             },
                                             "count": {
                                               "type": "integer",
@@ -11300,6 +11408,33 @@
                                               "minimum": 0,
                                               "maximum": 1
                                             },
+                                            "price": {
+                                              "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                              "type": "object",
+                                              "properties": {
+                                                "seriesId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "exclusiveMinimum": true,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "seriesId",
+                                                "label",
+                                                "count"
+                                              ],
+                                              "additionalProperties": false
+                                            },
                                             "minCount": {
                                               "type": "integer",
                                               "minimum": 0,
@@ -11347,6 +11482,33 @@
                                               "type": "number",
                                               "minimum": 0,
                                               "maximum": 1
+                                            },
+                                            "price": {
+                                              "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                              "type": "object",
+                                              "properties": {
+                                                "seriesId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "exclusiveMinimum": true,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "seriesId",
+                                                "label",
+                                                "count"
+                                              ],
+                                              "additionalProperties": false
                                             },
                                             "count": {
                                               "type": "integer",
@@ -11887,6 +12049,33 @@
                                               "minimum": 0,
                                               "maximum": 1
                                             },
+                                            "price": {
+                                              "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                              "type": "object",
+                                              "properties": {
+                                                "seriesId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "exclusiveMinimum": true,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "seriesId",
+                                                "label",
+                                                "count"
+                                              ],
+                                              "additionalProperties": false
+                                            },
                                             "minCount": {
                                               "type": "integer",
                                               "minimum": 0,
@@ -11934,6 +12123,33 @@
                                               "type": "number",
                                               "minimum": 0,
                                               "maximum": 1
+                                            },
+                                            "price": {
+                                              "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                              "type": "object",
+                                              "properties": {
+                                                "seriesId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "exclusiveMinimum": true,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "seriesId",
+                                                "label",
+                                                "count"
+                                              ],
+                                              "additionalProperties": false
                                             },
                                             "count": {
                                               "type": "integer",
@@ -12696,6 +12912,33 @@
                                                         "minimum": 0,
                                                         "maximum": 1
                                                       },
+                                                      "price": {
+                                                        "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "seriesId": {
+                                                            "type": "string",
+                                                            "format": "uuid",
+                                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                          },
+                                                          "label": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          },
+                                                          "count": {
+                                                            "type": "integer",
+                                                            "minimum": 0,
+                                                            "exclusiveMinimum": true,
+                                                            "maximum": 9007199254740991
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "seriesId",
+                                                          "label",
+                                                          "count"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      },
                                                       "minCount": {
                                                         "type": "integer",
                                                         "minimum": 0,
@@ -12743,6 +12986,33 @@
                                                         "type": "number",
                                                         "minimum": 0,
                                                         "maximum": 1
+                                                      },
+                                                      "price": {
+                                                        "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "seriesId": {
+                                                            "type": "string",
+                                                            "format": "uuid",
+                                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                          },
+                                                          "label": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          },
+                                                          "count": {
+                                                            "type": "integer",
+                                                            "minimum": 0,
+                                                            "exclusiveMinimum": true,
+                                                            "maximum": 9007199254740991
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "seriesId",
+                                                          "label",
+                                                          "count"
+                                                        ],
+                                                        "additionalProperties": false
                                                       },
                                                       "count": {
                                                         "type": "integer",
@@ -13283,6 +13553,33 @@
                                                         "minimum": 0,
                                                         "maximum": 1
                                                       },
+                                                      "price": {
+                                                        "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "seriesId": {
+                                                            "type": "string",
+                                                            "format": "uuid",
+                                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                          },
+                                                          "label": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          },
+                                                          "count": {
+                                                            "type": "integer",
+                                                            "minimum": 0,
+                                                            "exclusiveMinimum": true,
+                                                            "maximum": 9007199254740991
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "seriesId",
+                                                          "label",
+                                                          "count"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      },
                                                       "minCount": {
                                                         "type": "integer",
                                                         "minimum": 0,
@@ -13330,6 +13627,33 @@
                                                         "type": "number",
                                                         "minimum": 0,
                                                         "maximum": 1
+                                                      },
+                                                      "price": {
+                                                        "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "seriesId": {
+                                                            "type": "string",
+                                                            "format": "uuid",
+                                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                          },
+                                                          "label": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          },
+                                                          "count": {
+                                                            "type": "integer",
+                                                            "minimum": 0,
+                                                            "exclusiveMinimum": true,
+                                                            "maximum": 9007199254740991
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "seriesId",
+                                                          "label",
+                                                          "count"
+                                                        ],
+                                                        "additionalProperties": false
                                                       },
                                                       "count": {
                                                         "type": "integer",
@@ -14773,6 +15097,33 @@
                                               "minimum": 0,
                                               "maximum": 1
                                             },
+                                            "price": {
+                                              "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                              "type": "object",
+                                              "properties": {
+                                                "seriesId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "exclusiveMinimum": true,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "seriesId",
+                                                "label",
+                                                "count"
+                                              ],
+                                              "additionalProperties": false
+                                            },
                                             "minCount": {
                                               "type": "integer",
                                               "minimum": 0,
@@ -14820,6 +15171,33 @@
                                               "type": "number",
                                               "minimum": 0,
                                               "maximum": 1
+                                            },
+                                            "price": {
+                                              "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                              "type": "object",
+                                              "properties": {
+                                                "seriesId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "exclusiveMinimum": true,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "seriesId",
+                                                "label",
+                                                "count"
+                                              ],
+                                              "additionalProperties": false
                                             },
                                             "count": {
                                               "type": "integer",
@@ -15360,6 +15738,33 @@
                                               "minimum": 0,
                                               "maximum": 1
                                             },
+                                            "price": {
+                                              "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                              "type": "object",
+                                              "properties": {
+                                                "seriesId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "exclusiveMinimum": true,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "seriesId",
+                                                "label",
+                                                "count"
+                                              ],
+                                              "additionalProperties": false
+                                            },
                                             "minCount": {
                                               "type": "integer",
                                               "minimum": 0,
@@ -15407,6 +15812,33 @@
                                               "type": "number",
                                               "minimum": 0,
                                               "maximum": 1
+                                            },
+                                            "price": {
+                                              "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                              "type": "object",
+                                              "properties": {
+                                                "seriesId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": 0,
+                                                  "exclusiveMinimum": true,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              },
+                                              "required": [
+                                                "seriesId",
+                                                "label",
+                                                "count"
+                                              ],
+                                              "additionalProperties": false
                                             },
                                             "count": {
                                               "type": "integer",
@@ -17228,6 +17660,33 @@
                                                     "minimum": 0,
                                                     "maximum": 1
                                                   },
+                                                  "price": {
+                                                    "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "seriesId": {
+                                                        "type": "string",
+                                                        "format": "uuid",
+                                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                      },
+                                                      "label": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      },
+                                                      "count": {
+                                                        "type": "integer",
+                                                        "minimum": 0,
+                                                        "exclusiveMinimum": true,
+                                                        "maximum": 9007199254740991
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "seriesId",
+                                                      "label",
+                                                      "count"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  },
                                                   "minCount": {
                                                     "type": "integer",
                                                     "minimum": 0,
@@ -17275,6 +17734,33 @@
                                                     "type": "number",
                                                     "minimum": 0,
                                                     "maximum": 1
+                                                  },
+                                                  "price": {
+                                                    "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "seriesId": {
+                                                        "type": "string",
+                                                        "format": "uuid",
+                                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                      },
+                                                      "label": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      },
+                                                      "count": {
+                                                        "type": "integer",
+                                                        "minimum": 0,
+                                                        "exclusiveMinimum": true,
+                                                        "maximum": 9007199254740991
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "seriesId",
+                                                      "label",
+                                                      "count"
+                                                    ],
+                                                    "additionalProperties": false
                                                   },
                                                   "count": {
                                                     "type": "integer",
@@ -17815,6 +18301,33 @@
                                                     "minimum": 0,
                                                     "maximum": 1
                                                   },
+                                                  "price": {
+                                                    "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "seriesId": {
+                                                        "type": "string",
+                                                        "format": "uuid",
+                                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                      },
+                                                      "label": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      },
+                                                      "count": {
+                                                        "type": "integer",
+                                                        "minimum": 0,
+                                                        "exclusiveMinimum": true,
+                                                        "maximum": 9007199254740991
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "seriesId",
+                                                      "label",
+                                                      "count"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  },
                                                   "minCount": {
                                                     "type": "integer",
                                                     "minimum": 0,
@@ -17862,6 +18375,33 @@
                                                     "type": "number",
                                                     "minimum": 0,
                                                     "maximum": 1
+                                                  },
+                                                  "price": {
+                                                    "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "seriesId": {
+                                                        "type": "string",
+                                                        "format": "uuid",
+                                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                      },
+                                                      "label": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      },
+                                                      "count": {
+                                                        "type": "integer",
+                                                        "minimum": 0,
+                                                        "exclusiveMinimum": true,
+                                                        "maximum": 9007199254740991
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "seriesId",
+                                                      "label",
+                                                      "count"
+                                                    ],
+                                                    "additionalProperties": false
                                                   },
                                                   "count": {
                                                     "type": "integer",
@@ -24110,6 +24650,33 @@
                                                   "minimum": 0,
                                                   "maximum": 1
                                                 },
+                                                "price": {
+                                                  "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "seriesId": {
+                                                      "type": "string",
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                    },
+                                                    "label": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "count": {
+                                                      "type": "integer",
+                                                      "minimum": 0,
+                                                      "exclusiveMinimum": true,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "seriesId",
+                                                    "label",
+                                                    "count"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
                                                 "minCount": {
                                                   "type": "integer",
                                                   "minimum": 0,
@@ -24157,6 +24724,33 @@
                                                   "type": "number",
                                                   "minimum": 0,
                                                   "maximum": 1
+                                                },
+                                                "price": {
+                                                  "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "seriesId": {
+                                                      "type": "string",
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                    },
+                                                    "label": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "count": {
+                                                      "type": "integer",
+                                                      "minimum": 0,
+                                                      "exclusiveMinimum": true,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "seriesId",
+                                                    "label",
+                                                    "count"
+                                                  ],
+                                                  "additionalProperties": false
                                                 },
                                                 "count": {
                                                   "type": "integer",
@@ -24697,6 +25291,33 @@
                                                   "minimum": 0,
                                                   "maximum": 1
                                                 },
+                                                "price": {
+                                                  "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "seriesId": {
+                                                      "type": "string",
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                    },
+                                                    "label": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "count": {
+                                                      "type": "integer",
+                                                      "minimum": 0,
+                                                      "exclusiveMinimum": true,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "seriesId",
+                                                    "label",
+                                                    "count"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
                                                 "minCount": {
                                                   "type": "integer",
                                                   "minimum": 0,
@@ -24744,6 +25365,33 @@
                                                   "type": "number",
                                                   "minimum": 0,
                                                   "maximum": 1
+                                                },
+                                                "price": {
+                                                  "description": "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "seriesId": {
+                                                      "type": "string",
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                    },
+                                                    "label": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "count": {
+                                                      "type": "integer",
+                                                      "minimum": 0,
+                                                      "exclusiveMinimum": true,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "seriesId",
+                                                    "label",
+                                                    "count"
+                                                  ],
+                                                  "additionalProperties": false
                                                 },
                                                 "count": {
                                                   "type": "integer",

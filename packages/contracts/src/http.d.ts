@@ -3801,6 +3801,13 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                    price?: {
+                                        /** Format: uuid */
+                                        seriesId: string;
+                                        label: string;
+                                        count: number;
+                                    };
                                     minCount: number;
                                     maxCount: number;
                                 } | {
@@ -3809,6 +3816,13 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                    price?: {
+                                        /** Format: uuid */
+                                        seriesId: string;
+                                        label: string;
+                                        count: number;
+                                    };
                                     count: number;
                                 };
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -3934,6 +3948,13 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                    price?: {
+                                        /** Format: uuid */
+                                        seriesId: string;
+                                        label: string;
+                                        count: number;
+                                    };
                                     minCount: number;
                                     maxCount: number;
                                 } | {
@@ -3942,6 +3963,13 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                    price?: {
+                                        /** Format: uuid */
+                                        seriesId: string;
+                                        label: string;
+                                        count: number;
+                                    };
                                     count: number;
                                 };
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -4148,6 +4176,13 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                    price?: {
+                                        /** Format: uuid */
+                                        seriesId: string;
+                                        label: string;
+                                        count: number;
+                                    };
                                     minCount: number;
                                     maxCount: number;
                                 } | {
@@ -4156,6 +4191,13 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                    price?: {
+                                        /** Format: uuid */
+                                        seriesId: string;
+                                        label: string;
+                                        count: number;
+                                    };
                                     count: number;
                                 };
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -4281,6 +4323,13 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                    price?: {
+                                        /** Format: uuid */
+                                        seriesId: string;
+                                        label: string;
+                                        count: number;
+                                    };
                                     minCount: number;
                                     maxCount: number;
                                 } | {
@@ -4289,6 +4338,13 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                    price?: {
+                                        /** Format: uuid */
+                                        seriesId: string;
+                                        label: string;
+                                        count: number;
+                                    };
                                     count: number;
                                 };
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -4467,6 +4523,13 @@ export interface paths {
                                         species: string;
                                         description: string;
                                         probability: number;
+                                        /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                        price?: {
+                                            /** Format: uuid */
+                                            seriesId: string;
+                                            label: string;
+                                            count: number;
+                                        };
                                         minCount: number;
                                         maxCount: number;
                                     } | {
@@ -4475,6 +4538,13 @@ export interface paths {
                                         species: string;
                                         description: string;
                                         probability: number;
+                                        /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                        price?: {
+                                            /** Format: uuid */
+                                            seriesId: string;
+                                            label: string;
+                                            count: number;
+                                        };
                                         count: number;
                                     };
                                     /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -4600,6 +4670,13 @@ export interface paths {
                                         species: string;
                                         description: string;
                                         probability: number;
+                                        /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                        price?: {
+                                            /** Format: uuid */
+                                            seriesId: string;
+                                            label: string;
+                                            count: number;
+                                        };
                                         minCount: number;
                                         maxCount: number;
                                     } | {
@@ -4608,6 +4685,13 @@ export interface paths {
                                         species: string;
                                         description: string;
                                         probability: number;
+                                        /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                        price?: {
+                                            /** Format: uuid */
+                                            seriesId: string;
+                                            label: string;
+                                            count: number;
+                                        };
                                         count: number;
                                     };
                                     /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -4973,6 +5057,13 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                    price?: {
+                                        /** Format: uuid */
+                                        seriesId: string;
+                                        label: string;
+                                        count: number;
+                                    };
                                     minCount: number;
                                     maxCount: number;
                                 } | {
@@ -4981,6 +5072,13 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                    price?: {
+                                        /** Format: uuid */
+                                        seriesId: string;
+                                        label: string;
+                                        count: number;
+                                    };
                                     count: number;
                                 };
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -5106,6 +5204,13 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                    price?: {
+                                        /** Format: uuid */
+                                        seriesId: string;
+                                        label: string;
+                                        count: number;
+                                    };
                                     minCount: number;
                                     maxCount: number;
                                 } | {
@@ -5114,6 +5219,13 @@ export interface paths {
                                     species: string;
                                     description: string;
                                     probability: number;
+                                    /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                    price?: {
+                                        /** Format: uuid */
+                                        seriesId: string;
+                                        label: string;
+                                        count: number;
+                                    };
                                     count: number;
                                 };
                                 /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -5707,6 +5819,13 @@ export interface paths {
                                                 species: string;
                                                 description: string;
                                                 probability: number;
+                                                /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                                price?: {
+                                                    /** Format: uuid */
+                                                    seriesId: string;
+                                                    label: string;
+                                                    count: number;
+                                                };
                                                 minCount: number;
                                                 maxCount: number;
                                             } | {
@@ -5715,6 +5834,13 @@ export interface paths {
                                                 species: string;
                                                 description: string;
                                                 probability: number;
+                                                /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                                price?: {
+                                                    /** Format: uuid */
+                                                    seriesId: string;
+                                                    label: string;
+                                                    count: number;
+                                                };
                                                 count: number;
                                             };
                                             /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -5840,6 +5966,13 @@ export interface paths {
                                                 species: string;
                                                 description: string;
                                                 probability: number;
+                                                /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                                price?: {
+                                                    /** Format: uuid */
+                                                    seriesId: string;
+                                                    label: string;
+                                                    count: number;
+                                                };
                                                 minCount: number;
                                                 maxCount: number;
                                             } | {
@@ -5848,6 +5981,13 @@ export interface paths {
                                                 species: string;
                                                 description: string;
                                                 probability: number;
+                                                /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                                price?: {
+                                                    /** Format: uuid */
+                                                    seriesId: string;
+                                                    label: string;
+                                                    count: number;
+                                                };
                                                 count: number;
                                             };
                                             /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -8383,6 +8523,13 @@ export interface paths {
                                         species: string;
                                         description: string;
                                         probability: number;
+                                        /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                        price?: {
+                                            /** Format: uuid */
+                                            seriesId: string;
+                                            label: string;
+                                            count: number;
+                                        };
                                         minCount: number;
                                         maxCount: number;
                                     } | {
@@ -8391,6 +8538,13 @@ export interface paths {
                                         species: string;
                                         description: string;
                                         probability: number;
+                                        /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                        price?: {
+                                            /** Format: uuid */
+                                            seriesId: string;
+                                            label: string;
+                                            count: number;
+                                        };
                                         count: number;
                                     };
                                     /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -8516,6 +8670,13 @@ export interface paths {
                                         species: string;
                                         description: string;
                                         probability: number;
+                                        /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                        price?: {
+                                            /** Format: uuid */
+                                            seriesId: string;
+                                            label: string;
+                                            count: number;
+                                        };
                                         minCount: number;
                                         maxCount: number;
                                     } | {
@@ -8524,6 +8685,13 @@ export interface paths {
                                         species: string;
                                         description: string;
                                         probability: number;
+                                        /** @description 出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する */
+                                        price?: {
+                                            /** Format: uuid */
+                                            seriesId: string;
+                                            label: string;
+                                            count: number;
+                                        };
                                         count: number;
                                     };
                                     /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */

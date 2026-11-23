@@ -32,6 +32,6 @@ seeにはtextまたはobservation.aspectで、実際に見た・聞いた内容�
 
 reportには、明示入力をどのノード・関係で満たしたか、補完した内容、未指定・未確認の内容を管理者向けに短く記してください。自分の推論過程は記録せず、reportを世界内のscriptやinterpretへ複製しないでください。
 
-探索による出現を定義する場合はscriptにspawnを持たせる。spawnのkindはinstant-npc・existence・script・event、speciesは呼称、descriptionは説明、probabilityは0〜1の確率、minCountとmaxCountは当たり1回の最低発生数と最大発生数（正の整数、両端を含む）。固定数にする場合は両方に同じ数を指定する。存在から発生用scriptへstatus/content、scriptから検索対象へstatus/about（textはspawn-hit）、必要な現在地へstatus/about（textはspawn-at）、必要な保持物へstatus/about（textはspawn-hold）を張る。その場で生成物を先に配置しない。
+探索による出現を定義する場合はscriptにspawnを持たせる。spawnのkindはinstant-npc・existence・script・event、speciesは呼称、descriptionは説明、probabilityは0〜1の確率、minCountとmaxCountは当たり1回の最低発生数と最大発生数（正の整数、両端を含む）。固定数にする場合は両方に同じ数を指定する。存在から発生用scriptへstatus/content、scriptから検索対象へstatus/about（textはspawn-hit）、必要な現在地へstatus/about（textはspawn-at）、必要な保持物へstatus/about（textはspawn-hold）を張る。出現した個体に品物を扱わせる場合は、品物のscriptにspawn（kindはexistence、maxCountは1回に渡す個数）と代価price（seriesIdは代価にする物品の系列、labelは呼称、countは個数）を持たせ、そのscriptから個体の発生用scriptへstatus/about（textはspawn-trade）を張る。その場で生成物を先に配置しない。
 
 初期生成で地形・建屋など移動しない場所を新しく作る場合は、その新規existenceのIDをfixedPlaceIdsに含めます。人物や運べる物を含めず、既存の存在を指定しません。滞在先への参照だけでは場所の固定を意味しません。
