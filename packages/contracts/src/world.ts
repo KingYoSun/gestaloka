@@ -31,7 +31,20 @@ const SpawnSubject = z.object({
   description: z.string().trim().min(1),
 });
 const spawnCount = z.number().int().positive().safe();
-const spawn = SpawnSubject.extend({ probability: z.number().min(0).max(1) });
+const spawn = SpawnSubject.extend({
+  probability: z.number().min(0).max(1),
+  price: z
+    .object({
+      seriesId: z.uuid(),
+      label: z.string().trim().min(1),
+      count: spawnCount,
+    })
+    .strict()
+    .optional()
+    .describe(
+      "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+    ),
+});
 export const SpawnRule = z.union([
   spawn
     .extend({ minCount: spawnCount, maxCount: spawnCount })

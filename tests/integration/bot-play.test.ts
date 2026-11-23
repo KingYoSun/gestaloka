@@ -8183,6 +8183,131 @@ test("同じ検索の外れは確定し、発生判定1回の個体を1枠にま
   uniform.mockRestore();
   expect(f.calls.mock.calls.map((c) => c[1])).toEqual(["world-server-npc"]);
 });
+test("出現個体の発生用ノードへ結んだ取引は同席中だけ受領でき、代価を除いて品物を一度だけ作る", async () => {
+  const f = await fixture(),
+    buyer = f.actors[0]!,
+    seriesId = randomUUID(),
+    coin = randomUUID(),
+    scrap = randomUUID();
+  const script = (text: string, spawn: object) => ({
+    id: randomUUID(),
+    kind: "script" as const,
+    text,
+    spawn: { description: text, probability: 1, count: 1, ...spawn },
+  });
+  const seller = script("荷を背負った売り手", {
+      kind: "instant-npc",
+      species: "売り手",
+    }),
+    goods = script("籠から出して渡す", {
+      kind: "existence",
+      species: "干し果物",
+      count: 3,
+      price: { seriesId, label: "木札", count: 2 },
+    });
+  const setup = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, setup),
+    f.store.context(f.graph),
+    {
+      commitId: setup,
+      at: 0,
+      changes: {
+        nodes: [
+          seller,
+          goods,
+          { id: coin, kind: "existence", text: "木札", count: 5, seriesId },
+          { id: scrap, kind: "existence", text: "木札", count: 5 },
+        ],
+        revisions: [],
+        endEdges: [],
+        edges: [
+          ...[coin, scrap].map((target) => ({ kind: "has", target })),
+          { kind: "status", role: "content", target: seller.id },
+          { kind: "status", role: "content", target: goods.id },
+        ]
+          .map((edge) => ({ source: buyer, ...edge }))
+          .concat(
+            [
+              { source: seller.id, target: f.place, text: "spawn-hit" },
+              { source: goods.id, target: seller.id, text: "spawn-trade" },
+            ].map((edge) => ({ kind: "status", role: "about", ...edge })),
+          )
+          .map((edge) => ({
+            ...edge,
+            id: randomUUID(),
+            period: { from: 0 },
+          })) as never,
+      },
+      management: {
+        editorId: (await auth.person()).id,
+        reason: "代価の系列を指定",
+        requestHash: "c".repeat(64),
+      },
+    },
+  );
+  await f.send(1, { command: "contact", targetId: buyer });
+  const surroundings = { command: "search", query: { kind: "surroundings" } };
+  // 個体が現れた検索の応答に、その個体の取引が並ぶ。
+  const listed = await f.send(0, surroundings);
+  const [npc] = listed.appearances as { id: string }[];
+  expect(JSON.stringify(listed)).not.toContain(goods.id);
+  expect(listed.exchangeOffers).toMatchObject([
+    {
+      sellerId: npc!.id,
+      itemLabel: "干し果物：籠から出して渡す",
+      count: 3,
+      paymentSeriesId: seriesId,
+      paymentLabel: "木札",
+      paymentCount: 2,
+    },
+  ]);
+  const offerId = (listed.exchangeOffers as { id: string }[])[0]!.id;
+  const exchange = (paymentItemId: string) => ({
+    command: "exchange",
+    offerId,
+    paymentItemId,
+    requestId: randomUUID(),
+  });
+  await expect(f.send(0, exchange(scrap))).rejects.toMatchObject({
+    code: "EXCHANGE_PAYMENT",
+  });
+  const order = exchange(coin),
+    bought = await f.send(0, order);
+  expect(bought).toMatchObject({ state: "accepted", offerId });
+  expect(await f.send(0, order)).toEqual(bought);
+  const items = (await readBelongings(f.store.context(f.graph), buyer)).items;
+  expect(items).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: coin, count: 3 }),
+      expect.objectContaining({ id: scrap, count: 5 }),
+      expect.objectContaining({
+        label: "干し果物：籠から出して渡す",
+        count: 3,
+      }),
+    ]),
+  );
+  expect(items).toHaveLength(3);
+  await f.send(0, { command: "end-turn" });
+  await f.send(1, { command: "end-turn" });
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    expect(JSON.parse(String(messages[1]!.content)).trades).toEqual([
+      {
+        itemLabel: "干し果物：籠から出して渡す",
+        count: 3,
+        paymentLabel: "木札",
+        paymentCount: 2,
+        text: "籠から出して渡す",
+      },
+    ]);
+    return answer(id, { text: "荷をまとめて去る", departs: true });
+  });
+  await access.botPlay.tickNpcs();
+  await expect(f.send(0, exchange(coin))).rejects.toMatchObject({
+    code: "EXCHANGE_NOT_AVAILABLE",
+  });
+  expect(f.calls.mock.calls.map((c) => c[1])).toEqual(["world-server-npc"]);
+});
 test("別の場所へ移って手番を終えた人物は別のセッションになり、出現個体はその場所のセッションに残る", async () => {
   const f = await fixture(),
     source = randomUUID(),

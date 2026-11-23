@@ -501,6 +501,7 @@ export class PlayApplications {
     return visible;
   }
 
+  // tradeは同席している出現個体の取引。在庫と場所はなく、品物を新しく作り、代価を除く。
   async exchange(
     db: Db,
     world: string,
@@ -509,24 +510,28 @@ export class PlayApplications {
     request: string,
     id: string,
     paymentItemId: string,
+    trade?: Offer,
   ) {
-    const row = await this.#row(db, world, id);
-    if (!row?.offer || !row.place || row.sender === buyer)
+    const row = trade ? undefined : await this.#row(db, world, id),
+      offer = trade ?? row?.offer;
+    if (!offer || (row && (!row.place || row.sender === buyer)))
       return reject(
         "EXCHANGE_NOT_AVAILABLE",
         "ここで受領できる交換を指定してください",
       );
-    const offer = row.offer,
-      context = this.store.context(w.id),
+    const context = this.store.context(w.id),
       prior = await this.store.receipt(w.id, request);
     if (!prior) {
-      if (row.result || (await directPlaces(context, buyer))[0] !== row.place)
+      if (
+        row &&
+        (row.result || (await directPlaces(context, buyer))[0] !== row.place)
+      )
         return reject(
           "EXCHANGE_NOT_AVAILABLE",
           "交換条件を公開している場所で受領してください",
         );
-      const item = await this.#stock(context, offer, row.place);
-      if (!item || item.text !== offer.itemLabel)
+      const item = row && (await this.#stock(context, offer, row.place!));
+      if (row && item?.text !== offer.itemLabel)
         return reject("EXCHANGE_STOCK", "売り手の在庫が変わりました");
       const payment = await this.#held(
         context,
@@ -540,26 +545,41 @@ export class PlayApplications {
           "提示された系列と個数を満たす、本人の手持ちの品を指定してください",
         );
       const basis = offer.text;
-      const ops: BelongingOp[] = [
-        {
-          type: "move",
-          item: item.id,
-          from: offer.storageId,
-          to: buyer,
-          ...(item.count ? { count: offer.count } : {}),
-          basis,
-        },
-        {
-          type: "move",
-          item: payment.id,
-          from: buyer,
-          to: offer.storageId,
-          ...(payment.count ? { count: offer.paymentCount } : {}),
-          basis,
-        },
-      ];
+      const ops: BelongingOp[] = item
+        ? [
+            {
+              type: "move",
+              item: item.id,
+              from: offer.storageId,
+              to: buyer,
+              ...(item.count ? { count: offer.count } : {}),
+              basis,
+            },
+            {
+              type: "move",
+              item: payment.id,
+              from: buyer,
+              to: offer.storageId,
+              ...(payment.count ? { count: offer.paymentCount } : {}),
+              basis,
+            },
+          ]
+        : [
+            {
+              type: "create",
+              label: offer.itemLabel,
+              count: offer.count,
+              holder: buyer,
+              basis,
+            },
+            {
+              type: "remove",
+              id: payment.id,
+              ...(payment.count ? { count: offer.paymentCount } : {}),
+            },
+          ];
       try {
-        await context.assertMovable(item.id);
+        if (item) await context.assertMovable(item.id);
         await context.assertMovable(payment.id);
         const plan = await planBelongings(context, request, w.at, ops);
         await checkBelongingCapacity(
@@ -591,7 +611,7 @@ export class PlayApplications {
       db,
       world,
       `${request}:exchange`,
-      [offer.sellerId, buyer],
+      row ? [offer.sellerId, buyer] : [buyer],
       text,
     );
     return { state: "accepted", commitId: request, offerId: id, message: text };

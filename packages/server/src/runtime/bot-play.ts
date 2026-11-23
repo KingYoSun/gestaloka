@@ -57,6 +57,7 @@ import {
   groundPlacement,
   deathDrops,
   recordAppearances,
+  instantTrades,
   searchAppearances,
 } from "./search-appearances.js";
 import { PlayerTools, type PromotionProfile } from "./player-tools.js";
@@ -1922,12 +1923,23 @@ export class BotPlay {
                 ((npc.count ?? 1) > 1
                   ? "あなたはその場に現れた一団です。npc.countは現在の個体数です。一団として一手を選んでください。"
                   : "あなたはその場に現れた一個体です。") +
-                "自身の性質、見聞きした履歴、周囲から今回の一手を選んでください。textに行動を、外界を変えようとするならeffectに対象IDと成功時の状態を、立ち去るならdeparts:trueを指定します。成否はサーバーが決めます。schemaに沿うJSONだけを返してください。",
+                "自身の性質、見聞きした履歴、周囲から今回の一手を選んでください。tradesがあれば、相手が望めば応じる交換の品物と代価です。textに行動を、外界を変えようとするならeffectに対象IDと成功時の状態を、立ち去るならdeparts:trueを指定します。成否はサーバーが決めます。schemaに沿うJSONだけを返してください。",
             },
             {
               role: "user",
               content: JSON.stringify({
                 npc,
+                trades: (
+                  await instantTrades(context, [{ ...npc, actorId: actor }])
+                ).map(
+                  ({ itemLabel, count, paymentLabel, paymentCount, text }) => ({
+                    itemLabel,
+                    count,
+                    paymentLabel,
+                    paymentCount,
+                    text,
+                  }),
+                ),
                 nearby,
                 history: recentEntries(
                   await this.history(session.world_id, actor),
@@ -3597,7 +3609,7 @@ export class BotPlay {
         };
       }),
     );
-    const [belongings, place, neighbors, past, applications, exchangeOffers] =
+    const [belongings, place, neighbors, past, applications, offers, trades] =
       await Promise.all([
         readBelongings(context, actor),
         placeId ? context.node(placeId).then((node) => node?.text) : undefined,
@@ -3616,6 +3628,7 @@ export class BotPlay {
           .then(({ rows }) => rows),
         this.applications.list(this.pool, world, context, actor),
         this.applications.offers(this.pool, world, context, actor),
+        this.#trades(context, session, actor),
       ]);
     const material = await playerMaterial(
       context,
@@ -3631,7 +3644,7 @@ export class BotPlay {
       neighbors,
       past,
       ...applications,
-      exchangeOffers,
+      exchangeOffers: [...offers, ...trades],
     };
   }
   // 届く時刻を過ぎた申請の物品を成立させ、本人あての通知を作る。
@@ -4278,6 +4291,22 @@ export class BotPlay {
     return (
       (await isVehicle(context, id)) &&
       !!(await vehiclePerson(this.pool, context.worldId, id))
+    );
+  }
+  // 同じ場所に同席している出現個体が応じる取引。
+  async #trades(
+    context: WorldContext,
+    session: Session | undefined,
+    actor: string,
+  ) {
+    const places = await this.#places(context, actor);
+    return instantTrades(
+      context,
+      (session?.data.members ?? []).flatMap((m) =>
+        m.instant?.places.some((place) => places.includes(place))
+          ? [{ ...m.instant, actorId: m.actorId }]
+          : [],
+      ),
     );
   }
   async #places(context: WorldContext, actor: string): Promise<string[]> {
@@ -8925,6 +8954,13 @@ export class BotPlay {
                     input.requestId,
                     input.offerId,
                     input.paymentItemId,
+                    (
+                      await this.#trades(
+                        this.store.context(w.id),
+                        await this.current(world, actor, db),
+                        actor,
+                      )
+                    ).find((trade) => trade.id === input.offerId),
                   )
                 : undefined;
       if (application) {
@@ -9445,12 +9481,16 @@ export class BotPlay {
                 if (arriving.length) result = { ...result, arriving };
               }
               if (input.query.kind === "surroundings") {
-                const exchangeOffers = await this.applications.offers(
-                  db,
-                  world,
-                  this.store.context(w.id),
-                  actor,
-                );
+                const context = this.store.context(w.id),
+                  exchangeOffers = [
+                    ...(await this.applications.offers(
+                      db,
+                      world,
+                      context,
+                      actor,
+                    )),
+                    ...(await this.#trades(context, session, actor)),
+                  ];
                 if (exchangeOffers.length)
                   result = { ...result, exchangeOffers };
               }
@@ -9473,6 +9513,9 @@ export class BotPlay {
                 input.requestId,
                 input.offerId,
                 input.paymentItemId,
+                (
+                  await this.#trades(this.store.context(w.id), session, actor)
+                ).find((trade) => trade.id === input.offerId),
               );
               result = exchange;
               d.entries.push({

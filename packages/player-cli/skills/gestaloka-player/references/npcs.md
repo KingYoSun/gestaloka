@@ -25,6 +25,8 @@ gestaloka say --text '広場の水盤に小鳥が一羽降りてきた。' --npc
 }
 ```
 
+品物を扱う個体が同席している間は、`search --kind surroundings` の `exchangeOffers` にその個体の交換条件が並ぶ。`sellerId` は個体のID。店の公開交換と同じく `exchange --offer <交換ID> --payment <代価にする手持ちの品のID>` で受領する。品物は手元に新しく加わり、代価はなくなる。個体は物を受け取れないので、`move` では渡せない。個体が去ると、その交換条件もなくなる。
+
 一団で現れた個体は共通のIDを持ち、残数は `characters[].count` に出る。分離や死亡が成立したときは `instantReduction` に変化した数と残数が出る。分かれて残った個体は `appearances` に新しいIDで出る。GMが死亡と判定した個体のIDは `outcome.setting.fatal` で確認でき、判定に成功するとその個体は同席者一覧から外れる。その場に品が残ったら `appearances[].id` と `count` を確認し、[持ち物・保管・取引](inventory.md)の手順で拾う。
 
 ## この相手とまた会いたい

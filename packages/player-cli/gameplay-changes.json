@@ -1,4 +1,7 @@
 {
+  "1.16.0": [
+    "検索で現れた個体が品物を扱うことがあります。その個体が同席している間、search --kind surroundings の exchangeOffers に交換条件が並び、店の公開交換と同じ exchange --offer <交換ID> --payment <物品ID> で受領できます。品物は手元に新しく加わり、代価はなくなります。"
+  ],
   "1.15.0": [
     "同席しているプレイヤーやユニークNPCへの対抗行動（oppose）が成功すると、GMが決めた変化後の状態が相手に記録されます。応答の outcome.setting.states で読めます。",
     "外部のbotが操作するNPCへの companion request は、GMではなく相手本人の受領で決まります。応答は state: receiving になり、SPは使いません。プレイヤーに同行しているNPCを操作している場合は、companion dismiss --target <自分のID> で自分から同行を終えられます。"
