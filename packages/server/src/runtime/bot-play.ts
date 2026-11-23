@@ -298,14 +298,11 @@ function actionMessage(
         | {
             success?: boolean;
             reason?: string;
-            proposals?: { reason?: string }[];
+            proposals?: ProposalOutcome[];
           }
         | undefined;
-      if (
-        [outcome, ...(outcome?.proposals ?? [])].some(
-          (p) => p?.reason === "MATERIAL_ID_REQUIRED",
-        )
-      )
+      const parts = individualOutcomes(outcome?.proposals ?? []);
+      if ([outcome, ...parts].some((p) => p?.reason === "MATERIAL_ID_REQUIRED"))
         return "材料を特定できない案は振っていません。対象の物品IDをmaterialsに指定してください";
       if (outcome?.reason === "MATERIAL_SHORTAGE")
         return "使える材料が足りないため、作成できませんでした";
@@ -482,6 +479,7 @@ type Plan = {
   recipients: string[];
   handoff?: Handoff;
   outcome?: unknown;
+  withoutCreationRoll?: true;
   stealth?: StealthAction;
   instantMembers?: string;
   effectState?: string;
@@ -732,6 +730,86 @@ type CreationRoll = {
   roll: number;
   repeated?: boolean;
 };
+type ProposalOutcome = Partial<CreationRoll> & {
+  text: string;
+  person?: string;
+  reason?: string;
+  proposals?: ProposalOutcome[];
+};
+const individualOutcomes = (proposals: ProposalOutcome[]) =>
+  proposals.flatMap((p) => p.proposals ?? [p]);
+
+type CreationProposal = Extract<
+  Input,
+  { command: "create-batch" }
+>["proposals"][number];
+function creationGroups(input: Input, perSkill: boolean) {
+  let originals: CreationProposal[];
+  if (input.command === "create-batch") {
+    originals = input.proposals;
+    if (new Set(originals.map(canonical)).size !== originals.length)
+      reject("DUPLICATE_PROPOSAL", "同じ案が重複しています");
+  } else if (
+    input.command === "update" &&
+    !input.waitMinutes &&
+    input.operations
+  ) {
+    originals = [
+      {
+        text: input.text,
+        operations: input.operations,
+        materials: input.materials,
+      },
+    ];
+  } else return;
+  const learnCount = originals.reduce(
+    (n, p) =>
+      n +
+      ("operations" in p
+        ? p.operations.filter((op) => op.type === "learn").length
+        : 0),
+    0,
+  );
+  if (input.command === "update" && (!perSkill || learnCount < 2)) return;
+  type Group = {
+    proposal: CreationProposal;
+    parent: number;
+    split?: true;
+    person?: string;
+  };
+  const groups = originals.flatMap((proposal, parent): Group[] => {
+    if (
+      !perSkill ||
+      learnCount < 2 ||
+      !("operations" in proposal) ||
+      proposal.operations.length === 1
+    )
+      return [{ proposal, parent }];
+    const skills = proposal.operations.filter((op) => op.type === "learn");
+    if (!skills.length) return [{ proposal, parent }];
+    const consumed = skills.flatMap((op) => op.consumeSkillIds ?? []);
+    if (new Set(consumed).size !== consumed.length)
+      throw new BelongingRejected(
+        "消費する元技能には、本人が現在習得している別々の技能を指定してください",
+      );
+
+    const parts: Group[] = skills.map((op) => ({
+      parent,
+      split: true,
+      person: op.person,
+      proposal: { text: op.text, operations: [op] },
+    }));
+    const other = proposal.operations.filter((op) => op.type !== "learn");
+    if (other.length)
+      parts.push({
+        parent,
+        split: true,
+        proposal: { text: proposal.text, operations: other },
+      });
+    return parts;
+  });
+  return { originals, groups };
+}
 type Consumable = { id: string; label: string; count?: number };
 type Material = { id: string; count?: number | undefined };
 const WorkDice = DiceSetting.safeExtend({
@@ -5587,11 +5665,13 @@ export class BotPlay {
         const o = (
           e.result as {
             outcome?: Partial<CreationRoll> & {
-              proposals?: (Partial<CreationRoll> & { text: string })[];
+              proposals?: ProposalOutcome[];
             };
           }
         ).outcome;
-        return (o?.proposals ?? [{ ...o, text: e.input }]).flatMap((r) =>
+        return individualOutcomes(
+          o?.proposals ?? [{ ...o, text: e.input }],
+        ).flatMap((r) =>
           r.success === false && r.setting && r.roll !== undefined
             ? [{ text: r.text, setting: r.setting, roll: r.roll }]
             : [],
@@ -5626,10 +5706,20 @@ export class BotPlay {
       changes: Change;
       materials?: Material[] | undefined;
       operations?: BelongingOp[] | undefined;
+      requestText?: string | undefined;
     }[],
     consumable: Consumable[],
-    explore = false,
-    waitMinutes?: number,
+    {
+      explore = false,
+      waitMinutes,
+      splitMode,
+      hasUnrolledChanges = false,
+    }: {
+      explore?: boolean;
+      waitMinutes?: number | undefined;
+      splitMode?: "update" | "create-batch" | undefined;
+      hasUnrolledChanges?: boolean;
+    } = {},
   ) {
     type Result =
       | CreationRoll
@@ -5733,7 +5823,13 @@ export class BotPlay {
         usedSlots.set(holder, usedSlots.get(holder)! + delta);
     };
     const firstFull = full(0);
-    if (firstFull && proposals.every((_, i) => full(i))) throw firstFull;
+    if (firstFull && proposals.every((_, i) => full(i))) {
+      if (!hasUnrolledChanges) throw firstFull;
+      return proposals.map((): Result => ({
+        success: false,
+        reason: "SKILL_CAPACITY_EXCEEDED",
+      }));
+    }
     const keys = proposals.map((_, i) =>
       batch ? derivedId(`${requestId}:proposal:${i}`) : requestId,
     );
@@ -5755,31 +5851,34 @@ export class BotPlay {
         fresh.map((p) => this.#newStorages(context, p.changes)),
       );
       const material = await Promise.all(
-        fresh.map(async ({ text, changes, materials, operations }, i) => {
-          const learning = operations?.filter(
-            (op) => op.type === "learn" && op.consumeSkillIds?.length,
-          );
-          return {
-            text,
-            changes,
-            ...(learning?.length ? { learning } : {}),
-            ...(materials?.length
-              ? {
-                  materials: await Promise.all(
-                    materials.map(async (m) => {
-                      const item = await readMaterial(m.id);
-                      return {
-                        ...m,
-                        label: item?.label,
-                        available: item ? (item.count ?? 1) : 0,
-                      };
-                    }),
-                  ),
-                }
-              : {}),
-            ...(targets[i]!.length ? { storageIds: targets[i] } : {}),
-          };
-        }),
+        fresh.map(
+          async ({ text, changes, materials, operations, requestText }, i) => {
+            const learning = operations?.filter(
+              (op) => op.type === "learn" && op.consumeSkillIds?.length,
+            );
+            return {
+              text,
+              requestText,
+              changes,
+              ...(learning?.length ? { learning } : {}),
+              ...(materials?.length
+                ? {
+                    materials: await Promise.all(
+                      materials.map(async (m) => {
+                        const item = await readMaterial(m.id);
+                        return {
+                          ...m,
+                          label: item?.label,
+                          available: item ? (item.count ?? 1) : 0,
+                        };
+                      }),
+                    ),
+                  }
+                : {}),
+              ...(targets[i]!.length ? { storageIds: targets[i] } : {}),
+            };
+          },
+        ),
       );
       const nodes = await this.#facts(context, [
         actor,
@@ -5801,8 +5900,8 @@ export class BotPlay {
             )
           ).rows[0]?.criteria || defaultCreationCriteria;
       const Dice = explore ? ExploreDice : work ? WorkDice : DiceSetting;
-      // 本文をGMが決めるのは、すぐに成立する単独の申請に限る。
-      const decides = !explore && !batch && !waitMinutes;
+      const decides =
+        !explore && (!batch || splitMode === "update") && !waitMinutes;
       const parseSettings = (raw: string) => {
         const values = batch
           ? z
@@ -5842,6 +5941,9 @@ export class BotPlay {
                 ? "learningは本人が選んだ技能の発展・統合の申請。consumeSkillIdsで示された習得済み技能の本文と根拠、申請のtextとbasisから、引き継ぐ能力と新しく必要な応用・習熟を世界の基準に照らして判定する。中身を委ねられた技能は、その適用範囲と新たにできることを具体化する。"
                 : "") +
               (decides ? decidePrompt : "") +
+              (fresh.some((p) => p.requestText)
+                ? "requestTextは元の申請の経緯。各案の技能や製作はその案のchangesだけを判定し、別の案で使う材料をこの案に割り当てない。"
+                : "") +
               (batch
                 ? "proposalsの順に各案のダイス設定を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
                 : "") +
@@ -5981,6 +6083,7 @@ export class BotPlay {
       }
       const persisted = await db.query(
         `UPDATE bot_request r SET creation_rolls=$2,
+        outcome=CASE WHEN $5 THEN '{"creationPlan":{}}'::jsonb ELSE r.outcome END,
         sp_user=CASE WHEN $3 THEN a.sp_user END, sp_reset=CASE WHEN $3 THEN a.sp_reset END
         FROM bot_adjudication a WHERE r.id=$1 AND a.world_id=r.world_id AND a.actor_id=r.actor_id
         AND a.request_id=r.id AND a.expires_at>clock_timestamp() AND (NOT $3 OR a.sp_user=$4)`,
@@ -5989,6 +6092,7 @@ export class BotPlay {
           JSON.stringify(rolls),
           fresh.some((p) => "roll" in rolls[p.index]!),
           user,
+          !!splitMode,
         ],
       );
       if (!persisted.rowCount) rejectAdjudication();
@@ -6392,11 +6496,15 @@ export class BotPlay {
       db = this.pool,
       expectedHandoff,
       batchSize = 0,
+      skillGroup = false,
+      perSkill = true,
       vehicleResponse = false,
     }: {
       db?: Db;
       expectedHandoff?: Handoff;
       batchSize?: number;
+      skillGroup?: boolean;
+      perSkill?: boolean;
       vehicleResponse?: boolean;
     } = {},
   ): Promise<Plan | undefined> {
@@ -6564,6 +6672,7 @@ export class BotPlay {
       ]);
       return plan;
     }
+    const batch = batchSize ? undefined : creationGroups(input, perSkill);
     const prior = await this.store.receipt(w.id, input.requestId);
     if (prior) {
       const outcome = (
@@ -6571,6 +6680,15 @@ export class BotPlay {
           input.requestId,
         ])
       ).rows[0]?.outcome;
+      if (outcome?.creationPlan) {
+        return {
+          context,
+          changes: prior.changes,
+          at: prior.at,
+          recipients: [],
+          ...outcome.creationPlan,
+        };
+      }
       return {
         context,
         changes: prior.changes,
@@ -6624,13 +6742,25 @@ export class BotPlay {
         return { ...relocation, context, recipients: [] };
       }
     }
-    if (input.command === "create-batch") {
+    if (
+      input.command === "create-batch" ||
+      (input.command === "update" && batch)
+    ) {
+      const { originals, groups } = batch!;
+      const splitMode = groups.some((g) => g.split) ? input.command : undefined;
+      // デプロイ前に出目を保存済みの要求を再開するときは、当時の判定単位で確定する。
       if (
-        new Set(input.proposals.map(canonical)).size !== input.proposals.length
+        splitMode &&
+        (
+          await db.query(
+            "SELECT 1 FROM bot_request WHERE id=$1 AND creation_rolls IS NOT NULL AND NOT (COALESCE(outcome,'{}'::jsonb) ? 'creationPlan')",
+            [input.requestId],
+          )
+        ).rowCount
       )
-        reject("DUPLICATE_PROPOSAL", "同じ案が重複しています");
+        return this.#plan(world, actor, user, input, { db, perSkill: false });
       const proposals = await Promise.all(
-        input.proposals.map(async (proposal, i) => {
+        groups.map(async ({ proposal, split, person, parent }, i) => {
           const requestId = derivedId(`${input.requestId}:proposal:${i}`);
           const child =
             "changes" in proposal
@@ -6641,7 +6771,7 @@ export class BotPlay {
             actor,
             user,
             { ...child, requestId, dependencies: input.dependencies },
-            { batchSize: input.proposals.length },
+            { batchSize: groups.length, skillGroup: !!split },
           );
           if (!plan)
             reject(
@@ -6651,7 +6781,10 @@ export class BotPlay {
           return {
             ...plan,
             text: proposal.text,
-            materials: proposal.materials ?? [],
+            parent,
+            person,
+            requestText: person ? originals[parent]!.text : undefined,
+            materials: originals[parent]!.materials ?? [],
             operations:
               "operations" in proposal ? proposal.operations : undefined,
           };
@@ -6675,20 +6808,46 @@ export class BotPlay {
         at,
       );
       const consumable = await this.#consumable(context, actor, allChanges);
+      // 製作の材料は同じ案の製作にだけ割り当てる。別の技能の成功で消費しない。
+      const workParents = new Set(
+        proposals
+          .filter((p) => !p.person && !p.withoutCreationRoll)
+          .map((p) => p.parent),
+      );
+      const rolledPlans = proposals.filter((p) => !p.withoutCreationRoll);
       const rolls = await this.#creation(
         world,
         actor,
         user,
         input.requestId,
         context,
-        proposals,
+        rolledPlans.map((p) =>
+          p.person && workParents.has(p.parent) ? { ...p, materials: [] } : p,
+        ),
         consumable,
+        {
+          splitMode,
+          hasUnrolledChanges: rolledPlans.length < proposals.length,
+        },
       );
-      const successful = proposals.filter((_, i) => rolls[i]!.success);
+      let index = 0;
+      const results = proposals.map((p) => ({
+        text: p.text,
+        ...(p.person ? { person: p.person } : {}),
+        ...(p.withoutCreationRoll ? { success: true } : rolls[index++]!),
+      }));
+      const successful = proposals.filter((_, i) => results[i]!.success);
       const changes = combine(successful);
-      for (const roll of rolls)
-        if (roll.success)
-          await this.#saveStorageLimits(context, changes, roll.setting);
+      const items = successful.flatMap((p) => p.items ?? []);
+      for (const roll of rolls) {
+        if (!roll.success) continue;
+        for (const { id, text } of roll.setting.decided ?? []) {
+          changes.nodes.find((n) => n.id === id)!.text = text;
+          const item = items.find((item) => item.itemId === id);
+          if (item) item.label = text;
+        }
+        await this.#saveStorageLimits(context, changes, roll.setting);
+      }
       const amounts = new Map<string, number | undefined>();
       for (const roll of rolls)
         if (roll.success)
@@ -6712,22 +6871,38 @@ export class BotPlay {
       );
       const outcome = {
         success: successful.length > 0,
-        proposals: rolls.map((roll, i) => ({
-          text: proposals[i]!.text,
-          ...roll,
-        })),
+        proposals:
+          input.command === "update"
+            ? results
+            : originals.map((p, i) => {
+                const parts = results.filter(
+                  (_, j) => proposals[j]!.parent === i,
+                );
+                return parts.length === 1
+                  ? parts[0]!
+                  : {
+                      text: p.text,
+                      success: parts.some((part) => part.success),
+                      proposals: parts,
+                    };
+              }),
+      };
+      const distribution = {
+        outcome,
+        items,
+        mixedMoves: successful.flatMap((p) => p.mixedMoves ?? []),
+        boardings: successful.flatMap((p) => p.boardings ?? []),
       };
       await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
-        outcome,
+        splitMode ? { creationPlan: distribution } : outcome,
       ]);
       return {
         context,
         changes,
         at: finalAt,
         recipients: [...new Set(successful.flatMap((p) => p.recipients))],
-        items: successful.flatMap((p) => p.items ?? []),
-        outcome,
+        ...distribution,
       };
     }
     await context.validate();
@@ -7517,7 +7692,7 @@ export class BotPlay {
       }
     }
     if (batchSize) {
-      if (!needsCreation)
+      if (!needsCreation && !skillGroup)
         reject(
           "CREATION_REQUIRED",
           "各案に生成の判定が必要な操作を指定してください",
@@ -7527,6 +7702,16 @@ export class BotPlay {
         changes,
         at,
         recipients,
+        ...(!needsCreation ? { withoutCreationRoll: true as const } : {}),
+        ...(skillGroup
+          ? {
+              mixedMoves:
+                mixedMoves ??
+                locates?.filter((op): op is Locate => op.type === "locate") ??
+                [],
+              boardings,
+            }
+          : {}),
         items: await this.#itemOutcomes(context, input, changes),
       };
     }
@@ -7569,8 +7754,7 @@ export class BotPlay {
               },
             ],
             consumable,
-            input.command === "explore",
-            wait,
+            { explore: input.command === "explore", waitMinutes: wait },
           )
         )[0]
       : undefined;
@@ -10315,9 +10499,26 @@ export class BotPlay {
             actor,
           )
         : "";
+      const skillResults = individualOutcomes(
+        (result.outcome as { proposals?: ProposalOutcome[] } | undefined)
+          ?.proposals ?? [],
+      )
+        .filter((p) => p.person)
+        .map((p) => {
+          const name =
+            p.setting?.decided?.[0]?.text && p.success
+              ? p.setting.decided[0].text
+              : p.text;
+          return p.roll === undefined
+            ? `「${name}」は判定なし`
+            : `「${name}」は出目${p.roll}で${p.success ? "成功" : "失敗"}`;
+        });
       result.action = {
         command: input.command,
-        message: itemMessage || actionMessage(input, result, continuing, owner),
+        message: [
+          itemMessage || actionMessage(input, result, continuing, owner),
+          ...skillResults,
+        ].join("\n"),
         ...(endedTurn
           ? {
               endedTurn: {
