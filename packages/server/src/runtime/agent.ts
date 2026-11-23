@@ -32,6 +32,7 @@ import {
 } from "../world/belongings.js";
 import type { LlmClient, ChatMessage } from "../llm/client.js";
 import { generatedFixedPlaces, locationRecords } from "../world/locations.js";
+import { skillDeltas, SkillCapacityExceeded } from "../world/inventory.js";
 import {
   historyLimit,
   materialLimit,
@@ -941,6 +942,7 @@ export class WorldAgent {
       if (
         ops.some(
           (op) =>
+            (op.type === "learn" && !!op.consumeSkillIds?.length) ||
             !(
               row.request.phase === "participant"
                 ? ["create", "move", "grant", "learn", "locate"]
@@ -979,6 +981,10 @@ export class WorldAgent {
           target: id,
           period: { from: proposal.resolvedUntil },
         });
+      }
+      for (const [holder, delta] of skillDeltas(planned.changes.edges, [])) {
+        const full = await context.skillCapacityError(holder, delta);
+        if (full) throw new BelongingRejected(full.message);
       }
       return planned.changes;
     } catch (error) {
@@ -1180,7 +1186,11 @@ export class WorldAgent {
             return null;
           } catch (error) {
             // Failed workflow tasks abort the parent; a version conflict must return to its retry loop.
-            if (error instanceof WorldConflict) return error.message;
+            if (
+              error instanceof WorldConflict ||
+              error instanceof SkillCapacityExceeded
+            )
+              return error.message;
             throw error;
           }
         },

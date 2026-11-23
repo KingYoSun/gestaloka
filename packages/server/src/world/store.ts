@@ -6,6 +6,9 @@ import { InstallationPolicy } from "@gestaloka/contracts";
 import { routeEndpoints } from "./locations.js";
 import {
   defaultInventoryLimits,
+  checkSkillChange,
+  skillCapacityError,
+  usedSkillSlots,
   initializeInventory,
   inventoryChange,
   inventoryStackKey,
@@ -186,13 +189,18 @@ export class WorldContext {
     }
   }
 
-  async checkInventory(changes: Change, { readOnly = false } = {}) {
+  async checkInventory(
+    changes: Change,
+    { readOnly = false, deferSkills = false } = {},
+  ) {
     await this.inventoryLimits();
     const check = async (
       tx: ManagedTransaction,
       { enabled, limits }: Awaited<ReturnType<typeof initializeInventory>>,
     ) => {
-      if (!enabled) return;
+      const gainsSkills =
+        !deferSkills && changes.edges.some((edge) => edge.role === "skill");
+      if (!enabled && !gainsSkills) return;
       const ended: WorldEdge[] = [];
       for (const id of changes.endEdges) {
         const { records } = await tx.run(edgeById, {
@@ -202,6 +210,15 @@ export class WorldContext {
         if (records[0])
           ended.push(WorldEdge.parse(JSON.parse(records[0].get("data"))));
       }
+      if (gainsSkills)
+        await checkSkillChange(
+          tx,
+          this.worldId,
+          changes.edges,
+          ended,
+          limits.skillSlots,
+        );
+      if (!enabled) return;
       await inventoryChange(
         tx,
         this.worldId,
@@ -230,6 +247,21 @@ export class WorldContext {
 
   async inventoryLimits() {
     return (await this.inventorySettings()).limits;
+  }
+
+  async usedSkillSlots(holder: string) {
+    return this.#read(relationKey(holder, "has", "out"), (tx) =>
+      usedSkillSlots(tx, this.worldId, holder),
+    );
+  }
+
+  async skillCapacityError(holder: string, delta = 1) {
+    return skillCapacityError(
+      holder,
+      await this.usedSkillSlots(holder),
+      (await this.inventoryLimits()).skillSlots,
+      delta,
+    );
   }
 
   async inventorySlots(id: string) {
@@ -1057,6 +1089,7 @@ export class WorldStore {
   ) {
     return this.context(worldId).inventoryRead(async (tx, state) => {
       const next = {
+        skillSlots: limits?.skillSlots ?? state.limits.skillSlots,
         carrySlots: limits?.carrySlots ?? state.limits.carrySlots,
         storageSlots: limits?.storageSlots ?? state.limits.storageSlots,
         unitsPerSlot: limits?.unitsPerSlot ?? state.limits.unitsPerSlot,
@@ -1064,6 +1097,7 @@ export class WorldStore {
       const active = enabled ?? state.enabled;
       const changed =
         active !== state.enabled ||
+        next.skillSlots !== state.limits.skillSlots ||
         next.carrySlots !== state.limits.carrySlots ||
         next.storageSlots !== state.limits.storageSlots ||
         next.unitsPerSlot !== state.limits.unitsPerSlot;
@@ -1071,7 +1105,7 @@ export class WorldStore {
       await tx.run(
         `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
          SET g.inventoryEnabled=$enabled, g.inventoryCarrySlots=$carrySlots,
-          g.inventoryStorageSlots=$storageSlots, g.inventoryUnitsPerSlot=$unitsPerSlot,
+          g.inventoryStorageSlots=$storageSlots, g.inventoryUnitsPerSlot=$unitsPerSlot,g.skillSlots=$skillSlots,
           g.version=g.version+$versionIncrease`,
         {
           worldId,
@@ -1449,6 +1483,13 @@ export class WorldStore {
         if (inventoryTouched) {
           await lock(tx, worldId, "inventory");
           inventorySettings = await initializeInventory(tx, worldId);
+          await checkSkillChange(
+            tx,
+            worldId,
+            changes.edges,
+            ended,
+            inventorySettings.limits.skillSlots,
+          );
         }
         // 持つ物品・役割つきhasの集合か、その対象の本文が変わる主体は、同じ確定で要約を作り直す。
         const summaries = new Map<
@@ -1939,16 +1980,22 @@ export class WorldStore {
             await createEdge(edge);
             derived.nodes.push(node);
             derived.edges.push(edge);
-            continue;
+          } else {
+            const prior = {
+              node: WorldNode.parse(JSON.parse(row.get("data"))),
+              knownFrom: Number(row.get("knownFrom")),
+            };
+            if (prior.node.text !== node.text) {
+              // 要約は最新の確定状態を表す。以前より前の時点の確定でも記録時点は戻さない。
+              await reviseNode(prior, node, Math.max(at, prior.knownFrom));
+              derived.revisions.push(node);
+            }
           }
-          const prior = {
-            node: WorldNode.parse(JSON.parse(row.get("data"))),
-            knownFrom: Number(row.get("knownFrom")),
-          };
-          if (prior.node.text === node.text) continue;
-          // 要約は最新の確定状態を表す。以前より前の時点の確定でも記録時点は戻さない。
-          await reviseNode(prior, node, Math.max(at, prior.knownFrom));
-          derived.revisions.push(node);
+          if (role === "skill")
+            await tx.run(
+              "MATCH (s:WorldNode {worldId:$worldId,id:$id}) SET s.skillSlots=$used",
+              { worldId, id, used: int(targets.records.length) },
+            );
         }
         for (const key of touched) {
           await tx.run(

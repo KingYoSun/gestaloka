@@ -2233,6 +2233,49 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "inventoryLimits": {
+                      "type": "object",
+                      "properties": {
+                        "carrySlots": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991,
+                          "description": "人物の手持ち枠"
+                        },
+                        "storageSlots": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991,
+                          "description": "保管庫の標準枠"
+                        },
+                        "unitsPerSlot": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991,
+                          "description": "物品の1枠あたりの標準個数"
+                        },
+                        "skillSlots": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991,
+                          "description": "人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する"
+                        }
+                      },
+                      "required": [
+                        "carrySlots",
+                        "storageSlots",
+                        "unitsPerSlot",
+                        "skillSlots"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "inventoryCapacity": {
+                      "type": "boolean"
+                    },
                     "id": {
                       "type": "string",
                       "format": "uuid",
@@ -2616,6 +2659,49 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "inventoryLimits": {
+                      "type": "object",
+                      "properties": {
+                        "carrySlots": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991,
+                          "description": "人物の手持ち枠"
+                        },
+                        "storageSlots": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991,
+                          "description": "保管庫の標準枠"
+                        },
+                        "unitsPerSlot": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991,
+                          "description": "物品の1枠あたりの標準個数"
+                        },
+                        "skillSlots": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991,
+                          "description": "人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する"
+                        }
+                      },
+                      "required": [
+                        "carrySlots",
+                        "storageSlots",
+                        "unitsPerSlot",
+                        "skillSlots"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "inventoryCapacity": {
+                      "type": "boolean"
+                    },
                     "id": {
                       "type": "string",
                       "format": "uuid",
@@ -3061,6 +3147,49 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "inventoryLimits": {
+                      "type": "object",
+                      "properties": {
+                        "carrySlots": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991,
+                          "description": "人物の手持ち枠"
+                        },
+                        "storageSlots": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991,
+                          "description": "保管庫の標準枠"
+                        },
+                        "unitsPerSlot": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991,
+                          "description": "物品の1枠あたりの標準個数"
+                        },
+                        "skillSlots": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991,
+                          "description": "人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する"
+                        }
+                      },
+                      "required": [
+                        "carrySlots",
+                        "storageSlots",
+                        "unitsPerSlot",
+                        "skillSlots"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "inventoryCapacity": {
+                      "type": "boolean"
+                    },
                     "id": {
                       "type": "string",
                       "format": "uuid",
@@ -9399,6 +9528,15 @@
                                   "type": "string",
                                   "minLength": 1,
                                   "description": "この事実が成立した根拠。初期設定、または成立した出来事の内容"
+                                },
+                                "consumeSkillIds": {
+                                  "description": "成功時に消費する本人の習得済み技能ID。1件で発展、複数で統合できる",
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  }
                                 }
                               },
                               "required": [
@@ -14274,6 +14412,15 @@
                                             "type": "string",
                                             "minLength": 1,
                                             "description": "この事実が成立した根拠。初期設定、または成立した出来事の内容"
+                                          },
+                                          "consumeSkillIds": {
+                                            "description": "成功時に消費する本人の習得済み技能ID。1件で発展、複数で統合できる",
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            }
                                           }
                                         },
                                         "required": [
@@ -14698,6 +14845,15 @@
                                   "type": "string",
                                   "minLength": 1,
                                   "description": "この事実が成立した根拠。初期設定、または成立した出来事の内容"
+                                },
+                                "consumeSkillIds": {
+                                  "description": "成功時に消費する本人の習得済み技能ID。1件で発展、複数で統合できる",
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  }
                                 }
                               },
                               "required": [
@@ -27667,6 +27823,13 @@
                                 "exclusiveMinimum": true,
                                 "maximum": 9007199254740991,
                                 "description": "物品の1枠あたりの標準個数"
+                              },
+                              "skillSlots": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991,
+                                "description": "人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する"
                               }
                             },
                             "additionalProperties": false

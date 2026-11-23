@@ -263,6 +263,123 @@ test("倉庫の最後の一品の同時取り出しは一回だけ成立し、�
   ).toMatchObject([{ subject: winner }]);
 });
 
+test("技能枠は管理編集・同時取得にも適用し、超過中の発展・統合、履歴と再送を保つ", async () => {
+  const { worldId, ids, apply, read } = await world("船乗り", "同行者");
+  const [person, other] = ids as [string, string];
+  const learn = (text: string, consumeSkillIds?: string[]): BelongingOp => ({
+    type: "learn",
+    person,
+    text,
+    basis: "航行の実習",
+    ...(consumeSkillIds ? { consumeSkillIds } : {}),
+  });
+  await apply(
+    1,
+    Array.from({ length: 49 }, (_, i) => learn(`実習${i}`)),
+  );
+  const compete = (ops: BelongingOp[][], at: number) =>
+    Promise.allSettled(ops.map((list) => apply(at, list)));
+  const last = await compete([[learn("星を読む")], [learn("雲を読む")]], 2);
+  expect(last.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+  const full = await read(person);
+  expect(full.skillCapacity).toEqual({ usedSlots: 50, limitSlots: 50 });
+  await expect(apply(3, [learn("波を読む")])).rejects.toMatchObject({
+    code: "SKILL_CAPACITY_EXCEEDED",
+  });
+  const target = randomUUID();
+  await expect(
+    store.commit(
+      await store.claim(worldId, randomUUID()),
+      store.context(worldId),
+      {
+        commitId: randomUUID(),
+        at: 3,
+        management: {
+          editorId: randomUUID(),
+          reason: "検証",
+          requestHash: "0".repeat(64),
+        },
+        changes: {
+          nodes: [{ id: target, kind: "script", text: "潮を読む" }],
+          revisions: [],
+          edges: [
+            {
+              id: randomUUID(),
+              kind: "has",
+              role: "skill",
+              source: person,
+              target,
+              period: { from: 3 },
+            },
+          ],
+          endEdges: [],
+        },
+      },
+    ),
+  ).rejects.toMatchObject({ code: "SKILL_CAPACITY_EXCEEDED" });
+  const [first, second] = full.skills.map((s) => s.id) as [string, string];
+  await store.configureInventory(worldId, false, { skillSlots: 48 });
+  // 旧版の要約は有効な技能関係から件数を引き継ぐ。
+  await databases.graph.executeQuery(
+    "MATCH (:WorldNode {worldId:$worldId,id:$person})-[:has {role:'summary'}]->(s) REMOVE s.skillSlots",
+    { worldId, person },
+  );
+  await expect(apply(3, [learn("波を読む")])).rejects.toMatchObject({
+    capacity: { usedSlots: 50, limitSlots: 48 },
+  });
+  // 同じ記述を別の人物が習得している場合も、その人物の関係は保持する。
+  await store.commit(
+    await store.claim(worldId, randomUUID()),
+    store.context(worldId),
+    {
+      commitId: randomUUID(),
+      at: 3,
+      management: {
+        editorId: randomUUID(),
+        reason: "指導",
+        requestHash: "1".repeat(64),
+      },
+      changes: {
+        nodes: [],
+        revisions: [],
+        endEdges: [],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "has",
+            role: "skill",
+            source: other,
+            target: first,
+            period: { from: 3 },
+          },
+        ],
+      },
+    },
+  );
+  const evolved = await compete(
+    [[learn("星の動きを読む", [first])], [learn("星座を読む", [first])]],
+    4,
+  );
+  expect(evolved.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+  const current = await read(person);
+  expect(current.skillCapacity).toEqual({ usedSlots: 50, limitSlots: 48 });
+  expect((await read(other)).skills.map((s) => s.id)).toEqual([first]);
+  await expect(apply(5, [learn("重なる発展", [first])])).rejects.toThrow(
+    "本人が現在",
+  );
+  const combine = [
+    learn("星と潮から夜の進路を選ぶ", [current.skills.at(-1)!.id, second]),
+  ];
+  const request = randomUUID(),
+    done = await apply(5, combine, request);
+  expect(await apply(5, combine, request)).toEqual(done);
+  expect((await read(person)).skillCapacity).toEqual({
+    usedSlots: 49,
+    limitSlots: 48,
+  });
+  expect((await read(person, 3)).skills.map((s) => s.id)).toContain(first);
+}, 90000);
+
 test("技能の習得・範囲変更・除去の前後で、当時の一覧と根拠を参照できる", async () => {
   const { worldId, ids, apply, read } = await world("A");
   const [a] = ids as [string];

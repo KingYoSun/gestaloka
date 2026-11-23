@@ -518,6 +518,60 @@ test("応答喪失後は保存した同じ要求を再送し、入力を重ね�
   expect(entries).toHaveLength(1);
 });
 
+test("満枠から消費する技能を選び、成功後の使用枠を確かめて統合を申請できる", async () => {
+  view.belongings = {
+    items: [],
+    storages: [],
+    skills: [
+      { id: peer, text: "星位を測る" },
+      { id: user, text: "潮流を読む" },
+    ],
+    skillCapacity: { usedSlots: 2, limitSlots: 2 },
+  };
+  const submit = vi.fn();
+  server.use(
+    http.post("*/api/worlds/:id/session", async ({ request }) => {
+      submit(await request.json());
+      return json({ state: "confirmed" });
+    }),
+  );
+  show();
+  await open("操作");
+  fireEvent.click(screen.getByText("プレイコマンド", { exact: true }));
+  fireEvent.click(screen.getByText("技能を習得する（2/2枠）"));
+  const button = screen.getByRole("button", {
+    name: "習得を申請する",
+  }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  fireEvent.click(screen.getByLabelText("星位を測る"));
+  expect(screen.getByText("成功後の使用枠 2/2")).toBeTruthy();
+  fireEvent.click(screen.getByLabelText("潮流を読む"));
+  expect(screen.getByText("成功後の使用枠 1/2")).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("習得する技能と使える範囲"), {
+    target: { value: "夜の湾内で航路を選べる" },
+  });
+  fireEvent.change(screen.getByLabelText("どのように身につけるか"), {
+    target: { value: "湾内で夜間観測を重ねる" },
+  });
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "update",
+        operations: [
+          {
+            type: "learn",
+            person: actor,
+            text: "夜の湾内で航路を選べる",
+            basis: "湾内で夜間観測を重ねる",
+            consumeSkillIds: [peer, user],
+          },
+        ],
+      }),
+    ),
+  );
+});
+
 test("コマンド欄はJSONとコマンドの形式を検証し、入力中の発言と分けて送る", async () => {
   show();
   await open("操作");

@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { connectDatabases } from "@gestaloka/server";
 import type { Page } from "@playwright/test";
 
-async function participate(page: Page) {
+async function participate(page: Page, skillSlots?: number) {
   await expect(page.getByText("世界構築を完了", { exact: true })).toBeVisible();
   const id = new URL(page.url()).pathname.split("/")[2]!;
   const preset = await page.request.post("/api/operations", {
@@ -23,6 +23,11 @@ async function participate(page: Page) {
   });
   expect(preset.ok(), await preset.text()).toBe(true);
   await page.getByLabel("公開用の名称", { exact: true }).fill("参加できる村");
+  const limit = page.getByLabel("人物ごとの技能枠", { exact: true });
+  if (skillSlots) {
+    await expect(limit).toHaveValue("50");
+    await limit.fill(String(skillSlots));
+  }
   await page.getByLabel("登録済みの全員へ公開する", { exact: true }).check();
   await page.getByLabel("新しい参加を受け付ける", { exact: true }).check();
   await page
@@ -31,6 +36,10 @@ async function participate(page: Page) {
   await expect(
     page.getByText("公開・参加受付を保存しました。", { exact: true }),
   ).toBeVisible();
+  if (skillSlots) {
+    await page.reload();
+    await expect(limit).toHaveValue(String(skillSlots));
+  }
   await expect(
     page.getByRole("button", { name: "別の村民として参加する", exact: true }),
   ).toHaveCount(0);
@@ -59,7 +68,7 @@ test("ログインだけでは匿名データを移行せず、対象確認と�
   await page
     .getByRole("button", { name: "世界構築を完了する", exact: true })
     .click();
-  await participate(page);
+  await participate(page, 7);
 
   const world = new URL(page.url()).pathname.split("/")[2]!;
   const user = (await (await page.request.get("/api/session")).json()).id;

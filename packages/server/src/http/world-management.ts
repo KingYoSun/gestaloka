@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { z } from "zod";
 import { WorldGraphQuery, Change } from "@gestaloka/contracts";
 import { WorldStore, WorldConflict } from "../world/store.js";
-import { inventoryAudit } from "../world/inventory.js";
+import { inventoryAudit, SkillCapacityExceeded } from "../world/inventory.js";
 import { atTime, inGeneration, worldNow } from "../world/model.js";
 import { AccessError } from "./access.js";
 import type { WorldPlayers } from "../runtime/players.js";
@@ -201,6 +201,8 @@ export class WorldManagement {
       );
       return { worldId: id, ...receipt };
     } catch (error) {
+      if (error instanceof SkillCapacityExceeded)
+        throw new AccessError(409, error.code, error.message, undefined, error);
       if (error instanceof WorldConflict)
         throw new AccessError(409, "WORLD_CHANGED", error.message);
       if (error instanceof Error && error.constructor === Error)

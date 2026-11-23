@@ -751,19 +751,8 @@ export class Operations {
         };
       }
       case "worlds.read": {
-        const access = this.#access(context);
-        const world = await access.status(actor!, input.worldId);
-        const graph = (await access.construction.get(input.worldId)).world_id;
-        if (!graph) return { world };
-        const { limits, enabled } = await access.construction.agent.store
-          .context(graph)
-          .inventorySettings();
         return {
-          world: {
-            ...world,
-            inventoryLimits: limits,
-            inventoryCapacity: enabled,
-          },
+          world: await this.#access(context).status(actor!, input.worldId),
         };
       }
       case "worlds.records":

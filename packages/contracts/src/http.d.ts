@@ -1066,6 +1066,17 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            inventoryLimits?: {
+                                /** @description 人物の手持ち枠 */
+                                carrySlots: number;
+                                /** @description 保管庫の標準枠 */
+                                storageSlots: number;
+                                /** @description 物品の1枠あたりの標準個数 */
+                                unitsPerSlot: number;
+                                /** @description 人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する */
+                                skillSlots: number;
+                            };
+                            inventoryCapacity?: boolean;
                             /** Format: uuid */
                             id: string;
                             prompt: string;
@@ -1230,6 +1241,17 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            inventoryLimits?: {
+                                /** @description 人物の手持ち枠 */
+                                carrySlots: number;
+                                /** @description 保管庫の標準枠 */
+                                storageSlots: number;
+                                /** @description 物品の1枠あたりの標準個数 */
+                                unitsPerSlot: number;
+                                /** @description 人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する */
+                                skillSlots: number;
+                            };
+                            inventoryCapacity?: boolean;
                             /** Format: uuid */
                             id: string;
                             prompt: string;
@@ -1414,6 +1436,17 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            inventoryLimits?: {
+                                /** @description 人物の手持ち枠 */
+                                carrySlots: number;
+                                /** @description 保管庫の標準枠 */
+                                storageSlots: number;
+                                /** @description 物品の1枠あたりの標準個数 */
+                                unitsPerSlot: number;
+                                /** @description 人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する */
+                                skillSlots: number;
+                            };
+                            inventoryCapacity?: boolean;
                             /** Format: uuid */
                             id: string;
                             prompt: string;
@@ -3710,6 +3743,8 @@ export interface paths {
                             text: string;
                             /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                             basis: string;
+                            /** @description 成功時に消費する本人の習得済み技能ID。1件で発展、複数で統合できる */
+                            consumeSkillIds?: string[];
                         } | {
                             /** @enum {string} */
                             type: "update";
@@ -4853,6 +4888,8 @@ export interface paths {
                                 text: string;
                                 /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                                 basis: string;
+                                /** @description 成功時に消費する本人の習得済み技能ID。1件で発展、複数で統合できる */
+                                consumeSkillIds?: string[];
                             } | {
                                 /** @enum {string} */
                                 type: "update";
@@ -4966,6 +5003,8 @@ export interface paths {
                             text: string;
                             /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
                             basis: string;
+                            /** @description 成功時に消費する本人の習得済み技能ID。1件で発展、複数で統合できる */
+                            consumeSkillIds?: string[];
                         } | {
                             /** @enum {string} */
                             type: "update";
@@ -9210,6 +9249,8 @@ export interface paths {
                                 storageSlots?: number;
                                 /** @description 物品の1枠あたりの標準個数 */
                                 unitsPerSlot?: number;
+                                /** @description 人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する */
+                                skillSlots?: number;
                             };
                             title: string;
                             description: string;
