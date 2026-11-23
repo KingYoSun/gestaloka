@@ -15,6 +15,7 @@ const StoryDates = z.object({
   until: z.iso.date().optional(),
 });
 export const StoryListSort = z.enum([
+  "updated",
   "newest",
   "oldest",
   "player",
@@ -108,7 +109,7 @@ const Episode = z.object({
   title: z.string().optional(),
 });
 export const StoryList = z.object({
-  items: z.array(Story),
+  items: z.array(Story.extend({ updatedAt: z.iso.datetime().optional() })),
   next: z.uuid().nullable(),
 });
 export const StoryRead = z.object({

@@ -472,6 +472,22 @@ export class WorldContext {
       ?.get("id") as string | undefined;
   }
 
+  // 指定した存在のうち、呼称が名前のどれかを含むものの呼称。1回でまとめて読む。
+  async named(ids: string[], names: string[]) {
+    const result = await this.driver.executeQuery(
+      `UNWIND $ids AS id MATCH (n:WorldNode {worldId:$world,id:id})
+       WHERE any(name IN $names WHERE n.data CONTAINS name) RETURN n.data AS data`,
+      {
+        world: this.worldId,
+        ids,
+        names: names.map((name) => JSON.stringify(name).slice(1, -1)),
+      },
+    );
+    return result.records
+      .map((r) => JSON.parse(r.get("data")).text as string)
+      .filter((text) => names.some((name) => text.includes(name)));
+  }
+
   async locationSubjects(
     place: string,
     at = Number.MAX_SAFE_INTEGER,
