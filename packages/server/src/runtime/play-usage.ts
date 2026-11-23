@@ -48,17 +48,14 @@ export async function readPlayUsage(
   ).rows;
   const counted = rows.filter((r) => !r.partial),
     ids = counted.map((r) => r.id);
+  // 申請中のGM呼出しは、呼出しごとのoperation_idを持ち、response_idに元の要求IDが残る。
   const calls = new Map(
-    graph
-      ? (
-          await db.query<{ id: string; calls: number }>(
-            `SELECT operation_id AS id,count(*)::int AS calls FROM llm_call WHERE world_id=$1
-            AND created_at>=$2::timestamptz-interval '1 day' AND created_at<$3::timestamptz+interval '1 day'
-            AND operation_id=ANY($4::uuid[]) GROUP BY operation_id`,
-            [graph, q.from, q.to, ids],
-          )
-        ).rows.map((r) => [r.id, r.calls])
-      : [],
+    (
+      await db.query<{ id: string; calls: number }>(
+        "SELECT response_id AS id,count(*)::int AS calls FROM llm_call WHERE response_id=ANY($1::uuid[]) GROUP BY response_id",
+        [ids],
+      )
+    ).rows.map((r) => [r.id, r.calls]),
   );
   const receipts = new Map(
     (graph
@@ -126,12 +123,14 @@ export async function readPlayUsage(
           .filter((e) => e.kind === "has" && !e.role)
           .map((e) => e.target),
       );
+      const added = new Set(changes.nodes.map((n) => n.id));
       const existences = changes.nodes.filter((n) => n.kind === "existence");
       g.changes.receipts++;
       g.changes.existences += existences.length;
       g.changes.items += existences.filter((n) => held.has(n.id)).length;
+      // 新規技能は、新しい技能ノードへ付いた技能関係だけを数える。
       g.changes.skills += changes.edges.filter(
-        (e) => e.role === "skill",
+        (e) => e.role === "skill" && added.has(e.target),
       ).length;
     }
   }

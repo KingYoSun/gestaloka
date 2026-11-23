@@ -156,7 +156,123 @@ test("旧版で公開した話の再送は修正の前後で同じ結果を返�
       items: [],
       next: null,
     });
-    expect(await stories.read(user, storyId, { image: "1" })).toBeUndefined();
+    await expect(
+      stories.read(user, storyId, { image: "1" }),
+    ).rejects.toMatchObject({ code: "STORY_NOT_FOUND" });
+  } finally {
+    await isolated.close();
+  }
+});
+
+test("投稿状況は期間内に公開された公開中の話から数え、編集や著者名の変更で増やさない", async () => {
+  const isolated = isolatedDatabases();
+  await isolated.setup();
+  try {
+    const db = isolated.databases.postgres;
+    const stories = new Stories(db);
+    const id = () => randomUUID() as string;
+    const [world, other, first, second, outsider] = [
+      id(),
+      id(),
+      id(),
+      id(),
+      id(),
+    ];
+    const [serial, started, joined, removed, elsewhere] = [
+      id(),
+      id(),
+      id(),
+      id(),
+      id(),
+    ];
+    await setupStories(db);
+    await db.query(`CREATE TABLE world_access(construction_id uuid,subject_id uuid,role text,actor_id uuid);
+      CREATE TABLE world_subject(id uuid,user_id uuid,active boolean);`);
+    for (const user of [first, second, outsider])
+      await db.query("INSERT INTO world_subject VALUES($1,$1,true)", [user]);
+    for (const [construction, user] of [
+      [world, first],
+      [world, second],
+      [other, first],
+      [other, outsider],
+    ])
+      await db.query("INSERT INTO world_access VALUES($1,$2,'player',$3)", [
+        construction,
+        user,
+        randomUUID(),
+      ]);
+    await db.query(
+      `INSERT INTO player_story(id,world_id,world_title,author_id,author,title,published_at) VALUES
+        ($1,$6,'村',$8,'船主','初航海','2026-01-10T00:00:00Z'),
+        ($2,$6,'村',$8,'別名','港の朝','2026-01-31T15:30:00Z'),
+        ($3,$6,'村',$9,'漁師','網','2026-02-10T00:00:00Z'),
+        ($4,$6,'村',$9,'漁師','消した話','2026-02-11T00:00:00Z'),
+        ($5,$7,'町',$8,'船主','町の話','2026-02-12T00:00:00Z')`,
+      [
+        serial,
+        started,
+        joined,
+        removed,
+        elsewhere,
+        world,
+        other,
+        first,
+        second,
+      ],
+    );
+    await db.query(
+      `INSERT INTO player_story_episode(story_id,number,request_id,body,published_at) VALUES
+        ($1,1,$1,'帆を揚げた。','2026-01-10T00:00:00Z'),
+        ($1,2,$6,'岸を離れた。','2026-02-05T00:00:00Z'),
+        ($1,3,$7,'嵐が来た。','2026-02-28T15:00:00Z'),
+        ($2,1,$2,'朝が来た。','2026-01-31T15:30:00Z'),
+        ($3,1,$3,'網を張った。','2026-02-10T00:00:00Z'),
+        ($4,1,$4,'消える。','2026-02-11T00:00:00Z'),
+        ($5,1,$5,'町に着いた。','2026-02-12T00:00:00Z')`,
+      [serial, started, joined, removed, elsewhere, randomUUID(), randomUUID()],
+    );
+    await stories.post(second, world, {
+      operation: "delete",
+      requestId: randomUUID(),
+      storyId: removed,
+    });
+    const february = {
+      worldId: world,
+      since: "2026-02-01",
+      until: "2026-02-28",
+    };
+    const counts = {
+      stories: 2,
+      episodes: 3,
+      firstEpisodes: 2,
+      continuedEpisodes: 1,
+      players: 2,
+    };
+    expect(await stories.stats(first, february)).toMatchObject(counts);
+    for (const change of [
+      { episode: 1, body: "朝の風で帆を揚げた。" },
+      { author: "老船主" },
+    ])
+      await stories.post(first, world, {
+        operation: "edit",
+        requestId: randomUUID(),
+        storyId: serial,
+        ...change,
+      });
+    expect(await stories.stats(first, february)).toEqual({
+      ...february,
+      ...counts,
+    });
+    expect(await stories.stats(first, { worldId: world })).toMatchObject({
+      stories: 3,
+      episodes: 5,
+      players: 2,
+    });
+    expect(await stories.stats(outsider, february)).toMatchObject({
+      stories: 0,
+      episodes: 0,
+      players: 0,
+    });
   } finally {
     await isolated.close();
   }

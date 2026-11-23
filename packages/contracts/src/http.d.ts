@@ -8962,12 +8962,17 @@ export interface paths {
                                 /** Format: uuid */
                                 callId?: string;
                                 /** @enum {string} */
-                                view: "summary" | "calls" | "timeline";
+                                view: "summary" | "calls" | "timeline" | "groups";
                                 /**
                                  * @default day
                                  * @enum {string}
                                  */
                                 interval?: "hour" | "day" | "month";
+                                /** @enum {string} */
+                                by?: "user" | "task" | "model";
+                                /** @enum {string} */
+                                order?: "calls" | "cost";
+                                limit?: number;
                                 after?: string;
                             };
                         } | {
@@ -9088,6 +9093,46 @@ export interface paths {
                             worldId: string;
                             /** Format: uuid */
                             before?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "stories.list";
+                            /** Format: date */
+                            since?: string;
+                            /** Format: date */
+                            until?: string;
+                            /** Format: uuid */
+                            worldId?: string;
+                            author?: string;
+                            player?: string;
+                            title?: string;
+                            /** @enum {string} */
+                            bookmarked?: "1";
+                            /** @enum {string} */
+                            sort?: "updated" | "newest" | "oldest" | "player" | "author" | "title";
+                            /** Format: uuid */
+                            before?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "stories.read";
+                            /** Format: uuid */
+                            storyId: string;
+                            /** Format: date */
+                            since?: string;
+                            /** Format: date */
+                            until?: string;
+                            /** @enum {string} */
+                            sort?: "number" | "newest" | "oldest";
+                            after?: string;
+                            episode?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "stories.stats";
+                            /** Format: uuid */
+                            worldId: string;
+                            /** Format: date */
+                            since?: string;
+                            /** Format: date */
+                            until?: string;
                         } | {
                             /** @enum {string} */
                             operation: "blueprints.create";

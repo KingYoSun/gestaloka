@@ -59,6 +59,14 @@ export const operations = {
       "reportPolicy.put": "報告・感想の上限を変更",
     },
   ],
+  stories: [
+    "STORIES",
+    {
+      "stories.list": "作品一覧",
+      "stories.read": "作品の目次・本文",
+      "stories.stats": "世界別の投稿状況（公開中の作品・各話）",
+    },
+  ],
   invites: [
     "招待",
     {
@@ -92,7 +100,7 @@ export const operations = {
   costs: [
     "費用の計算額",
     {
-      "costs.read": "費用の集計・明細・時系列",
+      "costs.read": "費用の集計・明細・時系列・利用者/処理/モデル別",
       "playUsage.read": "生成申請・元案・消費SP・成立件数の日別集計",
     },
   ],
@@ -184,7 +192,7 @@ export const catalog: Partial<Record<Name, string>> = Object.assign(
   ...Object.values(operations).map((v) => v[1]),
 );
 export const readOnly = (name: string) =>
-  /\.(read|list|records|graph|samples|notifications|jobs|job|uses|select|history|evaluation|settings|promotions)$/.test(
+  /\.(read|list|records|graph|samples|notifications|jobs|job|uses|select|history|evaluation|settings|promotions|stats)$/.test(
     name,
   );
 export const schemas = Object.fromEntries(

@@ -11,6 +11,7 @@ import type {
   StoryPost,
   StoryRead,
   StoryReadQuery,
+  StoryDates,
 } from "@gestaloka/contracts";
 
 const fingerprint = (json: string) =>
@@ -97,6 +98,12 @@ const storyView = ({ published_at, ...story }: StoryRow) => ({
   publishedAt: published_at.toISOString(),
 });
 const pageSize = 50;
+const missing = () =>
+  new AccessError(
+    404,
+    "STORY_NOT_FOUND",
+    "作品または指定した話が見つかりません",
+  );
 const storyOrder = {
   updated: ["updated_at", "id"],
   newest: ["published_at", "id"],
@@ -162,14 +169,14 @@ export class Stories {
     user: string,
     id: string,
     query: z.infer<typeof StoryReadQuery>,
-  ): Promise<z.infer<typeof StoryRead> | undefined> {
+  ): Promise<z.infer<typeof StoryRead>> {
     const {
       rows: [story],
     } = await this.pool.query<StoryRow>(
       `SELECT ${columns} FROM player_story WHERE id=$2 AND ${readableStory}`,
       [user, id],
     );
-    if (!story) return undefined;
+    if (!story) throw missing();
     const values: (string | number)[] = [id];
     const filters = [
       "story_id=$1",
@@ -220,7 +227,7 @@ export class Stories {
       ),
     ]);
     const selected = entry.rows[0];
-    if (!selected) return undefined;
+    if (!selected) throw missing();
     const episodes = page.rows.slice(0, pageSize).map((row) => ({
       number: row.number,
       publishedAt: row.published_at.toISOString(),
@@ -242,6 +249,30 @@ export class Stories {
       nextEpisode: selected.next,
       next: page.rows.length > pageSize ? episodes.at(-1)!.number : null,
     };
+  }
+
+  /** Counts only stories and episodes that are still published. */
+  async stats(
+    user: string,
+    { worldId, since, until }: z.infer<typeof StoryDates> & { worldId: string },
+  ) {
+    const values = [user, worldId];
+    const period = dateWhere(values, { since, until })
+      .map((predicate) => ` AND ${predicate}`)
+      .join("");
+    const { rows } = await this.pool.query<Record<string, number>>(
+      `SELECT (SELECT count(*)::int FROM player_story
+         WHERE world_id=$2 AND ${readableStory}${period}) AS stories,
+       count(*)::int AS episodes,
+       count(*) FILTER (WHERE number=1)::int AS "firstEpisodes",
+       count(*) FILTER (WHERE number>1)::int AS "continuedEpisodes",
+       count(DISTINCT author_id)::int AS players
+       FROM player_story_episode JOIN (SELECT id AS story_id,author_id FROM player_story
+         WHERE world_id=$2 AND ${readableStory}) story USING(story_id)
+       WHERE deleted_at IS NULL${period}`,
+      values,
+    );
+    return { worldId, since, until, ...rows[0] };
   }
 
   async bookmark(user: string, id: string, saved: boolean) {

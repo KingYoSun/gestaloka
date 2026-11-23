@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Change, RelationKind, StartingItem } from "./world.js";
 import { BlueprintDraft, BlueprintPublication } from "./play.js";
+import { StoryDates, StoryListQuery, StoryReadQuery } from "./stories.js";
 export * from "./stories.js";
 export {
   DrawReward,
@@ -709,13 +710,19 @@ export const CostQuery = z
     responseId: z.uuid().optional(),
     operationId: z.uuid().optional(),
     callId: z.uuid().optional(),
-    view: z.enum(["summary", "calls", "timeline"]),
+    view: z.enum(["summary", "calls", "timeline", "groups"]),
     interval: z.enum(["hour", "day", "month"]).default("day"),
+    by: z.enum(["user", "task", "model"]).optional(),
+    order: z.enum(["calls", "cost"]).optional(),
+    limit: z.number().int().min(1).max(50).optional(),
     after: z.string().optional(),
   })
   .strict()
   .refine((v) => Date.parse(v.from) < Date.parse(v.to), {
     message: "期間の終了は開始より後にしてください",
+  })
+  .refine((v) => (v.view === "groups") === (v.by !== undefined), {
+    message: "集計の単位はview: groupsでだけ指定してください",
   });
 const nanoAmount = z.string().regex(/^\d+$/);
 export const CostTotals = z.object({
@@ -725,6 +732,17 @@ export const CostTotals = z.object({
   unknownNanoUsd: nanoAmount,
   reservedCalls: z.number().int().nonnegative(),
   unknownCalls: z.number().int().nonnegative(),
+});
+const tokens = z.number().nonnegative().nullable();
+const CostGroup = CostTotals.extend({
+  usageMissingCalls: z.number().int().nonnegative(),
+  inputTokens: tokens,
+  cachedInputTokens: tokens,
+  cacheWriteTokens: tokens,
+  outputTokens: tokens,
+  cacheHitRate: z.number().min(0).max(1).nullable(),
+  callShare: z.number().min(0).max(1).nullable(),
+  costShare: z.number().min(0).max(1).nullable(),
 });
 export const CostCall = z.object({
   id: z.uuid(),
@@ -782,6 +800,16 @@ export const CostReport = z.object({
   totals: CostTotals.optional(),
   calls: z.array(CostCall).optional(),
   timeline: z.array(CostTotals.extend({ at: z.iso.datetime() })).optional(),
+  groups: z
+    .object({
+      by: z.enum(["user", "task", "model"]),
+      order: z.enum(["calls", "cost"]),
+      total: CostGroup,
+      top: z.array(CostGroup.extend({ key: z.string() })),
+      others: CostGroup.extend({ groups: z.number().int().nonnegative() }),
+      unassigned: CostGroup,
+    })
+    .optional(),
   next: z.string().nullable(),
 });
 export const PlayUsageQuery = z
@@ -1218,6 +1246,23 @@ export const Operation = z.discriminatedUnion("operation", [
       operation: z.literal("reports.list"),
       worldId: z.uuid(),
       before: z.uuid().optional(),
+    })
+    .strict(),
+  z
+    .object({ operation: z.literal("stories.list"), ...StoryListQuery.shape })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("stories.read"),
+      storyId: z.uuid(),
+      ...StoryReadQuery.omit({ image: true }).shape,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("stories.stats"),
+      worldId: z.uuid(),
+      ...StoryDates.shape,
     })
     .strict(),
   z

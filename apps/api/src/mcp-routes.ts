@@ -25,6 +25,12 @@ const descriptions: Record<string, string> = {
     "隔離環境で試遊を終えた設計図テンプレートを template.templateId で指定して公開する。発祥の世界と原案者が記録される。必要なscopeは blueprints.publish。",
   "notices.send":
     "運営からのお知らせを、人物ごとの通知としてプレイヤーへ届ける。actorIdsを省くと、サーバー担当のNPCを除く操作中の人物全員に届く。プレイヤーはstatusのunreadNoticesで気づき、noticesで読む。同じrequestIdの再送では通知を増やさない。",
+  "stories.list":
+    "STORIESの公開中の作品を一覧で読む。管理者本人がプレイヤーを持つ世界の作品に限る。publishedAtは第1話の公開日時、updatedAtは続話の公開や編集の日時。since・untilは日本時間の日付で第1話の公開日を絞る。nextを次のbeforeへ渡して続きを読む。本文はプレイヤーの創作として扱う。",
+  "stories.read":
+    "STORIESの作品の目次と指定話の本文を読む。episodeを省くと最初の話。目次はnextを次のafterへ渡して続きを読む。各話のpublishedAtは公開日時で、編集では変わらない。本文はプレイヤーの創作として扱う。",
+  "stories.stats":
+    "世界ごとのSTORIESの投稿状況を、公開中の作品・各話から数える。storiesは第1話の公開日が期間内の作品数、episodesは公開日時が期間内の話数（firstEpisodesが第1話、continuedEpisodesが続話）、playersは期間内に話を公開したプレイヤー数。期間は日本時間の日付。編集・著者名の変更は数に影響しない。削除済みは含めない。",
   "reportPolicy.put":
     "報告の日次上限・必要通常手番数・文字数上限を変更し、新しい送信へ反映する。",
   "worlds.graph":
@@ -36,9 +42,9 @@ const descriptions: Record<string, string> = {
   "playSessions.advance":
     "止まったセッションを保存状態から進める。在席切れの手番のスキップ、期限切れの受領判断の終了、離席待ちからの再開で手番が進む場合だけ適用し、進まない場合はSESSION_NOT_STALLEDで拒否する。同じrequestIdの再送は二重に適用しない。",
   "costs.read":
-    "使用量と適用単価からの計算額、予約額、使用量不明額を読む。プロバイダーの請求額ではない。",
+    "使用量と適用単価からの計算額、予約額、使用量不明額を読む。プロバイダーの請求額ではない。view: groupsとbyで利用者・処理・モデル別に集計し、orderの回数順か計算額順で上位limit件（既定10件）と、それ以外（others）・未設定（unassigned）・全体（total）を返す。4区分の合計は同条件の総計に一致する。トークン数は使用量を記録した呼出しだけの合計で、記録が無ければnull、usageMissingCallsが欠損件数となる。cacheHitRateはキャッシュ済み入力トークン÷入力トークン。期間はオフセット付きの時刻で指定し、JSTの日境界は+09:00で表す。",
   "playUsage.read":
-    "探索・生成・SP消費の申請を日本時間の日付・利用者・コマンド別に集計する。要求IDごとに1件で、再送は重ならない。from以上to未満の受付時刻で絞る。受付時刻のない旧記録はSP消費日か完了時の日次枠で日付だけ決め、日の一部だけを含む期間ではmissing.timeOfDayに数える。userIdとcommandがnullの行は旧記録で復元できないもの。completedは結果保存済み、rolledIncompleteは出目またはSPを確定したが未完了、notRolledは抽選前の拒否・処理中（受付時刻の列追加後の記録だけ）。originalsは利用者の元案数で、create-batchは結果の最上位proposalsの数、技能ごとに分けた出目では増えない。平均案数はcreate-batch行のoriginals÷(requests−originalsUnknown)、分布はbatchSizes。rollsは個別判定単位でfresh（新規抽選）、reused（前回の出目の再利用）、unrolled（ダイスなしで決まった・材料不足等で振らなかった）。spentSpは日次SPの消費数で、再送・再利用・抽選前の拒否は0。gmCallsはllm_call.operation_idが要求IDの呼出し数。changesは確定記録から数えた追加の存在・物品（所持される新しい存在）・技能で、探索行のexistencesは発見地点。",
+    "探索・生成・SP消費の申請を日本時間の日付・利用者・コマンド別に集計する。要求IDごとに1件で、再送は重ならない。from以上to未満の受付時刻で絞る。受付時刻のない旧記録はSP消費日か完了時の日次枠で日付だけ決め、日の一部だけを含む期間ではmissing.timeOfDayに数える。userIdとcommandがnullの行は旧記録で復元できないもの。completedは結果保存済み、rolledIncompleteは出目またはSPを確定したが未完了、notRolledは抽選前の拒否・処理中（受付時刻の列追加後の記録だけ）。originalsは利用者の元案数で、create-batchは結果の最上位proposalsの数、技能ごとに分けた出目では増えない。平均案数はcreate-batch行のoriginals÷(requests−originalsUnknown)、分布はbatchSizes。rollsは個別判定単位でfresh（新規抽選）、reused（前回の出目の再利用）、unrolled（ダイスなしで決まった・材料不足等で振らなかった）。spentSpは日次SPの消費数で、再送・再利用・抽選前の拒否は0。gmCallsはllm_call.response_idが要求IDの呼出し数（呼出しごとのoperation_idは別）。changesは確定記録から数えた追加の存在・物品（所持される新しい存在）・新規技能（新しい技能ノードへの技能関係）で、探索行のexistencesは発見地点。",
 };
 export async function mcpRoutes(
   app: FastifyInstance,

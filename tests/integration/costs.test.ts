@@ -609,6 +609,204 @@ test("期間境界、絞込み、同日時の明細と長期間の時系列を�
   ).rejects.toMatchObject({ code: "CURSOR_INVALID" });
 });
 
+test("JSTの部分日を利用者・処理・モデル別に集計し、上位・その他・未設定の合計を総計と一致させる", async () => {
+  const pool = isolated.databases.postgres,
+    [a, b, c, d] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()],
+    usage = (hit: number, miss: number, write?: number) => ({
+      model: "reported",
+      content: "private response",
+      usage: {
+        prompt_tokens: hit + miss,
+        prompt_cache_hit_tokens: hit,
+        prompt_cache_miss_tokens: miss,
+        completion_tokens: 10,
+        ...(write === undefined ? {} : { cache_write_5m_tokens: write }),
+      },
+    }),
+    insert = (
+      at: string,
+      userId: string | null,
+      role: string | undefined,
+      name: string,
+      state: string,
+      charged: number | null,
+      response: unknown,
+    ) =>
+      pool.query(
+        `INSERT INTO llm_call(id,budget_id,hash,reserved_nano,charged_nano,request,response,state,delivery,created_at,user_id)
+        VALUES(gen_random_uuid(),$1,'fixture',100,$2,$3,$4,$5,'unknown',$6,$7)`,
+        [
+          model.ledger.budgetId,
+          charged,
+          { role, request: { model: name }, sourceMessages: messages },
+          response,
+          state,
+          at,
+          userId,
+        ],
+      );
+  // JSTの日付は3/1、UTCでは前日。
+  for (const at of ["2026-03-01T00:00:00+09:00", "2026-03-01T00:30:00+09:00"])
+    await insert(at, a, "scene", "m1", "complete", 10, usage(60, 40, 20));
+  await insert(
+    "2026-03-01T01:00:00+09:00",
+    a,
+    "scene",
+    "m1",
+    "complete",
+    10,
+    usage(0, 100),
+  );
+  await insert(
+    "2026-03-01T02:00:00+09:00",
+    b,
+    "judge",
+    "m2",
+    "complete",
+    100,
+    usage(0, 50),
+  );
+  await insert(
+    "2026-03-01T03:00:00+09:00",
+    c,
+    "scene",
+    "m1",
+    "pending",
+    null,
+    null,
+  );
+  await insert(
+    "2026-03-01T04:00:00+09:00",
+    d,
+    "judge",
+    "m2",
+    "complete",
+    1,
+    usage(10, 0),
+  );
+  await insert(
+    "2026-03-01T05:00:00+09:00",
+    null,
+    undefined,
+    "m1",
+    "complete",
+    5,
+    usage(5, 5),
+  );
+  await insert(
+    "2026-02-28T23:59:59+09:00",
+    a,
+    "scene",
+    "m1",
+    "complete",
+    1000,
+    usage(1, 1),
+  );
+  await insert(
+    "2026-03-01T12:00:00+09:00",
+    a,
+    "scene",
+    "m1",
+    "complete",
+    1000,
+    usage(1, 1),
+  );
+  const period = {
+      ...query,
+      from: "2026-03-01T00:00:00+09:00",
+      to: "2026-03-01T12:00:00+09:00",
+    },
+    summary = (await read({ ...period, view: "summary" })).totals!;
+  expect(summary).toEqual({
+    calls: 7,
+    calculatedNanoUsd: "136",
+    reservedNanoUsd: "0",
+    unknownNanoUsd: "100",
+    reservedCalls: 0,
+    unknownCalls: 1,
+  });
+  const cost = (await read({ ...period, view: "groups", by: "user", limit: 2 }))
+    .groups!;
+  expect(cost.top.map((g) => [g.key, g.calculatedNanoUsd])).toEqual([
+    [b, "100"],
+    [a, "30"],
+  ]);
+  expect(cost.top[1]).toMatchObject({
+    calls: 3,
+    usageMissingCalls: 0,
+    inputTokens: 300,
+    cachedInputTokens: 120,
+    cacheWriteTokens: 40,
+    outputTokens: 30,
+    cacheHitRate: 0.4,
+    callShare: 3 / 7,
+    costShare: 30 / 136,
+  });
+  expect(cost.top[0]!.cacheWriteTokens).toBeNull();
+  expect(cost.others).toMatchObject({
+    groups: 2,
+    calls: 2,
+    calculatedNanoUsd: "1",
+    unknownCalls: 1,
+    unknownNanoUsd: "100",
+    usageMissingCalls: 1,
+    inputTokens: 10,
+  });
+  expect(cost.unassigned).toMatchObject({ calls: 1, calculatedNanoUsd: "5" });
+  const parts = [...cost.top, cost.others, cost.unassigned];
+  for (const key of Object.keys(summary) as (keyof typeof summary)[]) {
+    expect(cost.total[key]).toEqual(summary[key]);
+    expect(parts.reduce((n, p) => n + BigInt(p[key]), 0n).toString()).toBe(
+      String(summary[key]),
+    );
+  }
+  expect(
+    (
+      await read({
+        ...period,
+        view: "groups",
+        by: "user",
+        order: "calls",
+        limit: 1,
+      })
+    ).groups!.top.map((g) => [g.key, g.calls, g.callShare]),
+  ).toEqual([[a, 3, 3 / 7]]);
+  const tasks = (await read({ ...period, view: "groups", by: "task" })).groups!;
+  expect(tasks.top.map((g) => [g.key, g.calls])).toEqual([
+    ["judge", 2],
+    ["scene", 4],
+  ]);
+  expect(tasks.unassigned).toMatchObject({ calls: 1, cacheHitRate: 0.5 });
+  expect(
+    (await read({ ...period, view: "groups", by: "model" })).groups!.top.map(
+      (g) => [g.key, g.calls],
+    ),
+  ).toEqual([
+    ["m2", 2],
+    ["m1", 5],
+  ]);
+  const missing = (
+    await read({ ...period, userId: c, view: "groups", by: "model" })
+  ).groups!;
+  expect(missing.total).toMatchObject({
+    calls: 1,
+    usageMissingCalls: 1,
+    inputTokens: null,
+    cacheHitRate: null,
+    costShare: null,
+  });
+  expect(missing.others).toMatchObject({
+    groups: 0,
+    calls: 0,
+    inputTokens: null,
+  });
+  expect(JSON.stringify(cost)).not.toMatch(/private/);
+  expect(() =>
+    CostQuery.parse({ ...period, view: "summary", by: "user" }),
+  ).toThrow();
+  expect(() => CostQuery.parse({ ...period, view: "groups" })).toThrow();
+});
+
 test("既存の金額・未確定額・欠けた対応を保持し、管理者だけが共通契約で取得できる", async () => {
   const pool = isolated.databases.postgres;
   await pool.query(
@@ -905,12 +1103,14 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
   const prefix = original.input[1].content[0];
   expect(original.input[0]).toEqual(next.input[0]);
   expect(prefix).toEqual(next.input[1].content[0]);
-  expect(prefix).not.toEqual(changed.input[1].content[0]);
+  expect(JSON.parse(changed.input[1].content[0].text).actorSkills).toEqual([
+    { ...skills[0], text: skills[0]!.text + "変更" },
+  ]);
   expect(prefix.prompt_cache_breakpoint).toEqual({ mode: "explicit" });
   expect(original.input[0].content[0]).not.toHaveProperty(
     "prompt_cache_breakpoint",
   );
-  expect(JSON.parse(prefix.text)).toEqual({
+  expect(JSON.parse(prefix.text + "]}")).toEqual({
     premise: "世界の前提",
     actor: "actor",
     actorSkills: skills,
@@ -918,7 +1118,9 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
   expect(original.input[1].content[1]).not.toHaveProperty(
     "prompt_cache_breakpoint",
   );
-  expect(JSON.parse(original.input[1].content[1].text)).toEqual({
+  const current = (request: { input: { content: { text: string }[] }[] }) =>
+    JSON.parse(request.input[1]!.content.at(-1)!.text.slice(2));
+  expect(current(original)).toEqual({
     text: "ひもと板で工作する",
     changes: { nodes: [] },
     nodes: [
@@ -940,7 +1142,7 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
     basisDictionary: [basis],
   });
   // 申請が指さない物品には取得経緯を付けない。短縮IDで指した物品には付ける。
-  const nextInput = JSON.parse(next.input[1].content[1].text);
+  const nextInput = current(next);
   expect(nextInput.storageStockNote).toContain("遠隔保管先");
   const { belongings, ...unreferenced } = nextInput.nodes[0];
   expect(unreferenced.node.id).toBe("actor");

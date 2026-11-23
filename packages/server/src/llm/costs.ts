@@ -10,6 +10,23 @@ const totals = `count(*)::int AS calls,
   coalesce(sum(reserved_nano) FILTER(WHERE state<>'complete' AND delivery='unknown'),0)::text AS "unknownNanoUsd",
   count(*) FILTER(WHERE state<>'complete' AND delivery<>'unknown')::int AS "reservedCalls",
   count(*) FILTER(WHERE state<>'complete' AND delivery='unknown')::int AS "unknownCalls"`;
+const tokens = (key: string) => `(response->'usage'->>'${key}')::float8`,
+  writes = ["5m", "1h", "30m", "12h"].map((w) =>
+    tokens(`cache_write_${w}_tokens`),
+  );
+/** Sums stay null until a call in the part reports that usage, so a missing record never reads as zero. */
+const usage = `${totals},
+  count(*) FILTER(WHERE response->'usage' IS NULL)::int AS "usageMissingCalls",
+  sum(${tokens("prompt_tokens")}) AS "inputTokens",
+  sum(${tokens("prompt_cache_hit_tokens")}) AS "cachedInputTokens",
+  sum(CASE WHEN coalesce(${writes.join(",")}) IS NOT NULL THEN ${writes.map((w) => `coalesce(${w},0)`).join("+")} END) AS "cacheWriteTokens",
+  sum(${tokens("completion_tokens")}) AS "outputTokens",
+  sum(${tokens("prompt_cache_hit_tokens")})/nullif(sum(${tokens("prompt_tokens")}),0) AS "cacheHitRate"`;
+const groupKeys = {
+  user: "user_id::text",
+  task: "request->>'role'",
+  model: "coalesce(request->'request'->>'model',response->>'model')",
+};
 
 /** The ledger is the sole source of amounts; reports never recompute old charges. */
 export async function readCosts(
@@ -46,6 +63,52 @@ export async function readCosts(
   }
   const source = `WITH selected AS (SELECT c.*,b.run_id AS construction_id FROM llm_call c
     LEFT JOIN world_build b ON b.world_id=c.world_id WHERE ${conditions.join(" AND ")})`;
+  if (q.view === "groups") {
+    const cost =
+        "sum(charged_nano) FILTER(WHERE state='complete') DESC NULLS LAST",
+      order = q.order ?? "cost",
+      top = `r.rank<=$${values.length + 1}`;
+    // One statement, so the parts and the total come from the same snapshot.
+    const rows = (
+        await db.query(
+          `${source}, keyed AS (SELECT *,${groupKeys[q.by!]} AS key FROM selected),
+        ranked AS (SELECT key,row_number() OVER (ORDER BY ${order === "calls" ? `count(*) DESC,${cost}` : `${cost},count(*) DESC`},key) AS rank
+          FROM keyed WHERE key IS NOT NULL GROUP BY key)
+        SELECT 'total' AS part,NULL AS key,0 AS rank,0 AS groups,${usage} FROM selected
+        UNION ALL SELECT 'empty',NULL,0,0,${usage} FROM selected WHERE false
+        UNION ALL SELECT CASE WHEN k.key IS NULL THEN 'unassigned' WHEN ${top} THEN 'top' ELSE 'others' END,
+          CASE WHEN ${top} THEN k.key END,min(r.rank),count(DISTINCT k.key)::int,${usage}
+        FROM keyed k LEFT JOIN ranked r ON r.key=k.key GROUP BY 1,2 ORDER BY rank`,
+          [...values, q.limit ?? 10],
+        )
+      ).rows,
+      pick = (part: string) => rows.filter((r) => r.part === part),
+      [all, empty] = [pick("total")[0], pick("empty")[0]],
+      [others = { ...empty, groups: 0 }] = pick("others"),
+      [unassigned = empty] = pick("unassigned");
+    // Parsing drops the ranking columns; only the schema's fields are returned.
+    const share = (part: typeof all) => ({
+      ...part,
+      callShare: all.calls ? part.calls / all.calls : null,
+      costShare:
+        all.calculatedNanoUsd === "0"
+          ? null
+          : Number(part.calculatedNanoUsd) / Number(all.calculatedNanoUsd),
+    });
+    return CostReport.parse({
+      currency: "USD",
+      basis: "calculated",
+      next: null,
+      groups: {
+        by: q.by,
+        order,
+        total: share(all),
+        top: pick("top").map(share),
+        others: share(others),
+        unassigned: share(unassigned),
+      },
+    });
+  }
   if (q.view === "summary")
     return CostReport.parse({
       currency: "USD",
