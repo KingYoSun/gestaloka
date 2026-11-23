@@ -189,12 +189,30 @@ export class PlayerTools {
     const appearance = (
       source?.appearances as Appearance[] | undefined
     )?.filter((a) => a.kind === "instant-npc")[input.npcIndex];
-    if ((appearance?.count ?? 1) > 1)
+    this.#checkPromotionCount(appearance?.count);
+    if (appearance) {
+      const session = await this.#promotionSession(db, world, appearance.id);
+      this.#checkPromotionCount(
+        session?.data.members.find((m) => m.actorId === appearance.id)?.instant
+          ?.count,
+      );
+    }
+    return { label, eventText: event!.text, appearance };
+  }
+  async #promotionSession(db: Db, world: string, npc: string) {
+    return (
+      await db.query<Session>(
+        "SELECT s.* FROM bot_scene p JOIN bot_session s ON s.id=p.session_id WHERE p.world_id=$1 AND p.actor_id=$2 AND NOT p.closed",
+        [world, npc],
+      )
+    ).rows[0];
+  }
+  #checkPromotionCount(count = 1) {
+    if (count > 1)
       reject(
         "INSTANT_NPC_GROUP",
         "一団から分かれた個体を昇格に指定してください",
       );
-    return { label, eventText: event!.text, appearance };
   }
   async requestPromotion(
     db: Db,
@@ -290,12 +308,7 @@ export class PlayerTools {
     )?.filter((a) => a.kind === "instant-npc")[row.npc_index];
     const npc = appearance?.id ?? derivedId(`promotion:${id}:npc`);
     if (approve) {
-      const session = (
-        await db.query<Session>(
-          "SELECT s.* FROM bot_scene p JOIN bot_session s ON s.id=p.session_id WHERE p.world_id=$1 AND p.actor_id=$2 AND NOT p.closed",
-          [world, npc],
-        )
-      ).rows[0];
+      const session = await this.#promotionSession(db, world, npc);
       if (!profile)
         return reject(
           "PROFILE_REQUIRED",
@@ -314,6 +327,7 @@ export class PlayerTools {
         (m) => m.actorId === npc,
       );
       const instant = member?.instant;
+      this.#checkPromotionCount(instant?.count);
       const w = await this.construction.get(world),
         store = this.construction.agent.store,
         commitId = derivedId(`promotion:${id}`);

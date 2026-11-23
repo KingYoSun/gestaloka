@@ -247,7 +247,15 @@ export async function searchAppearances(
   request: string,
   at: number,
   material: unknown,
-  present: { name: string; places: string[]; count?: number }[],
+  present: {
+    id: string;
+    name: string;
+    places: string[];
+    count?: number;
+    ruleId?: string;
+    sourceEventId: string;
+  }[],
+  instantPlaces: () => Promise<string[]>,
   multiplier: number,
   players: number,
 ) {
@@ -276,6 +284,7 @@ export async function searchAppearances(
   const places = await directPlaces(ctx, actor);
   const appearances: Appearance[] = [];
   const descriptions: string[] = [];
+  let nearby: typeof present | undefined;
   for (const ruleId of rules) {
     const node = await ctx.node(ruleId);
     if (node?.kind !== "script" || !node.spawn) continue;
@@ -290,6 +299,12 @@ export async function searchAppearances(
     )
       continue;
     if (!places.length && rule.kind !== "instant-npc") continue;
+    if (rule.kind === "instant-npc" && !nearby) {
+      const here = present.length ? await instantPlaces() : [];
+      nearby = present.filter((p) =>
+        p.places.some((place) => here.includes(place)),
+      );
+    }
     // その場に残っている同種の個体と合わせて、発生数に世界ごとの倍率を掛けた数を超えない。
     // 物品は、その場に落ちている同じ物と合わせて、発生数に同席するプレイヤーの人数（最低1）を
     // 掛けた数を超えない。拾われれば、また現れる。
@@ -298,12 +313,8 @@ export async function searchAppearances(
         (rule.kind === "instant-npc" ? multiplier : Math.max(1, players)),
       staying =
         rule.kind === "instant-npc"
-          ? present
-              .filter(
-                (p) =>
-                  p.name === rule.species &&
-                  p.places.some((x) => places.includes(x)),
-              )
+          ? nearby!
+              .filter((p) => p.name === rule.species || p.ruleId === ruleId)
               .reduce((count, p) => count + (p.count ?? 1), 0)
           : rule.kind === "existence"
             ? await lying(ctx, places, rule.species + "：" + rule.description)
@@ -315,11 +326,19 @@ export async function searchAppearances(
       draw(rule, limit - staying),
     );
     if (!spawned.length) continue;
-    for (const appearance of spawned)
-      appearances.push({
-        ...appearance,
-        ...(rule.kind === "instant-npc" ? { ruleId } : {}),
-      });
+    if (rule.kind === "instant-npc") {
+      const appearance = spawned[0]!;
+      appearance.ruleId = ruleId;
+      for (const group of nearby!) {
+        if (group.ruleId !== ruleId) continue;
+        // 一団から意図的に分けた個体には、後から現れた個体を加えない。
+        const origin = await ctx.node(group.sourceEventId);
+        if (origin?.kind !== "event" || origin.instantReduction) continue;
+        appearance.id = group.id;
+        break;
+      }
+    }
+    appearances.push(...spawned);
     const candidates: string[] = [];
     const descriptionIds = new Set(
       conditions

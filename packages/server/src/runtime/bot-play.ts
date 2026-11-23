@@ -426,6 +426,7 @@ type Member = {
     name: string;
     description: string;
     sourceEventId: string;
+    latestAppearanceEventId?: string;
     places: string[];
     ruleId?: string;
     count?: number;
@@ -1513,7 +1514,13 @@ export class BotPlay {
             ).map((e) => e.target),
           );
           const npcIds = current.data.members
-            .filter((m) => m.instant && witnessed.has(m.instant.sourceEventId))
+            .filter(
+              (m) =>
+                m.instant &&
+                (witnessed.has(m.instant.sourceEventId) ||
+                  (m.instant.latestAppearanceEventId &&
+                    witnessed.has(m.instant.latestAppearanceEventId))),
+            )
             .map((m) => m.actorId);
           const commands = z.union(
             PlayCommand.options
@@ -1673,6 +1680,14 @@ export class BotPlay {
     const world = await this.world(session.world_id, db);
     const places = await this.#places(this.store.context(world.id), actor);
     for (const animal of animals) {
+      const group = session.data.members.find(
+        (m) => m.actorId === animal.id,
+      )?.instant;
+      if (group) {
+        group.count = (group.count ?? 1) + (animal.count ?? 1);
+        group.latestAppearanceEventId = event;
+        continue;
+      }
       session.data.members.push({
         actorId: animal.id,
         sceneId: animal.id,
@@ -6983,7 +6998,9 @@ export class BotPlay {
         context = this.store.context(w.id);
       if (
         !(await context.history(actor, "see", "out", latest)).some(
-          (e) => e.target === npc.sourceEventId,
+          (e) =>
+            e.target === npc.sourceEventId ||
+            e.target === npc.latestAppearanceEventId,
         ) ||
         !(await this.#places(context, actor)).some((p) =>
           npc.places.includes(p),
@@ -10308,7 +10325,10 @@ export class BotPlay {
                 input.requestId,
                 w.at,
                 queried.visible.material,
-                d.members.flatMap((m) => (m.instant ? [m.instant] : [])),
+                d.members.flatMap((m) =>
+                  m.instant ? [{ ...m.instant, id: m.actorId }] : [],
+                ),
+                () => this.#places(queried.context, actor),
                 multiplier,
                 players,
               );
