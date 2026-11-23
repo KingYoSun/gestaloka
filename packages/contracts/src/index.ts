@@ -1249,6 +1249,13 @@ export const Operation = z.discriminatedUnion("operation", [
         .string()
         .trim()
         .describe("新規作成のダイスをGMが設定するときの基準。空欄で既定の基準"),
+      fumbleCriteria: z
+        .string()
+        .trim()
+        .optional()
+        .describe(
+          "失敗時のファンブルをGMが設定するときの基準。空欄で既定の基準。省略すると現在の設定を保つ",
+        ),
       shown: z
         .boolean()
         .optional()

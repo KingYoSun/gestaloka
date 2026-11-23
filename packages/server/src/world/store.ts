@@ -1479,7 +1479,11 @@ export class WorldStore {
           const edge = result.records[0]
             ? WorldEdge.parse(JSON.parse(result.records[0].get("data")))
             : undefined;
-          if (!edge || edge.period.until !== undefined || at < edge.period.from)
+          if (
+            !edge ||
+            (edge.period.until ?? Infinity) <= at ||
+            at < edge.period.from
+          )
             throw new WorldConflict("終了対象の関係が有効ではありません");
           ended.push(edge);
         }

@@ -390,6 +390,7 @@ type SessionStatus = {
   callsLimit: number;
   commentUsed: boolean;
   creationCriteria?: string;
+  fumbleCriteria?: string;
   turnStartedAt?: string;
   waitingForReturn?: TurnParticipant & {
     deadline: string;
@@ -666,6 +667,11 @@ const recentEntries = <T extends { entries: unknown[] }>(history: T) => ({
 });
 export const defaultCreationCriteria =
   "材料から判断できる実現可能性を1d100のダイスの基準値で設定する";
+// 状態が自然に続く実時間（分）。省いた状態は、終了を申請するまで続く。
+const StateText = {
+  text: z.string().trim().min(1),
+  minutes: z.number().int().positive().max(5256000).optional(),
+};
 const DiceSetting = z
   .object({
     sides: z.number().int().min(2).max(2147483647),
@@ -674,9 +680,12 @@ const DiceSetting = z
     endEdges: z.array(z.uuid()).optional(),
     // 成功したときに対象の人物へ残る状態。
     states: z
-      .array(
-        z.object({ id: z.uuid(), text: z.string().trim().min(1) }).strict(),
-      )
+      .array(z.object({ id: z.uuid(), ...StateText }).strict())
+      .optional(),
+    // 失敗したときにもう一度振り、出目がthrough以下なら申請者本人に残る状態。
+    fumble: z
+      .object({ through: z.number().int().positive(), ...StateText })
+      .strict()
       .optional(),
     instantReduction: InstantReduction.optional(),
     storageLimits: z
@@ -707,7 +716,9 @@ const DiceSetting = z
       .optional(),
   })
   .strict()
-  .refine((v) => v.successThrough < v.sides);
+  .refine(
+    (v) => v.successThrough < v.sides && (v.fumble?.through ?? 0) < v.sides,
+  );
 const WitnessDice = z
   .object({
     sides: DiceSetting.shape.sides,
@@ -733,12 +744,44 @@ const privateInterpretation = (actor: string, changes: Change) =>
         ? e.source === actor
         : changes.nodes.some((n) => n.id === e.source)),
   );
+type Fumble = { roll: number; success: boolean };
 type CreationRoll = {
   success: boolean;
   setting: z.infer<typeof DiceSetting>;
   roll: number;
   repeated?: boolean;
+  fumble?: Fumble;
 };
+// 人物に残る状態を加える。続く時間があれば、その時点で終わる関係にする。
+function addState(
+  changes: Change,
+  key: string,
+  person: string,
+  at: number,
+  { text, minutes }: { text: string; minutes?: number | undefined },
+) {
+  const state = derivedId(key);
+  changes.nodes.push({ id: state, kind: "script", text });
+  changes.edges.push({
+    id: derivedId(`${state}:content`),
+    kind: "status",
+    role: "content",
+    source: person,
+    target: state,
+    period: { from: at, ...(minutes ? { until: at + minutes * 60000 } : {}) },
+  });
+}
+// ファンブルした判定の状態を本人に残す。出し直しで返した前回の結果では重ねない。
+function addFumble(
+  changes: Change,
+  key: string,
+  actor: string,
+  at: number,
+  roll: Partial<CreationRoll>,
+) {
+  if (roll.fumble?.success && !roll.repeated)
+    addState(changes, `${key}:fumble`, actor, at, roll.setting!.fumble!);
+}
 const ApplyStatus = z
   .object({ apply: z.literal(true), endEdges: z.array(z.uuid()) })
   .strict();
@@ -871,6 +914,16 @@ const diceStatePrompt =
   "同じ対象の確定済みの状態（states）が矛盾するときは、状態が有効になった時点（since）が新しい記述を、矛盾する範囲の判定に使う。同じ時点の記述には新旧の差をつけない。申請中の変化は成功前の状態に含めない。";
 const stateEndsPrompt =
   "人物の状態が終了する場合は、申請の意図と状態の本文を照合し、成功時に終了する現在の状態のrelationIdをendEdgesに返す。候補は対象人物のstatesでrelationIdが付いたもの。申請の終了IDが別の性質を指す場合は意図に合う状態だけを選ぶ。終了するものがなければ空配列。";
+const minutesPrompt =
+  "minutesはその状態が自然に続く実時間（分）で、何もしなくても時間の経過で終わる状態にだけ付ける。自然には終わらない状態では省く。";
+export const defaultFumbleCriteria =
+  "行動そのものの危険、申請に書かれた進め方、本人の状態と持ち物から、失敗がさらに悪い結果になる見込みをダイスの基準値で設定する。本人に残る変化がなければ設定しない";
+const fumblePrompt = (criteria: string) =>
+  "ファンブルの基準に照らして、この行動が失敗したうえ、さらに悪い結果として申請者本人に変化が残り得るなら、同じ応答にfumble:{through:整数,text:文字列,minutes:整数}を加える。失敗したときだけ同じ面数でもう一度振り、出目がthrough以下ならtextを申請者本人の状態として記録する。1<=through<sides。textは変化後の本人の状態を、後から本人だけを調べた人が読める一文で書き、経緯や原因の推測を除く。部位や程度は一つに決め、複数の候補を並べない。死亡は含めない。該当しなければfumbleを省く。" +
+  minutesPrompt +
+  "ファンブルの基準: " +
+  criteria +
+  "。";
 const selfStatusPrompt =
   "本人の直接の状態変更について、変更前の本文と対象、申請した変更、確定した記録を照合する。表記の訂正や、同じ状態について付与後に成立した結果の反映には再度ダイスを振らず、allowApplyがtrueなら{apply:true,endEdges:[関係ID]}を返す。身体や世界にまだ成立していない不確実な変化は同じ応答でダイス設定を返す。追記・改訂・終了の形式や自己申告だけを成立の根拠にしない。";
 function stateRelations(
@@ -1722,14 +1775,8 @@ export class BotPlay {
         ? "出現場所と対象の作用関係を構築できません"
         : "対象と申請者の作用関係を構築できません",
     };
-    let outcome: {
-      success: boolean;
-      reason?: string;
-      roll?: number;
-      setting?: z.infer<typeof DiceSetting>;
-    } = {
-      success: true,
-    };
+    let outcome: Partial<CreationRoll> & { success: boolean; reason?: string } =
+      { success: true };
     const effect = action.effect;
     let effectState: string | null = null;
     const prior = await this.store.receipt(context.worldId, request);
@@ -1743,12 +1790,14 @@ export class BotPlay {
       const state = prior.changes.nodes.find(
         (n) => n.id === derivedId(request + ":state"),
       );
-      const dice = (
-        await this.pool.query<{
-          setting: z.infer<typeof DiceSetting>;
-          roll: number;
-        }>("SELECT setting,roll FROM bot_dice WHERE id=$1", [request])
+      const stored = (
+        await this.pool.query<{ setting: z.infer<typeof DiceSetting> }>(
+          "SELECT setting FROM bot_dice WHERE id=$1",
+          [request],
+        )
       ).rows[0];
+      // 保存済みの出目を、ファンブルの出目とともに読む。
+      const dice = stored && (await this.#roll(request, stored.setting));
       const success = dice ? dice.roll <= dice.setting.successThrough : !effect,
         recorded = prior.changes.nodes.find((n) => n.id === event);
       const instantReduction =
@@ -1877,12 +1926,15 @@ export class BotPlay {
           [],
           stateRelations(facts, subjects),
           !!person && !!previous,
+          npc ? "" : await this.#fumblePrompt(session.world_id),
         );
         outcome = {
           setting: saved.setting,
           roll: saved.roll,
           success: saved.roll <= saved.setting.successThrough,
+          ...(saved.fumble ? { fumble: saved.fumble } : {}),
         };
+        if (!npc) addFumble(changes, request, actorId, at, outcome);
         if (outcome.success) {
           effectState = saved.observable;
           if (saved.perception)
@@ -1903,6 +1955,7 @@ export class BotPlay {
           changes.endEdges = (
             await settleStateEnds(
               context,
+              at,
               changes,
               saved.setting.endEdges ??
                 (effectState && previous ? [previous.relationId] : []),
@@ -3456,8 +3509,8 @@ export class BotPlay {
     ).rows[0]!;
     // 運営者が表示を選んだ世界では、新規作成のダイスの基準を申請の前に読める。
     const criteria = (
-      await db.query<{ criteria: string }>(
-        "SELECT criteria FROM creation_policy WHERE world_id=$1 AND shown",
+      await db.query<{ criteria: string; fumble: string }>(
+        "SELECT criteria,fumble_criteria AS fumble FROM creation_policy WHERE world_id=$1 AND shown",
         [world],
       )
     ).rows[0];
@@ -3500,7 +3553,10 @@ export class BotPlay {
         ? !!r.comments[turnOwner(session.data, actor)!]
         : !!session.data.comment,
       ...(criteria
-        ? { creationCriteria: criteria.criteria || defaultCreationCriteria }
+        ? {
+            creationCriteria: criteria.criteria || defaultCreationCriteria,
+            fumbleCriteria: criteria.fumble || defaultFumbleCriteria,
+          }
         : {}),
       ...(waitingForReturn ? { waitingForReturn } : {}),
       // 受領判断は同席者全員に見える。宛先を示し、本文と変更内容は当事者にだけ返す。
@@ -4094,9 +4150,16 @@ export class BotPlay {
                 ]),
               ].map(async (actorId) => {
                 const current = (kind: "status" | "has") =>
-                  context.relations(actorId, kind, "out", latest, latest, {
-                    limit: 32,
-                  });
+                  context.relations(
+                    actorId,
+                    kind,
+                    "out",
+                    kind === "status" ? this.now().getTime() : latest,
+                    latest,
+                    {
+                      limit: 32,
+                    },
+                  );
                 const [node, states, belongings] = await Promise.all([
                   context.node(actorId),
                   current("status"),
@@ -4929,7 +4992,14 @@ export class BotPlay {
     showLocation = true,
   ) {
     const states = [];
-    for (const e of await context.relations(target, "status", "out", latest)) {
+    // 期限のある状態は、期限の前だけ現在の状態として読む。
+    for (const e of await context.relations(
+      target,
+      "status",
+      "out",
+      this.now().getTime(),
+      latest,
+    )) {
       if (e.role !== "content" || (!showLocation && e.text === "location"))
         continue;
       const node = await context.node(e.target);
@@ -6118,6 +6188,7 @@ export class BotPlay {
                   ? "learningは本人が選んだ技能の発展・統合の申請。consumeSkillIdsで示された習得済み技能の本文と根拠、申請のtextとbasisから、引き継ぐ能力と新しく必要な応用・習熟を世界の基準に照らして判定する。中身を委ねられた技能は、その適用範囲と新たにできることを具体化する。"
                   : "") +
                 (decides ? decidePrompt : "") +
+                (explore ? "" : await this.#fumblePrompt(world)) +
                 (fresh.some((p) => p.requestText)
                   ? "requestTextは元の申請の経緯。各案の技能や製作はその案のchangesだけを判定し、別の案で使う材料をこの案に割り当てない。"
                   : "") +
@@ -6246,6 +6317,18 @@ export class BotPlay {
       }
       const rolls: Result[] = [];
       const used = new Map<string, number>();
+      // 出し直しで返す前回の結果では、ファンブルを振らない。
+      const settle = async (i: number, die: CreationRoll) =>
+        die.repeated
+          ? die
+          : {
+              ...die,
+              ...(await this.#fumble(
+                db,
+                derivedId(`${keys[i]}:creation`),
+                die,
+              )),
+            };
       for (const i of proposals.keys()) {
         if (full(i)) {
           rolls.push({ success: false, reason: "SKILL_CAPACITY_EXCEEDED" });
@@ -6253,7 +6336,7 @@ export class BotPlay {
         }
         const old = repeated[i] ?? applied.get(i);
         if (old) {
-          rolls.push(old);
+          rolls.push(old.setting ? await settle(i, old) : old);
           if (old.success) applySlots(i);
           continue;
         }
@@ -6280,7 +6363,7 @@ export class BotPlay {
           setting,
         );
         const success = die.roll <= die.setting.successThrough;
-        rolls.push({ ...die, success });
+        rolls.push(await settle(i, { ...die, success }));
         if (success) {
           applySlots(i);
           for (const c of die.setting.consumes ?? [])
@@ -7162,6 +7245,7 @@ export class BotPlay {
         if (roll.success && review)
           proposal.changes = await settleStateEnds(
             context,
+            at,
             proposal.changes,
             roll.setting?.endEdges ??
               ("endEdges" in roll ? roll.endEdges : undefined),
@@ -7177,6 +7261,9 @@ export class BotPlay {
       }));
       const successful = proposals.filter((_, i) => results[i]!.success);
       const changes = combine(successful);
+      for (const [i, roll] of rolls.entries())
+        if ("fumble" in roll)
+          addFumble(changes, `${input.requestId}:${i}`, actor, at, roll);
       const items = successful.flatMap((p) => p.items ?? []);
       for (const roll of rolls) {
         if (!roll.success || !roll.setting) continue;
@@ -7883,12 +7970,13 @@ export class BotPlay {
         input.command === "oppose" ? controlled : new Set([actor]),
         changes,
         ended.filter((e) => e !== undefined),
+        at,
       );
     }
     if (!impossible) {
       try {
         const preview = statusReview?.requestedEnds.length
-          ? await settleStateEnds(context, changes, [], [], statusReview)
+          ? await settleStateEnds(context, at, changes, [], [], statusReview)
           : changes;
         context = await this.#validate(context, preview, at, configuringDraw);
       } catch (error) {
@@ -8124,9 +8212,8 @@ export class BotPlay {
         )[0]
       : undefined;
     if (outcome) {
-      const dice = outcome as {
+      const dice = outcome as Partial<CreationRoll> & {
         success: boolean;
-        setting?: z.infer<typeof DiceSetting>;
         endEdges?: string[];
       };
       const stealth =
@@ -8135,18 +8222,22 @@ export class BotPlay {
         input.requestId,
         stealth ? { outcome, stealth } : outcome,
       ]);
-      if (!dice.success)
+      if (!dice.success) {
+        changes = empty();
+        addFumble(changes, input.requestId, actor, at, dice);
         return {
           context,
-          changes: empty(),
+          changes,
           at,
           recipients: [],
           outcome,
           ...(stealth ? { stealth } : {}),
         };
+      }
       if (selfStatus)
         changes = await settleStateEnds(
           context,
+          at,
           changes,
           dice.endEdges ?? dice.setting?.endEdges,
           selfStatus.subjects,
@@ -8170,6 +8261,7 @@ export class BotPlay {
     let stealth: StealthAction | undefined;
     if (input.command === "oppose" && !selfStatus) {
       let success = !externalEffect && [...parties].every((id) => id === actor);
+      let failed: Partial<CreationRoll> = {};
       if (!success) {
         const session = (await this.current(world, actor))!;
         const affected = recipients.filter((id) =>
@@ -8210,8 +8302,10 @@ export class BotPlay {
           affected,
           stateRelations(materials, stateSubjects),
           !!statusReview?.requestedEnds.length,
+          await this.#fumblePrompt(world),
         );
         success = saved.roll <= saved.setting.successThrough;
+        failed = saved;
         if (saved.perception) {
           stealth = success
             ? await this.#oppositionObservations(
@@ -8253,16 +8347,17 @@ export class BotPlay {
         if (success) {
           changes = await settleStateEnds(
             context,
+            at,
             changes,
             saved.setting.endEdges,
             stateSubjects,
             statusReview,
           );
           fatal = saved.setting.fatal ?? [];
-          for (const { id, text } of saved.setting.states ?? []) {
+          for (const { id, ...state } of saved.setting.states ?? []) {
             const recorded = [...changes.nodes, ...changes.revisions].some(
               (n) =>
-                n.text === text &&
+                n.text === state.text &&
                 (changes.edges.some(
                   (e) =>
                     e.kind === "status" &&
@@ -8274,17 +8369,14 @@ export class BotPlay {
                     .find((f) => f.node.id === id)
                     ?.states.some((s) => s.node?.id === n.id)),
             );
-            if (recorded) continue;
-            const state = derivedId(`${input.requestId}:state:${id}`);
-            changes.nodes.push({ id: state, kind: "script", text });
-            changes.edges.push({
-              id: derivedId(`${state}:content`),
-              kind: "status",
-              role: "content",
-              source: id,
-              target: state,
-              period: { from: at },
-            });
+            if (!recorded)
+              addState(
+                changes,
+                `${input.requestId}:state:${id}`,
+                id,
+                at,
+                state,
+              );
           }
           at = await this.#relocateDead(
             session,
@@ -8302,13 +8394,21 @@ export class BotPlay {
             saved.setting,
           );
         }
-        outcome = { success, setting: saved.setting, roll: saved.roll };
+        outcome = {
+          success,
+          setting: saved.setting,
+          roll: saved.roll,
+          ...(saved.fumble ? { fumble: saved.fumble } : {}),
+        };
       } else
         outcome = {
           success: true,
           reason: "本人の操作範囲または既に成立している状態です",
         };
-      if (!success) changes = empty();
+      if (!success) {
+        changes = empty();
+        addFumble(changes, input.requestId, actor, at, failed);
+      }
       await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
         stealth ? { outcome, stealth } : outcome,
@@ -8569,7 +8669,7 @@ export class BotPlay {
         {
           commitId: requestId,
           at: plan.at,
-          changes: atTime(plan.changes, plan.at),
+          changes: atTime(plan.changes, plan.at, true),
           playerAction: true,
           ...(plan.storageEffect ? { storageEffect: plan.storageEffect } : {}),
           ...(newFixedPlaces?.length ? { newFixedPlaces } : {}),
@@ -8594,6 +8694,7 @@ export class BotPlay {
     affected: string[] = [],
     stateEnds: string[] = [],
     requireStateEnds = false,
+    fumble = "",
   ) {
     function readDecision(raw: string) {
       const parsed = parseOutput(raw);
@@ -8688,8 +8789,10 @@ export class BotPlay {
               ? "この行動が成功したときに死亡する対象を、mortalのIDから選んでfatal:[ID]に返す。行動と結果が対象の死を意味するときだけ選び、該当がなければ空配列。deathCriteriaがあれば、この世界で人物が死亡する条件として従う。"
               : "") +
             (affected.length
-              ? "この行動が成功したときに人物へ残る変化のうち、changesで既に記録されるものを除いてaffectedのIDごとにstates:[{id,text}]を返す。対象ごとに一件とし、後からその人物だけを調べた人が何がどうなったかを読める一文で書く。行為者、経緯、原因の推測を除く。追加する変化がなければ空配列。"
+              ? "この行動が成功したときに人物へ残る変化のうち、changesで既に記録されるものを除いてaffectedのIDごとにstates:[{id,text}]を返す。対象ごとに一件とし、後からその人物だけを調べた人が何がどうなったかを読める一文で書く。行為者、経緯、原因の推測を除く。追加する変化がなければ空配列。各状態にはminutesを加えてよい。" +
+                minutesPrompt
               : "") +
+            fumble +
             (group
               ? "対象が一団の場合、行動が成功したときに減る個体がいればinstantReductionを返す。死亡なら{kind:'death',count:死亡数}。" +
                 (group.allowSeparation
@@ -8734,15 +8837,41 @@ export class BotPlay {
     const db = await this.pool.connect();
     try {
       await db.query("BEGIN");
-      const die = await this.#rollIn(db, id, setting);
+      const die = await this.#rollIn(db, id, setting),
+        fumble = await this.#fumble(db, id, die);
       await db.query("COMMIT");
-      return die;
+      return { ...die, ...fumble };
     } catch (error) {
       await db.query("ROLLBACK");
       throw error;
     } finally {
       db.release();
     }
+  }
+  // ファンブルの指示。基準の文は世界ごとに運営者が決め、空欄なら既定の基準を使う。
+  async #fumblePrompt(world: string) {
+    return fumblePrompt(
+      (
+        await this.pool.query<{ criteria: string }>(
+          "SELECT fumble_criteria AS criteria FROM creation_policy WHERE world_id=$1",
+          [world],
+        )
+      ).rows[0]?.criteria || defaultFumbleCriteria,
+    );
+  }
+  // 失敗した判定にファンブルの設定があれば、同じ面数でもう一度振る。
+  async #fumble(
+    db: Db,
+    id: string,
+    die: { setting: z.infer<typeof DiceSetting>; roll: number },
+  ): Promise<{ fumble?: Fumble }> {
+    const { sides, successThrough, fumble } = die.setting;
+    if (!fumble || die.roll <= successThrough) return {};
+    const { roll } = await this.#rollIn(db, derivedId(`${id}:fumble`), {
+      sides,
+      successThrough: fumble.through,
+    });
+    return { fumble: { roll, success: roll <= fumble.through } };
   }
   async #rollIn(db: Db, id: string, setting: z.infer<typeof DiceSetting>) {
     await db.query(
