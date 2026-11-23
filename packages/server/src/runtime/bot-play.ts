@@ -6282,6 +6282,8 @@ export class BotPlay {
           required.set(id, Math.max(required.get(id) ?? 0, m.count ?? 1));
         }
         for (const [id, count] of required) {
+          // 申請が状態などを付ける対象そのものは、材料に挙がっても消費しない。
+          if (touched.has(id)) continue;
           const item = await readMaterial(id);
           if (!item || count > (item.count ?? 1)) shortages.add(p.index);
           else
@@ -8543,7 +8545,7 @@ export class BotPlay {
     return new Set([
       ...changes.flatMap((c) => [
         ...c.revisions.map((n) => n.id),
-        ...c.edges.map((e) => e.target),
+        ...c.edges.flatMap((e) => [e.source, e.target]),
       ]),
       ...ended.map((e) => e?.target),
     ]);
