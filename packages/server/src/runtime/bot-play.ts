@@ -9353,6 +9353,7 @@ export class BotPlay {
     const w = await this.world(world);
     let prepared: Session | undefined;
     let stateBasis: Dependency[] | undefined;
+    const basis = "dependencies" in input ? input.dependencies : [];
     if (adjudicationOwner) {
       const { rows } = await this.pool.query<{
         result: Record<string, unknown> | null;
@@ -9482,7 +9483,15 @@ export class BotPlay {
             prepared!,
             input.requestId,
           );
-        const planned = await this.#plan(world, actor, user, input);
+        // 申請者が検索で得た依存版は申請の時点で確かめる。計画には操作が読んだ記録の版だけを残す。
+        if (basis.length && !(await this.store.receipt(w.id, input.requestId)))
+          await this.store.context(w.id, basis).validate();
+        const planned = await this.#plan(
+          world,
+          actor,
+          user,
+          "dependencies" in input ? { ...input, dependencies: [] } : input,
+        );
         if (planned && stateBasis) planned.context.dependOn(stateBasis);
         if (planned?.vehicleResult) {
           await this.pool.query(
@@ -10117,11 +10126,7 @@ export class BotPlay {
                 result: z.infer<typeof ReceiptResult>;
               }
             | undefined;
-          if (
-            input.accept &&
-            receiving.vehicleControl &&
-            !(await this.store.receipt(w.id, receiving.id))
-          ) {
+          if (input.accept && !(await this.store.receipt(w.id, receiving.id))) {
             try {
               await this.store.context(w.id, receiving.dependencies).validate();
             } catch (error) {
@@ -10129,7 +10134,7 @@ export class BotPlay {
               settled = await this.#settle(db, session, "rejected", {
                 code: "WORLD_CHANGED",
                 message:
-                  "乗り物の所在や操縦権が変わりました。現在の状態を確かめてから申請し直してください",
+                  "申請時の前提が変わりました。対象を確認して申請し直してください",
               });
             }
           }
@@ -10836,6 +10841,8 @@ export class BotPlay {
                       : {}),
                   };
               } else {
+                // すぐ確定する申請は、検索で得た依存版も確定と同時に確かめる。
+                plan.context.dependOn(basis);
                 const stay = plan.stealth?.stay;
                 if (
                   plan.stealth &&
