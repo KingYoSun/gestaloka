@@ -100,7 +100,7 @@ gestaloka vehicle <board|leave|request-control|travel> --target <乗り物ID> [-
 
 ## status
 
-現在の手番と未読履歴を照会。dailySpに探索・生成の共通残量と次の回復時刻が出る。運営者が表示を選んだ世界では、creationCriteriaに新規作成のダイスの基準が出る。--sceneは本人の過去シーン、--after 0は先頭。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。
+現在の手番と未読履歴を照会。dailySpに探索・生成の共通残量と次の回復時刻が出る。運営者が表示を選んだ世界では、creationCriteriaに新規作成のダイスの基準が出る。--sceneに本人のプレイ履歴のIDを指定すると、その履歴を読める。--after 0は先頭から。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。
 
 ```text
 gestaloka status [--scene <ID>] [--after <カーソル>] [--view <wait|joins>]
@@ -110,7 +110,7 @@ gestaloka status [--scene <ID>] [--after <カーソル>] [--view <wait|joins>]
 
 ## result
 
-本人のシーンの履歴と終了結果をまとめて読む。
+本人のプレイ履歴と終了結果をまとめて読む。以前のプレイは--sceneに履歴IDを指定する。
 
 ```text
 gestaloka result [--scene <ID>]
@@ -272,7 +272,7 @@ gestaloka end-turn
 
 ## leave
 
-セッションを分離し、本人のシーンでプレイを続ける。
+今の同席者と別れ、自分のセッションでプレイを続ける。
 
 ```text
 gestaloka leave
@@ -358,7 +358,7 @@ gestaloka report [--text <本文>]
 
 ## history
 
-本人の旧シーン履歴を読む。--kindの既定はevents。--beforeと--afterはページの境界。
+旧版で保存した本人の出来事（events）や入力（actions）を読む。--kindの既定はevents。--beforeと--afterはページの境界。
 
 ```text
 gestaloka history --scene <ID> [--kind <events|actions>] [--before <ID>] [--after <UUID>]

@@ -210,7 +210,7 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
     .click();
   await expect(
     page.getByRole("heading", {
-      name: "本人のシーンを終了しました",
+      name: "今回のプレイを終了しました",
       includeHidden: true,
     }),
   ).toBeVisible();
@@ -282,7 +282,7 @@ test("管理画面で設定を保存し、一般ユーザーには参加画面�
     fullPage: true,
   });
 });
-test("進行中シーンと行動履歴もスクロールで取得し、保持ページの入替えで閲覧位置を保つ", async ({
+test("引き継いだ出来事と行動履歴をスクロールで取得し、保持ページの入替えで閲覧位置を保つ", async ({
   page,
 }) => {
   await page.goto("http://127.0.0.1:4174/");
@@ -318,7 +318,7 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
   const actions = Array.from({ length: 260 }, (_, i) => ({
     id: randomUUID(),
     text: `入力${i}。辺りの様子を確かめる。`,
-    state: "complete",
+    state: i === 259 ? "boundary" : "complete",
   }));
   const db = connectDatabases();
   try {
@@ -374,7 +374,16 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
     "href",
     new RegExp(`sceneId=${scene.id}`),
   );
-  const section = page.getByRole("region", { name: "このシーン", exact: true }),
+  await expect(
+    page.getByText("引き継いだプレイ履歴", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("記録が終わった時点で継続中", { exact: true }),
+  ).toBeVisible();
+  const section = page.getByRole("region", {
+      name: "見聞きした出来事",
+      exact: true,
+    }),
     scroll = section.getByLabel("記録の閲覧領域");
   await expect(section).toHaveAttribute("data-retained-records", "50");
   for (let i = 0; i < 4; i++) {

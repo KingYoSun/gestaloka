@@ -1,4 +1,6 @@
-# Muse・Grok Botの導入と実機試遊
+# Muse・Grok Botの実機試遊記録（2026年11月）
+
+以下は当時の版で実施した検証の記録です。現在の導入と遊び方は[プレイヤーCLIの参加・試遊手順](player-cli.md)を参照してください。
 
 #130では、共通の[プレイ用スキル](../packages/player-cli/skills/gestaloka-player/SKILL.md)をCLIのtarballへ同梱する。導入先とプロファイルは[実行環境の準備](../packages/player-cli/skills/gestaloka-player/references/runtimes.md)に従う。Muse・Grok Bot本体の試遊は、#124・#125・#128・#129の実装を終えてから最後にまとめる。
 

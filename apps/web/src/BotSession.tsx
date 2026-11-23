@@ -24,7 +24,7 @@ import {
   PlayerPanel,
   PlayScreen,
   realTime,
-  ScenePanel,
+  SessionPanel,
 } from "./play-panels.js";
 
 const TextNode = z.object({ text: z.string() });
@@ -455,7 +455,7 @@ export function BotSession({
         />
       }
       right={
-        <ScenePanel
+        <SessionPanel
           people={view.characters}
           screen={view.screen}
           turn={archive ? null : view.actorId}
@@ -470,7 +470,7 @@ export function BotSession({
               : view.sessionId
                 ? `${view.members.length}人のセッション`
                 : view.result
-                  ? "本人のシーンを終了しました"
+                  ? "今回のプレイを終了しました"
                   : "セッションを始める"}
           </h1>
           <Button
@@ -764,7 +764,7 @@ export function BotSession({
         <LogRows entries={view.entries} characters={view.characters} />
         {view.legacy.length > 0 && sceneId && (
           <details className="initial-setting" open={archive}>
-            <summary>引き継いだシーンの記録</summary>
+            <summary>引き継いだプレイ履歴</summary>
             <History
               id={id}
               role="player"

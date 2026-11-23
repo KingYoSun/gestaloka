@@ -653,7 +653,7 @@ async function run() {
     !["status", "result", "history", "recover"].includes(command)
   )
     throw new Error(
-      "--sceneは状態・履歴の照会に使います。プレイ操作は本人の現在のシーンを指定します。",
+      "--sceneは履歴を指定するオプションです。今の手番で操作するには、--sceneを外してください。",
     );
   if (command === "result") return status(profile);
   if (command === "status") {

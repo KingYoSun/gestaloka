@@ -57,7 +57,7 @@ export function History({
   );
   const title =
     sceneKind === "events"
-      ? "このシーン"
+      ? "見聞きした出来事"
       : sceneKind === "actions"
         ? "入力した行動"
         : role === "admin"
@@ -340,7 +340,11 @@ export function History({
                   <Characters characters={entry.characters} />
                   <RichText text={entry.text} />
                   {entry.continuation && (
-                    <p className="continuation">継続中: {entry.continuation}</p>
+                    <p className="continuation">
+                      {sceneKind
+                        ? "記録が終わった時点で継続中"
+                        : `継続中: ${entry.continuation}`}
+                    </p>
                   )}
                 </article>
               );

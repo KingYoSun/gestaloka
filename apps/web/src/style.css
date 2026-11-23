@@ -513,7 +513,7 @@ select {
 .play-individual-history .history-scroll {
   min-width: 0;
 }
-.scene-people {
+.session-people {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(55px, 1fr));
   gap: 16px 8px;
@@ -521,28 +521,28 @@ select {
   padding: 0;
   list-style: none;
 }
-.scene-person {
+.session-person {
   position: relative;
   justify-self: center;
 }
-.scene-person-button {
+.session-person-button {
   display: grid;
   min-width: 44px;
   min-height: 44px;
   place-items: center;
   border-radius: 50%;
 }
-.scene-person .player-avatar {
+.session-person .player-avatar {
   width: 44px;
   height: 44px;
 }
-.scene-person-button[aria-current="true"] {
+.session-person-button[aria-current="true"] {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
   box-shadow: 0 0 16px 5px color-mix(in srgb, var(--primary), transparent 52%);
   animation: play-turn-glow 2.4s ease-in-out infinite alternate;
 }
-.scene-person-button[aria-current="true"]::before {
+.session-person-button[aria-current="true"]::before {
   content: "";
   position: absolute;
   inset: -6px;
@@ -573,8 +573,8 @@ select {
 @media (prefers-reduced-motion: reduce) {
   .play-log-row,
   .play-log-state,
-  .scene-person-button[aria-current="true"],
-  .scene-person-button[aria-current="true"]::before {
+  .session-person-button[aria-current="true"],
+  .session-person-button[aria-current="true"]::before {
     animation: none;
   }
 }
@@ -591,14 +591,14 @@ select {
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
-.scene-place,
+.session-place,
 .play-dialog-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
-.scene-place {
+.session-place {
   margin-top: 8px;
 }
 .play-overlay {
@@ -957,27 +957,12 @@ select {
   margin-inline: auto;
   z-index: 40;
 }
-.generation-toast,
-.scene-composer {
+.generation-toast {
   padding: 16px;
   color: var(--popover-foreground);
   background: var(--popover);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 4px 8px rgb(0 0 0 / 14%);
-}
-.scene-tools {
-  position: fixed;
-  z-index: 20;
-  right: max(20px, calc((100% - 620px) / 2));
-  bottom: max(16px, env(safe-area-inset-bottom));
-  display: flex;
-  gap: 12px;
-}
-.scene-tool {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
   box-shadow: 0 4px 8px rgb(0 0 0 / 14%);
 }
 .tool-overlay {
@@ -1025,12 +1010,6 @@ select {
 .tool-tabs button[data-state="active"] {
   border-bottom-color: var(--primary);
 }
-.scene-composer {
-  z-index: 30;
-  width: min(420px, var(--radix-popover-content-available-width));
-  max-height: var(--radix-popover-content-available-height);
-  overflow: auto;
-}
 .action-footer {
   display: flex;
   justify-content: space-between;
@@ -1043,35 +1022,6 @@ select {
 }
 .connection-page {
   max-width: 676px;
-}
-.scene-panel {
-  margin: 24px 0;
-  padding: 24px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-.scene-panel h2 {
-  margin-top: 0;
-}
-.scene-message + .scene-message {
-  border-top: 1px solid var(--border);
-  padding-top: 16px;
-  margin-top: 16px;
-}
-.scene-result {
-  border-color: var(--primary);
-}
-.scene-inputs {
-  margin: 16px 0;
-  color: var(--muted-foreground);
-}
-.scene-inputs summary {
-  cursor: pointer;
-}
-.scene-end,
-.scene-history-toggle {
-  margin-top: 24px;
 }
 .admin-layout {
   display: grid;

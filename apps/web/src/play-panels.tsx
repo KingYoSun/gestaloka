@@ -147,7 +147,7 @@ export function PlayLayout({
       <div className="play-toolbar">
         {(["left", "right"] as const).map((side) => {
           const isLeft = side === "left";
-          const title = isLeft ? "プレイヤー情報" : "シーン情報";
+          const title = isLeft ? "プレイヤー情報" : "セッション情報";
           const Icon = isLeft ? PanelLeft : PanelRight;
           const hasUnread = isLeft && unreadNotices > 0;
           return (
@@ -226,7 +226,11 @@ export function PlayLayout({
           </Dialog.Root>
         ))}
       </div>
-      <aside className="play-aside" data-side="right" aria-label="シーン情報">
+      <aside
+        className="play-aside"
+        data-side="right"
+        aria-label="セッション情報"
+      >
         {right}
       </aside>
     </section>
@@ -432,7 +436,7 @@ function TurnClock({ since }: { since: string }) {
   );
 }
 
-export function ScenePanel({
+export function SessionPanel({
   people,
   screen,
   turn,
@@ -453,19 +457,19 @@ export function ScenePanel({
     <>
       <h2>登場人物</h2>
       <Tooltip.Provider>
-        <ol className="scene-people">
+        <ol className="session-people">
           {people.map((person) => {
             const active = turn === person.actorId;
             const label = characterName(person);
             return (
-              <li key={person.actorId} className="scene-person">
+              <li key={person.actorId} className="session-person">
                 <Dialog.Root>
                   <Tooltip.Root>
                     <Tooltip.Trigger asChild>
                       <Dialog.Trigger asChild>
                         <button
                           type="button"
-                          className="scene-person-button"
+                          className="session-person-button"
                           aria-current={active ? "true" : undefined}
                           aria-label={
                             active
@@ -510,7 +514,7 @@ export function ScenePanel({
         </ol>
       </Tooltip.Provider>
       <h2>現在地</h2>
-      <div className="scene-place">
+      <div className="session-place">
         <span>{screen.place ?? "現在地は未確定です"}</span>
         {screen.place && (
           <Dialog.Root>
