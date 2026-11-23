@@ -9079,6 +9079,46 @@ export interface paths {
                             before?: string;
                         } | {
                             /** @enum {string} */
+                            operation: "stories.list";
+                            /** Format: date */
+                            since?: string;
+                            /** Format: date */
+                            until?: string;
+                            /** Format: uuid */
+                            worldId?: string;
+                            author?: string;
+                            player?: string;
+                            title?: string;
+                            /** @enum {string} */
+                            bookmarked?: "1";
+                            /** @enum {string} */
+                            sort?: "updated" | "newest" | "oldest" | "player" | "author" | "title";
+                            /** Format: uuid */
+                            before?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "stories.read";
+                            /** Format: uuid */
+                            storyId: string;
+                            /** Format: date */
+                            since?: string;
+                            /** Format: date */
+                            until?: string;
+                            /** @enum {string} */
+                            sort?: "number" | "newest" | "oldest";
+                            after?: string;
+                            episode?: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "stories.stats";
+                            /** Format: uuid */
+                            worldId: string;
+                            /** Format: date */
+                            since?: string;
+                            /** Format: date */
+                            until?: string;
+                        } | {
+                            /** @enum {string} */
                             operation: "blueprints.create";
                             /** Format: uuid */
                             worldId: string;
