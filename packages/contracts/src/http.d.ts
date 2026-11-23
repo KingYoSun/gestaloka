@@ -8977,6 +8977,17 @@ export interface paths {
                             };
                         } | {
                             /** @enum {string} */
+                            operation: "playUsage.read";
+                            query: {
+                                /** Format: uuid */
+                                worldId: string;
+                                /** Format: date-time */
+                                from: string;
+                                /** Format: date-time */
+                                to: string;
+                            };
+                        } | {
+                            /** @enum {string} */
                             operation: "models.read";
                         } | {
                             /** @enum {string} */

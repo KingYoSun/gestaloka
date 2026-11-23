@@ -304,7 +304,11 @@ function defaults(name: Name, seed: Values) {
     value.at = seed.at ?? 0;
     value.dependencies = seed.dependencies ?? [];
   }
-  if (name === "costs.read" || name === "inspection.history") {
+  if (
+    name === "costs.read" ||
+    name === "playUsage.read" ||
+    name === "inspection.history"
+  ) {
     const from = new Date();
     from.setHours(0, 0, 0, 0);
     const to = new Date(from);

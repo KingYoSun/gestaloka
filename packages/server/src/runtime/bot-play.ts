@@ -1070,6 +1070,9 @@ export class BotPlay {
       ALTER TABLE bot_adjudication ADD COLUMN IF NOT EXISTS sp_user uuid, ADD COLUMN IF NOT EXISTS sp_reset timestamptz;
       CREATE INDEX IF NOT EXISTS bot_adjudication_sp ON bot_adjudication(world_id,sp_user,sp_reset) WHERE sp_user IS NOT NULL;
       CREATE INDEX IF NOT EXISTS bot_request_sp ON bot_request(world_id,sp_user,sp_reset) WHERE sp_user IS NOT NULL;
+      ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS received_at timestamptz, ADD COLUMN IF NOT EXISTS user_id uuid, ADD COLUMN IF NOT EXISTS command text;
+      ALTER TABLE bot_request ALTER COLUMN received_at SET DEFAULT now();
+      CREATE INDEX IF NOT EXISTS bot_request_received ON bot_request(world_id,received_at);
       CREATE TABLE IF NOT EXISTS bot_dice (
       id uuid PRIMARY KEY,setting jsonb NOT NULL,roll integer);
       CREATE TABLE IF NOT EXISTS bot_npc (
@@ -9236,8 +9239,8 @@ export class BotPlay {
   ) {
     const hash = createHash("sha256").update(canonical(input)).digest("hex");
     await this.pool.query(
-      "INSERT INTO bot_request(id,actor_id,world_id,hash) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
-      [input.requestId, actor, world, hash],
+      "INSERT INTO bot_request(id,actor_id,world_id,hash,user_id,command) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
+      [input.requestId, actor, world, hash, user, input.command],
     );
     const saved = (
       await this.pool.query<{

@@ -45,6 +45,8 @@ const descriptions: Record<string, string> = {
     "止まったセッションを保存状態から進める。在席切れの手番のスキップ、期限切れの受領判断の終了、離席待ちからの再開で手番が進む場合だけ適用し、進まない場合はSESSION_NOT_STALLEDで拒否する。同じrequestIdの再送は二重に適用しない。",
   "costs.read":
     "使用量と適用単価からの計算額、予約額、使用量不明額を読む。プロバイダーの請求額ではない。view: groupsとbyで利用者・処理・モデル別に集計し、orderの回数順か計算額順で上位limit件（既定10件）と、それ以外（others）・未設定（unassigned）・全体（total）を返す。4区分の合計は同条件の総計に一致する。トークン数は使用量を記録した呼出しだけの合計で、記録が無ければnull、usageMissingCallsが欠損件数となる。cacheHitRateはキャッシュ済み入力トークン÷入力トークン。期間はオフセット付きの時刻で指定し、JSTの日境界は+09:00で表す。",
+  "playUsage.read":
+    "探索・生成・SP消費の申請を日本時間の日付・利用者・コマンド別に集計する。要求IDごとに1件で、再送は重ならない。from以上to未満の受付時刻で絞る。受付時刻のない旧記録はSP消費日か完了時の日次枠で日付だけ決め、日の一部だけを含む期間ではmissing.timeOfDayに数える。userIdとcommandがnullの行は旧記録で復元できないもの。completedは結果保存済み、rolledIncompleteは出目またはSPを確定したが未完了、notRolledは抽選前の拒否・処理中（受付時刻の列追加後の記録だけ）。originalsは利用者の元案数で、create-batchは結果の最上位proposalsの数、技能ごとに分けた出目では増えない。平均案数はcreate-batch行のoriginals÷(requests−originalsUnknown)、分布はbatchSizes。rollsは個別判定単位でfresh（新規抽選）、reused（前回の出目の再利用）、unrolled（ダイスなしで決まった・材料不足等で振らなかった）。spentSpは日次SPの消費数で、再送・再利用・抽選前の拒否は0。gmCallsはllm_call.response_idが要求IDの呼出し数（呼出しごとのoperation_idは別）。changesは確定記録から数えた追加の存在・物品（所持される新しい存在）・新規技能（新しい技能ノードへの技能関係）で、探索行のexistencesは発見地点。",
 };
 export async function mcpRoutes(
   app: FastifyInstance,
