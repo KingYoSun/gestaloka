@@ -171,6 +171,14 @@ export class WorldContext {
   get dependencies(): Dependency[] {
     return [...this.#dependencies].map(([key, version]) => ({ key, version }));
   }
+  dependOn(saved: readonly Dependency[]) {
+    for (const { key, version } of saved) {
+      const current = this.#dependencies.get(key);
+      if (current !== undefined && current !== version)
+        throw new WorldConflict("保存済みの文脈が変わりました");
+      this.#dependencies.set(key, version);
+    }
+  }
 
   async inventoryRead<T>(
     fn: (
