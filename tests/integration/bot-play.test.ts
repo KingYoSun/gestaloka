@@ -13375,10 +13375,12 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
   expect((await pick()).items).toMatchObject([{ itemId: drops[0]!.id }]);
   expect(await carried()).toEqual([6]);
 });
-test("人物への対抗行動で死亡と判定されると、対象はセッションから外れて設定された場所か最初の所在地へ移る", async () => {
+test("人物への対抗行動で死亡と判定されると、対象はセッションから外れて設定された場所か最初の所在地へ移り、判定で付いた状態と期限のある状態が終わる", async () => {
   const f = await fixture(),
     items = [randomUUID(), randomUUID(), randomUUID()],
-    grave = randomUUID();
+    grave = randomUUID(),
+    // 人物1の、判定によらない状態と、印のない期限つきの状態。
+    [cloak, fever] = [randomUUID(), randomUUID()];
   await f.store.commit(
     await f.store.claim(f.graph, randomUUID()),
     f.store.context(f.graph),
@@ -13393,14 +13395,26 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
             text: "道具",
           })),
           { id: grave, kind: "existence", text: "墓地" },
+          { id: cloak, kind: "script", text: "赤い外套を着ている。" },
+          { id: fever, kind: "script", text: "熱がある。" },
         ],
-        edges: items.map((target, i) => ({
-          id: randomUUID(),
-          kind: "has",
-          source: f.actors[i === 2 ? 2 : 1]!,
-          target,
-          period: { from: 0 },
-        })),
+        edges: [
+          ...items.map((target, i) => ({
+            id: randomUUID(),
+            kind: "has" as const,
+            source: f.actors[i === 2 ? 2 : 1]!,
+            target,
+            period: { from: 0 },
+          })),
+          ...[cloak, fever].map((target) => ({
+            id: randomUUID(),
+            kind: "status" as const,
+            role: "content" as const,
+            source: f.actors[1]!,
+            target,
+            period: target === fever ? { from: 0, until: 9e15 } : { from: 0 },
+          })),
+        ],
         revisions: [],
         endEdges: [],
       },
@@ -13471,11 +13485,13 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
         (
           await f.store
             .context(f.graph)
-            .relations(f.actors[i]!, "status", "out", Number.MAX_SAFE_INTEGER)
+            .relations(f.actors[i]!, "status", "out", Date.now())
         ).map((e) => f.store.context(f.graph).node(e.target)),
       )
     ).map((n) => n?.text);
-  expect(await states(1)).toContain(wound.text);
+  expect(await states(1)).toEqual(
+    expect.arrayContaining([wound.text, "熱がある。"]),
+  );
   expect(await states(2)).not.toContain("無関係");
   // 設定された場所へ移り、セッションから外れる。
   await configure("death_judgment", true);
@@ -13492,6 +13508,10 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
   expect(await present(0)).toEqual([f.actors[0], f.actors[2]]);
   expect(await present(1)).toEqual([f.actors[1]]);
   expect(await whereabouts(1)).toEqual([grave]);
+  const after = await states(1);
+  expect(after).toContain("赤い外套を着ている。");
+  expect(after).not.toContain(wound.text);
+  expect(after).not.toContain("熱がある。");
   // 場所が未設定なら、本人の最初の所在地へ移る。
   await configure("death_place_id", null);
   fatalDice(f.actors[2]!, "mortal");

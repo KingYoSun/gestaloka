@@ -756,6 +756,8 @@ type CreationRoll = {
   repeated?: boolean;
   fumble?: Fumble;
 };
+// 判定で付いた状態の関係の印。死亡の確定で終える対象になる。
+const judged = "judged";
 // 人物に残る状態を加える。続く時間があれば、その時点で終わる関係にする。
 function addState(
   changes: Change,
@@ -770,6 +772,7 @@ function addState(
     id: derivedId(`${state}:content`),
     kind: "status",
     role: "content",
+    text: judged,
     source: person,
     target: state,
     period: { from: at, ...(minutes ? { until: at + minutes * 60000 } : {}) },
@@ -2091,6 +2094,7 @@ export class BotPlay {
         source: effect.targetId,
         target: state,
         role: "content",
+        text: judged,
       });
       link({ kind: "status", source: state, target: event, role: "about" });
     }
@@ -8543,7 +8547,8 @@ export class BotPlay {
       policy.death_criteria,
     ];
   }
-  // 死亡した人物を、世界に設定された場所か本人の最初の所在地へ移す差分を、同じ確定に加える。
+  // 死亡した人物を、世界に設定された場所か本人の最初の所在地へ移し、判定で付いた現在の状態と
+  // 期限のある現在の状態を終える差分を、同じ確定に加える。
   async #relocateDead(
     session: Session,
     context: WorldContext,
@@ -8556,6 +8561,13 @@ export class BotPlay {
     for (const id of fatal) {
       if (session.data.members.every((m) => m.actorId !== id || m.instant))
         continue;
+      for (const e of await context.relations(id, "status", "out", at))
+        if (
+          e.role === "content" &&
+          (e.text === judged || e.period.until !== undefined) &&
+          !changes.endEdges.includes(e.id)
+        )
+          changes.endEdges.push(e.id);
       const origin = await context.firstLocation(id),
         about = origin
           ? (await context.history(origin, "status", "out", latest)).filter(
