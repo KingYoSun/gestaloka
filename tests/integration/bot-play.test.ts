@@ -6042,6 +6042,256 @@ test("同じ場所のチームメンバーでも隠密移動を発見するま�
   );
 });
 
+test("対抗と本人の状態変更は一度の判断で該当する関係だけを終了し、再送と失敗では重ねて変えない", async () => {
+  const f = await fixture(2);
+  const [actor, target] = f.actors as [string, string];
+  const emptyChange = (): Change => ({
+    nodes: [],
+    edges: [],
+    revisions: [],
+    endEdges: [],
+  });
+  const seed = emptyChange();
+  mark(seed, target, "袖に青い刺繍がある");
+  mark(seed, target, "旗を掲げている", [{ id: f.place }]);
+  const [profile, raised, about] = seed.edges.map((e) => e.id) as [
+    string,
+    string,
+    string,
+  ];
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: seed,
+    },
+  );
+  await f.send(1, { command: "contact", targetId: actor });
+  const active = async (edge: string) =>
+    (await f.store.context(f.graph).edge(edge))?.period.until === undefined;
+  const binding = emptyChange();
+  mark(binding, target, "手首に旗の紐が絡んでいる", [{ id: f.place }]);
+  binding.edges.push({
+    id: randomUUID(),
+    kind: "effect",
+    source: actor,
+    target,
+    period: { from: 0 },
+  });
+  const bound = binding.edges[0]!.id;
+  const bind = {
+    command: "oppose",
+    requestId: randomUUID(),
+    text: "旗を引き下ろして相手の手首に紐を絡ませる",
+    changes: binding,
+    dependencies: [],
+  };
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-opposition-dice");
+    expect(messages[1]!.content).toContain(raised);
+    return answer(id, {
+      ...sure,
+      endEdges: [raised],
+      states: [{ id: target, text: binding.nodes[0]!.text }],
+    });
+  });
+  const applied = await f.send(0, bind);
+  expect(applied.outcome).toMatchObject({ success: true });
+  expect(await f.send(0, bind)).toEqual(applied);
+  expect(await active(raised)).toBe(false);
+  expect(await active(about)).toBe(false);
+  expect((await f.store.context(f.graph).edge(bound))?.source).toBe(target);
+  expect(
+    await f.store
+      .context(f.graph)
+      .node(derivedId(`${bind.requestId}:state:${target}`)),
+  ).toBeUndefined();
+  expect(f.calls).toHaveBeenCalledTimes(1);
+  await f.send(0, { command: "end-turn" });
+
+  for (const roll of [6, 1]) {
+    const changes = emptyChange(),
+      requestId = randomUUID();
+    mark(changes, target, "手首を自由に動かせる");
+    // 申請者は誤って刺繍の関係を指定。GMには両方の本文と関係IDを渡す。
+    changes.endEdges.push(profile);
+    f.calls.mockImplementationOnce(
+      async (id, role, messages, _target, _effort, _try, validate) => {
+        expect(role).toBe("world-creation-dice");
+        const input = JSON.parse(messages[1]!.content);
+        expect(input.allowApply).toBe(true);
+        expect(input.nodes[0].states).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              relationId: profile,
+              node: expect.objectContaining({ text: "袖に青い刺繍がある" }),
+            }),
+            expect.objectContaining({
+              relationId: bound,
+              node: expect.objectContaining({
+                text: "手首に旗の紐が絡んでいる",
+              }),
+            }),
+          ]),
+        );
+        expect(() =>
+          validate!(JSON.stringify({ apply: true, endEdges: [raised] })),
+        ).toThrow();
+        const setting = { sides: 6, successThrough: 3, endEdges: [bound] };
+        await isolated.databases.postgres.query(
+          "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,$3)",
+          [derivedId(requestId + ":creation"), setting, roll],
+        );
+        return answer(id, setting);
+      },
+    );
+    const update = {
+      command: "update",
+      requestId,
+      text: "旗の紐をほどいて手首を自由にする",
+      changes,
+      dependencies: [],
+    };
+    const result = await f.send(1, update);
+    const success = roll === 1;
+    expect(result.outcome).toMatchObject({ success, roll });
+    expect(result.spentSp).toBe(1);
+    expect(await f.send(1, update)).toEqual(result);
+    expect(await active(profile)).toBe(true);
+    expect(await active(bound)).toBe(!success);
+    expect(await active(binding.edges[1]!.id)).toBe(!success);
+    if (success)
+      expect((await f.store.context(f.graph).edge(bound))?.period.until).toBe(
+        (await f.store.context(f.graph).edge(changes.edges[0]!.id))?.period
+          .from,
+      );
+    expect(!!(await f.store.context(f.graph).node(changes.nodes[0]!.id))).toBe(
+      success,
+    );
+  }
+  expect(f.calls).toHaveBeenCalledTimes(3);
+});
+
+test("成立済みの変化の反映は対象と成功記録を照合し、SP残量がなくても再抽選しない", async () => {
+  const f = await fixture(1),
+    actor = f.actors[0]!;
+  await isolated.databases.postgres.query(
+    "UPDATE world_construction SET state='finished' WHERE id=$1",
+    [f.world],
+  );
+  const changes: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  mark(changes, actor, "足首に蔓が巻き付いている");
+  const old = changes.edges[0]!.id;
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      at: 0,
+      commitId: randomUUID(),
+      changes,
+    },
+  );
+  // 解除の結果だけが付与され、以前の状態も有効なままの保存記録。
+  const resultState: Change = {
+    nodes: [],
+    revisions: [],
+    edges: [],
+    endEdges: [],
+  };
+  mark(resultState, actor, "蔓はほどけて足首が自由になった");
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+  const freed = await f.send(0, {
+    command: "update",
+    text: "足首の蔓をほどいた",
+    dependencies: [],
+    changes: resultState,
+  });
+  expect(freed.outcome).toMatchObject({ success: true });
+  const sp = await access.botPlay.dailySp(f.world, f.people[0]!.id);
+  await isolated.databases.postgres.query(
+    "INSERT INTO bot_request(id,actor_id,world_id,hash,sp_user,sp_reset) SELECT gen_random_uuid(),$1,$2,'state-review',$3,$4 FROM generate_series(1,$5::int)",
+    [actor, f.world, f.people[0]!.id, sp.resetsAt, sp.remaining],
+  );
+  const update = {
+    command: "update",
+    requestId: randomUUID(),
+    text: "足首に残った古い拘束の記録を終える",
+    changes: { nodes: [], revisions: [], edges: [], endEdges: [old] },
+    dependencies: [],
+  };
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const input = JSON.parse(messages[1]!.content);
+    expect(input).toMatchObject({
+      states: [{ relationId: old, text: "足首に蔓が巻き付いている" }],
+      confirmed: { states: [{ text: "蔓はほどけて足首が自由になった" }] },
+    });
+    expect(input).not.toHaveProperty("nodes");
+    return answer(id, { apply: true, endEdges: [old] });
+  });
+  const done = await f.send(0, update);
+  expect(done).toMatchObject({
+    outcome: { success: true, endEdges: [old] },
+    spentSp: 0,
+  });
+  expect(done.outcome).not.toHaveProperty("roll");
+  expect(await f.send(0, update)).toEqual(done);
+  expect(
+    (await f.store.context(f.graph).edge(old))?.period.until,
+  ).toBeDefined();
+  expect(f.calls).toHaveBeenCalledTimes(2);
+});
+
+test("状態の審査後に確定が中断したとき、別の状態になった対象に以前の判断を適用しない", async () => {
+  const f = await fixture(1),
+    actor = f.actors[0]!;
+  const change: Change = { nodes: [], edges: [], revisions: [], endEdges: [] };
+  mark(change, actor, "靴紐がほどけている");
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    { commitId: randomUUID(), at: 0, changes: change },
+  );
+  const edge = change.edges[0]!.id;
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { apply: true, endEdges: [edge] }),
+  );
+  const update = {
+    command: "update",
+    requestId: randomUUID(),
+    text: "結び直したので古い状態を終える",
+    dependencies: [],
+    changes: { nodes: [], edges: [], revisions: [], endEdges: [edge] },
+  };
+  const stop = vi
+    .spyOn(f.store, "commit")
+    .mockRejectedValueOnce(new Error("状態の確定前に中断"));
+  await expect(f.send(0, update)).rejects.toThrow("状態の確定前に中断");
+  stop.mockRestore();
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 1,
+      changes: {
+        nodes: [],
+        edges: [],
+        revisions: [{ ...change.nodes[0]!, text: "靴紐が切れている" }],
+        endEdges: [],
+      },
+    },
+  );
+  await expect(f.send(0, update)).rejects.toMatchObject({
+    code: "WORLD_CHANGED",
+  });
+  expect(
+    (await f.store.context(f.graph).edge(edge))?.period.until,
+  ).toBeUndefined();
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
 test("対抗行動の0%・100%ではGMも抽選も使わず、不確実な行動だけ一度の設定と抽選を保存する", async () => {
   const f = await fixture(),
     items = [randomUUID(), randomUUID()];
@@ -6106,11 +6356,47 @@ test("対抗行動の0%・100%ではGMも抽選も使わず、不確実な行動
     success: true,
   });
   expect(f.calls).not.toHaveBeenCalled();
+  for (const [since, text] of [
+    [1, "両腕が蔓に絡まっている"],
+    [2, "蔓がほどけて両腕を動かせる"],
+  ] as const) {
+    const changes: Change = {
+      nodes: [],
+      edges: [],
+      revisions: [],
+      endEdges: [],
+    };
+    mark(changes, f.actors[0]!, text);
+    changes.edges[0]!.period.from = since;
+    await f.store.commit(
+      await f.store.claim(f.graph, randomUUID()),
+      f.store.context(f.graph),
+      {
+        commitId: randomUUID(),
+        at: since,
+        changes,
+      },
+    );
+  }
   f.calls.mockImplementation(async (id) =>
     answer(id, { sides: 6, successThrough: 3 }),
   );
   const requestId = randomUUID(),
     uncertain = await attempt(items[1]!, f.actors[1]!, requestId);
+  const [, , messages] = f.calls.mock.calls[0]!;
+  expect(messages[0]!.content).toContain("since）が新しい記述");
+  expect(JSON.parse(messages[1]!.content).materials[0].states).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        since: 1,
+        node: expect.objectContaining({ text: "両腕が蔓に絡まっている" }),
+      }),
+      expect.objectContaining({
+        since: 2,
+        node: expect.objectContaining({ text: "蔓がほどけて両腕を動かせる" }),
+      }),
+    ]),
+  );
   expect((uncertain.outcome as { roll: number }).roll).toBeGreaterThan(0);
   expect(await attempt(items[1]!, f.actors[1]!, requestId)).toEqual(uncertain);
   expect(f.calls).toHaveBeenCalledTimes(1);
@@ -6397,18 +6683,19 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
     );
   f.calls.mockImplementation(async (id, _role, messages) => {
     expect(messages[0]?.content).toContain(unset.defaultCriteria);
-    // 材料は、状態の本文とそれが何についての記述かに絞る。依存版と関係の属性は渡さない。
+    expect(messages[0]?.content).toContain("since）が新しい記述");
     const input = JSON.parse(String(messages[1]!.content));
     expect(Object.keys(input)).toEqual([
       "premise",
       "actor",
       "text",
       "changes",
+      "allowApply",
       "nodes",
     ]);
     for (const node of input.nodes)
       for (const state of node.states)
-        expect(Object.keys(state)).toEqual(["node", "about"]);
+        expect(Object.keys(state)).toEqual(["node", "since", "about"]);
     return answer(id, sure);
   });
   expect((await free(script)).outcome).toMatchObject({ success: true });
@@ -7104,7 +7391,15 @@ test("登録した保管先と誰も登録していない場所には、その�
       ["自分の家", ["鍬"]],
     ]),
   );
-  // 本人の状態は、changesで本文を改め、関係を終えられる。
+  // 本人の状態の改訂と終了は、一申請につき一度のGM確認で確定できる。
+  expect(f.calls).not.toHaveBeenCalled();
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(JSON.parse(messages[1]!.content)).toMatchObject({
+      allowApply: true,
+    });
+    return answer(id, { apply: true, endEdges: [] });
+  });
   await update({
     changes: {
       nodes: [],
@@ -7121,13 +7416,16 @@ test("登録した保管先と誰も登録していない場所には、その�
     [f.actors[0]!, "改めた名前"],
   ] as const)
     expect(await f.store.context(f.graph).node(id)).toMatchObject({ text });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { apply: true, endEdges: [content] }),
+  );
   await update({
     changes: { nodes: [], revisions: [], edges: [], endEdges: [content] },
   });
   expect(
     (await f.store.context(f.graph).edge(content))?.period.until,
   ).toBeDefined();
-  expect(f.calls).not.toHaveBeenCalled();
+  expect(f.calls).toHaveBeenCalledTimes(2);
   // 誰も登録していない場所を保管先にする申請は、新しく得る申請としてダイスで判定する。
   f.calls.mockImplementationOnce(async (id, role) => {
     expect(role).toBe("world-creation-dice");

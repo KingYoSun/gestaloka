@@ -59,9 +59,11 @@ export async function fixtureRuntime(
           memory: "小屋で観察者の声を聞いた。",
         };
       } else if (
+        user.allowApply !== undefined ||
         input.messages[0]?.content.includes(
           "新しいノード・エッジを作成する申請の成否を決めるダイス設定",
-        )
+        ) ||
+        input.messages[0]?.content.includes("申請した変更を審査する。")
       ) {
         // 成功範囲が面数未満という制約の中で、実質的に必ず成功する設定。
         const dice = (proposal: Record<string, unknown>) => ({
