@@ -298,7 +298,7 @@ export interface paths {
                     player?: string;
                     title?: string;
                     bookmarked?: "1";
-                    sort?: "newest" | "oldest" | "player" | "author" | "title";
+                    sort?: "updated" | "newest" | "oldest" | "player" | "author" | "title";
                     before?: string;
                 };
                 header?: never;
@@ -327,6 +327,8 @@ export interface paths {
                                 publishedAt?: string;
                                 mine: boolean;
                                 bookmarked?: boolean;
+                                /** Format: date-time */
+                                updatedAt?: string;
                             }[];
                             /** Format: uuid */
                             next: string | null;
