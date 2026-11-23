@@ -587,6 +587,13 @@ test("外部SDKのMCP接続で全共通操作を列挙し、認証・scope・再
         .map((s) => s.shape.operation.value.replaceAll(".", "_"))
         .sort(),
     );
+    for (const tool of tools.tools)
+      expect(tool._meta?.securitySchemes).toEqual([
+        {
+          type: "oauth2",
+          scopes: ["mcp.connect", tool.name.replaceAll("_", ".")],
+        },
+      ]);
     const id = randomUUID(),
       args = {
         requestId: id,

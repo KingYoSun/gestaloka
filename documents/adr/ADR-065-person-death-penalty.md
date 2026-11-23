@@ -1,6 +1,6 @@
 # ADR-065 プレイヤーとユニークNPCの死亡判定とペナルティ
 
-状態: 採用。2026年11月20日のユーザー判断を記録する。死亡に至らない人物の状態は、[ADR-080](ADR-080-opposition-states-by-gm.md)で扱う。
+状態: 採用。2026年11月20日のユーザー判断を記録する。死亡に至らない人物の状態は、[ADR-080](ADR-080-opposition-states-by-gm.md)で扱う。死亡したときに終える状態は、[ADR-084](ADR-084-death-ends-judged-states.md)で扱う。
 
 ## 背景
 

@@ -3,6 +3,7 @@ import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { Operation } from "@gestaloka/contracts";
 import type { Operations } from "@gestaloka/server/operations";
+import { MCP_CONNECT } from "@gestaloka/server/mcp";
 import { AccessError } from "@gestaloka/server/access";
 import type { WorldAccess } from "@gestaloka/server/access";
 const descriptions: Record<string, string> = {
@@ -65,7 +66,7 @@ export async function mcpRoutes(
         resource: auth.resource,
         authorization_servers: [issuer],
         bearer_methods_supported: ["header"],
-        scopes_supported: ["mcp.connect"],
+        scopes_supported: [MCP_CONNECT],
       }),
     );
   app.all("/mcp", { schema: { hide: true } }, async (request, reply) => {
@@ -122,7 +123,7 @@ export async function mcpRoutes(
         }
         reply.header(
           "WWW-Authenticate",
-          `Bearer error="insufficient_scope", resource_metadata="${resource.origin}/.well-known/oauth-protected-resource/mcp", scope="${[...new Set([...principal.scopes, required])].join(" ")}"`,
+          `Bearer error="insufficient_scope", error_description="Additional OAuth scope required", resource_metadata="${resource.origin}/.well-known/oauth-protected-resource/mcp", scope="${[...new Set([...principal.scopes, required])].join(" ")}"`,
         );
         return reply.code(403).send({
           code: "MCP_SCOPE_DENIED",
@@ -143,6 +144,11 @@ export async function mcpRoutes(
                 descriptions[name] ??
                 `共通運用操作 ${name}。必要なscopeは ${name}。同じ要求の再送には同じrequestIdを使う。`,
               inputSchema: schema,
+              _meta: {
+                securitySchemes: [
+                  { type: "oauth2", scopes: [MCP_CONNECT, name] },
+                ],
+              },
             },
             async (args) => {
               const { requestId, ...input } = args;
@@ -202,7 +208,7 @@ export async function mcpRoutes(
       if (error.status === 401)
         reply.header(
           "WWW-Authenticate",
-          `Bearer resource_metadata="${resource.origin}/.well-known/oauth-protected-resource/mcp", scope="mcp.connect"`,
+          `Bearer resource_metadata="${resource.origin}/.well-known/oauth-protected-resource/mcp", scope="${MCP_CONNECT}"`,
         );
       return reply
         .code(error.status)
