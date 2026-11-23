@@ -714,6 +714,8 @@ const DiceSetting = z
         z.object({ id: z.uuid(), text: z.string().trim().min(1) }).strict(),
       )
       .optional(),
+    // 申請が成立すると何かが起きる、名前で呼ばれる個人。
+    individuals: z.array(z.string().trim().min(1)).optional(),
   })
   .strict()
   .refine(
@@ -950,6 +952,8 @@ const consumePrompt =
   "consumableは申請者が手に持つ物品である。この行動が成功したときに使い切る・減る物品を選び、consumes:[{id,count}]に返す。countは減る個数で、個数のない物品やまるごと失う物品では省く。行動がその物品を減らさないなら選ばず、該当がなければ空配列。";
 const decidePrompt =
   "changes.nodesのうち申請者が新しく得る技能・物品で、その中身を申請者が決めず、相手・場所・偶然などに委ねているものがあれば、成功したときに確定する本文をdecided:[{id,text}]に返す。技能はできることとその適用範囲、物品は呼称とし、対象と世界の基準に合わせて、使い道や次の行動を考えられる具体性を持たせる。申請者が中身を書いているものは選ばず、該当がなければ空配列。";
+const individualsPrompt =
+  "申請が成立すると、固有の名前で呼ばれる特定の個人（人物・生き物）が、新しくその場へ登場する・呼び寄せられる、拘束される、傷つく、死ぬ、またはその身柄・遺体・体の一部が誰かの手に入ることになるなら、その名前を、敬称を付けずに申請の表記のままindividuals:[文字列]に返す。申請者本人、種類だけで呼ばれる相手、一緒に行動するだけの相手、名前が出るだけで本人には何も起きない個人は含めない。該当がなければ空配列。";
 const waitPrompt =
   "waitMinutesは申請者がこの作成にかける実時間（分）で、成功すると物品はその時間の後に成立する。その場にない物の取り寄せや手間のかかる製作のように、時間をかけるほど成立しやすい申請では、かける時間に応じて成功範囲を広げる。";
 // GMが選んだ消費を、申請者が手に持つ物品と、その個数までに限る。
@@ -5878,11 +5882,13 @@ export class BotPlay {
       waitMinutes,
       splitMode,
       hasUnrolledChanges = false,
+      referenced = [],
     }: {
       explore?: boolean;
       waitMinutes?: number | undefined;
       splitMode?: "update" | "create-batch" | undefined;
       hasUnrolledChanges?: boolean;
+      referenced?: string[];
     } = {},
   ) {
     type Result =
@@ -6082,6 +6088,19 @@ export class BotPlay {
             )
           : undefined;
       const compact = onlyEnd && confirmed;
+      // 申請が参照する対象。その記録をGMへ渡す。
+      const touching = [
+        actor,
+        ...reviews.flatMap((r) => r.subjects),
+        ...material.flatMap(
+          (p) =>
+            p.materials?.filter((m) => m.available > 0).map((m) => m.id) ?? [],
+        ),
+        ...fresh.flatMap(({ changes }) => [
+          ...changes.revisions.map((n) => n.id),
+          ...changes.edges.flatMap((e) => [e.source, e.target]),
+        ]),
+      ];
       const nodes = compact
         ? [
             {
@@ -6100,20 +6119,7 @@ export class BotPlay {
           ]
         : await this.#facts(
             context,
-            [
-              actor,
-              ...reviews.flatMap((r) => r.subjects),
-              ...material.flatMap(
-                (p) =>
-                  p.materials
-                    ?.filter((m) => m.available > 0)
-                    .map((m) => m.id) ?? [],
-              ),
-              ...fresh.flatMap(({ changes }) => [
-                ...changes.revisions.map((n) => n.id),
-                ...changes.edges.flatMap((e) => [e.source, e.target]),
-              ]),
-            ],
+            touching,
             reviews.flatMap((r) => r.subjects),
             reviews.flatMap((r) => r.scripts),
           );
@@ -6188,7 +6194,9 @@ export class BotPlay {
                   ? "learningは本人が選んだ技能の発展・統合の申請。consumeSkillIdsで示された習得済み技能の本文と根拠、申請のtextとbasisから、引き継ぐ能力と新しく必要な応用・習熟を世界の基準に照らして判定する。中身を委ねられた技能は、その適用範囲と新たにできることを具体化する。"
                   : "") +
                 (decides ? decidePrompt : "") +
-                (explore ? "" : await this.#fumblePrompt(world)) +
+                (explore
+                  ? ""
+                  : individualsPrompt + (await this.#fumblePrompt(world))) +
                 (fresh.some((p) => p.requestText)
                   ? "requestTextは元の申請の経緯。各案の技能や製作はその案のchangesだけを判定し、別の案で使う材料をこの案に割り当てない。"
                   : "") +
@@ -6228,6 +6236,7 @@ export class BotPlay {
         "resolution",
         parseSettings,
       );
+      const named: string[] = [];
       for (const [i, v] of parseSettings(response.content).entries()) {
         const p = fresh[i]!;
         if ("apply" in v) {
@@ -6246,7 +6255,10 @@ export class BotPlay {
             continue;
           }
         }
-        const { requiredMaterials, ...dice } = v as z.infer<typeof WorkDice>;
+        const { requiredMaterials, individuals, ...dice } = v as z.infer<
+          typeof WorkDice
+        >;
+        named.push(...(individuals ?? []));
         const setting = decision(
           consumption(dice, compact ? [] : consumable),
           decides ? p.changes : undefined,
@@ -6295,6 +6307,23 @@ export class BotPlay {
         }
         if (used.size) setting.consumes = [...used.values()];
         settings.set(p.index, setting);
+      }
+      // 登録済みの人物に起きることは、本人を参照する申請（受領・対抗行動）でだけ確定する。
+      if (named.length) {
+        const { rows } = await this.pool.query<{ actor_id: string }>(
+          "SELECT actor_id FROM world_controlled_actor WHERE world_id=$1 UNION SELECT actor_id FROM bot_npc WHERE world_id=$2",
+          [context.worldId, world],
+        );
+        const known = new Set([...touching, ...referenced]);
+        const persons = await context.named(
+          rows.map((r) => r.actor_id).filter((id) => !known.has(id)),
+          named,
+        );
+        if (persons.length)
+          reject(
+            "PERSON_REFERENCE_REQUIRED",
+            `${persons.map((text) => `「${text}」`).join("・")}は登録済みの人物です。本人に起きることは、新しい物品や個体の作成では確定できません。同じ場所で本人のIDを指定して申請してください（受領、または --oppose）`,
+          );
       }
       if (!needsSp && settings.size)
         await this.#reserveSp(world, actor, user, requestId);
@@ -8233,7 +8262,11 @@ export class BotPlay {
               },
             ],
             consumable,
-            { explore: input.command === "explore", waitMinutes: wait },
+            {
+              explore: input.command === "explore",
+              waitMinutes: wait,
+              referenced: [...parties, ...refs],
+            },
           )
         )[0]
       : undefined;
