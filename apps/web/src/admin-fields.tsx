@@ -161,6 +161,7 @@ export const labels: Record<string, string> = {
   grantId: "認可ID",
   redirectUris: "Callback URL（1行に1件）",
   scopes: "許可する操作",
+  advertisedReadScopes: "Web版ChatGPTに通知する読み取り権限",
   worldIds: "対象世界ID（未指定なら全世界・1行に1件）",
   at: "世界内時点（ミリ秒）",
   through: "履歴の終了時点",
@@ -362,14 +363,24 @@ export function Fields({
   if (shape.const !== undefined) return null;
   if (shape.type === "array") {
     const values = Array.isArray(value) ? value.map(String) : [];
-    return (
-      <div className="admin-field">
-        <Label htmlFor={id}>{label(name)}</Label>
-        {name === "scopes" ? (
-          <div id={id} className="scope-list">
-            {Operation.options
-              .map((s) => s.shape.operation.value)
-              .map((scope) => (
+    const scopes =
+      name === "scopes"
+        ? Operation.options.map((s) => s.shape.operation.value)
+        : name === "advertisedReadScopes"
+          ? (shape.items?.enum ?? [])
+          : undefined;
+    if (scopes)
+      return (
+        <fieldset className="admin-field">
+          <legend>{label(name)}</legend>
+          {name === "advertisedReadScopes" && (
+            <p className="muted">
+              「許可する操作」で選んだ読み取り権限から指定できます。保存後にWeb版ChatGPTでツールを更新し、再接続してください。
+            </p>
+          )}
+          {scopes.length > 0 && (
+            <div className="scope-list">
+              {scopes.map((scope) => (
                 <Label key={scope}>
                   <input
                     type="checkbox"
@@ -385,21 +396,25 @@ export function Fields({
                   {scope}
                 </Label>
               ))}
-          </div>
-        ) : (
-          <Textarea
-            id={id}
-            value={values.join("\n")}
-            onChange={(e) =>
-              onChange(
-                e.target.value
-                  .split("\n")
-                  .map((v) => v.trim())
-                  .filter(Boolean),
-              )
-            }
-          />
-        )}
+            </div>
+          )}
+        </fieldset>
+      );
+    return (
+      <div className="admin-field">
+        <Label htmlFor={id}>{label(name)}</Label>
+        <Textarea
+          id={id}
+          value={values.join("\n")}
+          onChange={(e) =>
+            onChange(
+              e.target.value
+                .split("\n")
+                .map((v) => v.trim())
+                .filter(Boolean),
+            )
+          }
+        />
       </div>
     );
   }

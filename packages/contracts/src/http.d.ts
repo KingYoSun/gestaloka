@@ -8368,6 +8368,7 @@ export interface paths {
                                 scopes: string[];
                                 worldIds: string[] | null;
                             };
+                            advertisedReadScopes?: string[];
                             expectedVersion: number;
                             reason: string;
                         } | {

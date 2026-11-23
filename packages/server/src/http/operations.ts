@@ -728,6 +728,7 @@ export class Operations {
           input.configuration,
           input.expectedVersion,
           actor!,
+          input.advertisedReadScopes,
         );
       case "mcp.grants.list":
         return this.mcp.grants(db, input.before);

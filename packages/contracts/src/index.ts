@@ -942,6 +942,11 @@ export const WorldGraphQuery = z.discriminatedUnion("kind", [
     .object({ kind: z.literal("receipts"), after: z.uuid().optional() })
     .strict(),
 ]);
+export const isReadOnlyOperation = (name: string) =>
+  /\.(read|list|records|graph|samples|notifications|jobs|job|uses|history|evaluation|settings|promotions|stats)$/.test(
+    name,
+  );
+
 export const McpClientConfiguration = z
   .object({
     name: z.string().trim().min(1),
@@ -1040,6 +1045,7 @@ export const Operation = z.discriminatedUnion("operation", [
       operation: z.literal("mcp.clients.put"),
       clientId: z.uuid(),
       configuration: McpClientConfiguration,
+      advertisedReadScopes: z.array(z.string()).optional(),
       expectedVersion: z.number().int().nonnegative(),
       reason: operationReason,
     })

@@ -3,7 +3,11 @@ import { InspectionResults } from "./inspection.js";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { Operation, CostReport } from "@gestaloka/contracts";
+import {
+  Operation,
+  CostReport,
+  isReadOnlyOperation,
+} from "@gestaloka/contracts";
 import { pendingKey } from "./api.js";
 import { operate } from "./operations-client.js";
 import { Notice, Problem } from "./presentation.js";
@@ -337,6 +341,12 @@ function nextCommand(command: Command, next: unknown): Command {
   else parent[key] = cursor;
   return Operation.parse(value);
 }
+function registeredReadScopes(value: Values) {
+  const scopes = object(value.configuration).scopes;
+  return Array.isArray(scopes)
+    ? scopes.map(String).filter(isReadOnlyOperation)
+    : [];
+}
 function OperationForm({
   name,
   seed,
@@ -463,6 +473,11 @@ function OperationForm({
     }
   }
   const shape = formShape(schemas[name]);
+  const advertised = shape.properties?.advertisedReadScopes;
+  if (name === "mcp.clients.put" && advertised) {
+    advertised.items = { enum: registeredReadScopes(value).sort() };
+    shape.required?.push("advertisedReadScopes");
+  }
   if (difference && shape.properties)
     shape.properties = Object.fromEntries(
       Object.entries(shape.properties).filter(
@@ -492,7 +507,19 @@ function OperationForm({
           <Fields
             shape={shape}
             value={value}
-            onChange={(v) => setValue(object(v))}
+            onChange={(v) => {
+              const next = object(v);
+              if (
+                name === "mcp.clients.put" &&
+                Array.isArray(next.advertisedReadScopes)
+              ) {
+                const scopes = registeredReadScopes(next);
+                next.advertisedReadScopes = next.advertisedReadScopes.filter(
+                  (scope: string) => scopes.includes(scope),
+                );
+              }
+              setValue(next);
+            }}
           />
           {difference && (
             <>
