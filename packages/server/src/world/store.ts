@@ -682,6 +682,29 @@ export class WorldContext {
       return records.map((r) => r.get("id") as string);
     });
   }
+  // 一部の場所(part-of)で結ばれた場所。接続元の一部として探索された場所と、その接続元を互いに返す。
+  async partPlaces(id: string) {
+    const read = (direction: "out" | "in", pattern: string) =>
+      this.#read(relationKey(id, "status", direction), async (tx) => {
+        const { records } = await tx.run(
+          `MATCH ${pattern}
+           WHERE c.validTo IS NULL AND a.validTo IS NULL AND a.data CONTAINS '"text":"part-of"'
+           RETURN DISTINCT x.id AS id ORDER BY id LIMIT 8`,
+          { world: this.worldId, id },
+        );
+        return records.map((r) => r.get("id") as string);
+      });
+    return [
+      ...(await read(
+        "out",
+        "(:WorldNode {worldId:$world,id:$id})-[c:status {role:'content'}]->()-[a:status {role:'about'}]->(x:WorldNode)",
+      )),
+      ...(await read(
+        "in",
+        "(x:WorldNode)-[c:status {role:'content'}]->()-[a:status {role:'about'}]->(:WorldNode {worldId:$world,id:$id})",
+      )),
+    ];
+  }
   async vehiclesAt(place: string, actor: string, after?: string) {
     return this.#read(relationKey(place, "status", "in"), async (tx) => {
       const { records } = await tx.run(

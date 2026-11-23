@@ -115,20 +115,28 @@ test("所在地は古いシーン時刻を補正し、旧所在地と参照を�
   ]);
 });
 test("同じ所在地の版からの同時更新は一方だけを確定する", async () => {
-  const { worldId, ids, apply } = await world("人物", "場所"),
-    [person, place] = ids as [string, string];
+  // 所在の本文は滞在先の呼び名になるので、別々の場所への移動で競合させる。
+  const { worldId, ids, apply } = await world("人物", "場所", "窓際", "奥"),
+    [person, place, ...targets] = ids as [string, string, string, string];
   await apply(100, [
     { type: "locate", subjectId: person, text: "入口", aboutIds: [place] },
   ]);
   const context = store.context(worldId);
   await locationRecords(context, person);
   const results = await Promise.allSettled(
-    ["窓際", "奥"].map(async (text) =>
+    targets.map(async (target) =>
       changeBelongings(store, await store.claim(worldId, randomUUID()), {
         commitId: randomUUID(),
         at: 20,
         dependencies: context.dependencies,
-        ops: [{ type: "locate", subjectId: person, text, aboutIds: [place] }],
+        ops: [
+          {
+            type: "locate",
+            subjectId: person,
+            text: "移動する",
+            aboutIds: [target],
+          },
+        ],
       }),
     ),
   );
