@@ -21,7 +21,8 @@ export async function setupStories(pool: pg.Pool) {
   CREATE TABLE IF NOT EXISTS player_story (
     id uuid PRIMARY KEY, world_id uuid NOT NULL, world_title text NOT NULL,
     author_id uuid NOT NULL, author text NOT NULL, title text NOT NULL,
-    published_at timestamptz NOT NULL DEFAULT now()
+    published_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
   );
   ALTER TABLE player_story ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
   CREATE INDEX IF NOT EXISTS player_story_active_latest ON player_story(published_at,id) WHERE deleted_at IS NULL;
@@ -45,6 +46,13 @@ export async function setupStories(pool: pg.Pool) {
   CREATE INDEX IF NOT EXISTS player_story_episode_active_date ON player_story_episode(story_id,published_at,number) WHERE deleted_at IS NULL;
   DROP INDEX IF EXISTS player_story_episode_date;
   DO $$ BEGIN
+    IF NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='player_story'::regclass AND attname='updated_at' AND NOT attisdropped) THEN
+      ALTER TABLE player_story ADD COLUMN updated_at timestamptz;
+      UPDATE player_story s SET updated_at=GREATEST(s.published_at,(
+        SELECT max(published_at) FROM player_story_episode WHERE story_id=s.id
+      ));
+      ALTER TABLE player_story ALTER COLUMN updated_at SET DEFAULT now(), ALTER COLUMN updated_at SET NOT NULL;
+    END IF;
     IF to_regclass('player_story_request') IS NULL THEN
       CREATE TABLE player_story_request (
         id uuid PRIMARY KEY, story_id uuid NOT NULL REFERENCES player_story(id) ON DELETE CASCADE,
@@ -59,6 +67,12 @@ export async function setupStories(pool: pg.Pool) {
       FROM player_story_episode e JOIN player_story s ON s.id=e.story_id;
     END IF;
   END $$;
+  CREATE INDEX IF NOT EXISTS player_story_active_updated ON player_story(updated_at,id) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS player_story_active_world_updated ON player_story(world_id,updated_at,id) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS player_story_active_author_updated ON player_story(md5(author),updated_at,id) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS player_story_active_world_author_updated ON player_story(world_id,md5(author),updated_at,id) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS player_story_active_player_updated ON player_story(md5('stories:' || author_id::text),updated_at,id) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS player_story_active_title_updated ON player_story(md5(title),updated_at,id) WHERE deleted_at IS NULL;
   CREATE TABLE IF NOT EXISTS player_story_bookmark (
     user_id uuid NOT NULL, story_id uuid NOT NULL REFERENCES player_story(id) ON DELETE CASCADE,
     PRIMARY KEY(user_id,story_id)
@@ -84,6 +98,7 @@ const storyView = ({ published_at, ...story }: StoryRow) => ({
 });
 const pageSize = 50;
 const storyOrder = {
+  updated: ["updated_at", "id"],
   newest: ["published_at", "id"],
   oldest: ["published_at", "id"],
   player: [playerKey, "published_at", "id"],
@@ -124,19 +139,22 @@ export class Stories {
       const value = `$${values.push(query[field])}`;
       filters.push(`md5(${field})=md5(${value}) AND ${field}=${value}`);
     }
-    const sort = query.sort ?? "newest";
+    const sort = query.sort ?? "updated";
     const order = storyOrder[sort];
-    const descending = sort === "newest";
+    const descending = sort === "updated" || sort === "newest";
     if (query.before)
       filters.push(
         `(${order.join(",")})${descending ? "<" : ">"}(SELECT ${order.join(",")} FROM player_story WHERE id=$${values.push(query.before)} AND ${inPlayerWorld})`,
       );
-    const { rows } = await this.pool.query<StoryRow>(
-      `SELECT ${columns} FROM player_story WHERE ${filters.join(" AND ")}
+    const { rows } = await this.pool.query<StoryRow & { updated_at: Date }>(
+      `SELECT ${columns},updated_at FROM player_story WHERE ${filters.join(" AND ")}
        ORDER BY ${order.map((field) => `${field} ${descending ? "DESC" : "ASC"}`).join(",")} LIMIT ${pageSize + 1}`,
       values,
     );
-    const items = rows.slice(0, pageSize).map(storyView);
+    const items = rows.slice(0, pageSize).map(({ updated_at, ...story }) => ({
+      ...storyView(story),
+      updatedAt: updated_at.toISOString(),
+    }));
     return { items, next: rows.length > pageSize ? items.at(-1)!.id : null };
   }
 
@@ -390,11 +408,6 @@ export class Stories {
           );
           if (!updated.rowCount) return "missing";
         }
-        if (input.title !== undefined || input.author !== undefined)
-          await db.query(
-            "UPDATE player_story SET title=coalesce($2,title),author=coalesce($3,author) WHERE id=$1",
-            [storyId, input.title ?? null, input.author ?? null],
-          );
       }
       const journal = await db.query(
         `INSERT INTO player_story_request(id,story_id,episode,fingerprint,deleted)
@@ -402,6 +415,15 @@ export class Stories {
         [input.requestId, storyId, episode, payload, deleted ?? null],
       );
       if (!journal.rowCount) return "conflict";
+      if (posting || input.operation === "edit")
+        await db.query(
+          "UPDATE player_story SET updated_at=clock_timestamp(),title=coalesce($2,title),author=coalesce($3,author) WHERE id=$1",
+          [
+            storyId,
+            posting ? null : (input.title ?? null),
+            posting ? null : (input.author ?? null),
+          ],
+        );
       await db.query("COMMIT");
       return { storyId, episode, ...(deleted && { deleted }) };
     } finally {

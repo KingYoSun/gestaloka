@@ -419,6 +419,34 @@ test("STORIES を一行から公開し、同じ世界にプレイヤーを持つ
       "datetime",
       firstPublishedAt!,
     );
+    await page.goto(`/stories?worldId=${world}`);
+    await expect(page.getByLabel("作品の並び順")).toHaveValue("updated");
+    const worksRegion = page.getByRole("region", { name: "作品一覧" });
+    await expect(worksRegion.getByRole("heading")).toHaveText([
+      "初航海の記録",
+      "出帆",
+    ]);
+    const dates = worksRegion
+      .getByRole("article")
+      .first()
+      .getByText(/公開日.*更新日/);
+    await expect(dates).toBeVisible();
+    const {
+      rows: [editedStory],
+    } = await db.postgres.query<{ updated_at: Date }>(
+      "SELECT updated_at FROM player_story WHERE id=$1",
+      [storyId],
+    );
+    await expect(dates.locator("time")).toHaveCount(2);
+    await expect(dates.locator("time").first()).toHaveAttribute(
+      "datetime",
+      "2026-01-02T14:59:59.000Z",
+    );
+    await expect(dates.locator("time").last()).toHaveAttribute(
+      "datetime",
+      editedStory!.updated_at.toISOString(),
+    );
+    await page.goto(`/stories/${storyId}`);
     expect(
       await writer(
         "stories",

@@ -150,7 +150,8 @@ export function Stories({
         <DateFields since={since} until={until} />
         <label>
           作品の並び順
-          <select name="sort" defaultValue={sort ?? "newest"}>
+          <select name="sort" defaultValue={sort ?? "updated"}>
+            <option value="updated">更新日が新しい順</option>
             <option value="newest">公開日が新しい順</option>
             <option value="oldest">公開日が古い順</option>
             <option value="player">プレイヤーごと</option>
@@ -183,10 +184,26 @@ export function Stories({
                     </Link>
                   </h2>
                   <Byline story={story} />
-                  {story.publishedAt && (
-                    <time className="record-meta" dateTime={story.publishedAt}>
-                      {createdDate(story.publishedAt)}
-                    </time>
+                  {(story.publishedAt || story.updatedAt) && (
+                    <p className="record-meta">
+                      {story.publishedAt && (
+                        <>
+                          公開日{" "}
+                          <time dateTime={story.publishedAt}>
+                            {createdDate(story.publishedAt)}
+                          </time>
+                        </>
+                      )}
+                      {story.publishedAt && story.updatedAt && " · "}
+                      {story.updatedAt && (
+                        <>
+                          更新日{" "}
+                          <time dateTime={story.updatedAt}>
+                            {createdDate(story.updatedAt)}
+                          </time>
+                        </>
+                      )}
+                    </p>
                   )}
                 </div>
               </article>
