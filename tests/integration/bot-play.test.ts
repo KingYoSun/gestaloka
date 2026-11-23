@@ -7437,6 +7437,37 @@ test("登録した保管先と誰も登録していない場所には、その�
     (await f.store.context(f.graph).edge(content))?.period.until,
   ).toBeDefined();
   expect(f.calls).toHaveBeenCalledTimes(2);
+  // 申請者が持たない物品への申請でも、その物品の成立時と現在の保持の経緯が判定に届く。
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    const facts = JSON.parse(messages[1]!.content).nodes as {
+      node: { id: string };
+    }[];
+    expect(facts.find((fact) => fact.node.id === axe)).toMatchObject({
+      held: { by: shared, label: "共同倉庫", basis: "検証" },
+      origin: { basis: "初期" },
+    });
+    return answer(id, sure);
+  });
+  const sharp = randomUUID();
+  await update({
+    changes: {
+      nodes: [{ id: sharp, kind: "script", text: "刃を研いである" }],
+      revisions: [],
+      edges: [
+        {
+          id: randomUUID(),
+          kind: "status",
+          role: "content",
+          source: axe,
+          target: sharp,
+          period: { from: 0 },
+        },
+      ],
+      endEdges: [],
+    },
+  });
+  expect(f.calls).toHaveBeenCalledTimes(3);
   // 誰も登録していない場所を保管先にする申請は、新しく得る申請としてダイスで判定する。
   f.calls.mockImplementationOnce(async (id, role) => {
     expect(role).toBe("world-creation-dice");

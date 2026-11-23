@@ -6585,8 +6585,9 @@ export class BotPlay {
     mentioned: readonly string[] = [],
   ) {
     const result = [],
-      includedStates = new Set<string>();
-    for (const id of new Set(ids)) {
+      includedStates = new Set<string>(),
+      wanted = new Set(ids);
+    for (const id of wanted) {
       if (includedStates.has(id)) continue;
       const node = await context.node(id);
       if (!node) continue;
@@ -6606,10 +6607,33 @@ export class BotPlay {
       }));
       for (const state of states)
         if (state.relationId && state.node) includedStates.add(state.node.id);
+      // 物品の成立と現在の保持の経緯は、持つ側の持ち物にしか現れない。申請者が持たない
+      // 物品でも判定に届くよう、移動の回数によらず成立時と現在の1件ずつを添える。
+      // 持つ側も材料に含まれるなら、現在の経緯はその持ち物に出るので重ねない。
+      const [held, origin] =
+        node.kind === "existence"
+          ? await Promise.all([context.holding(id), context.holding(id, true)])
+          : [];
+      const acquired = (edge: NonNullable<typeof held>) => ({
+        basis: edge.text ?? null,
+        since: edge.period.from,
+      });
       result.push({
         node,
         states,
         omittedStates: all.length - states.length,
+        ...(held && !wanted.has(held.source)
+          ? {
+              held: {
+                by: held.source,
+                label: (await context.node(held.source))?.text ?? "",
+                ...acquired(held),
+              },
+            }
+          : {}),
+        ...(origin?.text && origin.id !== held?.id
+          ? { origin: acquired(origin) }
+          : {}),
         ...(node.kind === "existence"
           ? {
               belongings: await readBelongings(

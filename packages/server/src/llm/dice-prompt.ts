@@ -108,7 +108,7 @@ export function prepareDicePrompt(
     ...(basisDictionary.length ? { basisDictionary } : {}),
   });
   const instructions =
-    "itemsの列は[id,表示名,basis,成立時点,個数(任意)]、storagesは[id,表示名,物品行]、skillsは[id,説明,basis,成立時点]。basisが整数ならbasisDictionaryの0始まりの添字。文字列なら取得経緯の原文。物品のbasisがnullなら、取得経緯が未記録か、申請が指さない物品なので省いた。consumableの文字列は申請者が保持する物品のIDを指す。物品行から表示名と個数を読む。" +
+    "itemsの列は[id,表示名,basis,成立時点,個数(任意)]、storagesは[id,表示名,物品行]、skillsは[id,説明,basis,成立時点]。basisが整数ならbasisDictionaryの0始まりの添字。文字列なら取得経緯の原文。物品のbasisがnullなら、取得経緯が未記録か、申請が指さない物品なので省いた。consumableの文字列は申請者が保持する物品のIDを指す。物品行から表示名と個数を読む。nodesの物品のheldは現在それを持つ存在(by,label)と取得経緯、originはその物品が最初に成立したときの経緯。" +
     (split
       ? "最初のJSONは世界設定・申請者・申請者の技能(actorSkills)。次のJSONは今回の申請と他の材料。両方を合わせて判定する。"
       : "");

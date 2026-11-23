@@ -607,12 +607,14 @@ export class WorldContext {
       (a, b) => a.id.localeCompare(b.id),
     ).filter((e) => e.text === text);
   }
-  async holding(id: string) {
+  // 物品を現在持つ関係。firstを渡すと、終了した関係も含めた最初の1件（成立時）を返す。
+  async holding(id: string, first = false) {
     return this.#read(relationKey(id, "has", "in"), async (tx) => {
       const { records } = await tx.run(
         `MATCH ()-[h:has]->(:WorldNode {worldId:$world,id:$id})
-         WHERE h.validTo IS NULL AND h.role IS NULL RETURN h.data AS data LIMIT 1`,
-        { world: this.worldId, id },
+         WHERE h.role IS NULL AND ($first OR h.validTo IS NULL)
+         RETURN h.data AS data ORDER BY h.validFrom,h.validTo LIMIT 1`,
+        { world: this.worldId, id, first },
       );
       return records[0]
         ? WorldEdge.parse(JSON.parse(records[0].get("data")))
