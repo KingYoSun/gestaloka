@@ -36,7 +36,7 @@ const descriptions: Record<string, string> = {
   "playSessions.advance":
     "止まったセッションを保存状態から進める。在席切れの手番のスキップ、期限切れの受領判断の終了、離席待ちからの再開で手番が進む場合だけ適用し、進まない場合はSESSION_NOT_STALLEDで拒否する。同じrequestIdの再送は二重に適用しない。",
   "costs.read":
-    "使用量と適用単価からの計算額、予約額、使用量不明額を読む。プロバイダーの請求額ではない。",
+    "使用量と適用単価からの計算額、予約額、使用量不明額を読む。プロバイダーの請求額ではない。view: groupsとbyで利用者・処理・モデル別に集計し、orderの回数順か計算額順で上位limit件（既定10件）と、それ以外（others）・未設定（unassigned）・全体（total）を返す。4区分の合計は同条件の総計に一致する。トークン数は使用量を記録した呼出しだけの合計で、記録が無ければnull、usageMissingCallsが欠損件数となる。cacheHitRateはキャッシュ済み入力トークン÷入力トークン。期間はオフセット付きの時刻で指定し、JSTの日境界は+09:00で表す。",
 };
 export async function mcpRoutes(
   app: FastifyInstance,

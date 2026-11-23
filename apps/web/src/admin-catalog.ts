@@ -89,7 +89,10 @@ export const operations = {
       "modelLimits.put": "共有枠を変更",
     },
   ],
-  costs: ["費用の計算額", { "costs.read": "費用の集計・明細・時系列" }],
+  costs: [
+    "費用の計算額",
+    { "costs.read": "費用の集計・明細・時系列・利用者/処理/モデル別" },
+  ],
   runtime: [
     "メンテナンス・監視",
     {
