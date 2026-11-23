@@ -8365,7 +8365,7 @@ test("発生用ノードごとの出現描写を検索結果と公開ログに�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
-test("同じ検索の外れは確定し、発生判定1回の個体を1枠にまとめて同席中の個体数を数える", async () => {
+test("検索の外れは確定し、同じ場所と発生ルールの個体は再送しても一団に一度だけ加わる", async () => {
   const f = await fixture(),
     id = randomUUID(),
     rule = randomUUID(),
@@ -8527,16 +8527,128 @@ test("同じ検索の外れは確定し、発生判定1回の個体を1枠にま
   ).rejects.toMatchObject({ code: "INSTANT_NPC_GROUP" });
   uniform.mockReturnValue(0.999);
   expect(await f.send(0, { ...miss, requestId: source })).toEqual(hit);
-  const three = await f.send(1, { ...miss, requestId: randomUUID() });
-  expect(three.appearances).toMatchObject([{ species: "鳥", count: 3 }]);
-  expect((three.appearances as { id: string }[])[0]!.id).not.toBe(group!.id);
+  const found = { ...miss, requestId: randomUUID() };
+  const commit = f.store.commit.bind(f.store);
+  vi.spyOn(f.store, "commit").mockImplementationOnce(async (...args) => {
+    await commit(...args);
+    throw new Error("同席の保存前に中断");
+  });
+  await expect(f.send(1, found)).rejects.toThrow("同席の保存前に中断");
+  expect((await f.status(1)).characters).toContainEqual(
+    expect.objectContaining({ actorId: group!.id, count: 2 }),
+  );
+  const three = await f.send(1, found);
+  expect(three.appearances).toMatchObject([
+    { id: group!.id, species: "鳥", count: 3 },
+  ]);
+  expect(await f.send(1, found)).toEqual(three);
   // その場に残る5羽と合わせて、発生数3に既定の倍率2を掛けた6羽を超えない。
-  const sixth = await f.send(1, { ...miss, requestId: randomUUID() });
-  expect(sixth.instantNpcs).toEqual(["鳥"]);
+  const topUp = { ...miss, requestId: randomUUID() };
+  const sixth = await f.send(1, topUp);
+  expect(sixth.appearances).toMatchObject([
+    { id: group!.id, species: "鳥", count: 1 },
+  ]);
   const full = await f.send(1, { ...miss, requestId: randomUUID() });
   expect(full.appearances).toBeUndefined();
+  expect(
+    (await f.status(1)).characters?.filter((p) => p.name === "鳥"),
+  ).toMatchObject([{ actorId: group!.id, count: 6 }]);
+  await expect(
+    f.send(1, {
+      command: "promote-npc",
+      sourceRequestId: topUp.requestId,
+      npcIndex: 0,
+      description: "鳥を世話したい",
+    }),
+  ).rejects.toMatchObject({ code: "INSTANT_NPC_GROUP" });
   uniform.mockRestore();
-  expect(f.calls.mock.calls.map((c) => c[1])).toEqual(["world-server-npc"]);
+  await f.send(1, { command: "end-turn" });
+  expect((await f.status(1)).actorId).toBe(group!.id);
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { text: "岸に佇む" }),
+  );
+  await access.botPlay.tickNpcs();
+  expect((await f.status(1)).actorId).toBe(f.actors[0]);
+  expect(f.calls.mock.calls.map((c) => c[1])).toEqual([
+    "world-server-npc",
+    "world-server-npc",
+  ]);
+});
+test("同名の別ルールと別の場所はそれぞれの一団を持ち、増加を見た同席者はその一団を指定できる", async () => {
+  const f = await fixture(),
+    setup = randomUUID();
+  const rules = ["群れA", "群れB"].map((text) => ({
+    id: randomUUID(),
+    kind: "script" as const,
+    text,
+    spawn: {
+      kind: "instant-npc" as const,
+      species: "鳥",
+      description: "木陰で鳴く",
+      minCount: 1,
+      maxCount: 4,
+      probability: 1,
+    },
+  }));
+  await f.store.commit(
+    await f.store.claim(f.graph, setup),
+    f.store.context(f.graph),
+    {
+      at: 0,
+      commitId: setup,
+      changes: {
+        nodes: rules,
+        revisions: [],
+        endEdges: [],
+        edges: rules.flatMap(({ id }) => [
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "content",
+            source: f.place,
+            target: id,
+            period: { from: 0 },
+          },
+          ...[f.place, f.far].map((target) => ({
+            id: randomUUID(),
+            kind: "status",
+            role: "about",
+            text: "spawn-hit",
+            source: id,
+            target,
+            period: { from: 0 },
+          })),
+        ]),
+      },
+    },
+  );
+  vi.spyOn(Math, "random").mockReturnValue(0);
+  const find = async (actor: number, targetId: string) =>
+    (
+      await f.send(actor, {
+        command: "search",
+        query: { kind: "subject", targetId },
+      })
+    ).appearances as { id: string; count: number }[];
+  const first = await find(0, f.place);
+  expect(first).toHaveLength(2);
+  expect(new Set(first.map((a) => a.id)).size).toBe(2);
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  expect(await find(0, f.place)).toEqual(expect.arrayContaining(first));
+  expect(
+    (await f.status(1)).characters?.filter((p) => p.name === "鳥"),
+  ).toMatchObject([{ count: 2 }, { count: 2 }]);
+  await f.send(0, { command: "end-turn" });
+  await expect(
+    f.send(1, {
+      command: "npc-action",
+      npcId: first[0]!.id,
+      text: "木陰で鳴く",
+    }),
+  ).resolves.toMatchObject({ outcome: { success: true } });
+  const elsewhere = await find(2, f.far);
+  expect(elsewhere).toMatchObject([{ count: 1 }, { count: 1 }]);
+  expect(elsewhere.some((p) => first.some((a) => a.id === p.id))).toBe(false);
 });
 test("出現個体の発生用ノードへ結んだ取引は同席中だけ受領でき、代価を除いて品物を一度だけ作る", async () => {
   const f = await fixture(),
