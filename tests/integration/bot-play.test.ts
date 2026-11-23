@@ -13375,7 +13375,7 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
   expect((await pick()).items).toMatchObject([{ itemId: drops[0]!.id }]);
   expect(await carried()).toEqual([6]);
 });
-test("人物への対抗行動で死亡と判定されると、対象はセッションから外れて設定された場所か最初の所在地へ移り、判定で付いた状態と期限のある状態が終わる", async () => {
+test("人物への対抗行動で死亡と判定されると、対象はセッションから外れて設定された場所か最初の所在地へ移り、判定で付いた状態・期限のある状態・死亡で付いた状態が現在の状態から外れる", async () => {
   const f = await fixture(),
     items = [randomUUID(), randomUUID(), randomUUID()],
     grave = randomUUID(),
@@ -13444,12 +13444,14 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
     ],
     dependencies: [],
   });
-  const fatalDice = (victim: string, expected: string, absent = "\u0000") =>
+  const fatalDice = (
+    victim: string,
+    expected: string,
+    states: { id: string; text: string }[] = [],
+  ) =>
     f.calls.mockImplementationOnce(async (id, _role, messages) => {
-      const sent = JSON.stringify(messages);
-      expect(sent).toContain(expected);
-      expect(sent).not.toContain(absent);
-      return answer(id, { ...sure, fatal: [victim] });
+      expect(JSON.stringify(messages)).toContain(expected);
+      return answer(id, { ...sure, fatal: [victim], states });
     });
   const present = async (i: number) =>
     (await f.status(i)).characters!.map((c) => c.actorId);
@@ -13497,7 +13499,8 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
   await configure("death_judgment", true);
   await configure("death_criteria", "致命傷で死亡する");
   await configure("death_place_id", grave);
-  fatalDice(f.actors[1]!, "致命傷で死亡する");
+  const crushed = { id: f.actors[1]!, text: "頭部が砕けている。" };
+  fatalDice(f.actors[1]!, "致命傷で死亡する", [crushed]);
   const first = attack(1),
     killed = await f.send(0, first);
   expect(killed.outcome).toMatchObject({
@@ -13512,6 +13515,13 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
   expect(after).toContain("赤い外套を着ている。");
   expect(after).not.toContain(wound.text);
   expect(after).not.toContain("熱がある。");
+  // 死亡で付いた状態は、終わった関係として記録され、現在の状態には出ない。
+  expect(after).not.toContain(crushed.text);
+  expect(
+    await f.store
+      .context(f.graph)
+      .node(derivedId(`${first.requestId}:state:${f.actors[1]}`)),
+  ).toMatchObject({ text: crushed.text });
   // 場所が未設定なら、本人の最初の所在地へ移る。
   await configure("death_place_id", null);
   fatalDice(f.actors[2]!, "mortal");
