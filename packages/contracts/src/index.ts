@@ -784,6 +784,50 @@ export const CostReport = z.object({
   timeline: z.array(CostTotals.extend({ at: z.iso.datetime() })).optional(),
   next: z.string().nullable(),
 });
+export const PlayUsageQuery = z
+  .object({
+    worldId: z.uuid(),
+    from: z.iso.datetime({ offset: true }),
+    to: z.iso.datetime({ offset: true }),
+  })
+  .strict()
+  .refine((v) => Date.parse(v.from) < Date.parse(v.to), {
+    message: "期間の終了は開始より後にしてください",
+  });
+const count = z.number().int().nonnegative();
+export const PlayUsageReport = z.object({
+  timeZone: z.literal("Asia/Tokyo"),
+  rows: z.array(
+    z.object({
+      date: z.iso.date(),
+      userId: z.uuid().nullable(),
+      command: z.string().nullable(),
+      requests: count,
+      completed: count,
+      rolledIncomplete: count,
+      notRolled: count,
+      originals: count,
+      originalsUnknown: count,
+      batchSizes: z.record(z.string(), count),
+      rolls: z.object({
+        fresh: count,
+        reused: count,
+        unrolled: count,
+        succeeded: count,
+      }),
+      results: z.object({ succeeded: count, partial: count, failed: count }),
+      spentSp: count,
+      gmCalls: count,
+      changes: z.object({
+        receipts: count,
+        existences: count,
+        items: count,
+        skills: count,
+      }),
+    }),
+  ),
+  missing: z.object({ timeOfDay: count }),
+});
 export const RuntimeSettings = z
   .object({
     paused: z.boolean(),
@@ -1123,6 +1167,9 @@ export const Operation = z.discriminatedUnion("operation", [
     })
     .strict(),
   z.object({ operation: z.literal("costs.read"), query: CostQuery }).strict(),
+  z
+    .object({ operation: z.literal("playUsage.read"), query: PlayUsageQuery })
+    .strict(),
   z.object({ operation: z.literal("models.read") }).strict(),
   z
     .object({

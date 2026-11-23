@@ -136,6 +136,7 @@ export class McpAuthorization {
       "blueprints.create",
       "blueprints.publish",
       "costs.read",
+      "playUsage.read",
       "jobs.list",
       "jobs.read",
       "jobs.resume",

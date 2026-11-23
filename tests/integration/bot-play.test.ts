@@ -20,6 +20,7 @@ import {
 import { WorldAccess } from "@gestaloka/server/access";
 import { LlmClient } from "@gestaloka/server/llm";
 import { decisionSettings } from "../../packages/server/src/llm/config.js";
+import { readPlayUsage } from "../../packages/server/src/runtime/play-usage.js";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
 import { derivedId, WorldContext } from "@gestaloka/server/world";
 import type { Change } from "@gestaloka/contracts";
@@ -11522,6 +11523,126 @@ describe("現場材料", () => {
       hulls: 0,
       boards: 2,
       tools: 1,
+    });
+  });
+  test("申請の利用量を日・利用者・コマンド別に数え、旧記録は日単位で扱う", async () => {
+    const { f, ids, plan } = await workshop(2);
+    const db = isolated.databases.postgres,
+      user = f.people[0]!.id,
+      batchId = randomUUID(),
+      updateId = randomUUID();
+    const first = plan(1, ids[0]);
+    // 技能ごとに分けた出目は3つでも、元案は2案。2案目は材料不足で振らない。
+    const batch = {
+      command: "create-batch",
+      requestId: batchId,
+      dependencies: [],
+      proposals: [
+        {
+          ...first,
+          operations: [
+            ...first.operations,
+            ...["帆縫い", "操舵"].map((text) => ({
+              type: "learn",
+              person: f.actors[0],
+              text,
+              basis: "指導を受けた",
+            })),
+          ],
+        },
+        plan(2, ids[0]),
+      ],
+    };
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { settings: [win, lose, win, win] }),
+    );
+    await f.send(0, batch);
+    await f.send(0, batch);
+    f.calls.mockResolvedValueOnce(answer(randomUUID(), lose));
+    await f.send(0, {
+      command: "update",
+      requestId: updateId,
+      ...plan(3, ids[1]),
+      dependencies: [],
+    });
+    // 抽選前の拒否はSPを使わず、出目もない。
+    await expect(
+      f.send(0, {
+        command: "create-batch",
+        dependencies: [],
+        proposals: [plan(4), plan(4)],
+      }),
+    ).rejects.toMatchObject({ code: "DUPLICATE_PROPOSAL" });
+    await db.query(
+      `INSERT INTO llm_call(id,budget_id,hash,reserved_nano,request,world_id,operation_id)
+       SELECT $1,id,'fixture',0,'{}',$2,$3 FROM llm_budget LIMIT 1`,
+      [randomUUID(), f.graph, batchId],
+    );
+    const { resetsAt } = await access.botPlay.dailySp(f.world, user);
+    const day = {
+      worldId: f.world,
+      from: new Date(Date.parse(resetsAt) - 86400000).toISOString(),
+      to: resetsAt,
+    };
+    const read = (query: typeof day) => readPlayUsage(db, f.store, query);
+    const date = new Date(Date.parse(day.from) + 9 * 3600000)
+      .toISOString()
+      .slice(0, 10);
+    const base = {
+      date,
+      userId: user,
+      rolledIncomplete: 0,
+      notRolled: 0,
+      originalsUnknown: 0,
+      batchSizes: {},
+      results: { succeeded: 0, partial: 0, failed: 0 },
+      gmCalls: 0,
+    };
+    const batchRow = {
+      ...base,
+      command: "create-batch",
+      requests: 2,
+      completed: 1,
+      notRolled: 1,
+      originals: 2,
+      originalsUnknown: 1,
+      batchSizes: { 2: 1 },
+      rolls: { fresh: 3, reused: 0, unrolled: 1, succeeded: 2 },
+      results: { ...base.results, partial: 1 },
+      spentSp: 1,
+      gmCalls: 1,
+      changes: { receipts: 1, existences: 1, items: 1, skills: 1 },
+    };
+    const updateRow = {
+      ...base,
+      command: "update",
+      requests: 1,
+      completed: 1,
+      originals: 1,
+      rolls: { fresh: 1, reused: 0, unrolled: 0, succeeded: 0 },
+      results: { ...base.results, failed: 1 },
+      spentSp: 1,
+    };
+    expect(await read(day)).toMatchObject({
+      rows: [batchRow, updateRow],
+      missing: { timeOfDay: 0 },
+    });
+    // 受付時刻・利用者・コマンドのない旧記録は、SPの消費日と結果から同じ行へ戻す。
+    await db.query(
+      "UPDATE bot_request SET received_at=NULL,user_id=NULL,command=NULL WHERE id=$1",
+      [updateId],
+    );
+    expect((await read(day)).rows).toMatchObject([batchRow, updateRow]);
+    // 日の一部だけの期間では、時刻の分からない旧記録を欠測として数える。
+    const hour = {
+      ...day,
+      to: new Date(
+        Math.min(Date.now() + 3600000, Date.parse(resetsAt) - 1),
+      ).toISOString(),
+    };
+    expect(await read(hour)).toMatchObject({
+      rows: [batchRow],
+      missing: { timeOfDay: 1 },
     });
   });
   test("船体2件は2隻まで、板材3個の指定は在庫2個のまま材料不足", async () => {

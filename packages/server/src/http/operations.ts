@@ -24,6 +24,7 @@ import { WorldBudget } from "../llm/world-budget.js";
 import { ExecutionBudget } from "../execution-budget.js";
 import { ModelSettings, ModelCheckFailed } from "../llm/settings.js";
 import { readCosts } from "../llm/costs.js";
+import { readPlayUsage } from "../runtime/play-usage.js";
 import { InspectionStore } from "../inspection/store.js";
 import {
   inspectionHistory,
@@ -1061,6 +1062,12 @@ export class Operations {
       }
       case "costs.read":
         return readCosts(db, input.query);
+      case "playUsage.read":
+        return readPlayUsage(
+          db,
+          this.#access(context).botPlay.store,
+          input.query,
+        );
       case "models.read":
         return this.models.read(db);
       case "models.put": {
