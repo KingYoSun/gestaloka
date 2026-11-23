@@ -822,11 +822,17 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
   await model.ledger.setup();
   const basis = "調査隊と一緒に回収した道具とその由来",
     held = { id: "held", label: "ひも", count: 3, basis, since: 2 },
+    tool = { id: "tool", label: "金づち", basis: null, since: 3 },
     stored = { id: "stored", label: "板", basis, since: 4 },
     skills = [
       { id: "skill", text: "作業手順。".repeat(450), basis: null, since: 5 },
     ];
-  const input = (text: string, count: number, skillText = skills[0]!.text) => [
+  const input = (
+    text: string,
+    count: number,
+    skillText = skills[0]!.text,
+    allHeld = false,
+  ) => [
     { role: "system" as const, content: "ダイスの設定をJSONで返す。" },
     {
       role: "user" as const,
@@ -842,7 +848,7 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
               { node: { id: "state", text: "濡れている" }, about: ["actor"] },
             ],
             belongings: {
-              items: [{ ...held, count }],
+              items: [{ ...held, count }, tool],
               storages: [{ id: "box", label: "箱", items: [stored] }],
               skills: [{ ...skills[0], text: skillText }],
             },
@@ -850,7 +856,9 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
         ],
         consumable: [
           { id: held.id, label: held.label, count },
-          { id: "other", label: "石" },
+          allHeld
+            ? { id: tool.id, label: tool.label }
+            : { id: tool.id, label: tool.label, count: 2 },
         ],
       }),
     },
@@ -872,7 +880,7 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
   await model.complete(
     randomUUID(),
     "world-creation-dice",
-    input("短い技能で工作する", 2, "鑿を使う"),
+    input("短い技能で工作する", 2, "鑿を使う", true),
   );
   await model.complete(id, "world-creation-dice", first);
   expect(transport).toHaveBeenCalledTimes(4);
@@ -904,12 +912,15 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
           { node: { id: "state", text: "濡れている" }, about: ["actor"] },
         ],
         belongings: {
-          items: [["held", "ひも", 0, 2, 3]],
+          items: [
+            ["held", "ひも", 0, 2, 3],
+            ["tool", "金づち", null, 3],
+          ],
           storages: [["box", "箱", [["stored", "板", 0, 4]]]],
         },
       },
     ],
-    consumable: ["held", { id: "other", label: "石" }],
+    consumable: ["held", { id: "tool", label: "金づち", count: 2 }],
     basisDictionary: [basis],
   });
   // 申請が指さない物品には取得経緯を付けない。短縮IDで指した物品には付ける。
@@ -918,14 +929,21 @@ test("ダイスの所持品を圧縮し、同じ技能だけをキャッシュ�
   ).nodes[0];
   expect(unreferenced.node.id).toBe("actor");
   expect(belongings).toEqual({
-    items: [["held", "ひも", null, 2, 2]],
+    items: [
+      ["held", "ひも", null, 2, 2],
+      ["tool", "金づち", null, 3],
+    ],
     storages: [["box", "箱", [["stored", "板", basis, 4]]]],
   });
   expect(JSON.parse(next.input[1].content[1].text)).not.toHaveProperty(
     "basisDictionary",
   );
-  expect(
-    JSON.parse(short.input[1].content[0].text).nodes[0].belongings.skills,
-  ).toEqual([["skill", "鑿を使う", null, 5]]);
+  const shortInput = JSON.parse(short.input[1].content[0].text);
+  expect(shortInput.consumable).toBe(true);
+  expect(shortInput.nodes[0].belongings).toEqual({
+    items: belongings.items,
+    storages: [["box", "箱", [["stored", "板", null, 4]]]],
+    skills: [["skill", "鑿を使う", null, 5]],
+  });
   expect(await model.ledger.input(id)).toMatchObject({ sourceMessages: first });
 });
