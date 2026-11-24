@@ -3441,6 +3441,16 @@ export interface paths {
                             replacesStateId?: string;
                         } | {
                             /** @enum {string} */
+                            type: "remove-place-item";
+                            text: string;
+                            /** Format: uuid */
+                            placeId: string;
+                            /** Format: uuid */
+                            itemId: string;
+                            /** @description 減らす個数。省くと全部 */
+                            count?: number;
+                        } | {
+                            /** @enum {string} */
                             type: "seize";
                             text: string;
                             operation: {
