@@ -251,6 +251,9 @@ function PersonalMaterial({
         ? `${x.label}（使用枠 ${x.capacity.usedSlots}/${x.capacity.limitSlots}）`
         : x.label,
       ...x.items.map(inventoryItemText),
+      ...x.bundles.map(
+        (bundle) => `${bundle.label} · ${bundle.itemCount}点 · 1枠`,
+      ),
     ]),
     data.belongings?.skillCapacity &&
       `技能の使用枠 ${data.belongings.skillCapacity.usedSlots}/${data.belongings.skillCapacity.limitSlots}`,
@@ -357,6 +360,7 @@ export function BotSession({
         setText((current) => (current === body.text ? "" : current));
       await query.refetch();
       history.current?.updated();
+      return true;
     } catch (error) {
       if (
         error instanceof ApiFailure &&
@@ -364,6 +368,7 @@ export function BotSession({
         error.status < 500
       )
         save(null);
+      return false;
     }
   };
   const send = (raw?: Record<string, unknown>) =>
@@ -439,6 +444,26 @@ export function BotSession({
           world={id}
           player={player}
           screen={view.screen}
+          bundlePlay={{
+            canTake: mine && !busy && !archive,
+            error: mutation.error,
+            refresh: () => query.refetch(),
+            take: (item, from, label) =>
+              send({
+                command: "update",
+                text: `${label}を手持ちへ取り出す`,
+                operations: [
+                  {
+                    type: "move",
+                    item,
+                    from,
+                    to: view.viewerId,
+                    basis: "バンドルから取り出す",
+                  },
+                ],
+                dependencies: [],
+              }),
+          }}
           notices={{
             unread: unreadNotices,
             items: notices.data?.notices,

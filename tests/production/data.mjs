@@ -5,6 +5,7 @@ import { fixtureRuntime } from "../support/provider.ts";
 import { fixtureAuth } from "../support/auth.ts";
 import { WorldAccess } from "@gestaloka/server/access";
 import { Operations } from "@gestaloka/server/operations";
+import { directPlaces } from "../../packages/server/src/world/locations.ts";
 
 const { databases: db, runtime } = await fixtureRuntime("deployment-recovery");
 const auth = await fixtureAuth(db.postgres),
@@ -92,6 +93,50 @@ try {
     ).rows[0];
     assert.equal(joined.state, "ready");
     const actor = joined.actor_id;
+    const { id: graphId, at } = await access.botPlay.world(world);
+    const store = access.botPlay.store;
+    const [storageId] = await directPlaces(store.context(graphId), actor);
+    assert(storageId);
+    const itemIds = [randomUUID(), randomUUID()];
+    await store.commit(
+      await store.claim(graphId, randomUUID()),
+      store.context(graphId),
+      {
+        commitId: randomUUID(),
+        at,
+        changes: {
+          nodes: itemIds.map((id) => ({
+            id,
+            kind: "existence",
+            text: "試験の木片",
+          })),
+          edges: [
+            { source: actor, target: storageId, role: "use" },
+            ...itemIds.map((target) => ({ source: storageId, target })),
+          ].map((edge) => ({
+            ...edge,
+            id: randomUUID(),
+            kind: "has",
+            period: { from: at },
+          })),
+          revisions: [],
+          endEdges: [],
+        },
+      },
+    );
+    const bundle = await access.editInventoryBundle(
+      user,
+      world,
+      {
+        requestId: randomUUID(),
+        storageId,
+        itemIds,
+        label: "試験の木片",
+        action: "create",
+      },
+      actor,
+    );
+    const slots = await store.context(graphId).inventorySlots(storageId);
     await access.botCommand(
       user,
       world,
@@ -167,6 +212,7 @@ try {
         fees,
         graph,
         sceneData: savedScene,
+        bundle: { ...bundle, storageId, itemIds, slots, graphId },
       }),
     ]);
     console.log(JSON.stringify({ seeded: true, fees: fees.calls }));
@@ -204,6 +250,24 @@ try {
         await readFile("/runtime/backup-fixture/recovery-context.json", "utf8"),
       ).id,
       expected.join,
+    );
+    const { bundle } = expected;
+    const restoredBundle = await access.inventoryContents(
+      expected.user,
+      expected.world,
+      bundle.bundleId,
+      undefined,
+      expected.actor,
+    );
+    assert.deepEqual(
+      restoredBundle.items.map(({ id }) => id).sort(),
+      bundle.itemIds.sort(),
+    );
+    assert.equal(
+      await access.botPlay.store
+        .context(bundle.graphId)
+        .inventorySlots(bundle.storageId),
+      bundle.slots,
     );
     const scene = await access.botStatus(
       expected.user,

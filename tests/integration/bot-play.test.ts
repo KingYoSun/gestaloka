@@ -14,6 +14,7 @@ import {
 } from "vitest";
 import {
   BlueprintDraft,
+  InventoryBundleCommand,
   PlayCommand,
   WaitingEvent,
 } from "@gestaloka/contracts";
@@ -8018,6 +8019,235 @@ test("手持ちの容量と受入可能数をHTTPとCLIへ返す", async () => {
       code: expected.code,
       inventory: { item: { requestedCount: 89, maxAcceptableCount: 60 } },
     });
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
+
+test("バンドルの枠、共同利用、取り出しを物品の同一性と同じ確定で扱う", async () => {
+  const f = await fixture();
+  const [actor, peer] = f.actors as [string, string];
+  const create = (label: string, holder: string, count?: number) => ({
+    type: "create",
+    label,
+    holder,
+    count,
+    basis: "検証",
+  });
+  const { changes } = await f.apply([
+    ...[actor, peer].map((person) => ({
+      type: "grant",
+      storage: f.far,
+      person,
+      basis: "共用",
+    })),
+    create("杉材", f.far, 31),
+    create("湿った杉材", f.far),
+    create("空の箱", f.far),
+    create("中身を入れる箱", f.far),
+    create("資材", f.far, 420),
+    create("杉材", actor, 31),
+  ]);
+  const [wood, wet, box, full, bulk, carried] = changes.nodes
+    .filter((node) => node.kind === "existence")
+    .map((node) => node.id) as [string, string, string, string, string, string];
+  await f.apply([create("中身", full)]);
+  const status: Change = { nodes: [], edges: [], revisions: [], endEdges: [] };
+  mark(status, wood, "乾燥済み");
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    { commitId: randomUUID(), at: 0, changes: status },
+  );
+  await f.move(0, f.far);
+  const context = () => f.store.context(f.graph);
+  const edit = (i: number, body: object, requestId = randomUUID()) =>
+    access.editInventoryBundle(
+      f.people[i]!.id,
+      f.world,
+      InventoryBundleCommand.parse({ ...body, requestId, storageId: f.far }),
+      f.actors[i],
+    );
+  const read = (i: number, id: string) =>
+    access.inventoryContents(
+      f.people[i]!.id,
+      f.world,
+      id,
+      undefined,
+      f.actors[i],
+    );
+  const capacity = () => context().inventorySlots(f.far);
+  const original = await capacity();
+  const calls = (await f.status(0)).callsUsed;
+  expect((await context().inventoryLimits()).bundleSlots).toBe(15);
+  const input = { action: "create", label: "木材", itemIds: [wood, wet] };
+  await expect(edit(1, input)).rejects.toThrow("保管先へ移動");
+  await expect(edit(2, input)).rejects.toThrow("登録した保管先");
+  await expect(edit(0, { ...input, itemIds: [wood, bulk] })).rejects.toThrow(
+    "15枠",
+  );
+  await expect(edit(0, { ...input, itemIds: [wood, full] })).rejects.toThrow(
+    "中に品を持つ",
+  );
+  const request = randomUUID();
+  const bundle = await edit(0, input, request);
+  expect(bundle).toMatchObject({ itemCount: 2, normalSlots: 3 });
+  expect(await edit(0, input, request)).toEqual(bundle);
+  expect(await capacity()).toBe(original - 2);
+  const bundleId = bundle.bundleId;
+  await expect(
+    edit(0, { action: "add", bundleId, itemIds: [bundleId] }),
+  ).rejects.toThrow("直下にある品");
+  expect((await read(1, bundleId)).items).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: wood, count: 31, states: ["乾燥済み"] }),
+      expect.objectContaining({ id: wet }),
+    ]),
+  );
+  await expect(read(2, bundleId)).rejects.toMatchObject({ status: 404 });
+  await f.store.configureInventory(f.graph, true, { bundleSlots: 2 });
+  await expect(
+    edit(0, { action: "add", bundleId, itemIds: [box] }),
+  ).rejects.toThrow("2枠");
+  await f.store.configureInventory(f.graph, true, { bundleSlots: 4 });
+  expect(
+    await edit(0, { action: "add", bundleId, itemIds: [box] }),
+  ).toMatchObject({ itemCount: 3, normalSlots: 4 });
+  await expect(f.apply([create("追加の中身", box)])).rejects.toThrow(
+    "物を入れられません",
+  );
+  expect((await f.status(0)).callsUsed).toBe(calls);
+  const used = await capacity();
+  await f.store.configureInventory(f.graph, true, {
+    storageSlots: used,
+    unitsPerSlot: 31,
+  });
+  expect((await context().inventoryBundles(f.far))[0]).toMatchObject({
+    id: bundleId,
+    itemCount: 3,
+    normalSlots: 3,
+  });
+  await expect(
+    edit(0, { action: "release", bundleId, itemId: wood }),
+  ).rejects.toMatchObject({ code: "INVENTORY_CAPACITY_EXCEEDED" });
+  await expect(edit(0, { action: "dissolve", bundleId })).rejects.toMatchObject(
+    { code: "INVENTORY_CAPACITY_EXCEEDED" },
+  );
+  expect(await capacity()).toBe(used);
+  const take = (item: string) =>
+    f.send(0, {
+      command: "update",
+      text: "保管した品を手に取る",
+      dependencies: [],
+      operations: [
+        { type: "move", item, from: f.far, to: actor, basis: "検証" },
+      ],
+    });
+  await take(wood);
+  expect(
+    (await readBelongings(context(), actor)).items.map(({ id }) => id),
+  ).toEqual(expect.arrayContaining([wood, carried]));
+  expect(
+    (
+      await context().relations(wood, "status", "out", Number.MAX_SAFE_INTEGER)
+    ).map(({ target }) => target),
+  ).toContain(status.nodes[0]!.id);
+  expect((await context().inventoryBundles(f.far))[0]?.itemCount).toBe(2);
+  expect(await capacity()).toBe(used);
+  await take(wet);
+  expect((await context().inventoryBundles(f.far))[0]?.itemCount).toBe(1);
+  await take(box);
+  expect(await context().inventoryBundles(f.far)).toEqual([]);
+  expect(await capacity()).toBe(used - 1);
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("CLIのバンドル操作を再送し、照会と保管庫内の解除を行える", async () => {
+  const f = await fixture(1);
+  const actor = f.actors[0]!;
+  const { changes } = await f.apply([
+    { type: "grant", person: actor, storage: f.far, basis: "資料庫" },
+    ...["板", "釘", "紐"].map((label) => ({
+      type: "create",
+      label,
+      holder: f.far,
+      basis: "検証",
+    })),
+  ]);
+  await f.move(0, f.far);
+  const [board, nail, cord] = changes.nodes.map(({ id }) => id) as [
+    string,
+    string,
+    string,
+  ];
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  try {
+    const profile = join(cli.directory, "bundle-view.json");
+    const connection = await cli.run(
+      profile,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (
+        await cli.approve(
+          f.people[0]!.cookie,
+          connection.userCode,
+          `actor:${actor}`,
+        )
+      ).statusCode,
+    ).toBe(302);
+    const file = join(cli.directory, "bundle-request.json");
+    const edit = async (body: object) => {
+      await writeFile(file, JSON.stringify({ storageId: f.far, ...body }));
+      return cli.run(profile, "bundle", "--file", file);
+    };
+    const created = await edit({
+      action: "create",
+      label: "小屋の建材",
+      itemIds: [board, nail],
+    });
+    const bundleId = created.result.bundleId;
+    expect(bundleId).toMatch(/^@/);
+    expect(
+      (await cli.run(profile, "recover", "--request", created.requestId))
+        .result,
+    ).toEqual(created.result);
+    expect(
+      (await edit({ action: "add", bundleId, itemIds: [cord] })).result
+        .itemCount,
+    ).toBe(3);
+    const contents = (await cli.run(
+      profile,
+      "contents",
+      "--target",
+      bundleId,
+    )) as { items: { id: string; label: string }[] };
+    expect(contents.items.map((row) => row.label).sort()).toEqual(
+      ["板", "紐", "釘"].sort(),
+    );
+    const nailId = contents.items.find((row) => row.label === "釘")!.id;
+    expect(
+      (await edit({ action: "release", bundleId, itemId: nailId })).result
+        .itemCount,
+    ).toBe(2);
+    const read = () => readBelongings(f.store.context(f.graph), actor);
+    expect((await read()).storages[0]?.capacity?.usedSlots).toBe(2);
+    expect(
+      (await edit({ action: "dissolve", bundleId })).result.itemCount,
+    ).toBe(0);
+    expect((await read()).storages[0]?.capacity?.usedSlots).toBe(3);
+    expect((await f.status(0)).callsUsed).toBe(0);
   } finally {
     await cli.close();
     await app.close();

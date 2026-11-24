@@ -148,13 +148,23 @@ gestaloka disconnect
 
 ## contents
 
-手持ちや登録した保管先にある入れ物の中身を読む。各品のslotsは本体、totalSlotsは中身を含む使用枠。nextがあれば--afterに渡す。手番と通常枠は使わない。
+本人が読める入れ物やバンドルの中身を読む。nextがあれば--afterに渡す。手番と通常枠は使わない。
 
 ```text
 gestaloka contents --target <入れ物ID> [--after <ID>]
 ```
 
 実行例 `gestaloka contents --target @12ab34cd`
+
+## bundle
+
+現地の登録保管先でバンドルを作成・追加・解除する。操作の形式は持ち物・保管・取引の参照文書にある。手番と通常枠は使わない。
+
+```text
+gestaloka bundle --file <操作のJSON>
+```
+
+実行例 `gestaloka bundle --file bundle.json`
 
 ## notices
 

@@ -10,6 +10,8 @@ import {
   PlayResponse,
   InventoryContents,
   InventoryContentsQuery,
+  InventoryBundleCommand,
+  InventoryBundleResult,
   PlayerReportInput,
   PlayerReportStatus,
   PlayerNotices,
@@ -106,6 +108,7 @@ export async function worldRoutes(
         "/api/worlds/:id/scene",
         "/api/worlds/:id/session",
         "/api/worlds/:id/inventory/contents",
+        "/api/worlds/:id/inventory/bundles",
         "/api/worlds/:id/waiting",
         "/api/worlds/:id/waiting/events",
         "/api/worlds/:id/reports",
@@ -655,6 +658,24 @@ export async function worldRoutes(
         request.params.id,
         request.query.containerId,
         request.query.after,
+        request.query.actorId,
+      ),
+  );
+  app.post(
+    "/api/worlds/:id/inventory/bundles",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        body: InventoryBundleCommand,
+        response: { 200: InventoryBundleResult, ...errors },
+      },
+    },
+    async (request) =>
+      service().editInventoryBundle(
+        await subject(request),
+        request.params.id,
+        request.body,
         request.query.actorId,
       ),
   );

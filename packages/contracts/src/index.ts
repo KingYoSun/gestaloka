@@ -133,6 +133,13 @@ export const WorldCommand = z.discriminatedUnion("command", [
 const InventoryLimits = z.object({
   carrySlots: z.number().int().positive().safe().describe("人物の手持ち枠"),
   storageSlots: z.number().int().positive().safe().describe("保管庫の標準枠"),
+  bundleSlots: z
+    .number()
+    .int()
+    .positive()
+    .safe()
+    .optional()
+    .describe("バンドルに収められる通常枠の合計。既定は15"),
   unitsPerSlot: z
     .number()
     .int()
@@ -275,9 +282,50 @@ export const InventoryContents = z.object({
       unitsPerSlot: z.union([z.number(), z.literal("unlimited")]).optional(),
       slots: z.number(),
       totalSlots: z.number(),
+      states: z.array(z.string()).optional(),
     }),
   ),
   next: z.uuid().nullable(),
+});
+const BundleRequest = {
+  requestId: z.uuid(),
+  storageId: z.uuid(),
+};
+const bundleId = z.uuid();
+const bundleItems = z.array(z.uuid());
+export const InventoryBundleCommand = z.discriminatedUnion("action", [
+  z
+    .object({
+      ...BundleRequest,
+      action: z.literal("create"),
+      label: z.string().trim().min(1),
+      itemIds: bundleItems.min(2),
+    })
+    .strict(),
+  z
+    .object({
+      ...BundleRequest,
+      action: z.literal("add"),
+      bundleId,
+      itemIds: bundleItems.min(1),
+    })
+    .strict(),
+  z
+    .object({
+      ...BundleRequest,
+      action: z.literal("release"),
+      bundleId,
+      itemId: z.uuid(),
+    })
+    .strict(),
+  z
+    .object({ ...BundleRequest, action: z.literal("dissolve"), bundleId })
+    .strict(),
+]);
+export const InventoryBundleResult = z.object({
+  bundleId,
+  itemCount: z.number(),
+  normalSlots: z.number(),
 });
 export const WorldEvent = z.object({
   id: z.string().regex(/^\d+$/),

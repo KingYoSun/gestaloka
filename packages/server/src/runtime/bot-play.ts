@@ -47,6 +47,7 @@ import {
   belongingEdges,
   heldItems,
   readBelongings,
+  readInventoryContents,
   visibleTo,
 } from "../world/belongings.js";
 import {
@@ -55,6 +56,10 @@ import {
   skillDeltas,
   skillCapacityError,
 } from "../world/inventory.js";
+import {
+  InventoryBundleError,
+  type BundleCommand,
+} from "../world/inventory-bundles.js";
 import {
   addRoute,
   directPlaces,
@@ -606,6 +611,8 @@ function playError(error: unknown) {
       undefined,
       error,
     );
+  if (error instanceof InventoryBundleError)
+    return new AccessError(409, error.code, error.message);
   if (error instanceof FixedPlaceMovement)
     return new AccessError(409, "FIXED_PLACE", error.message);
   if (error instanceof RuntimeStopped)
@@ -5090,6 +5097,39 @@ export class BotPlay {
     await context.validate();
     return { visible, context };
   }
+  async inventoryContents(
+    world: string,
+    actor: string,
+    container: string,
+    after?: string,
+  ) {
+    const context = this.store.context((await this.world(world)).id);
+    return readInventoryContents(context, actor, container, after, async (id) =>
+      (await this.#physicalStates(context, id, true, actor)).states.map(
+        ({ text }) => text,
+      ),
+    );
+  }
+
+  async editInventoryBundle(
+    world: string,
+    actor: string,
+    input: BundleCommand,
+  ) {
+    try {
+      const current = await this.world(world);
+      await RuntimeControl.check(this.pool, { worldId: current.id }, true);
+      const context = this.store.context(current.id);
+      return await context.editInventoryBundle(
+        actor,
+        input,
+        (await directPlaces(context, actor)).includes(input.storageId),
+      );
+    } catch (error) {
+      throw playError(error);
+    }
+  }
+
   async #physicalStates(
     context: WorldContext,
     target: string,
@@ -11620,7 +11660,8 @@ export class BotPlay {
         plan?.draw?.table &&
         (error instanceof WorldConflict ||
           error instanceof AccessError ||
-          error instanceof BelongingRejected) &&
+          error instanceof BelongingRejected ||
+          error instanceof InventoryBundleError) &&
         !(await this.store.receipt(w.id, input.requestId))
       ) {
         await db.query(

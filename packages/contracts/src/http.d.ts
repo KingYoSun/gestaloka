@@ -1073,6 +1073,8 @@ export interface paths {
                                 carrySlots: number;
                                 /** @description 保管庫の標準枠 */
                                 storageSlots: number;
+                                /** @description バンドルに収められる通常枠の合計。既定は15 */
+                                bundleSlots?: number;
                                 /** @description 物品の1枠あたりの標準個数 */
                                 unitsPerSlot: number;
                                 /** @description 人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する */
@@ -1248,6 +1250,8 @@ export interface paths {
                                 carrySlots: number;
                                 /** @description 保管庫の標準枠 */
                                 storageSlots: number;
+                                /** @description バンドルに収められる通常枠の合計。既定は15 */
+                                bundleSlots?: number;
                                 /** @description 物品の1枠あたりの標準個数 */
                                 unitsPerSlot: number;
                                 /** @description 人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する */
@@ -1443,6 +1447,8 @@ export interface paths {
                                 carrySlots: number;
                                 /** @description 保管庫の標準枠 */
                                 storageSlots: number;
+                                /** @description バンドルに収められる通常枠の合計。既定は15 */
+                                bundleSlots?: number;
                                 /** @description 物品の1枠あたりの標準個数 */
                                 unitsPerSlot: number;
                                 /** @description 人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する */
@@ -6561,6 +6567,7 @@ export interface paths {
                                 unitsPerSlot?: number | "unlimited";
                                 slots: number;
                                 totalSlots: number;
+                                states?: string[];
                             }[];
                             /** Format: uuid */
                             next: string | null;
@@ -6662,6 +6669,184 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worlds/{id}/inventory/bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: {
+                    actorId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        action: "create";
+                        label: string;
+                        itemIds: string[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        action: "add";
+                        /** Format: uuid */
+                        bundleId: string;
+                        itemIds: string[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        action: "release";
+                        /** Format: uuid */
+                        bundleId: string;
+                        /** Format: uuid */
+                        itemId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        action: "dissolve";
+                        /** Format: uuid */
+                        bundleId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            bundleId: string;
+                            itemCount: number;
+                            normalSlots: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -9460,6 +9645,8 @@ export interface paths {
                                 carrySlots?: number;
                                 /** @description 保管庫の標準枠 */
                                 storageSlots?: number;
+                                /** @description バンドルに収められる通常枠の合計。既定は15 */
+                                bundleSlots?: number;
                                 /** @description 物品の1枠あたりの標準個数 */
                                 unitsPerSlot?: number;
                                 /** @description 人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する */
