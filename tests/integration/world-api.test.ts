@@ -590,6 +590,60 @@ test("引き継ぎ対象は全件をページで確認でき、確定も全対�
   ).toBe(true);
 });
 
+test("管理者が参加記録のない既存人物のリスポーンを無効にし、理由を監査に残す", async () => {
+  const legacy = await legacyFixture(),
+    other = await fixture(),
+    person = await session("user");
+  await access.setup();
+  const before = await runtime.get(legacy.id);
+  const actorId = before.participant_id!;
+  const input = {
+    operation: "worlds.disableActorRespawn" as const,
+    worldId: legacy.id,
+    actorId,
+    reason: "既存人物の個別設定を変更する試験",
+  };
+  const policy = async () =>
+    (
+      await databases.postgres.query(
+        "SELECT respawn_disabled FROM world_controlled_actor WHERE world_id=$1 AND actor_id=$2",
+        [before.world_id, actorId],
+      )
+    ).rows[0].respawn_disabled;
+  expect(await policy()).toBe(false);
+  await expect(
+    auth.operations.execute(person.subject, randomUUID(), input),
+  ).rejects.toMatchObject({ code: "ADMIN_REQUIRED" });
+  await expect(
+    auth.operations.execute(legacy.subject, randomUUID(), {
+      ...input,
+      worldId: other.id,
+    }),
+  ).rejects.toMatchObject({ code: "ACTOR_NOT_FOUND" });
+  expect(await policy()).toBe(false);
+
+  const requestId = randomUUID();
+  const expected = { worldId: legacy.id, actorId, respawnDisabled: true };
+  expect(
+    await auth.operations.execute(legacy.subject, requestId, input),
+  ).toEqual(expected);
+  expect(
+    await auth.operations.execute(legacy.subject, requestId, input),
+  ).toEqual(expected);
+  expect(await policy()).toBe(true);
+  expect((await runtime.get(legacy.id)).respawn_enabled).toBe(
+    before.respawn_enabled,
+  );
+  const audit = await databases.postgres.query(
+    "SELECT outcome,details FROM operation_audit WHERE request_id=$1 ORDER BY id",
+    [requestId],
+  );
+  expect(audit.rows).toEqual([
+    { outcome: "accepted", details: { ...expected, reason: input.reason } },
+    { outcome: "replayed", details: {} },
+  ]);
+});
+
 test("公開と参加受付を分け、非公開化後も参加者の参照と操作対象を保持する", async () => {
   const legacy = await legacyFixture(),
     person = await session("user");

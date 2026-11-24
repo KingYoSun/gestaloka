@@ -65,6 +65,48 @@ test("共通操作一覧は全て管理画面または本人の画面に対応�
   );
 });
 
+test("管理画面で対象の世界と人物を確認してリスポーンを無効にする", async () => {
+  const command = {
+    operation: "worlds.disableActorRespawn",
+    worldId: A,
+    actorId: "00000000-0000-4000-8000-000000000002",
+    reason: "対象人物の設定を変更する",
+  };
+  const received: unknown[] = [];
+  server.use(
+    http.post("*/api/operations", async ({ request }) => {
+      const body = (await request.json()) as { command: { operation: string } };
+      if (body.command.operation === command.operation) {
+        received.push(body.command);
+        return json({
+          result: {
+            worldId: command.worldId,
+            actorId: command.actorId,
+            respawnDisabled: true,
+          },
+        });
+      }
+      return json({ result: { items: [], next: null } });
+    }),
+  );
+  show("worlds");
+  await choose(command.operation);
+  fireEvent.change(screen.getByLabelText("世界ID"), {
+    target: { value: command.worldId },
+  });
+  fireEvent.change(screen.getByLabelText("操作対象ID"), {
+    target: { value: command.actorId },
+  });
+  fireEvent.change(screen.getByLabelText("操作の理由"), {
+    target: { value: command.reason },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "内容を確認する" }));
+  expect(received).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "この内容で実行する" }));
+  await screen.findByText("リスポーンなし");
+  expect(received).toEqual([command]);
+});
+
 test("ログインを維持して、発行した招待と公開中の資料を一つのAI向け案内にまとめる", async () => {
   const copy = vi.fn().mockResolvedValue(undefined);
   vi.stubGlobal("navigator", { clipboard: { writeText: copy } });

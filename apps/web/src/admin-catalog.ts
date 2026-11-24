@@ -24,6 +24,7 @@ export const operations = {
       "worlds.create": "世界を生成",
       "worlds.command": "世界構築を進行・完了",
       "worlds.configure": "公開・参加受付",
+      "worlds.disableActorRespawn": "人物のリスポーンを無効にする",
       "presets.list": "プレイヤー設定一覧",
       "presets.put": "プレイヤー設定を保存",
       "worldBudgets.read": "世界の予算を確認",

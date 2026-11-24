@@ -182,6 +182,7 @@ export const labels: Record<string, string> = {
   instantNpcMultiplier: "出現個体の同席上限（発生数の倍率）",
   deathJudgment: "人物を死亡判定の対象にする",
   respawnEnabled: "死亡した人物をリスポーンさせる",
+  respawnDisabled: "リスポーンなし",
   deathCriteria: "人物の死亡を判定する条件",
   deathPlaceId: "リスポーン先の場所ID",
   nonCombatAreas: "非戦闘地域",

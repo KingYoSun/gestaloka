@@ -1325,6 +1325,22 @@ export class Operations {
           ? context.players.join(actor!, requestId, input, db)
           : context.players.resume(actor!, input.joinId, db);
       }
+      case "worlds.disableActorRespawn": {
+        const { worldId, actorId } = input;
+        const changed = await db.query(
+          `UPDATE world_controlled_actor AS actor SET respawn_disabled=true
+           FROM world_construction AS world
+           WHERE world.id=$1 AND actor.world_id=world.world_id AND actor.actor_id=$2`,
+          [worldId, actorId],
+        );
+        if (!changed.rowCount)
+          throw new AccessError(
+            404,
+            "ACTOR_NOT_FOUND",
+            "指定した世界に登録されている人物が見つかりません",
+          );
+        return { worldId, actorId, respawnDisabled: true };
+      }
       case "worlds.configure": {
         const row = (
           await db.query(

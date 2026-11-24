@@ -37,6 +37,7 @@ callbackは接続するクライアントが指定する値に合わせる。ク
 | 世界構築・進行・履歴       | `worlds.create`、`worlds.command`、`worlds.records`                   | `worlds_create`、`worlds_command`、`worlds_records`                   |
 | グラフの読取・管理修正     | `worlds.graph`、`worlds.edit`                                         | `worlds_graph`、`worlds_edit`                                         |
 | 公開・参加・プリセット     | `worlds.configure`、`worlds.join`、`presets.put`                      | `worlds_configure`、`worlds_join`、`presets_put`                      |
+| 人物のリスポーン           | `worlds.disableActorRespawn`                                          | `worlds_disableActorRespawn`                                          |
 | 費用・設定・上限           | `costs.read`、`models.put`、`worldBudgets.put`                        | `costs_read`、`models_put`、`worldBudgets_put`                        |
 | ユーザー・任命・招待・監査 | `users.ban`、`users.role`、`invites.create`、`audit.list`             | `users_ban`、`users_role`、`invites_create`、`audit_list`             |
 | ジョブ・停止・監視・通知   | `jobs.resume`、`runtime.put`、`monitor.samples`、`monitorWebhook.put` | `jobs_resume`、`runtime_put`、`monitor_samples`、`monitorWebhook_put` |

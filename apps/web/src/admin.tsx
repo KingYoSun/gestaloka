@@ -501,6 +501,9 @@ function OperationForm({
       >
         <h2>{catalog[name]}</h2>
         <p className="record-meta">{name}</p>
+        {name === "worlds.disableActorRespawn" && (
+          <p>対象の人物が今後死亡したときに適用します。</p>
+        )}
         <fieldset
           disabled={sending || !!review || completed || !!journal?.command}
         >

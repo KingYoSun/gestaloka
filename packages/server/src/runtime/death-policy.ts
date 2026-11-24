@@ -17,10 +17,13 @@ export async function respawnPolicy(
       death_place_id: string | null;
       disabled_actor_ids: string[];
     }>(
-      `SELECT respawn_enabled,death_place_id,ARRAY(
+      `SELECT c.respawn_enabled,c.death_place_id,ARRAY(
         SELECT actor_id FROM world_join
-        WHERE construction_id=$1 AND respawn_disabled AND actor_id=ANY($2::uuid[])
-      ) AS disabled_actor_ids FROM world_construction WHERE id=$1`,
+        WHERE construction_id=c.id AND respawn_disabled AND actor_id=ANY($2::uuid[])
+        UNION
+        SELECT actor_id FROM world_controlled_actor
+        WHERE world_id=c.world_id AND respawn_disabled AND actor_id=ANY($2::uuid[])
+      ) AS disabled_actor_ids FROM world_construction c WHERE c.id=$1`,
       [worldId, actorIds],
     )
   ).rows[0]!;

@@ -141,6 +141,8 @@ pnpm ops:recover-admin <app-user-id> "復旧理由"
 
 `POST /api/operations`の`worlds.configure`で、管理者が世界の公開・参加受付・公開用名称・説明を変更する。新規世界は非公開・受付停止とし、構築用の初期入力は公開一覧へ自動転記しない。公開状態は新たな参加の受付条件であり、参加済みの人物を削除・再生成する設定ではない。
 
+管理者は「世界・参加設定」の「人物のリスポーンを無効にする」から、世界IDと作成済みの人物IDを指定できる。共通操作名は `worlds.disableActorRespawn`。指定した理由は監査に残る。設定はその人物が今後死亡したときに使う。
+
 管理者の`presets.put`は、名称・公開用説明・生成用の設定本文を保存する。作成時の`expectedVersion`は0、編集時は取得した版を指定する。`presets.list`は管理者向け、`GET /api/catalog/presets`は登録済みの利用者向けで、後者に設定本文は含めない。既存の人物へプリセットの変更を遡及しない。
 
 `GET /api/catalog/worlds`は公開世界と本人が参加済みの世界を返す。`worlds.join`は`worldId`・`presetId`・`presetVersion`を受け取り、公開・受付状態と構築完了を確認して参加生成を開始する。同じ要求IDの再送では新たな人物を作らない。

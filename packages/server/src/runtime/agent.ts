@@ -267,7 +267,7 @@ export class WorldAgent {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS world_controlled_actor (
       world_id uuid NOT NULL,actor_id uuid NOT NULL,PRIMARY KEY(world_id,actor_id));`);
     await this.pool.query(
-      "ALTER TABLE world_controlled_actor ADD COLUMN IF NOT EXISTS npc_active boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS npc_session uuid",
+      "ALTER TABLE world_controlled_actor ADD COLUMN IF NOT EXISTS npc_active boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS npc_session uuid, ADD COLUMN IF NOT EXISTS respawn_disabled boolean NOT NULL DEFAULT false",
     );
     await this.pool.query(
       "ALTER TABLE world_operation ADD COLUMN IF NOT EXISTS approved boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false",
