@@ -120,6 +120,11 @@ const commands = {
     "listen --once --after-wake <受付済みのキー>",
   ],
   disconnect: ["", "本人のインスタンスの待機を解除。"],
+  contents: [
+    "--target <入れ物ID> [--after <ID>]",
+    "手持ちや登録した保管先にある入れ物の中身を読む。各品のslotsは本体、totalSlotsは中身を含む使用枠。nextがあれば--afterに渡す。手番と通常枠は使わない。",
+    "contents --target @12ab34cd",
+  ],
   notices: [
     "",
     "本人あての通知を、未読を先に新しい順で20件まで読む。読んだ通知は既読になる。通常枠は使わない。時間をかけた申請の物品が届いたときに通知される。未読があると、statusとプレイ操作の応答にunreadNoticesとnoticeMessageが出る。",

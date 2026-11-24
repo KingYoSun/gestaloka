@@ -19,6 +19,8 @@ import {
   WorldPlayerPage,
   PlayerReportInput,
   PlayerNotices,
+  InventoryContents,
+  InventoryContentsQuery,
   ViewersInput,
   WaitingContextStatus,
   WaitingEvent,
@@ -747,6 +749,20 @@ async function run() {
       }),
       true,
       id,
+    );
+  }
+  if (command === "contents") {
+    const query = InventoryContentsQuery.parse({
+      containerId: values.target,
+      after: values.after ? references.expand(values.after) : undefined,
+    });
+    const params = new URLSearchParams({ containerId: query.containerId });
+    if (query.after) params.set("after", query.after);
+    return InventoryContents.parse(
+      await http(
+        profile,
+        `/api/worlds/${profile.worldId}/inventory/contents?${params}`,
+      ),
     );
   }
   if (command === "notices")

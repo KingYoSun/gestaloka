@@ -67,9 +67,9 @@ export const api = createFetchClient<paths>({
       ((response.ok && identity !== session.id) ||
         ([401, 403, 404].includes(response.status) &&
           !(
-            storyRequest &&
             identity === session.id &&
-            response.status !== 401
+            ((storyRequest && response.status !== 401) ||
+              (response.status === 404 && path.endsWith("/inventory/contents")))
           )))
     ) {
       expireSession();
