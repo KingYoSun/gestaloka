@@ -129,6 +129,9 @@ const promotionCalls = new WeakMap<
   WorldConstruction,
   Map<string, ReturnType<WorldConstruction["agent"]["model"]["complete"]>>
 >();
+const VehicleCondition = z
+  .object({ movable: z.boolean(), reason: z.string() })
+  .strict();
 const BlueprintDecision = z
   .object({ accepted: z.boolean(), reason: z.string().trim().min(1) })
   .strict();
@@ -7303,6 +7306,12 @@ export class BotPlay {
           w.at,
           input.requestId,
         );
+        if ("vehicleResult" in relocation)
+          await this.#requireVehicleMovable(
+            context,
+            op.subjectId,
+            input.requestId,
+          );
         return { ...relocation, context, recipients: [] };
       }
     }
@@ -7757,6 +7766,12 @@ export class BotPlay {
           externalEffect = true;
         if (op.type === "locate") {
           const location = await checkLocation(db, world, context, actor, op);
+          if (location.travel)
+            await this.#requireVehicleMovable(
+              context,
+              location.travel.vehicleId,
+              input.requestId,
+            );
           if (location.board) {
             boardings.push({
               subjectId: op.subjectId,
@@ -8678,6 +8693,63 @@ export class BotPlay {
       policy.death_criteria,
     ];
   }
+  // 判定で付いた現在の状態がある乗り物だけ、その状態で動けるかをGMが判断する。状態が無ければ判断しない。
+  async #vehicleMovable(
+    context: WorldContext,
+    vehicleId: string,
+    request: string,
+  ) {
+    const states: string[] = [];
+    for (const e of await context.relations(
+      vehicleId,
+      "status",
+      "out",
+      this.now().getTime(),
+      latest,
+    ))
+      if (e.role === "content" && e.text === judged)
+        states.push((await context.node(e.target))!.text);
+    if (!states.length) return { movable: true, reason: "" };
+    const parse = (raw: string) => VehicleCondition.parse(parseOutput(raw));
+    const response = await this.#ask(
+      derivedId(`${request}:vehicle-condition:${vehicleId}`),
+      "world-vehicle-condition",
+      [
+        {
+          role: "system",
+          content:
+            "乗り物が今の状態で、人や荷を乗せて移動できるかだけを判断する。JSON: {movable:真偽,reason:文字列}。statesは乗り物に判定で付いた現在の状態。移動を妨げる損傷や故障があればfalse、移動に差し支えない状態ならtrue。reasonは判断の理由を一文で書く。物語を生成しない。",
+        },
+        {
+          role: "user",
+          content: canonical({
+            vehicle: (await context.node(vehicleId))?.text,
+            states,
+          }),
+        },
+      ],
+      "default",
+      parse,
+    );
+    return parse(response.content);
+  }
+  // 乗り物が損傷で動けなければ、移動の申請を断る。
+  async #requireVehicleMovable(
+    context: WorldContext,
+    vehicleId: string,
+    request: string,
+  ) {
+    const { movable, reason } = await this.#vehicleMovable(
+      context,
+      vehicleId,
+      request,
+    );
+    if (!movable)
+      reject(
+        "VEHICLE_DISABLED",
+        `${(await context.node(vehicleId))?.text ?? "乗り物"}は今の状態では動けません。${reason}`,
+      );
+  }
   // 終える関係のうち、物を持つ関係の持ち主。
   async #holders(context: WorldContext, ids: readonly string[]) {
     const holders = new Set<string>();
@@ -8924,7 +8996,20 @@ export class BotPlay {
           continue;
         const next = { ...move, subjectId: c.npc_id };
         await plan.context.assertMovable(c.npc_id);
-        await checkLocation(db, world, plan.context, c.actor_id, next);
+        const { travel } = await checkLocation(
+          db,
+          world,
+          plan.context,
+          c.actor_id,
+          next,
+        );
+        // 損傷で動けない乗り物は追従せず、その場に残る。
+        if (
+          travel &&
+          !(await this.#vehicleMovable(plan.context, travel.vehicleId, request))
+            .movable
+        )
+          continue;
         follows.push(next);
       }
       plan.at = await this.#append(

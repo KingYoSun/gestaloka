@@ -15608,3 +15608,59 @@ test("場所の物が判定で外れると、GMが選んだ場所の説明を終
   expect(await texts()).toContain(rest);
   expect(await texts()).not.toContain(second);
 });
+
+test("判定で付いた損傷のある乗り物は、GMが動けないと判断すれば運行できず、同行でも付いてこない", async () => {
+  const f = await fixture();
+  const [vehicleId, rider] = f.actors as [string, string];
+  await vehicleFixture(f, { npcId: vehicleId });
+  const at = (id: string) => directPlaces(f.store.context(f.graph), id);
+  // 損傷のない乗り物の移動では、GMに尋ねない。
+  await f.send(0, locate(vehicleId, f.far));
+  await f.send(0, locate(vehicleId, f.place));
+  expect(f.calls).not.toHaveBeenCalled();
+  const damage: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  const broken = randomUUID();
+  damage.nodes.push({ id: broken, kind: "script", text: "車輪が砕けている。" });
+  damage.edges.push({
+    id: randomUUID(),
+    kind: "status",
+    role: "content",
+    text: "judged",
+    source: vehicleId,
+    target: broken,
+    period: { from: 0 },
+  });
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    { commitId: randomUUID(), at: 0, changes: damage },
+  );
+  let movable = false;
+  f.calls.mockImplementation(async (id, role, messages) => {
+    if (role !== "world-vehicle-condition") return answer(id, sure);
+    expect(String(messages[1]!.content)).toContain("車輪が砕けている。");
+    return answer(id, { movable, reason: "車輪が砕けている" });
+  });
+  await expect(f.send(0, locate(vehicleId, f.far))).rejects.toMatchObject({
+    code: "VEHICLE_DISABLED",
+  });
+  expect(await at(vehicleId)).toEqual([f.place]);
+  // 同行している乗り物（サーバー担当のNPC）は、動けると判断されれば追従し、動けなければその場に残る。
+  await setNpc(f, 0, "server");
+  await isolated.databases.postgres.query(
+    "UPDATE app_user SET role='admin' WHERE id=$1",
+    [f.people[0]!.id],
+  );
+  await f.send(0, { command: "contact", targetId: rider });
+  await isolated.databases.postgres.query(
+    "INSERT INTO bot_companion(world_id,npc_id,actor_id) VALUES($1,$2,$3)",
+    [f.world, vehicleId, rider],
+  );
+  movable = true;
+  await f.send(1, locate(rider, f.far));
+  expect(await at(vehicleId)).toEqual([f.far]);
+  movable = false;
+  await f.send(1, locate(rider, f.place));
+  expect(await at(rider)).toEqual([f.place]);
+  expect(await at(vehicleId)).toEqual([f.far]);
+});
