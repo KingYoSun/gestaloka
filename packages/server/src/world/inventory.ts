@@ -6,12 +6,22 @@ import {
   type WorldEdge,
   type WorldNode,
 } from "./model.js";
+import {
+  bundleDiscount,
+  discountDeltas,
+  InventoryBundleError,
+  parseBundle,
+  saveBundles,
+  type Bundle,
+  type BundleChange,
+} from "./inventory-bundles.js";
 
 type Item = Extract<WorldNode, { kind: "existence" }>;
 export const defaultInventoryLimits = {
   carrySlots: 30,
   skillSlots: 50,
   storageSlots: 150,
+  bundleSlots: 15,
   unitsPerSlot: 30,
 };
 export type InventoryLimits = typeof defaultInventoryLimits;
@@ -125,6 +135,8 @@ type InventoryNode = {
   item?: Item;
   parent?: string;
   used: number;
+  discount: number;
+  bundle?: Bundle;
   storage: boolean;
 };
 
@@ -157,7 +169,9 @@ async function inventorySnapshot(
      OPTIONAL MATCH (p:WorldNode {kind:'existence'})-[h:has]->(n)
      WHERE h.role IS NULL AND h.validTo IS NULL
      WITH n,p,storage WHERE p IS NOT NULL OR storage OR n.id IN $actors
-     RETURN n.id AS id, n.data AS data, p.id AS parent, storage`,
+     OPTIONAL MATCH (b:InventoryBundle {worldId:$worldId,id:n.inventoryBundleId,storageId:p.id})
+     RETURN n.id AS id, n.data AS data, p.id AS parent, storage,
+       b {.id,.storageId,.label,.itemCount,.normalSlots} AS bundle`,
     { worldId, actors },
   );
   return new Map(
@@ -167,6 +181,7 @@ async function inventorySnapshot(
         item: JSON.parse(row.get("data")) as Item,
         parent: row.get("parent") as string | null,
         storage: row.get("storage") as boolean,
+        bundle: row.get("bundle") as Bundle | null,
       },
     ]),
   );
@@ -178,7 +193,8 @@ function snapshotTotals(
   standard = false,
 ) {
   const total = new Map<string, number>();
-  for (const { item, parent } of items.values()) {
+  const bundles = new Map<string, Bundle>();
+  for (const { item, parent, bundle } of items.values()) {
     const slots = itemSlots(
       standard ? { ...item, unitsPerSlot: undefined } : item,
       stackSize,
@@ -188,8 +204,24 @@ function snapshotTotals(
       total.set(p, (total.get(p) ?? 0) + slots);
       seen.add(p);
     }
+    if (bundle) {
+      const tally = bundles.get(bundle.id) ?? {
+        ...bundle,
+        itemCount: 0,
+        normalSlots: 0,
+      };
+      tally.itemCount++;
+      tally.normalSlots += slots;
+      bundles.set(bundle.id, tally);
+    }
   }
-  return total;
+  const discounts = new Map<string, number>();
+  for (const bundle of bundles.values())
+    discounts.set(
+      bundle.storageId,
+      (discounts.get(bundle.storageId) ?? 0) + bundleDiscount(bundle),
+    );
+  return { total, bundles: [...bundles.values()], discounts };
 }
 
 export async function inventoryAudit(
@@ -201,7 +233,11 @@ export async function inventoryAudit(
 ) {
   const { limits, enabled } = await inventoryState(tx, worldId);
   const items = await inventorySnapshot(tx, worldId, actors);
-  const totals = snapshotTotals(items, limits.unitsPerSlot, standard);
+  const { total, discounts } = snapshotTotals(
+    items,
+    limits.unitsPerSlot,
+    standard,
+  );
   const people = new Set(actors);
   return {
     limits,
@@ -212,7 +248,8 @@ export async function inventoryAudit(
         const limitSlots = storage
           ? (item.storageLimitSlots ?? limits.storageSlots)
           : limits.carrySlots;
-        const usedSlots = totals.get(item.id) ?? 0;
+        const usedSlots =
+          (total.get(item.id) ?? 0) - (discounts.get(item.id) ?? 0);
         return {
           id: item.id,
           label: item.text,
@@ -246,9 +283,11 @@ export async function inventoryState(tx: ManagedTransaction, worldId: string) {
   const { records } = await tx.run(
     `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
      RETURN CASE WHEN g.inventoryReady OR NOT coalesce(g.inventoryHolderIndexed,false)
+       OR NOT coalesce(g.inventoryBundlesIndexed,false)
        THEN null ELSE g.inventoryCacheUnits END AS cacheUnits,
        coalesce(g.inventoryEnabled,false) AS enabled,
-       g.inventoryCarrySlots AS carrySlots,g.inventoryStorageSlots AS storageSlots,g.inventoryUnitsPerSlot AS unitsPerSlot,g.skillSlots AS skillSlots`,
+       g.inventoryCarrySlots AS carrySlots,g.inventoryStorageSlots AS storageSlots,g.inventoryBundleSlots AS bundleSlots,
+       g.inventoryUnitsPerSlot AS unitsPerSlot,g.skillSlots AS skillSlots`,
     { worldId },
   );
   const row = records[0];
@@ -265,6 +304,9 @@ export async function inventoryState(tx: ManagedTransaction, worldId: string) {
       storageSlots: Number(
         row?.get("storageSlots") ?? defaultInventoryLimits.storageSlots,
       ),
+      bundleSlots: Number(
+        row?.get("bundleSlots") ?? defaultInventoryLimits.bundleSlots,
+      ),
       unitsPerSlot: Number(
         row?.get("unitsPerSlot") ?? defaultInventoryLimits.unitsPerSlot,
       ),
@@ -279,16 +321,22 @@ export async function initializeInventory(
   const { limits, enabled, cacheUnits } = await inventoryState(tx, worldId);
   if (cacheUnits !== limits.unitsPerSlot) {
     const items = await inventorySnapshot(tx, worldId);
-    const total = snapshotTotals(items, limits.unitsPerSlot);
+    const { total, bundles, discounts } = snapshotTotals(
+      items,
+      limits.unitsPerSlot,
+    );
     await tx.run(
       `UNWIND $rows AS row MATCH (n:WorldNode {worldId:$worldId,id:row.id})
-       SET n.inventorySlots=row.slots,n.inventoryStackKey=row.stack,n.inventoryHolder=row.holder`,
+       SET n.inventorySlots=row.slots,n.inventoryStackKey=row.stack,n.inventoryHolder=row.holder,
+           n.inventoryDiscount=row.discount,n.inventoryLooseHolder=row.loose`,
       {
         worldId,
         rows: [...new Set([...total.keys(), ...items.keys()])].map((id) => ({
           id,
           slots: total.get(id) ?? 0,
+          discount: discounts.get(id) ?? null,
           holder: items.get(id)?.parent ?? null,
+          loose: items.get(id)?.bundle ? null : (items.get(id)?.parent ?? null),
           stack: items.has(id)
             ? inventoryStackKey(
                 items.get(id)!.item,
@@ -299,9 +347,22 @@ export async function initializeInventory(
         })),
       },
     );
+    if (bundles.length)
+      await tx.run(
+        `UNWIND $rows AS row MATCH (b:InventoryBundle {worldId:$worldId,id:row.id})
+         SET b.normalSlots=row.normalSlots,b.itemCount=row.itemCount`,
+        {
+          worldId,
+          rows: bundles.map(({ id, normalSlots, itemCount }) => ({
+            id,
+            normalSlots,
+            itemCount,
+          })),
+        },
+      );
     await tx.run(
       `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
-       SET g.inventoryCacheUnits=$stackSize,g.inventoryHolderIndexed=true REMOVE g.inventoryReady`,
+       SET g.inventoryCacheUnits=$stackSize,g.inventoryHolderIndexed=true,g.inventoryBundlesIndexed=true REMOVE g.inventoryReady`,
       { worldId, stackSize: limits.unitsPerSlot },
     );
   }
@@ -341,7 +402,10 @@ export async function inventoryChange(
       `MATCH (n:WorldNode {worldId:$worldId,id:$id,kind:'existence'})
        OPTIONAL MATCH (p:WorldNode {kind:'existence'})-[h:has]->(n)
        WHERE h.role IS NULL AND h.validTo IS NULL
+       OPTIONAL MATCH (b:InventoryBundle {worldId:$worldId,id:n.inventoryBundleId,storageId:p.id})
        RETURN n.data AS data, p.id AS parent, coalesce(n.inventorySlots,0) AS used,
+       coalesce(n.inventoryDiscount,0) AS discount,
+       b {.id,.storageId,.label,.itemCount,.normalSlots} AS bundle,
        EXISTS { MATCH ()-[u:has {role:'use'}]->(n) WHERE u.validTo IS NULL } AS storage LIMIT 1`,
       { worldId, id },
     );
@@ -351,9 +415,13 @@ export async function inventoryChange(
           item: JSON.parse(row.get("data")) as Item,
           parent: row.get("parent") ?? undefined,
           used: Number(row.get("used")),
+          discount: Number(row.get("discount")),
+          ...(row.get("bundle")
+            ? { bundle: parseBundle(row.get("bundle")) }
+            : {}),
           storage: row.get("storage") as boolean,
         }
-      : { used: 0, storage: false };
+      : { used: 0, discount: 0, storage: false };
     before.set(id, result);
     return result;
   };
@@ -361,6 +429,7 @@ export async function inventoryChange(
     parent.has(id) ? parent.get(id) : (await read(id)).parent;
   const deltas = new Map<string, number>();
   const entries = [];
+  const bundles = new Map<string, BundleChange>();
   const add = async (
     id: string | undefined,
     delta: number,
@@ -382,21 +451,35 @@ export async function inventoryChange(
     const oldSlots = prior.item
       ? itemSlots(prior.item, limits.unitsPerSlot)
       : 0;
-    if (prior.parent === to) {
-      const delta = itemSlots(next, limits.unitsPerSlot) - oldSlots;
+    const nextSlots = itemSlots(next, limits.unitsPerSlot);
+    const moved = prior.parent !== to;
+    if (moved && to) {
+      const target = await read(to);
+      if (target.bundle && target.parent === (await nextParent(to)))
+        throw new InventoryBundleError(
+          "バンドルに入っている品の中には物を入れられません",
+        );
+    }
+    if (prior.bundle && (moved || oldSlots !== nextSlots)) {
+      const before = prior.bundle;
+      const change = bundles.get(before.id) ?? { before, after: { ...before } };
+      change.after.normalSlots += moved ? -oldSlots : nextSlots - oldSlots;
+      if (moved) change.after.itemCount--;
+      bundles.set(before.id, change);
+    }
+    if (!moved) {
+      const delta = nextSlots - oldSlots;
       if (delta) await add(to, delta, new Set([id]));
     } else {
       await add(prior.parent, -(oldSlots + prior.used), new Set([id]));
-      await add(
-        to,
-        itemSlots(next, limits.unitsPerSlot) + prior.used,
-        new Set([id]),
-      );
+      await add(to, nextSlots + prior.used, new Set([id]));
     }
     entries.push({
       id,
       holder: to ?? null,
+      loose: moved || !prior.bundle ? (to ?? null) : null,
       stack: inventoryStackKey(next, limits.unitsPerSlot, to),
+      ...(moved && prior.bundle ? { clearBundle: true } : {}),
     });
   }
   const registering = new Set(
@@ -407,8 +490,19 @@ export async function inventoryChange(
       )
       .map((e) => e.target),
   );
+  const bundleChanges = [...bundles.values()];
+  for (const { before, after } of bundleChanges)
+    if (after.normalSlots > Math.max(before.normalSlots, limits.bundleSlots))
+      throw new InventoryBundleError(
+        `バンドルに入れられるのは通常の使用枠で${limits.bundleSlots}枠分までです`,
+      );
   if (enforce) {
-    const growing = [...deltas].filter(([, delta]) => delta > 0);
+    const discounts = discountDeltas(bundleChanges);
+    const growing = [...new Set([...deltas.keys(), ...discounts.keys()])]
+      .map(
+        (id) => [id, (deltas.get(id) ?? 0) - (discounts.get(id) ?? 0)] as const,
+      )
+      .filter(([, delta]) => delta > 0);
     const people = growing.length
       ? await actors(growing.map(([id]) => id))
       : new Set<string>();
@@ -421,14 +515,15 @@ export async function inventoryChange(
           : people.has(holderId)
             ? limits.carrySlots
             : undefined;
-      const projectedSlots = old.used + delta;
+      const usedSlots = old.used - old.discount;
+      const projectedSlots = usedSlots + delta;
       if (
         limitSlots !== undefined &&
-        projectedSlots > Math.max(limitSlots, old.used)
+        projectedSlots > Math.max(limitSlots, usedSlots)
       )
         throw new InventoryCapacityExceeded({
           holderId,
-          usedSlots: old.used,
+          usedSlots,
           limitSlots,
           projectedSlots,
         });
@@ -437,13 +532,17 @@ export async function inventoryChange(
   const slots = new Map<string, number>();
   for (const [id, delta] of deltas)
     if (delta) slots.set(id, (await read(id)).used + delta);
-  return { slots, entries };
+  return { slots, entries, bundleChanges };
 }
 
 export async function saveInventory(
   tx: ManagedTransaction,
   worldId: string,
-  { slots, entries }: Awaited<ReturnType<typeof inventoryChange>>,
+  {
+    slots,
+    entries,
+    bundleChanges,
+  }: Awaited<ReturnType<typeof inventoryChange>>,
 ) {
   if (slots.size)
     await tx.run(
@@ -454,7 +553,9 @@ export async function saveInventory(
   if (entries.length)
     await tx.run(
       `UNWIND $rows AS row MATCH (n:WorldNode {worldId:$worldId,id:row.id})
-       SET n.inventoryStackKey=row.stack,n.inventoryHolder=row.holder`,
+       SET n.inventoryStackKey=row.stack,n.inventoryHolder=row.holder,n.inventoryLooseHolder=row.loose
+       FOREACH (_ IN CASE WHEN row.clearBundle THEN [1] ELSE [] END | REMOVE n.inventoryBundleId)`,
       { worldId, rows: entries },
     );
+  await saveBundles(tx, worldId, bundleChanges);
 }

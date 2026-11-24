@@ -3,6 +3,7 @@ import { npcReport } from "../runtime/npc-mode.js";
 import { BotPlay } from "../runtime/bot-play.js";
 import type {
   PlayCommand,
+  InventoryBundleCommand,
   PlayerReportInput,
   ViewersInput,
 } from "@gestaloka/contracts";
@@ -34,7 +35,6 @@ import {
 } from "../runtime/construction.js";
 import { worldNow } from "../world/model.js";
 import { WorldConflict } from "../world/store.js";
-import { readInventoryContents } from "../world/belongings.js";
 import { WorldScenes, type SceneRow } from "../runtime/scene.js";
 import { sceneAnchors } from "../runtime/scene-data.js";
 import { requireMember } from "./operations.js";
@@ -306,9 +306,8 @@ export class WorldAccess {
       this.pool,
       actorId,
     );
-    const world = await this.botPlay.world(id);
-    const contents = await readInventoryContents(
-      this.botPlay.store.context(world.id),
+    const contents = await this.botPlay.inventoryContents(
+      id,
       grant.actor_id!,
       container,
       after,
@@ -317,9 +316,24 @@ export class WorldAccess {
       throw new AccessError(
         404,
         "CONTAINER_NOT_AVAILABLE",
-        "持ち物や登録した保管先にある入れ物を指定してください",
+        "持ち物や登録した保管先にある入れ物、またはバンドルを指定してください",
       );
     return contents;
+  }
+  async editInventoryBundle(
+    subject: string,
+    id: string,
+    input: z.infer<typeof InventoryBundleCommand>,
+    actorId?: string,
+  ) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    return this.botPlay.editInventoryBundle(id, grant.actor_id!, input);
   }
   private async botStatusActor(
     subject: string,

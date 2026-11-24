@@ -5,6 +5,13 @@ import { z } from "zod";
 import { InstallationPolicy } from "@gestaloka/contracts";
 import { routeEndpoints } from "./locations.js";
 import {
+  editBundle,
+  InventoryBundleError,
+  parseBundle,
+  readBundle,
+  type BundleCommand,
+} from "./inventory-bundles.js";
+import {
   defaultInventoryLimits,
   checkSkillChange,
   skillCapacityError,
@@ -281,8 +288,9 @@ export class WorldContext {
     return this.#read(`inventory:${holder}`, async (tx) => {
       const { records } = await tx.run(
         `UNWIND $ids AS id MATCH (n:WorldNode {worldId:$worldId,id:id})
-         RETURN id,coalesce(n.inventorySlots,0) AS slots`,
-        { worldId: this.worldId, ids },
+         RETURN id,coalesce(n.inventorySlots,0) -
+           CASE WHEN id=$holder THEN coalesce(n.inventoryDiscount,0) ELSE 0 END AS slots`,
+        { worldId: this.worldId, holder, ids },
       );
       return new Map(
         records.map((r) => [r.get("id") as string, Number(r.get("slots"))]),
@@ -290,12 +298,75 @@ export class WorldContext {
     });
   }
 
+  async inventoryBundles(storage: string) {
+    return this.#read(`inventory:${storage}`, async (tx) => {
+      const { records } = await tx.run(
+        `MATCH (b:InventoryBundle {worldId:$worldId,storageId:$storage})
+         RETURN b {.id,.storageId,.label,.normalSlots,.itemCount} AS bundle ORDER BY b.id`,
+        { worldId: this.worldId, storage },
+      );
+      return records.map((row) => ({
+        ...parseBundle(row.get("bundle")),
+        slots: 1,
+      }));
+    });
+  }
+
+  async looseStorageItems(storage: string) {
+    await this.prepareInventory();
+    return this.#read(relationKey(storage, "has", "out"), async (tx) => {
+      const { records } = await tx.run(
+        `MATCH (n:WorldNode {worldId:$worldId,inventoryLooseHolder:$storage})
+         USING INDEX n:WorldNode(worldId,inventoryLooseHolder)
+         MATCH (:WorldNode {worldId:$worldId,id:$storage})-[r:has]->(n)
+         WHERE r.role IS NULL AND r.validTo IS NULL
+         RETURN r.data AS data`,
+        { worldId: this.worldId, storage },
+      );
+      return records.map((row) => WorldEdge.parse(JSON.parse(row.get("data"))));
+    });
+  }
+
+  async isBundled(id: string, holder?: string) {
+    if (!holder) return false;
+    return this.#read(`inventory:${holder}`, async (tx) => {
+      const { records } = await tx.run(
+        `MATCH (n:WorldNode {worldId:$worldId,id:$id})
+         RETURN n.inventoryBundleId IS NOT NULL AS bundled`,
+        { worldId: this.worldId, id },
+      );
+      return Boolean(records[0]?.get("bundled"));
+    });
+  }
+
+  async editInventoryBundle(
+    actor: string,
+    input: BundleCommand,
+    here: boolean,
+  ) {
+    return this.inventoryRead(async (tx, { limits, enabled }) =>
+      editBundle(tx, this.worldId, actor, input, limits, enabled, async () => {
+        if (!here)
+          throw new InventoryBundleError(
+            "保管先へ移動してから整理してください",
+          );
+        for (const { key, version } of [...this.dependencies].sort((a, b) =>
+          a.key.localeCompare(b.key),
+        ))
+          if ((await lock(tx, this.worldId, key)) !== version)
+            throw new WorldConflict("整理する前に本人の所在地が変わりました");
+      }),
+    );
+  }
+
   async inventoryContents(actor: string, container: string, after?: string) {
     return this.inventoryRead(async (tx, { limits }) => {
       const worldId = this.worldId;
+      const bundle = await readBundle(tx, worldId, container, actor);
       const seen = new Set<string>();
       let within = container;
-      while (!seen.has(within)) {
+      let allowed = !!bundle;
+      while (!allowed && !seen.has(within)) {
         seen.add(within);
         const { records } = await tx.run(
           `MATCH (n:WorldNode {worldId:$worldId,id:$within})
@@ -309,36 +380,33 @@ export class WorldContext {
         const row = records[0];
         if (!row) return;
         within = row.get("parent") as string;
-        if (within === actor || row.get("registered")) {
-          const pageSize = 50;
-          // 複合索引の順で読み、残りの品を並べ替えずにページ末尾で止める。
-          const { records: page } = await tx.run(
-            `MATCH (n:WorldNode {worldId:$worldId,inventoryHolder:$container})
-             USING INDEX n:WorldNode(worldId,inventoryHolder,id)
-             WHERE n.id > $after
-             WITH n ORDER BY n.worldId,n.inventoryHolder,n.id LIMIT $limit
-             RETURN n.data AS data,coalesce(n.inventorySlots,0) AS slots`,
-            {
-              worldId,
-              container,
-              after: after ?? "",
-              limit: int(pageSize + 1),
-            },
-          );
-          const items = page.slice(0, pageSize).map((r) => ({
-            node: WorldNode.parse(JSON.parse(r.get("data"))) as Extract<
-              WorldNode,
-              { kind: "existence" }
-            >,
-            contentsSlots: Number(r.get("slots")),
-          }));
-          return {
-            items,
-            next: page.length > pageSize ? items.at(-1)!.node.id : null,
-            limits,
-          };
-        }
+        allowed = within === actor || row.get("registered");
       }
+      if (!allowed) return;
+      const key = bundle ? "inventoryBundleId" : "inventoryHolder";
+      const pageSize = 50;
+      // 複合索引の順で読み、残りの品を並べ替えずにページ末尾で止める。
+      const { records: page } = await tx.run(
+        `MATCH (n:WorldNode {worldId:$worldId,${key}:$container})
+         USING INDEX n:WorldNode(worldId,${key},id)
+         WHERE n.id > $after
+         WITH n ORDER BY n.worldId,n.${key},n.id LIMIT $limit
+         RETURN n.data AS data,coalesce(n.inventorySlots,0) AS slots`,
+        { worldId, container, after: after ?? "", limit: int(pageSize + 1) },
+      );
+      const items = page.slice(0, pageSize).map((r) => ({
+        node: WorldNode.parse(JSON.parse(r.get("data"))) as Extract<
+          WorldNode,
+          { kind: "existence" }
+        >,
+        contentsSlots: Number(r.get("slots")),
+      }));
+      return {
+        items,
+        next: page.length > pageSize ? items.at(-1)!.node.id : null,
+        limits,
+        isBundle: !!bundle,
+      };
     });
   }
 
@@ -347,8 +415,10 @@ export class WorldContext {
     return this.#read(relationKey(holder, "has", "out"), async (tx) => {
       const { records } = await tx.run(
         `MATCH (n:WorldNode {worldId:$worldId,inventoryStackKey:$key})
-         WHERE NOT n.id IN $exclude RETURN n.id AS id ORDER BY n.id LIMIT 1`,
-        { worldId: this.worldId, key, exclude },
+         WHERE NOT n.id IN $exclude
+         AND NOT EXISTS { MATCH (:InventoryBundle {worldId:$worldId,id:n.inventoryBundleId,storageId:$holder}) }
+         RETURN n.id AS id ORDER BY n.id LIMIT 1`,
+        { worldId: this.worldId, key, exclude, holder },
       );
       return records[0]?.get("id") as string | undefined;
     });
@@ -357,7 +427,7 @@ export class WorldContext {
   async prepareInventory() {
     const { records } = await this.driver.executeQuery(
       `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
-       WHERE NOT coalesce(g.inventoryReady,false) AND g.inventoryHolderIndexed
+       WHERE NOT coalesce(g.inventoryReady,false) AND g.inventoryHolderIndexed AND g.inventoryBundlesIndexed
          AND g.inventoryCacheUnits=coalesce(g.inventoryUnitsPerSlot,$defaultUnits) RETURN g.key`,
       {
         worldId: this.worldId,
@@ -1152,6 +1222,7 @@ export class WorldStore {
       ["WorldRun", "runId"],
       ["WorldReceipt", "commitId"],
       ["WorldItemReservation", "id"],
+      ["InventoryBundle", "id"],
     ]) {
       await this.driver.executeQuery(
         `CREATE CONSTRAINT ${label}_identity IF NOT EXISTS FOR (n:${label}) REQUIRE (n.worldId, n.${field}) IS UNIQUE`,
@@ -1173,6 +1244,10 @@ export class WorldStore {
       "FOR (n:WorldPickup) ON (n.worldId,n.noticePending)",
       "FOR (n:WorldNode) ON (n.worldId,n.inventoryStackKey)",
       "FOR (n:WorldNode) ON (n.worldId,n.inventoryHolder,n.id)",
+      "FOR (n:WorldNode) ON (n.worldId,n.inventoryBundleId,n.id)",
+      "FOR (n:WorldNode) ON (n.worldId,n.inventoryLooseHolder)",
+      "FOR (b:InventoryBundle) ON (b.worldId,b.storageId,b.id)",
+      "FOR (r:InventoryBundleRequest) ON (r.worldId,r.actor,r.id)",
     ])
       await this.driver.executeQuery("CREATE INDEX IF NOT EXISTS " + index);
     await this.driver.executeQuery(
@@ -1217,6 +1292,7 @@ export class WorldStore {
         skillSlots: limits?.skillSlots ?? state.limits.skillSlots,
         carrySlots: limits?.carrySlots ?? state.limits.carrySlots,
         storageSlots: limits?.storageSlots ?? state.limits.storageSlots,
+        bundleSlots: limits?.bundleSlots ?? state.limits.bundleSlots,
         unitsPerSlot: limits?.unitsPerSlot ?? state.limits.unitsPerSlot,
       };
       const active = enabled ?? state.enabled;
@@ -1225,12 +1301,14 @@ export class WorldStore {
         next.skillSlots !== state.limits.skillSlots ||
         next.carrySlots !== state.limits.carrySlots ||
         next.storageSlots !== state.limits.storageSlots ||
+        next.bundleSlots !== state.limits.bundleSlots ||
         next.unitsPerSlot !== state.limits.unitsPerSlot;
       if (!changed && !limits) return state;
       await tx.run(
         `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
          SET g.inventoryEnabled=$enabled, g.inventoryCarrySlots=$carrySlots,
-          g.inventoryStorageSlots=$storageSlots, g.inventoryUnitsPerSlot=$unitsPerSlot,g.skillSlots=$skillSlots,
+          g.inventoryStorageSlots=$storageSlots, g.inventoryUnitsPerSlot=$unitsPerSlot,
+          g.inventoryBundleSlots=$bundleSlots,g.skillSlots=$skillSlots,
           g.version=g.version+$versionIncrease`,
         {
           worldId,

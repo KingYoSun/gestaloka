@@ -7,6 +7,7 @@ import {
 } from "./model.js";
 import type { Lease, WorldContext, WorldStore } from "./store.js";
 import type { Dependency } from "./store.js";
+import { directPlaces } from "./locations.js";
 import {
   InventoryCapacityExceeded,
   inventoryStackKey,
@@ -296,7 +297,11 @@ export async function planBelongings(
         part.count ?? (source.kind === "existence" ? source.count : undefined);
     // 移った先に、呼称と系列が同じ個数つきの物品があれば、そこへ足して物品を増やさない。
     let merged: WorldNode | undefined;
-    if (count && source.kind === "existence") {
+    if (
+      count &&
+      source.kind === "existence" &&
+      !(await context.isBundled(part.item, held[0]?.source))
+    ) {
       const standard = (stackSize ??= (await context.inventoryLimits())
         .unitsPerSlot);
       const key = inventoryStackKey(source, standard, part.to)!;
@@ -323,7 +328,8 @@ export async function planBelongings(
             node.kind !== "existence" ||
             moving.has(node.id) ||
             released.has(node.id) ||
-            inventoryStackKey(node, standard, part.to) !== key
+            inventoryStackKey(node, standard, part.to) !== key ||
+            (await context.isBundled(node.id, part.to))
           )
             continue;
           if (
@@ -580,16 +586,20 @@ export async function readInventoryContents(
   actor: string,
   container: string,
   after?: string,
+  states?: (id: string) => Promise<string[]>,
 ) {
   const page = await context.inventoryContents(actor, container, after);
   if (!page) return;
   return {
-    items: page.items.map(({ node, contentsSlots }) => ({
-      id: node.id,
-      label: node.text,
-      ...(node.count ? { count: node.count } : {}),
-      ...itemUsage(node, page.limits.unitsPerSlot, contentsSlots),
-    })),
+    items: await Promise.all(
+      page.items.map(async ({ node, contentsSlots }) => ({
+        id: node.id,
+        label: node.text,
+        ...(node.count ? { count: node.count } : {}),
+        ...itemUsage(node, page.limits.unitsPerSlot, contentsSlots),
+        ...(page.isBundle && states ? { states: await states(node.id) } : {}),
+      })),
+    ),
     next: page.next,
   };
 }
@@ -646,16 +656,24 @@ export async function readBelongings(
   includeCapacity = !viewer && at === LATEST,
 ) {
   const limits = includeCapacity ? await context.inventoryLimits() : undefined;
-  const facts = async (holder: string, role: WorldEdge["role"]) =>
-    (await context.relations(holder, "has", "out", at))
-      .filter((edge) => edge.role === role)
+  const facts = async (
+    holder: string,
+    role: WorldEdge["role"],
+    loose = false,
+  ) =>
+    (loose
+      ? await context.looseStorageItems(holder)
+      : (await context.relations(holder, "has", "out", at)).filter(
+          (edge) => edge.role === role,
+        )
+    )
       // 要約と同じく、成立した順に並べる。
       .sort(
         (x, y) => x.period.from - y.period.from || x.id.localeCompare(y.id),
       );
-  const contents = async (holder: string) => {
+  const contents = async (holder: string, storage = false) => {
     const held = [];
-    for (const edge of await facts(holder, undefined)) {
+    for (const edge of await facts(holder, undefined, storage && !!limits)) {
       const node = await context.node(edge.target, at);
       if (
         node?.kind !== "existence" ||
@@ -685,10 +703,13 @@ export async function readBelongings(
   };
   // 登録した保管先。中身はどこからでも読める。
   const storages = [];
-  for (const edge of await facts(subject, "use")) {
+  const uses = await facts(subject, "use");
+  const places =
+    limits && uses.length ? await directPlaces(context, subject) : [];
+  for (const edge of uses) {
     const node = await context.node(edge.target, at);
     if (viewer && !visibleTo(node, viewer, false)) continue;
-    const { items, usedSlots } = await contents(edge.target);
+    const { items, usedSlots } = await contents(edge.target, true);
     storages.push({
       id: edge.target,
       label: node?.text ?? "",
@@ -697,6 +718,9 @@ export async function readBelongings(
       ...(!limits
         ? {}
         : {
+            bundles: await context.inventoryBundles(edge.target),
+            bundleLimitSlots: limits.bundleSlots,
+            organizeHere: places.includes(edge.target),
             capacity: {
               usedSlots,
               limitSlots:

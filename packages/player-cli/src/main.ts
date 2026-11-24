@@ -21,6 +21,7 @@ import {
   PlayerNotices,
   InventoryContents,
   InventoryContentsQuery,
+  InventoryBundleCommand,
   ViewersInput,
   WaitingContextStatus,
   WaitingEvent,
@@ -361,7 +362,9 @@ async function send(
     };
   }
   return {
-    ...(saved.path.endsWith("/session") || saved.path.endsWith("/stories")
+    ...(saved.path.endsWith("/session") ||
+    saved.path.endsWith("/stories") ||
+    saved.path.endsWith("/inventory/bundles")
       ? {}
       : await status(profile).catch((error) => {
           if (saved.path.endsWith("/reports")) return { state: "report" };
@@ -763,6 +766,23 @@ async function run() {
         profile,
         `/api/worlds/${profile.worldId}/inventory/contents?${params}`,
       ),
+    );
+  }
+  if (command === "bundle") {
+    const id = randomUUID();
+    const input = InventoryBundleCommand.parse({
+      ...(references.convert(
+        JSON.parse(await readFile(z.string().parse(values.file), "utf8")),
+        true,
+      ) as object),
+      requestId: id,
+    });
+    return submit(
+      profile,
+      `/api/worlds/${profile.worldId}/inventory/bundles`,
+      input,
+      true,
+      id,
     );
   }
   if (command === "notices")

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { DiagramFlowHorizontal, PanelLeft, PanelRight, X } from "lucide-react";
 import { Dialog, Tabs, Tooltip } from "radix-ui";
 import { z } from "zod";
 import {
   DeferredApplication,
   ExchangeOffer,
+  type InventoryBundleCommand,
   PlayerCharacter,
   type PlayerNotices,
 } from "@gestaloka/contracts";
@@ -18,7 +19,7 @@ import {
 } from "./player-icons.js";
 import { RichText } from "./RichText.js";
 import { Notice, Problem } from "./presentation.js";
-import { api } from "./api.js";
+import { $api, api } from "./api.js";
 
 const Item = z.object({
   id: z.uuid().optional(),
@@ -27,20 +28,32 @@ const Item = z.object({
   seriesId: z.uuid().optional(),
   slots: z.number().optional(),
   totalSlots: z.number().optional(),
+  states: z.array(z.string()).optional(),
 });
 const Capacity = z.object({ usedSlots: z.number(), limitSlots: z.number() });
+const Storage = z.object({
+  id: z.uuid().optional(),
+  label: z.string(),
+  items: z.array(Item),
+  capacity: Capacity.optional(),
+  bundles: z
+    .array(
+      z.object({
+        id: z.uuid(),
+        label: z.string(),
+        itemCount: z.number(),
+        normalSlots: z.number(),
+      }),
+    )
+    .default([]),
+  bundleLimitSlots: z.number().optional(),
+  organizeHere: z.boolean().optional(),
+});
 export const Belongings = z.object({
   items: z.array(Item),
   capacity: Capacity.optional(),
   skillCapacity: Capacity.optional(),
-  storages: z.array(
-    z.object({
-      id: z.uuid().optional(),
-      label: z.string(),
-      items: z.array(Item),
-      capacity: Capacity.optional(),
-    }),
-  ),
+  storages: z.array(Storage),
   skills: z.array(z.object({ id: z.uuid().optional(), text: z.string() })),
 });
 const Profile = z.object({ actorId: z.string(), profile: z.array(z.string()) });
@@ -275,12 +288,14 @@ function TextList({ items, empty }: { items: string[]; empty: string }) {
 }
 
 type InventoryViewer = { world: string; actor: string };
+type ItemActions = (item: z.infer<typeof Item>) => ReactNode;
 
 function Contents({
   world,
   actor,
   container,
-}: InventoryViewer & { container: string }) {
+  actions,
+}: InventoryViewer & { container: string; actions?: ItemActions }) {
   const query = useInfiniteQuery({
     queryKey: ["inventory-contents", world, actor, container],
     initialPageParam: undefined as string | undefined,
@@ -311,6 +326,7 @@ function Contents({
           actor={actor}
           items={query.data.pages.flatMap((page) => page.items)}
           empty="中身はありません"
+          actions={actions}
         />
       )}
       {query.hasNextPage && (
@@ -331,12 +347,25 @@ function InventoryItem({
   world,
   actor,
   item,
-}: InventoryViewer & { item: z.infer<typeof Item> }) {
+  actions,
+  bundleMember,
+}: InventoryViewer & {
+  item: z.infer<typeof Item>;
+  actions?: ReactNode;
+  bundleMember: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const usage = bundleMember
+    ? `単独で${item.slots}枠`
+    : inventoryItemUsage(item);
   return (
     <li>
       <RichText text={itemText(item)} />
-      {inventoryItemUsage(item) && <span>{inventoryItemUsage(item)}</span>}
+      {usage && <span>{usage}</span>}
+      {item.states?.map((state, i) => (
+        <RichText key={i} text={state} />
+      ))}
+      {actions}
       {item.id && (item.totalSlots ?? 0) > (item.slots ?? 0) && (
         <details onToggle={(event) => setOpen(event.currentTarget.open)}>
           <summary>中身を見る</summary>
@@ -352,7 +381,12 @@ function InventoryList({
   actor,
   items,
   empty,
-}: InventoryViewer & { items: z.infer<typeof Item>[]; empty: string }) {
+  actions,
+}: InventoryViewer & {
+  items: z.infer<typeof Item>[];
+  empty: string;
+  actions?: ItemActions | undefined;
+}) {
   return items.length ? (
     <ul className="play-list">
       {items.map((item, i) => (
@@ -361,11 +395,259 @@ function InventoryList({
           world={world}
           actor={actor}
           item={item}
+          actions={actions?.(item)}
+          bundleMember={!!actions}
         />
       ))}
     </ul>
-  ) : (
+  ) : empty ? (
     <p className="muted">{empty}</p>
+  ) : null;
+}
+
+type BundleCommand = z.infer<typeof InventoryBundleCommand>;
+type BundlePlay = {
+  refresh: () => Promise<unknown>;
+  take: (item: string, from: string, label: string) => Promise<boolean>;
+  canTake: boolean;
+  error: unknown;
+};
+
+function BundleRow({
+  world,
+  actor,
+  bundle,
+  actions,
+  dissolve,
+}: InventoryViewer & {
+  bundle: z.infer<typeof Storage>["bundles"][number];
+  actions: ItemActions;
+  dissolve: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary>
+        {bundle.label} · {bundle.itemCount}点 · 1枠
+      </summary>
+      {open && (
+        <Contents
+          world={world}
+          actor={actor}
+          container={bundle.id}
+          actions={actions}
+        />
+      )}
+      {dissolve}
+    </details>
+  );
+}
+
+function StorageInventory({
+  world,
+  actor,
+  storage,
+  play,
+}: InventoryViewer & { storage: z.infer<typeof Storage>; play: BundlePlay }) {
+  const [selected, select] = useState<string[]>([]);
+  const [label, name] = useState("");
+  const [target, setTarget] = useState("");
+  const client = useQueryClient();
+  const refresh = async () => {
+    await play.refresh();
+    await client.invalidateQueries({
+      queryKey: ["inventory-contents", world, actor],
+    });
+  };
+  const edit = $api.useMutation("post", "/api/worlds/{id}/inventory/bundles", {
+    onSuccess: () => {
+      select([]);
+      name("");
+      void refresh();
+    },
+  });
+  const available = storage.items.filter(
+    (item) => item.id && item.slots === item.totalSlots,
+  );
+  const chosen = available.filter(
+    (item) => item.id && selected.includes(item.id),
+  );
+  const organize = (
+    command: (
+      request: Pick<BundleCommand, "storageId" | "requestId">,
+    ) => BundleCommand,
+  ) => {
+    if (!storage.id) return;
+    const body = command({
+      storageId: storage.id,
+      requestId: crypto.randomUUID(),
+    });
+    edit.mutate({
+      params: { path: { id: world }, query: { actorId: actor } },
+      body,
+    });
+  };
+  const bundle = storage.bundles.find((row) => row.id === target);
+  const total =
+    (bundle?.normalSlots ?? 0) +
+    chosen.reduce((sum, item) => sum + (item.slots ?? 0), 0);
+  return (
+    <section className="play-storage">
+      <h3>{storage.label}</h3>
+      {storage.capacity && (
+        <p className="muted">
+          使用枠 {storage.capacity.usedSlots}/{storage.capacity.limitSlots}
+        </p>
+      )}
+      {edit.error && <Problem error={edit.error} />}
+      {storage.organizeHere && !!play.error && <Problem error={play.error} />}
+      <InventoryList
+        world={world}
+        actor={actor}
+        items={storage.items}
+        empty={storage.bundles.length ? "" : "保管品はありません"}
+      />
+      {storage.bundles.map((row) => (
+        <BundleRow
+          key={row.id}
+          world={world}
+          actor={actor}
+          bundle={row}
+          actions={(item) =>
+            storage.organizeHere &&
+            item.id &&
+            storage.id && (
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={edit.isPending}
+                  onClick={() =>
+                    organize((request) => ({
+                      ...request,
+                      action: "release",
+                      bundleId: row.id,
+                      itemId: item.id!,
+                    }))
+                  }
+                >
+                  保管先で外す
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={!play.canTake}
+                  onClick={() =>
+                    void play
+                      .take(item.id!, storage.id!, item.label)
+                      .then((done) => {
+                        if (done) void refresh();
+                      })
+                  }
+                >
+                  手持ちへ取り出す
+                </Button>
+              </>
+            )
+          }
+          dissolve={
+            storage.organizeHere && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={edit.isPending}
+                onClick={() =>
+                  organize((request) => ({
+                    ...request,
+                    action: "dissolve",
+                    bundleId: row.id,
+                  }))
+                }
+              >
+                バンドルを解除する
+              </Button>
+            )
+          }
+        />
+      ))}
+      {storage.organizeHere && available.length > 0 && (
+        <details>
+          <summary>品をまとめる</summary>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const itemIds = chosen.map((item) => item.id!);
+              organize((request) =>
+                bundle
+                  ? { ...request, action: "add", bundleId: bundle.id, itemIds }
+                  : { ...request, action: "create", label, itemIds },
+              );
+            }}
+          >
+            {storage.bundles.length > 0 && (
+              <label>
+                バンドル
+                <select
+                  value={target}
+                  onChange={(event) => setTarget(event.target.value)}
+                >
+                  <option value="">新しく作る</option>
+                  {storage.bundles.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {row.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {!bundle && (
+              <label>
+                名前{" "}
+                <input
+                  required
+                  value={label}
+                  onChange={(event) => name(event.target.value)}
+                />
+              </label>
+            )}
+            <ul className="play-list">
+              {available.map((item) => (
+                <li key={item.id}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(item.id!)}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        select((ids) =>
+                          checked
+                            ? [...ids, item.id!]
+                            : ids.filter((id) => id !== item.id),
+                        );
+                      }}
+                    />{" "}
+                    {itemText(item)}
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <p className="muted">
+              品の通常枠 {total}/{storage.bundleLimitSlots}
+            </p>
+            <Button
+              type="submit"
+              disabled={
+                edit.isPending ||
+                chosen.length < (bundle ? 1 : 2) ||
+                total > (storage.bundleLimitSlots ?? Infinity)
+              }
+            >
+              {bundle ? "選んだ品を追加する" : "選んだ品をまとめる"}
+            </Button>
+          </form>
+        </details>
+      )}
+    </section>
   );
 }
 
@@ -376,12 +658,14 @@ export function PlayerPanel({
   history,
   sceneId,
   notices,
+  bundlePlay,
 }: {
   world: string;
   player: Character;
   screen: Screen;
   history: ReactNode;
   sceneId?: string;
+  bundlePlay: BundlePlay;
   notices: {
     unread: number;
     items: z.infer<typeof PlayerNotices>["notices"] | undefined;
@@ -437,21 +721,14 @@ export function PlayerPanel({
         </Tabs.Content>
         <Tabs.Content value="storage">
           {belongings?.storages.length ? (
-            belongings.storages.map(({ label, items, capacity }, i) => (
-              <section className="play-storage" key={i}>
-                <h3>{label}</h3>
-                {capacity && (
-                  <p className="muted">
-                    使用枠 {capacity.usedSlots}/{capacity.limitSlots}
-                  </p>
-                )}
-                <InventoryList
-                  world={world}
-                  actor={own.actorId}
-                  items={items}
-                  empty="保管品はありません"
-                />
-              </section>
+            belongings.storages.map((storage, i) => (
+              <StorageInventory
+                world={world}
+                actor={own.actorId}
+                storage={storage}
+                play={bundlePlay}
+                key={storage.id ?? i}
+              />
             ))
           ) : (
             <p className="muted">利用できる保管先はありません</p>

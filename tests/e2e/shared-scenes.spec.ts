@@ -439,6 +439,94 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
   }
 });
 
+test("保管品をバンドルにまとめ、状態を見て1本を取り出せる", async ({
+  page,
+}) => {
+  const f = await group(page);
+  const actor = f.actors[0]!;
+  const store = new WorldStore(f.db.graph);
+  const dry = randomUUID(),
+    wet = randomUUID(),
+    state = randomUUID();
+  const has = (source: string, target: string, role?: "use") => ({
+    id: randomUUID(),
+    kind: "has" as const,
+    source,
+    target,
+    role,
+    period: { from: 0 },
+  });
+  try {
+    await store.commit(
+      await store.claim(f.graph, randomUUID()),
+      store.context(f.graph),
+      {
+        commitId: randomUUID(),
+        at: 0,
+        changes: {
+          nodes: [
+            { id: dry, kind: "existence", text: "手前の杉材" },
+            { id: wet, kind: "existence", text: "奥の杉材" },
+            { id: state, kind: "script", text: "乾燥済み" },
+          ],
+          edges: [
+            has(actor, f.place, "use"),
+            has(f.place, dry),
+            has(f.place, wet),
+            {
+              id: randomUUID(),
+              kind: "status",
+              role: "content",
+              source: dry,
+              target: state,
+              period: { from: 0 },
+            },
+          ],
+          revisions: [],
+          endEdges: [],
+        },
+      },
+    );
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/worlds/${f.world}/play?actorId=${actor}`);
+    await page
+      .getByRole("button", { name: "プレイヤー情報", exact: true })
+      .click();
+    const drawer = page.getByRole("dialog", { name: "プレイヤー情報" });
+    await drawer.getByRole("tab", { name: "保管品" }).click();
+    await expect(drawer.getByText("使用枠 2/150")).toBeVisible();
+    await drawer.getByText("品をまとめる", { exact: true }).click();
+    await drawer.getByLabel("名前", { exact: true }).fill("小屋の建材");
+    await drawer.getByRole("checkbox", { name: "手前の杉材" }).check();
+    await drawer.getByRole("checkbox", { name: "奥の杉材" }).check();
+    await drawer.getByRole("button", { name: "選んだ品をまとめる" }).click();
+    await expect(drawer.getByText("使用枠 1/150")).toBeVisible();
+    await drawer.getByText("小屋の建材 · 2点 · 1枠", { exact: true }).click();
+    const dryRow = drawer
+      .getByRole("listitem")
+      .filter({ has: page.getByText("手前の杉材", { exact: true }) });
+    await expect(dryRow.getByText("乾燥済み", { exact: true })).toBeVisible();
+    await dryRow.getByRole("button", { name: "手持ちへ取り出す" }).click();
+    await expect(drawer.getByText("小屋の建材 · 1点 · 1枠")).toBeVisible();
+    await expect(dryRow).toHaveCount(0);
+    await drawer.getByRole("tab", { name: "所持品" }).click();
+    await expect(drawer.getByText("手前の杉材", { exact: true })).toBeVisible();
+    const ctx = store.context(f.graph);
+    expect(
+      (await ctx.relations(dry, "has", "in", Number.MAX_SAFE_INTEGER)).some(
+        (edge) => edge.source === actor && !edge.role,
+      ),
+    ).toBe(true);
+    expect(
+      (await ctx.relations(dry, "status", "out", Number.MAX_SAFE_INTEGER)).some(
+        (edge) => edge.target === state,
+      ),
+    ).toBe(true);
+  } finally {
+    await f.db.close();
+  }
+});
+
 test("プレイヤーは保管先の枠の内訳を読み、入れ物の続きを開ける", async ({
   page,
 }) => {
