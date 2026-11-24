@@ -22,6 +22,7 @@ import {
 import { WorldAccess } from "@gestaloka/server/access";
 import { LlmClient } from "@gestaloka/server/llm";
 import { decisionSettings } from "../../packages/server/src/llm/config.js";
+import { prepareDicePrompt } from "../../packages/server/src/llm/dice-prompt.js";
 import { readPlayUsage } from "../../packages/server/src/runtime/play-usage.js";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
 import { derivedId, WorldContext } from "@gestaloka/server/world";
@@ -7565,8 +7566,12 @@ test("CLIで複数の短縮IDを指定すると、その状態だけを新しい
     const quote = await run("play", "--file", file, "--quote");
     expect(quote).toEqual({ expectedSp: 1 });
     expect(f.calls).not.toHaveBeenCalled();
-    f.calls.mockImplementationOnce(async (id, role) => {
+    f.calls.mockImplementationOnce(async (id, role, messages) => {
       expect(role).toBe("world-creation-dice");
+      const prompt = prepareDicePrompt(messages, false);
+      expect(prompt?.system.map(({ text }) => text).join("\n")).toContain(
+        "JSON",
+      );
       return answer(id, {
         ...sure,
         endEdges: [changes.edges[0]!.id, changes.edges[2]!.id],
