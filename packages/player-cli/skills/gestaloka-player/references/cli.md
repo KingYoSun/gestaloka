@@ -220,10 +220,10 @@ gestaloka draw-configure --target <対象ID> --description <説明>
 
 ## draw
 
-本人の通常手番に、現在地・現地に置かれた物品・手持ちの抽選器から一件引く。searchで説明・利用条件・消費SP・代価を確認する。有料の固定表では公開版IDと代価の物品IDを指定する。固定表の管理手順はdraw.mdを参照。
+本人の通常手番に、現在地・現地に置かれた物品・手持ちの抽選器から一件引く。searchで説明・利用条件・消費SP・代価を確認する。有料の固定表では公開版IDと代価の物品IDを指定する。--quoteで返ったversionIdは--table-versionに使える。固定表の管理手順はdraw.mdを参照。
 
 ```text
-gestaloka draw --target <対象ID> [--text <行動>] [--table-version <公開版ID> --payment <物品ID>]
+gestaloka draw --target <対象ID> [--text <行動>] [--table-version <公開版ID> --payment <物品ID>] [--quote | --expected-sp <SP>]
 ```
 
 ## contact
@@ -238,10 +238,10 @@ gestaloka contact --target <人物ID>
 
 ## say
 
-自分の発言と、世界を変えない行動の描写を記録。物を取る・作る・渡す・使う・食べると述べても世界の物と持ち物は変わらないため、物を動かす・減らすときは play --file で申請する。ほかの人物を動かしたと述べても、その人物の居場所と行動は変わらない。--file指定時はファイルの本文を使用。--npcを付けると、その場に新しい人物や生き物を登場させる申請になり、1体ごとに繰り返し指定できる。GMが設定するダイスで判定し、新規抽選は1 SP。成功すると個体が同席者に加わり、応答のinstantNpcsに出る。失敗すると発言だけが記録される。[NPCの出現・昇格・同行](npcs.md)
+自分の発言と、世界を変えない行動の描写を記録。身振りや筆談など発声を伴わない行動には --nonverbal を指定する。発声が状態によって制限されているときは、エラーに原因の短縮IDと状態の本文が出る。物を取る・作る・渡す・使う・食べると述べても世界の物と持ち物は変わらないため、物を動かす・減らすときは play --file で申請する。ほかの人物を動かしたと述べても、その人物の居場所と行動は変わらない。--file指定時はファイルの本文を使用。--npcを付けると、その場に新しい人物や生き物を登場させる申請になり、1体ごとに繰り返し指定できる。GMが設定するダイスで判定し、新規抽選は1 SP。成功すると個体が同席者に加わり、応答のinstantNpcsに出る。失敗すると本文だけが記録される。[NPCの出現・昇格・同行](npcs.md)
 
 ```text
-gestaloka say (--text <発言> | --file <本文ファイル>) [--npc <個体の説明>]...
+gestaloka say (--text <本文> | --file <本文ファイル>) [--nonverbal] [--npc <個体の説明>]...
 ```
 
 実行例 `gestaloka say --text '水盤に小鳥が降りてきた' --npc '足に白い羽根のある小鳥'`
@@ -316,7 +316,7 @@ gestaloka finish
 
 ## play
 
-世界を変更する申請は command: apply の action に型と対象を指定します。--quote は実行せず必要SPを返します。返った額を expectedSp に指定してください。正式改名と対人対抗は1 SP、独立した生成案は新規抽選を行った案ごとに1 SPです。操作の形式と例は [世界への申請](commands.md) を参照してください。
+世界を変更する申請は command: apply の action に型と対象を指定します。apply の --quote はファイルをもとに最大SPを計算して返します。返った額を expectedSp に指定してください。正式改名と対人対抗は1 SP、独立した生成案は新規抽選を行った案ごとに1 SPです。操作の形式と例は [世界への申請](commands.md) を参照してください。
 
 ```text
 gestaloka play --file <JSONファイル> [--quote] [--stealth] [--depart-alone-on-timeout]
@@ -339,7 +339,7 @@ gestaloka memo --text <本文> [--participants <人物ID,人物ID>] [--deferred-
 新しい場所を申請。新規抽選は1 SP。探索と生成で、その世界の日次SPを共有する。上限はstatusのdailySp.limitで確認でき、日本時間の毎日0時に上限まで回復する。--fromは接続元で、本人の現在の所在地にある場所を指定する。--textには場所の様子と接続元からの行き方を書く。GMが接続元から見た妥当性でダイスを設定し、サーバーが一度だけ振る。ダイスで失敗しても通常枠を1回使う。成功すると応答のplaceIdへ移動でき、接続元と新しい場所の双方から互いの名前とIDを調べられる。どちらの場所でも、surroundingsのroutesに相手が出る。既にある場所と同じ呼び名は申請できず、EXPLORE_NAME_TAKENと先にある場所のIDが返る。このときGMは呼ばれず、通常枠も使わない。接続元からつながる既知の場所と同じ場所だとGMが判断すると、EXPLORE_SAME_PLACEとその場所のIDが返り、ダイスは振らず通常枠も使わない。新しい場所から直接行ける既知の場所があれば、その行き来も一緒に作られる。
 
 ```text
-gestaloka explore --from <場所ID> --label <場所の呼び名> --text <説明> | --file <本文ファイル>
+gestaloka explore --from <場所ID> --label <場所の呼び名> (--text <説明> | --file <本文ファイル>) [--quote | --expected-sp <SP>]
 ```
 
 実行例 `gestaloka explore --from @12ab34cd --label 森の奥の沢 --text ぶー森の小道を奥へ進むと浅い沢に出る`
@@ -429,6 +429,8 @@ gestaloka recover [--request <要求ID>]
 - --instance <View ID> は人物ごとの認可・接続先・要求記録を分離する。GESTALOKA_INSTANCEでも指定できる。
 - --profile <ファイル> は本人の保存先を明示する。--instanceとは併用できない。
 - --full-ids は完全なUUIDを出力する。短縮IDはそのView内で再利用できる。
+- --quote は探索・抽選などのプレイ操作を実行せず、消費SPの上限（expectedSp）と条件（chargeWhen）を返す。条件は消費なし（never）、新規抽選時（new-roll）、審査結果の保存時（review-saved）、抽選結果の保存時（draw-saved）。
+- --expected-sp <SP> は見積もりで確認した上限をプレイ操作の送信時に指定する。
 - --help は使い方を表示する。helpと同じく接続・認可を必要としない。
 
 グラフを更新する申請の形式は [世界への申請](commands.md) を参照してください。

@@ -456,6 +456,49 @@ test("発言の応答待ちに書き始めた次の入力を消さない", async
   expect((field as HTMLTextAreaElement).value).toBe("次の入力");
 });
 
+test("発声が制限された状態を確認し、同じ入力を発声せずに使える", async () => {
+  const body = vi.fn();
+  const cause = {
+    stateId: peer,
+    shortId: "@a1b2c3d4",
+    text: "喉が負傷している",
+  };
+  server.use(
+    http.post("*/api/worlds/:id/session", async ({ request }) => {
+      const sent = (await request.json()) as { mode?: string };
+      body(sent);
+      return sent.mode === "nonverbal"
+        ? json(view)
+        : json(
+            {
+              code: "COMMAND_RESTRICTED",
+              message:
+                "発声できません。原因の状態 @a1b2c3d4「喉が負傷している」。",
+              blockingStates: [cause],
+            },
+            409,
+          );
+    }),
+  );
+  show();
+  await open("操作");
+  const field = await screen.findByLabelText("発言・ターンコメント");
+  fireEvent.change(field, { target: { value: "道を教えてほしい" } });
+  fireEvent.click(screen.getByRole("button", { name: "発言する" }));
+  expect(await screen.findByText(/@a1b2c3d4「喉が負傷している」/)).toBeTruthy();
+  expect((field as HTMLTextAreaElement).value).toBe("道を教えてほしい");
+  fireEvent.click(screen.getByRole("button", { name: "発声せずに行動する" }));
+  await waitFor(() =>
+    expect(body).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        command: "say",
+        mode: "nonverbal",
+        text: "道を教えてほしい",
+      }),
+    ),
+  );
+});
+
 test("目撃した物品の参照と渡した先を表示する", async () => {
   view.characters = [
     { actorId: actor, name: "渡す人物", icon: null },
@@ -627,6 +670,56 @@ test("コマンド欄はJSONとコマンドの形式を検証し、入力中の�
   ]);
   expect(posted[0]?.requestId).not.toBe(scene);
   expect((speech as HTMLTextAreaElement).value).toBe("観測を続ける");
+});
+
+test("抽選器を変更するとSP見積もりを消し、確認した額と公開版で申請する", async () => {
+  const versionId = "00000000-0000-4000-8000-000000000006";
+  const submit = vi.fn();
+  server.use(
+    http.post("*/api/worlds/:id/session/quote", async ({ request }) => {
+      const body = (await request.json()) as { targetId: string };
+      return json(
+        body.targetId === peer
+          ? { expectedSp: 0, chargeWhen: "never" }
+          : { expectedSp: 1, chargeWhen: "draw-saved", versionId },
+      );
+    }),
+    http.post("*/api/worlds/:id/session", async ({ request }) => {
+      submit(
+        new URL(request.url).searchParams.get("expectedSp"),
+        await request.json(),
+      );
+      return json({ state: "confirmed" });
+    }),
+  );
+  show();
+  await open("操作");
+  fireEvent.click(screen.getByText("プレイコマンド", { exact: true }));
+  fireEvent.click(screen.getByText("JSONでコマンドを実行", { exact: true }));
+  const input = screen.getByLabelText("コマンドのJSON");
+  const execute = screen.getByRole("button", { name: "コマンドを実行する" });
+  const edit = (targetId: string) =>
+    fireEvent.change(input, {
+      target: { value: JSON.stringify({ command: "draw", targetId }) },
+    });
+
+  edit(peer);
+  fireEvent.click(screen.getByRole("button", { name: "SPを確認する" }));
+  await screen.findByText("0 SP。");
+  expect(execute).toHaveProperty("disabled", false);
+
+  edit(scene);
+  expect(screen.queryByText("0 SP。")).toBeNull();
+  expect(execute).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "SPを確認する" }));
+  await screen.findByText("最大 1 SP。抽選結果を保存したときに消費します。");
+  fireEvent.click(execute);
+  await waitFor(() =>
+    expect(submit).toHaveBeenCalledWith(
+      "1",
+      expect.objectContaining({ command: "draw", targetId: scene, versionId }),
+    ),
+  );
 });
 
 test("定期更新に失敗してもログを保ち、次の更新で新しい記録を先頭へ足す", async () => {

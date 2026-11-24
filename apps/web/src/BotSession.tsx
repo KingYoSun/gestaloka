@@ -29,6 +29,12 @@ import {
 } from "./play-panels.js";
 
 const TextNode = z.object({ text: z.string() });
+const PendingCommand = PlayerPlayCommand.or(
+  z.object({
+    body: PlayerPlayCommand,
+    expectedSp: z.number().int().nonnegative(),
+  }),
+);
 const Material = z.object({
   node: TextNode.optional(),
   states: z.array(z.object({ node: TextNode })).optional(),
@@ -322,7 +328,7 @@ export function BotSession({
   const log = useRef<HTMLDivElement>(null);
   const [pending, save] = usePending(
     pendingKey(`${id}:${actorId ?? "selected"}`, "bot-turn"),
-    PlayerPlayCommand,
+    PendingCommand,
   );
   const query = $api.useQuery(
     "get",
@@ -346,11 +352,20 @@ export function BotSession({
   const notices = $api.useMutation("get", "/api/worlds/{id}/notices", {
     onSuccess: () => void query.refetch(),
   });
-  const execute = async (body: z.infer<typeof PlayerPlayCommand>) => {
-    save(body);
+  const execute = async (
+    body: z.infer<typeof PlayerPlayCommand>,
+    expectedSp?: number,
+  ) => {
+    save(expectedSp === undefined ? body : { body, expectedSp });
     try {
       const result = await mutation.mutateAsync({
-        params: { path: { id }, query: actorId ? { actorId } : {} },
+        params: {
+          path: { id },
+          query: {
+            ...(actorId ? { actorId } : {}),
+            ...(expectedSp === undefined ? {} : { expectedSp }),
+          },
+        },
         body: body as paths["/api/worlds/{id}/session"]["post"]["requestBody"]["content"]["application/json"],
       });
       save(null);
@@ -377,11 +392,15 @@ export function BotSession({
       return false;
     }
   };
-  const send = (raw?: Record<string, unknown>) =>
-    execute(
-      pending ??
-        PlayerPlayCommand.parse({ ...raw, requestId: crypto.randomUUID() }),
+  const send = (raw?: Record<string, unknown>) => {
+    if (pending)
+      return "body" in pending
+        ? execute(pending.body, pending.expectedSp)
+        : execute(pending);
+    return execute(
+      PlayerPlayCommand.parse({ ...raw, requestId: crypto.randomUUID() }),
     );
+  };
   if (!view)
     return query.error ? (
       <Problem error={query.error} />
@@ -587,6 +606,7 @@ export function BotSession({
                     {feedback}
                     {view.aiControlled === false && (
                       <PlayCommandEditor
+                        worldId={id}
                         actorId={view.viewerId}
                         disabled={busy}
                         selection={
@@ -599,9 +619,9 @@ export function BotSession({
                             : undefined
                         }
                         response={mutation.data}
-                        execute={(command) => {
+                        execute={(command, expectedSp) => {
                           editorRequest.current = command.requestId;
-                          void execute(command);
+                          void execute(command, expectedSp);
                         }}
                       />
                     )}
@@ -732,12 +752,27 @@ export function BotSession({
                             </label>
                             <div className="flex flex-wrap gap-3">
                               {!view.receiving && (
-                                <Button
-                                  type="submit"
-                                  disabled={busy || !text.trim()}
-                                >
-                                  発言する
-                                </Button>
+                                <>
+                                  <Button
+                                    type="submit"
+                                    disabled={busy || !text.trim()}
+                                  >
+                                    発言する
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    disabled={busy || !text.trim()}
+                                    onClick={() =>
+                                      void send({
+                                        command: "say",
+                                        mode: "nonverbal",
+                                        text,
+                                      })
+                                    }
+                                  >
+                                    発声せずに行動する
+                                  </Button>
+                                </>
                               )}
                               <Button
                                 type="button"

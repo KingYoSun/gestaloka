@@ -22,6 +22,8 @@ export {
   type StorageAction,
   PlayCommand,
   PlayerPlayCommand,
+  PlayQuote,
+  playQuote,
   ApplyCommand,
   WorldApplication,
   applicationSp,
@@ -55,6 +57,8 @@ export {
   WorldEdge,
   RelationKind,
   BelongingRole,
+  CommandRestriction,
+  CommandRestrictions,
   StartingItem,
 } from "./world.js";
 
@@ -72,7 +76,20 @@ export const ApiError = z.object({
   message: z.string(),
   callsUsed: z.number().int().optional(),
 });
+export const BlockingState = z.object({
+  stateId: z.uuid(),
+  shortId: z.string(),
+  text: z.string(),
+  until: z.number().optional(),
+});
+export type BlockingState = z.infer<typeof BlockingState>;
+export function describeBlockingStates(states: readonly BlockingState[] = []) {
+  return states
+    .map(({ shortId, text }) => `原因の状態 ${shortId}「${text}」。`)
+    .join("");
+}
 export const PlayError = ApiError.extend({
+  blockingStates: z.array(BlockingState).optional(),
   capacity: z
     .object({
       holderId: z.uuid(),

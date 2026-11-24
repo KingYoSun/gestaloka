@@ -19,6 +19,11 @@ import {
 } from "../world/store.js";
 import { canonical } from "../llm/prompt.js";
 import type { PlayApplications } from "./play-applications.js";
+import {
+  commitPlayChange,
+  directChangeScope,
+  type DirectChangeScope,
+} from "./play-change-scope.js";
 import { deliverPickups } from "./storage-transfers.js";
 import { InventoryCapacityExceeded } from "../world/inventory.js";
 import { RuntimeControl } from "./control.js";
@@ -87,6 +92,7 @@ type Mutation = {
   at: number;
   dependencies: Dependency[];
   changes: Change;
+  directScope?: DirectChangeScope;
   reservations: ItemReservations;
   added?: Contribution;
   released: string[];
@@ -405,7 +411,8 @@ export class Blueprints {
     let result: object = quest;
     try {
       if (!(await this.store.receipt(w.id, commit)))
-        await this.store.commit(
+        await commitPlayChange(
+          this.store,
           await this.store.claim(w.id, commit),
           this.store.context(w.id, dependencies),
           {
@@ -431,6 +438,7 @@ export class Blueprints {
               ? { newFixedPlaces: [quest.buildingId] }
               : {}),
           },
+          mutation.directScope ?? directChangeScope(changes),
           true,
           reservations,
         );
@@ -830,6 +838,7 @@ export class Blueprints {
       quest,
       commit,
       dependencies: context.dependencies,
+      directScope: directChangeScope(plan.changes),
       released: [
         ...released.map((item) => item.id),
         ...(complete && added ? [added.id] : []),

@@ -1,4 +1,6 @@
 export { TurnSignals } from "./turn-signals.js";
+export { AccessError } from "./access-error.js";
+import { AccessError } from "./access-error.js";
 import { npcReport } from "../runtime/npc-mode.js";
 import { BotPlay } from "../runtime/bot-play.js";
 import type {
@@ -48,21 +50,6 @@ import {
   recordInitialPresentation,
 } from "../inspection/record.js";
 
-export class AccessError extends Error {
-  constructor(
-    readonly status: 400 | 401 | 403 | 404 | 409 | 503,
-    readonly code: string,
-    message: string,
-    // プレイ操作の拒否に付ける、現在の手番で使った通常枠の数。
-    readonly callsUsed?: number,
-    readonly inventory?: Pick<
-      import("../world/inventory.js").InventoryCapacityExceeded,
-      "capacity" | "item"
-    >,
-  ) {
-    super(message);
-  }
-}
 const digest = (text: string) =>
   createHash("sha256").update(text).digest("hex");
 const sequence = (value: string) =>
@@ -243,6 +230,7 @@ export class WorldAccess {
     input: z.infer<typeof PlayerPlayCommand>,
     actorId?: string,
     connectionId?: string,
+    expectedSp?: number,
   ) {
     const grant = await this.authorize(
       subject,
@@ -252,7 +240,15 @@ export class WorldAccess {
       actorId,
     );
     const result = await this.botPlay
-      .submit(id, grant.actor_id!, input, subject, undefined, connectionId)
+      .submit(
+        id,
+        grant.actor_id!,
+        input,
+        subject,
+        undefined,
+        connectionId,
+        expectedSp,
+      )
       .catch(async (error) => {
         if (!(error instanceof AccessError)) throw error;
         throw new AccessError(
@@ -261,6 +257,7 @@ export class WorldAccess {
           error.message,
           (await this.botPlay.current(id, grant.actor_id!))?.data.used,
           error.inventory,
+          error.blockingStates,
         );
       });
     return Object.assign(
@@ -270,6 +267,21 @@ export class WorldAccess {
         unknown
       >,
     );
+  }
+  async botQuote(
+    subject: string,
+    id: string,
+    input: z.infer<typeof PlayerPlayCommand>,
+    actorId?: string,
+  ) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    return this.botPlay.quote(id, grant.actor_id!, input);
   }
   async friend(
     subject: string,

@@ -18,6 +18,7 @@ import type {
 } from "../world/store.js";
 import type { PlayApplications } from "./play-applications.js";
 import { RuntimeControl } from "./control.js";
+import { commitPlayChange, directChangeScope } from "./play-change-scope.js";
 
 export const isStorageAction = (input: {
   command: string;
@@ -269,11 +270,14 @@ export async function storageCommand(
       w.at,
       request,
     );
+    const scope = directChangeScope(plan.changes);
     return finish(
-      await store.commit(
+      await commitPlayChange(
+        store,
         await store.claim(w.id, request),
         context,
         { commitId: request, ...plan, playerAction: true },
+        scope,
         true,
       ),
     );
@@ -308,6 +312,7 @@ export async function storageCommand(
   }
 
   let changes: Change = { nodes: [], edges: [], endEdges: [], revisions: [] };
+  let scope = directChangeScope(changes);
   let at = w.at;
   let effect: StorageEffect;
   const reservations: ItemReservations = { release: [] };
@@ -405,6 +410,7 @@ export async function storageCommand(
         },
       ];
       const plan = await planBelongings(context, request, at, operations);
+      scope = directChangeScope(plan.changes);
       await checkBelongingCapacity(
         context,
         request,
@@ -429,7 +435,8 @@ export async function storageCommand(
       };
     }
   }
-  const receipt = await store.commit(
+  const receipt = await commitPlayChange(
+    store,
     await store.claim(w.id, request),
     context,
     {
@@ -439,6 +446,7 @@ export async function storageCommand(
       playerAction: true,
       storageEffect: effect,
     },
+    scope,
     true,
     reservations,
   );

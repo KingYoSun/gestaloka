@@ -3242,6 +3242,7 @@ export interface paths {
             parameters: {
                 query?: {
                     actorId?: string;
+                    expectedSp?: number;
                 };
                 header?: never;
                 path: {
@@ -3428,6 +3429,7 @@ export interface paths {
                             minutes?: number;
                             /** @enum {boolean} */
                             affectsMovement?: true;
+                            commandRestrictions?: ("say" | "move" | "vehicle-travel")[];
                             /** @enum {string} */
                             feature?: "vehicle";
                         } | {
@@ -3928,6 +3930,8 @@ export interface paths {
                         /** @enum {string} */
                         command: "say";
                         text: string;
+                        /** @enum {string} */
+                        mode?: "voice" | "nonverbal";
                         /** @default [] */
                         instantNpcs?: string[];
                     } | {
@@ -4103,6 +4107,13 @@ export interface paths {
                             code: string;
                             message: string;
                             callsUsed?: number;
+                            blockingStates?: {
+                                /** Format: uuid */
+                                stateId: string;
+                                shortId: string;
+                                text: string;
+                                until?: number;
+                            }[];
                             capacity?: {
                                 /** Format: uuid */
                                 holderId: string;
@@ -4116,6 +4127,928 @@ export interface paths {
                                 requestedCount: number;
                                 maxAcceptableCount: number;
                             };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worlds/{id}/session/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: {
+                    actorId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "apply";
+                        action: {
+                            /** @enum {string} */
+                            type: "direct";
+                            text: string;
+                            operations: ({
+                                /** @enum {string} */
+                                type: "locate";
+                                /** Format: uuid */
+                                subjectId: string;
+                                text: string;
+                                aboutIds: string[];
+                                /**
+                                 * Format: uuid
+                                 * @description 直接滞在する具体的な場所。複数の場所を参照するときに指定する
+                                 */
+                                directPlaceId?: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "move";
+                                /** Format: uuid */
+                                item: string;
+                                /**
+                                 * Format: uuid
+                                 * @description 今持っている存在。所在が未記録ならnull
+                                 */
+                                from: string | null;
+                                /** Format: uuid */
+                                to: string;
+                                /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
+                                count?: number;
+                                /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                                basis: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "revoke";
+                                /** Format: uuid */
+                                person: string;
+                                /** Format: uuid */
+                                storage: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "remove";
+                                /** Format: uuid */
+                                id: string;
+                                /** @description 減らす個数。省くと全部 */
+                                count?: number;
+                            })[];
+                            /** Format: date-time */
+                            deferredUntil?: string;
+                            stealth?: boolean;
+                            departAloneOnTimeout?: boolean;
+                        } | {
+                            /** @enum {string} */
+                            type: "generate";
+                            plans: {
+                                text: string;
+                                /** @description 成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない */
+                                materials?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    count?: number;
+                                }[];
+                                operation: {
+                                    /** @enum {string} */
+                                    type: "create";
+                                    label: string;
+                                    /** @description 個数。数えないまとまりなら省く */
+                                    count?: number;
+                                    /**
+                                     * Format: uuid
+                                     * @description 物品を持つ存在。持つ存在の物になる
+                                     */
+                                    holder: string;
+                                    /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                                    basis: string;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "grant";
+                                    /** Format: uuid */
+                                    person: string;
+                                    /** Format: uuid */
+                                    storage: string;
+                                    /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                                    basis: string;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "learn";
+                                    /** Format: uuid */
+                                    person: string;
+                                    text: string;
+                                    /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                                    basis: string;
+                                    /** @description 成功時に消費する本人の習得済み技能ID。1件で発展、複数で統合できる */
+                                    consumeSkillIds?: string[];
+                                };
+                            }[];
+                            waitMinutes?: number;
+                        } | {
+                            /** @enum {string} */
+                            type: "rename";
+                            /** Format: uuid */
+                            targetId: string;
+                            name: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "clarify";
+                            /** Format: uuid */
+                            targetId: string;
+                            text: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis?: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "interpret";
+                            /** Format: uuid */
+                            targetId: string;
+                            text: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "revise-memo";
+                            /** Format: uuid */
+                            targetId: string;
+                            text: string;
+                            /** Format: date-time */
+                            deferredUntil?: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "increase-count";
+                            /** Format: uuid */
+                            itemId: string;
+                            count: number;
+                            text: string;
+                            /** @description 成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない */
+                            materials?: {
+                                /** Format: uuid */
+                                id: string;
+                                count?: number;
+                            }[];
+                        } | {
+                            /** @enum {string} */
+                            type: "detach";
+                            /** Format: uuid */
+                            stateId: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "share-storage";
+                            /** Format: uuid */
+                            person: string;
+                            /** Format: uuid */
+                            storage: string;
+                            /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                            basis: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "state";
+                            /** Format: uuid */
+                            targetId: string;
+                            text: string;
+                            description: string;
+                            /** Format: uuid */
+                            stateId?: string;
+                            /** @description 成功時に組み込む手持ち・現在地の物品IDと必要数。個数の省略は1。繰り返し使う道具は含めない */
+                            materials?: {
+                                /** Format: uuid */
+                                id: string;
+                                count?: number;
+                            }[];
+                            /** Format: uuid */
+                            attachedItemId?: string;
+                            minutes?: number;
+                            /** @enum {boolean} */
+                            affectsMovement?: true;
+                            commandRestrictions?: ("say" | "move" | "vehicle-travel")[];
+                            /** @enum {string} */
+                            feature?: "vehicle";
+                        } | {
+                            /** @enum {string} */
+                            type: "state";
+                            /** @enum {string} */
+                            operation: "end";
+                            /** Format: uuid */
+                            targetId: string;
+                            text: string;
+                            endStateIds: string[];
+                            description?: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "oppose";
+                            text: string;
+                            /** Format: uuid */
+                            targetId: string;
+                            description: string;
+                            /** Format: uuid */
+                            replacesStateId?: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "remove-place-item";
+                            text: string;
+                            /** Format: uuid */
+                            placeId: string;
+                            /** Format: uuid */
+                            itemId: string;
+                            /** @description 減らす個数。省くと全部 */
+                            count?: number;
+                        } | {
+                            /** @enum {string} */
+                            type: "seize";
+                            text: string;
+                            operation: {
+                                /** @enum {string} */
+                                type: "move";
+                                /** Format: uuid */
+                                item: string;
+                                /** Format: uuid */
+                                from: string;
+                                /** Format: uuid */
+                                to: string;
+                                /** @description 対象にする個数。省くと全部。一部なら、その個数を別の物品として分ける */
+                                count?: number;
+                                /** @description この事実が成立した根拠。初期設定、または成立した出来事の内容 */
+                                basis: string;
+                            };
+                            stealth?: boolean;
+                        };
+                        expectedSp: number;
+                        dependencies: {
+                            key: string;
+                            version: number;
+                        }[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        targetId: string;
+                        /** @enum {string} */
+                        command: "draw-table-edit";
+                        fromPublished?: boolean;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        targetId: string;
+                        /** @enum {string} */
+                        command: "draw-table-show";
+                        /** @enum {string} */
+                        view: "draft" | "published";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        targetId: string;
+                        revision: number;
+                        /** @enum {string} */
+                        command: "draw-table-settings";
+                        description: string;
+                        price: {
+                            /** Format: uuid */
+                            storageId: string;
+                            /** Format: uuid */
+                            paymentSeriesId: string;
+                            paymentLabel: string;
+                            count: number;
+                        } | null;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        targetId: string;
+                        revision: number;
+                        /** @enum {string} */
+                        command: "draw-table-put";
+                        /** Format: uuid */
+                        entryId?: string;
+                        weight?: number;
+                        result: {
+                            /** @enum {string} */
+                            kind: "item";
+                            label: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "skill";
+                            text: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "message";
+                            text: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "stock";
+                            /** Format: uuid */
+                            storageId: string;
+                            /** Format: uuid */
+                            itemId: string;
+                            count: number;
+                        };
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        targetId: string;
+                        revision: number;
+                        /** @enum {string} */
+                        command: "draw-table-remove";
+                        /** Format: uuid */
+                        entryId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        targetId: string;
+                        revision: number;
+                        /** @enum {string} */
+                        command: "draw-table-publish";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "storage-list";
+                        /** Format: uuid */
+                        after?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        command: "storage-post";
+                        /** Format: uuid */
+                        itemId: string;
+                        allocations: {
+                            count: number;
+                            /** Format: uuid */
+                            recipientId?: string;
+                        }[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        command: "storage-offers";
+                        /** Format: uuid */
+                        after?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        command: "storage-claim";
+                        /** Format: uuid */
+                        allocationId: string;
+                        count: number;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        command: "storage-withdraw";
+                        /** Format: uuid */
+                        allocationId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        command: "storage-history";
+                        /** Format: uuid */
+                        after?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** Format: uuid */
+                        storageId: string;
+                        /** @enum {string} */
+                        command: "storage-relocate";
+                        /** Format: uuid */
+                        placeId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-templates";
+                        /** Format: uuid */
+                        after?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-propose";
+                        plan: {
+                            /** Format: uuid */
+                            templateId: string;
+                            /** Format: uuid */
+                            placeId: string;
+                            /** Format: uuid */
+                            keeperId: string;
+                            description: string;
+                            product?: {
+                                label: string;
+                            };
+                            building?: {
+                                label: string;
+                                materials?: {
+                                    label: string;
+                                    count: number;
+                                    /** @enum {string} */
+                                    usage: "consume" | "tool";
+                                }[];
+                            };
+                            shop?: {
+                                stock: {
+                                    /** Format: uuid */
+                                    itemId: string;
+                                    count: number;
+                                    /** Format: uuid */
+                                    paymentSeriesId: string;
+                                    paymentLabel: string;
+                                    paymentCount: number;
+                                    text: string;
+                                    stockCount: number;
+                                }[];
+                            };
+                        };
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-list";
+                        /** Format: uuid */
+                        after?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-show";
+                        /** Format: uuid */
+                        questId: string;
+                        /** @description 呼称で指定された建材・道具について、提供可能数を照会する */
+                        provision?: {
+                            requirement: number;
+                            /** Format: uuid */
+                            itemId: string;
+                        };
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-consent";
+                        /** Format: uuid */
+                        questId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-start";
+                        /** Format: uuid */
+                        questId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-provide";
+                        /** Format: uuid */
+                        questId: string;
+                        /** @enum {string} */
+                        phase: "build" | "open" | "craft";
+                        requirement: number;
+                        /** Format: uuid */
+                        itemId: string;
+                        count: number;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-withdraw";
+                        /** Format: uuid */
+                        questId: string;
+                        /** Format: uuid */
+                        contributionId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "blueprint-cancel";
+                        /** Format: uuid */
+                        questId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "home-set";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "vehicle-request-control";
+                        /** Format: uuid */
+                        vehicleId: string;
+                        oppose?: boolean;
+                        /** Format: uuid */
+                        applicationId?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "vehicle-board";
+                        /** Format: uuid */
+                        vehicleId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "vehicle-leave";
+                        /** Format: uuid */
+                        vehicleId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "vehicle-travel";
+                        /** Format: uuid */
+                        vehicleId: string;
+                        /** Format: uuid */
+                        destinationId: string;
+                    } | {
+                        text: string;
+                        effect?: {
+                            /**
+                             * Format: uuid
+                             * @description その場の存在、または同席している出現個体のID
+                             */
+                            targetId: string;
+                            /** @description 後から対象を調べて観察できる状態 */
+                            state: string;
+                            /**
+                             * Format: uuid
+                             * @description 同じ性質について置き換える既存状態のID
+                             */
+                            replacesStateId?: string;
+                        };
+                        departs?: boolean;
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "npc-action";
+                        /** Format: uuid */
+                        npcId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "start";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "draw-configure";
+                        /** Format: uuid */
+                        targetId: string;
+                        /** @description この抽選器から繰り返し得られる結果の範囲 */
+                        description: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "draw";
+                        /** Format: uuid */
+                        targetId: string;
+                        /** Format: uuid */
+                        versionId?: string;
+                        /** Format: uuid */
+                        paymentItemId?: string;
+                        /** @description 同席者に伝える行動の描写 */
+                        text?: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "search";
+                        query: ({
+                            /** @enum {string} */
+                            kind: "surroundings";
+                            /** Format: uuid */
+                            vehicleAfter?: string;
+                            /** Format: uuid */
+                            passengerAfter?: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "seek";
+                        } | {
+                            /** @enum {string} */
+                            kind: "self";
+                        } | {
+                            /** @enum {string} */
+                            kind: "memos";
+                        } | {
+                            /** @enum {string} */
+                            kind: "history";
+                            /** Format: uuid */
+                            targetId?: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "subject";
+                            /** Format: uuid */
+                            targetId: string;
+                        }) | {
+                            /** @enum {string} */
+                            kind: "belongings";
+                        };
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "contact";
+                        /** Format: uuid */
+                        targetId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "team-invite";
+                        /** Format: uuid */
+                        targetId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "team-join";
+                        /** Format: uuid */
+                        teamId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "team-status" | "team-leave";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "companion-request";
+                        /** Format: uuid */
+                        targetId: string;
+                        text: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "companion-follow" | "companion-wait" | "companion-return" | "companion-dismiss";
+                        /** Format: uuid */
+                        targetId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "companion-move" | "companion-home";
+                        /** Format: uuid */
+                        targetId: string;
+                        /** Format: uuid */
+                        placeId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "companion-status";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "say";
+                        text: string;
+                        /** @enum {string} */
+                        mode?: "voice" | "nonverbal";
+                        /** @default [] */
+                        instantNpcs?: string[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "memo";
+                        text: string;
+                        /** @default [] */
+                        participants?: string[];
+                        /** Format: date-time */
+                        deferredUntil?: string;
+                        dependencies: {
+                            key: string;
+                            version: number;
+                        }[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "promote-npc";
+                        /** Format: uuid */
+                        sourceRequestId: string;
+                        npcIndex: number;
+                        description: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "explore";
+                        /** @description 新しい場所の様子と、接続元からの行き方 */
+                        text: string;
+                        /** @description 新しい場所の呼び名 */
+                        label: string;
+                        /**
+                         * Format: uuid
+                         * @description 接続元の場所。本人の現在の所在地にある場所
+                         */
+                        fromId: string;
+                        dependencies: {
+                            key: string;
+                            version: number;
+                        }[];
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "receive";
+                        /** Format: uuid */
+                        applicationId: string;
+                        accept: boolean;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "comment";
+                        text: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "applications";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "withdraw";
+                        /** Format: uuid */
+                        applicationId: string;
+                    } | {
+                        /** Format: uuid */
+                        storageId: string;
+                        /** Format: uuid */
+                        itemId: string;
+                        count: number;
+                        /** Format: uuid */
+                        paymentSeriesId: string;
+                        paymentLabel: string;
+                        paymentCount: number;
+                        text: string;
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "offer";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "exchange";
+                        /** Format: uuid */
+                        offerId: string;
+                        /** Format: uuid */
+                        paymentItemId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "end-turn" | "leave" | "finish";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @description この申請で消費するSPの上限 */
+                            expectedSp: number;
+                            /** @enum {string} */
+                            chargeWhen: "never" | "new-roll" | "review-saved" | "draw-saved";
+                            /**
+                             * Format: uuid
+                             * @description 抽選器の公開版
+                             */
+                            versionId?: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
                         };
                     };
                 };
@@ -4731,6 +5664,7 @@ export interface paths {
                                                 /** @enum {boolean} */
                                                 affectsMovement?: true;
                                             };
+                                            commandRestrictions?: ("say" | "move" | "vehicle-travel")[];
                                         }[];
                                         endEdges: string[];
                                     };
@@ -8073,6 +9007,7 @@ export interface paths {
                                         /** @enum {boolean} */
                                         affectsMovement?: true;
                                     };
+                                    commandRestrictions?: ("say" | "move" | "vehicle-travel")[];
                                 }[];
                                 endEdges: string[];
                             };

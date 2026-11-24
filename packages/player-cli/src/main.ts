@@ -10,8 +10,11 @@ import { cliVersion, update } from "./update.js";
 import { fileURLToPath } from "node:url";
 import { PlayerReferences, localTime, utcTime } from "./references.js";
 import {
+  BlockingState,
+  describeBlockingStates,
   PlayerDeviceCode,
   PlayerPlayCommand,
+  PlayQuote,
   WorldApplication,
   applicationSp,
   PlayerDeviceStatus,
@@ -64,7 +67,7 @@ const parse = () =>
     allowPositionals: true,
     options: playerOptions,
   });
-let values: ReturnType<typeof parse>["values"];
+let values: ReturnType<typeof parse>["values"] = {};
 let profilePath: string, journal: string;
 let requestId: string | undefined;
 let references: PlayerReferences | undefined, pendingCursor: string | undefined;
@@ -113,6 +116,7 @@ async function http(
           callsUsed: data.callsUsed,
           capacity: data.capacity,
           item: data.item,
+          blockingStates: data.blockingStates,
         },
       );
     return data;
@@ -365,7 +369,7 @@ async function send(
     };
   }
   return {
-    ...(saved.path.endsWith("/session") ||
+    ...(saved.path.split("?", 1)[0]!.endsWith("/session") ||
     saved.path.endsWith("/stories") ||
     saved.path.endsWith("/friends") ||
     saved.path.endsWith("/inventory/bundles")
@@ -442,6 +446,20 @@ async function run() {
   ].includes(command);
   if (positionals.length > (grouped ? 2 : 1))
     throw new Error("コマンドは1つ指定してください（helpを参照）");
+  const spLimit = values["expected-sp"];
+  if (values.quote && spLimit !== undefined)
+    throw new Error("--quote と --expected-sp は同時に指定できません");
+  if (
+    (values.quote || spLimit !== undefined) &&
+    command !== "play" &&
+    !PlayerPlayCommand.options.some(
+      (option) =>
+        option.shape.command.safeParse(
+          grouped ? `${command}-${positionals[1]}` : command,
+        ).success,
+    )
+  )
+    throw new Error("--quote と --expected-sp はプレイ操作に指定してください");
   if (command === "version")
     return {
       version: cliVersion,
@@ -954,8 +972,6 @@ async function run() {
     fileInput.action = action;
     if (values.quote) return { expectedSp: applicationSp(action) };
   }
-  if (values.quote)
-    throw new Error("--quote は apply の申請ファイルに指定してください");
   const body = PlayerPlayCommand.parse(
     command === "play"
       ? {
@@ -1010,7 +1026,12 @@ async function run() {
                   : values.text,
               }
             : {}),
-          ...(command === "say" ? { instantNpcs: values.npc } : {}),
+          ...(command === "say"
+            ? {
+                instantNpcs: values.npc,
+                ...(values.nonverbal ? { mode: "nonverbal" } : {}),
+              }
+            : {}),
           ...(command === "draw-configure"
             ? { description: values.description }
             : {}),
@@ -1053,9 +1074,23 @@ async function run() {
   );
   if (command === "receive" && !!values.accept === !!values.reject)
     throw new Error("--acceptか--rejectを一つ指定してください");
+  const sessionPath = `/api/worlds/${profile.worldId}/session`;
+  if (values.quote)
+    return PlayQuote.parse(await http(profile, `${sessionPath}/quote`, body));
+  const expectedSp =
+    spLimit === undefined
+      ? undefined
+      : z
+          .string()
+          .regex(/^\d+$/, "--expected-sp には0以上の整数を指定してください")
+          .transform(Number)
+          .pipe(z.number().int().nonnegative().safe())
+          .parse(spLimit);
   return submit(
     profile,
-    `/api/worlds/${profile.worldId}/session`,
+    expectedSp === undefined
+      ? sessionPath
+      : `${sessionPath}?expectedSp=${expectedSp}`,
     body,
     true,
     id,
@@ -1068,15 +1103,32 @@ try {
   );
   if (pendingCursor !== undefined) references?.advance(pendingCursor);
 } catch (error) {
+  const causes = z
+    .array(BlockingState)
+    .safeParse((error as { blockingStates?: unknown }).blockingStates).data;
+  const displayedCauses =
+    causes && references && !values["full-ids"]
+      ? (references.convert(causes) as typeof causes).map((state) => ({
+          ...state,
+          shortId: state.stateId,
+        }))
+      : causes;
+  const message = error instanceof Error ? error.message : String(error);
+  const causeText = describeBlockingStates(causes);
+  const base =
+    causeText && message.endsWith(causeText)
+      ? message.slice(0, -causeText.length)
+      : message;
   console.log(
     render({
       state: "error",
       ...(requestId ? { requestId } : {}),
       code: (error as { code?: string }).code ?? "CLI_ERROR",
-      message: error instanceof Error ? error.message : String(error),
+      message: base + describeBlockingStates(displayedCauses),
       callsUsed: (error as { callsUsed?: number }).callsUsed,
       capacity: (error as { capacity?: unknown }).capacity,
       item: (error as { item?: unknown }).item,
+      blockingStates: displayedCauses,
     }),
   );
   process.exitCode = 1;

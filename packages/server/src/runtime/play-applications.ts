@@ -8,6 +8,15 @@ import type {
 } from "@gestaloka/contracts";
 import { AccessError } from "../http/access.js";
 import { RuntimeControl } from "./control.js";
+import { changeScope } from "../world/change-scope.js";
+import {
+  assertDirectChanges,
+  assertPlayScope,
+  commitPlayChange,
+  directChangeScope,
+  PlayScopeConflict,
+  type DirectChangeScope,
+} from "./play-change-scope.js";
 import {
   BelongingRejected,
   planBelongings,
@@ -42,8 +51,10 @@ type Share = {
   changes: Change;
   at: number;
   dependencies: Dependency[];
+  directScope?: DirectChangeScope;
   items?: ItemOutcome[];
   handoff?: Handoff;
+  handoffScope?: string;
 };
 type Result = {
   applicationId: string;
@@ -189,13 +200,26 @@ export class PlayApplications {
     id: string,
     deadline: string,
     recipients: string[],
-    share: Share,
+    share: Share & { directScope: DirectChangeScope },
   ) {
     if (new Date(deadline) <= this.now())
       reject("APPLICATION_DEADLINE", "受領期限は未来の日時を指定してください");
+    assertDirectChanges(share.directScope, share.changes);
     await db.query(
       "INSERT INTO play_application(id,world_id,sender,deadline,recipients,share) VALUES($1,$2,$3,$4,$5,$6)",
-      [id, world, sender, deadline, recipients, share],
+      [
+        id,
+        world,
+        sender,
+        deadline,
+        recipients,
+        {
+          ...share,
+          ...(share.handoff
+            ? { handoffScope: changeScope(share.handoff) }
+            : {}),
+        },
+      ],
     );
     await this.notice(
       db,
@@ -320,8 +344,12 @@ export class PlayApplications {
         message: "受領者が申請を却下しました",
       });
     const share = row.share;
+    const storedScope = share.directScope ?? directChangeScope(share.changes);
     for (let attempt = 0; ; attempt++) {
       try {
+        if (share.handoff) assertDirectChanges(storedScope, share.changes);
+        if (share.handoffScope)
+          assertPlayScope(share.handoffScope, share.handoff ?? null);
         const { context, changes, at } = share.handoff
           ? await replan({
               sender: row.sender,
@@ -335,7 +363,8 @@ export class PlayApplications {
               changes: share.changes,
               at: Math.max(w.at, share.at),
             };
-        await this.store.commit(
+        await commitPlayChange(
+          this.store,
           await this.store.claim(w.id, id),
           context,
           {
@@ -344,6 +373,7 @@ export class PlayApplications {
             changes: atTime(changes, at, true),
             playerAction: true,
           },
+          share.handoff ? directChangeScope(changes) : storedScope,
           true,
         );
         break;
@@ -351,7 +381,10 @@ export class PlayApplications {
         if (
           share.handoff &&
           error instanceof WorldConflict &&
-          !(error instanceof FixedPlaceMovement)
+          !(
+            error instanceof FixedPlaceMovement ||
+            error instanceof PlayScopeConflict
+          )
         ) {
           const result = await this.#settled(db, w, row);
           if (result) return result;
@@ -372,7 +405,8 @@ export class PlayApplications {
           state: "changed",
           message:
             error instanceof BelongingRejected ||
-            error instanceof FixedPlaceMovement
+            error instanceof FixedPlaceMovement ||
+            error instanceof PlayScopeConflict
               ? `${error.message}。対象を確認して申請し直してください`
               : "申請時の前提が変わりました。対象を確認して申請し直してください",
         });
@@ -578,6 +612,7 @@ export class PlayApplications {
         if (item) await context.assertMovable(item.id);
         await context.assertMovable(payment.id);
         const plan = await planBelongings(context, request, w.at, ops);
+        const scope = directChangeScope(plan.changes);
         await checkBelongingCapacity(
           context,
           request,
@@ -585,10 +620,12 @@ export class PlayApplications {
           plan.changes,
           ops,
         );
-        await this.store.commit(
+        await commitPlayChange(
+          this.store,
           await this.store.claim(w.id, request),
           context,
           { commitId: request, ...plan, playerAction: true },
+          scope,
           true,
         );
       } catch (error) {
