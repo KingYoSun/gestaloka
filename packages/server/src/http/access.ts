@@ -239,6 +239,7 @@ export class WorldAccess {
     input: z.infer<typeof PlayerPlayCommand>,
     actorId?: string,
     connectionId?: string,
+    expectedSp?: number,
   ) {
     const grant = await this.authorize(
       subject,
@@ -248,7 +249,15 @@ export class WorldAccess {
       actorId,
     );
     const result = await this.botPlay
-      .submit(id, grant.actor_id!, input, subject, undefined, connectionId)
+      .submit(
+        id,
+        grant.actor_id!,
+        input,
+        subject,
+        undefined,
+        connectionId,
+        expectedSp,
+      )
       .catch(async (error) => {
         if (!(error instanceof AccessError)) throw error;
         throw new AccessError(
@@ -266,6 +275,21 @@ export class WorldAccess {
         unknown
       >,
     );
+  }
+  async botQuote(
+    subject: string,
+    id: string,
+    input: z.infer<typeof PlayerPlayCommand>,
+    actorId?: string,
+  ) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    return this.botPlay.quote(id, grant.actor_id!, input);
   }
   async setViewers(
     subject: string,

@@ -7,6 +7,7 @@ import {
   ApiError,
   PlayError,
   PlayerPlayCommand,
+  PlayQuote,
   PlayResponse,
   InventoryContents,
   InventoryContentsQuery,
@@ -107,6 +108,7 @@ export async function worldRoutes(
       const allowed = [
         "/api/worlds/:id/scene",
         "/api/worlds/:id/session",
+        "/api/worlds/:id/session/quote",
         "/api/worlds/:id/inventory/contents",
         "/api/worlds/:id/inventory/bundles",
         "/api/worlds/:id/waiting",
@@ -574,7 +576,9 @@ export async function worldRoutes(
     {
       schema: {
         params: ResourceId,
-        querystring: ActorQuery,
+        querystring: ActorQuery.extend({
+          expectedSp: z.coerce.number().int().nonnegative().optional(),
+        }),
         body: PlayerPlayCommand,
         response: { 200: PlayResponse, ...errors, 409: PlayError },
       },
@@ -586,6 +590,25 @@ export async function worldRoutes(
         request.body,
         request.query.actorId,
         deviceIds.get(request),
+        request.query.expectedSp,
+      ),
+  );
+  app.post(
+    "/api/worlds/:id/session/quote",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        body: PlayerPlayCommand,
+        response: { 200: PlayQuote, ...errors },
+      },
+    },
+    async (request) =>
+      service().botQuote(
+        await subject(request),
+        request.params.id,
+        request.body,
+        request.query.actorId,
       ),
   );
   app.get(

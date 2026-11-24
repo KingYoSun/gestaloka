@@ -8,6 +8,7 @@ import {
   PlayerPlayCommand,
   type ApplyCommand,
   applicationSp,
+  playQuote,
   DrawReward,
   type DrawTable,
   type DrawTableAction,
@@ -620,6 +621,19 @@ const turnIdleMs = 600000;
 const adjudicationLease = "interval '30 seconds'";
 function reject(code: string, message: string): never {
   throw new AccessError(409, code, message);
+}
+function requireSpQuote(expectedSp: number, currentSp: number) {
+  if (currentSp > expectedSp)
+    reject(
+      "SP_QUOTE_CHANGED",
+      `この申請で使うSPの上限は${currentSp}です。見積もりを確認してください`,
+    );
+}
+function quoteDraw(input: DrawInput, table?: DrawTable) {
+  return playQuote(
+    input,
+    table ? { sp: drawSpCost(table), versionId: table.versionId } : { sp: 1 },
+  );
 }
 function rejectAdjudication() {
   return reject(
@@ -5688,6 +5702,22 @@ export class BotPlay {
     return review;
   }
 
+  async #drawSourceInReach(
+    context: WorldContext,
+    actor: string,
+    targetId: string,
+  ) {
+    const source = await drawSource(context, targetId);
+    if (!source)
+      reject("DRAW_NOT_CONFIGURED", "公開済みの抽選器を指定してください");
+    if (!(await drawInReach(context, actor, targetId)))
+      reject(
+        "DRAW_NOT_IN_REACH",
+        "現在地、その場に置かれた物品、手持ちの物品から引けます",
+      );
+    return source;
+  }
+
   async #planDraw(
     world: string,
     graph: string,
@@ -5695,6 +5725,7 @@ export class BotPlay {
     actor: string,
     user: string,
     input: DrawInput,
+    expectedSp?: number,
   ): Promise<Plan> {
     const { requestId, targetId } = input;
     const prior = await this.store.receipt(graph, requestId);
@@ -5715,13 +5746,11 @@ export class BotPlay {
     let context = this.store.context(graph, draw?.dependencies);
     const restoring = !!draw;
     if (!draw) {
-      const source = await drawSource(context, targetId);
-      if (!source)
-        reject("DRAW_NOT_CONFIGURED", "公開済みの抽選器を指定してください");
-      if (!(await drawInReach(context, actor, targetId)))
-        reject(
-          "DRAW_NOT_IN_REACH",
-          "現在地、その場に置かれた物品、手持ちの物品から引けます",
+      const source = await this.#drawSourceInReach(context, actor, targetId);
+      if (expectedSp !== undefined)
+        requireSpQuote(
+          expectedSp,
+          quoteDraw(input, source.drawTable).expectedSp,
         );
       const full = await drawSkillCapacity(context, actor, source.drawTable);
       if (full) throw full;
@@ -5731,6 +5760,7 @@ export class BotPlay {
           actor,
           input,
           source.drawTable,
+          expectedSp !== undefined,
         );
       else {
         if (input.versionId || input.paymentItemId)
@@ -5824,8 +5854,12 @@ export class BotPlay {
     actor: string,
     input: DrawInput,
     table: DrawTable,
+    requireVersion: boolean,
   ): Promise<DrawOutcome> {
-    if ((input.versionId || table.price) && input.versionId !== table.versionId)
+    if (
+      (requireVersion || input.versionId || table.price) &&
+      input.versionId !== table.versionId
+    )
       reject("DRAW_TABLE_CHANGED", "公開版と代価を確認し直してください");
     const { reason, stock } = await tableAvailability(context, table, actor);
     if (reason) reject(reason.code, reason.message);
@@ -6040,6 +6074,14 @@ export class BotPlay {
       );
     return context;
   }
+  async #companionByReceipt(db: Db, world: string, target: string) {
+    return !!(
+      await db.query(
+        "SELECT 1 FROM bot_npc WHERE world_id=$1 AND actor_id=$2 AND controller='bot'",
+        [world, target],
+      )
+    ).rowCount;
+  }
   // 外部botが担当するNPCへの同行申請は、GMではなく本人の受領で決める（ADR-079）。
   async #companionApplication(
     world: string,
@@ -6048,11 +6090,8 @@ export class BotPlay {
     input: Extract<CompanionCommand, { text: string }>,
     session: Session,
   ): Promise<Plan | undefined> {
-    const { rowCount } = await this.pool.query(
-      "SELECT 1 FROM bot_npc WHERE world_id=$1 AND actor_id=$2 AND controller='bot'",
-      [world, input.targetId],
-    );
-    if (!rowCount) return;
+    if (!(await this.#companionByReceipt(this.pool, world, input.targetId)))
+      return;
     const context = await this.#companionAvailable(
       world,
       w,
@@ -6081,6 +6120,7 @@ export class BotPlay {
     user: string,
     input: Extract<CompanionCommand, { text: string }>,
     session: Session,
+    expectedSp?: number,
   ) {
     const saved = (
       await this.pool.query<{ outcome: CompanionJudgement | null }>(
@@ -6089,6 +6129,8 @@ export class BotPlay {
       )
     ).rows[0]?.outcome;
     if (saved) return saved;
+    if (expectedSp !== undefined)
+      requireSpQuote(expectedSp, playQuote(input).expectedSp);
     const context = await this.#companionAvailable(
       world,
       w,
@@ -7462,6 +7504,7 @@ export class BotPlay {
       skillGroup = false,
       perSkill = true,
       vehicleResponse = false,
+      expectedSp,
     }: {
       db?: Db;
       expectedHandoff?: Handoff;
@@ -7469,6 +7512,7 @@ export class BotPlay {
       skillGroup?: boolean;
       perSkill?: boolean;
       vehicleResponse?: boolean;
+      expectedSp?: number | undefined;
     } = {},
   ): Promise<Plan | undefined> {
     if (input.command === "npc-action") {
@@ -7572,7 +7616,7 @@ export class BotPlay {
       return;
     const w = await this.world(world, db);
     if (input.command === "draw")
-      return this.#planDraw(world, w.id, w.at, actor, user, input);
+      return this.#planDraw(world, w.id, w.at, actor, user, input, expectedSp);
     const deadline = deferred(input);
     if (
       deadline &&
@@ -8223,7 +8267,7 @@ export class BotPlay {
           externalEffect = true;
         if (op.type === "locate") {
           const location = await checkLocation(db, world, context, actor, op);
-          await this.#requirePassable(context, op, input.requestId);
+          await this.#requirePassable(context, op);
           if (location.travel)
             await this.#requireVehicleMovable(
               context,
@@ -9382,32 +9426,34 @@ export class BotPlay {
     );
     return parse(response.content);
   }
-  async #requirePassable(context: WorldContext, move: Locate, request: string) {
+  async #requirePassable(context: WorldContext, move: Locate) {
     const destination =
       move.directPlaceId ??
       (move.aboutIds.length === 1 ? move.aboutIds[0] : undefined);
     if (!destination) return;
     const origins = await directPlaces(context, move.subjectId);
     if (origins.includes(destination)) return;
+    const conditionsContext = this.store.context(context.worldId);
+    const at = this.now().getTime();
     const conditions = [];
     for (const place of new Set([...origins, destination])) {
-      const edges = await context.relations(
-        place,
-        "status",
-        "out",
-        this.now().getTime(),
-        latest,
-      );
+      const edges = await context.relations(place, "status", "out", at, latest);
       for (const edge of edges) {
         if (!edge.stateOrigin?.affectsMovement) continue;
+        // 関係集合の版は確定を守り、個々の状態の版で判定を再利用する。
+        await conditionsContext.edge(edge.id);
         conditions.push({
           place,
           id: edge.id,
-          text: (await context.node(edge.target))?.text,
+          text: (await conditionsContext.node(edge.target))?.text,
         });
       }
     }
     if (!conditions.length) return;
+    const versions = conditionsContext.dependencies.sort((a, b) =>
+      a.key.localeCompare(b.key),
+    );
+    context.dependOn(versions);
     const movement = {
       actor: (await context.node(move.subjectId))?.text,
       from: origins,
@@ -9418,7 +9464,9 @@ export class BotPlay {
     const result = parse(
       (
         await this.#ask(
-          derivedId(`${request}:place-movement:${move.subjectId}`),
+          derivedId(
+            `${context.worldId}:place-movement:${move.subjectId}:${canonical(versions)}`,
+          ),
           "world-place-movement",
           [
             {
@@ -10693,6 +10741,36 @@ export class BotPlay {
     };
   }
 
+  async quote(
+    world: string,
+    actor: string,
+    input: z.infer<typeof PlayerPlayCommand>,
+  ) {
+    if (input.command === "draw")
+      return this.#withWorldReadLock(world, async (db) => {
+        const context = this.store.context((await this.world(world, db)).id);
+        const { drawTable } = await this.#drawSourceInReach(
+          context,
+          actor,
+          input.targetId,
+        );
+        if (input.versionId && input.versionId !== drawTable?.versionId)
+          reject("DRAW_TABLE_CHANGED", "公開版と代価を確認し直してください");
+        return quoteDraw(input, drawTable);
+      });
+    if (input.command === "companion-request") {
+      const session = await this.current(world, actor);
+      if (
+        session?.data.members.some(
+          (member) => member.actorId === input.targetId,
+        ) &&
+        (await this.#companionByReceipt(this.pool, world, input.targetId))
+      )
+        return playQuote(input, undefined, "receipt");
+    }
+    return playQuote(input);
+  }
+
   async submit(
     world: string,
     actor: string,
@@ -10700,13 +10778,14 @@ export class BotPlay {
     user: string,
     expectedAssignment?: string,
     connectionId = `human:${user}`,
+    expectedSp?: number,
   ) {
     const hash = createHash("sha256")
       .update(canonical(submitted))
       .digest("hex");
     // 履歴の再送を先に解決する。改変済みの対象を前提に申請し直さない。
     const replay =
-      submitted.command === "apply"
+      submitted.command === "apply" || expectedSp !== undefined
         ? (
             await this.pool.query<{
               actor_id: string;
@@ -10726,8 +10805,16 @@ export class BotPlay {
         replay.hash !== hash
       )
         reject("REQUEST_CONFLICT", "同じ要求IDに異なる内容は使用できません");
-      return replay.result;
+      return submitted.command === "apply"
+        ? replay.result
+        : this.#replay(world, submitted, replay.result);
     }
+    if (
+      expectedSp !== undefined &&
+      submitted.command !== "draw" &&
+      submitted.command !== "companion-request"
+    )
+      requireSpQuote(expectedSp, playQuote(submitted).expectedSp);
     let input: Input =
       submitted.command === "apply"
         ? await this.#application(world, actor, submitted)
@@ -10786,6 +10873,7 @@ export class BotPlay {
         expectedAssignment,
         connectionId,
         owner,
+        expectedSp,
       );
     let active = await this.#activeAdjudication(this.pool, world, actor);
     const drawCommand = input.command === "draw" || isDrawConfiguration(input);
@@ -10871,6 +10959,7 @@ export class BotPlay {
     expectedAssignment: string | undefined,
     connectionId: string,
     adjudicationOwner?: string,
+    expectedSp?: number,
   ): Promise<Record<string, unknown>> {
     const w = await this.world(world);
     await this.#requireLivingActor(this.store.context(w.id), actor);
@@ -10977,6 +11066,7 @@ export class BotPlay {
             user,
             input,
             prepared!,
+            expectedSp,
           );
         }
         if (input.command === "say" && input.instantNpcs?.length) {
@@ -11014,6 +11104,7 @@ export class BotPlay {
           actor,
           user,
           "dependencies" in input ? { ...input, dependencies: [] } : input,
+          { expectedSp },
         );
         if (planned && stateBasis) planned.context.dependOn(stateBasis);
         if (planned?.vehicleResult) {

@@ -22,6 +22,8 @@ export {
   type StorageAction,
   PlayCommand,
   PlayerPlayCommand,
+  PlayQuote,
+  playQuote,
   ApplyCommand,
   WorldApplication,
   applicationSp,

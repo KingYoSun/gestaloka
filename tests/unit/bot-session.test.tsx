@@ -629,6 +629,56 @@ test("コマンド欄はJSONとコマンドの形式を検証し、入力中の�
   expect((speech as HTMLTextAreaElement).value).toBe("観測を続ける");
 });
 
+test("抽選器を変更するとSP見積もりを消し、確認した額と公開版で申請する", async () => {
+  const versionId = "00000000-0000-4000-8000-000000000006";
+  const submit = vi.fn();
+  server.use(
+    http.post("*/api/worlds/:id/session/quote", async ({ request }) => {
+      const body = (await request.json()) as { targetId: string };
+      return json(
+        body.targetId === peer
+          ? { expectedSp: 0, chargeWhen: "never" }
+          : { expectedSp: 1, chargeWhen: "draw-saved", versionId },
+      );
+    }),
+    http.post("*/api/worlds/:id/session", async ({ request }) => {
+      submit(
+        new URL(request.url).searchParams.get("expectedSp"),
+        await request.json(),
+      );
+      return json({ state: "confirmed" });
+    }),
+  );
+  show();
+  await open("操作");
+  fireEvent.click(screen.getByText("プレイコマンド", { exact: true }));
+  fireEvent.click(screen.getByText("JSONでコマンドを実行", { exact: true }));
+  const input = screen.getByLabelText("コマンドのJSON");
+  const execute = screen.getByRole("button", { name: "コマンドを実行する" });
+  const edit = (targetId: string) =>
+    fireEvent.change(input, {
+      target: { value: JSON.stringify({ command: "draw", targetId }) },
+    });
+
+  edit(peer);
+  fireEvent.click(screen.getByRole("button", { name: "SPを確認する" }));
+  await screen.findByText("0 SP。");
+  expect(execute).toHaveProperty("disabled", false);
+
+  edit(scene);
+  expect(screen.queryByText("0 SP。")).toBeNull();
+  expect(execute).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "SPを確認する" }));
+  await screen.findByText("最大 1 SP。抽選結果を保存したときに消費します。");
+  fireEvent.click(execute);
+  await waitFor(() =>
+    expect(submit).toHaveBeenCalledWith(
+      "1",
+      expect.objectContaining({ command: "draw", targetId: scene, versionId }),
+    ),
+  );
+});
+
 test("定期更新に失敗してもログを保ち、次の更新で新しい記録を先頭へ足す", async () => {
   const row = (id: string, input: string) => ({
     id,

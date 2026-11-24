@@ -7664,10 +7664,14 @@ test("場所への作用は1 SPで確定し、後続の移動は追加SPを使�
       changes,
     },
   );
+  let movable = false;
   f.calls.mockImplementation(async (id, role, messages) => {
     if (role === "world-place-movement") {
       expect(messages[1]?.content).toContain("霧");
-      return answer(id, { movable: true, reason: "道を見失わずに通れる" });
+      return answer(id, {
+        movable,
+        reason: movable ? "道を見失わずに通れる" : "道標が見えない",
+      });
     }
     return answer(id, sure);
   });
@@ -7684,41 +7688,53 @@ test("場所への作用は1 SPで確定し、後続の移動は追加SPを使�
       }),
       f.actors[i],
     );
-  const fog = () =>
+  const fog = (description: string) =>
     act(
       {
         type: "state",
         targetId: f.place,
         text: "霧を起こす",
-        description: "広場に霧がかかっている",
+        description,
         affectsMovement: true,
       },
       1,
     );
+  const move = (i: number) =>
+    act(
+      {
+        type: "direct",
+        text: "小道を通る",
+        operations: [
+          {
+            type: "locate",
+            subjectId: f.actors[i],
+            text: "離れた場所",
+            aboutIds: [f.far],
+          },
+        ],
+      },
+      0,
+      i,
+    );
   for (let i = 1; i < f.actors.length; i++) await f.move(i, f.far);
-  await expect(fog()).resolves.toMatchObject({ spentSp: 1 });
+  await expect(fog("広場に濃い霧がかかっている")).resolves.toMatchObject({
+    spentSp: 1,
+  });
   for (let i = 1; i < f.actors.length; i++) await f.move(i, f.place);
-  await expect(fog()).resolves.toMatchObject({ spentSp: 1 });
+  f.calls.mockClear();
+  await expect(move(1)).rejects.toMatchObject({ code: "MOVEMENT_BLOCKED" });
+  await expect(move(1)).rejects.toMatchObject({ code: "MOVEMENT_BLOCKED" });
+  const blocked = f.calls.mock.calls[0]![0];
+  expect(f.calls.mock.calls.map(([id]) => id)).toEqual([blocked, blocked]);
+
+  await expect(fog("風で霧が流れ、道標が見える")).resolves.toMatchObject({
+    spentSp: 1,
+  });
+  movable = true;
   f.calls.mockClear();
   for (let i = 1; i < f.actors.length; i++)
-    await expect(
-      act(
-        {
-          type: "direct",
-          text: "小道を通る",
-          operations: [
-            {
-              type: "locate",
-              subjectId: f.actors[i],
-              text: "離れた場所",
-              aboutIds: [f.far],
-            },
-          ],
-        },
-        0,
-        i,
-      ),
-    ).resolves.toMatchObject({ spentSp: 0 });
+    await expect(move(i)).resolves.toMatchObject({ spentSp: 0 });
+  expect(f.calls.mock.calls[0]![0]).not.toBe(blocked);
   expect(f.calls.mock.calls.map((call) => call[1])).toEqual(
     Array(5).fill("world-place-movement"),
   );
@@ -14090,6 +14106,90 @@ async function fixedTableFixture() {
   await edit();
   return { ...f, send, edit, change, settings, put, publish, approve };
 }
+
+test("抽選の見積もりは公開版に従い、同意額を超える抽選は確定しない", async () => {
+  const f = await fixedTableFixture();
+  await f.settings("札を一枚引く");
+  await f.put({ kind: "message", text: "白い札" });
+  f.approve();
+  const free = await f.publish();
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const path = `/api/worlds/${f.world}/session`;
+  const requestId = randomUUID();
+  const request = {
+    method: "POST" as const,
+    headers: { cookie: f.people[1]!.cookie, "x-gestaloka-request": "1" },
+    payload: { command: "draw", targetId: f.place, requestId },
+  };
+  try {
+    const initial = await app.inject({ ...request, url: `${path}/quote` });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json()).toEqual({
+      expectedSp: 0,
+      chargeWhen: "never",
+      versionId: free.versionId,
+    });
+    const stored = await isolated.databases.postgres.query(
+      "SELECT 1 FROM bot_request WHERE id=$1",
+      [requestId],
+    );
+    expect(stored.rowCount).toBe(0);
+    expect(f.calls).toHaveBeenCalledTimes(1);
+
+    await f.edit(true);
+    await f.settings("札か潮を読む技を授ける");
+    await f.put({ kind: "skill", text: "潮を読む" });
+    f.approve();
+    const paid = await f.publish();
+    const revised = await app.inject({ ...request, url: `${path}/quote` });
+    expect(revised.json()).toEqual({
+      expectedSp: 1,
+      chargeWhen: "draw-saved",
+      versionId: paid.versionId,
+    });
+
+    const refused = await app.inject({
+      ...request,
+      url: `${path}?expectedSp=0`,
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().code).toBe("SP_QUOTE_CHANGED");
+    const missingVersion = await app.inject({
+      ...request,
+      url: `${path}?expectedSp=1`,
+      payload: { ...request.payload, requestId: randomUUID() },
+    });
+    expect(missingVersion.statusCode).toBe(409);
+    expect(missingVersion.json().code).toBe("DRAW_TABLE_CHANGED");
+    expect((await f.status(1)).dailySp.remaining).toBe(100);
+
+    const accepted = {
+      ...request,
+      url: `${path}?expectedSp=1`,
+      payload: {
+        ...request.payload,
+        requestId: randomUUID(),
+        versionId: paid.versionId,
+      },
+    };
+    const result = await app.inject(accepted);
+    expect(result.statusCode).toBe(200);
+    expect(result.json()).toMatchObject({
+      spentSp: 1,
+      versionId: paid.versionId,
+    });
+    expect((await app.inject(accepted)).json()).toEqual(result.json());
+    expect((await f.status(1)).dailySp.remaining).toBe(99);
+    expect(f.calls).toHaveBeenCalledTimes(2);
+  } finally {
+    await app.close();
+  }
+});
 
 test("固定表の下書きで重み・候補・確率を確認し、審査の却下後も公開版で引ける", async () => {
   const f = await fixedTableFixture();

@@ -775,6 +775,64 @@ export const PlayerPlayCommand = z.discriminatedUnion("command", [
       ),
   ),
 ]);
+export const PlayQuote = z.strictObject({
+  expectedSp: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe("この申請で消費するSPの上限"),
+  chargeWhen: z.enum(["never", "new-roll", "review-saved", "draw-saved"]),
+  versionId: id.optional().describe("抽選器の公開版"),
+});
+export type PlayQuote = z.infer<typeof PlayQuote>;
+
+export function playQuote(
+  input: z.infer<typeof PlayerPlayCommand>,
+  draw?: { sp: number; versionId?: string },
+  companion?: "receipt",
+): PlayQuote {
+  switch (input.command) {
+    case "apply": {
+      const expectedSp = applicationSp(input.action);
+      return {
+        expectedSp,
+        chargeWhen:
+          expectedSp === 0
+            ? "never"
+            : input.action.type === "rename"
+              ? "review-saved"
+              : "new-roll",
+      };
+    }
+    case "draw": {
+      const expectedSp = draw?.sp ?? 1;
+      return {
+        expectedSp,
+        chargeWhen: expectedSp ? "draw-saved" : "never",
+        ...(draw?.versionId ? { versionId: draw.versionId } : {}),
+      };
+    }
+    case "blueprint-start":
+      return { expectedSp: 1, chargeWhen: "review-saved" };
+    case "companion-request":
+      if (companion !== "receipt")
+        return { expectedSp: 1, chargeWhen: "review-saved" };
+      break;
+    case "explore":
+      return { expectedSp: 1, chargeWhen: "new-roll" };
+    case "say":
+      if (input.instantNpcs.length)
+        return { expectedSp: 1, chargeWhen: "new-roll" };
+      break;
+    case "npc-action":
+      if (input.effect) return { expectedSp: 1, chargeWhen: "new-roll" };
+      break;
+    case "vehicle-request-control":
+      if (input.oppose) return { expectedSp: 1, chargeWhen: "new-roll" };
+      break;
+  }
+  return { expectedSp: 0, chargeWhen: "never" };
+}
 export const ViewersInput = z
   .object({
     ...request,

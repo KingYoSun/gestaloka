@@ -4,9 +4,13 @@ import {
   PlayerPlayCommand,
   WorldApplication,
   applicationSp,
+  playQuote,
   type BelongingOp,
+  type PlayQuote,
   type PlayerCharacter,
 } from "@gestaloka/contracts";
+import type { paths } from "@gestaloka/contracts/http";
+import { $api } from "./api.js";
 import { Button } from "./components/ui/button.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { Notice, Problem } from "./presentation.js";
@@ -14,6 +18,27 @@ import { itemText, type PlayScreen } from "./play-panels.js";
 
 const CommandObject = z.record(z.string(), z.unknown());
 const Action = z.object({ message: z.string() });
+
+type Command = z.infer<typeof PlayerPlayCommand>;
+
+function parseCommand(draft: string, requestId: string): Command {
+  const input = CommandObject.parse(JSON.parse(draft));
+  const action = WorldApplication.safeParse(input.action);
+  return PlayerPlayCommand.parse({
+    ...input,
+    ...(input.command === "apply" && action.success
+      ? { expectedSp: applicationSp(action.data) }
+      : {}),
+    requestId,
+  });
+}
+
+const chargeConditions: Record<PlayQuote["chargeWhen"], string> = {
+  never: "",
+  "new-roll": "新しい出目を保存したときに消費します。",
+  "review-saved": "審査結果を保存したときに消費します。",
+  "draw-saved": "抽選結果を保存したときに消費します。",
+};
 
 type Choice = { id: string; label: string };
 type Selection = {
@@ -47,21 +72,24 @@ function TargetSelect({
 }
 
 export function PlayCommandEditor({
+  worldId,
   actorId,
   disabled,
   selection,
   response,
   execute,
 }: {
+  worldId: string;
   actorId: string;
   disabled: boolean;
   selection: Selection | undefined;
   response: Record<string, unknown> | undefined;
-  execute: (command: z.infer<typeof PlayerPlayCommand>) => void;
+  execute: (command: Command, expectedSp?: number) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [sourceIds, setSourceIds] = useState<string[]>([]);
   const [error, setError] = useState<Error>();
+  const quote = $api.useMutation("post", "/api/worlds/{id}/session/quote");
   const action = Action.safeParse(response?.action);
   const places = selection?.screen.neighbors ?? [];
   const items =
@@ -84,15 +112,20 @@ export function PlayCommandEditor({
       s.id ? [{ id: s.id, text: s.text }] : [],
     ) ?? [];
   const sources = skills.filter((skill) => sourceIds.includes(skill.id));
-  let price: number | undefined;
+  let parsed: Command | undefined;
   try {
-    const input = CommandObject.parse(JSON.parse(draft));
-    const action = WorldApplication.safeParse(input.action);
-    if (input.command === "apply" && action.success)
-      price = applicationSp(action.data);
+    parsed = parseCommand(draft, actorId);
   } catch {
     // 入力の途中は価格を表示しない。
   }
+  const needsQuote =
+    parsed?.command === "draw" || parsed?.command === "companion-request";
+  const currentQuote =
+    quote.variables?.params.path.id === worldId &&
+    quote.variables.params.query?.actorId === actorId
+      ? quote.data
+      : undefined;
+  const price = needsQuote ? currentQuote : parsed && playQuote(parsed);
   function update(text: string, operation: BelongingOp) {
     const action = WorldApplication.parse(
       operation.type === "learn"
@@ -112,6 +145,7 @@ export function PlayCommandEditor({
   function edit(text: string) {
     setDraft(text);
     setError(undefined);
+    quote.reset();
   }
   function example(kind: "locate" | "move") {
     const movingSelf = kind === "locate";
@@ -211,6 +245,7 @@ export function PlayCommandEditor({
               {capacity.usedSlots >= capacity.limitSlots && !sources.length && (
                 <p>元技能を選ぶと、満枠でも発展・統合を申請できます。</p>
               )}
+              <p className="muted">{chargeConditions["new-roll"]}</p>
               <Button
                 type="submit"
                 disabled={
@@ -291,15 +326,18 @@ export function PlayCommandEditor({
           className="mt-3 space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
-            if (disabled) return;
+            if (disabled || quote.isPending || (needsQuote && !price)) return;
             try {
-              const command = PlayerPlayCommand.parse({
-                ...CommandObject.parse(JSON.parse(draft)),
-                ...(price === undefined ? {} : { expectedSp: price }),
-                requestId: crypto.randomUUID(),
-              });
+              const command = parseCommand(draft, crypto.randomUUID());
               setError(undefined);
-              execute(command);
+              execute(
+                command.command === "draw" && price?.versionId
+                  ? { ...command, versionId: price.versionId }
+                  : command,
+                command.command !== "apply" && (needsQuote || price?.expectedSp)
+                  ? price?.expectedSp
+                  : undefined,
+              );
             } catch (error) {
               setError(
                 error instanceof z.ZodError
@@ -340,10 +378,44 @@ export function PlayCommandEditor({
             />
           </label>
           {error && <Problem error={error} />}
-          {price !== undefined && <p aria-live="polite">申請のSP {price}</p>}
-          <Button type="submit" disabled={disabled || !draft.trim()}>
-            コマンドを実行する
-          </Button>
+          {quote.error && <Problem error={quote.error} />}
+          {price && (
+            <p aria-live="polite">
+              {price.expectedSp ? "最大 " : ""}
+              {price.expectedSp} SP。{chargeConditions[price.chargeWhen]}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-3">
+            {needsQuote && parsed && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={disabled || quote.isPending}
+                onClick={() =>
+                  quote.mutate({
+                    params: { path: { id: worldId }, query: { actorId } },
+                    body: {
+                      ...parsed,
+                      requestId: crypto.randomUUID(),
+                    } as paths["/api/worlds/{id}/session/quote"]["post"]["requestBody"]["content"]["application/json"],
+                  })
+                }
+              >
+                {quote.isPending ? "SPを確認中" : "SPを確認する"}
+              </Button>
+            )}
+            <Button
+              type="submit"
+              disabled={
+                disabled ||
+                !draft.trim() ||
+                quote.isPending ||
+                (needsQuote && !price)
+              }
+            >
+              コマンドを実行する
+            </Button>
+          </div>
         </form>
       </details>
       {action.success && <Notice>{action.data.message}</Notice>}
