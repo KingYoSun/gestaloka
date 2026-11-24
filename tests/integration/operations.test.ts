@@ -483,6 +483,65 @@ test("APIは本人セッションとCSRFを要求し、役割の自己申告・�
   ).toMatchObject({ id: admin.id, role: "admin" });
 });
 
+test("観戦の公開設定は非公開で始まり、登録済みの本人だけが変更できる", async () => {
+  const admin = await founder(),
+    owner = await join(admin.id),
+    unregistered = await person();
+  const url = "/api/account/spectating";
+  const read = (cookie?: string) =>
+    app.inject({ url, headers: cookie ? { cookie } : {} });
+  const update = (cookie: string, payload: Record<string, unknown>) =>
+    app.inject({
+      method: "PUT",
+      url,
+      headers: { cookie, "x-gestaloka-request": "1" },
+      payload,
+    });
+
+  expect((await read()).statusCode).toBe(401);
+  expect((await update("", { public: true })).statusCode).toBe(401);
+  expect((await read(unregistered.cookie)).json().code).toBe(
+    "REGISTRATION_REQUIRED",
+  );
+  expect(
+    (await update(unregistered.cookie, { public: true })).json().code,
+  ).toBe("REGISTRATION_REQUIRED");
+  const initial = await read(owner.cookie);
+  expect(initial.json()).toEqual({ public: false });
+  expect(initial.headers["cache-control"]).toBe("private, no-store");
+  expect(
+    (
+      await app.inject({
+        method: "PUT",
+        url,
+        headers: { cookie: owner.cookie },
+        payload: { public: true },
+      })
+    ).json().code,
+  ).toBe("ORIGIN_REQUIRED");
+  expect(
+    (await update(admin.cookie, { public: true, userId: owner.id })).statusCode,
+  ).toBe(400);
+  expect((await update(owner.cookie, { public: true })).json()).toEqual({
+    public: true,
+  });
+  expect((await read(owner.cookie)).json()).toEqual({ public: true });
+  expect((await read(admin.cookie)).json()).toEqual({ public: false });
+  expect((await update(owner.cookie, { public: false })).json()).toEqual({
+    public: false,
+  });
+  await run(admin.id, {
+    operation: "users.ban",
+    userId: owner.id,
+    banned: true,
+    reason: "テスト",
+  });
+  expect((await read(owner.cookie)).json().code).toBe("USER_BANNED");
+  expect((await update(owner.cookie, { public: true })).json().code).toBe(
+    "USER_BANNED",
+  );
+});
+
 test("復旧CLIは未登録の本人IDも管理者として登録でき、自動初代付与を繰り返さない", async () => {
   const actor = await person();
   const result = await ops.recover(

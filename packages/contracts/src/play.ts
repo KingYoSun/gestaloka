@@ -866,6 +866,24 @@ export const ViewersInput = z
   .strict();
 export const ViewersResult = ViewersInput.omit({ requestId: true });
 export const PlayResponse = z.record(z.string(), z.unknown());
+export const SpectatingView = z.object({
+  name: z.string(),
+  scene: z
+    .object({
+      id,
+      entries: z.array(
+        z.object({
+          id: z.string(),
+          at: z.iso.datetime().optional(),
+          lines: z.array(
+            z.object({ speaker: z.string().optional(), text: z.string() }),
+          ),
+        }),
+      ),
+      before: z.string().nullable(),
+    })
+    .nullable(),
+});
 export const WaitingCommand = z.object({ active: z.boolean() }).strict();
 const TurnTransition = z.object({
   type: z.enum([

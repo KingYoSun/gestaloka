@@ -123,6 +123,7 @@ export class Operations {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS app_user (
       id uuid PRIMARY KEY REFERENCES app_identity(id),role text NOT NULL CHECK(role IN ('admin','user')),
       banned boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now());
+      ALTER TABLE app_user ADD COLUMN IF NOT EXISTS public_spectating boolean NOT NULL DEFAULT false;
       CREATE TABLE IF NOT EXISTS operation_state (singleton boolean PRIMARY KEY CHECK(singleton),
         bootstrapped boolean NOT NULL DEFAULT false,invite_required boolean NOT NULL DEFAULT true);
       INSERT INTO operation_state(singleton) VALUES(true) ON CONFLICT DO NOTHING;
@@ -161,6 +162,21 @@ export class Operations {
       inviteRequired: state.invite_required,
       bootstrapAvailable: !state.bootstrapped,
     };
+  }
+  async spectating(userId: string, isPublic?: boolean) {
+    const setting = (
+      await this.pool.query<{ public: boolean }>(
+        isPublic === undefined
+          ? 'SELECT public_spectating AS "public" FROM app_user WHERE id=$1 AND NOT banned'
+          : 'UPDATE app_user SET public_spectating=$2 WHERE id=$1 AND NOT banned RETURNING public_spectating AS "public"',
+        isPublic === undefined ? [userId] : [userId, isPublic],
+      )
+    ).rows[0];
+    if (!setting) {
+      await this.authorize(userId);
+      throw new AccessError(403, "USER_BANNED", "利用が停止されています");
+    }
+    return setting;
   }
   async catalog(userId: string, before?: string, worldId?: string) {
     await this.authorize(userId);

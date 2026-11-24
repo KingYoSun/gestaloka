@@ -4,6 +4,7 @@ import { cliVersionHeader } from "../support/player-cli.js";
 import { connectDatabases } from "@gestaloka/server";
 import { WorldStore } from "@gestaloka/server/world";
 import type { Page } from "@playwright/test";
+import { fixtureAuth } from "../support/auth.js";
 
 const headers = { "X-Gestaloka-Request": "1" };
 test.setTimeout(120000);
@@ -103,6 +104,109 @@ async function village(page: Page, count = 1) {
   }
   return { world, actors };
 }
+
+test("アカウントの公開設定と共有URLで観戦し、非公開に戻すと閲覧が止まる", async ({
+  page,
+  browser,
+  baseURL,
+}) => {
+  const { world, actors } = await village(page);
+  const actor = actors[0]!;
+  const play = `/worlds/${world}/play?actorId=${actor}`;
+  const watch = new URL(`/worlds/${world}/watch/${actor}`, baseURL);
+  const send = async (
+    command:
+      { command: "start" | "end-turn" } | { command: "say"; text: string },
+  ) => {
+    const response = await page.request.post(
+      `/api/worlds/${world}/session?actorId=${actor}`,
+      { headers, data: { requestId: randomUUID(), ...command } },
+    );
+    expect(response.ok(), await response.text()).toBe(true);
+  };
+  await send({ command: "start" });
+  await send({ command: "say", text: "広場から鐘の音が聞こえる" });
+  await send({ command: "end-turn" });
+
+  const watcher = await browser.newContext();
+  const anonymous = await browser.newContext();
+  const db = connectDatabases();
+  try {
+    const auth = await fixtureAuth(db.postgres);
+    const { id } = await auth.person("user");
+    await db.postgres.query("INSERT INTO e2e_subject(scope,id) VALUES($1,$2)", [
+      process.env.E2E_SCOPE,
+      id,
+    ]);
+    await watcher.addCookies([
+      { name: "test_ory", value: id, url: watch.origin, httpOnly: true },
+    ]);
+    const observer = await watcher.newPage();
+    const log = observer.getByLabel("セッションのチャット");
+    const denied = observer
+      .getByRole("alert")
+      .getByText("このプレイは観戦できません");
+    await observer.goto(watch.href);
+    await expect(denied).toBeVisible();
+    await expect(log).toBeHidden();
+
+    await page.goto(play);
+    const copy = page.getByRole("button", { name: "観戦URLをコピー" });
+    await expect(page.getByLabel("セッションのチャット")).toBeVisible();
+    await expect(copy).toBeHidden();
+    await page.getByRole("link", { name: "アカウント設定" }).click();
+    const visibility = page.getByRole("checkbox", {
+      name: "他のユーザーからの観戦を許可する",
+    });
+    await expect(visibility).not.toBeChecked();
+    await visibility.click();
+    await expect(visibility).toBeChecked();
+    await page.reload();
+    await expect(visibility).toBeChecked();
+
+    await page
+      .context()
+      .grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.goto(play);
+    await page.bringToFront();
+    await copy.click();
+    await expect(page.getByText("観戦URLをコピーしました。")).toBeVisible();
+    const sharedUrl = await page.evaluate(() => navigator.clipboard.readText());
+    expect(sharedUrl).toBe(watch.href);
+
+    const unauthenticated = await anonymous.newPage();
+    await unauthenticated.goto(sharedUrl);
+    const login = unauthenticated.getByRole("link", {
+      name: "ログイン・利用登録へ",
+    });
+    await expect(login).toBeVisible();
+    expect(
+      new URL(
+        (await login.getAttribute("href"))!,
+        watch.origin,
+      ).searchParams.get("return_to"),
+    ).toBe(sharedUrl);
+
+    await observer.goto(sharedUrl);
+    await observer.bringToFront();
+    await expect(log).toContainText("広場から鐘の音が聞こえる");
+    await expect(
+      observer.getByRole("button", { name: "発言する" }),
+    ).toBeHidden();
+    await send({ command: "say", text: "見張りが橋へ向かう" });
+    await send({ command: "end-turn" });
+    await expect(log).toContainText("見張りが橋へ向かう", { timeout: 10000 });
+
+    await page.getByRole("link", { name: "アカウント設定" }).click();
+    await visibility.click();
+    await expect(visibility).not.toBeChecked();
+    await observer.bringToFront();
+    await expect(denied).toBeVisible({ timeout: 10000 });
+    await expect(log).toBeHidden();
+  } finally {
+    await Promise.all([watcher.close(), anonymous.close(), db.close()]);
+  }
+});
 
 async function group(page: Page) {
   const { world, actors } = await village(page, 2),

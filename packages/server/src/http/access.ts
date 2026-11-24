@@ -28,6 +28,8 @@ import {
   type WorldCommand,
   PlayerStatus,
   PlayRun,
+  type SpectatingView,
+  type ReceiptResult,
   SceneStatus,
   SceneResponse,
   SceneRecordPage,
@@ -58,6 +60,57 @@ const Cursor = z
   .object({ from: z.number().int().nonnegative().safe(), id: z.uuid() })
   .strict();
 type Role = "admin" | "player";
+
+type SpectatingChat = {
+  entries?: {
+    input: string;
+    label?: string;
+    result?: {
+      action?: { command: string };
+      effectState?: string;
+      outcome?: { success?: boolean };
+      state?: string;
+    } | null;
+  }[];
+  comment?: string;
+  observation?: string;
+  reason?: string;
+  receiptResult?: Pick<z.infer<typeof ReceiptResult>, "outcome">;
+  transition?: { at: string; message: string };
+};
+type SpectatingScene = NonNullable<z.infer<typeof SpectatingView>["scene"]>;
+const receiptMessages = {
+  accepted: "受領が成立しました",
+  rejected: "受領が拒否されました",
+  expired: "受領判断の期限が切れました",
+  cancelled: "受領が取り消されました",
+};
+function spectatingLines(payload: SpectatingChat) {
+  const lines: SpectatingScene["entries"][number]["lines"] = [];
+  for (const { input, label, result } of payload.entries ?? []) {
+    if (input)
+      lines.push({ text: input, ...(label ? { speaker: label } : {}) });
+    if (payload.observation || result?.action?.command === "oppose") continue;
+    const success = result?.outcome?.success;
+    const text =
+      success === true
+        ? (result?.effectState ?? "成立しました")
+        : success === false ||
+            result?.state === "failed" ||
+            result?.state === "rejected"
+          ? "成立しませんでした"
+          : result?.state === "receiving"
+            ? "受領判断中です"
+            : undefined;
+    if (text) lines.push({ text: `結果：${text}` });
+  }
+  if (payload.comment) lines.push({ text: payload.comment });
+  if (payload.reason) lines.push({ text: payload.reason });
+  if (payload.receiptResult)
+    lines.push({ text: receiptMessages[payload.receiptResult.outcome] });
+  if (payload.transition) lines.push({ text: payload.transition.message });
+  return lines;
+}
 
 export class WorldAccess {
   readonly botPlay: BotPlay;
@@ -430,6 +483,77 @@ export class WorldAccess {
     );
     return this.botPlay.editInventoryBundle(id, grant.actor_id!, input);
   }
+  async spectate(
+    subject: string,
+    id: string,
+    actorId: string,
+    before?: string,
+  ): Promise<z.infer<typeof SpectatingView>> {
+    // 認可と観戦対象の記録を同じスナップショットで読む。
+    const pageSize = 50;
+    const { rows } = await this.pool.query<{
+      world_id: string;
+      scene_id: string | null;
+      chat_id: string | null;
+      recorded_at: Date | null;
+      payload: SpectatingChat | null;
+    }>(
+      `SELECT c.world_id,s.id AS scene_id,r.chat_id,b.recorded_at,b.payload
+       FROM world_construction c
+       LEFT JOIN bot_scene s ON s.world_id=c.id AND s.actor_id=$2 AND NOT s.closed
+       LEFT JOIN LATERAL (
+         SELECT chat_id FROM bot_record
+         WHERE scene_id=s.id AND actor_id=$2 AND chat_id<=coalesce($4::bigint-1,9223372036854775807)
+         ORDER BY chat_id DESC LIMIT $5
+       ) r ON true
+       LEFT JOIN bot_chat b ON b.id=r.chat_id
+       WHERE c.id=$1 AND c.world_id IS NOT NULL
+         AND EXISTS (
+           SELECT 1 FROM world_access a
+           JOIN world_subject owner ON owner.id=a.subject_id AND owner.active
+           JOIN app_user u ON u.id=owner.user_id AND u.public_spectating AND NOT u.banned
+           WHERE a.construction_id=c.id AND a.role='player' AND a.actor_id=$2
+         )
+         AND (c.published OR EXISTS (
+           SELECT 1 FROM world_subject viewer JOIN world_access a ON a.subject_id=viewer.id
+           WHERE viewer.user_id=$3 AND viewer.active AND a.construction_id=c.id AND a.role='player'
+         ))
+       ORDER BY r.chat_id DESC`,
+      [id, actorId, subject, before ?? null, pageSize + 1],
+    );
+    const first = rows[0];
+    if (!first)
+      throw new AccessError(
+        404,
+        "SPECTATING_UNAVAILABLE",
+        "このプレイは観戦できません",
+      );
+    const name =
+      (await this.botPlay.store.context(first.world_id).node(actorId))?.text ??
+      "プレイヤー";
+    if (!first.scene_id) return { name, scene: null };
+    const beforePage =
+      rows.length > pageSize ? rows[pageSize - 1]!.chat_id : null;
+    const entries = rows
+      .slice(0, pageSize)
+      .reverse()
+      .flatMap((row) => {
+        if (!row.chat_id || !row.payload) return [];
+        const lines = spectatingLines(row.payload);
+        if (!lines.length) return [];
+        const at = row.recorded_at?.toISOString() ?? row.payload.transition?.at;
+        return [{ id: row.chat_id, ...(at ? { at } : {}), lines }];
+      });
+    return {
+      name,
+      scene: {
+        id: first.scene_id,
+        entries,
+        before: beforePage,
+      },
+    };
+  }
+
   private async botStatusActor(
     subject: string,
     id: string,

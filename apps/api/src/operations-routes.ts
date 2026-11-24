@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   ApiError,
   Member,
+  SpectatingSetting,
   Operation,
   LegacyClaimPage,
   CatalogPageQuery,
@@ -202,6 +203,22 @@ export async function operationsRoutes(
       },
     },
     async (request) => service().state(await actor(request)),
+  );
+  app.get(
+    "/api/account/spectating",
+    { schema: { response: { 200: SpectatingSetting, ...errors } } },
+    async (request) => service().spectating(await actor(request)),
+  );
+  app.put(
+    "/api/account/spectating",
+    {
+      schema: {
+        body: SpectatingSetting,
+        response: { 200: SpectatingSetting, ...errors },
+      },
+    },
+    async (request) =>
+      service().spectating(await actor(request), request.body.public),
   );
   app.post(
     "/api/operations",
