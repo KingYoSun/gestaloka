@@ -39,6 +39,7 @@ export async function operationsRoutes(
       actor_id: string | null;
       preset_id: string | null;
       character_approved: boolean;
+      respawn_disabled: boolean;
     }
   >();
   app.addHook("onSend", async (request, reply, payload) => {
@@ -114,6 +115,7 @@ export async function operationsRoutes(
       const joining =
         command.operation === "worlds.join" &&
         command.name === undefined &&
+        command.disableRespawn === undefined &&
         requestId === device.id &&
         command.worldId === device.world_id &&
         (device.character_approved
@@ -130,6 +132,7 @@ export async function operationsRoutes(
           "PLAYER_DEVICE_SCOPE",
           "許可された参加要求を指定してください",
         );
+      devices.set(request, device);
       identities.set(request, device.user_id!);
       return device.user_id!;
     }
@@ -216,14 +219,21 @@ export async function operationsRoutes(
         },
       },
     },
-    async (request) => ({
-      result: await service().execute(
-        await actor(request),
-        request.body.requestId,
-        request.body.command,
-        { legacyToken: request.cookies.gestaloka, players },
-      ),
-    }),
+    async (request) => {
+      const userId = await actor(request);
+      const { requestId, command } = request.body;
+      return {
+        result: await service().execute(
+          userId,
+          requestId,
+          command.operation === "worlds.join" &&
+            devices.get(request)?.respawn_disabled
+            ? { ...command, disableRespawn: true }
+            : command,
+          { legacyToken: request.cookies.gestaloka, players },
+        ),
+      };
+    },
   );
   app.get(
     "/api/catalog/worlds",

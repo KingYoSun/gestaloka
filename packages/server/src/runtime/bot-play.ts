@@ -9402,18 +9402,18 @@ export class BotPlay {
       session.data.members.some((m) => m.actorId === id && !m.instant),
     );
     if (!people.length) return at;
-    const respawn = await respawnPolicy(this.pool, session.world_id);
-    if (!respawn) {
-      for (const id of people) recordPermanentDeath(changes, id, at);
-      return at;
-    }
-    await this.#endDeathStates(context, at, changes, people);
+    const respawn = await respawnPolicy(this.pool, session.world_id, people);
+    const permanent = new Set(respawn ? respawn.disabledActorIds : people);
+    for (const id of permanent) recordPermanentDeath(changes, id, at);
+    const returning = people.filter((id) => !permanent.has(id));
+    if (!respawn || !returning.length) return at;
+    await this.#endDeathStates(context, at, changes, returning);
     return this.#relocateDead(
       context,
       request,
       at,
       changes,
-      people,
+      returning,
       respawn.placeId,
     );
   }

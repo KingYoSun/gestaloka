@@ -473,42 +473,54 @@ test("一般ユーザーは公開一覧を開き、管理アプリでは管理�
   expect(adminReads).toBe(0);
 });
 
-test("プリセットがない世界には名前だけでも参加できる", async () => {
-  server.use(
-    http.get("*/api/catalog/worlds/:id", () => json({ id: W, canJoin: true })),
-    http.get("*/api/catalog/presets", () => json({ items: [], next: null })),
-    http.get("*/api/worlds/:id/players", () => json({ items: [], next: null })),
-    http.get("*/api/worlds/:id/players/:playerId", () =>
-      json({ player: null }),
-    ),
-    http.post("*/api/operations", async ({ request }) => {
-      submitted = await request.json();
-      return json({ result: { state: "joining" } });
-    }),
-  );
-  render(
-    <App
-      navigation={createAppRouter(
-        createMemoryHistory({ initialEntries: [`/worlds/${W}`] }),
-      )}
-    />,
-  );
-  fireEvent.change(await screen.findByLabelText("名前"), {
-    target: { value: "ミラ" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "この設定で参加する" }));
-  await waitFor(() =>
-    expect(submitted).toEqual({
-      requestId: expect.any(String),
-      command: {
-        operation: "worlds.join",
-        worldId: W,
-        name: "ミラ",
-        character: "名前：ミラ",
-      },
-    }),
-  );
-});
+test.each([false, true])(
+  "プリセットがない世界の新規参加でリスポーンを指定する（無効=%s）",
+  async (disableRespawn) => {
+    server.use(
+      http.get("*/api/catalog/worlds/:id", () =>
+        json({ id: W, canJoin: true }),
+      ),
+      http.get("*/api/catalog/presets", () => json({ items: [], next: null })),
+      http.get("*/api/worlds/:id/players", () =>
+        json({ items: [], next: null }),
+      ),
+      http.get("*/api/worlds/:id/players/:playerId", () =>
+        json({ player: null }),
+      ),
+      http.post("*/api/operations", async ({ request }) => {
+        submitted = await request.json();
+        return json({ result: { state: "joining" } });
+      }),
+    );
+    render(
+      <App
+        navigation={createAppRouter(
+          createMemoryHistory({ initialEntries: [`/worlds/${W}`] }),
+        )}
+      />,
+    );
+    fireEvent.change(await screen.findByLabelText("名前"), {
+      target: { value: "ミラ" },
+    });
+    if (disableRespawn)
+      fireEvent.click(
+        screen.getByLabelText("この人物のリスポーンを無効にする"),
+      );
+    fireEvent.click(screen.getByRole("button", { name: "この設定で参加する" }));
+    await waitFor(() =>
+      expect(submitted).toEqual({
+        requestId: expect.any(String),
+        command: {
+          operation: "worlds.join",
+          worldId: W,
+          name: "ミラ",
+          character: "名前：ミラ",
+          ...(disableRespawn ? { disableRespawn: true } : {}),
+        },
+      }),
+    );
+  },
+);
 
 test("初期入力を改変せず受付し、同じ世界の管理画面へ進む", async () => {
   render(

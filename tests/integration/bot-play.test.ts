@@ -15174,6 +15174,71 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
   expect(await whereabouts(0)).toEqual([f.place]);
 });
 
+test("リスポーンが有効な世界でも、作成時に無効を選んだ人物は死亡時に戻らない", async () => {
+  const f = await fixture();
+  await isolated.databases.postgres.query(
+    "UPDATE world_construction SET published=true,accepting=true,state='finished',death_place_id=$2 WHERE id=$1",
+    [f.world, f.far],
+  );
+  for (const i of [1, 2]) {
+    const owner = f.people[i]!.id;
+    const join = randomUUID();
+    await auth.operations.execute(
+      owner,
+      join,
+      {
+        operation: "worlds.join",
+        worldId: f.world,
+        name: `新規の人物${i}`,
+        character: "新しく参加する人物",
+        ...(i === 1 && { disableRespawn: true }),
+      },
+      { players: access.players },
+    );
+    await access.players.tick(join);
+    const player = (await access.players.list(owner, f.world, undefined, join))
+      .items[0]!;
+    expect(player.state).toBe("ready");
+    f.actors[i] = player.actorId!;
+    await f.move(i, f.place);
+    await f.send(i, { command: "start" });
+    await f.send(i, { command: "contact", targetId: f.actors[0] });
+  }
+  for (const targetId of f.actors.slice(1)) {
+    f.calls.mockImplementationOnce(async (id) =>
+      answer(id, { ...sure, fatal: [targetId] }),
+    );
+    const result = await f.send(0, {
+      command: "apply",
+      expectedSp: 1,
+      dependencies: [],
+      action: {
+        type: "oppose",
+        targetId,
+        text: "致命的な結果となる対抗をする",
+        description: "相手が死亡する。",
+      },
+    });
+    expect(result.outcome).toMatchObject({
+      success: true,
+      setting: { fatal: [targetId] },
+    });
+  }
+  await expect(f.send(1, { command: "start" })).rejects.toMatchObject({
+    code: "ACTOR_DEAD",
+  });
+  expect(await f.status(1)).toMatchObject({ session: null });
+  expect(await directPlaces(f.store.context(f.graph), f.actors[1]!)).toEqual([
+    f.place,
+  ]);
+  expect((await f.status(2)).characters?.map((c) => c.actorId)).toEqual([
+    f.actors[2],
+  ]);
+  expect(await directPlaces(f.store.context(f.graph), f.actors[2]!)).toEqual([
+    f.far,
+  ]);
+});
+
 test("リスポーン無効時は死亡した人物の履歴を保持して操作を止め、同じ利用者が新しい人物で参加できる", async () => {
   const f = await fixture(2);
   const [actor, victim] = f.actors as [string, string];

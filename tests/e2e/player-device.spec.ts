@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { connectDatabases } from "@gestaloka/server";
 import { test, expect } from "./fixtures.js";
 import { cliVersionHeader } from "../support/player-cli.js";
 
@@ -78,6 +79,7 @@ test("持ち主が確認コードで新規参加を許可し、ブラウザー�
   await page
     .getByLabel("新規参加: 村で暮らす人 — この村で新しく参加する")
     .check();
+  await page.getByLabel("新しく作る人物のリスポーンを無効にする").check();
   await page.screenshot({
     path: "artifacts/screenshots/player-device-consent.png",
     fullPage: true,
@@ -96,6 +98,36 @@ test("持ち主が確認コードで新規参加を許可し、ブラウザー�
       ).json()
     ).state,
   ).toBe("authorized");
+  const join = {
+    requestId: id,
+    command: {
+      operation: "worlds.join",
+      worldId: world,
+      presetId,
+      presetVersion: 1,
+    },
+  };
+  const tampered = await page.request.post("/api/operations", {
+    headers: { ...headers, ...bearer },
+    data: { ...join, command: { ...join.command, disableRespawn: false } },
+  });
+  expect(tampered.status()).toBe(403);
+  expect((await tampered.json()).code).toBe("PLAYER_DEVICE_SCOPE");
+  const joined = await page.request.post("/api/operations", {
+    headers: { ...headers, ...bearer },
+    data: join,
+  });
+  expect(joined.ok(), await joined.text()).toBe(true);
+  const db = connectDatabases();
+  try {
+    const { rows } = await db.postgres.query(
+      "SELECT respawn_disabled FROM world_join WHERE id=$1",
+      [id],
+    );
+    expect(rows).toEqual([{ respawn_disabled: true }]);
+  } finally {
+    await db.close();
+  }
   await page.getByRole("link", { name: "許可を確認・解除する" }).click();
   await expect(
     page.getByText(`接続: ${code.userCode}`, { exact: false }),
