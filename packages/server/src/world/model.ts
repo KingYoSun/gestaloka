@@ -19,6 +19,12 @@ export const derivedId = (value: string) => {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
 };
 
+export const respawnHome = "respawn-home";
+export const isRespawnHome = (edge: WorldEdge) =>
+  edge.kind === "status" &&
+  edge.role === "content" &&
+  edge.text === respawnHome;
+
 // 世界内時間は世界生成の間だけ使う。生成を終えた世界の時点は現実の時刻(エポックミリ秒)とする。
 const generating = new Set(["generating", "ready", "running", "paused"]);
 export const inGeneration = (state: string) => generating.has(state);

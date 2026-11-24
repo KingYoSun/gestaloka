@@ -1580,7 +1580,7 @@ export const Operation = z.discriminatedUnion("operation", [
         .nullable()
         .optional()
         .describe(
-          "復帰時に人物を移す場所。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ",
+          "Homeが未設定の人物の復帰先。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ",
         ),
       nonCombatAreas: NonCombatAreas.optional().describe(
         "非戦闘地域。範囲の場所IDと、古い地理記録を補う場所IDを指定する。両方の内部にあたる part-of の子にも適用する。空配列で解除し、省略すると現在の設定を保つ",
