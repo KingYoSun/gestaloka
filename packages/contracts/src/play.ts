@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Change } from "./world.js";
+import { Change, CommandRestrictions } from "./world.js";
 import { DrawTableActions } from "./draw.js";
 
 const request = { requestId: z.uuid() },
@@ -221,6 +221,7 @@ export const WorldApplication = z.xor([
     attachedItemId: id.optional(),
     minutes: count.optional(),
     affectsMovement: z.literal(true).optional(),
+    commandRestrictions: CommandRestrictions.optional(),
     feature: z.literal("vehicle").optional(),
   }),
   z.strictObject({
@@ -611,6 +612,7 @@ export const PlayCommand = z.discriminatedUnion("command", [
       ...request,
       command: z.literal("say"),
       text,
+      mode: z.enum(["voice", "nonverbal"]).optional(),
       instantNpcs: z.array(text).default([]),
     })
     .strict(),

@@ -21,10 +21,14 @@ import {
   PlaySearch,
   PlayerNotices,
   ViewersInput,
+  CommandRestrictions,
+  type CommandRestriction,
+  type BlockingState,
+  type WorldEdge,
   type ReceiptResult,
   playActionMessage,
 } from "@gestaloka/contracts";
-import { AccessError } from "../http/access.js";
+import { AccessError } from "../http/access-error.js";
 import { requireMember } from "../http/operations.js";
 import { RuntimeControl, RuntimeStopped } from "./control.js";
 import { ExecutionBudget } from "../execution-budget.js";
@@ -74,6 +78,7 @@ import {
 } from "../world/locations.js";
 import { isNonCombatPlace, type NonCombatArea } from "../world/noncombat.js";
 import { canonical, parseOutput } from "../llm/prompt.js";
+import { changeScope, matchesChangeScope } from "../world/change-scope.js";
 import { diceStoragePlace } from "../llm/dice-prompt.js";
 import type { WorldConstruction } from "./construction.js";
 import {
@@ -100,6 +105,14 @@ import {
 } from "./storage-transfers.js";
 import { PlayTeams, type TeamCommand } from "./play-teams.js";
 import { PlayCompanions, type CompanionCommand } from "./play-companions.js";
+import {
+  assertDirectChanges,
+  assertPlayScope,
+  commitPlayChange,
+  directChangeScope,
+  PlayScopeConflict,
+  type DirectChangeScope,
+} from "./play-change-scope.js";
 import {
   assignOperator,
   checkLocation,
@@ -156,8 +169,28 @@ const promotionCalls = new WeakMap<
   Map<string, ReturnType<WorldConstruction["agent"]["model"]["complete"]>>
 >();
 const VehicleCondition = z
-  .object({ movable: z.boolean(), reason: z.string() })
+  .object({
+    movable: z.boolean(),
+    reason: z.string(),
+    causeIds: z.array(z.uuid()).optional(),
+  })
   .strict();
+function movementCondition(raw: string, states: readonly WorldEdge[]) {
+  const { movable, reason, causeIds } = VehicleCondition.parse(
+    parseOutput(raw),
+  );
+  const causes = states.filter(({ id }) => causeIds?.includes(id));
+  if (
+    new Set(causeIds).size !== causes.length ||
+    (!movable && states.length > 1 && !causes.length)
+  )
+    throw new Error("移動を妨げる状態のIDを候補から指定してください");
+  return {
+    movable,
+    reason,
+    causes: !movable && states.length === 1 ? states : causes,
+  };
+}
 const BlueprintDecision = z
   .object({ accepted: z.boolean(), reason: z.string().trim().min(1) })
   .strict();
@@ -324,7 +357,11 @@ function actionMessage(
         ? "新しい場所は見つかりませんでした"
         : "新しい場所を記録しました。placeIdへ移動できます";
     case "vehicle-board":
-      return "乗りました。降りるまで乗り物と一緒に移動します";
+      return result.departure === "blocked"
+        ? "乗りました。状態によって、この乗り物は今は発進できません"
+        : result.departure === "check-required"
+          ? "乗りました。発進できるかは運行時に確認します"
+          : "乗りました。降りるまで乗り物と一緒に移動します";
     case "vehicle-leave":
       return "乗り物から降りました";
     case "vehicle-travel":
@@ -507,6 +544,8 @@ export type Session = {
       comments: Record<string, string>;
       deadline: string;
       changes: Change;
+      directScope?: DirectChangeScope;
+      moveScope?: string;
       at: number;
       dependencies: Dependency[];
       items?: ItemOutcome[];
@@ -622,6 +661,16 @@ const adjudicationLease = "interval '30 seconds'";
 function reject(code: string, message: string): never {
   throw new AccessError(409, code, message);
 }
+class CommandRestrictionError extends AccessError {
+  constructor(
+    code: string,
+    message: string,
+    visible: BlockingState[],
+    readonly causes: readonly WorldEdge[],
+  ) {
+    super(409, code, message, undefined, undefined, visible);
+  }
+}
 function requireSpQuote(expectedSp: number, currentSp: number) {
   if (currentSp > expectedSp)
     reject(
@@ -734,6 +783,7 @@ export const defaultCreationCriteria =
 const StateText = {
   text: z.string().trim().min(1),
   minutes: z.number().int().positive().max(5256000).optional(),
+  commandRestrictions: CommandRestrictions.optional(),
 };
 // 探索が成功したときに記録する、道の記述・新しい場所の説明・接続元の一部かどうか。
 const Explored = z
@@ -850,7 +900,11 @@ function addState(
   key: string,
   person: string,
   at: number,
-  { text, minutes }: { text: string; minutes?: number | undefined },
+  {
+    text,
+    minutes,
+    commandRestrictions,
+  }: z.infer<z.ZodObject<typeof StateText>>,
 ) {
   const state = derivedId(key);
   changes.nodes.push({ id: state, kind: "script", text });
@@ -862,6 +916,7 @@ function addState(
     source: person,
     target: state,
     period: { from: at, ...(minutes ? { until: at + minutes * 60000 } : {}) },
+    ...(commandRestrictions === undefined ? {} : { commandRestrictions }),
   });
 }
 // ファンブルした判定の状態を本人に残す。出し直しで返した前回の結果では重ねない。
@@ -1026,16 +1081,20 @@ const deathStatePrompt =
   "人物の死亡や、人物として動くこと・話すことが戻らない機能の停止は状態に含めない。死亡はfatalでだけ表す。";
 const minutesPrompt =
   "minutesはその状態が自然に続く実時間（分）で、何もしなくても時間の経過で終わる状態にだけ付ける。自然には終わらない状態では省く。";
+const commandRestrictionsPrompt =
+  '状態が有効な間に常にできない操作だけをcommandRestrictionsに指定する。"say"は発声（身振りや筆談は残る）、"move"は本人の移動、"vehicle-travel"は乗り物の運行。成功率が下がるだけの操作や、状況次第でできる操作は含めない。制限がなければ空配列。';
 export const defaultFumbleCriteria =
   "行動そのものの危険、申請に書かれた進め方、本人の状態と持ち物から、失敗がさらに悪い結果になる見込みをダイスの基準値で設定する。本人に残る変化がなければ設定しない";
 const fumblePrompt = (criteria: string) =>
   "ファンブルの基準に照らして、この行動が失敗したうえ、さらに悪い結果として申請者本人に変化が残り得るなら、同じ応答にfumble:{through:整数,text:文字列,minutes:整数}を加える。失敗したときだけ同じ面数でもう一度振り、出目がthrough以下ならtextを申請者本人の状態として記録する。1<=through<sides。textは変化後の本人の状態を、後から本人だけを調べた人が読める一文で書き、経緯や原因の推測を除く。部位や程度は一つに決め、複数の候補を並べない。死亡は含めない。該当しなければfumbleを省く。" +
   minutesPrompt +
+  commandRestrictionsPrompt +
   "ファンブルの基準: " +
   criteria +
   "。";
 const selfStatusPrompt =
-  "本人の直接の状態変更について、変更前の本文と対象、申請した変更、確定した記録を照合し、審査結果をJSONで返す。表記の訂正や、同じ状態について付与後に成立した結果の反映には再度ダイスを振らず、allowApplyがtrueなら{apply:true,endEdges:[関係ID]}を返す。身体や世界にまだ成立していない不確実な変化は同じ応答でダイス設定を返す。追記・改訂・終了の形式や自己申告だけを成立の根拠にしない。";
+  "本人の直接の状態変更について、変更前の本文と対象、申請した変更、確定した記録を照合し、審査結果をJSONで返す。表記の訂正や、同じ状態について付与後に成立した結果の反映には再度ダイスを振らず、allowApplyがtrueなら{apply:true,endEdges:[関係ID]}を返す。身体や世界にまだ成立していない不確実な変化は同じ応答でダイス設定を返す。追記・改訂・終了の形式や自己申告だけを成立の根拠にしない。申請にcommandRestrictionsがある場合は制限を含めて審査する。" +
+  commandRestrictionsPrompt;
 function stateRelations(
   facts: { node: { id: string }; states: { relationId?: string }[] }[],
   subjects: readonly string[],
@@ -1220,6 +1279,7 @@ export class BotPlay {
       CREATE TABLE IF NOT EXISTS bot_arrival (
       id uuid PRIMARY KEY,world_id uuid NOT NULL,actor_id uuid NOT NULL,due timestamptz NOT NULL,
       text text NOT NULL,operations jsonb NOT NULL);
+      ALTER TABLE bot_arrival ADD COLUMN IF NOT EXISTS direct_scope text;
       CREATE TABLE IF NOT EXISTS player_notice (
       id uuid PRIMARY KEY,world_id uuid NOT NULL,actor_id uuid NOT NULL,created_at timestamptz NOT NULL,
       text text NOT NULL,read boolean NOT NULL DEFAULT false);
@@ -1699,7 +1759,7 @@ export class BotPlay {
               {
                 role: "system",
                 content:
-                  "あなたは明示的に担当を指定された一人のユニークNPCです。自分自身の発言・行動の描写にはsayを使います。発言の中で物を使った・食べた・渡したと述べても、持ち物は変わりません。self.material.companion があれば、wait中はその場で、follow中は同行相手と一緒に行動します。自分だけの出発は選べません。自分が乗り物（self.material.vehicle）なら、自ら運行するときは自分のIDをvehicleIdに指定してvehicle-travelを使えます。npc-actionは他の出現個体について申請するコマンドです。本人に提供された素材とセッションの入力・結果から、本人として次のAPIコマンドを一つ選びます。通常手番の開始時、sinceLastTurnには前回の自分の公開行動、その後に届いた発言・結果・コメント、同席者の増減があります。退出はセッションからの退出で、世界内の移動を意味しません。前回応じた声と新しい呼びかけを区別してください。今応じることや自分からしたいことがなければ、何も発言せずend-turnを選べます。currentTurnはこの手番で既に実行した操作とその結果です。発言・行動を終え、続けて行う別の目的がなければend-turnで次の人物へ渡してください。世界の裁定や他人の私的な解釈を代作しません。requestIdはサーバーが設定します。commandSchemaに従うJSONだけを返します。",
+                  'あなたは明示的に担当を指定された一人のユニークNPCです。自分自身の発言・行動の描写にはsayを使います。声を出さない身振りや筆談はmodeを"nonverbal"にします。状態のcommandRestrictionsを参照し、発声を制限されているときに伝えたいことがあれば、使える伝達手段を選べます。発言の中で物を使った・食べた・渡したと述べても、持ち物は変わりません。self.material.companion があれば、wait中はその場で、follow中は同行相手と一緒に行動します。自分だけの出発は選べません。自分が乗り物（self.material.vehicle）なら、自ら運行するときは自分のIDをvehicleIdに指定してvehicle-travelを使えます。npc-actionは他の出現個体について申請するコマンドです。本人に提供された素材とセッションの入力・結果から、本人として次のAPIコマンドを一つ選びます。通常手番の開始時、sinceLastTurnには前回の自分の公開行動、その後に届いた発言・結果・コメント、同席者の増減があります。退出はセッションからの退出で、世界内の移動を意味しません。前回応じた声と新しい呼びかけを区別してください。今応じることや自分からしたいことがなければ、何も発言せずend-turnを選べます。currentTurnはこの手番で既に実行した操作とその結果です。発言・行動を終え、続けて行う別の目的がなければend-turnで次の人物へ渡してください。世界の裁定や他人の私的な解釈を代作しません。requestIdはサーバーが設定します。commandSchemaに従うJSONだけを返します。',
               },
               {
                 role: "user",
@@ -1943,6 +2003,7 @@ export class BotPlay {
     const effect = action.effect;
     let effectState: string | null = null;
     let effectMinutes: number | undefined;
+    let effectRestrictions: CommandRestriction[] | undefined;
     const prior = await this.store.receipt(context.worldId, request);
     if (prior) {
       const saved = (
@@ -2141,7 +2202,11 @@ export class BotPlay {
             );
             effectState = state?.text ?? null;
             effectMinutes = state?.minutes;
-          } else effectState = saved.observable;
+            effectRestrictions = state?.commandRestrictions;
+          } else {
+            effectState = saved.observable;
+            effectRestrictions = saved.observableRestrictions;
+          }
           if (saved.perception)
             stealth = await this.#oppositionObservations(
               request,
@@ -2291,6 +2356,9 @@ export class BotPlay {
           role: "content",
           text: judged,
           stateOrigin: { requestId: request, actorId },
+          ...(effectRestrictions === undefined
+            ? {}
+            : { commandRestrictions: effectRestrictions }),
         },
         effectMinutes ? at + effectMinutes * 60000 : undefined,
       );
@@ -2413,6 +2481,7 @@ export class BotPlay {
               w.at,
             )
           : undefined;
+        const directScope = plan && directChangeScope(plan.changes);
         const db = await this.pool.connect();
         try {
           await db.query("BEGIN");
@@ -2438,7 +2507,12 @@ export class BotPlay {
                 session.world_id,
                 plan.nonCombatAreas,
               );
-              const receipt = await this.#commit(w.id, request, plan);
+              const receipt = await this.#commit(
+                w.id,
+                request,
+                plan,
+                directScope!,
+              );
               current.data.entries.push({
                 actorId: actor,
                 input: action.text,
@@ -3622,6 +3696,10 @@ export class BotPlay {
     if (!receipt) {
       const context = this.store.context(w.id, r.dependencies);
       try {
+        const approved = r.directScope ?? directChangeScope(r.changes);
+        assertDirectChanges(approved, r.changes);
+        if (r.moveScope)
+          assertPlayScope(r.moveScope, [r.locates ?? [], r.mixedMoves ?? []]);
         for (const item of r.items ?? [])
           if (item.holding) await context.assertMovable(item.itemId);
         const plan = staying.length
@@ -3652,6 +3730,7 @@ export class BotPlay {
             at: Math.max(plan?.at ?? r.at, w.at),
             changes: plan?.changes ?? r.changes,
             context: plan?.context ?? context,
+            directScope: plan ? directChangeScope(plan.changes) : approved,
           },
           undefined,
           r.parallel ? staying : [],
@@ -3660,12 +3739,27 @@ export class BotPlay {
       } catch (error) {
         if (error instanceof RuntimeStopped) throw error;
         const failure = playError(error);
-        if (!timedOut || !(failure instanceof AccessError)) throw error;
+        if (rejectingActor && failure instanceof CommandRestrictionError)
+          await this.#rejectBlocked(
+            this.store.context(w.id),
+            rejectingActor,
+            failure.code,
+            "状態によって移動できません。",
+            failure.causes,
+          );
+        if (
+          !(failure instanceof AccessError) ||
+          (!timedOut && !(error instanceof PlayScopeConflict))
+        )
+          throw error;
         await beforeWrite?.();
         return {
           settled: await this.#settle(db, session, "rejected", {
             code: failure.code,
-            message: failure.message,
+            message:
+              failure instanceof CommandRestrictionError
+                ? "状態によって移動できません。"
+                : failure.message,
           }),
         };
       }
@@ -4221,8 +4315,12 @@ export class BotPlay {
   }
   async #deliverArrival(db: Db, id: string) {
     const row = (
-      await db.query<{ world_id: string; operations: BelongingOp[] }>(
-        "SELECT world_id,operations FROM bot_arrival WHERE id=$1 FOR UPDATE SKIP LOCKED",
+      await db.query<{
+        world_id: string;
+        operations: BelongingOp[];
+        direct_scope: string | null;
+      }>(
+        "SELECT world_id,operations,direct_scope FROM bot_arrival WHERE id=$1 FOR UPDATE SKIP LOCKED",
         [id],
       )
     ).rows[0];
@@ -4232,36 +4330,51 @@ export class BotPlay {
       commitId = derivedId(id + ":arrival");
     let receipt = await this.store.receipt(w.id, commitId);
     if (!receipt) {
+      if (
+        row.direct_scope &&
+        !matchesChangeScope(row.direct_scope, row.operations)
+      ) {
+        await this.#finishArrival(
+          db,
+          id,
+          "到着予定の物品が申請時の内容と一致しないため、受け渡しを取りやめました。",
+        );
+        return;
+      }
       const plan = await planBelongings(
         context,
         commitId,
         w.at,
         row.operations,
       );
+      const scope = directChangeScope(plan.changes);
       // 所持枠が空くまで確定を試みず、到着予定を残す。
       await context.checkInventory(plan.changes, { readOnly: true });
-      receipt = await this.#commit(w.id, commitId, { ...plan, context });
+      receipt = await this.#commit(w.id, commitId, { ...plan, context }, scope);
     }
     const items = await this.#itemOutcomes(
       context,
       { requestId: commitId, operations: row.operations },
       receipt.changes,
     );
+    await this.#finishArrival(
+      db,
+      id,
+      arrivingItems(row.operations)
+        .map((item) => item.label + (item.count ? `（${item.count}個）` : ""))
+        .join("、") +
+        "が届きました。" +
+        (await itemOutcomeMessage(context, items)) +
+        "search --kind self の belongings で確かめられます",
+    );
+  }
+
+  async #finishArrival(db: Db, id: string, text: string) {
     await db.query(
       `WITH done AS (DELETE FROM bot_arrival WHERE id=$1 RETURNING world_id,actor_id),
         noticed AS (INSERT INTO player_notice(id,world_id,actor_id,created_at,text) SELECT $2,world_id,actor_id,$3,$4 FROM done RETURNING world_id,actor_id)
         SELECT pg_notify('gestaloka_turn',world_id::text||':'||actor_id::text) FROM noticed`,
-      [
-        id,
-        derivedId(id + ":notice"),
-        this.now(),
-        arrivingItems(row.operations)
-          .map((item) => item.label + (item.count ? `（${item.count}個）` : ""))
-          .join("、") +
-          "が届きました。" +
-          (await itemOutcomeMessage(context, items)) +
-          "search --kind self の belongings で確かめられます",
-      ],
+      [id, derivedId(id + ":notice"), this.now(), text],
     );
   }
   // 未読の通知があることを、プレイの応答に添える。
@@ -5384,6 +5497,9 @@ export class BotPlay {
         id: node!.id,
         text: node!.text,
         relationId: relation.id,
+        ...(relation.commandRestrictions?.length
+          ? { commandRestrictions: relation.commandRestrictions }
+          : {}),
       })),
       omittedStates: all.length - chosen.length,
     };
@@ -5447,17 +5563,18 @@ export class BotPlay {
       for (const id of input.viewers)
         if ((await context.node(id))?.kind !== "existence")
           reject("VIEWER_NOT_FOUND", "読める相手には人物を指定してください");
+    const changes = {
+      ...empty(),
+      revisions: [{ ...node, viewers: input.viewers }],
+    };
+    const scope = directChangeScope(changes);
     await RuntimeControl.withActiveRuntime(this.pool, () =>
-      this.#commit(w.id, input.requestId, {
-        context,
-        at: w.at,
-        changes: {
-          nodes: [],
-          revisions: [{ ...node, viewers: input.viewers }],
-          edges: [],
-          endEdges: [],
-        },
-      }),
+      this.#commit(
+        w.id,
+        input.requestId,
+        { context, at: w.at, changes },
+        scope,
+      ),
     ).catch((error) => {
       throw playError(error);
     });
@@ -6178,7 +6295,11 @@ export class BotPlay {
     const material = {
       currentSpeech: session.data.entries
         .slice(member.joinedAfterEntries ?? 0)
-        .filter((e) => e.speechWitnesses?.includes(input.targetId))
+        .filter(
+          (e) =>
+            e.speechWitnesses?.includes(input.targetId) &&
+            (e.result as { mode?: string } | null)?.mode !== "nonverbal",
+        )
         .map((e) => ({ actorId: e.actorId, text: e.input })),
       premise: (await this.construction.get(world)).initial_prompt,
       applicant: actor,
@@ -7166,6 +7287,9 @@ export class BotPlay {
       const states = [...chosen].map(({ node, about, relation }) => ({
         node,
         since: relation.period.from,
+        ...(relation.commandRestrictions?.length
+          ? { commandRestrictions: relation.commandRestrictions }
+          : {}),
         ...(stateSubjects.includes(id) && editableStatus(relation, node)
           ? { relationId: relation.id }
           : {}),
@@ -7751,8 +7875,10 @@ export class BotPlay {
           w.at,
           input.requestId,
         );
-        if ("vehicleResult" in relocation)
-          await this.#requireVehicleMovable(context, op.subjectId);
+        if ("vehicleResult" in relocation) {
+          await this.#requirePassable(context, actor, op);
+          await this.#requireVehicleMovable(context, op.subjectId, actor);
+        }
         return { ...relocation, context, recipients: [] };
       }
     }
@@ -8267,11 +8393,12 @@ export class BotPlay {
           externalEffect = true;
         if (op.type === "locate") {
           const location = await checkLocation(db, world, context, actor, op);
-          await this.#requirePassable(context, op);
+          await this.#requirePassable(context, actor, op);
           if (location.travel)
             await this.#requireVehicleMovable(
               context,
               location.travel.vehicleId,
+              actor,
             );
           if (location.board) {
             boardings.push({
@@ -8287,8 +8414,32 @@ export class BotPlay {
               release.push(location.release!);
             }
           }
-          if (vehicleResponse && plannedOps.length === 0)
+          if (vehicleResponse && plannedOps.length === 0) {
             vehicleResult = location.board ?? location.leave ?? location.travel;
+            if (location.board) {
+              const vehicle = location.board.vehicleId;
+              const blocked = await this.#vehicleRestriction(
+                context,
+                vehicle,
+                actor,
+              );
+              if (blocked)
+                vehicleResult = {
+                  ...location.board,
+                  departure: "blocked",
+                  departureCauses: await this.#blockingStates(context, actor, [
+                    blocked,
+                  ]),
+                };
+              else if (
+                (await this.#legacyVehicleStates(context, vehicle)).length
+              )
+                vehicleResult = {
+                  ...location.board,
+                  departure: "check-required",
+                };
+            }
+          }
           if (!accompanying && !location.travel) await affect(op.subjectId);
         } else if (op.type === "create") {
           parties.add(op.holder);
@@ -9388,36 +9539,132 @@ export class BotPlay {
       policy.death_criteria,
     ];
   }
-  // 判定で付いた現在の状態がある乗り物だけ、その状態で動けるかをGMが判断する。状態が無ければ判断しない。
-  async #vehicleMovable(context: WorldContext, vehicleId: string) {
-    const states: { id: string; text: string }[] = [];
-    for (const e of await context.relations(
-      vehicleId,
-      "status",
-      "out",
+  async #blockingStates(
+    context: WorldContext,
+    viewer: string,
+    causes: readonly WorldEdge[],
+  ) {
+    const visible = await Promise.all(
+      causes.map(async (edge): Promise<BlockingState | undefined> => {
+        const node = await context.node(edge.target);
+        if (!node || (viewer !== edge.source && !visibleTo(node, viewer, true)))
+          return;
+        return {
+          stateId: edge.id,
+          shortId:
+            "@" +
+            createHash("sha256").update(edge.id).digest("hex").slice(0, 8),
+          text: node.text,
+          ...(edge.period.until === undefined
+            ? {}
+            : { until: edge.period.until }),
+        };
+      }),
+    );
+    return visible.filter((state) => state !== undefined);
+  }
+
+  async #rejectBlocked(
+    context: WorldContext,
+    viewer: string,
+    code: string,
+    message: string,
+    causes: readonly WorldEdge[],
+    reason = "",
+  ): Promise<never> {
+    const visible = await this.#blockingStates(context, viewer, causes);
+    throw new CommandRestrictionError(
+      code,
+      reason && visible.length === causes.length
+        ? `${message}${reason}`
+        : message,
+      visible,
+      causes,
+    );
+  }
+
+  async #vehicleRestriction(
+    context: WorldContext,
+    vehicleId: string,
+    actor: string,
+  ) {
+    const at = this.now().getTime();
+    return (
+      (await context.commandRestriction(vehicleId, "vehicle-travel", at)) ??
+      (await context.commandRestriction(vehicleId, "move", at)) ??
+      (actor === vehicleId
+        ? undefined
+        : await context.commandRestriction(actor, "vehicle-travel", at))
+    );
+  }
+
+  async #requireVoice(context: WorldContext, actor: string) {
+    const blocked = await context.commandRestriction(
+      actor,
+      "say",
       this.now().getTime(),
-      latest,
-    ))
-      if (e.role === "content" && e.text === judged)
-        states.push({ id: e.id, text: (await context.node(e.target))!.text });
-    if (!states.length) return { movable: true, reason: "" };
-    const parse = (raw: string) => VehicleCondition.parse(parseOutput(raw));
+    );
+    if (blocked)
+      await this.#rejectBlocked(
+        context,
+        actor,
+        "VOICE_RESTRICTED",
+        "発声できません。",
+        [blocked],
+      );
+  }
+
+  async #legacyVehicleStates(context: WorldContext, vehicleId: string) {
+    const at = this.now().getTime();
+    return (await context.relations(vehicleId, "status", "out", at)).filter(
+      (edge) =>
+        edge.role === "content" &&
+        edge.text === judged &&
+        edge.commandRestrictions === undefined,
+    );
+  }
+
+  // 確定済みの制限は関係だけで判定し、制限の指定がなかった旧状態は従来の判断を使う。
+  async #vehicleMovable(
+    context: WorldContext,
+    vehicleId: string,
+    actor: string,
+  ) {
+    const blocked = await this.#vehicleRestriction(context, vehicleId, actor);
+    if (blocked) return { movable: false, reason: "", causes: [blocked] };
+    const edges = await this.#legacyVehicleStates(context, vehicleId);
+    if (!edges.length) return { movable: true, reason: "", causes: [] };
+    const statesContext = this.store.context(context.worldId);
+    const states = await Promise.all(
+      edges.map(async (edge) => {
+        await statesContext.edge(edge.id);
+        return {
+          id: edge.id,
+          text: (await statesContext.node(edge.target))?.text,
+        };
+      }),
+    );
+    const versions = statesContext.dependencies.sort((a, b) =>
+      a.key.localeCompare(b.key),
+    );
+    context.dependOn(versions);
+    const parse = (raw: string) => movementCondition(raw, edges);
     const response = await this.#ask(
       derivedId(
-        `${context.worldId}:vehicle-condition:${vehicleId}:${canonical(states)}`,
+        `${context.worldId}:vehicle-condition:${vehicleId}:${canonical(versions)}`,
       ),
       "world-vehicle-condition",
       [
         {
           role: "system",
           content:
-            "乗り物が今の状態で、人や荷を乗せて移動できるかだけを判断する。JSON: {movable:真偽,reason:文字列}。statesは乗り物に判定で付いた現在の状態。移動を妨げる損傷や故障があればfalse、移動に差し支えない状態ならtrue。reasonは判断の理由を一文で書く。物語を生成しない。",
+            "乗り物が今の状態で、人や荷を乗せて移動できるかだけを判断する。JSON: {movable:真偽,reason:文字列,causeIds:[状態ID]}。statesは乗り物に判定で付いた現在の状態。移動を妨げる損傷や故障があればfalseにし、原因のIDをstatesから選ぶ。移動に差し支えないならtrue。reasonは判断の理由を一文で書く。物語を生成しない。",
         },
         {
           role: "user",
           content: canonical({
             vehicle: (await context.node(vehicleId))?.text,
-            states: states.map((state) => state.text),
+            states,
           }),
         },
       ],
@@ -9426,7 +9673,7 @@ export class BotPlay {
     );
     return parse(response.content);
   }
-  async #requirePassable(context: WorldContext, move: Locate) {
+  async #requirePassable(context: WorldContext, actor: string, move: Locate) {
     const destination =
       move.directPlaceId ??
       (move.aboutIds.length === 1 ? move.aboutIds[0] : undefined);
@@ -9435,9 +9682,22 @@ export class BotPlay {
     if (origins.includes(destination)) return;
     const conditionsContext = this.store.context(context.worldId);
     const at = this.now().getTime();
+    const places = [...new Set([...origins, destination])];
+    for (const subject of [move.subjectId, ...places]) {
+      const blocked = await context.commandRestriction(subject, "move", at);
+      if (blocked)
+        await this.#rejectBlocked(
+          context,
+          actor,
+          "MOVEMENT_BLOCKED",
+          "状態によって移動できません。",
+          [blocked],
+        );
+    }
     const conditions = [];
-    for (const place of new Set([...origins, destination])) {
-      const edges = await context.relations(place, "status", "out", at, latest);
+    const causes: WorldEdge[] = [];
+    for (const place of places) {
+      const edges = await context.relations(place, "status", "out", at);
       for (const edge of edges) {
         if (!edge.stateOrigin?.affectsMovement) continue;
         // 関係集合の版は確定を守り、個々の状態の版で判定を再利用する。
@@ -9447,6 +9707,7 @@ export class BotPlay {
           id: edge.id,
           text: (await conditionsContext.node(edge.target))?.text,
         });
+        causes.push(edge);
       }
     }
     if (!conditions.length) return;
@@ -9460,7 +9721,7 @@ export class BotPlay {
       destination,
       conditions,
     };
-    const parse = (raw: string) => VehicleCondition.parse(parseOutput(raw));
+    const parse = (raw: string) => movementCondition(raw, causes);
     const result = parse(
       (
         await this.#ask(
@@ -9472,7 +9733,7 @@ export class BotPlay {
             {
               role: "system",
               content:
-                "指定された場所の状態のもとで、この移動が可能かを判定する。JSON {movable:真偽値,reason:理由} を返す。ほかの出来事や状態は作らない。",
+                "指定された場所の状態のもとで、この移動が可能かを判定する。JSON {movable:真偽値,reason:理由,causeIds:[状態ID]} を返す。移動できない場合はconditionsから原因の状態IDを選ぶ。ほかの出来事や状態は作らない。",
             },
             { role: "user", content: canonical(movement) },
           ],
@@ -9481,15 +9742,35 @@ export class BotPlay {
         )
       ).content,
     );
-    if (!result.movable) reject("MOVEMENT_BLOCKED", result.reason);
+    if (!result.movable)
+      await this.#rejectBlocked(
+        context,
+        actor,
+        "MOVEMENT_BLOCKED",
+        "状態によって移動できません。",
+        result.causes,
+        result.reason,
+      );
   }
   // 乗り物が損傷で動けなければ、移動の申請を断る。
-  async #requireVehicleMovable(context: WorldContext, vehicleId: string) {
-    const { movable, reason } = await this.#vehicleMovable(context, vehicleId);
+  async #requireVehicleMovable(
+    context: WorldContext,
+    vehicleId: string,
+    actor: string,
+  ) {
+    const { movable, reason, causes } = await this.#vehicleMovable(
+      context,
+      vehicleId,
+      actor,
+    );
     if (!movable)
-      reject(
+      await this.#rejectBlocked(
+        context,
+        actor,
         "VEHICLE_DISABLED",
-        `${(await context.node(vehicleId))?.text ?? "乗り物"}は今の状態では動けません。${reason}`,
+        `${(await context.node(vehicleId))?.text ?? "乗り物"}は今の状態では動けません。`,
+        causes,
+        reason,
       );
   }
   // 終える関係のうち、物を持つ関係の持ち主。
@@ -9757,14 +10038,16 @@ export class BotPlay {
       | "storageEffect"
       | "nonCombatAreas"
       | "spUseProhibitionGrants"
-    >,
+    > & { directScope: DirectChangeScope },
     fixed?: string[],
     staying: string[] = [],
     beforeWrite?: () => Promise<void>,
   ) {
+    let scope = plan.directScope;
     if (ops.length) {
       const prior = await this.store.receipt(graph, request);
       if (prior) return prior;
+      assertDirectChanges(scope, plan.changes);
       const moves = new Map(
         ops
           .filter((op): op is Locate => op.type === "locate")
@@ -9793,6 +10076,14 @@ export class BotPlay {
         )
           continue;
         const next = { ...move, subjectId: c.npc_id };
+        if (
+          await plan.context.commandRestriction(
+            c.npc_id,
+            "move",
+            this.now().getTime(),
+          )
+        )
+          continue;
         await plan.context.assertMovable(c.npc_id);
         const { travel } = await checkLocation(
           db,
@@ -9804,7 +10095,13 @@ export class BotPlay {
         // 損傷で動けない乗り物は追従せず、その場に残る。
         if (
           travel &&
-          !(await this.#vehicleMovable(plan.context, travel.vehicleId)).movable
+          !(
+            await this.#vehicleMovable(
+              plan.context,
+              travel.vehicleId,
+              c.actor_id,
+            )
+          ).movable
         )
           continue;
         follows.push(next);
@@ -9816,11 +10113,12 @@ export class BotPlay {
         plan.changes,
         follows,
       );
+      if (follows.length) scope = directChangeScope(plan.changes);
     }
     await beforeWrite?.();
     if (plan.nonCombatAreas && !(await this.store.receipt(graph, request)))
       await this.#checkNonCombatAreas(db, world, plan.nonCombatAreas);
-    return this.#commit(graph, request, plan, fixed);
+    return this.#commit(graph, request, plan, scope, fixed);
   }
 
   async #commit(
@@ -9830,12 +10128,14 @@ export class BotPlay {
       Plan,
       "context" | "at" | "changes" | "storageEffect" | "spUseProhibitionGrants"
     >,
+    scope: DirectChangeScope,
     newFixedPlaces?: string[],
   ) {
     const prior = await this.store.receipt(world, requestId);
     return (
       prior ??
-      this.store.commit(
+      commitPlayChange(
+        this.store,
         await this.store.claim(world, requestId),
         plan.context,
         {
@@ -9849,6 +10149,7 @@ export class BotPlay {
           ...(plan.storageEffect ? { storageEffect: plan.storageEffect } : {}),
           ...(newFixedPlaces?.length ? { newFixedPlaces } : {}),
         },
+        scope,
         true,
       )
     );
@@ -9935,7 +10236,7 @@ export class BotPlay {
           )
         : parsed;
       const decision = read(dice),
-        { observable } = decision,
+        { observable, observableRestrictions } = decision,
         setting = protect(decision.setting),
         fatal = setting.fatal?.filter((id) => mortal.includes(id)),
         states = setting.states?.filter((s) => affected.includes(s.id));
@@ -9960,19 +10261,26 @@ export class BotPlay {
           consumable,
         ),
         observable,
+        observableRestrictions,
         perception: reported,
       };
     }
-    function read(result: unknown) {
+    function read(result: unknown): {
+      setting: z.infer<typeof DiceSetting>;
+      observable: string | null;
+      observableRestrictions?: CommandRestriction[] | undefined;
+    } {
       if (protection?.target && proposedState === undefined) {
         const dice = z.record(z.string(), z.unknown()).parse(result);
         delete dice.observable;
+        delete dice.observableRestrictions;
         return { setting: DiceSetting.parse(dice), observable: null };
       }
       if (proposedState === undefined)
         return { setting: DiceSetting.parse(result), observable: null };
-      const { observable, ...dice } = z
+      const { observable, observableRestrictions, ...dice } = z
         .object({
+          observableRestrictions: CommandRestrictions.optional(),
           observable: z
             .string()
             .trim()
@@ -9993,7 +10301,11 @@ export class BotPlay {
         })
         .passthrough()
         .parse(result);
-      return { setting: DiceSetting.parse(dice), observable };
+      return {
+        setting: DiceSetting.parse(dice),
+        observable,
+        observableRestrictions,
+      };
     }
     if (spRequest) {
       await this.#reserveOpposition(spRequest);
@@ -10012,7 +10324,8 @@ export class BotPlay {
               ? ""
               : "NPCの外界への作用ではさらにobservableを返す。後から対象だけを調べた人が何がどうなったかを読めるよう、changes.stateから変化後の状態を述べる箇所を文末または句読点まで原文で抜き出す。部位名だけに切り詰めない。行為者、経緯、原因の推測を除く。" +
                 deathStatePrompt +
-                "観察可能な箇所がなければnull。") +
+                "観察可能な箇所がなければnull。observableを返す場合は制限をobservableRestrictionsに返す。" +
+                commandRestrictionsPrompt) +
             (mortal.length
               ? "この行動が成功したときに死亡する対象を、mortalのIDから選んでfatal:[ID]に返す。行動と結果が対象の死を意味するときだけ選び、該当がなければ空配列。deathCriteriaがあれば、この世界で人物が死亡する条件として従う。"
               : "") +
@@ -10020,7 +10333,8 @@ export class BotPlay {
               ? "この行動が成功したときに人物へ残る変化を、affectedのIDごとにstates:[{id,text}]で返す。申請者がchangesに書いた他人の状態は記録されないので、残る変化はここに書く。対象ごとに一件とし、後からその人物だけを調べた人が何がどうなったかを読める一文で書く。行為者、経緯、原因の推測を除く。" +
                 deathStatePrompt +
                 "追加する変化がなければ空配列。各状態にはminutesを加えてよい。" +
-                minutesPrompt
+                minutesPrompt +
+                commandRestrictionsPrompt
               : "") +
             fumble +
             (group
@@ -10059,10 +10373,16 @@ export class BotPlay {
     const {
         setting,
         observable,
+        observableRestrictions,
         perception: reported,
       } = readDecision(response.content),
       saved = await this.#roll(requestId, setting, spRequest, protect);
-    return { ...saved, observable, perception: reported };
+    return {
+      ...saved,
+      observable,
+      observableRestrictions,
+      perception: reported,
+    };
   }
   async #roll(
     id: string,
@@ -10720,6 +11040,9 @@ export class BotPlay {
             source: action.targetId,
             target: id,
             ...(action.feature ? { text: action.feature } : {}),
+            ...(action.commandRestrictions === undefined
+              ? {}
+              : { commandRestrictions: action.commandRestrictions }),
             period: {
               from: world.at,
               ...(action.minutes
@@ -11031,12 +11354,17 @@ export class BotPlay {
         reject("TURN_REQUIRED", "申請した手番は終了しました");
     }
     // Semantic work precedes all session locks; its graph dependencies are validated at commit.
+    const voice = input.command === "say" && input.mode !== "nonverbal";
+    const speechContext =
+      voice && input.instantNpcs?.length ? this.store.context(w.id) : undefined;
+    if (speechContext && !(await this.store.receipt(w.id, input.requestId)))
+      await this.#requireVoice(speechContext, actor);
     let promotion: Awaited<ReturnType<BotPlay["preparePromotion"]>> | undefined;
     let appearing: { success: boolean } | undefined;
     let blueprintDecision: BlueprintJudgement | undefined;
     let companionDecision: CompanionJudgement | undefined;
     let seeking: { context: WorldContext; results: SeekResult[] } | undefined;
-    const plan = await ExecutionBudget.run(
+    const preparedPlan = await ExecutionBudget.run(
       this.pool,
       input.requestId,
       async () => {
@@ -11082,7 +11410,7 @@ export class BotPlay {
               actor,
               user,
               input.requestId,
-              this.store.context(w.id),
+              speechContext ?? this.store.context(w.id),
               [{ text: input.text, changes }],
               [],
             )
@@ -11126,6 +11454,10 @@ export class BotPlay {
     ).catch((error) => {
       throw playError(error);
     });
+    const plan = preparedPlan && {
+      ...preparedPlan,
+      directScope: directChangeScope(preparedPlan.changes),
+    };
     const db = await this.pool.connect();
     let committedRejection: AccessError | undefined;
     try {
@@ -11325,7 +11657,12 @@ export class BotPlay {
             );
         }
         const commit = (context: WorldContext, changes: Change) =>
-          this.#commit(w.id, input.requestId, { context, at: w.at, changes });
+          this.#commit(
+            w.id,
+            input.requestId,
+            { context, at: w.at, changes },
+            directChangeScope(changes),
+          );
         if (input.command === "companion-request") {
           const active = await this.current(world, actor, db);
           if (
@@ -12254,6 +12591,8 @@ export class BotPlay {
               });
               const listeners: string[] = [];
               const location = this.store.context(w.id);
+              if (voice && !(await this.store.receipt(w.id, input.requestId)))
+                await this.#requireVoice(location, actor);
               const here = await this.#places(location, actor);
               for (const member of d.members) {
                 const places =
@@ -12275,22 +12614,24 @@ export class BotPlay {
                   text: input.text,
                   period: { from: w.at },
                   observation: {
-                    aspect: "発言",
+                    aspect: voice ? "発言" : "身振り・筆談",
                     through: w.at,
                     sourceIds: [actor, event],
                     pathIds: [],
                   },
                 });
               }
-              const receipt = await this.#commit(w.id, input.requestId, {
-                context: location,
-                at: w.at,
-                changes,
-              });
+              const receipt = await this.#commit(
+                w.id,
+                input.requestId,
+                { context: location, at: w.at, changes },
+                directChangeScope(changes),
+              );
               result = {
                 state: "accepted",
                 commitId: receipt.commitId,
                 instantNpcs: appeared,
+                ...(!voice ? { mode: "nonverbal" } : {}),
                 ...(appearing ? { outcome: appearing } : {}),
               };
               await this.#addInstants(db, session, animals, event, actor);
@@ -12453,6 +12794,7 @@ export class BotPlay {
                     preview,
                     at: plan.at,
                     changes: plan.changes,
+                    directScope: plan.directScope,
                     dependencies: plan.context.dependencies,
                     ...(plan.items?.length ? { items: plan.items } : {}),
                     ...(plan.handoff ? { handoff: plan.handoff } : {}),
@@ -12496,6 +12838,15 @@ export class BotPlay {
                     this.now().getTime() + timeout * 1000,
                   ).toISOString(),
                   changes: plan.changes,
+                  directScope: plan.directScope,
+                  ...(plan.locates || plan.mixedMoves
+                    ? {
+                        moveScope: changeScope([
+                          plan.locates ?? [],
+                          plan.mixedMoves ?? [],
+                        ]),
+                      }
+                    : {}),
                   ...(plan.items?.length ? { items: plan.items } : {}),
                   at: plan.at,
                   dependencies: plan.context.dependencies,
@@ -12636,7 +12987,7 @@ export class BotPlay {
                   result.arrival = {
                     dueAt: (
                       await db.query<{ due: Date }>(
-                        "INSERT INTO bot_arrival(id,world_id,actor_id,due,text,operations) VALUES($1,$2,$3,$4,$5,$6) RETURNING due",
+                        "INSERT INTO bot_arrival(id,world_id,actor_id,due,text,operations,direct_scope) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING due",
                         [
                           input.requestId,
                           world,
@@ -12646,6 +12997,7 @@ export class BotPlay {
                           ),
                           input.text,
                           JSON.stringify(input.operations),
+                          changeScope(input.operations),
                         ],
                       )
                     ).rows[0]!.due.toISOString(),

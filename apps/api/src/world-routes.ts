@@ -6,6 +6,7 @@ import type { ZodTypeProvider } from "@fastify/type-provider-zod";
 import {
   ApiError,
   PlayError,
+  describeBlockingStates,
   PlayerPlayCommand,
   PlayQuote,
   PlayResponse,
@@ -210,10 +211,11 @@ export async function worldRoutes(
     if (error instanceof AccessError)
       return reply.code(error.status).send({
         code: error.code,
-        message: error.message,
+        message: error.message + describeBlockingStates(error.blockingStates),
         callsUsed: error.callsUsed,
         capacity: error.inventory?.capacity,
         item: error.inventory?.item,
+        blockingStates: error.blockingStates,
       });
     if (
       typeof error === "object" &&

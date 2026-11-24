@@ -177,6 +177,9 @@ export type RelationKind = z.infer<typeof RelationKind>;
 // 役割なしのhasは、存在へ向くと物品を持つこと（持つ存在の物であること）、記述へ向くと記録やメモを持つことを表す。
 export const BelongingRole = z.enum(["use", "skill"]);
 export type BelongingRole = z.infer<typeof BelongingRole>;
+export const CommandRestriction = z.enum(["say", "move", "vehicle-travel"]);
+export type CommandRestriction = z.infer<typeof CommandRestriction>;
+export const CommandRestrictions = z.array(CommandRestriction);
 export const WorldEdge = z
   .object({
     id: z.uuid(),
@@ -197,6 +200,7 @@ export const WorldEdge = z
       ),
     period: Period,
     observation: Observation.optional(),
+    commandRestrictions: CommandRestrictions.optional(),
     stateOrigin: z
       .strictObject({
         requestId: z.uuid(),
@@ -226,6 +230,12 @@ export const WorldEdge = z
       edge.stateOrigin === undefined ||
       (edge.kind === "status" && edge.role === "content"),
     "状態の由来はstatus/contentだけに指定してください",
+  )
+  .refine(
+    (edge) =>
+      edge.commandRestrictions === undefined ||
+      (edge.kind === "status" && edge.role === "content"),
+    "コマンド制限はstatus/contentだけに指定してください",
   );
 export type WorldEdge = z.infer<typeof WorldEdge>;
 

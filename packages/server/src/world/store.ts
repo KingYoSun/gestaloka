@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { int, type Driver, type ManagedTransaction } from "neo4j-driver";
 import { z } from "zod";
-import { InstallationPolicy } from "@gestaloka/contracts";
+import {
+  InstallationPolicy,
+  type CommandRestriction,
+} from "@gestaloka/contracts";
 import { routeEndpoints } from "./locations.js";
 import {
   editBundle,
@@ -138,6 +141,11 @@ export type ItemReservations = {
 const nodeKey = (id: string) => `node:${id}`;
 const placeKey = (id: string) => `fixed-place:${id}`;
 const edgeKey = (id: string) => `edge:${id}`;
+const restrictionSubject: Record<CommandRestriction, string> = {
+  say: "restrictedSpeaker",
+  move: "restrictedMover",
+  "vehicle-travel": "restrictedVehicle",
+};
 // 関係の索引は種類ごとにある。種類を省いた照合は索引を使えず、世界中の関係を走査する。
 const edgeById = `CALL () { ${RelationKind.options
   .map(
@@ -566,6 +574,45 @@ export class WorldContext {
       );
       return records[0] ? Number(records[0].get("until")) : undefined;
     });
+  }
+
+  async commandRestriction(
+    actor: string,
+    command: CommandRestriction,
+    at: number,
+  ) {
+    const subject = restrictionSubject[command];
+    const ended = this.drafts.flatMap(({ changes }) => changes.endEdges);
+    const edges = await this.#read(
+      relationKey(actor, "status", "out"),
+      async (tx) => {
+        const { records } = await tx.run(
+          `MATCH ()-[r:status]->()
+         USING INDEX r:status(worldId,${subject},restrictionUntil)
+         WHERE r.worldId=$worldId AND r.${subject}=$actor AND r.restrictionUntil>$at
+           AND r.validFrom<=$at AND NOT r.id IN $ended
+         WITH r ORDER BY r.worldId DESC,r.${subject} DESC,r.restrictionUntil DESC LIMIT 1
+         RETURN r.data AS data`,
+          { worldId: this.worldId, actor, at, ended },
+        );
+        return records.map((r) => WorldEdge.parse(JSON.parse(r.get("data"))));
+      },
+    );
+    return this.#merge(
+      edges,
+      actor,
+      "status",
+      "out",
+      (edge) =>
+        !!edge.commandRestrictions?.includes(command) &&
+        edge.period.from <= at &&
+        (edge.period.until ?? Infinity) > at &&
+        !ended.includes(edge.id),
+      (a, b) =>
+        (b.period.until ?? Number.MAX_SAFE_INTEGER) -
+        (a.period.until ?? Number.MAX_SAFE_INTEGER),
+      1,
+    )[0];
   }
 
   async latestTime(id: string) {
@@ -1312,6 +1359,11 @@ export class WorldStore {
     await this.driver.executeQuery(
       "CREATE INDEX WorldEdge_status_sp_subject IF NOT EXISTS FOR ()-[r:status]-() ON (r.worldId,r.spSubject,r.validTo)",
     );
+    for (const subject of Object.values(restrictionSubject)) {
+      await this.driver.executeQuery(
+        `CREATE INDEX IF NOT EXISTS FOR ()-[r:status]-() ON (r.worldId,r.${subject},r.restrictionUntil)`,
+      );
+    }
     // 同名確認は索引を指定して引くので、作成中の索引を使わせない。
     await this.driver.executeQuery("CALL db.awaitIndexes(300)");
     // ADR-072: 物品を持つ関係は役割なしのhas。旧版が役割holdで記録した関係を書き換える。
@@ -2127,7 +2179,7 @@ export class WorldStore {
           tx.run(
             `MATCH (s:WorldNode {worldId: $worldId, id: $source}), (t:WorldNode {worldId: $worldId, id: $target})
             CREATE (s)-[r:${edge.kind} {worldId: $worldId, id: $id, data: $data, validFrom: $from}]->(t)
-            SET r.validTo = $until, r.role = $role${isSpUseProhibition(edge) ? ", r.spSubject = $source, t.spUseProhibition = true" : ""}`,
+            SET r.validTo = $until, r.role = $role${isSpUseProhibition(edge) ? ", r.spSubject = $source, t.spUseProhibition = true" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $restrictionUntil" + edge.commandRestrictions.map((command) => `, r.${restrictionSubject[command]} = $source`).join("") : ""}`,
             {
               worldId,
               source: edge.source,
@@ -2136,6 +2188,7 @@ export class WorldStore {
               data: JSON.stringify(edge),
               from: edge.period.from,
               until: edge.period.until ?? null,
+              restrictionUntil: edge.period.until ?? Number.MAX_SAFE_INTEGER,
               role: edge.role ?? null,
             },
           );
@@ -2199,7 +2252,7 @@ export class WorldStore {
             period: { ...edge.period, until: at },
           });
           await tx.run(
-            `MATCH ()-[r:${edge.kind} {worldId: $worldId, id: $id}]->() SET r.validTo = $at, r.data = $data`,
+            `MATCH ()-[r:${edge.kind} {worldId: $worldId, id: $id}]->() SET r.validTo = $at, r.data = $data${edge.commandRestrictions?.length ? ", r.restrictionUntil = $at" : ""}`,
             { worldId, id: edge.id, at, data },
           );
         }

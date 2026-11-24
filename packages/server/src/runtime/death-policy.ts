@@ -8,6 +8,7 @@ import {
   type WorldContext,
   type WorldStore,
 } from "../world/store.js";
+import { commitPlayChange, directChangeScope } from "./play-change-scope.js";
 
 export const permanentDeath = "permanent-death";
 const deathEdgeId = (actor: string) => derivedId(`${permanentDeath}:${actor}`);
@@ -59,38 +60,41 @@ export async function setRespawnHome(
   if (!place || place.kind !== "existence") return;
   const records = await homeRecords(context, actor);
   const period = { from: at };
-  await store.commit(await store.claim(context.worldId, request), context, {
-    commitId: request,
-    at,
-    respawnHomeActor: actor,
-    changes: {
-      nodes: [{ id: script, kind: "script", text: place.text, viewers: [] }],
-      endEdges: records.flatMap(({ edge, about }) => [
-        edge.id,
-        ...about.map((relation) => relation.id),
-      ]),
-      edges: [
-        {
-          id: derivedId(`${script}:content`),
-          kind: "status",
-          role: "content",
-          text: respawnHome,
-          source: actor,
-          target: script,
-          period,
-        },
-        {
-          id: derivedId(`${script}:about`),
-          kind: "status",
-          role: "about",
-          text: "direct-place",
-          source: script,
-          target: place.id,
-          period,
-        },
-      ],
-    },
-  });
+  const changes: Change = {
+    nodes: [{ id: script, kind: "script", text: place.text, viewers: [] }],
+    revisions: [],
+    endEdges: records.flatMap(({ edge, about }) => [
+      edge.id,
+      ...about.map((relation) => relation.id),
+    ]),
+    edges: [
+      {
+        id: derivedId(`${script}:content`),
+        kind: "status",
+        role: "content",
+        text: respawnHome,
+        source: actor,
+        target: script,
+        period,
+      },
+      {
+        id: derivedId(`${script}:about`),
+        kind: "status",
+        role: "about",
+        text: "direct-place",
+        source: script,
+        target: place.id,
+        period,
+      },
+    ],
+  };
+  await commitPlayChange(
+    store,
+    await store.claim(context.worldId, request),
+    context,
+    { commitId: request, at, respawnHomeActor: actor, changes },
+    directChangeScope(changes),
+  );
   return { placeId: place.id, name: place.text };
 }
 

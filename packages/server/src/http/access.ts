@@ -1,4 +1,6 @@
 export { TurnSignals } from "./turn-signals.js";
+export { AccessError } from "./access-error.js";
+import { AccessError } from "./access-error.js";
 import { npcReport } from "../runtime/npc-mode.js";
 import { BotPlay } from "../runtime/bot-play.js";
 import type {
@@ -45,21 +47,6 @@ import {
   recordInitialPresentation,
 } from "../inspection/record.js";
 
-export class AccessError extends Error {
-  constructor(
-    readonly status: 400 | 401 | 403 | 404 | 409 | 503,
-    readonly code: string,
-    message: string,
-    // プレイ操作の拒否に付ける、現在の手番で使った通常枠の数。
-    readonly callsUsed?: number,
-    readonly inventory?: Pick<
-      import("../world/inventory.js").InventoryCapacityExceeded,
-      "capacity" | "item"
-    >,
-  ) {
-    super(message);
-  }
-}
 const digest = (text: string) =>
   createHash("sha256").update(text).digest("hex");
 const sequence = (value: string) =>
@@ -266,6 +253,7 @@ export class WorldAccess {
           error.message,
           (await this.botPlay.current(id, grant.actor_id!))?.data.used,
           error.inventory,
+          error.blockingStates,
         );
       });
     return Object.assign(

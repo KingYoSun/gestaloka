@@ -1913,6 +1913,30 @@ test("同じセッションの受領は申請者が検索で見た周囲の変�
   expect(await holding(1)).not.toContain(second);
 });
 
+test("同席受領の確定では、申請時に許可した追加の内容を照合する", async () => {
+  const f = await fixture();
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  const { applicationId, memoId } = await f.send(0, {
+    command: "memo",
+    text: "夕方に渡し場を見に行く",
+    participants: [f.actors[1]],
+    dependencies: [],
+  });
+  const edited = await isolated.databases.postgres.query(
+    `UPDATE bot_session SET data=jsonb_set(data,'{receiving,changes,nodes,0,text}',to_jsonb($2::text),false)
+     WHERE data#>>'{receiving,id}'=$1 AND data#>>'{receiving,changes,nodes,0,id}'=$3
+       AND data->'receiving'?'directScope'`,
+    [applicationId, "承認を求めていない本文", memoId],
+  );
+  expect(edited.rowCount).toBe(1);
+  expect(
+    await f.send(1, { command: "receive", applicationId, accept: true }),
+  ).toMatchObject({
+    application: { state: "rejected", code: "WORLD_CHANGED" },
+  });
+  expect(await f.store.context(f.graph).node(memoId as string)).toBeUndefined();
+});
+
 test("設計図の着工だけがGMとSPを使い、建築・開店・不在時の購入を一度ずつ確定する", async () => {
   const f = await fixture();
   const admin = await auth.person();
@@ -2900,6 +2924,30 @@ test("時間差のメモは退出後も受領でき、全員の承認で一度�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test("時間差の受領は申請時に許可した差分だけを確定する", async () => {
+  const f = await fixture();
+  const { applicationId, memoId } = await f.send(0, {
+    command: "memo",
+    text: "水位が下がったら渡し場を確認する",
+    participants: [f.actors[1]],
+    deferredUntil: new Date(Date.now() + 60_000).toISOString(),
+    dependencies: [],
+  });
+  const changed = await isolated.databases.postgres.query(
+    `UPDATE play_application SET share=jsonb_set(share,'{changes,nodes,0,text}',to_jsonb($2::text),false)
+     WHERE id=$1 AND share#>>'{changes,nodes,0,id}'=$3 AND share?'directScope'`,
+    [applicationId, "申請で許可されていない本文", memoId],
+  );
+  expect(changed.rowCount).toBe(1);
+  expect(
+    await f.send(1, { command: "receive", applicationId, accept: true }),
+  ).toMatchObject({ state: "changed" });
+  expect(await f.store.context(f.graph).node(memoId as string)).toBeUndefined();
+  expect(
+    await f.store.receipt(f.graph, applicationId as string),
+  ).toBeUndefined();
+});
+
 test("時間差の申請は関係者にだけ届き、競合や期限切れや取り下げで確定しない", async () => {
   const f = await fixture();
   const expires = Date.now() + 60_000;
@@ -3016,7 +3064,7 @@ test("従来形式で保存した時間差の物品受け渡しも受領後に�
     (await readBelongings(f.store.context(f.graph), seller)).items,
   ).toMatchObject([{ id: item, count: 3 }]);
   await isolated.databases.postgres.query(
-    "UPDATE play_application SET share=share-'handoff' WHERE id=$1",
+    "UPDATE play_application SET share=share-'handoff'-'directScope'-'handoffScope' WHERE id=$1",
     [applicationId],
   );
   expect(
@@ -3089,6 +3137,22 @@ async function deferredHandoffFixture() {
     amounts,
   };
 }
+
+test("時間差の受領は保存した受け渡しの数量を照合する", async () => {
+  const f = await deferredHandoffFixture();
+  const { applicationId } = await f.request(10);
+  const changed = await isolated.databases.postgres.query(
+    `UPDATE play_application SET share=jsonb_set(share,'{handoff,operations,0,count}','12'::jsonb,false)
+     WHERE id=$1 AND share?'handoffScope'`,
+    [applicationId],
+  );
+  expect(changed.rowCount).toBe(1);
+  expect(await f.accept(applicationId)).toMatchObject({ state: "changed" });
+  expect(await f.amounts()).toEqual([1_000, 150]);
+  expect(
+    await f.store.receipt(f.graph, applicationId as string),
+  ).toBeUndefined();
+});
 
 test("別の受け渡しで元の束が減っても、残数が足りれば時間差の受領を確定する", async () => {
   const f = await deferredHandoffFixture();
@@ -16518,6 +16582,57 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
   expect((await waiting()).noticeKey).toBeNull();
 });
 
+test("到着予定の内容が変わった申請だけを取りやめ、後続の物品を届ける", async () => {
+  const f = await fixture(1);
+  const actor = f.actors[0]!;
+  f.calls.mockImplementation(async (id) => answer(id, sure));
+  const order = async (label: string) => {
+    const requestId = randomUUID();
+    await expect(
+      f.send(0, {
+        requestId,
+        command: "update",
+        text: `${label}を取り寄せる`,
+        operations: [
+          { type: "create", label, holder: actor, basis: "取り寄せ" },
+        ],
+        waitMinutes: 1,
+        dependencies: [],
+      }),
+    ).resolves.toMatchObject({ arrival: { dueAt: expect.any(String) } });
+    return requestId;
+  };
+  const changed = await order("布"),
+    accepted = await order("木材");
+  const edited = await isolated.databases.postgres.query(
+    `UPDATE bot_arrival SET due=due-interval '1 minute',
+       operations=jsonb_set(operations,'{0,label}',to_jsonb($2::text),false)
+     WHERE id=$1 AND direct_scope IS NOT NULL`,
+    [changed, "申請にない品"],
+  );
+  expect(edited.rowCount).toBe(1);
+  const later = new BotPlay(runtime, () => new Date(Date.now() + 120_000));
+  await later.deliverArrivals(f.world);
+  expect(
+    await f.store.receipt(f.graph, derivedId(changed + ":arrival")),
+  ).toBeUndefined();
+  expect(
+    await f.store.receipt(f.graph, derivedId(accepted + ":arrival")),
+  ).toBeDefined();
+  expect(
+    (await access.notices(f.people[0]!.id, f.world, actor)).notices,
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        text: expect.stringContaining("取りやめました"),
+      }),
+      expect.objectContaining({
+        text: expect.stringContaining("木材が届きました"),
+      }),
+    ]),
+  );
+});
+
 test("GMが同行を認めたユニークNPCは、本人の移動に付いてきて、待機・移動・帰還・解除を本人が選べる", async () => {
   const f = await fixture(),
     db = isolated.databases.postgres,
@@ -17754,4 +17869,245 @@ test("探索は接続元からつながる既知の場所を判定に渡し、�
   expect(
     await f.store.context(f.graph).routesBetween(shed, f.place),
   ).toHaveLength(1);
+});
+
+test("発声制限は原因の状態を返し、無声の行動と状態終了後の発言を受け付ける", async () => {
+  const f = await fixture(1);
+  const actor = f.actors[0]!;
+  const requestId = randomUUID();
+  const stateId = derivedId(`${derivedId(`${requestId}:state`)}:content`);
+  const description = "発声器と歩行用の脚が故障している。";
+  const route: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  linkRoute(
+    route,
+    randomUUID(),
+    0,
+    [
+      { id: f.place, text: "広場" },
+      { id: f.far, text: "離れた場所" },
+    ],
+    "舗装された小道",
+  );
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: route,
+    },
+  );
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+  await f.send(0, {
+    requestId,
+    command: "apply",
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "state",
+      targetId: actor,
+      text: "発声器を使えない状態になる",
+      description,
+      commandRestrictions: ["say", "move"],
+    },
+  });
+  const context = f.store.context(f.graph);
+  expect(await context.edge(stateId)).toMatchObject({
+    commandRestrictions: ["say", "move"],
+  });
+  const status = await f.status(0);
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  try {
+    const rejected = await app.inject({
+      method: "POST",
+      url: `/api/worlds/${f.world}/session`,
+      headers: { cookie: f.people[0]!.cookie, "x-gestaloka-request": "1" },
+      payload: {
+        command: "say",
+        requestId: randomUUID(),
+        text: "助けを呼ぶ",
+        instantNpcs: ["通りがかった職人"],
+      },
+    });
+    expect(rejected.statusCode).toBe(409);
+    const body = rejected.json();
+    expect(body).toMatchObject({
+      code: "VOICE_RESTRICTED",
+      message: expect.stringContaining(description),
+      blockingStates: [
+        {
+          stateId,
+          shortId: expect.stringMatching(/^@[0-9a-f]{8}$/),
+          text: description,
+        },
+      ],
+    });
+    expect(body.message).toContain(body.blockingStates[0].shortId);
+
+    const move = await app.inject({
+      method: "POST",
+      url: `/api/worlds/${f.world}/session`,
+      headers: { cookie: f.people[0]!.cookie, "x-gestaloka-request": "1" },
+      payload: {
+        command: "apply",
+        requestId: randomUUID(),
+        expectedSp: 0,
+        dependencies: [],
+        action: {
+          type: "direct",
+          text: "小道へ進む",
+          operations: [
+            {
+              type: "locate",
+              subjectId: actor,
+              text: "離れた場所",
+              aboutIds: [f.far],
+            },
+          ],
+        },
+      },
+    });
+    expect(move.statusCode).toBe(409);
+    expect(move.json()).toMatchObject({
+      code: "MOVEMENT_BLOCKED",
+      blockingStates: body.blockingStates,
+    });
+  } finally {
+    await app.close();
+  }
+  expect(await f.status(0)).toMatchObject({
+    callsUsed: status.callsUsed,
+    dailySp: status.dailySp,
+  });
+  expect(f.calls).toHaveBeenCalledTimes(1);
+
+  const gesture = randomUUID();
+  await expect(
+    f.send(0, {
+      command: "say",
+      requestId: gesture,
+      mode: "nonverbal",
+      text: "札に『助けて』と書いて見せる",
+    }),
+  ).resolves.toMatchObject({
+    state: "accepted",
+    mode: "nonverbal",
+    spentSp: 0,
+  });
+  expect(
+    await f.store
+      .context(f.graph)
+      .relations(
+        derivedId(`${gesture}:speech`),
+        "see",
+        "in",
+        Number.MAX_SAFE_INTEGER,
+      ),
+  ).toContainEqual(
+    expect.objectContaining({
+      observation: expect.objectContaining({ aspect: "身振り・筆談" }),
+    }),
+  );
+
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: Date.now(),
+      changes: { nodes: [], revisions: [], edges: [], endEdges: [stateId] },
+    },
+  );
+  await expect(
+    f.send(0, { command: "say", text: "声を出す" }),
+  ).resolves.toMatchObject({ state: "accepted" });
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
+test("運行を制限する状態は乗車時に示し、運行時にはGMを呼ばずに扱う", async () => {
+  const f = await fixture(2);
+  const vehicleId = await vehicleFixture(f, {
+    npcId: f.actors[0]!,
+    route: true,
+  });
+  const state = randomUUID(),
+    stateId = randomUUID(),
+    other = randomUUID();
+  const description = "固定用の留め具で台車が止められている。";
+  const until = Date.now() + 3600000;
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        nodes: [
+          { id: state, kind: "script", text: description, viewers: [] },
+          { id: other, kind: "script", text: "台車は緑色に塗装されている。" },
+        ],
+        revisions: [],
+        endEdges: [],
+        edges: [
+          {
+            id: stateId,
+            kind: "status",
+            role: "content",
+            text: "judged",
+            source: vehicleId,
+            target: state,
+            period: { from: 0, until },
+            commandRestrictions: ["vehicle-travel"],
+          },
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "content",
+            text: "judged",
+            source: vehicleId,
+            target: other,
+            period: { from: 0 },
+            commandRestrictions: [],
+          },
+        ],
+      },
+    },
+  );
+  await expect(
+    f.send(1, { command: "vehicle-board", vehicleId }),
+  ).resolves.toMatchObject({
+    departure: "blocked",
+    departureCauses: [],
+  });
+  const travel = { command: "vehicle-travel", vehicleId, destinationId: f.far };
+  for (let i = 0; i < 2; i++) {
+    await expect(f.send(0, travel)).rejects.toMatchObject({
+      code: "VEHICLE_DISABLED",
+      blockingStates: [{ stateId, text: description, until }],
+    });
+  }
+  expect(
+    await f.store
+      .context(f.graph)
+      .commandRestriction(vehicleId, "vehicle-travel", until),
+  ).toBeUndefined();
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: Date.now(),
+      changes: { nodes: [], revisions: [], edges: [], endEdges: [stateId] },
+    },
+  );
+  await expect(f.send(0, travel)).resolves.toMatchObject({
+    state: "accepted",
+    spentSp: 0,
+  });
+  expect(f.calls).not.toHaveBeenCalled();
 });

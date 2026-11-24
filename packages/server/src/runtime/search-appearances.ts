@@ -13,6 +13,7 @@ import {
   type WorldStore,
 } from "../world/store.js";
 import { directPlaces } from "../world/locations.js";
+import { commitPlayChange, directChangeScope } from "./play-change-scope.js";
 
 const latest = Number.MAX_SAFE_INTEGER;
 const about = (edge: WorldEdge, text: string) =>
@@ -378,11 +379,14 @@ export async function searchAppearances(
   link({ kind: "happen", source: actor, target: event });
   for (const member of members)
     link({ kind: "see", source: member, target: event });
-  await store.commit(await store.claim(ctx.worldId, request), ctx, {
-    commitId: request,
-    at,
-    changes,
-  });
+  const scope = directChangeScope(changes);
+  await commitPlayChange(
+    store,
+    await store.claim(ctx.worldId, request),
+    ctx,
+    { commitId: request, at, changes },
+    scope,
+  );
   return appearanceResult(appearances, text);
 }
 export async function groundItems(ctx: WorldContext, place: string) {

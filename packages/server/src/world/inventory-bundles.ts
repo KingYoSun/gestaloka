@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { int, type ManagedTransaction } from "neo4j-driver";
 import type { z } from "zod";
 import type { InventoryBundleCommand } from "@gestaloka/contracts";
+import { changeScope, matchesChangeScope } from "./change-scope.js";
 import { derivedId, type WorldNode } from "./model.js";
 import {
   InventoryCapacityExceeded,
@@ -21,6 +22,12 @@ export type BundleChange = { before: Bundle; after: Bundle };
 
 export class InventoryBundleError extends Error {
   readonly code = "INVENTORY_BUNDLE_INVALID";
+}
+
+function authorizedMembers<T>(approved: T, actual: T): T {
+  if (!matchesChangeScope(changeScope(approved), actual))
+    throw new InventoryBundleError("許可されたバンドルの範囲と一致しません");
+  return actual;
 }
 
 export function parseBundle(value: Bundle): Bundle {
@@ -161,10 +168,14 @@ export async function editBundle(
   if (action === "dissolve") {
     after.itemCount = 0;
     after.normalSlots = 0;
+    const members = authorizedMembers(
+      { storageId: before.storageId, bundleId: before.id },
+      { storageId, bundleId: input.bundleId },
+    );
     await tx.run(
       `MATCH (n:WorldNode {worldId:$worldId,inventoryBundleId:$bundleId})
        SET n.inventoryLooseHolder=$storageId REMOVE n.inventoryBundleId`,
-      { ...args, bundleId: before.id },
+      { ...args, ...members },
     );
   } else {
     const ids =
@@ -179,7 +190,7 @@ export async function editBundle(
       `UNWIND $ids AS id
        MATCH (n:WorldNode {worldId:$worldId,id:id,inventoryHolder:$storageId})
        OPTIONAL MATCH (b:InventoryBundle {worldId:$worldId,id:n.inventoryBundleId})
-       RETURN n.data AS data,coalesce(n.inventorySlots,0) AS contents,b.id AS bundleId`,
+       RETURN n.id AS id,n.data AS data,coalesce(n.inventorySlots,0) AS contents,b.id AS bundleId`,
       { ...args, ids },
     );
     if (records.length !== ids.length)
@@ -213,15 +224,27 @@ export async function editBundle(
       throw new InventoryBundleError(
         `バンドルに入れられるのは通常の使用枠で${limits.bundleSlots}枠分までです`,
       );
+    const members = authorizedMembers(
+      {
+        ids: records.map((row) => row.get("id") as string).sort(),
+        bundleId: action === "release" ? null : before.id,
+        loose: action === "release" ? before.storageId : null,
+      },
+      {
+        ids: ids.sort(),
+        bundleId:
+          action === "release"
+            ? null
+            : action === "create"
+              ? before.id
+              : input.bundleId,
+        loose: action === "release" ? storageId : null,
+      },
+    );
     await tx.run(
       `UNWIND $ids AS id MATCH(n:WorldNode {worldId:$worldId,id:id})
        SET n.inventoryBundleId=$bundleId,n.inventoryLooseHolder=$loose`,
-      {
-        ...args,
-        ids,
-        bundleId: action === "release" ? null : before.id,
-        loose: action === "release" ? storageId : null,
-      },
+      { ...args, ...members },
     );
   }
   const usedSlots = Number(storage.get("used"));

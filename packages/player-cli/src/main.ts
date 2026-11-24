@@ -10,6 +10,8 @@ import { cliVersion, update } from "./update.js";
 import { fileURLToPath } from "node:url";
 import { PlayerReferences, localTime, utcTime } from "./references.js";
 import {
+  BlockingState,
+  describeBlockingStates,
   PlayerDeviceCode,
   PlayerPlayCommand,
   PlayQuote,
@@ -64,7 +66,7 @@ const parse = () =>
     allowPositionals: true,
     options: playerOptions,
   });
-let values: ReturnType<typeof parse>["values"];
+let values: ReturnType<typeof parse>["values"] = {};
 let profilePath: string, journal: string;
 let requestId: string | undefined;
 let references: PlayerReferences | undefined, pendingCursor: string | undefined;
@@ -113,6 +115,7 @@ async function http(
           callsUsed: data.callsUsed,
           capacity: data.capacity,
           item: data.item,
+          blockingStates: data.blockingStates,
         },
       );
     return data;
@@ -999,7 +1002,12 @@ async function run() {
                   : values.text,
               }
             : {}),
-          ...(command === "say" ? { instantNpcs: values.npc } : {}),
+          ...(command === "say"
+            ? {
+                instantNpcs: values.npc,
+                ...(values.nonverbal ? { mode: "nonverbal" } : {}),
+              }
+            : {}),
           ...(command === "draw-configure"
             ? { description: values.description }
             : {}),
@@ -1071,15 +1079,32 @@ try {
   );
   if (pendingCursor !== undefined) references?.advance(pendingCursor);
 } catch (error) {
+  const causes = z
+    .array(BlockingState)
+    .safeParse((error as { blockingStates?: unknown }).blockingStates).data;
+  const displayedCauses =
+    causes && references && !values["full-ids"]
+      ? (references.convert(causes) as typeof causes).map((state) => ({
+          ...state,
+          shortId: state.stateId,
+        }))
+      : causes;
+  const message = error instanceof Error ? error.message : String(error);
+  const causeText = describeBlockingStates(causes);
+  const base =
+    causeText && message.endsWith(causeText)
+      ? message.slice(0, -causeText.length)
+      : message;
   console.log(
     render({
       state: "error",
       ...(requestId ? { requestId } : {}),
       code: (error as { code?: string }).code ?? "CLI_ERROR",
-      message: error instanceof Error ? error.message : String(error),
+      message: base + describeBlockingStates(displayedCauses),
       callsUsed: (error as { callsUsed?: number }).callsUsed,
       capacity: (error as { capacity?: unknown }).capacity,
       item: (error as { item?: unknown }).item,
+      blockingStates: displayedCauses,
     }),
   );
   process.exitCode = 1;

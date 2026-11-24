@@ -3429,6 +3429,7 @@ export interface paths {
                             minutes?: number;
                             /** @enum {boolean} */
                             affectsMovement?: true;
+                            commandRestrictions?: ("say" | "move" | "vehicle-travel")[];
                             /** @enum {string} */
                             feature?: "vehicle";
                         } | {
@@ -3929,6 +3930,8 @@ export interface paths {
                         /** @enum {string} */
                         command: "say";
                         text: string;
+                        /** @enum {string} */
+                        mode?: "voice" | "nonverbal";
                         /** @default [] */
                         instantNpcs?: string[];
                     } | {
@@ -4104,6 +4107,13 @@ export interface paths {
                             code: string;
                             message: string;
                             callsUsed?: number;
+                            blockingStates?: {
+                                /** Format: uuid */
+                                stateId: string;
+                                shortId: string;
+                                text: string;
+                                until?: number;
+                            }[];
                             capacity?: {
                                 /** Format: uuid */
                                 holderId: string;
@@ -4353,6 +4363,7 @@ export interface paths {
                             minutes?: number;
                             /** @enum {boolean} */
                             affectsMovement?: true;
+                            commandRestrictions?: ("say" | "move" | "vehicle-travel")[];
                             /** @enum {string} */
                             feature?: "vehicle";
                         } | {
@@ -4673,6 +4684,11 @@ export interface paths {
                         /** Format: uuid */
                         requestId: string;
                         /** @enum {string} */
+                        command: "home-set";
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
                         command: "vehicle-request-control";
                         /** Format: uuid */
                         vehicleId: string;
@@ -4848,6 +4864,8 @@ export interface paths {
                         /** @enum {string} */
                         command: "say";
                         text: string;
+                        /** @enum {string} */
+                        mode?: "voice" | "nonverbal";
                         /** @default [] */
                         instantNpcs?: string[];
                     } | {
@@ -5630,6 +5648,7 @@ export interface paths {
                                                     [key: string]: number;
                                                 };
                                             };
+                                            commandRestrictions?: ("say" | "move" | "vehicle-travel")[];
                                             stateOrigin?: {
                                                 /** Format: uuid */
                                                 requestId: string;
@@ -8672,6 +8691,7 @@ export interface paths {
                                             [key: string]: number;
                                         };
                                     };
+                                    commandRestrictions?: ("say" | "move" | "vehicle-travel")[];
                                     stateOrigin?: {
                                         /** Format: uuid */
                                         requestId: string;

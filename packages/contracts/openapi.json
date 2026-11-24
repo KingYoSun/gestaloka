@@ -8323,6 +8323,17 @@
                                   true
                                 ]
                               },
+                              "commandRestrictions": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "say",
+                                    "move",
+                                    "vehicle-travel"
+                                  ]
+                                }
+                              },
                               "feature": {
                                 "type": "string",
                                 "enum": [
@@ -10318,6 +10329,13 @@
                         "type": "string",
                         "minLength": 1
                       },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "voice",
+                          "nonverbal"
+                        ]
+                      },
                       "instantNpcs": {
                         "default": [],
                         "type": "array",
@@ -10898,6 +10916,34 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "blockingStates": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "stateId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "shortId": {
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "until": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "stateId",
+                          "shortId",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      }
                     },
                     "capacity": {
                       "type": "object",
@@ -11705,6 +11751,17 @@
                                 "enum": [
                                   true
                                 ]
+                              },
+                              "commandRestrictions": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "say",
+                                    "move",
+                                    "vehicle-travel"
+                                  ]
+                                }
                               },
                               "feature": {
                                 "type": "string",
@@ -13016,6 +13073,27 @@
                       "command": {
                         "type": "string",
                         "enum": [
+                          "home-set"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "requestId",
+                      "command"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "requestId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "command": {
+                        "type": "string",
+                        "enum": [
                           "vehicle-request-control"
                         ]
                       },
@@ -13679,6 +13757,13 @@
                       "text": {
                         "type": "string",
                         "minLength": 1
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "voice",
+                          "nonverbal"
+                        ]
                       },
                       "instantNpcs": {
                         "default": [],
@@ -16340,6 +16425,17 @@
                                           "pathIds"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "commandRestrictions": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "enum": [
+                                            "say",
+                                            "move",
+                                            "vehicle-travel"
+                                          ]
+                                        }
                                       },
                                       "stateOrigin": {
                                         "type": "object",
@@ -24128,6 +24224,17 @@
                                         "through"
                                       ],
                                       "additionalProperties": false
+                                    },
+                                    "commandRestrictions": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "enum": [
+                                          "say",
+                                          "move",
+                                          "vehicle-travel"
+                                        ]
+                                      }
                                     },
                                     "stateOrigin": {
                                       "type": "object",

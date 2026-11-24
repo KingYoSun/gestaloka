@@ -752,12 +752,27 @@ export function BotSession({
                             </label>
                             <div className="flex flex-wrap gap-3">
                               {!view.receiving && (
-                                <Button
-                                  type="submit"
-                                  disabled={busy || !text.trim()}
-                                >
-                                  発言する
-                                </Button>
+                                <>
+                                  <Button
+                                    type="submit"
+                                    disabled={busy || !text.trim()}
+                                  >
+                                    発言する
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    disabled={busy || !text.trim()}
+                                    onClick={() =>
+                                      void send({
+                                        command: "say",
+                                        mode: "nonverbal",
+                                        text,
+                                      })
+                                    }
+                                  >
+                                    発声せずに行動する
+                                  </Button>
+                                </>
                               )}
                               <Button
                                 type="button"

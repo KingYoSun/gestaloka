@@ -10,6 +10,7 @@ import { planBelongings } from "../world/belongings.js";
 import { WorldConflict } from "../world/store.js";
 import type { Session } from "./bot-play.js";
 import type { Appearance } from "@gestaloka/contracts";
+import { commitPlayChange, directChangeScope } from "./play-change-scope.js";
 
 export type PromotionProfile = {
   description: string;
@@ -493,11 +494,14 @@ export class PlayerTools {
           changes.nodes.push(...placed.changes.nodes);
           changes.edges.push(...placed.changes.edges);
         }
+        const scope = directChangeScope(changes);
         try {
-          await store.commit(
+          await commitPlayChange(
+            store,
             await store.claim(w.world_id!, commitId),
             context,
             { commitId, at, changes },
+            scope,
           );
         } catch (error) {
           if (error instanceof WorldConflict)

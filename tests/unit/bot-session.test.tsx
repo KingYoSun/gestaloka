@@ -456,6 +456,49 @@ test("発言の応答待ちに書き始めた次の入力を消さない", async
   expect((field as HTMLTextAreaElement).value).toBe("次の入力");
 });
 
+test("発声が制限された状態を確認し、同じ入力を発声せずに使える", async () => {
+  const body = vi.fn();
+  const cause = {
+    stateId: peer,
+    shortId: "@a1b2c3d4",
+    text: "喉が負傷している",
+  };
+  server.use(
+    http.post("*/api/worlds/:id/session", async ({ request }) => {
+      const sent = (await request.json()) as { mode?: string };
+      body(sent);
+      return sent.mode === "nonverbal"
+        ? json(view)
+        : json(
+            {
+              code: "COMMAND_RESTRICTED",
+              message:
+                "発声できません。原因の状態 @a1b2c3d4「喉が負傷している」。",
+              blockingStates: [cause],
+            },
+            409,
+          );
+    }),
+  );
+  show();
+  await open("操作");
+  const field = await screen.findByLabelText("発言・ターンコメント");
+  fireEvent.change(field, { target: { value: "道を教えてほしい" } });
+  fireEvent.click(screen.getByRole("button", { name: "発言する" }));
+  expect(await screen.findByText(/@a1b2c3d4「喉が負傷している」/)).toBeTruthy();
+  expect((field as HTMLTextAreaElement).value).toBe("道を教えてほしい");
+  fireEvent.click(screen.getByRole("button", { name: "発声せずに行動する" }));
+  await waitFor(() =>
+    expect(body).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        command: "say",
+        mode: "nonverbal",
+        text: "道を教えてほしい",
+      }),
+    ),
+  );
+});
+
 test("目撃した物品の参照と渡した先を表示する", async () => {
   view.characters = [
     { actorId: actor, name: "渡す人物", icon: null },
