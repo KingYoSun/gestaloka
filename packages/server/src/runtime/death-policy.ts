@@ -158,7 +158,7 @@ export function recordDeathSpProhibition(
   players: readonly string[],
   at: number,
 ) {
-  const seconds = Number(process.env.DEATH_SP_LOCK_SECONDS?.trim() || 10_800);
+  const seconds = Number(process.env.DEATH_SP_LOCK_SECONDS?.trim() || 43_200);
   const until = at + seconds * 1000;
   if (
     !Number.isSafeInteger(seconds) ||

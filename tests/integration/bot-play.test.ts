@@ -15548,7 +15548,7 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
   );
   expect(await states(2)).not.toContain("無関係");
   // 設定された場所へ移り、セッションから外れる。
-  vi.stubEnv("DEATH_SP_LOCK_SECONDS", "7200");
+  vi.stubEnv("DEATH_SP_LOCK_SECONDS", undefined);
   await configure("death_judgment", true);
   await configure("death_criteria", "致命傷で死亡する");
   await configure("death_place_id", grave);
@@ -15586,17 +15586,19 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
   };
   const lock = await penalty(1);
   const until = lock.period.until!;
-  expect(until - lock.period.from).toBe(7_200_000);
+  expect(until - lock.period.from).toBe(43_200_000);
   // 場所が未設定なら、本人の最初の所在地へ移る。
-  vi.stubEnv("DEATH_SP_LOCK_SECONDS", undefined);
+  vi.stubEnv("DEATH_SP_LOCK_SECONDS", "7200");
   await configure("death_place_id", null);
   fatalDice(f.actors[2]!, "mortal");
   await f.send(0, attack(2));
   expect(await present(0)).toEqual([f.actors[0]]);
   expect(await whereabouts(2)).toEqual([f.far]);
   expect(await whereabouts(0)).toEqual([f.place]);
-  const defaultLock = await penalty(2);
-  expect(defaultLock.period.until! - defaultLock.period.from).toBe(10_800_000);
+  const configuredLock = await penalty(2);
+  expect(configuredLock.period.until! - configuredLock.period.from).toBe(
+    7_200_000,
+  );
 
   const clock = vi
     .spyOn(access.botPlay, "now")
