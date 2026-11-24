@@ -1926,25 +1926,39 @@ export class BotPlay {
     let effectMinutes: number | undefined;
     const prior = await this.store.receipt(context.worldId, request);
     if (prior) {
-      const stealth = (
-        await this.pool.query<{ stealth: StealthAction | null }>(
-          "SELECT outcome->'stealth' AS stealth FROM bot_request WHERE id=$1",
-          [request],
-        )
-      ).rows[0]?.stealth;
+      const saved = (
+        await this.pool.query<{
+          outcome:
+            | typeof outcome
+            | { outcome: typeof outcome; stealth: StealthAction }
+            | null;
+        }>("SELECT outcome FROM bot_request WHERE id=$1", [request])
+      ).rows[0]?.outcome;
+      const { outcome: recovered, stealth } =
+        saved && "outcome" in saved
+          ? saved
+          : { outcome: saved, stealth: undefined };
       const state = prior.changes.nodes.find(
         (n) => n.id === derivedId(request + ":state"),
       );
-      const stored = (
-        await this.pool.query<{ setting: z.infer<typeof DiceSetting> }>(
-          "SELECT setting FROM bot_dice WHERE id=$1",
-          [request],
-        )
-      ).rows[0];
-      // 保存済みの出目を、ファンブルの出目とともに読む。
+      // プレイヤーの再送には、地域保護を反映した判定結果を使う。
+      const stored =
+        !saved &&
+        (
+          await this.pool.query<{ setting: z.infer<typeof DiceSetting> }>(
+            "SELECT setting FROM bot_dice WHERE id=$1",
+            [request],
+          )
+        ).rows[0];
       const dice = stored && (await this.#roll(request, stored.setting));
-      const success = dice ? dice.roll <= dice.setting.successThrough : !effect,
-        recorded = prior.changes.nodes.find((n) => n.id === event);
+      const restored: typeof outcome =
+        recovered ??
+        (dice
+          ? { success: dice.roll <= dice.setting.successThrough, ...dice }
+          : effect
+            ? unreachable
+            : { success: true });
+      const recorded = prior.changes.nodes.find((n) => n.id === event);
       const instantReduction =
         recorded?.kind === "event" ? recorded.instantReduction : undefined;
       return {
@@ -1953,11 +1967,7 @@ export class BotPlay {
         at: prior.at,
         recipients: [],
         ...(stealth ? { stealth } : {}),
-        outcome: dice
-          ? { success, ...dice }
-          : effect
-            ? unreachable
-            : { success },
+        outcome: restored,
         ...(instantReduction
           ? {
               instantReduction,
@@ -1966,8 +1976,8 @@ export class BotPlay {
           : state
             ? { effectState: state.text }
             : {}),
-        ...(success && dice?.setting.fatal
-          ? { fatal: dice.setting.fatal }
+        ...(restored.success && restored.setting?.fatal
+          ? { fatal: restored.setting.fatal }
           : {}),
         ...(recorded?.kind === "event" && recorded.appearances
           ? { appearances: recorded.appearances }
@@ -1987,6 +1997,8 @@ export class BotPlay {
       : undefined;
     let instantReduction: Plan["instantReduction"];
     let nonCombatAreas: NonCombatArea[] | undefined;
+    let protectedTarget = false;
+    let endedState = false;
     if (effect) {
       const otherParticipant = session.data.members.some(
         (member) =>
@@ -2026,7 +2038,7 @@ export class BotPlay {
           effect.targetId,
         ]);
         nonCombatAreas = policy.areas;
-        const protectedTarget = policy.protectedActors.has(effect.targetId);
+        protectedTarget = policy.protectedActors.has(effect.targetId);
         const protectedActor = policy.protectedActors.has(actorId);
         const subjects = person && !protectedTarget ? [effect.targetId] : [];
         const facts = victim
@@ -2125,7 +2137,8 @@ export class BotPlay {
             saved.setting,
           );
         }
-        if (subjects.length && outcome.success)
+        if (subjects.length && outcome.success) {
+          const previousEndCount = changes.endEdges.length;
           changes.endEdges = (
             await settleStateEnds(
               context,
@@ -2136,7 +2149,8 @@ export class BotPlay {
               subjects,
             )
           ).endEdges;
-        else if (effectState && previous)
+          endedState = changes.endEdges.length > previousEndCount;
+        } else if (effectState && previous)
           changes.endEdges.push(previous.relationId);
         else if (effectState && nearby)
           // 同じ個体が同じ対象へ繰り返した作用は、前回の状態を置き換えて積み上げない。
@@ -2187,27 +2201,45 @@ export class BotPlay {
           );
       }
     }
+    const reductionText =
+      instantReduction && instantReductionText(instantReduction);
+    const appliedEffect =
+      reductionText ??
+      (fatal.length ? "対象が死亡しました。" : effectState) ??
+      (endedState ? "対象の既存の状態が終了しました。" : undefined) ??
+      (protectedTarget
+        ? "非戦闘地域のため、対象の状態は変わりませんでした。"
+        : "対象に新しい状態は付きませんでした。");
+    const fumbleState = outcome.fumble?.success
+      ? (outcome.setting?.fumble?.text ?? "")
+      : "";
+    const resultText =
+      playerRequest && effect
+        ? outcome.success
+          ? `対抗行動の判定に成功しました。${appliedEffect}`
+          : `対抗行動の判定は失敗しました${outcome.reason ? `（${outcome.reason}）` : ""}。${fumbleState}`
+        : undefined;
+    if (resultText && stealth)
+      for (const observation of stealth.observations)
+        observation.text = resultText;
     const link = await recordAppearances(
       context,
       changes,
       request,
       {
         id: event,
-        text: concealed
-          ? instantReduction
-            ? instantReductionText(instantReduction)
-            : outcome.success
-              ? "対象に作用があった"
-              : "作用は成立しなかった"
-          : effect
-            ? action.text +
-              (outcome.success
-                ? "。結果：" +
-                  (instantReduction
-                    ? instantReductionText(instantReduction)
-                    : (effectState ?? "作用が成立した"))
-                : "。作用は成立しなかった")
-            : action.text,
+        text:
+          resultText ??
+          (concealed
+            ? (reductionText ??
+              (outcome.success ? "対象に作用があった" : "作用は成立しなかった"))
+            : effect
+              ? action.text +
+                (outcome.success
+                  ? "。結果：" +
+                    (reductionText ?? effectState ?? "作用が成立した")
+                  : "。作用は成立しなかった")
+              : action.text),
         ...(cause ? { instantActor: cause } : {}),
         ...(instantReduction ? { instantReduction } : {}),
         ...(victim
@@ -12111,7 +12143,7 @@ export class BotPlay {
                 reviewedSource?.kind === "script"
                   ? reviewedSource.drawTable
                   : undefined;
-              const entryText = plan.vehicleControl
+              let entryText = plan.vehicleControl
                 ? `「${(await plan.context.node(plan.vehicleControl.vehicleId))?.text ?? "乗り物"}」の操縦を申請する`
                 : plan.drawReview
                   ? [
@@ -12362,6 +12394,18 @@ export class BotPlay {
                       }
                     : {}),
                 };
+                if (input.command === "oppose" && input.effect) {
+                  const event = receipt.changes.nodes.find(
+                    ({ id }) => id === derivedId(input.requestId + ":action"),
+                  );
+                  if (event?.kind === "event") {
+                    entryText = event.text;
+                    result.action = {
+                      command: input.command,
+                      message: event.text,
+                    };
+                  }
+                }
                 if (
                   input.command === "vehicle-request-control" &&
                   input.applicationId &&
@@ -12604,7 +12648,9 @@ export class BotPlay {
       result.action = {
         command: input.command,
         message: [
-          itemMessage || actionMessage(input, result, continuing, owner),
+          itemMessage ||
+            (result.action as { message: string } | undefined)?.message ||
+            actionMessage(input, result, continuing, owner),
           ...skillResults,
         ].join("\n"),
         ...(endedTurn

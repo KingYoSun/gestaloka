@@ -117,6 +117,7 @@ const View = z.object({
                 result: z
                   .object({
                     state: z.string().optional(),
+                    action: z.object({ command: z.string() }).optional(),
                     effectState: z.string().optional(),
                     items: z.array(ItemOutcome).optional(),
                     outcome: z.object({ success: z.boolean() }).optional(),
@@ -126,6 +127,7 @@ const View = z.object({
             )
             .optional(),
           comment: z.string().optional(),
+          observation: z.string().optional(),
           reason: z.string().optional(),
           state: z.string().optional(),
           transition: z
@@ -163,22 +165,25 @@ const LogRow = memo(function LogRow({
                 {entry.label ?? name(entry.actorId) ?? "参加者"}
               </p>
               <RichText text={entry.input} />
-              <p className="muted">
-                結果：
-                {entry.result.outcome
-                  ? entry.result.outcome.success
-                    ? (entry.result.effectState ?? "成立しました")
-                    : "不成立でした"
-                  : entry.result.state === "rejected"
-                    ? "拒否しました"
-                    : entry.result.state === "failed"
-                      ? "成立しませんでした"
-                      : entry.result.state === "receiving"
-                        ? "受領判断中です"
-                        : entry.result?.state === "pending"
-                          ? "管理者の許可待ちです"
-                          : "受理しました"}
-              </p>
+              {!row.payload.observation &&
+                entry.result.action?.command !== "oppose" && (
+                  <p className="muted">
+                    結果：
+                    {entry.result.outcome
+                      ? entry.result.outcome.success
+                        ? (entry.result.effectState ?? "成立しました")
+                        : "不成立でした"
+                      : entry.result.state === "rejected"
+                        ? "拒否しました"
+                        : entry.result.state === "failed"
+                          ? "成立しませんでした"
+                          : entry.result.state === "receiving"
+                            ? "受領判断中です"
+                            : entry.result.state === "pending"
+                              ? "管理者の許可待ちです"
+                              : "受理しました"}
+                  </p>
+                )}
               {entry.result.items?.map((item) => (
                 <div key={item.itemId}>
                   <span>
