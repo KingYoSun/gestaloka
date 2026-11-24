@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import {
@@ -736,16 +737,30 @@ test("人物の乗り物は車内を分けず、本人と乗客が車外の人�
   await f.send(0, { command: "contact", targetId: outsider });
   const together = await sessions();
   expect(new Set(together).size).toBe(1);
-  await expect(
-    f.send(2, { command: "search", query: { kind: "surroundings" } }),
-  ).resolves.toMatchObject({
-    material: {
-      subjects: expect.arrayContaining([
-        expect.objectContaining({ id: vehicleId, contactAvailable: true }),
-        expect.objectContaining({ id: rider, contactAvailable: true }),
-      ]),
-    },
+  const pool = isolated.databases.postgres;
+  // 検索がトランザクションを開始すると、接続プールに空きがなくなる。
+  const occupied = await Promise.all(
+    Array.from({ length: pool.options.max! - 1 }, () => pool.connect()),
+  );
+  const search = f.send(2, {
+    command: "search",
+    query: { kind: "surroundings" },
   });
+  try {
+    await expect(
+      Promise.race([search, delay(10000, undefined, { ref: false })]),
+    ).resolves.toMatchObject({
+      material: {
+        subjects: expect.arrayContaining([
+          expect.objectContaining({ id: vehicleId, contactAvailable: true }),
+          expect.objectContaining({ id: rider, contactAvailable: true }),
+        ]),
+      },
+    });
+  } finally {
+    for (const client of occupied) client.release();
+    await Promise.allSettled([search]);
+  }
 
   await giveTurn(f, 0);
   await f.send(0, locate(vehicleId, f.far));

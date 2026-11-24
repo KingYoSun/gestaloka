@@ -1571,7 +1571,7 @@ export class BotPlay {
           actor,
           subject,
         )) &&
-        (await this.#places(context, subject)).includes(target)
+        (await this.#places(context, subject, db)).includes(target)
       )
         staying.push(subject);
     return (
@@ -1924,7 +1924,7 @@ export class BotPlay {
   ) {
     if (!animals.length) return;
     const world = await this.world(session.world_id, db);
-    const places = await this.#places(this.store.context(world.id), actor);
+    const places = await this.#places(this.store.context(world.id), actor, db);
     for (const animal of animals) {
       const group = session.data.members.find(
         (m) => m.actorId === animal.id,
@@ -3334,7 +3334,7 @@ export class BotPlay {
     );
     // 人物の乗り物が動くと、乗っている人の同席も出発側から解く。
     for (const id of movedActors)
-      if (await this.#carrier(context, id))
+      if (await this.#carrier(context, id, db))
         for (const rider of await context.locationSubjects(id, latest, {
           limit: vehiclePageSize,
         }))
@@ -4974,10 +4974,10 @@ export class BotPlay {
     return { observations };
   }
   // 人物の乗り物は車内を分けない。乗っている人も、乗り物のいる場所にいるものとして扱う。
-  async #carrier(context: WorldContext, id: string) {
+  async #carrier(context: WorldContext, id: string, db: Db) {
     return (
       (await isVehicle(context, id)) &&
-      !!(await vehiclePerson(this.pool, context.worldId, id))
+      !!(await vehiclePerson(db, context.worldId, id))
     );
   }
   // 同じ場所に同席している出現個体が応じる取引。
@@ -4985,8 +4985,9 @@ export class BotPlay {
     context: WorldContext,
     session: Session | undefined,
     actor: string,
+    db: Db = this.pool,
   ) {
-    const places = await this.#places(context, actor);
+    const places = await this.#places(context, actor, db);
     return instantTrades(
       context,
       (session?.data.members ?? []).flatMap((m) =>
@@ -4996,10 +4997,14 @@ export class BotPlay {
       ),
     );
   }
-  async #places(context: WorldContext, actor: string): Promise<string[]> {
+  async #places(
+    context: WorldContext,
+    actor: string,
+    db: Db = this.pool,
+  ): Promise<string[]> {
     const places = await directPlaces(context, actor);
-    return places[0] && (await this.#carrier(context, places[0]))
-      ? this.#places(context, places[0])
+    return places[0] && (await this.#carrier(context, places[0], db))
+      ? this.#places(context, places[0], db)
       : places;
   }
   // 探索の接続元から行き来でつながる既知の場所。読み取りも判定の入力も8件までにする。
@@ -5067,7 +5072,8 @@ export class BotPlay {
   ) {
     const found = await this.#atPlaces(
       context,
-      await this.#places(context, actor),
+      await this.#places(context, actor, db),
+      db,
       world
         ? (id) =>
             this.#canSee(
@@ -5085,6 +5091,7 @@ export class BotPlay {
   async #atPlaces(
     context: WorldContext,
     places: string[],
+    db: Db = this.pool,
     visible?: (id: string) => Promise<boolean>,
   ) {
     const found = new Set<string>();
@@ -5101,7 +5108,7 @@ export class BotPlay {
           (await directPlaces(context, subject)).includes(place)
         ) {
           found.add(subject);
-          if (await this.#carrier(context, subject)) await add(subject);
+          if (await this.#carrier(context, subject, db)) await add(subject);
         }
     };
     for (const place of places) {
@@ -5236,7 +5243,7 @@ export class BotPlay {
         )
           neighbors.delete(id);
       const contacts = await this.#available(world, [...neighbors], db);
-      const here = await this.#places(context, actor);
+      const here = await this.#places(context, actor, db);
       const aboard = await ride(context, actor);
       const driving = !aboard && (await isVehicle(context, actor));
       const outside = aboard
@@ -5306,7 +5313,7 @@ export class BotPlay {
             ...(await drawDetails(id)),
             contactAvailable:
               contacts.some((r) => r.actor_id === id && r.user_id !== null) &&
-              (await this.#places(context, id)).some((place) =>
+              (await this.#places(context, id, db)).some((place) =>
                 here.includes(place),
               ),
             npc: contacts.find((r) => r.actor_id === id)?.npc ?? false,
@@ -12025,7 +12032,7 @@ export class BotPlay {
                 d.members.flatMap((m) =>
                   m.instant ? [{ ...m.instant, id: m.actorId }] : [],
                 ),
-                () => this.#places(queried.context, actor),
+                () => this.#places(queried.context, actor, db),
                 multiplier,
                 players,
               );
@@ -12124,7 +12131,7 @@ export class BotPlay {
                       context,
                       actor,
                     )),
-                    ...(await this.#trades(context, session, actor)),
+                    ...(await this.#trades(context, session, actor, db)),
                   ];
                 if (exchangeOffers.length)
                   result = { ...result, exchangeOffers };
