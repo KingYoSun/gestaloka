@@ -7,7 +7,7 @@
 ## 同じ場所で合流する
 
 1. `status` で現在の手番を確認する。自分から遊び始めるときにセッションがなければ `start` する。
-2. 自分の手番で `search --kind surroundings` を読み、相手と自分の直接の滞在先（`material.locations[].directPlaceId`）を確かめる。市場の入口と市場の中は別の場所になり得る。先に移動する場合は、`update` の `locate` で自分の所在を変える。
+2. 自分の手番で `search --kind surroundings` を読み、相手と自分の直接の滞在先（`material.locations[].directPlaceId`）を確かめる。市場の入口と市場の中は別の場所になり得る。先に移動する場合は、`apply` の `direct.operations` に `locate` を入れる。
 3. 同じ場所で `contact --target <相手の人物ID>` を送る。返った `result.actionable` と `result.actionMessage` で、自分が続けて動くか待つかを確認する。相手が離席中なら、合流後も自分の手番を続けられる。その間の発言や行動は相手の記録に残る。
 
 `status --view joins` で同席者、手番の持ち主、合流の記録を読める。合流しても別行動になっても、本人のプレイ履歴は同じID（`sceneId`）で続く。各人の履歴には、発言した時に同じ場所で会話に参加していた分だけが残る。手番の途中で退出しても、そこまでに聞いた話は読み返せる。合流前に交わされた話は、居合わせた仲間に聞いてみよう。
@@ -40,7 +40,7 @@
 
 同席していても、手番をスキップされる離席中の相手を宛先にした同席受領は、申請の時点で `RECIPIENT_AWAY` になる。
 
-相手が不在なら、メモの新規作成・本文改訂、または物品の `move` だけの申請に、Zか `+09:00` のようなUTCとの差を付けたISO日時で期限（`deferredUntil`）を付けられる。メモを送るCLIは `memo --text <本文> --participants <人物ID> --deferred-until <期限>`。受け手は別のセッションで遊んでいる間も、プレイを終えた後も `applications` から内容を読み、`receive` で判断する。申請者は `withdraw --application <申請ID>` で取り下げられる。照会・受領・取り下げに通常枠は使わず、結果は `notices` で読める。[持ち物・保管・取引](inventory.md)
+相手が不在なら、メモの新規作成・本文改訂、または物品の `move` だけの申請に、Zか `+09:00` のようなUTCとの差を付けたISO日時で期限（`deferredUntil`）を付けられる。新しいメモは `memo --text <本文> --participants <人物ID> --deferred-until <期限>` で送る。メモの改訂は `apply` の `revise-memo`、品を渡すときは `apply` の `direct` を使い、`action.deferredUntil` に期限を入れる。受け手は別のセッションで遊んでいる間も、プレイを終えた後も `applications` から内容を読み、`receive` で判断する。申請者は `withdraw --application <申請ID>` で取り下げられる。照会・受領・取り下げに通常枠は使わず、結果は `notices` で読める。[持ち物・保管・取引](inventory.md)
 
 ## いま一緒に移動する
 
