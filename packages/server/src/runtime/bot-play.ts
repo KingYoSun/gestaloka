@@ -675,6 +675,14 @@ const StateText = {
   text: z.string().trim().min(1),
   minutes: z.number().int().positive().max(5256000).optional(),
 };
+// 探索が成功したときに記録する、道の記述・新しい場所の説明・接続元の一部かどうか。
+const Explored = z
+  .object({
+    route: z.string().trim().min(1),
+    description: z.string().trim().min(1),
+    partOf: z.boolean(),
+  })
+  .strict();
 const DiceSetting = z
   .object({
     sides: z.number().int().min(2).max(2147483647),
@@ -719,6 +727,7 @@ const DiceSetting = z
       .optional(),
     // 申請が成立すると何かが起きる、名前で呼ばれる個人。
     individuals: z.array(z.string().trim().min(1)).optional(),
+    explored: Explored.optional(),
   })
   .strict()
   .refine(
@@ -1015,8 +1024,11 @@ const ExploreDice = z
   .object({
     sides: z.literal(100),
     successThrough: z.number().int().min(1).max(100),
+    explored: Explored,
   })
   .strict();
+const explorePrompt =
+  "同じ応答にexplored:{route:文字列,description:文字列,partOf:真偽}を加える。routeは接続元と新しい場所を結ぶ道の記述で、どこからどう進むと着くかを一、二文で書く。「〜を探す」「〜へ向かう」のような申請の行動ではなく、後から誰でも通れる道そのものを書く。descriptionは新しい場所の様子を、後からその場所だけを調べた人が読める文で書く。partOfは、新しい場所が接続元の説明にすでにある物や区画（接続元の中の祠・部屋・岸辺など）ならtrue、接続元とは別の場所ならfalse。trueのとき、descriptionには接続元のどこにあるかを含める。";
 
 /** Bots select their own material; only completed public actions enter the chat. */
 export class BotPlay {
@@ -6260,7 +6272,7 @@ export class BotPlay {
                   : "") +
                 (decides ? decidePrompt : "") +
                 (explore
-                  ? ""
+                  ? explorePrompt
                   : individualsPrompt + (await this.#fumblePrompt(world))) +
                 (fresh.some((p) => p.requestText)
                   ? "requestTextは元の申請の経緯。各案の技能や製作はその案のchangesだけを判定し、別の案で使う材料をこの案に割り当てない。"
@@ -6691,6 +6703,9 @@ export class BotPlay {
       if (includedStates.has(id)) continue;
       const node = await context.node(id);
       if (!node) continue;
+      // 接続元の一部として探索された場所と、その接続元は、互いの様子を同じ材料として渡す。
+      if (node.kind === "existence")
+        for (const place of await context.partPlaces(id)) wanted.add(place);
       // 多くの状態を持つ対象でも入力が膨らまないよう、選んだ状態だけを渡す。
       const all = await this.#states(context, id),
         chosen = new Set(selectStates(all));
@@ -8375,6 +8390,38 @@ export class BotPlay {
         );
       for (const { id, text } of dice.setting?.decided ?? [])
         changes.nodes.find((n) => n.id === id)!.text = text;
+      // 探索では、GMが書き分けた道の記述と場所の説明を記録する。接続元の一部なら印を付ける。
+      const explored = dice.setting?.explored;
+      if (input.command === "explore" && explored) {
+        const place = changes.nodes[0]!.id,
+          script = derivedId(`${place}:description`);
+        changes.nodes.find(
+          (n) => n.id === derivedId(`${input.requestId}:route`),
+        )!.text = explored.route;
+        changes.nodes.push({
+          id: script,
+          kind: "script",
+          text: explored.description,
+        });
+        changes.edges.push({
+          id: derivedId(`${script}:content`),
+          kind: "status",
+          role: "content",
+          source: place,
+          target: script,
+          period: { from: at },
+        });
+        if (explored.partOf)
+          changes.edges.push({
+            id: derivedId(`${script}:part-of`),
+            kind: "status",
+            role: "about",
+            text: "part-of",
+            source: script,
+            target: input.fromId,
+            period: { from: at },
+          });
+      }
       if (dice.setting)
         await this.#saveStorageLimits(context, changes, dice.setting);
       // 時間をかける申請の物品は届く時刻に成立させる。ここでは消費だけを確定する。

@@ -37,15 +37,15 @@
 }
 ```
 
-| type           | 引数                                     | 意味                         |
-| -------------- | ---------------------------------------- | ---------------------------- |
-| locate         | subjectId, text, aboutIds, directPlaceId | 本人または同行者の所在地     |
-| create         | label, count任意, holder, basis          | 新しい物品。holderの物になる |
-| move           | item, from, to, count任意, basis         | 受け渡し。toの物になる       |
-| grant / revoke | person, storage。grantにはbasis          | 家・場所の保管先の登録       |
-| learn          | person, text, basis, consumeSkillIds任意 | 技能の習得・発展・統合       |
-| update         | id, text任意, count任意, basis任意       | 物品の呼称・個数、技能の内容 |
-| remove         | id, count任意                            | 消費・破棄・技能の喪失       |
+| type           | 引数                                     | 意味                                                                                                               |
+| -------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| locate         | subjectId, text, aboutIds, directPlaceId | 本人または同行者の所在地。記録される所在の本文は直接の滞在先の呼び名で、`text`は直接の滞在先が決まらないときに使う |
+| create         | label, count任意, holder, basis          | 新しい物品。holderの物になる                                                                                       |
+| move           | item, from, to, count任意, basis         | 受け渡し。toの物になる                                                                                             |
+| grant / revoke | person, storage。grantにはbasis          | 家・場所の保管先の登録                                                                                             |
+| learn          | person, text, basis, consumeSkillIds任意 | 技能の習得・発展・統合                                                                                             |
+| update         | id, text任意, count任意, basis任意       | 物品の呼称・個数、技能の内容                                                                                       |
+| remove         | id, count任意                            | 消費・破棄・技能の喪失                                                                                             |
 
 ### 物の受け渡し
 
@@ -260,7 +260,7 @@ gestaloka explore --from <接続元の場所ID> --label <場所の呼び名> --t
 
 接続元には、本人の現在の所在地にある場所を指定する。`search --kind self`または`surroundings`の`material.locations[].aboutIds`にあるIDが使える。離れた場所を接続元にはできない。
 
-GMは接続元から見た妥当性でダイスを設定し、サーバーが一度だけ振る。応答の`outcome`に成否・ダイス設定・出目が入る。成功すると`placeId`に新しい場所のIDが返り、`update`の`locate`でそこへ移動できる。接続元と新しい場所には同じ記述が付き、どちらを`search --kind subject`で調べても、相手の名前とIDを`about`から読める。後から来た人物も同じ手がかりで行き来できる。どちらの場所に直接滞在していても、`search --kind surroundings`の`material.routes`に相手の名前とIDが出る。`routes`は移動先の手がかりで、載っていない場所へも、検索結果で受け取ったIDなら`locate`で移動を申請できる。新しい場所は、接続元にいる間も`search --kind subject`で調べられる。
+GMは接続元から見た妥当性でダイスを設定し、サーバーが一度だけ振る。応答の`outcome`に成否・ダイス設定・出目が入る。成功すると`placeId`に新しい場所のIDが返り、`update`の`locate`でそこへ移動できる。接続元と新しい場所には同じ道の記述が付き、どちらを`search --kind subject`で調べても、相手の名前とIDを`about`から読める。道の記述と新しい場所の説明は、GMが`text`から書き分ける（`outcome.setting.explored`の`route`と`description`）。新しい場所が接続元の中にある物や区画（祠・部屋・岸辺など）なら、GMは接続元の一部として記録し（`explored.partOf`）、どちらかを材料にする判定には、もう一方の様子も一緒に渡る。後から来た人物も同じ手がかりで行き来できる。どちらの場所に直接滞在していても、`search --kind surroundings`の`material.routes`に相手の名前とIDが出る。`routes`は移動先の手がかりで、載っていない場所へも、検索結果で受け取ったIDなら`locate`で移動を申請できる。新しい場所は、接続元にいる間も`search --kind subject`で調べられる。
 
 既にある場所と同じ呼び名（`label`）では申請できない。`EXPLORE_NAME_TAKEN`が返り、メッセージに先にある場所のIDが入る。GMは呼ばれず、通常枠も使わない。その場所を`search --kind subject`で調べるか、別の呼び名で申請する。
 

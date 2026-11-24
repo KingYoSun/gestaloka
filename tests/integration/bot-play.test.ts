@@ -27,6 +27,7 @@ import type { Change } from "@gestaloka/contracts";
 import {
   addRoute,
   directPlaces,
+  locationRecords,
 } from "../../packages/server/src/world/locations.js";
 import { BotPlay } from "@gestaloka/server/play";
 import { createApp } from "../../apps/api/src/app.js";
@@ -52,6 +53,12 @@ let runtime: Awaited<ReturnType<typeof fixtureRuntime>>["runtime"],
 const graphs: string[] = [];
 // 成功範囲が面数未満という制約の中で、実質的に必ず成功するダイス設定。
 const sure = { sides: 2147483647, successThrough: 2147483646 };
+// 探索の判定で、GMが書き分ける道の記述と場所の説明。
+const explored = {
+  route: "広場の裏手から細い小道を抜けると、新しい場所に着く。",
+  description: "木立に囲まれた静かな場所。",
+  partOf: false,
+};
 const answer = (id: string, content: unknown) => ({
   id,
   model: "fixture",
@@ -12187,7 +12194,7 @@ test("探索と複数案の生成は日次SPを共有し、生成と素材消費
   });
   expect((await f.status(0)).dailySp).toMatchObject({ remaining: 100 });
   f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { sides: 100, successThrough: 100 }),
+    answer(id, { sides: 100, successThrough: 100, explored }),
   );
   expect(await f.send(0, explore)).toMatchObject({
     spentSp: 1,
@@ -13317,7 +13324,8 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
       expect(messages[0]?.content).toContain(
         "接続元ノードから見た妥当性によってダイスを1d100で振る。基準値100も可とする",
       );
-      return answer(id, { sides: 100, successThrough: 100 });
+      expect(messages[0]?.content).toContain("explored:");
+      return answer(id, { sides: 100, successThrough: 100, explored });
     });
     const found = await run(
       "explore",
@@ -13333,11 +13341,11 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
       outcome: { success: true, setting: { sides: 100, successThrough: 100 } },
     });
     expect(f.calls).toHaveBeenCalledTimes(1);
+    // 行き来の記述は申請の文ではなく、GMが書いた道の記述になり、新しい場所に説明が付く。
     const route = (target: string) =>
       run("search", "--kind", "subject", "--target", target).then((r) =>
         r.result.material.states.find(
-          (s: { node: { text: string } }) =>
-            s.node.text === "広場の裏手から細い小道が続いている。",
+          (s: { node: { text: string } }) => s.node.text === explored.route,
         ),
       );
     const names = (state: { about: { text?: string }[] }) =>
@@ -13359,6 +13367,14 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
       )
     ).records[0]!.get("id") as string;
     expect(await routes()).toEqual([{ id: placed, label: "広場の裏の小道" }]);
+    const described = await Promise.all(
+      (
+        await f.store
+          .context(f.graph)
+          .relations(placed, "status", "out", Number.MAX_SAFE_INTEGER)
+      ).map((e) => f.store.context(f.graph).node(e.target)),
+    );
+    expect(described.map((n) => n?.text)).toContain(explored.description);
     const path = found.result.placeId as string,
       me = (await run("status")).device.actorId as string,
       move = join(cli.directory, "move.json");
@@ -13374,7 +13390,7 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
           {
             type: "locate",
             subjectId: me,
-            text: "広場の裏の小道",
+            text: "広場から小道へ歩いて入っていく",
             aboutIds: [path],
           },
         ],
@@ -13384,6 +13400,12 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
     // 行く前でも、いまいる場所の記述が参照している新しい場所を調べられる。
     expect(names(await route(path))).toEqual(["広場", "広場の裏の小道"]);
     expect((await run("play", "--file", move)).result.state).toBe("accepted");
+    // 所在の本文は移動の申請の文ではなく、直接の滞在先の呼び名になる。
+    expect(
+      (await locationRecords(f.store.context(f.graph), f.actors[0]!)).map(
+        (r) => r.text,
+      ),
+    ).toEqual(["広場の裏の小道"]);
     expect(names(await route(path))).toEqual(["広場", "広場の裏の小道"]);
     expect(await routes()).toEqual([{ id: f.place, label: "広場" }]);
     const failing = randomUUID(),
@@ -13437,6 +13459,37 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
       dependencies: [],
     });
     expect(await routes()).toEqual([]);
+    // 接続元の一部として探索された場所は、接続元を材料にする判定へ一緒に渡る。
+    f.calls.mockImplementationOnce(async (id) =>
+      answer(id, {
+        sides: 100,
+        successThrough: 100,
+        explored: { ...explored, partOf: true },
+      }),
+    );
+    const part = (
+      await f.send(0, {
+        command: "explore",
+        text: "離れた場所の片隅に古井戸がある",
+        label: "離れた場所の古井戸",
+        fromId: f.far,
+        dependencies: [],
+      })
+    ).placeId as string;
+    f.calls.mockImplementationOnce(async (id, _role, messages) => {
+      const nodes = JSON.parse(String(messages[1]!.content)).nodes as {
+        node: { id: string };
+      }[];
+      expect(nodes.map((n) => n.node.id)).toContain(part);
+      return answer(id, { sides: 100, successThrough: 100, explored });
+    });
+    await f.send(0, {
+      command: "explore",
+      text: "離れた場所の先に丘がある",
+      label: "離れた場所の先の丘",
+      fromId: f.far,
+      dependencies: [],
+    });
   } finally {
     await cli.close();
     await app.close();

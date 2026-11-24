@@ -141,12 +141,14 @@ export async function planBelongings(
           op.directPlaceId ?? (ids.length === 1 ? ids[0] : undefined);
         if (direct && !ids.includes(direct))
           throw new BelongingRejected("直接の滞在先をaboutIdsに含めてください");
+        // 所在の本文は、直接の滞在先が決まればその呼び名にする。移動の申請の文は使わない。
+        const text = (direct && (await context.node(direct))?.text) || op.text;
         const { latest, last, active } = await context.locations(op.subjectId);
         at = Math.max(at, last);
         if (
           active.length === 1 &&
           active[0]!.period.from === latest &&
-          (await context.node(active[0]!.target))?.text === op.text
+          (await context.node(active[0]!.target))?.text === text
         ) {
           const about = (
             await context.relations(active[0]!.target, "status", "out", LATEST)
@@ -167,7 +169,7 @@ export async function planBelongings(
           );
         }
         const node = derivedId(`${commitId}:${index}:node`);
-        change.nodes.push({ id: node, kind: "script", text: op.text });
+        change.nodes.push({ id: node, kind: "script", text });
         change.edges.push({
           id: derivedId(`${node}:content`),
           kind: "status",
