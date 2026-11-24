@@ -647,6 +647,36 @@ export async function worldRoutes(
       ),
   );
   app.get(
+    "/api/worlds/:id/inventory/description",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery.extend({
+          itemId: z.uuid(),
+          after: z.string().min(1).max(1024).optional(),
+        }),
+        response: {
+          200: z.object({
+            origin: z.string().nullable(),
+            states: z.array(z.string()),
+            inherited: z.array(z.string()),
+            next: z.string().nullable(),
+          }),
+          ...errors,
+        },
+      },
+    },
+    async (request) =>
+      service().inventoryDescription(
+        await subject(request),
+        request.params.id,
+        request.query.itemId,
+        operations!.tokenSecret,
+        request.query.after,
+        request.query.actorId,
+      ),
+  );
+  app.get(
     "/api/worlds/:id/inventory/contents",
     {
       schema: {

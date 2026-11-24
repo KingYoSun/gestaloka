@@ -624,6 +624,13 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
     [sender, receiver] = f.actors as [string, string],
     store = new WorldStore(f.db.graph),
     item = randomUUID(),
+    marking = randomUUID(),
+    secret = randomUUID(),
+    notes = Array.from({ length: 50 }, (_, i) => ({
+      id: randomUUID(),
+      kind: "script" as const,
+      text: `観測印 ${i + 1}`,
+    })),
     place = randomUUID(),
     route = randomUUID(),
     before = await f.count();
@@ -637,6 +644,14 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
         changes: {
           nodes: [
             { id: item, kind: "existence", text: "手渡す星図" },
+            { id: marking, kind: "script", text: "北極星に銀の印がある" },
+            ...notes,
+            {
+              id: secret,
+              kind: "script",
+              text: "裏面の暗号",
+              viewers: [sender],
+            },
             { id: place, kind: "existence", text: "星を観測する丘" },
             { id: route, kind: "script", text: "合流場所から丘へ続く道" },
           ],
@@ -646,8 +661,19 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
               kind: "has",
               source: sender,
               target: item,
+              text: "師匠と冬の空を観測して描いた",
               period: { from: 0 },
             },
+            ...[marking, secret, ...notes.map((note) => note.id)].map(
+              (target) => ({
+                id: randomUUID(),
+                kind: "status" as const,
+                role: "content" as const,
+                source: item,
+                target,
+                period: { from: 0 },
+              }),
+            ),
             {
               id: randomUUID(),
               kind: "status",
@@ -713,6 +739,27 @@ test("手動プレイでドロワーと同じ候補から物品を手渡して�
     await expect(
       playerDrawer.getByText("手渡す星図", { exact: true }),
     ).toBeVisible();
+    await playerDrawer
+      .getByRole("listitem")
+      .filter({ hasText: "手渡す星図" })
+      .getByText("説明を見る")
+      .click();
+    await expect(
+      playerDrawer.getByText("師匠と冬の空を観測して描いた"),
+    ).toBeVisible();
+    await playerDrawer
+      .getByRole("button", { name: "説明の続きを見る" })
+      .click();
+    await expect(playerDrawer.getByText(/^観測印 \d+$/)).toHaveCount(50);
+    await expect(playerDrawer.getByText("北極星に銀の印がある")).toBeVisible();
+    await expect(playerDrawer.getByText("裏面の暗号")).toHaveCount(0);
+    expect(
+      (
+        await page.request.get(
+          `/api/worlds/${f.world}/inventory/description?actorId=${sender}&itemId=${item}`,
+        )
+      ).status(),
+    ).toBe(404);
     const holders = await store
       .context(f.graph)
       .relations(item, "has", "in", Number.MAX_SAFE_INTEGER);
