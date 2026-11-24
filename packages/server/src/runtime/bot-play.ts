@@ -37,6 +37,7 @@ import {
 import {
   atTime,
   derivedId,
+  isRespawnHome,
   validateConnection,
   bindingScripts,
   validateBindings,
@@ -119,7 +120,10 @@ import {
   isPermanentlyDead,
   recordDeathSpProhibition,
   recordPermanentDeath,
+  respawnHomePlace,
   respawnPolicy,
+  setRespawnHome,
+  type RespawnHome,
 } from "./death-policy.js";
 import { historyLimit, selectStates } from "./state-selection.js";
 import {
@@ -423,6 +427,7 @@ type SessionStatus = {
   members: { actorId: string; sceneId: string }[];
   characters: TurnParticipant[];
   stealth?: { placeId: string; place: string };
+  home?: RespawnHome;
   turn: number;
   actorId: string | null;
   callsUsed: number;
@@ -448,8 +453,8 @@ type SessionStatus = {
 };
 type IdleSessionStatus = {
   session: null;
-  stealth?: SessionStatus["stealth"];
-} & Partial<Record<Exclude<keyof SessionStatus, "stealth">, never>>;
+} & Pick<SessionStatus, "stealth" | "home"> &
+  Partial<Record<Exclude<keyof SessionStatus, "stealth" | "home">, never>>;
 type Member = {
   actorId: string;
   sceneId: string;
@@ -3807,8 +3812,13 @@ export class BotPlay {
     withClock = false,
   ): Promise<SessionStatus | IdleSessionStatus> {
     const session = await this.current(world, actor, db);
-    if (!session)
-      return { session: null, ...(await this.#ownStealth(db, world, actor)) };
+    const context = this.store.context((await this.world(world, db)).id);
+    const place = await respawnHomePlace(context, actor);
+    const own = {
+      ...(await this.#ownStealth(db, world, actor, context)),
+      ...(place ? { home: { placeId: place.id, name: place.text } } : {}),
+    };
+    if (!session) return { session: null, ...own };
     const policy = (
       await db.query<{ turnCalls: number; receiptTimeoutSeconds: number }>(
         `SELECT turn_calls::float8 AS "turnCalls",receipt_timeout_seconds::float8 AS "receiptTimeoutSeconds" FROM session_play_policy WHERE singleton`,
@@ -3844,7 +3854,7 @@ export class BotPlay {
         sceneId,
       })),
       characters,
-      ...(await this.#ownStealth(db, world, actor)),
+      ...own,
       turn: session.data.number,
       ...(withClock && session.data.turnStartedAt
         ? { turnStartedAt: session.data.turnStartedAt }
@@ -4710,8 +4720,13 @@ export class BotPlay {
     const stay = await this.#hidden(db, world, context, target);
     return !stay || stay.discovered.includes(viewer);
   }
-  async #ownStealth(db: Db, world: string, actor: string) {
-    const context = this.store.context((await this.world(world, db)).id);
+  async #ownStealth(
+    db: Db,
+    world: string,
+    actor: string,
+    context?: WorldContext,
+  ) {
+    context ??= this.store.context((await this.world(world, db)).id);
     const stay = await this.#hidden(db, world, context, actor);
     if (stay)
       return {
@@ -5378,7 +5393,11 @@ export class BotPlay {
       this.now().getTime(),
       latest,
     )) {
-      if (e.role !== "content" || (!showLocation && e.text === "location"))
+      if (
+        e.role !== "content" ||
+        isRespawnHome(e) ||
+        (!showLocation && e.text === "location")
+      )
         continue;
       const node = await context.node(e.target);
       if (viewer && viewer !== target && !visibleTo(node, viewer, true))
@@ -9489,6 +9508,7 @@ export class BotPlay {
       e.kind === "status" &&
       e.role === "content" &&
       e.text !== "location" &&
+      !isRespawnHome(e) &&
       !isSpUseProhibition(e);
     for (const id of fatal) {
       for (const e of await context.relations(id, "status", "out", at))
@@ -9554,7 +9574,7 @@ export class BotPlay {
         "この人物は死亡しています。新しい人物を作成してください",
       );
   }
-  // 死亡した人物を、世界に設定された場所か本人の最初の所在地へ移す差分を、同じ確定に加える。
+  // 死亡した人物をホーム、世界の指定先、最初の所在地の順に移す差分を、同じ確定に加える。
   async #relocateDead(
     context: WorldContext,
     request: string,
@@ -9565,18 +9585,21 @@ export class BotPlay {
   ) {
     const ops: BelongingOp[] = [];
     for (const id of fatal) {
-      const origin = await context.firstLocation(id),
-        about = origin
+      let place =
+        (await respawnHomePlace(context, id)) ??
+        (configured ? await context.node(configured) : undefined);
+      if (!place) {
+        const origin = await context.firstLocation(id);
+        const about = origin
           ? (await context.history(origin, "status", "out", latest)).filter(
               (e) => e.role === "about",
             )
-          : [],
-        direct = about.filter((e) => e.text === "direct-place");
-      const placeId =
-          (configured && (await context.node(configured)) && configured) ||
-          (direct.length === 1 ? direct : about.length === 1 ? about : [])[0]
-            ?.target,
-        place = placeId && (await context.node(placeId));
+          : [];
+        const direct = about.filter((e) => e.text === "direct-place");
+        const [ref] =
+          direct.length === 1 ? direct : about.length === 1 ? about : [];
+        if (ref) place = await context.node(ref.target);
+      }
       if (place)
         ops.push({
           type: "locate",
@@ -11090,6 +11113,33 @@ export class BotPlay {
           "REQUEST_IN_PROGRESS",
           "判定の受付を維持できませんでした。同じ要求を再送してください",
         );
+      }
+      if (input.command === "home-set") {
+        if (!granted || assignment)
+          reject(
+            "PLAYER_REQUIRED",
+            "ホームを設定できるのはプレイヤーの人物だけです",
+          );
+        const { at } = await this.world(world, db);
+        const home = await setRespawnHome(
+          this.store,
+          this.store.context(w.id),
+          actor,
+          input.requestId,
+          at,
+        );
+        if (!home)
+          reject(
+            "HOME_PLACE_REQUIRED",
+            "現在地を特定できる場所でホームを設定してください",
+          );
+        const result = { command: input.command, home };
+        await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [
+          input.requestId,
+          result,
+        ]);
+        await db.query("COMMIT");
+        return result;
       }
       if (
         input.command.startsWith("draw-table-") &&

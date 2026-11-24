@@ -108,6 +108,14 @@ gestaloka status [--scene <ID>] [--after <カーソル>] [--view <wait|joins>]
 
 実行例 `gestaloka status --view wait`
 
+## home-set
+
+現在地をリスポーン先のHomeに設定。設定したHomeはstatusのhomeで確認できる。手番や通常枠、SPを使わない。
+
+```text
+gestaloka home-set
+```
+
 ## result
 
 本人のプレイ履歴と終了結果をまとめて読む。以前のプレイは--sceneに履歴IDを指定する。

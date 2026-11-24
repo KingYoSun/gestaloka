@@ -35,6 +35,8 @@ import {
   requestedChange,
   BelongingRole,
   derivedId,
+  isRespawnHome,
+  respawnHome,
   summaryId,
   summaryText,
   type SummaryKind,
@@ -125,6 +127,8 @@ export function isSpUseProhibition(edge: WorldEdge) {
 }
 const spUseProhibitionAdminRequired = () =>
   new WorldConflict("SP使用禁止の状態は管理者だけが付与・変更できます");
+const respawnHomeCommandRequired = () =>
+  new WorldConflict("ホームは専用の設定操作で変更してください");
 export type ItemReservations = {
   add?: { id: string; itemId: string; count: number };
   allocations?: PickupAllocation[];
@@ -1554,6 +1558,7 @@ export class WorldStore {
       management?: { editorId: string; reason: string; requestHash: string };
       seriesGrants?: string[];
       spUseProhibitionGrants?: string[];
+      respawnHomeActor?: string;
     },
     fromBelongingOperations = false,
     reservations?: ItemReservations,
@@ -1576,11 +1581,17 @@ export class WorldStore {
           .optional(),
         seriesGrants: z.array(z.uuid()).optional(),
         spUseProhibitionGrants: z.array(z.uuid()).optional(),
+        respawnHomeActor: z.uuid().optional(),
       })
       .strict()
       .parse(input);
     const { commitId, at } = parsed;
     const changes = normalizeChange(parsed.changes, at);
+    const canChangeHome = (actor: string) =>
+      parsed.management || parsed.respawnHomeActor === actor;
+    for (const edge of changes.edges)
+      if (isRespawnHome(edge) && !canChangeHome(edge.source))
+        throw respawnHomeCommandRequired();
     for (const edge of changes.edges.filter(isSpUseProhibition)) {
       if (
         !parsed.management &&
@@ -1744,6 +1755,8 @@ export class WorldStore {
             throw new WorldConflict("終了対象の関係が有効ではありません");
           if (!parsed.management && isSpUseProhibition(edge))
             throw spUseProhibitionAdminRequired();
+          if (isRespawnHome(edge) && !canChangeHome(edge.source))
+            throw respawnHomeCommandRequired();
           ended.push(edge);
         }
         const inventoryTouched =
@@ -1910,13 +1923,21 @@ export class WorldStore {
             `MATCH (s:WorldNode {worldId:$worldId,id:$id})
             OPTIONAL MATCH (o:WorldNode)-[r:status {worldId:$worldId}]->(s)
             WHERE o.worldId=$worldId AND o.kind='existence' AND r.validFrom<=$at AND (r.validTo IS NULL OR $at<r.validTo)
-            RETURN DISTINCT o.id AS id,r.data CONTAINS '"text":"location"' AS location,s.spUseProhibition AS spUseProhibition`,
-            { worldId, id, at },
+            RETURN DISTINCT o.id AS id,r.data CONTAINS '"text":"location"' AS location,
+              r.role='content' AND r.data CONTAINS $home AS respawnHome,s.spUseProhibition AS spUseProhibition`,
+            {
+              worldId,
+              id,
+              at,
+              home: JSON.stringify({ text: respawnHome }).slice(1, -1),
+            },
           );
           for (const owner of owners.records) {
             if (!parsed.management && owner.get("spUseProhibition"))
               throw spUseProhibitionAdminRequired();
             if (!owner.get("id")) continue;
+            if (owner.get("respawnHome") && !canChangeHome(owner.get("id")))
+              throw respawnHomeCommandRequired();
             sourceIds.add(owner.get("id"));
             if (changedAbout.has(id) && owner.get("location"))
               movementTargets.add(owner.get("id"));

@@ -1,4 +1,5 @@
 import type { Change, WorldEdge, WorldNode } from "@gestaloka/contracts";
+import { isRespawnHome } from "../world/model.js";
 import {
   WorldConflict,
   isSpUseProhibition,
@@ -15,6 +16,7 @@ export function editableStatus(edge: WorldEdge, node?: WorldNode) {
     edge.text !== "location" &&
     edge.text !== "operator" &&
     edge.text !== permanentDeath &&
+    !isRespawnHome(edge) &&
     !isSpUseProhibition(edge) &&
     node?.kind === "script" &&
     node.type !== "draw-source" &&

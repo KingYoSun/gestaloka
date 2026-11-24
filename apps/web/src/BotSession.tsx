@@ -57,6 +57,7 @@ const View = z.object({
   viewerId: z.string(),
   aiControlled: z.boolean().optional(),
   actorId: z.string().nullish(),
+  home: z.object({ placeId: z.uuid(), name: z.string() }).optional(),
   turnStartedAt: z.string().optional(),
   screen: PlayScreen,
   dailySp: z
@@ -493,12 +494,33 @@ export function BotSession({
         />
       }
       right={
-        <SessionPanel
-          people={view.characters}
-          screen={view.screen}
-          turn={archive ? null : view.actorId}
-          turnStartedAt={view.turnStartedAt}
-        />
+        <>
+          <SessionPanel
+            people={view.characters}
+            screen={view.screen}
+            turn={archive ? null : view.actorId}
+            turnStartedAt={view.turnStartedAt}
+          />
+          {!archive && (
+            <>
+              <h2>Home（復帰先）</h2>
+              <div className="session-place">
+                <span>{view.home?.name ?? "未設定"}</span>
+                {view.screen.place && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void send({ command: "home-set" })}
+                  >
+                    現在地をHomeにする
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </>
       }
       toolbar={
         <>
