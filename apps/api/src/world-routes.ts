@@ -10,6 +10,7 @@ import {
   PlayerPlayCommand,
   PlayQuote,
   PlayResponse,
+  SpectatingView,
   InventoryContents,
   InventoryContentsQuery,
   InventoryBundleCommand,
@@ -74,6 +75,11 @@ import {
 } from "@gestaloka/server/access";
 import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
 import type { Operations } from "@gestaloka/server/operations";
+
+const chatCursor = z
+  .string()
+  .regex(/^\d{1,19}$/)
+  .refine((v) => v.length < 19 || v <= "9223372036854775807");
 
 export async function worldRoutes(
   instance: FastifyInstance,
@@ -530,17 +536,33 @@ export async function worldRoutes(
         ),
   );
   app.get(
+    "/api/worlds/:id/spectate",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: z.object({
+          actorId: z.uuid(),
+          before: chatCursor.optional(),
+        }),
+        response: { 200: SpectatingView, ...errors },
+      },
+    },
+    async (request) =>
+      service().spectate(
+        await subject(request),
+        request.params.id,
+        request.query.actorId,
+        request.query.before,
+      ),
+  );
+  app.get(
     "/api/worlds/:id/session",
     {
       schema: {
         params: ResourceId,
         querystring: SceneViewQuery.extend({
           view: z.enum(["wait", "joins", "screen"]).optional(),
-          after: z
-            .string()
-            .regex(/^\d{1,19}$/)
-            .refine((v) => v.length < 19 || v <= "9223372036854775807")
-            .optional(),
+          after: chatCursor.optional(),
         }),
         response: { 200: PlayResponse, ...errors },
       },

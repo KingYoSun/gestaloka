@@ -1,5 +1,12 @@
 import { memo, useState, useRef } from "react";
-import { ArrowDownToLine, ArrowUpToLine, Inbox, PenLine } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Check,
+  Copy,
+  Inbox,
+  PenLine,
+} from "lucide-react";
 import { z } from "zod";
 import {
   ItemOutcome,
@@ -16,7 +23,7 @@ import { PlayCommandEditor } from "./PlayCommandEditor.js";
 import { PlayApplications } from "./PlayApplications.js";
 import { RichText } from "./RichText.js";
 import { History, type HistoryHandle } from "./History.js";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import {
   Belongings,
   itemText,
@@ -235,6 +242,50 @@ function LogRows({
         fresh={Number(row.id) > shown}
       />
     ));
+}
+function SpectatorShare({ world, actor }: { world: string; actor: string }) {
+  const settings = $api.useQuery("get", "/api/account/spectating");
+  const router = useRouter();
+  const [result, setResult] = useState<"copied" | "failed">();
+  if (settings.error || !settings.data?.public) return null;
+  async function copy() {
+    try {
+      const { href } = router.buildLocation({
+        to: "/worlds/$id/watch/$actorId",
+        params: { id: world, actorId: actor },
+      });
+      await navigator.clipboard.writeText(new URL(href, location.origin).href);
+      setResult("copied");
+    } catch {
+      setResult("failed");
+    }
+  }
+  return (
+    <>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="play-icon"
+        aria-label="観戦URLをコピー"
+        title="観戦URLをコピー"
+        onClick={() => void copy()}
+      >
+        {result === "copied" ? <Check /> : <Copy />}
+      </Button>
+      <span role="status" className="sr-only">
+        {result === "copied" && "観戦URLをコピーしました。"}
+      </span>
+      {result === "failed" && (
+        <p
+          role="alert"
+          className="fixed inset-x-4 top-4 z-50 ml-auto w-fit rounded-lg border bg-popover px-4 py-3 text-sm text-destructive shadow-md"
+        >
+          観戦URLをコピーできませんでした。
+        </p>
+      )}
+    </>
+  );
 }
 function PersonalMaterial({
   value,
@@ -552,6 +603,13 @@ export function BotSession({
                   ? "今回のプレイを終了しました"
                   : "セッションを始める"}
           </h1>
+          {!archive && (
+            <SpectatorShare
+              key={view.viewerId}
+              world={id}
+              actor={view.viewerId}
+            />
+          )}
           <Button
             type="button"
             size="icon"

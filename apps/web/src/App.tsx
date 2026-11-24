@@ -37,6 +37,12 @@ const Manage = lazy(() =>
 const Player = lazy(() =>
   import("./screens.js").then((module) => ({ default: module.Player })),
 );
+const Account = lazy(() =>
+  import("./screens.js").then((module) => ({ default: module.Account })),
+);
+const Watch = lazy(() =>
+  import("./screens.js").then((module) => ({ default: module.Watch })),
+);
 const AdminOperations = lazy(() =>
   import("./admin.js").then((m) => ({ default: m.AdminOperations })),
 );
@@ -111,6 +117,7 @@ function Shell() {
           <Link to="/">世界一覧</Link>
           {surface === "user" && <Link to="/stories">STORIES</Link>}
           {surface === "user" && <a href="/auth/player">AIへのプレイ許可</a>}
+          <Link to="/account">アカウント設定</Link>
           {surface === "admin" && (
             <Link to="/operations/$section" params={{ section: "users" }}>
               運用管理
@@ -121,8 +128,6 @@ function Shell() {
           ) : account.data?.member?.role === "admin" ? (
             <a href={adminApp}>管理画面</a>
           ) : null}
-          <a href="/auth/claim">このブラウザーのデータを引き継ぐ</a>
-          <a href="/auth/link">ログイン方法を追加</a>
           <a href="/auth/logout">ログアウト</a>
           <ThemeButton />
         </nav>
@@ -190,6 +195,11 @@ const routeTree = root.addChildren([
   createRoute({ getParentRoute: () => root, path: "/", component: HomeRoute }),
   createRoute({
     getParentRoute: () => root,
+    path: "/account",
+    component: Account,
+  }),
+  createRoute({
+    getParentRoute: () => root,
     path: "/stories",
     validateSearch: StoryListQuery.extend({
       bookmarked: z
@@ -243,6 +253,22 @@ const routeTree = root.addChildren([
       sceneId: z.uuid().optional(),
     }).parse,
     component: PlayerRoute,
+  }),
+  createRoute({
+    getParentRoute: () => root,
+    path: "/worlds/$id/watch/$actorId",
+    component: function WatchRoute() {
+      const { id, actorId } = useParams({ from: "/worlds/$id/watch/$actorId" });
+      return useSurface() === "user" ? (
+        <Watch key={`${id}:${actorId}`} id={id} actorId={actorId} />
+      ) : (
+        <main className="page">
+          <a href={`${userApp}/worlds/${id}/watch/${actorId}`}>
+            ユーザー画面で開く
+          </a>
+        </main>
+      );
+    },
   }),
 ]);
 export const createAppRouter = (history?: RouterHistory) =>

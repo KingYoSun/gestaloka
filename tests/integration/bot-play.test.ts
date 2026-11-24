@@ -19,6 +19,7 @@ import {
   InventoryBundleCommand,
   PlayCommand,
   PlayerPlayCommand,
+  SpectatingView,
   WaitingEvent,
 } from "@gestaloka/contracts";
 import { WorldAccess } from "@gestaloka/server/access";
@@ -16783,6 +16784,121 @@ test("観戦画面の読み取り中に人物が移動すると、新しい現�
     expect(response.statusCode).toBe(200);
     expect(response.json().screen.place).toBe("離れた場所");
     expect(expire).toHaveBeenCalledTimes(1);
+  } finally {
+    await app.close();
+  }
+});
+
+test("観戦は公開した人物の進行中の記録だけを本人の視点で読める", async () => {
+  const f = await fixture(2);
+  const [owner, participant] = f.people;
+  const [actor, other] = f.actors;
+  const viewer = await auth.person("user");
+  const db = isolated.databases.postgres;
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const url = (actorId = actor) =>
+    `/api/worlds/${f.world}/spectate?actorId=${actorId}`;
+  const observe = (query = url(), cookie = viewer!.cookie) =>
+    app.inject({ method: "GET", url: query, headers: { cookie } });
+  const records = async (
+    target: string,
+    payload: Record<string, unknown>,
+    count = 1,
+  ) => {
+    await db.query(
+      `WITH scene AS (
+         SELECT id,session_id FROM bot_scene WHERE world_id=$1 AND actor_id=$2 AND NOT closed
+       ), chat AS (
+         INSERT INTO bot_chat(session_id,payload,recorded_at)
+         SELECT session_id,$3::jsonb,now() FROM scene CROSS JOIN generate_series(1,$4::int)
+         RETURNING id
+       )
+       INSERT INTO bot_record(scene_id,actor_id,chat_id)
+       SELECT scene.id,$2,chat.id FROM scene CROSS JOIN chat`,
+      [f.world, target, payload, count],
+    );
+  };
+  try {
+    expect((await observe(url(), "")).statusCode).toBe(401);
+    expect((await observe()).statusCode).toBe(404);
+    await auth.operations.spectating(owner!.id, true);
+    expect((await observe()).statusCode).toBe(404);
+    expect((await observe(url(), participant!.cookie)).statusCode).toBe(200);
+    await db.query("UPDATE world_construction SET published=true WHERE id=$1", [
+      f.world,
+    ]);
+    expect((await observe(url(other))).statusCode).toBe(404);
+
+    await records(actor!, { comment: "前のシーンだけに残る発言" });
+    await f.send(0, { command: "finish" });
+    expect(SpectatingView.parse((await observe()).json()).scene).toBeNull();
+    await f.send(0, { command: "start" });
+    await records(actor!, {
+      entries: [
+        {
+          label: "話し手",
+          input: "観戦対象だけに聞こえた発言",
+          result: {
+            outcome: { success: true },
+            effectState: "扉が開いた",
+            items: [{ label: "秘密の持ち物" }],
+          },
+        },
+      ],
+      receiptResult: { outcome: "rejected", message: "非表示の内訳" },
+    });
+    await records(other!, { comment: "別の人物だけに聞こえた発言" });
+    await records(actor!, { comment: "現在のシーンで見た発言" }, 50);
+    const keepAlive = vi.spyOn(access.botPlay, "keepAlive");
+    const expire = vi.spyOn(access.botPlay, "expire");
+
+    const response = await observe();
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+    expect(response.headers["x-gestaloka-subject"]).toBe(viewer.id);
+    const { name, scene } = SpectatingView.parse(response.json());
+    expect(name).toBe("人物0");
+    expect(scene?.entries).toHaveLength(50);
+    expect(scene?.before).toBeTruthy();
+    const older = await observe(`${url()}&before=${scene!.before}`);
+    expect(SpectatingView.parse(older.json()).scene!.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          lines: [
+            { speaker: "話し手", text: "観戦対象だけに聞こえた発言" },
+            { text: "結果：扉が開いた" },
+            { text: "受領が拒否されました" },
+          ],
+        }),
+      ]),
+    );
+    const text = response.body + older.body;
+    for (const hidden of [
+      "前のシーンだけに残る発言",
+      "別の人物だけに聞こえた発言",
+      "秘密の持ち物",
+      "非表示の内訳",
+    ])
+      expect(text).not.toContain(hidden);
+    expect(keepAlive).not.toHaveBeenCalled();
+    expect(expire).not.toHaveBeenCalled();
+    expect(
+      (
+        await observe(
+          `/api/worlds/${f.world}/session?view=screen&actorId=${actor}`,
+        )
+      ).statusCode,
+    ).toBe(404);
+    await auth.operations.spectating(owner!.id, false);
+    expect((await observe()).statusCode).toBe(404);
+    expect((await observe(`${url()}&before=${scene!.before}`)).statusCode).toBe(
+      404,
+    );
   } finally {
     await app.close();
   }

@@ -241,22 +241,24 @@ select {
   margin-bottom: 8px;
 }
 .site-header {
-  max-width: 1080px;
+  max-width: 1280px;
   margin: auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 24px 32px;
+  gap: 4px 20px;
+  padding: 8px 24px;
   border-bottom: 1px solid var(--border);
 }
 .brand {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 12px;
   font-size: 28px;
   font-weight: 400;
   text-decoration: none;
+  white-space: nowrap;
   line-height: 1;
 }
 .brand-image {
@@ -271,13 +273,28 @@ select {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  justify-content: center;
+  gap: 0 8px;
+  font-size: 14px;
 }
 .site-header nav > a {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
   text-decoration: none;
+}
+@media (min-width: 769px) {
+  .site-header:has(> nav) {
+    --header-side-column: minmax(12rem, 1fr);
+    display: grid;
+    grid-template-columns:
+      var(--header-side-column)
+      minmax(0, max-content)
+      var(--header-side-column);
+  }
+  .site-header > .brand {
+    justify-self: start;
+  }
 }
 .page {
   max-width: 900px;
@@ -1145,8 +1162,12 @@ select {
     display: block;
   }
   .site-header {
-    padding: 16px 20px;
+    padding-inline: 8px;
     flex-wrap: wrap;
+  }
+  .site-header nav {
+    justify-content: flex-start;
+    column-gap: 6px;
   }
   .brand {
     font-size: 24px;

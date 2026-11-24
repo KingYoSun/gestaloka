@@ -17,6 +17,8 @@ import { Input } from "./components/ui/input.js";
 import { Label } from "./components/ui/label.js";
 import { Publication, Presets, WorldBudgetSettings } from "./operations-ui.js";
 import { operate } from "./operations-client.js";
+import { RichText } from "./RichText.js";
+import type { MethodResponse } from "openapi-react-query";
 
 const PromptForm = CreateWorld.omit({ requestId: true }).extend({
   prompt: z.string().min(1, "初期設定を入力してください"),
@@ -31,6 +33,189 @@ const stateLabels = {
   playing: "村民が行動中",
   play_paused: "村民の行動を保留中",
 };
+
+export function Account() {
+  const client = useQueryClient();
+  const query = $api.queryOptions("get", "/api/account/spectating");
+  const settings = useQuery(query);
+  const save = $api.useMutation("put", "/api/account/spectating", {
+    onSuccess: async (value) => {
+      await client.cancelQueries({ queryKey: query.queryKey });
+      client.setQueryData(query.queryKey, value);
+    },
+  });
+  return (
+    <main className="page home">
+      <div className="page-title">
+        <h1>アカウント設定</h1>
+      </div>
+      <section className="form-panel space-y-3">
+        <h2>公開設定</h2>
+        <p id="spectating-description">
+          この設定はアカウント内のすべての人物に適用されます。観戦する人は、観戦URLとログインが必要です。
+          観戦画面には、進行中のセッションであなたに届いた発言や行動の結果が表示されます。
+        </p>
+        {settings.error ? (
+          <Problem error={settings.error} />
+        ) : settings.data ? (
+          <Label>
+            <input
+              type="checkbox"
+              aria-describedby="spectating-description"
+              checked={settings.data.public}
+              disabled={save.isPending}
+              onChange={(event) =>
+                save.mutate({ body: { public: event.target.checked } })
+              }
+            />
+            他のユーザーからの観戦を許可する
+          </Label>
+        ) : (
+          <Notice>公開設定を読み込んでいます</Notice>
+        )}
+        {settings.data?.public && (
+          <p>共有したい人物のプレイ画面で観戦URLをコピーできます。</p>
+        )}
+        {save.isPending && <Notice>公開設定を保存しています</Notice>}
+        {save.error && <Problem error={save.error} />}
+      </section>
+      <section className="form-panel mt-4">
+        <h2>ログイン方法とデータの引き継ぎ</h2>
+        <ul>
+          <li>
+            <a className="text-link" href="/auth/link">
+              ログイン方法を追加
+            </a>
+          </li>
+          <li>
+            <a className="text-link" href="/auth/claim">
+              このブラウザーのデータを引き継ぐ
+            </a>
+          </li>
+        </ul>
+      </section>
+    </main>
+  );
+}
+
+const spectateApi = "/api/worlds/{id}/spectate";
+type SpectatorScene = NonNullable<
+  MethodResponse<typeof $api, "get", typeof spectateApi>["scene"]
+>;
+
+export function Watch({ id, actorId }: { id: string; actorId: string }) {
+  const query = $api.useQuery(
+    "get",
+    spectateApi,
+    { params: { path: { id }, query: { actorId } } },
+    { refetchInterval: 5000 },
+  );
+  return (
+    <main className="page home">
+      <div className="page-title">
+        <h1>
+          {query.error || !query.data ? "観戦" : `「${query.data.name}」の観戦`}
+        </h1>
+      </div>
+      {query.error ? (
+        <Problem error={query.error} />
+      ) : !query.data ? (
+        <Notice>観戦画面を読み込んでいます</Notice>
+      ) : !query.data.scene ? (
+        <Notice>現在、観戦できるセッションはありません。</Notice>
+      ) : (
+        <SpectatorLog
+          key={query.data.scene.id}
+          id={id}
+          actorId={actorId}
+          latest={query.data.scene}
+          refresh={query.refetch}
+        />
+      )}
+    </main>
+  );
+}
+
+function SpectatorLog({
+  id,
+  actorId,
+  latest,
+  refresh,
+}: {
+  id: string;
+  actorId: string;
+  latest: SpectatorScene;
+  refresh: () => Promise<{ isSuccess: boolean }>;
+}) {
+  const [before, setBefore] = useState<string>();
+  const older = $api.useQuery(
+    "get",
+    spectateApi,
+    {
+      params: {
+        path: { id },
+        query: { actorId, ...(before ? { before } : {}) },
+      },
+    },
+    { enabled: before !== undefined },
+  );
+  const scene = before ? older.data?.scene : latest;
+  const previous =
+    scene?.id === latest.id && (!before || !older.error) ? scene.before : null;
+  async function openLatest() {
+    if ((await refresh()).isSuccess) setBefore(undefined);
+  }
+  return (
+    <section aria-label="セッションのチャット" className="space-y-3">
+      {older.error && before ? (
+        <Problem error={older.error} />
+      ) : !scene || scene.id !== latest.id ? (
+        <Notice>観戦の記録を読み込んでいます</Notice>
+      ) : scene.entries.length === 0 ? (
+        <Notice>表示できるプレイログはまだありません。</Notice>
+      ) : (
+        scene.entries.map(({ id: entryId, at, lines }) => (
+          <article
+            key={entryId}
+            className="rounded-lg border bg-card px-6 py-5"
+          >
+            {at && (
+              <p className="record-meta">
+                <time dateTime={at}>{createdDate(at)}</time>
+              </p>
+            )}
+            {lines.map(({ speaker, text }, index) => (
+              <div key={index}>
+                {speaker && <p className="record-meta">{speaker}</p>}
+                <RichText text={text} />
+              </div>
+            ))}
+          </article>
+        ))
+      )}
+      <div className="flex flex-wrap gap-3">
+        {previous && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setBefore(previous)}
+          >
+            前の記録を表示
+          </Button>
+        )}
+        {before && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void openLatest()}
+          >
+            最新の記録へ戻る
+          </Button>
+        )}
+      </div>
+    </section>
+  );
+}
 
 export function Home() {
   const router = useRouter(),

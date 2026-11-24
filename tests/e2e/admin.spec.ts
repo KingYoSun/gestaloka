@@ -69,6 +69,7 @@ test.afterEach(async ({ page }) => {
   await page.close();
   await app?.close();
   const db = isolated.databases;
+  await db.queue.offWork(runtime.queueName, { wait: true });
   for (const r of (await db.postgres.query("SELECT world_id FROM world_build"))
     .rows)
     if (r.world_id)

@@ -31,6 +31,7 @@ export {
   ItemOutcome,
   PlaySearch,
   PlayResponse,
+  SpectatingView,
   BelongingOp,
   LocationOp,
   PlayerReportInput,
@@ -636,6 +637,7 @@ export const Member = z.object({
   banned: z.boolean(),
   createdAt: z.iso.datetime(),
 });
+export const SpectatingSetting = z.strictObject({ public: z.boolean() });
 const operationPage = { before: z.uuid().optional() };
 const operationReason = z.string().trim().min(1);
 export const CatalogPageQuery = z.object({ before: z.uuid().optional() });

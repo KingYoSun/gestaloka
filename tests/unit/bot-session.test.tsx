@@ -35,7 +35,8 @@ type Entry = {
 let entries: Entry[] = [],
   comment: string | undefined,
   posted: { requestId: string; command: string; actorId: string | null }[] = [],
-  drop = false;
+  drop = false,
+  spectating = false;
 let view: Record<string, unknown>;
 const receipts = new Map<string, unknown>();
 const json = (value: unknown, status = 200) =>
@@ -49,6 +50,12 @@ const server = setupServer(
   http.get("*/api/account", () =>
     json({ member: { id: user, role: "user", banned: false } }),
   ),
+  http.get("*/api/account/spectating", () => json({ public: spectating })),
+  http.put("*/api/account/spectating", async ({ request }) => {
+    const { public: enabled } = (await request.json()) as { public: boolean };
+    spectating = enabled;
+    return json({ public: spectating });
+  }),
   http.get("*/api/worlds/:id/knowledge", () =>
     json({ viewerId: actor, items: [], next: null, previous: null }),
   ),
@@ -155,6 +162,7 @@ beforeEach(() => {
   comment = undefined;
   posted = [];
   drop = false;
+  spectating = false;
   view = {
     viewerId: actor,
     aiControlled: false,
@@ -186,12 +194,14 @@ afterEach(() => {
   resetSession();
 });
 afterAll(() => server.close());
-const show = () =>
+const playPath = `/worlds/${world}/play?actorId=${actor}`;
+const watchPath = `/worlds/${world}/watch/${actor}`;
+const show = (path = playPath) =>
   render(
     <App
       navigation={createAppRouter(
         createMemoryHistory({
-          initialEntries: [`/worlds/${world}/play?actorId=${actor}`],
+          initialEntries: [path],
         }),
       )}
     />,
@@ -201,6 +211,108 @@ const open = async (name: string) =>
   fireEvent.click(
     await screen.findByRole("button", { name }, { timeout: 5000 }),
   );
+
+test("公開設定を保存すると本人のプレイ画面だけで観戦URLをコピーできる", async () => {
+  const account = show("/account");
+  const label = "他のユーザーからの観戦を許可する";
+  const option = (await screen.findByRole(
+    "checkbox",
+    { name: label },
+    {
+      timeout: 5000,
+    },
+  )) as HTMLInputElement;
+  expect(option.checked).toBe(false);
+  fireEvent.click(option);
+  await waitFor(() => expect(option.checked).toBe(true));
+  account.unmount();
+
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  try {
+    show();
+    await open("観戦URLをコピー");
+    await screen.findByText("観戦URLをコピーしました。");
+    expect(writeText).toHaveBeenCalledWith(
+      new URL(watchPath, location.origin).href,
+    );
+    fireEvent.click(screen.getByRole("link", { name: "アカウント設定" }));
+    const saved = (await screen.findByRole(
+      "checkbox",
+      { name: label },
+      {
+        timeout: 5000,
+      },
+    )) as HTMLInputElement;
+    expect(saved.checked).toBe(true);
+    fireEvent.click(saved);
+    await waitFor(() => expect(saved.checked).toBe(false));
+    expect(spectating).toBe(false);
+  } finally {
+    if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard);
+    else Reflect.deleteProperty(navigator, "clipboard");
+  }
+});
+
+test("観戦画面で進行中のセッションの記録を前後に移動できる", async () => {
+  const ownerReads = vi.fn();
+  server.use(
+    http.get("*/api/worlds/:id/session", () => {
+      ownerReads();
+      return json(view);
+    }),
+    http.get("*/api/worlds/:id/spectate", ({ request }) => {
+      const query = new URL(request.url).searchParams;
+      expect(query.get("actorId")).toBe(actor);
+      const earlier = query.has("before");
+      if (earlier) expect(query.get("before")).toBe("2");
+      return json({
+        name: "観測者",
+        scene: {
+          id: scene,
+          entries: [
+            {
+              id: earlier ? "1" : "2",
+              lines: [
+                {
+                  speaker: "渡し守",
+                  text: earlier ? "菜の花が咲いている" : "渡し船が戻った",
+                },
+              ],
+            },
+          ],
+          before: earlier ? null : "2",
+        },
+      });
+    }),
+  );
+  show(watchPath);
+  await screen.findByRole("heading", { name: "「観測者」の観戦" });
+  await screen.findByText("渡し船が戻った");
+  await open("前の記録を表示");
+  await screen.findByText("菜の花が咲いている");
+  expect(screen.queryByText("渡し船が戻った")).toBeNull();
+  await open("最新の記録へ戻る");
+  await screen.findByText("渡し船が戻った");
+  expect(screen.queryByRole("button", { name: "観戦URLをコピー" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "操作" })).toBeNull();
+  expect(ownerReads).not.toHaveBeenCalled();
+});
+
+test("非公開の観戦URLを開いてもログイン状態を保持する", async () => {
+  server.use(
+    http.get("*/api/worlds/:id/spectate", () =>
+      json({ code: "SPECTATE_NOT_FOUND", message: "観戦できません" }, 404),
+    ),
+  );
+  show(watchPath);
+  await screen.findByText("観戦できません");
+  expect(screen.getByRole("link", { name: "アカウント設定" })).toBeTruthy();
+});
 
 test("手番外に現在地をHomeに設定し、表示を更新する", async () => {
   view.actorId = peer;

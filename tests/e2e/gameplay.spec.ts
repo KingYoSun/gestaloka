@@ -104,7 +104,18 @@ test("ログインだけでは匿名データを移行せず、対象確認と�
         sameSite: "Strict",
       },
     ]);
-    await page.goto("/auth/claim");
+    await page.goto("/account");
+    const nav = page.getByRole("navigation");
+    const claimLabel = "このブラウザーのデータを引き継ぐ";
+    const loginMethodLabel = "ログイン方法を追加";
+    await expect(
+      page.getByRole("link", { name: loginMethodLabel }),
+    ).toHaveAttribute("href", "/auth/link");
+    await expect(nav.getByRole("link", { name: claimLabel })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: loginMethodLabel })).toHaveCount(
+      0,
+    );
+    await page.getByRole("link", { name: claimLabel }).click();
     await expect(
       page.getByText("引き継ぐ対象の村", { exact: true }),
     ).toBeVisible();

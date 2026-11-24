@@ -55,6 +55,7 @@ export const api = createFetchClient<paths>({
     const path = new URL(request.url).pathname;
     const storyRequest =
       /^\/api\/(?:stories(?:\/|$)|worlds\/[^/]+\/stories$)/.test(path);
+    const spectateRequest = /^\/api\/worlds\/[^/]+\/spectate$/.test(path);
     const epoch = session.epoch,
       protectedPath = !["/api/health", "/api/player-cli/latest"].includes(path);
     if (session.error && protectedPath) throw new ScopeChanged();
@@ -69,7 +70,8 @@ export const api = createFetchClient<paths>({
           !(
             identity === session.id &&
             ((storyRequest && response.status !== 401) ||
-              (response.status === 404 && path.endsWith("/inventory/contents")))
+              (response.status === 404 &&
+                (spectateRequest || path.endsWith("/inventory/contents"))))
           )))
     ) {
       expireSession();
