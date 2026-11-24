@@ -741,6 +741,22 @@ export class WorldContext {
       return records.map((r) => r.get("id") as string);
     });
   }
+  // 行き来の記述で結ばれた既知の場所。読み取りを件数に比例させないよう、問い合わせで8件に絞る。
+  async routeNeighbors(id: string) {
+    return this.#read(relationKey(id, "status", "out"), async (tx) => {
+      const { records } = await tx.run(
+        `MATCH (:WorldNode {worldId:$world,id:$id})-[c:status {role:'content'}]->()-[a:status {role:'about'}]->(x:WorldNode)
+         WHERE c.validTo IS NULL AND c.data CONTAINS '"text":"route"'
+           AND a.validTo IS NULL AND NOT a.data CONTAINS '"text":"route-requires"' AND x.id <> $id
+         RETURN DISTINCT x.id AS id, x.data AS data ORDER BY id LIMIT 8`,
+        { world: this.worldId, id },
+      );
+      return records.map((r) => ({
+        id: r.get("id") as string,
+        label: (JSON.parse(r.get("data") as string) as { text: string }).text,
+      }));
+    });
+  }
   // 一部の場所(part-of)で結ばれた場所。接続元の一部として探索された場所と、その接続元を互いに返す。
   async partPlaces(id: string) {
     const read = (direction: "out" | "in", pattern: string) =>

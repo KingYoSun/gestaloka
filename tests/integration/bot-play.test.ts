@@ -15929,3 +15929,63 @@ test("判定で付いた損傷のある乗り物は、GMが動けないと判断
   expect(await at(rider)).toEqual([f.place]);
   expect(await at(vehicleId)).toEqual([f.far]);
 });
+
+test("探索は接続元からつながる既知の場所を判定に渡し、同じ場所なら作らず、つながる場所へは行き来も作る", async () => {
+  const f = await fixture(1);
+  const explore = (label: string, requestId = randomUUID()) => ({
+    requestId,
+    command: "explore",
+    text: `${label}へ続く道がある`,
+    label,
+    fromId: f.place,
+    dependencies: [],
+  });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { sides: 100, successThrough: 100, explored }),
+  );
+  const yard = (await f.send(0, explore("広場の裏庭"))).placeId as string;
+  // 既知の隣の場所と同じなら、ダイスを振らず、場所を作らずに先にある場所のIDを返す。
+  const same = explore("広場の裏の空き地");
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const input = JSON.parse(String(messages[1]!.content));
+    expect(input.neighbors).toContainEqual({ id: yard, label: "広場の裏庭" });
+    expect(messages[0]!.content).toContain("sameAs");
+    return answer(id, {
+      sides: 100,
+      successThrough: 100,
+      explored: { ...explored, sameAs: yard },
+    });
+  });
+  const used = (await f.status(0)).callsUsed;
+  await expect(f.send(0, same)).rejects.toMatchObject({
+    code: "EXPLORE_SAME_PLACE",
+    message: expect.stringContaining(yard),
+  });
+  expect(
+    await f.store.context(f.graph).node(derivedId(`${same.requestId}:place`)),
+  ).toBeUndefined();
+  expect((await f.status(0)).callsUsed).toBe(used);
+  // 別の場所なら作り、GMが選んだ既知の場所へも行き来を張る。
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, {
+      sides: 100,
+      successThrough: 100,
+      explored: {
+        ...explored,
+        sameAs: null,
+        // 同じ場所を重ねて返しても、行き来は一つだけ作る。
+        connects: [
+          { id: yard, route: "物置の脇の戸を抜けると、裏庭に出る。" },
+          { id: yard, route: "物置の裏から裏庭へ回れる。" },
+        ],
+      },
+    }),
+  );
+  const shed = (await f.send(0, explore("広場の物置"))).placeId as string;
+  expect(await f.store.context(f.graph).routesBetween(shed, yard)).toHaveLength(
+    1,
+  );
+  expect(
+    await f.store.context(f.graph).routesBetween(shed, f.place),
+  ).toHaveLength(1);
+});
