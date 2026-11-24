@@ -10146,6 +10146,103 @@ test("初回接続と状態照会のタイムアウトを復旧し、終了時�
     await app.close();
   }
 }, 60000);
+test("CLIの自己照会は本人が聞いた発言だけを添え、既読位置を進めない", async () => {
+  const f = await fixture();
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  const profiles = [0, 2].map((i) => join(cli.directory, `player-${i}.json`));
+  const run = (i: number, ...args: string[]) =>
+    cli.run(profiles[i], ...args, "--full-ids");
+  const read = (i: number) => run(i, "search", "--kind", "self");
+  const older = "今朝は北門で公演するよ。";
+  const change = "公演は中止だよ。桟橋で舟を待とう。";
+  const shared = "舟は桟橋の西側に来るよ。";
+  try {
+    for (const [profile, index] of [0, 2].entries()) {
+      const connection = await run(
+        profile,
+        "connect",
+        "--server",
+        cli.base,
+        "--world",
+        f.world,
+      );
+      expect(
+        (
+          await cli.approve(
+            f.people[index]!.cookie,
+            connection.userCode,
+            `actor:${f.actors[index]}`,
+          )
+        ).statusCode,
+      ).toBe(302);
+    }
+    await f.send(0, { command: "contact", targetId: f.actors[1] });
+    await f.send(1, { command: "say", text: older });
+    await f.send(1, { command: "end-turn" });
+    await run(0, "status");
+    await f.send(0, { command: "end-turn" });
+
+    await f.send(1, { command: "say", text: change });
+    await f.move(2, f.place);
+    await f.send(2, { command: "contact", targetId: f.actors[1] });
+    await f.send(1, { command: "say", text: shared });
+    await f.send(1, { command: "end-turn" });
+
+    const first = (await read(0)).result;
+    expect(first.material.belongings).toBeDefined();
+    const status = await run(0, "status");
+    const record = status.entries.find(
+      ({ payload }: { payload: { entries?: { input: string }[] } }) =>
+        payload.entries?.some(({ input }) => input === change),
+    );
+    expect(record).toBeDefined();
+    expect(first.recentSpeech).toEqual([
+      expect.objectContaining({ text: older }),
+      {
+        recordId: record.id,
+        turn: record.payload.turn,
+        speaker: "人物1",
+        text: change,
+      },
+      {
+        recordId: record.id,
+        turn: record.payload.turn,
+        speaker: "人物1",
+        text: shared,
+      },
+    ]);
+    expect(
+      JSON.stringify((await run(0, "status", "--after", "0")).entries),
+    ).toContain(older);
+    await f.send(0, { command: "end-turn" });
+    await giveTurn(f, 2);
+    const second = (await read(1)).result;
+    const secondStatus = await run(1, "status");
+    const secondRecord = secondStatus.entries.find(
+      ({ payload }: { payload: { entries?: { input: string }[] } }) =>
+        payload.entries?.some(({ input }) => input === shared),
+    );
+    expect(secondRecord).toBeDefined();
+    expect(second.recentSpeech).toEqual([
+      {
+        recordId: secondRecord.id,
+        turn: secondRecord.payload.turn,
+        speaker: "人物1",
+        text: shared,
+      },
+    ]);
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+}, 60000);
+
 test("CLIは短縮IDを次の操作に使え、本人の未読手だけをアイコンなしで返す", async () => {
   const f = await fixture(),
     app = await createApp(access, auth.identity, undefined, auth.operations),

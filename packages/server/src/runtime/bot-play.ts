@@ -10680,6 +10680,44 @@ export class BotPlay {
                 });
               }
               if (input.query.kind === "self") {
+                const { rows } = await db.query<{
+                  id: string;
+                  turn: number | null;
+                  entries: Entry[] | null;
+                }>(
+                  `SELECT c.id,(c.payload->>'turn')::integer AS turn,c.payload->'entries' AS entries
+                   FROM (SELECT chat_id FROM bot_record WHERE scene_id=$1 AND actor_id=$2
+                         ORDER BY chat_id DESC LIMIT $3) r
+                   JOIN bot_chat c ON c.id=r.chat_id ORDER BY r.chat_id`,
+                  [
+                    d.members.find((m) => m.actorId === actor)!.sceneId,
+                    actor,
+                    historyLimit,
+                  ],
+                );
+                const recentSpeech = rows
+                  .flatMap(({ id, turn, entries }) => {
+                    if (turn === null) return [];
+                    const heard = (entries ?? [])
+                      .filter(
+                        (entry) =>
+                          entry.actorId !== actor &&
+                          Array.isArray(
+                            (entry.result as { instantNpcs?: unknown } | null)
+                              ?.instantNpcs,
+                          ),
+                      )
+                      .map((entry) => ({
+                        recordId: id,
+                        turn,
+                        speaker: entry.label ?? "参加者",
+                        text: entry.input,
+                      }));
+                    return heard.length ? [heard] : [];
+                  })
+                  .slice(-3)
+                  .flat();
+                result = { recentSpeech, ...result };
                 const arriving = (
                   await db.query<{
                     text: string;
