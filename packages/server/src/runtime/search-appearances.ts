@@ -115,13 +115,13 @@ export async function recordAppearances(
   }
   changes.revisions.push(...added.values());
   const ground = derivedId(request + ":ground");
-  const link = (edge: Omit<WorldEdge, "id" | "period">) =>
+  const link = (edge: Omit<WorldEdge, "id" | "period">, until?: number) =>
     changes.edges.push({
       ...edge,
       id: derivedId(
         request + ":" + edge.kind + ":" + edge.source + ":" + edge.target,
       ),
-      period: { from: at },
+      period: { from: at, ...(until !== undefined ? { until } : {}) },
     });
   changes.nodes.push({
     ...event,

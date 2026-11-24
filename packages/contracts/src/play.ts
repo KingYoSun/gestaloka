@@ -231,6 +231,13 @@ export const WorldApplication = z.discriminatedUnion("type", [
     replacesStateId: id.optional(),
   }),
   z.strictObject({
+    type: z.literal("remove-place-item"),
+    text,
+    placeId: id,
+    itemId: id,
+    count: count.optional().describe("減らす個数。省くと全部"),
+  }),
+  z.strictObject({
     type: z.literal("seize"),
     text,
     operation: z.strictObject({
@@ -251,6 +258,7 @@ export function applicationSp(action: WorldApplication): number {
     action.type === "direct" ||
     action.type === "detach" ||
     action.type === "share-storage" ||
+    action.type === "remove-place-item" ||
     action.type === "clarify" ||
     action.type === "interpret" ||
     action.type === "revise-memo"
