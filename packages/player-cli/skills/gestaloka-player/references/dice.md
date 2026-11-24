@@ -199,6 +199,7 @@
 | `NPC_ACTION_NOT_AVAILABLE`    | 出現を見ていない個体か、出現した場所とは別の場所にいるときに、その個体の `npc-action` を申請した。                                                                                  |
 | `EXPLORE_SOURCE_REQUIRED`     | `explore` の接続元が、本人の現在の所在地にある場所ではない。                                                                                                                        |
 | `EXPLORE_NAME_TAKEN`          | 同じ呼び名の場所が既にある。メッセージのIDを調べるか、別の呼び名で申請する。                                                                                                        |
+| `EXPLORE_SAME_PLACE`          | 接続元からつながる既知の場所と同じ場所だとGMが判断した。メッセージのIDの場所へ移動する。                                                                                            |
 | `PERSON_REFERENCE_REQUIRED`   | 申請していない登録済みの人物に起きること（登場・拘束・負傷・死亡・身柄や遺体の入手）を、新しい物品や個体の作成で確定しようとした。同じ場所で本人のIDを参照して申請する。            |
 | `UPDATE_REJECTED`             | `operations` の中身が記録と合わない。指定した個数の物品がない、物品以外（技能など）に `count` を付けた、`locate` の `aboutIds` に直接の滞在先がない、など。メッセージに理由が入る。 |
 

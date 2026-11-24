@@ -55,7 +55,12 @@ import {
   skillDeltas,
   skillCapacityError,
 } from "../world/inventory.js";
-import { addRoute, directPlaces, locationRecords } from "../world/locations.js";
+import {
+  addRoute,
+  directPlaces,
+  linkRoute,
+  locationRecords,
+} from "../world/locations.js";
 import { canonical, parseOutput } from "../llm/prompt.js";
 import { diceStoragePlace } from "../llm/dice-prompt.js";
 import type { WorldConstruction } from "./construction.js";
@@ -684,6 +689,14 @@ const Explored = z
     route: z.string().trim().min(1),
     description: z.string().trim().min(1),
     partOf: z.boolean(),
+    // 接続元から行き来でつながる既知の場所のうち、新しい場所と同じもの。
+    sameAs: z.uuid().nullable().optional(),
+    // 新しい場所から直接行き来できる既知の場所と、その道の記述。
+    connects: z
+      .array(
+        z.object({ id: z.uuid(), route: z.string().trim().min(1) }).strict(),
+      )
+      .optional(),
   })
   .strict();
 const DiceSetting = z
@@ -1040,8 +1053,28 @@ const ExploreDice = z
     explored: Explored,
   })
   .strict();
+// GMが返した同じ場所とつながりのうち、渡した既知の隣の場所だけを残す。
+function knownNeighbors(
+  explored: z.infer<typeof Explored>,
+  neighbors: { id: string }[],
+) {
+  const ids = new Set(neighbors.map((n) => n.id)),
+    { sameAs, connects, ...rest } = explored,
+    same = sameAs && ids.has(sameAs) ? sameAs : undefined,
+    links = (connects ?? []).filter(
+      (c, i, all) =>
+        ids.has(c.id) &&
+        c.id !== same &&
+        all.findIndex((d) => d.id === c.id) === i,
+    );
+  return {
+    ...rest,
+    ...(same ? { sameAs: same } : {}),
+    ...(links.length ? { connects: links } : {}),
+  };
+}
 const explorePrompt =
-  "同じ応答にexplored:{route:文字列,description:文字列,partOf:真偽}を加える。routeは接続元と新しい場所を結ぶ道の記述で、どこからどう進むと着くかを一、二文で書く。「〜を探す」「〜へ向かう」のような申請の行動ではなく、後から誰でも通れる道そのものを書く。descriptionは新しい場所の様子を、後からその場所だけを調べた人が読める文で書く。partOfは、新しい場所が接続元の説明にすでにある物や区画（接続元の中の祠・部屋・岸辺など）ならtrue、接続元とは別の場所ならfalse。trueのとき、descriptionには接続元のどこにあるかを含める。";
+  "同じ応答にexplored:{route:文字列,description:文字列,partOf:真偽}を加える。routeは接続元と新しい場所を結ぶ道の記述で、どこからどう進むと着くかを一、二文で書く。「〜を探す」「〜へ向かう」のような申請の行動ではなく、後から誰でも通れる道そのものを書く。descriptionは新しい場所の様子を、後からその場所だけを調べた人が読める文で書く。partOfは、新しい場所が接続元の説明にすでにある物や区画（接続元の中の祠・部屋・岸辺など）ならtrue、接続元とは別の場所ならfalse。trueのとき、descriptionには接続元のどこにあるかを含める。neighborsは接続元から行き来でつながる既知の場所。新しい場所がそのどれかと同じ場所ならexplored.sameAsにそのIDを返し、同じものがなければnullにする。新しい場所からneighborsのどこかへ直接行き来できるなら、explored.connects:[{id,route}]にその場所のIDと、二つの場所を結ぶ道の記述を返す。該当がなければ空配列。";
 
 /** Bots select their own material; only completed public actions enter the chat. */
 export class BotPlay {
@@ -4622,6 +4655,15 @@ export class BotPlay {
       ? this.#places(context, places[0])
       : places;
   }
+  // 探索の接続元から行き来でつながる既知の場所。読み取りも判定の入力も8件までにする。
+  async #exploreNeighbors(context: WorldContext, changes: Change) {
+    const created = new Set(changes.nodes.map((n) => n.id));
+    const source = changes.edges.find(
+      (e) =>
+        e.role === "content" && e.text === "route" && !created.has(e.source),
+    )?.source;
+    return source ? await context.routeNeighbors(source) : [];
+  }
   async #routes(context: WorldContext, here: string[]) {
     const routes = new Map<string, string>();
     for (const place of here)
@@ -6165,9 +6207,14 @@ export class BotPlay {
             )
           : undefined;
       const compact = onlyEnd && confirmed;
+      // 探索では、接続元から行き来でつながる既知の場所を渡し、同じ場所かつながるかをGMが判断する。
+      const neighbors = explore
+        ? await this.#exploreNeighbors(context, fresh[0]!.changes)
+        : [];
       // 申請が参照する対象。その記録をGMへ渡す。
       const touching = [
         actor,
+        ...neighbors.map((n) => n.id),
         ...reviews.flatMap((r) => r.subjects),
         ...material.flatMap(
           (p) =>
@@ -6324,6 +6371,7 @@ export class BotPlay {
                     ...(confirmed ? { confirmed } : {}),
                     ...(consumable.length ? { consumable } : {}),
                     ...(waitMinutes ? { waitMinutes } : {}),
+                    ...(neighbors.length ? { neighbors } : {}),
                   },
             ),
           },
@@ -6401,8 +6449,18 @@ export class BotPlay {
             });
         }
         if (used.size) setting.consumes = [...used.values()];
+        if (setting.explored)
+          setting.explored = knownNeighbors(setting.explored, neighbors);
         settings.set(p.index, setting);
       }
+      // 探索した場所が既知の隣の場所と同じなら、新しく作らずに先にある場所を返す。
+      const same = [...settings.values()].find((s) => s.explored?.sameAs)
+        ?.explored?.sameAs;
+      if (same)
+        reject(
+          "EXPLORE_SAME_PLACE",
+          `「${neighbors.find((n) => n.id === same)!.label}」と同じ場所です（ID: ${same}）。その場所へ移動するか、別の場所を申請してください`,
+        );
       // 登録済みの人物に起きることは、本人を参照する申請（受領・対抗行動）でだけ確定する。
       // 人物と同じ呼称の存在を新しく作る申請は、GMが名指しと判断しなくても同じく断る。
       const labels = explore
@@ -8450,6 +8508,18 @@ export class BotPlay {
             target: input.fromId,
             period: { from: at },
           });
+        // 新しい場所から直接行き来できる既知の場所へも、行き来の記述を張る。
+        for (const { id, route } of explored.connects ?? [])
+          linkRoute(
+            changes,
+            derivedId(`${input.requestId}:route:${id}`),
+            at,
+            [
+              { id: place, text: input.label },
+              { id, text: (await context.node(id))!.text },
+            ],
+            route,
+          );
       }
       if (dice.setting)
         await this.#saveStorageLimits(context, changes, dice.setting);

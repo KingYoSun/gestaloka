@@ -93,12 +93,26 @@ export function addRoute(
   place: { id: string; text: string },
   text: string,
 ) {
-  const route = derivedId(`${requestId}:route`);
-  changes.nodes.push(
-    { id: place.id, kind: "existence", text: place.text },
-    { id: route, kind: "script", text },
+  changes.nodes.push({ id: place.id, kind: "existence", text: place.text });
+  linkRoute(
+    changes,
+    derivedId(`${requestId}:route`),
+    at,
+    [source, place],
+    text,
   );
-  for (const endpoint of [source, place])
+}
+
+// 二つの場所を、行き来の記述で結ぶ。どちらの場所を調べても相手の名前とIDを読める。
+export function linkRoute(
+  changes: Change,
+  route: string,
+  at: number,
+  endpoints: { id: string; text: string }[],
+  text: string,
+) {
+  changes.nodes.push({ id: route, kind: "script", text });
+  for (const endpoint of endpoints)
     changes.edges.push(
       {
         id: derivedId(`${route}:content:${endpoint.id}`),
