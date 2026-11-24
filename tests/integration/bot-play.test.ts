@@ -5822,9 +5822,13 @@ function stealthGm(f: Awaited<ReturnType<typeof fixture>>) {
   });
 }
 
-test("隠密のスリは成否と目撃を独立して判定し、未発見者と後からの合流者のログに痕跡を残さない", async () => {
+test("非戦闘地域のスリは成否と目撃を別に判定し、未発見者と後からの合流者のログに痕跡を残さない", async () => {
   const f = await fixture();
   const [a, b, c] = f.actors as [string, string, string];
+  await isolated.databases.postgres.query(
+    "UPDATE world_construction SET non_combat_areas=$2 WHERE id=$1",
+    [f.world, JSON.stringify([{ rootId: f.place, memberPlaceIds: [] }])],
+  );
   await f.apply([
     { type: "create", holder: b, label: "銀貨", count: 3, basis: "財布の中身" },
   ]);
@@ -5851,13 +5855,22 @@ test("隠密のスリは成否と目撃を独立して判定し、未発見者�
   const attempt = (requestId: string, text: string) =>
     f.send(0, {
       requestId,
-      command: "oppose",
-      text,
-      stealth: true,
+      command: "apply",
+      expectedSp: 1,
       dependencies: [],
-      operations: [
-        { type: "move", item: coin, from: b, to: a, count: 1, basis: text },
-      ],
+      action: {
+        type: "seize",
+        text,
+        stealth: true,
+        operation: {
+          type: "move",
+          item: coin,
+          from: b,
+          to: a,
+          count: 1,
+          basis: text,
+        },
+      },
     });
   const successId = randomUUID(),
     failId = randomUUID();
@@ -6171,7 +6184,7 @@ test("隠密中の対抗行動は所持・負傷・死亡を確定し、行為�
   }
 });
 
-test("非戦闘地域の隠密対抗は未成立の欠損を目撃させず、試みの目撃と匿名性を保つ", async () => {
+test("隠密対抗は非戦闘地域で抽選せず、保護外では確定結果を匿名で伝える", async () => {
   const f = await fixture();
   const [actor, target, witness] = f.actors as [string, string, string];
   const db = isolated.databases.postgres;
@@ -6204,14 +6217,48 @@ test("非戦闘地域の隠密対抗は未成立の欠損を目撃させず、�
   await f.send(1, { command: "contact", targetId: actor });
   await giveTurn(f, 0);
 
-  const requestId = randomUUID();
   const proposed = "人物0が左手を切り落とした";
   const alleged = "左手が床に落ちた";
   const damage = "左手を欠損している";
+  const actual = "左腕に薄い擦り傷がある";
+  const input = {
+    command: "apply",
+    requestId: randomUUID(),
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "oppose",
+      targetId: target,
+      text: proposed,
+      description: damage,
+    },
+  };
+  f.calls.mockClear();
+  const before = await f.status(0);
+  await expect(f.send(0, input)).rejects.toMatchObject({
+    code: "NON_COMBAT_AREA",
+  });
+  expect(f.calls).not.toHaveBeenCalled();
+  expect((await f.status(0)).dailySp).toEqual(before.dailySp);
+  expect(await f.store.receipt(f.graph, input.requestId)).toBeUndefined();
+  expect(
+    (await f.status(2)).entries.some((row) => row.payload.observation),
+  ).toBe(false);
+  await db.query(
+    "UPDATE world_construction SET non_combat_areas='[]' WHERE id=$1",
+    [f.world],
+  );
+
+  const requestId = randomUUID();
+  const unprotected = { ...input, requestId };
   const setting = { sides: 6, successThrough: 3 };
+  const injurySetting = {
+    ...setting,
+    states: [{ id: target, text: actual }],
+  };
   await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,1)", [
     requestId,
-    setting,
+    injurySetting,
   ]);
   await stealthRolls(requestId, {
     ["attempt:" + target]: 6,
@@ -6223,11 +6270,10 @@ test("非戦闘地域の隠密対抗は未成立の欠損を目撃させず、�
       affected?: string[];
       perception: { states: string[]; observers: string[] };
     };
-    expect(affected).toBeUndefined();
+    expect(affected).toEqual([target]);
     expect(perception.observers).toContain(witness);
     return answer(id, {
-      ...setting,
-      states: [{ id: target, text: damage }],
+      ...injurySetting,
       perception: {
         states: Object.fromEntries(
           perception.states.map((id) => [id, alleged]),
@@ -6241,18 +6287,6 @@ test("非戦闘地域の隠密対抗は未成立の欠損を目撃させず、�
     });
   });
 
-  const input = {
-    command: "apply",
-    requestId,
-    expectedSp: 1,
-    dependencies: [],
-    action: {
-      type: "oppose",
-      targetId: target,
-      text: proposed,
-      description: damage,
-    },
-  };
   const commit = f.store.commit.bind(f.store);
   const interrupted = vi
     .spyOn(f.store, "commit")
@@ -6260,14 +6294,16 @@ test("非戦闘地域の隠密対抗は未成立の欠損を目撃させず、�
       await commit(...args);
       throw new Error("世界の確定後に接続が切れた");
     });
-  await expect(f.send(0, input)).rejects.toThrow("世界の確定後に接続が切れた");
+  await expect(f.send(0, unprotected)).rejects.toThrow(
+    "世界の確定後に接続が切れた",
+  );
   interrupted.mockRestore();
-  const result = await f.send(0, input);
+  const result = await f.send(0, unprotected);
   expect(result).toMatchObject({
     outcome: { success: true, roll: 1 },
-    action: { message: expect.stringContaining("非戦闘地域") },
+    action: { message: expect.stringContaining(actual) },
   });
-  expect(await f.send(0, input)).toEqual(result);
+  expect(await f.send(0, unprotected)).toEqual(result);
 
   const records = (await f.status(2)).entries;
   const observed = records
@@ -6275,7 +6311,7 @@ test("非戦闘地域の隠密対抗は未成立の欠損を目撃させず、�
     .find((entry: { label?: string }) => entry.label === "目撃");
   expect(observed).toMatchObject({
     actorId: witness,
-    input: expect.any(String),
+    input: expect.stringContaining(actual),
   });
   expect(observed?.input).toBeTruthy();
   expect(JSON.stringify(observed)).not.toContain(actor);
@@ -6285,7 +6321,7 @@ test("非戦闘地域の隠密対抗は未成立の欠損を目撃させず、�
   expect(receipt?.changes.nodes).toEqual(
     expect.arrayContaining([expect.objectContaining({ kind: "event" })]),
   );
-  expect(receipt?.changes.edges).not.toContainEqual(
+  expect(receipt?.changes.edges).toContainEqual(
     expect.objectContaining({ kind: "status", source: target, text: "judged" }),
   );
   const views = JSON.stringify([
@@ -7425,9 +7461,13 @@ test("着脱の確定は付着した関係だけを終え、追加のGMとSPを�
 });
 
 test.each([false, true])(
-  "治療の成功で指定した負傷を同じ確定から終了する（材料指定=%s）",
+  "非戦闘地域でも治療の成功で指定した負傷を終了する（材料指定=%s）",
   async (withMaterials) => {
     const f = await fixture(1);
+    await isolated.databases.postgres.query(
+      "UPDATE world_construction SET non_combat_areas=$2 WHERE id=$1",
+      [f.world, JSON.stringify([{ rootId: f.place, memberPlaceIds: [] }])],
+    );
     const actor = f.actors[0]!;
     const apply = (action: unknown, requestId: string) =>
       access.botCommand(
@@ -15065,14 +15105,12 @@ test("非戦闘地域では子区画の車内も保護し、経路と親区画�
     },
   });
   const second = randomUUID();
-  await saveRoll(second, 2);
-  f.calls.mockImplementationOnce(opposeInside);
-  const protectedFailure = await f.send(0, attack(second));
-  expect(protectedFailure).toMatchObject({
-    spentSp: 1,
-    outcome: { success: false },
+  f.calls.mockClear();
+  await expect(f.send(0, attack(second))).rejects.toMatchObject({
+    code: "NON_COMBAT_AREA",
   });
-  expect(protectedFailure.outcome).not.toHaveProperty("fumble");
+  expect(f.calls).not.toHaveBeenCalled();
+  expect((await f.status(0)).dailySp.remaining).toBe(99);
   expect(
     await f.store.context(f.graph).edge(changes.edges[0]!.id),
   ).not.toHaveProperty("period.until");
@@ -15181,21 +15219,11 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
     [f.world, JSON.stringify([{ rootId: f.place, memberPlaceIds: [] }])],
   );
   const safeHit = attempt("鳥に対抗する", "鳥が攻撃を受けた");
-  const reduction = { ...sure, instantReduction: { kind: "death", count: 2 } };
-  await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,1)", [
-    safeHit.requestId,
-    reduction,
-  ]);
-  f.calls.mockImplementationOnce(async (id, _role, messages) => {
-    expect(JSON.parse(String(messages[1]!.content))).not.toHaveProperty(
-      "group",
-    );
-    return answer(id, reduction);
+  f.calls.mockClear();
+  await expect(f.send(0, safeHit)).rejects.toMatchObject({
+    code: "NON_COMBAT_AREA",
   });
-  const shelteredGroup = await f.send(0, safeHit);
-  expect(shelteredGroup.outcome).toMatchObject({ success: true });
-  expect(shelteredGroup.instantReduction).toBeUndefined();
-  expect(shelteredGroup.appearances).toBeUndefined();
+  expect(f.calls).not.toHaveBeenCalled();
   expect(await count()).toBe(4);
 
   for (const victim of [f.actors[1]!, f.place]) {
