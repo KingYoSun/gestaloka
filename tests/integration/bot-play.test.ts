@@ -7747,11 +7747,15 @@ test("登録した保管先と誰も登録していない場所には、その�
     expect(role).toBe("world-creation-dice");
     const facts = JSON.parse(messages[1]!.content).nodes as {
       node: { id: string };
+      belongings?: { items: { id: string; basis?: string }[] };
     }[];
     expect(facts.find((fact) => fact.node.id === stake)).toMatchObject({
-      held: { by: square, label: "空き地", basis: "検証" },
       origin: { basis: "削り出した" },
     });
+    // 材料を消費しうる現在地も材料に入るので、現在の保持の経緯は持つ側の持ち物に出る。
+    expect(
+      facts.find((fact) => fact.node.id === square)?.belongings?.items,
+    ).toContainEqual(expect.objectContaining({ id: stake, basis: "検証" }));
     // 状態を付ける対象そのものをGMが材料に挙げても、成功時に失わせない。
     return answer(id, {
       ...sure,
@@ -15503,4 +15507,104 @@ test("登録済みの人物に起きることを名指しする作成は、本�
       })
     ).outcome,
   ).toMatchObject({ success: true });
+});
+
+test("場所の物が判定で外れると、GMが選んだ場所の説明を終えて物の無い説明に置き換える", async () => {
+  const f = await fixture(1),
+    actor = f.actors[0]!;
+  const seed: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  const [anvil, tongs] = [randomUUID(), randomUUID()];
+  for (const [id, text] of [
+    [anvil, "古い金床"],
+    [tongs, "古い火ばさみ"],
+  ] as const) {
+    seed.nodes.push({ id, kind: "existence", text });
+    seed.edges.push({
+      id: randomUUID(),
+      kind: "has",
+      source: f.place,
+      target: id,
+      period: { from: 0 },
+    });
+  }
+  mark(seed, f.place, "石積みの炉と古い金床と火ばさみがある");
+  const first = seed.edges[2]!.id;
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    { commitId: randomUUID(), at: 0, changes: seed },
+  );
+  const texts = async () => {
+    const context = f.store.context(f.graph);
+    return (
+      await Promise.all(
+        (
+          await context.relations(
+            f.place,
+            "status",
+            "out",
+            Number.MAX_SAFE_INTEGER,
+          )
+        ).map((e) => context.node(e.target)),
+      )
+    ).map((n) => n?.text);
+  };
+  // 作成の判定で場所の物を材料に使い切ると、GMが選んだ説明を置き換える。
+  const second = "石積みの炉と古い火ばさみがある。";
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(messages[0]!.content).toContain("placeStates");
+    expect(messages[1]!.content).toContain(first);
+    return answer(id, {
+      ...sure,
+      requiredMaterials: [{ id: anvil }],
+      placeStates: [{ relationId: first, text: second }],
+    });
+  });
+  const melted = await f.send(0, {
+    command: "update",
+    text: "古い金床を溶かして鉄の延べ棒にする",
+    operations: [
+      {
+        type: "create",
+        label: "鉄の延べ棒",
+        holder: actor,
+        basis: "金床を溶かした",
+      },
+    ],
+    materials: [],
+    dependencies: [],
+  });
+  expect(melted.outcome).toMatchObject({ success: true });
+  expect(await texts()).toContain(second);
+  expect(await texts()).not.toContain("石積みの炉と古い金床と火ばさみがある");
+  // 対抗行動で場所の物を取り除いたときも、同じく置き換える。
+  const context = f.store.context(f.graph);
+  let replaced = "";
+  for (const e of await context.relations(
+    f.place,
+    "status",
+    "out",
+    Number.MAX_SAFE_INTEGER,
+  ))
+    if ((await context.node(e.target))?.text === second) replaced = e.id;
+  const rest = "石積みの炉が残っている。";
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-opposition-dice");
+    expect(messages[0]!.content).toContain("placeStates");
+    expect(messages[1]!.content).toContain(replaced);
+    return answer(id, {
+      ...sure,
+      placeStates: [{ relationId: replaced, text: rest }],
+    });
+  });
+  const smash = await f.send(0, {
+    command: "oppose",
+    text: "古い火ばさみを踏み砕く",
+    operations: [{ type: "remove", id: tongs }],
+    dependencies: [],
+  });
+  expect(smash.outcome).toMatchObject({ success: true });
+  expect(await texts()).toContain(rest);
+  expect(await texts()).not.toContain(second);
 });

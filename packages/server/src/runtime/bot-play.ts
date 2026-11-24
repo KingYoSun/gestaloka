@@ -728,6 +728,14 @@ const DiceSetting = z
     // 申請が成立すると何かが起きる、名前で呼ばれる個人。
     individuals: z.array(z.string().trim().min(1)).optional(),
     explored: Explored.optional(),
+    // 物が外れる場所の説明のうち、成功時に終えて置き換えるもの。
+    placeStates: z
+      .array(
+        z
+          .object({ relationId: z.uuid(), text: z.string().trim().min(1) })
+          .strict(),
+      )
+      .optional(),
   })
   .strict()
   .refine(
@@ -944,6 +952,8 @@ const diceStatePrompt =
   "同じ対象の確定済みの状態（states）が矛盾するときは、状態が有効になった時点（since）が新しい記述を、矛盾する範囲の判定に使う。同じ時点の記述には新旧の差をつけない。申請中の変化は成功前の状態に含めない。";
 const stateEndsPrompt =
   "人物の状態が終了する場合は、申請の意図と状態の本文を照合し、成功時に終了する現在の状態のrelationIdをendEdgesに返す。候補は対象人物のstatesでrelationIdが付いたもの。申請の終了IDが別の性質を指す場合は意図に合う状態だけを選ぶ。終了するものがなければ空配列。";
+const placeStatePrompt =
+  "この行動が成功すると場所から外れる物があり、その場所の説明（relationIdの付いた状態）がその物の存在を述べていれば、placeStates:[{relationId,text}]に、終える説明のrelationIdと、外れた物を除いた新しい説明を返す。該当がなければ省く。";
 const deathStatePrompt =
   "人物の死亡や、人物として動くこと・話すことが戻らない機能の停止は状態に含めない。死亡はfatalでだけ表す。";
 const minutesPrompt =
@@ -6183,8 +6193,12 @@ export class BotPlay {
           ]
         : await this.#facts(
             context,
-            touching,
-            reviews.flatMap((r) => r.subjects),
+            [...touching, ...(work ? await currentPlaces() : [])],
+            // 材料を消費しうる場所は、説明の relationId を付けて渡し、GMが置き換えを選べるようにする。
+            [
+              ...reviews.flatMap((r) => r.subjects),
+              ...(work ? await currentPlaces() : []),
+            ],
             reviews.flatMap((r) => r.scripts),
           );
       if (reviews.length) await this.#rememberStateBasis(requestId, context);
@@ -6266,7 +6280,7 @@ export class BotPlay {
                 diceStatePrompt +
                 (reviews.length ? selfStatusPrompt + stateEndsPrompt : "") +
                 (consumable.length ? consumePrompt : "") +
-                (work ? workMaterialPrompt : "") +
+                (work ? workMaterialPrompt + placeStatePrompt : "") +
                 (material.some((p) => p.learning)
                   ? "learningは本人が選んだ技能の発展・統合の申請。consumeSkillIdsで示された習得済み技能の本文と根拠、申請のtextとbasisから、引き継ぐ能力と新しく必要な応用・習熟を世界の基準に照らして判定する。中身を委ねられた技能は、その適用範囲と新たにできることを具体化する。"
                   : "") +
@@ -8434,6 +8448,14 @@ export class BotPlay {
           changes,
           dice.setting,
         );
+      await this.#replacePlaceStates(
+        world,
+        context,
+        changes,
+        at,
+        input.requestId,
+        dice.setting?.placeStates,
+      );
     }
     let stealth: StealthAction | undefined;
     if (input.command === "oppose" && !selfStatus) {
@@ -8447,10 +8469,14 @@ export class BotPlay {
         const stateSubjects = [
           ...new Set([...affected, ...(statusReview?.subjects ?? [])]),
         ];
+        // 物を外される場所は、説明の relationId を付けて渡し、GMが置き換えを選べるようにする。
+        const losing = (await this.#holders(context, changes.endEdges)).filter(
+          (id) => id !== actor && !controlled.has(id),
+        );
         const materials = await this.#facts(
           context,
-          [actor, ...parties, ...refs],
-          stateSubjects,
+          [actor, ...parties, ...refs, ...losing],
+          [...stateSubjects, ...losing],
           statusReview?.scripts,
         );
         const perception = concealed
@@ -8575,6 +8601,14 @@ export class BotPlay {
             changes,
             saved.setting,
           );
+          await this.#replacePlaceStates(
+            world,
+            context,
+            changes,
+            at,
+            input.requestId,
+            saved.setting.placeStates,
+          );
         }
         outcome = {
           success,
@@ -8643,6 +8677,48 @@ export class BotPlay {
         : [],
       policy.death_criteria,
     ];
+  }
+  // 終える関係のうち、物を持つ関係の持ち主。
+  async #holders(context: WorldContext, ids: readonly string[]) {
+    const holders = new Set<string>();
+    for (const id of ids) {
+      const edge = await context.edge(id);
+      if (edge?.kind === "has" && !edge.role) holders.add(edge.source);
+    }
+    return [...holders];
+  }
+  // 物が外れた場所の説明のうちGMが選んだものを終え、物の無い説明に置き換える。人物の状態は対象にしない。
+  async #replacePlaceStates(
+    world: string,
+    context: WorldContext,
+    changes: Change,
+    at: number,
+    key: string,
+    placeStates: { relationId: string; text: string }[] = [],
+  ) {
+    if (!placeStates.length) return;
+    const losing = await this.#holders(context, changes.endEdges);
+    for (const { relationId, text } of placeStates) {
+      const edge = await context.edge(relationId);
+      if (
+        edge?.kind !== "status" ||
+        edge.role !== "content" ||
+        edge.period.until !== undefined ||
+        !losing.includes(edge.source) ||
+        changes.endEdges.includes(relationId) ||
+        (
+          await this.pool.query(
+            "SELECT 1 FROM world_controlled_actor WHERE world_id=$1 AND actor_id=$2 UNION ALL SELECT 1 FROM bot_npc WHERE world_id=$3 AND actor_id=$2",
+            [context.worldId, edge.source, world],
+          )
+        ).rowCount
+      )
+        continue;
+      changes.endEdges.push(relationId);
+      addState(changes, `${key}:place:${relationId}`, edge.source, at, {
+        text,
+      });
+    }
   }
   // 死亡は復帰として扱う。死亡した人物の、判定で付いた状態と期限のある状態を終え、死亡を確定した
   // 差分で付く状態は終わった関係として記録する。所在は変えない。差分に状態をすべて加えた後に呼ぶ。
@@ -9013,6 +9089,7 @@ export class BotPlay {
                 "countは一団の個体数以下の正の整数。数が減らなければ省く。"
               : "") +
             (consumable.length ? consumePrompt : "") +
+            placeStatePrompt +
             (perception
               ? "隠密中の行動。成功時に使うperceptionも返す。形式は{states:{状態・物品ID:本文},about:[関係ID],observation:文字列またはnull,witnesses:{人物ID:{sides,successThrough}}}。statesはperception.statesの全IDについて、対象を後から調べるだけで確認できる結果を書く。名前・種別・呼び名や参照を含め、攻撃や移転を起こした主体、使用者、経緯、原因の断定は入れない。傷や破損、変化した性質は残す。物品の呼称は物自体が分かるように書く。aboutは指定された関係のうち、その結果だけから確認できる参照を選ぶ。observationは行為そのものを見たときに分かる内容を書き、実行者が見えるなら呼称を含める。私的な動機や目撃だけでは分からない指示者は含めない。目撃できる内容がなければnull。witnessesは指定された全observersに対して、到着を見たかと独立に今回の行為に気づく確率を設定する。"
               : ""),
