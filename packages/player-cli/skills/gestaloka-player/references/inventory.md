@@ -62,26 +62,30 @@
 
 ```json
 {
-  "command": "update",
-  "text": "焼き菓子2個を銅貨4枚で売る",
-  "operations": [
-    {
-      "type": "move",
-      "item": "焼き菓子のID",
-      "from": "売り手のID",
-      "to": "買い手のID",
-      "count": 2,
-      "basis": "菓子を売る"
-    },
-    {
-      "type": "move",
-      "item": "買い手が持つ銅貨のID",
-      "from": "買い手のID",
-      "to": "売り手のID",
-      "count": 4,
-      "basis": "菓子の代価を払う"
-    }
-  ],
+  "command": "apply",
+  "expectedSp": 0,
+  "action": {
+    "type": "direct",
+    "text": "焼き菓子2個を銅貨4枚で売る",
+    "operations": [
+      {
+        "type": "move",
+        "item": "焼き菓子のID",
+        "from": "売り手のID",
+        "to": "買い手のID",
+        "count": 2,
+        "basis": "菓子を売る"
+      },
+      {
+        "type": "move",
+        "item": "買い手が持つ銅貨のID",
+        "from": "買い手のID",
+        "to": "売り手のID",
+        "count": 4,
+        "basis": "菓子の代価を払う"
+      }
+    ]
+  },
   "dependencies": []
 }
 ```

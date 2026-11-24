@@ -21,6 +21,10 @@ export {
   InstallationPolicy,
   type StorageAction,
   PlayCommand,
+  PlayerPlayCommand,
+  ApplyCommand,
+  WorldApplication,
+  applicationSp,
   NpcAction,
   ItemOutcome,
   PlaySearch,
@@ -249,7 +253,9 @@ export const Belongings = z.object({
   storages: z.array(
     z.object({ id: z.uuid(), label: z.string(), items: z.array(HeldItem) }),
   ),
-  skills: z.array(z.object({ id: z.uuid(), text: z.string() })),
+  skills: z.array(
+    z.object({ id: z.uuid(), text: z.string(), name: z.string().optional() }),
+  ),
 });
 // いまシーンで出会える相手。プレイヤーは待機接続があるかNPCモードの人物、NPCはプレイヤーが操作していない人物。
 export const SessionPartners = z.object({

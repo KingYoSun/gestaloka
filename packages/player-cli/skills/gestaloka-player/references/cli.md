@@ -308,10 +308,10 @@ gestaloka finish
 
 ## play
 
-PlayCommand形式の操作を送る。同行者の承認がなく、未回答のまま期限に達した場合は元の場所に残る。--depart-alone-on-timeoutを付けると単独で出発する。--stealthは本人だけのlocateか、相手の物品を本人に移すopposeに指定する。移動先や行為は発見した相手にだけ伝わる。建築・開店・製作を始める手順と現地のクエストへの参加方法は [テンプレート・設計図・クエスト](blueprints.md) を参照。create-batchでは異なる生成案をproposalsに最大5件指定する。各案にtextと、changesかoperationsの一方を書く。各案を1回振り、成功した案ごとに生成・素材消費する。素材は指定順に使い、残りが足りない案は振らずにMATERIAL_SHORTAGEを返す。outcome.proposalsは指定順の結果、spentSpはこの申請の消費量。新規抽選があれば全案で1 SP。保管先への出し入れはmoveで申請し、本人が保管先のある場所にいる必要がある（離れているとSTORAGE_NOT_HERE）。本人の呼称と状態はupdateのchangesで改める。operationsのupdateが扱うのは物品と技能。グラフ差分を使うメモの更新や対抗行動、時間をかける物品の作成（waitMinutes）の形式は commands.md を参照。
+世界を変更する申請は command: apply の action に型と対象を指定します。--quote は実行せず必要SPを返します。返った額を expectedSp に指定してください。正式改名と対人対抗は1 SP、独立した生成案は新規抽選を行った案ごとに1 SPです。操作の形式と例は [世界への申請](commands.md) を参照してください。
 
 ```text
-gestaloka play --file <JSONファイル> [--stealth] [--depart-alone-on-timeout]
+gestaloka play --file <JSONファイル> [--quote] [--stealth] [--depart-alone-on-timeout]
 ```
 
 実行例 `gestaloka play --file action.json`

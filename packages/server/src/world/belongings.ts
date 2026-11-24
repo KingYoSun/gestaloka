@@ -219,7 +219,14 @@ export async function planBelongings(
             )
           )
             break;
-          change.nodes.push({ id: node, kind: "script", text: op.text });
+          change.nodes.push({
+            id: node,
+            kind: "script",
+            text: op.text,
+            ...(op.consumeSkillIds?.length
+              ? { derivedFromSkills: op.consumeSkillIds }
+              : {}),
+          });
           has(`${index}:skill`, op.person, node, "skill", op.basis);
           break;
         }
@@ -738,6 +745,7 @@ export async function readBelongings(
     skills.push({
       id: edge.target,
       text: node?.text ?? "",
+      ...(node?.kind === "script" && node.name ? { name: node.name } : {}),
       ...shown(node),
       basis: edge.text ?? null,
       since: edge.period.from,

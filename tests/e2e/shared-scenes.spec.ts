@@ -124,16 +124,20 @@ async function group(page: Page) {
   for (const actor of actors) {
     await call(actor, { command: "start" });
     await call(actor, {
-      command: "update",
-      text: "合流場所へ移動する",
-      operations: [
-        {
-          type: "locate",
-          subjectId: actor,
-          text: "合流場所",
-          aboutIds: [row.root_ids[0]],
-        },
-      ],
+      command: "apply",
+      expectedSp: 0,
+      action: {
+        type: "direct",
+        text: "合流場所へ移動する",
+        operations: [
+          {
+            type: "locate",
+            subjectId: actor,
+            text: "合流場所",
+            aboutIds: [row.root_ids[0]],
+          },
+        ],
+      },
       dependencies: [],
     });
     await call(actor, { command: "end-turn" });

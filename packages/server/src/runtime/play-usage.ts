@@ -9,7 +9,7 @@ type Row = {
   user_id: string | null;
   command: string | null;
   completed: boolean;
-  spent: boolean;
+  spent: number;
   rolls: { roll?: number; repeated?: boolean; success?: boolean }[] | null;
   batch: number | null;
   partial: boolean;
@@ -34,7 +34,7 @@ export async function readPlayUsage(
   ).rows[0]?.world_id;
   const rows = (
     await db.query<Row>(
-      `WITH r AS (SELECT id,result IS NOT NULL AS completed,sp_user IS NOT NULL AS spent,creation_rolls AS rolls,received_at,
+      `WITH r AS (SELECT id,result IS NOT NULL AS completed,CASE WHEN sp_user IS NULL THEN 0 ELSE sp_amount END AS spent,creation_rolls AS rolls,received_at,
         COALESCE(command,result->'action'->>'command') AS command,COALESCE(user_id,sp_user) AS user_id,
         CASE WHEN jsonb_typeof(result->'outcome'->'proposals')='array' THEN jsonb_array_length(result->'outcome'->'proposals') END AS batch,
         COALESCE(received_at,COALESCE(sp_reset,(result->'dailySp'->>'resetsAt')::timestamptz)-interval '1 day') AS at
@@ -114,7 +114,7 @@ export async function readPlayUsage(
         won === r.rolls.length ? "succeeded" : won ? "partial" : "failed"
       ]++;
     }
-    if (r.spent) g.spentSp++;
+    g.spentSp += r.spent;
     g.gmCalls += calls.get(r.id) ?? 0;
     const changes = receipts.get(r.id);
     if (changes) {

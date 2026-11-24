@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { z } from "zod";
 import {
-  PlayCommand,
+  PlayerPlayCommand,
+  WorldApplication,
+  applicationSp,
   type BelongingOp,
   type PlayerCharacter,
 } from "@gestaloka/contracts";
@@ -55,7 +57,7 @@ export function PlayCommandEditor({
   disabled: boolean;
   selection: Selection | undefined;
   response: Record<string, unknown> | undefined;
-  execute: (command: z.infer<typeof PlayCommand>) => void;
+  execute: (command: z.infer<typeof PlayerPlayCommand>) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [sourceIds, setSourceIds] = useState<string[]>([]);
@@ -82,13 +84,27 @@ export function PlayCommandEditor({
       s.id ? [{ id: s.id, text: s.text }] : [],
     ) ?? [];
   const sources = skills.filter((skill) => sourceIds.includes(skill.id));
+  let price: number | undefined;
+  try {
+    const input = CommandObject.parse(JSON.parse(draft));
+    const action = WorldApplication.safeParse(input.action);
+    if (input.command === "apply" && action.success)
+      price = applicationSp(action.data);
+  } catch {
+    // 入力の途中は価格を表示しない。
+  }
   function update(text: string, operation: BelongingOp) {
+    const action = WorldApplication.parse(
+      operation.type === "learn"
+        ? { type: "generate", plans: [{ text, operation }] }
+        : { type: "direct", text, operations: [operation] },
+    );
     execute(
-      PlayCommand.parse({
+      PlayerPlayCommand.parse({
         requestId: crypto.randomUUID(),
-        command: "update",
-        text,
-        operations: [operation],
+        command: "apply",
+        action,
+        expectedSp: applicationSp(action),
         dependencies: [],
       }),
     );
@@ -102,24 +118,28 @@ export function PlayCommandEditor({
     edit(
       JSON.stringify(
         {
-          command: "update",
-          text: movingSelf ? "指定した場所へ移動する" : "物品を預ける",
-          operations: [
-            movingSelf
-              ? {
-                  type: "locate",
-                  subjectId: actorId,
-                  text: "移動先の説明",
-                  aboutIds: ["移動先のUUID"],
-                }
-              : {
-                  type: "move",
-                  item: "物品のUUID",
-                  from: actorId,
-                  to: "預け先のUUID",
-                  basis: "保管先に預ける",
-                },
-          ],
+          command: "apply",
+          action: {
+            type: "direct",
+            text: movingSelf ? "指定した場所へ移動する" : "物品を預ける",
+            operations: [
+              movingSelf
+                ? {
+                    type: "locate",
+                    subjectId: actorId,
+                    text: "移動先の説明",
+                    aboutIds: ["移動先のUUID"],
+                  }
+                : {
+                    type: "move",
+                    item: "物品のUUID",
+                    from: actorId,
+                    to: "預け先のUUID",
+                    basis: "保管先に預ける",
+                  },
+            ],
+          },
+          expectedSp: 0,
           dependencies: [],
         },
         null,
@@ -197,7 +217,7 @@ export function PlayCommandEditor({
                   capacity.usedSlots >= capacity.limitSlots && !sources.length
                 }
               >
-                習得を申請する
+                習得を申請する（1 SP）
               </Button>
             </fieldset>
           </form>
@@ -273,8 +293,9 @@ export function PlayCommandEditor({
             event.preventDefault();
             if (disabled) return;
             try {
-              const command = PlayCommand.parse({
+              const command = PlayerPlayCommand.parse({
                 ...CommandObject.parse(JSON.parse(draft)),
+                ...(price === undefined ? {} : { expectedSp: price }),
                 requestId: crypto.randomUUID(),
               });
               setError(undefined);
@@ -319,6 +340,7 @@ export function PlayCommandEditor({
             />
           </label>
           {error && <Problem error={error} />}
+          {price !== undefined && <p aria-live="polite">申請のSP {price}</p>}
           <Button type="submit" disabled={disabled || !draft.trim()}>
             コマンドを実行する
           </Button>

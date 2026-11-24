@@ -6,7 +6,7 @@ import type { ZodTypeProvider } from "@fastify/type-provider-zod";
 import {
   ApiError,
   PlayError,
-  PlayCommand,
+  PlayerPlayCommand,
   PlayResponse,
   InventoryContents,
   InventoryContentsQuery,
@@ -575,7 +575,7 @@ export async function worldRoutes(
       schema: {
         params: ResourceId,
         querystring: ActorQuery,
-        body: PlayCommand,
+        body: PlayerPlayCommand,
         response: { 200: PlayResponse, ...errors, 409: PlayError },
       },
     },
