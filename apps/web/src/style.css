@@ -271,7 +271,6 @@ select {
 }
 .site-header nav {
   display: flex;
-  flex-grow: 1;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
@@ -283,6 +282,19 @@ select {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
+}
+@media (min-width: 769px) {
+  .site-header:has(> nav) {
+    --header-side-column: minmax(12rem, 1fr);
+    display: grid;
+    grid-template-columns:
+      var(--header-side-column)
+      minmax(0, max-content)
+      var(--header-side-column);
+  }
+  .site-header > .brand {
+    justify-self: start;
+  }
 }
 .page {
   max-width: 900px;
@@ -1154,7 +1166,6 @@ select {
     flex-wrap: wrap;
   }
   .site-header nav {
-    flex-grow: 0;
     justify-content: flex-start;
     column-gap: 6px;
   }
