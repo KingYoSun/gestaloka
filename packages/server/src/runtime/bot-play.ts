@@ -30,6 +30,7 @@ import { ExecutionBudget } from "../execution-budget.js";
 import {
   WorldConflict,
   FixedPlaceMovement,
+  isSpUseProhibition,
   WorldContext,
   type Dependency,
 } from "../world/store.js";
@@ -116,6 +117,7 @@ import {
 import { playerMaterial } from "./player-material.js";
 import {
   isPermanentlyDead,
+  recordDeathSpProhibition,
   recordPermanentDeath,
   respawnPolicy,
 } from "./death-policy.js";
@@ -534,6 +536,7 @@ type Plan = {
   nonCombatAreas?: NonCombatArea[];
   // ダイスの設定で死亡とされ、成功で確定した対象。
   fatal?: string[];
+  spUseProhibitionGrants?: string[] | undefined;
   appearances?: Appearance[];
   locates?: BelongingOp[];
   mixedMoves?: Locate[];
@@ -2235,7 +2238,7 @@ export class BotPlay {
       });
       link({ kind: "status", source: state, target: event, role: "about" });
     }
-    at = await this.#applyDeathPolicy(
+    const death = await this.#applyDeathPolicy(
       session,
       context,
       request,
@@ -2246,7 +2249,7 @@ export class BotPlay {
     return {
       context,
       changes,
-      at,
+      ...death,
       recipients: [],
       outcome,
       ...(stealth ? { stealth } : {}),
@@ -4958,6 +4961,8 @@ export class BotPlay {
     let material: unknown;
     let turn: ReturnType<BotPlay["current"]> | undefined;
     let sp: ReturnType<BotPlay["dailySp"]> | undefined;
+    let prohibition:
+      Promise<{ code: string; message: string } | undefined> | undefined;
     const drawDetails = async (target: string) => {
       const source = await drawSource(context, target);
       if (!source) return {};
@@ -4965,24 +4970,36 @@ export class BotPlay {
       const spCost = table ? drawSpCost(table) : 1;
       const inReach = await drawInReach(context, actor, target);
       const session = await (turn ??= this.current(world, actor, db));
-      const reason = !inReach
-        ? {
-            code: "DRAW_NOT_IN_REACH",
-            message: "現在地、その場に置かれた物品、手持ちの物品から引けます",
-          }
-        : session?.data.turn !== actor || session.data.receiving
-          ? { code: "TURN_REQUIRED", message: "本人の通常手番に引けます" }
-          : spCost &&
-              user &&
-              (await (sp ??= this.dailySp(world, user, db))).remaining <= 0
-            ? {
-                code: "DAILY_SP_EXHAUSTED",
-                message: "日次SPの利用可能残量は0です",
-              }
-            : ((await drawSkillCapacity(context, actor, table)) ??
-              (table
-                ? (await tableAvailability(context, table, actor)).reason
-                : undefined));
+      let reason;
+      if (!inReach)
+        reason = {
+          code: "DRAW_NOT_IN_REACH",
+          message: "現在地、その場に置かれた物品、手持ちの物品から引けます",
+        };
+      else if (session?.data.turn !== actor || session.data.receiving)
+        reason = { code: "TURN_REQUIRED", message: "本人の通常手番に引けます" };
+      else {
+        if (spCost) {
+          reason = await (prohibition ??= this.#spUseProhibition(
+            context,
+            actor,
+          ));
+          if (
+            !reason &&
+            user &&
+            (await (sp ??= this.dailySp(world, user, db))).remaining <= 0
+          )
+            reason = {
+              code: "DAILY_SP_EXHAUSTED",
+              message: "日次SPの利用可能残量は0です",
+            };
+        }
+        reason ??=
+          (await drawSkillCapacity(context, actor, table)) ??
+          (table
+            ? (await tableAvailability(context, table, actor)).reason
+            : undefined);
+      }
       return {
         draw: {
           mode: table ? "table" : "gm",
@@ -5406,13 +5423,10 @@ export class BotPlay {
     amount = 1,
     opposition = false,
   ) {
-    const db = await this.pool.connect();
-    try {
-      await db.query("BEGIN");
+    await this.#withWorldReadLock(world, async (db) => {
       await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,309))", [
         world + user,
       ]);
-      const sp = await this.dailySp(world, user, db, request);
       const previous = (
         await db.query<{
           sp_amount: number;
@@ -5423,10 +5437,14 @@ export class BotPlay {
           [request],
         )
       ).rows[0];
-      if (previous && (!opposition || previous.sp_opposed)) {
-        await db.query("COMMIT");
-        return;
-      }
+      if (previous && (!opposition || previous.sp_opposed)) return;
+      const { id } = await this.world(world, db);
+      const prohibition = await this.#spUseProhibition(
+        this.store.context(id),
+        actor,
+      );
+      if (prohibition) reject(prohibition.code, prohibition.message);
+      const sp = await this.dailySp(world, user, db, request);
       if (sp.remaining < amount)
         reject(
           "DAILY_SP_EXHAUSTED",
@@ -5444,13 +5462,18 @@ export class BotPlay {
         ],
       );
       if (!claim.rowCount) rejectAdjudication();
-      await db.query("COMMIT");
-    } catch (error) {
-      await db.query("ROLLBACK");
-      throw error;
-    } finally {
-      db.release();
-    }
+    });
+  }
+  async #spUseProhibition(context: WorldContext, actor: string) {
+    const until = await context.spUseProhibitedUntil(
+      actor,
+      this.now().getTime(),
+    );
+    if (until !== undefined)
+      return {
+        code: "SP_USE_PROHIBITED",
+        message: `SP使用禁止の状態です。解除時刻は${new Date(until).toISOString()}です`,
+      };
   }
   async #drawMaterials(world: string, context: WorldContext, targetId: string) {
     const target = (await context.node(targetId))!.text;
@@ -7914,6 +7937,7 @@ export class BotPlay {
     let mixedMoves: Locate[] | undefined;
     const boardings: Boarding[] = [];
     let statusReview: StatusReview | undefined;
+    let spUseProhibitionGrants: Plan["spUseProhibitionGrants"];
     let vehicleResult: Plan["vehicleResult"];
     let drawTable: DrawTable | undefined;
     let drawDescription = "";
@@ -9082,14 +9106,14 @@ export class BotPlay {
           fatal = saved.setting.fatal ?? [];
           for (const { id, ...state } of saved.setting.states ?? [])
             addState(changes, `${input.requestId}:state:${id}`, id, at, state);
-          at = await this.#applyDeathPolicy(
+          ({ at, spUseProhibitionGrants } = await this.#applyDeathPolicy(
             session,
             context,
             input.requestId,
             at,
             changes,
             fatal,
-          );
+          ));
           at = await this.#consume(
             context,
             input.requestId,
@@ -9149,6 +9173,7 @@ export class BotPlay {
       ...(boardings.length ? { boardings } : {}),
       ...(vehicleResult ? { vehicleResult } : {}),
       ...(fatal.length ? { fatal } : {}),
+      spUseProhibitionGrants,
       ...(nonCombatAreas ? { nonCombatAreas } : {}),
     };
   }
@@ -9376,7 +9401,10 @@ export class BotPlay {
     fatal: string[],
   ) {
     const state = (e: Change["edges"][number]) =>
-      e.kind === "status" && e.role === "content" && e.text !== "location";
+      e.kind === "status" &&
+      e.role === "content" &&
+      e.text !== "location" &&
+      !isSpUseProhibition(e);
     for (const id of fatal) {
       for (const e of await context.relations(id, "status", "out", at))
         if (
@@ -9401,21 +9429,38 @@ export class BotPlay {
     const people = [...new Set(fatal)].filter((id) =>
       session.data.members.some((m) => m.actorId === id && !m.instant),
     );
-    if (!people.length) return at;
+    if (!people.length) return { at };
+    at = Math.max(at, this.now().getTime());
     const respawn = await respawnPolicy(this.pool, session.world_id, people);
     const permanent = new Set(respawn ? respawn.disabledActorIds : people);
     for (const id of permanent) recordPermanentDeath(changes, id, at);
     const returning = people.filter((id) => !permanent.has(id));
-    if (!respawn || !returning.length) return at;
-    await this.#endDeathStates(context, at, changes, returning);
-    return this.#relocateDead(
-      context,
-      request,
-      at,
-      changes,
-      returning,
-      respawn.placeId,
+    if (respawn && returning.length) {
+      await this.#endDeathStates(context, at, changes, returning);
+      at = await this.#relocateDead(
+        context,
+        request,
+        at,
+        changes,
+        returning,
+        respawn.placeId,
+      );
+    }
+    const { rows } = await this.pool.query<{ actor_id: string }>(
+      `SELECT c.actor_id FROM world_controlled_actor c
+       WHERE c.world_id=$1 AND c.actor_id=ANY($2::uuid[])
+       AND NOT EXISTS(SELECT 1 FROM bot_npc n WHERE n.world_id=$3 AND n.actor_id=c.actor_id)`,
+      [context.worldId, people, session.world_id],
     );
+    return {
+      at,
+      spUseProhibitionGrants: recordDeathSpProhibition(
+        changes,
+        request,
+        rows.map(({ actor_id }) => actor_id),
+        at,
+      ),
+    };
   }
   async #requireLivingActor(context: WorldContext, actor: string) {
     if (await isPermanentlyDead(context, actor))
@@ -9560,7 +9605,12 @@ export class BotPlay {
     ops: BelongingOp[],
     plan: Pick<
       Plan,
-      "context" | "at" | "changes" | "storageEffect" | "nonCombatAreas"
+      | "context"
+      | "at"
+      | "changes"
+      | "storageEffect"
+      | "nonCombatAreas"
+      | "spUseProhibitionGrants"
     >,
     fixed?: string[],
     staying: string[] = [],
@@ -9630,7 +9680,10 @@ export class BotPlay {
   async #commit(
     world: string,
     requestId: string,
-    plan: Pick<Plan, "context" | "at" | "changes" | "storageEffect">,
+    plan: Pick<
+      Plan,
+      "context" | "at" | "changes" | "storageEffect" | "spUseProhibitionGrants"
+    >,
     newFixedPlaces?: string[],
   ) {
     const prior = await this.store.receipt(world, requestId);
@@ -9644,6 +9697,9 @@ export class BotPlay {
           at: plan.at,
           changes: atTime(plan.changes, plan.at, true),
           playerAction: true,
+          ...(plan.spUseProhibitionGrants?.length
+            ? { spUseProhibitionGrants: plan.spUseProhibitionGrants }
+            : {}),
           ...(plan.storageEffect ? { storageEffect: plan.storageEffect } : {}),
           ...(newFixedPlaces?.length ? { newFixedPlaces } : {}),
         },
@@ -10969,6 +11025,11 @@ export class BotPlay {
                       message:
                         "本人の通常手番になってから着工を申請してください",
                     };
+                  const prohibition = await this.#spUseProhibition(
+                    this.store.context(w.id),
+                    actor,
+                  );
+                  if (prohibition) return prohibition;
                   const { remaining, resetsAt } = await dailySp();
                   if (remaining <= 0)
                     return {

@@ -1,7 +1,7 @@
 import type { Change } from "@gestaloka/contracts";
 import type pg from "pg";
 import { derivedId } from "../world/model.js";
-import type { WorldContext } from "../world/store.js";
+import { spUseProhibition, type WorldContext } from "../world/store.js";
 
 export const permanentDeath = "permanent-death";
 const deathEdgeId = (actor: string) => derivedId(`${permanentDeath}:${actor}`);
@@ -58,5 +58,37 @@ export function recordPermanentDeath(
     target: script,
     text: permanentDeath,
     period: { from: at },
+  });
+}
+
+export function recordDeathSpProhibition(
+  change: Change,
+  request: string,
+  players: readonly string[],
+  at: number,
+) {
+  const seconds = Number(process.env.DEATH_SP_LOCK_SECONDS?.trim() || 10_800);
+  const until = at + seconds * 1000;
+  if (
+    !Number.isSafeInteger(seconds) ||
+    seconds < 0 ||
+    !Number.isFinite(new Date(until).getTime())
+  )
+    throw new Error("DEATH_SP_LOCK_SECONDS に有効な秒数を指定してください");
+  if (!seconds) return [];
+  return players.map((player) => {
+    const script = derivedId(`${request}:${player}:${spUseProhibition}`);
+    const id = derivedId(`${script}:content`);
+    change.nodes.push({ id: script, kind: "script", text: "SP使用禁止" });
+    change.edges.push({
+      id,
+      kind: "status",
+      role: "content",
+      source: player,
+      target: script,
+      text: spUseProhibition,
+      period: { from: at, until },
+    });
+    return id;
   });
 }
