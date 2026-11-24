@@ -4432,6 +4432,67 @@ test("プレイヤーの一覧は、待機中で接触を受けられるプレ�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test("インスタントNPCは公開行動なしで手番を終え、その後も行動できる", async () => {
+  const f = await fixture(1);
+  const source = randomUUID();
+  const npc = derivedId(source + ":manual:0");
+  await f.send(0, {
+    command: "say",
+    requestId: source,
+    text: "水盤に小鳥が降りる。",
+    instantNpcs: ["小鳥"],
+  });
+  const next = await f.send(0, { command: "end-turn" });
+  expect(next.actorId).toBe(npc);
+  const request = derivedId(`instant:${next.sessionId}:${npc}:${next.turn}`);
+  f.calls.mockImplementationOnce(
+    async (id, role, _messages, _target, _effort, _attempt, validate) => {
+      expect(role).toBe("world-server-npc");
+      const choice = { command: "end-turn" };
+      expect(() => validate!(JSON.stringify(choice))).not.toThrow();
+      return answer(id, choice);
+    },
+  );
+  await access.botPlay.tickNpcs(f.world);
+  await access.botPlay.tickNpcs(f.world);
+  const passed = await f.status(0);
+  expect(passed).toMatchObject({
+    actorId: f.actors[0],
+    turn: Number(next.turn) + 1,
+    characters: expect.arrayContaining([
+      expect.objectContaining({ actorId: npc }),
+    ]),
+  });
+  expect(passed.entries.at(-1)?.payload).toMatchObject({
+    actorId: npc,
+    entries: [],
+    transition: {
+      type: "turn-ended",
+      publicActivity: false,
+      message: expect.stringContaining("公開行動なし"),
+    },
+  });
+  expect(await f.store.receipt(f.graph, request)).toBeUndefined();
+
+  await f.send(0, { command: "end-turn" });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { text: "小鳥が水盤から飛び去る。", departs: true }),
+  );
+  await access.botPlay.tickNpcs(f.world);
+  const departed = await f.status(0);
+  expect(
+    departed.entries.flatMap(({ payload }) => payload.entries ?? []),
+  ).toContainEqual(
+    expect.objectContaining({
+      actorId: npc,
+      input: "小鳥が水盤から飛び去る。",
+    }),
+  );
+  expect(departed.characters).not.toContainEqual(
+    expect.objectContaining({ actorId: npc }),
+  );
+});
+
 test("その場の存在へ渡す入力は直近に絞られ、手番中に同席者が増えても次の試行で手番が進む", async () => {
   const f = await fixture();
   await f.send(0, {
