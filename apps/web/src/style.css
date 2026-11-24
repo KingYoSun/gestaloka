@@ -241,13 +241,13 @@ select {
   margin-bottom: 8px;
 }
 .site-header {
-  max-width: 1080px;
+  max-width: 1280px;
   margin: auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 20px;
-  padding: 12px 32px;
+  gap: 4px 20px;
+  padding: 8px 24px;
   border-bottom: 1px solid var(--border);
 }
 .brand {
@@ -273,7 +273,8 @@ select {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 16px;
+  gap: 0 8px;
+  font-size: 14px;
 }
 .site-header nav > a {
   min-height: 44px;
@@ -1147,8 +1148,11 @@ select {
     display: block;
   }
   .site-header {
-    padding-inline: 20px;
+    padding-inline: 8px;
     flex-wrap: wrap;
+  }
+  .site-header nav {
+    column-gap: 4px;
   }
   .brand {
     font-size: 24px;
