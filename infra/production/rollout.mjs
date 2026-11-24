@@ -31,8 +31,9 @@ export async function activeApi(compose) {
   ).toString();
   const initialized = /^# (api|api-next)\n/.test(contents);
   const api = await probe(compose);
-  if (slots.includes(api)) return { api, initialized };
   if (!initialized) return { api: "api", initialized };
+  if (slots.includes(api) && api === apiService(contents))
+    return { api, initialized };
   throw new Error("稼働中のCaddyのAPI転送先を確認できません");
 }
 
@@ -62,6 +63,7 @@ export async function setApiRoute(deployment, compose, controller, route) {
     await compose("exec", "-T", "caddy", "cat", "/etc/caddy/Caddyfile")
   ).toString();
   const contents = caddy(deployment.config, deployment.env, route);
+  const previousApi = await probe(compose);
   const proxy = (await compose("ps", "-q", "caddy")).toString().trim();
   const file = join(deployment.root, "Caddyfile.next");
   let published = false;
@@ -95,17 +97,23 @@ export async function setApiRoute(deployment, compose, controller, route) {
     published = true;
     await command(["kill", "--signal=USR1", proxy]);
   };
-  try {
-    await publish(contents, true);
+  const waitForRoute = async (api) => {
     for (let attempt = 0; attempt < 40; attempt++) {
-      if ((await probe(compose)) === route.api) return;
+      if ((await probe(compose)) === api) return;
       await delay(250);
     }
     throw new Error(
-      `CaddyのAPI転送先を${apiService(previous)}から切り替えられません`,
+      `CaddyのAPI転送先を確認できません。${api || "初期設定"}への再読み込みが未確認です`,
     );
+  };
+  try {
+    await publish(contents, true);
+    await waitForRoute(route.api);
   } catch (error) {
-    if (published) await publish(previous, false);
+    if (published) {
+      await publish(previous, false);
+      await waitForRoute(previousApi);
+    }
     throw error;
   }
 }
