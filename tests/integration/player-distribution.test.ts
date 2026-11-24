@@ -118,6 +118,7 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
       ["sessions.md", "セッション・手番・受領とチーム"],
       ["npcs.md", "NPCの出現・昇格・同行"],
       ["vehicles.md", "乗り物の設定・乗降・操縦"],
+      ["health.md", "死亡・怪我・治療"],
     ] as const) {
       const guide = await app.inject(
         `/api/player-cli/docs/${release.version}/${file}`,
