@@ -6488,6 +6488,8 @@ test("成立済みの変化の反映は対象と成功記録を照合し、SP残
     dependencies: [],
   };
   f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    // Responses API の JSON モードでは、入力に「JSON」がないとトークン計数で拒否される。
+    expect(messages[0]!.content).toMatch(/json/i);
     const input = JSON.parse(messages[1]!.content);
     expect(input).toMatchObject({
       states: [{ relationId: old, text: "足首に蔓が巻き付いている" }],

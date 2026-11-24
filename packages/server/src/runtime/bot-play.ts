@@ -967,7 +967,7 @@ const fumblePrompt = (criteria: string) =>
   criteria +
   "。";
 const selfStatusPrompt =
-  "本人の直接の状態変更について、変更前の本文と対象、申請した変更、確定した記録を照合する。表記の訂正や、同じ状態について付与後に成立した結果の反映には再度ダイスを振らず、allowApplyがtrueなら{apply:true,endEdges:[関係ID]}を返す。身体や世界にまだ成立していない不確実な変化は同じ応答でダイス設定を返す。追記・改訂・終了の形式や自己申告だけを成立の根拠にしない。";
+  "本人の直接の状態変更について、変更前の本文と対象、申請した変更、確定した記録を照合し、審査結果をJSONで返す。表記の訂正や、同じ状態について付与後に成立した結果の反映には再度ダイスを振らず、allowApplyがtrueなら{apply:true,endEdges:[関係ID]}を返す。身体や世界にまだ成立していない不確実な変化は同じ応答でダイス設定を返す。追記・改訂・終了の形式や自己申告だけを成立の根拠にしない。";
 function stateRelations(
   facts: { node: { id: string }; states: { relationId?: string }[] }[],
   subjects: readonly string[],
