@@ -1998,7 +1998,6 @@ export class BotPlay {
     let nonCombatAreas: NonCombatArea[] | undefined;
     let protectedTarget = false;
     let endedState = false;
-    let perception: z.infer<typeof Perception> | undefined;
     if (effect) {
       const otherParticipant = session.data.members.some(
         (member) =>
@@ -2120,7 +2119,11 @@ export class BotPlay {
                   (state) => state.id === effect.targetId,
                 )?.text ?? null)
               : saved.observable;
-          perception = saved.perception;
+          if (saved.perception)
+            stealth = await this.#oppositionObservations(
+              request,
+              saved.perception,
+            );
           fatal = saved.setting.fatal ?? [];
           at = await this.#consume(
             context,
@@ -2212,12 +2215,9 @@ export class BotPlay {
           ? `対抗行動の判定に成功しました。${appliedEffect}`
           : `対抗行動の判定は失敗しました${outcome.reason ? `（${outcome.reason}）` : ""}。${fumbleState}`
         : undefined;
-    if (perception)
-      stealth = await this.#oppositionObservations(
-        request,
-        perception,
-        resultText,
-      );
+    if (resultText && stealth)
+      for (const observation of stealth.observations)
+        observation.text = resultText;
     const link = await recordAppearances(
       context,
       changes,
@@ -4812,7 +4812,6 @@ export class BotPlay {
   async #oppositionObservations(
     request: string,
     perception: z.infer<typeof Perception>,
-    resultText?: string,
   ): Promise<StealthAction> {
     const observations: Observation[] = [];
     if (perception.observation)
@@ -4824,7 +4823,7 @@ export class BotPlay {
         if (saved.roll <= saved.setting.successThrough)
           observations.push({
             viewer,
-            text: resultText ?? perception.observation,
+            text: perception.observation,
             unattributed: true,
           });
       }
