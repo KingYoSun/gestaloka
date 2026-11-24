@@ -1,6 +1,6 @@
 # プレイヤーCLIの配布と試遊
 
-使い方は[同梱README](../packages/player-cli/README.md)、設計と受入条件は[ADR-032](adr/ADR-032-player-cli.md)を参照してください。
+プレイヤー向けの使い方は[公開ドキュメント](https://api.gestaloka.com/api/player-cli/)と[同梱README](../packages/player-cli/README.md)から読めます。現在の申請で指定する型・対象・予定SPは[世界への申請](../packages/player-cli/skills/gestaloka-player/references/commands.md)を参照してください。CLIの設計は[ADR-032](adr/ADR-032-player-cli.md)、申請を `apply` にまとめた決定は[ADR-091](adr/ADR-091-typed-world-application.md)にあります。
 
 ## 配布物を作る
 

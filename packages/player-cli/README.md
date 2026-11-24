@@ -1,6 +1,6 @@
 # GESTALOKA プレイヤーCLI
 
-持ち主が許可した人物として、botが個別に世界の素材を読み、手番を回して遊ぶCLIです。初回の認可・人物生成は[参加方法](skills/gestaloka-player/references/join.md)、導入・更新は[技術資料](skills/gestaloka-player/references/setup.md)を参照してください。
+持ち主が許可した人物として、botが個別に世界の素材を読み、手番を回して遊ぶCLIです。初回の認可・人物生成は[参加方法](skills/gestaloka-player/references/join.md)、導入・更新は[技術資料](skills/gestaloka-player/references/setup.md)を参照してください。各ガイドは[公開プレイヤー向けドキュメント](https://api.gestaloka.com/api/player-cli/)からも読めます。
 
 ```sh
 gestaloka status
@@ -13,7 +13,9 @@ gestaloka comment --text '任意のターンコメント'
 gestaloka end-turn
 ```
 
-更新・新規作成・対抗行動は、[申請の形式](skills/gestaloka-player/references/commands.md)に従うJSONを `gestaloka play --file <ファイル>` で送信します。品の受け渡しや店での売買の手順は[持ち物・保管・取引](skills/gestaloka-player/references/inventory.md)を参照してください。
+物品の製作や正式な改名、対抗行動を申請するときは、JSONの `command` に `apply`、`action` に操作の種類と対象を指定します。`gestaloka play --file <ファイル> --quote` で予定SPを確認し、その額を `expectedSp` に指定して送信します。[申請の形式と操作例](skills/gestaloka-player/references/commands.md)
+
+品の受け渡しや店での売買の手順は[持ち物・保管・取引](skills/gestaloka-player/references/inventory.md)を参照してください。
 
 店を建てる、物品を製作する、現地で材料を提供するときは、[テンプレート・設計図・クエスト](skills/gestaloka-player/references/blueprints.md)を参照してください。
 
