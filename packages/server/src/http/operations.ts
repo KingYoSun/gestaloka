@@ -1324,8 +1324,8 @@ export class Operations {
       case "worlds.configure": {
         const row = (
           await db.query(
-            `UPDATE world_construction SET public_title=$2,public_description=$3,published=$4,accepting=$5,player_settings=coalesce($6,player_settings),player_list=coalesce($7,player_list),instant_npc_multiplier=coalesce($8,instant_npc_multiplier),starting_items=coalesce($13::jsonb,starting_items),daily_sp_limit=coalesce($14,daily_sp_limit),death_judgment=coalesce($9,death_judgment),death_criteria=coalesce($10,death_criteria),death_place_id=CASE WHEN $11 THEN $12 ELSE death_place_id END WHERE id=$1
-          RETURNING id,public_title AS title,public_description AS description,player_settings AS "playerSettings",published,accepting,player_list AS "playerList",instant_npc_multiplier AS "instantNpcMultiplier",starting_items AS "startingItems",daily_sp_limit AS "dailySpLimit",death_judgment AS "deathJudgment",death_criteria AS "deathCriteria",death_place_id AS "deathPlaceId"`,
+            `UPDATE world_construction SET public_title=$2,public_description=$3,published=$4,accepting=$5,player_settings=coalesce($6,player_settings),player_list=coalesce($7,player_list),instant_npc_multiplier=coalesce($8,instant_npc_multiplier),starting_items=coalesce($13::jsonb,starting_items),daily_sp_limit=coalesce($14,daily_sp_limit),death_judgment=coalesce($9,death_judgment),death_criteria=coalesce($10,death_criteria),death_place_id=CASE WHEN $11 THEN $12 ELSE death_place_id END,respawn_enabled=coalesce($15,respawn_enabled),non_combat_areas=coalesce($16::jsonb,non_combat_areas) WHERE id=$1
+          RETURNING id,public_title AS title,public_description AS description,player_settings AS "playerSettings",published,accepting,player_list AS "playerList",instant_npc_multiplier AS "instantNpcMultiplier",starting_items AS "startingItems",daily_sp_limit AS "dailySpLimit",death_judgment AS "deathJudgment",death_criteria AS "deathCriteria",death_place_id AS "deathPlaceId",respawn_enabled AS "respawnEnabled",non_combat_areas AS "nonCombatAreas"`,
             [
               input.worldId,
               input.title,
@@ -1341,6 +1341,10 @@ export class Operations {
               input.deathPlaceId ?? null,
               input.startingItems ? JSON.stringify(input.startingItems) : null,
               input.dailySpLimit ?? null,
+              input.respawnEnabled ?? null,
+              input.nonCombatAreas
+                ? JSON.stringify(input.nonCombatAreas)
+                : null,
             ],
           )
         ).rows[0];
@@ -1348,7 +1352,8 @@ export class Operations {
           throw new AccessError(404, "WORLD_NOT_FOUND", "世界が見つかりません");
         if (
           input.inventoryCapacity !== undefined ||
-          input.inventoryLimits !== undefined
+          input.inventoryLimits !== undefined ||
+          input.nonCombatAreas?.length
         ) {
           const construction = this.#access(context).construction;
           const graph = (await construction.get(input.worldId)).world_id;
@@ -1358,14 +1363,35 @@ export class Operations {
               "WORLD_NOT_READY",
               "世界の構築が終わっていません",
             );
-          const { limits, enabled } =
-            await construction.agent.store.configureInventory(
+          const store = construction.agent.store;
+          if (input.nonCombatAreas?.length) {
+            const ids = new Set(
+              input.nonCombatAreas.flatMap(({ rootId, memberPlaceIds }) => [
+                rootId,
+                ...memberPlaceIds,
+              ]),
+            );
+            const graphContext = store.context(graph);
+            for (const place of ids)
+              if ((await graphContext.node(place))?.kind !== "existence")
+                throw new AccessError(
+                  409,
+                  "PLACE_NOT_FOUND",
+                  "非戦闘地域にはこの世界に存在する場所のIDを指定してください",
+                );
+          }
+          if (
+            input.inventoryCapacity !== undefined ||
+            input.inventoryLimits !== undefined
+          ) {
+            const { limits, enabled } = await store.configureInventory(
               graph,
               input.inventoryCapacity,
               input.inventoryLimits,
             );
-          row.inventoryCapacity = enabled;
-          row.inventoryLimits = limits;
+            row.inventoryCapacity = enabled;
+            row.inventoryLimits = limits;
+          }
         }
         return row;
       }

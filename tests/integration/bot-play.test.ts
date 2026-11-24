@@ -14525,6 +14525,168 @@ test("管理操作で止まったセッションを一覧から見つけ、保�
   });
   expect(f.calls).not.toHaveBeenCalled();
 });
+test("非戦闘地域では子区画の車内も保護し、経路と親区画には保護を広げない", async () => {
+  const f = await fixture(2),
+    [actor, target] = f.actors as [string, string],
+    [root, middle, condition] = [randomUUID(), randomUUID(), randomUUID()],
+    config = [{ rootId: root, memberPlaceIds: [] }],
+    db = isolated.databases.postgres;
+  const changes: Change = {
+    nodes: [
+      { id: root, kind: "existence", text: "守られる集落" },
+      { id: middle, kind: "existence", text: "集落内の敷地" },
+      { id: condition, kind: "script", text: "左手に以前の擦り傷がある。" },
+    ],
+    edges: [
+      {
+        id: randomUUID(),
+        kind: "status",
+        role: "content",
+        source: target,
+        target: condition,
+        period: { from: 0 },
+      },
+    ],
+    endEdges: [],
+    revisions: [],
+  };
+  mark(changes, f.place, "敷地の一部", [{ id: middle, text: "part-of" }]);
+  mark(changes, middle, "集落の一部", [{ id: root, text: "part-of" }]);
+  mark(changes, root, "周辺一帯の一部", [{ id: f.far, text: "part-of" }]);
+  linkRoute(
+    changes,
+    randomUUID(),
+    0,
+    [
+      { id: root, text: "集落" },
+      { id: f.far, text: "周辺" },
+    ],
+    "外へ続く道",
+  );
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes,
+    },
+  );
+  await db.query(
+    "UPDATE world_construction SET non_combat_areas=$2 WHERE id=$1",
+    [f.world, JSON.stringify(config)],
+  );
+  const vehicle = await vehicleFixture(f);
+  await f.move(0, vehicle);
+  await f.move(1, vehicle);
+  await f.send(1, { command: "contact", targetId: actor });
+  await giveTurn(f, 0);
+  const made = await f.apply([
+    { type: "create", label: "手袋", holder: target, basis: "試験用" },
+  ]);
+  const item = made.changes.nodes[0]!.id;
+  const setting = {
+    sides: 2,
+    successThrough: 1,
+    fatal: [target],
+    states: [{ id: target, text: "新しいけがをした。" }],
+    endEdges: [changes.edges[0]!.id],
+    fumble: { through: 1, text: "本人がけがをした。" },
+  };
+  const saveRoll = (id: string, roll: number) =>
+    db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,$3)", [
+      id,
+      setting,
+      roll,
+    ]);
+  const opposeInside = async (
+    id: string,
+    _role: string,
+    messages: { content: unknown }[],
+  ) => {
+    const sent = JSON.parse(String(messages[1]!.content));
+    expect(sent).not.toHaveProperty("mortal");
+    expect(sent).not.toHaveProperty("affected");
+    expect(String(messages[0]!.content)).not.toContain("fumble:{through");
+    return answer(id, setting);
+  };
+  const first = randomUUID();
+  await saveRoll(first, 1);
+  f.calls.mockImplementationOnce(opposeInside);
+  const seize = {
+    command: "apply",
+    requestId: first,
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "seize",
+      text: "相手の手袋を取る",
+      operation: {
+        type: "move",
+        item,
+        from: target,
+        to: actor,
+        basis: "手袋を取る",
+      },
+    },
+  };
+  const protectedSuccess = await f.send(0, seize);
+  expect(protectedSuccess).toMatchObject({
+    spentSp: 1,
+    outcome: { success: true, setting: { endEdges: [] } },
+  });
+  expect(protectedSuccess.outcome).not.toHaveProperty("setting.fatal");
+  expect(protectedSuccess.outcome).not.toHaveProperty("setting.states");
+  expect(await f.store.context(f.graph).holding(item)).toMatchObject({
+    source: actor,
+  });
+  expect(await f.send(0, seize)).toEqual(protectedSuccess);
+
+  const attack = (requestId: string) => ({
+    command: "apply",
+    requestId,
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "oppose",
+      text: "相手を傷つけようとする",
+      targetId: target,
+      description: "新しいけがをした。",
+      replacesStateId: condition,
+    },
+  });
+  const second = randomUUID();
+  await saveRoll(second, 2);
+  f.calls.mockImplementationOnce(opposeInside);
+  const protectedFailure = await f.send(0, attack(second));
+  expect(protectedFailure).toMatchObject({
+    spentSp: 1,
+    outcome: { success: false },
+  });
+  expect(protectedFailure.outcome).not.toHaveProperty("fumble");
+  expect(
+    await f.store.context(f.graph).edge(changes.edges[0]!.id),
+  ).not.toHaveProperty("period.until");
+
+  await f.move(0, f.far);
+  await f.move(1, f.far);
+  const third = randomUUID();
+  await saveRoll(third, 1);
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const sent = JSON.parse(String(messages[1]!.content));
+    expect(sent.mortal).toEqual([target]);
+    expect(sent.affected).toEqual([target]);
+    return answer(id, setting);
+  });
+  expect(await f.send(0, attack(third))).toMatchObject({
+    spentSp: 1,
+    outcome: {
+      success: true,
+      setting: { fatal: [target], states: setting.states },
+    },
+  });
+});
+
 test("一団へのダイスが分離と死亡を確定し、分けた個体を昇格できる", async () => {
   const f = await fixture(),
     admin = await auth.person(),
@@ -14604,6 +14766,58 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
     dependencies: [],
     effect: { targetId: group!.id, state },
   });
+  const db = isolated.databases.postgres;
+  await db.query(
+    "UPDATE world_construction SET non_combat_areas=$2 WHERE id=$1",
+    [f.world, JSON.stringify([{ rootId: f.place, memberPlaceIds: [] }])],
+  );
+  const safeHit = attempt("鳥に対抗する", "鳥が攻撃を受けた");
+  const reduction = { ...sure, instantReduction: { kind: "death", count: 2 } };
+  await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,1)", [
+    safeHit.requestId,
+    reduction,
+  ]);
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    expect(JSON.parse(String(messages[1]!.content))).not.toHaveProperty(
+      "group",
+    );
+    return answer(id, reduction);
+  });
+  const shelteredGroup = await f.send(0, safeHit);
+  expect(shelteredGroup.outcome).toMatchObject({ success: true });
+  expect(shelteredGroup.instantReduction).toBeUndefined();
+  expect(shelteredGroup.appearances).toBeUndefined();
+  expect(await count()).toBe(4);
+
+  for (const victim of [f.actors[1]!, f.place]) {
+    const effect = { targetId: victim, state: "つつかれた跡がある。" };
+    f.calls.mockImplementationOnce(async (id, _role, messages) => {
+      expect(JSON.parse(String(messages[1]!.content))).not.toHaveProperty(
+        "mortal",
+      );
+      expect(String(messages[0]!.content)).not.toContain(
+        "さらにobservableを返す",
+      );
+      return answer(id, { ...sure, fatal: [victim], observable: effect.state });
+    });
+    const sheltered = await f.send(0, {
+      command: "npc-action",
+      npcId: group!.id,
+      text: "鳥が目の前をつつく",
+      effect,
+    });
+    expect(sheltered.outcome).toMatchObject({ success: true });
+    expect(sheltered.outcome).not.toHaveProperty("setting.fatal");
+    expect(sheltered.effectState).toBeUndefined();
+    expect(
+      await f.store.context(f.graph).marked(victim, "status", "judged"),
+    ).toHaveLength(0);
+  }
+  await db.query(
+    "UPDATE world_construction SET non_combat_areas='[]' WHERE id=$1",
+    [f.world],
+  );
+
   const split = { kind: "separation", count: 1, stays: true };
   const missed = attempt("そっと手を伸ばす", "手の届くところにいる");
   const miss = {
@@ -14958,6 +15172,95 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
   expect(await present(0)).toEqual([f.actors[0]]);
   expect(await whereabouts(2)).toEqual([f.far]);
   expect(await whereabouts(0)).toEqual([f.place]);
+});
+
+test("リスポーン無効時は死亡した人物の履歴を保持して操作を止め、同じ利用者が新しい人物で参加できる", async () => {
+  const f = await fixture(2);
+  const [actor, victim] = f.actors as [string, string];
+  const previous = await f.status(1);
+  const sceneId = previous.members!.find((m) => m.actorId === victim)!.sceneId;
+  const previousRequest = { command: "start", requestId: randomUUID() };
+  const previousResult = await f.send(1, previousRequest);
+  await f.send(1, { command: "contact", targetId: actor });
+  const db = isolated.databases.postgres;
+  const { changes } = await f.apply([
+    { type: "create", label: "検証用の品", holder: victim, basis: "初期設定" },
+  ]);
+  const item = changes.nodes[0]!.id;
+  await db.query(
+    "UPDATE world_construction SET respawn_enabled=false,death_place_id=$2 WHERE id=$1",
+    [f.world, f.far],
+  );
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { ...sure, fatal: [victim] }),
+  );
+  const attack = {
+    requestId: randomUUID(),
+    command: "oppose",
+    text: "致命的な力で相手を押さえ、手に持つ品を奪う",
+    operations: [
+      { type: "move", item, from: victim, to: actor, basis: "奪う" },
+    ],
+    dependencies: [],
+  };
+  const result = await f.send(0, attack);
+  expect(result.outcome).toMatchObject({
+    success: true,
+    setting: { fatal: [victim] },
+  });
+  expect(await f.send(0, attack)).toEqual(result);
+  expect(await f.send(1, previousRequest)).toEqual(previousResult);
+  expect(await f.status(1)).toMatchObject({ session: null });
+  expect(await directPlaces(f.store.context(f.graph), victim)).toEqual([
+    f.place,
+  ]);
+  expect(await access.botPlay.history(f.world, victim, sceneId)).toMatchObject({
+    sceneId,
+    result: { entries: expect.any(Array) },
+  });
+  const owner = f.people[1]!.id;
+  await expect(f.send(1, { command: "start" })).rejects.toMatchObject({
+    code: "ACTOR_DEAD",
+  });
+  await expect(f.view(1, item, "all")).rejects.toMatchObject({
+    code: "ACTOR_DEAD",
+  });
+  await expect(
+    access.waiting(owner, f.world, victim, `human:${owner}`, true),
+  ).rejects.toMatchObject({ code: "ACTOR_DEAD" });
+  // 設定を戻しても確定済みの死亡は変化せず、同じアカウントの新しい人物は操作できる。
+  await db.query(
+    "UPDATE world_construction SET respawn_enabled=true,published=true,accepting=true,state='finished' WHERE id=$1",
+    [f.world],
+  );
+  await expect(f.send(1, { command: "start" })).rejects.toMatchObject({
+    code: "ACTOR_DEAD",
+  });
+  const join = randomUUID();
+  await auth.operations.execute(
+    owner,
+    join,
+    {
+      operation: "worlds.join",
+      worldId: f.world,
+      character: "新しく参加する人物",
+    },
+    { players: access.players },
+  );
+  await access.players.tick(join);
+  const replacement = (
+    await access.players.list(owner, f.world, undefined, join)
+  ).items[0]!.actorId;
+  expect(replacement).toBeTruthy();
+  expect(replacement).not.toBe(victim);
+  await expect(
+    access.botCommand(
+      owner,
+      f.world,
+      { command: "start", requestId: randomUUID() },
+      replacement!,
+    ),
+  ).resolves.toBeDefined();
 });
 
 test("持ち物は本人検索で個数つきで読め、ダイスが成功したときだけGMの選んだ手持ちの物品が減る", async () => {

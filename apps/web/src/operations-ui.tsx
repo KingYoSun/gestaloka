@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { PlayerPreset, type WorldStatus } from "@gestaloka/contracts";
 import { api, $api } from "./api.js";
+import { NonCombatAreasField } from "./admin-fields.js";
 import { Notice, Problem } from "./presentation.js";
 import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
@@ -230,17 +231,31 @@ export function Publication({
         value={value.deathCriteria}
         onChange={(e) => set({ ...value, deathCriteria: e.target.value })}
       />
-      <Label htmlFor="public-death-place">死亡した人物を移す場所のID</Label>
+      <Label>
+        <input
+          type="checkbox"
+          checked={value.respawnEnabled}
+          onChange={(e) => set({ ...value, respawnEnabled: e.target.checked })}
+        />{" "}
+        死亡した人物をリスポーンさせる
+      </Label>
+      <Label htmlFor="public-death-place">リスポーン先の場所ID</Label>
       <Input
         id="public-death-place"
+        disabled={!value.respawnEnabled}
         value={value.deathPlaceId ?? ""}
         onChange={(e) =>
           set({ ...value, deathPlaceId: e.target.value.trim() || null })
         }
       />
       <p>
-        死亡した人物はセッションから外れ、この場所へ移ります。空欄なら本人の最初の所在地へ移ります。
+        リスポーン先が空欄なら本人の最初の所在地へ移ります。リスポーンを無効にすると、死亡した人物は操作できなくなります。
       </p>
+      <NonCombatAreasField
+        id="public-noncombat-areas"
+        value={value.nonCombatAreas}
+        onChange={(nonCombatAreas) => set({ ...value, nonCombatAreas })}
+      />
       <p>非公開・受付停止にしても、参加済みの人物は利用を続けられます。</p>
       <Button disabled={mutation.isPending}>公開・参加受付を保存する</Button>
       {mutation.error && <Problem error={mutation.error} />}

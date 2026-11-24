@@ -5,7 +5,11 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { PgBoss } from "pg-boss";
 import { z } from "zod";
-import { ConstructionDuration, type StartingItem } from "@gestaloka/contracts";
+import {
+  ConstructionDuration,
+  type NonCombatAreas,
+  type StartingItem,
+} from "@gestaloka/contracts";
 import { WorldBuilder } from "./build.js";
 import { WorldAgent, SupersededWorker, type WorldProposal } from "./agent.js";
 import { ExecutionBudget } from "../execution-budget.js";
@@ -53,8 +57,10 @@ export type Construction = {
   instant_npc_multiplier: number;
   starting_items: z.infer<typeof StartingItem>[];
   death_judgment: boolean;
+  respawn_enabled: boolean;
   death_criteria: string;
   death_place_id: string | null;
+  non_combat_areas: NonCombatAreas;
   claim: string | null;
   error: string | null;
   initial_prompt: string;
@@ -108,8 +114,10 @@ export class WorldConstruction {
       ADD COLUMN IF NOT EXISTS daily_sp_limit integer NOT NULL DEFAULT 100 CHECK (daily_sp_limit > 0),
       ADD COLUMN IF NOT EXISTS starting_items jsonb NOT NULL DEFAULT '[]',
       ADD COLUMN IF NOT EXISTS death_judgment boolean NOT NULL DEFAULT true,
+      ADD COLUMN IF NOT EXISTS respawn_enabled boolean NOT NULL DEFAULT true,
       ADD COLUMN IF NOT EXISTS death_criteria text NOT NULL DEFAULT '',
-      ADD COLUMN IF NOT EXISTS death_place_id uuid;`);
+      ADD COLUMN IF NOT EXISTS death_place_id uuid,
+      ADD COLUMN IF NOT EXISTS non_combat_areas jsonb NOT NULL DEFAULT '[]'::jsonb;`);
     for (const name of [this.queueName, `${this.queueName}-play`])
       await this.queue.createQueue(name, {
         retryLimit: 2,

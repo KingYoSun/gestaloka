@@ -711,8 +711,10 @@ export class WorldAccess {
         playerList: row.player_list,
         instantNpcMultiplier: row.instant_npc_multiplier,
         deathJudgment: row.death_judgment,
+        respawnEnabled: row.respawn_enabled,
         deathCriteria: row.death_criteria,
         deathPlaceId: row.death_place_id,
+        nonCombatAreas: row.non_combat_areas,
       },
       error: row.error,
     });

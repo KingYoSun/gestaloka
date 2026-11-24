@@ -2407,6 +2407,9 @@
                         "deathJudgment": {
                           "type": "boolean"
                         },
+                        "respawnEnabled": {
+                          "type": "boolean"
+                        },
                         "deathCriteria": {
                           "type": "string"
                         },
@@ -2415,6 +2418,32 @@
                           "type": "string",
                           "format": "uuid",
                           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "nonCombatAreas": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "rootId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "memberPlaceIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                }
+                              }
+                            },
+                            "required": [
+                              "rootId",
+                              "memberPlaceIds"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
@@ -2425,8 +2454,10 @@
                         "playerList",
                         "instantNpcMultiplier",
                         "deathJudgment",
+                        "respawnEnabled",
                         "deathCriteria",
-                        "deathPlaceId"
+                        "deathPlaceId",
+                        "nonCombatAreas"
                       ],
                       "additionalProperties": false
                     },
@@ -2840,6 +2871,9 @@
                         "deathJudgment": {
                           "type": "boolean"
                         },
+                        "respawnEnabled": {
+                          "type": "boolean"
+                        },
                         "deathCriteria": {
                           "type": "string"
                         },
@@ -2848,6 +2882,32 @@
                           "type": "string",
                           "format": "uuid",
                           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "nonCombatAreas": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "rootId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "memberPlaceIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                }
+                              }
+                            },
+                            "required": [
+                              "rootId",
+                              "memberPlaceIds"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
@@ -2858,8 +2918,10 @@
                         "playerList",
                         "instantNpcMultiplier",
                         "deathJudgment",
+                        "respawnEnabled",
                         "deathCriteria",
-                        "deathPlaceId"
+                        "deathPlaceId",
+                        "nonCombatAreas"
                       ],
                       "additionalProperties": false
                     },
@@ -3335,6 +3397,9 @@
                         "deathJudgment": {
                           "type": "boolean"
                         },
+                        "respawnEnabled": {
+                          "type": "boolean"
+                        },
                         "deathCriteria": {
                           "type": "string"
                         },
@@ -3343,6 +3408,32 @@
                           "type": "string",
                           "format": "uuid",
                           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "nonCombatAreas": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "rootId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "memberPlaceIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                }
+                              }
+                            },
+                            "required": [
+                              "rootId",
+                              "memberPlaceIds"
+                            ],
+                            "additionalProperties": false
+                          }
                         }
                       },
                       "required": [
@@ -3353,8 +3444,10 @@
                         "playerList",
                         "instantNpcMultiplier",
                         "deathJudgment",
+                        "respawnEnabled",
                         "deathCriteria",
-                        "deathPlaceId"
+                        "deathPlaceId",
+                        "nonCombatAreas"
                       ],
                       "additionalProperties": false
                     },
@@ -22951,7 +23044,11 @@
                             }
                           },
                           "deathJudgment": {
-                            "description": "プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。死亡した人物はセッションから外れ、deathPlaceIdの場所へ移る。省略すると現在の設定を保つ",
+                            "description": "プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。省略すると現在の設定を保つ",
+                            "type": "boolean"
+                          },
+                          "respawnEnabled": {
+                            "description": "死亡した人物を復帰させる。既定は有効。無効なら死亡後はその人物で操作できない。省略すると現在の設定を保つ",
                             "type": "boolean"
                           },
                           "deathCriteria": {
@@ -22959,11 +23056,38 @@
                             "type": "string"
                           },
                           "deathPlaceId": {
-                            "description": "死亡した人物を移す場所。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ",
+                            "description": "復帰時に人物を移す場所。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ",
                             "nullable": true,
                             "type": "string",
                             "format": "uuid",
                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "nonCombatAreas": {
+                            "description": "非戦闘地域。範囲の場所IDと、古い地理記録を補う場所IDを指定する。両方の内部にあたる part-of の子にも適用する。空配列で解除し、省略すると現在の設定を保つ",
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "rootId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "memberPlaceIds": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "rootId",
+                                "memberPlaceIds"
+                              ],
+                              "additionalProperties": false
+                            }
                           },
                           "reason": {
                             "type": "string",

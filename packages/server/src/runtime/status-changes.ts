@@ -1,5 +1,6 @@
 import type { Change, WorldEdge, WorldNode } from "@gestaloka/contracts";
 import { WorldConflict, type WorldContext } from "../world/store.js";
+import { permanentDeath } from "./death-policy.js";
 
 const latest = Number.MAX_SAFE_INTEGER;
 
@@ -9,6 +10,7 @@ export function editableStatus(edge: WorldEdge, node?: WorldNode) {
     edge.role === "content" &&
     edge.text !== "location" &&
     edge.text !== "operator" &&
+    edge.text !== permanentDeath &&
     node?.kind === "script" &&
     node.type !== "draw-source" &&
     !node.spawn

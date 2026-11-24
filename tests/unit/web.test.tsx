@@ -55,8 +55,10 @@ const world = {
     playerList: false,
     instantNpcMultiplier: 2,
     deathJudgment: true,
+    respawnEnabled: true,
     deathCriteria: "",
     deathPlaceId: null,
+    nonCombatAreas: [],
   },
 };
 let player: z.infer<typeof PlayerStatus>, run: z.infer<typeof PlayRun> | null;
@@ -336,6 +338,44 @@ test("Reactを描画し、生成されたHTTPクライアント型を通信に�
     baseUrl: "http://localhost",
   });
   expect(data?.status).toBe("ok");
+});
+
+test("世界の公開設定からリスポーンと非戦闘地域を保存できる", async () => {
+  let saved: unknown;
+  server.use(
+    http.post("*/api/operations", async ({ request }) => {
+      const body = (await request.json()) as { command: { operation: string } };
+      if (body.command.operation === "worlds.configure") saved = body.command;
+      return json({ result: {} });
+    }),
+  );
+  render(
+    <App
+      surface="admin"
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}`] }),
+      )}
+    />,
+  );
+  fireEvent.click(
+    await screen.findByLabelText("死亡した人物をリスポーンさせる"),
+  );
+  fireEvent.change(screen.getByLabelText("非戦闘地域"), {
+    target: { value: `${A} ${B}\n${V}` },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "公開・参加受付を保存する" }),
+  );
+  await waitFor(() =>
+    expect(saved).toMatchObject({
+      operation: "worlds.configure",
+      respawnEnabled: false,
+      nonCombatAreas: [
+        { rootId: A, memberPlaceIds: [B] },
+        { rootId: V, memberPlaceIds: [] },
+      ],
+    }),
+  );
 });
 
 test("進行の受付直後は状態の再取得まで次の構築操作を有効にしない", async () => {

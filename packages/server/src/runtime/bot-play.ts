@@ -69,6 +69,7 @@ import {
   linkRoute,
   locationRecords,
 } from "../world/locations.js";
+import { isNonCombatPlace, type NonCombatArea } from "../world/noncombat.js";
 import { canonical, parseOutput } from "../llm/prompt.js";
 import { diceStoragePlace } from "../llm/dice-prompt.js";
 import type { WorldConstruction } from "./construction.js";
@@ -113,6 +114,11 @@ import {
 } from "./vehicles.js";
 
 import { playerMaterial } from "./player-material.js";
+import {
+  isPermanentlyDead,
+  recordPermanentDeath,
+  respawnPolicy,
+} from "./death-policy.js";
 import { historyLimit, selectStates } from "./state-selection.js";
 import {
   directStatusReview,
@@ -525,6 +531,7 @@ type Plan = {
   instantMembers?: string;
   effectState?: string;
   instantReduction?: z.infer<typeof InstantReductionResult>;
+  nonCombatAreas?: NonCombatArea[];
   // ダイスの設定で死亡とされ、成功で確定した対象。
   fatal?: string[];
   appearances?: Appearance[];
@@ -1270,7 +1277,13 @@ export class BotPlay {
         "本人のbot担当が指定された人物を使ってください",
       );
     if (active !== undefined) {
-      await this.#setPresence(db, world, actor, user, connection, active);
+      if (active)
+        await this.#withWorldReadLock(world, async (locked) => {
+          const current = await this.world(world, locked);
+          await this.#requireLivingActor(this.store.context(current.id), actor);
+          await this.#setPresence(locked, world, actor, user, connection, true);
+        });
+      else await this.#setPresence(db, world, actor, user, connection, false);
       await this.expire(world);
     } else if (renew) await this.keepAlive(world, actor, user, connection, db);
     const presence = (
@@ -1389,7 +1402,7 @@ export class BotPlay {
   }
   // 接触を受けられる待機中のプレイヤーと、その直接の滞在先。照会者の所在地は問わない。
   async players(world: string, actor: string, before?: string) {
-    return this.#readPlayWorld(world, async (db) => {
+    return this.#withWorldReadLock(world, async (db) => {
       const rows = await this.#waitingPlayers(
         world,
         actor,
@@ -1494,6 +1507,8 @@ export class BotPlay {
     id: string,
     target?: Session,
   ): Promise<Session> {
+    const w = await this.world(world, db);
+    await this.#requireLivingActor(this.store.context(w.id), actor);
     const legacy = (
       await db.query<{ id: string }>(
         "SELECT v.id FROM world_scene_session v WHERE world_id=$1 AND actor_id=$2 AND NOT closed AND NOT EXISTS(SELECT 1 FROM bot_scene p WHERE p.id=v.id AND p.actor_id=v.actor_id)",
@@ -1967,6 +1982,7 @@ export class BotPlay {
       ? { observations: [] }
       : undefined;
     let instantReduction: Plan["instantReduction"];
+    let nonCombatAreas: NonCombatArea[] | undefined;
     if (effect) {
       const otherParticipant = session.data.members.some(
         (member) =>
@@ -2000,7 +2016,13 @@ export class BotPlay {
               [context.worldId, effect.targetId, session.world_id],
             )
           ).rowCount;
-        const subjects = person ? [effect.targetId] : [];
+        const policy = await this.#oppositionPolicy(session, context, actorId, [
+          effect.targetId,
+        ]);
+        nonCombatAreas = policy.areas;
+        const protectedTarget = policy.protectedActors.has(effect.targetId);
+        const protectedActor = policy.protectedActors.has(actorId);
+        const subjects = person && !protectedTarget ? [effect.targetId] : [];
         const facts = victim
           ? npc
             ? []
@@ -2036,14 +2058,18 @@ export class BotPlay {
               ]
             : facts,
           npc ? [] : await this.#consumable(context, actorId, changes),
-          victim || (person && !npc) ? undefined : effect.state,
+          victim || (person && !npc) || protectedTarget
+            ? undefined
+            : effect.state,
           ...(victim
             ? ([
-                victim.count === undefined ? [effect.targetId] : [],
+                victim.count === undefined && !protectedTarget
+                  ? [effect.targetId]
+                  : [],
                 "",
               ] satisfies [string[], string])
-            : await this.#mortal(session, [effect.targetId])),
-          victim?.count === undefined
+            : this.#mortal(session, [effect.targetId], policy)),
+          victim?.count === undefined || protectedTarget
             ? undefined
             : { count: victim.count, allowSeparation: !npc },
           undefined,
@@ -2057,9 +2083,12 @@ export class BotPlay {
             : undefined,
           person && !npc ? subjects : [],
           stateRelations(facts, subjects),
-          !!person && !!previous,
-          npc ? "" : await this.#fumblePrompt(session.world_id),
+          subjects.length > 0 && !!previous,
+          npc || protectedActor
+            ? ""
+            : await this.#fumblePrompt(session.world_id),
           playerRequest && (person || victim) ? request : undefined,
+          { actor: protectedActor, target: protectedTarget },
         );
         outcome = {
           setting: saved.setting,
@@ -2089,7 +2118,7 @@ export class BotPlay {
             saved.setting,
           );
         }
-        if (person && outcome.success)
+        if (subjects.length && outcome.success)
           changes.endEdges = (
             await settleStateEnds(
               context,
@@ -2149,14 +2178,6 @@ export class BotPlay {
             victim.places,
             deaths,
           );
-        at = await this.#relocateDead(
-          session,
-          context,
-          request,
-          at,
-          changes,
-          fatal,
-        );
       }
     }
     const link = await recordAppearances(
@@ -2214,7 +2235,14 @@ export class BotPlay {
       });
       link({ kind: "status", source: state, target: event, role: "about" });
     }
-    await this.#endDeathStates(session, context, at, changes, fatal);
+    at = await this.#applyDeathPolicy(
+      session,
+      context,
+      request,
+      at,
+      changes,
+      fatal,
+    );
     return {
       context,
       changes,
@@ -2223,6 +2251,7 @@ export class BotPlay {
       outcome,
       ...(stealth ? { stealth } : {}),
       instantMembers: JSON.stringify(session.data.members),
+      ...(nonCombatAreas ? { nonCombatAreas } : {}),
       ...(instantReduction
         ? {
             instantReduction,
@@ -2343,6 +2372,11 @@ export class BotPlay {
             await ExecutionBudget.check(db, true);
             const before = turnState(current);
             if (action && plan) {
+              await this.#checkNonCombatAreas(
+                db,
+                session.world_id,
+                plan.nonCombatAreas,
+              );
               const receipt = await this.#commit(w.id, request, plan);
               current.data.entries.push({
                 actorId: actor,
@@ -2815,24 +2849,76 @@ export class BotPlay {
   }
   // 死亡した人物をセッションから外す。所在の移動は、死亡を確定した差分に含めている。
   async #expel(db: Db, session: Session, ids: string[], request: string) {
+    if (!ids.length) return;
     const d = session.data;
+    const w = await this.world(session.world_id, db);
+    const context = this.store.context(w.id);
     for (const pair of await this.companions.following(
       db,
       session.world_id,
       ids,
     ))
       await this.companions.setMode(db, session.world_id, pair.npc_id, "wait");
-    for (const id of ids)
+    for (const id of ids) {
+      const member = d.members.find((m) => m.actorId === id && !m.instant);
+      if (!member) continue;
+      if (await isPermanentlyDead(context, id)) {
+        const hidden = await this.#hidden(db, session.world_id, context, id);
+        const departure = await this.#transition(
+          db,
+          session,
+          id,
+          "session-left",
+        );
+        await this.#record(
+          db,
+          session,
+          {
+            transition: {
+              ...departure,
+              message: `${departure.name}は死亡し、プレイを終了しました`,
+            },
+          },
+          hidden ? [id, ...hidden.discovered] : undefined,
+        );
+        await this.#depart(db, session, [member]);
+        await this.#closeScene(db, session.world_id, id, member.sceneId);
+        await db.query(
+          "UPDATE player_waiting SET active=false WHERE world_id=$1 AND actor_id=$2 AND active",
+          [session.world_id, id],
+        );
+        await db.query(
+          "UPDATE bot_npc SET controller=NULL,user_id=NULL,assignment_id=$3 WHERE world_id=$1 AND actor_id=$2 AND controller IS NOT NULL",
+          [
+            session.world_id,
+            id,
+            derivedId(`${request}:death-controller:${id}`),
+          ],
+        );
+        if (d.nextRegular === id) delete d.nextRegular;
+        await signalTurns(db, session.world_id, id);
+        continue;
+      }
       await this.#split(
         db,
         session,
-        d.members.filter((m) => m.actorId === id && !m.instant),
+        [member],
         derivedId(`${request}:death:${id}`),
         "は死亡し、セッションから外れました",
         "は死亡したため、別のセッションで続けます",
       );
+    }
     if (d.members.length && !d.members.some((m) => m.actorId === d.turn))
       d.turn = d.members[0]!.actorId;
+  }
+  async #closeScene(db: Db, world: string, actor: string, sceneId: string) {
+    const { legacy, entries } = await this.history(world, actor, sceneId, db);
+    const result = { legacy, entries };
+    await db.query(
+      "UPDATE bot_scene SET closed=true,result=$3 WHERE id=$1 AND actor_id=$2",
+      [sceneId, actor, JSON.stringify(result)],
+    );
+    return result;
   }
   async #split(
     db: Db,
@@ -4274,7 +4360,7 @@ export class BotPlay {
     }
     return items;
   }
-  async #readPlayWorld<T>(world: string, read: (db: Db) => Promise<T>) {
+  async #withWorldReadLock<T>(world: string, work: (db: Db) => Promise<T>) {
     const db = await this.pool.connect();
     try {
       await db.query("BEGIN");
@@ -4282,7 +4368,7 @@ export class BotPlay {
         "SELECT pg_advisory_xact_lock_shared(hashtextextended($1,225))",
         [world],
       );
-      const result = await read(db);
+      const result = await work(db);
       await db.query("COMMIT");
       return result;
     } catch (error) {
@@ -4786,7 +4872,8 @@ export class BotPlay {
       };
     const other = await this.#places(context, target);
     return own.some((p) => other.includes(p)) &&
-      (await this.#canSee(db, world, context, actor, target))
+      (await this.#canSee(db, world, context, actor, target)) &&
+      !(await isPermanentlyDead(context, target))
       ? { allowed: true, reason: "同じ所在地です" }
       : {
           allowed: false,
@@ -4851,7 +4938,7 @@ export class BotPlay {
     query: z.infer<typeof PlaySearch>,
     dependencies: Dependency[] = [],
   ) {
-    return this.#readPlayWorld(
+    return this.#withWorldReadLock(
       world,
       async (db) =>
         (await this.#search(world, actor, query, dependencies, db)).visible,
@@ -5181,6 +5268,7 @@ export class BotPlay {
     try {
       const current = await this.world(world);
       const context = this.store.context(current.id);
+      await this.#requireLivingActor(context, actor);
       const present = (await directPlaces(context, actor)).includes(
         input.storageId,
       );
@@ -5251,8 +5339,9 @@ export class BotPlay {
     input: z.infer<typeof ViewersInput>,
   ) {
     const w = await this.world(world),
-      context = this.store.context(w.id),
-      node = await context.node(input.targetId);
+      context = this.store.context(w.id);
+    await this.#requireLivingActor(context, actor);
+    const node = await context.node(input.targetId);
     if (
       !node ||
       node.kind === "event" ||
@@ -6013,6 +6102,7 @@ export class BotPlay {
   ): Promise<Input> {
     const context = this.store.context((await this.world(world)).id);
     await this.companions.mine(this.pool, world, actor, input.targetId);
+    await this.#requireLivingActor(context, input.targetId);
     const placeId =
       "placeId" in input
         ? input.placeId
@@ -6038,7 +6128,7 @@ export class BotPlay {
           aboutIds: [place!.id],
         },
       ],
-      dependencies: [],
+      dependencies: context.dependencies,
     };
   }
   async #previousCreation(
@@ -8842,17 +8932,33 @@ export class BotPlay {
       );
     }
     let stealth: StealthAction | undefined;
+    let nonCombatAreas: NonCombatArea[] | undefined;
     if (input.command === "oppose" && !selfStatus) {
       let success = !externalEffect && [...parties].every((id) => id === actor);
       let failed: Partial<CreationRoll> = {};
       if (!success) {
         const session = (await this.current(world, actor))!;
-        const affected = recipients.filter((id) =>
+        const policy = await this.#oppositionPolicy(session, context, actor, [
+          ...recipients,
+          ...(statusReview?.subjects ?? []),
+        ]);
+        nonCombatAreas = policy.areas;
+        const protectedActor = policy.protectedActors.has(actor);
+        const opponents = recipients.filter((id) =>
           session.data.members.some((m) => m.actorId === id && !m.instant),
         );
-        const stateSubjects = [
-          ...new Set([...affected, ...(statusReview?.subjects ?? [])]),
+        const affected = opponents.filter(
+          (id) => !policy.protectedActors.has(id),
+        );
+        const allStateSubjects = [
+          ...new Set([...opponents, ...(statusReview?.subjects ?? [])]),
         ];
+        const stateSubjects = allStateSubjects.filter(
+          (id) => !policy.protectedActors.has(id),
+        );
+        const protectedTarget = [...recipients, ...allStateSubjects].some(
+          (id) => policy.protectedActors.has(id),
+        );
         // 物を外される場所は、説明の relationId を付けて渡し、GMが置き換えを選べるようにする。
         const losing = (await this.#holders(context, changes.endEdges)).filter(
           (id) => id !== actor && !controlled.has(id),
@@ -8874,6 +8980,7 @@ export class BotPlay {
           : undefined;
         if (stateSubjects.length)
           await this.#rememberStateBasis(input.requestId, context);
+        const allowedEnds = stateRelations(materials, stateSubjects);
         const saved = await this.#oppositionRoll(
           input.requestId,
           actor,
@@ -8882,15 +8989,20 @@ export class BotPlay {
           materials,
           await this.#consumable(context, actor, changes),
           undefined,
-          ...(await this.#mortal(session, recipients)),
+          ...this.#mortal(session, recipients, policy),
           undefined,
           undefined,
           perception,
           affected,
-          stateRelations(materials, stateSubjects),
-          !!statusReview?.requestedEnds.length,
-          await this.#fumblePrompt(world),
-          affected.length ? input.requestId : undefined,
+          allowedEnds,
+          protectedTarget
+            ? !!statusReview?.requestedEnds.some((id) =>
+                allowedEnds.includes(id),
+              )
+            : !!statusReview?.requestedEnds.length,
+          protectedActor ? "" : await this.#fumblePrompt(world),
+          opponents.length ? input.requestId : undefined,
+          { actor: protectedActor, target: protectedTarget },
         );
         success = saved.roll <= saved.setting.successThrough;
         failed = saved;
@@ -8963,15 +9075,14 @@ export class BotPlay {
             context,
             at,
             changes,
-            saved.setting.endEdges,
+            saved.setting.endEdges ?? (protectedTarget ? [] : undefined),
             stateSubjects,
             statusReview,
           );
           fatal = saved.setting.fatal ?? [];
           for (const { id, ...state } of saved.setting.states ?? [])
             addState(changes, `${input.requestId}:state:${id}`, id, at, state);
-          await this.#endDeathStates(session, context, at, changes, fatal);
-          at = await this.#relocateDead(
+          at = await this.#applyDeathPolicy(
             session,
             context,
             input.requestId,
@@ -9038,26 +9149,77 @@ export class BotPlay {
       ...(boardings.length ? { boardings } : {}),
       ...(vehicleResult ? { vehicleResult } : {}),
       ...(fatal.length ? { fatal } : {}),
+      ...(nonCombatAreas ? { nonCombatAreas } : {}),
     };
   }
-  // 死亡判定の対象になる同席中の人物（プレイヤーとユニークNPC）と、世界の条件文を返す。
-  async #mortal(
+  async #oppositionPolicy(
     session: Session,
-    ids: Iterable<string>,
-  ): Promise<[string[], string]> {
-    const policy = (
+    context: WorldContext,
+    actor: string,
+    targets: readonly string[],
+  ) {
+    const {
+      death_judgment,
+      death_criteria,
+      non_combat_areas: areas,
+    } = (
       await this.pool.query<{
         death_judgment: boolean;
         death_criteria: string;
+        non_combat_areas: NonCombatArea[];
       }>(
-        "SELECT death_judgment,death_criteria FROM world_construction WHERE id=$1",
+        "SELECT death_judgment,death_criteria,non_combat_areas FROM world_construction WHERE id=$1",
         [session.world_id],
       )
     ).rows[0]!;
+    const protectedActors = new Set<string>();
+    const at = this.now().getTime();
+    if (areas.length)
+      for (const id of new Set([actor, ...targets])) {
+        const instant = session.data.members.find(
+          (m) => m.actorId === id,
+        )?.instant;
+        const places = new Set(
+          instant?.places ?? (await directPlaces(context, id)),
+        );
+        for (const place of places)
+          if (await isVehicle(context, place)) {
+            const { placeId } = await vehiclePosition(context, place);
+            if (placeId) places.add(placeId);
+          }
+        if (targets.includes(id)) places.add(id);
+        if (await isNonCombatPlace(context, areas, [...places], at))
+          protectedActors.add(id);
+      }
+    return { death_judgment, death_criteria, areas, protectedActors };
+  }
+
+  async #checkNonCombatAreas(db: Db, world: string, areas?: NonCombatArea[]) {
+    if (!areas) return;
+    const { rows } = await db.query<{ non_combat_areas: NonCombatArea[] }>(
+      "SELECT non_combat_areas FROM world_construction WHERE id=$1 FOR SHARE",
+      [world],
+    );
+    if (canonical(rows[0]?.non_combat_areas) !== canonical(areas))
+      throw new WorldConflict("判定中に非戦闘地域の設定が変わりました");
+  }
+
+  // 死亡判定の対象になる同席中の人物（プレイヤーとユニークNPC）と、世界の条件文を返す。
+  #mortal(
+    session: Session,
+    ids: Iterable<string>,
+    policy: {
+      death_judgment: boolean;
+      death_criteria: string;
+      protectedActors: ReadonlySet<string>;
+    },
+  ): [string[], string] {
     return [
       policy.death_judgment
-        ? [...ids].filter((id) =>
-            session.data.members.some((m) => m.actorId === id && !m.instant),
+        ? [...ids].filter(
+            (id) =>
+              !policy.protectedActors.has(id) &&
+              session.data.members.some((m) => m.actorId === id && !m.instant),
           )
         : [],
       policy.death_criteria,
@@ -9208,7 +9370,6 @@ export class BotPlay {
   // 死亡は復帰として扱う。死亡した人物の、判定で付いた状態と期限のある状態を終え、死亡を確定した
   // 差分で付く状態は終わった関係として記録する。所在は変えない。差分に状態をすべて加えた後に呼ぶ。
   async #endDeathStates(
-    session: Session,
     context: WorldContext,
     at: number,
     changes: Change,
@@ -9217,8 +9378,6 @@ export class BotPlay {
     const state = (e: Change["edges"][number]) =>
       e.kind === "status" && e.role === "content" && e.text !== "location";
     for (const id of fatal) {
-      if (session.data.members.every((m) => m.actorId !== id || m.instant))
-        continue;
       for (const e of await context.relations(id, "status", "out", at))
         if (
           state(e) &&
@@ -9231,8 +9390,7 @@ export class BotPlay {
           e.period = { from: e.period.from, until: e.period.from };
     }
   }
-  // 死亡した人物を、世界に設定された場所か本人の最初の所在地へ移す差分を、同じ確定に加える。
-  async #relocateDead(
+  async #applyDeathPolicy(
     session: Session,
     context: WorldContext,
     request: string,
@@ -9240,10 +9398,43 @@ export class BotPlay {
     changes: Change,
     fatal: string[],
   ) {
+    const people = [...new Set(fatal)].filter((id) =>
+      session.data.members.some((m) => m.actorId === id && !m.instant),
+    );
+    if (!people.length) return at;
+    const respawn = await respawnPolicy(this.pool, session.world_id);
+    if (!respawn) {
+      for (const id of people) recordPermanentDeath(changes, id, at);
+      return at;
+    }
+    await this.#endDeathStates(context, at, changes, people);
+    return this.#relocateDead(
+      context,
+      request,
+      at,
+      changes,
+      people,
+      respawn.placeId,
+    );
+  }
+  async #requireLivingActor(context: WorldContext, actor: string) {
+    if (await isPermanentlyDead(context, actor))
+      reject(
+        "ACTOR_DEAD",
+        "この人物は死亡しています。新しい人物を作成してください",
+      );
+  }
+  // 死亡した人物を、世界に設定された場所か本人の最初の所在地へ移す差分を、同じ確定に加える。
+  async #relocateDead(
+    context: WorldContext,
+    request: string,
+    at: number,
+    changes: Change,
+    fatal: string[],
+    configured: string | null,
+  ) {
     const ops: BelongingOp[] = [];
     for (const id of fatal) {
-      if (session.data.members.every((m) => m.actorId !== id || m.instant))
-        continue;
       const origin = await context.firstLocation(id),
         about = origin
           ? (await context.history(origin, "status", "out", latest)).filter(
@@ -9251,12 +9442,6 @@ export class BotPlay {
             )
           : [],
         direct = about.filter((e) => e.text === "direct-place");
-      const configured = (
-        await this.pool.query<{ death_place_id: string | null }>(
-          "SELECT death_place_id FROM world_construction WHERE id=$1",
-          [session.world_id],
-        )
-      ).rows[0]!.death_place_id;
       const placeId =
           (configured && (await context.node(configured)) && configured) ||
           (direct.length === 1 ? direct : about.length === 1 ? about : [])[0]
@@ -9373,7 +9558,10 @@ export class BotPlay {
     actor: string,
     request: string,
     ops: BelongingOp[],
-    plan: Pick<Plan, "context" | "at" | "changes" | "storageEffect">,
+    plan: Pick<
+      Plan,
+      "context" | "at" | "changes" | "storageEffect" | "nonCombatAreas"
+    >,
     fixed?: string[],
     staying: string[] = [],
     beforeWrite?: () => Promise<void>,
@@ -9434,6 +9622,8 @@ export class BotPlay {
       );
     }
     await beforeWrite?.();
+    if (plan.nonCombatAreas && !(await this.store.receipt(graph, request)))
+      await this.#checkNonCombatAreas(db, world, plan.nonCombatAreas);
     return this.#commit(graph, request, plan, fixed);
   }
 
@@ -9496,7 +9686,30 @@ export class BotPlay {
     requireStateEnds = false,
     fumble = "",
     spRequest?: string,
+    protection?: { actor: boolean; target: boolean },
   ) {
+    // 再送が参照する保存済みのダイス設定にも、確定前の保護を適用する。
+    function protect(setting: z.infer<typeof DiceSetting>) {
+      if (!protection?.actor && !protection?.target) return setting;
+      const current = { ...setting };
+      if (protection.target) {
+        const fatal = current.fatal?.filter((id) => mortal.includes(id));
+        const states = current.states?.filter((state) =>
+          affected.includes(state.id),
+        );
+        if (fatal?.length) current.fatal = fatal;
+        else delete current.fatal;
+        if (states?.length) current.states = states;
+        else delete current.states;
+        if (current.endEdges)
+          current.endEdges = current.endEdges.filter((id) =>
+            stateEnds.includes(id),
+          );
+        if (!group) delete current.instantReduction;
+      }
+      if (protection.actor) delete current.fumble;
+      return current;
+    }
     function readDecision(raw: string) {
       const parsed = parseOutput(raw);
       const separated = perception
@@ -9519,7 +9732,9 @@ export class BotPlay {
             Object.entries(separated).filter(([key]) => key !== "perception"),
           )
         : parsed;
-      const { setting, observable } = read(dice),
+      const decision = read(dice),
+        { observable } = decision,
+        setting = protect(decision.setting),
         fatal = setting.fatal?.filter((id) => mortal.includes(id)),
         states = setting.states?.filter((s) => affected.includes(s.id));
       validateStateEnds(setting.endEdges, stateEnds, requireStateEnds);
@@ -9547,6 +9762,11 @@ export class BotPlay {
       };
     }
     function read(result: unknown) {
+      if (protection?.target && proposedState === undefined) {
+        const dice = z.record(z.string(), z.unknown()).parse(result);
+        delete dice.observable;
+        return { setting: DiceSetting.parse(dice), observable: null };
+      }
       if (proposedState === undefined)
         return { setting: DiceSetting.parse(result), observable: null };
       const { observable, ...dice } = z
@@ -9639,22 +9859,25 @@ export class BotPlay {
         observable,
         perception: reported,
       } = readDecision(response.content),
-      saved = await this.#roll(requestId, setting, spRequest);
+      saved = await this.#roll(requestId, setting, spRequest, protect);
     return { ...saved, observable, perception: reported };
   }
   async #roll(
     id: string,
     setting: z.infer<typeof DiceSetting>,
     spRequest?: string,
+    protect?: (
+      setting: z.infer<typeof DiceSetting>,
+    ) => z.infer<typeof DiceSetting>,
   ) {
     const db = await this.pool.connect();
     try {
       await db.query("BEGIN");
-      const die = await this.#fumble(
-        db,
-        id,
-        await this.#rollIn(db, id, setting),
-      );
+      const rolled = await this.#rollIn(db, id, setting);
+      const die = await this.#fumble(db, id, {
+        ...rolled,
+        setting: protect ? protect(rolled.setting) : rolled.setting,
+      });
       if (spRequest) {
         const charged = await db.query(
           `UPDATE bot_request r SET sp_user=a.sp_user,sp_reset=a.sp_reset,
@@ -10454,6 +10677,7 @@ export class BotPlay {
     adjudicationOwner?: string,
   ): Promise<Record<string, unknown>> {
     const w = await this.world(world);
+    await this.#requireLivingActor(this.store.context(w.id), actor);
     let prepared: Session | undefined;
     let stateBasis: Dependency[] | undefined;
     const basis = "dependencies" in input ? input.dependencies : [];
@@ -10675,6 +10899,7 @@ export class BotPlay {
         await db.query("COMMIT");
         return this.#replay(world, input, saved.result);
       }
+      await this.#requireLivingActor(this.store.context(w.id), actor);
       const active = await this.#activeAdjudication(db, world, actor);
       if (active?.owner !== adjudicationOwner) {
         if (active) rejectAdjudication();
@@ -11157,18 +11382,10 @@ export class BotPlay {
           const member = d.members.find((m) => m.actorId === actor)!;
           await this.#depart(db, session, [member]);
           if (input.command === "finish") {
-            const { legacy, entries } = await this.history(
-                world,
-                actor,
-                member.sceneId,
-                db,
-              ),
-              final = { legacy, entries };
-            await db.query(
-              "UPDATE bot_scene SET closed=true,result=$3 WHERE id=$1 AND actor_id=$2",
-              [member.sceneId, actor, JSON.stringify(final)],
-            );
-            result = { sceneId: member.sceneId, result: final };
+            result = {
+              sceneId: member.sceneId,
+              result: await this.#closeScene(db, world, actor, member.sceneId),
+            };
           } else {
             await signalTurns(db, world, actor);
             const at = this.now().toISOString();

@@ -159,6 +159,13 @@ const InventoryLimits = z.object({
       "人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する",
     ),
 });
+export const NonCombatAreas = z.array(
+  z.strictObject({
+    rootId: z.uuid(),
+    memberPlaceIds: z.array(z.uuid()),
+  }),
+);
+export type NonCombatAreas = z.infer<typeof NonCombatAreas>;
 export const WorldStatus = z.object({
   inventoryLimits: InventoryLimits.optional(),
   inventoryCapacity: z.boolean().optional(),
@@ -188,8 +195,10 @@ export const WorldStatus = z.object({
     playerList: z.boolean(),
     instantNpcMultiplier: z.number().int().positive(),
     deathJudgment: z.boolean(),
+    respawnEnabled: z.boolean(),
     deathCriteria: z.string(),
     deathPlaceId: z.uuid().nullable(),
+    nonCombatAreas: NonCombatAreas,
   }),
   error: z.string().nullable(),
 });
@@ -1536,7 +1545,13 @@ export const Operation = z.discriminatedUnion("operation", [
         .boolean()
         .optional()
         .describe(
-          "プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。死亡した人物はセッションから外れ、deathPlaceIdの場所へ移る。省略すると現在の設定を保つ",
+          "プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。省略すると現在の設定を保つ",
+        ),
+      respawnEnabled: z
+        .boolean()
+        .optional()
+        .describe(
+          "死亡した人物を復帰させる。既定は有効。無効なら死亡後はその人物で操作できない。省略すると現在の設定を保つ",
         ),
       deathCriteria: z
         .string()
@@ -1549,8 +1564,11 @@ export const Operation = z.discriminatedUnion("operation", [
         .nullable()
         .optional()
         .describe(
-          "死亡した人物を移す場所。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ",
+          "復帰時に人物を移す場所。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ",
         ),
+      nonCombatAreas: NonCombatAreas.optional().describe(
+        "非戦闘地域。範囲の場所IDと、古い地理記録を補う場所IDを指定する。両方の内部にあたる part-of の子にも適用する。空配列で解除し、省略すると現在の設定を保つ",
+      ),
       reason: operationReason,
     })
     .strict(),

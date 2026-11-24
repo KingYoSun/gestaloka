@@ -1113,9 +1113,15 @@ export interface paths {
                                 playerList: boolean;
                                 instantNpcMultiplier: number;
                                 deathJudgment: boolean;
+                                respawnEnabled: boolean;
                                 deathCriteria: string;
                                 /** Format: uuid */
                                 deathPlaceId: string | null;
+                                nonCombatAreas: {
+                                    /** Format: uuid */
+                                    rootId: string;
+                                    memberPlaceIds: string[];
+                                }[];
                             };
                             error: string | null;
                         };
@@ -1290,9 +1296,15 @@ export interface paths {
                                 playerList: boolean;
                                 instantNpcMultiplier: number;
                                 deathJudgment: boolean;
+                                respawnEnabled: boolean;
                                 deathCriteria: string;
                                 /** Format: uuid */
                                 deathPlaceId: string | null;
+                                nonCombatAreas: {
+                                    /** Format: uuid */
+                                    rootId: string;
+                                    memberPlaceIds: string[];
+                                }[];
                             };
                             error: string | null;
                         };
@@ -1487,9 +1499,15 @@ export interface paths {
                                 playerList: boolean;
                                 instantNpcMultiplier: number;
                                 deathJudgment: boolean;
+                                respawnEnabled: boolean;
                                 deathCriteria: string;
                                 /** Format: uuid */
                                 deathPlaceId: string | null;
+                                nonCombatAreas: {
+                                    /** Format: uuid */
+                                    rootId: string;
+                                    memberPlaceIds: string[];
+                                }[];
                             };
                             error: string | null;
                         };
@@ -8260,15 +8278,23 @@ export interface paths {
                                 /** @description 1枠あたりの個数。省くと世界の標準、unlimitedなら何個でも1枠 */
                                 unitsPerSlot?: number | "unlimited";
                             }[];
-                            /** @description プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。死亡した人物はセッションから外れ、deathPlaceIdの場所へ移る。省略すると現在の設定を保つ */
+                            /** @description プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。省略すると現在の設定を保つ */
                             deathJudgment?: boolean;
+                            /** @description 死亡した人物を復帰させる。既定は有効。無効なら死亡後はその人物で操作できない。省略すると現在の設定を保つ */
+                            respawnEnabled?: boolean;
                             /** @description 人物の死亡を判定するGMへ渡す、この世界の条件文。空なら行動と結果だけから判定する。省略すると現在の設定を保つ */
                             deathCriteria?: string;
                             /**
                              * Format: uuid
-                             * @description 死亡した人物を移す場所。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ
+                             * @description 復帰時に人物を移す場所。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ
                              */
                             deathPlaceId?: string | null;
+                            /** @description 非戦闘地域。範囲の場所IDと、古い地理記録を補う場所IDを指定する。両方の内部にあたる part-of の子にも適用する。空配列で解除し、省略すると現在の設定を保つ */
+                            nonCombatAreas?: {
+                                /** Format: uuid */
+                                rootId: string;
+                                memberPlaceIds: string[];
+                            }[];
                             reason: string;
                         } | {
                             /** @enum {string} */
