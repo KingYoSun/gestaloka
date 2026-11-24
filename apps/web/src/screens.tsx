@@ -79,6 +79,21 @@ export function Account() {
         {save.isPending && <Notice>公開設定を保存しています</Notice>}
         {save.error && <Problem error={save.error} />}
       </section>
+      <section className="form-panel mt-4">
+        <h2>ログイン方法とデータの引き継ぎ</h2>
+        <ul>
+          <li>
+            <a className="text-link" href="/auth/link">
+              ログイン方法を追加
+            </a>
+          </li>
+          <li>
+            <a className="text-link" href="/auth/claim">
+              このブラウザーのデータを引き継ぐ
+            </a>
+          </li>
+        </ul>
+      </section>
     </main>
   );
 }

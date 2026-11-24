@@ -117,7 +117,7 @@ function Shell() {
           <Link to="/">世界一覧</Link>
           {surface === "user" && <Link to="/stories">STORIES</Link>}
           {surface === "user" && <a href="/auth/player">AIへのプレイ許可</a>}
-          {surface === "user" && <Link to="/account">アカウント設定</Link>}
+          <Link to="/account">アカウント設定</Link>
           {surface === "admin" && (
             <Link to="/operations/$section" params={{ section: "users" }}>
               運用管理
@@ -128,8 +128,6 @@ function Shell() {
           ) : account.data?.member?.role === "admin" ? (
             <a href={adminApp}>管理画面</a>
           ) : null}
-          <a href="/auth/claim">このブラウザーのデータを引き継ぐ</a>
-          <a href="/auth/link">ログイン方法を追加</a>
           <a href="/auth/logout">ログアウト</a>
           <ThemeButton />
         </nav>
@@ -198,15 +196,7 @@ const routeTree = root.addChildren([
   createRoute({
     getParentRoute: () => root,
     path: "/account",
-    component: function AccountRoute() {
-      return useSurface() === "user" ? (
-        <Account />
-      ) : (
-        <main className="page">
-          <a href={`${userApp}/account`}>ユーザー画面で開く</a>
-        </main>
-      );
-    },
+    component: Account,
   }),
   createRoute({
     getParentRoute: () => root,
