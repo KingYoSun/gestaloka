@@ -6623,7 +6623,7 @@ export class BotPlay {
           {
             role: "system",
             content: endStatesOnly
-              ? "指定された状態を終了する申請の成否を判定する。changes.endEdgesにある状態は成功時にすべて終了する。現在の状態、申請内容、世界の基準から判断し、{sides:整数,successThrough:整数}を返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準: " +
+              ? "指定された状態を終了する申請の成否を判定する。changes.endEdgesにある状態は成功時にすべて終了する。現在の状態、申請内容、世界の基準から判断し、{sides:整数,successThrough:整数}をJSONで返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準: " +
                 criteria
               : compact
                 ? selfStatusPrompt +
