@@ -2044,6 +2044,11 @@ export class BotPlay {
         ]);
         nonCombatAreas = policy.areas;
         protectedTarget = policy.protectedActors.has(effect.targetId);
+        if (playerRequest && !npc && protectedTarget)
+          reject(
+            "NON_COMBAT_AREA",
+            "相手は非戦闘地域にいるため、対抗行動はできません",
+          );
         const protectedActor = policy.protectedActors.has(actorId);
         const subjects = person && !protectedTarget ? [effect.targetId] : [];
         const facts = victim
