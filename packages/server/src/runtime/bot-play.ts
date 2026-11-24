@@ -135,6 +135,10 @@ const VehicleCondition = z
 const BlueprintDecision = z
   .object({ accepted: z.boolean(), reason: z.string().trim().min(1) })
   .strict();
+const InstantTurnChoice = z.union([
+  NpcAction,
+  z.strictObject({ command: z.literal("end-turn") }),
+]);
 const ConstructionDecision = BlueprintDecision.extend({
   storageLimitSlots: z.number().int().positive().safe().optional(),
 });
@@ -2211,7 +2215,7 @@ export class BotPlay {
                 ((npc.count ?? 1) > 1
                   ? "あなたはその場に現れた一団です。npc.countは現在の個体数です。一団として一手を選んでください。"
                   : "あなたはその場に現れた一個体です。") +
-                "自身の性質、見聞きした履歴、周囲から今回の一手を選んでください。tradesがあれば、相手が望めば応じる交換の品物と代価です。textに行動を、外界を変えようとするならeffectに対象IDと成功時の状態を、立ち去るならdeparts:trueを指定します。成否はサーバーが決めます。schemaに沿うJSONだけを返してください。",
+                '自身の性質、見聞きした履歴、周囲から今回の一手を選んでください。tradesがあれば、相手が望めば応じる交換の品物と代価です。textに行動を、外界を変えようとするならeffectに対象IDと成功時の状態を、立ち去るならdeparts:trueを指定します。成否はサーバーが決めます。すでに示した状態が続き、周囲に伝わる行動や変化がなければ、そこに留まったまま {"command":"end-turn"} で手番を終えられます。schemaに沿うJSONだけを返してください。',
             },
             {
               role: "user",
@@ -2232,22 +2236,25 @@ export class BotPlay {
                 history: recentEntries(
                   await this.history(session.world_id, actor),
                 ),
-                schema: z.toJSONSchema(NpcAction),
+                schema: z.toJSONSchema(InstantTurnChoice),
               }),
             },
           ],
           "default",
-          (raw) => NpcAction.parse(parseOutput(raw)),
+          (raw) => InstantTurnChoice.parse(parseOutput(raw)),
         );
-        const action = NpcAction.parse(parseOutput(response.content));
-        const plan = await this.#instantAction(
-          session,
-          actor,
-          action,
-          request,
-          context,
-          w.at,
-        );
+        const choice = InstantTurnChoice.parse(parseOutput(response.content));
+        const action = "text" in choice ? choice : undefined;
+        const plan = action
+          ? await this.#instantAction(
+              session,
+              actor,
+              action,
+              request,
+              context,
+              w.at,
+            )
+          : undefined;
         const db = await this.pool.connect();
         try {
           await db.query("BEGIN");
@@ -2266,34 +2273,40 @@ export class BotPlay {
               JSON.stringify(session.data.members)
           ) {
             await ExecutionBudget.check(db, true);
-            const receipt = await this.#commit(w.id, request, plan);
             const before = turnState(current);
-            current.data.entries.push({
-              actorId: actor,
-              input: action.text,
-              result: {
-                outcome: plan.outcome,
-                ...(plan.effectState ? { effectState: plan.effectState } : {}),
-                ...(plan.appearances ? { appearances: plan.appearances } : {}),
-                ...(plan.instantReduction
-                  ? { instantReduction: plan.instantReduction }
-                  : {}),
-                commitId: receipt.commitId,
-              },
-            });
-            await this.#applyInstantReduction(
-              db,
-              current,
-              actor,
-              request,
-              plan,
-            );
+            if (action && plan) {
+              const receipt = await this.#commit(w.id, request, plan);
+              current.data.entries.push({
+                actorId: actor,
+                input: action.text,
+                result: {
+                  outcome: plan.outcome,
+                  ...(plan.effectState
+                    ? { effectState: plan.effectState }
+                    : {}),
+                  ...(plan.appearances
+                    ? { appearances: plan.appearances }
+                    : {}),
+                  ...(plan.instantReduction
+                    ? { instantReduction: plan.instantReduction }
+                    : {}),
+                  commitId: receipt.commitId,
+                },
+              });
+              await this.#applyInstantReduction(
+                db,
+                current,
+                actor,
+                request,
+                plan,
+              );
+            }
             await this.#next(db, current);
             await this.#removeInstants(db, current.data, [
-              ...(action.departs ? [actor] : []),
-              ...(plan.fatal ?? []),
+              ...(action?.departs ? [actor] : []),
+              ...(plan?.fatal ?? []),
             ]);
-            await this.#expel(db, current, plan.fatal ?? [], request);
+            await this.#expel(db, current, plan?.fatal ?? [], request);
             await this.#save(db, current, before);
           }
           await db.query("COMMIT");
