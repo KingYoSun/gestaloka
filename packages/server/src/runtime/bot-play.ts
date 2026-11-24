@@ -11480,7 +11480,7 @@ export class BotPlay {
           : null;
       if (
         input.command === "draw" &&
-        prior.outcome?.table &&
+        prior.outcome &&
         prior.prepared_turn !== turnKey
       ) {
         const receipt = await this.store.receipt(w.id, input.requestId);
