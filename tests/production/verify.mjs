@@ -91,33 +91,33 @@ async function verifyLocalRecovery(deployment) {
       .filter(Boolean)
       .sort();
   const runJob = async (request) => wait(name, (await ops(name, request)).id);
+  const runHostJob = async (request) => {
+    const requestId = randomUUID();
+    const file = join(deployment.root, "local-backup-test.json");
+    await writeFile(file, JSON.stringify({ ...request, requestId }), {
+      mode: 0o600,
+    });
+    await cli("controller", deployment, file);
+    await wait(name, requestId);
+  };
   const running = await services();
   assert.equal(running.length, 2);
   await cli("backup-controller", deployment);
   assert.deepEqual(await services(), running);
 
   const previous = await ops(name, { operation: "backups.read" });
-  const configurationFile = join(deployment.root, "local-backup-test.json");
-  const requestId = randomUUID();
-  await writeFile(
-    configurationFile,
-    JSON.stringify({
-      requestId,
-      operation: "backups.configure",
-      configuration: {
-        enabled: false,
-        intervalHours: 24,
-        retentionDays: 30,
-        repository: "local",
-        password: "test-password-for-local-recovery-only",
-      },
-      expectedVersion: previous.version,
-      reason: "ホスト内の隔離復元試験",
-    }),
-    { mode: 0o600 },
-  );
-  await cli("controller", deployment, configurationFile);
-  await wait(name, requestId);
+  await runHostJob({
+    operation: "backups.configure",
+    configuration: {
+      enabled: false,
+      intervalHours: 24,
+      retentionDays: 30,
+      repository: "local",
+      password: "test-password-for-local-recovery-only",
+    },
+    expectedVersion: previous.version,
+    reason: "ホスト内の隔離復元試験",
+  });
   assert.equal(
     (await ops(name, { operation: "backups.read" })).configuration.repository,
     "local",
@@ -134,10 +134,22 @@ async function verifyLocalRecovery(deployment) {
     expectedVersion: before.version,
     reason: "管理確認期間の取得前検証",
   });
-  await runJob({
+  await compose(deployment, "stop", "worker", "caddy");
+  await runHostJob({
     operation: "backups.create",
     reason: "メンテナンス中のホスト内バックアップ",
   });
+  const stillStopped = await compose(
+    deployment,
+    "ps",
+    "--status",
+    "running",
+    "-q",
+    "worker",
+    "caddy",
+  );
+  assert.equal(stillStopped.toString().trim(), "");
+  await cli("up", deployment);
   const snapshots = await ops(name, { operation: "backups.list" });
   assert.equal(snapshots.items.length, 1);
   const afterBackup = await ops(name, { operation: "runtime.read" });

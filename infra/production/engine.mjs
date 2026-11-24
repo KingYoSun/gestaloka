@@ -24,6 +24,7 @@ const RESTIC =
   "restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510";
 const TAR =
   "node:24.22.1-bookworm-slim@sha256:1681862882da07ee5476fee047bcf34138833f1df42633bb25bcb0f438d5bf3d";
+const resumableServices = ["worker", "caddy"];
 const digest = (s) => createHash("sha256").update(s).digest("hex");
 export function command(args, input, environment = process.env) {
   return new Promise((resolvePromise, reject) => {
@@ -302,6 +303,20 @@ export class BackupEngine {
     await this.save(`jobs/${job.id}.json`, job);
   }
   async freeze(job) {
+    const running = (
+      await this.compose(
+        "ps",
+        "--status",
+        "running",
+        "--services",
+        ...resumableServices,
+      )
+    )
+      .toString()
+      .split(/\s+/);
+    job.resumeServices = resumableServices.filter((service) =>
+      running.includes(service),
+    );
     await this.step(job, "実行中の応答を保存");
     const db = await this.pool.connect();
     try {
@@ -480,8 +495,10 @@ export class BackupEngine {
       "UPDATE runtime_control SET configuration=jsonb_set(configuration - 'worldEditsUntil','{paused}',$1::jsonb),version=version+1 WHERE singleton",
       [JSON.stringify(paused)],
     );
-    await this.compose("up", "-d", "--no-build", "worker", "caddy");
-    if (!paused && manifest.executions?.length)
+    const services = job.resumeServices ?? resumableServices;
+    if (services.length)
+      await this.compose("up", "-d", "--no-build", ...services);
+    if (!paused && services.includes("worker") && manifest.executions?.length)
       await this.compose(
         "exec",
         "-T",

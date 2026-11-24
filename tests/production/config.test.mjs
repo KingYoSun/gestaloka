@@ -167,6 +167,7 @@ test("送信済み応答の保存を待ってからワーカーとグラフを�
     const calls = [];
     engine.compose = async (...args) => {
       calls.push(args.join(" "));
+      return Buffer.from(args[0] === "ps" ? "worker\ncaddy\n" : "");
     };
     engine.pool.connect = async () => ({
       release() {},
@@ -193,14 +194,19 @@ test("送信済み応答の保存を待ってからワーカーとグラフを�
     const job = { id: randomUUID(), local: true },
       pending = engine.freeze(job);
     await draining;
-    assert.deepEqual(calls, ["stop caddy api"]);
+    assert.deepEqual(calls, [
+      "ps --status running --services worker caddy",
+      "stop caddy api",
+    ]);
     saved();
     await pending;
     assert.deepEqual(calls, [
+      "ps --status running --services worker caddy",
       "stop caddy api",
       "stop worker kratos hydra neo4j",
     ]);
     assert.equal(job.paused, false);
+    assert.deepEqual(job.resumeServices, ["worker", "caddy"]);
     assert.equal(job.executions.length, 1);
     assert.equal(job.quiesced, true);
   } finally {
