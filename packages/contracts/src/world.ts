@@ -200,7 +200,12 @@ export const WorldEdge = z
       ),
     period: Period,
     observation: Observation.optional(),
-    commandRestrictions: CommandRestrictions.optional(),
+    splitDescription: z
+      .strictObject({
+        originEdge: z.uuid().nullable(),
+        source: z.uuid(),
+      })
+      .optional(),
     stateOrigin: z
       .strictObject({
         requestId: z.uuid(),
@@ -209,6 +214,7 @@ export const WorldEdge = z
         affectsMovement: z.literal(true).optional(),
       })
       .optional(),
+    commandRestrictions: CommandRestrictions.optional(),
   })
   .strict()
   .refine(
@@ -220,6 +226,10 @@ export const WorldEdge = z
             edge.role !== "content" &&
             edge.role !== "about"),
     "status/interpretはcontent/about、hasは所在・利用・技能・要約の役割だけを持てます",
+  )
+  .refine(
+    (edge) => !edge.splitDescription || (edge.kind === "has" && !edge.role),
+    "取り分けた品の説明は所持の関係にだけ指定できます",
   )
   .refine(
     (edge) => edge.observation === undefined || edge.kind === "see",

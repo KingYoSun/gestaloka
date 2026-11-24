@@ -5,6 +5,7 @@ import { WorldStore, type WorldNode } from "@gestaloka/server/world";
 import {
   changeBelongings,
   readBelongings,
+  readItemDescription,
   type BelongingOp,
 } from "@gestaloka/server/belongings";
 import { locationRecords } from "../../packages/server/src/world/locations.js";
@@ -66,6 +67,99 @@ const summaries = async (worldId: string) =>
 beforeAll(async () => {
   await databases.verify();
   await store.setup();
+});
+test("取り分けた束は元の品の説明を引き継ぎ、既存の束に足すと受け取り先の説明が残る", async () => {
+  const { worldId, ids, apply, read } = await world("作り手", "買い手", "友人");
+  const [maker, buyer, friend] = ids as [string, string, string];
+  await apply(1, [
+    {
+      type: "create",
+      holder: maker,
+      label: "栞",
+      count: 5,
+      basis: "庭の葉を押して作った",
+    },
+  ]);
+  const original = (await read(maker)).items[0]!.id;
+  const state = randomUUID();
+  await store.commit(
+    await store.claim(worldId, randomUUID()),
+    store.context(worldId),
+    {
+      commitId: randomUUID(),
+      at: 2,
+      changes: {
+        nodes: [{ id: state, kind: "script", text: "銀の葉脈が透けて見える" }],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "content",
+            source: original,
+            target: state,
+            period: { from: 2 },
+          },
+        ],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  const move = (
+    at: number,
+    item: string,
+    from: string,
+    to: string,
+    count: number,
+  ) =>
+    apply(at, [{ type: "move", item, from, to, count, basis: "おすそ分け" }]);
+  const describe = async (actor: string, at: number) =>
+    readItemDescription(
+      store.context(worldId),
+      actor,
+      (await read(actor)).items[0]!.id,
+      at,
+    );
+  await move(3, original, maker, buyer, 3);
+  const split = (await read(buyer)).items[0]!.id;
+  await store.commit(
+    await store.claim(worldId, randomUUID()),
+    store.context(worldId),
+    {
+      commitId: randomUUID(),
+      at: 4,
+      changes: {
+        nodes: [],
+        edges: [],
+        endEdges: [],
+        revisions: [{ id: state, kind: "script", text: "葉脈に金を塗った" }],
+      },
+    },
+  );
+  await move(4, split, buyer, friend, 1);
+  const expected = {
+    origin: "庭の葉を押して作った",
+    states: [],
+    inherited: ["銀の葉脈が透けて見える"],
+    next: undefined,
+  };
+  expect(await describe(friend, 4)).toEqual(expected);
+  await apply(5, [
+    {
+      type: "create",
+      holder: maker,
+      label: "栞",
+      count: 2,
+      basis: "和紙を切って作った",
+    },
+  ]);
+  const paper = (await read(maker)).items.find(
+    (item) => item.id !== original,
+  )!.id;
+  // 別の由来の品を受け取り先の束へ加える。
+  await move(7, paper, maker, friend, 1);
+  expect((await read(friend)).items).toMatchObject([{ count: 2 }]);
+  expect(await describe(friend, 7)).toEqual(expected);
 });
 test("所在地は古いシーン時刻を補正し、旧所在地と参照を閉じて再送でも増やさない", async () => {
   const { worldId, ids, apply } = await world("人物", "室内", "門前"),

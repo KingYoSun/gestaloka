@@ -59,6 +59,8 @@ import {
   belongingEdges,
   heldItems,
   readBelongings,
+  readItemDescription,
+  type DescriptionCursor,
   readInventoryContents,
   visibleTo,
 } from "../world/belongings.js";
@@ -5563,6 +5565,21 @@ export class BotPlay {
       );
     await context.validate();
     return { visible, context };
+  }
+  async inventoryDescription(
+    world: string,
+    actor: string,
+    item: string,
+    cursor?: DescriptionCursor,
+  ) {
+    const context = this.store.context((await this.world(world)).id);
+    return readItemDescription(
+      context,
+      actor,
+      item,
+      this.now().getTime(),
+      cursor,
+    );
   }
   async inventoryContents(
     world: string,
