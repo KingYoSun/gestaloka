@@ -246,8 +246,8 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 24px 32px;
+  gap: 8px 20px;
+  padding: 12px 32px;
   border-bottom: 1px solid var(--border);
 }
 .brand {
@@ -273,7 +273,7 @@ select {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  gap: 4px 16px;
 }
 .site-header nav > a {
   min-height: 44px;
@@ -1147,7 +1147,7 @@ select {
     display: block;
   }
   .site-header {
-    padding: 16px 20px;
+    padding-inline: 20px;
     flex-wrap: wrap;
   }
   .brand {
