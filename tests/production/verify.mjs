@@ -214,11 +214,13 @@ const https = async (d, subdomain, path, method = "GET") =>
         port: d.config.httpsPort,
         path,
         method,
+        agent: false,
         headers: { host: `${host}:${d.config.httpsPort}` },
         rejectUnauthorized: false,
       },
       (response) => {
         let text = "";
+        response.on("error", reject);
         response.on("data", (c) => {
           text += c;
         });
@@ -230,6 +232,64 @@ const https = async (d, subdomain, path, method = "GET") =>
     request.setTimeout(5000, () => request.destroy(Error("HTTPS_TIMEOUT")));
     request.on("error", reject);
   });
+async function verifyApiRollout(deployment) {
+  const runningId = async (service) =>
+    (
+      await compose(
+        deployment,
+        "--profile",
+        "api-handoff",
+        "ps",
+        "--status",
+        "running",
+        "-q",
+        service,
+      )
+    )
+      .toString()
+      .trim();
+  const caddy = await runningId("caddy");
+  assert.ok(caddy);
+  const paths = [
+    ["api", "/api/health"],
+    ["play", "/api/health"],
+    ["play", "/"],
+  ];
+  for (const [previous, next] of [
+    ["api", "api-next"],
+    ["api-next", "api"],
+  ]) {
+    assert.ok(await runningId(previous));
+    assert.equal(await runningId(next), "");
+    let probing = true;
+    const failures = [];
+    const probe = async ([host, path]) => {
+      do {
+        try {
+          const page = await https(deployment, host, path);
+          assert.equal(page.status, 200);
+          if (path === "/api/health")
+            assert.equal(JSON.parse(page.text).status, "ok");
+        } catch (error) {
+          failures.push(`${host}${path}: ${error.message}`);
+        }
+        if (probing) await delay(100);
+      } while (probing);
+    };
+    const probes = Promise.all(paths.map(probe));
+    try {
+      await cli("rollout", deployment);
+      assert.ok(await runningId(next));
+      assert.equal(await runningId(previous), "");
+      assert.equal(await runningId("caddy"), caddy);
+    } finally {
+      probing = false;
+      await probes;
+    }
+    await Promise.all(paths.map(probe));
+    assert.deepEqual(failures, [], `${previous} → ${next}`);
+  }
+}
 try {
   for (const [role, httpPort, httpsPort] of [
     ["source", 24880, 24843],
@@ -286,6 +346,7 @@ try {
       }
       assert.equal(page.status, 200);
     }
+    if (role === "source") await verifyApiRollout(d);
     const discovery = JSON.parse(
       (await https(d, "api", "/.well-known/openid-configuration")).text,
     );

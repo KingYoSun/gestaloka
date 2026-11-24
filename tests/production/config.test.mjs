@@ -205,13 +205,13 @@ test("送信済み応答の保存を待ってからワーカーとグラフを�
     await draining;
     assert.deepEqual(calls, [
       "ps --status running --services worker caddy",
-      "stop caddy api",
+      "--profile api-handoff stop caddy api api-next",
     ]);
     saved();
     await pending;
     assert.deepEqual(calls, [
       "ps --status running --services worker caddy",
-      "stop caddy api",
+      "--profile api-handoff stop caddy api api-next",
       "stop worker kratos hydra neo4j",
     ]);
     assert.equal(job.paused, false);
@@ -264,7 +264,8 @@ test("メンテナンス中に通常稼働時のバックアップを復元し�
   const engine = new BackupEngine();
   const calls = [];
   engine.step = async () => {};
-  engine.compose = async (...args) => calls.push(args[0]);
+  engine.activeApi = async () => "api-next";
+  engine.compose = async (...args) => calls.push(args.join(" "));
   engine.pool = {
     query: async (statement, parameters) => {
       assert.match(statement, /configuration - 'worldEditsUntil'/);
@@ -275,7 +276,10 @@ test("メンテナンス中に通常稼働時のバックアップを復元し�
     { paused: true },
     { paused: false, executions: [{ kind: "scene", id: randomUUID() }] },
   );
-  assert.deepEqual(calls, ["up", "up"]);
+  assert.deepEqual(calls, [
+    "--profile api-handoff up -d --no-build --wait postgres identity-postgres neo4j kratos hydra api-next",
+    "up -d --no-build worker caddy",
+  ]);
 });
 test("2 GiBを超えるダンプをファイル記述子で渡し、取得と復元でハッシュを確認する", async () => {
   const root = await mkdtemp(join(tmpdir(), "gestaloka-large-backup-"));
