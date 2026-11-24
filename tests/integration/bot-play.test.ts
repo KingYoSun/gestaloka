@@ -15239,6 +15239,66 @@ test("リスポーンが有効な世界でも、作成時に無効を選んだ�
   ]);
 });
 
+test("管理者が既存の人物のリスポーンを無効にすると次の死亡で戻らない", async () => {
+  const f = await fixture();
+  const [actor, disabled, normal] = f.actors as [string, string, string];
+  const db = isolated.databases.postgres;
+  const admin = await auth.person();
+  await db.query(
+    "UPDATE world_construction SET death_place_id=$2 WHERE id=$1",
+    [f.world, f.far],
+  );
+  expect(
+    (await db.query("SELECT 1 FROM world_join WHERE actor_id=$1", [disabled]))
+      .rowCount,
+  ).toBe(0);
+  await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    {
+      operation: "worlds.disableActorRespawn",
+      worldId: f.world,
+      actorId: disabled,
+      reason: "死亡後に復帰しない人物として遊ぶため",
+    },
+    { players: access.players },
+  );
+
+  await f.move(2, f.place);
+  await f.send(1, { command: "contact", targetId: actor });
+  await f.send(2, { command: "contact", targetId: actor });
+  for (const targetId of [disabled, normal]) {
+    f.calls.mockImplementationOnce(async (id) =>
+      answer(id, { ...sure, fatal: [targetId] }),
+    );
+    const result = await f.send(0, {
+      command: "apply",
+      expectedSp: 1,
+      dependencies: [],
+      action: {
+        type: "oppose",
+        targetId,
+        text: "致命的な結果となる対抗をする",
+        description: "相手が死亡する。",
+      },
+    });
+    expect(result.outcome).toMatchObject({
+      success: true,
+      setting: { fatal: [targetId] },
+    });
+  }
+  await expect(f.send(1, { command: "start" })).rejects.toMatchObject({
+    code: "ACTOR_DEAD",
+  });
+  expect(await directPlaces(f.store.context(f.graph), disabled)).toEqual([
+    f.place,
+  ]);
+  expect(await directPlaces(f.store.context(f.graph), normal)).toEqual([f.far]);
+  expect((await f.status(2)).characters?.map((c) => c.actorId)).toEqual([
+    normal,
+  ]);
+});
+
 test("リスポーン無効時は死亡した人物の履歴を保持して操作を止め、同じ利用者が新しい人物で参加できる", async () => {
   const f = await fixture(2);
   const [actor, victim] = f.actors as [string, string];

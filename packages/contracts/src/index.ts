@@ -1509,6 +1509,14 @@ export const Operation = z.discriminatedUnion("operation", [
     .strict(),
   z
     .object({
+      operation: z.literal("worlds.disableActorRespawn"),
+      worldId: z.uuid(),
+      actorId: z.uuid(),
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({
       operation: z.literal("worlds.configure"),
       worldId: z.uuid(),
       dailySpLimit: z

@@ -772,7 +772,12 @@ test("限定対象・scopeの縮小・一般ユーザー・別audienceを共通�
   const world = await create(),
     other = await create(),
     { principal, token } = await delegation(
-      ["worlds.list", "worlds.read", "costs.read"],
+      [
+        "worlds.list",
+        "worlds.read",
+        "costs.read",
+        "worlds.disableActorRespawn",
+      ],
       [world],
     );
   const invoke = (command: Parameters<typeof auth.operations.execute>[2]) =>
@@ -786,6 +791,14 @@ test("限定対象・scopeの縮小・一般ユーザー・別audienceを共通�
   await invoke({ operation: "worlds.read", worldId: world });
   await expect(
     invoke({ operation: "worlds.read", worldId: other }),
+  ).rejects.toMatchObject({ code: "MCP_TARGET_DENIED" });
+  await expect(
+    invoke({
+      operation: "worlds.disableActorRespawn",
+      worldId: other,
+      actorId: randomUUID(),
+      reason: "対象外の世界では変更できないことを確かめる",
+    }),
   ).rejects.toMatchObject({ code: "MCP_TARGET_DENIED" });
   const q = {
     from: "2020-01-01T00:00:00Z",

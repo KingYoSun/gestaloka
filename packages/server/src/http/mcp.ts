@@ -124,6 +124,7 @@ export class McpAuthorization {
       "worlds.graph",
       "worlds.edit",
       "worlds.configure",
+      "worlds.disableActorRespawn",
       "worlds.join",
       "worlds.resumeJoin",
       "worldBudgets.read",

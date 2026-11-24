@@ -8238,6 +8238,14 @@ export interface paths {
                             joinId: string;
                         } | {
                             /** @enum {string} */
+                            operation: "worlds.disableActorRespawn";
+                            /** Format: uuid */
+                            worldId: string;
+                            /** Format: uuid */
+                            actorId: string;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
                             operation: "worlds.configure";
                             /** Format: uuid */
                             worldId: string;
