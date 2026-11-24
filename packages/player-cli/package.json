@@ -1,6 +1,6 @@
 {
   "name": "@gestaloka/player-cli",
-  "version": "1.21.6",
+  "version": "1.21.7",
   "type": "module",
   "description": "GESTALOKAの世界に参加し、同じ人物でプレイを続けるCLI",
   "license": "UNLICENSED",
