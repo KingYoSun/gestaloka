@@ -201,7 +201,7 @@ export function Publication({
           checked={value.playerList}
           onChange={(e) => set({ ...value, playerList: e.target.checked })}
         />{" "}
-        いま出会えるプレイヤーと居場所の一覧を参加者へ提供する
+        いま出会えるフレンドと居場所の一覧を参加者へ提供する
       </Label>
       <Label htmlFor="public-instant-npc-multiplier">
         出現個体の同席上限（発生数の何倍まで）

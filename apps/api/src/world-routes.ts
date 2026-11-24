@@ -15,6 +15,8 @@ import {
   PlayerReportInput,
   PlayerReportStatus,
   PlayerNotices,
+  FriendCommand,
+  FriendResult,
   ViewersInput,
   ViewersResult,
   PlayerReportReceipt,
@@ -115,6 +117,7 @@ export async function worldRoutes(
         "/api/worlds/:id/stories",
         "/api/worlds/:id/notices",
         "/api/worlds/:id/viewers",
+        "/api/worlds/:id/friends",
         "/api/worlds/:id/npc-promotions",
         "/api/worlds/:id/scene/records",
         "/api/worlds/:id/knowledge",
@@ -692,6 +695,24 @@ export async function worldRoutes(
       service().notices(
         await subject(request),
         request.params.id,
+        request.query.actorId,
+      ),
+  );
+  app.post(
+    "/api/worlds/:id/friends",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: ActorQuery,
+        body: FriendCommand,
+        response: { 200: FriendResult, ...errors },
+      },
+    },
+    async (request) =>
+      service().friend(
+        await subject(request),
+        request.params.id,
+        request.body,
         request.query.actorId,
       ),
   );

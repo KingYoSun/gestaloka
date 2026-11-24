@@ -21,6 +21,7 @@ import {
   WorldPlayerPage,
   PlayerReportInput,
   PlayerNotices,
+  FriendCommand,
   InventoryContents,
   InventoryContentsQuery,
   InventoryBundleCommand,
@@ -366,6 +367,7 @@ async function send(
   return {
     ...(saved.path.endsWith("/session") ||
     saved.path.endsWith("/stories") ||
+    saved.path.endsWith("/friends") ||
     saved.path.endsWith("/inventory/bundles")
       ? {}
       : await status(profile).catch((error) => {
@@ -431,7 +433,13 @@ async function run() {
           ]),
     );
   journal = `${profilePath}.requests`;
-  const grouped = ["team", "companion", "vehicle", "stories"].includes(command);
+  const grouped = [
+    "team",
+    "companion",
+    "vehicle",
+    "stories",
+    "friend",
+  ].includes(command);
   if (positionals.length > (grouped ? 2 : 1))
     throw new Error("コマンドは1つ指定してください（helpを参照）");
   if (command === "version")
@@ -782,6 +790,22 @@ async function run() {
     return submit(
       profile,
       `/api/worlds/${profile.worldId}/inventory/bundles`,
+      input,
+      true,
+      id,
+    );
+  }
+  if (command === "friend") {
+    const id = randomUUID();
+    const input = FriendCommand.parse({
+      requestId: id,
+      action: positionals[1],
+      ...(values.target && { targetId: values.target }),
+      ...(values.offer && { offerId: values.offer }),
+    });
+    return submit(
+      profile,
+      `/api/worlds/${profile.worldId}/friends`,
       input,
       true,
       id,

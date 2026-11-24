@@ -6,9 +6,10 @@ import type {
   InventoryBundleCommand,
   PlayerReportInput,
   ViewersInput,
+  FriendCommand,
 } from "@gestaloka/contracts";
 import type { NpcModeCommand } from "@gestaloka/contracts";
-import { RuntimeStopped } from "../runtime/control.js";
+import { RuntimeControl, RuntimeStopped } from "../runtime/control.js";
 import { PlayerDevices } from "./player-devices.js";
 import { Stories, setupStories } from "./stories.js";
 import { McpOrigin } from "./mcp-origin.js";
@@ -111,6 +112,7 @@ export class WorldAccess {
       END $$;
       CREATE UNIQUE INDEX IF NOT EXISTS world_access_admin ON world_access(subject_id,construction_id) WHERE role='admin';
       CREATE UNIQUE INDEX IF NOT EXISTS world_access_player ON world_access(subject_id,construction_id,actor_id) WHERE role='player';
+      CREATE INDEX IF NOT EXISTS world_access_actor ON world_access(construction_id,actor_id,subject_id) WHERE role='player';
       CREATE OR REPLACE FUNCTION guard_subject_grants() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
         PERFORM id FROM world_subject WHERE id=CASE WHEN TG_OP='DELETE' THEN OLD.subject_id ELSE NEW.subject_id END FOR SHARE;
@@ -265,6 +267,31 @@ export class WorldAccess {
         string,
         unknown
       >,
+    );
+  }
+  async friend(
+    subject: string,
+    id: string,
+    input: z.infer<typeof FriendCommand>,
+    actorId?: string,
+  ) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    const actor = grant.actor_id!;
+    return this.#accept(
+      subject,
+      input.requestId,
+      { operation: "friend", worldId: id, actorId: actor, input },
+      "player",
+      async (db) => {
+        await RuntimeControl.check(db, { userId: subject }, true);
+        return this.botPlay.friend(db, id, actor, input);
+      },
     );
   }
   async setViewers(
@@ -1421,7 +1448,7 @@ export class WorldAccess {
       "通常プレイは/api/worlds/:id/sessionと新しいCLIを利用してください。",
     );
   }
-  // 運営者が世界ごとに有効にした場合だけ、いま出会えるプレイヤーと居場所を返す。
+  // 運営者が世界ごとに有効にした場合だけ、いま出会えるフレンドと居場所を返す。
   async partners(
     subject: string,
     id: string,
