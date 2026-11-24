@@ -3432,6 +3432,16 @@ export interface paths {
                             feature?: "vehicle";
                         } | {
                             /** @enum {string} */
+                            type: "state";
+                            /** @enum {string} */
+                            operation: "end";
+                            /** Format: uuid */
+                            targetId: string;
+                            text: string;
+                            endStateIds: string[];
+                            description?: string;
+                        } | {
+                            /** @enum {string} */
                             type: "oppose";
                             text: string;
                             /** Format: uuid */

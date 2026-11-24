@@ -161,7 +161,7 @@ const Generation = z.strictObject({
   materials,
   operation: z.union(generationOperations),
 });
-export const WorldApplication = z.discriminatedUnion("type", [
+export const WorldApplication = z.xor([
   z.strictObject({
     type: z.literal("direct"),
     text,
@@ -222,6 +222,14 @@ export const WorldApplication = z.discriminatedUnion("type", [
     minutes: count.optional(),
     affectsMovement: z.literal(true).optional(),
     feature: z.literal("vehicle").optional(),
+  }),
+  z.strictObject({
+    type: z.literal("state"),
+    operation: z.literal("end"),
+    targetId: id,
+    text,
+    endStateIds: z.array(id).nonempty(),
+    description: text.optional(),
   }),
   z.strictObject({
     type: z.literal("oppose"),

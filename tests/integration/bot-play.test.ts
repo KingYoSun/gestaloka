@@ -7284,6 +7284,145 @@ test.each([false, true])(
   },
 );
 
+test("CLIで複数の短縮IDを指定すると、その状態だけを新しい状態なしで終了する", async () => {
+  const f = await fixture(1);
+  const actor = f.actors[0]!;
+  const changes: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  const ended = ["濡れた袖", "濡れた裾"];
+  const kept = "袖に縫い跡がある";
+  for (const state of [...ended, kept]) mark(changes, actor, state);
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    { commitId: randomUUID(), at: 0, changes },
+  );
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  try {
+    const profile = join(cli.directory, "state.json");
+    const run = (...args: string[]) => cli.run(profile, ...args);
+    const connection = await run(
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (
+        await cli.approve(
+          f.people[0]!.cookie,
+          connection.userCode,
+          `actor:${actor}`,
+        )
+      ).statusCode,
+    ).toBe(302);
+    const read = async () => {
+      const { result } = await run("search", "--kind", "self");
+      return result.material.states as {
+        node: { text: string };
+        relation: { id: string };
+      }[];
+    };
+    const before = await read();
+    const endStateIds = ended.map(
+      (label) => before.find(({ node }) => node.text === label)!.relation.id,
+    );
+    for (const id of endStateIds) expect(id).toMatch(/^@/);
+    const file = join(cli.directory, "end.json");
+    const request = {
+      command: "apply",
+      action: {
+        type: "state",
+        operation: "end",
+        targetId: actor,
+        text: "服の水気を拭き取る",
+        description: "袖と裾が乾いた",
+        endStateIds,
+      },
+      dependencies: [],
+    };
+    await writeFile(file, JSON.stringify(request));
+    const quote = await run("play", "--file", file, "--quote");
+    expect(quote).toEqual({ expectedSp: 1 });
+    expect(f.calls).not.toHaveBeenCalled();
+    f.calls.mockImplementationOnce(async (id, role) => {
+      expect(role).toBe("world-creation-dice");
+      return answer(id, {
+        ...sure,
+        endEdges: [changes.edges[0]!.id, changes.edges[2]!.id],
+      });
+    });
+    await writeFile(file, JSON.stringify({ ...request, ...quote }));
+    expect(await run("play", "--file", file)).toMatchObject({
+      result: { state: "accepted", spentSp: 1, outcome: { success: true } },
+    });
+    expect((await read()).map(({ relation }) => relation.id).sort()).toEqual(
+      before
+        .map(({ relation }) => relation.id)
+        .filter((id) => !endStateIds.includes(id))
+        .sort(),
+    );
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
+
+test("現在地の現行状態は説明なしで終了でき、異なる対象や終了済みの状態は指定できない", async () => {
+  const f = await fixture(1);
+  const changes: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  mark(changes, f.place, "広場に掲示がある", [{ id: f.far }]);
+  mark(changes, f.actors[0]!, "袖に汚れがある");
+  const [current, about, other] = changes.edges.map((edge) => edge.id);
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    { commitId: randomUUID(), at: 0, changes },
+  );
+  const requestId = randomUUID();
+  const apply = (endStateIds: string[], id = randomUUID()) =>
+    f.send(0, {
+      command: "apply",
+      requestId: id,
+      expectedSp: 1,
+      action: {
+        type: "state",
+        operation: "end",
+        targetId: f.place,
+        text: "掲示を外す",
+        endStateIds,
+      },
+      dependencies: [],
+    });
+  await expect(apply([current!, other!])).rejects.toMatchObject({
+    code: "STATE_TARGET_CHANGED",
+  });
+  expect(f.calls).not.toHaveBeenCalled();
+  f.calls.mockImplementationOnce(async (id, role) => {
+    expect(role).toBe("world-creation-dice");
+    return answer(id, sure);
+  });
+  const result = await apply([current!], requestId);
+  expect(result).toMatchObject({ spentSp: 1, outcome: { success: true } });
+  expect((await f.store.receipt(f.graph, requestId))?.changes).toEqual({
+    nodes: [],
+    revisions: [],
+    edges: [],
+    endEdges: [current, about],
+  });
+  await expect(apply([current!], requestId)).resolves.toEqual(result);
+  await expect(apply([current!])).rejects.toMatchObject({
+    code: "STATE_TARGET_CHANGED",
+  });
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
 test("場所への作用は1 SPで確定し、後続の移動は追加SPを使わず条件を判定する", async () => {
   const f = await fixture(6);
   const changes: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
