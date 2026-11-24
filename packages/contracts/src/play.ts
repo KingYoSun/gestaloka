@@ -835,6 +835,24 @@ export function playQuote(
   }
   return { expectedSp: 0, chargeWhen: "never" };
 }
+export const FriendCommand = z.union([
+  z
+    .object({ ...request, action: z.enum(["propose", "remove"]), targetId: id })
+    .strict(),
+  z
+    .object({
+      ...request,
+      action: z.enum(["accept", "decline", "withdraw"]),
+      offerId: id,
+    })
+    .strict(),
+]);
+export const FriendResult = z.object({
+  offerId: id,
+  proposerId: id,
+  recipientId: id,
+  state: z.enum(["pending", "accepted", "declined", "withdrawn", "removed"]),
+});
 export const ViewersInput = z
   .object({
     ...request,

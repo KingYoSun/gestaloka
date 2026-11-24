@@ -6531,6 +6531,163 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/worlds/{id}/friends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: {
+                    actorId?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        action: "propose" | "remove";
+                        /** Format: uuid */
+                        targetId: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        action: "accept" | "decline" | "withdraw";
+                        /** Format: uuid */
+                        offerId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            offerId: string;
+                            /** Format: uuid */
+                            proposerId: string;
+                            /** Format: uuid */
+                            recipientId: string;
+                            /** @enum {string} */
+                            state: "pending" | "accepted" | "declined" | "withdrawn" | "removed";
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/worlds/{id}/viewers": {
         parameters: {
             query?: never;
@@ -9230,7 +9387,7 @@ export interface paths {
                             playerSettings?: string;
                             published: boolean;
                             accepting: boolean;
-                            /** @description いま出会えるプレイヤーと居場所の一覧（players）を参加者へ提供する。省略すると現在の設定を保つ */
+                            /** @description いま出会えるフレンドと居場所の一覧（players）を参加者へ提供する。省略すると現在の設定を保つ */
                             playerList?: boolean;
                             /** @description 検索で出現した個体が同じ場所に同時に同席できる数を、発生用ノードの発生数（maxCount、旧形式はcount）の何倍までにするか。既定は2。省略すると現在の設定を保つ */
                             instantNpcMultiplier?: number;

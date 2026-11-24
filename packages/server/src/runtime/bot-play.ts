@@ -20,6 +20,8 @@ import {
   type ItemOutcome,
   PlaySearch,
   PlayerNotices,
+  type FriendCommand,
+  FriendResult,
   ViewersInput,
   CommandRestrictions,
   type CommandRestriction,
@@ -1236,6 +1238,13 @@ export class BotPlay {
       id uuid PRIMARY KEY,actor_id uuid NOT NULL,world_id uuid NOT NULL,hash text NOT NULL,result jsonb,outcome jsonb);
       ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS prepared_turn text;
       ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS status_dependencies jsonb;
+      CREATE TABLE IF NOT EXISTS player_friend (
+        id uuid PRIMARY KEY,world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
+        proposer uuid NOT NULL,recipient uuid NOT NULL,accepted boolean NOT NULL DEFAULT false,
+        CHECK(proposer<>recipient));
+      CREATE UNIQUE INDEX IF NOT EXISTS player_friend_pair ON player_friend(world_id,least(proposer,recipient),greatest(proposer,recipient));
+      CREATE INDEX IF NOT EXISTS player_friend_out ON player_friend(world_id,proposer,recipient) WHERE accepted;
+      CREATE INDEX IF NOT EXISTS player_friend_in ON player_friend(world_id,recipient,proposer) WHERE accepted;
       CREATE TABLE IF NOT EXISTS bot_stealth (
       world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
       actor_id uuid NOT NULL,id uuid NOT NULL UNIQUE,place_id uuid NOT NULL,discovered uuid[] NOT NULL,
@@ -1485,7 +1494,97 @@ export class BotPlay {
       )
     ).rows;
   }
-  // 接触を受けられる待機中のプレイヤーと、その直接の滞在先。照会者の所在地は問わない。
+  async friend(
+    db: Db,
+    world: string,
+    actor: string,
+    input: z.infer<typeof FriendCommand>,
+  ) {
+    const columns =
+      'id AS "offerId",proposer AS "proposerId",recipient AS "recipientId",accepted';
+    let row;
+    let state: z.infer<typeof FriendResult>["state"];
+    if (input.action === "propose") {
+      if (
+        actor === input.targetId ||
+        !(
+          await db.query(
+            `SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id AND s.active
+           JOIN app_user u ON u.id=s.user_id AND NOT u.banned
+           WHERE a.construction_id=$1 AND a.role='player' AND a.actor_id=$3
+           AND NOT EXISTS(SELECT 1 FROM bot_npc WHERE world_id=$1 AND actor_id IN ($2,$3)) LIMIT 1`,
+            [world, actor, input.targetId],
+          )
+        ).rowCount
+      )
+        reject(
+          "FRIEND_TARGET_REQUIRED",
+          "同じ世界のほかのプレイヤーを指定してください",
+        );
+      const offerId = randomUUID();
+      row = (
+        await db.query(
+          `INSERT INTO player_friend(id,world_id,proposer,recipient) VALUES($1,$2,$3,$4)
+           ON CONFLICT(world_id,least(proposer,recipient),greatest(proposer,recipient))
+           DO UPDATE SET accepted=player_friend.accepted RETURNING ${columns}`,
+          [offerId, world, actor, input.targetId],
+        )
+      ).rows[0]!;
+      state = row.accepted ? "accepted" : "pending";
+      if (row.offerId === offerId) {
+        const name =
+          (
+            await this.store
+              .context((await this.world(world, db)).id)
+              .node(actor)
+          )?.text ?? "人物";
+        await this.#playerNotice(
+          db,
+          world,
+          input.targetId,
+          row.offerId,
+          `${name}からフレンド登録の提案が届きました。この通知のidを --offer に指定し、friend accept で受領、friend decline で辞退できます。`,
+        );
+      }
+    } else {
+      const params = [
+        world,
+        actor,
+        "targetId" in input ? input.targetId : input.offerId,
+      ];
+      const actions = {
+        accept: [
+          "accepted",
+          "UPDATE player_friend SET accepted=true WHERE world_id=$1 AND recipient=$2 AND id=$3 AND NOT accepted",
+        ],
+        decline: [
+          "declined",
+          "DELETE FROM player_friend WHERE world_id=$1 AND recipient=$2 AND id=$3 AND NOT accepted",
+        ],
+        withdraw: [
+          "withdrawn",
+          "DELETE FROM player_friend WHERE world_id=$1 AND proposer=$2 AND id=$3 AND NOT accepted",
+        ],
+        remove: [
+          "removed",
+          `DELETE FROM player_friend WHERE world_id=$1 AND accepted
+            AND least(proposer,recipient)=least($2::uuid,$3::uuid)
+            AND greatest(proposer,recipient)=greatest($2::uuid,$3::uuid)`,
+        ],
+      } as const;
+      const [outcome, mutation] = actions[input.action];
+      state = outcome;
+      row = (await db.query(`${mutation} RETURNING ${columns}`, params))
+        .rows[0];
+      if (!row)
+        reject(
+          "FRIEND_NOT_AVAILABLE",
+          "この操作の対象となるフレンドまたは提案がありません",
+        );
+    }
+    return FriendResult.parse({ ...row, state });
+  }
+  // 接触を受けられる待機中のフレンドと、その直接の滞在先。
   async players(world: string, actor: string, before?: string) {
     return this.#withWorldReadLock(world, async (db) => {
       const rows = await this.#waitingPlayers(
@@ -1568,12 +1667,16 @@ export class BotPlay {
   ) {
     return (
       await db.query<{ actor_id: string }>(
-        `SELECT DISTINCT p.actor_id FROM player_waiting p JOIN app_user u ON u.id=p.user_id AND NOT u.banned
-      WHERE p.world_id=$1 AND p.actor_id<>$2 AND p.active AND p.last_seen>=$3 AND ($4::uuid IS NULL OR p.actor_id<$4)
-      AND ($5::uuid[] IS NULL OR p.actor_id=ANY($5))
-      AND EXISTS(SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id WHERE a.construction_id=$1 AND a.actor_id=p.actor_id AND a.role='player' AND s.user_id=p.user_id AND s.active)
-      AND NOT EXISTS(SELECT 1 FROM bot_npc n WHERE n.world_id=$1 AND n.actor_id=p.actor_id)
-      ORDER BY p.actor_id DESC LIMIT 51`,
+        `SELECT f.actor_id FROM (
+        SELECT recipient AS actor_id FROM player_friend WHERE world_id=$1 AND proposer=$2 AND accepted
+        UNION ALL SELECT proposer FROM player_friend WHERE world_id=$1 AND recipient=$2 AND accepted
+      ) f WHERE ($4::uuid IS NULL OR f.actor_id<$4) AND ($5::uuid[] IS NULL OR f.actor_id=ANY($5))
+      AND EXISTS(SELECT 1 FROM player_waiting p JOIN app_user u ON u.id=p.user_id AND NOT u.banned
+        JOIN world_subject s ON s.user_id=p.user_id AND s.active
+        JOIN world_access a ON a.subject_id=s.id AND a.construction_id=$1 AND a.actor_id=f.actor_id AND a.role='player'
+        WHERE p.world_id=$1 AND p.actor_id=f.actor_id AND p.active AND p.last_seen>=$3)
+      AND NOT EXISTS(SELECT 1 FROM bot_npc n WHERE n.world_id=$1 AND n.actor_id=f.actor_id)
+      ORDER BY f.actor_id DESC LIMIT 51`,
         [
           world,
           actor,
@@ -1849,20 +1952,29 @@ export class BotPlay {
         `通知を届けられない人物です: ${missing.join(", ")}`,
       );
     for (const actor of targets)
-      await db.query(
-        `WITH inserted AS (
-           INSERT INTO player_notice(id,world_id,actor_id,created_at,text)
-           VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING actor_id
-         ) SELECT pg_notify('gestaloka_turn',$2::text||':'||actor_id::text) FROM inserted`,
-        [
-          derivedId(`${requestId}:notice:${actor}`),
-          world,
-          actor,
-          this.now(),
-          text,
-        ],
+      await this.#playerNotice(
+        db,
+        world,
+        actor,
+        derivedId(`${requestId}:notice:${actor}`),
+        text,
       );
     return { actorIds: targets };
+  }
+  async #playerNotice(
+    db: Db,
+    world: string,
+    actor: string,
+    id: string,
+    text: string,
+  ) {
+    await db.query(
+      `WITH inserted AS (
+         INSERT INTO player_notice(id,world_id,actor_id,created_at,text)
+         VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING actor_id
+       ) SELECT pg_notify('gestaloka_turn',$2::text||':'||actor_id::text) FROM inserted`,
+      [id, world, actor, this.now(), text],
+    );
   }
   async world(id: string, db: Db = this.pool) {
     const row = (
@@ -2122,6 +2234,11 @@ export class BotPlay {
         ]);
         nonCombatAreas = policy.areas;
         protectedTarget = policy.protectedActors.has(effect.targetId);
+        if (playerRequest && !npc && protectedTarget)
+          reject(
+            "NON_COMBAT_AREA",
+            "相手は非戦闘地域にいるため、対抗行動はできません",
+          );
         const protectedActor = policy.protectedActors.has(actorId);
         const subjects = person && !protectedTarget ? [effect.targetId] : [];
         const facts = victim

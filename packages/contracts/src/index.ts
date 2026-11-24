@@ -37,6 +37,8 @@ export {
   PlayerReportStatus,
   PlayerReportReceipt,
   PlayerNotices,
+  FriendCommand,
+  FriendResult,
   ViewersInput,
   ViewersResult,
   WaitingCommand,
@@ -1557,7 +1559,7 @@ export const Operation = z.discriminatedUnion("operation", [
         .boolean()
         .optional()
         .describe(
-          "いま出会えるプレイヤーと居場所の一覧（players）を参加者へ提供する。省略すると現在の設定を保つ",
+          "いま出会えるフレンドと居場所の一覧（players）を参加者へ提供する。省略すると現在の設定を保つ",
         ),
       instantNpcMultiplier: z
         .number()
