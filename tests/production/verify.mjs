@@ -148,6 +148,10 @@ try {
       );
     }
     await cli("up", d);
+    const [api] = JSON.parse(
+      await command(["inspect", `${d.config.name}-api-1`]),
+    );
+    assert.equal(api.Config.StopTimeout, 240);
     for (const host of ["play", "admin", "api"]) {
       let page;
       for (let i = 0; ; i++) {
