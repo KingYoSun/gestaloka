@@ -16,7 +16,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { parseEnv } from "node:util";
 import { BackupConfiguration, Operation } from "@gestaloka/contracts";
 import { seal, unseal } from "../../packages/server/dist/secrets.js";
-import { keyNames, renderDeployment } from "./config.mjs";
+import { apiService, keyNames, renderDeployment } from "./config.mjs";
 
 const require = createRequire(
   new URL("../../packages/server/package.json", import.meta.url),
@@ -58,6 +58,27 @@ export function command(
     child.stdin?.end(input);
   });
 }
+export async function deploymentLock(file, seconds = 0) {
+  const lock = await open(file, "r");
+  let acquired;
+  try {
+    // flock uses the inherited file description, which stays open in Node.
+    acquired = await new Promise((resolvePromise, reject) => {
+      const child = spawn("flock", ["-w", String(seconds), "-E", "75", "3"], {
+        stdio: ["ignore", "ignore", "ignore", lock.fd],
+      });
+      child.on("error", reject);
+      child.on("exit", (code) => {
+        if (code === 0 || code === 75) resolvePromise(code === 0);
+        else reject(new Error("DEPLOYMENT_LOCK_FAILED"));
+      });
+    });
+    if (acquired) return lock;
+  } finally {
+    if (!acquired) await lock.close();
+  }
+}
+
 export class BackupEngine {
   constructor(root = "/state", run = command) {
     this.root = resolve(root);
@@ -361,7 +382,14 @@ export class BackupEngine {
     // Persist the previous state before stopping the API; the controller does not depend on it.
     job.quiesced = true;
     await this.step(job, "新規接続を停止");
-    await this.compose("stop", "caddy", "api");
+    await this.compose(
+      "--profile",
+      "api-handoff",
+      "stop",
+      "caddy",
+      "api",
+      "api-next",
+    );
     await this.authorize(job);
     for (;;) {
       const { n } = (
@@ -482,11 +510,19 @@ export class BackupEngine {
       { mode: 0o600 },
     );
   }
+  async activeApi() {
+    return apiService(
+      await readFile("/configuration/public/Caddyfile", "utf8"),
+    );
+  }
   async thaw(job, manifest = job) {
     const paused = job.paused || (manifest.paused ?? true);
+    const api = await this.activeApi();
     await this.step(job, "サービスを再起動");
     // Recreated processes read restored encryption keys; networking and controller credentials stay local.
     await this.compose(
+      "--profile",
+      "api-handoff",
       "up",
       "-d",
       "--no-build",
@@ -496,7 +532,7 @@ export class BackupEngine {
       "neo4j",
       "kratos",
       "hydra",
-      "api",
+      api,
     );
     await this.pool.query(
       "UPDATE runtime_control SET configuration=jsonb_set(configuration - 'worldEditsUntil','{paused}',$1::jsonb),version=version+1 WHERE singleton",
@@ -507,9 +543,11 @@ export class BackupEngine {
       await this.compose("up", "-d", "--no-build", ...services);
     if (!paused && services.includes("worker") && manifest.executions?.length)
       await this.compose(
+        "--profile",
+        "api-handoff",
         "exec",
         "-T",
-        "api",
+        api,
         "node",
         "infra/production/resume.mjs",
         JSON.stringify(manifest.executions),
@@ -714,26 +752,6 @@ export class BackupEngine {
     });
     await rm(join(this.root, "staging"), { recursive: true, force: true });
   }
-  async deploymentLock() {
-    const lock = await open("/deploy.lock", "r");
-    let acquired;
-    try {
-      // flock uses the inherited file description, which stays open in Node.
-      acquired = await new Promise((resolvePromise, reject) => {
-        const child = spawn("flock", ["-n", "-E", "75", "3"], {
-          stdio: ["ignore", "ignore", "ignore", lock.fd],
-        });
-        child.on("error", reject);
-        child.on("exit", (code) => {
-          if (code === 0 || code === 75) resolvePromise(code === 0);
-          else reject(new Error("DEPLOYMENT_LOCK_FAILED"));
-        });
-      });
-      if (acquired) return lock;
-    } finally {
-      if (!acquired) await lock.close();
-    }
-  }
   async tick() {
     if (this.busy) return;
     this.busy = true;
@@ -793,7 +811,7 @@ export class BackupEngine {
         const lock =
           current.operation === "backups.configure"
             ? null
-            : await this.deploymentLock();
+            : await deploymentLock("/deploy.lock");
         if (lock === undefined) continue;
         try {
           current.state = "running";

@@ -26,7 +26,15 @@ export const keyNames = [
   "HYDRA_PAIRWISE_SALT",
 ];
 
-function caddy(config, env) {
+export function apiService(caddyfile) {
+  return caddyfile.startsWith("# api-next\n") ? "api-next" : "api";
+}
+
+export function caddy(
+  config,
+  env,
+  { api = "api", web = "/srv", initializing = false } = {},
+) {
   const tlsMode = z
     .enum(["auto", "internal"])
     .parse(
@@ -43,17 +51,30 @@ https://${host} {
   @auth path /auth/*
   redir @auth ${env.ORY_KRATOS_PUBLIC_URL}{uri} 303
   handle /api/* {
-    reverse_proxy api:3000
+    reverse_proxy ${api}:3000
   }
   handle {
-    root * /srv/${root}
+    root * ${web}/${root}
     try_files {path} /index.html
     file_server
   }
 }`;
-  return `{
+  return `# ${initializing ? "initializing" : api}
+{
   admin off
   auto_https disable_redirects
+}
+http://:3000 {
+  bind 0.0.0.0
+  @probe {
+    remote_ip 127.0.0.1
+    path /
+  }
+  respond @probe ${api}
+  handle /internal/auth/invitation {
+    reverse_proxy ${api}:3000
+  }
+  respond 404
 }
 ${frontend(`play.${config.domain}`, env.ORY_APP_URL, "user")}
 ${frontend(`admin.${config.domain}`, env.ORY_ADMIN_APP_URL, "admin")}
@@ -73,7 +94,7 @@ https://api.${config.domain} {
       method POST
       path /self-service/login /self-service/registration
     }
-    forward_auth @attempt api:3000 {
+    forward_auth @attempt ${api}:3000 {
       uri /internal/auth/attempt
     }
     reverse_proxy kratos:4433
@@ -83,7 +104,7 @@ https://api.${config.domain} {
     reverse_proxy hydra:4444
   }
   handle {
-    reverse_proxy api:3000
+    reverse_proxy ${api}:3000
   }
 }
 `;
@@ -143,7 +164,7 @@ export async function renderDeployment(directory) {
     await mkdir(join(root, folder), { recursive: true, mode: 0o750 });
   const { kratos, hydra } = oryConfiguration({
     ...env,
-    ORY_APP_INTERNAL_URL: "http://api:3000",
+    ORY_APP_INTERNAL_URL: "http://caddy:3000",
   });
   hydra.urls.identity_provider.publicUrl = api;
   for (const [name, value] of Object.entries({ kratos, hydra }))

@@ -62,7 +62,7 @@ services:
     networks: [private, ingress]
     restart: unless-stopped
 
-  api:
+  api: &api
     <<: *app
     depends_on:
       postgres: { condition: service_healthy }
@@ -81,13 +81,15 @@ services:
       timeout: 5s
       retries: 30
 
+  api-next:
+    <<: *api
+    profiles: [api-handoff]
+
   worker:
     <<: *app
     environment:
       <<: *app-env
     command: [node, apps/worker/dist/main.js]
-    depends_on:
-      api: { condition: service_healthy }
 
   controller:
     image: ${STACK_NAME}-controller
