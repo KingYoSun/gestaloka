@@ -5,7 +5,7 @@ import { fixtureRuntime } from "../support/provider.ts";
 import { fixtureAuth } from "../support/auth.ts";
 import { WorldAccess } from "@gestaloka/server/access";
 import { Operations } from "@gestaloka/server/operations";
-import { directPlaces } from "../../packages/server/src/world/locations.ts";
+import { changeBelongings } from "@gestaloka/server/belongings";
 
 const { databases: db, runtime } = await fixtureRuntime("deployment-recovery");
 const auth = await fixtureAuth(db.postgres),
@@ -95,8 +95,20 @@ try {
     const actor = joined.actor_id;
     const { id: graphId, at } = await access.botPlay.world(world);
     const store = access.botPlay.store;
-    const [storageId] = await directPlaces(store.context(graphId), actor);
+    const [storageId] = (await runtime.get(world)).root_ids;
     assert(storageId);
+    await changeBelongings(store, await store.claim(graphId, randomUUID()), {
+      commitId: randomUUID(),
+      at,
+      ops: [
+        {
+          type: "locate",
+          subjectId: actor,
+          text: "試験の保管先",
+          aboutIds: [storageId],
+        },
+      ],
+    });
     const itemIds = [randomUUID(), randomUUID()];
     await store.commit(
       await store.claim(graphId, randomUUID()),
