@@ -252,6 +252,7 @@ select {
 }
 .brand {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 12px;
   font-size: 28px;
