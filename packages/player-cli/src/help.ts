@@ -216,9 +216,14 @@ const commands = {
     "本人が見聞きした出現記録から1体を選び、ユニークNPCへの昇格を申請する。結果はpromotionsで確認できる。[NPCの出現・昇格・同行](npcs.md)",
     "promote-npc --source @12ab34cd --index 0 --text '小屋の留鳥'",
   ],
+  friend: [
+    "propose|remove --target <人物ID> | accept|decline|withdraw --offer <提案ID>",
+    "同じ世界のプレイヤーにフレンド登録を提案する。相手には notices で提案者の名前と提案ID（通知のid）が届く。相手が accept すると成立する。相手から先に提案が届いていた場合、propose はその提案IDを返すので、accept で受領する。decline は辞退、withdraw は提案の撤回、remove は成立後の解除。手番と通常枠は使わない。",
+    "friend propose --target @12ab34cd",
+  ],
   players: [
     "[--before <ID>]",
-    "いま出会えるプレイヤーと居場所を照会。本人の所在地を問わず、待機中で接触を受けられるプレイヤーの人物ID・名前・直接の滞在先（placeId・place）を返す。滞在先が未確定の人物はnull。世界の運営者が有効にした世界でだけ使え、無効な世界ではPLAYER_LIST_DISABLEDになる。通常枠は使わない。一覧に載っている人物と滞在先は、離れていてもsearch --kind subjectで調べられる。--beforeにnextを指定して続きを取得。",
+    "待機中で接触を受けられるフレンドの人物ID・名前・直接の滞在先（placeId・place）を照会。滞在先が未確定か、相手のステルスを発見していない場合、滞在先はnull。世界の運営者が有効にした世界でだけ使え、無効な世界ではPLAYER_LIST_DISABLEDになる。通常枠は使わない。一覧に載っている人物と滞在先は、離れていてもsearch --kind subjectで調べられる。--beforeにnextを指定して続きを取得。",
     "players",
   ],
   promotions: [

@@ -13,6 +13,7 @@ import {
   vi,
 } from "vitest";
 import {
+  type FriendCommand,
   BlueprintDraft,
   InventoryBundleCommand,
   PlayCommand,
@@ -37,6 +38,7 @@ import { BotPlay } from "@gestaloka/server/play";
 import { createApp } from "../../apps/api/src/app.js";
 import { cliVersionHeader, playerCli } from "../support/player-cli.js";
 import { localTime } from "../../packages/player-cli/src/references.js";
+import type { z } from "zod";
 import { join, resolve } from "node:path";
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureRuntime } from "../support/provider.js";
@@ -207,6 +209,8 @@ async function fixture(playerCount = 3) {
     move,
     calls,
     apply,
+    friend: (i: number, input: z.infer<typeof FriendCommand>) =>
+      access.friend(people[i]!.id, world, input, actors[i]),
     view: (i: number, targetId: string, viewers: "all" | string[]) =>
       access.setViewers(
         people[i]!.id,
@@ -4089,9 +4093,7 @@ test("HTTPとCLIは本人の手番APIを使い、旧書込を拒否し、同じ�
     );
     const players = await cli.run(profile, "players");
     expect(players).toMatchObject({ state: "players", next: null });
-    expect(players.items).toContainEqual(
-      expect.objectContaining({ name: "人物2", place: "離れた場所" }),
-    );
+    expect(players.items).toEqual([]);
     const old = await app.inject({
       method: "POST",
       url: `/api/worlds/${f.world}/scene?actorId=${f.actors[0]}`,
@@ -4393,7 +4395,110 @@ test("待受が止まった本人にも接触でき、戻ると不在の間の�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
-test("プレイヤーの一覧は、待機中で接触を受けられるプレイヤーだけを所在地を問わず返す", async () => {
+test("CLIでフレンド提案を受領すると遠くの人物と滞在先を調べられ、解除すると双方の公開が終わる", async () => {
+  const f = await fixture();
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  const profile = (i: number) => join(cli.directory, `player-${i}.json`);
+  const run = (i: number, ...args: string[]) => cli.run(profile(i), ...args);
+  const [a, , b] = f.actors as [string, string, string];
+  const empty = { items: [], next: null };
+  try {
+    for (const i of [0, 2]) {
+      const entry = await run(
+        i,
+        "connect",
+        "--server",
+        cli.base,
+        "--world",
+        f.world,
+      );
+      expect(
+        (
+          await cli.approve(
+            f.people[i]!.cookie,
+            entry.userCode,
+            `actor:${f.actors[i]}`,
+          )
+        ).statusCode,
+      ).toBe(302);
+    }
+    await isolated.databases.postgres.query(
+      "UPDATE world_construction SET player_list=true WHERE id=$1",
+      [f.world],
+    );
+    const look = (target: string) =>
+      run(2, "search", "--kind", "subject", "--target", target);
+    const propose = async () => {
+      const sent = await run(0, "friend", "propose", "--target", b);
+      expect(sent.result).toMatchObject({ state: "pending" });
+      const { notices } = await run(2, "notices");
+      expect(notices[0]).toMatchObject({
+        text: expect.stringContaining("人物0"),
+        unread: true,
+      });
+      return {
+        sent: sent.result.offerId as string,
+        received: notices[0].id as string,
+      };
+    };
+    const first = await propose();
+    expect(
+      await run(2, "friend", "decline", "--offer", first.received),
+    ).toMatchObject({ result: { state: "declined" } });
+    const second = await propose();
+    expect(
+      await run(0, "friend", "withdraw", "--offer", second.sent),
+    ).toMatchObject({ result: { state: "withdrawn" } });
+    expect(
+      await run(2, "friend", "accept", "--offer", second.received),
+    ).toMatchObject({ code: "FRIEND_NOT_AVAILABLE" });
+    const offer = await propose();
+    expect(await run(0, "players")).toMatchObject(empty);
+    expect(await run(2, "players")).toMatchObject(empty);
+    expect(await look(a)).toMatchObject({ code: "MATERIAL_NOT_AVAILABLE" });
+    expect(await look(f.place)).toMatchObject({
+      code: "MATERIAL_NOT_AVAILABLE",
+    });
+    expect(
+      await run(2, "friend", "accept", "--offer", offer.received),
+    ).toMatchObject({ result: { state: "accepted" } });
+    expect(await run(0, "players")).toMatchObject({
+      items: [{ name: "人物2", place: "離れた場所" }],
+    });
+    expect(await run(2, "players")).toMatchObject({
+      items: [{ name: "人物0", place: "広場" }],
+    });
+    expect(await look(a)).toMatchObject({
+      result: { material: { node: { text: "人物0" } } },
+    });
+    expect(await look(f.place)).toMatchObject({
+      result: { material: { node: { text: "広場" } } },
+    });
+    expect(await run(2, "friend", "remove", "--target", a)).toMatchObject({
+      result: { state: "removed" },
+    });
+    expect(await run(0, "players")).toMatchObject(empty);
+    expect(await run(2, "players")).toMatchObject(empty);
+    expect(await look(a)).toMatchObject({ code: "MATERIAL_NOT_AVAILABLE" });
+    expect(await look(f.place)).toMatchObject({
+      code: "MATERIAL_NOT_AVAILABLE",
+    });
+    expect(
+      await run(2, "friend", "accept", "--offer", offer.received),
+    ).toMatchObject({ code: "FRIEND_NOT_AVAILABLE" });
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+}, 120000);
+
+test("プレイヤーの一覧は、待機中で接触を受けられるフレンドだけを所在地を問わず返す", async () => {
   const f = await fixture(),
     list = () => access.partners(f.people[2]!.id, f.world, f.actors[2]);
   await expect(list()).rejects.toMatchObject({ code: "PLAYER_LIST_DISABLED" });
@@ -4407,6 +4512,41 @@ test("プレイヤーの一覧は、待機中で接触を受けられるプレ�
     "UPDATE world_construction SET player_list=true WHERE id=$1",
     [f.world],
   );
+  const propose = () =>
+    f.friend(0, {
+      requestId: randomUUID(),
+      action: "propose",
+      targetId: f.actors[2]!,
+    });
+  const offer = await propose();
+  expect(
+    await f.friend(2, {
+      requestId: randomUUID(),
+      action: "propose",
+      targetId: f.actors[0]!,
+    }),
+  ).toEqual(offer);
+  const accept = {
+    requestId: randomUUID(),
+    action: "accept" as const,
+    offerId: offer.offerId,
+  };
+  await expect(f.friend(1, accept)).rejects.toMatchObject({
+    code: "FRIEND_NOT_AVAILABLE",
+  });
+  await expect(f.friend(0, accept)).rejects.toMatchObject({
+    code: "FRIEND_NOT_AVAILABLE",
+  });
+  expect(await list()).toEqual({ items: [], next: null });
+  await expect(look(f.place)).rejects.toMatchObject({
+    code: "MATERIAL_NOT_AVAILABLE",
+  });
+  const [one, two] = await Promise.all([
+    f.friend(2, accept),
+    f.friend(2, accept),
+  ]);
+  expect(one).toEqual(two);
+  expect(one.state).toBe("accepted");
   // 開始した人物は待機中になる。本人と、NPCとして担当される人物は含めない。
   await isolated.databases.postgres.query(
     "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,'bot',$3,$4)",
@@ -6445,6 +6585,16 @@ test("隠密移動の現在地は今回の滞在を発見した相手だけが�
   await db.query("UPDATE world_construction SET player_list=true WHERE id=$1", [
     f.world,
   ]);
+  const offer = await f.friend(0, {
+    requestId: randomUUID(),
+    action: "propose",
+    targetId: c,
+  });
+  await f.friend(2, {
+    requestId: randomUUID(),
+    action: "accept",
+    offerId: offer.offerId,
+  });
   stealthGm(f);
   const move = async (place: string, roll: number, observer?: string) => {
     const requestId = randomUUID();
@@ -6495,6 +6645,7 @@ test("隠密移動の現在地は今回の滞在を発見した相手だけが�
     placeId: null,
     place: null,
   });
+  expect(await listed(b)).toBeUndefined();
   expect(await firstMove()).toMatchObject({ stealth: { placeId: f.far } });
   expect((await f.status(0)).stealth).toMatchObject({ placeId: f.far });
   const departure = JSON.stringify((await f.status(1)).entries);
