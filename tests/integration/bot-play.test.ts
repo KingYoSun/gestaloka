@@ -7963,6 +7963,111 @@ test("手持ちの容量と受入可能数をHTTPとCLIへ返す", async () => {
   }
 });
 
+test("本人は保管品と手持ちの使用枠を照合し、CLIで入れ子の中身をたどれる", async () => {
+  const f = await fixture(2);
+  const [actor, other] = f.actors as [string, string];
+  const create = (label: string, holder: string, count?: number) => ({
+    type: "create",
+    label,
+    holder,
+    count,
+    basis: "検証",
+  });
+  const { changes } = await f.apply([
+    { type: "grant", person: actor, storage: f.far, basis: "検証" },
+    create("外箱", f.far),
+    create("独立した手持ち品", actor),
+  ]);
+  const outer = changes.nodes.find((node) => node.text === "外箱")!.id;
+  const { changes: nested } = await f.apply([
+    create("内箱", outer),
+    ...Array.from({ length: 52 }, (_, index) =>
+      create(`記録 ${index + 1}`, outer),
+    ),
+  ]);
+  const inner = nested.nodes.find((node) => node.text === "内箱")!.id;
+  await f.apply([create("針", inner, 31)]);
+
+  // 既存世界では所持先の索引がまだない。確定済みの関係から再構築する。
+  await f.store.driver.executeQuery(
+    `MATCH (n:WorldNode {worldId:$world}) REMOVE n.inventoryHolder
+     WITH count(n) AS cleared
+     MATCH (g:WorldGuard {worldId:$world,key:'inventory'}) REMOVE g.inventoryHolderIndexed`,
+    { world: f.graph },
+  );
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  try {
+    const profile = join(cli.directory, "contents.json");
+    const connection = await cli.run(
+      profile,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (
+        await cli.approve(
+          f.people[0]!.cookie,
+          connection.userCode,
+          `actor:${actor}`,
+        )
+      ).statusCode,
+    ).toBe(302);
+    const result = await cli.run(profile, "search", "--kind", "self");
+    const storage = result.result.material.belongings.storages[0];
+    expect(storage.items).toMatchObject([
+      { label: "外箱", slots: 1, totalSlots: 56 },
+    ]);
+    expect(storage.items[0].totalSlots).toBe(storage.capacity.usedSlots);
+    const read = (...args: string[]) => cli.run(profile, "contents", ...args);
+    const target = ["--target", storage.items[0].id];
+    const calls = (await f.status(0)).callsUsed;
+    const first = await read(...target);
+    expect(first.items).toHaveLength(50);
+    const last = await read(...target, "--after", first.next);
+    expect(last.items).toHaveLength(3);
+    expect(last.next).toBeNull();
+    const rows = [...first.items, ...last.items];
+    expect(new Set(rows.map((row) => row.id)).size).toBe(53);
+    expect(rows.reduce((sum, row) => sum + row.totalSlots, 0)).toBe(55);
+    const child = rows.find((row) => row.label === "内箱");
+    expect(child).toMatchObject({ slots: 1, totalSlots: 3 });
+    expect(await read("--target", child.id)).toMatchObject({
+      items: [{ label: "針", count: 31, slots: 2, totalSlots: 2 }],
+      next: null,
+    });
+    expect((await f.status(0)).callsUsed).toBe(calls);
+    const denied = await app.inject({
+      url: `/api/worlds/${f.world}/inventory/contents?actorId=${other}&containerId=${inner}`,
+      headers: { cookie: f.people[1]!.cookie },
+    });
+    expect(denied.statusCode).toBe(404);
+
+    await f.apply([
+      { type: "move", item: outer, from: f.far, to: actor, basis: "検証" },
+    ]);
+    const own = await readBelongings(f.store.context(f.graph), actor);
+    expect(own.items.reduce((sum, row) => sum + (row.totalSlots ?? 0), 0)).toBe(
+      own.capacity?.usedSlots,
+    );
+    expect(own.capacity?.usedSlots).toBe(57);
+    expect(own.storages[0]?.capacity?.usedSlots).toBe(0);
+    expect((await read(...target)).items).toEqual(first.items);
+    expect(f.calls).not.toHaveBeenCalled();
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
+
 test("箱による枠の節約を防ぎ、共同保管先の最後の1枠を原子的に確定する", async () => {
   const f = await fixture();
   const [a, b] = f.actors as [string, string];

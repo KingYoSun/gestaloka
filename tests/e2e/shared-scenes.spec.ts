@@ -439,6 +439,92 @@ test("実APIの手番・個別検索・チャット・本人の終了を狭い�
   }
 });
 
+test("プレイヤーは保管先の枠の内訳を読み、入れ物の続きを開ける", async ({
+  page,
+}) => {
+  const {
+    world,
+    actors: [actor],
+  } = await village(page);
+  const db = connectDatabases();
+  const store = new WorldStore(db.graph);
+  const storage = randomUUID(),
+    outer = randomUUID(),
+    inner = randomUUID();
+  const has = (source: string, target: string, role?: "use") => ({
+    id: randomUUID(),
+    kind: "has" as const,
+    source,
+    target,
+    role,
+    period: { from: 0 },
+  });
+  const records = Array.from({ length: 51 }, (_, i) => ({
+    id: randomUUID(),
+    kind: "existence" as const,
+    text: `採集記録 ${i + 1}`,
+  }));
+  try {
+    const graph = (
+      await db.postgres.query(
+        "SELECT world_id FROM world_construction WHERE id=$1",
+        [world],
+      )
+    ).rows[0].world_id as string;
+    const needle = randomUUID();
+    await store.commit(
+      await store.claim(graph, randomUUID()),
+      store.context(graph),
+      {
+        commitId: randomUUID(),
+        at: 0,
+        changes: {
+          nodes: [
+            { id: storage, kind: "existence", text: "資料庫" },
+            { id: outer, kind: "existence", text: "記録の箱" },
+            { id: inner, kind: "existence", text: "針の小箱" },
+            { id: needle, kind: "existence", text: "縫い針" },
+            ...records,
+          ],
+          edges: [
+            has(actor!, storage, "use"),
+            has(storage, outer),
+            has(outer, inner),
+            has(inner, needle),
+            ...records.map(({ id }) => has(outer, id)),
+          ],
+          revisions: [],
+          endEdges: [],
+        },
+      },
+    );
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/worlds/${world}/play?actorId=${actor}`);
+    await page
+      .getByRole("button", { name: "プレイヤー情報", exact: true })
+      .click();
+    const drawer = page.getByRole("dialog", { name: "プレイヤー情報" });
+    await drawer.getByRole("tab", { name: "保管品" }).click();
+    await expect(drawer.getByText("使用枠 54/150")).toBeVisible();
+    await expect(drawer.getByText("54枠（本体1枠・中身53枠）")).toBeVisible();
+    await drawer.getByText("中身を見る", { exact: true }).click();
+    await drawer.getByRole("button", { name: "中身をさらに読む" }).click();
+    await expect(drawer.getByText(/^採集記録 \d+$/)).toHaveCount(51);
+    await expect(
+      drawer.getByRole("button", { name: "中身をさらに読む" }),
+    ).toHaveCount(0);
+    await drawer
+      .getByRole("listitem")
+      .filter({ has: page.getByText("針の小箱", { exact: true }) })
+      .last()
+      .getByText("中身を見る")
+      .click();
+    await expect(drawer.getByText("縫い針", { exact: true })).toBeVisible();
+  } finally {
+    await db.close();
+  }
+});
+
 test("手動プレイでドロワーと同じ候補から物品を手渡して移動できる", async ({
   page,
 }) => {

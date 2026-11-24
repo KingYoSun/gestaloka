@@ -34,6 +34,7 @@ import {
 } from "../runtime/construction.js";
 import { worldNow } from "../world/model.js";
 import { WorldConflict } from "../world/store.js";
+import { readInventoryContents } from "../world/belongings.js";
 import { WorldScenes, type SceneRow } from "../runtime/scene.js";
 import { sceneAnchors } from "../runtime/scene-data.js";
 import { requireMember } from "./operations.js";
@@ -290,6 +291,35 @@ export class WorldAccess {
       actorId,
     );
     return this.botPlay.notices(id, grant.actor_id!);
+  }
+  async inventoryContents(
+    subject: string,
+    id: string,
+    container: string,
+    after?: string,
+    actorId?: string,
+  ) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    const world = await this.botPlay.world(id);
+    const contents = await readInventoryContents(
+      this.botPlay.store.context(world.id),
+      grant.actor_id!,
+      container,
+      after,
+    );
+    if (!contents)
+      throw new AccessError(
+        404,
+        "CONTAINER_NOT_AVAILABLE",
+        "持ち物や登録した保管先にある入れ物を指定してください",
+      );
+    return contents;
   }
   private async botStatusActor(
     subject: string,

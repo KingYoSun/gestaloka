@@ -273,13 +273,71 @@ export class WorldContext {
   }
 
   async inventorySlots(id: string) {
+    return (await this.inventorySlotTotals(id, [id])).get(id) ?? 0;
+  }
+
+  async inventorySlotTotals(holder: string, ids: string[]) {
     await this.prepareInventory();
-    return this.#read(`inventory:${id}`, async (tx) => {
+    return this.#read(`inventory:${holder}`, async (tx) => {
       const { records } = await tx.run(
-        "MATCH (n:WorldNode {worldId:$worldId,id:$id}) RETURN coalesce(n.inventorySlots,0) AS slots",
-        { worldId: this.worldId, id },
+        `UNWIND $ids AS id MATCH (n:WorldNode {worldId:$worldId,id:id})
+         RETURN id,coalesce(n.inventorySlots,0) AS slots`,
+        { worldId: this.worldId, ids },
       );
-      return Number(records[0]?.get("slots") ?? 0);
+      return new Map(
+        records.map((r) => [r.get("id") as string, Number(r.get("slots"))]),
+      );
+    });
+  }
+
+  async inventoryContents(actor: string, container: string, after?: string) {
+    return this.inventoryRead(async (tx, { limits }) => {
+      const worldId = this.worldId;
+      const seen = new Set<string>();
+      let within = container;
+      while (!seen.has(within)) {
+        seen.add(within);
+        const { records } = await tx.run(
+          `MATCH (n:WorldNode {worldId:$worldId,id:$within})
+           MATCH (p:WorldNode {worldId:$worldId,id:n.inventoryHolder})
+           RETURN p.id AS parent, EXISTS {
+             MATCH (:WorldNode {worldId:$worldId,id:$actor})-[u:has {role:'use'}]->(p)
+             WHERE u.validTo IS NULL
+           } AS registered`,
+          { worldId, within, actor },
+        );
+        const row = records[0];
+        if (!row) return;
+        within = row.get("parent") as string;
+        if (within === actor || row.get("registered")) {
+          const pageSize = 50;
+          const { records: page } = await tx.run(
+            `MATCH (n:WorldNode {worldId:$worldId,inventoryHolder:$container})
+             USING INDEX n:WorldNode(worldId,inventoryHolder,id)
+             WHERE n.id > $after
+             RETURN n.data AS data,coalesce(n.inventorySlots,0) AS slots
+             ORDER BY n.id LIMIT $limit`,
+            {
+              worldId,
+              container,
+              after: after ?? "",
+              limit: int(pageSize + 1),
+            },
+          );
+          const items = page.slice(0, pageSize).map((r) => ({
+            node: WorldNode.parse(JSON.parse(r.get("data"))) as Extract<
+              WorldNode,
+              { kind: "existence" }
+            >,
+            contentsSlots: Number(r.get("slots")),
+          }));
+          return {
+            items,
+            next: page.length > pageSize ? items.at(-1)!.node.id : null,
+            limits,
+          };
+        }
+      }
     });
   }
 
@@ -298,7 +356,7 @@ export class WorldContext {
   async prepareInventory() {
     const { records } = await this.driver.executeQuery(
       `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
-       WHERE NOT coalesce(g.inventoryReady,false)
+       WHERE NOT coalesce(g.inventoryReady,false) AND g.inventoryHolderIndexed
          AND g.inventoryCacheUnits=coalesce(g.inventoryUnitsPerSlot,$defaultUnits) RETURN g.key`,
       {
         worldId: this.worldId,
@@ -1097,6 +1155,7 @@ export class WorldStore {
       "FOR (n:WorldPickup) ON (n.noticePending)",
       "FOR (n:WorldPickup) ON (n.worldId,n.noticePending)",
       "FOR (n:WorldNode) ON (n.worldId,n.inventoryStackKey)",
+      "FOR (n:WorldNode) ON (n.worldId,n.inventoryHolder,n.id)",
     ])
       await this.driver.executeQuery("CREATE INDEX IF NOT EXISTS " + index);
     await this.driver.executeQuery(

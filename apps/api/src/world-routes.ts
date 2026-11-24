@@ -8,6 +8,8 @@ import {
   PlayError,
   PlayCommand,
   PlayResponse,
+  InventoryContents,
+  InventoryContentsQuery,
   PlayerReportInput,
   PlayerReportStatus,
   PlayerNotices,
@@ -103,6 +105,7 @@ export async function worldRoutes(
       const allowed = [
         "/api/worlds/:id/scene",
         "/api/worlds/:id/session",
+        "/api/worlds/:id/inventory/contents",
         "/api/worlds/:id/waiting",
         "/api/worlds/:id/waiting/events",
         "/api/worlds/:id/reports",
@@ -635,6 +638,24 @@ export async function worldRoutes(
         request.params.id,
         request.query.actorId,
         deviceIds.get(request),
+      ),
+  );
+  app.get(
+    "/api/worlds/:id/inventory/contents",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: InventoryContentsQuery,
+        response: { 200: InventoryContents, ...errors },
+      },
+    },
+    async (request) =>
+      service().inventoryContents(
+        await subject(request),
+        request.params.id,
+        request.query.containerId,
+        request.query.after,
+        request.query.actorId,
       ),
   );
   app.get(
