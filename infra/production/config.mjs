@@ -95,6 +95,11 @@ export async function renderDeployment(directory) {
       JSON.parse(await readFile(join(root, "profile.json"), "utf8")),
     );
   const env = parseEnv(await readFile(join(root, "deployment.env"), "utf8"));
+  if (!env.DEPLOYMENT_LOCK_FILE) {
+    const file = join(root, "deploy.lock");
+    await writeFile(file, "", { flag: "a", mode: 0o600 });
+    env.DEPLOYMENT_LOCK_FILE = file.replaceAll("\\", "/");
+  }
   for (const name of [
     ...keyNames,
     "CONTROL_TOKEN",

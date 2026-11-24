@@ -714,6 +714,26 @@ export class BackupEngine {
     });
     await rm(join(this.root, "staging"), { recursive: true, force: true });
   }
+  async deploymentLock() {
+    const lock = await open("/deploy.lock", "r");
+    let acquired;
+    try {
+      // flock uses the inherited file description, which stays open in Node.
+      acquired = await new Promise((resolvePromise, reject) => {
+        const child = spawn("flock", ["-n", "-E", "75", "3"], {
+          stdio: ["ignore", "ignore", "ignore", lock.fd],
+        });
+        child.on("error", reject);
+        child.on("exit", (code) => {
+          if (code === 0 || code === 75) resolvePromise(code === 0);
+          else reject(new Error("DEPLOYMENT_LOCK_FAILED"));
+        });
+      });
+      if (acquired) return lock;
+    } finally {
+      if (!acquired) await lock.close();
+    }
+  }
   async tick() {
     if (this.busy) return;
     this.busy = true;
@@ -770,19 +790,28 @@ export class BackupEngine {
           !["backups.restore", "backups.configure"].includes(current.operation)
         )
           continue;
-        current.state = "running";
-        await this.step(current, "開始");
+        const lock =
+          current.operation === "backups.configure"
+            ? null
+            : await this.deploymentLock();
+        if (lock === undefined) continue;
         try {
-          await this.process(current);
-          current.state = "complete";
-          current.phase = "完了";
-        } catch {
-          current.state = "failed";
-          current.error = "BACKUP_OPERATION_FAILED";
-          current.phase = "復旧手順を確認してください";
+          current.state = "running";
+          await this.step(current, "開始");
+          try {
+            await this.process(current);
+            current.state = "complete";
+            current.phase = "完了";
+          } catch {
+            current.state = "failed";
+            current.error = "BACKUP_OPERATION_FAILED";
+            current.phase = "復旧手順を確認してください";
+          }
+          current.finishedAt = new Date().toISOString();
+          await this.save(`jobs/${file}`, current);
+        } finally {
+          await lock?.close();
         }
-        current.finishedAt = new Date().toISOString();
-        await this.save(`jobs/${file}`, current);
       }
     } finally {
       this.busy = false;
