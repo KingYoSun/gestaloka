@@ -827,6 +827,21 @@ export class WorldContext {
       }));
     });
   }
+  // 場所の説明が part-of で指す親。説明や about の変更は source キーを更新する。
+  async partParents(id: string, at: number) {
+    return this.#read(`source:${id}`, async (tx) => {
+      const { records } = await tx.run(
+        `MATCH (:WorldNode {worldId:$world,id:$id})-[c:status {role:'content'}]->()-[a:status {role:'about'}]->(p:WorldNode {worldId:$world,kind:'existence'})
+         WHERE c.validFrom <= $at AND (c.validTo IS NULL OR $at < c.validTo)
+           AND a.validFrom <= $at AND (a.validTo IS NULL OR $at < a.validTo)
+           AND a.data CONTAINS '"text":"part-of"'
+         RETURN DISTINCT p.id AS id`,
+        { world: this.worldId, id, at },
+      );
+      return records.map((r) => r.get("id") as string);
+    });
+  }
+
   // 一部の場所(part-of)で結ばれた場所。接続元の一部として探索された場所と、その接続元を互いに返す。
   async partPlaces(id: string) {
     const read = (direction: "out" | "in", pattern: string) =>

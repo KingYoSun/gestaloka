@@ -624,23 +624,45 @@ test("公開と参加受付を分け、非公開化後も参加者の参照と�
       playerList: false,
       instantNpcMultiplier: 2,
       deathJudgment: true,
+      respawnEnabled: true,
       deathCriteria: "",
       deathPlaceId: null,
+      nonCombatAreas: [],
     },
   );
   const changed = {
     playerList: true,
     instantNpcMultiplier: 1,
     deathJudgment: false,
+    respawnEnabled: false,
     deathCriteria: "致命傷で死亡する",
     deathPlaceId: randomUUID(),
+    nonCombatAreas: [
+      {
+        rootId: (await runtime.get(legacy.id)).root_ids[0]!,
+        memberPlaceIds: [],
+      },
+    ],
   };
   expect(
-    await auth.operations.execute(legacy.subject, randomUUID(), {
-      ...cfg,
-      ...changed,
-    }),
+    await auth.operations.execute(
+      legacy.subject,
+      randomUUID(),
+      { ...cfg, ...changed },
+      { players: access.players },
+    ),
   ).toMatchObject(changed);
+  await expect(
+    auth.operations.execute(
+      legacy.subject,
+      randomUUID(),
+      {
+        ...cfg,
+        nonCombatAreas: [{ rootId: randomUUID(), memberPlaceIds: [] }],
+      },
+      { players: access.players },
+    ),
+  ).rejects.toMatchObject({ code: "PLACE_NOT_FOUND" });
   expect(
     await auth.operations.execute(legacy.subject, randomUUID(), cfg),
   ).toMatchObject(changed);
@@ -648,8 +670,9 @@ test("公開と参加受付を分け、非公開化後も参加者の参照と�
     await auth.operations.execute(legacy.subject, randomUUID(), {
       ...cfg,
       deathPlaceId: null,
+      nonCombatAreas: [],
     }),
-  ).toMatchObject({ ...changed, deathPlaceId: null });
+  ).toMatchObject({ ...changed, deathPlaceId: null, nonCombatAreas: [] });
   let catalog = await auth.operations.catalog(person.subject);
   expect(catalog.items.find((w) => w.id === legacy.id)).toMatchObject({
     title: cfg.title,

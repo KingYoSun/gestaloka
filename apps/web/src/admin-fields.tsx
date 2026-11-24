@@ -1,6 +1,6 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 import { z } from "zod";
-import { Operation } from "@gestaloka/contracts";
+import { Operation, type NonCombatAreas } from "@gestaloka/contracts";
 import { Input } from "./components/ui/input.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { Label } from "./components/ui/label.js";
@@ -181,8 +181,10 @@ export const labels: Record<string, string> = {
   playerList: "出会えるプレイヤーと居場所の一覧を提供",
   instantNpcMultiplier: "出現個体の同席上限（発生数の倍率）",
   deathJudgment: "人物を死亡判定の対象にする",
+  respawnEnabled: "死亡した人物をリスポーンさせる",
   deathCriteria: "人物の死亡を判定する条件",
-  deathPlaceId: "死亡した人物を移す場所のID",
+  deathPlaceId: "リスポーン先の場所ID",
+  nonCombatAreas: "非戦闘地域",
   settings: "生成用の設定本文",
   presetId: "プレイヤー設定ID",
   calculatedNanoUsd: "計算済み額",
@@ -195,6 +197,52 @@ export const labels: Record<string, string> = {
   credentials: "APIキーの設定情報",
 };
 export const label = (key: string) => labels[key] ?? key;
+export function NonCombatAreasField({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: NonCombatAreas;
+  onChange: (areas: NonCombatAreas) => void;
+}) {
+  const [draft, setDraft] = useState<string>();
+  return (
+    <>
+      <Label htmlFor={id}>{label("nonCombatAreas")}</Label>
+      <Textarea
+        id={id}
+        aria-describedby={`${id}-help`}
+        value={
+          draft ??
+          value
+            .map(({ rootId, memberPlaceIds }) =>
+              [rootId, ...memberPlaceIds].join(" "),
+            )
+            .join("\n")
+        }
+        onBlur={() => setDraft(undefined)}
+        onChange={(e) => {
+          const text = e.target.value;
+          setDraft(text);
+          onChange(
+            text
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .map((line) => {
+                const [rootId, ...memberPlaceIds] = line.split(/\s+/);
+                return { rootId: rootId!, memberPlaceIds };
+              }),
+          );
+        }}
+      />
+      <p id={`${id}-help`} className="muted">
+        1行に範囲のIDを一つ書きます。古い地理記録で範囲とのつながりが未登録の場所は、同じ行に空白区切りでIDを加えます。
+      </p>
+    </>
+  );
+}
 export const secretField = (name: string) =>
   ["value", "accessKey", "secretKey", "password", "url"].includes(name);
 export type Shape = {
@@ -371,6 +419,16 @@ export function Fields({
     );
   }
   if (shape.const !== undefined) return null;
+  if (name === "nonCombatAreas")
+    return (
+      <div className="admin-field">
+        <NonCombatAreasField
+          id={id}
+          value={(value ?? []) as NonCombatAreas}
+          onChange={onChange}
+        />
+      </div>
+    );
   if (shape.type === "array") {
     const values = Array.isArray(value) ? value.map(String) : [];
     const scopes =
