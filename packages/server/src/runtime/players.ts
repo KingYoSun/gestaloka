@@ -52,7 +52,10 @@ export class WorldPlayers {
       image text NOT NULL);`);
     await this.pool.query(
       `ALTER TABLE world_join ALTER COLUMN preset_id DROP NOT NULL, ALTER COLUMN preset_version DROP NOT NULL,
-        ADD COLUMN IF NOT EXISTS hidden_from_selection boolean NOT NULL DEFAULT false`,
+        ADD COLUMN IF NOT EXISTS hidden_from_selection boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS respawn_disabled boolean NOT NULL DEFAULT false;
+      CREATE INDEX IF NOT EXISTS world_join_respawn_disabled ON world_join(construction_id, actor_id)
+        WHERE respawn_disabled;`,
     );
     await this.construction.queue.createQueue(this.queueName, {
       retryLimit: 2,
@@ -159,7 +162,7 @@ export class WorldPlayers {
       db,
     );
     await db.query(
-      "INSERT INTO world_join(id,subject_id,construction_id,preset_id,preset_version,operation_id,at) VALUES($1,$2,$3,$4,$5,$6,$7)",
+      "INSERT INTO world_join(id,subject_id,construction_id,preset_id,preset_version,operation_id,at,respawn_disabled) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
       [
         id,
         userId,
@@ -168,6 +171,7 @@ export class WorldPlayers {
         preset?.version ?? null,
         operationId,
         now,
+        input.disableRespawn ?? false,
       ],
     );
     await ExecutionBudget.attribute(db, id, userId, { role: "user" });

@@ -203,17 +203,27 @@ export async function playerDeviceRoutes(
         choices.unshift(
           `<section><h2>参加者の基本設定</h2><p>${escape(world.playerSettings).replaceAll("\n", "<br>")}</p></section>`,
         );
+      const respawnChoice =
+        proposed || presets.items.length
+          ? '<label><input type="checkbox" name="disableRespawn" value="true">新しく作る人物のリスポーンを無効にする</label><p>選択すると、世界でリスポーンが有効でも、死亡後はこの人物で遊べなくなります。</p>'
+          : "";
       return authPage(
         reply,
         "AIにプレイを許可する",
-        `<p>${escape(world.title || world.id)}</p><p>${escape(world.description)}</p><p>AIから届いた確認のことばが <strong>${code}</strong> と同じか確かめてください。</p><p>${proposed ? "表示されている人物として遊び、顔の画像を変え、その人物が知っていることを読むのを許可します。" : "選んだ村民として遊び、顔の画像を変え、その村民が知っていることを読むのを許可します。新しく参加する場合は、その一人だけに許可します。"}</p><p>この世界の STORIES に物語や続話を公開することも許可します。</p><form method="post" action="/auth/player">${csrf}<input type="hidden" name="code" value="${code}">${choices.join("<br>")}${choices.length ? "<button>この人物のプレイを許可する</button>" : "<p>選択できる人物・参加設定がありません。</p>"}</form>${people.next ? `<a href="?code=${code}&before=${people.next}${presetsBefore ? `&presetsBefore=${presetsBefore}` : ""}">次の人物へ</a>` : ""}${presets.next ? `<a href="?code=${code}&presetsBefore=${presets.next}${before ? `&before=${before}` : ""}">次の参加設定へ</a>` : ""}`,
+        `<p>${escape(world.title || world.id)}</p><p>${escape(world.description)}</p><p>AIから届いた確認のことばが <strong>${code}</strong> と同じか確かめてください。</p><p>${proposed ? "表示されている人物として遊び、顔の画像を変え、その人物が知っていることを読むのを許可します。" : "選んだ村民として遊び、顔の画像を変え、その村民が知っていることを読むのを許可します。新しく参加する場合は、その一人だけに許可します。"}</p><p>この世界の STORIES に物語や続話を公開することも許可します。</p><form method="post" action="/auth/player">${csrf}<input type="hidden" name="code" value="${code}">${choices.join("<br>")}${respawnChoice}${choices.length ? "<button>この人物のプレイを許可する</button>" : "<p>選択できる人物・参加設定がありません。</p>"}</form>${people.next ? `<a href="?code=${code}&before=${people.next}${presetsBefore ? `&presetsBefore=${presetsBefore}` : ""}">次の人物へ</a>` : ""}${presets.next ? `<a href="?code=${code}&presetsBefore=${presets.next}${before ? `&before=${before}` : ""}">次の参加設定へ</a>` : ""}`,
       );
     },
   );
   app.post<{
-    Body: { csrf?: string; code?: string; choice?: string; revoke?: string };
+    Body: {
+      csrf?: string;
+      code?: string;
+      choice?: string;
+      revoke?: string;
+      disableRespawn?: string;
+    };
   }>("/auth/player", { schema: { hide: true } }, async (request, reply) => {
-    const { csrf, code, choice, revoke } = request.body,
+    const { csrf, code, choice, revoke, disableRespawn } = request.body,
       saved = request.cookies.gestaloka_player_form;
     if (
       !csrf ||
@@ -236,15 +246,16 @@ export async function playerDeviceRoutes(
       const [kind, id, version] = (choice ?? "").split(":");
       if (kind !== "actor" && kind !== "preset" && kind !== "character")
         throw new AccessError(409, "INPUT_INVALID", "村民を選んでください");
+      const respawn = disableRespawn === "true" ? { disableRespawn: true } : {};
       await devices.approve(
         userId,
         Query.shape.code.unwrap().parse(code),
         PlayerDeviceApproval.parse(
           kind === "character"
-            ? { character: true }
+            ? { character: true, ...respawn }
             : kind === "actor"
               ? { actorId: id }
-              : { presetId: id, presetVersion: Number(version) },
+              : { presetId: id, presetVersion: Number(version), ...respawn },
         ),
       );
     }

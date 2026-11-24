@@ -19,6 +19,7 @@ type Device = {
   character: string | null;
   icon: string | null;
   character_approved: boolean;
+  respawn_disabled: boolean;
   revoked: boolean;
   join_state?: string;
 };
@@ -44,7 +45,8 @@ export class PlayerDevices {
       CREATE INDEX IF NOT EXISTS player_device_owner ON player_device(user_id,id);`);
     await this.pool
       .query(`ALTER TABLE player_device ADD COLUMN IF NOT EXISTS character text,
-      ADD COLUMN IF NOT EXISTS icon text, ADD COLUMN IF NOT EXISTS character_approved boolean NOT NULL DEFAULT false`);
+      ADD COLUMN IF NOT EXISTS icon text, ADD COLUMN IF NOT EXISTS character_approved boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS respawn_disabled boolean NOT NULL DEFAULT false`);
   }
 
   async begin(
@@ -167,6 +169,8 @@ export class PlayerDevices {
         )
       ).rows[0];
       if (!row) throw denied();
+      const respawnDisabled =
+        "disableRespawn" in choice && choice.disableRespawn === true;
       if (row.user_id) {
         if (
           row.user_id !== userId ||
@@ -174,7 +178,8 @@ export class PlayerDevices {
           row.preset_id !== ("presetId" in choice ? choice.presetId : null) ||
           row.preset_version !==
             ("presetVersion" in choice ? choice.presetVersion : null) ||
-          row.character_approved !== "character" in choice
+          row.character_approved !== "character" in choice ||
+          row.respawn_disabled !== respawnDisabled
         )
           throw denied();
       } else if ("actorId" in choice) {
@@ -211,7 +216,7 @@ export class PlayerDevices {
           );
       }
       await db.query(
-        "UPDATE player_device SET user_id=$2,actor_id=$3,preset_id=$4,preset_version=$5,character_approved=$6 WHERE id=$1",
+        "UPDATE player_device SET user_id=$2,actor_id=$3,preset_id=$4,preset_version=$5,character_approved=$6,respawn_disabled=$7 WHERE id=$1",
         [
           row.id,
           userId,
@@ -219,6 +224,7 @@ export class PlayerDevices {
           "presetId" in choice ? choice.presetId : null,
           "presetVersion" in choice ? choice.presetVersion : null,
           "character" in choice,
+          respawnDisabled,
         ],
       );
       await db.query("COMMIT");

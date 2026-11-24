@@ -670,6 +670,10 @@ export const LegacyClaimPage = z.object({
   ),
   next: z.uuid().nullable(),
 });
+const DisableRespawn = z
+  .boolean()
+  .optional()
+  .describe("この人物をリスポーンなしで作成する。省略すると世界の設定に従う");
 export const JoinWorld = z
   .object({
     operation: z.literal("worlds.join"),
@@ -678,6 +682,7 @@ export const JoinWorld = z
     presetId: z.uuid().optional(),
     presetVersion: z.number().int().positive().safe().optional(),
     character: z.string().min(1).optional(),
+    disableRespawn: DisableRespawn,
   })
   .strict()
   .refine((v) =>
@@ -702,12 +707,15 @@ export const PlayerDeviceCode = z.object({
   verificationPath: z.string(),
 });
 export const PlayerDeviceApproval = z.union([
-  z.object({ character: z.literal(true) }).strict(),
+  z
+    .object({ character: z.literal(true), disableRespawn: DisableRespawn })
+    .strict(),
   z.object({ actorId: z.uuid() }).strict(),
   z
     .object({
       presetId: z.uuid(),
       presetVersion: z.number().int().positive().safe(),
+      disableRespawn: DisableRespawn,
     })
     .strict(),
 ]);

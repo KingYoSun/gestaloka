@@ -22870,6 +22870,10 @@
                           "character": {
                             "type": "string",
                             "minLength": 1
+                          },
+                          "disableRespawn": {
+                            "description": "この人物をリスポーンなしで作成する。省略すると世界の設定に従う",
+                            "type": "boolean"
                           }
                         },
                         "required": [

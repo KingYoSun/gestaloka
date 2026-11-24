@@ -8229,6 +8229,8 @@ export interface paths {
                             presetId?: string;
                             presetVersion?: number;
                             character?: string;
+                            /** @description この人物をリスポーンなしで作成する。省略すると世界の設定に従う */
+                            disableRespawn?: boolean;
                         } | {
                             /** @enum {string} */
                             operation: "worlds.resumeJoin";

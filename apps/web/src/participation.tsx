@@ -18,16 +18,27 @@ import {
   iconDraftKey,
 } from "./player-icons.js";
 
-const Join = z.strictObject(JoinWorld.shape);
 const Request = z.object({
   requestId: z.uuid(),
-  command: z.union([
-    Join.omit({ character: true, name: true }).required(),
-    Join.omit({ presetId: true, presetVersion: true }).required(),
-  ]),
+  command: JoinWorld.transform(
+    ({
+      name,
+      presetId,
+      presetVersion,
+      character,
+      disableRespawn,
+      ...command
+    }) => ({
+      ...command,
+      ...(name !== undefined && { name }),
+      ...(presetId !== undefined && { presetId }),
+      ...(presetVersion !== undefined && { presetVersion }),
+      ...(character !== undefined && { character }),
+      ...(disableRespawn !== undefined && { disableRespawn }),
+    }),
+  ),
 });
-function characterSettings(form: HTMLFormElement) {
-  const data = new FormData(form);
+function characterSettings(data: FormData) {
   const name = String(data.get("name")).trim();
   const texts = data.getAll("text");
   const settings = data
@@ -346,6 +357,7 @@ export function Participation({ id }: { id: string }) {
               reading
             )
               return;
+            const fields = new FormData(e.currentTarget);
             const body = {
               requestId: crypto.randomUUID(),
               command: {
@@ -353,7 +365,10 @@ export function Participation({ id }: { id: string }) {
                 worldId: id,
                 ...(selected
                   ? { presetId: selected.id, presetVersion: selected.version }
-                  : characterSettings(e.currentTarget)),
+                  : characterSettings(fields)),
+                ...(fields.has("disableRespawn")
+                  ? { disableRespawn: true }
+                  : {}),
               },
             };
             setPreparing(true);
@@ -401,6 +416,13 @@ export function Participation({ id }: { id: string }) {
             }}
           />
           {custom && <CharacterFields />}
+          <Label>
+            <input type="checkbox" name="disableRespawn" />{" "}
+            この人物のリスポーンを無効にする
+          </Label>
+          <p className="muted">
+            選択すると、世界でリスポーンが有効でも、死亡後はこの人物で遊べなくなります。
+          </p>
           <IconPicker
             onChange={setImage}
             onReading={setReading}

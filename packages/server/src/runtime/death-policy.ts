@@ -9,14 +9,27 @@ const deathEdgeId = (actor: string) => derivedId(`${permanentDeath}:${actor}`);
 export async function respawnPolicy(
   db: Pick<pg.Pool, "query">,
   worldId: string,
+  actorIds: readonly string[] = [],
 ) {
-  const { respawn_enabled, death_place_id } = (
-    await db.query<{ respawn_enabled: boolean; death_place_id: string | null }>(
-      "SELECT respawn_enabled,death_place_id FROM world_construction WHERE id=$1",
-      [worldId],
+  const { respawn_enabled, death_place_id, disabled_actor_ids } = (
+    await db.query<{
+      respawn_enabled: boolean;
+      death_place_id: string | null;
+      disabled_actor_ids: string[];
+    }>(
+      `SELECT respawn_enabled,death_place_id,ARRAY(
+        SELECT actor_id FROM world_join
+        WHERE construction_id=$1 AND respawn_disabled AND actor_id=ANY($2::uuid[])
+      ) AS disabled_actor_ids FROM world_construction WHERE id=$1`,
+      [worldId, actorIds],
     )
   ).rows[0]!;
-  return respawn_enabled ? { placeId: death_place_id } : null;
+  return respawn_enabled
+    ? {
+        placeId: death_place_id,
+        ...(actorIds.length && { disabledActorIds: disabled_actor_ids }),
+      }
+    : null;
 }
 
 export async function isPermanentlyDead(context: WorldContext, actor: string) {

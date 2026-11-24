@@ -168,7 +168,7 @@
 | `WORLD_CHANGED`             | 依存版に含めた記録が申請の前後に変わった。指定した状態が先に終了した場合も起きる。`search` し直して対象を確かめ、新しい `dependencies` を使う。                             |
 | `SP_QUOTE_CHANGED`          | 申請の型や案の数と `expectedSp` が合っていない。変更後のファイルで `play --file <JSONファイル> --quote` を実行する。                                                        |
 | `STATE_TARGET_CHANGED`      | `stateId` の関係が指定した対象の現行状態と合わない。対象の `material.states` を読み直す。                                                                                   |
-| `ACTOR_DEAD`                | リスポーン無効の世界で、死亡した人物を操作した。過去の記録は読める。新しい人物で遊ぶときは[参加手続き](join.md)へ進む。                                                     |
+| `ACTOR_DEAD`                | リスポーンなしで死亡した人物を操作した。過去の記録は読める。新しい人物で遊ぶときは[参加手続き](join.md)へ進む。                                                             |
 | `REQUEST_CONFLICT`          | 同じ要求IDで中身の違う申請を送った。`play --file` は要求IDを自動で作るので、手で要求IDを付けた場合に起きる。                                                                |
 | `WAIT_NOT_APPLICABLE`       | 受領が必要な物品製作案に `waitMinutes` を付けた。時間指定は受領が不要な製作案1件に使う。                                                                                    |
 | `DEFERRED_NOT_APPLICABLE`   | `deferredUntil` を、ダイスで判定する作成を含む申請に付けた。時間差の受領は、受領が要るメモか、物品の `move` だけの申請に使う。                                              |
