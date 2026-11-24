@@ -7293,7 +7293,7 @@ test("独立した生成案は同じGM呼び出しでも、抽選した案ごと
   expect(f.calls).toHaveBeenCalledTimes(1);
 });
 
-test("型付きの対人対抗は出目を保存した時点で1 SPを使う", async () => {
+test("型付きの対人対抗は関係IDで状態を置き換え、期限と出目を保存する", async () => {
   const f = await fixture();
   await f.send(0, { command: "contact", targetId: f.actors[1] });
   const status = await f.status(0);
@@ -7301,9 +7301,27 @@ test("型付きの対人対抗は出目を保存した時点で1 SPを使う", a
     ?.actorId;
   const attacker = current === f.actors[0] ? 0 : 1;
   const defender = 1 - attacker;
-  f.calls.mockImplementation(async (id, role) => {
+  const target = f.actors[defender]!;
+  const prior: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  mark(prior, target, "足を踏み出している。");
+  mark(prior, target, "帽子をかぶっている。");
+  const [replaced, kept] = prior.edges;
+  const context = () => f.store.context(f.graph);
+  await f.store.commit(await f.store.claim(f.graph, randomUUID()), context(), {
+    commitId: randomUUID(),
+    at: 0,
+    changes: prior,
+  });
+  const states = [{ id: target, text: "足を止めている。", minutes: 5 }];
+  f.calls.mockImplementation(async (id, role, messages) => {
     expect(role).toBe("world-opposition-dice");
-    return answer(id, sure);
+    const material = JSON.parse(String(messages[1]!.content)).materials[0];
+    expect(material).toMatchObject({
+      states: expect.arrayContaining([
+        expect.objectContaining({ relationId: replaced!.id }),
+      ]),
+    });
+    return answer(id, { ...sure, states, endEdges: [replaced!.id] });
   });
   const command = PlayerPlayCommand.parse({
     requestId: randomUUID(),
@@ -7313,8 +7331,9 @@ test("型付きの対人対抗は出目を保存した時点で1 SPを使う", a
     action: {
       type: "oppose",
       text: "練習用の棒で相手を止めようとする",
-      targetId: f.actors[defender],
+      targetId: target,
       description: "立ち止まっている",
+      replacesStateId: replaced!.id,
     },
   });
   const send = () =>
@@ -7327,7 +7346,18 @@ test("型付きの対人対抗は出目を保存した時点で1 SPを使う", a
   await expect(send()).resolves.toMatchObject({
     spentSp: 1,
     dailySp: { remaining: 99 },
+    outcome: { success: true, setting: { states, endEdges: [replaced!.id] } },
   });
+  expect((await context().edge(replaced!.id))?.period.until).toBeDefined();
+  expect((await context().edge(kept!.id))?.period.until).toBeUndefined();
+  const receipt = await f.store.receipt(f.graph, command.requestId);
+  const received = receipt!.changes.edges.find(
+    (edge) => edge.stateOrigin?.requestId === command.requestId,
+  )!;
+  expect(received.period.until).toBe(received.period.from + 5 * 60000);
+  expect(
+    await context().relations(target, "status", "out", received.period.until!),
+  ).not.toContainEqual(expect.objectContaining({ id: received.id }));
   await send();
   expect((await f.status(attacker)).dailySp.remaining).toBe(99);
   expect(f.calls).toHaveBeenCalledTimes(1);
@@ -7393,60 +7423,80 @@ test("着脱の確定は付着した関係だけを終え、追加のGMとSPを�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
-test("治療の成功で指定した負傷を同じ確定から終了する", async () => {
-  const f = await fixture(1);
-  const actor = f.actors[0]!;
-  const apply = (action: unknown, requestId: string) =>
-    access.botCommand(
-      f.people[0]!.id,
-      f.world,
-      PlayerPlayCommand.parse({
-        requestId,
-        command: "apply",
-        expectedSp: 1,
-        action,
-        dependencies: [],
-      }),
-      actor,
+test.each([false, true])(
+  "治療の成功で指定した負傷を同じ確定から終了する（材料指定=%s）",
+  async (withMaterials) => {
+    const f = await fixture(1);
+    const actor = f.actors[0]!;
+    const apply = (action: unknown, requestId: string) =>
+      access.botCommand(
+        f.people[0]!.id,
+        f.world,
+        PlayerPlayCommand.parse({
+          requestId,
+          command: "apply",
+          expectedSp: 1,
+          action,
+          dependencies: [],
+        }),
+        actor,
+      );
+    const injury = randomUUID();
+    await apply(
+      {
+        type: "state",
+        targetId: actor,
+        text: "作業中に怪我をする",
+        description: "指に浅い傷がある",
+      },
+      injury,
     );
-  const injury = randomUUID();
-  await apply(
-    {
+    const wound = derivedId(`${derivedId(`${injury}:state`)}:content`);
+    const treatment = randomUUID();
+    const bandage = withMaterials
+      ? (
+          await f.apply([
+            { type: "create", label: "包帯", holder: actor, basis: "検証" },
+          ])
+        ).changes.nodes[0]!.id
+      : undefined;
+    const action = {
       type: "state",
       targetId: actor,
-      text: "作業中に怪我をする",
-      description: "指に浅い傷がある",
-    },
-    injury,
-  );
-  const wound = derivedId(`${derivedId(`${injury}:state`)}:content`);
-  const treatment = randomUUID();
-  const action = {
-    type: "state",
-    targetId: actor,
-    text: "傷を洗い包帯を巻く",
-    description: "手当てされている",
-    stateId: wound,
-  };
-  f.calls.mockClear();
-  f.calls.mockImplementation(async (id, role, messages) => {
-    expect(role).toBe("world-creation-dice");
-    expect(JSON.parse(String(messages[1]!.content))).not.toHaveProperty(
-      "confirmed",
-    );
-    return answer(id, { ...sure, endEdges: [wound] });
-  });
-  await expect(apply(action, treatment)).resolves.toMatchObject({ spentSp: 1 });
-  const receipt = await f.store.receipt(f.graph, treatment);
-  expect(receipt?.changes.endEdges).toContain(wound);
-  expect(
-    receipt?.changes.edges.some(
-      (edge) => edge.stateOrigin?.requestId === treatment,
-    ),
-  ).toBe(true);
-  await apply(action, treatment);
-  expect(f.calls).toHaveBeenCalledTimes(1);
-});
+      text: "傷を洗い包帯を巻く",
+      description: "手当てされている",
+      stateId: wound,
+      ...(bandage ? { materials: [{ id: bandage }] } : {}),
+    };
+    f.calls.mockClear();
+    f.calls.mockImplementation(async (id, role, messages) => {
+      expect(role).toBe("world-creation-dice");
+      expect(String(messages[0]!.content).includes("requiredMaterials")).toBe(
+        withMaterials,
+      );
+      const review = JSON.parse(String(messages[1]!.content));
+      expect(review.allowApply).toBe(false);
+      expect(review).not.toHaveProperty("confirmed");
+      return answer(id, { ...sure, endEdges: [wound] });
+    });
+    await expect(apply(action, treatment)).resolves.toMatchObject({
+      spentSp: 1,
+    });
+    const receipt = await f.store.receipt(f.graph, treatment);
+    expect(receipt?.changes.endEdges).toContain(wound);
+    expect(
+      receipt?.changes.edges.some(
+        (edge) => edge.stateOrigin?.requestId === treatment,
+      ),
+    ).toBe(true);
+    if (bandage)
+      expect(
+        (await readBelongings(f.store.context(f.graph), actor)).items,
+      ).toEqual([]);
+    await apply(action, treatment);
+    expect(f.calls).toHaveBeenCalledTimes(1);
+  },
+);
 
 test("場所への作用は1 SPで確定し、後続の移動は追加SPを使わず条件を判定する", async () => {
   const f = await fixture(6);
@@ -17071,7 +17121,7 @@ test("登録済みの人物に起きることを名指しする作成は、本�
   named(["物2"]);
   await expect(f.send(0, corpse)).rejects.toMatchObject({
     ...refused,
-    message: expect.stringContaining("「人物2」"),
+    message: expect.stringMatching(/「人物2」.+applyのoppose/),
   });
   // 同じ要求の再送は同じ呼び出しになり、同じ結果を返す。
   named(["物2"]);
@@ -17184,17 +17234,22 @@ test("場所の物が判定で外れると、GMが選んだ場所の説明を終
     });
   });
   const melted = await f.send(0, {
-    command: "update",
-    text: "古い金床を溶かして鉄の延べ棒にする",
-    operations: [
-      {
-        type: "create",
-        label: "鉄の延べ棒",
-        holder: actor,
-        basis: "金床を溶かした",
-      },
-    ],
-    materials: [],
+    command: "apply",
+    expectedSp: 1,
+    action: {
+      type: "generate",
+      plans: [
+        {
+          text: "古い金床を溶かして鉄の延べ棒にする",
+          operation: {
+            type: "create",
+            label: "鉄の延べ棒",
+            holder: actor,
+            basis: "金床を溶かした",
+          },
+        },
+      ],
+    },
     dependencies: [],
   });
   expect(melted.outcome).toMatchObject({ success: true });
@@ -17211,7 +17266,30 @@ test("場所の物が判定で外れると、GMが選んだ場所の説明を終
   ))
     if ((await context.node(e.target))?.text === second) replaced = e.id;
   const rest = "石積みの炉が残っている。";
-  f.calls.mockImplementationOnce(async (id, role, messages) => {
+  const removal = (placeId = f.place) => ({
+    requestId: randomUUID(),
+    command: "apply",
+    expectedSp: 0,
+    action: {
+      type: "remove-place-item",
+      text: "古い火ばさみを踏み砕く",
+      placeId,
+      itemId: tongs,
+    },
+    dependencies: [],
+  });
+  const registration = { person: actor, storage: f.place };
+  await expect(f.send(0, removal(f.far))).rejects.toMatchObject({
+    code: "PLACE_ITEM_REQUIRED",
+  });
+  await f.apply([{ type: "grant", ...registration, basis: "保管先" }]);
+  await expect(f.send(0, removal())).rejects.toMatchObject({
+    code: "PLACE_ITEM_REQUIRED",
+  });
+  await f.apply([{ type: "revoke", ...registration }]);
+  expect(f.calls).toHaveBeenCalledTimes(1);
+
+  f.calls.mockImplementation(async (id, role, messages) => {
     expect(role).toBe("world-opposition-dice");
     expect(messages[0]!.content).toContain("placeStates");
     expect(messages[1]!.content).toContain(replaced);
@@ -17220,15 +17298,39 @@ test("場所の物が判定で外れると、GMが選んだ場所の説明を終
       placeStates: [{ relationId: replaced, text: rest }],
     });
   });
-  const smash = await f.send(0, {
-    command: "oppose",
-    text: "古い火ばさみを踏み砕く",
-    operations: [{ type: "remove", id: tongs }],
-    dependencies: [],
+  const failed = removal();
+  await isolated.databases.postgres.query(
+    "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,100)",
+    [
+      failed.requestId,
+      {
+        sides: 100,
+        successThrough: 50,
+        placeStates: [{ relationId: replaced, text: rest }],
+      },
+    ],
+  );
+  expect(await f.send(0, failed)).toMatchObject({
+    outcome: { success: false },
+    spentSp: 0,
   });
-  expect(smash.outcome).toMatchObject({ success: true });
+  expect(await f.store.context(f.graph).holding(tongs)).toMatchObject({
+    source: f.place,
+  });
+  expect(await texts()).toContain(second);
+  expect(await texts()).not.toContain(rest);
+
+  const request = removal();
+  const smash = await f.send(0, request);
+  expect(smash).toMatchObject({
+    outcome: { success: true },
+    spentSp: 0,
+  });
+  expect(await f.store.context(f.graph).holding(tongs)).toBeUndefined();
   expect(await texts()).toContain(rest);
   expect(await texts()).not.toContain(second);
+  expect(await f.send(0, request)).toEqual(smash);
+  expect(f.calls).toHaveBeenCalledTimes(3);
 });
 
 test("判定で付いた損傷のある乗り物は、GMが動けないと判断すれば運行できず、同行でも付いてこない", async () => {

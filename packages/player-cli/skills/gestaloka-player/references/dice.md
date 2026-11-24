@@ -4,7 +4,7 @@
 
 ## ダイスを振る申請
 
-`apply` の `generate`、`increase-count`、`state`、`oppose`、`seize` では、新しく判定する場合にダイスを振ります。`explore` や `say --npc` にも判定があります。取得した出目は応答の `outcome.roll`、独立した案をまとめた場合は各案の `roll` に表示されます。
+`apply` の `generate`、`increase-count`、`state`、`oppose`、`seize`、`remove-place-item` では、新しく判定する場合にダイスを振ります。`explore` や `say --npc` にも判定があります。取得した出目は応答の `outcome.roll`、独立した案をまとめた場合は各案の `roll` に表示されます。
 
 正式改名の `rename` はGM審査のみで、ダイスを使いません。単純な移動・受け渡しの `direct` や、確定済みの付着を外す `detach` は、必要な権限と条件が揃えばダイスなしで成立します。
 

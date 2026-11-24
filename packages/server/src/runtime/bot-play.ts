@@ -1923,6 +1923,7 @@ export class BotPlay {
       { success: true };
     const effect = action.effect;
     let effectState: string | null = null;
+    let effectMinutes: number | undefined;
     const prior = await this.store.receipt(context.worldId, request);
     if (prior) {
       const saved = (
@@ -2007,12 +2008,14 @@ export class BotPlay {
         !victim && (npc || otherParticipant)
           ? await this.#atPlaces(context, places)
           : undefined;
+      const replacesStateId = effect.replacesStateId;
+      const priorStates =
+        nearby && replacesStateId
+          ? (await this.#physicalStates(context, effect.targetId)).states
+          : [];
       const previous =
-        nearby &&
-        effect.replacesStateId &&
-        (await this.#physicalStates(context, effect.targetId)).states.find(
-          (s) => s.id === effect.replacesStateId,
-        );
+        priorStates.find((state) => state.relationId === replacesStateId) ??
+        priorStates.find((state) => state.id === replacesStateId);
 
       if (
         !victim &&
@@ -2113,12 +2116,13 @@ export class BotPlay {
         };
         if (!npc) addFumble(changes, request, actorId, at, outcome);
         if (outcome.success) {
-          effectState =
-            person && !npc
-              ? (saved.setting.states?.find(
-                  (state) => state.id === effect.targetId,
-                )?.text ?? null)
-              : saved.observable;
+          if (person && !npc) {
+            const state = saved.setting.states?.find(
+              (state) => state.id === effect.targetId,
+            );
+            effectState = state?.text ?? null;
+            effectMinutes = state?.minutes;
+          } else effectState = saved.observable;
           if (saved.perception)
             stealth = await this.#oppositionObservations(
               request,
@@ -2260,14 +2264,17 @@ export class BotPlay {
     if (effect && effectState) {
       const state = derivedId(request + ":state");
       changes.nodes.push({ id: state, kind: "script", text: effectState });
-      link({
-        kind: "status",
-        source: effect.targetId,
-        target: state,
-        role: "content",
-        text: judged,
-        stateOrigin: { requestId: request, actorId },
-      });
+      link(
+        {
+          kind: "status",
+          source: effect.targetId,
+          target: state,
+          role: "content",
+          text: judged,
+          stateOrigin: { requestId: request, actorId },
+        },
+        effectMinutes ? at + effectMinutes * 60000 : undefined,
+      );
       link({ kind: "status", source: state, target: event, role: "about" });
     }
     const death = await this.#applyDeathPolicy(
@@ -6428,6 +6435,7 @@ export class BotPlay {
       const allowApply = fresh.map(
         (p) =>
           !!p.statusReview?.onlyStateCreation &&
+          !p.changes.edges.some((edge) => edge.stateOrigin) &&
           !p.materials?.length &&
           !waitMinutes,
       );
@@ -6775,7 +6783,7 @@ export class BotPlay {
         if (persons.length)
           reject(
             "PERSON_REFERENCE_REQUIRED",
-            `${persons.map((text) => `「${text}」`).join("・")}は登録済みの人物です。本人に起きることは、新しい物品や個体の作成では確定できません。同じ場所で本人のIDを指定して申請してください（受領、または --oppose）`,
+            `${persons.map((text) => `「${text}」`).join("・")}は登録済みの人物です。本人に起きることは、新しい物品や個体の作成では確定できません。同じ場所で本人のIDを指定し、受領が必要な操作か、applyのopposeで申請してください`,
           );
       }
       if (!needsSp && settings.size)
@@ -8564,8 +8572,6 @@ export class BotPlay {
           ended.filter((e) => e !== undefined),
           at,
         );
-      if (statusReview && changes.edges.some((edge) => edge.stateOrigin))
-        statusReview.onlyStateCreation = false;
     }
     if (!impossible) {
       try {
@@ -10396,6 +10402,29 @@ export class BotPlay {
     }
     const world = await this.world(worldId);
     const context = this.store.context(world.id, dependencies);
+    if (action.type === "remove-place-item") {
+      const { placeId, itemId, count, text } = action;
+      if (
+        !(await directPlaces(context, actor)).includes(placeId) ||
+        (await context.holding(itemId))?.source !== placeId ||
+        (await context.node(itemId))?.kind !== "existence" ||
+        (await context.storageAccess(placeId, actor)).registered ||
+        (await context.holding(placeId)) ||
+        (await vehiclePerson(this.pool, world.id, placeId))
+      )
+        reject(
+          "PLACE_ITEM_REQUIRED",
+          "今いる未登録の場所が直接持つ物品を指定してください",
+        );
+      await context.validate();
+      return {
+        ...common,
+        dependencies: context.dependencies,
+        command: "oppose",
+        text,
+        operations: [{ type: "remove", id: itemId, count }],
+      };
+    }
     if (action.type === "increase-count") {
       const item = await context.node(action.itemId);
       if (item?.kind !== "existence" || action.count <= (item.count ?? 0))
