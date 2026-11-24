@@ -6170,6 +6170,220 @@ test("隠密中の対抗行動は所持・負傷・死亡を確定し、行為�
   }
 });
 
+test("非戦闘地域の隠密対抗は未成立の欠損を目撃させず、試みの目撃と匿名性を保つ", async () => {
+  const f = await fixture();
+  const [actor, target, witness] = f.actors as [string, string, string];
+  const db = isolated.databases.postgres;
+  await db.query(
+    "UPDATE world_construction SET non_combat_areas=$2 WHERE id=$1",
+    [f.world, JSON.stringify([{ rootId: f.place, memberPlaceIds: [] }])],
+  );
+  await f.move(0, f.far);
+  await f.move(2, f.place);
+  stealthGm(f);
+  const arrival = randomUUID();
+  await stealthRolls(arrival, {
+    ["arrival:" + target]: 1,
+    ["arrival:" + witness]: 6,
+  });
+  await f.send(0, {
+    command: "apply",
+    requestId: arrival,
+    expectedSp: 0,
+    dependencies: [],
+    action: {
+      type: "direct",
+      text: "隠密で広場へ行く",
+      stealth: true,
+      operations: [
+        { type: "locate", subjectId: actor, text: "広場", aboutIds: [f.place] },
+      ],
+    },
+  });
+  await f.send(1, { command: "contact", targetId: actor });
+  await giveTurn(f, 0);
+
+  const requestId = randomUUID();
+  const proposed = "人物0が左手を切り落とした";
+  const alleged = "左手が床に落ちた";
+  const damage = "左手を欠損している";
+  const setting = { sides: 6, successThrough: 3 };
+  await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,1)", [
+    requestId,
+    setting,
+  ]);
+  await stealthRolls(requestId, {
+    ["attempt:" + target]: 6,
+    ["attempt:" + witness]: 1,
+  });
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-opposition-dice");
+    const { affected, perception } = JSON.parse(messages[1]!.content) as {
+      affected?: string[];
+      perception: { states: string[]; observers: string[] };
+    };
+    expect(affected).toBeUndefined();
+    expect(perception.observers).toContain(witness);
+    return answer(id, {
+      ...setting,
+      states: [{ id: target, text: damage }],
+      perception: {
+        states: Object.fromEntries(
+          perception.states.map((id) => [id, alleged]),
+        ),
+        about: [],
+        observation: alleged,
+        witnesses: Object.fromEntries(
+          perception.observers.map((id) => [id, setting]),
+        ),
+      },
+    });
+  });
+
+  const input = {
+    command: "apply",
+    requestId,
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "oppose",
+      targetId: target,
+      text: proposed,
+      description: damage,
+    },
+  };
+  const commit = f.store.commit.bind(f.store);
+  const interrupted = vi
+    .spyOn(f.store, "commit")
+    .mockImplementationOnce(async (...args) => {
+      await commit(...args);
+      throw new Error("世界の確定後に接続が切れた");
+    });
+  await expect(f.send(0, input)).rejects.toThrow("世界の確定後に接続が切れた");
+  interrupted.mockRestore();
+  const result = await f.send(0, input);
+  expect(result).toMatchObject({
+    outcome: { success: true, roll: 1 },
+    action: { message: expect.stringContaining("非戦闘地域") },
+  });
+  expect(await f.send(0, input)).toEqual(result);
+
+  const records = (await f.status(2)).entries;
+  const observed = records
+    .flatMap((row) => row.payload.entries ?? [])
+    .find((entry: { label?: string }) => entry.label === "目撃");
+  expect(observed).toMatchObject({
+    actorId: witness,
+    input: expect.any(String),
+  });
+  expect(observed?.input).toBeTruthy();
+  expect(JSON.stringify(observed)).not.toContain(actor);
+  expect(JSON.stringify(observed)).not.toContain("人物0");
+
+  const receipt = await f.store.receipt(f.graph, requestId);
+  expect(receipt?.changes.nodes).toEqual(
+    expect.arrayContaining([expect.objectContaining({ kind: "event" })]),
+  );
+  expect(receipt?.changes.edges).not.toContainEqual(
+    expect.objectContaining({ kind: "status", source: target, text: "judged" }),
+  );
+  const views = JSON.stringify([
+    result,
+    receipt?.changes,
+    records,
+    (await f.status(0)).entries,
+  ]);
+  for (const falseResult of [proposed, alleged, damage])
+    expect(views).not.toContain(falseResult);
+});
+
+test("対抗申請の応答と公開記録には成否に応じてGMが確定した状態だけが載る", async () => {
+  const f = await fixture(2);
+  const [actor, target] = f.actors as [string, string];
+  await f.send(1, { command: "contact", targetId: actor });
+  await giveTurn(f, 0);
+  const proposed = "相手の右手を切り落とした";
+  const description = "右手を欠損している";
+  const strike = async (roll: number, state: string) => {
+    const requestId = randomUUID();
+    const setting = {
+      sides: 6,
+      successThrough: 3,
+      states: [{ id: target, text: state }],
+    };
+    await isolated.databases.postgres.query(
+      "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,$3)",
+      [requestId, setting, roll],
+    );
+    f.calls.mockImplementationOnce(async (id, role) => {
+      expect(role).toBe("world-opposition-dice");
+      return answer(id, setting);
+    });
+    const result = await f.send(0, {
+      command: "apply",
+      requestId,
+      expectedSp: 1,
+      dependencies: [],
+      action: { type: "oppose", targetId: target, text: proposed, description },
+    });
+    await giveTurn(f, 1);
+    const entry = (await f.status(1)).entries
+      .flatMap((row) => row.payload.entries ?? [])
+      .find(
+        (entry: { result?: { commitId?: string } }) =>
+          entry.result?.commitId === requestId,
+      );
+    const receipt = await f.store.receipt(f.graph, requestId);
+    expect(entry).toBeDefined();
+    expect(receipt?.changes.nodes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "event" })]),
+    );
+    const presentation = JSON.stringify([
+      result.action,
+      result.effectState,
+      entry?.input,
+      entry?.result.effectState,
+      receipt?.changes.nodes,
+    ]);
+    expect(presentation).not.toContain(proposed);
+    expect(presentation).not.toContain(description);
+    return { result, entry, presentation, receipt };
+  };
+
+  const actual = "右手の甲に浅い擦り傷がある";
+  const success = await strike(1, actual);
+  expect(success.result).toMatchObject({
+    outcome: { success: true, roll: 1 },
+    action: { message: expect.stringContaining(actual) },
+  });
+  expect(
+    JSON.stringify([success.entry?.input, success.entry?.result.effectState]),
+  ).toContain(actual);
+  expect(success.receipt?.changes.nodes).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ kind: "script", text: actual }),
+    ]),
+  );
+  expect(success.receipt?.changes.nodes).toContainEqual(
+    expect.objectContaining({
+      kind: "event",
+      text: expect.stringContaining(actual),
+    }),
+  );
+
+  await giveTurn(f, 0);
+  const conditional = "右手の指を動かせない";
+  const failure = await strike(6, conditional);
+  expect(failure.result).toMatchObject({
+    outcome: { success: false, roll: 6 },
+    action: { message: expect.stringContaining("失敗") },
+  });
+  expect(failure.presentation).not.toContain(conditional);
+  expect(failure.receipt?.changes.edges).not.toContainEqual(
+    expect.objectContaining({ kind: "status", source: target, text: "judged" }),
+  );
+});
+
 test("隠密移動の現在地は今回の滞在を発見した相手だけが取得できる", async () => {
   const f = await fixture();
   const [a, b, c] = f.actors as [string, string, string];
