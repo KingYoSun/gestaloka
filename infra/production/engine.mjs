@@ -24,6 +24,7 @@ const RESTIC =
   "restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510";
 const TAR =
   "node:24.22.1-bookworm-slim@sha256:1681862882da07ee5476fee047bcf34138833f1df42633bb25bcb0f438d5bf3d";
+const resumableServices = ["worker", "caddy"];
 const digest = (s) => createHash("sha256").update(s).digest("hex");
 export function command(args, input, environment = process.env) {
   return new Promise((resolvePromise, reject) => {
@@ -195,6 +196,7 @@ export class BackupEngine {
       const c = BackupConfiguration.parse(input.configuration);
       if (
         this.env.DEPLOYMENT_MODE !== "testing" &&
+        c.repository !== "local" &&
         !c.repository.startsWith("s3:https://")
       )
         throw new Error("HTTPS_REQUIRED");
@@ -243,34 +245,32 @@ export class BackupEngine {
     await this.save(`jobs/${id}.json`, job);
   }
   async restic(configuration, args) {
-    const env = {
-      ...process.env,
-      RESTIC_REPOSITORY: configuration.repository,
+    const local = configuration.repository === "local";
+    const settings = {
+      RESTIC_REPOSITORY: local ? "/state/repository" : configuration.repository,
       RESTIC_PASSWORD: configuration.password,
-      AWS_ACCESS_KEY_ID: configuration.accessKey,
-      AWS_SECRET_ACCESS_KEY: configuration.secretKey,
-      AWS_DEFAULT_REGION: configuration.region,
+      ...(local
+        ? {}
+        : {
+            AWS_ACCESS_KEY_ID: configuration.accessKey,
+            AWS_SECRET_ACCESS_KEY: configuration.secretKey,
+            AWS_DEFAULT_REGION: configuration.region,
+          }),
     };
     return this.run(
       [
         "run",
         "--rm",
         "--network",
-        `${this.project}_egress`,
+        local ? "none" : `${this.project}_egress`,
         "--mount",
         `type=volume,source=${this.project}_controller-state,target=/state`,
-        ...[
-          "RESTIC_REPOSITORY",
-          "RESTIC_PASSWORD",
-          "AWS_ACCESS_KEY_ID",
-          "AWS_SECRET_ACCESS_KEY",
-          "AWS_DEFAULT_REGION",
-        ].flatMap((v) => ["-e", v]),
+        ...Object.keys(settings).flatMap((v) => ["-e", v]),
         RESTIC,
         ...args,
       ],
       undefined,
-      env,
+      { ...process.env, ...settings },
     );
   }
   async snapshots(before) {
@@ -303,6 +303,20 @@ export class BackupEngine {
     await this.save(`jobs/${job.id}.json`, job);
   }
   async freeze(job) {
+    const running = (
+      await this.compose(
+        "ps",
+        "--status",
+        "running",
+        "--services",
+        ...resumableServices,
+      )
+    )
+      .toString()
+      .split(/\s+/);
+    job.resumeServices = resumableServices.filter((service) =>
+      running.includes(service),
+    );
     await this.step(job, "実行中の応答を保存");
     const db = await this.pool.connect();
     try {
@@ -319,7 +333,7 @@ export class BackupEngine {
         )
       ).rows;
       await db.query(
-        "UPDATE runtime_control SET configuration=jsonb_set(configuration,'{paused}','true'),version=version+1 WHERE singleton",
+        "UPDATE runtime_control SET configuration=jsonb_set(configuration - 'worldEditsUntil','{paused}','true'),version=version+1 WHERE singleton",
       );
       await db.query("COMMIT");
     } catch (error) {
@@ -462,6 +476,7 @@ export class BackupEngine {
     );
   }
   async thaw(job, manifest = job) {
+    const paused = job.paused || (manifest.paused ?? true);
     await this.step(job, "サービスを再起動");
     // Recreated processes read restored encryption keys; networking and controller credentials stay local.
     await this.compose(
@@ -477,11 +492,13 @@ export class BackupEngine {
       "api",
     );
     await this.pool.query(
-      "UPDATE runtime_control SET configuration=jsonb_set(configuration,'{paused}',$1::jsonb),version=version+1 WHERE singleton",
-      [JSON.stringify(manifest.paused ?? true)],
+      "UPDATE runtime_control SET configuration=jsonb_set(configuration - 'worldEditsUntil','{paused}',$1::jsonb),version=version+1 WHERE singleton",
+      [JSON.stringify(paused)],
     );
-    await this.compose("up", "-d", "--no-build", "worker", "caddy");
-    if (!manifest.paused && manifest.executions?.length)
+    const services = job.resumeServices ?? resumableServices;
+    if (services.length)
+      await this.compose("up", "-d", "--no-build", ...services);
+    if (!paused && services.includes("worker") && manifest.executions?.length)
       await this.compose(
         "exec",
         "-T",

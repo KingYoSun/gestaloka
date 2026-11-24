@@ -37,11 +37,11 @@ const gate = () => {
       vi.waitFor(() => expect(arrived).toBe(true), { timeout: 10000 }),
   };
 };
-const policy = async (paused: boolean) => {
+const policy = async (paused: boolean, worldEditsUntil?: string) => {
   const old = await RuntimeControl.read(isolated.databases.postgres);
   return auth.operations.execute(admin, randomUUID(), {
     operation: "runtime.put",
-    configuration: { ...old.configuration, paused },
+    configuration: { ...old.configuration, paused, worldEditsUntil },
     expectedVersion: old.version,
     reason: "試験",
   });
@@ -186,6 +186,126 @@ test("停止中は新規生成を拒否し、閲覧と管理操作を維持す�
   expect(queues.n).toBe(2); // initial delivery and one resume
   await runtime.tick(world);
   expect((await runtime.get(world)).state).toBe("ready");
+});
+
+test("管理修正の期限中だけ停止中のグラフを編集でき、通常プレイと到着は保留する", async () => {
+  const { world, id } = await prepareJoin();
+  await access.players.tick(id);
+  const actor = (await access.players.list(user, world)).items[0]!.actorId!;
+  const db = isolated.databases.postgres;
+  const execute = (
+    command: Parameters<typeof auth.operations.execute>[2],
+    requestId = randomUUID(),
+    operator = admin,
+  ) =>
+    auth.operations.execute(operator, requestId, command, {
+      players: access.players,
+    });
+  const arrival = randomUUID();
+  await db.query(
+    "INSERT INTO bot_arrival(id,world_id,actor_id,due,text,operations) VALUES($1,$2,$3,now(),$4,$5)",
+    [
+      arrival,
+      world,
+      actor,
+      "到着待ち",
+      JSON.stringify([{ type: "create", holder: actor, label: "布の包み" }]),
+    ],
+  );
+
+  await policy(true);
+  const read = await execute({
+    operation: "worlds.graph",
+    worldId: world,
+    query: { kind: "node", id: actor },
+  });
+  const item = randomUUID();
+  const edit = {
+    operation: "worlds.edit" as const,
+    worldId: world,
+    at: 0,
+    dependencies: read.dependencies as { key: string; version: number }[],
+    changes: {
+      nodes: [
+        { id: item, kind: "existence" as const, text: "公開設定の確認品" },
+      ],
+      revisions: [
+        {
+          ...(read.node as { id: string; kind: "existence"; text: string }),
+          text: "管理修正後の呼称",
+        },
+      ],
+      edges: [
+        {
+          id: randomUUID(),
+          kind: "has" as const,
+          source: actor,
+          target: item,
+          period: { from: 0 },
+        },
+      ],
+      endEdges: [],
+    },
+    reason: "保守期間の記録を整理",
+  };
+  const request = randomUUID();
+  await expect(execute(edit, request)).rejects.toMatchObject({
+    code: "MAINTENANCE",
+  });
+
+  const until = new Date(Date.now() + 60_000).toISOString();
+  await policy(true, until);
+  expect((await RuntimeControl.read(db)).configuration).toMatchObject({
+    paused: true,
+    worldEditsUntil: until,
+  });
+  await expect(execute(edit, randomUUID(), user)).rejects.toMatchObject({
+    code: "ADMIN_REQUIRED",
+  });
+  const result = await execute(edit, request);
+  expect(result.management).toMatchObject({
+    editorId: admin,
+    reason: edit.reason,
+  });
+  await expect(execute(edit, request)).resolves.toEqual(result);
+  await expect(
+    access.botCommand(
+      user,
+      world,
+      { requestId: randomUUID(), command: "start" },
+      actor,
+    ),
+  ).rejects.toMatchObject({ code: "MAINTENANCE" });
+  await expect(
+    access.setViewers(
+      user,
+      world,
+      { requestId: randomUUID(), targetId: item, viewers: "all" },
+      actor,
+    ),
+  ).rejects.toMatchObject({ code: "MAINTENANCE" });
+  await expect(
+    execute({
+      operation: "playSessions.advance",
+      worldId: world,
+      sessionId: randomUUID(),
+      reason: "保守中の進行を確認",
+    }),
+  ).rejects.toMatchObject({ code: "MAINTENANCE" });
+  await access.botPlay.deliverArrivals(world);
+  const arrived = () =>
+    db.query("SELECT id FROM bot_arrival WHERE id=$1", [arrival]);
+  expect((await arrived()).rowCount).toBe(1);
+
+  await policy(true, new Date(Date.now() - 60_000).toISOString());
+  await expect(execute(edit)).rejects.toMatchObject({ code: "MAINTENANCE" });
+  await expect(execute(edit, request)).resolves.toEqual(result);
+  await policy(false, until);
+  expect(
+    (await RuntimeControl.read(db)).configuration.worldEditsUntil,
+  ).toBeUndefined();
+  await access.botPlay.deliverArrivals(world);
+  expect((await arrived()).rowCount).toBe(0);
 });
 
 test.each(["maintenance", "ban", "demotion"] as const)(

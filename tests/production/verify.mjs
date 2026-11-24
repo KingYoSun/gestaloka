@@ -66,12 +66,12 @@ const compose = (d, ...args) =>
     resolve("infra/production/compose.yaml"),
     ...args,
   ]);
-const cli = (action, d) =>
+const cli = (action, d, ...args) =>
   new Promise((resolvePromise, reject) => {
     import("node:child_process").then(({ spawn }) => {
       const child = spawn(
         process.execPath,
-        ["scripts/production.mjs", action, d.root],
+        ["scripts/production.mjs", action, d.root, ...args],
         { stdio: "inherit" },
       );
       child.on("error", reject);
@@ -82,6 +82,125 @@ const cli = (action, d) =>
       );
     });
   });
+async function verifyLocalRecovery(deployment) {
+  const name = deployment.config.name;
+  const services = async () =>
+    (await compose(deployment, "ps", "-q", "api", "worker"))
+      .toString()
+      .split(/\s+/)
+      .filter(Boolean)
+      .sort();
+  const runJob = async (request) => wait(name, (await ops(name, request)).id);
+  const runHostJob = async (request) => {
+    const requestId = randomUUID();
+    const file = join(deployment.root, "local-backup-test.json");
+    await writeFile(file, JSON.stringify({ ...request, requestId }), {
+      mode: 0o600,
+    });
+    await cli("controller", deployment, file);
+    await wait(name, requestId);
+  };
+  const running = await services();
+  assert.equal(running.length, 2);
+  await cli("backup-controller", deployment);
+  assert.deepEqual(await services(), running);
+
+  const previous = await ops(name, { operation: "backups.read" });
+  await runHostJob({
+    operation: "backups.configure",
+    configuration: {
+      enabled: false,
+      intervalHours: 24,
+      retentionDays: 30,
+      repository: "local",
+      password: "test-password-for-local-recovery-only",
+    },
+    expectedVersion: previous.version,
+    reason: "ホスト内の隔離復元試験",
+  });
+  assert.equal(
+    (await ops(name, { operation: "backups.read" })).configuration.repository,
+    "local",
+  );
+  const before = await ops(name, { operation: "runtime.read" });
+  const editUntil = () => new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  await ops(name, {
+    operation: "runtime.put",
+    configuration: {
+      ...before.configuration,
+      paused: true,
+      worldEditsUntil: editUntil(),
+    },
+    expectedVersion: before.version,
+    reason: "管理確認期間の取得前検証",
+  });
+  await compose(deployment, "stop", "worker", "caddy");
+  await runHostJob({
+    operation: "backups.create",
+    reason: "メンテナンス中のホスト内バックアップ",
+  });
+  const stillStopped = await compose(
+    deployment,
+    "ps",
+    "--status",
+    "running",
+    "-q",
+    "worker",
+    "caddy",
+  );
+  assert.equal(stillStopped.toString().trim(), "");
+  await cli("up", deployment);
+  const snapshots = await ops(name, { operation: "backups.list" });
+  assert.equal(snapshots.items.length, 1);
+  const afterBackup = await ops(name, { operation: "runtime.read" });
+  assert.equal(afterBackup.configuration.paused, true);
+  assert.equal(afterBackup.configuration.worldEditsUntil, undefined);
+
+  await ops(name, {
+    operation: "runtime.put",
+    configuration: {
+      ...afterBackup.configuration,
+      retentionDays: afterBackup.configuration.retentionDays + 1,
+      worldEditsUntil: editUntil(),
+    },
+    expectedVersion: afterBackup.version,
+    reason: "取得後に管理修正する隔離試験",
+  });
+  const {
+    items: [{ id: worldId }],
+  } = await ops(name, { operation: "worlds.list" });
+  const itemId = randomUUID();
+  const item = () =>
+    ops(name, {
+      operation: "worlds.graph",
+      worldId,
+      query: { kind: "node", id: itemId },
+    });
+  await ops(name, {
+    operation: "worlds.edit",
+    worldId,
+    at: Date.now(),
+    dependencies: [],
+    changes: {
+      nodes: [{ id: itemId, kind: "existence", text: "取得後の試験物品" }],
+      edges: [],
+      endEdges: [],
+    },
+    reason: "ローカル復元で消えることを確認する試験物品",
+  });
+  assert.equal((await item()).node.id, itemId);
+  await runJob({
+    operation: "backups.restore",
+    snapshot: snapshots.items[0].id,
+    reason: "メンテナンス中のホスト内復元",
+  });
+  const restored = await ops(name, { operation: "runtime.read" });
+  assert.deepEqual(restored.configuration, {
+    ...before.configuration,
+    paused: true,
+  });
+  assert.equal((await item()).node, null);
+}
 const storage = `gestaloka-recovery-s3-${suffix}`;
 const https = async (d, subdomain, path, method = "GET") =>
   new Promise((resolvePromise, reject) => {
@@ -314,10 +433,16 @@ try {
     ).toString(),
   );
   assert(result.noDuplicateCharge, JSON.stringify(result));
+  await verifyLocalRecovery(source);
   await writeFile(
     join(root, "result.json"),
     JSON.stringify(
-      { at: new Date().toISOString(), snapshot, ...result },
+      {
+        at: new Date().toISOString(),
+        snapshot,
+        localRecoveryWhilePaused: true,
+        ...result,
+      },
       null,
       2,
     ),

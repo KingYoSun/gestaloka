@@ -426,6 +426,19 @@ test("設定・計算額・世界差分を共通APIへ接続し、狭い画面�
     .getByRole("button", { name: "この設定を入力に使う", exact: true })
     .click();
   await page.getByLabel("メンテナンス・運用停止", { exact: true }).check();
+  const deadline = new Date(Date.now() + 60 * 60 * 1000);
+  deadline.setSeconds(0, 0);
+  const localDeadline = new Date(
+    deadline.getTime() - deadline.getTimezoneOffset() * 60_000,
+  )
+    .toISOString()
+    .slice(0, 16);
+  await page
+    .getByLabel("運用停止中に管理修正を許可する期限を指定", { exact: true })
+    .check();
+  await page
+    .getByLabel("運用停止中に管理修正を許可する期限", { exact: true })
+    .fill(localDeadline);
   await page.getByLabel("エラー率（%）を指定", { exact: true }).check();
   await page.getByLabel("エラー率（%）", { exact: true }).fill("10");
   await page.getByLabel("操作の理由", { exact: true }).fill("監視と停止の設定");
@@ -443,6 +456,7 @@ test("設定・計算額・世界差分を共通APIへ接続し、狭い画面�
   });
   expect(control.configuration).toMatchObject({
     paused: true,
+    worldEditsUntil: deadline.toISOString(),
     thresholds: { errorPercent: 10 },
   });
   await auth.operations.execute(admin, randomUUID(), {
@@ -744,6 +758,15 @@ test("MCP登録・認可失効とバックアップ画面の受付・進捗を�
   await expect(
     page.getByLabel("取得間隔（時間）", { exact: true }),
   ).toHaveValue("24");
+  const destination = page.getByLabel("バックアップの保存先", { exact: true });
+  await destination.selectOption({ label: "配備先ホスト内" });
+  await expect(page.getByLabel("S3アクセスキー", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByLabel("暗号化パスワード（16文字以上）", { exact: true }),
+  ).toBeVisible();
+  await destination.selectOption({ label: "S3" });
   await page
     .getByLabel("バックアップ先（s3:https://…）", { exact: true })
     .fill("s3:https://storage.invalid/test");

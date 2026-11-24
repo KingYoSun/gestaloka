@@ -58,14 +58,17 @@ export class RuntimeControl {
       userId?: string | undefined;
       worldId?: string | undefined;
     } = {},
-    lock = false,
+    lock: boolean | "nowait" = false,
+    operation?: "worlds.edit",
   ) {
-    const policy = (
-      await db.query(
-        `SELECT configuration FROM runtime_control WHERE singleton${lock ? " FOR SHARE" : ""}`,
+    const policy = await this.#policy(db, lock);
+    if (
+      policy?.paused &&
+      !(
+        operation === "worlds.edit" &&
+        Date.parse(policy.worldEditsUntil ?? "") > Date.now()
       )
-    ).rows[0];
-    if (policy?.configuration.paused)
+    )
       throw new RuntimeStopped(
         "MAINTENANCE",
         "運用停止中です。保存状態を保持し、解除後に再開できます。",
@@ -131,5 +134,68 @@ export class RuntimeControl {
         "AUTHORITY_LOST",
         "操作対象の権限が失効したため処理を保留しました。",
       );
+  }
+
+  static async #policy(db: Database, lock: boolean | "nowait") {
+    const clause =
+      lock === "nowait" ? " FOR SHARE NOWAIT" : lock ? " FOR SHARE" : "";
+    try {
+      return (
+        await db.query<{
+          configuration: { paused: boolean; worldEditsUntil?: string };
+        }>(`SELECT configuration FROM runtime_control WHERE singleton${clause}`)
+      ).rows[0]?.configuration;
+    } catch (error) {
+      if (
+        lock === "nowait" &&
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "55P03"
+      )
+        throw new RuntimeStopped(
+          "MAINTENANCE",
+          "運用設定の切り替え中です。少し待ってから再開できます。",
+        );
+      throw error;
+    }
+  }
+
+  static async isPaused(db: Database) {
+    return (await this.#policy(db, false))?.paused === true;
+  }
+
+  static async withActiveRuntime<T>(
+    pool: pg.Pool,
+    work: (db: pg.PoolClient) => Promise<T>,
+  ) {
+    const db = await pool.connect();
+    try {
+      await db.query("BEGIN");
+      await this.check(db, {}, true);
+      const result = await work(db);
+      await db.query("COMMIT");
+      return result;
+    } catch (error) {
+      await db.query("ROLLBACK");
+      throw error;
+    } finally {
+      db.release();
+    }
+  }
+
+  // 期限処理や到着通知を確定する短いトランザクションだけ、停止設定を共有ロックする。
+  static async runWhenActive(
+    pool: pg.Pool,
+    work: (db: pg.PoolClient) => Promise<unknown>,
+  ) {
+    try {
+      await this.withActiveRuntime(pool, work);
+      return true;
+    } catch (error) {
+      if (!(error instanceof RuntimeStopped && error.code === "MAINTENANCE"))
+        throw error;
+      return false;
+    }
   }
 }

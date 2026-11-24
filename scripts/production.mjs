@@ -13,7 +13,7 @@ import {
 const [action, directory, argument] = process.argv.slice(2);
 if (!directory)
   throw new Error(
-    "使い方: pnpm production <init|render|build|up|stop|status|controller|recover> <設定ディレクトリ> [JSONファイル]",
+    "使い方: pnpm production <init|render|build|up|stop|status|backup-controller|controller|recover> <設定ディレクトリ> [JSONファイル]",
   );
 const root = resolve(directory);
 if (action === "init") {
@@ -81,6 +81,19 @@ if (action === "init") {
     case "build":
       await compose("build");
       console.log("公開用イメージを作成しました。");
+      break;
+    case "backup-controller":
+      await compose("build", "controller");
+      await seed();
+      await compose(
+        "up",
+        "-d",
+        "--no-build",
+        "--no-deps",
+        "--wait",
+        "controller",
+      );
+      console.log("バックアップ制御サービスを更新しました。");
       break;
     case "up": {
       const worker = (
