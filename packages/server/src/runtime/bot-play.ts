@@ -171,7 +171,7 @@ type CompanionJudgement = z.infer<typeof BlueprintDecision> & {
   text: string;
   repeated?: true;
 };
-type Input = z.infer<typeof PlayCommand>;
+type Input = z.infer<typeof PlayCommand> & { endStateTargetId?: string };
 type VehicleControl = Extract<Input, { command: "vehicle-request-control" }>;
 type VehicleApplication = {
   vehicleId: string;
@@ -6286,12 +6286,14 @@ export class BotPlay {
       splitMode,
       hasUnrolledChanges = false,
       referenced = [],
+      endStatesOnly = false,
     }: {
       explore?: boolean;
       waitMinutes?: number | undefined;
       splitMode?: "update" | "create-batch" | undefined;
       hasUnrolledChanges?: boolean;
       referenced?: string[];
+      endStatesOnly?: boolean;
     } = {},
   ) {
     type Result =
@@ -6434,6 +6436,7 @@ export class BotPlay {
     if (fresh.length) {
       const allowApply = fresh.map(
         (p) =>
+          !endStatesOnly &&
           !!p.statusReview?.onlyStateCreation &&
           !p.changes.edges.some((edge) => edge.stateOrigin) &&
           !p.materials?.length &&
@@ -6490,6 +6493,7 @@ export class BotPlay {
         fresh[0]!.changes.endEdges.length ===
           reviews[0]!.requestedEnds.length + reviews[0]!.relatedEnds.length;
       const confirmed =
+        !endStatesOnly &&
         !batch &&
         reviews[0] &&
         !fresh[0]!.changes.edges.some((edge) => edge.stateOrigin)
@@ -6565,6 +6569,11 @@ export class BotPlay {
               .parse(parseOutput(raw)).settings
           : [parseOutput(raw)];
         return values.map((rawValue, i) => {
+          if (endStatesOnly)
+            return {
+              ...WitnessDice.strip().parse(rawValue),
+              endEdges: fresh[i]!.changes.endEdges,
+            };
           const value = allowApply[i]
             ? ApplyStatus.or(Dice).parse(applyChoice(rawValue))
             : Dice.parse(rawValue);
@@ -6613,38 +6622,41 @@ export class BotPlay {
         [
           {
             role: "system",
-            content: compact
-              ? selfStatusPrompt +
-                stateEndsPrompt +
-                diceStatePrompt +
-                "confirmedは先行する成功時に確定した状態。今回の対象についての結果かを本文と時点で確かめる。不確実なら{sides,successThrough,endEdges}。世界の基準: " +
+            content: endStatesOnly
+              ? "指定された状態を終了する申請の成否を判定する。changes.endEdgesにある状態は成功時にすべて終了する。現在の状態、申請内容、世界の基準から判断し、{sides:整数,successThrough:整数}を返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準: " +
                 criteria
-              : (reviews.length
-                  ? "申請した変更を審査する。ダイスを振る場合は{sides:整数,successThrough:整数}を返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準と確定した材料から判断する。"
-                  : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
-                diceStatePrompt +
-                (reviews.length ? selfStatusPrompt + stateEndsPrompt : "") +
-                (consumable.length ? consumePrompt : "") +
-                (work ? workMaterialPrompt + placeStatePrompt : "") +
-                (material.some((p) => p.learning)
-                  ? "learningは本人が選んだ技能の発展・統合の申請。consumeSkillIdsで示された習得済み技能の本文と根拠、申請のtextとbasisから、引き継ぐ能力と新しく必要な応用・習熟を世界の基準に照らして判定する。中身を委ねられた技能は、その適用範囲と新たにできることを具体化する。"
-                  : "") +
-                (decides ? decidePrompt : "") +
-                (explore
-                  ? explorePrompt
-                  : individualsPrompt + (await this.#fumblePrompt(world))) +
-                (fresh.some((p) => p.requestText)
-                  ? "requestTextは元の申請の経緯。各案の技能や製作はその案のchangesだけを判定し、別の案で使う材料をこの案に割り当てない。"
-                  : "") +
-                (batch
-                  ? "proposalsの順に各案のダイス設定を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
-                  : "") +
-                (waitMinutes ? waitPrompt : "") +
-                (storageReference !== undefined
-                  ? `storageIds に指定された対象ごとに、標準的な家の${storageReference}枠を基準として、規模と用途に見合う保管枠を決める。同じダイス設定に storageLimits を加え、対象の storageId と limitSlots（正の整数）を持つ配列で返す。`
-                  : "") +
-                "世界の基準: " +
-                criteria,
+              : compact
+                ? selfStatusPrompt +
+                  stateEndsPrompt +
+                  diceStatePrompt +
+                  "confirmedは先行する成功時に確定した状態。今回の対象についての結果かを本文と時点で確かめる。不確実なら{sides,successThrough,endEdges}。世界の基準: " +
+                  criteria
+                : (reviews.length
+                    ? "申請した変更を審査する。ダイスを振る場合は{sides:整数,successThrough:整数}を返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準と確定した材料から判断する。"
+                    : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
+                  diceStatePrompt +
+                  (reviews.length ? selfStatusPrompt + stateEndsPrompt : "") +
+                  (consumable.length ? consumePrompt : "") +
+                  (work ? workMaterialPrompt + placeStatePrompt : "") +
+                  (material.some((p) => p.learning)
+                    ? "learningは本人が選んだ技能の発展・統合の申請。consumeSkillIdsで示された習得済み技能の本文と根拠、申請のtextとbasisから、引き継ぐ能力と新しく必要な応用・習熟を世界の基準に照らして判定する。中身を委ねられた技能は、その適用範囲と新たにできることを具体化する。"
+                    : "") +
+                  (decides ? decidePrompt : "") +
+                  (explore
+                    ? explorePrompt
+                    : individualsPrompt + (await this.#fumblePrompt(world))) +
+                  (fresh.some((p) => p.requestText)
+                    ? "requestTextは元の申請の経緯。各案の技能や製作はその案のchangesだけを判定し、別の案で使う材料をこの案に割り当てない。"
+                    : "") +
+                  (batch
+                    ? "proposalsの順に各案のダイス設定を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
+                    : "") +
+                  (waitMinutes ? waitPrompt : "") +
+                  (storageReference !== undefined
+                    ? `storageIds に指定された対象ごとに、標準的な家の${storageReference}枠を基準として、規模と用途に見合う保管枠を決める。同じダイス設定に storageLimits を加え、対象の storageId と limitSlots（正の整数）を持つ配列で返す。`
+                    : "") +
+                  "世界の基準: " +
+                  criteria,
           },
           {
             role: "user",
@@ -8408,6 +8420,16 @@ export class BotPlay {
       const ended = await Promise.all(
         changes.endEdges.map((id) => context.edge(id)),
       );
+      if (
+        input.endStateTargetId &&
+        ended.some(
+          (edge) =>
+            !edge ||
+            edge.period.from > at ||
+            (edge.period.until ?? Infinity) <= at,
+        )
+      )
+        reject("STATE_TARGET_CHANGED", "同じ対象の現行状態を指定してください");
       for (const edge of [...changes.edges, ...ended]) {
         if (edge?.kind !== "status") continue;
         const operator =
@@ -8562,12 +8584,15 @@ export class BotPlay {
       }
       // 私的解釈の追加は、同じ申請の既存事実の変更に作成権限を与えない。
       needsCreation =
-        !!(changes.nodes.length || changes.edges.length) &&
-        !privateInterpretation(actor, changes);
+        !!input.endStateTargetId ||
+        (!!(changes.nodes.length || changes.edges.length) &&
+          !privateInterpretation(actor, changes));
       if (input.command !== "update" || !input.resolvedState)
         statusReview = await directStatusReview(
           context,
-          input.command === "oppose" ? controlled : new Set([actor]),
+          input.command === "oppose"
+            ? controlled
+            : new Set([input.endStateTargetId ?? actor]),
           changes,
           ended.filter((e) => e !== undefined),
           at,
@@ -8576,7 +8601,14 @@ export class BotPlay {
     if (!impossible) {
       try {
         const preview = statusReview?.requestedEnds.length
-          ? await settleStateEnds(context, at, changes, [], [], statusReview)
+          ? await settleStateEnds(
+              context,
+              at,
+              changes,
+              input.endStateTargetId ? statusReview.requestedEnds : [],
+              statusReview.subjects,
+              statusReview,
+            )
           : changes;
         context = await this.#validate(context, preview, at, configuringDraw);
       } catch (error) {
@@ -8775,7 +8807,9 @@ export class BotPlay {
         "材料は新規作成の判定を伴う申請に指定してください",
       );
     const consumable =
-      (needsCreation && input.command !== "explore") ||
+      (needsCreation &&
+        input.command !== "explore" &&
+        !input.endStateTargetId) ||
       input.command === "oppose"
         ? await this.#consumable(context, actor, changes)
         : [];
@@ -8880,7 +8914,8 @@ export class BotPlay {
                   "operations" in input ? input.operations : undefined,
                 statusReview: selfStatus,
                 materials:
-                  input.command === "update" || input.command === "create"
+                  !input.endStateTargetId &&
+                  (input.command === "update" || input.command === "create")
                     ? (input.materials ?? [])
                     : undefined,
               },
@@ -8890,6 +8925,7 @@ export class BotPlay {
               explore: input.command === "explore",
               waitMinutes: wait,
               referenced: [...parties, ...refs],
+              endStatesOnly: !!input.endStateTargetId,
             },
           )
         )[0]
@@ -8907,7 +8943,8 @@ export class BotPlay {
       ]);
       if (!dice.success) {
         changes = empty();
-        addFumble(changes, input.requestId, actor, at, dice);
+        if (!input.endStateTargetId)
+          addFumble(changes, input.requestId, actor, at, dice);
         return {
           context,
           changes,
@@ -10540,13 +10577,32 @@ export class BotPlay {
         "TARGET_NOT_FOUND",
         "本人か現在地から作用できる対象を指定してください",
       );
-    if (action.stateId) {
-      const previous = await context.edge(action.stateId);
+    const endEdges =
+      "operation" in action
+        ? [...new Set(action.endStateIds)]
+        : action.stateId
+          ? [action.stateId]
+          : [];
+    for (const stateId of endEdges) {
+      const previous = await context.edge(stateId);
       if (
         previous?.source !== action.targetId ||
         !editableStatus(previous, await context.node(previous.target))
       )
         reject("STATE_TARGET_CHANGED", "同じ対象の現行状態を指定してください");
+    }
+    if ("operation" in action) {
+      await context.validate();
+      return {
+        ...common,
+        dependencies: context.dependencies,
+        command: "update",
+        text: action.description
+          ? `${action.text}\n${action.description}`
+          : action.text,
+        endStateTargetId: action.targetId,
+        changes: { ...empty(), endEdges },
+      };
     }
     if (
       action.attachedItemId &&
@@ -10609,7 +10665,7 @@ export class BotPlay {
             },
           },
         ],
-        endEdges: action.stateId ? [action.stateId] : [],
+        endEdges,
       },
     };
   }
