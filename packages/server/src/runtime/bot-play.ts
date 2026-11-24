@@ -5,6 +5,9 @@ import type pg from "pg";
 import { z } from "zod";
 import {
   PlayCommand,
+  PlayerPlayCommand,
+  type ApplyCommand,
+  applicationSp,
   DrawReward,
   type DrawTable,
   type DrawTableAction,
@@ -294,6 +297,15 @@ function actionMessage(
       return result.state === "receiving" || result.state === "pending"
         ? "メモは受領判断待ちです。メモIDは確定予定です"
         : "メモを確定しました";
+    case "rename": {
+      const outcome = result.outcome as
+        { success?: boolean; reason?: string } | undefined;
+      if (outcome?.success === false)
+        return outcome.reason ?? "改名は認められませんでした";
+      return result.state === "receiving"
+        ? "改名の受領判断を待っています"
+        : "呼び名を確認しました";
+    }
     case "explore":
       return (result.outcome as { success?: boolean })?.success === false
         ? "新しい場所は見つかりませんでした"
@@ -1147,14 +1159,16 @@ export class BotPlay {
       world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
       actor_id uuid NOT NULL,request_id uuid NOT NULL,owner uuid NOT NULL,
       expires_at timestamptz NOT NULL,PRIMARY KEY(world_id,actor_id));
-      ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS creation_rolls jsonb, ADD COLUMN IF NOT EXISTS sp_user uuid, ADD COLUMN IF NOT EXISTS sp_reset timestamptz;
+      ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS creation_rolls jsonb, ADD COLUMN IF NOT EXISTS sp_user uuid, ADD COLUMN IF NOT EXISTS sp_reset timestamptz,
+        ADD COLUMN IF NOT EXISTS sp_amount integer NOT NULL DEFAULT 1, ADD COLUMN IF NOT EXISTS sp_opposed boolean NOT NULL DEFAULT false;
       ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS draw_reviewed_at timestamptz;
       CREATE TABLE IF NOT EXISTS draw_table_draft (
         world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
         target_id uuid NOT NULL, actor_id uuid NOT NULL, data jsonb NOT NULL,
         PRIMARY KEY(world_id,target_id,actor_id));
       CREATE INDEX IF NOT EXISTS bot_request_draw_review ON bot_request(world_id,actor_id,(outcome->>'targetId'),(outcome->>'basis'),draw_reviewed_at DESC) WHERE draw_reviewed_at IS NOT NULL;
-      ALTER TABLE bot_adjudication ADD COLUMN IF NOT EXISTS sp_user uuid, ADD COLUMN IF NOT EXISTS sp_reset timestamptz;
+      ALTER TABLE bot_adjudication ADD COLUMN IF NOT EXISTS sp_user uuid, ADD COLUMN IF NOT EXISTS sp_reset timestamptz,
+        ADD COLUMN IF NOT EXISTS sp_amount integer NOT NULL DEFAULT 1;
       CREATE INDEX IF NOT EXISTS bot_adjudication_sp ON bot_adjudication(world_id,sp_user,sp_reset) WHERE sp_user IS NOT NULL;
       CREATE INDEX IF NOT EXISTS bot_request_sp ON bot_request(world_id,sp_user,sp_reset) WHERE sp_user IS NOT NULL;
       ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS received_at timestamptz, ADD COLUMN IF NOT EXISTS user_id uuid, ADD COLUMN IF NOT EXISTS command text;
@@ -1615,7 +1629,7 @@ export class BotPlay {
             )
             .map((m) => m.actorId);
           const commands = z.union(
-            PlayCommand.options
+            PlayerPlayCommand.options
               // 受領判断中に受け付けるのは、受領の返答と一度のコメントだけ。
               .filter((option) =>
                 status.receiving
@@ -1672,7 +1686,7 @@ export class BotPlay {
             (raw) =>
               commands.parse({ ...(parseOutput(raw) as object), requestId }),
           );
-          const command = PlayCommand.parse({
+          const command = PlayerPlayCommand.parse({
             ...(parseOutput(completion.content) as object),
             requestId,
           });
@@ -1872,6 +1886,7 @@ export class BotPlay {
     context: WorldContext,
     at: number,
     concealed = false,
+    playerRequest = false,
   ): Promise<Plan> {
     const instant = (id: string) =>
       session.data.members.find((m) => m.actorId === id)?.instant;
@@ -1953,8 +1968,14 @@ export class BotPlay {
       : undefined;
     let instantReduction: Plan["instantReduction"];
     if (effect) {
+      const otherParticipant = session.data.members.some(
+        (member) =>
+          member.actorId === effect.targetId && member.actorId !== actorId,
+      );
       const nearby =
-        npc && !victim ? await this.#atPlaces(context, places) : undefined;
+        !victim && (npc || otherParticipant)
+          ? await this.#atPlaces(context, places)
+          : undefined;
       const previous =
         nearby &&
         effect.replacesStateId &&
@@ -2015,7 +2036,7 @@ export class BotPlay {
               ]
             : facts,
           npc ? [] : await this.#consumable(context, actorId, changes),
-          victim ? undefined : effect.state,
+          victim || (person && !npc) ? undefined : effect.state,
           ...(victim
             ? ([
                 victim.count === undefined ? [effect.targetId] : [],
@@ -2034,10 +2055,11 @@ export class BotPlay {
                 changes,
               )
             : undefined,
-          [],
+          person && !npc ? subjects : [],
           stateRelations(facts, subjects),
           !!person && !!previous,
           npc ? "" : await this.#fumblePrompt(session.world_id),
+          playerRequest && (person || victim) ? request : undefined,
         );
         outcome = {
           setting: saved.setting,
@@ -2047,7 +2069,12 @@ export class BotPlay {
         };
         if (!npc) addFumble(changes, request, actorId, at, outcome);
         if (outcome.success) {
-          effectState = saved.observable;
+          effectState =
+            person && !npc
+              ? (saved.setting.states?.find(
+                  (state) => state.id === effect.targetId,
+                )?.text ?? null)
+              : saved.observable;
           if (saved.perception)
             stealth = await this.#oppositionObservations(
               request,
@@ -2150,7 +2177,7 @@ export class BotPlay {
                 ? "。結果：" +
                   (instantReduction
                     ? instantReductionText(instantReduction)
-                    : effect.state)
+                    : (effectState ?? "作用が成立した"))
                 : "。作用は成立しなかった")
             : action.text,
         ...(cause ? { instantActor: cause } : {}),
@@ -2183,6 +2210,7 @@ export class BotPlay {
         target: state,
         role: "content",
         text: judged,
+        stateOrigin: { requestId: request, actorId },
       });
       link({ kind: "status", source: state, target: event, role: "about" });
     }
@@ -4389,6 +4417,7 @@ export class BotPlay {
       })),
       ...atDestination.map((id) => ({ key: "arrival:" + id, actorId: id })),
     ];
+    if (victim) await this.#reserveOpposition(input.requestId);
     const settings = await this.#stealthDice(
       context,
       input.requestId,
@@ -4401,6 +4430,7 @@ export class BotPlay {
       const saved = await this.#roll(
         derivedId(`${input.requestId}:stealth:${key}`),
         settings[key]!,
+        victim && key === "action" ? input.requestId : undefined,
       );
       return saved.roll <= saved.setting.successThrough;
     };
@@ -5233,9 +5263,11 @@ export class BotPlay {
     const { rows } = await db.query<{ used: number; sp_limit: number }>(
       `SELECT
       coalesce((SELECT daily_sp_limit FROM world_construction WHERE id=$1),100) AS sp_limit,
-      (SELECT count(*) FROM bot_request WHERE world_id=$1 AND sp_user=$2 AND sp_reset=$3)
-      + (SELECT count(*) FROM bot_adjudication a WHERE world_id=$1 AND sp_user=$2 AND sp_reset=$3 AND request_id IS DISTINCT FROM $4 AND expires_at>clock_timestamp()
-        AND NOT EXISTS (SELECT 1 FROM bot_request r WHERE r.id=a.request_id AND r.sp_user IS NOT NULL)) AS used`,
+      (SELECT coalesce(sum(sp_amount),0) FROM bot_request WHERE world_id=$1 AND sp_user=$2 AND sp_reset=$3)
+      + (SELECT coalesce(sum(greatest(a.sp_amount-coalesce(r.sp_amount,0),0)),0)
+         FROM bot_adjudication a
+         LEFT JOIN bot_request r ON r.id=a.request_id AND r.sp_user=a.sp_user AND r.sp_reset=a.sp_reset
+         WHERE a.world_id=$1 AND a.sp_user=$2 AND a.sp_reset=$3 AND a.request_id IS DISTINCT FROM $4 AND a.expires_at>clock_timestamp()) AS used`,
       [world, user, resetsAt, request ?? null],
     );
     const { used, sp_limit: limit } = rows[0]!;
@@ -5246,6 +5278,8 @@ export class BotPlay {
     actor: string,
     user: string,
     request: string,
+    amount = 1,
+    opposition = false,
   ) {
     const db = await this.pool.connect();
     try {
@@ -5254,22 +5288,35 @@ export class BotPlay {
         world + user,
       ]);
       const sp = await this.dailySp(world, user, db, request);
-      if (
-        sp.remaining <= 0 &&
-        !(
-          await db.query(
-            "SELECT 1 FROM bot_request WHERE id=$1 AND sp_user IS NOT NULL",
-            [request],
-          )
-        ).rowCount
-      )
+      const previous = (
+        await db.query<{
+          sp_amount: number;
+          sp_opposed: boolean;
+          sp_reset: Date;
+        }>(
+          "SELECT sp_amount,sp_opposed,sp_reset FROM bot_request WHERE id=$1 AND sp_user IS NOT NULL",
+          [request],
+        )
+      ).rows[0];
+      if (previous && (!opposition || previous.sp_opposed)) {
+        await db.query("COMMIT");
+        return;
+      }
+      if (sp.remaining < amount)
         reject(
           "DAILY_SP_EXHAUSTED",
-          `日次SPの利用可能残量は0です。次の回復は${sp.resetsAt}です`,
+          `必要な日次SPは${amount}、利用可能残量は${sp.remaining}です。次の回復は${sp.resetsAt}です`,
         );
       const claim = await db.query(
-        `UPDATE bot_adjudication SET sp_user=$3,sp_reset=$4 WHERE world_id=$1 AND actor_id=$2 AND request_id=$5 AND expires_at>clock_timestamp()`,
-        [world, actor, user, sp.resetsAt, request],
+        `UPDATE bot_adjudication SET sp_user=$3,sp_reset=$4,sp_amount=$6 WHERE world_id=$1 AND actor_id=$2 AND request_id=$5 AND expires_at>clock_timestamp()`,
+        [
+          world,
+          actor,
+          user,
+          previous?.sp_reset ?? sp.resetsAt,
+          request,
+          (previous?.sp_amount ?? 0) + amount,
+        ],
       );
       if (!claim.rowCount) rejectAdjudication();
       await db.query("COMMIT");
@@ -6042,6 +6089,7 @@ export class BotPlay {
       operations?: BelongingOp[] | undefined;
       statusReview?: StatusReview | undefined;
       requestText?: string | undefined;
+      parent?: number;
     }[],
     consumable: Consumable[],
     {
@@ -6189,6 +6237,8 @@ export class BotPlay {
     const fresh = proposals.flatMap((p, i) =>
       repeated[i] ? [] : [{ ...p, index: i }],
     );
+    const cost = (plans: typeof fresh) =>
+      new Set(plans.map((p) => p.parent ?? p.index)).size;
     const settings = new Map<number, z.infer<typeof DiceSetting>>();
     const applied = new Map<number, AppliedStatus>();
     const unresolved = new Set<number>();
@@ -6201,7 +6251,8 @@ export class BotPlay {
           !waitMinutes,
       );
       const needsSp = allowApply.some((allow) => !allow);
-      if (needsSp) await this.#reserveSp(world, actor, user, requestId);
+      if (needsSp)
+        await this.#reserveSp(world, actor, user, requestId, cost(fresh));
       const premise = (await this.construction.get(world)).initial_prompt;
       const targets = await Promise.all(
         fresh.map((p) => this.#newStorages(context, p.changes)),
@@ -6250,7 +6301,9 @@ export class BotPlay {
         fresh[0]!.changes.endEdges.length ===
           reviews[0]!.requestedEnds.length + reviews[0]!.relatedEnds.length;
       const confirmed =
-        !batch && reviews[0]
+        !batch &&
+        reviews[0] &&
+        !fresh[0]!.changes.edges.some((edge) => edge.stateOrigin)
           ? await this.#confirmedStateAction(
               world,
               actor,
@@ -6545,7 +6598,13 @@ export class BotPlay {
           );
       }
       if (!needsSp && settings.size)
-        await this.#reserveSp(world, actor, user, requestId);
+        await this.#reserveSp(
+          world,
+          actor,
+          user,
+          requestId,
+          cost(fresh.filter((p) => settings.has(p.index))),
+        );
     }
     const db = await this.pool.connect();
     try {
@@ -6610,21 +6669,23 @@ export class BotPlay {
             used.set(c.id, (used.get(c.id) ?? 0) + (c.count ?? 1));
         }
       }
+      const spent = cost(
+        fresh.filter((p) => !repeated[p.index] && "roll" in rolls[p.index]!),
+      );
       const persisted = await db.query(
         `UPDATE bot_request r SET creation_rolls=$2,
         outcome=CASE WHEN $5 THEN '{"creationPlan":{}}'::jsonb ELSE r.outcome END,
-        sp_user=CASE WHEN $3 THEN a.sp_user END, sp_reset=CASE WHEN $3 THEN a.sp_reset END
+        sp_user=CASE WHEN $3::int>0 THEN a.sp_user END, sp_reset=CASE WHEN $3::int>0 THEN a.sp_reset END,
+        sp_amount=greatest($3::int,1)
         FROM bot_adjudication a WHERE r.id=$1 AND a.world_id=r.world_id AND a.actor_id=r.actor_id
-        AND a.request_id=r.id AND a.expires_at>clock_timestamp() AND (NOT $3 OR a.sp_user=$4)`,
-        [
-          requestId,
-          JSON.stringify(rolls),
-          fresh.some((p) => !repeated[p.index] && "roll" in rolls[p.index]!),
-          user,
-          !!splitMode,
-        ],
+        AND a.request_id=r.id AND a.expires_at>clock_timestamp() AND ($3::int=0 OR (a.sp_user=$4 AND a.sp_amount>=$3::int))`,
+        [requestId, JSON.stringify(rolls), spent, user, !!splitMode],
       );
       if (!persisted.rowCount) rejectAdjudication();
+      await db.query(
+        "UPDATE bot_adjudication SET sp_amount=$2 WHERE request_id=$1 AND world_id=$3 AND actor_id=$4",
+        [requestId, spent, world, actor],
+      );
       await db.query("COMMIT");
       return rolls;
     } catch (error) {
@@ -7114,6 +7175,12 @@ export class BotPlay {
           "",
           undefined,
           opponentId,
+          undefined,
+          [],
+          [],
+          false,
+          "",
+          requestId,
         );
         const success = roll.roll <= roll.setting.successThrough;
         contests.push({
@@ -7214,6 +7281,8 @@ export class BotPlay {
         input.requestId,
         context,
         w.at,
+        false,
+        true,
       );
     }
     const movement = vehicleMovement(input);
@@ -7341,6 +7410,7 @@ export class BotPlay {
         context,
         w.at,
         concealed,
+        true,
       );
       await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
@@ -7418,11 +7488,7 @@ export class BotPlay {
           input.requestId,
         );
         if ("vehicleResult" in relocation)
-          await this.#requireVehicleMovable(
-            context,
-            op.subjectId,
-            input.requestId,
-          );
+          await this.#requireVehicleMovable(context, op.subjectId);
         return { ...relocation, context, recipients: [] };
       }
     }
@@ -7725,7 +7791,66 @@ export class BotPlay {
     let vehicleResult: Plan["vehicleResult"];
     let drawTable: DrawTable | undefined;
     let drawDescription = "";
-    if (configuringDraw) {
+    let previousBasis: (string | undefined)[] | undefined;
+    if (input.command === "rename") {
+      const target = await context.node(input.targetId);
+      const skillEdges =
+        target?.kind === "script"
+          ? (await holders(target.id)).filter((edge) => edge.role === "skill")
+          : [];
+      const description =
+        target?.kind === "script" &&
+        input.descriptionOnly &&
+        (await context.relations(target.id, "status", "in", at)).some((edge) =>
+          editableStatus(edge, target),
+        );
+      if (
+        !target ||
+        (target.kind !== "existence" && !skillEdges.length && !description)
+      )
+        reject(
+          "RENAME_TARGET_REQUIRED",
+          "物品・場所・人物・技能のIDを指定してください",
+        );
+      await affect(target.id);
+      if (input.descriptionOnly && target.kind !== "script")
+        reject(
+          "DESCRIPTION_TARGET_REQUIRED",
+          "説明を直す記述のIDを指定してください",
+        );
+      if (input.basis !== undefined) {
+        if (!input.descriptionOnly || !skillEdges.length)
+          reject(
+            "DESCRIPTION_TARGET_REQUIRED",
+            "習得根拠を直す技能を指定してください",
+          );
+        previousBasis = skillEdges.map((e) => e.text);
+        if (
+          previousBasis.some((value) => value !== input.basis) ||
+          target.text !== input.name
+        ) {
+          const updated = await planBelongings(context, input.requestId, at, [
+            {
+              type: "update",
+              id: target.id,
+              text: input.name,
+              basis: input.basis,
+            },
+          ]);
+          changes = updated.changes;
+          at = updated.at;
+        }
+      } else if (
+        (target.kind === "script" && !input.descriptionOnly
+          ? (target.name ?? target.text)
+          : target.text) !== input.name
+      )
+        changes.revisions.push(
+          target.kind === "script" && !input.descriptionOnly
+            ? { ...target, name: input.name }
+            : { ...target, text: input.name },
+        );
+    } else if (configuringDraw) {
       const { targetId } = input;
       const target = await context.node(targetId);
       if (
@@ -7877,11 +8002,11 @@ export class BotPlay {
           externalEffect = true;
         if (op.type === "locate") {
           const location = await checkLocation(db, world, context, actor, op);
+          await this.#requirePassable(context, op, input.requestId);
           if (location.travel)
             await this.#requireVehicleMovable(
               context,
               location.travel.vehicleId,
-              input.requestId,
             );
           if (location.board) {
             boardings.push({
@@ -8245,14 +8370,20 @@ export class BotPlay {
         if (changes.nodes.some((n) => n.kind !== "script"))
           externalEffect = true;
       }
-      needsCreation = !!(changes.nodes.length || changes.edges.length);
-      statusReview = await directStatusReview(
-        context,
-        input.command === "oppose" ? controlled : new Set([actor]),
-        changes,
-        ended.filter((e) => e !== undefined),
-        at,
-      );
+      // 私的解釈の追加は、同じ申請の既存事実の変更に作成権限を与えない。
+      needsCreation =
+        !!(changes.nodes.length || changes.edges.length) &&
+        !privateInterpretation(actor, changes);
+      if (input.command !== "update" || !input.resolvedState)
+        statusReview = await directStatusReview(
+          context,
+          input.command === "oppose" ? controlled : new Set([actor]),
+          changes,
+          ended.filter((e) => e !== undefined),
+          at,
+        );
+      if (statusReview && changes.edges.some((edge) => edge.stateOrigin))
+        statusReview.onlyStateCreation = false;
     }
     if (!impossible) {
       try {
@@ -8328,6 +8459,86 @@ export class BotPlay {
           `${(await Promise.all(unowned.map(named))).join("・")}は本人の操作範囲になく、判断できる人物の記録もありません。本人の居場所は条件ではありません`,
         );
     }
+    if (input.command === "rename") {
+      if (!changes.revisions.length)
+        return {
+          context,
+          at,
+          changes,
+          recipients: [],
+          outcome: { success: true },
+        };
+      const stored = (
+        await this.pool.query<{
+          outcome: { success: boolean; reason: string } | null;
+        }>("SELECT outcome FROM bot_request WHERE id=$1", [input.requestId])
+      ).rows[0]?.outcome;
+      let outcome = stored;
+      if (!outcome) {
+        const original = await context.node(input.targetId);
+        const originSkills =
+          input.descriptionOnly &&
+          original?.kind === "script" &&
+          original.derivedFromSkills
+            ? await Promise.all(
+                original.derivedFromSkills.map((id) => context.node(id)),
+              )
+            : undefined;
+        await this.#rememberStateBasis(input.requestId, context);
+        if (!input.descriptionOnly)
+          await this.#reserveSp(world, actor, user, input.requestId);
+        const parse = (raw: string) =>
+          z
+            .strictObject({ success: z.boolean(), reason: z.string().min(1) })
+            .parse(parseOutput(raw));
+        outcome = parse(
+          (
+            await this.#ask(
+              input.requestId,
+              input.descriptionOnly
+                ? "world-description-review"
+                : "world-rename-review",
+              [
+                {
+                  role: "system",
+                  content: input.descriptionOnly
+                    ? "確定済みの記述や習得根拠の訂正を審査する。現在の本文や旧根拠から読み取れる事実・能力・対象・条件・制約をそのまま表す訂正だけを許す。originSkillsは発展で消費した元技能。現在の本文がそこから引き継いだ能力は明文化してよい。事実や適用範囲が変わる場合は差し戻す。JSON {success:真偽値,reason:文字列} を返す。"
+                    : "既存の同じ対象に呼び名を付ける申請を審査する。新しい呼び名だけを書き換える。比喩や愛称は呼び名として認めてよい。別の存在と同一にする、起きていない出来事を成立させる、所持・所在・能力・状態を実際に変えることが名前の意味に必要なら差し戻す。JSON {success:真偽値,reason:文字列} を返す。",
+                },
+                {
+                  role: "user",
+                  content: canonical({
+                    original,
+                    name: input.name,
+                    previousBasis,
+                    basis: input.basis,
+                    originSkills,
+                  }),
+                },
+              ],
+              "resolution",
+              parse,
+            )
+          ).content,
+        );
+        const confirmed = await this.pool.query(
+          `UPDATE bot_request r SET outcome=$2,sp_user=CASE WHEN $3 THEN a.sp_user END,
+           sp_reset=CASE WHEN $3 THEN a.sp_reset END,sp_amount=1
+           FROM bot_adjudication a WHERE r.id=$1 AND r.outcome IS NULL
+           AND a.world_id=r.world_id AND a.actor_id=r.actor_id AND a.request_id=r.id
+           AND a.expires_at>clock_timestamp() AND (NOT $3 OR a.sp_user=r.user_id)`,
+          [input.requestId, outcome, !input.descriptionOnly],
+        );
+        if (!confirmed.rowCount) rejectAdjudication();
+      }
+      return {
+        context,
+        at,
+        changes: outcome.success ? changes : empty(),
+        recipients: outcome.success ? recipients : [],
+        outcome,
+      };
+    }
     if (configuringDraw) {
       const drawReview = await this.#reviewDraw(
         world,
@@ -8369,8 +8580,7 @@ export class BotPlay {
           input.changes &&
           recipients.length &&
           isOppositionResult(changes, statusReview)
-        ) &&
-        !privateInterpretation(actor, changes));
+        ));
     if ("materials" in input && input.materials?.length && !needsCreation)
       reject(
         "CREATION_REQUIRED",
@@ -8644,6 +8854,7 @@ export class BotPlay {
           stateRelations(materials, stateSubjects),
           !!statusReview?.requestedEnds.length,
           await this.#fumblePrompt(world),
+          affected.length ? input.requestId : undefined,
         );
         success = saved.roll <= saved.setting.successThrough;
         failed = saved;
@@ -8817,12 +9028,8 @@ export class BotPlay {
     ];
   }
   // 判定で付いた現在の状態がある乗り物だけ、その状態で動けるかをGMが判断する。状態が無ければ判断しない。
-  async #vehicleMovable(
-    context: WorldContext,
-    vehicleId: string,
-    request: string,
-  ) {
-    const states: string[] = [];
+  async #vehicleMovable(context: WorldContext, vehicleId: string) {
+    const states: { id: string; text: string }[] = [];
     for (const e of await context.relations(
       vehicleId,
       "status",
@@ -8831,11 +9038,13 @@ export class BotPlay {
       latest,
     ))
       if (e.role === "content" && e.text === judged)
-        states.push((await context.node(e.target))!.text);
+        states.push({ id: e.id, text: (await context.node(e.target))!.text });
     if (!states.length) return { movable: true, reason: "" };
     const parse = (raw: string) => VehicleCondition.parse(parseOutput(raw));
     const response = await this.#ask(
-      derivedId(`${request}:vehicle-condition:${vehicleId}`),
+      derivedId(
+        `${context.worldId}:vehicle-condition:${vehicleId}:${canonical(states)}`,
+      ),
       "world-vehicle-condition",
       [
         {
@@ -8847,7 +9056,7 @@ export class BotPlay {
           role: "user",
           content: canonical({
             vehicle: (await context.node(vehicleId))?.text,
-            states,
+            states: states.map((state) => state.text),
           }),
         },
       ],
@@ -8856,17 +9065,62 @@ export class BotPlay {
     );
     return parse(response.content);
   }
-  // 乗り物が損傷で動けなければ、移動の申請を断る。
-  async #requireVehicleMovable(
-    context: WorldContext,
-    vehicleId: string,
-    request: string,
-  ) {
-    const { movable, reason } = await this.#vehicleMovable(
-      context,
-      vehicleId,
-      request,
+  async #requirePassable(context: WorldContext, move: Locate, request: string) {
+    const destination =
+      move.directPlaceId ??
+      (move.aboutIds.length === 1 ? move.aboutIds[0] : undefined);
+    if (!destination) return;
+    const origins = await directPlaces(context, move.subjectId);
+    if (origins.includes(destination)) return;
+    const conditions = [];
+    for (const place of new Set([...origins, destination])) {
+      const edges = await context.relations(
+        place,
+        "status",
+        "out",
+        this.now().getTime(),
+        latest,
+      );
+      for (const edge of edges) {
+        if (!edge.stateOrigin?.affectsMovement) continue;
+        conditions.push({
+          place,
+          id: edge.id,
+          text: (await context.node(edge.target))?.text,
+        });
+      }
+    }
+    if (!conditions.length) return;
+    const movement = {
+      actor: (await context.node(move.subjectId))?.text,
+      from: origins,
+      destination,
+      conditions,
+    };
+    const parse = (raw: string) => VehicleCondition.parse(parseOutput(raw));
+    const result = parse(
+      (
+        await this.#ask(
+          derivedId(`${request}:place-movement:${move.subjectId}`),
+          "world-place-movement",
+          [
+            {
+              role: "system",
+              content:
+                "指定された場所の状態のもとで、この移動が可能かを判定する。JSON {movable:真偽値,reason:理由} を返す。ほかの出来事や状態は作らない。",
+            },
+            { role: "user", content: canonical(movement) },
+          ],
+          "default",
+          parse,
+        )
+      ).content,
     );
+    if (!result.movable) reject("MOVEMENT_BLOCKED", result.reason);
+  }
+  // 乗り物が損傷で動けなければ、移動の申請を断る。
+  async #requireVehicleMovable(context: WorldContext, vehicleId: string) {
+    const { movable, reason } = await this.#vehicleMovable(context, vehicleId);
     if (!movable)
       reject(
         "VEHICLE_DISABLED",
@@ -9129,8 +9383,7 @@ export class BotPlay {
         // 損傷で動けない乗り物は追従せず、その場に残る。
         if (
           travel &&
-          !(await this.#vehicleMovable(plan.context, travel.vehicleId, request))
-            .movable
+          !(await this.#vehicleMovable(plan.context, travel.vehicleId)).movable
         )
           continue;
         follows.push(next);
@@ -9170,6 +9423,23 @@ export class BotPlay {
       )
     );
   }
+  async #reserveOpposition(id: string) {
+    const { rows } = await this.pool.query<{
+      world_id: string;
+      actor_id: string;
+      user_id: string;
+    }>("SELECT world_id,actor_id,user_id FROM bot_request WHERE id=$1", [id]);
+    const request = rows[0];
+    if (!request?.user_id) return rejectAdjudication();
+    await this.#reserveSp(
+      request.world_id,
+      request.actor_id,
+      request.user_id,
+      id,
+      1,
+      true,
+    );
+  }
   async #oppositionRoll(
     requestId: string,
     actor: unknown,
@@ -9187,6 +9457,7 @@ export class BotPlay {
     stateEnds: string[] = [],
     requireStateEnds = false,
     fumble = "",
+    spRequest?: string,
   ) {
     function readDecision(raw: string) {
       const parsed = parseOutput(raw);
@@ -9264,6 +9535,9 @@ export class BotPlay {
         .parse(result);
       return { setting: DiceSetting.parse(dice), observable };
     }
+    if (spRequest) {
+      await this.#reserveOpposition(spRequest);
+    }
     const response = await this.#ask(
       derivedId(`${requestId}:dice-setting${perception ? ":stealth" : ""}`),
       "world-opposition-dice",
@@ -9327,10 +9601,14 @@ export class BotPlay {
         observable,
         perception: reported,
       } = readDecision(response.content),
-      saved = await this.#roll(requestId, setting);
+      saved = await this.#roll(requestId, setting, spRequest);
     return { ...saved, observable, perception: reported };
   }
-  async #roll(id: string, setting: z.infer<typeof DiceSetting>) {
+  async #roll(
+    id: string,
+    setting: z.infer<typeof DiceSetting>,
+    spRequest?: string,
+  ) {
     const db = await this.pool.connect();
     try {
       await db.query("BEGIN");
@@ -9339,6 +9617,27 @@ export class BotPlay {
         id,
         await this.#rollIn(db, id, setting),
       );
+      if (spRequest) {
+        const charged = await db.query(
+          `UPDATE bot_request r SET sp_user=a.sp_user,sp_reset=a.sp_reset,
+           sp_amount=a.sp_amount,sp_opposed=true
+           FROM bot_adjudication a WHERE r.id=$1 AND NOT r.sp_opposed
+           AND a.world_id=r.world_id AND a.actor_id=r.actor_id AND a.request_id=r.id
+           AND a.expires_at>clock_timestamp() AND a.sp_user=r.user_id
+           AND a.sp_amount=(CASE WHEN r.sp_user IS NULL THEN 0 ELSE r.sp_amount END)+1`,
+          [spRequest],
+        );
+        if (
+          !charged.rowCount &&
+          !(
+            await db.query(
+              "SELECT 1 FROM bot_request WHERE id=$1 AND sp_opposed",
+              [spRequest],
+            )
+          ).rowCount
+        )
+          rejectAdjudication();
+      }
       await db.query("COMMIT");
       return die;
     } catch (error) {
@@ -9636,15 +9935,346 @@ export class BotPlay {
     );
     return rows[0];
   }
+  async #application(
+    worldId: string,
+    actor: string,
+    input: z.infer<typeof ApplyCommand>,
+  ): Promise<Input> {
+    const { action, requestId, dependencies } = input;
+    const common = { requestId, dependencies };
+    const quoted = applicationSp(action);
+    if (quoted !== input.expectedSp)
+      reject("SP_QUOTE_CHANGED", `この申請で必要なSPは${quoted}です`);
+    if (action.type === "direct") {
+      const { text, operations, deferredUntil, stealth, departAloneOnTimeout } =
+        action;
+      return {
+        ...common,
+        command: "update",
+        text,
+        operations,
+        deferredUntil,
+        stealth,
+        departAloneOnTimeout,
+      };
+    }
+    if (action.type === "generate") {
+      const grants = action.plans.flatMap(({ operation }) =>
+        operation.type === "grant" ? [operation] : [],
+      );
+      if (grants.length) {
+        const world = await this.world(worldId);
+        const context = this.store.context(world.id, dependencies);
+        for (const grant of grants)
+          if (
+            (
+              await context.relations(grant.storage, "has", "in", world.at)
+            ).some((e) => e.role === "use")
+          )
+            reject(
+              "STORAGE_ALREADY_REGISTERED",
+              "登録済みの保管先を分けるときはshare-storageを使ってください",
+            );
+        await context.validate();
+        common.dependencies = context.dependencies;
+      }
+      const proposals = action.plans.map(({ operation, ...rest }) => ({
+        ...rest,
+        operations: [operation],
+      }));
+      if (proposals.length === 1)
+        return {
+          ...common,
+          ...proposals[0]!,
+          command: "update",
+          waitMinutes: action.waitMinutes,
+        };
+      return { ...common, command: "create-batch", proposals };
+    }
+    if (action.type === "rename")
+      return {
+        ...common,
+        command: "rename",
+        targetId: action.targetId,
+        name: action.name,
+      };
+    if (action.type === "clarify")
+      return {
+        ...common,
+        command: "rename",
+        targetId: action.targetId,
+        name: action.text,
+        descriptionOnly: true,
+        basis: action.basis,
+      };
+    if (action.type === "oppose") {
+      const session = await this.current(worldId, actor);
+      if (
+        action.targetId === actor ||
+        !session?.data.members.some(
+          (member) => member.actorId === action.targetId,
+        )
+      )
+        reject(
+          "OPPONENT_NOT_PRESENT",
+          "同じセッションにいる相手を指定してください",
+        );
+      return {
+        ...common,
+        command: "oppose",
+        text: action.text,
+        effect: {
+          targetId: action.targetId,
+          state: action.description,
+          replacesStateId: action.replacesStateId,
+        },
+      };
+    }
+    if (action.type === "seize") {
+      const { from, to } = action.operation;
+      if (from === actor || to !== actor)
+        reject(
+          "OPPONENT_NOT_PRESENT",
+          "他の人物が持つ物を本人に移す操作を指定してください",
+        );
+      return {
+        ...common,
+        command: "oppose",
+        text: action.text,
+        operations: [action.operation],
+        stealth: action.stealth,
+      };
+    }
+    const world = await this.world(worldId);
+    const context = this.store.context(world.id, dependencies);
+    if (action.type === "increase-count") {
+      const item = await context.node(action.itemId);
+      if (item?.kind !== "existence" || action.count <= (item.count ?? 0))
+        return reject(
+          "COUNT_INCREASE_REQUIRED",
+          "既存の物品と、現在より多い個数を指定してください",
+        );
+      await context.validate();
+      return {
+        ...common,
+        dependencies: context.dependencies,
+        command: "update",
+        text: action.text,
+        materials: action.materials,
+        operations: [{ type: "update", id: item.id, count: action.count }],
+      };
+    }
+    if (action.type === "revise-memo") {
+      const memo = await context.node(action.targetId);
+      if (memo?.kind !== "script" || memo.type !== "memo")
+        return reject(
+          "MEMO_REQUIRED",
+          "編集する既存メモのIDを指定してください",
+        );
+      await context.validate();
+      return {
+        ...common,
+        dependencies: context.dependencies,
+        command: "update",
+        text: "メモを更新する",
+        deferredUntil: action.deferredUntil,
+        changes: { ...empty(), revisions: [{ ...memo, text: action.text }] },
+      };
+    }
+    if (action.type === "interpret") {
+      const id = derivedId(`${requestId}:interpretation`);
+      return {
+        ...common,
+        command: "update",
+        text: action.text,
+        changes: {
+          ...empty(),
+          nodes: [{ id, kind: "script", text: action.text }],
+          edges: [
+            {
+              id: derivedId(`${id}:content`),
+              kind: "interpret",
+              role: "content",
+              source: actor,
+              target: id,
+              period: { from: world.at },
+            },
+            {
+              id: derivedId(`${id}:about`),
+              kind: "interpret",
+              role: "about",
+              source: id,
+              target: action.targetId,
+              period: { from: world.at },
+            },
+          ],
+        },
+      };
+    }
+    if (action.type === "share-storage") {
+      if (
+        !(await context.relations(action.storage, "has", "in", world.at)).some(
+          (edge) => edge.role === "use" && edge.source === actor,
+        )
+      )
+        reject(
+          "STORAGE_NOT_REGISTERED",
+          "本人が登録している保管先を指定してください",
+        );
+      await context.validate();
+      const { person, storage, basis } = action;
+      return {
+        ...common,
+        dependencies: context.dependencies,
+        command: "update",
+        text: action.basis,
+        operations: [{ type: "grant", person, storage, basis }],
+      };
+    }
+    if (action.type === "detach") {
+      const state = await context.edge(action.stateId);
+      if (
+        !state ||
+        state.source !== actor ||
+        !state.stateOrigin?.attachedItemId ||
+        (state.period.until ?? Infinity) <= world.at
+      )
+        reject(
+          "ATTACHMENT_REQUIRED",
+          "本人が外せる現行の付着を指定してください",
+        );
+      await context.validate();
+      return {
+        ...common,
+        dependencies: context.dependencies,
+        command: "update",
+        text: "身に付いた物を外す",
+        resolvedState: true,
+        changes: { ...empty(), endEdges: [action.stateId] },
+      };
+    }
+    if (
+      action.targetId !== actor &&
+      !(await this.#places(context, actor)).includes(action.targetId) &&
+      !(await this.#nearby(context, actor)).has(action.targetId)
+    )
+      reject(
+        "TARGET_NOT_FOUND",
+        "本人か現在地から作用できる対象を指定してください",
+      );
+    if (action.stateId) {
+      const previous = await context.edge(action.stateId);
+      if (
+        previous?.source !== action.targetId ||
+        !editableStatus(previous, await context.node(previous.target))
+      )
+        reject("STATE_TARGET_CHANGED", "同じ対象の現行状態を指定してください");
+    }
+    if (
+      action.attachedItemId &&
+      !(
+        await context.relations(action.attachedItemId, "has", "in", world.at)
+      ).some((edge) => !edge.role && edge.source === actor)
+    )
+      reject("ATTACHMENT_REQUIRED", "本人が持つ着脱可能な物を指定してください");
+    if (
+      action.attachedItemId &&
+      (action.stateId || action.affectsMovement || action.feature)
+    )
+      reject(
+        "ATTACHMENT_REQUIRED",
+        "着脱可能な付着は独立した状態として指定してください",
+      );
+    const item = action.attachedItemId
+      ? await context.node(action.attachedItemId)
+      : undefined;
+    if (action.attachedItemId && item?.kind !== "existence")
+      reject("ATTACHMENT_REQUIRED", "本人が持つ着脱可能な物を指定してください");
+    await context.validate();
+    const id = derivedId(`${requestId}:state`);
+    return {
+      ...common,
+      dependencies: context.dependencies,
+      command: "update",
+      text: action.text,
+      materials: action.materials,
+      changes: {
+        nodes: [
+          {
+            id,
+            kind: "script",
+            text: item ? `${item.text}が付いている。` : action.description,
+          },
+        ],
+        revisions: [],
+        edges: [
+          {
+            id: derivedId(`${id}:content`),
+            kind: "status",
+            role: "content",
+            source: action.targetId,
+            target: id,
+            ...(action.feature ? { text: action.feature } : {}),
+            period: {
+              from: world.at,
+              ...(action.minutes
+                ? { until: world.at + action.minutes * 60000 }
+                : {}),
+            },
+            stateOrigin: {
+              requestId,
+              actorId: actor,
+              ...(action.attachedItemId
+                ? { attachedItemId: action.attachedItemId }
+                : {}),
+              ...(action.affectsMovement ? { affectsMovement: true } : {}),
+            },
+          },
+        ],
+        endEdges: action.stateId ? [action.stateId] : [],
+      },
+    };
+  }
+
   async submit(
     world: string,
     actor: string,
-    input: Input,
+    submitted: z.infer<typeof PlayerPlayCommand>,
     user: string,
     expectedAssignment?: string,
     connectionId = `human:${user}`,
   ) {
-    const hash = createHash("sha256").update(canonical(input)).digest("hex");
+    const hash = createHash("sha256")
+      .update(canonical(submitted))
+      .digest("hex");
+    // 履歴の再送を先に解決する。改変済みの対象を前提に申請し直さない。
+    const replay =
+      submitted.command === "apply"
+        ? (
+            await this.pool.query<{
+              actor_id: string;
+              world_id: string;
+              hash: string;
+              result: Record<string, unknown> | null;
+            }>(
+              "SELECT actor_id,world_id,hash,result FROM bot_request WHERE id=$1",
+              [submitted.requestId],
+            )
+          ).rows[0]
+        : undefined;
+    if (replay?.result) {
+      if (
+        replay.actor_id !== actor ||
+        replay.world_id !== world ||
+        replay.hash !== hash
+      )
+        reject("REQUEST_CONFLICT", "同じ要求IDに異なる内容は使用できません");
+      return replay.result;
+    }
+    let input: Input =
+      submitted.command === "apply"
+        ? await this.#application(world, actor, submitted)
+        : submitted;
     await this.pool.query(
       "INSERT INTO bot_request(id,actor_id,world_id,hash,user_id,command) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
       [input.requestId, actor, world, hash, user, input.command],
@@ -9707,6 +10337,7 @@ export class BotPlay {
         "update",
         "create",
         "create-batch",
+        "rename",
         "blueprint-start",
         "companion-request",
         "vehicle-request-control",
@@ -9796,7 +10427,7 @@ export class BotPlay {
         status_dependencies: Dependency[] | null;
         spent: number;
       }>(
-        "SELECT result,outcome,prepared_turn,status_dependencies,(sp_user IS NOT NULL)::int AS spent FROM bot_request WHERE id=$1",
+        "SELECT result,outcome,prepared_turn,status_dependencies,CASE WHEN sp_user IS NULL THEN 0 ELSE sp_amount END AS spent FROM bot_request WHERE id=$1",
         [input.requestId],
       );
       const prior = rows[0]!;
@@ -9955,7 +10586,7 @@ export class BotPlay {
           result: Record<string, unknown> | null;
           spent: number;
         }>(
-          "SELECT result,(sp_user IS NOT NULL)::int AS spent FROM bot_request WHERE id=$1 FOR UPDATE",
+          "SELECT result,CASE WHEN sp_user IS NULL THEN 0 ELSE sp_amount END AS spent FROM bot_request WHERE id=$1 FOR UPDATE",
           [input.requestId],
         )
       ).rows[0]!;

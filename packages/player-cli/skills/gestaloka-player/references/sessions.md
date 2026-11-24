@@ -44,32 +44,36 @@
 
 ## いま一緒に移動する
 
-市場から宿へミオ、レン、ハルの3人で移るなら、ミオの通常手番で、本人と同行者それぞれの `locate` を一つの `update` に書く。次の例のIDを検索した値に置き換え、検索で得た依存版を `dependencies` に入れて `play --file action.json` で送る。
+市場から宿へミオ、レン、ハルの3人で移るなら、ミオの通常手番で、本人と同行者それぞれの `locate` を`apply` の `direct.operations` にまとめる。次の例のIDを検索した値に置き換え、検索で得た依存版を `dependencies` に入れて `play --file action.json` で送る。
 
 ```json
 {
-  "command": "update",
-  "text": "市場を出て、二人を宿へ誘う",
-  "operations": [
-    {
-      "type": "locate",
-      "subjectId": "ミオのID",
-      "text": "宿に入る",
-      "aboutIds": ["宿のID"]
-    },
-    {
-      "type": "locate",
-      "subjectId": "レンのID",
-      "text": "宿に入る",
-      "aboutIds": ["宿のID"]
-    },
-    {
-      "type": "locate",
-      "subjectId": "ハルのID",
-      "text": "宿に入る",
-      "aboutIds": ["宿のID"]
-    }
-  ],
+  "command": "apply",
+  "expectedSp": 0,
+  "action": {
+    "type": "direct",
+    "text": "市場を出て、二人を宿へ誘う",
+    "operations": [
+      {
+        "type": "locate",
+        "subjectId": "ミオのID",
+        "text": "宿に入る",
+        "aboutIds": ["宿のID"]
+      },
+      {
+        "type": "locate",
+        "subjectId": "レンのID",
+        "text": "宿に入る",
+        "aboutIds": ["宿のID"]
+      },
+      {
+        "type": "locate",
+        "subjectId": "ハルのID",
+        "text": "宿に入る",
+        "aboutIds": ["宿のID"]
+      }
+    ]
+  },
   "dependencies": []
 }
 ```

@@ -149,6 +149,116 @@ export const BelongingOp = z.discriminatedUnion("type", [
     .describe("消費・消失した物品、または失った技能を除く"),
 ]);
 export type BelongingOp = z.infer<typeof BelongingOp>;
+
+const directOperations = BelongingOp.options.filter((op) =>
+  ["locate", "move", "remove", "revoke"].includes(op.shape.type.value),
+);
+const generationOperations = BelongingOp.options.filter((op) =>
+  ["create", "learn", "grant"].includes(op.shape.type.value),
+);
+const Generation = z.strictObject({
+  text,
+  materials,
+  operation: z.union(generationOperations),
+});
+export const WorldApplication = z.discriminatedUnion("type", [
+  z.strictObject({
+    type: z.literal("direct"),
+    text,
+    operations: z.array(z.union(directOperations)).nonempty(),
+    deferredUntil: z.iso.datetime().optional(),
+    stealth: z.boolean().optional(),
+    departAloneOnTimeout: z.boolean().optional(),
+  }),
+  z
+    .strictObject({
+      type: z.literal("generate"),
+      plans: z.array(Generation).nonempty().max(5),
+      waitMinutes: count.optional(),
+    })
+    .refine(
+      (value) =>
+        value.waitMinutes === undefined ||
+        (value.plans.length === 1 &&
+          value.plans[0]!.operation.type === "create"),
+      "時間指定には物品の製作案を1件指定してください",
+    ),
+  z.strictObject({ type: z.literal("rename"), targetId: id, name: text }),
+  z.strictObject({
+    type: z.literal("clarify"),
+    targetId: id,
+    text,
+    basis: basis.optional(),
+  }),
+  z.strictObject({ type: z.literal("interpret"), targetId: id, text }),
+  z.strictObject({
+    type: z.literal("revise-memo"),
+    targetId: id,
+    text,
+    deferredUntil: z.iso.datetime().optional(),
+  }),
+  z.strictObject({
+    type: z.literal("increase-count"),
+    itemId: id,
+    count,
+    text,
+    materials,
+  }),
+  z.strictObject({ type: z.literal("detach"), stateId: id }),
+  z.strictObject({
+    type: z.literal("share-storage"),
+    person: id,
+    storage: id,
+    basis,
+  }),
+  z.strictObject({
+    type: z.literal("state"),
+    targetId: id,
+    text,
+    description: text,
+    stateId: id.optional(),
+    materials,
+    attachedItemId: id.optional(),
+    minutes: count.optional(),
+    affectsMovement: z.literal(true).optional(),
+    feature: z.literal("vehicle").optional(),
+  }),
+  z.strictObject({
+    type: z.literal("oppose"),
+    text,
+    targetId: id,
+    description: text,
+    replacesStateId: id.optional(),
+  }),
+  z.strictObject({
+    type: z.literal("seize"),
+    text,
+    operation: z.strictObject({
+      type: z.literal("move"),
+      item: id,
+      from: id,
+      to: id,
+      count: part,
+      basis,
+    }),
+    stealth: z.boolean().optional(),
+  }),
+]);
+export type WorldApplication = z.infer<typeof WorldApplication>;
+
+export function applicationSp(action: WorldApplication): number {
+  if (
+    action.type === "direct" ||
+    action.type === "detach" ||
+    action.type === "share-storage" ||
+    action.type === "clarify" ||
+    action.type === "interpret" ||
+    action.type === "revise-memo"
+  )
+    return 0;
+  if (action.type === "generate") return action.plans.length;
+  return 1;
+}
 export const PlaySearch = z.discriminatedUnion("kind", [
   z
     .object({
@@ -496,6 +606,7 @@ export const PlayCommand = z.discriminatedUnion("command", [
       stealth: z.boolean().optional(),
       operations: z.array(BelongingOp).min(1).optional(),
       changes: Change.optional(),
+      resolvedState: z.boolean().optional(),
       deferredUntil: z.iso.datetime().optional(),
       departAloneOnTimeout: z
         .boolean()
@@ -522,6 +633,17 @@ export const PlayCommand = z.discriminatedUnion("command", [
       text,
       participants: z.array(z.uuid()).default([]),
       deferredUntil: z.iso.datetime().optional(),
+      dependencies,
+    })
+    .strict(),
+  z
+    .object({
+      ...request,
+      command: z.literal("rename"),
+      targetId: id,
+      name: z.string().trim().min(1),
+      descriptionOnly: z.literal(true).optional(),
+      basis: basis.optional(),
       dependencies,
     })
     .strict(),
@@ -619,6 +741,22 @@ export const PlayCommand = z.discriminatedUnion("command", [
   z
     .object({ ...request, command: z.enum(["end-turn", "leave", "finish"]) })
     .strict(),
+]);
+export const ApplyCommand = z.strictObject({
+  ...request,
+  command: z.literal("apply"),
+  action: WorldApplication,
+  expectedSp: z.number().int().nonnegative(),
+  dependencies,
+});
+export const PlayerPlayCommand = z.discriminatedUnion("command", [
+  ApplyCommand,
+  ...PlayCommand.options.filter(
+    (option) =>
+      !["update", "create", "create-batch", "oppose", "rename"].some(
+        (command) => option.shape.command.safeParse(command).success,
+      ),
+  ),
 ]);
 export const ViewersInput = z
   .object({

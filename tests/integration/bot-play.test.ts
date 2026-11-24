@@ -16,6 +16,7 @@ import {
   BlueprintDraft,
   InventoryBundleCommand,
   PlayCommand,
+  PlayerPlayCommand,
   WaitingEvent,
 } from "@gestaloka/contracts";
 import { WorldAccess } from "@gestaloka/server/access";
@@ -28,6 +29,7 @@ import type { Change } from "@gestaloka/contracts";
 import {
   addRoute,
   directPlaces,
+  linkRoute,
   locationRecords,
 } from "../../packages/server/src/world/locations.js";
 import { BotPlay } from "@gestaloka/server/play";
@@ -180,7 +182,10 @@ async function fixture(playerCount = 3) {
     access.botCommand(
       people[i]!.id,
       world,
-      PlayCommand.parse({ requestId: randomUUID(), ...input }),
+      (input.command === "apply" ? PlayerPlayCommand : PlayCommand).parse({
+        requestId: randomUUID(),
+        ...input,
+      }),
       actors[i],
     );
   const status = (i: number) =>
@@ -4120,7 +4125,7 @@ test("HTTPとCLIは本人の手番APIを使い、旧書込を拒否し、同じ�
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json()).toMatchObject({
       code: "INPUT_INVALID",
-      message: expect.stringContaining("/operations/0/type"),
+      message: expect.stringContaining("/command"),
     });
     expect(f.calls).not.toHaveBeenCalled();
   } finally {
@@ -6930,6 +6935,387 @@ test("要約中の昇格再送は最初の判定を待ち、保留で先に確�
   expect(reviews).toBe(1);
   expect(profiles).toBe(1);
 });
+test("型付きの正式改名は1 SPで審査し、技能の本文と習得根拠を維持する", async () => {
+  const f = await fixture();
+  const person = f.actors[0]!;
+  await f.apply([
+    {
+      type: "learn",
+      person,
+      text: "周囲数歩を照らす",
+      basis: "灯りを練習した",
+    },
+  ]);
+  const skills = () =>
+    readBelongings(f.store.context(f.graph), person).then((r) => r.skills);
+  const [skill] = await skills();
+  f.calls.mockImplementation(async (id, role) => {
+    expect(role).toBe("world-rename-review");
+    return answer(id, { success: true, reason: "習得済みの技能の呼び名" });
+  });
+  const command = PlayerPlayCommand.parse({
+    requestId: randomUUID(),
+    command: "apply",
+    expectedSp: 1,
+    action: { type: "rename", targetId: skill!.id, name: "宵灯" },
+    dependencies: [],
+  });
+  const result = await access.botCommand(
+    f.people[0]!.id,
+    f.world,
+    command,
+    person,
+  );
+  expect(result).toMatchObject({ spentSp: 1, outcome: { success: true } });
+  expect(await skills()).toEqual([{ ...skill, name: "宵灯" }]);
+  await access.botCommand(f.people[0]!.id, f.world, command, person);
+  expect(f.calls).toHaveBeenCalledTimes(1);
+  expect((await f.status(0)).dailySp.remaining).toBe(99);
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { success: false, reason: "呼び名を変えるだけでは成立しない" }),
+  );
+  const refused = PlayerPlayCommand.parse({
+    requestId: randomUUID(),
+    command: "apply",
+    expectedSp: 1,
+    action: {
+      type: "rename",
+      targetId: skill!.id,
+      name: "既に世界中を照らした灯り",
+    },
+    dependencies: [],
+  });
+  await expect(
+    access.botCommand(f.people[0]!.id, f.world, refused, person),
+  ).resolves.toMatchObject({ spentSp: 1, outcome: { success: false } });
+  expect(await skills()).toEqual([{ ...skill, name: "宵灯" }]);
+  expect((await f.status(0)).dailySp.remaining).toBe(98);
+  const legacy = PlayCommand.parse({
+    command: "update",
+    requestId: randomUUID(),
+    text: "技能の名前を変える",
+    operations: [{ type: "update", id: skill!.id, text: "別の名前" }],
+    dependencies: [],
+  });
+  expect(PlayerPlayCommand.safeParse(legacy).success).toBe(false);
+});
+
+test("発展で消費した元技能を根拠に既存の能力を0 SPで明文化する", async () => {
+  const f = await fixture(1);
+  const person = f.actors[0]!;
+  const read = () => readBelongings(f.store.context(f.graph), person);
+  await f.apply([
+    { type: "learn", person, text: "手元を照らせる", basis: "灯りの練習" },
+  ]);
+  const origin = (await read()).skills[0]!;
+  await f.apply([
+    {
+      type: "learn",
+      person,
+      text: "以前の灯りに加えて灯りの色を変えられる",
+      basis: "色の練習",
+      consumeSkillIds: [origin.id],
+    },
+  ]);
+  const current = (await read()).skills[0]!;
+  f.calls.mockImplementation(async (id, role, messages) => {
+    expect(role).toBe("world-description-review");
+    expect(JSON.parse(String(messages[1]!.content)).originSkills).toEqual([
+      expect.objectContaining({ id: origin.id, text: origin.text }),
+    ]);
+    return answer(id, {
+      success: true,
+      reason: "元からある能力を明文化している",
+    });
+  });
+  const text = "手元を照らせて、灯りの色を変えられる";
+  await expect(
+    f.send(0, {
+      command: "apply",
+      expectedSp: 0,
+      dependencies: [],
+      action: { type: "clarify", targetId: current.id, text },
+    }),
+  ).resolves.toMatchObject({ spentSp: 0 });
+  expect((await read()).skills).toEqual([{ ...current, text }]);
+});
+
+test("独立した生成案は同じGM呼び出しでも、抽選した案ごとに1 SPを使う", async () => {
+  const f = await fixture();
+  f.calls.mockImplementation(async (id) =>
+    answer(id, { settings: [sure, sure] }),
+  );
+  const command = PlayerPlayCommand.parse({
+    requestId: randomUUID(),
+    command: "apply",
+    expectedSp: 2,
+    action: {
+      type: "generate",
+      plans: ["紙の栞", "木の匙"].map((label) => ({
+        text: `${label}を作る`,
+        operation: {
+          type: "create",
+          label,
+          holder: f.actors[0],
+          basis: "手工作",
+        },
+      })),
+    },
+    dependencies: [],
+  });
+  await expect(
+    access.botCommand(
+      f.people[0]!.id,
+      f.world,
+      PlayerPlayCommand.parse({ ...command, expectedSp: 1 }),
+      f.actors[0],
+    ),
+  ).rejects.toMatchObject({ code: "SP_QUOTE_CHANGED" });
+  expect(f.calls).not.toHaveBeenCalled();
+  await expect(
+    access.botCommand(f.people[0]!.id, f.world, command, f.actors[0]),
+  ).resolves.toMatchObject({ spentSp: 2, dailySp: { remaining: 98 } });
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
+test("型付きの対人対抗は出目を保存した時点で1 SPを使う", async () => {
+  const f = await fixture();
+  await f.send(0, { command: "contact", targetId: f.actors[1] });
+  const status = await f.status(0);
+  const current = (status as { turnHolder?: { actorId: string } }).turnHolder
+    ?.actorId;
+  const attacker = current === f.actors[0] ? 0 : 1;
+  const defender = 1 - attacker;
+  f.calls.mockImplementation(async (id, role) => {
+    expect(role).toBe("world-opposition-dice");
+    return answer(id, sure);
+  });
+  const command = PlayerPlayCommand.parse({
+    requestId: randomUUID(),
+    command: "apply",
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "oppose",
+      text: "練習用の棒で相手を止めようとする",
+      targetId: f.actors[defender],
+      description: "立ち止まっている",
+    },
+  });
+  const send = () =>
+    access.botCommand(
+      f.people[attacker]!.id,
+      f.world,
+      command,
+      f.actors[attacker],
+    );
+  await expect(send()).resolves.toMatchObject({
+    spentSp: 1,
+    dailySp: { remaining: 99 },
+  });
+  await send();
+  expect((await f.status(attacker)).dailySp.remaining).toBe(99);
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
+test("着脱の確定は付着した関係だけを終え、追加のGMとSPを使わない", async () => {
+  const f = await fixture();
+  const person = f.actors[0]!;
+  const wearer = f.actors[1]!;
+  await f.send(0, { command: "contact", targetId: wearer });
+  await giveTurn(f, 0);
+  await f.apply([
+    { type: "create", label: "布の花飾り", holder: person, basis: "携行品" },
+  ]);
+  const context = () => f.store.context(f.graph);
+  const item = (await readBelongings(context(), person)).items[0]!.id;
+  const act = (action: unknown, expectedSp: number, id = randomUUID(), i = 0) =>
+    access.botCommand(
+      f.people[i]!.id,
+      f.world,
+      PlayerPlayCommand.parse({
+        requestId: id,
+        command: "apply",
+        action,
+        expectedSp,
+        dependencies: [],
+      }),
+      f.actors[i],
+    );
+  const id = randomUUID();
+  const offered = await act(
+    {
+      type: "state",
+      targetId: wearer,
+      text: "胸に花飾りを付ける",
+      description: "花飾りが付いている",
+      attachedItemId: item,
+    },
+    1,
+    id,
+  );
+  expect(offered).toMatchObject({ state: "receiving", spentSp: 1 });
+  await f.send(1, {
+    command: "receive",
+    applicationId: offered.applicationId,
+    accept: true,
+  });
+  await giveTurn(f, 1);
+  const stateId = derivedId(`${derivedId(`${id}:state`)}:content`);
+  const edge = await context().edge(stateId);
+  expect(edge?.stateOrigin).toEqual({
+    requestId: id,
+    actorId: person,
+    attachedItemId: item,
+  });
+  f.calls.mockClear();
+  await expect(
+    act({ type: "detach", stateId }, 0, randomUUID(), 1),
+  ).resolves.toMatchObject({
+    spentSp: 0,
+  });
+  expect((await context().edge(stateId))?.period.until).toBeDefined();
+  expect(f.calls).not.toHaveBeenCalled();
+});
+
+test("治療の成功で指定した負傷を同じ確定から終了する", async () => {
+  const f = await fixture(1);
+  const actor = f.actors[0]!;
+  const apply = (action: unknown, requestId: string) =>
+    access.botCommand(
+      f.people[0]!.id,
+      f.world,
+      PlayerPlayCommand.parse({
+        requestId,
+        command: "apply",
+        expectedSp: 1,
+        action,
+        dependencies: [],
+      }),
+      actor,
+    );
+  const injury = randomUUID();
+  await apply(
+    {
+      type: "state",
+      targetId: actor,
+      text: "作業中に怪我をする",
+      description: "指に浅い傷がある",
+    },
+    injury,
+  );
+  const wound = derivedId(`${derivedId(`${injury}:state`)}:content`);
+  const treatment = randomUUID();
+  const action = {
+    type: "state",
+    targetId: actor,
+    text: "傷を洗い包帯を巻く",
+    description: "手当てされている",
+    stateId: wound,
+  };
+  f.calls.mockClear();
+  f.calls.mockImplementation(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(JSON.parse(String(messages[1]!.content))).not.toHaveProperty(
+      "confirmed",
+    );
+    return answer(id, { ...sure, endEdges: [wound] });
+  });
+  await expect(apply(action, treatment)).resolves.toMatchObject({ spentSp: 1 });
+  const receipt = await f.store.receipt(f.graph, treatment);
+  expect(receipt?.changes.endEdges).toContain(wound);
+  expect(
+    receipt?.changes.edges.some(
+      (edge) => edge.stateOrigin?.requestId === treatment,
+    ),
+  ).toBe(true);
+  await apply(action, treatment);
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
+test("場所への作用は1 SPで確定し、後続の移動は追加SPを使わず条件を判定する", async () => {
+  const f = await fixture(6);
+  const changes: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  linkRoute(
+    changes,
+    randomUUID(),
+    0,
+    [
+      { id: f.place, text: "広場" },
+      { id: f.far, text: "離れた場所" },
+    ],
+    "舗装された小道",
+  );
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes,
+    },
+  );
+  f.calls.mockImplementation(async (id, role, messages) => {
+    if (role === "world-place-movement") {
+      expect(messages[1]?.content).toContain("霧");
+      return answer(id, { movable: true, reason: "道を見失わずに通れる" });
+    }
+    return answer(id, sure);
+  });
+  const act = (action: unknown, expectedSp: number, i = 0) =>
+    access.botCommand(
+      f.people[i]!.id,
+      f.world,
+      PlayerPlayCommand.parse({
+        requestId: randomUUID(),
+        command: "apply",
+        action,
+        expectedSp,
+        dependencies: [],
+      }),
+      f.actors[i],
+    );
+  const fog = () =>
+    act(
+      {
+        type: "state",
+        targetId: f.place,
+        text: "霧を起こす",
+        description: "広場に霧がかかっている",
+        affectsMovement: true,
+      },
+      1,
+    );
+  for (let i = 1; i < f.actors.length; i++) await f.move(i, f.far);
+  await expect(fog()).resolves.toMatchObject({ spentSp: 1 });
+  for (let i = 1; i < f.actors.length; i++) await f.move(i, f.place);
+  await expect(fog()).resolves.toMatchObject({ spentSp: 1 });
+  f.calls.mockClear();
+  for (let i = 1; i < f.actors.length; i++)
+    await expect(
+      act(
+        {
+          type: "direct",
+          text: "小道を通る",
+          operations: [
+            {
+              type: "locate",
+              subjectId: f.actors[i],
+              text: "離れた場所",
+              aboutIds: [f.far],
+            },
+          ],
+        },
+        0,
+        i,
+      ),
+    ).resolves.toMatchObject({ spentSp: 0 });
+  expect(f.calls.mock.calls.map((call) => call[1])).toEqual(
+    Array(5).fill("world-place-movement"),
+  );
+  expect((await f.status(0)).dailySp.remaining).toBe(98);
+});
+
 test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人の解釈をチャットへ同報しない", async () => {
   const f = await fixture();
   const speech = randomUUID(),
@@ -6963,28 +7349,42 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
       ],
     ),
   ).rejects.toMatchObject({ code: "CONNECTION_REJECTED" });
-  await make(
-    [{ id: thought, kind: "script", text: "本人だけが持つ人物解釈" }],
-    [
+  const interpretation = (id: string) => ({
+    nodes: [{ id, kind: "script", text: "本人だけが持つ人物解釈" }],
+    edges: [
       {
         id: randomUUID(),
         kind: "interpret",
         role: "content",
         source: f.actors[0],
-        target: thought,
+        target: id,
         period: { from: 0 },
       },
       {
         id: randomUUID(),
         kind: "interpret",
         role: "about",
-        source: thought,
+        source: id,
         target: f.actors[1],
         period: { from: 0 },
       },
     ],
-    "私的な解釈を保存する",
-  );
+  });
+  const privateChange = interpretation(thought);
+  await make(privateChange.nodes, privateChange.edges, "私的な解釈を保存する");
+  await expect(
+    f.send(0, {
+      command: "update",
+      text: "広場の名前と本人の解釈を更新する",
+      changes: {
+        ...interpretation(randomUUID()),
+        revisions: [{ id: f.place, kind: "existence", text: "広場の別名" }],
+        endEdges: [],
+      },
+      dependencies: [],
+    }),
+  ).rejects.toMatchObject({ code: "AUTHORITY_REQUIRED" });
+  expect((await f.store.context(f.graph).node(f.place))?.text).toBe("広場");
   expect(f.calls).not.toHaveBeenCalled();
   await f.send(0, { command: "end-turn" });
   expect(JSON.stringify((await f.status(0)).entries)).not.toContain(
@@ -7918,13 +8318,17 @@ test("手持ちの容量と受入可能数をHTTPとCLIへ返す", async () => {
     ),
   ).toMatchObject({ inventoryCapacity: true });
   const move = (item: string, count?: number) => ({
-    command: "update",
+    command: "apply",
     requestId: randomUUID(),
-    text: "拾う",
+    expectedSp: 0,
     dependencies: [],
-    operations: [
-      { type: "move", item, from: f.place, to: actor, count, basis: "検証" },
-    ],
+    action: {
+      type: "direct",
+      text: "拾う",
+      operations: [
+        { type: "move", item, from: f.place, to: actor, count, basis: "検証" },
+      ],
+    },
   });
   const app = await createApp(
     access,
@@ -9770,14 +10174,18 @@ test.each([
       await writeFile(
         file,
         JSON.stringify({
-          command: "update",
-          text: "一緒に離れた場所へ出発する",
-          operations: f.actors.slice(0, 4).map((subjectId) => ({
-            type: "locate",
-            subjectId,
-            text: "離れた場所",
-            aboutIds: [f.far],
-          })),
+          command: "apply",
+          expectedSp: 0,
+          action: {
+            type: "direct",
+            text: "一緒に離れた場所へ出発する",
+            operations: f.actors.slice(0, 4).map((subjectId) => ({
+              type: "locate",
+              subjectId,
+              text: "離れた場所",
+              aboutIds: [f.far],
+            })),
+          },
           dependencies: [],
         }),
       );
@@ -12749,8 +13157,8 @@ test("探索と複数案の生成は日次SPを共有し、生成と素材消費
   });
   const created = await f.send(0, batch);
   expect(created).toMatchObject({
-    spentSp: 1,
-    dailySp: { remaining: 98 },
+    spentSp: 3,
+    dailySp: { remaining: 96 },
     outcome: {
       proposals: [
         { roll: 1, success: true },
@@ -12788,7 +13196,7 @@ test("探索と複数案の生成は日次SPを共有し、生成と素材消費
   });
   expect(missed).toMatchObject({
     spentSp: 1,
-    dailySp: { remaining: 97 },
+    dailySp: { remaining: 95 },
     outcome: { success: false },
   });
   expect(
@@ -13883,16 +14291,20 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
     await writeFile(
       move,
       JSON.stringify({
-        command: "update",
-        text: "小道へ入る",
-        operations: [
-          {
-            type: "locate",
-            subjectId: me,
-            text: "広場から小道へ歩いて入っていく",
-            aboutIds: [path],
-          },
-        ],
+        command: "apply",
+        expectedSp: 0,
+        action: {
+          type: "direct",
+          text: "小道へ入る",
+          operations: [
+            {
+              type: "locate",
+              subjectId: me,
+              text: "広場から小道へ歩いて入っていく",
+              aboutIds: [path],
+            },
+          ],
+        },
         dependencies: [],
       }),
     );
@@ -15558,7 +15970,13 @@ test("待機をNPC自身が読み、現地で話せるが自分からは出発�
     expect(
       JSON.parse(String(messages[1]!.content)).self.material.companion.mode,
     ).toBe("wait");
-    return answer(id, locate(npc, f.far));
+    const { text, operations, dependencies } = locate(npc, f.far);
+    return answer(id, {
+      command: "apply",
+      expectedSp: 0,
+      action: { type: "direct", text, operations },
+      dependencies,
+    });
   });
   await access.botPlay.tickNpcs(f.world);
   expect(await at(npc)).toEqual([f.place]);

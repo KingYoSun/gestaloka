@@ -3,7 +3,7 @@ import { ArrowDownToLine, ArrowUpToLine, Inbox, PenLine } from "lucide-react";
 import { z } from "zod";
 import {
   ItemOutcome,
-  PlayCommand,
+  PlayerPlayCommand,
   PlayerCharacter,
 } from "@gestaloka/contracts";
 import type { paths } from "@gestaloka/contracts/http";
@@ -316,7 +316,7 @@ export function BotSession({
   const log = useRef<HTMLDivElement>(null);
   const [pending, save] = usePending(
     pendingKey(`${id}:${actorId ?? "selected"}`, "bot-turn"),
-    PlayCommand,
+    PlayerPlayCommand,
   );
   const query = $api.useQuery(
     "get",
@@ -340,7 +340,7 @@ export function BotSession({
   const notices = $api.useMutation("get", "/api/worlds/{id}/notices", {
     onSuccess: () => void query.refetch(),
   });
-  const execute = async (body: z.infer<typeof PlayCommand>) => {
+  const execute = async (body: z.infer<typeof PlayerPlayCommand>) => {
     save(body);
     try {
       const result = await mutation.mutateAsync({
@@ -373,7 +373,8 @@ export function BotSession({
   };
   const send = (raw?: Record<string, unknown>) =>
     execute(
-      pending ?? PlayCommand.parse({ ...raw, requestId: crypto.randomUUID() }),
+      pending ??
+        PlayerPlayCommand.parse({ ...raw, requestId: crypto.randomUUID() }),
     );
   if (!view)
     return query.error ? (
@@ -450,17 +451,21 @@ export function BotSession({
             refresh: () => query.refetch(),
             take: (item, from, label) =>
               send({
-                command: "update",
-                text: `${label}を手持ちへ取り出す`,
-                operations: [
-                  {
-                    type: "move",
-                    item,
-                    from,
-                    to: view.viewerId,
-                    basis: "バンドルから取り出す",
-                  },
-                ],
+                command: "apply",
+                expectedSp: 0,
+                action: {
+                  type: "direct",
+                  text: `${label}を手持ちへ取り出す`,
+                  operations: [
+                    {
+                      type: "move",
+                      item,
+                      from,
+                      to: view.viewerId,
+                      basis: "バンドルから取り出す",
+                    },
+                  ],
+                },
                 dependencies: [],
               }),
           }}

@@ -139,6 +139,8 @@ export const WorldNode = z.discriminatedUnion("kind", [
     .object({
       ...Content,
       kind: z.literal("script"),
+      name: z.string().trim().min(1).optional(),
+      derivedFromSkills: z.array(z.uuid()).optional(),
       type: z.enum(["memo", "draw-source"]).optional(),
       drawTable: DrawTable.optional(),
       spawn: SpawnRule.optional(),
@@ -195,6 +197,14 @@ export const WorldEdge = z
       ),
     period: Period,
     observation: Observation.optional(),
+    stateOrigin: z
+      .strictObject({
+        requestId: z.uuid(),
+        actorId: z.uuid(),
+        attachedItemId: z.uuid().optional(),
+        affectsMovement: z.literal(true).optional(),
+      })
+      .optional(),
   })
   .strict()
   .refine(
@@ -210,6 +220,12 @@ export const WorldEdge = z
   .refine(
     (edge) => edge.observation === undefined || edge.kind === "see",
     "観測の範囲はseeだけに指定してください",
+  )
+  .refine(
+    (edge) =>
+      edge.stateOrigin === undefined ||
+      (edge.kind === "status" && edge.role === "content"),
+    "状態の由来はstatus/contentだけに指定してください",
   );
 export type WorldEdge = z.infer<typeof WorldEdge>;
 

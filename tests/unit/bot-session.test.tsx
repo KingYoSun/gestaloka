@@ -540,7 +540,7 @@ test("満枠から消費する技能を選び、成功後の使用枠を確か�
   fireEvent.click(screen.getByText("プレイコマンド", { exact: true }));
   fireEvent.click(screen.getByText("技能を習得する（2/2枠）"));
   const button = screen.getByRole("button", {
-    name: "習得を申請する",
+    name: "習得を申請する（1 SP）",
   }) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
   fireEvent.click(screen.getByLabelText("星位を測る"));
@@ -557,16 +557,23 @@ test("満枠から消費する技能を選び、成功後の使用枠を確か�
   await waitFor(() =>
     expect(submit).toHaveBeenCalledWith(
       expect.objectContaining({
-        command: "update",
-        operations: [
-          {
-            type: "learn",
-            person: actor,
-            text: "夜の湾内で航路を選べる",
-            basis: "湾内で夜間観測を重ねる",
-            consumeSkillIds: [peer, user],
-          },
-        ],
+        command: "apply",
+        expectedSp: 1,
+        action: {
+          type: "generate",
+          plans: [
+            {
+              text: "湾内で夜間観測を重ねる",
+              operation: {
+                type: "learn",
+                person: actor,
+                text: "夜の湾内で航路を選べる",
+                basis: "湾内で夜間観測を重ねる",
+                consumeSkillIds: [peer, user],
+              },
+            },
+          ],
+        },
       }),
     ),
   );

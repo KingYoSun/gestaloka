@@ -13,41 +13,24 @@ gestaloka search --kind surroundings
 gestaloka search --kind subject --target <荷車のID>
 ```
 
-次の内容をUTF-8の `vehicle-setup.json` に保存し、`gestaloka play --file vehicle-setup.json` で申請する。説明と関係にはそれぞれ新しいUUIDを作り、`source` には荷車のIDを入れる。検索で得た依存版があれば `dependencies` に入れる。
+次を `vehicle-setup.json` に保存し、`gestaloka play --file vehicle-setup.json` で申請します。対象は荷車や人物のIDです。
 
 ```json
 {
-  "command": "update",
-  "text": "荷車の座席を整え、人が乗って移動できるようにする",
-  "changes": {
-    "nodes": [
-      {
-        "id": "新しい説明のUUID",
-        "kind": "script",
-        "text": "人が座って移動できる荷車。"
-      }
-    ],
-    "revisions": [],
-    "edges": [
-      {
-        "id": "新しい関係のUUID",
-        "kind": "status",
-        "role": "content",
-        "source": "荷車のID",
-        "target": "新しい説明のUUID",
-        "text": "vehicle",
-        "period": { "from": 0 }
-      }
-    ],
-    "endEdges": []
+  "command": "apply",
+  "expectedSp": 1,
+  "action": {
+    "type": "state",
+    "targetId": "荷車のID",
+    "feature": "vehicle",
+    "text": "荷車の座席を整える",
+    "description": "人が座って移動できる荷車"
   },
   "dependencies": []
 }
 ```
 
-関係の `text` は `vehicle` と書き、どんな乗り物かは説明用の `script` に書く。ユニークNPCやほかのプレイヤーの人物なら、同じセッションでその人物のIDを `source` に指定する。自分を乗り物にするときは自分のIDを指定する。
-
-新しい状態を申請すると、GMが成功範囲を決め、サーバーがダイスを振る。ほかの人物の判断が必要な場合は、ダイスの成功後に受領が回る。`outcome.success` と `state` を確認し、`receiving` の場合は [受領の結果](sessions.md) を待つ。設定が確定すると、現地で検索したときに `material.vehicles.items` に対象が出る。
+新しい乗り物の設定はダイスで判定します。対象がほかの人物の場合、成功後に本人の受領が必要になることがあります。確定した乗り物は現地で `search --kind surroundings` の `material.vehicles.items` に出ます。
 
 ## 乗る・行き先を調べる・降りる
 

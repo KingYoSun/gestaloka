@@ -2,7 +2,7 @@ export { TurnSignals } from "./turn-signals.js";
 import { npcReport } from "../runtime/npc-mode.js";
 import { BotPlay } from "../runtime/bot-play.js";
 import type {
-  PlayCommand,
+  PlayerPlayCommand,
   InventoryBundleCommand,
   PlayerReportInput,
   ViewersInput,
@@ -236,7 +236,7 @@ export class WorldAccess {
   async botCommand(
     subject: string,
     id: string,
-    input: z.infer<typeof PlayCommand>,
+    input: z.infer<typeof PlayerPlayCommand>,
     actorId?: string,
     connectionId?: string,
   ) {

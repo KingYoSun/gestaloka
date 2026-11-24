@@ -11,7 +11,9 @@ import { fileURLToPath } from "node:url";
 import { PlayerReferences, localTime, utcTime } from "./references.js";
 import {
   PlayerDeviceCode,
-  PlayCommand,
+  PlayerPlayCommand,
+  WorldApplication,
+  applicationSp,
   PlayerDeviceStatus,
   SceneRecordPage,
   JoinWorld,
@@ -907,17 +909,33 @@ async function run() {
     ).includes(action ?? "")
   )
     throw new Error(playerHelp(command));
-  const body = PlayCommand.parse(
+  const fileInput =
+    command === "play"
+      ? z
+          .record(z.string(), z.unknown())
+          .parse(
+            references.convert(
+              JSON.parse(await readFile(z.string().parse(values.file), "utf8")),
+              true,
+            ),
+          )
+      : undefined;
+  if (fileInput?.command === "apply") {
+    const action = WorldApplication.parse(fileInput.action);
+    if (action.type === "direct") {
+      if (values.stealth) action.stealth = true;
+      if (values["depart-alone-on-timeout"]) action.departAloneOnTimeout = true;
+    }
+    if (action.type === "seize" && values.stealth) action.stealth = true;
+    fileInput.action = action;
+    if (values.quote) return { expectedSp: applicationSp(action) };
+  }
+  if (values.quote)
+    throw new Error("--quote は apply の申請ファイルに指定してください");
+  const body = PlayerPlayCommand.parse(
     command === "play"
       ? {
-          ...(references.convert(
-            JSON.parse(await readFile(z.string().parse(values.file), "utf8")),
-            true,
-          ) as object),
-          ...(values.stealth ? { stealth: true } : {}),
-          ...(values["depart-alone-on-timeout"]
-            ? { departAloneOnTimeout: true }
-            : {}),
+          ...fileInput,
           requestId: id,
         }
       : {
