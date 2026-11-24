@@ -6442,14 +6442,14 @@ export class BotPlay {
       splitMode,
       hasUnrolledChanges = false,
       referenced = [],
-      endStatesOnly = false,
+      endStateTargetId,
     }: {
       explore?: boolean;
       waitMinutes?: number | undefined;
       splitMode?: "update" | "create-batch" | undefined;
       hasUnrolledChanges?: boolean;
       referenced?: string[];
-      endStatesOnly?: boolean;
+      endStateTargetId?: string | undefined;
     } = {},
   ) {
     type Result =
@@ -6592,7 +6592,7 @@ export class BotPlay {
     if (fresh.length) {
       const allowApply = fresh.map(
         (p) =>
-          !endStatesOnly &&
+          !endStateTargetId &&
           !!p.statusReview?.onlyStateCreation &&
           !p.changes.edges.some((edge) => edge.stateOrigin) &&
           !p.materials?.length &&
@@ -6649,7 +6649,7 @@ export class BotPlay {
         fresh[0]!.changes.endEdges.length ===
           reviews[0]!.requestedEnds.length + reviews[0]!.relatedEnds.length;
       const confirmed =
-        !endStatesOnly &&
+        !endStateTargetId &&
         !batch &&
         reviews[0] &&
         !fresh[0]!.changes.edges.some((edge) => edge.stateOrigin)
@@ -6680,10 +6680,11 @@ export class BotPlay {
           ...changes.edges.flatMap((e) => [e.source, e.target]),
         ]),
       ];
-      const nodes = compact
+      const ending = endStateTargetId ?? (compact ? actor : undefined);
+      const nodes = ending
         ? [
             {
-              node: { id: actor },
+              node: { id: ending },
               states: await Promise.all(
                 reviews[0]!.requestedEnds.map(async (relationId) => {
                   const edge = (await context.edge(relationId))!;
@@ -6706,6 +6707,7 @@ export class BotPlay {
             ],
             reviews.flatMap((r) => r.scripts),
           );
+      if (endStateTargetId) await context.validate();
       if (reviews.length) await this.#rememberStateBasis(requestId, context);
       const criteria = explore
         ? exploreCriteria
@@ -6725,7 +6727,7 @@ export class BotPlay {
               .parse(parseOutput(raw)).settings
           : [parseOutput(raw)];
         return values.map((rawValue, i) => {
-          if (endStatesOnly)
+          if (endStateTargetId)
             return {
               ...WitnessDice.strip().parse(rawValue),
               endEdges: fresh[i]!.changes.endEdges,
@@ -6778,8 +6780,8 @@ export class BotPlay {
         [
           {
             role: "system",
-            content: endStatesOnly
-              ? "指定された状態を終了する申請の成否を判定する。changes.endEdgesにある状態は成功時にすべて終了する。現在の状態、申請内容、世界の基準から判断し、{sides:整数,successThrough:整数}をJSONで返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準: " +
+            content: endStateTargetId
+              ? "指定された状態を終了する申請の成否を判定する。statesは成功時にすべて終了する。selfがtrueなら申請者本人が対象。申請文（text）、終了対象の状態、世界の前提（premise）と基準から判断し、{sides:整数,successThrough:整数}をJSONで返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準: " +
                 criteria
               : compact
                 ? selfStatusPrompt +
@@ -6818,24 +6820,32 @@ export class BotPlay {
             role: "user",
             [diceStoragePlace]: storagePlace,
             content: JSON.stringify(
-              compact
+              endStateTargetId
                 ? {
-                    actor,
-                    text: fresh[0]!.text,
-                    allowApply: true,
-                    states: nodes[0]!.states,
-                    confirmed,
-                  }
-                : {
                     premise,
-                    actor,
-                    ...(batch ? { proposals: material } : material[0]),
-                    nodes,
-                    ...(confirmed ? { confirmed } : {}),
-                    ...(consumable.length ? { consumable } : {}),
-                    ...(waitMinutes ? { waitMinutes } : {}),
-                    ...(neighbors.length ? { neighbors } : {}),
-                  },
+                    targetId: endStateTargetId,
+                    self: endStateTargetId === actor,
+                    text: fresh[0]!.text,
+                    states: nodes[0]!.states,
+                  }
+                : compact
+                  ? {
+                      actor,
+                      text: fresh[0]!.text,
+                      allowApply: true,
+                      states: nodes[0]!.states,
+                      confirmed,
+                    }
+                  : {
+                      premise,
+                      actor,
+                      ...(batch ? { proposals: material } : material[0]),
+                      nodes,
+                      ...(confirmed ? { confirmed } : {}),
+                      ...(consumable.length ? { consumable } : {}),
+                      ...(waitMinutes ? { waitMinutes } : {}),
+                      ...(neighbors.length ? { neighbors } : {}),
+                    },
             ),
           },
         ],
@@ -9088,7 +9098,7 @@ export class BotPlay {
               explore: input.command === "explore",
               waitMinutes: wait,
               referenced: [...parties, ...refs],
-              endStatesOnly: !!input.endStateTargetId,
+              endStateTargetId: input.endStateTargetId,
             },
           )
         )[0]

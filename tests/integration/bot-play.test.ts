@@ -23,7 +23,6 @@ import {
 import { WorldAccess } from "@gestaloka/server/access";
 import { LlmClient } from "@gestaloka/server/llm";
 import { decisionSettings } from "../../packages/server/src/llm/config.js";
-import { prepareDicePrompt } from "../../packages/server/src/llm/dice-prompt.js";
 import { readPlayUsage } from "../../packages/server/src/runtime/play-usage.js";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
 import { derivedId, WorldContext } from "@gestaloka/server/world";
@@ -7693,6 +7692,7 @@ test.each([false, true])(
 test("CLIで複数の短縮IDを指定すると、その状態だけを新しい状態なしで終了する", async () => {
   const f = await fixture(1);
   const actor = f.actors[0]!;
+  const { initial_prompt: premise } = await runtime.get(f.world);
   const changes: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
   const ended = ["濡れた袖", "濡れた裾"];
   const kept = "袖に縫い跡がある";
@@ -7702,6 +7702,12 @@ test("CLIで複数の短縮IDを指定すると、その状態だけを新しい
     f.store.context(f.graph),
     { commitId: randomUUID(), at: 0, changes },
   );
+  await f.apply([
+    { type: "create", holder: actor, label: "手持ちの針", basis: "裁縫道具" },
+    { type: "learn", person: actor, text: "布を継ぐ", basis: "裁縫の練習" },
+    { type: "grant", person: actor, storage: f.far, basis: "道具を預ける" },
+    { type: "create", holder: f.far, label: "保管中の布", basis: "裁縫材料" },
+  ]);
   const app = await createApp(
     access,
     auth.identity,
@@ -7759,19 +7765,34 @@ test("CLIで複数の短縮IDを指定すると、その状態だけを新しい
     expect(f.calls).not.toHaveBeenCalled();
     f.calls.mockImplementationOnce(async (id, role, messages) => {
       expect(role).toBe("world-creation-dice");
-      const prompt = prepareDicePrompt(messages, false);
-      expect(prompt?.system.map(({ text }) => text).join("\n")).toContain(
-        "JSON",
-      );
+      expect(messages[0]!.content).toContain("JSON");
+      expect(JSON.parse(messages[1]!.content)).toEqual({
+        premise,
+        targetId: actor,
+        self: true,
+        text: `${request.action.text}\n${request.action.description}`,
+        states: ended.map((text, i) => ({
+          relationId: changes.edges[i]!.id,
+          since: changes.edges[i]!.period.from,
+          text,
+        })),
+      });
       return answer(id, {
         ...sure,
         endEdges: [changes.edges[0]!.id, changes.edges[2]!.id],
       });
     });
     await writeFile(file, JSON.stringify({ ...request, ...quote }));
-    expect(await run("play", "--file", file)).toMatchObject({
-      result: { state: "accepted", spentSp: 1, outcome: { success: true } },
+    const played = await run("play", "--file", file);
+    expect(played.result).toMatchObject({
+      state: "accepted",
+      spentSp: 1,
+      outcome: { success: true, setting: sure, roll: expect.any(Number) },
     });
+    expect(
+      (await run("recover", "--request", played.requestId)).result,
+    ).toEqual(played.result);
+    expect(f.calls).toHaveBeenCalledTimes(1);
     expect((await read()).map(({ relation }) => relation.id).sort()).toEqual(
       before
         .map(({ relation }) => relation.id)
@@ -7814,8 +7835,14 @@ test("現在地の現行状態は説明なしで終了でき、異なる対象�
     code: "STATE_TARGET_CHANGED",
   });
   expect(f.calls).not.toHaveBeenCalled();
-  f.calls.mockImplementationOnce(async (id, role) => {
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
     expect(role).toBe("world-creation-dice");
+    expect(JSON.parse(messages[1]!.content)).toMatchObject({
+      targetId: f.place,
+      self: false,
+      text: "掲示を外す",
+      states: [{ relationId: current, text: "広場に掲示がある", since: 0 }],
+    });
     return answer(id, sure);
   });
   const result = await apply([current!], requestId);
