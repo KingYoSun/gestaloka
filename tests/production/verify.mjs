@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { join, resolve } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
@@ -386,7 +388,31 @@ try {
   );
   const id = randomUUID(),
     request = { operation: "backups.create", reason: "隔離復元試験" };
-  await ops(source.config.name, request, id);
+  const deploy = spawn("flock", [
+    source.env.DEPLOYMENT_LOCK_FILE,
+    "sh",
+    "-c",
+    "printf locked; cat >/dev/null",
+  ]);
+  const exited = once(deploy, "exit");
+  try {
+    await Promise.race([
+      once(deploy.stdout, "data"),
+      exited.then(() => {
+        throw new Error("配備ロックを取得できませんでした");
+      }),
+    ]);
+    await ops(source.config.name, request, id);
+    await delay(3000);
+    assert.equal(
+      (await rpc(source.config.name, "job", { id })).job.state,
+      "queued",
+    );
+    assert.equal((await https(source, "api", "/api/health")).status, 200);
+  } finally {
+    deploy.stdin.end();
+    await exited;
+  }
   await wait(source.config.name, id);
   await ops(source.config.name, request, id);
   const snapshots = await ops(source.config.name, {

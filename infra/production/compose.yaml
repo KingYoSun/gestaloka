@@ -102,6 +102,11 @@ services:
       - controller-state:/state
       - configuration:/configuration
       - /var/run/docker.sock:/var/run/docker.sock
+      - type: bind
+        source: ${DEPLOYMENT_LOCK_FILE:?}
+        target: /deploy.lock
+        bind:
+          create_host_path: false
     networks: [private, egress]
     restart: unless-stopped
 
