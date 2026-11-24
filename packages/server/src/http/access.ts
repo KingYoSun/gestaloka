@@ -15,6 +15,8 @@ import { Stories, setupStories } from "./stories.js";
 import { McpOrigin } from "./mcp-origin.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { seal, unseal } from "../secrets.js";
+import type { DescriptionCursor } from "../world/belongings.js";
 import type pg from "pg";
 import {
   WorldStatus,
@@ -318,6 +320,60 @@ export class WorldAccess {
       actorId,
     );
     return this.botPlay.notices(id, grant.actor_id!);
+  }
+  async inventoryDescription(
+    subject: string,
+    id: string,
+    item: string,
+    secret: string,
+    after?: string,
+    actorId?: string,
+  ) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
+    const label = JSON.stringify([id, grant.actor_id, item]);
+    let cursor: DescriptionCursor | undefined;
+    if (after) {
+      try {
+        cursor = JSON.parse(
+          unseal(secret, "inventory-description", label, after),
+        );
+      } catch {
+        throw new AccessError(
+          400,
+          "INVALID_CURSOR",
+          "この品の説明の続きを指定してください",
+        );
+      }
+    }
+    const description = await this.botPlay.inventoryDescription(
+      id,
+      grant.actor_id!,
+      item,
+      cursor,
+    );
+    if (!description)
+      throw new AccessError(
+        404,
+        "ITEM_NOT_HELD",
+        "手持ちの品を指定してください",
+      );
+    return {
+      ...description,
+      next: description.next
+        ? seal(
+            secret,
+            "inventory-description",
+            label,
+            JSON.stringify(description.next),
+          )
+        : null,
+    };
   }
   async inventoryContents(
     subject: string,

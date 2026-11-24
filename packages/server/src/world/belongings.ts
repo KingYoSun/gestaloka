@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   derivedId,
+  isRespawnHome,
   type Change,
   type WorldEdge,
   type WorldNode,
@@ -59,6 +60,75 @@ export async function belongingEdges(
   return false;
 }
 
+// 分割元とその時点をたどる。ページごとに現在の所持と閲覧範囲を確認する。
+export type DescriptionCursor = { source: string; at: number; after?: string };
+
+export async function readItemDescription(
+  context: WorldContext,
+  actor: string,
+  item: string,
+  now: number,
+  cursor?: DescriptionCursor,
+) {
+  if (
+    (await context.holding(item))?.source !== actor ||
+    (await context.node(item))?.kind !== "existence"
+  )
+    return;
+  const first = await context.holding(item, true);
+  const states: string[] = [],
+    inherited: string[] = [];
+  let next: DescriptionCursor | undefined = cursor ?? { source: item, at: now };
+  let remaining = 50;
+  // 状態の少ない束でも、1ページで調べる分割元は一定数にする。
+  for (let depth = 0; next && remaining && depth < 4; depth++) {
+    const { source, at, after }: DescriptionCursor = next;
+    const edges = await context.relations(source, "status", "out", at, at, {
+      after,
+      limit: remaining + 1,
+    });
+    const page = edges.slice(0, remaining);
+    for (const edge of page) {
+      if (
+        edge.role !== "content" ||
+        edge.text === "location" ||
+        isRespawnHome(edge)
+      )
+        continue;
+      const current = await context.node(edge.target);
+      if (!current || !visibleTo(current, actor, true)) continue;
+      const node =
+        source === item ? current : await context.node(edge.target, at);
+      if (
+        current.kind === "script" &&
+        !current.type &&
+        !current.spawn &&
+        node?.kind === "script" &&
+        !node.type &&
+        !node.spawn &&
+        visibleTo(node, actor, true)
+      )
+        (source === item ? states : inherited).push(node.text);
+    }
+    if (edges.length > remaining) {
+      next = { source, at, after: page.at(-1)!.id };
+      break;
+    }
+    remaining -= edges.length;
+    const start: WorldEdge | undefined =
+      source === item ? first : await context.holding(source, true);
+    next = start?.splitDescription
+      ? { source: start.splitDescription.source, at: start.period.from }
+      : undefined;
+  }
+  const origin = first?.splitDescription
+    ? first.splitDescription.originEdge &&
+      (await context.edge(first.splitDescription.originEdge))?.text
+    : first?.text;
+  await context.validate();
+  return { origin: origin ?? null, states, inherited, next };
+}
+
 // 操作を差分へ変える。進行中のシーンは世界内の時点が互いにずれるため、終了・改訂する
 // 記録より前の時点を指定された場合は、その記録の時点まで確定時点を進める。
 export async function planBelongings(
@@ -81,6 +151,7 @@ export async function planBelongings(
     target: string,
     role?: WorldEdge["role"],
     text?: string,
+    splitDescription?: WorldEdge["splitDescription"],
   ) =>
     change.edges.push({
       id: derivedId(`${commitId}:${key}`),
@@ -89,6 +160,7 @@ export async function planBelongings(
       target,
       ...(role ? { role } : {}),
       ...(text ? { text } : {}),
+      ...(splitDescription ? { splitDescription } : {}),
       period: { from: requestedAt },
     });
   const end = (edges: WorldEdge[]) => {
@@ -377,7 +449,13 @@ export async function planBelongings(
           ? { unitsPerSlot: source.unitsPerSlot }
           : {}),
       });
-      has(`${part.key}:hold`, part.to, node, undefined, part.basis);
+      const first = await context.holding(part.item, true);
+      has(`${part.key}:hold`, part.to, node, undefined, part.basis, {
+        source: part.item,
+        originEdge: first?.splitDescription
+          ? first.splitDescription.originEdge
+          : (first?.id ?? null),
+      });
     } else {
       destinations?.set(part.item, part.item);
       end(held);

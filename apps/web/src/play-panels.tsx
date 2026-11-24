@@ -349,18 +349,88 @@ function Contents({
   );
 }
 
+function ItemDescription({
+  world,
+  actor,
+  item,
+}: InventoryViewer & { item: string }) {
+  const query = useInfiniteQuery({
+    queryKey: ["inventory-description", world, actor, item],
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam, signal }) => {
+      const { data } = await api.GET("/api/worlds/{id}/inventory/description", {
+        params: {
+          path: { id: world },
+          query: {
+            actorId: actor,
+            itemId: item,
+            ...(pageParam ? { after: pageParam } : {}),
+          },
+        },
+        signal,
+      });
+      if (!data) throw new Error("説明を取得できませんでした");
+      return data;
+    },
+    getNextPageParam: (last) => last.next ?? undefined,
+  });
+  if (query.error) return <Problem error={query.error} />;
+  if (!query.data) return <p role="status">説明を読み込み中…</p>;
+  const pages = query.data.pages;
+  const origin = pages[0]?.origin;
+  const states = pages.flatMap((page) => page.states);
+  const inherited = pages.flatMap((page) => page.inherited);
+  return (
+    <>
+      {states.map((state, i) => (
+        <RichText key={i} text={state} />
+      ))}
+      {!!inherited.length && (
+        <>
+          <strong>取り分けたときの特徴</strong>
+          {inherited.map((state, i) => (
+            <RichText key={i} text={state} />
+          ))}
+        </>
+      )}
+      {origin && (
+        <>
+          <strong>作成時の取得経緯</strong>
+          <RichText text={origin} />
+        </>
+      )}
+      {!origin && !states.length && !inherited.length && !query.hasNextPage && (
+        <p className="muted">説明は記録されていません。</p>
+      )}
+      {query.hasNextPage && (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={query.isFetchingNextPage}
+          onClick={() => void query.fetchNextPage()}
+        >
+          説明の続きを見る
+        </Button>
+      )}
+    </>
+  );
+}
+
 function InventoryItem({
   world,
   actor,
   item,
   actions,
   bundleMember,
+  showDescription,
 }: InventoryViewer & {
   item: z.infer<typeof Item>;
   actions?: ReactNode;
   bundleMember: boolean;
+  showDescription: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
   const usage = bundleMember
     ? `単独で${item.slots}枠`
     : inventoryItemUsage(item);
@@ -372,6 +442,16 @@ function InventoryItem({
         <RichText key={i} text={state} />
       ))}
       {actions}
+      {showDescription && item.id && (
+        <details
+          onToggle={(event) => setDescriptionOpen(event.currentTarget.open)}
+        >
+          <summary>説明を見る</summary>
+          {descriptionOpen && (
+            <ItemDescription world={world} actor={actor} item={item.id} />
+          )}
+        </details>
+      )}
       {item.id && (item.totalSlots ?? 0) > (item.slots ?? 0) && (
         <details onToggle={(event) => setOpen(event.currentTarget.open)}>
           <summary>中身を見る</summary>
@@ -388,10 +468,12 @@ function InventoryList({
   items,
   empty,
   actions,
+  showDescription = false,
 }: InventoryViewer & {
   items: z.infer<typeof Item>[];
   empty: string;
   actions?: ItemActions | undefined;
+  showDescription?: boolean;
 }) {
   return items.length ? (
     <ul className="play-list">
@@ -403,6 +485,7 @@ function InventoryList({
           item={item}
           actions={actions?.(item)}
           bundleMember={!!actions}
+          showDescription={showDescription}
         />
       ))}
     </ul>
@@ -723,6 +806,7 @@ export function PlayerPanel({
             actor={own.actorId}
             items={belongings?.items ?? []}
             empty="所持品はありません"
+            showDescription
           />
         </Tabs.Content>
         <Tabs.Content value="storage">
