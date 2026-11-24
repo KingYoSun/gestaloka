@@ -7481,6 +7481,68 @@ test("型付きの正式改名は1 SPで審査し、技能の本文と習得根�
   expect(PlayerPlayCommand.safeParse(legacy).success).toBe(false);
 });
 
+test("物品と登録した場所を正式改名しても、所持・登録と経路は変わらない", async () => {
+  const f = await fixture(1);
+  const actor = f.actors[0]!;
+  const { changes: made } = await f.apply([
+    { type: "create", label: "木箱", holder: actor, basis: "手持ち" },
+    { type: "grant", person: actor, storage: f.place, basis: "保管先" },
+  ]);
+  const item = made.nodes.find((node) => node.kind === "existence")!.id;
+  const route: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  linkRoute(
+    route,
+    randomUUID(),
+    0,
+    [
+      { id: f.place, text: "広場" },
+      { id: f.far, text: "離れた場所" },
+    ],
+    "石畳の道",
+  );
+  const context = () => f.store.context(f.graph);
+  await f.store.commit(await f.store.claim(f.graph, randomUUID()), context(), {
+    commitId: randomUUID(),
+    at: 0,
+    changes: route,
+  });
+  const holding = await context().holding(item);
+  const register = () => context().relations(f.place, "has", "in", Date.now());
+  const registration = await register();
+  const rename = (targetId: string, name: string) =>
+    f.send(0, {
+      command: "apply",
+      expectedSp: 1,
+      dependencies: [],
+      action: { type: "rename", targetId, name },
+    });
+  await expect(rename(f.far, "別の呼び名")).rejects.toMatchObject({
+    code: "AUTHORITY_REQUIRED",
+  });
+  expect(f.calls).not.toHaveBeenCalled();
+  f.calls.mockImplementation(async (id, role) => {
+    expect(role).toBe("world-rename-review");
+    return answer(id, { success: true, reason: "正式な呼び名を付ける" });
+  });
+  for (const [targetId, name] of [
+    [item, "薬箱"],
+    [f.place, "石畳広場"],
+  ] as const) {
+    const before = await context().node(targetId);
+    await expect(rename(targetId, name)).resolves.toMatchObject({
+      spentSp: 1,
+      outcome: { success: true, reason: "正式な呼び名を付ける" },
+    });
+    expect(await context().node(targetId)).toEqual({ ...before, text: name });
+  }
+  expect(await context().holding(item)).toEqual(holding);
+  expect(await register()).toEqual(registration);
+  for (const edge of route.edges)
+    expect(await context().edge(edge.id)).toEqual(edge);
+  expect(f.calls).toHaveBeenCalledTimes(2);
+  expect((await f.status(0)).dailySp.remaining).toBe(98);
+});
+
 test("発展で消費した元技能を根拠に既存の能力を0 SPで明文化する", async () => {
   const f = await fixture(1);
   const person = f.actors[0]!;
@@ -8036,6 +8098,88 @@ test("場所への作用は1 SPで確定し、後続の移動は追加SPを使�
     Array(5).fill("world-place-movement"),
   );
   expect((await f.status(0)).dailySp.remaining).toBe(98);
+});
+
+test("場所への作用と私的解釈の申請から、人物の状態を直接確定できない", async () => {
+  const f = await fixture(2);
+  const person = f.actors[1]!;
+  const state = "霧の中にいた人物は体が固まった";
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const send = (action: unknown, expectedSp: number) =>
+    app.inject({
+      method: "POST",
+      url: `/api/worlds/${f.world}/session`,
+      headers: { cookie: f.people[0]!.cookie, "x-gestaloka-request": "1" },
+      payload: {
+        requestId: randomUUID(),
+        command: "apply",
+        action,
+        expectedSp,
+        dependencies: [],
+      },
+    });
+  const placeEffect = {
+    type: "state",
+    targetId: f.place,
+    text: state,
+    description: "広場に霧がかかっている",
+    affectsMovement: true,
+  };
+  const ownInterpretation = {
+    type: "interpret",
+    targetId: person,
+    text: state,
+  };
+  const personStates = () =>
+    f.store.context(f.graph).relations(person, "status", "out", Date.now());
+  const before = await personStates();
+  try {
+    const outside = { targetId: person, description: state };
+    expect(
+      (await send({ ...placeEffect, states: [outside] }, 1)).statusCode,
+    ).toBe(400);
+    expect(
+      (await send({ ...ownInterpretation, states: [outside] }, 0)).statusCode,
+    ).toBe(400);
+    expect(f.calls).not.toHaveBeenCalled();
+
+    f.calls.mockImplementationOnce(async (id, role) => {
+      expect(role).toBe("world-creation-dice");
+      return answer(id, { ...sure, states: [{ id: person, text: state }] });
+    });
+    const fog = await send(placeEffect, 1);
+    expect(fog.statusCode).toBe(200);
+    expect(fog.json()).toMatchObject({ spentSp: 1 });
+    const changes = (await f.store.receipt(f.graph, fog.json().commitId))!
+      .changes;
+    expect(
+      changes.edges.filter(
+        (edge) => edge.kind === "status" && edge.role === "content",
+      ),
+    ).toMatchObject([{ source: f.place }]);
+    expect(await personStates()).toEqual(before);
+
+    const interpretation = await send(ownInterpretation, 0);
+    expect(interpretation.statusCode).toBe(200);
+    expect(interpretation.json()).toMatchObject({ spentSp: 0 });
+    const recorded = await f.store.receipt(
+      f.graph,
+      interpretation.json().commitId,
+    );
+    expect(recorded?.changes.edges).toMatchObject([
+      { kind: "interpret", role: "content", source: f.actors[0] },
+      { kind: "interpret", role: "about", target: person },
+    ]);
+    expect(await personStates()).toEqual(before);
+    expect(f.calls).toHaveBeenCalledTimes(1);
+  } finally {
+    await app.close();
+  }
 });
 
 test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人の解釈をチャットへ同報しない", async () => {
