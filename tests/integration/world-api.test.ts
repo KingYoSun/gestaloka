@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
-import { WORLD_DAY_MS } from "@gestaloka/contracts";
+import { WORLD_DAY_MS, type Change } from "@gestaloka/contracts";
 import { connectDatabases } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
@@ -726,6 +726,98 @@ test("公開と参加受付を分け、非公開化後も参加者の参照と�
       )
     ).rows[0].published,
   ).toBe(false);
+});
+
+test("期限付きのSP使用禁止は管理者だけが付与・解除できる", async () => {
+  const scene = await fixture(),
+    player = await session("user");
+  await archivedParticipant(scene);
+  const world = await runtime.get(scene.id);
+  const graph = world.world_id!,
+    actor = world.participant_id!,
+    store = runtime.agent.store;
+  await databases.postgres.query(
+    "INSERT INTO world_subject(id,user_id) VALUES($1,$1) ON CONFLICT DO NOTHING",
+    [player.subject],
+  );
+  await databases.postgres.query(
+    "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3)",
+    [player.subject, scene.id, actor],
+  );
+
+  const script = randomUUID(),
+    relation = randomUUID(),
+    until = Date.now() + 3_600_000;
+  const change: Change = {
+    ...empty(),
+    nodes: [{ id: script, kind: "script", text: "SP使用禁止" }],
+    edges: [
+      {
+        id: relation,
+        kind: "status",
+        role: "content",
+        source: actor,
+        target: script,
+        text: "system:sp-use-prohibited",
+        period: { from: 0, until },
+      },
+    ],
+  };
+  const commitAsPlayer = async (changes: Change) => {
+    const commitId = randomUUID();
+    return store.commit(
+      await store.claim(graph, commitId),
+      store.context(graph),
+      { commitId, at: Date.now(), changes, playerAction: true },
+      true,
+    );
+  };
+  const edit = (
+    cookie: string,
+    changes: Change,
+    dependencies: { key: string; version: number }[] = [],
+  ) =>
+    app.inject({
+      method: "POST",
+      url: "/api/operations",
+      headers: headers(cookie),
+      payload: {
+        requestId: randomUUID(),
+        command: {
+          operation: "worlds.edit",
+          worldId: scene.id,
+          at: 0,
+          dependencies,
+          changes,
+          reason: "SP使用禁止を管理する",
+        },
+      },
+    });
+
+  await expect(commitAsPlayer(change)).rejects.toThrow(/SP使用禁止/);
+  const denied = await edit(player.cookie, change);
+  expect(denied.statusCode).toBe(403);
+  expect(denied.json()).toMatchObject({ code: "ADMIN_REQUIRED" });
+  const noExpiry = await edit(scene.cookie, {
+    ...change,
+    edges: [{ ...change.edges[0]!, period: { from: 0 } }],
+  });
+  expect(noExpiry.statusCode).toBe(409);
+  expect(noExpiry.json()).toMatchObject({ code: "WORLD_CHANGED" });
+
+  const granted = await edit(scene.cookie, change);
+  expect(granted.statusCode).toBe(200);
+  const context = store.context(graph);
+  expect(await context.edge(relation)).toMatchObject({ period: { until } });
+
+  const end = { ...empty(), endEdges: [relation] };
+  await expect(commitAsPlayer(end)).rejects.toThrow(/SP使用禁止/);
+  expect((await edit(scene.cookie, end, context.dependencies)).statusCode).toBe(
+    200,
+  );
+  expect(
+    (await store.context(graph).edge(relation))?.period.until,
+  ).toBeLessThan(until);
 });
 
 test("自由記述のプリセットを版付きで編集し、本文は管理者以外へ返さない", async () => {

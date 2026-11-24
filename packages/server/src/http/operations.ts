@@ -793,6 +793,10 @@ export class Operations {
         );
       case "worlds.edit": {
         await RuntimeControl.check(db, {}, true, "worlds.edit");
+        await db.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended($1,225))",
+          [input.worldId],
+        );
         return new WorldManagement(this.#access(context).players).edit(
           db,
           actor!,

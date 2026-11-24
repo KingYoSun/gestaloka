@@ -115,6 +115,16 @@ export class FixedPlaceMovement extends WorldConflict {
     super("固定場所そのものの所在や所持先は変更できません");
   }
 }
+export const spUseProhibition = "system:sp-use-prohibited";
+export function isSpUseProhibition(edge: WorldEdge) {
+  return (
+    edge.kind === "status" &&
+    edge.role === "content" &&
+    edge.text === spUseProhibition
+  );
+}
+const spUseProhibitionAdminRequired = () =>
+  new WorldConflict("SP使用禁止の状態は管理者だけが付与・変更できます");
 export type ItemReservations = {
   add?: { id: string; itemId: string; count: number };
   allocations?: PickupAllocation[];
@@ -535,6 +545,23 @@ export class WorldContext {
       stored ??
       this.drafts.flatMap((d) => d.changes.edges).find((e) => e.id === id)
     );
+  }
+
+  async spUseProhibitedUntil(actor: string, at: number) {
+    z.uuid().parse(actor);
+    z.number().int().nonnegative().safe().parse(at);
+    return this.#read(relationKey(actor, "status", "out"), async (tx) => {
+      // 複合索引の順で期限が最も遅い有効な関係を1件だけ読む。
+      const { records } = await tx.run(
+        `MATCH ()-[r:status]->()
+         USING INDEX r:status(worldId,spSubject,validTo)
+         WHERE r.worldId=$worldId AND r.spSubject=$actor AND r.validTo>$at AND r.validFrom<=$at
+         WITH r ORDER BY r.worldId DESC,r.spSubject DESC,r.validTo DESC LIMIT 1
+         RETURN r.validTo AS until`,
+        { worldId: this.worldId, actor, at },
+      );
+      return records[0] ? Number(records[0].get("until")) : undefined;
+    });
   }
 
   async latestTime(id: string) {
@@ -1278,6 +1305,9 @@ export class WorldStore {
     await this.driver.executeQuery(
       "CREATE INDEX WorldEdge_has_role IF NOT EXISTS FOR ()-[r:has]-() ON (r.role)",
     );
+    await this.driver.executeQuery(
+      "CREATE INDEX WorldEdge_status_sp_subject IF NOT EXISTS FOR ()-[r:status]-() ON (r.worldId,r.spSubject,r.validTo)",
+    );
     // 同名確認は索引を指定して引くので、作成中の索引を使わせない。
     await this.driver.executeQuery("CALL db.awaitIndexes(300)");
     // ADR-072: 物品を持つ関係は役割なしのhas。旧版が役割holdで記録した関係を書き換える。
@@ -1523,6 +1553,7 @@ export class WorldStore {
       storageEffect?: StorageEffect;
       management?: { editorId: string; reason: string; requestHash: string };
       seriesGrants?: string[];
+      spUseProhibitionGrants?: string[];
     },
     fromBelongingOperations = false,
     reservations?: ItemReservations,
@@ -1544,11 +1575,25 @@ export class WorldStore {
           .strict()
           .optional(),
         seriesGrants: z.array(z.uuid()).optional(),
+        spUseProhibitionGrants: z.array(z.uuid()).optional(),
       })
       .strict()
       .parse(input);
     const { commitId, at } = parsed;
     const changes = normalizeChange(parsed.changes, at);
+    for (const edge of changes.edges.filter(isSpUseProhibition)) {
+      if (
+        !parsed.management &&
+        !parsed.spUseProhibitionGrants?.includes(edge.id)
+      )
+        throw spUseProhibitionAdminRequired();
+      if (
+        edge.period.until === undefined ||
+        edge.period.until <= edge.period.from ||
+        Number.isNaN(new Date(edge.period.until).getTime())
+      )
+        throw new WorldConflict("SP使用禁止の状態には期限を指定してください");
+    }
     if (
       !parsed.management &&
       !fromBelongingOperations &&
@@ -1697,6 +1742,8 @@ export class WorldStore {
             at < edge.period.from
           )
             throw new WorldConflict("終了対象の関係が有効ではありません");
+          if (!parsed.management && isSpUseProhibition(edge))
+            throw spUseProhibitionAdminRequired();
           ended.push(edge);
         }
         const inventoryTouched =
@@ -1860,12 +1907,16 @@ export class WorldStore {
           const key = relationKey(id, "status", "in");
           dependencies.push({ key, version: await version(tx, worldId, key) });
           const owners = await tx.run(
-            `MATCH(o:WorldNode)-[r:status {worldId:$worldId}]->(s:WorldNode {worldId:$worldId,id:$id})
+            `MATCH (s:WorldNode {worldId:$worldId,id:$id})
+            OPTIONAL MATCH (o:WorldNode)-[r:status {worldId:$worldId}]->(s)
             WHERE o.worldId=$worldId AND o.kind='existence' AND r.validFrom<=$at AND (r.validTo IS NULL OR $at<r.validTo)
-            RETURN DISTINCT o.id AS id,r.data CONTAINS '"text":"location"' AS location`,
+            RETURN DISTINCT o.id AS id,r.data CONTAINS '"text":"location"' AS location,s.spUseProhibition AS spUseProhibition`,
             { worldId, id, at },
           );
           for (const owner of owners.records) {
+            if (!parsed.management && owner.get("spUseProhibition"))
+              throw spUseProhibitionAdminRequired();
+            if (!owner.get("id")) continue;
             sourceIds.add(owner.get("id"));
             if (changedAbout.has(id) && owner.get("location"))
               movementTargets.add(owner.get("id"));
@@ -2055,7 +2106,7 @@ export class WorldStore {
           tx.run(
             `MATCH (s:WorldNode {worldId: $worldId, id: $source}), (t:WorldNode {worldId: $worldId, id: $target})
             CREATE (s)-[r:${edge.kind} {worldId: $worldId, id: $id, data: $data, validFrom: $from}]->(t)
-            SET r.validTo = $until, r.role = $role`,
+            SET r.validTo = $until, r.role = $role${isSpUseProhibition(edge) ? ", r.spSubject = $source, t.spUseProhibition = true" : ""}`,
             {
               worldId,
               source: edge.source,

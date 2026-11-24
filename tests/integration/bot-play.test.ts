@@ -76,6 +76,7 @@ const answer = (id: string, content: unknown) => ({
 });
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   await isolated.databases.postgres.query("DELETE FROM bot_npc");
   await isolated.databases.postgres.query(
     "UPDATE player_report_policy SET daily_limit=10,turns_per_report=3,max_characters=1200",
@@ -15139,6 +15140,7 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
   );
   expect(await states(2)).not.toContain("無関係");
   // 設定された場所へ移り、セッションから外れる。
+  vi.stubEnv("DEATH_SP_LOCK_SECONDS", "7200");
   await configure("death_judgment", true);
   await configure("death_criteria", "致命傷で死亡する");
   await configure("death_place_id", grave);
@@ -15165,13 +15167,74 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
       .context(f.graph)
       .node(derivedId(`${first.requestId}:state:${f.actors[1]}`)),
   ).toMatchObject({ text: crushed.text });
+  const penalty = async (i: number) => {
+    const edges = (
+      await f.store
+        .context(f.graph)
+        .relations(f.actors[i]!, "status", "out", Date.now())
+    ).filter((edge) => edge.text === "system:sp-use-prohibited");
+    expect(edges).toHaveLength(1);
+    return edges[0]!;
+  };
+  const lock = await penalty(1);
+  const until = lock.period.until!;
+  expect(until - lock.period.from).toBe(7_200_000);
   // 場所が未設定なら、本人の最初の所在地へ移る。
+  vi.stubEnv("DEATH_SP_LOCK_SECONDS", undefined);
   await configure("death_place_id", null);
   fatalDice(f.actors[2]!, "mortal");
   await f.send(0, attack(2));
   expect(await present(0)).toEqual([f.actors[0]]);
   expect(await whereabouts(2)).toEqual([f.far]);
   expect(await whereabouts(0)).toEqual([f.place]);
+  const defaultLock = await penalty(2);
+  expect(defaultLock.period.until! - defaultLock.period.from).toBe(10_800_000);
+
+  const clock = vi
+    .spyOn(access.botPlay, "now")
+    .mockReturnValue(new Date(until - 1));
+  const self = () => f.send(1, { command: "search", query: { kind: "self" } });
+  const explore = {
+    requestId: randomUUID(),
+    command: "explore",
+    text: "墓地から水場へ通じる道を探す",
+    label: "水場",
+    fromId: grave,
+    dependencies: [],
+  };
+  const penaltyState = {
+    states: expect.arrayContaining([
+      expect.objectContaining({
+        relation: expect.objectContaining({ id: lock.id }),
+        node: expect.objectContaining({ text: "SP使用禁止" }),
+      }),
+    ]),
+  };
+  expect(await self()).toMatchObject({
+    spentSp: 0,
+    material: penaltyState,
+  });
+  const before = (await f.status(1)).dailySp;
+  const calls = f.calls.mock.calls.length;
+  await expect(f.send(1, explore)).rejects.toMatchObject({
+    code: "SP_USE_PROHIBITED",
+  });
+  expect(f.calls.mock.calls.length).toBe(calls);
+  expect((await f.status(1)).dailySp).toEqual(before);
+
+  clock.mockReturnValue(new Date(until));
+  expect((await self()).material).not.toMatchObject(penaltyState);
+  const remaining = (await f.status(1)).dailySp.remaining;
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { sides: 100, successThrough: 100, explored }),
+  );
+  const resumed = await f.send(1, explore);
+  expect(resumed).toMatchObject({
+    spentSp: 1,
+    dailySp: { remaining: remaining - 1 },
+  });
+  expect(await f.send(1, explore)).toEqual(resumed);
+  expect((await f.status(1)).dailySp).toEqual(resumed.dailySp);
 });
 
 test("リスポーンが有効な世界でも、作成時に無効を選んだ人物は死亡時に戻らない", async () => {
@@ -15240,6 +15303,7 @@ test("リスポーンが有効な世界でも、作成時に無効を選んだ�
 });
 
 test("リスポーン無効時は死亡した人物の履歴を保持して操作を止め、同じ利用者が新しい人物で参加できる", async () => {
+  vi.stubEnv("DEATH_SP_LOCK_SECONDS", "0");
   const f = await fixture(2);
   const [actor, victim] = f.actors as [string, string];
   const previous = await f.status(1);
@@ -15276,6 +15340,9 @@ test("リスポーン無効時は死亡した人物の履歴を保持して操�
   expect(await f.send(0, attack)).toEqual(result);
   expect(await f.send(1, previousRequest)).toEqual(previousResult);
   expect(await f.status(1)).toMatchObject({ session: null });
+  expect(
+    await f.store.context(f.graph).spUseProhibitedUntil(victim, Date.now()),
+  ).toBeUndefined();
   expect(await directPlaces(f.store.context(f.graph), victim)).toEqual([
     f.place,
   ]);
