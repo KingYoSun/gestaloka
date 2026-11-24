@@ -507,6 +507,7 @@ export const PlayCommand = z.discriminatedUnion("command", [
   ...DrawTableActions,
   ...StorageActions,
   ...BlueprintActions,
+  z.object({ ...request, command: z.literal("home-set") }).strict(),
   z
     .object({
       ...request,

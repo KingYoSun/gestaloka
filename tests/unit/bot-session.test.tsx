@@ -62,6 +62,7 @@ const server = setupServer(
         people: [],
         neighbors: [],
         past: [],
+        place: view.place,
         belongings: view.belongings,
       },
     });
@@ -80,6 +81,11 @@ const server = setupServer(
       actorId: new URL(request.url).searchParams.get("actorId"),
     });
     if (receipts.has(body.requestId)) return json(receipts.get(body.requestId));
+    if (body.command === "home-set")
+      view.home = {
+        placeId: "00000000-0000-4000-8000-000000000006",
+        name: view.place,
+      };
     if (body.command === "search") {
       view.callsUsed = Number(view.callsUsed) + 1;
       return json({
@@ -195,6 +201,17 @@ const open = async (name: string) =>
   fireEvent.click(
     await screen.findByRole("button", { name }, { timeout: 5000 }),
   );
+
+test("手番外に現在地をHomeに設定し、表示を更新する", async () => {
+  view.actorId = peer;
+  view.place = "渡し場";
+  show();
+  await open("現在地をHomeにする");
+  await waitFor(() => expect(screen.getAllByText("渡し場")).toHaveLength(2));
+  expect(posted).toEqual([
+    { requestId: expect.any(String), command: "home-set", actorId: actor },
+  ]);
+});
 
 test("セッションの外で申請を開き、受領を確定する", async () => {
   delete view.sessionId;

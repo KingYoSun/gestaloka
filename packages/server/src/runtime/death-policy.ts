@@ -1,10 +1,98 @@
 import type { Change } from "@gestaloka/contracts";
 import type pg from "pg";
-import { derivedId } from "../world/model.js";
-import { spUseProhibition, type WorldContext } from "../world/store.js";
+import { directPlaces } from "../world/locations.js";
+import { derivedId, respawnHome } from "../world/model.js";
+import {
+  WorldConflict,
+  spUseProhibition,
+  type WorldContext,
+  type WorldStore,
+} from "../world/store.js";
 
 export const permanentDeath = "permanent-death";
 const deathEdgeId = (actor: string) => derivedId(`${permanentDeath}:${actor}`);
+
+export type RespawnHome = { placeId: string; name: string };
+
+async function homeRecords(context: WorldContext, actor: string) {
+  return Promise.all(
+    (await context.marked(actor, "status", respawnHome)).map(async (edge) => ({
+      edge,
+      about: (
+        await context.relations(
+          edge.target,
+          "status",
+          "out",
+          Number.MAX_SAFE_INTEGER,
+        )
+      ).filter((relation) => relation.role === "about"),
+    })),
+  );
+}
+
+export async function respawnHomePlace(context: WorldContext, actor: string) {
+  const [record] = await homeRecords(context, actor);
+  const target = record?.about.find((edge) => edge.text === "direct-place");
+  const place = target && (await context.node(target.target));
+  return place?.kind === "existence" ? place : undefined;
+}
+
+export async function setRespawnHome(
+  store: WorldStore,
+  context: WorldContext,
+  actor: string,
+  request: string,
+  at: number,
+): Promise<RespawnHome | undefined> {
+  const script = derivedId(`${request}:${respawnHome}`);
+  const prior = await store.receipt(context.worldId, request);
+  if (prior) {
+    const node = prior.changes.nodes.find((entry) => entry.id === script);
+    const place = prior.changes.edges.find((edge) => edge.source === script);
+    if (!node || !place)
+      throw new WorldConflict("同じ要求IDに異なる内容は使用できません");
+    return { placeId: place.target, name: node.text };
+  }
+
+  const [placeId] = await directPlaces(context, actor);
+  const place = placeId && (await context.node(placeId));
+  if (!place || place.kind !== "existence") return;
+  const records = await homeRecords(context, actor);
+  const period = { from: at };
+  await store.commit(await store.claim(context.worldId, request), context, {
+    commitId: request,
+    at,
+    respawnHomeActor: actor,
+    changes: {
+      nodes: [{ id: script, kind: "script", text: place.text, viewers: [] }],
+      endEdges: records.flatMap(({ edge, about }) => [
+        edge.id,
+        ...about.map((relation) => relation.id),
+      ]),
+      edges: [
+        {
+          id: derivedId(`${script}:content`),
+          kind: "status",
+          role: "content",
+          text: respawnHome,
+          source: actor,
+          target: script,
+          period,
+        },
+        {
+          id: derivedId(`${script}:about`),
+          kind: "status",
+          role: "about",
+          text: "direct-place",
+          source: script,
+          target: place.id,
+          period,
+        },
+      ],
+    },
+  });
+  return { placeId: place.id, name: place.text };
+}
 
 export async function respawnPolicy(
   db: Pick<pg.Pool, "query">,

@@ -9633,6 +9633,27 @@
                       "command": {
                         "type": "string",
                         "enum": [
+                          "home-set"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "requestId",
+                      "command"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "requestId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "command": {
+                        "type": "string",
+                        "enum": [
                           "vehicle-request-control"
                         ]
                       },
@@ -23178,7 +23199,7 @@
                             "type": "string"
                           },
                           "deathPlaceId": {
-                            "description": "復帰時に人物を移す場所。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ",
+                            "description": "Homeが未設定の人物の復帰先。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ",
                             "nullable": true,
                             "type": "string",
                             "format": "uuid",

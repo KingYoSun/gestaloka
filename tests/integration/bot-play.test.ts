@@ -15640,6 +15640,67 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
   expect((await f.status(1)).dailySp).toEqual(resumed.dailySp);
 });
 
+test("現在地をHomeに設定すると、手番とSPを消費せず、死亡時は世界指定よりHomeを優先する", async () => {
+  const f = await fixture(2);
+  const target = f.actors[1]!;
+  const item = (
+    await f.apply([
+      { type: "create", label: "道具", holder: target, basis: "試験" },
+    ])
+  ).changes.nodes.find((node) => node.kind === "existence")!;
+  await isolated.databases.postgres.query(
+    "UPDATE world_construction SET death_place_id=$2 WHERE id=$1",
+    [f.world, f.place],
+  );
+  const whereabouts = async () =>
+    (
+      (await f.send(1, { command: "search", query: { kind: "self" } }))
+        .material as { locations: { directPlaceId: string }[] }
+    ).locations.map((location) => location.directPlaceId);
+
+  await f.move(1, f.far);
+  const before = await f.status(1);
+  await f.send(1, { command: "home-set" });
+  expect(await f.status(1)).toMatchObject({
+    home: { placeId: f.far, name: "離れた場所" },
+    sessionId: before.sessionId,
+    turn: before.turn,
+    callsUsed: before.callsUsed,
+    dailySp: before.dailySp,
+  });
+  expect(await whereabouts()).toEqual([f.far]);
+  expect(f.calls).not.toHaveBeenCalled();
+
+  await f.move(1, f.place);
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { ...sure, fatal: [target] }),
+  );
+  const result = await f.send(0, {
+    command: "oppose",
+    text: "斬りかかって道具を奪う",
+    operations: [
+      {
+        type: "move",
+        item: item.id,
+        from: target,
+        to: f.actors[0],
+        basis: "奪う",
+      },
+    ],
+    dependencies: [],
+  });
+  expect(result.outcome).toMatchObject({
+    success: true,
+    setting: { fatal: [target] },
+  });
+  expect(await whereabouts()).toEqual([f.far]);
+  expect((await f.status(1)).home).toEqual({
+    placeId: f.far,
+    name: "離れた場所",
+  });
+});
+
 test("リスポーンが有効な世界でも、作成時に無効を選んだ人物は死亡時に戻らない", async () => {
   const f = await fixture();
   await isolated.databases.postgres.query(
