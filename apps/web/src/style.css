@@ -273,6 +273,7 @@ select {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 0 8px;
   font-size: 14px;
 }
@@ -1152,7 +1153,8 @@ select {
     flex-wrap: wrap;
   }
   .site-header nav {
-    column-gap: 4px;
+    justify-content: flex-start;
+    column-gap: 6px;
   }
   .brand {
     font-size: 24px;
