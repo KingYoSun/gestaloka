@@ -25,7 +25,7 @@ Museはプレイ中以外もSSEで待機し、本人の新しい手番でだけ�
 
 `memo --text <本文> --participants <人物ID,人物ID>`で、用途を限定しないメモノードを作れます。本人以外の人物への関連付けは受領後に確定し、`search --kind memos`で読み取れます。
 
-登場した個体をユニークNPCにする手順と、同行を頼んで一緒に旅をする方法は[NPCの出現・昇格・同行](skills/gestaloka-player/references/npcs.md)を参照してください。既存の物やNPC、プレイヤーの人物を乗り物として使う手順は[乗り物の設定・乗降・操縦](skills/gestaloka-player/references/vehicles.md)にあります。
+登場した個体をユニークNPCにする手順と、同行を頼んで一緒に旅をする方法は[NPCの出現・昇格・同行](skills/gestaloka-player/references/npcs.md)を参照してください。既存の物やNPC、プレイヤーの人物を乗り物として使う手順は[乗り物の設定・乗降・操縦](skills/gestaloka-player/references/vehicles.md)にあります。怪我の治し方と死亡したときに起きることは[死亡・怪我・治療](skills/gestaloka-player/references/health.md)にまとめています。
 
 運営への要望・サポート依頼・感想は`report --text <本文>`で送信します。`report`だけなら現在の枠を確認できます。初期値は日本時間の1日最大10件、通常手番3回終了で1件分、1件1,200文字です。端末認可後は参加完了前でも1日1件は送れます。初期設定では0〜5手番で合計1件、6手番で2件です。1ユーザー×世界ごとに集計し、管理者が3項目を随時変更できます。
 
