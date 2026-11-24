@@ -17460,20 +17460,39 @@ test("登録済みの人物に起きることを名指しする作成は、本�
   const [actor, present] = f.actors as [string, string, string];
   const items = async (id: string) =>
     (await readBelongings(f.store.context(f.graph), id)).items;
-  const named = (individuals: string[]) =>
+  const named = (individuals: string[], basis?: string) =>
     f.calls.mockImplementationOnce(async (id, role, messages) => {
       expect(role).toBe("world-creation-dice");
       expect(messages[0]!.content).toContain("individuals:[");
+      if (basis) {
+        expect(messages[0]!.content).toContain("申請の根拠");
+        expect(messages[0]!.content).toContain(
+          "本人の身体に由来しない別の装備",
+        );
+        expect(
+          JSON.parse(String(messages[1]!.content)).changes.edges,
+        ).toContainEqual(expect.objectContaining({ kind: "has", text: basis }));
+      }
       return answer(id, { ...sure, individuals });
     });
-  const create = (label: string) => ({
+  const create = (
+    label: string,
+    basis = "検証",
+    text = `${label}を手に入れる`,
+  ) => ({
     requestId: randomUUID(),
-    command: "update",
-    text: `${label}を手に入れる`,
-    operations: [{ type: "create", label, holder: actor, basis: "検証" }],
+    command: "apply",
+    expectedSp: 1,
+    action: {
+      type: "generate",
+      plans: [
+        { text, operation: { type: "create", label, holder: actor, basis } },
+      ],
+    },
     dependencies: [],
   });
   const refused = { code: "PERSON_REFERENCE_REQUIRED" };
+  const remaining = (await f.status(0)).dailySp.remaining;
   // 離れた場所にいる人物を呼称の一部で名指しすると、ダイスを振らず、何も作らず、通常枠も使わない。
   const corpse = create("倒れた人物2");
   named(["物2"]);
@@ -17485,13 +17504,26 @@ test("登録済みの人物に起きることを名指しする作成は、本�
   named(["物2"]);
   await expect(f.send(0, corpse)).rejects.toMatchObject(refused);
   expect(f.calls.mock.calls[1]![0]).toBe(f.calls.mock.calls[0]![0]);
+  // 物品名や行為に人物名がなくても、根拠が本人の身体に付いた義手を指す場合は断る。
+  const arm = "銀色の義手";
+  const attachedBasis = "人物2の腕として装着されていた義手を外したもの";
+  const attached = create(arm, attachedBasis);
+  named(["物2"], attachedBasis);
+  await expect(f.send(0, attached)).rejects.toMatchObject(refused);
   expect(await items(actor)).toEqual([]);
-  expect((await f.status(0)).callsUsed).toBe(0);
+  expect(await f.status(0)).toMatchObject({
+    callsUsed: 0,
+    dailySp: { remaining },
+  });
   expect(
     (
       await isolated.databases.postgres.query(
-        "SELECT 1 FROM bot_dice WHERE id=$1",
-        [derivedId(`${corpse.requestId}:creation`)],
+        "SELECT 1 FROM bot_dice WHERE id=ANY($1::uuid[])",
+        [
+          [corpse, attached].map(({ requestId }) =>
+            derivedId(`${requestId}:creation`),
+          ),
+        ],
       )
     ).rowCount,
   ).toBe(0);
@@ -17510,6 +17542,16 @@ test("登録済みの人物に起きることを名指しする作成は、本�
   expect(made.outcome).toMatchObject({ success: true });
   expect(JSON.stringify(made.outcome)).not.toContain("individuals");
   expect((await items(actor)).map((i) => i.label)).toEqual(["森の主の牙"]);
+  const equipmentBasis = "人物2の義手に似せて、工房で別に作った予備の装備";
+  for (const label of [arm, "人物2"]) {
+    named([], equipmentBasis);
+    await expect(
+      f.send(0, create(label, equipmentBasis)),
+    ).resolves.toMatchObject({ outcome: { success: true } });
+  }
+  expect((await items(actor)).map((i) => i.label)).toEqual(
+    expect.arrayContaining([arm, "人物2"]),
+  );
   // 申請が参照している同席者は、名指しされても断らない。
   await f.send(1, { command: "contact", targetId: actor });
   await f.apply([
