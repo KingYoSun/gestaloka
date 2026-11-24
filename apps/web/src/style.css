@@ -271,9 +271,10 @@ select {
 }
 .site-header nav {
   display: flex;
+  flex-grow: 1;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 0 8px;
   font-size: 14px;
 }
@@ -1153,6 +1154,7 @@ select {
     flex-wrap: wrap;
   }
   .site-header nav {
+    flex-grow: 0;
     justify-content: flex-start;
     column-gap: 6px;
   }
