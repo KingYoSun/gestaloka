@@ -4432,6 +4432,67 @@ test("プレイヤーの一覧は、待機中で接触を受けられるプレ�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test("インスタントNPCは公開行動なしで手番を終え、その後も行動できる", async () => {
+  const f = await fixture(1);
+  const source = randomUUID();
+  const npc = derivedId(source + ":manual:0");
+  await f.send(0, {
+    command: "say",
+    requestId: source,
+    text: "水盤に小鳥が降りる。",
+    instantNpcs: ["小鳥"],
+  });
+  const next = await f.send(0, { command: "end-turn" });
+  expect(next.actorId).toBe(npc);
+  const request = derivedId(`instant:${next.sessionId}:${npc}:${next.turn}`);
+  f.calls.mockImplementationOnce(
+    async (id, role, _messages, _target, _effort, _attempt, validate) => {
+      expect(role).toBe("world-server-npc");
+      const choice = { command: "end-turn" };
+      expect(() => validate!(JSON.stringify(choice))).not.toThrow();
+      return answer(id, choice);
+    },
+  );
+  await access.botPlay.tickNpcs(f.world);
+  await access.botPlay.tickNpcs(f.world);
+  const passed = await f.status(0);
+  expect(passed).toMatchObject({
+    actorId: f.actors[0],
+    turn: Number(next.turn) + 1,
+    characters: expect.arrayContaining([
+      expect.objectContaining({ actorId: npc }),
+    ]),
+  });
+  expect(passed.entries.at(-1)?.payload).toMatchObject({
+    actorId: npc,
+    entries: [],
+    transition: {
+      type: "turn-ended",
+      publicActivity: false,
+      message: expect.stringContaining("公開行動なし"),
+    },
+  });
+  expect(await f.store.receipt(f.graph, request)).toBeUndefined();
+
+  await f.send(0, { command: "end-turn" });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { text: "小鳥が水盤から飛び去る。", departs: true }),
+  );
+  await access.botPlay.tickNpcs(f.world);
+  const departed = await f.status(0);
+  expect(
+    departed.entries.flatMap(({ payload }) => payload.entries ?? []),
+  ).toContainEqual(
+    expect.objectContaining({
+      actorId: npc,
+      input: "小鳥が水盤から飛び去る。",
+    }),
+  );
+  expect(departed.characters).not.toContainEqual(
+    expect.objectContaining({ actorId: npc }),
+  );
+});
+
 test("その場の存在へ渡す入力は直近に絞られ、手番中に同席者が増えても次の試行で手番が進む", async () => {
   const f = await fixture();
   await f.send(0, {
@@ -7963,6 +8024,111 @@ test("手持ちの容量と受入可能数をHTTPとCLIへ返す", async () => {
   }
 });
 
+test("本人は保管品と手持ちの使用枠を照合し、CLIで入れ子の中身をたどれる", async () => {
+  const f = await fixture(2);
+  const [actor, other] = f.actors as [string, string];
+  const create = (label: string, holder: string, count?: number) => ({
+    type: "create",
+    label,
+    holder,
+    count,
+    basis: "検証",
+  });
+  const { changes } = await f.apply([
+    { type: "grant", person: actor, storage: f.far, basis: "検証" },
+    create("外箱", f.far),
+    create("独立した手持ち品", actor),
+  ]);
+  const outer = changes.nodes.find((node) => node.text === "外箱")!.id;
+  const { changes: nested } = await f.apply([
+    create("内箱", outer),
+    ...Array.from({ length: 52 }, (_, index) =>
+      create(`記録 ${index + 1}`, outer),
+    ),
+  ]);
+  const inner = nested.nodes.find((node) => node.text === "内箱")!.id;
+  await f.apply([create("針", inner, 31)]);
+
+  // 既存世界では所持先の索引がまだない。確定済みの関係から再構築する。
+  await f.store.driver.executeQuery(
+    `MATCH (n:WorldNode {worldId:$world}) REMOVE n.inventoryHolder
+     WITH count(n) AS cleared
+     MATCH (g:WorldGuard {worldId:$world,key:'inventory'}) REMOVE g.inventoryHolderIndexed`,
+    { world: f.graph },
+  );
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  try {
+    const profile = join(cli.directory, "contents.json");
+    const connection = await cli.run(
+      profile,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (
+        await cli.approve(
+          f.people[0]!.cookie,
+          connection.userCode,
+          `actor:${actor}`,
+        )
+      ).statusCode,
+    ).toBe(302);
+    const result = await cli.run(profile, "search", "--kind", "self");
+    const storage = result.result.material.belongings.storages[0];
+    expect(storage.items).toMatchObject([
+      { label: "外箱", slots: 1, totalSlots: 56 },
+    ]);
+    expect(storage.items[0].totalSlots).toBe(storage.capacity.usedSlots);
+    const read = (...args: string[]) => cli.run(profile, "contents", ...args);
+    const target = ["--target", storage.items[0].id];
+    const calls = (await f.status(0)).callsUsed;
+    const first = await read(...target);
+    expect(first.items).toHaveLength(50);
+    const last = await read(...target, "--after", first.next);
+    expect(last.items).toHaveLength(3);
+    expect(last.next).toBeNull();
+    const rows = [...first.items, ...last.items];
+    expect(new Set(rows.map((row) => row.id)).size).toBe(53);
+    expect(rows.reduce((sum, row) => sum + row.totalSlots, 0)).toBe(55);
+    const child = rows.find((row) => row.label === "内箱");
+    expect(child).toMatchObject({ slots: 1, totalSlots: 3 });
+    expect(await read("--target", child.id)).toMatchObject({
+      items: [{ label: "針", count: 31, slots: 2, totalSlots: 2 }],
+      next: null,
+    });
+    expect((await f.status(0)).callsUsed).toBe(calls);
+    const denied = await app.inject({
+      url: `/api/worlds/${f.world}/inventory/contents?actorId=${other}&containerId=${inner}`,
+      headers: { cookie: f.people[1]!.cookie },
+    });
+    expect(denied.statusCode).toBe(404);
+
+    await f.apply([
+      { type: "move", item: outer, from: f.far, to: actor, basis: "検証" },
+    ]);
+    const own = await readBelongings(f.store.context(f.graph), actor);
+    expect(own.items.reduce((sum, row) => sum + (row.totalSlots ?? 0), 0)).toBe(
+      own.capacity?.usedSlots,
+    );
+    expect(own.capacity?.usedSlots).toBe(57);
+    expect(own.storages[0]?.capacity?.usedSlots).toBe(0);
+    expect((await read(...target)).items).toEqual(first.items);
+    expect(f.calls).not.toHaveBeenCalled();
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
+
 test("箱による枠の節約を防ぎ、共同保管先の最後の1枠を原子的に確定する", async () => {
   const f = await fixture();
   const [a, b] = f.actors as [string, string];
@@ -10146,6 +10312,103 @@ test("初回接続と状態照会のタイムアウトを復旧し、終了時�
     await app.close();
   }
 }, 60000);
+test("CLIの自己照会は本人が聞いた発言だけを添え、既読位置を進めない", async () => {
+  const f = await fixture();
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  const profiles = [0, 2].map((i) => join(cli.directory, `player-${i}.json`));
+  const run = (i: number, ...args: string[]) =>
+    cli.run(profiles[i], ...args, "--full-ids");
+  const read = (i: number) => run(i, "search", "--kind", "self");
+  const older = "今朝は北門で公演するよ。";
+  const change = "公演は中止だよ。桟橋で舟を待とう。";
+  const shared = "舟は桟橋の西側に来るよ。";
+  try {
+    for (const [profile, index] of [0, 2].entries()) {
+      const connection = await run(
+        profile,
+        "connect",
+        "--server",
+        cli.base,
+        "--world",
+        f.world,
+      );
+      expect(
+        (
+          await cli.approve(
+            f.people[index]!.cookie,
+            connection.userCode,
+            `actor:${f.actors[index]}`,
+          )
+        ).statusCode,
+      ).toBe(302);
+    }
+    await f.send(0, { command: "contact", targetId: f.actors[1] });
+    await f.send(1, { command: "say", text: older });
+    await f.send(1, { command: "end-turn" });
+    await run(0, "status");
+    await f.send(0, { command: "end-turn" });
+
+    await f.send(1, { command: "say", text: change });
+    await f.move(2, f.place);
+    await f.send(2, { command: "contact", targetId: f.actors[1] });
+    await f.send(1, { command: "say", text: shared });
+    await f.send(1, { command: "end-turn" });
+
+    const first = (await read(0)).result;
+    expect(first.material.belongings).toBeDefined();
+    const status = await run(0, "status");
+    const record = status.entries.find(
+      ({ payload }: { payload: { entries?: { input: string }[] } }) =>
+        payload.entries?.some(({ input }) => input === change),
+    );
+    expect(record).toBeDefined();
+    expect(first.recentSpeech).toEqual([
+      expect.objectContaining({ text: older }),
+      {
+        recordId: record.id,
+        turn: record.payload.turn,
+        speaker: "人物1",
+        text: change,
+      },
+      {
+        recordId: record.id,
+        turn: record.payload.turn,
+        speaker: "人物1",
+        text: shared,
+      },
+    ]);
+    expect(
+      JSON.stringify((await run(0, "status", "--after", "0")).entries),
+    ).toContain(older);
+    await f.send(0, { command: "end-turn" });
+    await giveTurn(f, 2);
+    const second = (await read(1)).result;
+    const secondStatus = await run(1, "status");
+    const secondRecord = secondStatus.entries.find(
+      ({ payload }: { payload: { entries?: { input: string }[] } }) =>
+        payload.entries?.some(({ input }) => input === shared),
+    );
+    expect(secondRecord).toBeDefined();
+    expect(second.recentSpeech).toEqual([
+      {
+        recordId: secondRecord.id,
+        turn: secondRecord.payload.turn,
+        speaker: "人物1",
+        text: shared,
+      },
+    ]);
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+}, 60000);
+
 test("CLIは短縮IDを次の操作に使え、本人の未読手だけをアイコンなしで返す", async () => {
   const f = await fixture(),
     app = await createApp(access, auth.identity, undefined, auth.operations),

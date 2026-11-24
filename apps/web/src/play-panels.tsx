@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { DiagramFlowHorizontal, PanelLeft, PanelRight, X } from "lucide-react";
 import { Dialog, Tabs, Tooltip } from "radix-ui";
 import { z } from "zod";
@@ -17,12 +18,15 @@ import {
 } from "./player-icons.js";
 import { RichText } from "./RichText.js";
 import { Notice, Problem } from "./presentation.js";
+import { api } from "./api.js";
 
 const Item = z.object({
   id: z.uuid().optional(),
   label: z.string(),
   count: z.number().optional(),
   seriesId: z.uuid().optional(),
+  slots: z.number().optional(),
+  totalSlots: z.number().optional(),
 });
 const Capacity = z.object({ usedSlots: z.number(), limitSlots: z.number() });
 export const Belongings = z.object({
@@ -55,6 +59,15 @@ type Screen = z.infer<typeof PlayScreen>;
 type Character = z.infer<typeof PlayerCharacter>;
 export const itemText = (item: z.infer<typeof Item>) =>
   item.count ? `${item.label} ×${item.count}` : item.label;
+function inventoryItemUsage(item: z.infer<typeof Item>) {
+  if (item.slots === undefined) return "";
+  const total = item.totalSlots ?? item.slots;
+  return total > item.slots
+    ? ` ${total}枠（本体${item.slots}枠・中身${total - item.slots}枠）`
+    : ` ${total}枠`;
+}
+export const inventoryItemText = (item: z.infer<typeof Item>) =>
+  itemText(item) + inventoryItemUsage(item);
 export function realTime(at: string) {
   return new Date(at).toLocaleString("ja-JP");
 }
@@ -261,6 +274,101 @@ function TextList({ items, empty }: { items: string[]; empty: string }) {
   );
 }
 
+type InventoryViewer = { world: string; actor: string };
+
+function Contents({
+  world,
+  actor,
+  container,
+}: InventoryViewer & { container: string }) {
+  const query = useInfiniteQuery({
+    queryKey: ["inventory-contents", world, actor, container],
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam, signal }) => {
+      const { data } = await api.GET("/api/worlds/{id}/inventory/contents", {
+        params: {
+          path: { id: world },
+          query: {
+            actorId: actor,
+            containerId: container,
+            ...(pageParam ? { after: pageParam } : {}),
+          },
+        },
+        signal,
+      });
+      if (!data) throw new Error("中身を取得できませんでした");
+      return data;
+    },
+    getNextPageParam: (last) => last.next ?? undefined,
+  });
+  return (
+    <div className="ml-3">
+      {query.isPending && <p role="status">中身を読み込み中…</p>}
+      {query.error && <Problem error={query.error} />}
+      {query.data && (
+        <InventoryList
+          world={world}
+          actor={actor}
+          items={query.data.pages.flatMap((page) => page.items)}
+          empty="中身はありません"
+        />
+      )}
+      {query.hasNextPage && (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={query.isFetchingNextPage}
+          onClick={() => void query.fetchNextPage()}
+        >
+          中身をさらに読む
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function InventoryItem({
+  world,
+  actor,
+  item,
+}: InventoryViewer & { item: z.infer<typeof Item> }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li>
+      <RichText text={itemText(item)} />
+      {inventoryItemUsage(item) && <span>{inventoryItemUsage(item)}</span>}
+      {item.id && (item.totalSlots ?? 0) > (item.slots ?? 0) && (
+        <details onToggle={(event) => setOpen(event.currentTarget.open)}>
+          <summary>中身を見る</summary>
+          {open && <Contents world={world} actor={actor} container={item.id} />}
+        </details>
+      )}
+    </li>
+  );
+}
+
+function InventoryList({
+  world,
+  actor,
+  items,
+  empty,
+}: InventoryViewer & { items: z.infer<typeof Item>[]; empty: string }) {
+  return items.length ? (
+    <ul className="play-list">
+      {items.map((item, i) => (
+        <InventoryItem
+          key={item.id ?? i}
+          world={world}
+          actor={actor}
+          item={item}
+        />
+      ))}
+    </ul>
+  ) : (
+    <p className="muted">{empty}</p>
+  );
+}
+
 export function PlayerPanel({
   world,
   player,
@@ -320,8 +428,10 @@ export function PlayerPanel({
               {belongings.capacity.limitSlots}
             </p>
           )}
-          <TextList
-            items={belongings?.items.map(itemText) ?? []}
+          <InventoryList
+            world={world}
+            actor={own.actorId}
+            items={belongings?.items ?? []}
             empty="所持品はありません"
           />
         </Tabs.Content>
@@ -335,8 +445,10 @@ export function PlayerPanel({
                     使用枠 {capacity.usedSlots}/{capacity.limitSlots}
                   </p>
                 )}
-                <TextList
-                  items={items.map(itemText)}
+                <InventoryList
+                  world={world}
+                  actor={own.actorId}
+                  items={items}
                   empty="保管品はありません"
                 />
               </section>

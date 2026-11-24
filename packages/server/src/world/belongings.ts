@@ -562,6 +562,38 @@ const labelled = (node: WorldNode | undefined) => ({
   ...shown(node),
 });
 
+function itemUsage(
+  node: Extract<WorldNode, { kind: "existence" }>,
+  standard: number,
+  contentsSlots: number,
+) {
+  const slots = itemSlots(node, standard);
+  return {
+    slots,
+    totalSlots: slots + contentsSlots,
+    ...(node.count ? { unitsPerSlot: unitsPerSlot(node, standard) } : {}),
+  };
+}
+
+export async function readInventoryContents(
+  context: WorldContext,
+  actor: string,
+  container: string,
+  after?: string,
+) {
+  const page = await context.inventoryContents(actor, container, after);
+  if (!page) return;
+  return {
+    items: page.items.map(({ node, contentsSlots }) => ({
+      id: node.id,
+      label: node.text,
+      ...(node.count ? { count: node.count } : {}),
+      ...itemUsage(node, page.limits.unitsPerSlot, contentsSlots),
+    })),
+    next: page.next,
+  };
+}
+
 // 本人以外の参加者が読めるか。範囲を省いた記録は、種類ごとの既定(open)に従う。
 export const visibleTo = (
   node: WorldNode | undefined,
@@ -621,7 +653,7 @@ export async function readBelongings(
       .sort(
         (x, y) => x.period.from - y.period.from || x.id.localeCompare(y.id),
       );
-  const items = async (holder: string) => {
+  const contents = async (holder: string) => {
     const held = [];
     for (const edge of await facts(holder, undefined)) {
       const node = await context.node(edge.target, at);
@@ -630,38 +662,43 @@ export async function readBelongings(
         (viewer && !visibleTo(node, viewer, true))
       )
         continue;
-      held.push({
-        id: edge.target,
+      held.push({ node, edge });
+    }
+    const totals = limits
+      ? await context.inventorySlotTotals(holder, [
+          holder,
+          ...held.map(({ node }) => node.id),
+        ])
+      : undefined;
+    return {
+      items: held.map(({ node, edge }) => ({
+        id: node.id,
         ...labelled(node),
         ...(limits
-          ? {
-              slots: itemSlots(node, limits.unitsPerSlot),
-              ...(node.count
-                ? { unitsPerSlot: unitsPerSlot(node, limits.unitsPerSlot) }
-                : {}),
-            }
+          ? itemUsage(node, limits.unitsPerSlot, totals?.get(node.id) ?? 0)
           : {}),
         basis: edge.text ?? null,
         since: edge.period.from,
-      });
-    }
-    return held;
+      })),
+      usedSlots: totals?.get(holder) ?? 0,
+    };
   };
   // 登録した保管先。中身はどこからでも読める。
   const storages = [];
   for (const edge of await facts(subject, "use")) {
     const node = await context.node(edge.target, at);
     if (viewer && !visibleTo(node, viewer, false)) continue;
+    const { items, usedSlots } = await contents(edge.target);
     storages.push({
       id: edge.target,
       label: node?.text ?? "",
       ...shown(node),
-      items: await items(edge.target),
+      items,
       ...(!limits
         ? {}
         : {
             capacity: {
-              usedSlots: await context.inventorySlots(edge.target),
+              usedSlots,
               limitSlots:
                 node?.kind === "existence"
                   ? (node.storageLimitSlots ?? limits.storageSlots)
@@ -682,15 +719,16 @@ export async function readBelongings(
       since: edge.period.from,
     });
   }
+  const { items, usedSlots } = await contents(subject);
   return {
-    items: await items(subject),
+    items,
     storages,
     skills,
     ...(!limits
       ? {}
       : {
           capacity: {
-            usedSlots: await context.inventorySlots(subject),
+            usedSlots,
             limitSlots: limits.carrySlots,
           },
           skillCapacity: {

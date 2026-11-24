@@ -20,6 +20,7 @@ import { Link } from "@tanstack/react-router";
 import {
   Belongings,
   itemText,
+  inventoryItemText,
   PlayLayout,
   PlayerPanel,
   PlayScreen,
@@ -244,12 +245,12 @@ function PersonalMaterial({
     ...(data.locations ?? []).map((x) => x.text),
     data.belongings?.capacity &&
       `手持ちの使用枠 ${data.belongings.capacity.usedSlots}/${data.belongings.capacity.limitSlots}`,
-    ...(data.belongings?.items ?? []).map(itemText),
+    ...(data.belongings?.items ?? []).map(inventoryItemText),
     ...(data.belongings?.storages ?? []).flatMap((x) => [
       x.capacity
         ? `${x.label}（使用枠 ${x.capacity.usedSlots}/${x.capacity.limitSlots}）`
         : x.label,
-      ...x.items.map(itemText),
+      ...x.items.map(inventoryItemText),
     ]),
     data.belongings?.skillCapacity &&
       `技能の使用枠 ${data.belongings.skillCapacity.usedSlots}/${data.belongings.skillCapacity.limitSlots}`,

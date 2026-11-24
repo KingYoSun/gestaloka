@@ -245,7 +245,8 @@ export async function inventoryAudit(
 export async function inventoryState(tx: ManagedTransaction, worldId: string) {
   const { records } = await tx.run(
     `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
-     RETURN CASE WHEN g.inventoryReady THEN null ELSE g.inventoryCacheUnits END AS cacheUnits,
+     RETURN CASE WHEN g.inventoryReady OR NOT coalesce(g.inventoryHolderIndexed,false)
+       THEN null ELSE g.inventoryCacheUnits END AS cacheUnits,
        coalesce(g.inventoryEnabled,false) AS enabled,
        g.inventoryCarrySlots AS carrySlots,g.inventoryStorageSlots AS storageSlots,g.inventoryUnitsPerSlot AS unitsPerSlot,g.skillSlots AS skillSlots`,
     { worldId },
@@ -281,12 +282,13 @@ export async function initializeInventory(
     const total = snapshotTotals(items, limits.unitsPerSlot);
     await tx.run(
       `UNWIND $rows AS row MATCH (n:WorldNode {worldId:$worldId,id:row.id})
-       SET n.inventorySlots=row.slots,n.inventoryStackKey=row.stack`,
+       SET n.inventorySlots=row.slots,n.inventoryStackKey=row.stack,n.inventoryHolder=row.holder`,
       {
         worldId,
         rows: [...new Set([...total.keys(), ...items.keys()])].map((id) => ({
           id,
           slots: total.get(id) ?? 0,
+          holder: items.get(id)?.parent ?? null,
           stack: items.has(id)
             ? inventoryStackKey(
                 items.get(id)!.item,
@@ -299,7 +301,7 @@ export async function initializeInventory(
     );
     await tx.run(
       `MATCH (g:WorldGuard {worldId:$worldId,key:'inventory'})
-       SET g.inventoryCacheUnits=$stackSize REMOVE g.inventoryReady`,
+       SET g.inventoryCacheUnits=$stackSize,g.inventoryHolderIndexed=true REMOVE g.inventoryReady`,
       { worldId, stackSize: limits.unitsPerSlot },
     );
   }
@@ -358,7 +360,7 @@ export async function inventoryChange(
   const nextParent = async (id: string) =>
     parent.has(id) ? parent.get(id) : (await read(id)).parent;
   const deltas = new Map<string, number>();
-  const stack = new Map<string, string | null>();
+  const entries = [];
   const add = async (
     id: string | undefined,
     delta: number,
@@ -391,7 +393,11 @@ export async function inventoryChange(
         new Set([id]),
       );
     }
-    stack.set(id, inventoryStackKey(next, limits.unitsPerSlot, to));
+    entries.push({
+      id,
+      holder: to ?? null,
+      stack: inventoryStackKey(next, limits.unitsPerSlot, to),
+    });
   }
   const registering = new Set(
     change.edges
@@ -431,13 +437,13 @@ export async function inventoryChange(
   const slots = new Map<string, number>();
   for (const [id, delta] of deltas)
     if (delta) slots.set(id, (await read(id)).used + delta);
-  return { slots, stack };
+  return { slots, entries };
 }
 
 export async function saveInventory(
   tx: ManagedTransaction,
   worldId: string,
-  { slots, stack }: Awaited<ReturnType<typeof inventoryChange>>,
+  { slots, entries }: Awaited<ReturnType<typeof inventoryChange>>,
 ) {
   if (slots.size)
     await tx.run(
@@ -445,10 +451,10 @@ export async function saveInventory(
        SET n.inventorySlots=row.slots`,
       { worldId, rows: [...slots].map(([id, slots]) => ({ id, slots })) },
     );
-  if (stack.size)
+  if (entries.length)
     await tx.run(
       `UNWIND $rows AS row MATCH (n:WorldNode {worldId:$worldId,id:row.id})
-       SET n.inventoryStackKey=row.stack`,
-      { worldId, rows: [...stack].map(([id, stack]) => ({ id, stack })) },
+       SET n.inventoryStackKey=row.stack,n.inventoryHolder=row.holder`,
+      { worldId, rows: entries },
     );
 }

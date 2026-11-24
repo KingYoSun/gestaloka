@@ -262,6 +262,23 @@ export const EventQuery = z.object({
   after: z.string().regex(/^\d+$/).optional(),
 });
 export const ActorQuery = z.object({ actorId: z.uuid().optional() });
+export const InventoryContentsQuery = ActorQuery.extend({
+  containerId: z.uuid(),
+  after: z.uuid().optional(),
+});
+export const InventoryContents = z.object({
+  items: z.array(
+    z.object({
+      id: z.uuid(),
+      label: z.string(),
+      count: z.number().optional(),
+      unitsPerSlot: z.union([z.number(), z.literal("unlimited")]).optional(),
+      slots: z.number(),
+      totalSlots: z.number(),
+    }),
+  ),
+  next: z.uuid().nullable(),
+});
 export const WorldEvent = z.object({
   id: z.string().regex(/^\d+$/),
   worldId: z.uuid(),
