@@ -257,6 +257,7 @@ select {
   font-size: 28px;
   font-weight: 400;
   text-decoration: none;
+  white-space: nowrap;
   line-height: 1;
 }
 .brand-image {
