@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { createRequire } from "node:module";
 import {
   mkdir,
+  open,
   readFile,
   writeFile,
   rename,
@@ -26,14 +28,24 @@ const TAR =
   "node:24.22.1-bookworm-slim@sha256:1681862882da07ee5476fee047bcf34138833f1df42633bb25bcb0f438d5bf3d";
 const resumableServices = ["worker", "caddy"];
 const digest = (s) => createHash("sha256").update(s).digest("hex");
-export function command(args, input, environment = process.env) {
+async function fileDigest(file) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(file)) hash.update(chunk);
+  return hash.digest("hex");
+}
+export function command(
+  args,
+  input,
+  environment = process.env,
+  { stdinFd, stdoutFd } = {},
+) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn("docker", args, {
       env: environment,
-      stdio: ["pipe", "pipe", "pipe"],
+      stdio: [stdinFd ?? "pipe", stdoutFd ?? "pipe", "pipe"],
     });
     const chunks = [];
-    child.stdout.on("data", (data) => chunks.push(data));
+    child.stdout?.on("data", (data) => chunks.push(data));
     // CLI errors may contain credentials or recovered world content. Keep them private.
     child.stderr.resume();
     child.on("error", () => reject(new Error("CONTAINER_COMMAND_FAILED")));
@@ -42,8 +54,8 @@ export function command(args, input, environment = process.env) {
         ? resolvePromise(Buffer.concat(chunks))
         : reject(new Error("CONTAINER_COMMAND_FAILED")),
     );
-    child.stdin.on("error", () => {});
-    child.stdin.end(input);
+    child.stdin?.on("error", () => {});
+    child.stdin?.end(input);
   });
 }
 export class BackupEngine {
@@ -80,6 +92,9 @@ export class BackupEngine {
     }
   }
   compose(...args) {
+    return this.#compose(args);
+  }
+  #compose(args, stdio) {
     return this.run(
       [
         "compose",
@@ -93,6 +108,7 @@ export class BackupEngine {
       ],
       undefined,
       { ...process.env, ...this.env },
+      stdio,
     );
   }
   async save(name, value) {
@@ -393,43 +409,34 @@ export class BackupEngine {
   }
   async dump(service, user, database, file, restore = false) {
     const base = ["exec", "-T", service];
-    if (restore) {
-      await this.compose(
-        ...base,
-        "dropdb",
-        "-U",
-        user,
-        "--if-exists",
-        "--force",
-        database,
-      );
-      await this.compose(...base, "createdb", "-U", user, database);
-      const args = [
-        "compose",
-        "--project-name",
-        this.project,
-        "--env-file",
-        join(this.root, "deployment.env"),
-        "-f",
-        "/app/infra/production/compose.yaml",
-        ...base,
-        "pg_restore",
-        "-U",
-        user,
-        "--no-owner",
-        "-d",
-        database,
-      ];
-      await this.run(args, await readFile(join(this.root, "staging", file)), {
-        ...process.env,
-        ...this.env,
-      });
-    } else
-      await writeFile(
-        join(this.root, "staging", file),
-        await this.compose(...base, "pg_dump", "-U", user, "-Fc", database),
-        { mode: 0o600 },
-      );
+    const data = await open(
+      join(this.root, "staging", file),
+      restore ? "r" : "w",
+      0o600,
+    );
+    try {
+      if (restore) {
+        await this.compose(
+          ...base,
+          "dropdb",
+          "-U",
+          user,
+          "--if-exists",
+          "--force",
+          database,
+        );
+        await this.compose(...base, "createdb", "-U", user, database);
+        await this.#compose(
+          [...base, "pg_restore", "-U", user, "--no-owner", "-d", database],
+          { stdinFd: data.fd },
+        );
+      } else
+        await this.#compose([...base, "pg_dump", "-U", user, "-Fc", database], {
+          stdoutFd: data.fd,
+        });
+    } finally {
+      await data.close();
+    }
   }
   async capture(job) {
     await this.freeze(job);
@@ -459,7 +466,7 @@ export class BackupEngine {
     const files = {};
     for (const file of await readdir(join(this.root, "staging")))
       if (file !== "manifest.json")
-        files[file] = digest(await readFile(join(this.root, "staging", file)));
+        files[file] = await fileDigest(join(this.root, "staging", file));
     await writeFile(
       join(this.root, "staging", "manifest.json"),
       JSON.stringify({
@@ -539,9 +546,7 @@ export class BackupEngine {
     )
       throw new Error("INVALID_BACKUP");
     for (const file of expected)
-      if (
-        digest(await readFile(join(recovered, file))) !== manifest.files[file]
-      )
+      if ((await fileDigest(join(recovered, file))) !== manifest.files[file])
         throw new Error("BACKUP_CHECKSUM_FAILED");
     await this.freeze(job);
     await this.pool.end();

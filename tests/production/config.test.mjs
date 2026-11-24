@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appendFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import { fstatSync, ftruncateSync, readSync, writeSync } from "node:fs";
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -9,7 +18,7 @@ import {
   keyNames,
 } from "../../infra/production/config.mjs";
 import { BackupEngine } from "../../infra/production/engine.mjs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 test("環境ごとに鍵を生成し、再描画では保持し、公開面と内部接続を分離する", async () => {
   const root = await mkdtemp(join(tmpdir(), "gestaloka-deploy-"));
   try {
@@ -267,4 +276,66 @@ test("メンテナンス中に通常稼働時のバックアップを復元し�
     { paused: false, executions: [{ kind: "scene", id: randomUUID() }] },
   );
   assert.deepEqual(calls, ["up", "up"]);
+});
+test("2 GiBを超えるダンプをファイル記述子で渡し、取得と復元でハッシュを確認する", async () => {
+  const root = await mkdtemp(join(tmpdir(), "gestaloka-large-backup-"));
+  const payload = Buffer.from("database-dump");
+  const size = 2 ** 31 + payload.length;
+  try {
+    const commands = [];
+    const engine = new BackupEngine(root, async (args, input, _env, stdio) => {
+      assert.equal(input, undefined);
+      if (args.includes("pg_dump")) {
+        assert.equal(typeof stdio.stdoutFd, "number");
+        if (args.at(-1) === "gestaloka") ftruncateSync(stdio.stdoutFd, size);
+        writeSync(stdio.stdoutFd, payload);
+      } else if (args.includes("pg_restore")) {
+        assert.equal(typeof stdio.stdinFd, "number");
+        assert.equal(fstatSync(stdio.stdinFd).size, size);
+        const read = Buffer.alloc(payload.length);
+        assert.equal(readSync(stdio.stdinFd, read), payload.length);
+        assert.deepEqual(read, payload);
+      }
+      commands.push(args[args.indexOf("-T") + 2]);
+      return Buffer.alloc(0);
+    });
+    engine.env = {};
+    engine.project = "backup-test";
+    engine.freeze = async () => {};
+    engine.archive = async (_volume, file) =>
+      writeFile(join(root, "staging", file), payload);
+    await engine.capture({ id: randomUUID() });
+    const manifest = JSON.parse(
+      await readFile(join(root, "staging/manifest.json"), "utf8"),
+    );
+    const hash = createHash("sha256").update(payload),
+      zeros = Buffer.alloc(2 ** 20);
+    for (let i = 0; i < 2048; i++) hash.update(zeros);
+    assert.equal(manifest.files["app.dump"], hash.digest("hex"));
+    await engine.dump("postgres", "gestaloka", "gestaloka", "app.dump", true);
+    assert.deepEqual(commands, [
+      "pg_dump",
+      "pg_dump",
+      "pg_dump",
+      "dropdb",
+      "createdb",
+      "pg_restore",
+    ]);
+
+    const restored = join(root, "restore/state");
+    engine.restic = async () => {
+      await mkdir(restored, { recursive: true });
+      await rename(join(root, "staging"), join(restored, "staging"));
+    };
+    engine.step = async () => {};
+    const verified = new Error("復元前の検証を通過");
+    engine.freeze = async () => {
+      throw verified;
+    };
+    await assert.rejects(engine.restore({}, {}, "snapshot"), {
+      message: verified.message,
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
