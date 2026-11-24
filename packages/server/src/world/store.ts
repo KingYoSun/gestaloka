@@ -311,12 +311,13 @@ export class WorldContext {
         within = row.get("parent") as string;
         if (within === actor || row.get("registered")) {
           const pageSize = 50;
+          // 複合索引の順で読み、残りの品を並べ替えずにページ末尾で止める。
           const { records: page } = await tx.run(
             `MATCH (n:WorldNode {worldId:$worldId,inventoryHolder:$container})
              USING INDEX n:WorldNode(worldId,inventoryHolder,id)
              WHERE n.id > $after
-             RETURN n.data AS data,coalesce(n.inventorySlots,0) AS slots
-             ORDER BY n.id LIMIT $limit`,
+             WITH n ORDER BY n.worldId,n.inventoryHolder,n.id LIMIT $limit
+             RETURN n.data AS data,coalesce(n.inventorySlots,0) AS slots`,
             {
               worldId,
               container,
