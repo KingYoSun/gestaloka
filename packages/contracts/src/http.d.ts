@@ -7751,11 +7751,18 @@ export interface paths {
                                 enabled: boolean;
                                 intervalHours: number;
                                 retentionDays: number;
+                                password: string;
                                 repository: string;
                                 accessKey: string;
                                 secretKey: string;
-                                password: string;
                                 region: string;
+                            } | {
+                                enabled: boolean;
+                                intervalHours: number;
+                                retentionDays: number;
+                                password: string;
+                                /** @enum {string} */
+                                repository: "local";
                             };
                             expectedVersion: number;
                             reason: string;
@@ -7795,6 +7802,8 @@ export interface paths {
                             operation: "runtime.put";
                             configuration: {
                                 paused: boolean;
+                                /** Format: date-time */
+                                worldEditsUntil?: string;
                                 concurrency: number | null;
                                 sampleIntervalSeconds: number;
                                 retentionDays: number;

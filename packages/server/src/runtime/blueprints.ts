@@ -21,6 +21,7 @@ import { canonical } from "../llm/prompt.js";
 import type { PlayApplications } from "./play-applications.js";
 import { deliverPickups } from "./storage-transfers.js";
 import { InventoryCapacityExceeded } from "../world/inventory.js";
+import { RuntimeControl } from "./control.js";
 
 type Db = Pick<pg.Pool, "query">;
 type World = { id: string; at: number };
@@ -499,26 +500,21 @@ export class Blueprints {
       [world ?? null],
     );
     for (const row of rows) {
-      const db = await this.pool.connect();
-      try {
-        await db.query("BEGIN");
-        await db.query(
-          "SELECT pg_advisory_xact_lock(hashtextextended($1,225))",
-          [row.world],
-        );
-        await this.pending(
-          db,
-          row.world,
-          { id: row.graph, at: Number(row.at) },
-          row.quest,
-        );
-        await db.query("COMMIT");
-      } catch (error) {
-        await db.query("ROLLBACK");
-        throw error;
-      } finally {
-        db.release();
-      }
+      if (
+        !(await RuntimeControl.runWhenActive(this.pool, async (db) => {
+          await db.query(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,225))",
+            [row.world],
+          );
+          await this.pending(
+            db,
+            row.world,
+            { id: row.graph, at: Number(row.at) },
+            row.quest,
+          );
+        }))
+      )
+        return;
     }
   }
 

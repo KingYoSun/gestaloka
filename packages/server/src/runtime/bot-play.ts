@@ -1534,7 +1534,7 @@ export class BotPlay {
     return session;
   }
   async tickNpcs(world?: string, paused = () => false) {
-    if (paused()) return;
+    if (paused() || (await RuntimeControl.isPaused(this.pool))) return;
     const active = await this.pool.query<Session>(
       "SELECT * FROM bot_session WHERE data ? 'nextRegular' AND NOT (data ? 'receiving') AND NOT (data ? 'parked') AND ($1::uuid IS NULL OR world_id=$1)",
       [world ?? null],
@@ -3415,7 +3415,12 @@ export class BotPlay {
     delete session.data.receiving;
     return { items, result };
   }
-  async #completeReceipt(db: Db, session: Session, rejectingActor?: string) {
+  async #completeReceipt(
+    db: Db,
+    session: Session,
+    rejectingActor?: string,
+    beforeWrite?: () => Promise<void>,
+  ) {
     const r = session.data.receiving!;
     const world = session.world_id;
     const w = await this.world(world, db);
@@ -3436,9 +3441,12 @@ export class BotPlay {
         !ops?.length ||
         (!r.parallel.departAloneOnTimeout &&
           r.decided.length === declined.length))
-    )
+    ) {
+      await beforeWrite?.();
       return { settled: await this.#settle(db, session, "expired") };
-    if (!prior && ops && !ops.length)
+    }
+    if (!prior && ops && !ops.length) {
+      await beforeWrite?.();
       return {
         settled: await this.#settle(
           db,
@@ -3448,7 +3456,9 @@ export class BotPlay {
           rejectingActor,
         ),
       };
+    }
     if (!prior && r.vehicleControl?.oppositionRequired) {
+      await beforeWrite?.();
       await db.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         r.id,
         { vehicleApproval: r.vehicleControl.vehicleId },
@@ -3498,10 +3508,13 @@ export class BotPlay {
           },
           undefined,
           r.parallel ? staying : [],
+          beforeWrite,
         );
       } catch (error) {
+        if (error instanceof RuntimeStopped) throw error;
         const failure = playError(error);
         if (!timedOut || !(failure instanceof AccessError)) throw error;
+        await beforeWrite?.();
         return {
           settled: await this.#settle(db, session, "rejected", {
             code: failure.code,
@@ -3510,6 +3523,7 @@ export class BotPlay {
         };
       }
     }
+    await beforeWrite?.();
     if (r.companion)
       await this.companions.index(db, world, r.companion, r.sender);
     // 再送時は確定した移動を参照し、未回答者の扱いも復元する。
@@ -3551,7 +3565,7 @@ export class BotPlay {
     );
     return session.data.used >= Number(rows[0].turn_calls);
   }
-  async #expire(db: Db, session: Session) {
+  async #expire(db: Db, session: Session, beforeWrite?: () => Promise<void>) {
     const d = session.data;
     const r = d.receiving;
     if (!d.members.length) return;
@@ -3559,9 +3573,16 @@ export class BotPlay {
     const before = turnState(session);
     let idleExpired = false;
     let changes: Change | undefined;
+    if (!r?.parallel) await beforeWrite?.();
     if (r) {
       if (new Date(r.deadline) > now) return;
-      if (r.parallel) ({ changes } = await this.#completeReceipt(db, session));
+      if (r.parallel)
+        ({ changes } = await this.#completeReceipt(
+          db,
+          session,
+          undefined,
+          beforeWrite,
+        ));
       else await this.#settle(db, session, "expired");
       if (await this.#turnCallsExhausted(db, session))
         await this.#next(db, session);
@@ -4026,6 +4047,7 @@ export class BotPlay {
   }
   // 届く時刻を過ぎた申請の物品を成立させ、本人あての通知を作る。
   async deliverArrivals(world?: string) {
+    if (await RuntimeControl.isPaused(this.pool)) return;
     const due = (
       await this.pool.query<{ id: string }>(
         "SELECT id FROM bot_arrival WHERE ($1::uuid IS NULL OR world_id=$1) AND due<=$2 ORDER BY due,id",
@@ -4033,16 +4055,15 @@ export class BotPlay {
       )
     ).rows;
     for (const { id } of due) {
-      const db = await this.pool.connect();
       try {
-        await db.query("BEGIN");
-        await this.#deliverArrival(db, id);
-        await db.query("COMMIT");
+        if (
+          !(await RuntimeControl.runWhenActive(this.pool, (db) =>
+            this.#deliverArrival(db, id),
+          ))
+        )
+          return;
       } catch (error) {
-        await db.query("ROLLBACK");
         if (!(error instanceof InventoryCapacityExceeded)) throw error;
-      } finally {
-        db.release();
       }
     }
   }
@@ -4136,6 +4157,7 @@ export class BotPlay {
     return page;
   }
   async expire(world?: string) {
+    if (await RuntimeControl.isPaused(this.pool)) return;
     await this.blueprints.recover(world);
     await this.applications.expire(world);
     const now = this.now();
@@ -4171,6 +4193,8 @@ export class BotPlay {
         await db.query("COMMIT");
       } catch (error) {
         await db.query("ROLLBACK");
+        if (error instanceof RuntimeStopped && error.code === "MAINTENANCE")
+          return;
         throw error;
       } finally {
         db.release();
@@ -4179,6 +4203,7 @@ export class BotPlay {
   }
   // 自動の期限処理で手番が進む場合に、管理用操作からも進められる。
   async advance(db: Db, world: string, id: string) {
+    await RuntimeControl.check(db);
     await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,225))", [
       world,
     ]);
@@ -4190,7 +4215,14 @@ export class BotPlay {
     ).rows[0];
     if (!session) return false;
     const before = turnState(session).key;
-    await this.#expire(db, session);
+    let locked = false;
+    await this.#expire(db, session, async () => {
+      if (locked) return;
+      // 期限切れの移動を再計画するときは、GM応答を待ってから運用設定をロックする。
+      // すでに世界のロックがあるため、設定更新を待つと他の確定と循環する。
+      await RuntimeControl.check(db, {}, "nowait");
+      locked = true;
+    });
     return before !== turnState(session).key;
   }
   async sessions(world: string, db: Db = this.pool, id?: string) {
@@ -5148,12 +5180,12 @@ export class BotPlay {
   ) {
     try {
       const current = await this.world(world);
-      await RuntimeControl.check(this.pool, { worldId: current.id }, true);
       const context = this.store.context(current.id);
-      return await context.editInventoryBundle(
-        actor,
-        input,
-        (await directPlaces(context, actor)).includes(input.storageId),
+      const present = (await directPlaces(context, actor)).includes(
+        input.storageId,
+      );
+      return await RuntimeControl.withActiveRuntime(this.pool, () =>
+        context.editInventoryBundle(actor, input, present),
       );
     } catch (error) {
       throw playError(error);
@@ -5237,15 +5269,19 @@ export class BotPlay {
       for (const id of input.viewers)
         if ((await context.node(id))?.kind !== "existence")
           reject("VIEWER_NOT_FOUND", "読める相手には人物を指定してください");
-    await this.#commit(w.id, input.requestId, {
-      context,
-      at: w.at,
-      changes: {
-        nodes: [],
-        revisions: [{ ...node, viewers: input.viewers }],
-        edges: [],
-        endEdges: [],
-      },
+    await RuntimeControl.withActiveRuntime(this.pool, () =>
+      this.#commit(w.id, input.requestId, {
+        context,
+        at: w.at,
+        changes: {
+          nodes: [],
+          revisions: [{ ...node, viewers: input.viewers }],
+          edges: [],
+          endEdges: [],
+        },
+      }),
+    ).catch((error) => {
+      throw playError(error);
     });
     return { targetId: node.id, viewers: input.viewers };
   }
@@ -9340,6 +9376,7 @@ export class BotPlay {
     plan: Pick<Plan, "context" | "at" | "changes" | "storageEffect">,
     fixed?: string[],
     staying: string[] = [],
+    beforeWrite?: () => Promise<void>,
   ) {
     if (ops.length) {
       const prior = await this.store.receipt(graph, request);
@@ -9396,6 +9433,7 @@ export class BotPlay {
         follows,
       );
     }
+    await beforeWrite?.();
     return this.#commit(graph, request, plan, fixed);
   }
 

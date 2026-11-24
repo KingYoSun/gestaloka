@@ -930,6 +930,7 @@ export const PlayUsageReport = z.object({
 export const RuntimeSettings = z
   .object({
     paused: z.boolean(),
+    worldEditsUntil: z.iso.datetime().optional(),
     concurrency: z.number().int().positive().safe().nullable(),
     sampleIntervalSeconds: z.number().int().positive().safe(),
     retentionDays: z.number().int().positive().safe(),
@@ -961,18 +962,23 @@ export const JobQuery = z
 export const MonitorPageQuery = z
   .object({ before: z.string().regex(/^\d+$/).optional() })
   .strict();
-export const BackupConfiguration = z
-  .object({
-    enabled: z.boolean(),
-    intervalHours: z.number().int().positive().safe(),
-    retentionDays: z.number().int().positive().safe(),
-    repository: z.string().regex(/^s3:https?:\/\/[^\s?#@]+$/),
-    accessKey: z.string().min(1),
-    secretKey: z.string().min(1),
-    password: z.string().min(16),
-    region: z.string().min(1),
-  })
-  .strict();
+const backupSettings = z.object({
+  enabled: z.boolean(),
+  intervalHours: z.number().int().positive().safe(),
+  retentionDays: z.number().int().positive().safe(),
+  password: z.string().min(16),
+});
+export const BackupConfiguration = z.union([
+  backupSettings
+    .extend({
+      repository: z.string().regex(/^s3:https?:\/\/[^\s?#@]+$/),
+      accessKey: z.string().min(1),
+      secretKey: z.string().min(1),
+      region: z.string().min(1),
+    })
+    .strict(),
+  backupSettings.extend({ repository: z.literal("local") }).strict(),
+]);
 const worldTime = z.number().int().nonnegative().safe();
 export const WorldGraphQuery = z.discriminatedUnion("kind", [
   z

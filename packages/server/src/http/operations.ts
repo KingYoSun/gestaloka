@@ -792,7 +792,7 @@ export class Operations {
           input.query,
         );
       case "worlds.edit": {
-        await RuntimeControl.check(db, {}, true);
+        await RuntimeControl.check(db, {}, true, "worlds.edit");
         return new WorldManagement(this.#access(context).players).edit(
           db,
           actor!,
@@ -1063,10 +1063,17 @@ export class Operations {
         return RuntimeControl.read(db);
       case "runtime.put": {
         const previous = await RuntimeControl.read(db);
+        const { worldEditsUntil, ...configuration } = input.configuration;
         const row = (
           await db.query(
             "UPDATE runtime_control SET configuration=$1,version=version+1,updated_by=$2,updated_at=now() WHERE singleton AND version=$3 RETURNING version",
-            [input.configuration, actor, input.expectedVersion],
+            [
+              configuration.paused && worldEditsUntil
+                ? input.configuration
+                : configuration,
+              actor,
+              input.expectedVersion,
+            ],
           )
         ).rows[0];
         if (!row)

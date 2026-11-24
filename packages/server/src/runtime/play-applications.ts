@@ -7,6 +7,7 @@ import type {
   ItemOutcome,
 } from "@gestaloka/contracts";
 import { AccessError } from "../http/access.js";
+import { RuntimeControl } from "./control.js";
 import {
   BelongingRejected,
   planBelongings,
@@ -409,18 +410,13 @@ export class PlayApplications {
       [this.now(), world ?? null],
     );
     for (const { id, world_id, graph_id } of rows) {
-      const db = await this.pool.connect();
-      try {
-        await db.query("BEGIN");
-        const row = await this.#row(db, world_id, id);
-        if (row) await this.#settled(db, { id: graph_id, at: 0 }, row);
-        await db.query("COMMIT");
-      } catch (error) {
-        await db.query("ROLLBACK");
-        throw error;
-      } finally {
-        db.release();
-      }
+      if (
+        !(await RuntimeControl.runWhenActive(this.pool, async (db) => {
+          const row = await this.#row(db, world_id, id);
+          if (row) await this.#settled(db, { id: graph_id, at: 0 }, row);
+        }))
+      )
+        return;
     }
   }
 

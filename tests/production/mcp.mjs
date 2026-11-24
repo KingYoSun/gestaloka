@@ -90,6 +90,11 @@ try {
       "backups.read",
       "backups.job",
       "backups.restore",
+      "runtime.read",
+      "runtime.put",
+      "worlds.list",
+      "worlds.graph",
+      "worlds.edit",
     ];
   await operations.execute(admin, randomUUID(), {
     operation: "mcp.clients.put",

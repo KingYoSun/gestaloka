@@ -17,6 +17,7 @@ import type {
   WorldStore,
 } from "../world/store.js";
 import type { PlayApplications } from "./play-applications.js";
+import { RuntimeControl } from "./control.js";
 
 export const isStorageAction = (input: {
   command: string;
@@ -85,11 +86,22 @@ export async function deliverPickups(
     if (!origin) continue;
     const receipt = await store.receipt(graphId, id);
     if (!receipt) continue;
-    await notifyPickup(pool, applications, origin, receipt);
-    await store.driver.executeQuery(
-      "MATCH(r:WorldReceipt {worldId:$graphId,commitId:$id}) REMOVE r.noticePending",
-      { graphId, id },
-    );
+    if (
+      !(await RuntimeControl.runWhenActive(pool, (db) =>
+        notifyPickup(db, applications, origin, receipt),
+      ))
+    )
+      return;
+    // 通知を確定してから配信待ちを外す。間に停止した場合、再開後の通知は同じIDで重ならない。
+    if (
+      !(await RuntimeControl.runWhenActive(pool, () =>
+        store.driver.executeQuery(
+          "MATCH(r:WorldReceipt {worldId:$graphId,commitId:$id}) REMOVE r.noticePending",
+          { graphId, id },
+        ),
+      ))
+    )
+      return;
   }
 }
 

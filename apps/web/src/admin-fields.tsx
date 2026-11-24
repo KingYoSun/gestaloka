@@ -108,6 +108,7 @@ export const labels: Record<string, string> = {
   requestsPerMinute: "毎分の要求数",
   tokensPerMinute: "毎分のトークン数",
   paused: "メンテナンス・運用停止",
+  worldEditsUntil: "運用停止中に管理修正を許可する期限",
   sampleIntervalSeconds: "監視の取得間隔（秒）",
   retentionDays: "保持期間（日）",
   thresholds: "通知の閾値（指定した項目のみ判定）",
@@ -290,6 +291,9 @@ export function Fields({
     );
   }
   if (options) {
+    const backupDestination = options.some(
+      (option) => option.properties?.repository?.const === "local",
+    );
     const selected = options.findIndex((s) =>
       Object.entries(s.properties ?? {}).some(
         ([k, v]) => v.const !== undefined && object(value)[k] === v.const,
@@ -299,7 +303,9 @@ export function Fields({
     return (
       <fieldset className="admin-field">
         <legend>{label(name)}</legend>
-        <Label htmlFor={id}>取得・操作の種類</Label>
+        <Label htmlFor={id}>
+          {backupDestination ? "バックアップの保存先" : "取得・操作の種類"}
+        </Label>
         <select
           id={id}
           value={index}
@@ -307,11 +313,15 @@ export function Fields({
         >
           {options.map((s, i) => (
             <option key={i} value={i}>
-              {String(
-                Object.values(s.properties ?? {}).find(
-                  (v) => v.const !== undefined,
-                )?.const ?? i,
-              )}
+              {backupDestination
+                ? s.properties?.repository?.const === "local"
+                  ? "配備先ホスト内"
+                  : "S3"
+                : String(
+                    Object.values(s.properties ?? {}).find(
+                      (v) => v.const !== undefined,
+                    )?.const ?? i,
+                  )}
             </option>
           ))}
         </select>

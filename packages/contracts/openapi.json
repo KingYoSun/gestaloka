@@ -20743,55 +20743,97 @@
                             ]
                           },
                           "configuration": {
-                            "type": "object",
-                            "properties": {
-                              "enabled": {
-                                "type": "boolean"
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "enabled": {
+                                    "type": "boolean"
+                                  },
+                                  "intervalHours": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "exclusiveMinimum": true,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "retentionDays": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "exclusiveMinimum": true,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "password": {
+                                    "type": "string",
+                                    "minLength": 16
+                                  },
+                                  "repository": {
+                                    "type": "string",
+                                    "pattern": "^s3:https?:\\/\\/[^\\s?#@]+$"
+                                  },
+                                  "accessKey": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "secretKey": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "region": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "enabled",
+                                  "intervalHours",
+                                  "retentionDays",
+                                  "password",
+                                  "repository",
+                                  "accessKey",
+                                  "secretKey",
+                                  "region"
+                                ],
+                                "additionalProperties": false
                               },
-                              "intervalHours": {
-                                "type": "integer",
-                                "minimum": 0,
-                                "exclusiveMinimum": true,
-                                "maximum": 9007199254740991
-                              },
-                              "retentionDays": {
-                                "type": "integer",
-                                "minimum": 0,
-                                "exclusiveMinimum": true,
-                                "maximum": 9007199254740991
-                              },
-                              "repository": {
-                                "type": "string",
-                                "pattern": "^s3:https?:\\/\\/[^\\s?#@]+$"
-                              },
-                              "accessKey": {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              "secretKey": {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              "password": {
-                                "type": "string",
-                                "minLength": 16
-                              },
-                              "region": {
-                                "type": "string",
-                                "minLength": 1
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "enabled": {
+                                    "type": "boolean"
+                                  },
+                                  "intervalHours": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "exclusiveMinimum": true,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "retentionDays": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "exclusiveMinimum": true,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "password": {
+                                    "type": "string",
+                                    "minLength": 16
+                                  },
+                                  "repository": {
+                                    "type": "string",
+                                    "enum": [
+                                      "local"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "enabled",
+                                  "intervalHours",
+                                  "retentionDays",
+                                  "password",
+                                  "repository"
+                                ],
+                                "additionalProperties": false
                               }
-                            },
-                            "required": [
-                              "enabled",
-                              "intervalHours",
-                              "retentionDays",
-                              "repository",
-                              "accessKey",
-                              "secretKey",
-                              "password",
-                              "region"
-                            ],
-                            "additionalProperties": false
+                            ]
                           },
                           "expectedVersion": {
                             "type": "integer",
@@ -20969,6 +21011,11 @@
                             "properties": {
                               "paused": {
                                 "type": "boolean"
+                              },
+                              "worldEditsUntil": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                               },
                               "concurrency": {
                                 "nullable": true,

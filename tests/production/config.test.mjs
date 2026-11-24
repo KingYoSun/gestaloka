@@ -245,3 +245,20 @@ test("受付後にMCPの許可を取り消したバックアップは外部送�
   );
   assert.equal(sent, false);
 });
+test("メンテナンス中に通常稼働時のバックアップを復元しても進行を再開しない", async () => {
+  const engine = new BackupEngine();
+  const calls = [];
+  engine.step = async () => {};
+  engine.compose = async (...args) => calls.push(args[0]);
+  engine.pool = {
+    query: async (statement, parameters) => {
+      assert.match(statement, /configuration - 'worldEditsUntil'/);
+      assert.deepEqual(parameters, ["true"]);
+    },
+  };
+  await engine.thaw(
+    { paused: true },
+    { paused: false, executions: [{ kind: "scene", id: randomUUID() }] },
+  );
+  assert.deepEqual(calls, ["up", "up"]);
+});
