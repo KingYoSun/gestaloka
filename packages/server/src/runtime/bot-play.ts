@@ -234,12 +234,42 @@ type VehicleApplication = {
   operatorId: string;
   oppositionRequired: boolean;
 };
-function vehicleMovement(input: Input) {
-  return input.command === "vehicle-board" ||
+type VehicleCommand = Extract<Input, { command: `vehicle-${string}` }>;
+function isVehicleCommand(input: Input): input is VehicleCommand {
+  return (
+    input.command === "vehicle-board" ||
     input.command === "vehicle-leave" ||
-    input.command === "vehicle-travel"
-    ? input
-    : undefined;
+    input.command === "vehicle-travel" ||
+    input.command === "vehicle-request-control"
+  );
+}
+async function vehicleEntry(input: VehicleCommand, plan: Plan) {
+  const result = plan.vehicleResult;
+  const place = result?.fromId ?? result?.outerPlaceId ?? result?.directPlaceId;
+  const ids = [input.vehicleId];
+  if (typeof place === "string") ids.push(place);
+  if (input.command === "vehicle-travel") ids.push(input.destinationId);
+  const labels = await plan.context.nodes(ids);
+  const vehicle = `「${labels.get(input.vehicleId)!.text}」`;
+  if (input.command === "vehicle-request-control")
+    return `${vehicle}の操縦を申請した。`;
+  const location = typeof place === "string" && labels.get(place);
+  switch (input.command) {
+    case "vehicle-board":
+      return location
+        ? `「${location.text}」で${vehicle}に乗った。`
+        : `${vehicle}に乗ろうとした。`;
+    case "vehicle-leave":
+      return location
+        ? `「${location.text}」で${vehicle}を降りた。`
+        : `${vehicle}を降りようとした。`;
+    case "vehicle-travel": {
+      const to = `「${labels.get(input.destinationId)!.text}」`;
+      return location
+        ? `${vehicle}は「${location.text}」を出発し、${to}に着いた。`
+        : `${vehicle}で${to}へ向かおうとした。`;
+    }
+  }
 }
 type Boarding = { subjectId: string; vehicleId: string };
 type DrawInput = Extract<Input, { command: "draw" }>;
@@ -8288,8 +8318,7 @@ export class BotPlay {
         true,
       );
     }
-    const movement = vehicleMovement(input);
-    if (movement || input.command === "vehicle-request-control") {
+    if (isVehicleCommand(input)) {
       const w = await this.world(world, db);
       const context = this.store.context(w.id);
       const prior = await this.store.receipt(w.id, input.requestId);
@@ -8310,7 +8339,7 @@ export class BotPlay {
       }
       if (input.command === "vehicle-request-control")
         return this.#planVehicleControl(db, world, actor, input, context, w.at);
-      const { vehicleId } = movement!;
+      const { vehicleId } = input;
       if (!(await isVehicle(context, vehicleId)))
         reject("VEHICLE_NOT_FOUND", "乗り物を指定してください");
       let op = vehicleLocate(
@@ -13363,8 +13392,8 @@ export class BotPlay {
                 reviewedSource?.kind === "script"
                   ? reviewedSource.drawTable
                   : undefined;
-              let entryText = plan.vehicleControl
-                ? `「${(await plan.context.node(plan.vehicleControl.vehicleId))?.text ?? "乗り物"}」の操縦を申請する`
+              let entryText = isVehicleCommand(input)
+                ? await vehicleEntry(input, plan)
                 : plan.drawReview
                   ? [
                       `抽選器の設定を申請した。説明：${plan.drawReview.description}`,
@@ -13382,10 +13411,7 @@ export class BotPlay {
                     ? plan.companion
                       ? `自分のcompanionとして同行してほしいと申請する。「${input.text}」`
                       : (input.text ?? "")
-                    : vehicleMovement(input) ||
-                        input.command === "vehicle-request-control"
-                      ? "乗り物を操作する"
-                      : "";
+                    : "";
               if (
                 plan.boardings?.length &&
                 !(await this.store.receipt(w.id, input.requestId))
