@@ -59,7 +59,12 @@ CADDY_TLS_MODE=internal
 ```dotenv
 LLM_DECISION_MODEL=typesafe/jev-1.14
 LLM_DECISION_REPEAT_THRESHOLD=0.80
+LLM_DECISION_MATERIAL_THRESHOLD=0.55
 ```
+
+`LLM_DECISION_MATERIAL_THRESHOLD` は、対抗・生成で判定資料を選ぶ際に使うしきい値です。行動への適用と、成立可否や結果への影響の両方がこの値以上なら、主GMに渡す必須資料にします。出し直し判定のしきい値は別に設定します。
+
+判定資料の本文、取得・習得経緯はそれぞれ400文字以上で抜粋の対象になります。ワーカーは保存された資料と既存資料を順に処理し、評価する文をJevの質問に引用して、採用した原文の断片を保存します。準備中の資料は判定に残し、抜粋で選別した資料とあわせて正本を読みます。
 
 ## 秘密情報
 

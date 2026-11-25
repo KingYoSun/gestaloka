@@ -6,6 +6,7 @@ import {
   changeBelongings,
   readBelongings,
   readItemDescription,
+  readJudgmentScope,
   type BelongingOp,
 } from "@gestaloka/server/belongings";
 import { locationRecords } from "../../packages/server/src/world/locations.js";
@@ -539,6 +540,188 @@ test("技能の習得・範囲変更・除去の前後で、当時の一覧と�
     ["鍛冶場で打ち直しを仕上げた", { from: 20, until: 30 }],
   ]);
   expect((await summaries(worldId))[0]?.text).toBe("技能\n(なし)");
+});
+
+test("判定の範囲には双方の技能と、指定範囲の物品・保管品を含める", async () => {
+  const { worldId, ids, apply } = await world("A", "B", "工房", "倉庫", "戸棚");
+  const [actor, target, place, storage, other] = ids as [
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
+  const longText = `${"水".repeat(399)}"深さに条件がある"\\潜水`;
+  const longBasis = `${'"引用", \\記録\n'}${"水".repeat(500)}最後の根拠`;
+  await apply(1, [
+    { type: "grant", person: actor, storage, basis: "工房から使える倉庫" },
+    { type: "grant", person: target, storage: other, basis: "本人の戸棚" },
+    {
+      type: "create",
+      holder: storage,
+      label: "古い部品",
+      count: 3,
+      basis: "予備",
+    },
+    { type: "create", holder: other, label: "糸", basis: "私物" },
+    { type: "create", holder: actor, label: "木槌", basis: longBasis },
+  ]);
+  const learned = await apply(2, [
+    { type: "learn", person: target, text: "熱を避けられる", basis: "訓練" },
+    { type: "learn", person: target, text: longText, basis: longBasis },
+  ]);
+  const [expired, active] = learned.changes.nodes;
+  await apply(3, [{ type: "remove", id: expired!.id }]);
+  const groundState = randomUUID();
+  const groundItem = randomUUID();
+  await store.commit(
+    await store.claim(worldId, randomUUID()),
+    store.context(worldId),
+    {
+      commitId: randomUUID(),
+      at: 3,
+      changes: {
+        nodes: [
+          { id: groundState, kind: "script", text: "工房に工具がある" },
+          { id: groundItem, kind: "existence", text: "鉄棒" },
+        ],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "content",
+            text: "ground",
+            source: place,
+            target: groundState,
+            period: { from: 3 },
+          },
+          {
+            id: randomUUID(),
+            kind: "status",
+            role: "about",
+            text: "ground-item",
+            source: groundState,
+            target: groundItem,
+            period: { from: 3 },
+          },
+        ],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  const context = store.context(worldId);
+  const facts = await readJudgmentScope(
+    context,
+    [actor, target],
+    [place],
+    [actor],
+  );
+  expect(facts.get(actor)).toMatchObject({
+    items: [{ label: "木槌" }],
+    storages: [{ id: storage, items: [{ label: "古い部品", count: 3 }] }],
+  });
+  expect(facts.get(target)).toMatchObject({
+    skills: [{ id: active!.id, text: longText, basis: longBasis }],
+    storages: [],
+  });
+  expect(facts.get(place)?.items).toMatchObject([
+    { id: groundItem, label: "鉄棒", ground: true },
+  ]);
+  const preview = await readJudgmentScope(
+    context,
+    [actor, target],
+    [place],
+    [actor],
+    [],
+    true,
+  );
+  const skill = preview.get(target)!.skills[0]!;
+  expect(skill).toMatchObject({
+    judgmentNodeId: active!.id,
+    judgmentTruncated: true,
+    text: "水".repeat(399),
+  });
+  expect(skill.basis?.startsWith('"引用", \\記録\n')).toBe(true);
+  expect(skill.basis).not.toContain("最後の根拠");
+  const [nodes, edges, holding] = await Promise.all([
+    context.nodes([skill.judgmentNodeId!]),
+    context.edges([skill.judgmentEdgeId!]),
+    context.holding(facts.get(actor)!.items[0]!.id, false, true),
+  ]);
+  expect(nodes.get(skill.judgmentNodeId!)?.text).toBe(longText);
+  expect(edges.get(skill.judgmentEdgeId!)?.text).toBe(longBasis);
+  expect(holding).toMatchObject({ judgmentTruncated: true });
+  expect(holding?.text).not.toContain("最後の根拠");
+  await apply(4, [
+    {
+      type: "update",
+      id: active!.id,
+      text: "深い水を避けられる",
+      basis: "訓練",
+    },
+  ]);
+  await expect(context.validate()).rejects.toThrow(
+    "保存済みの文脈が変わりました",
+  );
+});
+
+test("旧記録にも抜粋を保存し、本文が変わったら古い処理結果を受け付けない", async () => {
+  const { worldId, ids, apply, read } = await world("作り手");
+  const [actor] = ids as [string];
+  const text = "😀".repeat(400),
+    basis = "試".repeat(400),
+    short = '"'.repeat(399);
+  await apply(1, [
+    { type: "learn", person: actor, text, basis: "教本" },
+    { type: "create", holder: actor, label: short, basis },
+  ]);
+  const rows = await read(actor);
+  const skill = rows.skills[0]!.id,
+    item = rows.items[0]!.id;
+  // 旧記録には抜粋用の属性がなかった。実際の起点と関係を使って埋め直す。
+  await databases.graph.executeQuery(
+    `MATCH (s:WorldNode {worldId:$worldId,id:$skill}),
+      ()-[r:has]->(:WorldNode {worldId:$worldId,id:$item})
+     WHERE r.role IS NULL
+     REMOVE s.judgmentLong,s.judgmentSourceHash,s.judgmentAvailableAt,
+       r.judgmentLong,r.judgmentSourceHash,r.judgmentAvailableAt`,
+    { worldId, skill, item },
+  );
+  const jobs = await store.judgmentExcerptJobs(8, worldId);
+  expect(jobs).toHaveLength(2);
+  const skillJob = jobs.find((job) => job.id === skill)!;
+  const holdingJob = jobs.find((job) => job.kind === "has")!;
+  expect(skillJob.text).toBe(text);
+  expect(holdingJob.text).toBe(basis);
+  expect(await store.judgmentExcerptJobs(8, worldId)).toEqual([]);
+  expect(await store.finishJudgmentExcerpt(holdingJob, "取得条件の抜粋")).toBe(
+    true,
+  );
+  const previews = await store.context(worldId).nodes([item, skill], true);
+  expect(previews.get(item)).toMatchObject({ text: short });
+  expect(previews.get(skill)).toMatchObject({ judgmentExcerptPending: true });
+  expect(await store.context(worldId).holding(item, false, true)).toMatchObject(
+    {
+      text: "取得条件の抜粋",
+    },
+  );
+  expect((await store.context(worldId).holding(item))?.text).toBe(basis);
+
+  const revised = text + "改訂";
+  await apply(2, [
+    { type: "update", id: skill, text: revised, basis: "再確認" },
+  ]);
+  expect(await store.finishJudgmentExcerpt(skillJob, "古い抜粋")).toBe(false);
+  const [newJob] = await store.judgmentExcerptJobs(8, worldId);
+  expect(newJob).toMatchObject({ id: skill, text: revised });
+  expect(await store.finishJudgmentExcerpt(newJob!, null)).toBe(true);
+  expect(await store.judgmentExcerptJobs(8, worldId)).toEqual([]);
+  expect(
+    (await store.context(worldId).nodes([skill], true)).get(skill),
+  ).toMatchObject({
+    judgmentExcerptPending: true,
+  });
 });
 
 test("旧版が役割holdで記録した関係を、起動時に役割なしのhasへ書き換える", async () => {

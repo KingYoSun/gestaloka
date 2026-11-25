@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { int, type Driver, type ManagedTransaction } from "neo4j-driver";
 import { z } from "zod";
@@ -153,6 +153,90 @@ const edgeById = `CALL () { ${RelationKind.options
       `MATCH ()-[r:${kind} {worldId: $worldId, id: $id}]->() RETURN r.data AS data`,
   )
   .join(" UNION ALL ")} } RETURN data`;
+const edgesById = `UNWIND $ids AS id CALL (id) { ${RelationKind.options
+  .map(
+    (kind) =>
+      `MATCH ()-[r:${kind} {worldId:$worldId,id:id}]->() RETURN r.data AS data`,
+  )
+  .join(" UNION ALL ")} } RETURN data`;
+const judgmentTextKey = '"text":"';
+const excerptKinds = ["node", "has"] as const;
+type ExcerptKind = (typeof excerptKinds)[number];
+export type JudgmentExcerptJob = {
+  kind: ExcerptKind;
+  worldId: string;
+  id: string;
+  text: string;
+  claim: string;
+  sourceHash: string;
+};
+const excerptPatterns = {
+  node: {
+    match: "(v:WorldNode)",
+    identity: "v:WorldNode(worldId,id)",
+    ready: "v:WorldNode(judgmentAvailableAt)",
+  },
+  has: {
+    match: "()-[v:has]->()",
+    identity: "v:has(worldId,id)",
+    ready: "v:has(judgmentAvailableAt)",
+  },
+} as const;
+const excerptHash = (text: string) =>
+  createHash("sha256").update(text).digest("hex");
+function excerptProperties(text: string | undefined) {
+  const characters = (text ?? "")[Symbol.iterator]();
+  for (let count = 0; count < 400; count++)
+    if (characters.next().done)
+      return { long: false, hash: null, available: null };
+  return { long: true, hash: excerptHash(text!), available: Date.now() };
+}
+// 正本のJSONから本文の外側を保ち、準備済みの抜粋か、保護扱いの短い候補を返す。
+const judgmentProjection = `WITH id,data,excerptLong,excerpt,split(data,$textKey) AS fields
+  WITH id,data,excerptLong,excerpt,head(fields) AS prefix,
+       CASE WHEN size(fields)>1 THEN substring(data,size(head(fields))+size($textKey)) ELSE '' END AS rest
+  WITH id,data,excerptLong,excerpt,prefix,rest,head(split(rest,'","')) AS first
+  WITH id,data,excerptLong,excerpt,prefix,rest,
+       CASE WHEN first=rest THEN left(first,CASE WHEN size(first)>2 THEN size(first)-2 ELSE 0 END) ELSE first END AS text
+  WITH id,data,excerpt,prefix,rest,text,coalesce(excerptLong,size(text)>=400) AS long
+  RETURN id,
+    CASE WHEN long THEN null ELSE data END AS data,
+    CASE WHEN long THEN prefix END AS prefix,
+    CASE WHEN long AND excerpt IS NULL THEN left(text,400) END AS preview,
+    CASE WHEN long THEN excerpt END AS excerpt,
+    CASE WHEN long THEN substring(rest,size(text)) END AS suffix,
+    size(text) AS textLength`;
+
+export type JudgmentPreview<T> = T & {
+  judgmentTruncated?: true;
+  judgmentTextLength?: number;
+  judgmentExcerptPending?: true;
+};
+function parseJudgmentRecord<T extends object>(
+  row: { get(key: string): unknown },
+  schema: { parse(value: unknown): T },
+): JudgmentPreview<T> {
+  const data = row.get("data");
+  if (typeof data === "string") return schema.parse(JSON.parse(data));
+  const excerpt = row.get("excerpt");
+  const ready = typeof excerpt === "string";
+  // JSONのエスケープ文字列の途中で切れたときは、最後の完結した文字まで戻す。
+  const complete = ready
+    ? JSON.stringify(excerpt).slice(1, -1)
+    : /^(?:[^"\\]|\\(?:["\\/bfnrt]|u[\da-f]{4}))*/iu.exec(
+        row.get("preview") as string,
+      )![0];
+  return {
+    ...schema.parse(
+      JSON.parse(
+        `${row.get("prefix")}${judgmentTextKey}${complete}${row.get("suffix")}`,
+      ),
+    ),
+    judgmentTruncated: true,
+    judgmentTextLength: Number(row.get("textLength")),
+    ...(!ready ? { judgmentExcerptPending: true as const } : {}),
+  };
+}
 const relationKey = (id: string, kind: RelationKind, direction: Direction) =>
   `relations:${id}:${kind}:${direction}`;
 const edgeKeys = (edge: WorldEdge) => [
@@ -500,6 +584,132 @@ export class WorldContext {
     }
   }
 
+  async #readMany<T>(
+    keys: readonly string[],
+    query: (tx: ManagedTransaction) => Promise<T>,
+  ) {
+    const session = this.driver.session();
+    try {
+      return await session.executeRead(async (tx) => {
+        const { records } = await tx.run(
+          `UNWIND $keys AS key
+           OPTIONAL MATCH (g:WorldGuard {worldId:$worldId,key:key})
+           RETURN key,coalesce(g.version,0) AS version`,
+          { worldId: this.worldId, keys },
+        );
+        const data = await query(tx);
+        this.dependOn(
+          records.map((row) => ({
+            key: row.get("key") as string,
+            version: Number(row.get("version")),
+          })),
+        );
+        return data;
+      });
+    } finally {
+      await session.close();
+    }
+  }
+
+  async nodes(ids: Iterable<string>, preview = false) {
+    const wanted = new Set(ids);
+    if (!wanted.size) return new Map<string, JudgmentPreview<WorldNode>>();
+    const stored = await this.#readMany(
+      [...wanted].map(nodeKey),
+      async (tx) => {
+        const { records } = await tx.run(
+          `UNWIND $ids AS id MATCH (n:WorldNode {worldId:$worldId,id:id})
+           WITH id,n.data AS data ${preview ? ",n.judgmentLong AS excerptLong,n.judgmentExcerpt AS excerpt " + judgmentProjection : "RETURN data"}`,
+          { worldId: this.worldId, ids: [...wanted], textKey: judgmentTextKey },
+        );
+        return new Map<string, JudgmentPreview<WorldNode>>(
+          records.map((row) => {
+            const node = parseJudgmentRecord(row, WorldNode);
+            return [node.id, node];
+          }),
+        );
+      },
+    );
+    for (const draft of this.drafts)
+      for (const node of draft.changes.nodes)
+        if (wanted.has(node.id) && !stored.has(node.id))
+          stored.set(node.id, node);
+    return stored;
+  }
+
+  async edges(ids: Iterable<string>) {
+    const wanted = new Set(ids);
+    if (!wanted.size) return new Map<string, WorldEdge>();
+    const stored = await this.#readMany(
+      [...wanted].map(edgeKey),
+      async (tx) => {
+        const { records } = await tx.run(edgesById, {
+          worldId: this.worldId,
+          ids: [...wanted],
+        });
+        return new Map<string, WorldEdge>(
+          records.map((row) => {
+            const edge = WorldEdge.parse(JSON.parse(row.get("data")));
+            return [edge.id, edge];
+          }),
+        );
+      },
+    );
+    for (const draft of this.drafts)
+      for (const edge of draft.changes.edges)
+        if (wanted.has(edge.id) && !stored.has(edge.id))
+          stored.set(edge.id, edge);
+    return stored;
+  }
+
+  async outgoingRelations(
+    ids: Iterable<string>,
+    kind: RelationKind,
+    at: number,
+    through: number = at,
+    preview = false,
+  ) {
+    const bySubject = new Map<string, JudgmentPreview<WorldEdge>[]>(
+      [...ids].map((id) => [id, []]),
+    );
+    if (!bySubject.size) return bySubject;
+    RelationKind.parse(kind);
+    const subjects = [...bySubject.keys()];
+    const accepts = (edge: WorldEdge) =>
+      edge.period.from <= through &&
+      (edge.period.until === undefined || at < edge.period.until);
+    await this.#readMany(
+      subjects.map((id) => relationKey(id, kind, "out")),
+      async (tx) => {
+        const { records } = await tx.run(
+          `UNWIND $subjects AS id MATCH (n:WorldNode {worldId:$worldId,id:id})
+           MATCH (n)-[r:${kind}]->() WHERE r.worldId=$worldId AND r.validFrom<=$through
+           AND (r.validTo IS NULL OR $at<r.validTo)
+           WITH id,r.data AS data ${preview && kind === "has" ? ",r.judgmentLong AS excerptLong,r.judgmentExcerpt AS excerpt " + judgmentProjection : "RETURN id,data"}`,
+          {
+            worldId: this.worldId,
+            subjects,
+            at,
+            through,
+            textKey: judgmentTextKey,
+          },
+        );
+        for (const row of records)
+          bySubject
+            .get(row.get("id"))!
+            .push(parseJudgmentRecord(row, WorldEdge));
+      },
+    );
+    for (const [id, edges] of bySubject)
+      bySubject.set(
+        id,
+        this.#merge(edges, id, kind, "out", accepts, (a, b) =>
+          a.id.localeCompare(b.id),
+        ),
+      );
+    return bySubject;
+  }
+
   async node(id: string, at?: number): Promise<WorldNode | undefined> {
     z.uuid().parse(id);
     if (at !== undefined) z.number().int().nonnegative().safe().parse(at);
@@ -831,16 +1041,17 @@ export class WorldContext {
     ).filter((e) => e.text === text);
   }
   // 物品を現在持つ関係。firstを渡すと、終了した関係も含めた最初の1件（成立時）を返す。
-  async holding(id: string, first = false) {
+  async holding(id: string, first = false, preview = false) {
     return this.#read(relationKey(id, "has", "in"), async (tx) => {
       const { records } = await tx.run(
         `MATCH ()-[h:has]->(:WorldNode {worldId:$world,id:$id})
          WHERE h.role IS NULL AND ($first OR h.validTo IS NULL)
-         RETURN h.data AS data ORDER BY h.validFrom,h.validTo LIMIT 1`,
-        { world: this.worldId, id, first },
+         WITH $id AS id,h.data AS data,h.judgmentLong AS excerptLong,h.judgmentExcerpt AS excerpt ORDER BY h.validFrom,h.validTo LIMIT 1
+         ${preview ? judgmentProjection : "RETURN data"}`,
+        { world: this.worldId, id, first, textKey: judgmentTextKey },
       );
       return records[0]
-        ? WorldEdge.parse(JSON.parse(records[0].get("data")))
+        ? parseJudgmentRecord(records[0], WorldEdge)
         : undefined;
     });
   }
@@ -1357,6 +1568,14 @@ export class WorldStore {
       "CREATE INDEX WorldEdge_has_role IF NOT EXISTS FOR ()-[r:has]-() ON (r.role)",
     );
     await this.driver.executeQuery(
+      "CREATE CONSTRAINT WorldJudgmentExcerptCursor_identity IF NOT EXISTS FOR (n:WorldJudgmentExcerptCursor) REQUIRE n.kind IS UNIQUE",
+    );
+    for (const index of [
+      "FOR (n:WorldNode) ON (n.judgmentAvailableAt)",
+      "FOR ()-[r:has]-() ON (r.judgmentAvailableAt)",
+    ])
+      await this.driver.executeQuery("CREATE INDEX IF NOT EXISTS " + index);
+    await this.driver.executeQuery(
       "CREATE INDEX WorldEdge_status_sp_subject IF NOT EXISTS FOR ()-[r:status]-() ON (r.worldId,r.spSubject,r.validTo)",
     );
     for (const subject of Object.values(restrictionSubject)) {
@@ -1370,6 +1589,154 @@ export class WorldStore {
     await this.driver.executeQuery(
       `MATCH ()-[r:has {role:'hold'}]->() SET r.role = null, r.data = replace(r.data, ',"role":"hold"', '')`,
     );
+  }
+
+  // 旧記録は順序つきID索引から一定件数ずつ進め、同じ更新で位置と登録結果を保存する。
+  async #backfillJudgmentExcerpts(
+    tx: ManagedTransaction,
+    kind: ExcerptKind,
+    scope?: string,
+  ) {
+    const key = scope ? `${kind}:${scope}` : kind;
+    const cursor = (
+      await tx.run(
+        `MERGE (cursor:WorldJudgmentExcerptCursor {kind:$key})
+         ON CREATE SET cursor.lastWorldId=$scope,cursor.id='',cursor.done=false
+         SET cursor.lock=true REMOVE cursor.lock
+         RETURN cursor.lastWorldId AS worldId,cursor.id AS id,cursor.done AS done`,
+        { key, scope: scope ?? "" },
+      )
+    ).records[0]!;
+    if (cursor.get("done")) return;
+    const { match, identity } = excerptPatterns[kind];
+    const worldId: string = cursor.get("worldId");
+    const id: string = cursor.get("id");
+    const eligible =
+      kind === "node"
+        ? "v.kind IN ['script','existence'] AND NOT EXISTS { MATCH ()-[:has {role:'summary'}]->(v) }"
+        : "(v.role IS NULL OR v.role='skill')";
+    const page = async (same: boolean, limit: number) =>
+      (
+        await tx.run(
+          `MATCH ${match} USING INDEX ${identity}
+         WHERE ${same ? "v.worldId=$worldId AND v.id>$id" : "v.worldId>$worldId AND v.id IS NOT NULL"}
+         WITH v ORDER BY v.worldId,v.id LIMIT $limit
+         RETURN v.worldId AS worldId,v.id AS id,
+           CASE WHEN v.judgmentLong IS NULL AND ${eligible} THEN v.data END AS data`,
+          { worldId, id, limit: int(limit) },
+        )
+      ).records;
+    const limit = 64;
+    const rows = worldId ? await page(true, limit) : [];
+    if (!scope && rows.length < limit)
+      rows.push(...(await page(false, limit - rows.length)));
+    const entries = rows.flatMap((row) => {
+      const data = row.get("data") as string | null;
+      if (!data) return [];
+      const text = JSON.parse(data).text as string | undefined;
+      return [
+        {
+          worldId: row.get("worldId"),
+          id: row.get("id"),
+          data,
+          ...excerptProperties(text),
+        },
+      ];
+    });
+    if (entries.length)
+      await tx.run(
+        `UNWIND $entries AS entry
+         MATCH ${match} USING INDEX ${identity}
+         WHERE v.worldId=entry.worldId AND v.id=entry.id AND v.judgmentLong IS NULL
+         SET v.judgmentLock=true REMOVE v.judgmentLock
+         WITH v,entry WHERE v.judgmentLong IS NULL AND v.data=entry.data
+         SET v.judgmentLong=entry.long,v.judgmentSourceHash=entry.hash,v.judgmentAvailableAt=entry.available`,
+        { entries },
+      );
+    const last = rows.at(-1);
+    await tx.run(
+      `MATCH (cursor:WorldJudgmentExcerptCursor {kind:$key})
+       SET cursor.lastWorldId=$worldId,cursor.id=$id,cursor.done=$done`,
+      {
+        key,
+        worldId: last?.get("worldId") ?? worldId,
+        id: last?.get("id") ?? id,
+        done: rows.length < limit,
+      },
+    );
+  }
+
+  async judgmentExcerptJobs(
+    limit: number,
+    worldId?: string,
+  ): Promise<JudgmentExcerptJob[]> {
+    z.number().int().min(1).max(64).parse(limit);
+    if (worldId) z.uuid().parse(worldId);
+    const session = this.driver.session();
+    try {
+      return await session.executeWrite(async (tx) => {
+        const claim = randomUUID();
+        const jobs: JudgmentExcerptJob[] = [];
+        for (const kind of excerptKinds) {
+          await this.#backfillJudgmentExcerpts(tx, kind, worldId);
+          const now = Date.now();
+          const { match, ready } = excerptPatterns[kind];
+          const { records } = await tx.run(
+            `MATCH ${match} USING INDEX ${ready}
+             WHERE v.judgmentAvailableAt<=$now AND ($worldId IS NULL OR v.worldId=$worldId)
+             WITH v ORDER BY v.judgmentAvailableAt LIMIT $limit
+             SET v.judgmentLock=true REMOVE v.judgmentLock
+             WITH v WHERE v.judgmentAvailableAt<=$now
+             SET v.judgmentAvailableAt=$until,v.judgmentClaim=$claim
+             RETURN v.worldId AS worldId,v.id AS id,v.data AS data,v.judgmentSourceHash AS sourceHash`,
+            {
+              now,
+              until: now + 5 * 60 * 1000,
+              worldId: worldId ?? null,
+              claim,
+              limit: int(
+                kind === "node" ? Math.ceil(limit / 2) : limit - jobs.length,
+              ),
+            },
+          );
+          for (const row of records)
+            jobs.push({
+              kind,
+              worldId: row.get("worldId"),
+              id: row.get("id"),
+              text: JSON.parse(row.get("data")).text,
+              claim,
+              sourceHash: row.get("sourceHash"),
+            });
+        }
+        return jobs;
+      });
+    } finally {
+      await session.close();
+    }
+  }
+
+  async finishJudgmentExcerpt(
+    job: JudgmentExcerptJob,
+    excerpt: string | null,
+  ): Promise<boolean> {
+    const { match, identity } = excerptPatterns[job.kind];
+    const result = await this.driver.executeQuery(
+      `MATCH ${match} USING INDEX ${identity}
+       WHERE v.worldId=$worldId AND v.id=$id AND v.judgmentClaim=$claim
+       SET v.judgmentLock=true REMOVE v.judgmentLock
+       WITH v WHERE v.judgmentClaim=$claim AND v.judgmentSourceHash=$sourceHash
+       SET v.judgmentExcerpt=$excerpt REMOVE v.judgmentClaim,v.judgmentAvailableAt
+       RETURN v.id AS id`,
+      {
+        worldId: job.worldId,
+        id: job.id,
+        claim: job.claim,
+        sourceHash: job.sourceHash,
+        excerpt: excerpt?.trim() || null,
+      },
+    );
+    return result.records.length > 0;
   }
 
   context(worldId: string, dependencies: readonly Dependency[] = []) {
@@ -2139,9 +2506,10 @@ export class WorldStore {
             inventorySettings.enabled && !parsed.management,
           ));
         const fixedPlaces = new Set(parsed.newFixedPlaces);
-        const createNode = (node: WorldNode) =>
+        const createNode = (node: WorldNode, summary = false) =>
           tx.run(
-            "CREATE (n:WorldNode {worldId: $worldId, id: $id, kind: $kind, data: $data, knownFrom: $at, recordedAt: datetime()}) SET n.fixedPlace=$fixed",
+            `CREATE (n:WorldNode {worldId: $worldId, id: $id, kind: $kind, data: $data, knownFrom: $at, recordedAt: datetime()})
+             SET n.fixedPlace=$fixed,n.judgmentLong=$long,n.judgmentSourceHash=$hash,n.judgmentAvailableAt=$available`,
             {
               worldId,
               id: node.id,
@@ -2152,12 +2520,16 @@ export class WorldStore {
                   : null,
               data: JSON.stringify(node),
               at,
+              ...excerptProperties(
+                !summary && node.kind !== "event" ? node.text : undefined,
+              ),
             },
           );
         const reviseNode = async (
           prior: { node: WorldNode; knownFrom: number },
           node: WorldNode,
           at: number,
+          summary = false,
         ) => {
           await tx.run(
             "CREATE (:WorldRevision {worldId: $worldId, nodeId: $id, version: $version, data: $data, knownFrom: $from, knownUntil: $at, recordedAt: datetime()})",
@@ -2171,15 +2543,28 @@ export class WorldStore {
             },
           );
           await tx.run(
-            "MATCH (n:WorldNode {worldId: $worldId, id: $id}) SET n.data = $data, n.knownFrom = $at",
-            { worldId, id: node.id, data: JSON.stringify(node), at },
+            `MATCH (n:WorldNode {worldId: $worldId, id: $id})
+             SET n.data=$data,n.knownFrom=$at
+             FOREACH (_ IN CASE WHEN $textChanged OR n.judgmentLong IS NULL THEN [1] ELSE [] END |
+               SET n.judgmentLong=$long,n.judgmentSourceHash=$hash,n.judgmentAvailableAt=$available
+               REMOVE n.judgmentExcerpt,n.judgmentClaim)`,
+            {
+              worldId,
+              id: node.id,
+              data: JSON.stringify(node),
+              at,
+              textChanged: prior.node.text !== node.text,
+              ...excerptProperties(
+                !summary && node.kind !== "event" ? node.text : undefined,
+              ),
+            },
           );
         };
         const createEdge = (edge: WorldEdge) =>
           tx.run(
             `MATCH (s:WorldNode {worldId: $worldId, id: $source}), (t:WorldNode {worldId: $worldId, id: $target})
             CREATE (s)-[r:${edge.kind} {worldId: $worldId, id: $id, data: $data, validFrom: $from}]->(t)
-            SET r.validTo = $until, r.role = $role${isSpUseProhibition(edge) ? ", r.spSubject = $source, t.spUseProhibition = true" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $restrictionUntil" + edge.commandRestrictions.map((command) => `, r.${restrictionSubject[command]} = $source`).join("") : ""}`,
+            SET r.validTo = $until, r.role = $role${edge.kind === "has" ? ", r.judgmentLong=$long,r.judgmentSourceHash=$hash,r.judgmentAvailableAt=$available" : ""}${isSpUseProhibition(edge) ? ", r.spSubject = $source, t.spUseProhibition = true" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $restrictionUntil" + edge.commandRestrictions.map((command) => `, r.${restrictionSubject[command]} = $source`).join("") : ""}`,
             {
               worldId,
               source: edge.source,
@@ -2190,6 +2575,11 @@ export class WorldStore {
               until: edge.period.until ?? null,
               restrictionUntil: edge.period.until ?? Number.MAX_SAFE_INTEGER,
               role: edge.role ?? null,
+              ...excerptProperties(
+                edge.kind === "has" && (!edge.role || edge.role === "skill")
+                  ? edge.text
+                  : undefined,
+              ),
             },
           );
         for (const node of changes.nodes) await createNode(node);
@@ -2325,7 +2715,7 @@ export class WorldStore {
           );
           const row = stored.records[0];
           if (!row) {
-            await createNode(node);
+            await createNode(node, true);
             await createEdge(edge);
             derived.nodes.push(node);
             derived.edges.push(edge);
@@ -2336,7 +2726,12 @@ export class WorldStore {
             };
             if (prior.node.text !== node.text) {
               // 要約は最新の確定状態を表す。以前より前の時点の確定でも記録時点は戻さない。
-              await reviseNode(prior, node, Math.max(at, prior.knownFrom));
+              await reviseNode(
+                prior,
+                node,
+                Math.max(at, prior.knownFrom),
+                true,
+              );
               derived.revisions.push(node);
             }
           }

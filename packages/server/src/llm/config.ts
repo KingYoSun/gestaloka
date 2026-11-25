@@ -321,6 +321,11 @@ export function decisionSettings(env: NodeJS.ProcessEnv) {
           .gt(0)
           .lt(1)
           .parse(env.LLM_DECISION_REPEAT_THRESHOLD ?? 0.8),
+        materialThreshold: z.coerce
+          .number()
+          .gt(0)
+          .lt(1)
+          .parse(env.LLM_DECISION_MATERIAL_THRESHOLD ?? 0.55),
       }
     : undefined;
 }

@@ -42,3 +42,4 @@ export { RuntimeExecutions } from "./runtime/executions.js";
 
 export { RuntimeMonitor } from "./runtime/monitor.js";
 export { InspectionWorker } from "./inspection/worker.js";
+export { JudgmentExcerptWorker } from "./runtime/judgment-excerpt-worker.js";

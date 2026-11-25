@@ -25,6 +25,8 @@ import {
 import { WorldAccess } from "@gestaloka/server/access";
 import { LlmClient } from "@gestaloka/server/llm";
 import { decisionSettings } from "../../packages/server/src/llm/config.js";
+import { prepareDicePrompt } from "../../packages/server/src/llm/dice-prompt.js";
+import { buildJudgmentExcerpts } from "../../packages/server/src/llm/judgment-excerpts.js";
 import { readPlayUsage } from "../../packages/server/src/runtime/play-usage.js";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
 import { derivedId, WorldContext } from "@gestaloka/server/world";
@@ -7635,6 +7637,21 @@ test("型付きの対人対抗は関係IDで状態を置き換え、期限と出
   mark(prior, target, "足を踏み出している。");
   mark(prior, target, "帽子をかぶっている。");
   const [replaced, kept] = prior.edges;
+  mark(prior, f.actors[attacker]!, "利き手の傷を保護している。");
+  await f.apply([
+    {
+      type: "learn",
+      person: f.actors[attacker],
+      text: "握りを保つ技能",
+      basis: "稽古で習得",
+    },
+    {
+      type: "learn",
+      person: target,
+      text: "立った姿勢を保つ技能",
+      basis: "稽古で習得",
+    },
+  ]);
   const context = () => f.store.context(f.graph);
   await f.store.commit(await f.store.claim(f.graph, randomUUID()), context(), {
     commitId: randomUUID(),
@@ -7644,12 +7661,37 @@ test("型付きの対人対抗は関係IDで状態を置き換え、期限と出
   const states = [{ id: target, text: "足を止めている。", minutes: 5 }];
   f.calls.mockImplementation(async (id, role, messages) => {
     expect(role).toBe("world-opposition-dice");
-    const material = JSON.parse(String(messages[1]!.content)).materials[0];
+    const materials = JSON.parse(String(messages[1]!.content)).materials;
+    const material = materials.find(
+      ({ node }: { node: { id: string } }) => node.id === target,
+    );
     expect(material).toMatchObject({
       states: expect.arrayContaining([
         expect.objectContaining({ relationId: replaced!.id }),
       ]),
+      belongings: {
+        skills: expect.arrayContaining([
+          expect.objectContaining({ text: "立った姿勢を保つ技能" }),
+        ]),
+      },
     });
+    expect(materials).toContainEqual(
+      expect.objectContaining({
+        node: expect.objectContaining({ id: f.actors[attacker] }),
+        states: expect.arrayContaining([
+          expect.objectContaining({
+            node: expect.objectContaining({
+              text: "利き手の傷を保護している。",
+            }),
+          }),
+        ]),
+        belongings: expect.objectContaining({
+          skills: expect.arrayContaining([
+            expect.objectContaining({ text: "握りを保つ技能" }),
+          ]),
+        }),
+      }),
+    );
     return answer(id, { ...sure, states, endEdges: [replaced!.id] });
   });
   const command = PlayerPlayCommand.parse({
@@ -7689,6 +7731,248 @@ test("型付きの対人対抗は関係IDで状態を置き換え、期限と出
   ).not.toContainEqual(expect.objectContaining({ id: received.id }));
   await send();
   expect((await f.status(attacker)).dailySp.remaining).toBe(99);
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
+test("生成の必須資料が超過した案は抽選せず、独立した案を判定する", async () => {
+  const f = await fixture(1);
+  const actor = f.actors[0]!;
+  await f.apply([
+    {
+      type: "learn",
+      person: actor,
+      text: "古い術の条件と効果。".repeat(900),
+      basis: "修練で習得",
+    },
+  ]);
+  const { skills } = await readBelongings(f.store.context(f.graph), actor);
+  const [job] = await f.store.judgmentExcerptJobs(1, f.graph);
+  expect(job?.id).toBe(skills[0]!.id);
+  expect(
+    await f.store.finishJudgmentExcerpt(job!, "古い術の条件と効果。"),
+  ).toBe(true);
+  vi.spyOn(runtime.agent.model, "decide").mockImplementation(
+    async (_id, role, _state, questions) => {
+      expect(role).toBe("world-judgment-materials");
+      return Object.fromEntries(
+        Object.keys(questions).map((key) => [key, 0.1]),
+      );
+    },
+  );
+  f.calls.mockImplementation(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    const input = JSON.parse(messages[1]!.content);
+    expect(input.proposals).toMatchObject([{ text: "紙札を作る" }]);
+    expect(
+      input.nodes.find((row: { node: { id: string } }) => row.node.id === actor)
+        .belongings.skills,
+    ).toEqual([]);
+    return answer(id, { settings: [sure] });
+  });
+  const result = await f.send(0, {
+    command: "apply",
+    expectedSp: 2,
+    dependencies: [],
+    action: {
+      type: "generate",
+      plans: [
+        {
+          text: "術を発展させる",
+          operation: {
+            type: "learn",
+            person: actor,
+            text: "発展した術",
+            basis: "修練の応用",
+            consumeSkillIds: [skills[0]!.id],
+          },
+        },
+        {
+          text: "紙札を作る",
+          operation: {
+            type: "create",
+            holder: actor,
+            label: "紙札",
+            basis: "手製",
+          },
+        },
+      ],
+    },
+  });
+  expect(result).toMatchObject({
+    spentSp: 1,
+    outcome: {
+      proposals: [
+        { reason: "JUDGMENT_MATERIAL_LIMIT", success: false },
+        { success: true },
+      ],
+    },
+  });
+  expect(
+    (result.outcome as { proposals: unknown[] }).proposals[0],
+  ).not.toHaveProperty("roll");
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
+test("生成は保存済みの抜粋で選別してから原文と習得経緯を読み、圧縮して抽選する", async () => {
+  const f = await fixture(1);
+  const actor = f.actors[0]!;
+  const itemClause = "仕入時に水で強度が落ちないと確認した。";
+  const itemBasis = itemClause + "仕入帳の日付を控えた。".repeat(135);
+  const skillStart = "布の継ぎ目の強度をそろえられる。";
+  const condition = "特殊な縁処理で糸の間隔を変えられる。";
+  const exception = "ただし濡れた布にはこの縁処理を使えない。";
+  const skillText =
+    skillStart +
+    "端の反りと糸の張りを見て調整する。".repeat(70) +
+    condition +
+    "折り返しを均等にして縫い合わせる。".repeat(70) +
+    exception;
+  const training = "継ぎ目の強さを比べながら縁処理を練習した。";
+  const skillBasis = "稽古の日付と使った机を控えた。".repeat(45) + training;
+  const seed = await f.apply([
+    ...Array.from({ length: 9 }, (_, index) => ({
+      type: "create",
+      holder: actor,
+      label: `巻き布${index + 1}`,
+      basis: itemBasis,
+    })),
+    { type: "learn", person: actor, text: skillText, basis: skillBasis },
+  ]);
+  const materials = seed.changes.nodes.flatMap((node) =>
+    node.kind === "existence" ? [{ id: node.id }] : [],
+  );
+  const skillId = seed.changes.nodes.find(
+    (node) => node.text === skillText,
+  )!.id;
+  const skillBasisId = seed.changes.edges.find(
+    (edge) => edge.role === "skill" && edge.target === skillId,
+  )!.id;
+  // 抜粋の導入前に保存された技能と習得経緯を再現する。
+  await isolated.databases.graph.executeQuery(
+    `MATCH ()-[e:has {worldId:$worldId,id:$edgeId}]->(n:WorldNode {worldId:$worldId,id:$skillId})
+     REMOVE n.judgmentLong,n.judgmentSourceHash,n.judgmentAvailableAt,
+            e.judgmentLong,e.judgmentSourceHash,e.judgmentAvailableAt`,
+    { worldId: f.graph, edgeId: skillBasisId, skillId },
+  );
+  const clauses = [itemClause, skillStart, condition, exception, training];
+  const jobs = await f.store.judgmentExcerptJobs(32, f.graph);
+  expect(jobs).toHaveLength(11);
+  let quoted = false;
+  const excerpts = await buildJudgmentExcerpts(
+    jobs.map(({ text }) => text),
+    async (_state, questions) =>
+      Object.fromEntries(
+        Object.entries(questions).map(([key, question]) => {
+          const relevant = clauses.some((clause) =>
+            question.instructions.includes(JSON.stringify(clause)),
+          );
+          quoted ||= relevant;
+          return [key, relevant ? 1 : 0];
+        }),
+      ),
+  );
+  expect(quoted).toBe(true);
+  expect(excerpts.get(skillText)).toContain(condition);
+  expect(excerpts.get(skillText)).toContain(exception);
+  for (const job of jobs)
+    expect(
+      await f.store.finishJudgmentExcerpt(job, excerpts.get(job.text)!),
+    ).toBe(true);
+  const skillReads: boolean[] = [];
+  const readNodes = WorldContext.prototype.nodes;
+  vi.spyOn(WorldContext.prototype, "nodes").mockImplementation(function (
+    this: WorldContext,
+    ids,
+    preview,
+  ) {
+    const requested = [...ids];
+    if (requested.includes(skillId)) skillReads.push(preview ?? false);
+    return readNodes.call(this, requested, preview);
+  });
+  const decide = vi.spyOn(runtime.agent.model, "decide");
+  let sawSkillPreview = false;
+  let sawTail = false;
+  let sawBasis = false;
+  const readEdges = WorldContext.prototype.edges;
+  const hydratedEdges = new Set<string>();
+  vi.spyOn(WorldContext.prototype, "edges").mockImplementation(function (
+    this: WorldContext,
+    ids,
+  ) {
+    const requested = [...ids];
+    for (const id of requested) hydratedEdges.add(id);
+    return readEdges.call(this, requested);
+  });
+  decide.mockImplementation(async (_id, role, state, questions) => {
+    expect(role).toBe("world-judgment-materials");
+    expect(skillReads).toContain(true);
+    expect(skillReads).not.toContain(false);
+    expect(hydratedEdges.has(skillBasisId)).toBe(false);
+    const preview = JSON.stringify(state);
+    sawSkillPreview ||= preview.includes(skillStart);
+    sawTail ||= preview.includes(condition) && preview.includes(exception);
+    sawBasis ||= preview.includes(training);
+    expect(preview).not.toContain(skillText);
+    expect(preview).not.toContain(skillBasis);
+    expect(preview).not.toContain(itemBasis);
+    return Object.fromEntries(Object.keys(questions).map((key) => [key, 1]));
+  });
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(sawSkillPreview).toBe(true);
+    expect(sawTail).toBe(true);
+    expect(sawBasis).toBe(true);
+    expect(skillReads).toContain(false);
+    expect(hydratedEdges.has(skillBasisId)).toBe(true);
+    const input = JSON.parse(messages[1]!.content);
+    expect(Buffer.byteLength(JSON.stringify(input.nodes))).toBeGreaterThan(
+      24 * 1024,
+    );
+    expect(
+      input.nodes.find((row: { node: { id: string } }) => row.node.id === actor)
+        .belongings.skills,
+    ).toContainEqual(
+      expect.objectContaining({ text: skillText, basis: skillBasis }),
+    );
+    const user = prepareDicePrompt(messages, false)!.messages.find(
+      (message) => message.role === "user",
+    )!;
+    expect(typeof user.content).toBe("string");
+    const wire = user.content as string;
+    expect(Buffer.byteLength(wire)).toBeGreaterThan(12 * 1024);
+    expect(Buffer.byteLength(wire)).toBeLessThan(24 * 1024);
+    expect(wire).toContain(skillText);
+    expect(wire).toContain(skillBasis);
+    expect(JSON.parse(wire).basisDictionary).toContain(itemBasis);
+    return answer(id, sure);
+  });
+
+  const result = await f.send(0, {
+    command: "apply",
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "generate",
+      plans: [
+        {
+          text: "そろえた布を縫い合わせて覆いを作る",
+          materials,
+          operation: {
+            type: "create",
+            holder: actor,
+            label: "布の覆い",
+            basis: "九枚の布を縫い合わせた。",
+          },
+        },
+      ],
+    },
+  });
+  expect(result).toMatchObject({
+    spentSp: 1,
+    outcome: { success: true, roll: expect.any(Number) },
+    items: [expect.objectContaining({ label: "布の覆い" })],
+  });
+  expect(decide).toHaveBeenCalled();
   expect(f.calls).toHaveBeenCalledTimes(1);
 });
 

@@ -1,6 +1,7 @@
 import {
   RuntimeMonitor,
   InspectionWorker,
+  JudgmentExcerptWorker,
   connectDatabases,
 } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
@@ -60,7 +61,8 @@ try {
     process.env.OPERATIONS_TOKEN_SECRET!,
   );
   monitor.start();
-  stopPlay = await startPlayLoop(play);
+  const excerpts = new JudgmentExcerptWorker(construction.agent.store, model);
+  stopPlay = await startPlayLoop(play, undefined, () => excerpts.tick());
   console.log("World construction worker ready");
 } catch (error) {
   await databases.queue.stop();
