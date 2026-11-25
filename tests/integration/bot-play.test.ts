@@ -15004,12 +15004,11 @@ test("探索と複数案の生成は日次SPを共有し、生成と素材消費
         roll,
       ]);
     return answer(id, {
-      settings: [
-        setting,
-        setting,
-        setting,
-        { ...setting, consumes: [{ id: material, count: 3 }] },
-      ],
+      settings: [1, 1, 1, 3].map((count) => ({
+        sides: setting.sides,
+        successThrough: setting.successThrough,
+        requiredMaterials: [{ id: material, count }],
+      })),
     });
   });
   const created = await f.send(0, batch);
@@ -17559,7 +17558,7 @@ test("持ち物は本人検索で個数つきで読め、ダイスが成功し�
     f.send(0, { command: "search", query: { kind: "belongings" } }),
   ).rejects.toMatchObject({ code: "SEARCH_KIND_MOVED" });
   expect((await f.status(0)).callsUsed).toBe(1);
-  // 新規作成のダイス。候補は申請者が手に持つ物品で、候補にないIDは減らない。
+  // 製作は必須材料を消費し、再利用する道具は余分なconsumesにあっても手元に残す。
   const candidates = (messages: { content: unknown }[]) =>
     (
       JSON.parse(String(messages[1]!.content)) as {
@@ -17569,7 +17568,7 @@ test("持ち物は本人検索で個数つきで読め、ダイスが成功し�
   const craft = (requestId = randomUUID()) => ({
     requestId,
     command: "update",
-    text: "矢を使って的を作る",
+    text: "矢を二本組み込み、砥石で仕上げて的を作る",
     operations: [
       { type: "create", label: "的", holder: f.actors[0], basis: "作った" },
     ],
@@ -17577,10 +17576,11 @@ test("持ち物は本人検索で個数つきで読め、ダイスが成功し�
   });
   f.calls.mockImplementationOnce(async (id, role, messages) => {
     expect(role).toBe("world-creation-dice");
-    expect(candidates(messages)?.sort()).toEqual([arrows, stone].sort());
+    expect(candidates(messages)).toBeUndefined();
     return answer(id, {
       ...sure,
-      consumes: [{ id: arrows, count: 2 }, { id: shield }],
+      requiredMaterials: [{ id: arrows, count: 2 }],
+      consumes: [{ id: stone }, { id: shield }],
     });
   });
   const first = craft(),
@@ -17590,6 +17590,7 @@ test("持ち物は本人検索で個数つきで読め、ダイスが成功し�
     setting: { consumes: [{ id: arrows, label: "矢", count: 2 }] },
   });
   expect(await f.send(0, first)).toEqual(crafted);
+  expect((await held(0)).map((item) => item.id)).toContain(stone);
   expect(await held(0)).toHaveLength(3);
   expect(await count(0, arrows)).toBe(3);
   expect(await held(1)).toMatchObject([{ id: shield }]);
@@ -17605,7 +17606,7 @@ test("持ち物は本人検索で個数つきで読め、ダイスが成功し�
   );
   expect((await f.send(0, failing)).outcome).toMatchObject({ success: false });
   expect(await count(0, arrows)).toBe(3);
-  // 個数を増やす更新はダイスに進む。申請が操作する物品は候補から外れる。減らす更新はダイスを通らない。
+  // 個数を増やす対象が必須材料にも挙がっても、その物品は消費しない。減らす更新はダイスを通らない。
   const recount = (count: number) =>
     f.send(0, {
       command: "update",
@@ -17616,8 +17617,8 @@ test("持ち物は本人検索で個数つきで読め、ダイスが成功し�
   f.calls.mockClear();
   f.calls.mockImplementationOnce(async (id, role, messages) => {
     expect(role).toBe("world-creation-dice");
-    expect(candidates(messages)).not.toContain(arrows);
-    return answer(id, sure);
+    expect(candidates(messages)).toBeUndefined();
+    return answer(id, { ...sure, requiredMaterials: [{ id: arrows }] });
   });
   expect((await recount(8)).outcome).toMatchObject({ success: true });
   expect(await count(0, arrows)).toBe(8);
@@ -18018,7 +18019,10 @@ test("時間をかける物品の作成は、届く時刻を過ぎてから成�
     expect(role).toBe("world-creation-dice");
     expect(String(messages[0]!.content)).toContain("waitMinutes");
     expect(JSON.parse(String(messages[1]!.content)).waitMinutes).toBe(90);
-    return answer(id, { ...sure, consumes: [{ id: coins, count: 2 }] });
+    return answer(id, {
+      ...sure,
+      requiredMaterials: [{ id: coins, count: 2 }],
+    });
   });
   const first = order([milk()]),
     placed = await f.send(0, first),
