@@ -1188,7 +1188,7 @@ const WorkDice = DiceSetting.safeExtend({
     .optional(),
 });
 const workMaterialPrompt =
-  "本文とchangesから、成功時に加工・組み込み・支払い・使い切りで減る現物とその個数をrequiredMaterialsに指定する。生産物を得ても残る元の存在、繰り返し使う道具、技能、設計図、作業場所は含めない。明示されたmaterialsは必須。対象のIDが申請で指定されていれば{id,count}、呼称だけなら{label,count}で返す。同名の現物から勝手に一つ選ばない。どの材料を指すかも不明ならrequiredMaterials:null、既存品を使わない申請なら[]。成果物が新しく作られることだけを理由に、加工元の現物を省かない。";
+  "本文とchangesから、成功時に加工・組み込み・支払い・使い切りで減る現物とその個数をrequiredMaterialsに指定する。生産物を得ても残る元の存在、繰り返し使う道具、技能、設計図、作業場所は含めない。declaredMaterialsは申請者の材料指定で、本文から使用後も残ると読める現物は除く。本文に用途の記述がない明示材料には指定のIDと個数を使う。対象のIDが申請で指定されていれば{id,count}、呼称だけなら{label,count}で返す。同名の現物から勝手に一つ選ばない。どの材料を指すかも不明ならrequiredMaterials:null、既存品を使わない申請なら[]。成果物が新しく作られることだけを理由に、加工元の現物を省かない。";
 function instantReductionText({
   kind,
   count,
@@ -7035,7 +7035,7 @@ export class BotPlay {
               ...(learning?.length ? { learning } : {}),
               ...(materials?.length
                 ? {
-                    materials: await Promise.all(
+                    declaredMaterials: await Promise.all(
                       materials.map(async (m) => {
                         const item = await readMaterial(
                           m.id,
@@ -7092,7 +7092,9 @@ export class BotPlay {
         ...reviews.flatMap((r) => r.subjects),
         ...material.flatMap(
           (p) =>
-            p.materials?.filter((m) => m.available > 0).map((m) => m.id) ?? [],
+            p.declaredMaterials
+              ?.filter((m) => m.available > 0)
+              .map((m) => m.id) ?? [],
         ),
         ...fresh.flatMap(({ changes }) => [
           ...changes.revisions.map((n) => n.id),
@@ -7144,10 +7146,10 @@ export class BotPlay {
         labels?: ReadonlyMap<string, string>,
       ) => {
         const proposal = material[index]!;
-        return proposal.materials && labels
+        return proposal.declaredMaterials && labels
           ? {
               ...proposal,
-              materials: proposal.materials.map((item) => ({
+              declaredMaterials: proposal.declaredMaterials.map((item) => ({
                 ...item,
                 label: labels.get(item.id) ?? item.label,
               })),
@@ -7450,10 +7452,7 @@ export class BotPlay {
           );
           const unresolvedLabels = new Set<string>();
           const required = new Map<string, number>();
-          for (const m of [
-            ...(p.materials ?? []),
-            ...(requiredMaterials ?? []),
-          ]) {
+          for (const m of requiredMaterials ?? []) {
             let id: string;
             if ("id" in m) id = m.id;
             else {
@@ -7477,7 +7476,11 @@ export class BotPlay {
             }
             required.set(id, Math.max(required.get(id) ?? 0, m.count ?? 1));
           }
-          if (requiredMaterials === null || unresolvedLabels.size)
+          if (
+            requiredMaterials === null ||
+            (p.materials?.length && requiredMaterials === undefined) ||
+            unresolvedLabels.size
+          )
             unresolved.set(p.index, [...unresolvedLabels]);
           for (const [id, count] of required) {
             // 申請が状態などを付ける対象そのものは、材料に挙がっても消費しない。

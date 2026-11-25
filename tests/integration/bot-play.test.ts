@@ -8647,7 +8647,11 @@ test.each([false, true])(
       expect(review.previousState).toBe(previousState);
       expect(review.allowApply).toBe(false);
       expect(review).not.toHaveProperty("confirmed");
-      return answer(id, { ...sure, remainingState });
+      return answer(id, {
+        ...sure,
+        remainingState,
+        ...(bandage ? { requiredMaterials: [{ id: bandage }] } : {}),
+      });
     });
     await expect(apply(action, treatment)).resolves.toMatchObject({
       spentSp: 1,
@@ -13967,6 +13971,9 @@ describe("現場材料", () => {
   // サーバーが組み立てた設定はそのまま使い、出目だけ2に固定する。
   const win = { sides: 100, successThrough: 70 },
     lose = { ...win, successThrough: 1 };
+  const hull = { requiredMaterials: [{ label: "船体" }] };
+  const builtHull = { ...win, ...hull },
+    failedHull = { ...lose, ...hull };
   beforeAll(async () => {
     await isolated.databases.postgres
       .query(`CREATE FUNCTION fixture_material_roll() RETURNS trigger AS $$
@@ -14078,6 +14085,7 @@ describe("現場材料", () => {
     const expected = (await read()).skills;
     const learnedText = "雨よけを作るため、継ぎ目を折り返して縫える。";
     const learnedBasis = "荷覆いの試作で折り返し幅を考えた。";
+    let requiredMaterials: { id: string; count: number }[] = [];
     const transport = vi.fn<typeof fetch>().mockImplementation(async () =>
       Response.json({
         id: randomUUID(),
@@ -14086,7 +14094,12 @@ describe("現場材料", () => {
         output: [
           {
             type: "message",
-            content: [{ type: "output_text", text: JSON.stringify(win) }],
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({ ...win, requiredMaterials }),
+              },
+            ],
           },
         ],
         usage: { input_tokens: 6000, output_tokens: 20 },
@@ -14139,6 +14152,7 @@ describe("現場材料", () => {
       materials: [{ id: cloth, count: 2 }],
       dependencies: [],
     };
+    requiredMaterials = craft.materials;
     decision();
     const crafted = await f.send(0, craft);
     expect(crafted.outcome).toMatchObject({
@@ -14234,10 +14248,12 @@ describe("現場材料", () => {
         saved.request.messages.find(({ role }) => role === "user")!.content,
       ) as {
         storageStockNote?: string;
+        declaredMaterials?: { id: string; count?: number }[];
         nodes: { node: { id: string }; belongings: { storages: unknown[] } }[];
       };
       return {
         result,
+        declaredMaterials: sent.declaredMaterials,
         storageStockNote: sent.storageStockNote,
         storages: sent.nodes.find(({ node }) => node.id === actor)!.belongings
           .storages,
@@ -14247,6 +14263,7 @@ describe("現場材料", () => {
     const first = await work("布を二つ切って作業台に敷く", "作業台の覆い", {
       materials: [{ id: cloth, count: 2 }],
     });
+    expect(first.declaredMaterials).toMatchObject([{ id: cloth, count: 2 }]);
     expect(first.storages).toEqual(
       expect.arrayContaining([
         [
@@ -14444,12 +14461,14 @@ describe("現場材料", () => {
         expect(role).toBe("world-creation-dice");
         const { proposals } = JSON.parse(String(messages[1]!.content));
         expect(proposals).toHaveLength(3);
-        expect(proposals[0].materials).toBeUndefined();
-        expect(proposals[1].materials).toBeUndefined();
-        expect(proposals[2].materials).toMatchObject([
+        expect(proposals[0].declaredMaterials).toBeUndefined();
+        expect(proposals[1].declaredMaterials).toBeUndefined();
+        expect(proposals[2].declaredMaterials).toMatchObject([
           { id: ids[0], available: 1 },
         ]);
-        return answer(id, { settings: [win, lose, built ? win : lose] });
+        return answer(id, {
+          settings: [win, lose, built ? builtHull : failedHull],
+        });
       });
       const result = await f.send(0, request);
       expect(result).toMatchObject({
@@ -14527,7 +14546,7 @@ describe("現場材料", () => {
     const first = plan(1, ids[0]),
       second = plan(2, ids[0]);
     f.calls.mockResolvedValueOnce(
-      answer(randomUUID(), { settings: [win, lose, win, win] }),
+      answer(randomUUID(), { settings: [win, lose, builtHull, builtHull] }),
     );
     const result = await f.send(0, {
       command: "create-batch",
@@ -14569,9 +14588,46 @@ describe("現場材料", () => {
       tools: 1,
     });
   });
+  test("明示した生産元は必須材料が空なら残り、材料判定が欠けた申請は抽選しない", async () => {
+    const f = await fixture(1),
+      actor = f.actors[0]!;
+    const seeded = await f.apply([
+      {
+        type: "create",
+        holder: f.place,
+        label: "雌鶏",
+        basis: "庭で飼っている",
+      },
+    ]);
+    const hen = seeded.changes.nodes[0]!.id;
+    const collect = () =>
+      f.send(0, {
+        command: "update",
+        text: "庭の雌鶏が産んだ卵を一つ拾う",
+        materials: [{ id: hen }],
+        operations: [
+          { type: "create", holder: actor, label: "卵", basis: "庭で拾った" },
+        ],
+        dependencies: [],
+      });
+    f.calls.mockResolvedValueOnce(answer(randomUUID(), win));
+    expect((await collect()).outcome).toMatchObject({
+      success: false,
+      reason: "MATERIAL_ID_REQUIRED",
+    });
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { ...win, requiredMaterials: [] }),
+    );
+    expect((await collect()).outcome).toMatchObject({ success: true });
+    const ctx = f.store.context(f.graph);
+    expect((await ctx.holding(hen))?.source).toBe(f.place);
+    expect(
+      (await readBelongings(ctx, actor)).items.map((item) => item.label),
+    ).toEqual(["卵"]);
+  });
   test("単独の失敗は船体を残し、成功は現地の現物を一度消費して滑車を残す", async () => {
     const { f, ids, plan, inventory } = await workshop(1);
-    f.calls.mockResolvedValueOnce(answer(randomUUID(), lose));
+    f.calls.mockResolvedValueOnce(answer(randomUUID(), failedHull));
     await f.send(0, {
       command: "update",
       ...plan(1, ids[0]),
@@ -14599,7 +14655,9 @@ describe("現場材料", () => {
     const { f, ids, plan, inventory } = await workshop(1);
     const requestId = randomUUID();
     f.calls.mockResolvedValueOnce(
-      answer(randomUUID(), { settings: [lose, win, win, win, win] }),
+      answer(randomUUID(), {
+        settings: [failedHull, builtHull, builtHull, builtHull, builtHull],
+      }),
     );
     const command = {
       command: "create-batch",
@@ -14665,11 +14723,11 @@ describe("現場材料", () => {
       ],
     };
     f.calls.mockResolvedValueOnce(
-      answer(randomUUID(), { settings: [win, lose, win, win] }),
+      answer(randomUUID(), { settings: [win, lose, builtHull, builtHull] }),
     );
     await f.send(0, batch);
     await f.send(0, batch);
-    f.calls.mockResolvedValueOnce(answer(randomUUID(), lose));
+    f.calls.mockResolvedValueOnce(answer(randomUUID(), failedHull));
     await f.send(0, {
       command: "update",
       requestId: updateId,
@@ -14760,7 +14818,7 @@ describe("現場材料", () => {
   test("船体2件は2隻まで、板材3個の指定は在庫2個のまま材料不足", async () => {
     const { f, ids, board, plan, inventory } = await workshop(2);
     f.calls.mockResolvedValueOnce(
-      answer(randomUUID(), { settings: [win, win, win] }),
+      answer(randomUUID(), { settings: [builtHull, builtHull, builtHull] }),
     );
     await f.send(0, {
       command: "create-batch",
@@ -14768,7 +14826,10 @@ describe("現場材料", () => {
       proposals: [plan(1, ids[0]), plan(2, ids[1]), plan(3, ids[1])],
     });
     f.calls.mockResolvedValueOnce(
-      answer(randomUUID(), { ...win, consumes: [{ id: board, count: 3 }] }),
+      answer(randomUUID(), {
+        ...win,
+        requiredMaterials: [{ id: board, count: 3 }],
+      }),
     );
     const result = await f.send(0, {
       command: "update",
@@ -14803,7 +14864,7 @@ describe("現場材料", () => {
     f.calls.mockImplementation(async (id) => {
       if (++enter === 2) release();
       await barrier;
-      return answer(id, win);
+      return answer(id, builtHull);
     });
     const sent = await Promise.allSettled(cmds.map((cmd, i) => f.send(i, cmd)));
     expect(enter).toBe(2);
@@ -14894,7 +14955,7 @@ describe("現場材料", () => {
     f.calls.mockResolvedValueOnce(
       answer(randomUUID(), {
         settings: [
-          win,
+          builtHull,
           {
             ...win,
             requiredMaterials: ["船体", "蜜蝋", "麻糸", "蜜蝋"].map(
@@ -17569,6 +17630,7 @@ test("持ち物は本人検索で個数つきで読め、ダイスが成功し�
     requestId,
     command: "update",
     text: "矢を二本組み込み、砥石で仕上げて的を作る",
+    materials: [{ id: stone }, { id: arrows, count: 2 }],
     operations: [
       { type: "create", label: "的", holder: f.actors[0], basis: "作った" },
     ],
