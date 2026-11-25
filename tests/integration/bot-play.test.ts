@@ -8315,6 +8315,151 @@ test("生成は保存済みの抜粋で選別してから原文と習得経緯�
   expect(f.calls).toHaveBeenCalledTimes(1);
 });
 
+test.each(["generate", "oppose"] as const)(
+  "同じ所持関係の取得経緯は一度評価し、所在と利用権の両経路に原文を残す（%s）",
+  async (type) => {
+    const f = await fixture(2);
+    const [actor, target] = f.actors;
+    if (type === "oppose") {
+      await f.send(0, { command: "contact", targetId: target });
+      await giveTurn(f, 0);
+    }
+
+    const label = "溝付きの型板";
+    const excerpt = "深い溝を布の縁に合わせれば濡れた布が破れない。";
+    const basis =
+      "受け渡した日付と棚の位置を帳面に控えた。".repeat(24) + excerpt;
+    const seed = await f.apply([
+      { type: "grant", person: actor, storage: f.place, basis: "共同利用" },
+      { type: "create", holder: f.place, label, basis },
+    ]);
+    const item = seed.changes.nodes.find(({ text }) => text === label)!;
+    const [job] = await f.store.judgmentExcerptJobs(4, f.graph);
+    expect(job?.text).toBe(basis);
+    expect(await f.store.finishJudgmentExcerpt(job!, excerpt)).toBe(true);
+
+    const notes: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+    for (let index = 0; index < 18; index++)
+      mark(
+        notes,
+        actor!,
+        `作業記録${index}。` +
+          "記録係が紙片の通し番号と棚に並べる順番を照合した。".repeat(12),
+      );
+    const commitId = randomUUID();
+    await f.store.commit(
+      await f.store.claim(f.graph, commitId),
+      f.store.context(f.graph),
+      { commitId, at: 0, changes: notes },
+    );
+
+    const model = runtime.agent.model;
+    vi.spyOn(model, "decision", "get").mockReturnValue(
+      decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+    );
+    const kinds: string[] = [];
+    vi.spyOn(model, "decide").mockImplementation(
+      async (_id, role, state, questions) => {
+        expect(role).toBe("world-judgment-materials");
+        const { candidates } = state as {
+          candidates: {
+            key: string;
+            kind: string;
+            evidence: { id?: string } | string;
+            material?: { id: string };
+            holdingPaths?: unknown;
+          }[];
+        };
+        const scores = new Map<string, number>();
+        for (const row of candidates) {
+          const itemId =
+            typeof row.evidence === "string"
+              ? row.material?.id
+              : row.evidence?.id;
+          if (itemId !== item.id) continue;
+          kinds.push(row.kind);
+          expect(row.holdingPaths).toEqual({
+            holder: { id: f.place, label: "広場" },
+            registeredUsers: [actor],
+          });
+          const score = row.kind === "basis" ? 0.5 : 0.55;
+          if (row.kind === "basis") expect(row.evidence).toBe(excerpt);
+          for (const suffix of ["a", "e"]) {
+            const key = `r0${row.key}${suffix}`;
+            expect(questions).toHaveProperty(key);
+            scores.set(key, score);
+          }
+        }
+        return Object.fromEntries(
+          Object.keys(questions).map((key) => [key, scores.get(key) ?? 0.1]),
+        );
+      },
+    );
+    f.calls.mockImplementation(async (id, role, messages) => {
+      expect(role).toBe(
+        type === "generate" ? "world-creation-dice" : "world-opposition-dice",
+      );
+      const payload = JSON.parse(messages[1]!.content);
+      const facts = payload.nodes ?? payload.materials;
+      const full = expect.objectContaining({ id: item.id, label, basis });
+      expect(facts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            node: expect.objectContaining({ id: f.place }),
+            belongings: expect.objectContaining({
+              items: expect.arrayContaining([full]),
+            }),
+          }),
+          expect.objectContaining({
+            node: expect.objectContaining({ id: actor }),
+            belongings: expect.objectContaining({
+              storages: expect.arrayContaining([
+                expect.objectContaining({
+                  id: f.place,
+                  items: expect.arrayContaining([full]),
+                }),
+              ]),
+            }),
+          }),
+        ]),
+      );
+      return answer(id, sure);
+    });
+
+    await expect(
+      f.send(0, {
+        command: "apply",
+        expectedSp: 1,
+        dependencies: [],
+        action:
+          type === "generate"
+            ? {
+                type,
+                plans: [
+                  {
+                    text: "濡れた布を破かずに覆いを仕上げる",
+                    operation: {
+                      type: "create",
+                      holder: actor,
+                      label: "布の覆い",
+                      basis: "広場で布を仕上げた。",
+                    },
+                  },
+                ],
+              }
+            : {
+                type,
+                targetId: target,
+                text: "相手が握る濡れた布を破かずに外そうとする",
+                description: "濡れた布が手から離れている。",
+              },
+      }),
+    ).resolves.toMatchObject({ spentSp: 1 });
+    expect(kinds.sort()).toEqual(["basis", "item"]);
+    expect(f.calls).toHaveBeenCalledTimes(1);
+  },
+);
+
 test("着脱の確定は付着した関係だけを終え、追加のGMとSPを使わない", async () => {
   const f = await fixture();
   const person = f.actors[0]!;
