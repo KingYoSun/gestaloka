@@ -18915,6 +18915,59 @@ test("追従の再開・シーンの再開で同席者の受領判断を取り�
   });
 });
 
+test("サーバーNPCが目的を引き継ぎ、操作の成功時に同じ手番で続けるか終えるかを選ぶ", async () => {
+  const f = await fixture(2),
+    npc = f.actors[1]!;
+  await f.send(0, { command: "contact", targetId: npc });
+  await giveTurn(f, 1);
+  await auth.operations.execute(
+    (await auth.person()).id,
+    randomUUID(),
+    {
+      operation: "npcs.put",
+      worldId: f.world,
+      actorId: npc,
+      controller: "server",
+      reason: "隔離した手番の検証",
+    },
+    { players: access.players },
+  );
+  const goals: (string | null)[] = [];
+  const plans = [
+    {
+      goal: "荷物の受渡しを見届ける",
+      endOnSuccess: false,
+      action: { command: "say", text: "札を読みます" },
+    },
+    {
+      goal: "受取人を待つ",
+      endOnSuccess: true,
+      action: { command: "say", text: "宛先は隣町です" },
+    },
+    { goal: null, endOnSuccess: true, action: { command: "end-turn" } },
+  ];
+  f.calls.mockImplementation(async (id, _role, messages) => {
+    const i = goals.length;
+    goals.push(JSON.parse(String(messages[1]!.content)).goal);
+    return answer(id, plans[i]);
+  });
+  await access.botPlay.tickNpcs(f.world);
+  expect((await f.status(1)).actorId).toBe(npc);
+  await access.botPlay.tickNpcs(f.world);
+  expect((await f.status(0)).actorId).toBe(f.actors[0]);
+  await f.send(0, { command: "end-turn" });
+  await access.botPlay.tickNpcs(f.world);
+  expect(goals).toEqual([null, plans[0]!.goal, plans[1]!.goal]);
+  expect(
+    (
+      await isolated.databases.postgres.query(
+        "SELECT memory->'goal' AS goal FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
+        [f.world, npc],
+      )
+    ).rows[0].goal,
+  ).toBeNull();
+});
+
 test("サーバー担当NPCは断られた選択を問い直さず、受領判断中は返答と一度のコメントだけを選べる", async () => {
   const f = await fixture();
   const npc = f.actors[1]!;
@@ -18942,7 +18995,11 @@ test("サーバー担当NPCは断られた選択を問い直さず、受領判�
             o.properties.command.const,
         ),
       );
-      return answer(id, choices[offered.length - 1]);
+      return answer(id, {
+        goal: "やり取りを見届ける",
+        endOnSuccess: true,
+        action: choices[offered.length - 1],
+      });
     });
   choose({ command: "vehicle-board", vehicleId: randomUUID() });
   await access.botPlay.tickNpcs(f.world);

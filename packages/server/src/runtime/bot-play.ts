@@ -1,3 +1,4 @@
+import { classifyNpcHistory, type NpcMemory } from "./npc-history.js";
 import { ModelCallInProgress } from "../llm/budget.js";
 import { createHash, randomInt, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -546,6 +547,12 @@ type IdleSessionStatus = {
   session: null;
 } & Pick<SessionStatus, "stealth" | "home"> &
   Partial<Record<Exclude<keyof SessionStatus, "stealth" | "home">, never>>;
+type NpcChoice = {
+  assignmentId: string;
+  turnKey: string;
+  endOnSuccess: boolean;
+  memory: NpcMemory;
+};
 type Member = {
   actorId: string;
   sceneId: string;
@@ -825,10 +832,15 @@ const compactRecord = (record: unknown) => {
     },
   };
 };
-const recentEntries = <T extends { entries: unknown[] }>(history: T) => ({
+const recentEntries = <T extends { entries: unknown[] }>(
+  history: T,
+  windowed = false,
+) => ({
   ...history,
   entries: history.entries.slice(-historyLimit).map(compactRecord),
-  omittedEntries: Math.max(0, history.entries.length - historyLimit),
+  ...(windowed && history.entries.length > historyLimit
+    ? { earlierRecords: true }
+    : { omittedEntries: Math.max(0, history.entries.length - historyLimit) }),
 });
 export const defaultCreationCriteria =
   "材料から判断できる実現可能性を1d100のダイスの基準値で設定する";
@@ -1430,6 +1442,7 @@ export class BotPlay {
       world_id uuid NOT NULL REFERENCES world_construction(id),actor_id uuid NOT NULL,
       controller text CHECK(controller IN ('bot','server')),user_id uuid,assignment_id uuid NOT NULL,PRIMARY KEY(world_id,actor_id));
       ALTER TABLE bot_npc ALTER COLUMN controller DROP NOT NULL;
+      ALTER TABLE bot_npc ADD COLUMN IF NOT EXISTS memory jsonb;
       ALTER TABLE bot_dice ADD COLUMN IF NOT EXISTS repeated boolean NOT NULL DEFAULT false;`);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS player_waiting (
       world_id uuid NOT NULL,actor_id uuid NOT NULL,connection_id text NOT NULL,user_id uuid NOT NULL,
@@ -1908,6 +1921,7 @@ export class BotPlay {
         user_id: string;
         assignment_id: string;
         profile_chat_id: string | null;
+        memory: NpcMemory | null;
       }>(
         "SELECT n.*,p.profile_chat_id FROM bot_npc n LEFT JOIN npc_promotion p ON p.world_id=n.world_id AND p.npc_id=n.actor_id AND p.state='approved' WHERE n.controller='server' AND ($1::uuid IS NULL OR n.world_id=$1)",
         [world ?? null],
@@ -1953,6 +1967,8 @@ export class BotPlay {
             scene === npc.actor_id
               ? (npc.profile_chat_id ?? undefined)
               : undefined,
+            false,
+            { checkpoint: member.lastServerTurn?.recordId },
           );
           const origin =
             npc.profile_chat_id == null &&
@@ -1963,7 +1979,15 @@ export class BotPlay {
                 [npc.actor_id, npc.world_id],
               )
             ).rowCount
-              ? await this.history(npc.world_id, npc.actor_id, npc.actor_id)
+              ? await this.history(
+                  npc.world_id,
+                  npc.actor_id,
+                  npc.actor_id,
+                  this.pool,
+                  undefined,
+                  false,
+                  {},
+                )
               : undefined;
           const witnessed = new Set(
             (
@@ -2000,14 +2024,38 @@ export class BotPlay {
                     : option,
               ),
           );
+          const classified = await classifyNpcHistory(
+            history.entries.slice(-historyLimit),
+            npc.memory?.comparisons,
+            this.construction.agent.model,
+            requestId,
+          );
+          const rows = [
+            ...history.entries.slice(0, -historyLimit),
+            ...classified.rows,
+          ];
           const sinceLastTurn =
             !status.receiving && !status.callsUsed && !status.commentUsed
-              ? this.#sinceLastTurn(
-                  member,
-                  history.entries,
-                  status.characters ?? [],
-                )
+              ? this.#sinceLastTurn(member, rows, status.characters ?? [])
               : undefined;
+          const planSchema = z.object({
+            goal: z.string().trim().min(1).nullable(),
+            endOnSuccess: z.boolean(),
+            action: z.object({}).passthrough(),
+          });
+          const readChoice = (raw: string) => {
+            const value = parseOutput(raw);
+            // Previously saved completions contain only the command.
+            const plan =
+              value && typeof value === "object" && !("command" in value)
+                ? planSchema.parse(value)
+                : undefined;
+            const action = commands.parse({
+              ...(plan?.action ?? (value as object)),
+              requestId,
+            });
+            return { plan, action };
+          };
           const completion = await this.#ask(
             derivedId(`${requestId}:choice`),
             "world-server-npc",
@@ -2015,7 +2063,7 @@ export class BotPlay {
               {
                 role: "system",
                 content:
-                  'あなたは明示的に担当を指定された一人のユニークNPCです。自分自身の発言・行動の描写にはsayを使います。声を出さない身振りや筆談はmodeを"nonverbal"にします。状態のcommandRestrictionsを参照し、発声を制限されているときに伝えたいことがあれば、使える伝達手段を選べます。発言の中で物を使った・食べた・渡したと述べても、持ち物は変わりません。self.material.companion があれば、wait中はその場で、follow中は同行相手と一緒に行動します。自分だけの出発は選べません。自分が乗り物（self.material.vehicle）なら、自ら運行するときは自分のIDをvehicleIdに指定してvehicle-travelを使えます。npc-actionは他の出現個体について申請するコマンドです。本人に提供された素材とセッションの入力・結果から、本人として次のAPIコマンドを一つ選びます。通常手番の開始時、sinceLastTurnには前回の自分の公開行動、その後に届いた発言・結果・コメント、同席者の増減があります。退出はセッションからの退出で、世界内の移動を意味しません。前回応じた声と新しい呼びかけを区別してください。今応じることや自分からしたいことがなければ、何も発言せずend-turnを選べます。currentTurnはこの手番で既に実行した操作とその結果です。発言・行動を終え、続けて行う別の目的がなければend-turnで次の人物へ渡してください。世界の裁定や他人の私的な解釈を代作しません。requestIdはサーバーが設定します。commandSchemaに従うJSONだけを返します。',
+                  'あなたは明示的に担当を指定された一人のユニークNPCです。自分自身の発言・行動の描写にはsayを使います。声を出さない身振りや筆談はmodeを"nonverbal"にします。状態のcommandRestrictionsを参照し、発声を制限されているときに伝えたいことがあれば、使える伝達手段を選べます。発言の中で物を使った・食べた・渡したと述べても、持ち物は変わりません。self.material.companion があれば、wait中はその場で、follow中は同行相手と一緒に行動します。自分だけの出発は選べません。自分が乗り物（self.material.vehicle）なら、自ら運行するときは自分のIDをvehicleIdに指定してvehicle-travelを使えます。npc-actionは他の出現個体について申請するコマンドです。本人に提供された素材とセッションの入力・結果から、本人として次のAPIコマンドを一つ選びます。通常手番の開始時、sinceLastTurnには前回の自分の公開行動、その後に届いた発言・結果・コメント、同席者の増減があります。退出はセッションからの退出で、世界内の移動を意味しません。前回応じた声と新しい呼びかけを区別してください。今応じることや自分からしたいことがなければ、何も発言せずend-turnを選べます。currentTurnはこの手番で既に実行した操作とその結果です。発言・行動を終え、続けて行う別の目的がなければend-turnで次の人物へ渡してください。世界の裁定や他人の私的な解釈を代作しません。requestIdはサーバーが設定します。現在の目的goalを人物自身の関心と知っていることから選び、続ける・変える・手放すことができます。目的に向けて既に済んだことと、まだ本人が引き受けていることを見直します。相手の証言と自分の観測、既に試みたことと得られた結果を区別し、何が変わったかを手がかりにしてください。repeatOfのある発言は、記録ID.番号で参照する元の発言を同じ人から再び聞いたものとして読みます。返すJSONは {"goal":"現在の目的（なければnull）","endOnSuccess":true,"action":コマンド}。actionだけがcommandSchemaに従います。この操作で今できる働きかけを終え、相手の反応を待つならendOnSuccessはtrue。自分から実行するつもりのことを予告しただけで、今の手番でまだ行えるならfalse。結果を見てから次を決める場合もfalse。',
               },
               {
                 role: "user",
@@ -2023,10 +2071,29 @@ export class BotPlay {
                   actorId: npc.actor_id,
                   self,
                   nearby,
-                  history: recentEntries(history),
-                  origin: origin && recentEntries(origin),
+                  goal: npc.memory?.goal ?? null,
+                  history: recentEntries(
+                    {
+                      ...history,
+                      entries: rows.map((row) => {
+                        // The delta carries these witnessed actions in full.
+                        if (
+                          !sinceLastTurn ||
+                          !sinceLastTurn.recordIds.has(row.id)
+                        )
+                          return row;
+                        return {
+                          ...row,
+                          payload: omit(row.payload, ["entries", "comment"]),
+                        };
+                      }),
+                    },
+                    true,
+                  ),
+                  origin: origin && recentEntries(origin, true),
                   status,
-                  sinceLastTurn,
+                  sinceLastTurn:
+                    sinceLastTurn && omit(sinceLastTurn, ["recordIds"]),
                   currentTurn: {
                     actions: current.data.npcActions ?? [],
                     comment: current.data.comment,
@@ -2036,24 +2103,34 @@ export class BotPlay {
               },
             ],
             "default",
-            (raw) =>
-              commands.parse({ ...(parseOutput(raw) as object), requestId }),
+            readChoice,
           );
-          const command = PlayerPlayCommand.parse({
-            ...(parseOutput(completion.content) as object),
-            requestId,
-          });
+          const { plan, action: command } = readChoice(completion.content);
+          const choice = {
+            assignmentId: npc.assignment_id,
+            turnKey: turnState(current).key,
+            endOnSuccess: !status.receiving && !!plan?.endOnSuccess,
+            memory: {
+              goal: plan ? plan.goal : (npc.memory?.goal ?? null),
+              comparisons: classified.comparisons,
+            },
+          };
           try {
             await this.submit(
               npc.world_id,
               npc.actor_id,
               command,
               npc.user_id,
-              npc.assignment_id,
+              choice,
             );
           } catch (error) {
             // 断られた選択は同じ手番で問い直さず、受領を断るか手番を渡す。
             if (!(error instanceof AccessError)) throw error;
+            if (
+              error.code === "NPC_CHOICE_EXPIRED" ||
+              error.code === "NPC_CONTROLLER_CHANGED"
+            )
+              return;
             await this.submit(
               npc.world_id,
               npc.actor_id,
@@ -2068,7 +2145,7 @@ export class BotPlay {
                 requestId: derivedId(requestId + ":stay"),
               },
               npc.user_id,
-              npc.assignment_id,
+              choice,
             );
           }
         },
@@ -3035,8 +3112,8 @@ export class BotPlay {
     const prior = history[previous]!.payload;
     const observed = history
       .slice(previous + 1)
-      .map((row) => row.payload)
-      .filter((p) => p.entries?.length || p.comment || p.state);
+      .filter(({ payload: p }) => p.entries?.length || p.comment || p.state)
+      .map(({ id, payload }) => ({ ...payload, recordId: id }));
     let membership = null;
     if (checkpoint) {
       const present = new Set(characters.map((c) => c.actorId));
@@ -3047,7 +3124,14 @@ export class BotPlay {
       };
     }
     return {
+      recordIds: new Set([
+        ...(prior.entries?.every((e) => e.actorId === actor)
+          ? [history[previous]!.id]
+          : []),
+        ...observed.map((p) => p.recordId),
+      ]),
       previousTurn: {
+        recordId: history[previous]!.id,
         turn: prior.turn,
         actions: (prior.entries ?? []).filter((e) => e.actorId === actor),
         comment: prior.comment,
@@ -4499,6 +4583,7 @@ export class BotPlay {
     db: Db = this.pool,
     after?: string,
     withClock = false,
+    npcWindow?: { checkpoint?: string | undefined },
   ) {
     const selected =
       scene ??
@@ -4526,8 +4611,18 @@ export class BotPlay {
     const entries = (
       await db.query(
         `SELECT c.id,c.payload${withClock ? ',c.recorded_at AS "recordedAt"' : ""} FROM bot_record r JOIN bot_chat c ON c.id=r.chat_id
-       WHERE r.scene_id=$1 AND r.actor_id=$2 AND r.chat_id > $3::bigint ORDER BY r.chat_id`,
-        [selected, actor, after ?? "0"],
+       WHERE r.scene_id=$1 AND r.actor_id=$2 AND r.chat_id > $3::bigint
+       ${
+         npcWindow
+           ? `AND r.chat_id >= LEAST($4::bigint,
+         COALESCE((SELECT chat_id FROM bot_record WHERE scene_id=$1 AND actor_id=$2
+           ORDER BY chat_id DESC OFFSET ${historyLimit} LIMIT 1),0))`
+           : ""
+       }
+       ORDER BY r.chat_id`,
+        npcWindow
+          ? [selected, actor, after ?? "0", npcWindow.checkpoint ?? null]
+          : [selected, actor, after ?? "0"],
       )
     ).rows;
     for (const { payload } of entries) {
@@ -11952,10 +12047,13 @@ export class BotPlay {
     actor: string,
     submitted: z.infer<typeof PlayerPlayCommand>,
     user: string,
-    expectedAssignment?: string,
+    assignment?: string | NpcChoice,
     connectionId = `human:${user}`,
     expectedSp?: number,
   ) {
+    const choice = typeof assignment === "object" ? assignment : undefined;
+    const expectedAssignment =
+      typeof assignment === "string" ? assignment : assignment?.assignmentId;
     const hash = createHash("sha256")
       .update(canonical(submitted))
       .digest("hex");
@@ -12050,6 +12148,7 @@ export class BotPlay {
         connectionId,
         owner,
         expectedSp,
+        choice,
       );
     let active = await this.#activeAdjudication(this.pool, world, actor);
     const drawCommand = input.command === "draw" || isDrawConfiguration(input);
@@ -12136,6 +12235,7 @@ export class BotPlay {
     connectionId: string,
     adjudicationOwner?: string,
     expectedSp?: number,
+    choice?: NpcChoice,
   ): Promise<Record<string, unknown>> {
     const w = await this.world(world);
     await this.#requireLivingActor(this.store.context(w.id), actor);
@@ -12380,6 +12480,67 @@ export class BotPlay {
           "判定の受付を維持できませんでした。同じ要求を再送してください",
         );
       }
+      if (choice) {
+        const active = await this.current(world, actor, db);
+        if (!active || turnState(active).key !== choice.turnKey)
+          reject("NPC_CHOICE_EXPIRED", "判断した手番は終了しました");
+        const updated = await db.query(
+          "UPDATE bot_npc SET memory=$4 WHERE world_id=$1 AND actor_id=$2 AND assignment_id=$3 AND controller='server'",
+          [world, actor, expectedAssignment, choice.memory],
+        );
+        if (!updated.rowCount)
+          reject("NPC_CONTROLLER_CHANGED", "NPCの操作担当が変わりました");
+      }
+      const finish = async (result: Record<string, unknown>) => {
+        const outcome = result.outcome as
+          (Partial<ProposalOutcome> & { accepted?: boolean }) | undefined;
+        if (
+          choice?.endOnSuccess &&
+          !["pending", "receiving", "rejected", "failed", "waiting"].includes(
+            String(result.state),
+          ) &&
+          result.accepted !== false &&
+          outcome?.accepted !== false &&
+          outcome?.success !== false &&
+          !individualOutcomes(outcome?.proposals ?? []).some(
+            (p) => p.success === false,
+          )
+        ) {
+          const active = await this.current(world, actor, db);
+          if (
+            active &&
+            !active.data.receiving &&
+            turnState(active).key === choice.turnKey
+          ) {
+            const before = turnState(active);
+            await this.#next(db, active);
+            await this.#save(db, active, before);
+            const status = await this.status(world, actor, db);
+            result = {
+              ...result,
+              ...status,
+              turnHolder:
+                status.characters?.find((c) => c.actorId === status.actorId) ??
+                null,
+              action: {
+                ...(result.action as object),
+                command: input.command,
+                endedTurn: {
+                  number: before.number,
+                  reason: "explicit",
+                  message: `手番${before.number}を終了しました`,
+                },
+              },
+            };
+          }
+        }
+        await db.query(
+          "UPDATE bot_request SET result=$2, status_dependencies=NULL WHERE id=$1",
+          [input.requestId, result],
+        );
+        await db.query("COMMIT");
+        return result;
+      };
       if (input.command === "home-set") {
         if (!granted || assignment)
           reject(
@@ -12400,12 +12561,7 @@ export class BotPlay {
             "現在地を特定できる場所でホームを設定してください",
           );
         const result = { command: input.command, home };
-        await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [
-          input.requestId,
-          result,
-        ]);
-        await db.query("COMMIT");
-        return result;
+        return await finish(result);
       }
       if (
         input.command.startsWith("draw-table-") &&
@@ -12418,12 +12574,7 @@ export class BotPlay {
           actor,
           input as Exclude<DrawTableAction, DrawPublish>,
         );
-        await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [
-          input.requestId,
-          result,
-        ]);
-        await db.query("COMMIT");
-        return result;
+        return await finish(result);
       }
       if (isBlueprint(input) || isStorageAction(input)) {
         if (input.command === "blueprint-start") {
@@ -12485,12 +12636,7 @@ export class BotPlay {
           spentSp: saved.spent,
           dailySp: await dailySp(),
         };
-        await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [
-          input.requestId,
-          result,
-        ]);
-        await db.query("COMMIT");
-        return result;
+        return await finish(result);
       }
       if (isCompanionCommand(input) && !plan) {
         const context = this.store.context(w.id);
@@ -12600,12 +12746,7 @@ export class BotPlay {
               dailySp: await this.dailySp(world, user, db),
             }
           : companion;
-        await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [
-          input.requestId,
-          result,
-        ]);
-        await db.query("COMMIT");
-        return result;
+        return await finish(result);
       }
       if (isTeamCommand(input)) {
         const context = this.store.context(w.id);
@@ -12629,12 +12770,7 @@ export class BotPlay {
           ...team,
           ...(arrival ? { teamArrival: arrival } : {}),
         };
-        await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [
-          input.requestId,
-          result,
-        ]);
-        await db.query("COMMIT");
-        return result;
+        return await finish(result);
       }
       const application =
         input.command === "applications"
@@ -12717,12 +12853,7 @@ export class BotPlay {
                 : "未決の申請を取得しました",
           },
         };
-        await db.query("UPDATE bot_request SET result=$2 WHERE id=$1", [
-          input.requestId,
-          result,
-        ]);
-        await db.query("COMMIT");
-        return result;
+        return await finish(result);
       }
       let session = await this.current(world, actor, db);
       // 旧版の会話で取り残されていた人を、次の発言・接触の聞き手を決める前に照合する。
@@ -14082,12 +14213,7 @@ export class BotPlay {
             }
           : {}),
       };
-      await db.query(
-        "UPDATE bot_request SET result=$2, status_dependencies=NULL WHERE id=$1",
-        [input.requestId, result],
-      );
-      await db.query("COMMIT");
-      return result;
+      return await finish(result);
     } catch (error) {
       // Persist a deadline processed by the request that it invalidated.
       await db.query(
