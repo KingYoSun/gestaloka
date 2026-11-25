@@ -1,3 +1,4 @@
+import { PlayLog, PlayLogRows } from "./play-panels.js";
 import { BotSession } from "./BotSession.js";
 import { useEffect, useRef, useState } from "react";
 import { Link, useRouter, useSearch } from "@tanstack/react-router";
@@ -110,27 +111,34 @@ export function Watch({ id, actorId }: { id: string; actorId: string }) {
     { params: { path: { id }, query: { actorId } } },
     { refetchInterval: 5000 },
   );
+  const title =
+    query.error || !query.data ? "観戦" : `「${query.data.name}」の観戦`;
+  if (!query.error && query.data?.scene)
+    return (
+      <main className="page play-page">
+        <section className="play-layout" aria-label="セッション">
+          <SpectatorLog
+            key={query.data.scene.id}
+            id={id}
+            actorId={actorId}
+            title={title}
+            latest={query.data.scene}
+            refresh={query.refetch}
+          />
+        </section>
+      </main>
+    );
   return (
     <main className="page home">
       <div className="page-title">
-        <h1>
-          {query.error || !query.data ? "観戦" : `「${query.data.name}」の観戦`}
-        </h1>
+        <h1>{title}</h1>
       </div>
       {query.error ? (
         <Problem error={query.error} />
       ) : !query.data ? (
         <Notice>観戦画面を読み込んでいます</Notice>
-      ) : !query.data.scene ? (
-        <Notice>現在、観戦できるセッションはありません。</Notice>
       ) : (
-        <SpectatorLog
-          key={query.data.scene.id}
-          id={id}
-          actorId={actorId}
-          latest={query.data.scene}
-          refresh={query.refetch}
-        />
+        <Notice>現在、観戦できるセッションはありません。</Notice>
       )}
     </main>
   );
@@ -139,11 +147,13 @@ export function Watch({ id, actorId }: { id: string; actorId: string }) {
 function SpectatorLog({
   id,
   actorId,
+  title,
   latest,
   refresh,
 }: {
   id: string;
   actorId: string;
+  title: string;
   latest: SpectatorScene;
   refresh: () => Promise<{ isSuccess: boolean }>;
 }) {
@@ -166,54 +176,51 @@ function SpectatorLog({
     if ((await refresh()).isSuccess) setBefore(undefined);
   }
   return (
-    <section aria-label="セッションのチャット" className="space-y-3">
+    <PlayLog
+      key={before ?? "latest"}
+      toolbar={<h1>{title}</h1>}
+      footer={
+        (previous || before) && (
+          <div className="flex flex-wrap gap-3">
+            {previous && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setBefore(previous)}
+              >
+                前の記録を表示
+              </Button>
+            )}
+            {before && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void openLatest()}
+              >
+                最新の記録へ戻る
+              </Button>
+            )}
+          </div>
+        )
+      }
+    >
       {older.error && before ? (
         <Problem error={older.error} />
       ) : !scene || scene.id !== latest.id ? (
         <Notice>観戦の記録を読み込んでいます</Notice>
-      ) : scene.entries.length === 0 ? (
-        <Notice>表示できるプレイログはまだありません。</Notice>
       ) : (
-        scene.entries.map(({ id: entryId, at, lines }) => (
-          <article
-            key={entryId}
-            className="rounded-lg border bg-card px-6 py-5"
-          >
-            {at && (
-              <p className="record-meta">
-                <time dateTime={at}>{createdDate(at)}</time>
-              </p>
-            )}
-            {lines.map(({ speaker, text }, index) => (
+        <PlayLogRows entries={scene.entries} timestamp={(row) => row.at}>
+          {({ lines }) =>
+            lines.map(({ speaker, text }, index) => (
               <div key={index}>
                 {speaker && <p className="record-meta">{speaker}</p>}
                 <RichText text={text} />
               </div>
-            ))}
-          </article>
-        ))
+            ))
+          }
+        </PlayLogRows>
       )}
-      <div className="flex flex-wrap gap-3">
-        {previous && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setBefore(previous)}
-          >
-            前の記録を表示
-          </Button>
-        )}
-        {before && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => void openLatest()}
-          >
-            最新の記録へ戻る
-          </Button>
-        )}
-      </div>
-    </section>
+    </PlayLog>
   );
 }
 

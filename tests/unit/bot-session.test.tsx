@@ -284,6 +284,9 @@ test("観戦画面で進行中のセッションの記録を前後に移動で�
                 },
               ],
             },
+            ...(earlier
+              ? []
+              : [{ id: "3", lines: [{ text: "船が岸に着いた" }] }]),
           ],
           before: earlier ? null : "2",
         },
@@ -293,6 +296,16 @@ test("観戦画面で進行中のセッションの記録を前後に移動で�
   show(watchPath);
   await screen.findByRole("heading", { name: "「観測者」の観戦" });
   await screen.findByText("渡し船が戻った");
+  const log = screen.getByRole("region", { name: "セッションのチャット" });
+  expect(within(log).getAllByRole("article")[0]?.textContent).toContain(
+    "船が岸に着いた",
+  );
+  const scrollTo = vi.fn();
+  log.scrollTo = scrollTo;
+  Object.defineProperty(log, "scrollHeight", { value: 1800 });
+  await open("最下部に移動");
+  await open("最上部へ移動");
+  expect(scrollTo.mock.calls).toEqual([[{ top: 1800 }], [{ top: 0 }]]);
   await open("前の記録を表示");
   await screen.findByText("菜の花が咲いている");
   expect(screen.queryByText("渡し船が戻った")).toBeNull();
