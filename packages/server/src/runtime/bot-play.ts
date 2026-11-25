@@ -307,6 +307,7 @@ function actionMessage(
   result: Record<string, unknown>,
   continuing: boolean,
   owner: TurnParticipant | null,
+  hasUnresolvedMaterials: boolean,
 ) {
   switch (input.command) {
     case "start":
@@ -410,8 +411,7 @@ function actionMessage(
       const parts = individualOutcomes(outcome?.proposals ?? []);
       if ([outcome, ...parts].some((p) => p?.reason === judgmentMaterialLimit))
         return "判定に必要な資料が収まらなかった案は振っていません";
-      if ([outcome, ...parts].some((p) => p?.reason === "MATERIAL_ID_REQUIRED"))
-        return "材料を特定できない案は振っていません。対象の物品IDをmaterialsに指定してください";
+      if (hasUnresolvedMaterials && !outcome?.success) return "";
       if (outcome?.reason === "MATERIAL_SHORTAGE")
         return "使える材料が足りないため、作成できませんでした";
       if (outcome?.success === false) return "新規作成の判定は失敗しました";
@@ -1030,6 +1030,7 @@ type ProposalOutcome = Partial<CreationRoll> & {
   text: string;
   person?: string;
   reason?: string;
+  unresolvedMaterialLabels?: string[];
   proposals?: ProposalOutcome[];
 };
 type JudgmentScope = {
@@ -6815,6 +6816,7 @@ export class BotPlay {
             | "MATERIAL_ID_REQUIRED"
             | "SKILL_CAPACITY_EXCEEDED"
             | typeof judgmentMaterialLimit;
+          unresolvedMaterialLabels?: string[];
         };
     // 材料を指定しない本人の状態だけの変更は製作ではないので、材料を求めない。
     const work = proposals.some(
@@ -6943,7 +6945,7 @@ export class BotPlay {
       new Set(plans.map((p) => p.parent ?? p.index)).size;
     const settings = new Map<number, z.infer<typeof DiceSetting>>();
     const applied = new Map<number, AppliedStatus>();
-    const unresolved = new Set<number>();
+    const unresolved = new Map<number, string[]>();
     const shortages = new Set<number>();
     const overBudget = new Set<number>();
     if (fresh.length) {
@@ -7333,7 +7335,7 @@ export class BotPlay {
             decides ? p.changes : undefined,
           );
           const used = new Map((setting.consumes ?? []).map((c) => [c.id, c]));
-          if (requiredMaterials === null) unresolved.add(p.index);
+          const unresolvedLabels = new Set<string>();
           const required = new Map<string, number>();
           for (const m of [
             ...(p.materials ?? []),
@@ -7355,13 +7357,15 @@ export class BotPlay {
                   ids.push(...(await context.materialIds(place, m.label)));
               }
               if (ids.length !== 1) {
-                unresolved.add(p.index);
+                unresolvedLabels.add(m.label);
                 continue;
               }
               id = ids[0]!;
             }
             required.set(id, Math.max(required.get(id) ?? 0, m.count ?? 1));
           }
+          if (requiredMaterials === null || unresolvedLabels.size)
+            unresolved.set(p.index, [...unresolvedLabels]);
           for (const [id, count] of required) {
             // 申請が状態などを付ける対象そのものは、材料に挙がっても消費しない。
             if (touched.has(id)) continue;
@@ -7474,8 +7478,13 @@ export class BotPlay {
           continue;
         }
         const setting = settings.get(i)!;
-        if (unresolved.has(i)) {
-          rolls.push({ success: false, reason: "MATERIAL_ID_REQUIRED" });
+        const labels = unresolved.get(i);
+        if (labels) {
+          rolls.push({
+            success: false,
+            reason: "MATERIAL_ID_REQUIRED",
+            ...(labels.length ? { unresolvedMaterialLabels: labels } : {}),
+          });
           continue;
         }
         const required = setting.consumes ?? [];
@@ -13853,10 +13862,19 @@ export class BotPlay {
             actor,
           )
         : "";
-      const skillResults = individualOutcomes(
-        (result.outcome as { proposals?: ProposalOutcome[] } | undefined)
-          ?.proposals ?? [],
-      )
+      const outcome = result.outcome as Partial<ProposalOutcome> | undefined;
+      const parts = individualOutcomes(outcome?.proposals ?? []);
+      const materialMessages = (parts.length ? parts : [outcome]).flatMap(
+        (p) => {
+          if (p?.reason !== "MATERIAL_ID_REQUIRED") return [];
+          const proposal = p.text ? `「${p.text}」の案` : "この案";
+          const labels = p.unresolvedMaterialLabels;
+          return labels?.length
+            ? `${proposal}は振っていません。材料「${labels.join("」「")}」に使う物品を特定できません。使う物品のIDをmaterialsに指定するか、その材料を使う工程を申請文から外してください。`
+            : `${proposal}は振っていません。申請文からどの材料を使うのか読み取れません。使う材料を申請文に明記し、その物品のIDをmaterialsに指定してください。`;
+        },
+      );
+      const skillResults = parts
         .filter((p) => p.person)
         .map((p) => {
           const name =
@@ -13872,9 +13890,18 @@ export class BotPlay {
         message: [
           itemMessage ||
             (result.action as { message: string } | undefined)?.message ||
-            actionMessage(input, result, continuing, owner),
+            actionMessage(
+              input,
+              result,
+              continuing,
+              owner,
+              materialMessages.length > 0,
+            ),
+          ...materialMessages,
           ...skillResults,
-        ].join("\n"),
+        ]
+          .filter(Boolean)
+          .join("\n"),
         ...(endedTurn
           ? {
               endedTurn: {
