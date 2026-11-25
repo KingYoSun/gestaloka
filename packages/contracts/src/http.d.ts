@@ -5612,6 +5612,15 @@ export interface paths {
                                                 from: number;
                                                 until?: number;
                                             };
+                                        } | {
+                                            /** Format: uuid */
+                                            id: string;
+                                            text: string;
+                                            /** @enum {string} */
+                                            kind: "condition";
+                                            expression: components["schemas"]["WorldConditionExpression"];
+                                            /** Format: uuid */
+                                            stateId: string;
                                         })[];
                                         /** @default [] */
                                         revisions: ({
@@ -5761,12 +5770,21 @@ export interface paths {
                                                 from: number;
                                                 until?: number;
                                             };
+                                        } | {
+                                            /** Format: uuid */
+                                            id: string;
+                                            text: string;
+                                            /** @enum {string} */
+                                            kind: "condition";
+                                            expression: components["schemas"]["WorldConditionExpression"];
+                                            /** Format: uuid */
+                                            stateId: string;
                                         })[];
                                         edges: {
                                             /** Format: uuid */
                                             id: string;
                                             /** @enum {string} */
-                                            kind: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+                                            kind: "has" | "effect" | "happen" | "see" | "interpret" | "status" | "required";
                                             /** Format: uuid */
                                             source: string;
                                             /** Format: uuid */
@@ -9013,7 +9031,7 @@ export interface paths {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                relation: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+                                relation: "has" | "effect" | "happen" | "see" | "interpret" | "status" | "required";
                                 /** @enum {string} */
                                 direction: "in" | "out";
                                 at: number;
@@ -9026,7 +9044,7 @@ export interface paths {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                relation: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+                                relation: "has" | "effect" | "happen" | "see" | "interpret" | "status" | "required";
                                 /** @enum {string} */
                                 direction: "in" | "out";
                                 through: number;
@@ -9201,6 +9219,15 @@ export interface paths {
                                         from: number;
                                         until?: number;
                                     };
+                                } | {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "condition";
+                                    expression: components["schemas"]["WorldConditionExpressionInput"];
+                                    /** Format: uuid */
+                                    stateId: string;
                                 })[];
                                 /** @default [] */
                                 revisions?: ({
@@ -9350,12 +9377,21 @@ export interface paths {
                                         from: number;
                                         until?: number;
                                     };
+                                } | {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                    /** @enum {string} */
+                                    kind: "condition";
+                                    expression: components["schemas"]["WorldConditionExpressionInput"];
+                                    /** Format: uuid */
+                                    stateId: string;
                                 })[];
                                 edges: {
                                     /** Format: uuid */
                                     id: string;
                                     /** @enum {string} */
-                                    kind: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+                                    kind: "has" | "effect" | "happen" | "see" | "interpret" | "status" | "required";
                                     /** Format: uuid */
                                     source: string;
                                     /** Format: uuid */
@@ -11588,7 +11624,40 @@ export interface paths {
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: never;
+    schemas: {
+        WorldConditionExpressionInput: {
+            all: components["schemas"]["WorldConditionExpressionInput"][];
+        } | {
+            any: components["schemas"]["WorldConditionExpressionInput"][];
+        } | {
+            eq: ((string) | (string))[];
+        } | {
+            id?: string | "$effect";
+            /** @enum {string} */
+            kind?: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+            source?: string | ("$actor" | "$target" | "$effect");
+            target?: string | ("$actor" | "$target" | "$effect");
+            /** @enum {string|null} */
+            role?: "content" | "about" | "use" | "skill" | "summary" | null;
+            text?: string;
+        };
+        WorldConditionExpression: {
+            all: components["schemas"]["WorldConditionExpression"][];
+        } | {
+            any: components["schemas"]["WorldConditionExpression"][];
+        } | {
+            eq: ((string) | (string))[];
+        } | {
+            id?: string | "$effect";
+            /** @enum {string} */
+            kind?: "has" | "effect" | "happen" | "see" | "interpret" | "status";
+            source?: string | ("$actor" | "$target" | "$effect");
+            target?: string | ("$actor" | "$target" | "$effect");
+            /** @enum {string|null} */
+            role?: "content" | "about" | "use" | "skill" | "summary" | null;
+            text?: string;
+        };
+    };
     responses: never;
     parameters: never;
     requestBodies: never;

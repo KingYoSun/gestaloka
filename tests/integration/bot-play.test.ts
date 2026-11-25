@@ -14,6 +14,7 @@ import {
   vi,
 } from "vitest";
 import {
+  type ConditionExpression,
   type FriendCommand,
   BlueprintDraft,
   InventoryBundleCommand,
@@ -6852,6 +6853,214 @@ test("同じ場所のチームメンバーでも隠密移動を発見するま�
   expect(JSON.stringify((await f.status(0)).entries)).not.toContain(
     "離れた場所で人物0を見つけた",
   );
+});
+
+async function conditionalState(
+  f: Awaited<ReturnType<typeof fixture>>,
+  text: string,
+  condition: ConditionExpression,
+  commandRestrictions?: ("move" | "say")[],
+) {
+  const target = f.actors[1]!;
+  const requestId = randomUUID();
+  const state = { id: target, text, while: condition, commandRestrictions };
+  await giveTurn(f, 0);
+  f.calls.mockImplementationOnce(async (id, role) => {
+    expect(role).toBe("world-opposition-dice");
+    return answer(id, { ...sure, states: [state] });
+  });
+  expect(
+    await f.send(0, {
+      command: "apply",
+      requestId,
+      expectedSp: 1,
+      dependencies: [],
+      action: { type: "oppose", targetId: target, text, description: text },
+    }),
+  ).toMatchObject({ outcome: { success: true } });
+  const receipt = (await f.store.receipt(f.graph, requestId))!;
+  const binding = receipt.changes.edges.find(
+    (edge) =>
+      edge.kind === "status" &&
+      edge.role === "content" &&
+      edge.source === target,
+  )!;
+  expect(binding).toBeDefined();
+  expect(receipt.changes.edges).toContainEqual(
+    expect.objectContaining({ kind: "required", source: binding.target }),
+  );
+  const effect = receipt.changes.edges.find(
+    (edge) => edge.kind === "effect" && edge.target === target,
+  )!;
+  expect(effect).toBeDefined();
+  return { binding, attackId: effect.source };
+}
+
+async function conditionalChange(
+  f: Awaited<ReturnType<typeof fixture>>,
+  ops: unknown,
+) {
+  return changeBelongings(f.store, await f.store.claim(f.graph, randomUUID()), {
+    commitId: randomUUID(),
+    at: Date.now(),
+    ops,
+  });
+}
+
+async function conditionalFixture() {
+  const f = await fixture(2);
+  await isolated.databases.postgres.query(
+    "UPDATE world_construction SET state='finished' WHERE id=$1",
+    [f.world],
+  );
+  await f.send(1, { command: "contact", targetId: f.actors[0]! });
+  return f;
+}
+
+const samePlaceCondition: ConditionExpression = {
+  eq: ["$actor.directPlaceId", "$target.directPlaceId"],
+};
+
+test.each([
+  { title: "熊が離れると拘束と連鎖先が終了する", together: false },
+  { title: "同じ確定で一緒に移動すると拘束が続く", together: true },
+])("継続条件の隔離試遊: $title", async ({ together }) => {
+  const f = await conditionalFixture();
+  const [bear, target] = f.actors as [string, string];
+  const description = "熊に押さえつけられて身動きできない。";
+  const { binding, attackId } = await conditionalState(
+    f,
+    description,
+    together
+      ? samePlaceCondition
+      : { all: [samePlaceCondition, { id: "$effect" }] },
+    ["move"],
+  );
+  const dependent = await conditionalState(
+    f,
+    "拘束中は声を出せない。",
+    { id: binding.id },
+    ["say"],
+  );
+  const current = async () =>
+    (await access.botPlay.screen(f.world, target, [target])).own.profile;
+  expect(await current()).toContain(description);
+  expect(
+    await f.store
+      .context(f.graph)
+      .commandRestriction(target, "move", Date.now()),
+  ).toMatchObject({ id: binding.id });
+
+  const actors = together ? [bear, target] : [bear];
+  const moved = await conditionalChange(
+    f,
+    actors.map((subjectId) => ({
+      type: "locate",
+      subjectId,
+      text: "移動先",
+      aboutIds: [f.far],
+    })),
+  );
+  const read = f.store.context(f.graph);
+  expect(await directPlaces(read, bear)).toEqual([f.far]);
+  expect(await directPlaces(read, target)).toEqual([
+    together ? f.far : f.place,
+  ]);
+  expect(await read.node(attackId)).toMatchObject({ kind: "event" });
+  if (together) {
+    expect(await current()).toContain(description);
+    expect(moved.changes.endEdges).not.toContain(binding.id);
+    expect(
+      await read.commandRestriction(target, "move", moved.at),
+    ).toMatchObject({
+      id: binding.id,
+    });
+    return;
+  }
+  expect(moved.changes.endEdges).toEqual(
+    expect.arrayContaining([binding.id, dependent.binding.id]),
+  );
+  for (const id of [binding.id, dependent.binding.id])
+    expect((await read.edge(id))?.period.until).toBe(moved.at);
+  expect(await current()).not.toContain(description);
+  expect(
+    await read.commandRestriction(target, "move", moved.at),
+  ).toBeUndefined();
+  expect(
+    await read.commandRestriction(target, "say", moved.at),
+  ).toBeUndefined();
+});
+
+test.each([
+  { title: "灯具を返すと使用状態が終了する", substitute: false },
+  { title: "OR条件は同じ確定で代替の灯具を受け取れば続く", substitute: true },
+])("継続条件の隔離試遊: $title", async ({ substitute }) => {
+  const f = await conditionalFixture();
+  const [lender, target] = f.actors as [string, string];
+  const description = "借りた灯具を作業に使える。";
+  const items = await conditionalChange(f, [
+    {
+      type: "create",
+      label: "借りた灯具",
+      holder: target,
+      basis: "貸し出された",
+    },
+    {
+      type: "create",
+      label: "予備の灯具",
+      holder: lender,
+      basis: "予備に持っている",
+    },
+  ]);
+  const primary = items.changes.edges.find(
+    (edge) =>
+      edge.kind === "has" && edge.role === undefined && edge.source === target,
+  )!;
+  const backup = items.changes.edges.find(
+    (edge) =>
+      edge.kind === "has" && edge.role === undefined && edge.source === lender,
+  )!;
+  const held = (target: string): ConditionExpression => ({
+    kind: "has",
+    role: null,
+    source: "$target",
+    target,
+  });
+  const condition = substitute
+    ? { any: [held(primary.target), held(backup.target)] }
+    : held(primary.target);
+  const { binding } = await conditionalState(f, description, condition);
+  const returned = await conditionalChange(f, [
+    {
+      type: "move",
+      item: primary.target,
+      from: target,
+      to: lender,
+      basis: "返却した",
+    },
+    ...(substitute
+      ? [
+          {
+            type: "move",
+            item: backup.target,
+            from: lender,
+            to: target,
+            basis: "代わりに受け取った",
+          },
+        ]
+      : []),
+  ]);
+  const read = f.store.context(f.graph);
+  expect((await read.edge(primary.id))?.period.until).toBe(returned.at);
+  const profile = (await access.botPlay.screen(f.world, target, [target])).own
+    .profile;
+  if (substitute) {
+    expect(profile).toContain(description);
+    expect((await read.edge(binding.id))?.period.until).toBeUndefined();
+  } else {
+    expect(profile).not.toContain(description);
+    expect((await read.edge(binding.id))?.period.until).toBe(returned.at);
+  }
 });
 
 test("対抗と本人の状態変更は一度の判断で該当する関係だけを終了し、再送と失敗では重ねて変えない", async () => {

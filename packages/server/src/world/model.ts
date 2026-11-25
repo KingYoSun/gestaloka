@@ -131,6 +131,13 @@ export function validateConnection(
   target: WorldNode,
 ) {
   const valid = (() => {
+    if (edge.kind === "required")
+      return (
+        (source.kind === "script" && target.kind === "condition") ||
+        (source.kind === "condition" && target.kind !== "condition")
+      );
+    if (source.kind === "condition" || target.kind === "condition")
+      return false;
     switch (edge.kind) {
       case "has":
         return (
