@@ -8282,8 +8282,10 @@ test("生成は保存済みの抜粋で選別してから原文と習得経緯�
     expect(Buffer.byteLength(wire)).toBeLessThan(24 * 1024);
     expect(wire).toContain(skillText);
     expect(wire).toContain(skillBasis);
-    expect(JSON.parse(wire).basisDictionary).toContain(itemBasis);
-    return answer(id, sure);
+    const payload = JSON.parse(wire);
+    expect(payload.basisDictionary).toContain(itemBasis);
+    expect(payload.declaredMaterials).toMatchObject(materials);
+    return answer(id, { ...sure, requiredMaterials: materials });
   });
 
   const result = await f.send(0, {
