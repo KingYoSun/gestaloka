@@ -1210,20 +1210,40 @@ const deathStatePrompt =
   "人物の死亡や、人物として動くこと・話すことが戻らない機能の停止は状態に含めない。死亡はfatalでだけ表す。";
 const minutesPrompt =
   "minutesはその状態が自然に続く実時間（分）で、何もしなくても時間の経過で終わる状態にだけ付ける。自然には終わらない状態では省く。";
-const commandRestrictionsPrompt =
-  '状態が有効な間に常にできない操作だけをcommandRestrictionsに指定する。"say"は発声（身振りや筆談は残る）、"move"は本人の移動、"vehicle-travel"は乗り物の運行。成功率が下がるだけの操作や、状況次第でできる操作は含めない。制限がなければ空配列。';
+const commandRestrictionsPrompt = (field: string) =>
+  field +
+  'には、その状態が有効な間に常にできない操作だけを指定する。"say"は発声（身振りや筆談は残る）、"move"は本人の移動、"vehicle-travel"は乗り物の運行。成功率が下がるだけの操作や、状況次第でできる操作は含めない。制限がなければ空配列。';
 export const defaultFumbleCriteria =
   "行動そのものの危険、申請に書かれた進め方、本人の状態と持ち物から、失敗がさらに悪い結果になる見込みをダイスの基準値で設定する。本人に残る変化がなければ設定しない";
 const fumblePrompt = (criteria: string) =>
   "ファンブルの基準に照らして、この行動が失敗したうえ、さらに悪い結果として申請者本人に変化が残り得るなら、同じ応答にfumble:{through:整数,text:文字列,minutes:整数}を加える。失敗したときだけ同じ面数でもう一度振り、出目がthrough以下ならtextを申請者本人の状態として記録する。1<=through<sides。textは変化後の本人の状態を、後から本人だけを調べた人が読める一文で書き、経緯や原因の推測を除く。部位や程度は一つに決め、複数の候補を並べない。死亡は含めない。該当しなければfumbleを省く。" +
   minutesPrompt +
-  commandRestrictionsPrompt +
+  commandRestrictionsPrompt("fumble.commandRestrictions") +
   "ファンブルの基準: " +
   criteria +
   "。";
 const selfStatusPrompt =
-  "本人の直接の状態変更について、変更前の本文と対象、申請した変更、確定した記録を照合し、審査結果をJSONで返す。表記の訂正や、同じ状態について付与後に成立した結果の反映には再度ダイスを振らず、allowApplyがtrueなら{apply:true,endEdges:[関係ID]}を返す。身体や世界にまだ成立していない不確実な変化は同じ応答でダイス設定を返す。追記・改訂・終了の形式や自己申告だけを成立の根拠にしない。申請にcommandRestrictionsがある場合は制限を含めて審査する。" +
-  commandRestrictionsPrompt;
+  "本人の直接の状態変更について、変更前の本文と対象、申請した変更、確定した記録を照合し、審査結果をJSONで返す。allowApplyがtrueで、変更全体が表記の訂正か確定記録の反映なら{apply:true,endEdges:[終了する関係ID]}を返す。新しい変化がある場合、またはallowApplyがfalseの場合は必ず1<=successThrough<sidesの整数でダイス設定を返す。成功の見込みが最大でもsuccessThroughはsides-1。追記・改訂・終了の形式や自己申告だけを成立の根拠にしない。申請にcommandRestrictionsがあれば制限を含めて審査する。応答の最上位にはcommandRestrictionsを書かない。";
+// 型付きstateで転記を認めるのは、本人に期限のない記述を一件加える場合だけ。
+function selfStateClaim(actor: string, changes: Change) {
+  const [edge] = changes.edges;
+  const [node] = changes.nodes;
+  if (
+    changes.nodes.length === 1 &&
+    changes.edges.length === 1 &&
+    !changes.endEdges.length &&
+    !changes.revisions.length &&
+    edge?.stateOrigin &&
+    edge.source === actor &&
+    edge.target === node?.id &&
+    !edge.stateOrigin.attachedItemId &&
+    !edge.stateOrigin.affectsMovement &&
+    edge.period.until === undefined &&
+    !edge.text &&
+    !edge.commandRestrictions?.length
+  )
+    return node.text;
+}
 function stateRelations(
   facts: { node: { id: string }; states: { relationId?: string }[] }[],
   subjects: readonly string[],
@@ -6979,11 +6999,15 @@ export class BotPlay {
     const shortages = new Set<number>();
     const overBudget = new Set<number>();
     if (fresh.length) {
+      const factClaim = fresh.map((p) =>
+        batch ? undefined : selfStateClaim(actor, p.changes),
+      );
       const allowApply = fresh.map(
-        (p) =>
+        (p, i) =>
           !endStateTargetId &&
           !!p.statusReview?.onlyStateCreation &&
-          !p.changes.edges.some((edge) => edge.stateOrigin) &&
+          (factClaim[i] !== undefined ||
+            !p.changes.edges.some((edge) => edge.stateOrigin)) &&
           !p.materials?.length &&
           !waitMinutes,
       );
@@ -7166,6 +7190,47 @@ export class BotPlay {
           overBudget.add(fresh[i]!.index);
           continue;
         }
+        const claim = factClaim[i];
+        const model = this.construction.agent.model;
+        if (allowApply[i] && claim && model.decision) {
+          const person = packet.find((row) => row.node.id === actor);
+          if (person && "belongings" in person) {
+            const state = {
+              subject: person.node.text,
+              states: person.states.map(({ node, since, until }) => ({
+                text: node?.text,
+                since,
+                until,
+              })),
+              skills: person.belongings?.skills.map(
+                ({ name, text, basis }) => ({ name, text, basis }),
+              ),
+              action: fresh[i]!.text,
+              claim,
+            };
+            const answers = await model
+              .decide(
+                derivedId(`${requestId}:state-fact:${canonical(state)}`),
+                "world-state-fact",
+                state,
+                {
+                  recorded: {
+                    instructions:
+                      "statesとskillsは本人の確定記録。actionは今回の申請理由、claimは追加したい記述。この申請が既存事実の転記だけで、claimの内容すべてが今この本人についてすでに成立していると確定記録から言えるか。技能があることは今回それを使った証拠にならない。期限付きの状態を恒久的な性質にする場合もfalse。自己申告、過去の出来事からの推測、新たな行為・効力・対象・条件を含む場合はfalse。",
+                    criteria: {
+                      true: "全内容がすでに成立した同じ事実の再記述",
+                      false: "一部でも新しい変化または根拠不足がある",
+                    },
+                  },
+                },
+              )
+              .catch(() => undefined);
+            if ((answers?.recorded ?? 0) >= 0.85) {
+              applied.set(fresh[i]!.index, { success: true, endEdges: [] });
+              continue;
+            }
+          }
+        }
         const key = JSON.stringify([filtered.has(i), packet]);
         const group = groups.get(key);
         if (group) group.indexes.push(i);
@@ -7231,7 +7296,9 @@ export class BotPlay {
             const ends = "endEdges" in value ? value.endEdges : undefined;
             validateStateEnds(
               ends,
-              stateRelations(selectedNodes, review?.subjects ?? []),
+              "apply" in value && factClaim[i]
+                ? []
+                : stateRelations(selectedNodes, review?.subjects ?? []),
               !!review?.requestedEnds.length,
             );
             if ("apply" in value) return value;
@@ -7271,7 +7338,7 @@ export class BotPlay {
                     criteria
                   : (reviews.length
                       ? "申請した変更を審査する。ダイスを振る場合は{sides:整数,successThrough:整数}を返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準と確定した材料から判断する。"
-                      : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
+                      : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1<=successThrough<sides。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
                     diceStatePrompt +
                     (reviews.length ? selfStatusPrompt + stateEndsPrompt : "") +
                     (selectedConsumable.length ? consumePrompt : "") +
@@ -7826,6 +7893,9 @@ export class BotPlay {
       const states = [...chosen].map(({ node, about, relation }) => ({
         node: judgment && node ? { ...node, judgmentNodeId: node.id } : node,
         since: relation.period.from,
+        ...(relation.period.until === undefined
+          ? {}
+          : { until: relation.period.until }),
         ...(judgment && relation.text === "location"
           ? { judgmentLocation: true }
           : {}),
@@ -11021,7 +11091,7 @@ export class BotPlay {
               : "NPCの外界への作用ではさらにobservableを返す。後から対象だけを調べた人が何がどうなったかを読めるよう、changes.stateから変化後の状態を述べる箇所を文末または句読点まで原文で抜き出す。部位名だけに切り詰めない。行為者、経緯、原因の推測を除く。" +
                 deathStatePrompt +
                 "観察可能な箇所がなければnull。observableを返す場合は制限をobservableRestrictionsに返す。" +
-                commandRestrictionsPrompt) +
+                commandRestrictionsPrompt("observableRestrictions")) +
             (mortal.length
               ? "この行動が成功したときに死亡する対象を、mortalのIDから選んでfatal:[ID]に返す。行動と結果が対象の死を意味するときだけ選び、該当がなければ空配列。deathCriteriaがあれば、この世界で人物が死亡する条件として従う。"
               : "") +
@@ -11030,7 +11100,7 @@ export class BotPlay {
                 deathStatePrompt +
                 "追加する変化がなければ空配列。各状態にはminutesを加えてよい。" +
                 minutesPrompt +
-                commandRestrictionsPrompt
+                commandRestrictionsPrompt("statesの各要素のcommandRestrictions")
               : "") +
             (affected.length || proposedState !== undefined
               ? "条件が崩れれば終了する状態を付けるときは、statesの要素にwhileを、observableにはobservableWhileを必ず返す。状態本文に「〜の間」と書くだけでは自動終了しない。" +
