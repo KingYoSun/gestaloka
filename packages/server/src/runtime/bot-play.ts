@@ -227,7 +227,10 @@ type CompanionJudgement = z.infer<typeof BlueprintDecision> & {
   text: string;
   repeated?: true;
 };
-type Input = z.infer<typeof PlayCommand> & { endStateTargetId?: string };
+type Input = z.infer<typeof PlayCommand> & {
+  endStateTargetId?: string;
+  treatmentTargetId?: string;
+};
 type VehicleControl = Extract<Input, { command: "vehicle-request-control" }>;
 type VehicleApplication = {
   vehicleId: string;
@@ -943,7 +946,7 @@ const privateInterpretation = (actor: string, changes: Change) =>
 type Fumble = { roll: number; success: boolean };
 type CreationRoll = {
   success: boolean;
-  setting: z.infer<typeof DiceSetting>;
+  setting: z.infer<typeof DiceSetting> & { remainingState?: string };
   roll: number;
   repeated?: boolean;
   fumble?: Fumble;
@@ -6847,6 +6850,7 @@ export class BotPlay {
       hasUnrolledChanges = false,
       referenced = [],
       endStateTargetId,
+      previousState,
     }: {
       explore?: boolean;
       waitMinutes?: number | undefined;
@@ -6854,6 +6858,7 @@ export class BotPlay {
       hasUnrolledChanges?: boolean;
       referenced?: string[];
       endStateTargetId?: string | undefined;
+      previousState?: string | undefined;
     } = {},
   ) {
     type Result =
@@ -7025,6 +7030,7 @@ export class BotPlay {
               text,
               requestText,
               changes,
+              previousState,
               ...(fresh[i]!.statusReview ? { allowApply: allowApply[i] } : {}),
               ...(learning?.length ? { learning } : {}),
               ...(materials?.length
@@ -7256,7 +7262,13 @@ export class BotPlay {
               [world],
             )
           ).rows[0]?.criteria || defaultCreationCriteria;
-      const Dice = explore ? ExploreDice : work ? WorkDice : DiceSetting;
+      const creationDice = work ? WorkDice : DiceSetting;
+      const Dice =
+        previousState !== undefined
+          ? creationDice.safeExtend({ remainingState: z.string().trim() })
+          : explore
+            ? ExploreDice
+            : creationDice;
       const decides =
         !explore && (!batch || splitMode === "update") && !waitMinutes;
       const storageReference = targets.some((ids) => ids.length)
@@ -7293,14 +7305,14 @@ export class BotPlay {
               ? ApplyStatus.or(Dice).parse(applyChoice(rawValue))
               : Dice.parse(rawValue);
             const review = fresh[i]!.statusReview;
-            const ends = "endEdges" in value ? value.endEdges : undefined;
-            validateStateEnds(
-              ends,
-              "apply" in value && factClaim[i]
-                ? []
-                : stateRelations(selectedNodes, review?.subjects ?? []),
-              !!review?.requestedEnds.length,
-            );
+            if (previousState === undefined)
+              validateStateEnds(
+                "endEdges" in value ? value.endEdges : undefined,
+                "apply" in value && factClaim[i]
+                  ? []
+                  : stateRelations(selectedNodes, review?.subjects ?? []),
+                !!review?.requestedEnds.length,
+              );
             if ("apply" in value) return value;
             const expected = targets[i]!;
             const limits =
@@ -7340,7 +7352,11 @@ export class BotPlay {
                       ? "申請した変更を審査する。ダイスを振る場合は{sides:整数,successThrough:整数}を返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準と確定した材料から判断する。"
                       : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1<=successThrough<sides。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
                     diceStatePrompt +
-                    (reviews.length ? selfStatusPrompt + stateEndsPrompt : "") +
+                    (previousState !== undefined
+                      ? "previousStateは置き換える状態の本文。行為（text）と申請者が書いた処置後の状態（changes.nodesの本文）を照合し、行為が成功しても解消しない元の状態をremainingStateに文字列で必ず返す。全体が解消するなら空文字、何も解消しないなら元の本文を返す。"
+                      : reviews.length
+                        ? selfStatusPrompt + stateEndsPrompt
+                        : "") +
                     (selectedConsumable.length ? consumePrompt : "") +
                     (work ? workMaterialPrompt + placeStatePrompt : "") +
                     (selectedMaterial.some((p) => p.learning)
@@ -8897,6 +8913,7 @@ export class BotPlay {
     let mixedMoves: Locate[] | undefined;
     const boardings: Boarding[] = [];
     let statusReview: StatusReview | undefined;
+    let previousState: string | undefined;
     let spUseProhibitionGrants: Plan["spUseProhibitionGrants"];
     let vehicleResult: Plan["vehicleResult"];
     let drawTable: DrawTable | undefined;
@@ -9354,7 +9371,7 @@ export class BotPlay {
         changes.endEdges.map((id) => context.edge(id)),
       );
       if (
-        input.endStateTargetId &&
+        (input.endStateTargetId || input.treatmentTargetId) &&
         ended.some(
           (edge) =>
             !edge ||
@@ -9363,6 +9380,20 @@ export class BotPlay {
         )
       )
         reject("STATE_TARGET_CHANGED", "同じ対象の現行状態を指定してください");
+      if (input.treatmentTargetId) {
+        const edge = ended[0]!;
+        const state = await context.node(edge.target);
+        if (
+          edge.source !== input.treatmentTargetId ||
+          !state ||
+          !editableStatus(edge, state)
+        )
+          reject(
+            "STATE_TARGET_CHANGED",
+            "同じ対象の現行状態を指定してください",
+          );
+        previousState = state.text;
+      }
       for (const edge of [...changes.edges, ...ended]) {
         if (edge?.kind !== "status") continue;
         const operator =
@@ -9525,7 +9556,9 @@ export class BotPlay {
           context,
           input.command === "oppose"
             ? controlled
-            : new Set([input.endStateTargetId ?? actor]),
+            : new Set([
+                input.treatmentTargetId ?? input.endStateTargetId ?? actor,
+              ]),
           changes,
           ended.filter((e) => e !== undefined),
           at,
@@ -9892,6 +9925,7 @@ export class BotPlay {
               waitMinutes: wait,
               referenced: [...parties, ...refs],
               endStateTargetId: input.endStateTargetId,
+              previousState,
             },
           )
         )[0]
@@ -9925,10 +9959,17 @@ export class BotPlay {
           context,
           at,
           changes,
-          dice.endEdges ?? dice.setting?.endEdges,
+          input.treatmentTargetId
+            ? selfStatus.requestedEnds
+            : (dice.endEdges ?? dice.setting?.endEdges),
           selfStatus.subjects,
           selfStatus,
         );
+      if (input.treatmentTargetId && dice.setting?.remainingState) {
+        const state = changes.nodes[0]!;
+        const text = `${state.text}\n${dice.setting.remainingState}`;
+        changes = { ...changes, nodes: [{ ...state, text }] };
+      }
       for (const { id, text } of dice.setting?.decided ?? [])
         changes.nodes.find((n) => n.id === id)!.text = text;
       // 探索では、GMが書き分けた道の記述と場所の説明を記録する。接続元の一部なら印を付ける。
@@ -11832,6 +11873,7 @@ export class BotPlay {
       command: "update",
       text: action.text,
       materials: action.materials,
+      ...(action.stateId && { treatmentTargetId: action.targetId }),
       changes: {
         nodes: [
           {
