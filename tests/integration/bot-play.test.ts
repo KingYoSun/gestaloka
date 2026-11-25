@@ -441,6 +441,51 @@ test("乗降と運行は専用操作とlocateで同じ所在になり、通行�
   );
 });
 
+test("同乗者は手番記録で乗り場と到着先を読んでから降りられる", async () => {
+  const f = await fixture(2);
+  const vehicleId = await vehicleFixture(f);
+  await f.send(0, { command: "vehicle-request-control", vehicleId });
+  await f.send(0, { command: "vehicle-board", vehicleId });
+  await f.send(1, { command: "vehicle-board", vehicleId });
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  await giveTurn(f, 1);
+  const travel = { command: "vehicle-travel", vehicleId, destinationId: f.far };
+  await expect(f.send(1, travel)).rejects.toMatchObject({
+    code: "VEHICLE_CONTROL_REQUIRED",
+  });
+  await giveTurn(f, 0);
+  await f.send(0, travel);
+  await giveTurn(f, 1);
+  const records = async (viewer: number) =>
+    (await f.status(viewer)).entries.flatMap(
+      (row: { payload: { entries?: { input: string; result: unknown }[] } }) =>
+        row.payload.entries ?? [],
+    );
+  const entries = await records(1);
+  expect(await records(0)).toContainEqual(
+    expect.objectContaining({ input: "「台車」の操縦を申請した。" }),
+  );
+  expect(entries).toContainEqual(
+    expect.objectContaining({ input: "「広場」で「台車」に乗った。" }),
+  );
+  expect(
+    entries.filter((entry: { input: string }) =>
+      entry.input.includes("着いた"),
+    ),
+  ).toMatchObject([
+    {
+      actorId: f.actors[0],
+      input: "「台車」は「広場」を出発し、「離れた場所」に着いた。",
+      result: { fromId: f.place, destinationId: f.far },
+    },
+  ]);
+  await f.send(1, { command: "vehicle-leave", vehicleId });
+  await f.send(1, { command: "end-turn" });
+  expect(await records(1)).toContainEqual(
+    expect.objectContaining({ input: "「離れた場所」で「台車」を降りた。" }),
+  );
+});
+
 test("他人の所持と操縦権には明示したときだけ対抗し、相手別の出目で一括確定する", async () => {
   const f = await fixture();
   const [actor, operator, holder] = f.actors as [string, string, string];
@@ -1083,6 +1128,20 @@ test("隔離試遊で配布用CLIから自動運転の乗り物に乗り、到�
     });
     for (let i = 0; i < 6 && (await f.status(0)).actorId === npcId; i++)
       await access.botPlay.tickNpcs(f.world);
+    const history = await run("status", "--after", "0");
+    expect(
+      history.entries.flatMap(
+        (row: { payload: { entries?: unknown[] } }) =>
+          row.payload.entries ?? [],
+      ),
+    ).toContainEqual(
+      expect.objectContaining({
+        actorId: npcId,
+        input: expect.stringMatching(
+          /^「コハク号.*」は「広場」を出発し、「作業場」に着いた。$/u,
+        ),
+      }),
+    );
     const self = await game("search", "--kind", "self");
     const outside = await directPlaces(f.store.context(f.graph), bystander);
     expect(self.material.ride).toMatchObject({
