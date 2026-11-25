@@ -1188,7 +1188,7 @@ const WorkDice = DiceSetting.safeExtend({
     .optional(),
 });
 const workMaterialPrompt =
-  "本文とchangesの作業内容から、既存の物品を加工・組み込み・使い切る場合は、その必須材料をrequiredMaterialsに指定する。作業後も残る道具、技能、設計図、単に作業する場所は材料にしない。明示されたmaterialsは必須。対象のIDが申請で指定されていれば{id,count}、呼称だけなら{label,count}で返す。同名の現物から勝手に一つ選ばない。どの材料を指すかも不明ならrequiredMaterials:null、既存品を使わない申請なら[]。成果物が新しく作られることだけを理由に、加工元の現物を省かない。";
+  "本文とchangesから、成功時に加工・組み込み・支払い・使い切りで減る現物とその個数をrequiredMaterialsに指定する。生産物を得ても残る元の存在、繰り返し使う道具、技能、設計図、作業場所は含めない。declaredMaterialsは申請者の材料指定で、本文から使用後も残ると読める現物は除く。本文に用途の記述がない明示材料には指定のIDと個数を使う。対象のIDが申請で指定されていれば{id,count}、呼称だけなら{label,count}で返す。同名の現物から勝手に一つ選ばない。どの材料を指すかも不明ならrequiredMaterials:null、既存品を使わない申請なら[]。成果物が新しく作られることだけを理由に、加工元の現物を省かない。";
 function instantReductionText({
   kind,
   count,
@@ -7035,7 +7035,7 @@ export class BotPlay {
               ...(learning?.length ? { learning } : {}),
               ...(materials?.length
                 ? {
-                    materials: await Promise.all(
+                    declaredMaterials: await Promise.all(
                       materials.map(async (m) => {
                         const item = await readMaterial(
                           m.id,
@@ -7092,7 +7092,9 @@ export class BotPlay {
         ...reviews.flatMap((r) => r.subjects),
         ...material.flatMap(
           (p) =>
-            p.materials?.filter((m) => m.available > 0).map((m) => m.id) ?? [],
+            p.declaredMaterials
+              ?.filter((m) => m.available > 0)
+              .map((m) => m.id) ?? [],
         ),
         ...fresh.flatMap(({ changes }) => [
           ...changes.revisions.map((n) => n.id),
@@ -7144,10 +7146,10 @@ export class BotPlay {
         labels?: ReadonlyMap<string, string>,
       ) => {
         const proposal = material[index]!;
-        return proposal.materials && labels
+        return proposal.declaredMaterials && labels
           ? {
               ...proposal,
-              materials: proposal.materials.map((item) => ({
+              declaredMaterials: proposal.declaredMaterials.map((item) => ({
                 ...item,
                 label: labels.get(item.id) ?? item.label,
               })),
@@ -7177,7 +7179,7 @@ export class BotPlay {
             {
               actor,
               premise,
-              consumable,
+              consumable: work ? [] : consumable,
               storagePlace,
               action: (index, labels) => {
                 const proposal = proposalFor(index, labels);
@@ -7282,6 +7284,7 @@ export class BotPlay {
         const selectedConsumable = judgment
           ? judgmentConsumables(selectedNodes, consumable)
           : consumable;
+        const directConsumable = work || compact ? [] : selectedConsumable;
         for (const [id, label] of labels ?? []) {
           const item = stock.get(id);
           if (item) stock.set(id, { ...item, label });
@@ -7357,7 +7360,7 @@ export class BotPlay {
                       : reviews.length
                         ? selfStatusPrompt + stateEndsPrompt
                         : "") +
-                    (selectedConsumable.length ? consumePrompt : "") +
+                    (directConsumable.length ? consumePrompt : "") +
                     (work ? workMaterialPrompt + placeStatePrompt : "") +
                     (selectedMaterial.some((p) => p.learning)
                       ? "learningは本人が選んだ技能の発展・統合の申請。consumeSkillIdsで示された習得済み技能の本文と根拠、申請のtextとbasisから、引き継ぐ能力と新しく必要な応用・習熟を世界の基準に照らして判定する。中身を委ねられた技能は、その適用範囲と新たにできることを具体化する。"
@@ -7408,8 +7411,8 @@ export class BotPlay {
                           : selectedMaterial[0]),
                         nodes: selectedNodes,
                         ...(confirmed ? { confirmed } : {}),
-                        ...(selectedConsumable.length
-                          ? { consumable: selectedConsumable }
+                        ...(directConsumable.length
+                          ? { consumable: directConsumable }
                           : {}),
                         ...(waitMinutes ? { waitMinutes } : {}),
                         ...(neighbors.length ? { neighbors } : {}),
@@ -7444,16 +7447,12 @@ export class BotPlay {
           >;
           named.push(...(individuals ?? []));
           const setting = decision(
-            consumption(dice, compact ? [] : selectedConsumable),
+            consumption(dice, directConsumable),
             decides ? p.changes : undefined,
           );
-          const used = new Map((setting.consumes ?? []).map((c) => [c.id, c]));
           const unresolvedLabels = new Set<string>();
           const required = new Map<string, number>();
-          for (const m of [
-            ...(p.materials ?? []),
-            ...(requiredMaterials ?? []),
-          ]) {
+          for (const m of requiredMaterials ?? []) {
             let id: string;
             if ("id" in m) id = m.id;
             else {
@@ -7477,7 +7476,11 @@ export class BotPlay {
             }
             required.set(id, Math.max(required.get(id) ?? 0, m.count ?? 1));
           }
-          if (requiredMaterials === null || unresolvedLabels.size)
+          if (
+            requiredMaterials === null ||
+            (p.materials?.length && requiredMaterials === undefined) ||
+            unresolvedLabels.size
+          )
             unresolved.set(p.index, [...unresolvedLabels]);
           for (const [id, count] of required) {
             // 申請が状態などを付ける対象そのものは、材料に挙がっても消費しない。
@@ -7485,13 +7488,12 @@ export class BotPlay {
             const item = await readMaterial(id);
             if (!item || count > (item.count ?? 1)) shortages.add(p.index);
             else
-              used.set(id, {
+              (setting.consumes ??= []).push({
                 id,
                 label: item.label,
                 ...(item.count === undefined ? {} : { count }),
               });
           }
-          if (used.size) setting.consumes = [...used.values()];
           if (setting.explored)
             setting.explored = knownNeighbors(setting.explored, neighbors);
           settings.set(p.index, setting);

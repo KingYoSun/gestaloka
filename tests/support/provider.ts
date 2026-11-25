@@ -69,6 +69,13 @@ export async function fixtureRuntime(
         const dice = (proposal: Record<string, unknown>) => ({
           sides: 2147483647,
           successThrough: 2147483646,
+          ...(Array.isArray(proposal.declaredMaterials)
+            ? {
+                requiredMaterials: proposal.declaredMaterials.map(
+                  ({ id, count }) => ({ id, count }),
+                ),
+              }
+            : {}),
           ...(Array.isArray(proposal.storageIds)
             ? {
                 storageLimits: proposal.storageIds.map((storageId) => ({
