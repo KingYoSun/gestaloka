@@ -25,6 +25,7 @@ import {
   ViewersInput,
   CommandRestrictions,
   type CommandRestriction,
+  ConditionExpression,
   type BlockingState,
   type WorldEdge,
   type ReceiptResult,
@@ -828,7 +829,13 @@ const DiceSetting = z
     endEdges: z.array(z.uuid()).optional(),
     // 成功したときに対象の人物へ残る状態。
     states: z
-      .array(z.object({ id: z.uuid(), ...StateText }).strict())
+      .array(
+        z.strictObject({
+          id: z.uuid(),
+          ...StateText,
+          while: ConditionExpression.optional(),
+        }),
+      )
       .optional(),
     // 失敗したときにもう一度振り、出目がthrough以下なら申請者本人に残る状態。
     fumble: z
@@ -926,9 +933,10 @@ function addState(
   }: z.infer<z.ZodObject<typeof StateText>>,
 ) {
   const state = derivedId(key);
+  const stateId = derivedId(`${state}:content`);
   changes.nodes.push({ id: state, kind: "script", text });
   changes.edges.push({
-    id: derivedId(`${state}:content`),
+    id: stateId,
     kind: "status",
     role: "content",
     text: judged,
@@ -936,6 +944,53 @@ function addState(
     target: state,
     period: { from: at, ...(minutes ? { until: at + minutes * 60000 } : {}) },
     ...(commandRestrictions === undefined ? {} : { commandRestrictions }),
+  });
+  return stateId;
+}
+
+function addStateCondition(
+  changes: Change,
+  stateId: string,
+  condition: ConditionExpression,
+  actor: string | undefined,
+  target: string,
+  effect?: WorldEdge,
+) {
+  const refs: Readonly<Record<string, string | undefined>> = {
+    $actor: actor,
+    $target: target,
+    $effect: effect?.source,
+  };
+  const resolve = (value: string, edge = false): string => {
+    if (!value.startsWith("$")) return value;
+    const id = edge && value === "$effect" ? effect?.id : refs[value];
+    if (!id) throw new Error("状態の継続条件に使える参照を指定してください");
+    return id;
+  };
+  const bind = (expression: ConditionExpression): ConditionExpression => {
+    if ("all" in expression) return { all: expression.all.map(bind) };
+    if ("any" in expression) return { any: expression.any.map(bind) };
+    if ("eq" in expression) {
+      const operand = (value: string) => {
+        const reference = /^([^.]+)\.directPlaceId$/.exec(value)?.[1];
+        return reference ? resolve(reference) + ".directPlaceId" : value;
+      };
+      return { eq: [operand(expression.eq[0]), operand(expression.eq[1])] };
+    }
+    const { id, source, target, ...selector } = expression;
+    return {
+      ...selector,
+      ...(id === undefined ? {} : { id: resolve(id, true) }),
+      ...(source === undefined ? {} : { source: resolve(source) }),
+      ...(target === undefined ? {} : { target: resolve(target) }),
+    };
+  };
+  changes.nodes.push({
+    id: derivedId(`${stateId}:condition`),
+    kind: "condition",
+    text: "",
+    stateId,
+    expression: bind(condition),
   });
 }
 // ファンブルした判定の状態を本人に残す。出し直しで返した前回の結果では重ねない。
@@ -2160,6 +2215,7 @@ export class BotPlay {
     let effectState: string | null = null;
     let effectMinutes: number | undefined;
     let effectRestrictions: CommandRestriction[] | undefined;
+    let effectCondition: ConditionExpression | undefined;
     const prior = await this.store.receipt(context.worldId, request);
     if (prior) {
       const saved = (
@@ -2408,6 +2464,7 @@ export class BotPlay {
             : await this.#fumblePrompt(session.world_id),
           playerRequest && (person || victim) ? request : undefined,
           { actor: protectedActor, target: protectedTarget },
+          !victim,
         );
         outcome = {
           setting: saved.setting,
@@ -2424,9 +2481,11 @@ export class BotPlay {
             effectState = state?.text ?? null;
             effectMinutes = state?.minutes;
             effectRestrictions = state?.commandRestrictions;
+            effectCondition = state?.while;
           } else {
             effectState = saved.observable;
             effectRestrictions = saved.observableRestrictions;
+            effectCondition = saved.observableWhile;
           }
           if (saved.perception)
             stealth = await this.#oppositionObservations(
@@ -2564,8 +2623,11 @@ export class BotPlay {
     for (const member of session.data.members)
       if (!member.instant && (!concealed || member.actorId === actorId))
         link({ kind: "see", source: member.actorId, target: event });
-    if (effect && outcome.success && !victim)
+    let effectEdge: WorldEdge | undefined;
+    if (effect && outcome.success && !victim) {
       link({ kind: "effect", source: event, target: effect.targetId });
+      effectEdge = changes.edges.at(-1);
+    }
     if (effect && effectState) {
       const state = derivedId(request + ":state");
       changes.nodes.push({ id: state, kind: "script", text: effectState });
@@ -2583,6 +2645,15 @@ export class BotPlay {
         },
         effectMinutes ? at + effectMinutes * 60000 : undefined,
       );
+      if (effectCondition)
+        addStateCondition(
+          changes,
+          changes.edges.at(-1)!.id,
+          effectCondition,
+          npc ? undefined : actorId,
+          effect.targetId,
+          effectEdge,
+        );
       link({ kind: "status", source: state, target: event, role: "about" });
     }
     const death = await this.#applyDeathPolicy(
@@ -9953,8 +10024,18 @@ export class BotPlay {
             statusReview,
           );
           fatal = saved.setting.fatal ?? [];
-          for (const { id, ...state } of saved.setting.states ?? [])
-            addState(changes, `${input.requestId}:state:${id}`, id, at, state);
+          for (const { id, while: condition, ...state } of saved.setting
+            .states ?? []) {
+            const stateId = addState(
+              changes,
+              `${input.requestId}:state:${id}`,
+              id,
+              at,
+              state,
+            );
+            if (condition)
+              addStateCondition(changes, stateId, condition, actor, id);
+          }
           ({ at, spUseProhibitionGrants } = await this.#applyDeathPolicy(
             session,
             context,
@@ -10389,6 +10470,7 @@ export class BotPlay {
       e.text !== "location" &&
       !isRespawnHome(e) &&
       !isSpUseProhibition(e);
+    const endedOnCreation = new Set<string>();
     for (const id of fatal) {
       for (const e of await context.relations(id, "status", "out", at))
         if (
@@ -10398,9 +10480,16 @@ export class BotPlay {
         )
           changes.endEdges.push(e.id);
       for (const e of changes.edges)
-        if (e.source === id && state(e))
+        if (e.source === id && state(e)) {
           e.period = { from: e.period.from, until: e.period.from };
+          endedOnCreation.add(e.id);
+        }
     }
+    if (endedOnCreation.size)
+      changes.nodes = changes.nodes.filter(
+        (node) =>
+          node.kind !== "condition" || !endedOnCreation.has(node.stateId),
+      );
   }
   async #applyDeathPolicy(
     session: Session,
@@ -10753,6 +10842,7 @@ export class BotPlay {
     fumble = "",
     spRequest?: string,
     protection?: { actor: boolean; target: boolean },
+    effectRef = false,
   ) {
     // 再送が参照する保存済みのダイス設定にも、確定前の保護を適用する。
     function protect(setting: z.infer<typeof DiceSetting>) {
@@ -10799,7 +10889,7 @@ export class BotPlay {
           )
         : parsed;
       const decision = read(dice),
-        { observable, observableRestrictions } = decision,
+        { observable, observableRestrictions, observableWhile } = decision,
         setting = protect(decision.setting),
         fatal = setting.fatal?.filter((id) => mortal.includes(id)),
         states = setting.states?.filter((s) => affected.includes(s.id));
@@ -10825,6 +10915,7 @@ export class BotPlay {
         ),
         observable,
         observableRestrictions,
+        observableWhile,
         perception: reported,
       };
     }
@@ -10832,18 +10923,21 @@ export class BotPlay {
       setting: z.infer<typeof DiceSetting>;
       observable: string | null;
       observableRestrictions?: CommandRestriction[] | undefined;
+      observableWhile?: ConditionExpression | undefined;
     } {
       if (protection?.target && proposedState === undefined) {
         const dice = z.record(z.string(), z.unknown()).parse(result);
         delete dice.observable;
         delete dice.observableRestrictions;
+        delete dice.observableWhile;
         return { setting: DiceSetting.parse(dice), observable: null };
       }
       if (proposedState === undefined)
         return { setting: DiceSetting.parse(result), observable: null };
-      const { observable, observableRestrictions, ...dice } = z
+      const { observable, observableRestrictions, observableWhile, ...dice } = z
         .object({
           observableRestrictions: CommandRestrictions.optional(),
+          observableWhile: ConditionExpression.optional(),
           observable: z
             .string()
             .trim()
@@ -10868,6 +10962,7 @@ export class BotPlay {
         setting: DiceSetting.parse(dice),
         observable,
         observableRestrictions,
+        observableWhile,
       };
     }
     if (spRequest) {
@@ -10898,6 +10993,19 @@ export class BotPlay {
                 "追加する変化がなければ空配列。各状態にはminutesを加えてよい。" +
                 minutesPrompt +
                 commandRestrictionsPrompt
+              : "") +
+            (affected.length || proposedState !== undefined
+              ? "条件が崩れれば終了する状態を付けるときは、statesの要素にwhileを、observableにはobservableWhileを必ず返す。状態本文に「〜の間」と書くだけでは自動終了しない。" +
+                '関係は{id}または{kind,source,target,role,text}で照合する。role:nullは役割なしの関係に一致する。materialsのbelongings.itemsは外側のnode.idが所持する物品を表す。ground:trueの品はその場所に置かれている。consumableは行為者の所持品から選んだ消費候補である。両方の一覧の物品IDを条件に使える。例えば対象が指定の物品を所持する間は{"kind":"has","source":"$target","target":"物品ID","role":null}。' +
+                "{all:[条件,...]}はすべての条件、{any:[条件,...]}はいずれかの条件で状態が続く。複数の代替のうち一つで足りるなら、IDが確認できる代替をそれぞれanyに含める。付与時に成立が必要なのは式全体で、anyの枝にはその時点で不成立の代替も指定できる。" +
+                "属性とIDの等値比較は{eq:[属性またはID,属性またはID]}で、directPlaceIdの値は直接の所在地の場所IDである。属性は「ノードID.directPlaceId」、対象は$targetを使える。" +
+                (typeof actor === "string"
+                  ? '行為者は$actor。例えば同じ直接の所在にいる間は{"eq":["$actor.directPlaceId","$target.directPlaceId"]}。'
+                  : "") +
+                (effectRef
+                  ? '今回記録する作用の辺を条件にする場合は{id:"$effect"}を使う。'
+                  : "") +
+                "原因が終わっても残る負傷などには、その原因を継続条件として指定しない。"
               : "") +
             fumble +
             (group
@@ -10937,6 +11045,7 @@ export class BotPlay {
         setting,
         observable,
         observableRestrictions,
+        observableWhile,
         perception: reported,
       } = readDecision(response.content),
       saved = await this.#roll(requestId, setting, spRequest, protect);
@@ -10944,6 +11053,7 @@ export class BotPlay {
       ...saved,
       observable,
       observableRestrictions,
+      observableWhile,
       perception: reported,
     };
   }

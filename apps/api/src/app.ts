@@ -4,6 +4,7 @@ import swagger from "@fastify/swagger";
 import { fastifySSE } from "@fastify/sse";
 import {
   jsonSchemaTransform,
+  jsonSchemaTransformObject,
   serializerCompiler,
   validatorCompiler,
   type ZodTypeProvider,
@@ -33,6 +34,7 @@ export async function createApp(
   await app.register(swagger, {
     openapi: { info: { title: "GESTALOKA", version: "3.0.0" } },
     transform: jsonSchemaTransform,
+    transformObject: jsonSchemaTransformObject,
   });
   await app.register(fastifySSE);
   const health = () => Health.parse({ service: "gestaloka", status: "ok" });

@@ -112,6 +112,59 @@ export const StartingItem = z
     ),
   })
   .strict();
+const ConditionRelationKind = z.enum([
+  "has",
+  "effect",
+  "happen",
+  "see",
+  "interpret",
+  "status",
+]);
+export const RelationKind = z.enum([
+  ...ConditionRelationKind.options,
+  "required",
+]);
+export type RelationKind = z.infer<typeof RelationKind>;
+const WorldRole = z.enum(["content", "about", "use", "skill", "summary"]);
+const ConditionNodeRef = z.union([
+  z.uuid(),
+  z.enum(["$actor", "$target", "$effect"]),
+]);
+const ConditionOperand = z.union([
+  z.uuid(),
+  z.templateLiteral([
+    z.union([z.uuid(), z.enum(["$actor", "$target"])]),
+    ".directPlaceId",
+  ]),
+]);
+const ConditionEdge = z
+  .strictObject({
+    id: z.union([z.uuid(), z.literal("$effect")]).optional(),
+    kind: ConditionRelationKind.optional(),
+    source: ConditionNodeRef.optional(),
+    target: ConditionNodeRef.optional(),
+    role: WorldRole.nullable().optional(),
+    text: z.string().optional(),
+  })
+  .refine(
+    (edge) => edge.id || (edge.kind && (edge.source || edge.target)),
+    "辺のIDか、種類と接続先の少なくとも一方を指定してください",
+  );
+export type ConditionExpression =
+  | { all: ConditionExpression[] }
+  | { any: ConditionExpression[] }
+  | { eq: [string, string] }
+  | z.infer<typeof ConditionEdge>;
+export const ConditionExpression: z.ZodType<ConditionExpression> = z.lazy(() =>
+  z.union([
+    z.strictObject({ all: z.array(ConditionExpression).nonempty() }),
+    z.strictObject({ any: z.array(ConditionExpression).nonempty() }),
+    z.strictObject({ eq: z.tuple([ConditionOperand, ConditionOperand]) }),
+    ConditionEdge,
+  ]),
+);
+z.globalRegistry.add(ConditionExpression, { id: "WorldConditionExpression" });
+
 export const WorldNode = z.discriminatedUnion("kind", [
   z
     .object({
@@ -162,17 +215,14 @@ export const WorldNode = z.discriminatedUnion("kind", [
       period: Period,
     })
     .strict(),
+  z.strictObject({
+    ...Content,
+    kind: z.literal("condition"),
+    expression: ConditionExpression,
+    stateId: z.uuid(),
+  }),
 ]);
 export type WorldNode = z.infer<typeof WorldNode>;
-export const RelationKind = z.enum([
-  "has",
-  "effect",
-  "happen",
-  "see",
-  "interpret",
-  "status",
-]);
-export type RelationKind = z.infer<typeof RelationKind>;
 // hasの役割。useは家・場所の保管先の登録、skillは身につけた技能を表す。
 // 役割なしのhasは、存在へ向くと物品を持つこと（持つ存在の物であること）、記述へ向くと記録やメモを持つことを表す。
 export const BelongingRole = z.enum(["use", "skill"]);
@@ -186,12 +236,9 @@ export const WorldEdge = z
     kind: RelationKind,
     source: z.uuid(),
     target: z.uuid(),
-    role: z
-      .enum(["content", "about", ...BelongingRole.options, "summary"])
-      .optional()
-      .describe(
-        "status/interpretはcontentかabout。hasの役割なしは、存在へ向くと物品を持つこと、記述へ向くと記録やメモを持つこと。useは家・場所の保管先の登録。use・skill・summaryと物品を持つhasは実行側だけが記録する",
-      ),
+    role: WorldRole.optional().describe(
+      "status/interpretはcontentかabout。hasの役割なしは、存在へ向くと物品を持つこと、記述へ向くと記録やメモを持つこと。useは家・場所の保管先の登録。use・skill・summaryと物品を持つhasは実行側だけが記録する",
+    ),
     text: z
       .string()
       .optional()

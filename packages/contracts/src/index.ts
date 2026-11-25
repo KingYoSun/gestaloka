@@ -60,6 +60,7 @@ export {
   BelongingRole,
   CommandRestriction,
   CommandRestrictions,
+  ConditionExpression,
   StartingItem,
 } from "./world.js";
 

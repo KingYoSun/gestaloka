@@ -7,6 +7,7 @@ import {
   type CommandRestriction,
 } from "@gestaloka/contracts";
 import { routeEndpoints } from "./locations.js";
+import { conditionAnchors, evaluateCondition } from "./conditions.js";
 import {
   editBundle,
   InventoryBundleError,
@@ -265,6 +266,32 @@ async function lock(tx: ManagedTransaction, worldId: string, key: string) {
     { worldId, key },
   );
   return Number(result.records[0]!.get("version"));
+}
+
+async function recordedLocations(
+  tx: ManagedTransaction,
+  worldId: string,
+  actor: string,
+  at?: number,
+) {
+  const { records } = await tx.run(
+    `MATCH (:WorldNode {worldId:$world,id:$actor})-[c:status {role:'content'}]->()
+     WHERE c.worldId=$world AND c.data CONTAINS $marker
+       AND ($at IS NULL OR c.validFrom<=$at)
+     RETURN max(c.validFrom) AS latest,max(coalesce(c.validTo,c.validFrom)) AS last,
+       [x IN collect(c) WHERE x.validTo IS NULL OR ($at IS NOT NULL AND $at<x.validTo) | x.data] AS active`,
+    { world: worldId, actor, marker: '"text":"location"', at: at ?? null },
+  );
+  const row = records[0]!;
+  const time = (key: string) =>
+    row.get(key) === null ? null : Number(row.get(key));
+  return {
+    latest: time("latest"),
+    last: time("last"),
+    active: (row.get("active") as string[]).map((data) =>
+      WorldEdge.parse(JSON.parse(data)),
+    ),
+  };
 }
 
 export class WorldContext {
@@ -949,28 +976,8 @@ export class WorldContext {
   // 移動を重ねても読み出す量を有効な記録の数に保つ。
   async locations(actor: string) {
     z.uuid().parse(actor);
-    const stored = await this.#read(
-      relationKey(actor, "status", "out"),
-      async (tx) => {
-        const row = (
-          await tx.run(
-            `MATCH (n:WorldNode {worldId:$world,id:$actor})-[c:status {role:'content'}]->()
-            WHERE c.worldId=$world AND c.data CONTAINS $marker
-            RETURN max(c.validFrom) AS latest,max(coalesce(c.validTo,c.validFrom)) AS last,
-              [x IN collect(c) WHERE x.validTo IS NULL | x.data] AS active`,
-            { world: this.worldId, actor, marker: '"text":"location"' },
-          )
-        ).records[0]!;
-        const time = (key: string) =>
-          row.get(key) === null ? null : Number(row.get(key));
-        return {
-          latest: time("latest"),
-          last: time("last"),
-          active: (row.get("active") as string[]).map((d) =>
-            WorldEdge.parse(JSON.parse(d)),
-          ),
-        };
-      },
+    const stored = await this.#read(relationKey(actor, "status", "out"), (tx) =>
+      recordedLocations(tx, this.worldId, actor),
     );
     const drafts = this.drafts
       .flatMap((d) => d.changes.edges)
@@ -1578,6 +1585,9 @@ export class WorldStore {
     await this.driver.executeQuery(
       "CREATE INDEX WorldEdge_status_sp_subject IF NOT EXISTS FOR ()-[r:status]-() ON (r.worldId,r.spSubject,r.validTo)",
     );
+    await this.driver.executeQuery(
+      "CREATE INDEX WorldEdge_required_subject IF NOT EXISTS FOR ()-[r:required]-() ON (r.worldId,r.requiredSubject,r.requiredUntil)",
+    );
     for (const subject of Object.values(restrictionSubject)) {
       await this.driver.executeQuery(
         `CREATE INDEX IF NOT EXISTS FOR ()-[r:status]-() ON (r.worldId,r.${subject},r.restrictionUntil)`,
@@ -1964,6 +1974,270 @@ export class WorldStore {
     );
   }
 
+  async #conditionEnds(
+    tx: ManagedTransaction,
+    worldId: string,
+    at: number,
+    changes: Change,
+    ended: WorldEdge[],
+    dependencies: Dependency[],
+  ) {
+    const endedIds = new Set(changes.endEdges);
+    const added = new Map(changes.edges.map((edge) => [edge.id, edge]));
+    const guards = new Map<string, Promise<number>>();
+    const guard = async (key: string) => {
+      if (!guards.has(key)) {
+        guards.set(key, version(tx, worldId, key));
+        dependencies.push({ key, version: await guards.get(key)! });
+      } else await guards.get(key);
+    };
+    const guardAll = async (keys: string[]) => {
+      const unseen = [...new Set(keys)].filter((key) => !guards.has(key));
+      if (!unseen.length) return;
+      const { records } = await tx.run(
+        `UNWIND $keys AS key
+         OPTIONAL MATCH (g:WorldGuard {worldId:$worldId,key:key})
+         RETURN key,coalesce(g.version,0) AS version`,
+        { worldId, keys: unseen },
+      );
+      for (const row of records) {
+        const key = row.get("key") as string;
+        const revision = Number(row.get("version"));
+        guards.set(key, Promise.resolve(revision));
+        dependencies.push({ key, version: revision });
+      }
+    };
+    const active = (edge: WorldEdge) =>
+      !endedIds.has(edge.id) &&
+      edge.period.from <= at &&
+      at < (edge.period.until ?? Infinity);
+    const readEdge = async (id: string) => {
+      if (added.has(id)) return added.get(id);
+      await guard(edgeKey(id));
+      const { records } = await tx.run(edgeById, { worldId, id });
+      return records[0] && WorldEdge.parse(JSON.parse(records[0].get("data")));
+    };
+    const relations = async (
+      id: string,
+      kind: RelationKind,
+      direction: Direction,
+      role?: WorldEdge["role"] | null,
+      text?: string,
+      opposite?: string,
+      first = false,
+    ) => {
+      await guard(relationKey(id, kind, direction));
+      const staged = [...added.values()].filter(
+        (edge) =>
+          edge.kind === kind &&
+          (direction === "out" ? edge.source : edge.target) === id &&
+          (opposite === undefined ||
+            (direction === "out" ? edge.target : edge.source) === opposite) &&
+          (role === undefined || (edge.role ?? null) === role) &&
+          (text === undefined || edge.text === text) &&
+          active(edge),
+      );
+      if (first && staged.length) return [staged[0]!];
+      const endpoint =
+        opposite === undefined
+          ? "()"
+          : "(:WorldNode {worldId:$worldId,id:$opposite})";
+      const pattern =
+        direction === "out"
+          ? `(n)-[r:${kind}]->${endpoint}`
+          : `(n)<-[r:${kind}]-${endpoint}`;
+      const { records } = await tx.run(
+        `MATCH (n:WorldNode {worldId:$worldId,id:$id})
+         MATCH ${pattern} WHERE r.worldId=$worldId
+           AND r.validFrom<=$at AND (r.validTo IS NULL OR $at<r.validTo)
+           AND NOT r.id IN $ended
+           AND ($anyRole OR r.role=$role OR (r.role IS NULL AND $role IS NULL))
+           AND ($marker IS NULL OR r.data CONTAINS $marker)
+         RETURN r.data AS data${first ? " LIMIT 1" : ""}`,
+        {
+          worldId,
+          at,
+          id,
+          opposite: opposite ?? null,
+          ended: [...endedIds],
+          anyRole: role === undefined,
+          role: role ?? null,
+          marker: text === undefined ? null : `"text":${JSON.stringify(text)}`,
+        },
+      );
+      return [
+        ...records.map((row) => WorldEdge.parse(JSON.parse(row.get("data")))),
+        ...staged,
+      ];
+    };
+    const reader = {
+      activeEdge: async (id: string) => {
+        const edge = await readEdge(id);
+        return edge && active(edge) ? edge : undefined;
+      },
+      hasActiveRelation: async (
+        id: string,
+        kind: RelationKind,
+        direction: Direction,
+        role: WorldEdge["role"] | null,
+        text: string | undefined,
+        opposite: string | undefined,
+      ) =>
+        (await relations(id, kind, direction, role, text, opposite, true))
+          .length > 0,
+      directPlace: async (actor: string) => {
+        await guard(relationKey(actor, "status", "out"));
+        const before = await recordedLocations(tx, worldId, actor, at);
+        const newLocations = changes.edges.filter(
+          (edge) =>
+            edge.kind === "status" &&
+            edge.role === "content" &&
+            edge.text === "location" &&
+            edge.source === actor &&
+            edge.period.from <= at,
+        );
+        const latest = Math.max(
+          before.latest ?? -1,
+          ...newLocations.map((edge) => edge.period.from),
+        );
+        const places = new Set<string | undefined>();
+        for (const location of [...before.active, ...newLocations].filter(
+          (edge) => edge.period.from === latest && active(edge),
+        )) {
+          const direct = await relations(
+            location.target,
+            "status",
+            "out",
+            "about",
+            "direct-place",
+          );
+          places.add(direct.length === 1 ? direct[0]!.target : undefined);
+        }
+        return places.size === 1 ? [...places][0] : undefined;
+      },
+    };
+    type Condition = Extract<WorldNode, { kind: "condition" }>;
+    const fresh = changes.nodes.filter(
+      (node): node is Condition => node.kind === "condition",
+    );
+    const states = new Set<string>();
+    const newConditions = new Map(fresh.map((node) => [node.id, node]));
+    const pending = new Map(newConditions);
+    for (const condition of fresh) {
+      const state = added.get(condition.stateId);
+      if (
+        !state ||
+        state.kind !== "status" ||
+        state.role !== "content" ||
+        state.text === "location" ||
+        isRespawnHome(state) ||
+        isSpUseProhibition(state) ||
+        !active(state) ||
+        states.has(state.id)
+      )
+        throw new WorldConflict("継続条件には新しい状態を一件指定してください");
+      states.add(state.id);
+      const { edgeIds, nodeIds } = conditionAnchors(condition.expression);
+      for (const id of edgeIds) {
+        const fact = await readEdge(id);
+        if (!fact) throw new WorldConflict("継続条件の関係が見つかりません");
+        nodeIds.push(fact.source, fact.target);
+      }
+      const require = (source: string, target: string) => {
+        const edge: WorldEdge = {
+          id: derivedId(`required:${source}:${target}`),
+          kind: "required",
+          source,
+          target,
+          period: state.period,
+        };
+        added.set(edge.id, edge);
+        changes.edges.push(edge);
+      };
+      require(state.target, condition.id);
+      for (const id of new Set(nodeIds)) require(condition.id, id);
+    }
+    const changed = new Set(changes.revisions.map((node) => node.id));
+    const mark = async (edge: WorldEdge) => {
+      if (edge.kind === "required") return;
+      changed.add(edge.source);
+      changed.add(edge.target);
+      if (
+        edge.kind === "status" &&
+        edge.role === "about" &&
+        edge.text === "direct-place"
+      )
+        for (const owner of await relations(
+          edge.source,
+          "status",
+          "in",
+          "content",
+          "location",
+        ))
+          changed.add(owner.source);
+    };
+    for (const edge of [...changes.edges, ...ended]) await mark(edge);
+    const close = (edge: WorldEdge) => {
+      endedIds.add(edge.id);
+      ended.push(edge);
+      changes.endEdges.push(edge.id);
+    };
+    while (changed.size || pending.size) {
+      if (changed.size) {
+        const owners = ended
+          .filter(
+            (edge) =>
+              edge.kind === "status" &&
+              edge.role === "content" &&
+              changed.has(edge.target),
+          )
+          .map((edge) => edge.target);
+        await guardAll([
+          ...[...changed].map((id) => relationKey(id, "required", "in")),
+          ...owners.map((id) => relationKey(id, "required", "out")),
+        ]);
+        const { records } = await tx.run(
+          `UNWIND $anchors AS id
+           MATCH (s:WorldNode)-[r:required]->(t:WorldNode)
+           USING INDEX r:required(worldId,requiredSubject,requiredUntil)
+           WHERE r.worldId=$worldId AND r.requiredSubject=id AND r.requiredUntil>$at
+             AND r.validFrom<=$at AND NOT r.id IN $ended
+             AND (s.kind='condition' OR id IN $owners)
+           WITH CASE WHEN s.kind='condition' THEN s ELSE t END AS condition
+           RETURN DISTINCT condition.data AS data`,
+          { worldId, at, anchors: [...changed], owners, ended: [...endedIds] },
+        );
+        for (const row of records) {
+          const node = WorldNode.parse(JSON.parse(row.get("data")));
+          if (node.kind === "condition") pending.set(node.id, node);
+        }
+        for (const edge of added.values()) {
+          if (edge.kind !== "required" || !changed.has(edge.target)) continue;
+          const condition = newConditions.get(edge.source);
+          if (condition) pending.set(condition.id, condition);
+        }
+      }
+      changed.clear();
+      for (const [id, condition] of pending) {
+        const state = await readEdge(condition.stateId);
+        const current = state && active(state);
+        const result =
+          current && (await evaluateCondition(condition.expression, reader));
+        if (states.has(condition.stateId) && result !== true)
+          throw new WorldConflict("状態の継続条件が成立していません");
+        if (current && result !== false) continue;
+        if (state && current) {
+          close(state);
+          await mark(state);
+        }
+        for (const direction of ["in", "out"] as const)
+          for (const relation of await relations(id, "required", direction))
+            close(relation);
+      }
+      pending.clear();
+    }
+  }
+
   async commit(
     lease: Lease,
     context: WorldContext,
@@ -2005,13 +2279,18 @@ export class WorldStore {
       .strict()
       .parse(input);
     const { commitId, at } = parsed;
-    const changes = normalizeChange(parsed.changes, at);
+    const submitted = normalizeChange(parsed.changes, at);
+    if (
+      submitted.edges.some((edge) => edge.kind === "required") ||
+      submitted.revisions.some((node) => node.kind === "condition")
+    )
+      throw new WorldConflict("状態の継続条件は状態と一緒に確定してください");
     const canChangeHome = (actor: string) =>
       parsed.management || parsed.respawnHomeActor === actor;
-    for (const edge of changes.edges)
+    for (const edge of submitted.edges)
       if (isRespawnHome(edge) && !canChangeHome(edge.source))
         throw respawnHomeCommandRequired();
-    for (const edge of changes.edges.filter(isSpUseProhibition)) {
+    for (const edge of submitted.edges.filter(isSpUseProhibition)) {
       if (
         !parsed.management &&
         !parsed.spUseProhibitionGrants?.includes(edge.id)
@@ -2027,7 +2306,7 @@ export class WorldStore {
     if (
       !parsed.management &&
       !fromBelongingOperations &&
-      changes.nodes.some(
+      submitted.nodes.some(
         (node) =>
           node.kind === "existence" &&
           !parsed.seriesGrants?.includes(node.id) &&
@@ -2048,7 +2327,7 @@ export class WorldStore {
           JSON.stringify({
             runId,
             at,
-            changes: requestedChange(changes, at),
+            changes: requestedChange(submitted, at),
             ...(fixedPlaces?.length ? { newFixedPlaces: fixedPlaces } : {}),
             ...(reservations ? { reservations } : {}),
             ...(parsed.storageEffect
@@ -2090,6 +2369,11 @@ export class WorldStore {
           Number(fence.records[0].get("generation")) !== generation
         )
           throw new WorldConflict("古い実行試行からは確定できません");
+        const changes: Change = {
+          ...submitted,
+          edges: [...submitted.edges],
+          endEdges: [...submitted.endEdges],
+        };
         const dependencies = context.dependencies;
         const revised: { node: WorldNode; knownFrom: number }[] = [];
         for (const node of changes.revisions) {
@@ -2176,8 +2460,18 @@ export class WorldStore {
             throw spUseProhibitionAdminRequired();
           if (isRespawnHome(edge) && !canChangeHome(edge.source))
             throw respawnHomeCommandRequired();
+          if (edge.kind === "required")
+            throw new WorldConflict("継続条件は状態の終了時に終了します");
           ended.push(edge);
         }
+        await this.#conditionEnds(
+          tx,
+          worldId,
+          at,
+          changes,
+          ended,
+          dependencies,
+        );
         const inventoryTouched =
           changes.revisions.some((node) => node.kind === "existence") ||
           [...changes.edges, ...ended].some((edge) => edge.kind === "has");
@@ -2560,11 +2854,11 @@ export class WorldStore {
             },
           );
         };
-        const createEdge = (edge: WorldEdge) =>
+        const createEdge = (edge: WorldEdge, requiredSubject?: string) =>
           tx.run(
             `MATCH (s:WorldNode {worldId: $worldId, id: $source}), (t:WorldNode {worldId: $worldId, id: $target})
             CREATE (s)-[r:${edge.kind} {worldId: $worldId, id: $id, data: $data, validFrom: $from}]->(t)
-            SET r.validTo = $until, r.role = $role${edge.kind === "has" ? ", r.judgmentLong=$long,r.judgmentSourceHash=$hash,r.judgmentAvailableAt=$available" : ""}${isSpUseProhibition(edge) ? ", r.spSubject = $source, t.spUseProhibition = true" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $restrictionUntil" + edge.commandRestrictions.map((command) => `, r.${restrictionSubject[command]} = $source`).join("") : ""}`,
+            SET r.validTo = $until, r.role = $role${edge.kind === "has" ? ", r.judgmentLong=$long,r.judgmentSourceHash=$hash,r.judgmentAvailableAt=$available" : ""}${isSpUseProhibition(edge) ? ", r.spSubject = $source, t.spUseProhibition = true" : ""}${requiredSubject ? ", r.requiredSubject = $requiredSubject, r.requiredUntil = $restrictionUntil" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $restrictionUntil" + edge.commandRestrictions.map((command) => `, r.${restrictionSubject[command]} = $source`).join("") : ""}`,
             {
               worldId,
               source: edge.source,
@@ -2575,6 +2869,7 @@ export class WorldStore {
               until: edge.period.until ?? null,
               restrictionUntil: edge.period.until ?? Number.MAX_SAFE_INTEGER,
               role: edge.role ?? null,
+              requiredSubject: requiredSubject ?? null,
               ...excerptProperties(
                 edge.kind === "has" && (!edge.role || edge.role === "skill")
                   ? edge.text
@@ -2634,7 +2929,12 @@ export class WorldStore {
           if (!source || !target)
             throw new Error("同じ世界の接続先が見つかりません");
           validateConnection(edge, source, target);
-          await createEdge(edge);
+          const requiredSubject =
+            source.kind === "condition" ? edge.target : edge.source;
+          await createEdge(
+            edge,
+            edge.kind === "required" ? requiredSubject : undefined,
+          );
         }
         for (const edge of ended) {
           const data = JSON.stringify({
@@ -2642,7 +2942,7 @@ export class WorldStore {
             period: { ...edge.period, until: at },
           });
           await tx.run(
-            `MATCH ()-[r:${edge.kind} {worldId: $worldId, id: $id}]->() SET r.validTo = $at, r.data = $data${edge.commandRestrictions?.length ? ", r.restrictionUntil = $at" : ""}`,
+            `MATCH ()-[r:${edge.kind} {worldId: $worldId, id: $id}]->() SET r.validTo = $at, r.data = $data${edge.kind === "required" ? ", r.requiredUntil = $at" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $at" : ""}`,
             { worldId, id: edge.id, at, data },
           );
         }
