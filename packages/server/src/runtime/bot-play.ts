@@ -914,8 +914,14 @@ const DiceSetting = z
         z.object({ id: z.uuid(), text: z.string().trim().min(1) }).strict(),
       )
       .optional(),
-    // 申請が成立すると何かが起きる、名前で呼ばれる個人。
-    individuals: z.array(z.string().trim().min(1)).optional(),
+    individuals: z
+      .array(
+        z.object({
+          name: z.string().trim().min(1),
+          effect: z.string().trim().min(1),
+        }),
+      )
+      .optional(),
     explored: Explored.optional(),
     // 物が外れる場所の説明のうち、成功時に終えて置き換えるもの。
     placeStates: z
@@ -1285,7 +1291,8 @@ const decidePrompt =
   "changes.nodesのうち申請者が新しく得る技能・物品で、その中身を申請者が決めず、相手・場所・偶然などに委ねているものがあれば、成功したときに確定する本文をdecided:[{id,text}]に返す。技能はできることとその適用範囲、物品は呼称とし、対象と世界の基準に合わせて、使い道や次の行動を考えられる具体性を持たせる。申請者が中身を書いているものは選ばず、該当がなければ空配列。";
 const individualsPrompt =
   "申請文（text、requestText）、作る物の呼称や本文（changes.nodes[].text）、申請の根拠（changes.edges[].text）を合わせて読む。" +
-  "成立によって、特定の個人（人物・生き物）が新しくその場へ登場する・呼び寄せられる、拘束される、傷つく、死ぬ、またはその身柄・遺体・体の一部が誰かの手に入るなら、その呼び名を敬称なしでindividuals:[文字列]に返す。" +
+  "declaredMaterialsのavailableが正なら、そのIDの現物はすでにある。申請でその現物を消費・加工して申請者が能力を得るだけなら、現物の名前や取得経緯に出てくる個人には今回の作用はない。" +
+  "今回の成立によって特定の個人（人物・生き物）本人が登場する・呼び寄せられる、拘束される、傷つく、死ぬ、力を奪われる、またはその身柄・遺体・体の一部が新たに誰かの手に入るなら、individuals:[{name,effect}]に返す。effectには申請文・成果・根拠から読み取れる今回本人に起きる変化を、nameにはその本人の呼び名を敬称なしで書く。同名の材料が指定されていても、本人にも作用するなら含める。" +
   "たとえば、申請文に「義手を見つける」とだけあっても、根拠で特定の人物の腕や本人から外した義肢そのものを取得するとしていれば、その人物を含める。同名や外見が似ているだけの、本人の身体に由来しない別の装備なら含めない。" +
   "固有の名前は申請の表記のまま返す。役職・肩書き・身元でただ一人に決まる相手も含め、所属や説明を除き「村長」「家の主」のように返す。申請者本人、種類だけで呼ばれて誰とも決まらない相手（例: 通りがかりの狩人、一羽の小鳥）、一緒に行動するだけの相手、名前が出るだけで本人には何も起きない個人は含めない。該当がなければ空配列。";
 const waitPrompt =
@@ -7541,7 +7548,7 @@ export class BotPlay {
           const { requiredMaterials, individuals, ...dice } = v as z.infer<
             typeof WorkDice
           >;
-          named.push(...(individuals ?? []));
+          for (const { name } of individuals ?? []) named.push(name);
           const setting = decision(
             consumption(dice, directConsumable),
             decides ? p.changes : undefined,

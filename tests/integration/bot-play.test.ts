@@ -19207,7 +19207,13 @@ test("登録済みの人物に起きることを名指しする作成は、本�
           JSON.parse(String(messages[1]!.content)).changes.edges,
         ).toContainEqual(expect.objectContaining({ kind: "has", text: basis }));
       }
-      return answer(id, { ...sure, individuals });
+      return answer(id, {
+        ...sure,
+        individuals: individuals.map((name) => ({
+          name,
+          effect: basis ?? "身柄を得る",
+        })),
+      });
     });
   const create = (
     label: string,
@@ -19296,7 +19302,10 @@ test("登録済みの人物に起きることを名指しする作成は、本�
     answer(
       id,
       role === "world-creation-dice"
-        ? { ...sure, individuals: ["人物1"] }
+        ? {
+            ...sure,
+            individuals: [{ name: "人物1", effect: "突き飛ばされる" }],
+          }
         : sure,
     ),
   );
@@ -19313,6 +19322,104 @@ test("登録済みの人物に起きることを名指しする作成は、本�
       })
     ).outcome,
   ).toMatchObject({ success: true });
+});
+
+test("技能習得では指定した現物の消費と同名のNPC本人への作用を区別する", async () => {
+  const f = await fixture(2);
+  const actor = f.actors[0]!;
+  await setNpc(f, 1, "server");
+  const label = "人物1";
+  const seed = await f.apply([
+    {
+      type: "create",
+      holder: actor,
+      label,
+      basis: "旅人が遠い国から持ち帰り、市に並んだものを買った",
+    },
+  ]);
+  const item = seed.changes.nodes.find((n) => n.text === label)!.id;
+  const skill = "遠くの物音を聞き分ける";
+  const belongings = () => readBelongings(f.store.context(f.graph), actor);
+  const diceIds: string[] = [];
+  const learn = (text: string, useItem: boolean, effect?: string) => {
+    const requestId = randomUUID();
+    diceIds.push(derivedId(`${requestId}:creation`));
+    f.calls.mockImplementationOnce(async (id, role, messages) => {
+      expect(role).toBe("world-creation-dice");
+      const payload = JSON.parse(String(messages[1]!.content));
+      expect(payload.declaredMaterials).toEqual(
+        useItem
+          ? [expect.objectContaining({ id: item, label, available: 1 })]
+          : undefined,
+      );
+      return answer(id, {
+        ...sure,
+        requiredMaterials: useItem ? [{ id: item, count: 1 }] : [],
+        individuals: effect ? [{ name: label, effect }] : [],
+      });
+    });
+    return f.send(0, {
+      requestId,
+      command: "apply",
+      expectedSp: 1,
+      action: {
+        type: "generate",
+        plans: [
+          {
+            text,
+            materials: useItem ? [{ id: item }] : [],
+            operation: {
+              type: "learn",
+              person: actor,
+              text: skill,
+              basis: text,
+            },
+          },
+        ],
+      },
+      dependencies: [],
+    });
+  };
+  const refused = { code: "PERSON_REFERENCE_REQUIRED" };
+  await expect(
+    learn(
+      "手持ちの人物1を食べ、同時に人物1本人から聴力を奪う",
+      true,
+      "本人が聴力を失う",
+    ),
+  ).rejects.toMatchObject(refused);
+  await expect(
+    learn(
+      "人物1本人を丸呑みにしてその聴力を得る",
+      false,
+      "本人が丸呑みにされる",
+    ),
+  ).rejects.toMatchObject(refused);
+  expect(await belongings()).toMatchObject({
+    items: [{ id: item }],
+    skills: [],
+  });
+  expect(
+    (
+      await isolated.databases.postgres.query(
+        "SELECT 1 FROM bot_dice WHERE id=ANY($1::uuid[])",
+        [diceIds],
+      )
+    ).rowCount,
+  ).toBe(0);
+  const result = await learn(
+    "手持ちの人物1を食べ、遠くの物音を聞き分ける力を身につける",
+    true,
+  );
+  expect(result.outcome).toMatchObject({
+    roll: expect.any(Number),
+    success: true,
+  });
+  expect(await belongings()).toMatchObject({
+    items: [],
+    skills: [{ text: skill }],
+  });
+  expect(f.calls).toHaveBeenCalledTimes(3);
 });
 
 test("場所の物が判定で外れると、GMが選んだ場所の説明を終えて物の無い説明に置き換える", async () => {
