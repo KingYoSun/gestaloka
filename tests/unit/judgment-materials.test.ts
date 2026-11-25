@@ -582,3 +582,154 @@ test("全資料と分かる小さな入力は一度だけ正本を確認し、�
   expect(decide).not.toHaveBeenCalled();
   expect(hydrate).toHaveBeenCalledExactlyOnceWith(materials, 0);
 });
+
+const heldItem = (id: string, judgmentEdgeId = `held-${id}`) => ({
+  id,
+  label: "木製の型板",
+  basis: "深い溝を使う場合に限り布を傷めなかった。",
+  judgmentEdgeId,
+});
+
+type HeldItem = Omit<ReturnType<typeof heldItem>, "basis"> & {
+  basis: string | null;
+};
+
+const holdingMaterials = (stored: HeldItem[], local = stored) => {
+  const place = material("workshop", [], { items: local });
+  const actor = material("actor", []);
+  return [
+    {
+      ...actor,
+      belongings: {
+        ...actor.belongings,
+        storages: [{ id: "workshop", label: "共同工房", items: stored }],
+      },
+    },
+    place,
+  ];
+};
+
+test("同じ所持関係を一度だけ評価し、採用した物品に限って経緯を案ごとに1件補う", async () => {
+  const first = heldItem("first");
+  const second = heldItem("second");
+  const excluded = heldItem("excluded");
+  const distinct = heldItem("distinct");
+  const other = heldItem("distinct", "other-edge");
+  const materials = holdingMaterials(
+    [first, second, excluded, distinct],
+    [first, second, excluded, other],
+  );
+  const decide = vi.fn(
+    async (value: unknown, questions: Record<string, unknown>) => {
+      const { candidates } = value as {
+        candidates: {
+          key: string;
+          evidence: HeldItem | string;
+          material?: HeldItem;
+          holdingPaths?: unknown;
+        }[];
+      };
+      expect(
+        candidates.filter(({ holdingPaths }) => holdingPaths),
+      ).toHaveLength(6);
+      for (const row of candidates.filter(({ holdingPaths }) => holdingPaths)) {
+        expect(row.holdingPaths).toEqual({
+          holder: { id: "workshop", label: "workshopのプロフィール" },
+          registeredUsers: ["actor"],
+        });
+      }
+      expect(
+        candidates.filter(
+          ({ material, evidence }) =>
+            (material ?? (evidence as HeldItem)).id === distinct.id,
+        ),
+      ).toHaveLength(4);
+      const scores: Record<string, number> = {};
+      for (const { key, evidence, material } of candidates) {
+        const { id } = material ?? (evidence as HeldItem);
+        for (const proposal of [0, 1]) {
+          const [applicable, effect] = !material
+            ? id === excluded.id
+              ? [0.54, 0.54]
+              : [0.55, 0.55]
+            : id === (proposal === 0 ? first.id : second.id)
+              ? [0.5, 0.54]
+              : [0.54, 0.53];
+          scores[`r${proposal}${key}a`] = applicable;
+          scores[`r${proposal}${key}e`] = effect;
+        }
+      }
+      expect(Object.keys(questions)).toEqual(Object.keys(scores));
+      return scores;
+    },
+  );
+  const expected = (withBasis: HeldItem) =>
+    [first, second].map((item) => ({
+      ...item,
+      basis: item === withBasis ? item.basis : null,
+    }));
+  const [firstPlan, secondPlan] = await selectJudgmentMaterials({
+    materials,
+    requiredIds: new Set(["workshop"]),
+    requests: ["湿った生地を伸ばす", "布地の端を揃える"].map((text) => ({
+      text,
+      subjects: ["actor"],
+    })),
+    directLimit: 0,
+    threshold: 0.55,
+    decide,
+  });
+  for (const [packet, basis] of [
+    [firstPlan, first],
+    [secondPlan, second],
+  ] as const) {
+    expect(packet).toEqual(
+      holdingMaterials(
+        [...expected(basis), { ...distinct, basis: null }],
+        [...expected(basis), { ...other, basis: null }],
+      ),
+    );
+  }
+  expect(decide).toHaveBeenCalledTimes(1);
+});
+
+test("追加する取得経緯が正本復元後の予算に収まらなければ物品本体を残す", async () => {
+  const item = heldItem("board");
+  const materials = holdingMaterials([item]);
+  const withoutBasis = holdingMaterials([{ ...item, basis: null }]);
+  const budget = bytes(materials);
+  const hydrate = vi.fn(
+    async (packet: unknown[]) =>
+      JSON.parse(
+        JSON.stringify(packet).replaceAll(item.basis, "原文".repeat(budget)),
+      ) as unknown[],
+  );
+  const decide = vi.fn(async (value: unknown) => {
+    const { candidates } = value as {
+      candidates: { key: string; material?: HeldItem }[];
+    };
+    return Object.fromEntries(
+      candidates.flatMap(({ key, material }) => {
+        const p = material ? 0.5 : 0.55;
+        return [
+          [`r0${key}a`, p],
+          [`r0${key}e`, p],
+        ];
+      }),
+    );
+  });
+  expect(
+    await selectJudgmentMaterials({
+      materials,
+      requiredIds: new Set(["workshop"]),
+      requests: [{ text: "湿った生地を伸ばす", subjects: ["actor"] }],
+      directLimit: 0,
+      threshold: 0.55,
+      budget,
+      decide,
+      hydrate,
+    }),
+  ).toEqual([withoutBasis]);
+  expect(hydrate).toHaveBeenCalledWith(materials, 0);
+  expect(decide).toHaveBeenCalledTimes(1);
+});

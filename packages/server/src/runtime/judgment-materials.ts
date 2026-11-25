@@ -25,6 +25,13 @@ type Candidate = {
   pending?: boolean;
 };
 type Scored = { candidate: Candidate; applicable: number; effect: number };
+type HoldingGroup = {
+  rows: Candidate[];
+  paths: {
+    holder: { id: string; label: string };
+    registeredUsers: string[];
+  };
+};
 
 const bytes = (data: unknown) =>
   Buffer.byteLength(JSON.stringify(data) ?? "null");
@@ -202,10 +209,63 @@ function materialRows(materials: unknown[]) {
   return { candidates, pack };
 }
 
-function withParents(candidates: Iterable<Candidate>) {
+function sameHoldings(candidates: Candidate[]) {
+  const byHolding = new Map<string, Candidate[]>();
+  for (const candidate of candidates) {
+    const { parent } = candidate;
+    if (candidate.kind !== "item" || !parent) continue;
+    const item = record(candidate.evidence);
+    const holder =
+      parent.kind === "storage"
+        ? string(record(parent.evidence).id)
+        : parent.kind === "root"
+          ? candidate.owner
+          : "";
+    if (
+      !holder ||
+      item.ground ||
+      !string(item.id) ||
+      !string(item.judgmentEdgeId)
+    )
+      continue;
+    // Both read paths must carry the same holding, preview, and version.
+    const basis = candidate.supplements?.[0];
+    const key = JSON.stringify([holder, item, basis?.evidence, basis?.pending]);
+    const matching = byHolding.get(key);
+    if (matching) matching.push(candidate);
+    else byHolding.set(key, [candidate]);
+  }
+
+  const groups = new Map<Candidate, HoldingGroup>();
+  for (const items of byHolding.values()) {
+    const direct = items.find(({ parent }) => parent?.kind === "root");
+    const users = items.filter(({ parent }) => parent?.kind === "storage");
+    if (!direct || !users.length) continue;
+    const paths = {
+      holder: {
+        id: direct.owner,
+        label: string(record(record(direct.parent!.evidence).node).text),
+      },
+      registeredUsers: [...new Set(users.map(({ owner }) => owner))],
+    };
+    const notes = items.flatMap(({ supplements }) => supplements ?? []);
+    for (const rows of [items, notes]) {
+      const group = { rows, paths };
+      for (const row of rows) groups.set(row, group);
+    }
+  }
+  return groups;
+}
+
+function withParents(
+  candidates: Iterable<Candidate>,
+  groups?: ReadonlyMap<Candidate, HoldingGroup>,
+) {
   const selected = new Set(candidates);
-  for (const candidate of selected)
+  for (const candidate of selected) {
+    for (const row of groups?.get(candidate)?.rows ?? []) selected.add(row);
     if (candidate.parent) selected.add(candidate.parent);
+  }
   return selected;
 }
 
@@ -271,20 +331,26 @@ function* questionBatches(
   requests: readonly Request[],
   required: (ReadonlySet<Candidate> | undefined)[],
   participants: RecordValue[],
+  groups: ReadonlyMap<Candidate, HoldingGroup>,
 ) {
   const actions = requests.map(({ text, effect, subjects }) => ({
     text,
     effect,
     subjects,
   }));
-  const state = (candidates: unknown[]) => ({
+  const holdingPathsRule =
+    "holdingPathsは同じ所持関係の確認経路。holderの所在とregisteredUsersの保管先利用権を両方考慮し、どちらかの文脈で関係すれば評価する。";
+  const state = (candidates: unknown[], hasHoldingPaths = false) => ({
     requests: actions,
     participants,
     candidates,
+    ...(hasHoldingPaths ? { holdingPathsRule } : {}),
   });
   // The Decisions client adds the model and a type to each question.
   const fixed = bytes({ state: state([]), questions: {} }) + 64;
+  const ruleSize = bytes({ holdingPathsRule }) - 1;
   let size = fixed;
+  let hasHoldingPaths = false;
   let evidence: unknown[] = [];
   let questions: Record<string, Question> = {};
   let asked: {
@@ -294,8 +360,9 @@ function* questionBatches(
     effect: string;
   }[] = [];
   for (const candidate of candidates) {
+    const group = groups.get(candidate);
+    if (group && group.rows[0] !== candidate) continue;
     const { key, kind, owner, evidence: value, parent, basisField } = candidate;
-    const root = rootOf(candidate);
     const row = {
       key,
       kind,
@@ -307,16 +374,20 @@ function* questionBatches(
         ? { storage: record(parent.evidence).id }
         : {}),
       ...(basisField ? { basisField, material: parent?.evidence } : {}),
+      ...(group ? { holdingPaths: group.paths } : {}),
     };
     const nextQuestions: typeof questions = {};
     const nextAsked: typeof asked = [];
     for (const [request, pinned] of required.entries()) {
-      if (
-        !pinned ||
-        pinned.has(candidate) ||
-        ((candidate.pending || root.pending) && !pinned.has(root))
-      )
-        continue;
+      if (!pinned) continue;
+      const askedRows = (group?.rows ?? [candidate]).filter((row) => {
+        const root = rootOf(row);
+        return (
+          !pinned.has(row) &&
+          (!(row.pending || root.pending) || pinned.has(root))
+        );
+      });
+      if (!askedRows.length) continue;
       const applicable = `r${request}${key}a`;
       const effect = `r${request}${key}e`;
       const reference =
@@ -342,24 +413,35 @@ function* questionBatches(
           false: "成功率にしか影響しないか無関係",
         },
       };
-      nextAsked.push({ request, candidate, applicable, effect });
+      for (const row of askedRows)
+        nextAsked.push({ request, candidate: row, applicable, effect });
     }
-    if (!nextAsked.length) continue;
-    const added = bytes(row) + bytes(nextQuestions) + 28 * nextAsked.length;
+    const questionCount = Object.keys(nextQuestions).length;
+    if (!questionCount) continue;
+    const added = bytes(row) + bytes(nextQuestions) + 14 * questionCount;
     // Rows are kept whole. One oversized row is sent on its own.
-    if (evidence.length && size + added > 30 * 1024) {
-      yield { state: state(evidence), questions, asked };
+    if (
+      evidence.length &&
+      size + added + (group && !hasHoldingPaths ? ruleSize : 0) > 30 * 1024
+    ) {
+      yield { state: state(evidence, hasHoldingPaths), questions, asked };
       evidence = [];
       questions = {};
       asked = [];
       size = fixed;
+      hasHoldingPaths = false;
+    }
+    if (group && !hasHoldingPaths) {
+      hasHoldingPaths = true;
+      size += ruleSize;
     }
     evidence.push(row);
     Object.assign(questions, nextQuestions);
     asked.push(...nextAsked);
     size += added;
   }
-  if (evidence.length) yield { state: state(evidence), questions, asked };
+  if (evidence.length)
+    yield { state: state(evidence, hasHoldingPaths), questions, asked };
 }
 
 const strength = ({ applicable, effect }: Scored) =>
@@ -382,13 +464,17 @@ async function fit(
   subjects: readonly string[] | undefined,
   threshold: number,
   finalize: (materials: unknown[]) => Promise<unknown[] | undefined>,
+  groups: ReadonlyMap<Candidate, HoldingGroup>,
 ) {
-  let selected = withParents([
-    ...required,
-    ...scored
-      .filter((row) => strength(row) >= threshold)
-      .map(({ candidate }) => candidate),
-  ]);
+  let selected = withParents(
+    [
+      ...required,
+      ...scored
+        .filter((row) => strength(row) >= threshold)
+        .map(({ candidate }) => candidate),
+    ],
+    groups,
+  );
   let result = await finalize(pack(selected));
   if (!result) return;
 
@@ -414,16 +500,28 @@ async function fit(
       uncertain.set(owner, row);
     }
   }
-  for (const { candidate } of new Set([...uncertain.values(), ...modifiers])) {
-    if (selected.has(candidate)) continue;
-    if (candidate.kind === "basis" && !selected.has(candidate.parent!))
-      continue;
-    const trial = withParents([...selected, candidate]);
+  const keepIfFits = async (candidate: Candidate) => {
+    if (selected.has(candidate)) return;
+    if (candidate.kind === "basis" && !selected.has(candidate.parent!)) return;
+    const trial = withParents([...selected, candidate], groups);
     const packed = await finalize(pack(trial));
-    if (!packed) continue;
+    if (!packed) return;
     selected = trial;
     result = packed;
-  }
+  };
+  for (const { candidate } of uncertain.values()) await keepIfFits(candidate);
+  const holdingNote = ranked
+    .filter(
+      (row) =>
+        row.candidate.kind === "basis" &&
+        groups.has(row.candidate) &&
+        selected.has(row.candidate.parent!) &&
+        strength(row) >= 0.5 &&
+        strength(row) < threshold,
+    )
+    .sort((a, b) => b.effect - a.effect || b.applicable - a.applicable)[0];
+  if (holdingNote) await keepIfFits(holdingNote.candidate);
+  for (const { candidate } of modifiers) await keepIfFits(candidate);
   return result;
 }
 
@@ -489,9 +587,13 @@ export async function selectJudgmentMaterials({
   if (direct.every((packet) => packet !== undefined)) return direct;
 
   const { candidates, pack } = materialRows(materials);
+  const groups = sameHoldings(candidates);
   const required = requests.map((request, i) => {
     if (direct[i]) return;
-    const rows = requiredRows(candidates, request, requiredIds);
+    const rows = withParents(
+      requiredRows(candidates, request, requiredIds),
+      groups,
+    );
     return !previewComplete || measure(pack(rows), i, true) <= budget
       ? rows
       : undefined;
@@ -515,6 +617,7 @@ export async function selectJudgmentMaterials({
     requests,
     required,
     participants,
+    groups,
   )) {
     const answers = await decide(state, questions, batch++).catch(
       () => undefined,
@@ -544,6 +647,7 @@ export async function selectJudgmentMaterials({
         subjects,
         threshold,
         (packet) => finalize(packet, i, true),
+        groups,
       );
       if (packet) onFiltered?.(i);
       return packet;
