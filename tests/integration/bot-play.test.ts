@@ -8036,6 +8036,72 @@ test("着脱の確定は付着した関係だけを終え、追加のGMとSPを�
   expect(f.calls).not.toHaveBeenCalled();
 });
 
+test.each(["転記", "効力の拡大", "判断API失敗", "操作制限"] as const)(
+  "本人のstateで確定記録を照合し、出目を保存した時だけSPを使う（%s）",
+  async (kind) => {
+    const f = await fixture(1);
+    const actor = f.actors[0]!;
+    const skill = "風向きを草の揺れから読める";
+    const basis = "草原で風を観察して学んだ";
+    await f.apply([{ type: "learn", person: actor, text: skill, basis }]);
+    const description = kind === "効力の拡大" ? "風の向きを変えられる" : skill;
+    const model = runtime.agent.model;
+    vi.spyOn(model, "decision", "get").mockReturnValue(
+      decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+    );
+    const decide = vi
+      .spyOn(model, "decide")
+      .mockImplementation(async (_id, role, state) => {
+        expect(role).toBe("world-state-fact");
+        expect(state).toMatchObject({
+          claim: description,
+          skills: [expect.objectContaining({ text: skill, basis })],
+        });
+        if (kind === "判断API失敗") throw new Error("fixture: unavailable");
+        return { recorded: kind === "効力の拡大" ? 0.1 : 0.99 };
+      });
+    f.calls.mockImplementation(async (id, role, messages) => {
+      expect(role).toBe("world-creation-dice");
+      expect(JSON.parse(messages[1]!.content).allowApply).toBe(
+        kind !== "操作制限",
+      );
+      return answer(id, sure);
+    });
+    const requestId = randomUUID();
+    const command = {
+      command: "apply",
+      expectedSp: 1,
+      requestId,
+      dependencies: [],
+      action: {
+        type: "state",
+        targetId: actor,
+        text: "自分の状態に記録する",
+        description,
+        ...(kind === "操作制限" ? { commandRestrictions: ["move"] } : {}),
+      },
+    };
+    const result = await f.send(0, command);
+    expect(result.spentSp).toBe(kind === "転記" ? 0 : 1);
+    if (kind === "転記") {
+      expect(result.outcome).not.toHaveProperty("roll");
+      const receipt = await f.store.receipt(f.graph, requestId);
+      expect(receipt?.changes.nodes).toEqual([
+        expect.objectContaining({ text: description }),
+      ]);
+      expect(receipt?.changes.edges).toContainEqual(
+        expect.objectContaining({
+          source: actor,
+          stateOrigin: { requestId, actorId: actor },
+        }),
+      );
+    } else expect(result.outcome).toHaveProperty("roll");
+    expect((await f.send(0, command)).spentSp).toBe(result.spentSp);
+    expect(decide).toHaveBeenCalledTimes(kind === "操作制限" ? 0 : 1);
+    expect(f.calls).toHaveBeenCalledTimes(kind === "転記" ? 0 : 1);
+  },
+);
+
 test.each([false, true])(
   "非戦闘地域でも治療の成功で指定した負傷を終了する（材料指定=%s）",
   async (withMaterials) => {
