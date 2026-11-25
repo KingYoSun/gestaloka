@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { expect, test, vi } from "vitest";
 import { measureDiceMaterials } from "../../packages/server/src/llm/dice-prompt.js";
 import { selectJudgmentMaterials } from "../../packages/server/src/runtime/judgment-materials.js";
+import { stripJudgmentPreview } from "../../packages/server/src/runtime/judgment-records.js";
 
 const bytes = (data: unknown) => Buffer.byteLength(JSON.stringify(data));
 const material = (
@@ -315,7 +316,10 @@ test("別の案が参照する大きな対象は、無関係な案の予算を�
   const target = {
     node: { id: "target", kind: "existence", text: "長い設定。".repeat(130) },
   };
-  const location = { node: { id: "location", text: "工作場" }, location: true };
+  const location = {
+    node: { id: "location", text: "工作場" },
+    judgmentLocation: true,
+  };
   actor.states.push(location);
   expect(
     await selectJudgmentMaterials({
@@ -335,6 +339,33 @@ test("別の案が参照する大きな対象は、無関係な案の予算を�
       budget: bytes([actor]),
     }),
   ).toEqual([[actor], undefined]);
+});
+
+test("現在地は選別で保持し、GMへは判定内部の印を渡さない", async () => {
+  const state = {
+    node: { id: "location", text: "工作場" },
+    since: 1,
+    about: ["place"],
+  };
+  const materials = [
+    material("actor", [{ id: "skill", text: "紙を折る。" }], {
+      states: [{ ...state, judgmentLocation: true }],
+    }),
+  ];
+  const decide = vi.fn(async (_state, questions) =>
+    Object.fromEntries(Object.keys(questions).map((key) => [key, 0])),
+  );
+  expect(
+    await selectJudgmentMaterials({
+      materials,
+      requiredIds: new Set(),
+      requests: [{ text: "紙を切る", subjects: ["actor"] }],
+      decide,
+      directLimit: 0,
+      hydrate: async (selected) => stripJudgmentPreview(selected),
+    }),
+  ).toEqual([[material("actor", [], { states: [state] })]]);
+  expect(Object.keys(decide.mock.calls[0]![1])).toHaveLength(2);
 });
 
 test("抜粋待ちの対象とその保管品は、その対象を参照した案だけに必須で残る", async () => {

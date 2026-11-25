@@ -50,6 +50,7 @@ function restore(
   delete record.judgmentExcerptPending;
   delete record.judgmentTextPending;
   delete record.judgmentBasisPending;
+  delete record.judgmentLocation;
   const node =
     typeof judgmentNodeId === "string" ? nodes.get(judgmentNodeId) : undefined;
   if (node && "kind" in record) return node;

@@ -86,9 +86,7 @@ function compactDiceInput(input: ChatMessage, cacheSkills: boolean) {
     since,
     ...(name ? [name] : []),
   ];
-  const place = input[diceJudgmentMaterials]
-    ? undefined
-    : input[diceStoragePlace];
+  const place = input[diceStoragePlace];
   const groundItems = belongs.flatMap(({ items }) =>
     items.flatMap((item: Item) => (item.ground ? [item.id] : [])),
   );

@@ -6998,6 +6998,30 @@ export class BotPlay {
             reviews.flatMap((r) => r.scripts),
             judgment,
           );
+      // 送信時だけ使い、再送の呼出しIDと保存する元入力には含めない。
+      const storagePlace =
+        !explore &&
+        !waitMinutes &&
+        !hasUnrolledChanges &&
+        !fresh.some((p) => p.operations?.some((op) => op.type === "locate"))
+          ? (await currentPlaces())[0]
+          : undefined;
+      const proposalFor = (
+        index: number,
+        labels?: ReadonlyMap<string, string>,
+      ) => {
+        const proposal = material[index]!;
+        return proposal.materials && labels
+          ? {
+              ...proposal,
+              materials: proposal.materials.map((item) => ({
+                ...item,
+                label: labels.get(item.id) ?? item.label,
+              })),
+            }
+          : proposal;
+      };
+      const filtered = new Set<number>();
       const packets = judgment
         ? await this.#selectJudgment<(typeof nodes)[number]>(
             requestId,
@@ -7017,22 +7041,37 @@ export class BotPlay {
                 ),
               ]),
             })),
-            { actor, premise, consumable },
+            {
+              actor,
+              premise,
+              consumable,
+              storagePlace,
+              action: (index, labels) => {
+                const proposal = proposalFor(index, labels);
+                return batch ? { proposals: [proposal] } : proposal;
+              },
+              onFiltered: (index) => filtered.add(index),
+            },
           )
         : fresh.map(() => nodes);
       const groups = new Map<
         string,
-        { indexes: number[]; nodes: typeof nodes }
+        { indexes: number[]; nodes: typeof nodes; filtered: boolean }
       >();
       for (const [i, packet] of packets.entries()) {
         if (!packet) {
           overBudget.add(fresh[i]!.index);
           continue;
         }
-        const key = JSON.stringify(packet);
+        const key = JSON.stringify([filtered.has(i), packet]);
         const group = groups.get(key);
         if (group) group.indexes.push(i);
-        else groups.set(key, { indexes: [i], nodes: packet as typeof nodes });
+        else
+          groups.set(key, {
+            indexes: [i],
+            nodes: packet as typeof nodes,
+            filtered: filtered.has(i),
+          });
       }
       const reserved = fresh.filter((p, i) => packets[i] && !allowApply[i]);
       const needsSp = reserved.length > 0;
@@ -7059,18 +7098,7 @@ export class BotPlay {
       for (const group of groups.values()) {
         const { indexes, nodes: selectedNodes } = group;
         const labels = judgment ? judgmentLabels(selectedNodes) : undefined;
-        const selectedMaterial = indexes.map((i) => {
-          const proposal = material[i]!;
-          return proposal.materials && labels
-            ? {
-                ...proposal,
-                materials: proposal.materials.map((item) => ({
-                  ...item,
-                  label: labels.get(item.id) ?? item.label,
-                })),
-              }
-            : proposal;
-        });
+        const selectedMaterial = indexes.map((i) => proposalFor(i, labels));
         const selectedConsumable = judgment
           ? judgmentConsumables(selectedNodes, consumable)
           : consumable;
@@ -7119,21 +7147,6 @@ export class BotPlay {
             return value;
           });
         };
-        // 送信時だけ使い、再送の呼出しIDと保存する元入力には含めない。
-        const storagePlace =
-          !explore &&
-          !waitMinutes &&
-          !hasUnrolledChanges &&
-          !fresh.some((p) =>
-            p.operations?.some((op) => op.type === "locate"),
-          ) &&
-          selectedNodes.some(
-            (node) =>
-              "belongings" in node &&
-              node.belongings?.storages.some(({ items }) => items.length),
-          )
-            ? (await currentPlaces())[0]
-            : undefined;
         const response = await this.#ask(
           derivedId(
             indexes.length === fresh.length
@@ -7182,8 +7195,8 @@ export class BotPlay {
             },
             {
               role: "user",
-              [diceStoragePlace]: storagePlace,
-              ...(judgment ? { [diceJudgmentMaterials]: true } : {}),
+              [diceStoragePlace]: group.filtered ? undefined : storagePlace,
+              ...(group.filtered ? { [diceJudgmentMaterials]: true } : {}),
               content: JSON.stringify(
                 endStateTargetId
                   ? {
@@ -7703,7 +7716,9 @@ export class BotPlay {
       const states = [...chosen].map(({ node, about, relation }) => ({
         node: judgment && node ? { ...node, judgmentNodeId: node.id } : node,
         since: relation.period.from,
-        ...(judgment && relation.text === "location" ? { location: true } : {}),
+        ...(judgment && relation.text === "location"
+          ? { judgmentLocation: true }
+          : {}),
         ...(relation.commandRestrictions?.length
           ? { commandRestrictions: relation.commandRestrictions }
           : {}),
@@ -7803,6 +7818,9 @@ export class BotPlay {
       actor: string;
       premise?: string;
       consumable: Consumable[];
+      storagePlace?: string | undefined;
+      action?: (index: number, labels: ReadonlyMap<string, string>) => object;
+      onFiltered?: (index: number) => void;
     },
   ) {
     const model = this.construction.agent.model;
@@ -7819,18 +7837,22 @@ export class BotPlay {
       requests,
       previewComplete: completeJudgmentPreview(materials),
       hydrate: judgmentLoader(context),
-      measure: (rows, index) => {
+      ...(frame.onFiltered ? { onFiltered: frame.onFiltered } : {}),
+      measure: (rows, index, filtered) => {
         const value = stripJudgmentPreview(rows);
         return measureDiceMaterials(
           {
             role: "user",
-            [diceJudgmentMaterials]: true,
+            [diceJudgmentMaterials]: !creation || filtered,
+            [diceStoragePlace]: filtered ? undefined : frame.storagePlace,
             content: JSON.stringify({
               actor: frame.actor,
               premise: frame.premise,
               [creation ? "nodes" : "materials"]: value,
-              action: requests[index]!.text,
-              changes: requests[index]!.effect,
+              ...(frame.action?.(index, judgmentLabels(value)) ?? {
+                action: requests[index]!.text,
+                changes: requests[index]!.effect,
+              }),
               consumable: judgmentConsumables(value, frame.consumable),
             }),
           },

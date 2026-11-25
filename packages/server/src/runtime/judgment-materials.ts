@@ -258,7 +258,8 @@ function requiredRows(
   for (const candidate of candidates) {
     if (
       pinned.has(rootOf(candidate)) &&
-      (candidate.pending || record(candidate.evidence).location === true)
+      (candidate.pending ||
+        record(candidate.evidence).judgmentLocation === true)
     )
       pinned.add(candidate);
   }
@@ -435,6 +436,7 @@ export async function selectJudgmentMaterials({
   budget = 24 * 1024,
   directLimit = 12 * 1024,
   measure = bytes,
+  onFiltered,
   hydrate,
   previewComplete = !hydrate,
 }: {
@@ -449,25 +451,37 @@ export async function selectJudgmentMaterials({
   threshold?: number;
   budget?: number;
   directLimit?: number;
-  measure?: (materials: unknown[], requestIndex: number) => number;
+  measure?: (
+    materials: unknown[],
+    requestIndex: number,
+    filtered: boolean,
+  ) => number;
+  onFiltered?: (requestIndex: number) => void;
   hydrate?: (materials: unknown[], requestIndex: number) => Promise<unknown[]>;
   previewComplete?: boolean;
 }): Promise<(unknown[] | undefined)[]> {
-  const finalize = async (packet: unknown[], index: number) => {
+  const finalize = async (
+    packet: unknown[],
+    index: number,
+    filtered: boolean,
+  ) => {
     const canonical = hydrate ? await hydrate(packet, index) : packet;
-    return measure(canonical, index) <= budget ? canonical : undefined;
+    return measure(canonical, index, filtered) <= budget
+      ? canonical
+      : undefined;
   };
   const originals = new Map<number, Promise<unknown[] | undefined>>();
   const whole = (index: number) => {
     const saved = originals.get(index);
     if (saved) return saved;
-    const pending = finalize(materials, index);
+    const pending = finalize(materials, index, false);
     originals.set(index, pending);
     return pending;
   };
   const direct = await Promise.all(
     requests.map((_, i) =>
-      previewComplete && measure(materials, i) <= Math.min(directLimit, budget)
+      previewComplete &&
+      measure(materials, i, false) <= Math.min(directLimit, budget)
         ? whole(i)
         : undefined,
     ),
@@ -478,7 +492,7 @@ export async function selectJudgmentMaterials({
   const required = requests.map((request, i) => {
     if (direct[i]) return;
     const rows = requiredRows(candidates, request, requiredIds);
-    return !previewComplete || measure(pack(rows), i) <= budget
+    return !previewComplete || measure(pack(rows), i, true) <= budget
       ? rows
       : undefined;
   });
@@ -518,15 +532,21 @@ export async function selectJudgmentMaterials({
     }
   }
   return Promise.all(
-    requests.map(({ subjects }, i) => {
+    requests.map(async ({ subjects }, i) => {
       if (direct[i]) return direct[i];
+      if (failed.has(i)) return whole(i);
       const pinned = required[i];
-      return failed.has(i)
-        ? whole(i)
-        : pinned &&
-            fit(pack, pinned, scores[i]!, subjects, threshold, (packet) =>
-              finalize(packet, i),
-            );
+      if (!pinned) return;
+      const packet = await fit(
+        pack,
+        pinned,
+        scores[i]!,
+        subjects,
+        threshold,
+        (packet) => finalize(packet, i, true),
+      );
+      if (packet) onFiltered?.(i);
+      return packet;
     }),
   );
 }
