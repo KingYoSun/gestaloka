@@ -9,18 +9,20 @@ import { workerSocket } from "./deployment.js";
 export async function startPlayLoop(
   play: Pick<BotPlay, "deliverArrivals" | "expire" | "tickNpcs">,
   path = workerSocket(process.pid),
+  background?: () => Promise<void>,
 ) {
   const holds = new Set<Socket>();
   let stopping = false;
   let active: Promise<void> | undefined;
   let arrivals: Promise<void> | undefined;
+  let backgroundWork: Promise<void> | undefined;
   const paused = () => stopping || holds.size > 0;
   const server = createServer((socket) => {
     holds.add(socket);
     socket.on("error", () => socket.destroy());
     socket.on("close", () => holds.delete(socket));
     socket.resume();
-    void Promise.all([active, arrivals]).then(
+    void Promise.all([active, arrivals, backgroundWork]).then(
       () => {
         if (!socket.destroyed) socket.write("ready\n");
       },
@@ -47,13 +49,20 @@ export async function startPlayLoop(
       .finally(() => {
         arrivals = undefined;
       });
+    if (background && !backgroundWork)
+      backgroundWork = Promise.resolve()
+        .then(background)
+        .catch(console.error)
+        .finally(() => {
+          backgroundWork = undefined;
+        });
   }, 1000);
   timer.unref();
   return async () => {
     stopping = true;
     clearInterval(timer);
     server.close();
-    await Promise.allSettled([active, arrivals]);
+    await Promise.allSettled([active, arrivals, backgroundWork]);
     for (const socket of holds) socket.destroy();
   };
 }

@@ -6,7 +6,12 @@ import {
   type WorldEdge,
   type WorldNode,
 } from "./model.js";
-import type { Lease, WorldContext, WorldStore } from "./store.js";
+import type {
+  JudgmentPreview,
+  Lease,
+  WorldContext,
+  WorldStore,
+} from "./store.js";
 import type { Dependency } from "./store.js";
 import { directPlaces } from "./locations.js";
 import {
@@ -653,6 +658,158 @@ const labelled = (node: WorldNode | undefined) => ({
   ...shown(node),
 });
 
+const judgmentDetail = (
+  node?: JudgmentPreview<WorldNode>,
+  edge?: JudgmentPreview<WorldEdge>,
+) => ({
+  ...(node ? { judgmentNodeId: node.id } : {}),
+  ...(edge ? { judgmentEdgeId: edge.id } : {}),
+  ...(node?.judgmentExcerptPending ? { judgmentTextPending: true } : {}),
+  ...(edge?.judgmentExcerptPending ? { judgmentBasisPending: true } : {}),
+  ...(node?.judgmentTruncated
+    ? {
+        judgmentTruncated: true as const,
+        judgmentTextLength: node.judgmentTextLength,
+      }
+    : {}),
+  ...(edge?.judgmentTruncated
+    ? {
+        judgmentTruncated: true as const,
+        judgmentBasisLength: edge.judgmentTextLength,
+      }
+    : {}),
+});
+
+const itemFact = (
+  node: JudgmentPreview<WorldNode>,
+  edge: JudgmentPreview<WorldEdge>,
+  ground = false,
+  preview = false,
+) => ({
+  id: node.id,
+  ...labelled(node),
+  ...(ground ? { ground: true as const } : {}),
+  basis: ground ? null : (edge.text ?? null),
+  since: edge.period.from,
+  ...(preview ? judgmentDetail(node, ground ? undefined : edge) : {}),
+});
+
+const skillFact = (
+  edge: JudgmentPreview<WorldEdge>,
+  node: JudgmentPreview<WorldNode> | undefined,
+  preview = false,
+) => ({
+  id: edge.target,
+  text: node?.text ?? "",
+  ...(node?.kind === "script" && node.name ? { name: node.name } : {}),
+  ...shown(node),
+  basis: edge.text ?? null,
+  since: edge.period.from,
+  ...(preview ? judgmentDetail(node, edge) : {}),
+});
+
+// 判定の起点に限定して関係をまとめて読む。保管先の中身を読むのは登録者と明示された保管先だけ。
+export async function readJudgmentScope(
+  context: WorldContext,
+  subjects: readonly string[],
+  places: readonly string[],
+  storageOwners: readonly string[],
+  storageIds: readonly string[] = [],
+  preview = false,
+) {
+  const roots = [...new Set([...subjects, ...places, ...storageIds])];
+  const [holdings, placeStates] = await Promise.all([
+    context.outgoingRelations(roots, "has", LATEST, LATEST, preview),
+    context.outgoingRelations(places, "status", LATEST, LATEST, preview),
+  ]);
+  const registered = new Map(
+    storageOwners.map((id) => [
+      id,
+      (holdings.get(id) ?? []).filter((edge) => edge.role === "use"),
+    ]),
+  );
+  const groundStates = [...placeStates.values()].flatMap((edges) =>
+    edges
+      .filter((edge) => edge.role === "content" && edge.text === "ground")
+      .map((edge) => edge.target),
+  );
+  const [storageHeld, placements] = await Promise.all([
+    context.outgoingRelations(
+      [...registered.values()]
+        .flat()
+        .map((edge) => edge.target)
+        .filter((id) => !holdings.has(id)),
+      "has",
+      LATEST,
+      LATEST,
+      preview,
+    ),
+    context.outgoingRelations(groundStates, "status", LATEST, LATEST, preview),
+  ]);
+  for (const [storage, edges] of storageHeld) holdings.set(storage, edges);
+  const ground = [...placements.values()].flat();
+  const nodes = await context.nodes(
+    [
+      ...[...holdings.values()]
+        .flat()
+        .filter(
+          (edge) => !edge.role || edge.role === "use" || edge.role === "skill",
+        )
+        .map((edge) => edge.target),
+      ...ground
+        .filter((edge) => edge.role === "about" && edge.text === "ground-item")
+        .map((edge) => edge.target),
+    ],
+    preview,
+  );
+  const items = (
+    edges: readonly JudgmentPreview<WorldEdge>[],
+    onGround = false,
+  ) =>
+    edges.flatMap((edge) => {
+      const node = nodes.get(edge.target);
+      return node?.kind === "existence"
+        ? [itemFact(node, edge, onGround, preview)]
+        : [];
+    });
+  const owned = (id: string) =>
+    items((holdings.get(id) ?? []).filter((edge) => !edge.role));
+  for (const edges of holdings.values())
+    edges.sort(
+      (a, b) => a.period.from - b.period.from || a.id.localeCompare(b.id),
+    );
+  return new Map(
+    roots.map((id) => {
+      const here = (placeStates.get(id) ?? [])
+        .filter((edge) => edge.role === "content" && edge.text === "ground")
+        .flatMap((edge) => placements.get(edge.target) ?? [])
+        .filter((edge) => edge.role === "about" && edge.text === "ground-item");
+      return [
+        id,
+        {
+          items: [
+            ...new Map(
+              [...items(here, true), ...owned(id)].map((row) => [row.id, row]),
+            ).values(),
+          ],
+          storages: (registered.get(id) ?? []).map(({ target }) => {
+            const node = nodes.get(target);
+            return {
+              id: target,
+              ...labelled(node),
+              items: owned(target),
+              ...(preview ? judgmentDetail(node) : {}),
+            };
+          }),
+          skills: (holdings.get(id) ?? [])
+            .filter((edge) => edge.role === "skill")
+            .map((edge) => skillFact(edge, nodes.get(edge.target), preview)),
+        },
+      ];
+    }),
+  );
+}
+
 function itemUsage(
   node: Extract<WorldNode, { kind: "existence" }>,
   standard: number,
@@ -708,6 +865,7 @@ export async function heldItems(
   holder: string,
   at = LATEST,
   viewer?: string,
+  preview = false,
 ) {
   const held = (await context.relations(holder, "has", "out", at)).filter(
     (edge) => !edge.role,
@@ -719,14 +877,27 @@ export async function heldItems(
     )
   )
     return [];
+  const nodes =
+    at === LATEST
+      ? await context.nodes(
+          held.map(({ target }) => target),
+          preview,
+        )
+      : undefined;
   const items = [];
   for (const edge of held) {
-    const node = await context.node(edge.target, at);
+    const node = nodes
+      ? nodes.get(edge.target)
+      : await context.node(edge.target, at);
     if (
       node?.kind === "existence" &&
       (!viewer || visibleTo(node, viewer, true))
     )
-      items.push({ id: edge.target, ...labelled(node) });
+      items.push({
+        id: edge.target,
+        ...labelled(node),
+        ...(preview ? judgmentDetail(node) : {}),
+      });
   }
   return items;
 }
@@ -775,13 +946,10 @@ export async function readBelongings(
       : undefined;
     return {
       items: held.map(({ node, edge }) => ({
-        id: node.id,
-        ...labelled(node),
+        ...itemFact(node, edge),
         ...(limits
           ? itemUsage(node, limits.unitsPerSlot, totals?.get(node.id) ?? 0)
           : {}),
-        basis: edge.text ?? null,
-        since: edge.period.from,
       })),
       usedSlots: totals?.get(holder) ?? 0,
     };
@@ -820,14 +988,7 @@ export async function readBelongings(
   for (const edge of await facts(subject, "skill")) {
     const node = await context.node(edge.target, at);
     if (viewer && !visibleTo(node, viewer, false)) continue;
-    skills.push({
-      id: edge.target,
-      text: node?.text ?? "",
-      ...(node?.kind === "script" && node.name ? { name: node.name } : {}),
-      ...shown(node),
-      basis: edge.text ?? null,
-      since: edge.period.from,
-    });
+    skills.push(skillFact(edge, node));
   }
   const { items, usedSlots } = await contents(subject);
   return {

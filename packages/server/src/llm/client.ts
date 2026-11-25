@@ -29,7 +29,11 @@ import {
   renderCachedPrompt,
   openAiExplicitCache,
 } from "./cache.js";
-import { diceStoragePlace, prepareDicePrompt } from "./dice-prompt.js";
+import {
+  diceJudgmentMaterials,
+  diceStoragePlace,
+  prepareDicePrompt,
+} from "./dice-prompt.js";
 import {
   settings,
   budgetSettings,
@@ -48,6 +52,7 @@ export type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
   [diceStoragePlace]?: string | undefined;
+  [diceJudgmentMaterials]?: boolean | undefined;
 };
 export type Connection = {
   baseUrl: string;
@@ -761,10 +766,13 @@ export class LlmClient {
         : message,
     );
     const dice =
-      role === "world-creation-dice" || role === "world-explore-dice"
+      role === "world-creation-dice" ||
+      role === "world-explore-dice" ||
+      role === "world-opposition-dice"
         ? prepareDicePrompt(
             wire,
-            provider === "openai" &&
+            role !== "world-opposition-dice" &&
+              provider === "openai" &&
               api === "responses" &&
               openAiExplicitCache(model),
             role === "world-creation-dice",

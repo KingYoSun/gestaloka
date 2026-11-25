@@ -1,6 +1,9 @@
 import { expect, test } from "vitest";
 import { preparePrompt } from "../../packages/server/src/llm/prompt.js";
-import { prepareDicePrompt } from "../../packages/server/src/llm/dice-prompt.js";
+import {
+  measureDiceMaterials,
+  prepareDicePrompt,
+} from "../../packages/server/src/llm/dice-prompt.js";
 import {
   cacheMessages,
   geminiCachePlan,
@@ -76,6 +79,7 @@ test("技能を追加しても以前の技能の境界を再利用でき、判�
     text: "応用できる条件と手順。".repeat(15),
     basis: "記録に基づいて習得した",
     since: index,
+    ...(index === 0 ? { name: "あとから付けた呼称" } : {}),
   }));
   const skillInput = (length: number, partition: boolean) =>
     cacheMessages(
@@ -114,10 +118,117 @@ test("技能を追加しても以前の技能の境界を再利用でき、判�
   expect(appended[2]?.cacheBoundary).toBe(true);
   expect(appended.filter(({ cacheBoundary }) => cacheBoundary)).toHaveLength(4);
   expect(appended.at(-1)).not.toHaveProperty("cacheBoundary");
+  expect(appended[0]?.text).toContain('"name":"あとから付けた呼称"');
   expect(appended.map(({ text }) => text).join("")).toBe(
     contents(29, false)
       .map(({ text }) => text)
       .join(""),
   );
   expect(skillInput(29, true)[0]).toEqual(skillInput(29, false)[0]);
+});
+
+test("対抗の資料を圧縮しても、技能の正式名・根拠と地面の物品を区別できる", () => {
+  const basis = "同じ修練記録に基づいて引き継いだ技能";
+  const prompt = prepareDicePrompt(
+    [
+      {
+        role: "user",
+        content: JSON.stringify({
+          actor: "attacker",
+          action: "相手を押さえる",
+          materials: ["attacker", "defender"].map((id) => ({
+            node: { id },
+            belongings: {
+              items:
+                id === "attacker"
+                  ? [
+                      {
+                        id: "nearby",
+                        label: "縄",
+                        basis: null,
+                        since: 0,
+                        ground: true,
+                      },
+                    ]
+                  : [],
+              skills: [
+                {
+                  id: id + "-skill",
+                  text: "姿勢を保つ",
+                  basis,
+                  since: 0,
+                  ...(id === "defender" ? { name: "揺らがぬ構え" } : {}),
+                },
+              ],
+              storages: [],
+            },
+          })),
+        }),
+      },
+    ],
+    false,
+  )!;
+  expect(JSON.parse(String(prompt.messages[0]!.content))).toMatchObject({
+    basisDictionary: [basis],
+    groundItems: ["nearby"],
+    materials: [
+      { belongings: { skills: [["attacker-skill", "姿勢を保つ", 0, 0]] } },
+      {
+        belongings: {
+          skills: [["defender-skill", "姿勢を保つ", 0, 0, "揺らがぬ構え"]],
+        },
+      },
+    ],
+  });
+  expect(prompt.system[0]?.text).toContain("成立時点,名称(任意)");
+});
+
+test("資料の計測は重複した根拠とキャッシュ部分を含む実際の送信本文から申請だけを除く", () => {
+  const base = {
+    premise: "海の近く",
+    actor: "actor",
+    text: "道具で木を削る。".repeat(100),
+  };
+  const skill = {
+    id: "skill",
+    text: "木目を読んで削る技能。".repeat(70),
+    basis: "長い修練を受けて習得した。",
+    since: 2,
+  };
+  const item = {
+    id: "tool",
+    label: "道具",
+    basis: "長く使ってきた道具。".repeat(10),
+    since: 3,
+    ground: true,
+  };
+  const input = {
+    role: "user" as const,
+    content: JSON.stringify({
+      ...base,
+      nodes: [
+        {
+          node: { id: "actor" },
+          belongings: {
+            items: [item, { ...item, id: "tool2" }],
+            storages: [],
+            skills: [skill],
+          },
+        },
+      ],
+      consumable: [item, { ...item, id: "tool2" }],
+    }),
+  };
+  for (const cache of [false, true]) {
+    const prompt = prepareDicePrompt([input], cache, true)!;
+    const wire = cacheMessages(prompt).find(
+      ({ role }) => role === "user",
+    )!.content;
+    expect(wire.length).toBe(cache ? 2 : 1);
+    expect(wire.at(-1)!.text).toContain('"basisDictionary"');
+    const length = Buffer.byteLength(wire.map(({ text }) => text).join(""));
+    expect(measureDiceMaterials(input, cache)).toBe(
+      length - Buffer.byteLength(JSON.stringify(base)),
+    );
+  }
 });

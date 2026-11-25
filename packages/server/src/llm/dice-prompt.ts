@@ -4,27 +4,33 @@ import type { ChatMessage } from "./client.js";
 import type { PreparedPrompt } from "./prompt.js";
 
 type Belongings = Awaited<ReturnType<typeof readBelongings>>;
-type Item = Belongings["items"][number];
+type Item = Belongings["items"][number] & { ground?: boolean };
 type Skill = Belongings["skills"][number];
 export const diceStoragePlace = Symbol.for("gestaloka.diceStoragePlace");
+export const diceJudgmentMaterials = Symbol.for(
+  "gestaloka.diceJudgmentMaterials",
+);
+type MaterialFact = { node?: { id: string }; belongings?: Belongings };
 type DiceInput = {
-  premise: string;
-  actor: string;
-  nodes: { node: { id: string }; belongings?: Belongings }[];
+  premise?: string;
+  actor: unknown;
+  nodes?: MaterialFact[];
+  materials?: MaterialFact[];
   consumable?: { id: string; label: string; count?: number }[];
 };
 
-export function prepareDicePrompt(
-  messages: ChatMessage[],
-  cacheSkills: boolean,
-  partitionSkills = false,
-): PreparedPrompt | undefined {
-  const input = messages.find((message) => message.role === "user");
-  if (!input) return;
-  const { premise, actor, nodes, consumable, ...action } = JSON.parse(
-    input.content,
-  ) as DiceInput;
+function compactDiceInput(input: ChatMessage, cacheSkills: boolean) {
+  const {
+    premise,
+    actor,
+    nodes: creation,
+    materials: opposition,
+    consumable,
+    ...action
+  } = JSON.parse(input.content) as DiceInput;
+  const nodes = creation ?? opposition;
   if (!Array.isArray(nodes)) return;
+  const factKey = creation ? "nodes" : "materials";
 
   // 取得経緯は物品が増えるほど入力を膨らませる。申請がID・CLIの短縮ID・呼称で指す物品にだけ付ける。
   const request = JSON.stringify(action);
@@ -34,8 +40,11 @@ export function prepareDicePrompt(
       "@" + createHash("sha256").update(id).digest("hex").slice(0, 8),
     ) ||
     (label !== "" && request.includes(label));
-  const shownBasis = (item: Item) => (mentions(item) ? item.basis : null);
-  const held = nodes.find(({ node }) => node.id === actor)?.belongings;
+  const shownBasis = (item: Item) =>
+    input[diceJudgmentMaterials] || opposition || mentions(item)
+      ? item.basis
+      : null;
+  const held = nodes.find(({ node }) => node?.id === actor)?.belongings;
   const actorSkills = held?.skills ?? [];
   const prefix = JSON.stringify({ premise, actor, actorSkills });
   // 2 KiB was the lower bound for useful skill prefixes in the saved calls.
@@ -70,13 +79,19 @@ export function prepareDicePrompt(
     i.since,
     ...(i.count === undefined ? [] : [i.count]),
   ];
-  const skill = ({ id, text, basis, since }: Skill) => [
+  const skill = ({ id, text, basis, since, name }: Skill) => [
     id,
     text,
     basisValue(basis),
     since,
+    ...(name ? [name] : []),
   ];
-  const place = input[diceStoragePlace];
+  const place = input[diceJudgmentMaterials]
+    ? undefined
+    : input[diceStoragePlace];
+  const groundItems = belongs.flatMap(({ items }) =>
+    items.flatMap((item: Item) => (item.ground ? [item.id] : [])),
+  );
   let summarized = false;
   const storage = ({ id, label, items }: Belongings["storages"][number]) => {
     const remote = place && place !== id && !mentions({ id, label });
@@ -126,7 +141,8 @@ export function prepareDicePrompt(
   const current = JSON.stringify({
     ...(split ? {} : { premise, actor }),
     ...action,
-    nodes: packedNodes,
+    [factKey]: packedNodes,
+    ...(groundItems.length ? { groundItems } : {}),
     ...(packedConsumable
       ? { consumable: allHeldConsumable ? true : packedConsumable }
       : {}),
@@ -138,10 +154,56 @@ export function prepareDicePrompt(
         }
       : {}),
   });
+  return {
+    premise,
+    actor,
+    action,
+    actorSkills,
+    prefix,
+    split,
+    current,
+    packedConsumable,
+    groundItems,
+  };
+}
+
+export function measureDiceMaterials(input: ChatMessage, cacheSkills = false) {
+  const packed = compactDiceInput(input, cacheSkills);
+  if (!packed) throw new Error("ダイス判定の資料がありません");
+  const { premise, actor, action, current, split, prefix } = packed;
+  // Both layouts serialize the same action once. A split adds the actual skill prefix and its newline.
+  return (
+    Buffer.byteLength(current) +
+    (split ? Buffer.byteLength(prefix) + 1 : 0) -
+    Buffer.byteLength(JSON.stringify({ premise, actor, ...action }))
+  );
+}
+
+export function prepareDicePrompt(
+  messages: ChatMessage[],
+  cacheSkills: boolean,
+  partitionSkills = false,
+): PreparedPrompt | undefined {
+  const input = messages.find((message) => message.role === "user");
+  const packed = input && compactDiceInput(input, cacheSkills);
+  if (!packed) return;
+  const {
+    premise,
+    actor,
+    actorSkills,
+    prefix,
+    split,
+    current,
+    packedConsumable,
+    groundItems,
+  } = packed;
   const instructions =
-    "itemsの列は[id,表示名,basis,成立時点,個数(任意)]、storagesは[id,表示名,物品行]、skillsは[id,説明,basis,成立時点]。basisが整数ならbasisDictionaryの0始まりの添字。文字列なら取得経緯の原文。物品のbasisがnullなら、取得経緯が未記録か、申請が指さない物品なので省いた。nodesの物品のheldは現在それを持つ存在(by,label)と取得経緯、originはその物品が最初に成立したときの経緯。" +
+    "itemsの列は[id,表示名,basis,成立時点,個数(任意)]、storagesは[id,表示名,物品行]、skillsは[id,説明,basis,成立時点,名称(任意)]。basisが整数ならbasisDictionaryの0始まりの添字。文字列なら取得経緯の原文。物品のbasisがnullなら、取得経緯が未記録か、申請が指さない物品なので省いた。nodesの物品のheldは現在それを持つ存在(by,label)と取得経緯、originはその物品が最初に成立したときの経緯。" +
     (packedConsumable
       ? "consumableがtrueなら申請者のitemsの全行が消費候補。配列の文字列は申請者のitemsにある物品のIDを指す。物品行から表示名と個数を読む。"
+      : "") +
+    (groundItems.length
+      ? "groundItemsのIDは出現して地面にある物で、保持中の材料とは区別する。"
       : "") +
     (split
       ? "最初のJSONは世界設定・申請者・申請者の技能(actorSkills)。次のJSONは今回の申請と他の材料。両方を合わせて判定する。"

@@ -59,6 +59,7 @@ import {
   belongingEdges,
   heldItems,
   readBelongings,
+  readJudgmentScope,
   readItemDescription,
   type DescriptionCursor,
   readInventoryContents,
@@ -83,7 +84,12 @@ import {
 import { isNonCombatPlace, type NonCombatArea } from "../world/noncombat.js";
 import { canonical, parseOutput } from "../llm/prompt.js";
 import { changeScope, matchesChangeScope } from "../world/change-scope.js";
-import { diceStoragePlace } from "../llm/dice-prompt.js";
+import {
+  diceJudgmentMaterials,
+  diceStoragePlace,
+  measureDiceMaterials,
+} from "../llm/dice-prompt.js";
+import { openAiExplicitCache } from "../llm/cache.js";
 import type { WorldConstruction } from "./construction.js";
 import {
   groundItems,
@@ -144,6 +150,13 @@ import {
   type RespawnHome,
 } from "./death-policy.js";
 import { historyLimit, selectStates } from "./state-selection.js";
+import { selectJudgmentMaterials } from "./judgment-materials.js";
+import {
+  completeJudgmentPreview,
+  judgmentLabels,
+  judgmentLoader,
+  stripJudgmentPreview,
+} from "./judgment-records.js";
 import {
   directStatusReview,
   editableStatus,
@@ -394,6 +407,8 @@ function actionMessage(
           }
         | undefined;
       const parts = individualOutcomes(outcome?.proposals ?? []);
+      if ([outcome, ...parts].some((p) => p?.reason === judgmentMaterialLimit))
+        return "判定に必要な資料が収まらなかった案は振っていません";
       if ([outcome, ...parts].some((p) => p?.reason === "MATERIAL_ID_REQUIRED"))
         return "材料を特定できない案は振っていません。対象の物品IDをmaterialsに指定してください";
       if (outcome?.reason === "MATERIAL_SHORTAGE")
@@ -962,6 +977,30 @@ type ProposalOutcome = Partial<CreationRoll> & {
   reason?: string;
   proposals?: ProposalOutcome[];
 };
+type JudgmentScope = {
+  actor: string;
+  participants: string[];
+  places: string[];
+};
+const judgmentMaterialLimit = "JUDGMENT_MATERIAL_LIMIT";
+const judgmentMaterialMessage =
+  "判定に必要な資料が収まらないため抽選できません";
+
+function judgmentReferences(change: Change) {
+  return [
+    ...change.revisions.map(({ id }) => id),
+    ...change.edges.flatMap(({ source, target }) => [source, target]),
+    ...change.endEdges,
+  ];
+}
+
+function judgmentConsumables(materials: unknown[], consumables: Consumable[]) {
+  const labels = judgmentLabels(materials);
+  return consumables.flatMap((item) => {
+    const label = labels.get(item.id);
+    return label === undefined ? [] : [{ ...item, label }];
+  });
+}
 const individualOutcomes = (proposals: ProposalOutcome[]) =>
   proposals.flatMap((p) => p.proposals ?? [p]);
 
@@ -2197,6 +2236,7 @@ export class BotPlay {
     let protectedTarget = false;
     let endedState = false;
     if (effect) {
+      const preview = playerRequest && !npc;
       const otherParticipant = session.data.members.some(
         (member) =>
           member.actorId === effect.targetId && member.actorId !== actorId,
@@ -2208,7 +2248,15 @@ export class BotPlay {
       const replacesStateId = effect.replacesStateId;
       const priorStates =
         nearby && replacesStateId
-          ? (await this.#physicalStates(context, effect.targetId)).states
+          ? (
+              await this.#physicalStates(
+                context,
+                effect.targetId,
+                false,
+                undefined,
+                preview,
+              )
+            ).states
           : [];
       const previous =
         priorStates.find((state) => state.relationId === replacesStateId) ??
@@ -2218,7 +2266,12 @@ export class BotPlay {
         !victim &&
         (!nearby?.has(effect.targetId) ||
           (effect.replacesStateId && !previous) ||
-          (await context.node(effect.targetId))?.kind !== "existence")
+          (preview
+            ? (await context.nodes([effect.targetId], true)).get(
+                effect.targetId,
+              )
+            : await context.node(effect.targetId)
+          )?.kind !== "existence")
       )
         outcome = unreachable;
       else {
@@ -2243,16 +2296,72 @@ export class BotPlay {
           );
         const protectedActor = policy.protectedActors.has(actorId);
         const subjects = person && !protectedTarget ? [effect.targetId] : [];
-        const facts = victim
-          ? npc
-            ? []
-            : await this.#facts(context, [actorId])
-          : await this.#facts(
+        const participants = [actorId, effect.targetId];
+        const judgment = preview
+          ? {
+              actor: actorId,
+              participants,
+              places: [
+                ...(await directPlaces(context, actorId)),
+                ...(victim
+                  ? victim.places
+                  : await directPlaces(context, effect.targetId)),
+              ],
+            }
+          : undefined;
+        const facts = judgment
+          ? await this.#facts(
               context,
-              [effect.targetId],
+              participants,
               subjects,
               previous ? [previous.id] : [],
-            );
+              judgment,
+            )
+          : victim
+            ? npc
+              ? []
+              : await this.#facts(context, [actorId])
+            : await this.#facts(
+                context,
+                [effect.targetId],
+                subjects,
+                previous ? [previous.id] : [],
+              );
+        const materials = victim
+          ? [
+              {
+                id: effect.targetId,
+                name: victim.name,
+                description: victim.description,
+                count: victim.count,
+              },
+              ...facts,
+            ]
+          : facts;
+        const consumable = npc
+          ? []
+          : await this.#consumable(context, actorId, changes, !!judgment);
+        const [selected] = judgment
+          ? await this.#selectJudgment(
+              request,
+              context,
+              materials,
+              [
+                ...participants,
+                ...judgment.places,
+                ...(previous
+                  ? [
+                      previous.id,
+                      ...(previous.relationId ? [previous.relationId] : []),
+                    ]
+                  : []),
+              ],
+              [{ text: action.text, effect, subjects: participants }],
+              { actor: actorId, consumable },
+            )
+          : [materials];
+        if (!selected)
+          return reject(judgmentMaterialLimit, judgmentMaterialMessage);
         if (person) await this.#rememberStateBasis(request, context);
         const saved = await this.#oppositionRoll(
           request,
@@ -2266,18 +2375,8 @@ export class BotPlay {
             : actorId,
           action.text,
           effect,
-          victim
-            ? [
-                {
-                  id: effect.targetId,
-                  name: victim.name,
-                  description: victim.description,
-                  count: victim.count,
-                },
-                ...facts,
-              ]
-            : facts,
-          npc ? [] : await this.#consumable(context, actorId, changes),
+          selected,
+          judgment ? judgmentConsumables(selected, consumable) : consumable,
           victim || (person && !npc) || protectedTarget
             ? undefined
             : effect.state,
@@ -5627,8 +5726,11 @@ export class BotPlay {
     target: string,
     select = false,
     viewer?: string,
+    preview = false,
   ) {
-    const all = (await this.#states(context, target, viewer)).filter(
+    const all = (
+        await this.#states(context, target, viewer, true, preview)
+      ).filter(
         ({ node, relation }) =>
           node?.kind === "script" &&
           !node.spawn &&
@@ -5654,29 +5756,39 @@ export class BotPlay {
     target: string,
     viewer?: string,
     showLocation = true,
+    preview = false,
   ) {
     const states = [];
     // 期限のある状態は、期限の前だけ現在の状態として読む。
-    for (const e of await context.relations(
-      target,
-      "status",
-      "out",
-      this.now().getTime(),
-      latest,
-    )) {
-      if (
-        e.role !== "content" ||
-        isRespawnHome(e) ||
-        (!showLocation && e.text === "location")
-      )
-        continue;
-      const node = await context.node(e.target);
+    const at = this.now().getTime();
+    const relations = preview
+      ? ((
+          await context.outgoingRelations([target], "status", at, latest, true)
+        ).get(target) ?? [])
+      : await context.relations(target, "status", "out", at, latest);
+    const active = relations.filter(
+      (edge) =>
+        edge.role === "content" &&
+        !isRespawnHome(edge) &&
+        (showLocation || edge.text !== "location"),
+    );
+    const ids = active.map((edge) => edge.target);
+    const [nodes, about] = preview
+      ? await Promise.all([
+          context.nodes(ids, true),
+          context.outgoingRelations(ids, "status", latest, latest, true),
+        ])
+      : [];
+    for (const e of active) {
+      const node = nodes ? nodes.get(e.target) : await context.node(e.target);
       if (viewer && viewer !== target && !visibleTo(node, viewer, true))
         continue;
       states.push({
         relation: e,
         node,
-        about: await context.relations(e.target, "status", "out", latest),
+        about: about
+          ? (about.get(e.target) ?? [])
+          : await context.relations(e.target, "status", "out", latest),
       });
     }
     return states;
@@ -6630,7 +6742,8 @@ export class BotPlay {
           reason:
             | "MATERIAL_SHORTAGE"
             | "MATERIAL_ID_REQUIRED"
-            | "SKILL_CAPACITY_EXCEEDED";
+            | "SKILL_CAPACITY_EXCEEDED"
+            | typeof judgmentMaterialLimit;
         };
     // 材料を指定しない本人の状態だけの変更は製作ではないので、材料を求めない。
     const work = proposals.some(
@@ -6646,11 +6759,11 @@ export class BotPlay {
     let places: string[] | undefined;
     const currentPlaces = async () =>
       (places ??= await directPlaces(context, actor));
-    const readMaterial = async (id: string) => {
+    const readMaterial = async (id: string, preview = false) => {
       if (touched.has(id)) return;
       const known = stock.get(id);
       if (known) return known;
-      const held = await context.holding(id);
+      const held = await context.holding(id, false, preview);
       if (!held || !(await currentPlaces()).includes(held.source)) return;
       if (
         (await context.inventoryActors(context.worldId, [held.source, id])).size
@@ -6659,7 +6772,9 @@ export class BotPlay {
       const access = await context.storageAccess(held.source, actor);
       if (access.registered && !access.allowed) return;
       if ((await context.storageAccess(id, actor)).registered) return;
-      const node = await context.node(id);
+      const node = preview
+        ? (await context.nodes([id], true)).get(id)
+        : await context.node(id);
       if (node?.kind !== "existence" || !visibleTo(node, actor, true)) return;
       await context.assertMovable(id);
       const item = {
@@ -6759,6 +6874,7 @@ export class BotPlay {
     const applied = new Map<number, AppliedStatus>();
     const unresolved = new Set<number>();
     const shortages = new Set<number>();
+    const overBudget = new Set<number>();
     if (fresh.length) {
       const allowApply = fresh.map(
         (p) =>
@@ -6768,9 +6884,6 @@ export class BotPlay {
           !p.materials?.length &&
           !waitMinutes,
       );
-      const needsSp = allowApply.some((allow) => !allow);
-      if (needsSp)
-        await this.#reserveSp(world, actor, user, requestId, cost(fresh));
       const premise = (await this.construction.get(world)).initial_prompt;
       const targets = await Promise.all(
         fresh.map((p) => this.#newStorages(context, p.changes)),
@@ -6791,7 +6904,10 @@ export class BotPlay {
                 ? {
                     materials: await Promise.all(
                       materials.map(async (m) => {
-                        const item = await readMaterial(m.id);
+                        const item = await readMaterial(
+                          m.id,
+                          !explore && !endStateTargetId,
+                        );
                         return {
                           ...m,
                           label: item?.label,
@@ -6851,6 +6967,10 @@ export class BotPlay {
         ]),
       ];
       const ending = endStateTargetId ?? (compact ? actor : undefined);
+      const judgment =
+        !explore && !ending
+          ? { actor, participants: [actor], places: await currentPlaces() }
+          : undefined;
       const nodes = ending
         ? [
             {
@@ -6876,9 +6996,51 @@ export class BotPlay {
               ...(work ? await currentPlaces() : []),
             ],
             reviews.flatMap((r) => r.scripts),
+            judgment,
           );
+      const packets = judgment
+        ? await this.#selectJudgment<(typeof nodes)[number]>(
+            requestId,
+            context,
+            nodes,
+            [actor, ...judgment.places],
+            fresh.map((p) => ({
+              text: p.text,
+              effect: p.changes,
+              subjects: [actor],
+              requiredIds: new Set([
+                ...judgmentReferences(p.changes),
+                ...(p.materials ?? []).map(({ id }) => id),
+                ...(p.statusReview?.scripts ?? []),
+                ...(p.operations ?? []).flatMap((op) =>
+                  op.type === "learn" ? (op.consumeSkillIds ?? []) : [],
+                ),
+              ]),
+            })),
+            { actor, premise, consumable },
+          )
+        : fresh.map(() => nodes);
+      const groups = new Map<
+        string,
+        { indexes: number[]; nodes: typeof nodes }
+      >();
+      for (const [i, packet] of packets.entries()) {
+        if (!packet) {
+          overBudget.add(fresh[i]!.index);
+          continue;
+        }
+        const key = JSON.stringify(packet);
+        const group = groups.get(key);
+        if (group) group.indexes.push(i);
+        else groups.set(key, { indexes: [i], nodes: packet as typeof nodes });
+      }
+      const reserved = fresh.filter((p, i) => packets[i] && !allowApply[i]);
+      const needsSp = reserved.length > 0;
+      if (needsSp)
+        await this.#reserveSp(world, actor, user, requestId, cost(reserved));
       if (endStateTargetId) await context.validate();
-      if (reviews.length) await this.#rememberStateBasis(requestId, context);
+      if (reviews.length || (judgment && groups.size))
+        await this.#rememberStateBasis(requestId, context);
       const criteria = explore
         ? exploreCriteria
         : (
@@ -6890,211 +7052,249 @@ export class BotPlay {
       const Dice = explore ? ExploreDice : work ? WorkDice : DiceSetting;
       const decides =
         !explore && (!batch || splitMode === "update") && !waitMinutes;
-      const parseSettings = (raw: string) => {
-        const values = batch
-          ? z
-              .object({ settings: z.array(z.unknown()).length(fresh.length) })
-              .parse(parseOutput(raw)).settings
-          : [parseOutput(raw)];
-        return values.map((rawValue, i) => {
-          if (endStateTargetId)
-            return {
-              ...WitnessDice.strip().parse(rawValue),
-              endEdges: fresh[i]!.changes.endEdges,
-            };
-          const value = allowApply[i]
-            ? ApplyStatus.or(Dice).parse(applyChoice(rawValue))
-            : Dice.parse(rawValue);
-          const review = fresh[i]!.statusReview;
-          const ends = "endEdges" in value ? value.endEdges : undefined;
-          validateStateEnds(
-            ends,
-            stateRelations(nodes, review?.subjects ?? []),
-            !!review?.requestedEnds.length,
-          );
-          if ("apply" in value) return value;
-          const expected = targets[i]!;
-          const limits =
-            "storageLimits" in value ? (value.storageLimits ?? []) : [];
-          if (
-            limits.length !== expected.length ||
-            !expected.every((id) =>
-              limits.some((limit) => limit.storageId === id),
-            )
-          )
-            throw new Error(
-              "ダイス設定に対象となる保管先ごとの枠数を指定してください",
-            );
-          return value;
-        });
-      };
       const storageReference = targets.some((ids) => ids.length)
         ? (await context.inventoryLimits()).storageSlots
         : undefined;
-      // 送信時だけ使い、再送の呼出しIDと保存する元入力には含めない。
-      const storagePlace =
-        !explore &&
-        !waitMinutes &&
-        !hasUnrolledChanges &&
-        !fresh.some((p) => p.operations?.some((op) => op.type === "locate")) &&
-        nodes.some(
-          (node) =>
-            "belongings" in node &&
-            node.belongings?.storages.some(({ items }) => items.length),
-        )
-          ? (await currentPlaces())[0]
-          : undefined;
-      const response = await this.#ask(
-        derivedId(`${requestId}:creation`),
-        explore ? "world-explore-dice" : "world-creation-dice",
-        [
-          {
-            role: "system",
-            content: endStateTargetId
-              ? "指定された状態を終了する申請の成否を判定する。statesは成功時にすべて終了する。selfがtrueなら申請者本人が対象。申請文（text）、終了対象の状態、世界の前提（premise）と基準から判断し、{sides:整数,successThrough:整数}をJSONで返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準: " +
-                criteria
-              : compact
-                ? selfStatusPrompt +
-                  stateEndsPrompt +
-                  diceStatePrompt +
-                  "confirmedは先行する成功時に確定した状態。今回の対象についての結果かを本文と時点で確かめる。不確実なら{sides,successThrough,endEdges}。世界の基準: " +
-                  criteria
-                : (reviews.length
-                    ? "申請した変更を審査する。ダイスを振る場合は{sides:整数,successThrough:整数}を返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準と確定した材料から判断する。"
-                    : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
-                  diceStatePrompt +
-                  (reviews.length ? selfStatusPrompt + stateEndsPrompt : "") +
-                  (consumable.length ? consumePrompt : "") +
-                  (work ? workMaterialPrompt + placeStatePrompt : "") +
-                  (material.some((p) => p.learning)
-                    ? "learningは本人が選んだ技能の発展・統合の申請。consumeSkillIdsで示された習得済み技能の本文と根拠、申請のtextとbasisから、引き継ぐ能力と新しく必要な応用・習熟を世界の基準に照らして判定する。中身を委ねられた技能は、その適用範囲と新たにできることを具体化する。"
-                    : "") +
-                  (decides ? decidePrompt : "") +
-                  (explore
-                    ? explorePrompt
-                    : individualsPrompt + (await this.#fumblePrompt(world))) +
-                  (fresh.some((p) => p.requestText)
-                    ? "requestTextは元の申請の経緯。各案の技能や製作はその案のchangesだけを判定し、別の案で使う材料をこの案に割り当てない。"
-                    : "") +
-                  (batch
-                    ? "proposalsの順に各案のダイス設定を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
-                    : "") +
-                  (waitMinutes ? waitPrompt : "") +
-                  (storageReference !== undefined
-                    ? `storageIds に指定された対象ごとに、標準的な家の${storageReference}枠を基準として、規模と用途に見合う保管枠を決める。同じダイス設定に storageLimits を加え、対象の storageId と limitSlots（正の整数）を持つ配列で返す。`
-                    : "") +
-                  "世界の基準: " +
-                  criteria,
-          },
-          {
-            role: "user",
-            [diceStoragePlace]: storagePlace,
-            content: JSON.stringify(
-              endStateTargetId
-                ? {
-                    premise,
-                    targetId: endStateTargetId,
-                    self: endStateTargetId === actor,
-                    text: fresh[0]!.text,
-                    states: nodes[0]!.states,
-                  }
-                : compact
-                  ? {
-                      actor,
-                      text: fresh[0]!.text,
-                      allowApply: true,
-                      states: nodes[0]!.states,
-                      confirmed,
-                    }
-                  : {
-                      premise,
-                      actor,
-                      ...(batch ? { proposals: material } : material[0]),
-                      nodes,
-                      ...(confirmed ? { confirmed } : {}),
-                      ...(consumable.length ? { consumable } : {}),
-                      ...(waitMinutes ? { waitMinutes } : {}),
-                      ...(neighbors.length ? { neighbors } : {}),
-                    },
-            ),
-          },
-        ],
-        "resolution",
-        parseSettings,
-      );
       const named: string[] = [];
-      for (const [i, v] of parseSettings(response.content).entries()) {
-        const p = fresh[i]!;
-        if ("apply" in v) {
-          applied.set(p.index, { success: true, endEdges: v.endEdges });
-          continue;
+      for (const group of groups.values()) {
+        const { indexes, nodes: selectedNodes } = group;
+        const labels = judgment ? judgmentLabels(selectedNodes) : undefined;
+        const selectedMaterial = indexes.map((i) => {
+          const proposal = material[i]!;
+          return proposal.materials && labels
+            ? {
+                ...proposal,
+                materials: proposal.materials.map((item) => ({
+                  ...item,
+                  label: labels.get(item.id) ?? item.label,
+                })),
+              }
+            : proposal;
+        });
+        const selectedConsumable = judgment
+          ? judgmentConsumables(selectedNodes, consumable)
+          : consumable;
+        for (const [id, label] of labels ?? []) {
+          const item = stock.get(id);
+          if (item) stock.set(id, { ...item, label });
         }
-        if (p.statusReview) {
-          const previousFailure = await this.#repeatedCreation(
-            world,
-            actor,
-            keys[p.index]!,
-            p.text,
-          );
-          if (previousFailure) {
-            repeated[p.index] = previousFailure;
+        const parseSettings = (raw: string) => {
+          const values = batch
+            ? z
+                .object({
+                  settings: z.array(z.unknown()).length(indexes.length),
+                })
+                .parse(parseOutput(raw)).settings
+            : [parseOutput(raw)];
+          return values.map((rawValue, position) => {
+            const i = indexes[position]!;
+            if (endStateTargetId)
+              return {
+                ...WitnessDice.strip().parse(rawValue),
+                endEdges: fresh[i]!.changes.endEdges,
+              };
+            const value = allowApply[i]
+              ? ApplyStatus.or(Dice).parse(applyChoice(rawValue))
+              : Dice.parse(rawValue);
+            const review = fresh[i]!.statusReview;
+            const ends = "endEdges" in value ? value.endEdges : undefined;
+            validateStateEnds(
+              ends,
+              stateRelations(selectedNodes, review?.subjects ?? []),
+              !!review?.requestedEnds.length,
+            );
+            if ("apply" in value) return value;
+            const expected = targets[i]!;
+            const limits =
+              "storageLimits" in value ? (value.storageLimits ?? []) : [];
+            if (
+              limits.length !== expected.length ||
+              !expected.every((id) =>
+                limits.some((limit) => limit.storageId === id),
+              )
+            )
+              throw new Error(
+                "ダイス設定に対象となる保管先ごとの枠数を指定してください",
+              );
+            return value;
+          });
+        };
+        // 送信時だけ使い、再送の呼出しIDと保存する元入力には含めない。
+        const storagePlace =
+          !explore &&
+          !waitMinutes &&
+          !hasUnrolledChanges &&
+          !fresh.some((p) =>
+            p.operations?.some((op) => op.type === "locate"),
+          ) &&
+          selectedNodes.some(
+            (node) =>
+              "belongings" in node &&
+              node.belongings?.storages.some(({ items }) => items.length),
+          )
+            ? (await currentPlaces())[0]
+            : undefined;
+        const response = await this.#ask(
+          derivedId(
+            indexes.length === fresh.length
+              ? `${requestId}:creation`
+              : `${requestId}:creation:proposals:${indexes.join(",")}`,
+          ),
+          explore ? "world-explore-dice" : "world-creation-dice",
+          [
+            {
+              role: "system",
+              content: endStateTargetId
+                ? "指定された状態を終了する申請の成否を判定する。statesは成功時にすべて終了する。selfがtrueなら申請者本人が対象。申請文（text）、終了対象の状態、世界の前提（premise）と基準から判断し、{sides:整数,successThrough:整数}をJSONで返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準: " +
+                  criteria
+                : compact
+                  ? selfStatusPrompt +
+                    stateEndsPrompt +
+                    diceStatePrompt +
+                    "confirmedは先行する成功時に確定した状態。今回の対象についての結果かを本文と時点で確かめる。不確実なら{sides,successThrough,endEdges}。世界の基準: " +
+                    criteria
+                  : (reviews.length
+                      ? "申請した変更を審査する。ダイスを振る場合は{sides:整数,successThrough:整数}を返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準と確定した材料から判断する。"
+                      : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
+                    diceStatePrompt +
+                    (reviews.length ? selfStatusPrompt + stateEndsPrompt : "") +
+                    (selectedConsumable.length ? consumePrompt : "") +
+                    (work ? workMaterialPrompt + placeStatePrompt : "") +
+                    (selectedMaterial.some((p) => p.learning)
+                      ? "learningは本人が選んだ技能の発展・統合の申請。consumeSkillIdsで示された習得済み技能の本文と根拠、申請のtextとbasisから、引き継ぐ能力と新しく必要な応用・習熟を世界の基準に照らして判定する。中身を委ねられた技能は、その適用範囲と新たにできることを具体化する。"
+                      : "") +
+                    (decides ? decidePrompt : "") +
+                    (explore
+                      ? explorePrompt
+                      : individualsPrompt + (await this.#fumblePrompt(world))) +
+                    (selectedMaterial.some((p) => p.requestText)
+                      ? "requestTextは元の申請の経緯。各案の技能や製作はその案のchangesだけを判定し、別の案で使う材料をこの案に割り当てない。"
+                      : "") +
+                    (batch
+                      ? "proposalsの順に各案のダイス設定を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
+                      : "") +
+                    (waitMinutes ? waitPrompt : "") +
+                    (storageReference !== undefined
+                      ? `storageIds に指定された対象ごとに、標準的な家の${storageReference}枠を基準として、規模と用途に見合う保管枠を決める。同じダイス設定に storageLimits を加え、対象の storageId と limitSlots（正の整数）を持つ配列で返す。`
+                      : "") +
+                    "世界の基準: " +
+                    criteria,
+            },
+            {
+              role: "user",
+              [diceStoragePlace]: storagePlace,
+              ...(judgment ? { [diceJudgmentMaterials]: true } : {}),
+              content: JSON.stringify(
+                endStateTargetId
+                  ? {
+                      premise,
+                      targetId: endStateTargetId,
+                      self: endStateTargetId === actor,
+                      text: fresh[0]!.text,
+                      states: nodes[0]!.states,
+                    }
+                  : compact
+                    ? {
+                        actor,
+                        text: fresh[0]!.text,
+                        allowApply: true,
+                        states: nodes[0]!.states,
+                        confirmed,
+                      }
+                    : {
+                        premise,
+                        actor,
+                        ...(batch
+                          ? { proposals: selectedMaterial }
+                          : selectedMaterial[0]),
+                        nodes: selectedNodes,
+                        ...(confirmed ? { confirmed } : {}),
+                        ...(selectedConsumable.length
+                          ? { consumable: selectedConsumable }
+                          : {}),
+                        ...(waitMinutes ? { waitMinutes } : {}),
+                        ...(neighbors.length ? { neighbors } : {}),
+                      },
+              ),
+            },
+          ],
+          "resolution",
+          parseSettings,
+        );
+        for (const [position, v] of parseSettings(response.content).entries()) {
+          const i = indexes[position]!;
+          const p = fresh[i]!;
+          if ("apply" in v) {
+            applied.set(p.index, { success: true, endEdges: v.endEdges });
             continue;
           }
-        }
-        const { requiredMaterials, individuals, ...dice } = v as z.infer<
-          typeof WorkDice
-        >;
-        named.push(...(individuals ?? []));
-        const setting = decision(
-          consumption(dice, compact ? [] : consumable),
-          decides ? p.changes : undefined,
-        );
-        const used = new Map((setting.consumes ?? []).map((c) => [c.id, c]));
-        if (requiredMaterials === null) unresolved.add(p.index);
-        const required = new Map<string, number>();
-        for (const m of [
-          ...(p.materials ?? []),
-          ...(requiredMaterials ?? []),
-        ]) {
-          let id: string;
-          if ("id" in m) id = m.id;
-          else {
-            const ids = (p.materials ?? [])
-              .filter((item) => stock.get(item.id)?.label === m.label)
-              .map((item) => item.id);
-            if (!ids.length) {
-              ids.push(
-                ...consumable
-                  .filter((item) => item.label === m.label)
-                  .map((item) => item.id),
-              );
-              for (const place of await currentPlaces())
-                ids.push(...(await context.materialIds(place, m.label)));
-            }
-            if (ids.length !== 1) {
-              unresolved.add(p.index);
+          if (p.statusReview) {
+            const previousFailure = await this.#repeatedCreation(
+              world,
+              actor,
+              keys[p.index]!,
+              p.text,
+            );
+            if (previousFailure) {
+              repeated[p.index] = previousFailure;
               continue;
             }
-            id = ids[0]!;
           }
-          required.set(id, Math.max(required.get(id) ?? 0, m.count ?? 1));
+          const { requiredMaterials, individuals, ...dice } = v as z.infer<
+            typeof WorkDice
+          >;
+          named.push(...(individuals ?? []));
+          const setting = decision(
+            consumption(dice, compact ? [] : selectedConsumable),
+            decides ? p.changes : undefined,
+          );
+          const used = new Map((setting.consumes ?? []).map((c) => [c.id, c]));
+          if (requiredMaterials === null) unresolved.add(p.index);
+          const required = new Map<string, number>();
+          for (const m of [
+            ...(p.materials ?? []),
+            ...(requiredMaterials ?? []),
+          ]) {
+            let id: string;
+            if ("id" in m) id = m.id;
+            else {
+              const ids = (p.materials ?? [])
+                .filter((item) => stock.get(item.id)?.label === m.label)
+                .map((item) => item.id);
+              if (!ids.length) {
+                ids.push(
+                  ...selectedConsumable
+                    .filter((item) => item.label === m.label)
+                    .map((item) => item.id),
+                );
+                for (const place of await currentPlaces())
+                  ids.push(...(await context.materialIds(place, m.label)));
+              }
+              if (ids.length !== 1) {
+                unresolved.add(p.index);
+                continue;
+              }
+              id = ids[0]!;
+            }
+            required.set(id, Math.max(required.get(id) ?? 0, m.count ?? 1));
+          }
+          for (const [id, count] of required) {
+            // 申請が状態などを付ける対象そのものは、材料に挙がっても消費しない。
+            if (touched.has(id)) continue;
+            const item = await readMaterial(id);
+            if (!item || count > (item.count ?? 1)) shortages.add(p.index);
+            else
+              used.set(id, {
+                id,
+                label: item.label,
+                ...(item.count === undefined ? {} : { count }),
+              });
+          }
+          if (used.size) setting.consumes = [...used.values()];
+          if (setting.explored)
+            setting.explored = knownNeighbors(setting.explored, neighbors);
+          settings.set(p.index, setting);
         }
-        for (const [id, count] of required) {
-          // 申請が状態などを付ける対象そのものは、材料に挙がっても消費しない。
-          if (touched.has(id)) continue;
-          const item = await readMaterial(id);
-          if (!item || count > (item.count ?? 1)) shortages.add(p.index);
-          else
-            used.set(id, {
-              id,
-              label: item.label,
-              ...(item.count === undefined ? {} : { count }),
-            });
-        }
-        if (used.size) setting.consumes = [...used.values()];
-        if (setting.explored)
-          setting.explored = knownNeighbors(setting.explored, neighbors);
-        settings.set(p.index, setting);
       }
       // 探索した場所が既知の隣の場所と同じなら、新しく作らずに先にある場所を返す。
       const same = [...settings.values()].find((s) => s.explored?.sameAs)
@@ -7108,18 +7308,20 @@ export class BotPlay {
       // 同名の物品は由来をGMが判断し、出現個体などの同名の存在は呼称だけで断る。
       const labels = explore
         ? []
-        : fresh.flatMap(({ changes }) => {
-            const held = new Set(
-              changes.edges
-                .filter((edge) => edge.kind === "has" && !edge.role)
-                .map((edge) => edge.target),
-            );
-            return changes.nodes.flatMap((node) =>
-              node.kind === "existence" && !held.has(node.id)
-                ? [node.text]
-                : [],
-            );
-          });
+        : fresh
+            .filter((p) => !overBudget.has(p.index))
+            .flatMap(({ changes }) => {
+              const held = new Set(
+                changes.edges
+                  .filter((edge) => edge.kind === "has" && !edge.role)
+                  .map((edge) => edge.target),
+              );
+              return changes.nodes.flatMap((node) =>
+                node.kind === "existence" && !held.has(node.id)
+                  ? [node.text]
+                  : [],
+              );
+            });
       if (named.length || labels.length) {
         const { rows } = await this.pool.query<{ actor_id: string }>(
           "SELECT actor_id FROM world_controlled_actor WHERE world_id=$1 UNION SELECT actor_id FROM bot_npc WHERE world_id=$2",
@@ -7173,6 +7375,10 @@ export class BotPlay {
       const settle = (i: number, die: CreationRoll) =>
         this.#fumble(db, derivedId(`${keys[i]}:creation`), die);
       for (const i of proposals.keys()) {
+        if (overBudget.has(i)) {
+          rolls.push({ success: false, reason: judgmentMaterialLimit });
+          continue;
+        }
         if (full(i)) {
           rolls.push({ success: false, reason: "SKILL_CAPACITY_EXCEEDED" });
           continue;
@@ -7428,26 +7634,76 @@ export class BotPlay {
     ids: Iterable<string>,
     stateSubjects: readonly string[] = [],
     mentioned: readonly string[] = [],
+    judgment?: JudgmentScope,
   ) {
     const result = [],
       includedStates = new Set<string>(),
-      wanted = new Set(ids);
+      wanted = new Set([...ids, ...(judgment?.places ?? [])]);
+    const nodes = judgment && (await context.nodes(wanted, true));
+    const judgmentBelongings = judgment
+      ? await readJudgmentScope(
+          context,
+          judgment.participants,
+          judgment.places,
+          [judgment.actor],
+          [
+            ...(await Promise.all(
+              [...wanted]
+                .filter((id) => nodes?.get(id)?.kind === "existence")
+                .map(async (id) =>
+                  (await context.storageAccess(id, judgment.actor)).allowed
+                    ? [id]
+                    : [],
+                ),
+            )),
+          ].flat(),
+          true,
+        )
+      : undefined;
+    const stateEdges = judgment
+      ? await context.outgoingRelations(
+          wanted,
+          "status",
+          this.now().getTime(),
+          latest,
+          true,
+        )
+      : undefined;
+    const stateIds = [...(stateEdges?.values() ?? [])]
+      .flat()
+      .filter((e) => e.role === "content" && !isRespawnHome(e))
+      .map((e) => e.target);
+    const [stateNodes, stateAbout] = judgment
+      ? await Promise.all([
+          context.nodes(stateIds, true),
+          context.outgoingRelations(stateIds, "status", latest, latest, true),
+        ])
+      : [];
     for (const id of wanted) {
       if (includedStates.has(id)) continue;
-      const node = await context.node(id);
+      const node = nodes ? nodes.get(id) : await context.node(id);
       if (!node) continue;
       // 接続元の一部として探索された場所と、その接続元は、互いの様子を同じ材料として渡す。
-      if (node.kind === "existence")
+      if (!judgment && node.kind === "existence")
         for (const place of await context.partPlaces(id)) wanted.add(place);
       // 多くの状態を持つ対象でも入力が膨らまないよう、選んだ状態だけを渡す。
-      const all = await this.#states(context, id),
-        chosen = new Set(selectStates(all));
+      const all = stateEdges
+          ? (stateEdges.get(id) ?? [])
+              .filter((e) => e.role === "content" && !isRespawnHome(e))
+              .map((relation) => ({
+                relation,
+                node: stateNodes!.get(relation.target),
+                about: stateAbout!.get(relation.target) ?? [],
+              }))
+          : await this.#states(context, id),
+        chosen = new Set(judgment ? all : selectStates(all));
       if (stateSubjects.includes(id))
         for (const state of all)
           if (mentioned.includes(state.relation.target)) chosen.add(state);
       const states = [...chosen].map(({ node, about, relation }) => ({
-        node,
+        node: judgment && node ? { ...node, judgmentNodeId: node.id } : node,
         since: relation.period.from,
+        ...(judgment && relation.text === "location" ? { location: true } : {}),
         ...(relation.commandRestrictions?.length
           ? { commandRestrictions: relation.commandRestrictions }
           : {}),
@@ -7463,21 +7719,52 @@ export class BotPlay {
       // 持つ側も材料に含まれるなら、現在の経緯はその持ち物に出るので重ねない。
       const [held, origin] =
         node.kind === "existence"
-          ? await Promise.all([context.holding(id), context.holding(id, true)])
+          ? await Promise.all([
+              context.holding(id, false, !!judgment),
+              context.holding(id, true, !!judgment),
+            ])
           : [];
       const acquired = (edge: NonNullable<typeof held>) => ({
         basis: edge.text ?? null,
         since: edge.period.from,
+        ...(judgment
+          ? {
+              judgmentEdgeId: edge.id,
+              ...("judgmentExcerptPending" in edge
+                ? { judgmentBasisPending: true }
+                : {}),
+              ...("judgmentTruncated" in edge
+                ? { judgmentTruncated: true }
+                : {}),
+            }
+          : {}),
       });
+      const holder =
+        held && !wanted.has(held.source)
+          ? judgment
+            ? (await context.nodes([held.source], true)).get(held.source)
+            : await context.node(held.source)
+          : undefined;
       result.push({
-        node,
+        node: judgment ? { ...node, judgmentNodeId: node.id } : node,
         states,
         omittedStates: all.length - states.length,
         ...(held && !wanted.has(held.source)
           ? {
               held: {
                 by: held.source,
-                label: (await context.node(held.source))?.text ?? "",
+                label: holder?.text ?? "",
+                ...(judgment && holder
+                  ? {
+                      judgmentNodeId: holder.id,
+                      ...("judgmentExcerptPending" in holder
+                        ? { judgmentTextPending: true }
+                        : {}),
+                      ...("judgmentTruncated" in holder
+                        ? { judgmentTruncated: true }
+                        : {}),
+                    }
+                  : {}),
                 ...acquired(held),
               },
             }
@@ -7487,19 +7774,84 @@ export class BotPlay {
           : {}),
         ...(node.kind === "existence"
           ? {
-              belongings: await readBelongings(
-                context,
-                id,
-                latest,
-                undefined,
-                false,
-              ),
+              belongings: judgmentBelongings
+                ? (judgmentBelongings.get(id) ?? {
+                    items: [],
+                    storages: [],
+                    skills: [],
+                  })
+                : await readBelongings(context, id, latest, undefined, false),
             }
           : {}),
       });
     }
     await context.validate();
     return result;
+  }
+  async #selectJudgment<T>(
+    requestId: string,
+    context: WorldContext,
+    materials: T[],
+    requiredIds: readonly string[],
+    requests: readonly {
+      text: string;
+      effect?: unknown;
+      subjects: readonly string[];
+      requiredIds?: ReadonlySet<string>;
+    }[],
+    frame: {
+      actor: string;
+      premise?: string;
+      consumable: Consumable[];
+    },
+  ) {
+    const model = this.construction.agent.model;
+    const { provider, api, model: modelId } = model.settingsFor("resolution");
+    const creation = frame.premise !== undefined;
+    const cacheSkills =
+      creation &&
+      provider === "openai" &&
+      api === "responses" &&
+      openAiExplicitCache(modelId);
+    return (await selectJudgmentMaterials({
+      materials,
+      requiredIds: new Set(requiredIds),
+      requests,
+      previewComplete: completeJudgmentPreview(materials),
+      hydrate: judgmentLoader(context),
+      measure: (rows, index) => {
+        const value = stripJudgmentPreview(rows);
+        return measureDiceMaterials(
+          {
+            role: "user",
+            [diceJudgmentMaterials]: true,
+            content: JSON.stringify({
+              actor: frame.actor,
+              premise: frame.premise,
+              [creation ? "nodes" : "materials"]: value,
+              action: requests[index]!.text,
+              changes: requests[index]!.effect,
+              consumable: judgmentConsumables(value, frame.consumable),
+            }),
+          },
+          cacheSkills,
+        );
+      },
+      ...(model.decision
+        ? { threshold: model.decision.materialThreshold }
+        : {}),
+      decide: (state, questions, batch) =>
+        model.decide(
+          derivedId(
+            `${requestId}:judgment-materials:${batch}:${createHash("sha256")
+              .update(canonical([state, questions]))
+              .digest("hex")}`,
+          ),
+          "world-judgment-materials",
+          state,
+          questions,
+        ),
+    })) as (T[] | undefined)[];
   }
   async #validate(
     context: WorldContext,
@@ -8108,7 +8460,12 @@ export class BotPlay {
         allChanges,
         at,
       );
-      const consumable = await this.#consumable(context, actor, allChanges);
+      const consumable = await this.#consumable(
+        context,
+        actor,
+        allChanges,
+        true,
+      );
       // 製作の材料は同じ案の製作にだけ割り当てる。別の技能の成功で消費しない。
       const workParents = new Set(
         proposals
@@ -9186,7 +9543,12 @@ export class BotPlay {
         input.command !== "explore" &&
         !input.endStateTargetId) ||
       input.command === "oppose"
-        ? await this.#consumable(context, actor, changes)
+        ? await this.#consumable(
+            context,
+            actor,
+            changes,
+            input.command === "oppose" || !selfStatus,
+          )
         : [];
     if (
       changes.edges.some((edge) => edge.kind === "has") ||
@@ -9437,12 +9799,27 @@ export class BotPlay {
         const losing = (await this.#holders(context, changes.endEdges)).filter(
           (id) => id !== actor && !controlled.has(id),
         );
+        const participants = [actor, ...opponents];
+        const places = await Promise.all(
+          participants.map((id) => directPlaces(context, id)),
+        );
         const materials = await this.#facts(
           context,
           [actor, ...parties, ...refs, ...losing],
           [...stateSubjects, ...losing],
           statusReview?.scripts,
+          { actor, participants, places: places.flat() },
         );
+        const [selected] = await this.#selectJudgment(
+          input.requestId,
+          context,
+          materials,
+          [...participants, ...places.flat(), ...judgmentReferences(changes)],
+          [{ text: input.text, effect: changes, subjects: participants }],
+          { actor, consumable },
+        );
+        if (!selected)
+          return reject(judgmentMaterialLimit, judgmentMaterialMessage);
         const perception = concealed
           ? await this.#oppositionPerception(
               session,
@@ -9460,8 +9837,8 @@ export class BotPlay {
           actor,
           input.text,
           changes,
-          materials,
-          await this.#consumable(context, actor, changes),
+          selected,
+          judgmentConsumables(selected, consumable),
           undefined,
           ...this.#mortal(session, recipients, policy),
           undefined,
@@ -10095,9 +10472,12 @@ export class BotPlay {
     context: WorldContext,
     actor: string,
     changes: Change,
+    preview = false,
   ): Promise<Consumable[]> {
     const touched = await this.#touchedItems(context, [changes]);
-    return (await heldItems(context, actor)).filter((i) => !touched.has(i.id));
+    return (await heldItems(context, actor, latest, undefined, preview)).filter(
+      (i) => !touched.has(i.id),
+    );
   }
   async #touchedItems(context: WorldContext, changes: Change[]) {
     const ended = await Promise.all(
