@@ -8392,13 +8392,14 @@ test.each([false, true])(
         }),
         actor,
       );
+    const previousState = "指に浅い傷がある";
     const injury = randomUUID();
     await apply(
       {
         type: "state",
         targetId: actor,
         text: "作業中に怪我をする",
-        description: "指に浅い傷がある",
+        description: previousState,
       },
       injury,
     );
@@ -8419,6 +8420,7 @@ test.each([false, true])(
       stateId: wound,
       ...(bandage ? { materials: [{ id: bandage }] } : {}),
     };
+    const remainingState = withMaterials ? "" : previousState;
     f.calls.mockClear();
     f.calls.mockImplementation(async (id, role, messages) => {
       expect(role).toBe("world-creation-dice");
@@ -8426,15 +8428,28 @@ test.each([false, true])(
         withMaterials,
       );
       const review = JSON.parse(String(messages[1]!.content));
+      expect(review.previousState).toBe(previousState);
       expect(review.allowApply).toBe(false);
       expect(review).not.toHaveProperty("confirmed");
-      return answer(id, { ...sure, endEdges: [wound] });
+      return answer(id, { ...sure, remainingState });
     });
     await expect(apply(action, treatment)).resolves.toMatchObject({
       spentSp: 1,
     });
     const receipt = await f.store.receipt(f.graph, treatment);
     expect(receipt?.changes.endEdges).toContain(wound);
+    const text = [action.description, remainingState]
+      .filter(Boolean)
+      .join("\n");
+    const { material } = await f.send(0, {
+      command: "search",
+      query: { kind: "self" },
+    });
+    expect(material).toMatchObject({
+      states: expect.arrayContaining([
+        expect.objectContaining({ node: expect.objectContaining({ text }) }),
+      ]),
+    });
     expect(
       receipt?.changes.edges.some(
         (edge) => edge.stateOrigin?.requestId === treatment,
@@ -8448,6 +8463,77 @@ test.each([false, true])(
     expect(f.calls).toHaveBeenCalledTimes(1);
   },
 );
+
+test("他人への手当てで残る状態を受領前に読み、承認した本文を現在の状態に残す", async () => {
+  const f = await fixture(2);
+  const targetId = f.actors[1]!;
+  const previousState = "左耳の先を失い、傷口から血がにじんでいる。";
+  const changes: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  mark(changes, targetId, previousState);
+  mark(changes, targetId, "右腕には古い傷跡がある。");
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes,
+    },
+  );
+  const stateId = changes.edges[0]!.id;
+  const text = "傷口を清潔な布で押さえる";
+  const description = "傷口に布が当たり、出血が落ち着いている。";
+  const remainingState = "左耳の先を失っている。";
+  await f.send(0, { command: "contact", targetId });
+  await giveTurn(f, 0);
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(JSON.parse(messages[1]!.content)).toMatchObject({
+      previousState,
+      text,
+      changes: { nodes: [{ text: description }] },
+    });
+    return answer(id, { ...sure, remainingState });
+  });
+  const offered = await f.send(0, {
+    command: "apply",
+    expectedSp: 1,
+    dependencies: [],
+    action: { type: "state", targetId, stateId, text, description },
+  });
+  expect(offered).toMatchObject({ state: "receiving", spentSp: 1 });
+  const after = `${description}\n${remainingState}`;
+  expect((await f.status(1)).receiving).toMatchObject({
+    text,
+    changes: { nodes: [{ text: after }], endEdges: [stateId] },
+  });
+  expect(
+    (await f.store.context(f.graph).edge(stateId))?.period.until,
+  ).toBeUndefined();
+  await f.send(1, {
+    command: "receive",
+    applicationId: offered.applicationId,
+    accept: true,
+  });
+  await giveTurn(f, 1);
+  const current = await f.send(1, {
+    command: "search",
+    query: { kind: "self" },
+  });
+  expect(current.material).toMatchObject({
+    states: expect.arrayContaining([
+      expect.objectContaining({
+        node: expect.objectContaining({ text: after }),
+      }),
+      expect.objectContaining({
+        relation: expect.objectContaining({ id: changes.edges[1]!.id }),
+      }),
+    ]),
+  });
+  expect(
+    (await f.store.context(f.graph).edge(stateId))?.period.until,
+  ).toBeDefined();
+});
 
 test("CLIで複数の短縮IDを指定すると、その状態だけを新しい状態なしで終了する", async () => {
   const f = await fixture(1);
