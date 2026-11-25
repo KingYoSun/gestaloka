@@ -7814,6 +7814,77 @@ test("物品と登録した場所を正式改名しても、所持・登録と�
   expect((await f.status(0)).dailySp.remaining).toBe(98);
 });
 
+test.each([
+  { score: 0.7, directly: true },
+  { score: 0.69, directly: false },
+  { score: undefined, directly: false },
+])(
+  "clarify は Jev が0.70以上なら直接承認する（$score）",
+  async ({ score, directly }) => {
+    const f = await fixture(1);
+    const actor = f.actors[0]!;
+    const previous = "日なたの小枝を少し浮かせることができる";
+    const basis = "日なたで小枝を使って練習した";
+    const text = directly
+      ? "日なたの小枝を少し浮かせられる"
+      : "日陰でも人を浮かせられる";
+    await f.apply([{ type: "learn", person: actor, text: previous, basis }]);
+    const read = () => readBelongings(f.store.context(f.graph), actor);
+    const target = (await read()).skills[0]!;
+    const model = runtime.agent.model;
+    vi.spyOn(model, "decision", "get").mockReturnValue(
+      decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+    );
+    const decide = vi
+      .spyOn(model, "decide")
+      .mockImplementation(async (_id, role, facts) => {
+        expect(role).toBe("world-clarify-fact");
+        expect(facts).toMatchObject({
+          original: { id: target.id, text: previous },
+          name: text,
+          previousBasis: [basis],
+          basis: "日なたで小枝を使う練習をした",
+        });
+        if (score === undefined) throw new Error("fixture: unavailable");
+        return { preserves: score };
+      });
+    f.calls.mockImplementation(async (id, role) => {
+      expect(role).toBe("world-description-review");
+      return answer(id, {
+        success: false,
+        reason: "技能の対象と使用条件が変わる",
+      });
+    });
+    const command = {
+      requestId: randomUUID(),
+      command: "apply",
+      expectedSp: 0,
+      dependencies: [],
+      action: {
+        type: "clarify",
+        targetId: target.id,
+        text,
+        basis: "日なたで小枝を使う練習をした",
+      },
+    };
+    const result = await f.send(0, command);
+    expect(result).toMatchObject({
+      spentSp: 0,
+      outcome: { success: directly },
+    });
+    expect((await read()).skills[0]).toMatchObject({
+      text: directly ? text : previous,
+      basis: directly ? command.action.basis : basis,
+    });
+    expect(await f.send(0, command)).toMatchObject({
+      spentSp: 0,
+      outcome: result.outcome,
+    });
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(f.calls).toHaveBeenCalledTimes(directly ? 0 : 1);
+  },
+);
+
 test("発展で消費した元技能を根拠に既存の能力を0 SPで明文化する", async () => {
   const f = await fixture(1);
   const person = f.actors[0]!;

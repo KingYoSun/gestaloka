@@ -9644,36 +9644,64 @@ export class BotPlay {
           z
             .strictObject({ success: z.boolean(), reason: z.string().min(1) })
             .parse(parseOutput(raw));
-        outcome = parse(
-          (
-            await this.#ask(
-              input.requestId,
-              input.descriptionOnly
-                ? "world-description-review"
-                : "world-rename-review",
-              [
-                {
-                  role: "system",
-                  content: input.descriptionOnly
-                    ? "確定済みの記述や習得根拠の訂正を審査する。現在の本文や旧根拠から読み取れる事実・能力・対象・条件・制約をそのまま表す訂正だけを許す。originSkillsは発展で消費した元技能。現在の本文がそこから引き継いだ能力は明文化してよい。事実や適用範囲が変わる場合は差し戻す。JSON {success:真偽値,reason:文字列} を返す。"
-                    : "既存の同じ対象に呼び名を付ける申請を審査する。新しい呼び名だけを書き換える。比喩や愛称は呼び名として認めてよい。別の存在と同一にする、起きていない出来事を成立させる、所持・所在・能力・状態を実際に変えることが名前の意味に必要なら差し戻す。JSON {success:真偽値,reason:文字列} を返す。",
-                },
-                {
-                  role: "user",
-                  content: canonical({
-                    original,
-                    name: input.name,
-                    previousBasis,
-                    basis: input.basis,
-                    originSkills,
-                  }),
-                },
-              ],
-              "resolution",
-              parse,
-            )
-          ).content,
-        );
+        const facts = {
+          original,
+          name: input.name,
+          previousBasis,
+          basis: input.basis,
+          originSkills,
+        };
+        const model = this.construction.agent.model;
+        const answers =
+          input.descriptionOnly && model.decision
+            ? await model
+                .decide(
+                  derivedId(
+                    `${input.requestId}:clarify-fact:${canonical(facts)}`,
+                  ),
+                  "world-clarify-fact",
+                  facts,
+                  {
+                    preserves: {
+                      instructions:
+                        "originalは現行の確定本文、previousBasisは現在の習得根拠、originSkillsは発展元の技能。nameは新しい本文、basisは指定時のみ新しい根拠。nameとbasisを差し替えても、事実、対象、能力、効力の範囲、条件、制約、習得経緯が実質的に同じか。追加・削除・弱化・一般化も調べる。originSkillsは現行技能が引き継いだと確定している能力の裏付けに限る。申請文の主張を根拠に使わない。判断に必要な根拠が足りなければfalse。",
+                      criteria: {
+                        true: "確定済みの内容すべてを保つ言い換え",
+                        false:
+                          "事実・能力・条件・根拠に変更があるか、判断材料が不足",
+                      },
+                    },
+                  },
+                )
+                .catch(() => undefined)
+            : undefined;
+        outcome =
+          (answers?.preserves ?? 0) >= 0.7
+            ? { success: true, reason: "確定済みの内容を保った訂正です。" }
+            : parse(
+                (
+                  await this.#ask(
+                    input.requestId,
+                    input.descriptionOnly
+                      ? "world-description-review"
+                      : "world-rename-review",
+                    [
+                      {
+                        role: "system",
+                        content: input.descriptionOnly
+                          ? "確定済みの記述や習得根拠の訂正を審査する。現在の本文や旧根拠から読み取れる事実・能力・対象・条件・制約をそのまま表す訂正だけを許す。originSkillsは発展で消費した元技能。現在の本文がそこから引き継いだ能力は明文化してよい。事実や適用範囲が変わる場合は差し戻す。JSON {success:真偽値,reason:文字列} を返す。"
+                          : "既存の同じ対象に呼び名を付ける申請を審査する。新しい呼び名だけを書き換える。比喩や愛称は呼び名として認めてよい。別の存在と同一にする、起きていない出来事を成立させる、所持・所在・能力・状態を実際に変えることが名前の意味に必要なら差し戻す。JSON {success:真偽値,reason:文字列} を返す。",
+                      },
+                      {
+                        role: "user",
+                        content: canonical(facts),
+                      },
+                    ],
+                    "resolution",
+                    parse,
+                  )
+                ).content,
+              );
         const confirmed = await this.pool.query(
           `UPDATE bot_request r SET outcome=$2,sp_user=CASE WHEN $3 THEN a.sp_user END,
            sp_reset=CASE WHEN $3 THEN a.sp_reset END,sp_amount=1
