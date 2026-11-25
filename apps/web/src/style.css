@@ -375,9 +375,8 @@ select {
 }
 .play-layout {
   display: grid;
-  grid-template-areas: "left toolbar right" "left center right";
-  /* サイドパネルの高さでツールバーの行が伸びないようにする。 */
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "left center right";
+  grid-template-rows: minmax(0, 1fr);
   grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(
       180px,
       240px
@@ -400,20 +399,10 @@ select {
   background: var(--card);
 }
 .play-toolbar {
-  grid-area: toolbar;
-  max-width: 620px;
-  width: 100%;
-  justify-self: center;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.play-log-toolbar {
-  flex: 1;
   display: flex;
   align-items: center;
 }
-.play-log-toolbar h1 {
+.play-toolbar h1 {
   flex: 1;
   margin: 0;
   font-size: 1.25rem;
@@ -442,6 +431,7 @@ select {
 }
 .play-center {
   grid-area: center;
+  min-height: 0;
   align-self: stretch;
   min-width: 0;
   width: 100%;
@@ -654,7 +644,7 @@ select {
 }
 @media (max-width: 940px) {
   .play-layout {
-    grid-template-areas: "toolbar" "center";
+    grid-template-areas: "center";
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
@@ -663,9 +653,7 @@ select {
   }
   .play-center {
     max-width: none;
-  }
-  .play-toolbar {
-    max-width: none;
+    gap: 8px;
   }
   .play-layout[data-drawer-open="false"] .play-drawer-trigger {
     display: inline-flex;

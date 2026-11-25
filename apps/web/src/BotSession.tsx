@@ -1,12 +1,5 @@
 import { memo, useState, useRef } from "react";
-import {
-  ArrowDownToLine,
-  ArrowUpToLine,
-  Check,
-  Copy,
-  Inbox,
-  PenLine,
-} from "lucide-react";
+import { Check, Copy, Inbox, PenLine } from "lucide-react";
 import { z } from "zod";
 import {
   ItemOutcome,
@@ -29,6 +22,8 @@ import {
   itemText,
   inventoryItemText,
   PlayLayout,
+  PlayLog,
+  PlayLogRows,
   PlayerPanel,
   PlayScreen,
   realTime,
@@ -158,91 +153,64 @@ const parseView = (data: unknown) => View.parse(data);
 const LogRow = memo(function LogRow({
   row,
   characters,
-  fresh,
 }: {
   row: Session["entries"][number];
   characters: Session["characters"];
-  fresh: boolean;
 }) {
   const name = (id: string) => characters.find((c) => c.actorId === id)?.name;
-  const at = row.recordedAt ?? row.payload.transition?.at;
   return (
-    <div className="play-log-row" data-fresh={fresh || undefined}>
-      <div>
-        <article className="rounded-lg border bg-card px-6 py-5">
+    <>
+      {row.payload.entries?.map((entry, i) => (
+        <div key={i}>
           <p className="record-meta">
-            {at ? <time dateTime={at}>{realTime(at)}</time> : "時刻の記録なし"}
+            {entry.label ?? name(entry.actorId) ?? "参加者"}
           </p>
-          {row.payload.entries?.map((entry, i) => (
-            <div key={i}>
-              <p className="record-meta">
-                {entry.label ?? name(entry.actorId) ?? "参加者"}
+          <RichText text={entry.input} />
+          {!row.payload.observation &&
+            entry.result.action?.command !== "oppose" && (
+              <p className="muted">
+                結果：
+                {entry.result.outcome
+                  ? entry.result.outcome.success
+                    ? (entry.result.effectState ?? "成立しました")
+                    : "不成立でした"
+                  : entry.result.state === "rejected"
+                    ? "拒否しました"
+                    : entry.result.state === "failed"
+                      ? "成立しませんでした"
+                      : entry.result.state === "receiving"
+                        ? "受領判断中です"
+                        : entry.result.state === "pending"
+                          ? "管理者の許可待ちです"
+                          : "受理しました"}
               </p>
-              <RichText text={entry.input} />
-              {!row.payload.observation &&
-                entry.result.action?.command !== "oppose" && (
-                  <p className="muted">
-                    結果：
-                    {entry.result.outcome
-                      ? entry.result.outcome.success
-                        ? (entry.result.effectState ?? "成立しました")
-                        : "不成立でした"
-                      : entry.result.state === "rejected"
-                        ? "拒否しました"
-                        : entry.result.state === "failed"
-                          ? "成立しませんでした"
-                          : entry.result.state === "receiving"
-                            ? "受領判断中です"
-                            : entry.result.state === "pending"
-                              ? "管理者の許可待ちです"
-                              : "受理しました"}
-                  </p>
-                )}
-              {entry.result.items?.map((item) => (
-                <div key={item.itemId}>
-                  <span>
-                    {item.label}
-                    {item.count ? ` ×${item.count}` : ""}〈{item.itemId}〉
-                  </span>
-                  {item.holding && (
-                    <p>
-                      {item.holding.fromId
-                        ? (name(item.holding.fromId) ?? item.holding.fromId)
-                        : "なし"}{" "}
-                      → {name(item.holding.toId) ?? item.holding.toId}
-                    </p>
-                  )}
-                </div>
-              ))}
+            )}
+          {entry.result.items?.map((item) => (
+            <div key={item.itemId}>
+              <span>
+                {item.label}
+                {item.count ? ` ×${item.count}` : ""}〈{item.itemId}〉
+              </span>
+              {item.holding && (
+                <p>
+                  {item.holding.fromId
+                    ? (name(item.holding.fromId) ?? item.holding.fromId)
+                    : "なし"}{" "}
+                  → {name(item.holding.toId) ?? item.holding.toId}
+                </p>
+              )}
             </div>
           ))}
-          {row.payload.comment && <p>ターンコメント：{row.payload.comment}</p>}
-          {row.payload.reason && <p>{row.payload.reason}</p>}
-          {row.payload.transition && (
-            <p className="record-meta">{row.payload.transition.message}</p>
-          )}
-        </article>
-      </div>
-    </div>
+        </div>
+      ))}
+      {row.payload.comment && <p>ターンコメント：{row.payload.comment}</p>}
+      {row.payload.reason && <p>{row.payload.reason}</p>}
+      {row.payload.transition && (
+        <p className="record-meta">{row.payload.transition.message}</p>
+      )}
+    </>
   );
 });
-function LogRows({
-  entries,
-  characters,
-}: Pick<Session, "entries" | "characters">) {
-  // 開いた時点より後に届いた記録だけを、現れる演出の対象にする。
-  const [shown] = useState(() => Number(entries.at(-1)?.id ?? 0));
-  return [...entries]
-    .reverse()
-    .map((row) => (
-      <LogRow
-        key={row.id}
-        row={row}
-        characters={characters}
-        fresh={Number(row.id) > shown}
-      />
-    ));
-}
 function SpectatorShare({ world, actor }: { world: string; actor: string }) {
   const settings = $api.useQuery("get", "/api/account/spectating");
   const router = useRouter();
@@ -376,7 +344,6 @@ export function BotSession({
     [searchResult, setSearchResult] = useState<unknown>();
   const history = useRef<HistoryHandle>(null);
   const editorRequest = useRef<string>(null);
-  const log = useRef<HTMLDivElement>(null);
   const [pending, save] = usePending(
     pendingKey(`${id}:${actorId ?? "selected"}`, "bot-turn"),
     PendingCommand,
@@ -491,8 +458,6 @@ export function BotSession({
       {waiting.data?.active === false ? "待機を解除しました" : "待機を解除する"}
     </Button>
   );
-  const jump = (toEnd: boolean) =>
-    log.current?.scrollTo({ top: toEnd ? log.current.scrollHeight : 0 });
   // 新しい記録を上に積むため、現在の状態はログの先頭に置く。
   const state =
     !archive &&
@@ -590,48 +555,6 @@ export function BotSession({
               </div>
             </>
           )}
-        </>
-      }
-      toolbar={
-        <>
-          <h1>
-            {archive
-              ? "過去のプレイログ"
-              : view.sessionId
-                ? `${view.members.length}人のセッション`
-                : view.result
-                  ? "今回のプレイを終了しました"
-                  : "セッションを始める"}
-          </h1>
-          {!archive && (
-            <SpectatorShare
-              key={view.viewerId}
-              world={id}
-              actor={view.viewerId}
-            />
-          )}
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="play-icon"
-            onClick={() => jump(false)}
-            aria-label="最上部へ移動"
-            title="最上部へ移動"
-          >
-            <ArrowUpToLine />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="play-icon"
-            onClick={() => jump(true)}
-            aria-label="最下部に移動"
-            title="最下部に移動"
-          >
-            <ArrowDownToLine />
-          </Button>
         </>
       }
       actions={
@@ -899,22 +822,51 @@ export function BotSession({
           </div>
         )}
       </div>
-      <div
-        className="play-log"
-        aria-label="セッションのチャット"
-        role="region"
-        tabIndex={0}
-        ref={log}
+      <PlayLog
+        toolbar={
+          <>
+            <h1>
+              {archive
+                ? "過去のプレイログ"
+                : view.sessionId
+                  ? `${view.members.length}人のセッション`
+                  : view.result
+                    ? "今回のプレイを終了しました"
+                    : "セッションを始める"}
+            </h1>
+            {!archive && (
+              <SpectatorShare
+                key={view.viewerId}
+                world={id}
+                actor={view.viewerId}
+              />
+            )}
+          </>
+        }
+        footer={
+          archive && (
+            <Link
+              to="/worlds/$id/play"
+              params={{ id }}
+              search={{ actorId: view.viewerId }}
+              className="text-link"
+            >
+              現在のセッションを開く
+            </Link>
+          )
+        }
       >
         {state && (
           <div className="play-log-state" key={state}>
             <Notice>{state}</Notice>
           </div>
         )}
-        {view.entries.length === 0 && (
-          <p className="muted">表示できるプレイログはまだありません</p>
-        )}
-        <LogRows entries={view.entries} characters={view.characters} />
+        <PlayLogRows
+          entries={view.entries}
+          timestamp={(row) => row.recordedAt ?? row.payload.transition?.at}
+        >
+          {(row) => <LogRow row={row} characters={view.characters} />}
+        </PlayLogRows>
         {view.legacy.length > 0 && sceneId && (
           <details className="initial-setting" open={archive}>
             <summary>引き継いだプレイ履歴</summary>
@@ -938,17 +890,7 @@ export function BotSession({
             />
           </details>
         )}
-      </div>
-      {archive && (
-        <Link
-          to="/worlds/$id/play"
-          params={{ id }}
-          search={{ actorId: view.viewerId }}
-          className="text-link"
-        >
-          現在のセッションを開く
-        </Link>
-      )}
+      </PlayLog>
     </PlayLayout>
   );
 }

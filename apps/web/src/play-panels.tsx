@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { DiagramFlowHorizontal, PanelLeft, PanelRight, X } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  DiagramFlowHorizontal,
+  PanelLeft,
+  PanelRight,
+  X,
+} from "lucide-react";
 import { Dialog, Tabs, Tooltip } from "radix-ui";
 import { z } from "zod";
 import {
@@ -128,17 +135,105 @@ function PanelDialog({
   );
 }
 
+export function PlayLog({
+  toolbar,
+  children,
+  footer,
+}: {
+  toolbar: ReactNode;
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
+  const log = useRef<HTMLDivElement>(null);
+  return (
+    <div className="play-center">
+      <div className="play-toolbar">
+        {toolbar}
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="play-icon"
+          onClick={() => log.current?.scrollTo({ top: 0 })}
+          aria-label="最上部へ移動"
+          title="最上部へ移動"
+        >
+          <ArrowUpToLine />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="play-icon"
+          onClick={() =>
+            log.current?.scrollTo({ top: log.current.scrollHeight })
+          }
+          aria-label="最下部に移動"
+          title="最下部に移動"
+        >
+          <ArrowDownToLine />
+        </Button>
+      </div>
+      <div
+        className="play-log"
+        aria-label="セッションのチャット"
+        role="region"
+        tabIndex={0}
+        ref={log}
+      >
+        {children}
+      </div>
+      {footer}
+    </div>
+  );
+}
+
+export function PlayLogRows<T extends { id: string }>({
+  entries,
+  timestamp,
+  children,
+}: {
+  entries: T[];
+  timestamp: (row: T) => string | null | undefined;
+  children: (row: T) => ReactNode;
+}) {
+  const [shown] = useState(() => Number(entries.at(-1)?.id ?? 0));
+  if (!entries.length)
+    return <p className="muted">表示できるプレイログはまだありません</p>;
+  return [...entries].reverse().map((row) => {
+    const at = timestamp(row);
+    return (
+      <div
+        key={row.id}
+        className="play-log-row"
+        data-fresh={Number(row.id) > shown || undefined}
+      >
+        <div>
+          <article className="rounded-lg border bg-card px-6 py-5">
+            <p className="record-meta">
+              {at ? (
+                <time dateTime={at}>{realTime(at)}</time>
+              ) : (
+                "時刻の記録なし"
+              )}
+            </p>
+            {children(row)}
+          </article>
+        </div>
+      </div>
+    );
+  });
+}
+
 export function PlayLayout({
   left,
   right,
-  toolbar,
   actions,
   children,
   unreadNotices,
 }: {
   left: ReactNode;
   right: ReactNode;
-  toolbar: ReactNode;
   actions: {
     label: string;
     icon: ReactNode;
@@ -177,51 +272,48 @@ export function PlayLayout({
           setDrawer("right");
       }}
     >
-      <div className="play-toolbar">
-        {(["left", "right"] as const).map((side) => {
-          const isLeft = side === "left";
-          const title = isLeft ? "プレイヤー情報" : "セッション情報";
-          const Icon = isLeft ? PanelLeft : PanelRight;
-          const hasUnread = isLeft && unreadNotices > 0;
-          return (
-            <Dialog.Root
-              key={side}
-              open={drawer === side}
-              onOpenChange={(open) => setDrawer(open ? side : undefined)}
-            >
-              <Dialog.Trigger asChild>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="play-icon play-drawer-trigger"
-                  data-side={side}
-                  aria-label={
-                    hasUnread
-                      ? `${title}（未読の通知 ${unreadNotices}件）`
-                      : title
-                  }
-                  title={title}
-                >
-                  <Icon />
-                  {hasUnread && (
-                    <span
-                      className="play-unread absolute -top-1 -right-1"
-                      aria-hidden="true"
-                    >
-                      {unreadNotices}
-                    </span>
-                  )}
-                </Button>
-              </Dialog.Trigger>
-              <PanelDialog side={side} title={title}>
-                {isLeft ? left : right}
-              </PanelDialog>
-            </Dialog.Root>
-          );
-        })}
-        <div className="play-log-toolbar">{toolbar}</div>
-      </div>
+      {(["left", "right"] as const).map((side) => {
+        const isLeft = side === "left";
+        const title = isLeft ? "プレイヤー情報" : "セッション情報";
+        const Icon = isLeft ? PanelLeft : PanelRight;
+        const hasUnread = isLeft && unreadNotices > 0;
+        return (
+          <Dialog.Root
+            key={side}
+            open={drawer === side}
+            onOpenChange={(open) => setDrawer(open ? side : undefined)}
+          >
+            <Dialog.Trigger asChild>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="play-icon play-drawer-trigger"
+                data-side={side}
+                aria-label={
+                  hasUnread
+                    ? `${title}（未読の通知 ${unreadNotices}件）`
+                    : title
+                }
+                title={title}
+              >
+                <Icon />
+                {hasUnread && (
+                  <span
+                    className="play-unread absolute -top-1 -right-1"
+                    aria-hidden="true"
+                  >
+                    {unreadNotices}
+                  </span>
+                )}
+              </Button>
+            </Dialog.Trigger>
+            <PanelDialog side={side} title={title}>
+              {isLeft ? left : right}
+            </PanelDialog>
+          </Dialog.Root>
+        );
+      })}
       <aside
         className="play-aside"
         data-side="left"
@@ -229,7 +321,7 @@ export function PlayLayout({
       >
         {left}
       </aside>
-      <div className="play-center">{children}</div>
+      {children}
       <div className="play-actions">
         {actions.map(({ label, icon, badge, content }) => (
           <Dialog.Root key={label}>
