@@ -1,4 +1,5 @@
 import { classifyNpcHistory, type NpcMemory } from "./npc-history.js";
+import { npcOperations, type NpcReport, type NpcTask } from "./npc-work.js";
 import { ModelCallInProgress } from "../llm/budget.js";
 import { createHash, randomInt, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -512,6 +513,7 @@ type Entry = {
   applicationId?: string;
   itemWitnesses?: string[];
   speechWitnesses?: string[];
+  report?: { recipient: string; readId: string };
 };
 type TurnParticipant = { actorId: string; name: string; count?: number };
 type SessionStatus = {
@@ -548,6 +550,9 @@ type IdleSessionStatus = {
 } & Pick<SessionStatus, "stealth" | "home"> &
   Partial<Record<Exclude<keyof SessionStatus, "stealth" | "home">, never>>;
 type NpcChoice = {
+  inspect?: NpcTask;
+  recipient?: string;
+  reportReadId?: string;
   assignmentId: string;
   turnKey: string;
   endOnSuccess: boolean;
@@ -1906,6 +1911,41 @@ export class BotPlay {
     await signalTurns(db, world, actor);
     return session;
   }
+  async #reportedMaterial(
+    graph: string,
+    world: string,
+    actor: string,
+    user: string,
+    report: NpcReport,
+  ) {
+    try {
+      await this.store.context(graph, report.dependencies).validate();
+      return "unchanged";
+    } catch (error) {
+      if (!(error instanceof WorldConflict)) throw error;
+    }
+    // A private change may invalidate a graph dependency without changing
+    // anything this character can see. Reveal only the visible comparison.
+    try {
+      const material = await this.#withWorldReadLock(
+        world,
+        async (db) =>
+          (await this.#search(world, actor, report.query, [], db, user)).visible
+            .material,
+      );
+      return createHash("sha256").update(canonical(material)).digest("hex") ===
+        report.materialHash
+        ? "unchanged"
+        : "visible-result-changed";
+    } catch (error) {
+      if (
+        error instanceof AccessError &&
+        error.code === "MATERIAL_NOT_AVAILABLE"
+      )
+        return "unavailable";
+      throw error;
+    }
+  }
   async tickNpcs(world?: string, paused = () => false) {
     if (paused() || (await RuntimeControl.isPaused(this.pool))) return;
     const active = await this.pool.query<Session>(
@@ -2046,24 +2086,56 @@ export class BotPlay {
             !status.receiving && !status.callsUsed && !status.commentUsed
               ? this.#sinceLastTurn(member, rows, status.characters ?? [])
               : undefined;
-          const planSchema = z.object({
-            goal: z.string().trim().min(1).nullable(),
-            endOnSuccess: z.boolean(),
-            action: z.object({}).passthrough(),
-          });
+          const peers = status.characters
+            .filter((p) => p.actorId !== npc.actor_id)
+            .map((p) => p.actorId);
+          const work = npc.memory;
+          const pending =
+            !status.receiving &&
+            work?.pending &&
+            peers.includes(work.pending.recipient)
+              ? work.pending
+              : undefined;
+          const completed =
+            !pending &&
+            !status.receiving &&
+            work?.completed &&
+            peers.includes(work.completed.recipient)
+              ? work.completed
+              : undefined;
+          const operations = npcOperations(
+            peers,
+            !!status.receiving,
+            pending,
+            completed,
+          );
+          const priorResult =
+            completed &&
+            (await this.#reportedMaterial(
+              world.id,
+              npc.world_id,
+              npc.actor_id,
+              npc.user_id,
+              completed,
+            ));
           const readChoice = (raw: string) => {
             const value = parseOutput(raw);
             // Previously saved completions contain only the command.
-            const plan =
-              value && typeof value === "object" && !("command" in value)
-                ? planSchema.parse(value)
-                : undefined;
+            const plan = operations.read(value);
             const action = commands.parse({
               ...(plan?.action ?? (value as object)),
               requestId,
             });
             return { plan, action };
           };
+          const readResult = pending
+            ? (
+                await this.pool.query(
+                  "SELECT result->'material' AS material FROM bot_request WHERE id=$1 AND world_id=$2 AND actor_id=$3",
+                  [pending.readId, npc.world_id, npc.actor_id],
+                )
+              ).rows[0]?.material
+            : undefined;
           const completion = await this.#ask(
             derivedId(`${requestId}:choice`),
             "world-server-npc",
@@ -2071,41 +2143,75 @@ export class BotPlay {
               {
                 role: "system",
                 content:
-                  'あなたは明示的に担当を指定された一人のユニークNPCです。自分自身の発言・行動の描写にはsayを使います。声を出さない身振りや筆談はmodeを"nonverbal"にします。状態のcommandRestrictionsを参照し、発声を制限されているときに伝えたいことがあれば、使える伝達手段を選べます。発言の中で物を使った・食べた・渡したと述べても、持ち物は変わりません。self.material.companion があれば、wait中はその場で、follow中は同行相手と一緒に行動します。自分だけの出発は選べません。自分が乗り物（self.material.vehicle）なら、自ら運行するときは自分のIDをvehicleIdに指定してvehicle-travelを使えます。npc-actionは他の出現個体について申請するコマンドです。本人に提供された素材とセッションの入力・結果から、本人として次のAPIコマンドを一つ選びます。通常手番の開始時、sinceLastTurnには前回の自分の公開行動、その後に届いた発言・結果・コメント、同席者の増減があります。退出はセッションからの退出で、世界内の移動を意味しません。前回応じた声と新しい呼びかけを区別してください。今応じることや自分からしたいことがなければ、何も発言せずend-turnを選べます。currentTurnはこの手番で既に実行した操作とその結果です。発言・行動を終え、続けて行う別の目的がなければend-turnで次の人物へ渡してください。世界の裁定や他人の私的な解釈を代作しません。requestIdはサーバーが設定します。現在の目的goalを人物自身の関心と知っていることから選び、続ける・変える・手放すことができます。目的に向けて既に済んだことと、まだ本人が引き受けていることを見直します。相手の証言と自分の観測、既に試みたことと得られた結果を区別し、何が変わったかを手がかりにしてください。repeatOfのある発言は、記録ID.番号で参照する元の発言を同じ人から再び聞いたものとして読みます。返すJSONは {"goal":"現在の目的（なければnull）","endOnSuccess":true,"action":コマンド}。actionだけがcommandSchemaに従います。この操作で今できる働きかけを終え、相手の反応を待つならendOnSuccessはtrue。自分から実行するつもりのことを予告しただけで、今の手番でまだ行えるならfalse。結果を見てから次を決める場合もfalse。',
+                  'あなたは一人の担当人物です。本人の目的・性格と知っていることから、今成立させたい結果に対応する操作をavailableOperationsから一つ選びます。相手の証言、自分が予告したこと、実際に調べて分かったことを区別します。自分が引き受けてまだ済ませていない確認は自分で対象を選んで実行できます。報告が相手に届いた用事は完了です。目的が続いても、了承・待機・別の話題だけなら同じ用事を調べ直す必要はありません。前の答えを聞き直されたらその答えを返せます。関連する変化や再依頼、またはpriorResultがvisible-result-changedなら、自分の目的に応じて改めて確認できます。変化の内容は読んでから判断します。sinceLastTurnには前回の公開行動とその後に届いた発言・結果・参加者の増減があり、repeatOfは記録ID.番号の発言を再び聞いたことを示します。退出はセッションからの退出です。他人の意図や世界の裁定を代作しません。行動を予告するだけで持ち物や状態は変わりません。commandRestrictionsに従い、身振り・筆談はnonverbalを選びます。companionがwaitならその場で、followなら同行相手と行動します。乗り物が自ら運行するときはvehicle-travelのvehicleIdに自分のIDを使います。npc-actionは他の出現個体に対する操作です。goalには自分の現在の目的またはnullを入れます。操作の成功後、反応を待つならendOnSuccessはtrue、結果を見て自分で続けるならfalse。出力は {"operation":"操作名","args":引数} のJSONだけ。',
               },
               {
                 role: "user",
                 content: JSON.stringify({
-                  actorId: npc.actor_id,
-                  self,
-                  nearby,
-                  goal: npc.memory?.goal ?? null,
-                  history: recentEntries(
-                    {
-                      ...history,
-                      entries: rows.map((row) => {
-                        // The delta carries these witnessed actions in full.
-                        if (
-                          !sinceLastTurn ||
-                          !sinceLastTurn.recordIds.has(row.id)
-                        )
-                          return row;
-                        return {
-                          ...row,
-                          payload: omit(row.payload, ["entries", "comment"]),
-                        };
+                  ...(pending
+                    ? {
+                        situation:
+                          "自分で選んだ確認を終えた。読めた内容から、引き受けた問いに答える具体的な結果を自分の口調で伝えられる。所見を想像しない。",
+                        task: {
+                          question: pending.question,
+                          recipient: pending.recipient,
+                          query: pending.query,
+                        },
+                        readResult,
+                        self,
+                        goal: work?.goal,
+                        people: status.characters,
+                        status,
+                        sinceLastTurn:
+                          sinceLastTurn && omit(sinceLastTurn, ["recordIds"]),
+                      }
+                    : {
+                        actorId: npc.actor_id,
+                        self,
+                        nearby,
+                        goal: npc.memory?.goal ?? null,
+                        history: recentEntries(
+                          {
+                            ...history,
+                            entries: rows.map((row) => {
+                              // The delta carries these witnessed actions in full.
+                              if (
+                                !sinceLastTurn ||
+                                !sinceLastTurn.recordIds.has(row.id)
+                              )
+                                return row;
+                              return {
+                                ...row,
+                                payload: omit(row.payload, [
+                                  "entries",
+                                  "comment",
+                                ]),
+                              };
+                            }),
+                          },
+                          true,
+                        ),
+                        origin: origin && recentEntries(origin, true),
+                        status,
+                        sinceLastTurn:
+                          sinceLastTurn && omit(sinceLastTurn, ["recordIds"]),
+                        currentTurn: {
+                          actions: current.data.npcActions ?? [],
+                          comment: current.data.comment,
+                        },
+                        completedWork: completed && {
+                          question: completed.question,
+                          recipient: completed.recipient,
+                          query: completed.query,
+                          alreadyDelivered: completed.answer,
+                          priorResult,
+                          situation:
+                            priorResult === "visible-result-changed"
+                              ? "相手に報告した後、自分が閲覧できる確認対象に変化があった。前の答えを今の状態として扱えない。相手が待っている間でも、その人の判断に関わるなら recheck_for_recipient で何が変わったか読み直し、知らせるかを選ぶ。"
+                              : "この問いへの答えは相手に届いた。新しい依頼や関連する知らせがあれば再確認できる。前の答えを聞き直された場合は報告済みの答えを伝えられる。",
+                        },
                       }),
-                    },
-                    true,
-                  ),
-                  origin: origin && recentEntries(origin, true),
-                  status,
-                  sinceLastTurn:
-                    sinceLastTurn && omit(sinceLastTurn, ["recordIds"]),
-                  currentTurn: {
-                    actions: current.data.npcActions ?? [],
-                    comment: current.data.comment,
-                  },
+                  availableOperations: operations.availableOperations,
                   commandSchema: z.toJSONSchema(commands),
                 }),
               },
@@ -2115,6 +2221,9 @@ export class BotPlay {
           );
           const { plan, action: command } = readChoice(completion.content);
           const choice = {
+            ...(plan?.inspect && { inspect: plan.inspect }),
+            ...(plan?.recipient && { recipient: plan.recipient }),
+            ...(plan?.reportReadId && { reportReadId: plan.reportReadId }),
             assignmentId: npc.assignment_id,
             turnKey: turnState(current).key,
             endOnSuccess: !status.receiving && !!plan?.endOnSuccess,
@@ -3157,6 +3266,9 @@ export class BotPlay {
     const witnesses = Array.isArray(payload.entries)
       ? (payload.entries as Entry[])
       : [];
+    const reports = witnesses.flatMap((entry, index) =>
+      entry.report ? [{ entry, index, report: entry.report }] : [],
+    );
     if (Array.isArray(payload.entries)) {
       const context = this.store.context(
         (await this.world(session.world_id, db)).id,
@@ -3190,9 +3302,9 @@ export class BotPlay {
     for (const member of session.data.members) {
       if (viewers && !viewers.includes(member.actorId)) continue;
       let visibleId = id;
+      const skip =
+        payload.turn === undefined ? 0 : (member.joinedAfterEntries ?? 0);
       if (Array.isArray(payload.entries)) {
-        const skip =
-          payload.turn === undefined ? 0 : (member.joinedAfterEntries ?? 0);
         const hideComment =
           payload.turn !== undefined && member.joinedAfterComment;
         if (
@@ -3247,6 +3359,30 @@ export class BotPlay {
         "INSERT INTO bot_record(scene_id,actor_id,chat_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
         [member.sceneId, member.actorId, visibleId],
       );
+      for (const { entry: e, report, index } of reports) {
+        if (
+          index < skip ||
+          report.recipient !== member.actorId ||
+          !e.speechWitnesses?.includes(member.actorId)
+        )
+          continue;
+        const speech = e.result as { mode?: string };
+        await db.query(
+          `UPDATE bot_npc SET memory=(memory - 'pending') ||
+            jsonb_build_object('completed', (memory->'pending') || $4::jsonb)
+           WHERE world_id=$1 AND actor_id=$2 AND memory->'pending'->>'readId'=$3`,
+          [
+            session.world_id,
+            e.actorId,
+            report.readId,
+            {
+              answer: e.input,
+              mode: speech.mode ?? "voice",
+              recordId: visibleId,
+            },
+          ],
+        );
+      }
       if (
         payload.turn !== undefined &&
         payload.actorId === member.actorId &&
@@ -12493,7 +12629,7 @@ export class BotPlay {
         if (!active || turnState(active).key !== choice.turnKey)
           reject("NPC_CHOICE_EXPIRED", "判断した手番は終了しました");
         const updated = await db.query(
-          "UPDATE bot_npc SET memory=$4 WHERE world_id=$1 AND actor_id=$2 AND assignment_id=$3 AND controller='server'",
+          "UPDATE bot_npc SET memory=COALESCE(memory,'{}'::jsonb) || $4::jsonb WHERE world_id=$1 AND actor_id=$2 AND assignment_id=$3 AND controller='server'",
           [world, actor, expectedAssignment, choice.memory],
         );
         if (!updated.rowCount)
@@ -13336,6 +13472,23 @@ export class BotPlay {
                   ],
                 });
               }
+              if (choice?.inspect) {
+                await db.query(
+                  "UPDATE bot_npc SET memory=jsonb_set(memory,'{pending}',$3) WHERE world_id=$1 AND actor_id=$2",
+                  [
+                    world,
+                    actor,
+                    {
+                      ...choice.inspect,
+                      readId: input.requestId,
+                      dependencies: result.dependencies,
+                      materialHash: createHash("sha256")
+                        .update(canonical(result.material))
+                        .digest("hex"),
+                    },
+                  ],
+                );
+              }
               if (input.query.kind === "self") {
                 const { rows } = await db.query<{
                   id: string;
@@ -13613,6 +13766,11 @@ export class BotPlay {
                   },
                 });
               }
+              if (choice?.recipient && !listeners.includes(choice.recipient))
+                reject(
+                  "NPC_REPORT_RECIPIENT_ABSENT",
+                  "結果を伝える相手がこの場にいません",
+                );
               const receipt = await this.#commit(
                 w.id,
                 input.requestId,
@@ -13640,6 +13798,14 @@ export class BotPlay {
                 input: input.text,
                 result,
                 speechWitnesses: [...listeners, ...animals.map((a) => a.id)],
+                ...(choice?.reportReadId && choice.recipient
+                  ? {
+                      report: {
+                        recipient: choice.recipient,
+                        readId: choice.reportReadId,
+                      },
+                    }
+                  : {}),
               });
             } else if (
               plan?.drawReview &&

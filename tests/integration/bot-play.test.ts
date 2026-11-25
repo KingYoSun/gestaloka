@@ -18968,6 +18968,131 @@ test("サーバーNPCが目的を引き継ぎ、操作の成功時に同じ手�
   ).toBeNull();
 });
 
+test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉じ、前の答えと新しい確認を区別する", async () => {
+  const f = await fixture(2),
+    [peer, npc] = f.actors as [string, string];
+  await f.send(0, { command: "contact", targetId: npc });
+  await giveTurn(f, 1);
+  await auth.operations.execute(
+    (await auth.person()).id,
+    randomUUID(),
+    {
+      operation: "npcs.put",
+      worldId: f.world,
+      actorId: npc,
+      controller: "server",
+      reason: "渡し場の受渡し",
+    },
+    { players: access.players },
+  );
+  const memory = async () =>
+    (
+      await isolated.databases.postgres.query(
+        "SELECT memory FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
+        [f.world, npc],
+      )
+    ).rows[0].memory;
+  const choose = async (operation: string, args: object) => {
+    let context:
+      | { readResult?: unknown; completedWork: { priorResult: string } }
+      | undefined;
+    f.calls.mockImplementationOnce(async (id, _role, messages) => {
+      context = JSON.parse(String(messages[1]!.content));
+      return answer(id, {
+        operation,
+        args: { goal: "荷の引き渡しを見届ける", ...args },
+      });
+    });
+    await access.botPlay.tickNpcs(f.world);
+    return context!;
+  };
+  const query = { kind: "subject", targetId: f.place };
+  const submits = vi.spyOn(access.botPlay, "submit");
+  await choose("inspect_and_reply", {
+    recipient: peer,
+    question: "荷受け場所の名前",
+    query,
+  });
+  expect((await memory()).completed).toBeUndefined();
+  const firstRead = (await memory()).pending.readId;
+  const reply = { mode: "nonverbal", text: "荷受けは広場です。" };
+  const reporting = await choose("report_and_pass", reply);
+  expect(JSON.stringify(reporting.readResult)).toContain("広場");
+  const done = await memory();
+  expect(done.pending).toBeUndefined();
+  expect(done.completed).toMatchObject({
+    readId: firstRead,
+    recipient: peer,
+    query,
+    answer: reply.text,
+  });
+  const history = await access.botPlay.history(f.world, peer);
+  expect(
+    history.entries.find((r) => r.id === done.completed.recordId)?.payload
+      .entries,
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ actorId: npc, input: reply.text }),
+    ]),
+  );
+  const published = submits.mock.calls.at(-1)!;
+  await access.botPlay.submit(...published);
+  expect(await memory()).toEqual(done);
+  expect((await access.botPlay.history(f.world, peer)).entries).toEqual(
+    history.entries,
+  );
+  await f.send(0, { command: "end-turn" });
+  const recall = await choose("repeat_delivered_answer", {});
+  expect(recall.completedWork.priorResult).toBe("unchanged");
+  expect((await memory()).completed).toEqual(done.completed);
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    {
+      at: 1,
+      commitId: randomUUID(),
+      changes: {
+        nodes: [],
+        edges: [],
+        endEdges: [],
+        revisions: [
+          { kind: "existence", id: f.place, text: "渡し場の荷受け所" },
+        ],
+      },
+    },
+  );
+  await f.send(0, { command: "end-turn" });
+  const changed = await choose("recheck_for_recipient", {
+    reason: "荷受け場所の表示が変わった",
+  });
+  expect(changed.completedWork.priorResult).toBe("visible-result-changed");
+  expect((await memory()).pending.readId).not.toBe(firstRead);
+  const second = await choose("report_and_pass", {
+    mode: "voice",
+    text: "渡し場の荷受け所に変わりました。",
+  });
+  expect(JSON.stringify(second.readResult)).toContain("渡し場の荷受け所");
+  expect((await memory()).completed.recordId).not.toBe(done.completed.recordId);
+  await f.send(0, { command: "end-turn" });
+  await choose("recheck_for_recipient", { reason: "受取人から再確認の依頼" });
+  const before = await memory();
+  await f.move(0, f.far);
+  await choose("report_and_pass", {
+    mode: "voice",
+    text: "これが最新の表示です。",
+  });
+  expect(await memory()).toMatchObject({
+    pending: before.pending,
+    completed: before.completed,
+  });
+  const absent = await access.botPlay.history(f.world, peer);
+  expect(
+    absent.entries
+      .flatMap((row) => row.payload.entries ?? [])
+      .some((e) => e.input === "これが最新の表示です。"),
+  ).toBe(false);
+});
+
 test("サーバー担当NPCは断られた選択を問い直さず、受領判断中は返答と一度のコメントだけを選べる", async () => {
   const f = await fixture();
   const npc = f.actors[1]!;

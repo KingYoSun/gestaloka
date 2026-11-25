@@ -1,5 +1,6 @@
 import type { LlmClient } from "../llm/client.js";
 import { derivedId } from "../world/model.js";
+import type { NpcRead, NpcReport } from "./npc-work.js";
 
 type Speech = {
   actorId: string;
@@ -9,6 +10,8 @@ type Speech = {
 };
 type Row = { id: string; payload: { entries?: Speech[] } };
 export type NpcMemory = {
+  pending?: NpcRead;
+  completed?: NpcReport;
   goal?: string | null;
   comparisons?: Record<string, number>;
 };
