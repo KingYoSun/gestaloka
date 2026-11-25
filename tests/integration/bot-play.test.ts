@@ -14208,7 +14208,14 @@ describe("現場材料", () => {
         dependencies: [],
       }),
     ).toMatchObject({
-      outcome: { success: false, reason: "MATERIAL_ID_REQUIRED" },
+      outcome: {
+        success: false,
+        reason: "MATERIAL_ID_REQUIRED",
+        unresolvedMaterialLabels: ["船体"],
+      },
+      action: {
+        message: expect.stringMatching(/「船体」.*物品のIDをmaterialsに指定/),
+      },
     });
     expect(
       (
@@ -14224,6 +14231,69 @@ describe("現場材料", () => {
       boards: 2,
       tools: 1,
     });
+  });
+  test("材料名が分からないときは申請文と物品IDの指定を案内する", async () => {
+    const { f, plan } = await workshop(1);
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), { ...win, requiredMaterials: null }),
+    );
+    const result = await f.send(0, {
+      command: "update",
+      ...plan(1),
+      dependencies: [],
+    });
+    expect(result.outcome).toEqual({
+      success: false,
+      reason: "MATERIAL_ID_REQUIRED",
+    });
+    expect(result.action).toMatchObject({
+      message: expect.stringMatching(
+        /どの材料を使うのか読み取れません.*申請文に明記.*物品のIDをmaterialsに指定/,
+      ),
+    });
+  });
+  test("一括製作の結果に成功した物品と未判定の案ごとの材料名を表示する", async () => {
+    const { f, ids, plan } = await workshop(1);
+    const proposals = [plan(1, ids[0]), plan(2, ids[0]), plan(3, ids[0])];
+    f.calls.mockResolvedValueOnce(
+      answer(randomUUID(), {
+        settings: [
+          win,
+          {
+            ...win,
+            requiredMaterials: ["船体", "蜜蝋", "麻糸", "蜜蝋"].map(
+              (label) => ({ label }),
+            ),
+          },
+          { ...win, requiredMaterials: [{ label: "染料" }] },
+        ],
+      }),
+    );
+    const result = await f.send(0, {
+      command: "create-batch",
+      proposals,
+      dependencies: [],
+    });
+    expect(result.outcome).toMatchObject({
+      proposals: [
+        { success: true },
+        {
+          reason: "MATERIAL_ID_REQUIRED",
+          unresolvedMaterialLabels: ["蜜蝋", "麻糸"],
+        },
+        { reason: "MATERIAL_ID_REQUIRED", unresolvedMaterialLabels: ["染料"] },
+      ],
+    });
+    const { message } = result.action as { message: string };
+    expect(message.split("\n")).toEqual([
+      expect.stringContaining("「交易船」を手元に置きました"),
+      expect.stringContaining(
+        `「${proposals[1]!.text}」の案は振っていません。材料「蜜蝋」「麻糸」`,
+      ),
+      expect.stringContaining(
+        `「${proposals[2]!.text}」の案は振っていません。材料「染料」`,
+      ),
+    ]);
   });
 });
 
