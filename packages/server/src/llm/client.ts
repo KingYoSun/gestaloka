@@ -14,6 +14,7 @@ import {
 } from "./budget.js";
 import { ModelLimits } from "./limits.js";
 import { responseDeadline } from "./response-deadline.js";
+import { generationFetch, UnsentGeneration } from "./generation-fetch.js";
 import { JSON_WHITESPACE_ERROR, streamedChat, streamEvents } from "./stream.js";
 import {
   preparePrompt,
@@ -1058,18 +1059,17 @@ export class LlmClient {
           let received: unknown;
           let interrupted = false;
           try {
-            const response = await this.transport(
-              `${connection.baseUrl}/${path}`,
-              {
-                method: "POST",
-                headers: {
-                  ...(await this.headers(provider, quota.key)),
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify(request),
-                signal: deadline.signal,
+            const send =
+              this.transport === fetch ? generationFetch : this.transport;
+            const response = await send(`${connection.baseUrl}/${path}`, {
+              method: "POST",
+              headers: {
+                ...(await this.headers(provider, quota.key)),
+                "Content-Type": "application/json",
               },
-            );
+              body: JSON.stringify(request),
+              signal: deadline.signal,
+            });
             if (!response.ok) {
               const rejection = await this.ledger.reject(
                 id,
@@ -1297,6 +1297,19 @@ export class LlmClient {
             );
             return completion;
           } catch (error) {
+            if (error instanceof UnsentGeneration) {
+              await this.ledger.settle(
+                id,
+                0,
+                {
+                  error: error.message,
+                  rejection: { type: "unsent", code: error.code },
+                },
+                Math.round(performance.now() - started),
+              );
+              quota.used(0);
+              throw error;
+            }
             if (error instanceof z.ZodError && received !== undefined) {
               let text: string | null | undefined;
               if (api === "chat-completions") {

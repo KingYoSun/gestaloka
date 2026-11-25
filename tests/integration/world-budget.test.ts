@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { ExecutionBudget } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
@@ -9,7 +11,7 @@ import { modelEnvironment } from "../support/model.js";
 const isolated = isolatedDatabases(),
   db = isolated.databases;
 const messages = [{ role: "user" as const, content: "予算の検証" }];
-async function model(transport: typeof fetch) {
+async function model(transport: typeof fetch, env: NodeJS.ProcessEnv = {}) {
   const llm = new LlmClient(
     db.postgres,
     {
@@ -20,6 +22,7 @@ async function model(transport: typeof fetch) {
       LLM_INPUT_USD_PER_MILLION: "1",
       LLM_CACHED_INPUT_USD_PER_MILLION: "0",
       LLM_OUTPUT_USD_PER_MILLION: "1",
+      ...env,
     },
     transport,
   );
@@ -35,6 +38,100 @@ const reply = () =>
   });
 beforeAll(() => isolated.setup());
 afterAll(() => isolated.close());
+
+test("生成要求の初回接続拒否だけを0ドルで精算し、同じIDで再送しない", async () => {
+  const attempts: string[] = [];
+  let mode = "success";
+  const server = createServer((req, res) => {
+    attempts.push(mode);
+    if (mode === "disconnect") return req.socket.destroy();
+    if (mode === "redirect") {
+      // The first POST arrived; only the redirect destination refuses to connect.
+      server.close();
+      res
+        .writeHead(307, { location: "/redirected", connection: "close" })
+        .end();
+    } else if (mode === "http") res.writeHead(503).end();
+    else
+      void reply()
+        .text()
+        .then((body) => res.end(body));
+  });
+  const listen = (port: number) =>
+    new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
+  await listen(0);
+  const { port } = server.address() as AddressInfo;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  const llm = await model(fetch, {
+    LLM_MODEL: "meta/muse-ember",
+    OPENROUTER_API_KEY: "unused",
+    LLM_BASE_URL: `http://127.0.0.1:${port}`,
+  });
+  const world = randomUUID(),
+    first = randomUUID();
+  await WorldBudget.create(db.postgres, world, 1);
+  const complete = (id: string) =>
+    ExecutionBudget.run(
+      db.postgres,
+      id,
+      () => llm.complete(id, "world-server-npc", messages),
+      world,
+    );
+  const row = async (id: string) =>
+    (
+      await db.postgres.query(
+        "SELECT state,delivery,charged_nano,response,elapsed_ms FROM llm_call WHERE id=$1",
+        [id],
+      )
+    ).rows[0];
+  await expect(complete(first)).rejects.toThrow("ECONNREFUSED");
+  expect(await row(first)).toMatchObject({
+    state: "complete",
+    charged_nano: "0",
+    elapsed_ms: expect.any(Number),
+    response: { rejection: { type: "unsent", code: "ECONNREFUSED" } },
+  });
+  expect(await llm.ledger.summary()).toMatchObject({
+    upperCostUsd: 0,
+    unsettled: 0,
+  });
+  expect(await WorldBudget.read(db.postgres, world)).toMatchObject({
+    upperCostUsd: 0,
+  });
+
+  await listen(port);
+  try {
+    await expect(complete(first)).rejects.toThrow("ECONNREFUSED");
+    await complete(randomUUID());
+    expect(attempts).toEqual(["success"]);
+    expect(await llm.ledger.summary()).toMatchObject({
+      upperCostUsd: 0.000002,
+      calls: 2,
+    });
+    expect(await WorldBudget.read(db.postgres, world)).toMatchObject({
+      upperCostUsd: 0.000002,
+    });
+    for (mode of ["disconnect", "http", "redirect"]) {
+      const id = randomUUID();
+      await expect(complete(id)).rejects.toThrow();
+      expect(await row(id)).toMatchObject({
+        state: "pending",
+        delivery: "unknown",
+        charged_nano: null,
+      });
+    }
+    expect(attempts).toEqual(["success", "disconnect", "http", "redirect"]);
+    expect(await llm.ledger.summary()).toMatchObject({
+      unsettled: 3,
+      upperCostUsd: 0.000332,
+    });
+    expect(await WorldBudget.read(db.postgres, world)).toMatchObject({
+      upperCostUsd: 0.000332,
+    });
+  } finally {
+    if (server.listening) await server[Symbol.asyncDispose]();
+  }
+});
 
 test("別の費用記録系統でも世界予算を通算し、未確定予約・精算・再利用・増額を二重計上しない", async () => {
   let release!: () => void,
