@@ -17,6 +17,7 @@ export type NpcMemory = {
 // speaker and mode is comparable. Outcomes and comments retain their own records.
 export async function classifyNpcHistory<T extends Row>(
   rows: T[],
+  npcActorId: string,
   previous: NpcMemory["comparisons"],
   model: Pick<LlmClient, "decision" | "decide">,
   requestId: string,
@@ -29,6 +30,7 @@ export async function classifyNpcHistory<T extends Row>(
     after: string;
   }[] = [];
   const links = new Map<string, string>();
+  let latestIncoming: Speech | undefined;
   for (const row of rows) {
     for (const [index, entry] of (row.payload.entries ?? []).entries()) {
       const result = entry.result as {
@@ -36,6 +38,13 @@ export async function classifyNpcHistory<T extends Row>(
         instantNpcs?: string[];
         mode?: string;
       } | null;
+      if (
+        entry.actorId !== npcActorId &&
+        !entry.applicationId &&
+        result?.state === "accepted" &&
+        Array.isArray(result.instantNpcs)
+      )
+        latestIncoming = entry;
       if (
         entry.applicationId ||
         result?.state !== "accepted" ||
@@ -137,6 +146,7 @@ export async function classifyNpcHistory<T extends Row>(
       ...row.payload,
       ...(row.payload.entries && {
         entries: row.payload.entries.map((entry, i) => {
+          if (entry === latestIncoming) return entry;
           let original = links.get(row.id + "." + i);
           if (!original) return entry;
           while (links.has(original)) original = links.get(original)!;
