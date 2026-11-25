@@ -14517,6 +14517,80 @@ test("技能枠が満杯でも元技能を本人が選んだときだけ作成�
   });
 });
 
+test("説明式の抽選は手番が進んでも確定済みの結果を再送で取り直せる", async () => {
+  const f = await fixture(1);
+  const actor = f.actors[0]!;
+  f.calls.mockImplementation(async (id, role) => {
+    if (role === "world-draw-review")
+      return answer(id, { accepted: true, reason: "出る品の範囲が明確" });
+    expect(role).toBe("world-draw");
+    return answer(id, { kind: "item", label: "木の札" });
+  });
+  await expect(
+    f.send(0, {
+      command: "draw-configure",
+      targetId: f.place,
+      description: "木の札が一枚出る",
+    }),
+  ).resolves.toMatchObject({ state: "confirmed", spentSp: 0 });
+  const request = {
+    command: "draw",
+    requestId: randomUUID(),
+    targetId: f.place,
+  };
+  const commit = f.store.commit.bind(f.store);
+  const writes = vi
+    .spyOn(f.store, "commit")
+    .mockImplementationOnce(async (...args) => {
+      await commit(...args);
+      throw new Error("グラフ確定後に接続が切れた");
+    });
+  const turn = () => access.botPlay.current(f.world, actor);
+  const previousTurn = (await turn())!.data.number;
+  await expect(f.send(0, request)).rejects.toThrow(
+    "グラフ確定後に接続が切れた",
+  );
+  const receipt = await f.store.receipt(f.graph, request.requestId);
+  const rewards =
+    receipt?.changes.nodes.filter((node) => node.kind === "existence") ?? [];
+  expect(rewards).toMatchObject([{ kind: "existence", text: "木の札" }]);
+  const saved = await isolated.databases.postgres.query(
+    "SELECT result FROM bot_request WHERE id=$1",
+    [request.requestId],
+  );
+  expect(saved.rows).toEqual([{ result: null }]);
+  expect((await f.status(0)).dailySp.remaining).toBe(99);
+  await f.send(0, { command: "end-turn" });
+  expect((await turn())!.data.number).toBeGreaterThan(previousTurn);
+
+  const restored = await f.send(0, request);
+  expect(restored).toMatchObject({
+    state: "accepted",
+    commitId: request.requestId,
+    reward: {
+      kind: "item",
+      label: "木の札",
+      id: rewards[0]!.id,
+    },
+    spentSp: 1,
+    dailySp: { remaining: 99 },
+  });
+  expect(await f.send(0, request)).toEqual(restored);
+  expect(
+    f.calls.mock.calls.filter(([, role]) => role === "world-draw"),
+  ).toHaveLength(1);
+  expect(
+    writes.mock.calls.filter(
+      ([, , { commitId }]) => commitId === request.requestId,
+    ),
+  ).toHaveLength(1);
+  expect((await f.status(0)).dailySp.remaining).toBe(99);
+  const { items } = await readBelongings(f.store.context(f.graph), actor);
+  expect(
+    items.filter(({ label }) => label === "木の札").map(({ id }) => id),
+  ).toEqual([rewards[0]!.id]);
+});
+
 async function fixedTableFixture() {
   const f = await fixture();
   const send = (
