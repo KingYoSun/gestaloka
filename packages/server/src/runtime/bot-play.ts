@@ -2026,6 +2026,7 @@ export class BotPlay {
           );
           const classified = await classifyNpcHistory(
             history.entries.slice(-historyLimit),
+            npc.actor_id,
             npc.memory?.comparisons,
             this.construction.agent.model,
             requestId,
