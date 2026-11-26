@@ -8775,6 +8775,58 @@ test.each([true, false])(
   },
 );
 
+test("本人の状態を繰り返し置き換えても本文が増えない", async () => {
+  const f = await fixture(1);
+  const targetId = f.actors[0]!;
+  const original = "布の外套を着ている。";
+  const description = "革の外套を着ている。";
+  const changes: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  mark(changes, targetId, original);
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    { commitId: randomUUID(), at: 0, changes },
+  );
+  let stateId = changes.edges[0]!.id;
+  for (const [text, previousState] of [
+    ["布の外套を脱いで革の外套に着替える", original],
+    ["革の外套を着ている状態に置き換える", description],
+  ] as const) {
+    f.calls.mockImplementationOnce(async (id, role, messages) => {
+      expect(role).toBe("world-creation-dice");
+      expect(JSON.parse(messages[1]!.content)).toMatchObject({
+        text,
+        previousState,
+        changes: { nodes: [{ text: description }] },
+      });
+      return answer(id, { ...sure, replacementState: description });
+    });
+    const requestId = randomUUID();
+    await expect(
+      f.send(0, {
+        requestId,
+        command: "apply",
+        expectedSp: 1,
+        dependencies: [],
+        action: { type: "state", targetId, stateId, text, description },
+      }),
+    ).resolves.toMatchObject({ state: "accepted", outcome: { success: true } });
+    const receipt = await f.store.receipt(f.graph, requestId);
+    expect(receipt?.changes.endEdges).toContain(stateId);
+    stateId = derivedId(`${derivedId(`${requestId}:state`)}:content`);
+    const { material } = await f.send(0, {
+      command: "search",
+      query: { kind: "self" },
+    });
+    const { states } = material as {
+      states: { relation: { id: string }; node: { text: string } }[];
+    };
+    expect(states.filter(({ node }) => /外套/.test(node.text))).toMatchObject([
+      { relation: { id: stateId }, node: { text: description } },
+    ]);
+  }
+});
+
 test.each([false, true])(
   "非戦闘地域でも治療の成功で指定した負傷を終了する（材料指定=%s）",
   async (withMaterials) => {
@@ -8825,7 +8877,9 @@ test.each([false, true])(
       stateId: wound,
       ...(bandage ? { materials: [{ id: bandage }] } : {}),
     };
-    const remainingState = withMaterials ? "" : previousState;
+    const replacementState = withMaterials
+      ? action.description
+      : "指に浅い傷があり、手当てされている";
     f.calls.mockClear();
     f.calls.mockImplementation(async (id, role, messages) => {
       expect(role).toBe("world-creation-dice");
@@ -8840,7 +8894,7 @@ test.each([false, true])(
       expect(messages[0]!.content).toMatch(/json/i);
       return answer(id, {
         ...sure,
-        remainingState,
+        replacementState,
         ...(bandage ? { requiredMaterials: [{ id: bandage }] } : {}),
       });
     });
@@ -8849,16 +8903,15 @@ test.each([false, true])(
     });
     const receipt = await f.store.receipt(f.graph, treatment);
     expect(receipt?.changes.endEdges).toContain(wound);
-    const text = [action.description, remainingState]
-      .filter(Boolean)
-      .join("\n");
     const { material } = await f.send(0, {
       command: "search",
       query: { kind: "self" },
     });
     expect(material).toMatchObject({
       states: expect.arrayContaining([
-        expect.objectContaining({ node: expect.objectContaining({ text }) }),
+        expect.objectContaining({
+          node: expect.objectContaining({ text: replacementState }),
+        }),
       ]),
     });
     expect(
@@ -8894,7 +8947,8 @@ test("他人への手当てで残る状態を受領前に読み、承認した�
   const stateId = changes.edges[0]!.id;
   const text = "傷口を清潔な布で押さえる";
   const description = "傷口に布が当たり、出血が落ち着いている。";
-  const remainingState = "左耳の先を失っている。";
+  const after =
+    "左耳の先を失っており、布で傷口を押さえて出血は落ち着いている。";
   await f.send(0, { command: "contact", targetId });
   await giveTurn(f, 0);
   f.calls.mockImplementationOnce(async (id, role, messages) => {
@@ -8905,7 +8959,7 @@ test("他人への手当てで残る状態を受領前に読み、承認した�
       changes: { nodes: [{ text: description }] },
     });
     expect(messages[0]!.content).toMatch(/json/i);
-    return answer(id, { ...sure, remainingState });
+    return answer(id, { ...sure, replacementState: after });
   });
   const offered = await f.send(0, {
     command: "apply",
@@ -8917,7 +8971,6 @@ test("他人への手当てで残る状態を受領前に読み、承認した�
   expect(offered.dice).toEqual([
     expect.stringContaining(`成功は ${sure.successThrough} 以下（成功）`),
   ]);
-  const after = `${description}\n${remainingState}`;
   expect((await f.status(1)).receiving).toMatchObject({
     text,
     changes: { nodes: [{ text: after }], endEdges: [stateId] },
