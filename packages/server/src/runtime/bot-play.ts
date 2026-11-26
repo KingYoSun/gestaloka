@@ -538,6 +538,7 @@ type SessionStatus = {
   characters: TurnParticipant[];
   stealth?: { placeId: string; place: string };
   home?: RespawnHome;
+  departureFollowers?: { targetId: string; name: string }[];
   turn: number;
   actorId: string | null;
   callsUsed: number;
@@ -993,7 +994,10 @@ const privateInterpretation = (actor: string, changes: Change) =>
 type Fumble = { roll: number; success: boolean };
 type CreationRoll = {
   success: boolean;
-  setting: SavedDice & { remainingState?: string };
+  setting: SavedDice & {
+    replacementState?: string;
+    remainingState?: string;
+  };
   roll: number;
   repeated?: boolean;
   fumble?: Fumble;
@@ -3954,28 +3958,43 @@ export class BotPlay {
   }
 
   // 過去の保存状態、再開、乗降、遠隔での帰還にも同じ所在・同席の判定を使う。
-  async #syncFollowers(
+  async #syncCompanions(
     db: Db,
     world: string,
     context: WorldContext,
     actors: string[],
     request: string,
-    requestedNpc?: string,
+    {
+      joinWaiting = false,
+      requestedNpc,
+    }: {
+      joinWaiting?: boolean;
+      requestedNpc?: string;
+    } = {},
   ) {
     let changed = false;
-    for (const c of await this.companions.following(db, world, actors)) {
+    for (const c of await this.companions.related(
+      db,
+      world,
+      actors,
+      joinWaiting ? undefined : "follow",
+    )) {
       const place = await this.#places(context, c.actor_id);
       if (
         !(await this.#places(context, c.npc_id)).some((p) => place.includes(p))
       ) {
-        await this.companions.setMode(db, world, c.npc_id, "wait");
-        changed = true;
+        if (c.mode === "follow") {
+          await this.companions.setMode(db, world, c.npc_id, "wait");
+          changed = true;
+        }
         continue;
       }
       const target = await this.current(world, c.actor_id, db);
       if (!target || target.data.members.some((m) => m.actorId === c.npc_id))
         continue;
       const source = await this.current(world, c.npc_id, db);
+      if (source && source.data.members.length > 1 && requestedNpc !== c.npc_id)
+        continue;
       if (source && deciding(source, [c.npc_id])) {
         // 別の会話にいる旧データの照合で、進行中の受領を取り消さない。
         if (requestedNpc === c.npc_id)
@@ -3983,11 +4002,15 @@ export class BotPlay {
             "COMPANION_RECEIVING",
             "コンパニオンの受領判断が終わってから追従を再開してください",
           );
-        await this.companions.setMode(db, world, c.npc_id, "wait");
-        changed = true;
+        if (c.mode === "follow") {
+          await this.companions.setMode(db, world, c.npc_id, "wait");
+          changed = true;
+        }
         continue;
       }
       if (!source) {
+        if (c.mode === "wait" && (await isPermanentlyDead(context, c.npc_id)))
+          continue;
         const { rows } = await db.query<{ user_id: string | null }>(
           "SELECT user_id FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
           [world, c.npc_id],
@@ -3998,7 +4021,8 @@ export class BotPlay {
               "NPC_UNASSIGNED",
               "対象のユニークNPCには操作担当が指定されていません",
             );
-          await this.companions.setMode(db, world, c.npc_id, "wait");
+          if (c.mode === "follow")
+            await this.companions.setMode(db, world, c.npc_id, "wait");
           continue;
         }
         await this.#open(
@@ -4636,12 +4660,13 @@ export class BotPlay {
         ...r.recipients,
       ]);
       if (affected.size)
-        await this.#syncFollowers(
+        await this.#syncCompanions(
           db,
           world,
           context,
           [r.sender, ...affected],
           r.id,
+          { joinWaiting: true },
         );
     }
     return idleExpired;
@@ -4694,6 +4719,29 @@ export class BotPlay {
     ).rows[0];
     const r = session.data.receiving;
     const characters = await this.#characters(session, db);
+    const following = await this.companions.following(db, world, [actor]);
+    const departureFollowers: NonNullable<SessionStatus["departureFollowers"]> =
+      [];
+    if (following.length) {
+      const origin = await directPlaces(context, actor);
+      for (const { npc_id: targetId } of following) {
+        if (
+          !(await directPlaces(context, targetId)).some((id) =>
+            origin.includes(id),
+          ) ||
+          (await context.commandRestriction(
+            targetId,
+            "move",
+            this.now().getTime(),
+          ))
+        )
+          continue;
+        departureFollowers.push({
+          targetId,
+          name: (await context.node(targetId))?.text ?? "人物",
+        });
+      }
+    }
     const due = r ? undefined : session.data.awayUntil;
     const remainingSeconds = due
       ? Math.max(0, Math.ceil((Date.parse(due) - this.now().getTime()) / 1000))
@@ -4716,6 +4764,7 @@ export class BotPlay {
       })),
       characters,
       ...own,
+      ...(departureFollowers.length ? { departureFollowers } : {}),
       turn: session.data.number,
       ...(withClock && session.data.turnStartedAt
         ? { turnStartedAt: session.data.turnStartedAt }
@@ -7818,7 +7867,9 @@ export class BotPlay {
       const creationDice = work ? WorkDice(pool) : DiceSetting(pool);
       const Dice =
         previousState !== undefined
-          ? creationDice.safeExtend({ remainingState: z.string().trim() })
+          ? creationDice.safeExtend({
+              replacementState: z.string().trim().min(1),
+            })
           : explore
             ? z.strictObject({
                 ...fields,
@@ -7924,7 +7975,7 @@ export class BotPlay {
                       : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {successThrough:整数}。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
                     diceStatePrompt +
                     (previousState !== undefined
-                      ? "previousStateは置き換える状態の本文。行為（text）と申請者が書いた処置後の状態（changes.nodesの本文）を照合し、ダイス設定と同じJSONオブジェクトのremainingStateに、行為が成功しても解消しない元の状態を文字列で必ず返す。全体が解消するなら空文字、何も解消しないなら元の本文を返す。"
+                      ? "previousStateは終了する状態の本文。ダイス設定は {successThrough:整数,replacementState:空でない文字列} を含むJSONで返す。replacementStateはtextの行為が成功した場合に、指定の状態に代わって現在の状態として読める全文。changes.nodesの本文が成功後の状態を過不足なく表すなら、その本文をそのまま文字列で返す。交換で古くなった内容は除き、手当てで解消しない欠損などは残す。同じ事実は一度だけ書く。"
                       : reviews.length
                         ? selfStatusPrompt + stateEndsPrompt
                         : "") +
@@ -10613,9 +10664,14 @@ export class BotPlay {
           selfStatus.subjects,
           selfStatus,
         );
-      if (input.treatmentTargetId && dice.setting?.remainingState) {
+      if (input.treatmentTargetId && dice.setting) {
         const state = changes.nodes[0]!;
-        const text = `${state.text}\n${dice.setting.remainingState}`;
+        // 旧版で保存済みの判定を再開する場合だけ、当時の残存部分を引き継ぐ。
+        const text =
+          dice.setting.replacementState ??
+          (dice.setting.remainingState
+            ? `${state.text}\n${dice.setting.remainingState}`
+            : state.text);
         changes = { ...changes, nodes: [{ ...state, text }] };
       }
       if (dice.setting) settleItemNames(changes, dice.setting);
@@ -13303,13 +13359,15 @@ export class BotPlay {
           input.command === "companion-follow" ||
           input.command === "companion-status"
         )
-          await this.#syncFollowers(
+          await this.#syncCompanions(
             db,
             world,
             context,
             [actor],
             input.requestId,
-            input.command === "companion-follow" ? input.targetId : undefined,
+            input.command === "companion-follow"
+              ? { requestedNpc: input.targetId }
+              : { joinWaiting: true },
           );
         const companion = {
           action,
@@ -13449,7 +13507,7 @@ export class BotPlay {
         const participants = session.data.members.map((m) => m.actorId);
         if (input.command === "contact") participants.push(input.targetId);
         if (
-          await this.#syncFollowers(
+          await this.#syncCompanions(
             db,
             world,
             this.store.context(w.id),
@@ -13554,12 +13612,13 @@ export class BotPlay {
             )
           ).get(actor);
         }
-        await this.#syncFollowers(
+        await this.#syncCompanions(
           db,
           world,
           this.store.context(w.id),
           [actor],
           input.requestId,
+          { joinWaiting: true },
         );
       } else {
         if (!session)
@@ -14782,12 +14841,17 @@ export class BotPlay {
           affected.size ||
           ["contact", "leave", "finish"].includes(input.command)
         )
-          await this.#syncFollowers(
+          await this.#syncCompanions(
             db,
             world,
             context,
-            [actor, ...affected],
+            [
+              actor,
+              ...affected,
+              ...(input.command === "contact" ? [input.targetId] : []),
+            ],
             input.requestId,
+            { joinWaiting: affected.size > 0 || input.command === "contact" },
           );
       }
       const status = await this.status(world, actor, db);

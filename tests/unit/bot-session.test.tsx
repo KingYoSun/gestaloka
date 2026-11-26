@@ -67,7 +67,7 @@ const server = setupServer(
       screen: {
         own: { actorId: actor, name: "観測者", profile: [] },
         people: [],
-        neighbors: [],
+        neighbors: view.neighbors ?? [],
         past: [],
         place: view.place,
         belongings: view.belongings,
@@ -80,6 +80,7 @@ const server = setupServer(
       command: string;
       text?: string;
       accept?: boolean;
+      targetId?: string;
       query?: { kind: string };
     };
     posted.push({
@@ -88,6 +89,10 @@ const server = setupServer(
       actorId: new URL(request.url).searchParams.get("actorId"),
     });
     if (receipts.has(body.requestId)) return json(receipts.get(body.requestId));
+    if (body.command === "companion-wait")
+      view.departureFollowers = (
+        view.departureFollowers as { targetId: string }[]
+      ).filter((person) => person.targetId !== body.targetId);
     if (body.command === "home-set")
       view.home = {
         placeId: "00000000-0000-4000-8000-000000000006",
@@ -863,6 +868,31 @@ test("満枠から消費する技能を選び、成功後の使用枠を確か�
       }),
     ),
   );
+});
+
+test("移動前に追従するNPCを確認し、手番外でもその場に残せる", async () => {
+  view.departureFollowers = [{ targetId: peer, name: "渡し守" }];
+  view.neighbors = [{ id: scene, label: "対岸" }];
+  view.actorId = peer;
+  show();
+  await open("操作");
+  const wait = await screen.findByRole("button", {
+    name: "渡し守をここに残す",
+  });
+  fireEvent.click(screen.getByText("プレイコマンド", { exact: true }));
+  expect(
+    (
+      screen.getByRole("button", { name: "移動する" }) as HTMLButtonElement
+    ).closest("fieldset")?.disabled,
+  ).toBe(true);
+  expect(posted).toEqual([]);
+  fireEvent.click(wait);
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "渡し守をここに残す" }),
+    ).toBeNull(),
+  );
+  expect(posted.map(({ command }) => command)).toEqual(["companion-wait"]);
 });
 
 test("コマンド欄はJSONとコマンドの形式を検証し、入力中の発言と分けて送る", async () => {
