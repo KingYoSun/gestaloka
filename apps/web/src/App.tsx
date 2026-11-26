@@ -236,9 +236,9 @@ const routeTree = root.addChildren([
   }),
   createRoute({
     getParentRoute: () => root,
-    path: "/stories/write/$id",
+    path: "/stories/write/{-$id}",
     component: function WriteStoryRoute() {
-      const { id } = useParams({ from: "/stories/write/$id" });
+      const { id } = useParams({ from: "/stories/write/{-$id}" });
       return <WriteStory key={id} id={id} />;
     },
   }),
