@@ -2665,7 +2665,7 @@ test("クエスト照会で本人の操作可否と、取り置きを引いた�
   });
   await f.send(0, { command: "start" });
   const user = f.people[0]!.id;
-  const { resetsAt } = await access.botPlay.dailySp(f.world, user);
+  const { resetsAt } = await access.botPlay.dailySp(f.world, f.actors[0]!);
   await db.query(
     `INSERT INTO bot_request(id,actor_id,world_id,hash,sp_user,sp_reset)
       SELECT gen_random_uuid(),$1,$2,'blueprint-preview-sp',$3,$4 FROM generate_series(1,100)`,
@@ -7296,7 +7296,7 @@ test("成立済みの変化の反映は対象と成功記録を照合し、SP残
     changes: resultState,
   });
   expect(freed.outcome).toMatchObject({ success: true });
-  const sp = await access.botPlay.dailySp(f.world, f.people[0]!.id);
+  const sp = await access.botPlay.dailySp(f.world, f.actors[0]!);
   await isolated.databases.postgres.query(
     "INSERT INTO bot_request(id,actor_id,world_id,hash,sp_user,sp_reset) SELECT gen_random_uuid(),$1,$2,'state-review',$3,$4 FROM generate_series(1,$5::int)",
     [actor, f.world, f.people[0]!.id, sp.resetsAt, sp.remaining],
@@ -14201,9 +14201,7 @@ describe("現場材料", () => {
     expect(f.calls).toHaveBeenCalledTimes(1);
     const { skills } = await readBelongings(f.store.context(f.graph), actor);
     expect(skills.map(({ text }) => text).sort()).toEqual([...names].sort());
-    expect(
-      await access.botPlay.dailySp(f.world, f.people[0]!.id),
-    ).toMatchObject({
+    expect(await access.botPlay.dailySp(f.world, f.actors[0]!)).toMatchObject({
       remaining: 99,
     });
   });
@@ -14900,7 +14898,7 @@ describe("現場材料", () => {
        SELECT $1,id,'fixture',0,'{}',$2,$3,$4 FROM llm_budget LIMIT 1`,
       [randomUUID(), f.graph, batchId, randomUUID()],
     );
-    const { resetsAt } = await access.botPlay.dailySp(f.world, user);
+    const { resetsAt } = await access.botPlay.dailySp(f.world, f.actors[0]!);
     const day = {
       worldId: f.world,
       from: new Date(Date.parse(resetsAt) - 86400000).toISOString(),
@@ -15284,7 +15282,7 @@ test("世界別のSP上限を下げた当日も消費を引き継ぎ、翌日に
   const time = vi
     .spyOn(access.botPlay, "now")
     .mockReturnValue(new Date("2026-11-20T14:59:59Z"));
-  const { resetsAt } = await access.botPlay.dailySp(f.world, user);
+  const { resetsAt } = await access.botPlay.dailySp(f.world, f.actors[0]!);
   try {
     await db.query(
       `INSERT INTO bot_request(id,actor_id,world_id,hash,sp_user,sp_reset)
@@ -15338,14 +15336,14 @@ test("世界別のSP上限を下げた当日も消費を引き継ぎ、翌日に
   }
 });
 
-test("同じ利用者の残り1 SPを同時申請で共有し、使い切った後も移動・結果取得・日次回復ができる", async () => {
+test("同じアカウントの2人が同時に各自のSPを消費し、再送・移動・日次回復でも残量を個別に扱う", async () => {
   const f = await fixture(),
     db = isolated.databases.postgres,
     user = f.people[0]!.id;
   const time = vi
     .spyOn(access.botPlay, "now")
     .mockReturnValue(new Date("2026-11-20T14:59:59Z"));
-  const { resetsAt } = await access.botPlay.dailySp(f.world, user);
+  const { resetsAt } = await access.botPlay.dailySp(f.world, f.actors[0]!);
   expect(resetsAt).toBe("2026-11-20T15:00:00.000Z");
   await db.query(
     `INSERT INTO bot_request(id,actor_id,world_id,hash,sp_user,sp_reset) SELECT gen_random_uuid(),$1,$2,'fixture',$3,$4 FROM generate_series(1,99)`,
@@ -15380,18 +15378,14 @@ test("同じ利用者の残り1 SPを同時申請で共有し、使い切った�
     ]);
     return answer(id, setting);
   });
-  const results = await Promise.allSettled([send(0), send(1)]);
-  const winner = results.findIndex((r) => r.status === "fulfilled");
-  expect(winner).toBeGreaterThanOrEqual(0);
-  expect(results[1 - winner]).toMatchObject({
-    status: "rejected",
-    reason: { code: "DAILY_SP_EXHAUSTED" },
-  });
-  expect(f.calls).toHaveBeenCalledTimes(1);
-  expect(await send(winner)).toMatchObject({
-    spentSp: 1,
-    dailySp: { remaining: 0 },
-  });
+  const results = await Promise.all([send(0), send(1)]);
+  for (const [i, remaining] of [0, 99].entries()) {
+    expect(results[i]).toMatchObject({ spentSp: 1, dailySp: { remaining } });
+    expect(await send(i)).toEqual(results[i]);
+    expect(await access.botStatus(user, f.world, f.actors[i])).toMatchObject({
+      dailySp: { remaining },
+    });
+  }
   vi.spyOn(runtime.agent.model, "decision", "get").mockReturnValue(
     decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
   );
@@ -15399,15 +15393,15 @@ test("同じ利用者の残り1 SPを同時申請で共有し、使い切った�
   const reused = await access.botCommand(
     user,
     f.world,
-    { ...requests[winner]!, requestId: randomUUID() },
-    f.actors[winner],
+    { ...requests[0]!, requestId: randomUUID() },
+    f.actors[0],
   );
   expect(reused).toMatchObject({
     spentSp: 0,
     dailySp: { remaining: 0 },
     outcome: { repeated: true, roll: 2 },
   });
-  expect(f.calls).toHaveBeenCalledTimes(1);
+  expect(f.calls).toHaveBeenCalledTimes(2);
   const moved = await f.send(0, {
     command: "update",
     text: "移動",
@@ -15423,10 +15417,10 @@ test("同じ利用者の残り1 SPを同時申請で共有し、使い切った�
   });
   expect(moved).toMatchObject({ spentSp: 0, dailySp: { remaining: 0 } });
   time.mockReturnValue(new Date(resetsAt));
-  expect(await send(1 - winner)).toMatchObject({
-    spentSp: 1,
-    dailySp: { remaining: 99 },
-  });
+  for (const actor of f.actors.slice(0, 2))
+    expect(await access.botStatus(user, f.world, actor)).toMatchObject({
+      dailySp: { remaining: 100 },
+    });
 });
 
 test("抽選器を審査し、別の人物が結果を受け取り、同席者の履歴に残す", async () => {
@@ -16309,7 +16303,7 @@ test("固定表の32件上限と不正な重みを審査前に検査する", asy
   expect(f.calls).not.toHaveBeenCalled();
 });
 
-test("現地に置かれた物品から引け、共有残量1 SPで競合しても一件だけ生成する", async () => {
+test("現地の抽選器は同じアカウントでもSPが尽きたプレイヤーだけ引けない", async () => {
   const f = await fixture();
   const user = f.people[0]!.id;
   const db = isolated.databases.postgres;
@@ -16352,9 +16346,9 @@ test("現地に置かれた物品から引け、共有残量1 SPで競合して�
   await expect(
     f.send(2, { command: "draw", targetId: box }),
   ).rejects.toMatchObject({ code: "DRAW_NOT_IN_REACH" });
-  const { resetsAt } = await access.botPlay.dailySp(f.world, user);
+  const { resetsAt } = await access.botPlay.dailySp(f.world, f.actors[0]!);
   await db.query(
-    `INSERT INTO bot_request(id,actor_id,world_id,hash,sp_user,sp_reset) SELECT gen_random_uuid(),$1,$2,'fixture',$3,$4 FROM generate_series(1,99)`,
+    `INSERT INTO bot_request(id,actor_id,world_id,hash,sp_user,sp_reset) SELECT gen_random_uuid(),$1,$2,'fixture',$3,$4 FROM generate_series(1,100)`,
     [f.actors[0], f.world, user, resetsAt],
   );
   await db.query(
@@ -16373,20 +16367,10 @@ test("現地に置かれた物品から引け、共有残量1 SPで競合して�
   f.calls.mockImplementationOnce(async (id) =>
     answer(id, { kind: "item", label: "青い小石" }),
   );
-  const results = await Promise.allSettled([send(0), send(1)]);
-  const winner = results.findIndex(({ status }) => status === "fulfilled");
-  expect(winner).toBeGreaterThanOrEqual(0);
-  expect(results[1 - winner]).toMatchObject({
-    status: "rejected",
-    reason: { code: "DAILY_SP_EXHAUSTED" },
-  });
-  expect(results[winner]).toMatchObject({
-    status: "fulfilled",
-    value: { dailySp: { remaining: 0 }, spentSp: 1 },
-  });
-  expect({ status: "fulfilled", value: await send(winner) }).toEqual(
-    results[winner],
-  );
+  await expect(send(0)).rejects.toMatchObject({ code: "DAILY_SP_EXHAUSTED" });
+  const drawn = await send(1);
+  expect(drawn).toMatchObject({ dailySp: { remaining: 99 }, spentSp: 1 });
+  expect(await send(1)).toEqual(drawn);
   expect(f.calls).toHaveBeenCalledTimes(2);
 });
 
