@@ -20559,6 +20559,9 @@ test("物品と探索の拒否は各案1 SPで、許可した物品だけが成�
   const sp = (await access.botPlay.dailySp(f.world, holder)).remaining;
   f.calls.mockImplementationOnce(async (id, _role, messages) => {
     expect(messages[0]?.content).toContain("希少品を複製");
+    expect(messages[0]?.content).toContain(
+      "対象が一人で同意している場合も拒否する",
+    );
     return answer(id, {
       settings: [{ reject: "望む宝石が無限に出てくる" }, sure],
     });
@@ -20591,6 +20594,7 @@ test("物品と探索の拒否は各案1 SPで、許可した物品だけが成�
   ).toEqual(["木の小箱"]);
   f.calls.mockImplementationOnce(async (id, _role, messages) => {
     expect(messages[0]?.content).toContain(exploreCriteria);
+    expect(messages[0]?.content).not.toContain("同行者の車");
     return answer(id, { reject: "踏み入れるだけで報酬が確定する" });
   });
   const request = {
@@ -20613,6 +20617,28 @@ test("物品と探索の拒否は各案1 SPで、許可した物品だけが成�
   expect((await access.botPlay.dailySp(f.world, holder)).remaining).toBe(
     sp - 3,
   );
+});
+
+test("既定の探索基準は乗り物で向かう描写と所有権の取得を区別する", async () => {
+  const f = await fixture(1);
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-explore-dice");
+    expect(messages[0]?.content).toContain("「私の車」「同行者の車」");
+    expect(messages[0]?.content).toContain("所有者として登録する");
+    return answer(id, { successThrough: 18, explored });
+  });
+  const result = await f.send(0, {
+    command: "explore",
+    dependencies: [],
+    fromId: f.place,
+    label: "広場裏の木立",
+    text: "私の荷車で広場の裏手へ向かい、小道が続く木立を探す。",
+  });
+  expect(result).toMatchObject({
+    spentSp: 1,
+    placeId: expect.any(String),
+    outcome: { success: true, roll: expect.any(Number) },
+  });
 });
 
 test("世界外に接続する技能だけを差し戻し、同じ申請の技能と製作は抽選して精算する", async () => {
