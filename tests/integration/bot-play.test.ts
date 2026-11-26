@@ -14578,8 +14578,10 @@ describe("現場材料", () => {
     expect(sent[0]!.skills).toEqual(expected);
     expect(sent[1]!.skills).toEqual(skills);
     expect(sent[0]!.current).toHaveProperty("skillCriteria");
+    expect(sent[0]!.current).toHaveProperty("learningReferences");
     expect(sent[1]!.current).not.toHaveProperty("skillCriteria");
     expect(sent[1]!.current).not.toHaveProperty("recentAttempts");
+    expect(sent[1]!.current).not.toHaveProperty("learningReferences");
     expect(sent[0]!.boundaries.at(-1)).toBeDefined();
     expect(sent[1]!.boundaries).toContain(sent[0]!.boundaries.at(-1));
   });

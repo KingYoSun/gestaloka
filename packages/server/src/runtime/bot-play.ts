@@ -8085,7 +8085,7 @@ export class BotPlay {
                     (!explore
                       ? "itemGenerationがtrueの案で、新しく作る物品が人間を含む生きた生物そのもの、またはその生物を呼ぶための召喚石なら、ダイス設定のsummons:[{id,name}]に物品ノードのIDと、生物の呼称を返す。中身を委ねられた物品も確定する中身で判断する。死骸・素材・生物をかたどった道具は含めない。サーバーが対象の物品を召喚石にする。既存の個人への作用はindividualsにも返す。"
                       : "") +
-                    (references?.size ? learningFactorsPrompt : "") +
+                    (!explore ? learningFactorsPrompt : "") +
                     (explore
                       ? "探索の基準が拒否を指定した案は {reject:申請者に伝える具体的な理由} だけを返す。その他はダイス設定を返す。" +
                         explorePrompt
