@@ -245,7 +245,9 @@ export function PlayCommandEditor({
               {capacity.usedSlots >= capacity.limitSlots && !sources.length && (
                 <p>元技能を選ぶと、満枠でも発展・統合を申請できます。</p>
               )}
-              <p className="muted">{chargeConditions["new-roll"]}</p>
+              <p className="muted">
+                世界の技能基準で差し戻された場合も1 SPを消費します。
+              </p>
               <Button
                 type="submit"
                 disabled={

@@ -100,7 +100,7 @@ gestaloka vehicle <board|leave|request-control|travel> --target <乗り物ID> [-
 
 ## status
 
-現在の手番と未読履歴を照会。dailySpで操作中のプレイヤーのSP残量と次の回復時刻を確認できる。運営者が表示を選んだ世界では、creationCriteriaに新規作成のダイスの基準、fumbleCriteriaにファンブルの基準が出る。--sceneに本人のプレイ履歴のIDを指定すると、その履歴を読める。--after 0は先頭から。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。
+現在の手番と未読履歴を照会。dailySpで操作中のプレイヤーのSP残量と次の回復時刻を確認できる。運営者が表示を選んだ世界では、creationCriteriaに新規作成、skillCriteriaに技能の習得・発展・統合、exploreCriteriaに探索、fumbleCriteriaにファンブルの基準が出る。--sceneに本人のプレイ履歴のIDを指定すると、その履歴を読める。--after 0は先頭から。--view waitは復帰待ちの残り時間、--view joinsは同席者と合流記録。--viewと--sceneは併用不可。--view・--after・--sceneでの照会は既読位置を進めない。
 
 ```text
 gestaloka status [--scene <ID>] [--after <カーソル>] [--view <wait|joins>]
@@ -336,7 +336,7 @@ gestaloka memo --text <本文> [--participants <人物ID,人物ID>] [--deferred-
 
 ## explore
 
-新しい場所を申請。新規抽選は1 SP。探索と生成には、そのプレイヤーの日次SPを使う。上限はstatusのdailySp.limitで確認でき、日本時間の毎日0時に上限まで回復する。--fromは接続元で、本人の現在の所在地にある場所を指定する。--textには場所の様子と接続元からの行き方を書く。GMが接続元から見た妥当性でダイスを設定し、サーバーが一度だけ振る。ダイスで失敗しても通常枠を1回使う。成功すると応答のplaceIdへ移動でき、接続元と新しい場所の双方から互いの名前とIDを調べられる。どちらの場所でも、surroundingsのroutesに相手が出る。既にある場所と同じ呼び名は申請できず、EXPLORE_NAME_TAKENと先にある場所のIDが返る。このときGMは呼ばれず、通常枠も使わない。接続元からつながる既知の場所と同じ場所だとGMが判断すると、EXPLORE_SAME_PLACEとその場所のIDが返り、ダイスは振らず通常枠も使わない。新しい場所から直接行ける既知の場所があれば、その行き来も一緒に作られる。
+新しい場所を申請。新規抽選と世界の探索基準による差し戻しは各1 SP。探索と生成には、そのプレイヤーの日次SPを使う。上限はstatusのdailySp.limitで確認でき、日本時間の毎日0時に上限まで回復する。--fromは接続元で、本人の現在の所在地にある場所を指定する。--textには場所の様子と接続元からの行き方を書く。GMが接続元から見た妥当性でダイスを設定し、サーバーが一度だけ振る。ダイスで失敗しても通常枠を1回使う。成功すると応答のplaceIdへ移動でき、接続元と新しい場所の双方から互いの名前とIDを調べられる。どちらの場所でも、surroundingsのroutesに相手が出る。既にある場所と同じ呼び名は申請できず、EXPLORE_NAME_TAKENと先にある場所のIDが返る。このときGMは呼ばれず、通常枠も使わない。接続元からつながる既知の場所と同じ場所だとGMが判断すると、EXPLORE_SAME_PLACEとその場所のIDが返り、ダイスは振らず通常枠も使わない。新しい場所から直接行ける既知の場所があれば、その行き来も一緒に作られる。
 
 ```text
 gestaloka explore --from <場所ID> --label <場所の呼び名> (--text <説明> | --file <本文ファイル>) [--quote | --expected-sp <SP>]
