@@ -982,7 +982,10 @@ const privateInterpretation = (actor: string, changes: Change) =>
 type Fumble = { roll: number; success: boolean };
 type CreationRoll = {
   success: boolean;
-  setting: z.infer<typeof DiceSetting> & { remainingState?: string };
+  setting: z.infer<typeof DiceSetting> & {
+    replacementState?: string;
+    remainingState?: string;
+  };
   roll: number;
   repeated?: boolean;
   fumble?: Fumble;
@@ -7709,7 +7712,9 @@ export class BotPlay {
       const creationDice = work ? WorkDice : DiceSetting;
       const Dice =
         previousState !== undefined
-          ? creationDice.safeExtend({ remainingState: z.string().trim() })
+          ? creationDice.safeExtend({
+              replacementState: z.string().trim().min(1),
+            })
           : explore
             ? ExploreDice
             : creationDice;
@@ -7810,7 +7815,7 @@ export class BotPlay {
                       : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1<=successThrough<sides。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
                     diceStatePrompt +
                     (previousState !== undefined
-                      ? "previousStateは置き換える状態の本文。行為（text）と申請者が書いた処置後の状態（changes.nodesの本文）を照合し、ダイス設定と同じJSONオブジェクトのremainingStateに、行為が成功しても解消しない元の状態を文字列で必ず返す。全体が解消するなら空文字、何も解消しないなら元の本文を返す。"
+                      ? "previousStateは終了する状態の本文。ダイス設定は {sides:整数,successThrough:整数,replacementState:空でない文字列} を含むJSONで返す。1<=successThrough<sides。replacementStateはtextの行為が成功した場合に、指定の状態に代わって現在の状態として読める全文。changes.nodesの本文が成功後の状態を過不足なく表すなら、その本文をそのまま文字列で返す。交換で古くなった内容は除き、手当てで解消しない欠損などは残す。同じ事実は一度だけ書く。"
                       : reviews.length
                         ? selfStatusPrompt + stateEndsPrompt
                         : "") +
@@ -10462,9 +10467,14 @@ export class BotPlay {
           selfStatus.subjects,
           selfStatus,
         );
-      if (input.treatmentTargetId && dice.setting?.remainingState) {
+      if (input.treatmentTargetId && dice.setting) {
         const state = changes.nodes[0]!;
-        const text = `${state.text}\n${dice.setting.remainingState}`;
+        // 旧版で保存済みの判定を再開する場合だけ、当時の残存部分を引き継ぐ。
+        const text =
+          dice.setting.replacementState ??
+          (dice.setting.remainingState
+            ? `${state.text}\n${dice.setting.remainingState}`
+            : state.text);
         changes = { ...changes, nodes: [{ ...state, text }] };
       }
       for (const { id, text } of dice.setting?.decided ?? [])
