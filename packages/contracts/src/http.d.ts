@@ -10010,6 +10010,13 @@ export interface paths {
                             operation: "creationPolicy.put";
                             /** Format: uuid */
                             worldId: string;
+                            /** @description 世界の判定で振るダイス。既定は3d6。省略すると現在の設定を保つ */
+                            dice?: {
+                                /** @description 振るダイスの個数 */
+                                count: number;
+                                /** @description ダイス1個の面数 */
+                                sides: number;
+                            };
                             /** @description 新規作成のダイス基準。空欄で既定、省略で現状維持 */
                             criteria?: string;
                             /** @description 探索の判定基準と拒否条件。空欄で既定、省略で現状維持 */

@@ -28373,6 +28373,30 @@
                             "format": "uuid",
                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                           },
+                          "dice": {
+                            "description": "世界の判定で振るダイス。既定は3d6。省略すると現在の設定を保つ",
+                            "type": "object",
+                            "properties": {
+                              "count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991,
+                                "description": "振るダイスの個数"
+                              },
+                              "sides": {
+                                "type": "integer",
+                                "minimum": 2,
+                                "maximum": 9007199254740991,
+                                "description": "ダイス1個の面数"
+                              }
+                            },
+                            "required": [
+                              "count",
+                              "sides"
+                            ],
+                            "additionalProperties": false
+                          },
                           "criteria": {
                             "description": "新規作成のダイス基準。空欄で既定、省略で現状維持",
                             "type": "string"
