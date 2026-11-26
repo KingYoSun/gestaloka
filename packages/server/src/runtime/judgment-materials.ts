@@ -456,6 +456,10 @@ const priority = ({ candidate }: Scored) =>
         : 1;
 const probability = (value: unknown): value is number =>
   typeof value === "number" && value >= 0 && value <= 1;
+const comparePriority = (a: Scored, b: Scored) =>
+  priority(a) - priority(b) ||
+  b.applicable - a.applicable ||
+  b.effect - a.effect;
 
 async function fit(
   pack: ReturnType<typeof materialRows>["pack"],
@@ -465,27 +469,36 @@ async function fit(
   threshold: number,
   finalize: (materials: unknown[]) => Promise<unknown[] | undefined>,
   groups: ReadonlyMap<Candidate, HoldingGroup>,
+  incomplete: boolean,
 ) {
+  const important = scored.filter((row) => strength(row) >= threshold);
   let selected = withParents(
-    [
-      ...required,
-      ...scored
-        .filter((row) => strength(row) >= threshold)
-        .map(({ candidate }) => candidate),
-    ],
+    incomplete
+      ? required
+      : [...required, ...important.map(({ candidate }) => candidate)],
     groups,
   );
   let result = await finalize(pack(selected));
   if (!result) return;
 
-  const ranked = scored
-    .filter(({ candidate }) => !selected.has(candidate))
-    .sort(
-      (a, b) =>
-        priority(a) - priority(b) ||
-        b.applicable - a.applicable ||
-        b.effect - a.effect,
+  const keepIfFits = async (candidate: Candidate) => {
+    if (selected.has(candidate)) return;
+    const trial = withParents([...selected, candidate], groups);
+    const packed = await finalize(pack(trial));
+    if (!packed) return;
+    selected = trial;
+    result = packed;
+  };
+  if (incomplete) {
+    important.sort(
+      (a, b) => strength(b) - strength(a) || comparePriority(a, b),
     );
+    for (const { candidate } of important) await keepIfFits(candidate);
+  }
+
+  const ranked = scored
+    .filter((row) => strength(row) < threshold && !selected.has(row.candidate))
+    .sort(comparePriority);
   const modifiers = ranked.filter(({ applicable }) => applicable >= threshold);
   const uncertain = new Map<string, Scored>();
   for (const row of ranked) {
@@ -500,15 +513,6 @@ async function fit(
       uncertain.set(owner, row);
     }
   }
-  const keepIfFits = async (candidate: Candidate) => {
-    if (selected.has(candidate)) return;
-    if (candidate.kind === "basis" && !selected.has(candidate.parent!)) return;
-    const trial = withParents([...selected, candidate], groups);
-    const packed = await finalize(pack(trial));
-    if (!packed) return;
-    selected = trial;
-    result = packed;
-  };
   for (const { candidate } of uncertain.values()) await keepIfFits(candidate);
   const holdingNote = ranked
     .filter(
@@ -521,7 +525,9 @@ async function fit(
     )
     .sort((a, b) => b.effect - a.effect || b.applicable - a.applicable)[0];
   if (holdingNote) await keepIfFits(holdingNote.candidate);
-  for (const { candidate } of modifiers) await keepIfFits(candidate);
+  for (const { candidate } of modifiers)
+    if (candidate.kind !== "basis" || selected.has(candidate.parent!))
+      await keepIfFits(candidate);
   return result;
 }
 
@@ -637,7 +643,11 @@ export async function selectJudgmentMaterials({
   return Promise.all(
     requests.map(async ({ subjects }, i) => {
       if (direct[i]) return direct[i];
-      if (failed.has(i)) return whole(i);
+      const incomplete = failed.has(i);
+      if (incomplete) {
+        const packet = await whole(i);
+        if (packet) return packet;
+      }
       const pinned = required[i];
       if (!pinned) return;
       const packet = await fit(
@@ -648,6 +658,7 @@ export async function selectJudgmentMaterials({
         threshold,
         (packet) => finalize(packet, i, true),
         groups,
+        incomplete,
       );
       if (packet) onFiltered?.(i);
       return packet;

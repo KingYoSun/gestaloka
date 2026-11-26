@@ -538,10 +538,28 @@ export class LlmClient {
           );
           if (!response.ok) {
             const error = `判断APIがHTTP ${response.status}を返しました`;
+            let diagnostic:
+              | { body: string | null; providerCode?: string | number }
+              | undefined;
+            if (response.status === 400) {
+              const body = await response.text().catch(() => null);
+              diagnostic = { body };
+              try {
+                const code: unknown = JSON.parse(body ?? "")?.error?.code;
+                if (typeof code === "number" || typeof code === "string")
+                  diagnostic.providerCode = code;
+              } catch {
+                // Keep the body even when it is not JSON.
+              }
+            }
             await this.ledger.settle(
               id,
               0,
-              { error, httpStatus: response.status },
+              {
+                error,
+                httpStatus: response.status,
+                ...(diagnostic ? { diagnostic } : {}),
+              },
               elapsed(),
             );
             throw new Error(error);

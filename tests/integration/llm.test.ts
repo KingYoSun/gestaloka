@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { connectDatabases } from "@gestaloka/server";
+import { connectDatabases, ExecutionBudget } from "@gestaloka/server";
 import {
   BudgetUnavailable,
   ResponseFormatError,
@@ -44,6 +44,83 @@ const response = () =>
       },
     }),
   );
+
+test("OpenRouter Decisionsの400応答を呼び出しごとに台帳へ保存する", async () => {
+  const cases = [
+    {
+      body: ' { "error": { "code": 400, "message": "invalid request" } }\n',
+      providerCode: 400,
+    },
+    {
+      body: '{"error":{"code":"provider_error","metadata":{"raw":"upstream error"}}}',
+      providerCode: "provider_error",
+    },
+    { body: "Bad Request\n" },
+    { body: "" },
+  ];
+  const transport = vi.fn<typeof fetch>();
+  for (const { body } of cases)
+    transport.mockResolvedValueOnce(new Response(body, { status: 400 }));
+
+  const client = createCountedClient(
+    databases.postgres,
+    {
+      ...environment(),
+      OPENROUTER_API_KEY: "unused",
+      LLM_DECISION_MODEL: "fixture/decision",
+    },
+    transport,
+  );
+  await client.ledger.setup();
+  const operationId = randomUUID();
+  const ids = cases.map(() => randomUUID());
+  try {
+    await ExecutionBudget.run(databases.postgres, operationId, async () => {
+      for (const [batch, id] of ids.entries()) {
+        await expect(
+          client.decide(
+            id,
+            "world-judgment-materials",
+            { batch },
+            {
+              relevant: {
+                instructions: "この資料が申請に関係するか。",
+                criteria: { true: "関係する", false: "無関係" },
+              },
+            },
+          ),
+        ).rejects.toThrow("判断APIがHTTP 400を返しました");
+      }
+    });
+    const { rows } = await databases.postgres.query(
+      "SELECT id, state, charged_nano, request, response FROM llm_call WHERE operation_id=$1",
+      [operationId],
+    );
+    expect(rows).toHaveLength(cases.length);
+    for (const [batch, { body, providerCode }] of cases.entries()) {
+      const row = rows.find(({ id }) => id === ids[batch]);
+      expect(row).toMatchObject({
+        state: "complete",
+        charged_nano: "0",
+        request: {
+          role: "world-judgment-materials",
+          request: { state: { batch } },
+        },
+      });
+      expect(row?.response).toEqual({
+        error: "判断APIがHTTP 400を返しました",
+        httpStatus: 400,
+        diagnostic:
+          providerCode === undefined ? { body } : { body, providerCode },
+      });
+    }
+  } finally {
+    await databases.postgres.query("DELETE FROM execution_budget WHERE id=$1", [
+      operationId,
+    ]);
+  }
+  expect(transport).toHaveBeenCalledTimes(cases.length);
+});
 
 test.each(["正常完了", "未受信のまま上限", "一部受信後に上限"])(
   "JSON応答の%sを10分上限で扱い、未確定要求と受信進捗を保持する",
