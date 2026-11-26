@@ -20181,7 +20181,7 @@ test("管理者が指定した技能の拒否条件を、抽選や元技能・�
     expect(JSON.parse(String(messages[1]!.content)).skillCriteria).toBe(
       skillCriteria,
     );
-    return answer(id, { rejectSkill: reason });
+    return answer(id, { reject: reason });
   });
   const sp = (await access.botPlay.dailySp(f.world, person)).remaining;
   const request = PlayerPlayCommand.parse({
@@ -20237,6 +20237,82 @@ test("管理者が指定した技能の拒否条件を、抽選や元技能・�
   ).toBe(0);
 });
 
+test("物品と探索の拒否は各案1 SPで、許可した物品だけが成立する", async () => {
+  const f = await fixture(1);
+  const holder = f.actors[0]!;
+  const exploreCriteria = "旅だけで報酬を保証する場所は拒否する";
+  await auth.operations.execute(
+    (await auth.person()).id,
+    randomUUID(),
+    {
+      operation: "creationPolicy.put",
+      worldId: f.world,
+      exploreCriteria,
+      shown: true,
+      reason: "探索条件の設定",
+    },
+    { players: access.players },
+  );
+  expect((await f.status(0)).exploreCriteria).toBe(exploreCriteria);
+  const sp = (await access.botPlay.dailySp(f.world, holder)).remaining;
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    expect(messages[0]?.content).toContain("希少品を複製");
+    return answer(id, {
+      settings: [{ reject: "望む宝石が無限に出てくる" }, sure],
+    });
+  });
+  const result = await f.send(0, {
+    command: "apply",
+    expectedSp: 2,
+    dependencies: [],
+    action: {
+      type: "generate",
+      plans: ["尽きない宝石箱", "木の小箱"].map((label) => ({
+        text: label,
+        operation: { type: "create", label, holder, basis: "木工" },
+      })),
+    },
+  });
+  expect(result).toMatchObject({
+    spentSp: 2,
+    outcome: {
+      proposals: [
+        { success: false, reason: "ITEM_POLICY_REJECTED" },
+        { success: true, roll: expect.any(Number) },
+      ],
+    },
+  });
+  expect(
+    (await readBelongings(f.store.context(f.graph), holder)).items.map(
+      (i) => i.label,
+    ),
+  ).toEqual(["木の小箱"]);
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    expect(messages[0]?.content).toContain(exploreCriteria);
+    return answer(id, { reject: "踏み入れるだけで報酬が確定する" });
+  });
+  const request = {
+    command: "explore",
+    requestId: randomUUID(),
+    dependencies: [],
+    fromId: f.place,
+    label: "祝福の道",
+    text: "道を通るたびに富を得る",
+  };
+  const explored = await f.send(0, request);
+  expect(explored).toMatchObject({
+    spentSp: 1,
+    outcome: { success: false, reason: "EXPLORE_POLICY_REJECTED" },
+    action: { message: expect.stringContaining("報酬") },
+  });
+  expect(explored).not.toHaveProperty("placeId");
+  expect(explored.outcome).not.toHaveProperty("roll");
+  expect(await f.send(0, request)).toEqual(explored);
+  expect((await access.botPlay.dailySp(f.world, holder)).remaining).toBe(
+    sp - 3,
+  );
+});
+
 test("世界外に接続する技能だけを差し戻し、同じ申請の技能と製作は抽選して精算する", async () => {
   const f = await fixture(1);
   const person = f.actors[0]!;
@@ -20253,7 +20329,7 @@ test("世界外に接続する技能だけを差し戻し、同じ申請の技�
       true,
       false,
     ]);
-    return answer(id, { settings: [{ rejectSkill: reason }, sure, sure] });
+    return answer(id, { settings: [{ reject: reason }, sure, sure] });
   });
   const request = PlayerPlayCommand.parse({
     command: "apply",

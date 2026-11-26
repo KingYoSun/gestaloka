@@ -802,8 +802,13 @@ export function playQuote(
           expectedSp === 0
             ? "never"
             : input.action.type === "rename" ||
+                input.action.type === "increase-count" ||
                 (input.action.type === "generate" &&
-                  input.action.plans.some((p) => p.operation.type === "learn"))
+                  input.action.plans.some(
+                    (p) =>
+                      p.operation.type === "learn" ||
+                      p.operation.type === "create",
+                  ))
               ? "review-saved"
               : "new-roll",
       };
@@ -823,7 +828,7 @@ export function playQuote(
         return { expectedSp: 1, chargeWhen: "review-saved" };
       break;
     case "explore":
-      return { expectedSp: 1, chargeWhen: "new-roll" };
+      return { expectedSp: 1, chargeWhen: "review-saved" };
     case "say":
       if (input.instantNpcs.length)
         return { expectedSp: 1, chargeWhen: "new-roll" };

@@ -94,6 +94,8 @@ export const labels: Record<string, string> = {
   promotionId: "NPC昇格申請ID",
   condition: "自動昇格の条件（空欄で手動のみ）",
   criteria: "新規作成のダイス基準（空欄で既定、省略で現状維持）",
+  exploreCriteria: "探索の判定基準と拒否条件（空欄で既定、省略で現状維持）",
+  defaultExploreCriteria: "探索の既定基準",
   skillCriteria:
     "技能の習得・発展・統合の判定基準と拒否条件（空欄で既定、省略で現状維持）",
   defaultSkillCriteria: "技能の習得・発展・統合の既定基準",
@@ -530,6 +532,7 @@ export function Fields({
           "prompt",
           "criteria",
           "skillCriteria",
+          "exploreCriteria",
           "fumbleCriteria",
           "playerSettings",
           "description",
@@ -539,7 +542,12 @@ export function Fields({
           id={id}
           value={String(value ?? "")}
           required={
-            !["criteria", "skillCriteria", "fumbleCriteria"].includes(name)
+            ![
+              "criteria",
+              "skillCriteria",
+              "exploreCriteria",
+              "fumbleCriteria",
+            ].includes(name)
           }
           onChange={(e) => onChange(e.target.value)}
         />

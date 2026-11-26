@@ -1471,6 +1471,11 @@ export const Operation = z.discriminatedUnion("operation", [
         .trim()
         .optional()
         .describe("新規作成のダイス基準。空欄で既定、省略で現状維持"),
+      exploreCriteria: z
+        .string()
+        .trim()
+        .optional()
+        .describe("探索の判定基準と拒否条件。空欄で既定、省略で現状維持"),
       skillCriteria: z
         .string()
         .trim()

@@ -9869,6 +9869,8 @@ export interface paths {
                             worldId: string;
                             /** @description 新規作成のダイス基準。空欄で既定、省略で現状維持 */
                             criteria?: string;
+                            /** @description 探索の判定基準と拒否条件。空欄で既定、省略で現状維持 */
+                            exploreCriteria?: string;
                             /** @description 技能の習得・発展・統合の成功範囲と、ダイスを振る前にエラーを返す条件。空欄で既定、省略で現状維持 */
                             skillCriteria?: string;
                             /** @description 失敗時のファンブルをGMが設定するときの基準。空欄で既定の基準。省略すると現在の設定を保つ */
