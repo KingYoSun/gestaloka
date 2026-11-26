@@ -1249,7 +1249,7 @@ const fumblePrompt = (criteria: string) =>
   criteria +
   "。";
 const selfStatusPrompt =
-  "本人の直接の状態変更について、変更前の本文と対象、申請した変更、確定した記録を照合し、審査結果をJSONで返す。allowApplyがtrueで、変更全体が表記の訂正か確定記録の反映なら{apply:true,endEdges:[終了する関係ID]}を返す。新しい変化がある場合、またはallowApplyがfalseの場合は必ず1<=successThrough<sidesの整数でダイス設定を返す。成功の見込みが最大でもsuccessThroughはsides-1。追記・改訂・終了の形式や自己申告だけを成立の根拠にしない。申請にcommandRestrictionsがあれば制限を含めて審査する。応答の最上位にはcommandRestrictionsを書かない。";
+  "本人の直接の状態変更について、変更前の本文と対象、申請した変更、確定した記録を照合し、審査結果をJSONで返す。allowApplyがtrueで、変更全体が表記の訂正か確定記録の反映なら{apply:true,endEdges:[終了する関係ID]}を返す。changes.edgesにstateOriginがある申請でapply:trueを返すときはendEdgesを空配列にする。この申請で現在の状態を終える場合は、allowApplyがtrueでもダイス設定とendEdgesを返す。新しい変化がある場合、またはallowApplyがfalseの場合は必ず1<=successThrough<sidesの整数でダイス設定を返す。成功の見込みが最大でもsuccessThroughはsides-1。追記・改訂・終了の形式や自己申告だけを成立の根拠にしない。申請にcommandRestrictionsがあれば制限を含めて審査する。応答の最上位にはcommandRestrictionsを書かない。";
 // 型付きstateで転記を認めるのは、本人に期限のない記述を一件加える場合だけ。
 function selfStateClaim(actor: string, changes: Change) {
   const [edge] = changes.edges;
@@ -7547,12 +7547,15 @@ export class BotPlay {
               ? ApplyStatus.or(Dice).parse(applyChoice(rawValue))
               : Dice.parse(rawValue);
             const review = fresh[i]!.statusReview;
-            if (previousState === undefined)
+            if ("apply" in value && factClaim[i])
+              z.tuple([], {
+                error:
+                  "現在の状態を終える場合はapplyを省き、ダイス設定とendEdgesを返してください",
+              }).parse(value.endEdges);
+            else if (previousState === undefined)
               validateStateEnds(
                 "endEdges" in value ? value.endEdges : undefined,
-                "apply" in value && factClaim[i]
-                  ? []
-                  : stateRelations(selectedNodes, review?.subjects ?? []),
+                stateRelations(selectedNodes, review?.subjects ?? []),
                 !!review?.requestedEnds.length,
               );
             if ("apply" in value) return value;

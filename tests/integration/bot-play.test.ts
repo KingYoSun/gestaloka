@@ -59,7 +59,8 @@ import { vehicleOperator } from "../../packages/server/src/runtime/vehicles.js";
 const isolated = isolatedDatabases();
 let runtime: Awaited<ReturnType<typeof fixtureRuntime>>["runtime"],
   access: WorldAccess,
-  auth: Awaited<ReturnType<typeof fixtureAuth>>;
+  auth: Awaited<ReturnType<typeof fixtureAuth>>,
+  fixtureResponse: Parameters<typeof fixtureRuntime>[1];
 const graphs: string[] = [];
 // 成功範囲が面数未満という制約の中で、実質的に必ず成功するダイス設定。
 const sure = { sides: 2147483647, successThrough: 2147483646 };
@@ -82,6 +83,7 @@ const answer = (id: string, content: unknown) => ({
   },
 });
 afterEach(async () => {
+  fixtureResponse = undefined;
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   await isolated.databases.postgres.query("DELETE FROM bot_npc");
@@ -93,7 +95,7 @@ beforeAll(async () => {
   await isolated.setup();
   ({ runtime } = await fixtureRuntime(
     `bot-play-${randomUUID()}`,
-    undefined,
+    (...args) => fixtureResponse?.(...args),
     isolated.databases,
   ));
   auth = await fixtureAuth(isolated.databases.postgres);
@@ -8585,6 +8587,62 @@ test.each(["転記", "効力の拡大", "判断API失敗", "操作制限"] as co
     expect((await f.send(0, command)).spentSp).toBe(result.spentSp);
     expect(decide).toHaveBeenCalledTimes(kind === "操作制限" ? 0 : 1);
     expect(f.calls).toHaveBeenCalledTimes(kind === "転記" ? 0 : 1);
+  },
+);
+
+test.each([true, false])(
+  "本人の状態の置き換えをダイスなしで返した応答を修正し、判定結果に従う（成功=%s）",
+  async (success) => {
+    const f = await fixture(1);
+    const actor = f.actors[0]!;
+    const add = (requestId: string, text: string, description: string) =>
+      f.send(0, {
+        command: "apply",
+        requestId,
+        expectedSp: 1,
+        dependencies: [],
+        action: { type: "state", targetId: actor, text, description },
+      });
+    const originalRequest = randomUUID();
+    const original = "木の義足を使っている。";
+    const replacement = "鉄の義足を使っている。";
+    await add(originalRequest, "木の義足を取り付ける", original);
+    const previous = derivedId(
+      `${derivedId(`${originalRequest}:state`)}:content`,
+    );
+    const requestId = randomUUID();
+    const text = "木の義足を外して鉄の義足に替える";
+    const setting = {
+      ...sure,
+      successThrough: success ? sure.successThrough : 1,
+    };
+    const reply = vi.fn<(repair: boolean) => void>();
+    fixtureResponse = (content, user, messages) => {
+      if (user.text !== text) return content;
+      expect(user.allowApply).toBe(true);
+      expect(user.changes).toMatchObject({ endEdges: [] });
+      const repair = messages
+        .filter(({ role }) => role === "user")
+        .slice(1)
+        .some(({ content }) => "validationErrors" in JSON.parse(content));
+      reply(repair);
+      return repair
+        ? { ...setting, endEdges: [previous] }
+        : { apply: true, endEdges: [previous], decided: [], individuals: [] };
+    };
+
+    await expect(add(requestId, text, replacement)).resolves.toMatchObject({
+      spentSp: 1,
+      outcome: { success, setting },
+    });
+    expect(reply.mock.calls).toEqual([[false], [true]]);
+    const profile = (await access.botPlay.screen(f.world, actor, [actor])).own
+      .profile;
+    expect(
+      profile.filter((row) => row === original || row === replacement),
+    ).toEqual([success ? replacement : original]);
+    const receipt = await f.store.receipt(f.graph, requestId);
+    expect(receipt?.changes.endEdges.includes(previous) ?? false).toBe(success);
   },
 );
 
