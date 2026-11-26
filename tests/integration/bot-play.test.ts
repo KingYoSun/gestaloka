@@ -8856,6 +8856,9 @@ test("他人への手当てで残る状態を受領前に読み、承認した�
     action: { type: "state", targetId, stateId, text, description },
   });
   expect(offered).toMatchObject({ state: "receiving", spentSp: 1 });
+  expect(offered.dice).toEqual([
+    expect.stringContaining(`成功は ${sure.successThrough} 以下（成功）`),
+  ]);
   const after = `${description}\n${remainingState}`;
   expect((await f.status(1)).receiving).toMatchObject({
     text,
@@ -8870,6 +8873,17 @@ test("他人への手当てで残る状態を受領前に読み、承認した�
     accept: true,
   });
   await giveTurn(f, 1);
+  expect(
+    (await f.status(1)).entries.flatMap(({ payload }) => payload.entries ?? []),
+  ).toContainEqual(
+    expect.objectContaining({
+      input: text,
+      result: expect.objectContaining({
+        state: "accepted",
+        dice: offered.dice,
+      }),
+    }),
+  );
   const current = await f.send(1, {
     command: "search",
     query: { kind: "self" },
@@ -14801,6 +14815,10 @@ describe("現場材料", () => {
     };
     const result = await f.send(0, command);
     expect(result).toMatchObject({
+      dice: [
+        expect.stringMatching(/出目 2 \/ \d+、成功は 1 以下（失敗）$/),
+        expect.stringMatching(/出目 2 \/ \d+、成功は \d+ 以下（成功）$/),
+      ],
       outcome: {
         proposals: [
           { roll: 2, success: false },
@@ -16370,6 +16388,67 @@ test("現地に置かれた物品から引け、共有残量1 SPで競合して�
     results[winner],
   );
   expect(f.calls).toHaveBeenCalledTimes(2);
+});
+
+test("ダイスの出目と成功範囲を申請者と同席プレイヤーがCLIの応答と履歴で読める", async () => {
+  const f = await fixture(),
+    app = await createApp(access, auth.identity, undefined, auth.operations),
+    cli = await playerCli(app);
+  try {
+    const profile = join(cli.directory, "dice-peer.json");
+    const conn = await cli.run(
+      profile,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (
+        await cli.approve(
+          f.people[1]!.cookie,
+          conn.userCode,
+          `actor:${f.actors[1]}`,
+        )
+      ).statusCode,
+    ).toBe(302);
+    await f.send(1, { command: "contact", targetId: f.actors[0] });
+    await giveTurn(f, 0);
+    f.calls.mockImplementation(async (id) =>
+      answer(id, { sides: 100, successThrough: 100, explored }),
+    );
+    const text = "広場の裏手から小道を探す";
+    const result = await f.send(0, {
+      command: "explore",
+      fromId: f.place,
+      label: "裏手の小道",
+      text,
+      dependencies: [],
+    });
+    const { roll } = result.outcome as { roll: number };
+    const dice = [`判定 出目 ${roll} / 100、成功は 100 以下（成功）`];
+    expect(result.dice).toEqual(dice);
+    await f.send(0, { command: "end-turn" });
+
+    const record = expect.objectContaining({
+      payload: expect.objectContaining({
+        entries: expect.arrayContaining([
+          expect.objectContaining({
+            input: text,
+            result: expect.objectContaining({ dice }),
+          }),
+        ]),
+      }),
+    });
+    const peer = await cli.run(profile, "status", "--after", "0");
+    for (const status of [await f.status(0), peer])
+      expect(status.entries).toContainEqual(record);
+    expect((await f.status(2)).entries).not.toContainEqual(record);
+  } finally {
+    await cli.close();
+    await app.close();
+  }
 });
 
 test("新しい場所は接続元を指定して申請し、ダイスの成否と行き来の手がかりを残す", async () => {
@@ -19355,10 +19434,12 @@ test("失敗した判定はファンブルを一度だけ振り、本人に残�
       { sides: 100, successThrough: 30 },
     ],
   );
-  expect((await f.send(0, missed)).outcome).toMatchObject({
-    success: false,
-    roll: 50,
-    fumble: { roll: 31, success: false },
+  expect(await f.send(0, missed)).toMatchObject({
+    outcome: { success: false, roll: 50, fumble: { roll: 31, success: false } },
+    dice: [
+      "判定 出目 50 / 100、成功は 10 以下（失敗）",
+      "ファンブル判定 出目 31 / 100、ファンブルは 30 以下（ファンブルなし）",
+    ],
   });
   f.calls.mockImplementationOnce(async (id) =>
     answer(id, { ...sure, fumble: { ...cut, through: most } }),

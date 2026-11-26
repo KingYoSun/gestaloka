@@ -3,6 +3,7 @@ export { AccessError } from "./access-error.js";
 import { AccessError } from "./access-error.js";
 import { npcReport } from "../runtime/npc-mode.js";
 import { BotPlay } from "../runtime/bot-play.js";
+import { playDiceMessages } from "../runtime/play-dice-messages.js";
 import type {
   PlayerPlayCommand,
   InventoryBundleCommand,
@@ -627,6 +628,12 @@ export class WorldAccess {
       after,
       screen,
     );
+    for (const { payload } of history.entries) {
+      for (const entry of payload.entries ?? []) {
+        const dice = playDiceMessages(entry.result?.outcome);
+        if (dice.length) entry.result.dice = dice;
+      }
+    }
     const result = {
       viewerId,
       ...status,

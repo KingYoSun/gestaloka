@@ -657,6 +657,42 @@ test("目撃した物品の参照と渡した先を表示する", async () => {
   expect(await screen.findByText("紐〈" + scene + "〉")).toBeTruthy();
   expect(screen.getByText(/渡す人物.*受け取る人物/)).toBeTruthy();
 });
+
+test("同席者の判定の出目と成功範囲をプレイログで読める", async () => {
+  view.characters = [
+    { actorId: actor, name: "観測者", icon: null },
+    { actorId: peer, name: "同席者", icon: null },
+  ];
+  view.entries = [
+    {
+      id: "12",
+      payload: {
+        entries: [
+          {
+            actorId: peer,
+            input: "広場の先を探る",
+            result: {
+              outcome: { success: false },
+              dice: ["判定 出目 42 / 100、成功は 25 以下（失敗）"],
+            },
+          },
+          {
+            actorId: actor,
+            input: "そばで待つ",
+            result: { state: "accepted" },
+          },
+        ],
+      },
+    },
+  ];
+  show();
+  await screen.findByText("広場の先を探る");
+  expect(
+    screen.getByText(/出目 42 \/ 100、成功は 25 以下（失敗）/),
+  ).toBeTruthy();
+  expect(screen.getAllByText(/出目/)).toHaveLength(1);
+});
+
 test("受領判断を表示し、判断後は元の人物の通常手番へ戻る", async () => {
   view.members = [
     { actorId: actor, sceneId: scene },

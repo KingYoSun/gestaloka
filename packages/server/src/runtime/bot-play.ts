@@ -1,5 +1,6 @@
 import { classifyNpcHistory, type NpcMemory } from "./npc-history.js";
 import { npcOperations, type NpcReport, type NpcTask } from "./npc-work.js";
+import { playDiceMessages } from "./play-dice-messages.js";
 import { ModelCallInProgress } from "../llm/budget.js";
 import { createHash, randomInt, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -4125,7 +4126,7 @@ export class BotPlay {
             )
             .map(({ itemId, label }) => ({ itemId, label }));
     entry.result = {
-      applicationId: r.id,
+      ...(entry.result as Record<string, unknown>),
       state,
       ...extra,
       ...(items?.length ? { items } : {}),
@@ -13965,6 +13966,7 @@ export class BotPlay {
                   message: "受領依頼を送りました",
                 };
               } else if (plan.recipients.length) {
+                const dice = playDiceMessages(plan.outcome);
                 const timeout = Number(
                   (
                     await db.query(
@@ -13979,6 +13981,7 @@ export class BotPlay {
                   result: {
                     applicationId: input.requestId,
                     state: "receiving",
+                    ...(dice.length ? { dice } : {}),
                   },
                 });
                 d.receiving = {
@@ -14339,6 +14342,8 @@ export class BotPlay {
           )
         : "";
       const outcome = result.outcome as Partial<ProposalOutcome> | undefined;
+      const dice = playDiceMessages(outcome);
+      if (dice.length) result.dice = dice;
       const parts = individualOutcomes(outcome?.proposals ?? []);
       const materialMessages = (parts.length ? parts : [outcome]).flatMap(
         (p) => {
