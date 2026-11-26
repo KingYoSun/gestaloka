@@ -19551,6 +19551,100 @@ async function serverNpcScene(receiving = false) {
   return { ...f, peer, npc, application, exhaust };
 }
 
+test("相手の非公開状態の変更だけではNPCに内容を渡さず、報告済みの確認を開き直さない", async () => {
+  const f = await serverNpcScene();
+  const publicText = "荷受けは午後三時からです。";
+  const privateBefore = "本人だけの予定は買い物です。";
+  const privateAfter = "本人だけの予定は裁縫です。";
+  const changes: Change = { nodes: [], edges: [], revisions: [], endEdges: [] };
+  mark(changes, f.peer, publicText);
+  mark(changes, f.peer, privateBefore);
+  const secret = changes.nodes.find(({ text }) => text === privateBefore)!.id;
+  const change = async (changes: Change, at: number) => {
+    const commitId = randomUUID();
+    await f.store.commit(
+      await f.store.claim(f.graph, commitId),
+      f.store.context(f.graph),
+      { commitId, at, changes },
+    );
+  };
+  await change(changes, 0);
+  await f.view(0, secret, []);
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, {
+      operation: "inspect_and_reply",
+      args: {
+        goal: null,
+        recipient: f.peer,
+        question: "荷受け時刻を確かめる",
+        query: { kind: "subject", targetId: f.peer },
+      },
+    }),
+  );
+  await access.botPlay.tickNpcs(f.world);
+  f.calls.mockImplementationOnce(
+    async (id, _role, messages, _target, _effort, _attempt, validate) => {
+      const input = String(messages[1]!.content);
+      expect(input).not.toContain(privateBefore);
+      const { reportRecords } = JSON.parse(input) as {
+        reportRecords: { number: number; text: string }[];
+      };
+      const record = reportRecords.find(({ text }) => text === publicText)!;
+      const report = (number: number) => ({
+        operation: "report_and_pass",
+        args: {
+          goal: null,
+          finding: [number],
+          judgment: null,
+          mode: "nonverbal",
+        },
+      });
+      expect(() =>
+        validate!(JSON.stringify(report(reportRecords.length + 1))),
+      ).toThrow();
+      return answer(id, report(record.number));
+    },
+  );
+  await access.botPlay.tickNpcs(f.world);
+
+  await change(
+    {
+      nodes: [],
+      edges: [],
+      endEdges: [],
+      revisions: [
+        { id: secret, kind: "script", text: privateAfter, viewers: [] },
+      ],
+    },
+    1,
+  );
+  const own = await f.send(0, { command: "search", query: { kind: "self" } });
+  expect(JSON.stringify(own.material)).toContain(privateAfter);
+  await f.send(0, { command: "end-turn" });
+  f.calls.mockClear();
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-server-npc");
+    const input = String(messages[1]!.content);
+    expect(input).not.toContain(privateBefore);
+    expect(input).not.toContain(privateAfter);
+    const context = JSON.parse(input);
+    expect(context.completedWork.priorResult).toBe("unchanged");
+    expect(context.availableOperations).not.toContainEqual(
+      expect.objectContaining({ name: "recheck_for_recipient" }),
+    );
+    return answer(id, { operation: "pass_turn", args: { goal: null } });
+  });
+  await access.botPlay.tickNpcs(f.world);
+  expect(f.calls).toHaveBeenCalledTimes(1);
+  expect((await f.status(0)).actorId).toBe(f.peer);
+  const { entries } = await access.botPlay.history(f.world, f.peer);
+  expect(JSON.stringify(entries)).toContain(
+    `記録には「${publicText}」とあります。`,
+  );
+  expect(JSON.stringify(entries)).not.toContain(privateBefore);
+  expect(JSON.stringify(entries)).not.toContain(privateAfter);
+});
+
 test.each([0, 1, 2])(
   "再依頼判定はNPCの返答用の枠を残す（残り%s回）",
   async (remaining) => {
