@@ -33,6 +33,10 @@ export const DrawTable = z
     versionId: id,
     managerId: id,
     entries: z.array(DrawEntry).min(1).max(drawTableLimit),
+    summons: z
+      .record(id, text)
+      .optional()
+      .describe("公開時に判定した景品ごとの召喚先"),
     price: DrawPrice.nullable(),
   })
   .strict();

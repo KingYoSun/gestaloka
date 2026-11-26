@@ -162,6 +162,9 @@ const Generation = z.strictObject({
   operation: z.union(generationOperations),
 });
 export const WorldApplication = z.xor([
+  z
+    .strictObject({ type: z.literal("summon"), itemId: id })
+    .describe("手持ちの召喚石を1個使い、現在地にサーバーNPCを呼び出す"),
   z.strictObject({
     type: z.literal("direct"),
     text,
@@ -265,6 +268,7 @@ export type WorldApplication = z.infer<typeof WorldApplication>;
 export function applicationSp(action: WorldApplication): number {
   if (
     action.type === "direct" ||
+    action.type === "summon" ||
     action.type === "detach" ||
     action.type === "share-storage" ||
     action.type === "remove-place-item" ||

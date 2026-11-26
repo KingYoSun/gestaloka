@@ -13,6 +13,7 @@ import {
   type WorldStore,
 } from "../world/store.js";
 import { directPlaces } from "../world/locations.js";
+import { stoneLabel } from "../world/belongings.js";
 import { commitPlayChange, directChangeScope } from "./play-change-scope.js";
 
 const latest = Number.MAX_SAFE_INTEGER;
@@ -86,12 +87,16 @@ export async function recordAppearances(
   appearances: Appearance[],
 ) {
   const stacks = new Map<string, Extract<WorldNode, { kind: "existence" }>>();
+  const stackKey = (label: string, summons?: string) =>
+    JSON.stringify([label, summons]);
   if (appearances.some((a) => a.kind === "existence")) {
     const standard = (await ctx.inventoryLimits()).unitsPerSlot;
     for (const place of places)
       for (const id of await groundItems(ctx, place)) {
         const node = await ctx.node(id);
-        const known = node && stacks.get(node.text);
+        const key =
+          node?.kind === "existence" ? stackKey(node.text, node.summons) : "";
+        const known = stacks.get(key);
         if (
           node?.kind === "existence" &&
           node.count &&
@@ -102,13 +107,19 @@ export async function recordAppearances(
             node.count > known.count! ||
             (node.count === known.count && node.id < known.id))
         )
-          stacks.set(node.text, node);
+          stacks.set(key, node);
       }
   }
   const added = new Map<string, Extract<WorldNode, { kind: "existence" }>>();
   for (const a of appearances) {
     const stack =
-      a.kind === "existence" && stacks.get(a.species + "：" + a.description);
+      a.kind === "existence" &&
+      stacks.get(
+        stackKey(
+          a.summons ? a.species : a.species + "：" + a.description,
+          a.summons,
+        ),
+      );
     if (!stack || !a.count) continue;
     a.id = stack.id;
     const node = added.get(stack.id) ?? stack;
@@ -145,14 +156,21 @@ export async function recordAppearances(
         target: ground,
       });
   }
-  for (const { id, kind, species, description, count } of appearances) {
+  for (const {
+    id,
+    kind,
+    species,
+    description,
+    count,
+    summons,
+  } of appearances) {
     if (kind === "instant-npc" || added.has(id)) continue;
-    const text = species + "：" + description;
+    const text = summons ? species : species + "：" + description;
     changes.nodes.push(
       kind === "event"
         ? { kind, id, text, period: { from: at } }
         : kind === "existence" && count
-          ? { kind, id, text, count }
+          ? { kind, id, text, count, ...(summons ? { summons } : {}) }
           : { kind, id, text },
     );
     link({
@@ -166,26 +184,40 @@ export async function recordAppearances(
   return link;
 }
 // 個体の発生用ノードへspawn-deathで結ばれた発生用ノードを抽選し、個体のいた場所に残す。
-export async function deathDrops(
+export async function deathDropRules(
   ctx: WorldContext,
-  request: string,
   ruleId: string | undefined,
-  places: string[],
-  deaths: number,
 ) {
-  const drops: Appearance[] = [];
-  if (ruleId && places.length)
+  const rules: { id: string; rule: Rule }[] = [];
+  if (ruleId)
     for (const edge of await ctx.relations(ruleId, "status", "in", latest)) {
       const node = about(edge, "spawn-death")
         ? await ctx.node(edge.source)
         : undefined;
       if (node?.kind !== "script" || !node.spawn) continue;
-      if (node.spawn.kind === "instant-npc") continue;
-      let count = 0;
-      for (let i = 0; i < deaths; i++) count += draw(node.spawn);
-      drops.push(...appear(request + ":" + node.id, node.spawn, count));
+      rules.push({ id: node.id, rule: node.spawn });
     }
-  return drops;
+  return rules;
+}
+export function deathDrops(
+  request: string,
+  rules: Awaited<ReturnType<typeof deathDropRules>>,
+  deaths: number,
+  summons: { id: string; name: string }[] = [],
+) {
+  return rules.flatMap(({ id, rule }) => {
+    let count = 0;
+    for (let i = 0; i < deaths; i++) count += draw(rule);
+    const name =
+      rule.kind === "instant-npc"
+        ? rule.species
+        : rule.kind === "existence" && summons.find((s) => s.id === id)?.name;
+    return appear(
+      request + ":" + id,
+      name ? { ...rule, kind: "existence", species: stoneLabel(name) } : rule,
+      count,
+    ).map((a) => (name ? { ...a, summons: name } : a));
+  });
 }
 // 個体の発生用ノードへspawn-tradeで結ばれた品物を、公開交換と同じ形で返す。個体はノードを
 // 持たないので在庫は無く、受領のたびに品物が生まれて代価が消える。

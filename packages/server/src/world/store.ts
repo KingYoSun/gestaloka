@@ -2308,6 +2308,12 @@ export class WorldStore {
     if (
       !parsed.management &&
       !fromBelongingOperations &&
+      submitted.nodes.some((node) => node.kind === "existence" && node.summons)
+    )
+      throw new WorldConflict("召喚石は物品の生成判定で作成してください");
+    if (
+      !parsed.management &&
+      !fromBelongingOperations &&
       submitted.nodes.some(
         (node) =>
           node.kind === "existence" &&
@@ -2425,6 +2431,9 @@ export class WorldStore {
             node.kind === "existence" &&
             original.kind === "existence"
           ) {
+            if (node.summons !== undefined && node.summons !== original.summons)
+              throw new WorldConflict("召喚石の対象は変更できません");
+            if (original.summons) node.summons = original.summons;
             if (
               node.seriesId !== undefined &&
               node.seriesId !== original.seriesId
