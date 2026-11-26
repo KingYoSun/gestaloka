@@ -436,6 +436,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stories/worlds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    before?: string;
+                    worldId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                /** Format: uuid */
+                                id: string;
+                                title: string;
+                            }[];
+                            /** Format: uuid */
+                            next: string | null;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                            callsUsed?: number;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stories/{id}": {
         parameters: {
             query?: never;
@@ -1122,6 +1259,8 @@ export interface paths {
                                     rootId: string;
                                     memberPlaceIds: string[];
                                 }[];
+                                /** @default [] */
+                                nonCombatPlaceSeries: string[];
                             };
                             error: string | null;
                         };
@@ -1305,6 +1444,8 @@ export interface paths {
                                     rootId: string;
                                     memberPlaceIds: string[];
                                 }[];
+                                /** @default [] */
+                                nonCombatPlaceSeries: string[];
                             };
                             error: string | null;
                         };
@@ -1508,6 +1649,8 @@ export interface paths {
                                     rootId: string;
                                     memberPlaceIds: string[];
                                 }[];
+                                /** @default [] */
+                                nonCombatPlaceSeries: string[];
                             };
                             error: string | null;
                         };
@@ -5492,7 +5635,7 @@ export interface paths {
                                             name?: string;
                                             derivedFromSkills?: string[];
                                             /** @enum {string} */
-                                            type?: "memo" | "draw-source";
+                                            type?: "memo" | "draw-source" | "place-series";
                                             drawTable?: {
                                                 /** Format: uuid */
                                                 versionId: string;
@@ -5650,7 +5793,7 @@ export interface paths {
                                             name?: string;
                                             derivedFromSkills?: string[];
                                             /** @enum {string} */
-                                            type?: "memo" | "draw-source";
+                                            type?: "memo" | "draw-source" | "place-series";
                                             drawTable?: {
                                                 /** Format: uuid */
                                                 versionId: string;
@@ -9099,7 +9242,7 @@ export interface paths {
                                     name?: string;
                                     derivedFromSkills?: string[];
                                     /** @enum {string} */
-                                    type?: "memo" | "draw-source";
+                                    type?: "memo" | "draw-source" | "place-series";
                                     drawTable?: {
                                         /** Format: uuid */
                                         versionId: string;
@@ -9257,7 +9400,7 @@ export interface paths {
                                     name?: string;
                                     derivedFromSkills?: string[];
                                     /** @enum {string} */
-                                    type?: "memo" | "draw-source";
+                                    type?: "memo" | "draw-source" | "place-series";
                                     drawTable?: {
                                         /** Format: uuid */
                                         versionId: string;
@@ -10005,6 +10148,8 @@ export interface paths {
                              * @description Homeが未設定の人物の復帰先。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ
                              */
                             deathPlaceId?: string | null;
+                            /** @description 非戦闘にする場所の系統名。世界内の特定の範囲ごとに指定する。空配列で解除し、省略すると現在の設定を保つ */
+                            nonCombatPlaceSeries?: string[];
                             /** @description 非戦闘地域。範囲の場所IDと、古い地理記録を補う場所IDを指定する。両方の内部にあたる part-of の子にも適用する。空配列で解除し、省略すると現在の設定を保つ */
                             nonCombatAreas?: {
                                 /** Format: uuid */

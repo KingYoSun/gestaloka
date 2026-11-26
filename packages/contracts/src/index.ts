@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Change, RelationKind, StartingItem } from "./world.js";
+import { Change, PlaceSeries, RelationKind, StartingItem } from "./world.js";
 import { BlueprintDraft, BlueprintPublication } from "./play.js";
 import { StoryDates, StoryListQuery, StoryReadQuery } from "./stories.js";
 export * from "./stories.js";
@@ -63,6 +63,7 @@ export {
   WaitingStatus,
 } from "./play.js";
 export {
+  PlaceSeries,
   Change,
   Appearance,
   InstantReduction,
@@ -233,6 +234,7 @@ export const WorldStatus = z.object({
     deathCriteria: z.string(),
     deathPlaceId: z.uuid().nullable(),
     nonCombatAreas: NonCombatAreas,
+    nonCombatPlaceSeries: z.array(PlaceSeries).default([]),
   }),
   error: z.string().nullable(),
 });
@@ -1632,6 +1634,12 @@ export const Operation = z.discriminatedUnion("operation", [
         .optional()
         .describe(
           "Homeが未設定の人物の復帰先。nullなら本人の最初の所在地へ移す。省略すると現在の設定を保つ",
+        ),
+      nonCombatPlaceSeries: z
+        .array(PlaceSeries)
+        .optional()
+        .describe(
+          "非戦闘にする場所の系統名。世界内の特定の範囲ごとに指定する。空配列で解除し、省略すると現在の設定を保つ",
         ),
       nonCombatAreas: NonCombatAreas.optional().describe(
         "非戦闘地域。範囲の場所IDと、古い地理記録を補う場所IDを指定する。両方の内部にあたる part-of の子にも適用する。空配列で解除し、省略すると現在の設定を保つ",

@@ -18,6 +18,77 @@ type Dates = { since?: string | undefined; until?: string | undefined };
 const field = (form: FormData, name: string) =>
   String(form.get(name) ?? "").trim() || undefined;
 
+function StoryWorldField({
+  initial,
+  required = false,
+}: {
+  initial?: string | undefined;
+  required?: boolean;
+}) {
+  const [value, setValue] = useState(initial ?? "");
+  const worlds = $api.useInfiniteQuery(
+    "get",
+    "/api/stories/worlds",
+    {},
+    {
+      initialPageParam: null,
+      pageParamName: "before",
+      getNextPageParam: (page) => page.next ?? undefined,
+    },
+  );
+  const options = worlds.data?.pages.flatMap((page) => page.items) ?? [];
+  const missingInitial =
+    !!initial && !options.some((world) => world.id === initial);
+  const initialWorld = $api.useQuery(
+    "get",
+    "/api/stories/worlds",
+    {
+      params: { query: initial ? { worldId: initial } : {} },
+    },
+    { enabled: missingInitial && worlds.hasNextPage },
+  );
+  return (
+    <div>
+      <label>
+        世界
+        <select
+          name="worldId"
+          required={required}
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+        >
+          <option value="">{required ? "世界を選択" : "すべての世界"}</option>
+          {missingInitial && (!required || initialWorld.data?.items.length) ? (
+            <option value={initial}>
+              {initialWorld.data?.items[0]?.title || initial}
+            </option>
+          ) : null}
+          {options.map((world) => (
+            <option key={world.id} value={world.id}>
+              {world.title || world.id}
+            </option>
+          ))}
+        </select>
+      </label>
+      {worlds.hasNextPage && (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={worlds.isFetchingNextPage}
+          onClick={() => void worlds.fetchNextPage()}
+        >
+          世界をさらに表示
+        </Button>
+      )}
+      {worlds.error && <Problem error={worlds.error} />}
+      {initialWorld.error && <Problem error={initialWorld.error} />}
+      {required && worlds.data && !options.length && (
+        <p>投稿するには世界に参加してください。</p>
+      )}
+    </div>
+  );
+}
+
 function DateFields({ since, until }: Dates) {
   return (
     <fieldset className="story-dates">
@@ -89,13 +160,9 @@ export function Stories({
     <main className="page home stories">
       <header className="page-title">
         <h1>STORIES</h1>
-        {worldId ? (
-          <Link to="/stories/write/$id" params={{ id: worldId }}>
-            この世界の物語を書く
-          </Link>
-        ) : (
-          <Link to="/">世界を選んで書く</Link>
-        )}
+        <Link to="/stories/write/{-$id}" params={{ id: worldId }}>
+          {worldId ? "この世界の物語を書く" : "物語を書く"}
+        </Link>
         <Link
           to="/stories"
           search={{ bookmarked: "1" }}
@@ -119,7 +186,7 @@ export function Stories({
           event.preventDefault();
           const form = new FormData(event.currentTarget);
           const search = StoryListQuery.parse({
-            worldId,
+            worldId: field(form, "worldId"),
             player,
             bookmarked,
             author: field(form, "author"),
@@ -139,6 +206,7 @@ export function Stories({
             </Link>
           </p>
         )}
+        <StoryWorldField initial={worldId} />
         <label>
           著者名
           <Input name="author" defaultValue={author} />
@@ -501,11 +569,11 @@ export function ReadStory({
   );
 }
 
-export function WriteStory({ id }: { id: string }) {
+export function WriteStory({ id }: { id?: string | undefined }) {
   return (
     <main className="page home stories">
       <Link to="/stories" search={{ worldId: id }}>
-        この世界の作品一覧
+        {id ? "この世界の作品一覧" : "作品一覧"}
       </Link>
       <StoryForm worldId={id} />
     </main>
@@ -518,7 +586,7 @@ function StoryForm({
   edit,
   closeEdit,
 }: {
-  worldId: string;
+  worldId?: string | undefined;
   storyId?: string;
   edit?: {
     episode: number;
@@ -541,7 +609,13 @@ function StoryForm({
   const imageInput = useRef<HTMLInputElement>(null);
   const last = useRef<{ input: string; id: string } | null>(null);
   const post = useMutation({
-    mutationFn: async (file: File | undefined) => {
+    mutationFn: async ({
+      destination,
+      file,
+    }: {
+      destination: string;
+      file: File | undefined;
+    }) => {
       if (file && file.size > STORY_IMAGE_MAX_BYTES)
         throw new Error("5MiB以下の画像を指定してください。");
       const input =
@@ -568,12 +642,12 @@ function StoryForm({
           episodeTitle.trim() && { episodeTitle: episodeTitle.trim() }),
         ...(file && { image: await readImageFile(file) }),
       };
-      const key = JSON.stringify(payload);
+      const key = JSON.stringify([destination, payload]);
       if (last.current?.input !== key)
         last.current = { input: key, id: crypto.randomUUID() };
       return (
         await api.POST("/api/worlds/{id}/stories", {
-          params: { path: { id: worldId } },
+          params: { path: { id: destination } },
           body: { ...payload, requestId: last.current.id },
         })
       ).data!;
@@ -598,7 +672,11 @@ function StoryForm({
       className="story-form"
       onSubmit={(event) => {
         event.preventDefault();
-        post.mutate(imageInput.current?.files?.[0]);
+        const destination = storyId
+          ? worldId
+          : field(new FormData(event.currentTarget), "worldId");
+        if (destination)
+          post.mutate({ destination, file: imageInput.current?.files?.[0] });
       }}
     >
       {edit ? (
@@ -611,9 +689,10 @@ function StoryForm({
       <p>
         {edit
           ? "作品名と著者名の変更は全話に反映されます。"
-          : "公開した文章はログインしたユーザーが読めます。"}
+          : "この世界に参加しているプレイヤーが読めます。"}
       </p>
       <fieldset disabled={post.isPending}>
+        {!storyId && <StoryWorldField initial={worldId} required />}
         {(!storyId || edit) && (
           <>
             <label>

@@ -9,6 +9,12 @@ const Period = z
     (period) => period.until === undefined || period.until >= period.from,
     "期間の終点は始点以降にしてください",
   );
+export const PlaceSeries = z
+  .string()
+  .trim()
+  .min(1)
+  .regex(/^[^\r\n]+$/)
+  .describe("この世界の特定の地理的範囲を識別する系統名");
 const Content = { id: z.uuid(), text: z.string() };
 const Observation = z
   .object({
@@ -194,7 +200,7 @@ export const WorldNode = z.discriminatedUnion("kind", [
       kind: z.literal("script"),
       name: z.string().trim().min(1).optional(),
       derivedFromSkills: z.array(z.uuid()).optional(),
-      type: z.enum(["memo", "draw-source"]).optional(),
+      type: z.enum(["memo", "draw-source", "place-series"]).optional(),
       drawTable: DrawTable.optional(),
       spawn: SpawnRule.optional(),
       viewers,

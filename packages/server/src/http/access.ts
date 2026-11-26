@@ -941,6 +941,7 @@ export class WorldAccess {
         deathCriteria: row.death_criteria,
         deathPlaceId: row.death_place_id,
         nonCombatAreas: row.non_combat_areas,
+        nonCombatPlaceSeries: row.non_combat_place_series,
       },
       error: row.error,
     });

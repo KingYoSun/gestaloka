@@ -198,6 +198,7 @@ export const labels: Record<string, string> = {
   deathCriteria: "人物の死亡を判定する条件",
   deathPlaceId: "リスポーン先の場所ID",
   nonCombatAreas: "非戦闘地域",
+  nonCombatPlaceSeries: "非戦闘にする場所の系統",
   settings: "生成用の設定本文",
   presetId: "プレイヤー設定ID",
   calculatedNanoUsd: "計算済み額",
@@ -219,39 +220,58 @@ export function NonCombatAreasField({
   value: NonCombatAreas;
   onChange: (areas: NonCombatAreas) => void;
 }) {
+  return (
+    <NonCombatLines
+      id={id}
+      name="nonCombatAreas"
+      value={value.map(({ rootId, memberPlaceIds }) =>
+        [rootId, ...memberPlaceIds].join(" "),
+      )}
+      onChange={(lines) =>
+        onChange(
+          lines.map((line) => {
+            const [rootId, ...memberPlaceIds] = line.split(/\s+/);
+            return { rootId: rootId!, memberPlaceIds };
+          }),
+        )
+      }
+    />
+  );
+}
+export function NonCombatLines({
+  id,
+  name,
+  value,
+  onChange,
+}: {
+  id: string;
+  name: "nonCombatPlaceSeries" | "nonCombatAreas";
+  value: string[];
+  onChange: (lines: string[]) => void;
+}) {
   const [draft, setDraft] = useState<string>();
   return (
     <>
-      <Label htmlFor={id}>{label("nonCombatAreas")}</Label>
+      <Label htmlFor={id}>{label(name)}</Label>
       <Textarea
         id={id}
-        aria-describedby={`${id}-help`}
-        value={
-          draft ??
-          value
-            .map(({ rootId, memberPlaceIds }) =>
-              [rootId, ...memberPlaceIds].join(" "),
-            )
-            .join("\n")
-        }
+        aria-describedby={id + "-help"}
+        value={draft ?? value.join("\n")}
         onBlur={() => setDraft(undefined)}
         onChange={(e) => {
-          const text = e.target.value;
-          setDraft(text);
+          setDraft(e.target.value);
           onChange(
-            text
+            e.target.value
               .split("\n")
               .map((line) => line.trim())
-              .filter(Boolean)
-              .map((line) => {
-                const [rootId, ...memberPlaceIds] = line.split(/\s+/);
-                return { rootId: rootId!, memberPlaceIds };
-              }),
+              .filter(Boolean),
           );
         }}
       />
-      <p id={`${id}-help`} className="muted">
-        1行に範囲のIDを一つ書きます。古い地理記録で範囲とのつながりが未登録の場所は、同じ行に空白区切りでIDを加えます。
+      <p id={id + "-help"} className="muted">
+        {name === "nonCombatPlaceSeries"
+          ? "村名など、その世界の系統名を1行に一つ入力します。探索でその系統に属すると判定された場所が保護されます。"
+          : "1行に範囲のIDを一つ書きます。古い地理記録で範囲とのつながりが未登録の場所は、同じ行に空白区切りでIDを加えます。"}
       </p>
     </>
   );
@@ -434,6 +454,15 @@ export function Fields({
     );
   }
   if (shape.const !== undefined) return null;
+  if (name === "nonCombatPlaceSeries")
+    return (
+      <NonCombatLines
+        name="nonCombatPlaceSeries"
+        id={id}
+        value={(value ?? []) as string[]}
+        onChange={onChange}
+      />
+    );
   if (name === "nonCombatAreas")
     return (
       <div className="admin-field">

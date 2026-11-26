@@ -131,6 +131,25 @@ function dateWhere(
 export class Stories {
   constructor(private readonly pool: pg.Pool) {}
 
+  async worlds(
+    user: string,
+    {
+      before,
+      worldId,
+    }: { before?: string | undefined; worldId?: string | undefined },
+  ) {
+    const { rows } = await this.pool.query<{ id: string; title: string }>(
+      `SELECT id,public_title AS title FROM world_construction
+       WHERE id IN (${playerWorlds("$1")}) AND ($2::uuid IS NULL OR id<$2) AND ($3::uuid IS NULL OR id=$3)
+       ORDER BY id DESC LIMIT 51`,
+      [user, before ?? null, worldId ?? null],
+    );
+    return {
+      items: rows.slice(0, 50),
+      next: rows.length > 50 ? rows[49]!.id : null,
+    };
+  }
+
   async list(
     user: string,
     query: z.infer<typeof StoryListQuery>,
