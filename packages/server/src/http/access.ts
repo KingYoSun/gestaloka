@@ -637,7 +637,7 @@ export class WorldAccess {
     const result = {
       viewerId,
       ...status,
-      dailySp: await this.botPlay.dailySp(id, subject),
+      dailySp: await this.botPlay.dailySp(id, viewerId),
       ...history,
       ...(await this.botPlay.unread(id, viewerId)),
     };

@@ -1444,8 +1444,8 @@ export class BotPlay {
       CREATE INDEX IF NOT EXISTS bot_request_draw_review ON bot_request(world_id,actor_id,(outcome->>'targetId'),(outcome->>'basis'),draw_reviewed_at DESC) WHERE draw_reviewed_at IS NOT NULL;
       ALTER TABLE bot_adjudication ADD COLUMN IF NOT EXISTS sp_user uuid, ADD COLUMN IF NOT EXISTS sp_reset timestamptz,
         ADD COLUMN IF NOT EXISTS sp_amount integer NOT NULL DEFAULT 1;
-      CREATE INDEX IF NOT EXISTS bot_adjudication_sp ON bot_adjudication(world_id,sp_user,sp_reset) WHERE sp_user IS NOT NULL;
-      CREATE INDEX IF NOT EXISTS bot_request_sp ON bot_request(world_id,sp_user,sp_reset) WHERE sp_user IS NOT NULL;
+      DROP INDEX IF EXISTS bot_adjudication_sp, bot_request_sp;
+      CREATE INDEX IF NOT EXISTS bot_request_actor_sp ON bot_request(world_id,actor_id,sp_reset) WHERE sp_reset IS NOT NULL;
       ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS received_at timestamptz, ADD COLUMN IF NOT EXISTS user_id uuid, ADD COLUMN IF NOT EXISTS command text;
       ALTER TABLE bot_request ALTER COLUMN received_at SET DEFAULT now();
       CREATE INDEX IF NOT EXISTS bot_request_received ON bot_request(world_id,received_at);
@@ -1916,7 +1916,6 @@ export class BotPlay {
     graph: string,
     world: string,
     actor: string,
-    user: string,
     report: NpcReport,
   ) {
     try {
@@ -1931,7 +1930,7 @@ export class BotPlay {
       const material = await this.#withWorldReadLock(
         world,
         async (db) =>
-          (await this.#search(world, actor, report.query, [], db, user)).visible
+          (await this.#search(world, actor, report.query, [], db)).visible
             .material,
       );
       return createHash("sha256").update(canonical(material)).digest("hex") ===
@@ -2123,7 +2122,6 @@ export class BotPlay {
                   world.id,
                   npc.world_id,
                   npc.actor_id,
-                  npc.user_id,
                   completed,
                 ));
               const readChoice = (raw: string) => {
@@ -5750,7 +5748,6 @@ export class BotPlay {
     query: z.infer<typeof PlaySearch>,
     dependencies: Dependency[] = [],
     db: Db = this.pool,
-    user?: string,
   ) {
     const w = await this.world(world, db),
       context = this.store.context(w.id, dependencies);
@@ -5783,8 +5780,7 @@ export class BotPlay {
           ));
           if (
             !reason &&
-            user &&
-            (await (sp ??= this.dailySp(world, user, db))).remaining <= 0
+            (await (sp ??= this.dailySp(world, actor, db))).remaining <= 0
           )
             reason = {
               code: "DAILY_SP_EXHAUSTED",
@@ -6226,7 +6222,7 @@ export class BotPlay {
   }
   async dailySp(
     world: string,
-    user: string,
+    actor: string,
     db: Db = this.pool,
     request?: string,
   ) {
@@ -6238,12 +6234,12 @@ export class BotPlay {
     const { rows } = await db.query<{ used: number; sp_limit: number }>(
       `SELECT
       coalesce((SELECT daily_sp_limit FROM world_construction WHERE id=$1),100) AS sp_limit,
-      (SELECT coalesce(sum(sp_amount),0) FROM bot_request WHERE world_id=$1 AND sp_user=$2 AND sp_reset=$3)
+      (SELECT coalesce(sum(sp_amount),0) FROM bot_request WHERE world_id=$1 AND actor_id=$2 AND sp_reset=$3)
       + (SELECT coalesce(sum(greatest(a.sp_amount-coalesce(r.sp_amount,0),0)),0)
          FROM bot_adjudication a
-         LEFT JOIN bot_request r ON r.id=a.request_id AND r.sp_user=a.sp_user AND r.sp_reset=a.sp_reset
-         WHERE a.world_id=$1 AND a.sp_user=$2 AND a.sp_reset=$3 AND a.request_id IS DISTINCT FROM $4 AND a.expires_at>clock_timestamp()) AS used`,
-      [world, user, resetsAt, request ?? null],
+         LEFT JOIN bot_request r ON r.id=a.request_id AND r.actor_id=a.actor_id AND r.sp_reset=a.sp_reset
+         WHERE a.world_id=$1 AND a.actor_id=$2 AND a.sp_reset=$3 AND a.request_id IS DISTINCT FROM $4 AND a.expires_at>clock_timestamp()) AS used`,
+      [world, actor, resetsAt, request ?? null],
     );
     const { used, sp_limit: limit } = rows[0]!;
     return { remaining: Math.max(0, limit - used), limit, resetsAt };
@@ -6258,7 +6254,7 @@ export class BotPlay {
   ) {
     await this.#withWorldReadLock(world, async (db) => {
       await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,309))", [
-        world + user,
+        world + actor,
       ]);
       const previous = (
         await db.query<{
@@ -6277,7 +6273,7 @@ export class BotPlay {
         actor,
       );
       if (prohibition) reject(prohibition.code, prohibition.message);
-      const sp = await this.dailySp(world, user, db, request);
+      const sp = await this.dailySp(world, actor, db, request);
       if (sp.remaining < amount)
         reject(
           "DAILY_SP_EXHAUSTED",
@@ -7827,7 +7823,7 @@ export class BotPlay {
       if (fresh.length)
         await db.query(
           "SELECT pg_advisory_xact_lock(hashtextextended($1,309))",
-          [world + user],
+          [world + actor],
         );
       const saved = (
         await db.query<{ creation_rolls: Result[] | null }>(
@@ -12458,7 +12454,7 @@ export class BotPlay {
             commitId: receipt.commitId,
             ...drawn,
             spentSp: prior.spent,
-            dailySp: await this.dailySp(world, user),
+            dailySp: await this.dailySp(world, actor),
             action: { command: "draw", message: drawn.message },
           };
           await this.pool.query(
@@ -12760,7 +12756,7 @@ export class BotPlay {
             reject("TURN_REQUIRED", "申請した手番は終了しました");
         }
         let sp: ReturnType<BotPlay["dailySp"]> | undefined;
-        const dailySp = () => (sp ??= this.dailySp(world, user, db));
+        const dailySp = () => (sp ??= this.dailySp(world, actor, db));
         const result = {
           ...(isStorageAction(input)
             ? await storageCommand(
@@ -12914,7 +12910,7 @@ export class BotPlay {
                   : "同行は認められませんでした",
               },
               spentSp: saved.spent,
-              dailySp: await this.dailySp(world, user, db),
+              dailySp: await this.dailySp(world, actor, db),
             }
           : companion;
         return await finish(result);
@@ -13437,7 +13433,6 @@ export class BotPlay {
                 input.query,
                 [],
                 db,
-                user,
               );
               result = queried.visible;
               const members = d.members
@@ -13471,9 +13466,8 @@ export class BotPlay {
               if (appearance) {
                 const { appearances, ...description } = appearance;
                 // 出現の確定で依存版が進む。本人が次の操作に使えるよう、確定後の素材と版を返す。
-                result = (
-                  await this.#search(world, actor, input.query, [], db, user)
-                ).visible;
+                result = (await this.#search(world, actor, input.query, [], db))
+                  .visible;
                 await this.#addInstants(
                   db,
                   session,
@@ -14333,7 +14327,7 @@ export class BotPlay {
         ...result,
         ...status,
         spentSp: saved.spent,
-        dailySp: await this.dailySp(world, user, db),
+        dailySp: await this.dailySp(world, actor, db),
         ...(teamArrival ? { teamArrival } : {}),
       };
       const owner =
