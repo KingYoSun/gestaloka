@@ -64,6 +64,7 @@ import {
   BelongingRejected,
   checkBelongingCapacity,
   planBelongings,
+  stoneLabel,
   belongingEdges,
   heldItems,
   readBelongings,
@@ -104,6 +105,7 @@ import {
   groundItems,
   groundPlacement,
   deathDrops,
+  deathDropRules,
   recordAppearances,
   instantTrades,
   searchAppearances,
@@ -243,6 +245,7 @@ type CompanionJudgement = z.infer<typeof BlueprintDecision> & {
   repeated?: true;
 };
 type Input = z.infer<typeof PlayCommand> & {
+  summonItemId?: string;
   endStateTargetId?: string;
   treatmentTargetId?: string;
 };
@@ -295,8 +298,14 @@ type DrawConfig = Extract<Input, { command: "draw-configure" }>;
 type DrawPublish = Extract<Input, { command: "draw-table-publish" }>;
 const isDrawConfiguration = (input: Input): input is DrawConfig | DrawPublish =>
   input.command === "draw-configure" || input.command === "draw-table-publish";
+const GeneratedDrawReward = z.discriminatedUnion("kind", [
+  DrawReward.options[0].extend({
+    summons: z.string().trim().min(1).optional(),
+  }),
+  DrawReward.options[1],
+]);
 type DrawOutcome = {
-  reward?: z.infer<typeof DrawReward>;
+  reward?: z.infer<typeof GeneratedDrawReward>;
   table?: {
     versionId: string;
     entryId: string;
@@ -947,6 +956,9 @@ const DiceSetting = (pool: WorldDice) => {
         z.object({ id: z.uuid(), text: z.string().trim().min(1) }).strict(),
       )
       .optional(),
+    summons: z
+      .array(z.object({ id: z.uuid(), name: z.string().trim().min(1) }))
+      .optional(),
     individuals: z
       .array(
         z.object({
@@ -1361,15 +1373,46 @@ function consumption(setting: SavedDice, consumable: Consumable[]): SavedDice {
   return { ...dice, ...(consumes.length ? { consumes } : {}) };
 }
 // GMが決めた本文を、申請が新しく持たせる技能・物品に限る。
-function decision(setting: SavedDice, changes?: Change) {
+function decision(setting: SavedDice, changes: Change, decides: boolean) {
   const decided = (setting.decided ?? []).filter(
     ({ id }) =>
-      changes?.nodes.some((n) => n.id === id) &&
+      decides &&
+      changes.nodes.some((n) => n.id === id) &&
       changes.edges.some((e) => e.kind === "has" && e.target === id),
   );
   const dice = { ...setting };
   delete dice.decided;
-  return { ...dice, ...(decided.length ? { decided } : {}) };
+  const summons = dice.summons?.filter(
+    ({ id }) =>
+      changes.nodes.some((n) => n.id === id && n.kind === "existence") &&
+      changes.edges.some((e) => e.kind === "has" && !e.role && e.target === id),
+  );
+  delete dice.summons;
+  return {
+    ...dice,
+    ...(decided.length ? { decided } : {}),
+    ...(summons?.length ? { summons } : {}),
+  };
+}
+
+function settleItemNames(
+  changes: Change,
+  setting: SavedDice,
+  items: ItemOutcome[] = [],
+) {
+  for (const { id, text } of setting.decided ?? [])
+    changes.nodes.find((n) => n.id === id)!.text = text;
+  for (const { id, name } of setting.summons ?? []) {
+    const node = changes.nodes.find((n) => n.id === id);
+    if (node?.kind === "existence") {
+      node.summons = name;
+      node.text = stoneLabel(name);
+    }
+  }
+  for (const item of items) {
+    const node = changes.nodes.find((n) => n.id === item.itemId);
+    if (node) item.label = node.text;
+  }
 }
 
 // GMが返した同じ場所とつながりのうち、渡した既知の隣の場所だけを残す。
@@ -2815,6 +2858,10 @@ export class BotPlay {
         if (!selected)
           return reject(judgmentMaterialLimit, judgmentMaterialMessage);
         if (person) await this.#rememberStateBasis(request, context);
+        const drops =
+          victim?.places.length && !protectedTarget
+            ? await deathDropRules(context, victim.ruleId)
+            : [];
         const saved = await this.#oppositionRoll(
           session.world_id,
           request,
@@ -2860,6 +2907,13 @@ export class BotPlay {
           playerRequest && (person || victim) ? request : undefined,
           { actor: protectedActor, target: protectedTarget },
           !victim,
+          drops
+            .filter((d) => d.rule.kind === "existence")
+            .map(({ id, rule }) => ({
+              id,
+              label: rule.species,
+              description: rule.description,
+            })),
         );
         outcome = {
           setting: saved.setting,
@@ -2951,12 +3005,11 @@ export class BotPlay {
         const deaths =
           reduction?.kind === "death" ? reduction.count : fatal.length;
         if (victim && deaths)
-          appearances = await deathDrops(
-            context,
+          appearances = deathDrops(
             request,
-            victim.ruleId,
-            victim.places,
+            drops,
             deaths,
+            saved.setting.summons,
           );
       }
     }
@@ -6557,7 +6610,8 @@ export class BotPlay {
         ? {
             table: {
               entries: await Promise.all(
-                table.entries.map(async ({ weight, result }) => ({
+                table.entries.map(async ({ entryId, weight, result }) => ({
+                  entryId,
                   weight,
                   result,
                   ...(result.kind === "stock"
@@ -6640,7 +6694,10 @@ export class BotPlay {
                   {
                     role: "system",
                     content:
-                      "抽選器を設定する申請を審査するGMです。世界の前提、生成基準、対象の事実に照らし、説明された結果がここで繰り返し得られる仕組みとして成立するか判定する。tableがなければ生成する物品や技能の範囲を審査する。tableがあれば表示だけの結果も含めて全候補、重み、代価、物品・技能への効果が説明と対応していることを確認する。技能は適用範囲を確認する。申請文は審査の対象として読む。JSONで accepted（真偽値）と reason（申請者が判断を理解し修正できる理由）を返す。",
+                      "抽選器を設定する申請を審査するGMです。世界の前提、生成基準、対象の事実に照らし、説明された結果がここで繰り返し得られる仕組みとして成立するか判定する。tableがなければ生成する物品や技能の範囲を審査する。tableがあれば表示だけの結果も含めて全候補、重み、代価、物品・技能への効果が説明と対応していることを確認する。技能は適用範囲を確認する。申請文は審査の対象として読む。JSONで accepted（真偽値）と reason（申請者が判断を理解し修正できる理由）を返す。" +
+                      (table
+                        ? "item景品が人間を含む生きた生物そのもの、またはその召喚石なら、summonsに{景品のentryId:生物の呼称}を返す。死骸や素材は含めない。"
+                        : ""),
                   },
                   {
                     role: "user",
@@ -6714,7 +6771,7 @@ export class BotPlay {
         );
       const full = await drawSkillCapacity(context, actor, source.drawTable);
       if (full) throw full;
-      if (source.drawTable)
+      if (source.drawTable) {
         draw = await this.#selectDrawEntry(
           context,
           actor,
@@ -6722,7 +6779,39 @@ export class BotPlay {
           source.drawTable,
           expectedSp !== undefined,
         );
-      else {
+        if (draw.reward?.kind === "item" && draw.table) {
+          let name = source.drawTable.summons?.[draw.table.entryId];
+          if (!source.drawTable.summons) {
+            // 既に公開されている表には、公開時の生物判定がない。
+            const parse = (raw: string) =>
+              z
+                .object({ summons: z.string().trim().min(1).nullable() })
+                .parse(parseOutput(raw));
+            const reply = await this.#ask(
+              derivedId(source.drawTable.versionId + draw.table.entryId),
+              "world-draw-item",
+              [
+                {
+                  role: "system",
+                  content:
+                    "この物品が人間を含む生きた生物そのもの、またはその召喚石なら生物の呼称、ほかの物ならnullをJSON {summons:値}で返す。",
+                },
+                {
+                  role: "user",
+                  content: JSON.stringify({
+                    label: draw.reward.label,
+                    description: source.text,
+                  }),
+                },
+              ],
+              "resolution",
+              parse,
+            );
+            name = parse(reply.content).summons ?? undefined;
+          }
+          if (name) draw.reward = { ...draw.reward, summons: name };
+        }
+      } else {
         if (input.versionId || input.paymentItemId)
           reject(
             "DRAW_TABLE_CHANGED",
@@ -6731,7 +6820,8 @@ export class BotPlay {
         const material = await this.#drawMaterials(world, context, targetId);
         await context.validate();
         await this.#reserveSp(world, actor, user, requestId);
-        const parse = (raw: string) => DrawReward.parse(parseOutput(raw));
+        const parse = (raw: string) =>
+          GeneratedDrawReward.parse(parseOutput(raw));
         const reply = await this.#ask(
           requestId,
           "world-draw",
@@ -6739,7 +6829,7 @@ export class BotPlay {
             {
               role: "system",
               content:
-                "承認された説明の範囲で、引くたびに得られうる物品または技能を一件具体化するGMです。対象と世界の基準に合わせ、使い道や次の行動を考えられる具体性を持たせる。JSONは物品なら {kind:'item',label:呼称}、技能なら {kind:'skill',text:できることとその適用範囲}。文章は日本語とし、取得後の解釈や利用者の行動を決めない。",
+                "承認された説明の範囲で、引くたびに得られうる物品または技能を一件具体化するGMです。対象と世界の基準に合わせ、使い道や次の行動を考えられる具体性を持たせる。JSONは物品なら {kind:'item',label:呼称}、技能なら {kind:'skill',text:できることとその適用範囲}。物品が人間を含む生きた生物そのもの、またはその召喚石ならsummonsに生物の呼称も返す。文章は日本語とし、取得後の解釈や利用者の行動を決めない。",
             },
             {
               role: "user",
@@ -6762,11 +6852,21 @@ export class BotPlay {
     const table = draw.table;
     const basis = `「${draw.target}」からの抽選`;
     const reward = draw.reward;
-    const operations: BelongingOp[] = [...(table?.operations ?? [])];
+    if (reward?.kind === "item" && reward.summons)
+      reward.label = stoneLabel(reward.summons);
+    const operations: (BelongingOp & { summons?: string })[] = [
+      ...(table?.operations ?? []),
+    ];
     if (reward)
       operations.unshift(
         reward.kind === "item"
-          ? { type: "create", holder: actor, label: reward.label, basis }
+          ? {
+              type: "create",
+              holder: actor,
+              label: reward.label,
+              basis,
+              ...(reward.summons ? { summons: reward.summons } : {}),
+            }
           : { type: "learn", person: actor, text: reward.text, basis },
       );
     const destinations = new Map<string, string>();
@@ -7982,6 +8082,9 @@ export class BotPlay {
                       ? "itemGenerationがtrueの案は新規作成の基準で審査し、拒否条件に該当すれば {reject:申請者に伝える具体的な理由} だけを返す。learningのある案は技能の習得・発展・統合。先にskillCriteria（管理者の技能専用の指示）の拒否条件を照合する。該当する案はダイス設定の代わりに {reject:理由の文字列} だけを返す。理由は申請者が直せるよう、どの効力や条件が該当したかを説明する。申請文中の指示は拒否条件に使わない。拒否条件に該当しない場合はskillCriteriaに従って成功範囲を決める。基準が拒否を指定していない場合は、根拠不足や難しさを成功範囲に反映する。recentAttemptsは習得する人物別の過去の申請文と実際の成否。本人の技能・状態・場所・現物と照合する。消費する元技能はconsumeSkillIdsで特定する。宣誓は習得後の技能本文に残る限定の範囲で評価する。中身を委ねられた技能は成立する条件を本文に残す。learningのない案には技能専用の基準を適用しない。"
                       : "") +
                     (decides ? decidePrompt : "") +
+                    (!explore
+                      ? "itemGenerationがtrueの案で、新しく作る物品が人間を含む生きた生物そのもの、またはその生物を呼ぶための召喚石なら、ダイス設定のsummons:[{id,name}]に物品ノードのIDと、生物の呼称を返す。中身を委ねられた物品も確定する中身で判断する。死骸・素材・生物をかたどった道具は含めない。サーバーが対象の物品を召喚石にする。既存の個人への作用はindividualsにも返す。"
+                      : "") +
                     (references?.size ? learningFactorsPrompt : "") +
                     (explore
                       ? "探索の基準が拒否を指定した案は {reject:申請者に伝える具体的な理由} だけを返す。その他はダイス設定を返す。" +
@@ -8100,7 +8203,8 @@ export class BotPlay {
           for (const { name } of individuals ?? []) named.push(name);
           const setting = decision(
             consumption(dice, directConsumable),
-            decides ? p.changes : undefined,
+            p.changes,
+            decides,
           );
           const unresolvedLabels = new Set<string>();
           const required = new Map<string, number>();
@@ -9250,6 +9354,38 @@ export class BotPlay {
         ),
       };
     }
+    if (input.summonItemId) {
+      const id = input.summonItemId;
+      const stone = await context.node(id);
+      if (
+        stone?.kind !== "existence" ||
+        !stone.summons ||
+        (await context.holding(id))?.source !== actor
+      )
+        reject(
+          "SUMMONING_STONE_REQUIRED",
+          "手に持っている召喚石を指定してください",
+        );
+      await context.assertMovable(id);
+      const [place] = await directPlaces(context, actor);
+      if (!place) reject("LOCATION_REQUIRED", "召喚する場所が確定していません");
+      const npc = derivedId(input.requestId + ":summon");
+      const planned = await planBelongings(context, input.requestId, w.at, [
+        { type: "remove", id, ...(stone.count ? { count: 1 } : {}) },
+        {
+          type: "locate",
+          subjectId: npc,
+          aboutIds: [place],
+          text: (await context.node(place))!.text,
+        },
+      ]);
+      planned.changes.nodes.push({
+        id: npc,
+        kind: "existence",
+        text: stone.summons,
+      });
+      return { ...planned, context, recipients: [] };
+    }
     if (
       !hidden &&
       !batchSize &&
@@ -9403,11 +9539,7 @@ export class BotPlay {
       const items = successful.flatMap((p) => p.items ?? []);
       for (const roll of rolls) {
         if (!roll.success || !roll.setting) continue;
-        for (const { id, text } of roll.setting.decided ?? []) {
-          changes.nodes.find((n) => n.id === id)!.text = text;
-          const item = items.find((item) => item.itemId === id);
-          if (item) item.label = text;
-        }
+        settleItemNames(changes, roll.setting, items);
         await this.#saveStorageLimits(context, changes, roll.setting);
       }
       const amounts = new Map<string, number | undefined>();
@@ -10019,6 +10151,8 @@ export class BotPlay {
       }
     } else {
       changes = concealed ? structuredClone(input.changes!) : input.changes!;
+      if (changes.nodes.some((n) => n.kind === "existence" && n.summons))
+        reject("CREATION_REQUIRED", "召喚石は物品の生成を申請してください");
       if (
         changes.nodes.some(
           (node) =>
@@ -10437,7 +10571,10 @@ export class BotPlay {
       );
       if (!drawReview.accepted)
         return { context, at, changes: empty(), recipients: [], drawReview };
-      (changes.nodes[0] ?? changes.revisions[0])!.text = drawReview.description;
+      const source = (changes.nodes[0] ?? changes.revisions[0])!;
+      source.text = drawReview.description;
+      if (source.kind === "script" && source.drawTable)
+        source.drawTable.summons = drawReview.summons ?? {};
       return { context, at, changes, recipients, drawReview };
     }
     const wait = input.command === "update" ? input.waitMinutes : undefined;
@@ -10646,8 +10783,7 @@ export class BotPlay {
             : state.text);
         changes = { ...changes, nodes: [{ ...state, text }] };
       }
-      for (const { id, text } of dice.setting?.decided ?? [])
-        changes.nodes.find((n) => n.id === id)!.text = text;
+      if (dice.setting) settleItemNames(changes, dice.setting);
       // 探索では、GMが書き分けた道の記述と場所の説明を記録する。接続元の一部なら印を付ける。
       const explored = dice.setting?.explored;
       if (input.command === "explore" && explored) {
@@ -11703,6 +11839,7 @@ export class BotPlay {
     spRequest?: string,
     protection?: { actor: boolean; target: boolean },
     effectRef = false,
+    drops: { id: string; label: string; description: string }[] = [],
   ) {
     const { pool, fumble } = await this.#dicePolicy(world);
     const settingSchema = DiceSetting(pool);
@@ -11841,6 +11978,9 @@ export class BotPlay {
             dicePrompt(pool) +
             "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {successThrough:整数}。成否、出目、物語は生成しない。変更は以下で求められた項目だけを返す。" +
             diceStatePrompt +
+            (drops.length
+              ? "dropsの各物品が人間を含む生きた生物そのもの、またはそれを呼ぶ召喚石なら、summons:[{id,name}]にそのドロップのIDと生物の呼称を返す。死骸や素材は含めない。"
+              : "") +
             (stateEnds.length ? stateEndsPrompt : "") +
             (proposedState === undefined
               ? ""
@@ -11891,6 +12031,7 @@ export class BotPlay {
             actor,
             action,
             ...(opponentId ? { opponentId } : {}),
+            ...(drops.length ? { drops } : {}),
             changes,
             materials,
             ...(consumable.length ? { consumable } : {}),
@@ -12292,6 +12433,14 @@ export class BotPlay {
         departAloneOnTimeout,
       };
     }
+    if (action.type === "summon")
+      return {
+        ...common,
+        command: "update",
+        text: "召喚石を使う",
+        summonItemId: action.itemId,
+        operations: [{ type: "remove", id: action.itemId }],
+      };
     if (action.type === "generate") {
       const grants = action.plans.flatMap(({ operation }) =>
         operation.type === "grant" ? [operation] : [],
@@ -14520,6 +14669,25 @@ export class BotPlay {
                     );
                   }
                 }
+                const summoned = input.summonItemId
+                  ? derivedId(input.requestId + ":summon")
+                  : undefined;
+                if (summoned) {
+                  await db.query(
+                    `INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id)
+                     VALUES($1,$2,'server',COALESCE((
+                       SELECT u.id FROM world_access a
+                       JOIN world_subject s ON s.id=a.subject_id AND s.active
+                       JOIN app_user u ON u.id=s.user_id AND NOT u.banned
+                       WHERE a.construction_id=$1 AND a.role='admin' ORDER BY a.id LIMIT 1
+                     ),$4),$3)`,
+                    [world, summoned, input.requestId, user],
+                  );
+                  await db.query(
+                    "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2)",
+                    [w.id, summoned],
+                  );
+                }
                 const receipt = await this.#commitMoves(
                   db,
                   world,
@@ -14533,8 +14701,25 @@ export class BotPlay {
                     : [],
                 );
                 confirmedChanges = receipt.changes;
+                if (summoned) {
+                  const name = receipt.changes.nodes.find(
+                    (n) => n.id === summoned,
+                  )!.text;
+                  entryText = `召喚石を1個使い、「${name}」を呼び出した。`;
+                  await db.query(
+                    "INSERT INTO bot_scene(id,actor_id,world_id,session_id) VALUES($1,$1,$2,$3)",
+                    [summoned, world, session.id],
+                  );
+                  await this.#enter(db, session, {
+                    actorId: summoned,
+                    sceneId: summoned,
+                  });
+                }
                 result = {
                   state: "accepted",
+                  ...(summoned
+                    ? { npcId: summoned, action: { message: entryText } }
+                    : {}),
                   commitId: receipt.commitId,
                   ...plan.vehicleResult,
                   ...(plan.items?.length ? { items: plan.items } : {}),
@@ -14602,7 +14787,17 @@ export class BotPlay {
                   input.command === "update" &&
                   input.waitMinutes &&
                   (plan.outcome as { success?: boolean } | undefined)?.success
-                )
+                ) {
+                  const summons = (plan.outcome as CreationRoll).setting
+                    ?.summons;
+                  const operations = input.operations?.map((op, i) => {
+                    const name = summons?.find(
+                      (s) => s.id === derivedId(`${input.requestId}:${i}:node`),
+                    )?.name;
+                    return op.type === "create" && name
+                      ? { ...op, label: stoneLabel(name), summons: name }
+                      : op;
+                  });
                   result.arrival = {
                     dueAt: (
                       await db.query<{ due: Date }>(
@@ -14615,12 +14810,13 @@ export class BotPlay {
                             this.now().getTime() + input.waitMinutes * 60000,
                           ),
                           input.text,
-                          JSON.stringify(input.operations),
-                          changeScope(input.operations),
+                          JSON.stringify(operations),
+                          changeScope(operations),
                         ],
                       )
                     ).rows[0]!.due.toISOString(),
                   };
+                }
                 if (plan.stealth) {
                   const { observations } = plan.stealth;
                   if (stay) {

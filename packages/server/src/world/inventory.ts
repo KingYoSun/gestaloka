@@ -153,6 +153,7 @@ export const inventoryStackKey = (
             item.text,
             item.seriesId ?? null,
             unitsPerSlot(item, standard),
+            ...(item.summons ? [item.summons] : []),
           ]),
         )
         .digest("hex")

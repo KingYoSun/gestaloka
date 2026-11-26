@@ -17,7 +17,11 @@ const latest = Number.MAX_SAFE_INTEGER;
 const text = z.string().trim().min(1);
 
 export const DrawReview = z
-  .object({ accepted: z.boolean(), reason: text })
+  .object({
+    accepted: z.boolean(),
+    reason: text,
+    summons: z.record(z.uuid(), text).optional(),
+  })
   .strict();
 type Db = Pick<pg.Pool, "query">;
 type Draft = Pick<DrawTable, "entries" | "price"> & {

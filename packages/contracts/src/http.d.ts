@@ -3549,6 +3549,11 @@ export interface paths {
                         command: "apply";
                         action: {
                             /** @enum {string} */
+                            type: "summon";
+                            /** Format: uuid */
+                            itemId: string;
+                        } | {
+                            /** @enum {string} */
                             type: "direct";
                             text: string;
                             operations: ({
@@ -4482,6 +4487,11 @@ export interface paths {
                         /** @enum {string} */
                         command: "apply";
                         action: {
+                            /** @enum {string} */
+                            type: "summon";
+                            /** Format: uuid */
+                            itemId: string;
+                        } | {
                             /** @enum {string} */
                             type: "direct";
                             text: string;
@@ -5622,6 +5632,8 @@ export interface paths {
                                              * @description 管理者が指定する物品の系列ID
                                              */
                                             seriesId?: string;
+                                            /** @description 召喚石を使うと現れる生物の呼称 */
+                                            summons?: string;
                                             unitsPerSlot?: number | "unlimited";
                                             storageLimitSlots?: number;
                                             /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -5667,6 +5679,10 @@ export interface paths {
                                                         count: number;
                                                     };
                                                 }[];
+                                                /** @description 公開時に判定した景品ごとの召喚先 */
+                                                summons?: {
+                                                    [key: string]: string;
+                                                };
                                                 price: {
                                                     /** Format: uuid */
                                                     storageId: string;
@@ -5721,6 +5737,7 @@ export interface paths {
                                                 description: string;
                                                 /** Format: uuid */
                                                 id: string;
+                                                summons?: string;
                                                 /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                                 count?: number;
                                                 /**
@@ -5780,6 +5797,8 @@ export interface paths {
                                              * @description 管理者が指定する物品の系列ID
                                              */
                                             seriesId?: string;
+                                            /** @description 召喚石を使うと現れる生物の呼称 */
+                                            summons?: string;
                                             unitsPerSlot?: number | "unlimited";
                                             storageLimitSlots?: number;
                                             /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -5825,6 +5844,10 @@ export interface paths {
                                                         count: number;
                                                     };
                                                 }[];
+                                                /** @description 公開時に判定した景品ごとの召喚先 */
+                                                summons?: {
+                                                    [key: string]: string;
+                                                };
                                                 price: {
                                                     /** Format: uuid */
                                                     storageId: string;
@@ -5879,6 +5902,7 @@ export interface paths {
                                                 description: string;
                                                 /** Format: uuid */
                                                 id: string;
+                                                summons?: string;
                                                 /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                                 count?: number;
                                                 /**
@@ -9229,6 +9253,8 @@ export interface paths {
                                      * @description 管理者が指定する物品の系列ID
                                      */
                                     seriesId?: string;
+                                    /** @description 召喚石を使うと現れる生物の呼称 */
+                                    summons?: string;
                                     unitsPerSlot?: number | "unlimited";
                                     storageLimitSlots?: number;
                                     /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -9274,6 +9300,10 @@ export interface paths {
                                                 count: number;
                                             };
                                         }[];
+                                        /** @description 公開時に判定した景品ごとの召喚先 */
+                                        summons?: {
+                                            [key: string]: string;
+                                        };
                                         price: {
                                             /** Format: uuid */
                                             storageId: string;
@@ -9328,6 +9358,7 @@ export interface paths {
                                         description: string;
                                         /** Format: uuid */
                                         id: string;
+                                        summons?: string;
                                         /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                         count?: number;
                                         /**
@@ -9387,6 +9418,8 @@ export interface paths {
                                      * @description 管理者が指定する物品の系列ID
                                      */
                                     seriesId?: string;
+                                    /** @description 召喚石を使うと現れる生物の呼称 */
+                                    summons?: string;
                                     unitsPerSlot?: number | "unlimited";
                                     storageLimitSlots?: number;
                                     /** @description 本人以外で読める参加者。allはその場の全員、配列は指定した人物だけで、空なら本人だけ。省くと、手にしている物と状態は全員、技能と保管先の中身は本人だけ */
@@ -9432,6 +9465,10 @@ export interface paths {
                                                 count: number;
                                             };
                                         }[];
+                                        /** @description 公開時に判定した景品ごとの召喚先 */
+                                        summons?: {
+                                            [key: string]: string;
+                                        };
                                         price: {
                                             /** Format: uuid */
                                             storageId: string;
@@ -9486,6 +9523,7 @@ export interface paths {
                                         description: string;
                                         /** Format: uuid */
                                         id: string;
+                                        summons?: string;
                                         /** @description 出現した一団の個体数、または一つにまとまった物品の個数 */
                                         count?: number;
                                         /**

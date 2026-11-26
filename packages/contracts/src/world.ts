@@ -63,6 +63,7 @@ export const SpawnRule = z.union([
 ]);
 export const Appearance = SpawnSubject.extend({
   id: z.uuid(),
+  summons: z.string().trim().min(1).optional(),
   count: spawnCount
     .optional()
     .describe("出現した一団の個体数、または一つにまとまった物品の個数"),
@@ -189,6 +190,12 @@ export const WorldNode = z.discriminatedUnion("kind", [
         .optional()
         .describe("物品の個数。無い物品は、個数を数えないひとまとまり"),
       seriesId: z.uuid().optional().describe("管理者が指定する物品の系列ID"),
+      summons: z
+        .string()
+        .trim()
+        .min(1)
+        .optional()
+        .describe("召喚石を使うと現れる生物の呼称"),
       unitsPerSlot: UnitsPerSlot.optional(),
       storageLimitSlots: z.number().int().positive().safe().optional(),
       viewers,
