@@ -27,6 +27,7 @@ import {
 export { BelongingOp } from "@gestaloka/contracts";
 import { BelongingOp } from "@gestaloka/contracts";
 export class BelongingRejected extends Error {}
+export const stoneLabel = (name: string) => name + "の召喚石";
 // モデルは操作を1件ずつJSON文字列で返す。操作の形を応答スキーマへ並べると、
 // 行動解決の構造化出力が文法の上限を超えるため、形は実行側で検証する。
 export function belongingOps(texts: readonly string[]) {
@@ -140,7 +141,7 @@ export async function planBelongings(
   context: WorldContext,
   commitId: string,
   requestedAt: number,
-  ops: readonly BelongingOp[],
+  ops: readonly (BelongingOp & { summons?: string })[],
   destinations?: Map<string, string>,
 ) {
   const change: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
@@ -311,6 +312,7 @@ export async function planBelongings(
           id: node,
           kind: "existence",
           text: op.label,
+          ...(op.summons ? { summons: op.summons } : {}),
           ...(op.count ? { count: op.count } : {}),
         });
         has(`${index}:hold`, op.holder, node, undefined, op.basis);
@@ -446,6 +448,9 @@ export async function planBelongings(
         id: node,
         kind: "existence",
         text: source.text,
+        ...(source.kind === "existence" && source.summons
+          ? { summons: source.summons }
+          : {}),
         count: part.count,
         ...(source.kind === "existence" && source.seriesId
           ? { seriesId: source.seriesId }
@@ -629,6 +634,8 @@ export async function changeBelongings(
   if (prior) return prior;
   const context = store.context(lease.worldId, input.dependencies),
     planned = await planBelongings(context, input.commitId, input.at, ops);
+  if (input.nodes?.some((node) => node.kind === "existence" && node.summons))
+    throw new BelongingRejected("召喚石は生成判定で作成してください");
   if (input.nodes?.some((node) => node.kind === "existence" && node.seriesId))
     throw new BelongingRejected("物品へ系列を付けるには管理者の確定が必要です");
   planned.changes.nodes.unshift(...(input.nodes ?? []));
@@ -651,6 +658,9 @@ const shown = (node: WorldNode | undefined) =>
     : {};
 const labelled = (node: WorldNode | undefined) => ({
   label: node?.text ?? "",
+  ...(node?.kind === "existence" && node.summons
+    ? { summons: node.summons }
+    : {}),
   ...(node?.kind === "existence" && node.count ? { count: node.count } : {}),
   ...(node?.kind === "existence" && node.seriesId
     ? { seriesId: node.seriesId }

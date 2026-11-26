@@ -8598,6 +8598,28 @@
                               "type": {
                                 "type": "string",
                                 "enum": [
+                                  "summon"
+                                ]
+                              },
+                              "itemId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "itemId"
+                            ],
+                            "additionalProperties": false,
+                            "description": "手持ちの召喚石を1個使い、現在地にサーバーNPCを呼び出す"
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": [
                                   "direct"
                                 ]
                               },
@@ -12021,6 +12043,28 @@
                       },
                       "action": {
                         "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "summon"
+                                ]
+                              },
+                              "itemId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "itemId"
+                            ],
+                            "additionalProperties": false,
+                            "description": "手持ちの召喚石を1個使い、現在地にサーバーNPCを呼び出す"
+                          },
                           {
                             "type": "object",
                             "properties": {
@@ -15978,6 +16022,11 @@
                                             "format": "uuid",
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
+                                          "summons": {
+                                            "description": "召喚石を使うと現れる生物の呼称",
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
                                           "unitsPerSlot": {
                                             "anyOf": [
                                               {
@@ -16200,6 +16249,14 @@
                                                     "result"
                                                   ],
                                                   "additionalProperties": false
+                                                }
+                                              },
+                                              "summons": {
+                                                "description": "公開時に判定した景品ごとの召喚先",
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                  "type": "string",
+                                                  "minLength": 1
                                                 }
                                               },
                                               "price": {
@@ -16461,6 +16518,10 @@
                                                   "type": "string",
                                                   "format": "uuid",
                                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "summons": {
+                                                  "type": "string",
+                                                  "minLength": 1
                                                 },
                                                 "count": {
                                                   "description": "出現した一団の個体数、または一つにまとまった物品の個数",
@@ -16667,6 +16728,11 @@
                                             "format": "uuid",
                                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                           },
+                                          "summons": {
+                                            "description": "召喚石を使うと現れる生物の呼称",
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
                                           "unitsPerSlot": {
                                             "anyOf": [
                                               {
@@ -16889,6 +16955,14 @@
                                                     "result"
                                                   ],
                                                   "additionalProperties": false
+                                                }
+                                              },
+                                              "summons": {
+                                                "description": "公開時に判定した景品ごとの召喚先",
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                  "type": "string",
+                                                  "minLength": 1
                                                 }
                                               },
                                               "price": {
@@ -17150,6 +17224,10 @@
                                                   "type": "string",
                                                   "format": "uuid",
                                                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "summons": {
+                                                  "type": "string",
+                                                  "minLength": 1
                                                 },
                                                 "count": {
                                                   "description": "出現した一団の個体数、または一つにまとまった物品の個数",
@@ -24953,6 +25031,11 @@
                                           "format": "uuid",
                                           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                         },
+                                        "summons": {
+                                          "description": "召喚石を使うと現れる生物の呼称",
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
                                         "unitsPerSlot": {
                                           "anyOf": [
                                             {
@@ -25175,6 +25258,14 @@
                                                   "result"
                                                 ],
                                                 "additionalProperties": false
+                                              }
+                                            },
+                                            "summons": {
+                                              "description": "公開時に判定した景品ごとの召喚先",
+                                              "type": "object",
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "minLength": 1
                                               }
                                             },
                                             "price": {
@@ -25436,6 +25527,10 @@
                                                 "type": "string",
                                                 "format": "uuid",
                                                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                              },
+                                              "summons": {
+                                                "type": "string",
+                                                "minLength": 1
                                               },
                                               "count": {
                                                 "description": "出現した一団の個体数、または一つにまとまった物品の個数",
@@ -25642,6 +25737,11 @@
                                           "format": "uuid",
                                           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                                         },
+                                        "summons": {
+                                          "description": "召喚石を使うと現れる生物の呼称",
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
                                         "unitsPerSlot": {
                                           "anyOf": [
                                             {
@@ -25864,6 +25964,14 @@
                                                   "result"
                                                 ],
                                                 "additionalProperties": false
+                                              }
+                                            },
+                                            "summons": {
+                                              "description": "公開時に判定した景品ごとの召喚先",
+                                              "type": "object",
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "minLength": 1
                                               }
                                             },
                                             "price": {
@@ -26125,6 +26233,10 @@
                                                 "type": "string",
                                                 "format": "uuid",
                                                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                              },
+                                              "summons": {
+                                                "type": "string",
+                                                "minLength": 1
                                               },
                                               "count": {
                                                 "description": "出現した一団の個体数、または一つにまとまった物品の個数",
