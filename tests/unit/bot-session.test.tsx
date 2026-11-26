@@ -258,6 +258,65 @@ test("公開設定を保存すると本人のプレイ画面だけで観戦URL�
   }
 });
 
+test("初期表示の再生を省き、最新ログが進むと選んだ音色と音量で一度鳴る", async () => {
+  const start = vi.fn();
+  const gain = { gain: { value: 1 }, connect: vi.fn() };
+  vi.stubGlobal(
+    "AudioContext",
+    class {
+      state = "running";
+      decodeAudioData = vi.fn().mockResolvedValue({});
+      createGain = () => gain;
+      createBufferSource = () => ({ connect: () => gain, start, stop() {} });
+    },
+  );
+  const loadSound = vi.fn();
+  server.use(
+    http.get(/\/sounds\/electro\.mp3$/, () => {
+      loadSound();
+      return HttpResponse.arrayBuffer(new ArrayBuffer(1));
+    }),
+  );
+  view.sceneId = scene;
+  const turn = (id: string, message: string) => ({
+    id,
+    payload: { transition: { at: "2026-11-26T00:00:00Z", message } },
+  });
+  view.entries = [turn("9007199254740992", "先に届いた記録")];
+  show();
+  await screen.findByText("先に届いた記録");
+  await open("効果音設定");
+  const settings = within(
+    screen.getByRole("dialog", { name: "プレイログの効果音" }),
+  );
+  const toggle = settings.getByRole<HTMLInputElement>("checkbox", {
+    name: "新しいログが届いたら効果音を鳴らす",
+  });
+  expect(toggle.checked).toBe(false);
+  const picker = settings.getByRole("combobox", { name: "音色" });
+  expect(within(picker).getAllByRole("option")).toHaveLength(4);
+  fireEvent.change(picker, { target: { value: "electro" } });
+  fireEvent.change(settings.getByRole("slider", { name: /音量/ }), {
+    target: { value: "30" },
+  });
+  fireEvent.click(toggle);
+  await open("閉じる");
+  expect(start).not.toHaveBeenCalled();
+  view.entries = [turn("9007199254740993", "新しく届いた記録")];
+  await screen.findByText("新しく届いた記録", {}, { timeout: 3000 });
+  await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+  expect(loadSound).toHaveBeenCalledTimes(1);
+  expect(gain.gain.value).toBe(0.3);
+  view.actorId = peer;
+  await screen.findByText(/の手番を待っています/, {}, { timeout: 3000 });
+  expect(start).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("link", { name: "アカウント設定" }));
+  const saved = await screen.findByRole<HTMLSelectElement>("combobox", {
+    name: "音色",
+  });
+  expect(saved.value).toBe("electro");
+});
+
 test("観戦画面で進行中のセッションの記録を前後に移動できる", async () => {
   const ownerReads = vi.fn();
   server.use(
@@ -296,6 +355,12 @@ test("観戦画面で進行中のセッションの記録を前後に移動で�
   show(watchPath);
   await screen.findByRole("heading", { name: "「観測者」の観戦" });
   await screen.findByText("渡し船が戻った");
+  await open("効果音設定");
+  expect(
+    screen.getByRole("dialog", { name: "プレイログの効果音" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "試聴する" })).toBeTruthy();
+  await open("閉じる");
   const log = screen.getByRole("region", { name: "セッションのチャット" });
   expect(within(log).getAllByRole("article")[0]?.textContent).toContain(
     "船が岸に着いた",

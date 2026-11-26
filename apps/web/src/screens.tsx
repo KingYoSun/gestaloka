@@ -1,4 +1,4 @@
-import { PlayLog, PlayLogRows } from "./play-panels.js";
+import { PlayLog, PlayLogRows, PlayLogSoundButton } from "./play-panels.js";
 import { BotSession } from "./BotSession.js";
 import { useEffect, useRef, useState } from "react";
 import { Link, useRouter, useSearch } from "@tanstack/react-router";
@@ -20,6 +20,8 @@ import { Publication, Presets, WorldBudgetSettings } from "./operations-ui.js";
 import { operate } from "./operations-client.js";
 import { RichText } from "./RichText.js";
 import type { MethodResponse } from "openapi-react-query";
+import { PlayLogSoundSettings } from "./play-log-sound.js";
+import { useSurface } from "./surface.js";
 
 const PromptForm = CreateWorld.omit({ requestId: true }).extend({
   prompt: z.string().min(1, "初期設定を入力してください"),
@@ -36,6 +38,7 @@ const stateLabels = {
 };
 
 export function Account() {
+  const surface = useSurface();
   const client = useQueryClient();
   const query = $api.queryOptions("get", "/api/account/spectating");
   const settings = useQuery(query);
@@ -80,6 +83,12 @@ export function Account() {
         {save.isPending && <Notice>公開設定を保存しています</Notice>}
         {save.error && <Problem error={save.error} />}
       </section>
+      {surface === "user" && (
+        <section className="form-panel mt-4 space-y-3">
+          <h2>プレイログの効果音</h2>
+          <PlayLogSoundSettings />
+        </section>
+      )}
       <section className="form-panel mt-4">
         <h2>ログイン方法とデータの引き継ぎ</h2>
         <ul>
@@ -130,8 +139,9 @@ export function Watch({ id, actorId }: { id: string; actorId: string }) {
     );
   return (
     <main className="page home">
-      <div className="page-title">
+      <div className="page-title flex items-center justify-between gap-2">
         <h1>{title}</h1>
+        {!query.error && query.data && <PlayLogSoundButton />}
       </div>
       {query.error ? (
         <Problem error={query.error} />
@@ -209,7 +219,11 @@ function SpectatorLog({
       ) : !scene || scene.id !== latest.id ? (
         <Notice>観戦の記録を読み込んでいます</Notice>
       ) : (
-        <PlayLogRows entries={scene.entries} timestamp={(row) => row.at}>
+        <PlayLogRows
+          entries={scene.entries}
+          liveScene={before ? undefined : scene.id}
+          timestamp={(row) => row.at}
+        >
           {({ lines }) =>
             lines.map(({ speaker, text }, index) => (
               <div key={index}>

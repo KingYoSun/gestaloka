@@ -7,6 +7,7 @@ import {
   DiagramFlowHorizontal,
   PanelLeft,
   PanelRight,
+  Volume2,
   X,
 } from "lucide-react";
 import { Dialog, Tabs, Tooltip } from "radix-ui";
@@ -27,6 +28,7 @@ import {
 import { RichText } from "./RichText.js";
 import { Notice, Problem } from "./presentation.js";
 import { $api, api } from "./api.js";
+import { PlayLogSoundSettings, usePlayLogSound } from "./play-log-sound.js";
 
 const Item = z.object({
   id: z.uuid().optional(),
@@ -135,6 +137,28 @@ function PanelDialog({
   );
 }
 
+export function PlayLogSoundButton() {
+  return (
+    <Dialog.Root>
+      <Dialog.Trigger asChild>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="play-icon"
+          aria-label="効果音設定"
+          title="効果音設定"
+        >
+          <Volume2 />
+        </Button>
+      </Dialog.Trigger>
+      <PanelDialog title="プレイログの効果音">
+        <PlayLogSoundSettings />
+      </PanelDialog>
+    </Dialog.Root>
+  );
+}
+
 export function PlayLog({
   toolbar,
   children,
@@ -149,6 +173,7 @@ export function PlayLog({
     <div className="play-center">
       <div className="play-toolbar">
         {toolbar}
+        <PlayLogSoundButton />
         <Button
           type="button"
           size="icon"
@@ -190,14 +215,18 @@ export function PlayLog({
 
 export function PlayLogRows<T extends { id: string }>({
   entries,
+  liveScene,
   timestamp,
   children,
 }: {
   entries: T[];
+  liveScene?: string | undefined;
   timestamp: (row: T) => string | null | undefined;
   children: (row: T) => ReactNode;
 }) {
-  const [shown] = useState(() => Number(entries.at(-1)?.id ?? 0));
+  const latest = entries.at(-1)?.id;
+  const [shown] = useState(() => Number(latest ?? 0));
+  usePlayLogSound(liveScene, latest);
   if (!entries.length)
     return <p className="muted">表示できるプレイログはまだありません</p>;
   return [...entries].reverse().map((row) => {
