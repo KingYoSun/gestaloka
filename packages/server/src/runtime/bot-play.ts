@@ -1,12 +1,15 @@
 import { classifyNpcHistory, type NpcMemory } from "./npc-history.js";
 import { npcOperations, type NpcReport, type NpcTask } from "./npc-work.js";
+import { diceFields, dicePrompt, rollDice } from "./dice.js";
 import { playDiceMessages } from "./play-dice-messages.js";
 import { ModelCallInProgress } from "../llm/budget.js";
-import { createHash, randomInt, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 import { z } from "zod";
 import {
+  defaultDice,
+  type WorldDice,
   PlaceSeries,
   PlayCommand,
   PlayerPlayCommand,
@@ -506,7 +509,7 @@ type SeekResult = {
   actorId: string;
   stayId: string;
   found: boolean | null;
-  setting?: z.infer<typeof DiceSetting>;
+  setting?: SavedDice;
 };
 
 type Entry = {
@@ -800,10 +803,8 @@ const deferred = (input: Input) =>
   input.command === "memo" || input.command === "update"
     ? input.deferredUntil
     : undefined;
-// 新規作成の成否を決めるダイスの基準。世界ごとの設定が空ならこれを使う。
-// 新しい場所の申請に使う基準。確実に成立する場所には成功範囲100を設定できる。
 export const defaultExploreCriteria =
-  "接続元ノードから見た妥当性によってダイスを1d100で振る。基準値100も可とする。" +
+  "接続元から見た妥当性で目標値を決める。確実に成立する場所には出目の最大値も使える。" +
   "探索は接続元に根拠のある道と場所を見つける申請として扱う。地名・道・施設の説明に、任意の地点や別世界へ通じる恒久経路、封鎖や必要な移動手段の無条件の迂回、希少品の無限供給、技能・所有権・報酬の確定を埋め込む案は拒否する。欲しい希少品の入手を保証するために、その産地や取引相手まで探索で新設する案も拒否する。前の探索で作った場所を根拠に同じ結果を段階的に得る案も対象とする。遠方・未知・幻想的というだけで拒否せず、地形や交通に沿う新発見や、別途採集・取引が必要な普通の資源・店舗は認める。成功時の道・説明・追加の接続にも、申請にない報酬や無条件の近道を書き足さない。";
 // LLMへ渡す記録から、行動の選択に使えない属性を外す。確定ID、記録された実時刻、公開行動の有無、
 // 空の出現一覧、手番の持ち主と重なる人物IDが当たる。プレイヤーへ見せる記録は変えない。
@@ -855,11 +856,11 @@ const recentEntries = <T extends { entries: unknown[] }>(
     : { omittedEntries: Math.max(0, history.entries.length - historyLimit) }),
 });
 export const defaultCreationCriteria =
-  "材料から判断できる実現可能性を1d100のダイスの基準値で設定する。" +
+  "材料から実現可能性を判断し、成功となる出目の合計の上限を決める。" +
   "物品を作る・得る・増やす案では、由来、使える現物、供給量、消費、繰り返したときの効果を照合する。望んだ物や価値を任意に取り出す、現物や有限の供給を要さず希少品を複製する、名目だけの取引・拾得・加工で無制限の効力や報酬を得る案は拒否する。希少な完成品の供給元や対価を申請文だけで作り、その品を取得できることまで確定する案も拒否する。既存技能・道具・新発見の場所を経由して同じ結果を得る案も同じ基準で扱う。身近な素材の採集・有限な製作や取引は、量や価値に応じて通常どおり判定する。";
 export const defaultSkillCriteria =
   "この世界の外部との接続を成立させる技能は拒否する。現実の人物・サービスや別の世界と通信する、情報や物を取り寄せる、外部に作用する能力が該当する。接続先が世界設定の中にある領域や装置なら通常どおり判定する。比喩や呼び名だけで拒否しない。" +
-  "本人に記録された経験と習得済みの技能から、今回新しくできるようになることを見極め、1d100の成功範囲を決める。発展・統合では元技能から引き継げる範囲を確かめる。現在地や周囲の状態、手元で使える道具、成功時に消費する品が、習得にどう役立つかを照合する。習得に不可欠な経験や道具が申請文にしか現れず、それを補う根拠もなければ、成功上限を最低値の1に近づける。裏付けられた経験から遠く、求める効力が広いほど難しくする。制約や宣誓は、対象・場所・回数・代価によって使い道が実際に狭まる分だけ考慮する。限定を約束しても、稽古の実績や道具を得たことにはならない。" +
+  "本人に記録された経験と習得済みの技能から、今回新しくできるようになることを見極め、世界のダイスの成功範囲を決める。発展・統合では元技能から引き継げる範囲を確かめる。現在地や周囲の状態、手元で使える道具、成功時に消費する品が、習得にどう役立つかを照合する。習得に不可欠な経験や道具が申請文にしか現れず、それを補う根拠もなければ、成功上限を出目の最小値に近づける。裏付けられた経験から遠く、求める効力が広いほど難しくする。制約や宣誓は、対象・場所・回数・代価によって使い道が実際に狭まる分だけ考慮する。限定を約束しても、稽古の実績や道具を得たことにはならない。" +
   "発展・統合は今回の増分と、習得後に元技能や所持品と組み合わせてできることの両方を審査する。過去に許された効果や申請を小分けにした実績だけで、別の対象・桁違いの規模・無制限の回数へ広げない。何でも生成・取得・切断・無効化できる、結果や相手の意思を確定する、距離・防御・死・代価を常に無視できるなど、後の選択や対抗が成立しなくなる技能は拒否する。名前だけの制約、容易に回収できる代価、自作の品との循環は限定に数えない。強力でも対象・使用条件・代価・対抗手段によって実効範囲が限られる能力は通常のダイスで扱う。";
 // 状態が自然に続く実時間（分）。省いた状態は、終了を申請するまで続く。
 const StateText = {
@@ -884,10 +885,10 @@ const Explored = z
       .optional(),
   })
   .strict();
-const DiceSetting = z
-  .object({
-    sides: z.number().int().min(2).max(2147483647),
-    successThrough: z.number().int().positive(),
+const DiceSetting = (pool: WorldDice) => {
+  const fields = diceFields(pool);
+  return z.strictObject({
+    ...fields,
     fatal: z.array(z.uuid()).optional(),
     endEdges: z.array(z.uuid()).optional(),
     // 成功したときに対象の人物へ残る状態。
@@ -902,7 +903,10 @@ const DiceSetting = z
       .optional(),
     // 失敗したときにもう一度振り、出目がthrough以下なら申請者本人に残る状態。
     fumble: z
-      .object({ through: z.number().int().positive(), ...StateText })
+      .object({
+        through: fields.successThrough,
+        ...StateText,
+      })
       .strict()
       .optional(),
     instantReduction: InstantReduction.optional(),
@@ -949,26 +953,21 @@ const DiceSetting = z
           .strict(),
       )
       .optional(),
-  })
-  .strict()
-  .refine(
-    (v) => v.successThrough < v.sides && (v.fumble?.through ?? 0) < v.sides,
-  );
-const WitnessDice = z
-  .object({
-    sides: DiceSetting.shape.sides,
-    successThrough: DiceSetting.shape.successThrough,
-  })
-  .strict()
-  .refine((setting) => setting.successThrough < setting.sides);
-const Perception = z
-  .object({
-    states: z.record(z.uuid(), z.string().trim().min(1)),
-    about: z.array(z.uuid()),
-    observation: z.string().trim().min(1).nullable(),
-    witnesses: z.record(z.uuid(), WitnessDice),
-  })
-  .strict();
+  });
+};
+// 旧版で保存した判定には個数がなく、ダイス1個の出目が残る。
+type SavedDice = Omit<z.infer<ReturnType<typeof DiceSetting>>, "count"> & {
+  count?: number | undefined;
+};
+const Perception = (pool: WorldDice) =>
+  z
+    .object({
+      states: z.record(z.uuid(), z.string().trim().min(1)),
+      about: z.array(z.uuid()),
+      observation: z.string().trim().min(1).nullable(),
+      witnesses: z.record(z.uuid(), z.strictObject(diceFields(pool))),
+    })
+    .strict();
 const privateInterpretation = (actor: string, changes: Change) =>
   changes.nodes.every((n) => n.kind === "script") &&
   changes.edges.length &&
@@ -982,7 +981,7 @@ const privateInterpretation = (actor: string, changes: Change) =>
 type Fumble = { roll: number; success: boolean };
 type CreationRoll = {
   success: boolean;
-  setting: z.infer<typeof DiceSetting> & {
+  setting: SavedDice & {
     replacementState?: string;
     remainingState?: string;
   };
@@ -1084,7 +1083,7 @@ const ApplyStatus = z
 function applyChoice(raw: unknown) {
   if (!raw || typeof raw !== "object" || !("apply" in raw)) return raw;
   const { apply, ...rest } = raw as Record<string, unknown>;
-  if ("sides" in rest) return rest;
+  if ("successThrough" in rest) return rest;
   return Object.fromEntries(
     Object.entries({ apply, ...rest }).filter(
       ([key, v]) =>
@@ -1206,27 +1205,28 @@ function creationGroups(input: Input, perSkill: boolean) {
 }
 type Consumable = { id: string; label: string; count?: number };
 type Material = { id: string; count?: number | undefined };
-const WorkDice = DiceSetting.safeExtend({
-  requiredMaterials: z
-    .array(
-      z.union([
-        z
-          .object({
-            id: z.uuid(),
-            count: z.number().int().positive().safe().optional(),
-          })
-          .strict(),
-        z
-          .object({
-            label: z.string().trim().min(1),
-            count: z.number().int().positive().safe().optional(),
-          })
-          .strict(),
-      ]),
-    )
-    .nullable()
-    .optional(),
-});
+const WorkDice = (pool: WorldDice) =>
+  DiceSetting(pool).extend({
+    requiredMaterials: z
+      .array(
+        z.union([
+          z
+            .object({
+              id: z.uuid(),
+              count: z.number().int().positive().safe().optional(),
+            })
+            .strict(),
+          z
+            .object({
+              label: z.string().trim().min(1),
+              count: z.number().int().positive().safe().optional(),
+            })
+            .strict(),
+        ]),
+      )
+      .nullable()
+      .optional(),
+  });
 const PolicyRefusal = z.strictObject({ reject: z.string().trim().min(1) });
 const workMaterialPrompt =
   "本文とchangesから、成功時に加工・組み込み・支払い・使い切りで減る現物とその個数をrequiredMaterialsに指定する。生産物を得ても残る元の存在、繰り返し使う道具、技能、設計図、作業場所は含めない。declaredMaterialsは申請者の材料指定で、本文から使用後も残ると読める現物は除く。本文に用途の記述がない明示材料には指定のIDと個数を使う。対象のIDが申請で指定されていれば{id,count}、呼称だけなら{label,count}で返す。同名の現物から勝手に一つ選ばない。どの材料を指すかも不明ならrequiredMaterials:null、既存品を使わない申請なら[]。成果物が新しく作られることだけを理由に、加工元の現物を省かない。";
@@ -1260,14 +1260,14 @@ const commandRestrictionsPrompt = (field: string) =>
 export const defaultFumbleCriteria =
   "行動そのものの危険、申請に書かれた進め方、本人の状態と持ち物から、失敗がさらに悪い結果になる見込みをダイスの基準値で設定する。本人に残る変化がなければ設定しない";
 const fumblePrompt = (criteria: string) =>
-  "ファンブルの基準に照らして、この行動が失敗したうえ、さらに悪い結果として申請者本人に変化が残り得るなら、同じ応答にfumble:{through:整数,text:文字列,minutes:整数}を加える。失敗したときだけ同じ面数でもう一度振り、出目がthrough以下ならtextを申請者本人の状態として記録する。1<=through<sides。textは変化後の本人の状態を、後から本人だけを調べた人が読める一文で書き、経緯や原因の推測を除く。部位や程度は一つに決め、複数の候補を並べない。死亡は含めない。該当しなければfumbleを省く。" +
+  "ファンブルの基準に照らして、この行動が失敗したうえ、さらに悪い結果として申請者本人に変化が残り得るなら、同じ応答にfumble:{through:整数,text:文字列,minutes:整数}を加える。失敗したときだけ同じ個数・面数でもう一度振り、出目がthrough以下ならtextを申請者本人の状態として記録する。throughは出目の最小値以上、最大値未満。textは変化後の本人の状態を、後から本人だけを調べた人が読める一文で書き、経緯や原因の推測を除く。部位や程度は一つに決め、複数の候補を並べない。死亡は含めない。該当しなければfumbleを省く。" +
   minutesPrompt +
   commandRestrictionsPrompt("fumble.commandRestrictions") +
   "ファンブルの基準: " +
   criteria +
   "。";
 const selfStatusPrompt =
-  "本人の直接の状態変更について、変更前の本文と対象、申請した変更、確定した記録を照合し、審査結果をJSONで返す。allowApplyがtrueで、変更全体が表記の訂正か確定記録の反映なら{apply:true,endEdges:[終了する関係ID]}を返す。changes.edgesにstateOriginがある申請でapply:trueを返すときはendEdgesを空配列にする。この申請で現在の状態を終える場合は、allowApplyがtrueでもダイス設定とendEdgesを返す。新しい変化がある場合、またはallowApplyがfalseの場合は必ず1<=successThrough<sidesの整数でダイス設定を返す。成功の見込みが最大でもsuccessThroughはsides-1。追記・改訂・終了の形式や自己申告だけを成立の根拠にしない。申請にcommandRestrictionsがあれば制限を含めて審査する。応答の最上位にはcommandRestrictionsを書かない。";
+  "本人の直接の状態変更について、変更前の本文と対象、申請した変更、確定した記録を照合し、審査結果をJSONで返す。allowApplyがtrueで、変更全体が表記の訂正か確定記録の反映なら{apply:true,endEdges:[終了する関係ID]}を返す。changes.edgesにstateOriginがある申請でapply:trueを返すときはendEdgesを空配列にする。この申請で現在の状態を終える場合は、allowApplyがtrueでもダイス設定とendEdgesを返す。新しい変化がある場合、またはallowApplyがfalseの場合はsuccessThroughを返す。追記・改訂・終了の形式や自己申告だけを成立の根拠にしない。申請にcommandRestrictionsがあれば制限を含めて審査する。応答の最上位にはcommandRestrictionsを書かない。";
 // 型付きstateで転記を認めるのは、本人に期限のない記述を一件加える場合だけ。
 function selfStateClaim(actor: string, changes: Change) {
   const [edge] = changes.edges;
@@ -1321,10 +1321,7 @@ const individualsPrompt =
 const waitPrompt =
   "waitMinutesは申請者がこの作成にかける実時間（分）で、成功すると物品はその時間の後に成立する。その場にない物の取り寄せや手間のかかる製作のように、時間をかけるほど成立しやすい申請では、かける時間に応じて成功範囲を広げる。";
 // GMが選んだ消費を、申請者が手に持つ物品と、その個数までに限る。
-function consumption(
-  setting: z.infer<typeof DiceSetting>,
-  consumable: Consumable[],
-): z.infer<typeof DiceSetting> {
+function consumption(setting: SavedDice, consumable: Consumable[]): SavedDice {
   const consumes = consumable.flatMap((item) => {
     const chosen = setting.consumes?.find((c) => c.id === item.id);
     return chosen
@@ -1344,7 +1341,7 @@ function consumption(
   return { ...dice, ...(consumes.length ? { consumes } : {}) };
 }
 // GMが決めた本文を、申請が新しく持たせる技能・物品に限る。
-function decision(setting: z.infer<typeof DiceSetting>, changes?: Change) {
+function decision(setting: SavedDice, changes?: Change) {
   const decided = (setting.decided ?? []).filter(
     ({ id }) =>
       changes?.nodes.some((n) => n.id === id) &&
@@ -1354,13 +1351,7 @@ function decision(setting: z.infer<typeof DiceSetting>, changes?: Change) {
   delete dice.decided;
   return { ...dice, ...(decided.length ? { decided } : {}) };
 }
-const ExploreDice = z
-  .object({
-    sides: z.literal(100),
-    successThrough: z.number().int().min(1).max(100),
-    explored: Explored.safeExtend({ placeSeries: PlaceSeries.nullable() }),
-  })
-  .strict();
+
 // GMが返した同じ場所とつながりのうち、渡した既知の隣の場所だけを残す。
 function knownNeighbors(
   explored: z.infer<typeof Explored>,
@@ -2622,7 +2613,7 @@ export class BotPlay {
       const stored =
         !saved &&
         (
-          await this.pool.query<{ setting: z.infer<typeof DiceSetting> }>(
+          await this.pool.query<{ setting: SavedDice }>(
             "SELECT setting FROM bot_dice WHERE id=$1",
             [request],
           )
@@ -2805,6 +2796,7 @@ export class BotPlay {
           return reject(judgmentMaterialLimit, judgmentMaterialMessage);
         if (person) await this.#rememberStateBasis(request, context);
         const saved = await this.#oppositionRoll(
+          session.world_id,
           request,
           npc
             ? {
@@ -2844,9 +2836,7 @@ export class BotPlay {
           person && !npc ? subjects : [],
           stateRelations(facts, subjects),
           subjects.length > 0 && !!previous,
-          npc || protectedActor
-            ? ""
-            : await this.#fumblePrompt(session.world_id),
+          !npc && !protectedActor,
           playerRequest && (person || victim) ? request : undefined,
           { actor: protectedActor, target: protectedTarget },
           !victim,
@@ -5286,7 +5276,29 @@ export class BotPlay {
       db.release();
     }
   }
+  async #dicePolicy(world: string) {
+    const row = (
+      await this.pool.query<{
+        dice: WorldDice | null;
+        skill_criteria: string;
+        explore_criteria: string;
+        criteria: string;
+        fumble_criteria: string;
+      }>(
+        "SELECT dice,criteria,fumble_criteria,skill_criteria,explore_criteria FROM creation_policy WHERE world_id=$1",
+        [world],
+      )
+    ).rows[0];
+    return {
+      pool: row?.dice ?? defaultDice,
+      skill: row?.skill_criteria || defaultSkillCriteria,
+      explore: row?.explore_criteria || defaultExploreCriteria,
+      criteria: row?.criteria || defaultCreationCriteria,
+      fumble: row?.fumble_criteria || defaultFumbleCriteria,
+    };
+  }
   async #stealthDice(
+    world: string,
     context: WorldContext,
     request: string,
     action: unknown,
@@ -5295,10 +5307,10 @@ export class BotPlay {
     checks: { key: string; actorId: string }[],
   ) {
     if (!checks.length) return {};
+    const { pool } = await this.#dicePolicy(world);
+    const witness = z.strictObject(diceFields(pool));
     const read = (raw: string) => {
-      const settings = z
-        .record(z.string(), WitnessDice)
-        .parse(parseOutput(raw));
+      const settings = z.record(z.string(), witness).parse(parseOutput(raw));
       if (
         Object.keys(settings).length !== checks.length ||
         checks.some(({ key }) => !settings[key])
@@ -5313,7 +5325,8 @@ export class BotPlay {
         {
           role: "system",
           content:
-            "隠密行動のダイス設定をJSONオブジェクトで返す。checksのkeyをキーとし、各値は{sides,successThrough}。1からsidesまでの出目がsuccessThrough以下なら、actionは行為成功、departureとarrivalは目撃、attemptは試みの発見、seekは捜索成功。行為の成否と各人物の発見確率は独立に設定する。指定された現在の材料だけで判断し、出目や物語は返さない。" +
+            "隠密行動のダイス設定をJSONオブジェクトで返す。checksのkeyをキーとし、各値は{successThrough}。合計が目標値以下なら、actionは行為成功、departureとarrivalは目撃、attemptは試みの発見、seekは捜索成功。行為の成否と各人物の発見確率は独立に設定する。指定された現在の材料だけで判断し、出目や物語は返さない。" +
+            dicePrompt(pool) +
             diceStatePrompt,
         },
         {
@@ -5445,6 +5458,7 @@ export class BotPlay {
     ];
     if (victim) await this.#reserveOpposition(input.requestId);
     const settings = await this.#stealthDice(
+      world,
       context,
       input.requestId,
       { actor, text: input.text, operation: op },
@@ -5536,6 +5550,7 @@ export class BotPlay {
       .filter((row) => row.found === null)
       .map((row) => ({ key: "seek:" + row.actor_id, actorId: row.actor_id }));
     const settings = await this.#stealthDice(
+      world,
       context,
       request,
       { actor, kind: "seek" },
@@ -5689,7 +5704,7 @@ export class BotPlay {
   }
   async #oppositionObservations(
     request: string,
-    perception: z.infer<typeof Perception>,
+    perception: z.infer<ReturnType<typeof Perception>>,
   ): Promise<StealthAction> {
     const observations: Observation[] = [];
     if (perception.observation)
@@ -7150,7 +7165,7 @@ export class BotPlay {
     const diceId = derivedId(`${requestId}:creation`),
       known = (
         await this.pool.query<{
-          setting: z.infer<typeof DiceSetting>;
+          setting: SavedDice;
           roll: number;
           repeated: boolean;
         }>("SELECT setting,roll,repeated FROM bot_dice WHERE id=$1", [diceId])
@@ -7385,7 +7400,7 @@ export class BotPlay {
     );
     const cost = (plans: typeof fresh) =>
       new Set(plans.map((p) => p.parent ?? p.index)).size;
-    const settings = new Map<number, z.infer<typeof DiceSetting>>();
+    const settings = new Map<number, SavedDice>();
     const applied = new Map<number, AppliedStatus>();
     const unresolved = new Map<number, string[]>();
     const shortages = new Set<number>();
@@ -7696,27 +7711,26 @@ export class BotPlay {
       if (endStateTargetId) await context.validate();
       if (reviews.length || (judgment && groups.size))
         await this.#rememberStateBasis(requestId, context);
-      const policy = (
-        await this.pool.query<{
-          criteria: string;
-          skill: string;
-          explore: string;
-        }>(
-          "SELECT criteria,skill_criteria AS skill,explore_criteria AS explore FROM creation_policy WHERE world_id=$1",
-          [world],
-        )
-      ).rows[0];
-      const criteria = explore
-        ? policy?.explore || defaultExploreCriteria
-        : policy?.criteria || defaultCreationCriteria;
-      const creationDice = work ? WorkDice : DiceSetting;
+      const policy = await this.#dicePolicy(world);
+      const { pool } = policy;
+      const criteria =
+        (explore ? policy.explore : policy.criteria) +
+        "\n" +
+        dicePrompt(pool, !!explore);
+      const fields = diceFields(pool, !!explore);
+      const creationDice = work ? WorkDice(pool) : DiceSetting(pool);
       const Dice =
         previousState !== undefined
           ? creationDice.safeExtend({
               replacementState: z.string().trim().min(1),
             })
           : explore
-            ? ExploreDice
+            ? z.strictObject({
+                ...fields,
+                explored: Explored.safeExtend({
+                  placeSeries: PlaceSeries.nullable(),
+                }),
+              })
             : creationDice;
       const decides =
         !explore && (!batch || splitMode === "update") && !waitMinutes;
@@ -7757,7 +7771,7 @@ export class BotPlay {
             }
             if (endStateTargetId)
               return {
-                ...WitnessDice.strip().parse(rawValue),
+                ...z.object(fields).parse(rawValue),
                 endEdges: fresh[i]!.changes.endEdges,
               };
             const value = allowApply[i]
@@ -7802,20 +7816,20 @@ export class BotPlay {
             {
               role: "system",
               content: endStateTargetId
-                ? "指定された状態を終了する申請の成否を判定する。statesは成功時にすべて終了する。selfがtrueなら申請者本人が対象。申請文（text）、終了対象の状態、世界の前提（premise）と基準から判断し、{sides:整数,successThrough:整数}をJSONで返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準: " +
+                ? "指定された状態を終了する申請の成否を判定する。statesは成功時にすべて終了する。selfがtrueなら申請者本人が対象。申請文（text）、終了対象の状態、世界の前提（premise）と基準から判断し、{successThrough:整数}をJSONで返す。世界の基準: " +
                   criteria
                 : compact
                   ? selfStatusPrompt +
                     stateEndsPrompt +
                     diceStatePrompt +
-                    "confirmedは先行する成功時に確定した状態。今回の対象についての結果かを本文と時点で確かめる。不確実なら{sides,successThrough,endEdges}。世界の基準: " +
+                    "confirmedは先行する成功時に確定した状態。今回の対象についての結果かを本文と時点で確かめる。不確実なら{successThrough,endEdges}。世界の基準: " +
                     criteria
                   : (reviews.length
-                      ? "申請した変更を審査する。ダイスを振る場合は{sides:整数,successThrough:整数}を返す。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準と確定した材料から判断する。"
-                      : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1<=successThrough<sides。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
+                      ? "申請した変更を審査する。ダイスを振る場合は{successThrough:整数}を返す。世界の基準と確定した材料から判断する。"
+                      : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {successThrough:整数}。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
                     diceStatePrompt +
                     (previousState !== undefined
-                      ? "previousStateは終了する状態の本文。ダイス設定は {sides:整数,successThrough:整数,replacementState:空でない文字列} を含むJSONで返す。1<=successThrough<sides。replacementStateはtextの行為が成功した場合に、指定の状態に代わって現在の状態として読める全文。changes.nodesの本文が成功後の状態を過不足なく表すなら、その本文をそのまま文字列で返す。交換で古くなった内容は除き、手当てで解消しない欠損などは残す。同じ事実は一度だけ書く。"
+                      ? "previousStateは終了する状態の本文。ダイス設定は {successThrough:整数,replacementState:空でない文字列} を含むJSONで返す。replacementStateはtextの行為が成功した場合に、指定の状態に代わって現在の状態として読める全文。changes.nodesの本文が成功後の状態を過不足なく表すなら、その本文をそのまま文字列で返す。交換で古くなった内容は除き、手当てで解消しない欠損などは残す。同じ事実は一度だけ書く。"
                       : reviews.length
                         ? selfStatusPrompt + stateEndsPrompt
                         : "") +
@@ -7828,7 +7842,7 @@ export class BotPlay {
                     (explore
                       ? "探索の基準が拒否を指定した案は {reject:申請者に伝える具体的な理由} だけを返す。その他はダイス設定を返す。" +
                         explorePrompt
-                      : individualsPrompt + (await this.#fumblePrompt(world))) +
+                      : individualsPrompt + fumblePrompt(policy.fumble)) +
                     (selectedMaterial.some((p) => p.requestText)
                       ? "requestTextは元の申請の経緯。各案の技能や製作はその案のchangesだけを判定し、別の案で使う材料をこの案に割り当てない。"
                       : "") +
@@ -7874,8 +7888,7 @@ export class BotPlay {
                         nodes: selectedNodes,
                         ...(selectedLearners.length
                           ? {
-                              skillCriteria:
-                                policy?.skill || defaultSkillCriteria,
+                              skillCriteria: policy.skill,
                               recentAttempts: Object.fromEntries(
                                 selectedLearners.map((person) => [
                                   person,
@@ -7930,7 +7943,7 @@ export class BotPlay {
             }
           }
           const { requiredMaterials, individuals, ...dice } = v as z.infer<
-            typeof WorkDice
+            ReturnType<typeof WorkDice>
           >;
           for (const { name } of individuals ?? []) named.push(name);
           const setting = decision(
@@ -8209,7 +8222,7 @@ export class BotPlay {
   async #saveStorageLimits(
     context: WorldContext,
     changes: Change,
-    setting: z.infer<typeof DiceSetting>,
+    setting: SavedDice,
   ) {
     for (const id of await this.#newStorages(context, changes)) {
       const node = await context.node(id);
@@ -8782,6 +8795,7 @@ export class BotPlay {
       const contests = [];
       for (const opponentId of others) {
         const roll = await this.#oppositionRoll(
+          world,
           derivedId(`${requestId}:vehicle-opposition:${opponentId}`),
           actor,
           "乗り物の専用操縦権を取得するため、指定された相手の所持または操縦に対抗する",
@@ -8797,7 +8811,7 @@ export class BotPlay {
           [],
           [],
           false,
-          "",
+          false,
           requestId,
         );
         const success = roll.roll <= roll.setting.successThrough;
@@ -10618,6 +10632,7 @@ export class BotPlay {
           await this.#rememberStateBasis(input.requestId, context);
         const allowedEnds = stateRelations(materials, stateSubjects);
         const saved = await this.#oppositionRoll(
+          world,
           input.requestId,
           actor,
           input.text,
@@ -10636,7 +10651,7 @@ export class BotPlay {
                 allowedEnds.includes(id),
               )
             : !!statusReview?.requestedEnds.length,
-          protectedActor ? "" : await this.#fumblePrompt(world),
+          !protectedActor,
           opponents.length ? input.requestId : undefined,
           { actor: protectedActor, target: protectedTarget },
         );
@@ -11312,7 +11327,7 @@ export class BotPlay {
     request: string,
     at: number,
     changes: Change,
-    setting: z.infer<typeof DiceSetting>,
+    setting: SavedDice,
   ) {
     return this.#append(
       context,
@@ -11513,6 +11528,7 @@ export class BotPlay {
     );
   }
   async #oppositionRoll(
+    world: string,
     requestId: string,
     actor: unknown,
     action: string,
@@ -11528,13 +11544,16 @@ export class BotPlay {
     affected: string[] = [],
     stateEnds: string[] = [],
     requireStateEnds = false,
-    fumble = "",
+    allowFumble = false,
     spRequest?: string,
     protection?: { actor: boolean; target: boolean },
     effectRef = false,
   ) {
+    const { pool, fumble } = await this.#dicePolicy(world);
+    const settingSchema = DiceSetting(pool);
+    const perceptionSchema = Perception(pool);
     // 再送が参照する保存済みのダイス設定にも、確定前の保護を適用する。
-    function protect(setting: z.infer<typeof DiceSetting>) {
+    function protect(setting: SavedDice) {
       if (!protection?.actor && !protection?.target) return setting;
       const current = { ...setting };
       if (protection.target) {
@@ -11558,7 +11577,7 @@ export class BotPlay {
     function readDecision(raw: string) {
       const parsed = parseOutput(raw);
       const separated = perception
-        ? z.object({ perception: Perception }).passthrough().parse(parsed)
+        ? z.object({ perception: perceptionSchema }).passthrough().parse(parsed)
         : undefined;
       const reported = separated?.perception;
       if (reported && perception) {
@@ -11609,7 +11628,7 @@ export class BotPlay {
       };
     }
     function read(result: unknown): {
-      setting: z.infer<typeof DiceSetting>;
+      setting: SavedDice;
       observable: string | null;
       observableRestrictions?: CommandRestriction[] | undefined;
       observableWhile?: ConditionExpression | undefined;
@@ -11619,10 +11638,10 @@ export class BotPlay {
         delete dice.observable;
         delete dice.observableRestrictions;
         delete dice.observableWhile;
-        return { setting: DiceSetting.parse(dice), observable: null };
+        return { setting: settingSchema.parse(dice), observable: null };
       }
       if (proposedState === undefined)
-        return { setting: DiceSetting.parse(result), observable: null };
+        return { setting: settingSchema.parse(result), observable: null };
       const { observable, observableRestrictions, observableWhile, ...dice } = z
         .object({
           observableRestrictions: CommandRestrictions.optional(),
@@ -11648,7 +11667,7 @@ export class BotPlay {
         .passthrough()
         .parse(result);
       return {
-        setting: DiceSetting.parse(dice),
+        setting: settingSchema.parse(dice),
         observable,
         observableRestrictions,
         observableWhile,
@@ -11664,7 +11683,8 @@ export class BotPlay {
         {
           role: "system",
           content:
-            "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {sides:整数,successThrough:整数}。1からsidesまでの一様な出目がsuccessThrough以下なら成功。1<=successThrough<sides。成否、出目、物語は生成しない。変更は以下で求められた項目だけを返す。" +
+            dicePrompt(pool) +
+            "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {successThrough:整数}。成否、出目、物語は生成しない。変更は以下で求められた項目だけを返す。" +
             diceStatePrompt +
             (stateEnds.length ? stateEndsPrompt : "") +
             (proposedState === undefined
@@ -11696,7 +11716,7 @@ export class BotPlay {
                   : "") +
                 "原因が終わっても残る負傷などには、その原因を継続条件として指定しない。"
               : "") +
-            fumble +
+            (allowFumble ? fumblePrompt(fumble) : "") +
             (group
               ? "対象が一団の場合、行動が成功したときに減る個体がいればinstantReductionを返す。死亡なら{kind:'death',count:死亡数}。" +
                 (group.allowSeparation
@@ -11707,7 +11727,7 @@ export class BotPlay {
             (consumable.length ? consumePrompt : "") +
             placeStatePrompt +
             (perception
-              ? "隠密中の行動。成功時に使うperceptionも返す。形式は{states:{状態・物品ID:本文},about:[関係ID],observation:文字列またはnull,witnesses:{人物ID:{sides,successThrough}}}。statesはperception.statesの全IDについて、対象を後から調べるだけで確認できる結果を書く。名前・種別・呼び名や参照を含め、攻撃や移転を起こした主体、使用者、経緯、原因の断定は入れない。傷や破損、変化した性質は残す。物品の呼称は物自体が分かるように書く。aboutは指定された関係のうち、その結果だけから確認できる参照を選ぶ。observationは行為そのものを見たときに分かる内容を書き、実行者が見えるなら呼称を含める。私的な動機や目撃だけでは分からない指示者は含めない。目撃できる内容がなければnull。witnessesは指定された全observersに対して、到着を見たかと独立に今回の行為に気づく確率を設定する。"
+              ? "隠密中の行動。成功時に使うperceptionも返す。形式は{states:{状態・物品ID:本文},about:[関係ID],observation:文字列またはnull,witnesses:{人物ID:{successThrough}}}。statesはperception.statesの全IDについて、対象を後から調べるだけで確認できる結果を書く。名前・種別・呼び名や参照を含め、攻撃や移転を起こした主体、使用者、経緯、原因の断定は入れない。傷や破損、変化した性質は残す。物品の呼称は物自体が分かるように書く。aboutは指定された関係のうち、その結果だけから確認できる参照を選ぶ。observationは行為そのものを見たときに分かる内容を書き、実行者が見えるなら呼称を含める。私的な動機や目撃だけでは分からない指示者は含めない。目撃できる内容がなければnull。witnessesは指定された全observersに対して、到着を見たかと独立に今回の行為に気づく確率を設定する。"
               : ""),
         },
         {
@@ -11748,11 +11768,9 @@ export class BotPlay {
   }
   async #roll(
     id: string,
-    setting: z.infer<typeof DiceSetting>,
+    setting: SavedDice,
     spRequest?: string,
-    protect?: (
-      setting: z.infer<typeof DiceSetting>,
-    ) => z.infer<typeof DiceSetting>,
+    protect?: (setting: SavedDice) => SavedDice,
   ) {
     const db = await this.pool.connect();
     try {
@@ -11792,22 +11810,11 @@ export class BotPlay {
       db.release();
     }
   }
-  // ファンブルの指示。基準の文は世界ごとに運営者が決め、空欄なら既定の基準を使う。
-  async #fumblePrompt(world: string) {
-    return fumblePrompt(
-      (
-        await this.pool.query<{ criteria: string }>(
-          "SELECT fumble_criteria AS criteria FROM creation_policy WHERE world_id=$1",
-          [world],
-        )
-      ).rows[0]?.criteria || defaultFumbleCriteria,
-    );
-  }
   // 失敗した判定にファンブルの設定があれば、同じ面数でもう一度振る。
   // 出し直しで返す前回の結果では振らない。振らなかった判定の結果には、ファンブルの設定を載せない。
   async #fumble<
     T extends {
-      setting: z.infer<typeof DiceSetting>;
+      setting: SavedDice;
       roll: number;
       repeated?: boolean;
     },
@@ -11816,23 +11823,24 @@ export class BotPlay {
     if (!fumble || die.repeated || die.roll <= setting.successThrough)
       return { ...die, setting };
     const { roll } = await this.#rollIn(db, derivedId(`${id}:fumble`), {
+      ...(setting.count === undefined ? {} : { count: setting.count }),
       sides: setting.sides,
       successThrough: fumble.through,
     });
     return { ...die, fumble: { roll, success: roll <= fumble.through } };
   }
-  async #rollIn(db: Db, id: string, setting: z.infer<typeof DiceSetting>) {
+  async #rollIn(db: Db, id: string, setting: SavedDice) {
     await db.query(
       "INSERT INTO bot_dice(id,setting) VALUES($1,$2) ON CONFLICT DO NOTHING",
       [id, setting],
     );
     const row = (
       await db.query<{
-        setting: z.infer<typeof DiceSetting>;
+        setting: SavedDice;
         roll: number | null;
       }>("SELECT * FROM bot_dice WHERE id=$1 FOR UPDATE", [id])
     ).rows[0]!;
-    const roll = row.roll ?? randomInt(1, row.setting.sides + 1);
+    const roll = row.roll ?? rollDice(row.setting);
     if (row.roll === null)
       await db.query("UPDATE bot_dice SET roll=$2 WHERE id=$1", [id, roll]);
     return { setting: row.setting, roll };

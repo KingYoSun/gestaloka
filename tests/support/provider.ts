@@ -65,10 +65,9 @@ export async function fixtureRuntime(
         ) ||
         input.messages[0]?.content.includes("申請した変更を審査する。")
       ) {
-        // 成功範囲が面数未満という制約の中で、実質的に必ず成功する設定。
+        // 既定の3d6で選べる最大の目標値。
         const dice = (proposal: Record<string, unknown>) => ({
-          sides: 2147483647,
-          successThrough: 2147483646,
+          successThrough: 17,
           ...(Array.isArray(proposal.declaredMaterials)
             ? {
                 requiredMaterials: proposal.declaredMaterials.map(

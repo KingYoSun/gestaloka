@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import {
   beforeAll,
+  beforeEach,
   afterAll,
   afterEach,
   describe,
@@ -62,14 +63,22 @@ import {
 } from "../../apps/worker/src/deployment.js";
 import { vehicleOperator } from "../../packages/server/src/runtime/vehicles.js";
 
+import * as diceRuntime from "../../packages/server/dist/runtime/dice.js";
+
 const isolated = isolatedDatabases();
 let runtime: Awaited<ReturnType<typeof fixtureRuntime>>["runtime"],
   access: WorldAccess,
   auth: Awaited<ReturnType<typeof fixtureAuth>>,
   fixtureResponse: Parameters<typeof fixtureRuntime>[1];
 const graphs: string[] = [];
-// 成功範囲が面数未満という制約の中で、実質的に必ず成功するダイス設定。
-const sure = { sides: 2147483647, successThrough: 2147483646 };
+// 世界の処理を検証する試験では各ダイスの出目を中央に固定する。
+beforeEach(() => {
+  const roll = diceRuntime.rollDice;
+  vi.spyOn(diceRuntime, "rollDice").mockImplementation((setting) =>
+    roll(setting, (_min, max) => Math.floor(max / 2)),
+  );
+});
+const sure = { successThrough: 17 };
 // 探索の判定で、GMが書き分ける道の記述と場所の説明。
 const explored = {
   route: "広場の裏手から細い小道を抜けると、新しい場所に着く。",
@@ -527,8 +536,9 @@ test("他人の所持と操縦権には明示したときだけ対抗し、相�
     });
   expect(rolls()).toHaveLength(0);
   const setting = {
-    sides: 2,
-    successThrough: 1,
+    count: 3,
+    sides: 6,
+    successThrough: 3,
     consumes: [{ id: fuel.id, count: 1 }],
   };
   f.calls.mockImplementation(async (id) => answer(id, setting));
@@ -537,7 +547,7 @@ test("他人の所持と操縦権には明示したときだけ対抗し、相�
       await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,$3)", [
         derivedId(`${requestId}:vehicle-opposition:${opponent}`),
         setting,
-        failures.includes(opponent) ? 2 : 1,
+        failures.includes(opponent) ? 4 : 3,
       ]);
   };
   const context = () => f.store.context(f.graph);
@@ -8733,7 +8743,7 @@ test.each([true, false])(
     const text = "木の義足を外して鉄の義足に替える";
     const setting = {
       ...sure,
-      successThrough: success ? sure.successThrough : 1,
+      successThrough: success ? sure.successThrough : 3,
     };
     const reply = vi.fn<(repair: boolean) => void>();
     fixtureResponse = (content, user, messages) => {
@@ -9447,6 +9457,7 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
         shown: boolean;
       }>;
   const unset = await policy({ operation: "creationPolicy.read" });
+  expect(unset).toMatchObject({ dice: { count: 3, sides: 6 } });
   expect(unset.criteria).toBe("");
   expect(unset.skillCriteria).toBe("");
   expect(unset.fumbleCriteria).toBe("");
@@ -9483,7 +9494,10 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
         expect(Object.keys(state)).toEqual(["node", "since", "about"]);
     return answer(id, sure);
   });
-  expect((await free(script)).outcome).toMatchObject({ success: true });
+  expect((await free(script)).outcome).toMatchObject({
+    success: true,
+    setting: { count: 3, sides: 6, successThrough: 17 },
+  });
   expect(f.calls).toHaveBeenCalledTimes(1);
   expect(f.calls.mock.calls[0]![1]).toBe("world-creation-dice");
   // 基準の文は既定ではプレイヤーに見せない。表示を選ぶと、空欄の世界では既定の基準を見せる。
@@ -9522,6 +9536,17 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
   expect((await f.status(0)).fumbleCriteria).toBe(
     "この世界だけのファンブル基準",
   );
+  expect(
+    await policy({
+      operation: "creationPolicy.put",
+      dice: { count: 2, sides: 8 },
+      reason: "ダイスだけを変更",
+    }),
+  ).toMatchObject({
+    dice: { count: 2, sides: 8 },
+    criteria: "この世界だけの基準",
+    fumbleCriteria: "この世界だけのファンブル基準",
+  });
   // ファンブルの基準を省いた設定は、現在のファンブルの基準を保つ。
   await policy({
     operation: "creationPolicy.put",
@@ -9546,7 +9571,12 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
   f.calls.mockImplementation(async (id, _role, messages) => {
     expect(messages[0]?.content).toContain("この世界だけの基準");
     expect(messages[0]?.content).toContain("この世界だけのファンブル基準");
-    return answer(id, { sides: 100, successThrough: 10 });
+    expect(messages[0]?.content).toContain("2d8");
+    return answer(id, { successThrough: 10 });
+  });
+  expect((await free(randomUUID())).outcome).toMatchObject({
+    roll: 8,
+    setting: { count: 2, sides: 8, successThrough: 10 },
   });
   const failing = randomUUID(),
     rejected = randomUUID(),
@@ -9601,7 +9631,7 @@ test("同じ手番で失敗した申請の出し直しは、判断モデルが�
   const f = await fixture(),
     db = isolated.databases.postgres,
     model = runtime.agent.model,
-    dice = { sides: 100, successThrough: 10 };
+    dice = { count: 3, sides: 6, successThrough: 10 };
   let probability = 0.8,
     status = 200;
   vi.spyOn(model, "decision", "get").mockReturnValue(
@@ -9656,10 +9686,10 @@ test("同じ手番で失敗した申請の出し直しは、判断モデルが�
   f.calls.mockImplementationOnce(async (id) => answer(id, sure));
   expect(await attempt("最初の作成")).toMatchObject({ success: true });
   expect(decisions).not.toHaveBeenCalled();
-  expect(await attempt("通らない作成", 50)).toEqual({
+  expect(await attempt("通らない作成", 15)).toEqual({
     success: false,
     setting: dice,
-    roll: 50,
+    roll: 15,
   });
   const judged = f.calls.mock.calls.length,
     used = (await f.status(0)).callsUsed as number;
@@ -9684,7 +9714,7 @@ test("同じ手番で失敗した申請の出し直しは、判断モデルが�
   expect(first.outcome).toEqual({
     success: false,
     setting: dice,
-    roll: 50,
+    roll: 15,
     repeated: true,
   });
   expect(f.calls).toHaveBeenCalledTimes(judged);
@@ -12815,7 +12845,7 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
     })
     .mockImplementationOnce(
       async (id, _role, _messages, _target, _effort, _attempt, validate) => {
-        const dice = { sides: 2, successThrough: 1 };
+        const dice = { successThrough: 3 };
         expect(() =>
           validate!(JSON.stringify({ ...dice, observable: "羽根" })),
         ).toThrow();
@@ -14333,23 +14363,11 @@ test("認可済み端末は人物生成前に一度報告でき、参加後も�
 });
 
 describe("現場材料", () => {
-  // サーバーが組み立てた設定はそのまま使い、出目だけ2に固定する。
-  const win = { sides: 100, successThrough: 70 },
-    lose = { ...win, successThrough: 1 };
+  const win = { successThrough: 15 },
+    lose = { successThrough: 3 };
   const hull = { requiredMaterials: [{ label: "船体" }] };
   const builtHull = { ...win, ...hull },
     failedHull = { ...lose, ...hull };
-  beforeAll(async () => {
-    await isolated.databases.postgres
-      .query(`CREATE FUNCTION fixture_material_roll() RETURNS trigger AS $$
-      BEGIN NEW.roll := 2; RETURN NEW; END $$ LANGUAGE plpgsql;
-      CREATE TRIGGER fixture_material_roll BEFORE INSERT ON bot_dice FOR EACH ROW EXECUTE FUNCTION fixture_material_roll()`);
-  });
-  afterAll(async () => {
-    await isolated.databases.postgres.query(
-      "DROP FUNCTION fixture_material_roll() CASCADE",
-    );
-  });
   test("技能の判定中に同じ申請を再送すると確定を待ち、GMを一度だけ呼ぶ", async () => {
     const f = await fixture(1),
       actor = f.actors[0]!,
@@ -14496,7 +14514,7 @@ describe("現場材料", () => {
       ],
       dependencies: [],
     });
-    expect(learn.outcome).toMatchObject({ success: true, roll: 2 });
+    expect(learn.outcome).toMatchObject({ success: true, roll: 9 });
     const { items, skills } = await read();
     expect(skills.slice(0, -1)).toEqual(expected);
     expect(skills.at(-1)).toMatchObject({
@@ -14520,7 +14538,7 @@ describe("現場材料", () => {
     const crafted = await f.send(0, craft);
     expect(crafted.outcome).toMatchObject({
       success: true,
-      roll: 2,
+      roll: 9,
       setting: { consumes: [{ id: cloth, count: 2 }] },
     });
     expect(await f.send(0, craft)).toEqual(crafted);
@@ -14773,13 +14791,13 @@ describe("現場材料", () => {
         outcome: {
           success: learned,
           proposals: [
-            { person, roll: 2, success: learned },
-            { person, roll: 2, success: false },
+            { person, roll: 9, success: learned },
+            { person, roll: 9, success: false },
           ],
         },
       });
       expect(result.action).toMatchObject({
-        message: expect.stringContaining("「水鏡」は出目2で失敗"),
+        message: expect.stringContaining("「水鏡」は出目9で失敗"),
       });
       expect(await f.send(0, request)).toEqual(result);
       const dice = [0, 1].map((i) =>
@@ -14854,9 +14872,9 @@ describe("現場材料", () => {
         outcome: {
           success: true,
           proposals: [
-            { text: "帆を繕う", roll: 2, success: true },
-            { text: "風を読む", roll: 2, success: false },
-            { text: craft.text, roll: 2, success: built },
+            { text: "帆を繕う", roll: 9, success: true },
+            { text: "風を読む", roll: 9, success: false },
+            { text: craft.text, roll: 9, success: built },
           ],
         },
       });
@@ -14904,8 +14922,8 @@ describe("現場材料", () => {
     expect(result.outcome).toMatchObject({
       success: true,
       proposals: [
-        { roll: 2, success: false },
-        { roll: 2, success: false },
+        { roll: 9, success: false },
+        { roll: 9, success: false },
         { success: true },
       ],
     });
@@ -14951,9 +14969,9 @@ describe("現場材料", () => {
           text: first.text,
           success: true,
           proposals: [
-            { roll: 2, success: true },
-            { roll: 2, success: false },
-            { roll: 2, success: true },
+            { roll: 9, success: true },
+            { roll: 9, success: false },
+            { roll: 9, success: true },
           ],
         },
         { text: second.text, success: false, reason: "MATERIAL_SHORTAGE" },
@@ -15046,13 +15064,13 @@ describe("現場材料", () => {
     const result = await f.send(0, command);
     expect(result).toMatchObject({
       dice: [
-        expect.stringMatching(/出目 2 \/ \d+、成功は 1 以下（失敗）$/),
-        expect.stringMatching(/出目 2 \/ \d+、成功は \d+ 以下（成功）$/),
+        expect.stringMatching(/出目 9（3d6）、成功は 3 以下（失敗）$/),
+        expect.stringMatching(/出目 9（3d6）、成功は 15 以下（成功）$/),
       ],
       outcome: {
         proposals: [
-          { roll: 2, success: false },
-          { roll: 2, success: true, setting: { consumes: [{ id: ids[0] }] } },
+          { roll: 9, success: false },
+          { roll: 9, success: true, setting: { consumes: [{ id: ids[0] }] } },
           ...Array(3).fill({ success: false, reason: "MATERIAL_SHORTAGE" }),
         ],
       },
@@ -15401,7 +15419,7 @@ test("探索と複数案の生成は日次SPを共有し、生成と素材消費
   });
   expect((await f.status(0)).dailySp).toMatchObject({ remaining: 100 });
   f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { sides: 100, successThrough: 100, explored }),
+    answer(id, { successThrough: 18, explored }),
   );
   expect(await f.send(0, explore)).toMatchObject({
     spentSp: 1,
@@ -15603,8 +15621,8 @@ test("同じアカウントの2人が同時に各自のSPを消費し、再送�
   f.calls.mockImplementation(async (id, _role, messages) => {
     const changes = JSON.parse(String(messages[1]!.content)).changes;
     const i = Number(changes.nodes[0].text.slice(-1));
-    const setting = { sides: 2, successThrough: 1 };
-    await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,2)", [
+    const setting = { count: 3, sides: 6, successThrough: 3 };
+    await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,4)", [
       derivedId(requests[i]!.requestId + ":creation"),
       setting,
     ]);
@@ -15631,7 +15649,7 @@ test("同じアカウントの2人が同時に各自のSPを消費し、再送�
   expect(reused).toMatchObject({
     spentSp: 0,
     dailySp: { remaining: 0 },
-    outcome: { repeated: true, roll: 2 },
+    outcome: { repeated: true, roll: 4 },
   });
   expect(f.calls).toHaveBeenCalledTimes(2);
   const moved = await f.send(0, {
@@ -15918,7 +15936,7 @@ test("技能枠が満杯でも元技能を本人が選んだときだけ作成�
       JSON.parse(String(messages[1]!.content)).learning[0].consumeSkillIds,
     ).toEqual(ids);
     expect(JSON.stringify(messages)).toContain("潮流の観測");
-    return answer(id, { sides: 2147483647, successThrough: 1 });
+    return answer(id, { successThrough: 3 });
   });
   const lost = await f.send(0, request(skill(actor, "遠洋航海", ids)));
   expect(lost.outcome).toMatchObject({ success: false });
@@ -16637,7 +16655,7 @@ test("ダイスの出目と成功範囲を申請者と同席プレイヤーがCL
     await f.send(1, { command: "contact", targetId: f.actors[0] });
     await giveTurn(f, 0);
     f.calls.mockImplementation(async (id) =>
-      answer(id, { sides: 100, successThrough: 100, explored }),
+      answer(id, { successThrough: 18, explored }),
     );
     const text = "広場の裏手から小道を探す";
     const result = await f.send(0, {
@@ -16648,7 +16666,7 @@ test("ダイスの出目と成功範囲を申請者と同席プレイヤーがCL
       dependencies: [],
     });
     const { roll } = result.outcome as { roll: number };
-    const dice = [`判定 出目 ${roll} / 100、成功は 100 以下（成功）`];
+    const dice = [`判定 出目 ${roll}（3d6）、成功は 18 以下（成功）`];
     expect(result.dice).toEqual(dice);
     await f.send(0, { command: "end-turn" });
 
@@ -16738,10 +16756,10 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
       }
       expect(role).toBe("world-explore-dice");
       expect(messages[0]?.content).toContain(
-        "接続元ノードから見た妥当性によってダイスを1d100で振る。基準値100も可とする",
+        "接続元から見た妥当性で目標値を決める。確実に成立する場所には出目の最大値も使える。",
       );
       expect(messages[0]?.content).toContain("explored:");
-      return answer(id, { sides: 100, successThrough: 100, explored });
+      return answer(id, { successThrough: 18, explored });
     });
     const found = await run(
       "explore",
@@ -16754,7 +16772,10 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
     );
     expect(found.result).toMatchObject({
       state: "accepted",
-      outcome: { success: true, setting: { sides: 100, successThrough: 100 } },
+      outcome: {
+        success: true,
+        setting: { count: 3, sides: 6, successThrough: 18 },
+      },
     });
     expect(f.calls).toHaveBeenCalledTimes(1);
     // 行き来の記述は申請の文ではなく、GMが書いた道の記述になり、新しい場所に説明が付く。
@@ -16882,8 +16903,8 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
     // 接続元の一部として探索された場所は、接続元を材料にする判定へ一緒に渡る。
     f.calls.mockImplementationOnce(async (id) =>
       answer(id, {
-        sides: 100,
-        successThrough: 100,
+        sides: 6,
+        successThrough: 18,
         explored: { ...explored, partOf: true },
       }),
     );
@@ -16901,7 +16922,7 @@ test("新しい場所は接続元を指定して申請し、ダイスの成否�
         node: { id: string };
       }[];
       expect(nodes.map((n) => n.node.id)).toContain(part);
-      return answer(id, { sides: 100, successThrough: 100, explored });
+      return answer(id, { successThrough: 18, explored });
     });
     await f.send(0, {
       command: "explore",
@@ -17095,12 +17116,13 @@ test("非戦闘地域では子区画の車内も保護し、経路と親区画�
   ]);
   const item = made.changes.nodes[0]!.id;
   const setting = {
-    sides: 2,
-    successThrough: 1,
+    count: 3,
+    sides: 6,
+    successThrough: 3,
     fatal: [target],
     states: [{ id: target, text: "新しいけがをした。" }],
     endEdges: [changes.edges[0]!.id],
-    fumble: { through: 1, text: "本人がけがをした。" },
+    fumble: { through: 3, text: "本人がけがをした。" },
   };
   const saveRoll = (id: string, roll: number) =>
     db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,$3)", [
@@ -17120,7 +17142,7 @@ test("非戦闘地域では子区画の車内も保護し、経路と親区画�
     return answer(id, setting);
   };
   const first = randomUUID();
-  await saveRoll(first, 1);
+  await saveRoll(first, 3);
   f.calls.mockImplementationOnce(opposeInside);
   const seize = {
     command: "apply",
@@ -17178,7 +17200,7 @@ test("非戦闘地域では子区画の車内も保護し、経路と親区画�
   await f.move(0, f.far);
   await f.move(1, f.far);
   const third = randomUUID();
-  await saveRoll(third, 1);
+  await saveRoll(third, 3);
   f.calls.mockImplementationOnce(async (id, _role, messages) => {
     const sent = JSON.parse(String(messages[1]!.content));
     expect(sent.mortal).toEqual([target]);
@@ -17318,18 +17340,19 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
   const split = { kind: "separation", count: 1, stays: true };
   const missed = attempt("そっと手を伸ばす", "手の届くところにいる");
   const miss = {
-    sides: 2,
-    successThrough: 1,
+    count: 3,
+    sides: 6,
+    successThrough: 3,
     instantReduction: split,
-    fumble: { through: 1, text: "指先をつつかれて血がにじんでいる。" },
+    fumble: { through: 3, text: "指先をつつかれて血がにじんでいる。" },
   };
   await isolated.databases.postgres.query(
-    "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,2),($3,$4,1)",
+    "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,4),($3,$4,3)",
     [
       missed.requestId,
       miss,
       derivedId(`${missed.requestId}:fumble`),
-      { sides: 2, successThrough: 1 },
+      { count: 3, sides: 6, successThrough: 3 },
     ],
   );
   f.calls.mockImplementationOnce(async (id, _role, messages) => {
@@ -17339,7 +17362,7 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
   const failed = await f.send(0, missed);
   expect(failed.outcome).toMatchObject({
     success: false,
-    fumble: { roll: 1, success: true },
+    fumble: { roll: 3, success: true },
   });
   expect(
     (
@@ -17724,7 +17747,7 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
   expect((await self()).material).not.toMatchObject(penaltyState);
   const remaining = (await f.status(1)).dailySp.remaining;
   f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { sides: 100, successThrough: 100, explored }),
+    answer(id, { successThrough: 18, explored }),
   );
   const resumed = await f.send(1, explore);
   expect(resumed).toMatchObject({
@@ -20076,8 +20099,7 @@ test("失敗した判定はファンブルを一度だけ振り、本人に残�
     expect(role).toBe("world-creation-dice");
     expect(messages[0]!.content).toContain("fumble:{through");
     return answer(id, {
-      sides: sure.sides,
-      successThrough: 1,
+      successThrough: 3,
       fumble: { ...cut, through: most },
     });
   });
@@ -20085,8 +20107,8 @@ test("失敗した判定はファンブルを一度だけ振り、本人に残�
     slipped = await f.send(0, first);
   expect(slipped.outcome).toMatchObject({
     success: false,
-    fumble: { success: true },
-    setting: { fumble: { text: cut.text, minutes: 60 } },
+    fumble: { roll: 9, success: true },
+    setting: { count: 3, sides: 6, fumble: { text: cut.text, minutes: 60 } },
   });
   expect(await f.send(0, first)).toEqual(slipped);
   const [wound] = await states(0);
@@ -20170,8 +20192,7 @@ test("失敗した判定はファンブルを一度だけ振り、本人に残�
     expect(role).toBe("world-opposition-dice");
     expect(messages[0]!.content).toContain("fumble:{through");
     return answer(id, {
-      sides: sure.sides,
-      successThrough: 1,
+      successThrough: 3,
       fumble: { through: most, text: "足首をひねっている。" },
     });
   });
@@ -20925,8 +20946,7 @@ test("探索のGMが系統と所属を作り、管理者が指定した系統だ
       if (known) expect(input.placeSeriesByPlace[fromId]).toBe(known);
       expect(messages[0]!.content).toContain("explored.placeSeries");
       return answer(id, {
-        sides: 100,
-        successThrough: 100,
+        successThrough: 18,
         explored: { ...explored, placeSeries: name },
       });
     });
@@ -21025,7 +21045,7 @@ test("探索は接続元からつながる既知の場所を判定に渡し、�
     dependencies: [],
   });
   f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { sides: 100, successThrough: 100, explored }),
+    answer(id, { successThrough: 18, explored }),
   );
   const yard = (await f.send(0, explore("広場の裏庭"))).placeId as string;
   // 既知の隣の場所と同じなら、ダイスを振らず、場所を作らずに先にある場所のIDを返す。
@@ -21035,8 +21055,8 @@ test("探索は接続元からつながる既知の場所を判定に渡し、�
     expect(input.neighbors).toContainEqual({ id: yard, label: "広場の裏庭" });
     expect(messages[0]!.content).toContain("sameAs");
     return answer(id, {
-      sides: 100,
-      successThrough: 100,
+      sides: 6,
+      successThrough: 18,
       explored: { ...explored, sameAs: yard },
     });
   });
@@ -21052,8 +21072,8 @@ test("探索は接続元からつながる既知の場所を判定に渡し、�
   // 別の場所なら作り、GMが選んだ既知の場所へも行き来を張る。
   f.calls.mockImplementationOnce(async (id) =>
     answer(id, {
-      sides: 100,
-      successThrough: 100,
+      sides: 6,
+      successThrough: 18,
       explored: {
         ...explored,
         sameAs: null,

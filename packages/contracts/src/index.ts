@@ -3,6 +3,19 @@ import { Change, PlaceSeries, RelationKind, StartingItem } from "./world.js";
 import { BlueprintDraft, BlueprintPublication } from "./play.js";
 import { StoryDates, StoryListQuery, StoryReadQuery } from "./stories.js";
 export * from "./stories.js";
+
+export const WorldDice = z
+  .strictObject({
+    count: z.number().int().positive().describe("振るダイスの個数"),
+    sides: z.number().int().min(2).describe("ダイス1個の面数"),
+  })
+  .refine(
+    ({ count, sides }) => count * sides <= 2147483647,
+    "出目の合計が保存できる整数の範囲を超えています",
+  );
+export type WorldDice = z.infer<typeof WorldDice>;
+export const defaultDice: WorldDice = { count: 3, sides: 6 };
+
 export {
   DrawReward,
   DrawTable,
@@ -1468,6 +1481,9 @@ export const Operation = z.discriminatedUnion("operation", [
     .object({
       operation: z.literal("creationPolicy.put"),
       worldId: z.uuid(),
+      dice: WorldDice.optional().describe(
+        "世界の判定で振るダイス。既定は3d6。省略すると現在の設定を保つ",
+      ),
       criteria: z
         .string()
         .trim()
