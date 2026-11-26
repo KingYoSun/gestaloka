@@ -48,7 +48,11 @@ import { join, resolve } from "node:path";
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { fixtureRuntime } from "../support/provider.js";
 import { fixtureAuth } from "../support/auth.js";
-import { approvedTransport, modelEnvironment } from "../support/model.js";
+import {
+  approvedTransport,
+  fixtureBody,
+  modelEnvironment,
+} from "../support/model.js";
 import { createCountedClient } from "../support/token-counting.js";
 import { startPlayLoop } from "../../apps/worker/src/play-loop.js";
 import {
@@ -12919,6 +12923,93 @@ test("初回接続と状態照会のタイムアウトを復旧し、終了時�
     await app.close();
   }
 }, 60000);
+test("通常手番のCLIは本人が受理された直近10発言を再起動後も返す", async () => {
+  const f = await fixture(2),
+    app = await createApp(access, auth.identity, undefined, auth.operations),
+    cli = await playerCli(app);
+  const profile = join(cli.directory, "speech.json");
+  const run = (...args: string[]) => cli.run(profile, ...args, "--full-ids");
+  try {
+    const device = await run(
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (
+        await cli.approve(
+          f.people[0]!.cookie,
+          device.userCode,
+          `actor:${f.actors[0]}`,
+        )
+      ).statusCode,
+    ).toBe(302);
+    const first = await run("status");
+    expect(first.recentOwnSpeech).toEqual([]);
+    const file = join(cli.directory, "speech-input.json");
+    const speeches = Array.from(
+      { length: 11 },
+      (_, i) => `見回りの記録 ${i + 1}`,
+    );
+    const accepted = [];
+    let lost: string | undefined;
+    for (const [i, text] of speeches.entries()) {
+      if (i === 6) await run("end-turn");
+      if (i === 0) cli.dropNextResponse("say");
+      if (i === 1)
+        await writeFile(file, JSON.stringify({ command: "say", text }));
+      const sent =
+        i === 1
+          ? await run("play", "--file", file)
+          : await run("say", "--text", text);
+      if (i === 0) {
+        expect(sent.state).toBe("error");
+        lost = sent.requestId;
+      } else {
+        expect(sent.result.state).toBe("accepted");
+        accepted.push({ requestId: sent.requestId, text });
+      }
+    }
+    expect((await run("recover", "--request", lost!)).result.state).toBe(
+      "accepted",
+    );
+    expect(
+      (await run("recover", "--request", accepted[0]!.requestId)).result.state,
+    ).toBe("accepted");
+    expect(await run("standby", "--resume")).toMatchObject({
+      actionable: true,
+    });
+    const current = await run("status");
+    expect(current.recentOwnSpeech).toEqual(accepted);
+    expect(current.entries.length).toBeGreaterThan(0);
+    expect(await run("status")).toMatchObject({
+      entries: [],
+      nextCursor: current.nextCursor,
+      callsUsed: current.callsUsed,
+      recentOwnSpeech: accepted,
+    });
+    expect(
+      (await run("status", "--scene", first.sceneId)).recentOwnSpeech,
+    ).toBeUndefined();
+    await run("contact", "--target", f.actors[1]!);
+    await giveTurn(f, 1);
+    expect((await run("status")).recentOwnSpeech).toBeUndefined();
+    await f.send(1, { command: "say", text: "相手だけの発言" });
+    await f.send(1, { command: "end-turn" });
+    expect((await run("status")).recentOwnSpeech).toEqual(accepted);
+    await run("finish");
+    await f.send(0, { command: "start" });
+    const next = await run("status");
+    expect(next.sceneId).not.toBe(first.sceneId);
+    expect(next.recentOwnSpeech).toEqual([]);
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+}, 60000);
+
 test("CLIの自己照会は本人が聞いた発言だけを添え、既読位置を進めない", async () => {
   const f = await fixture();
   const app = await createApp(
@@ -19237,11 +19328,27 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
         [f.world, npc],
       )
     ).rows[0].memory;
-  const choose = async (operation: string, args: object) => {
+  const choose = async (
+    operation: string,
+    args: object,
+    requestId?: string,
+  ) => {
     let context:
-      | { readResult?: unknown; completedWork: { priorResult: string } }
+      | {
+          readResult?: unknown;
+          completedWork: {
+            priorResult: string;
+            recheckRequest?: { id: string; text: string };
+          };
+          availableOperations: { name: string }[];
+        }
       | undefined;
-    f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    f.calls.mockImplementation(async (id, role, messages) => {
+      if (role === "world-npc-recheck-request")
+        return answer(
+          id,
+          requestId ? { intent: "recheck", requestId } : { intent: "other" },
+        );
       context = JSON.parse(String(messages[1]!.content));
       return answer(id, {
         operation,
@@ -19261,8 +19368,17 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
   expect((await memory()).completed).toBeUndefined();
   const firstRead = (await memory()).pending.readId;
   const reply = { mode: "nonverbal", text: "荷受けは広場です。" };
-  const reporting = await choose("report_and_pass", reply);
+  const reporting = await choose("report_and_pass", {
+    finding: reply.text,
+    judgment: null,
+    mode: reply.mode,
+  });
   expect(JSON.stringify(reporting.readResult)).toContain("広場");
+  const operationsWhileReporting = reporting.availableOperations.map(
+    ({ name }) => name,
+  );
+  expect(operationsWhileReporting).toContain("report_and_pass");
+  expect(operationsWhileReporting).not.toContain("inspect_and_reply");
   const done = await memory();
   expect(done.pending).toBeUndefined();
   expect(done.completed).toMatchObject({
@@ -19287,44 +19403,96 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
     history.entries,
   );
   await f.send(0, { command: "end-turn" });
-  const recall = await choose("repeat_delivered_answer", {});
-  expect(recall.completedWork.priorResult).toBe("unchanged");
+  const same = await choose("inspect_and_reply", {
+    recipient: peer,
+    question: "荷受け場所をもう一度見る",
+    query,
+  });
+  expect(same.completedWork.priorResult).toBe("unchanged");
+  expect(same.availableOperations.map(({ name }) => name)).not.toContain(
+    "recheck_for_recipient",
+  );
+  expect(submits.mock.calls.at(-1)![2].command).toBe("end-turn");
+  expect(await memory()).toMatchObject({ completed: done.completed });
+  expect((await memory()).pending).toBeUndefined();
+  await f.send(0, {
+    command: "say",
+    text: "読み取れなかったので、前の答えをもう一度教えてください。",
+  });
+  await f.send(0, { command: "end-turn" });
+  const recall = await choose("communicate", { ...reply, endOnSuccess: true });
+  expect(recall.availableOperations.map(({ name }) => name)).not.toContain(
+    "recheck_for_recipient",
+  );
+  expect(submits.mock.calls.at(-1)![2]).toMatchObject({
+    command: "say",
+    ...reply,
+  });
   expect((await memory()).completed).toEqual(done.completed);
+  const updatedMaterial: Change = {
+    nodes: [],
+    edges: [],
+    endEdges: [],
+    revisions: [{ kind: "existence", id: f.place, text: "渡し場の荷受け所" }],
+  };
+  const notice = "次の荷受け場所は渡し場です。";
+  mark(updatedMaterial, f.place, notice);
   await f.store.commit(
     await f.store.claim(f.graph, randomUUID()),
     f.store.context(f.graph),
     {
       at: 1,
       commitId: randomUUID(),
-      changes: {
-        nodes: [],
-        edges: [],
-        endEdges: [],
-        revisions: [
-          { kind: "existence", id: f.place, text: "渡し場の荷受け所" },
-        ],
-      },
+      changes: updatedMaterial,
     },
   );
   await f.send(0, { command: "end-turn" });
-  const changed = await choose("recheck_for_recipient", {
-    reason: "荷受け場所の表示が変わった",
-  });
+  const changed = await choose("recheck_for_recipient", {});
   expect(changed.completedWork.priorResult).toBe("visible-result-changed");
   expect((await memory()).pending.readId).not.toBe(firstRead);
   const second = await choose("report_and_pass", {
     mode: "voice",
-    text: "渡し場の荷受け所に変わりました。",
+    finding: [1],
+    judgment: {
+      condition: "すべての受取人に届いたかは分かりません。",
+      proposal: "場所を知らせておくとよさそうです。",
+    },
   });
   expect(JSON.stringify(second.readResult)).toContain("渡し場の荷受け所");
-  expect((await memory()).completed.recordId).not.toBe(done.completed.recordId);
+  const updated = (await memory()).completed;
+  expect(updated.recordId).not.toBe(done.completed.recordId);
+  expect(updated.answer).toBe(
+    `記録には「${notice}」とあります。\n私の見立てでは、すべての受取人に届いたかは分かりません。\n場所を知らせておくとよさそうです。`,
+  );
+  const updatedHistory = await access.botPlay.history(f.world, peer);
+  expect(
+    updatedHistory.entries.find(({ id }) => id === updated.recordId)?.payload
+      .entries,
+  ).toContainEqual(
+    expect.objectContaining({ actorId: npc, input: updated.answer }),
+  );
+  const request = "受取人に知らせるので、今の荷受け場所を改めて見てください。";
+  await f.send(0, { command: "say", text: request });
   await f.send(0, { command: "end-turn" });
-  await choose("recheck_for_recipient", { reason: "受取人から再確認の依頼" });
+  const visible = await access.botPlay.history(f.world, npc);
+  const requestEvidence = visible.entries.flatMap(({ id, payload }) =>
+    (payload.entries ?? []).flatMap(
+      (entry: { input: string }, index: number) =>
+        entry.input === request ? [`${id}.${index}`] : [],
+    ),
+  )[0]!;
+  const recheck = await choose("recheck_for_recipient", {}, requestEvidence);
+  expect(recheck.completedWork.priorResult).toBe("unchanged");
+  expect(recheck.completedWork.recheckRequest).toEqual({
+    id: requestEvidence,
+    text: request,
+  });
   const before = await memory();
   await f.move(0, f.far);
   await choose("report_and_pass", {
     mode: "voice",
-    text: "これが最新の表示です。",
+    finding: [1],
+    judgment: null,
   });
   expect(await memory()).toMatchObject({
     pending: before.pending,
@@ -19334,7 +19502,7 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
   expect(
     absent.entries
       .flatMap((row) => row.payload.entries ?? [])
-      .some((e) => e.input === "これが最新の表示です。"),
+      .some((e) => e.input === `記録には「${notice}」とあります。`),
   ).toBe(false);
 });
 
@@ -19411,7 +19579,7 @@ async function serverNpcScene(receiving = false) {
     { players: access.players },
   );
   const db = isolated.databases.postgres;
-  const exhaust = async () => {
+  const exhaust = async (remaining = 0) => {
     const current = (await access.botPlay.current(f.world, npc))!;
     const status = await f.status(0);
     expect(status.actorId).toBe(npc);
@@ -19425,13 +19593,114 @@ async function serverNpcScene(receiving = false) {
       `npc:${assignment_id}:${current.id}:${status.turn}:${status.callsUsed}:${status.commentUsed}:${current.data.receiving?.id ?? "normal"}`,
     );
     await db.query(
-      "INSERT INTO execution_budget(id,llm_used,llm_limit) SELECT $1,calls,calls FROM response_call_policy",
-      [id],
+      "INSERT INTO execution_budget(id,llm_used,llm_limit) SELECT $1,calls-$2::integer,calls FROM response_call_policy",
+      [id, remaining],
     );
     return derivedId(id + ":stay");
   };
   return { ...f, peer, npc, application, exhaust };
 }
+
+test.each([0, 1, 2])(
+  "再依頼判定はNPCの返答用の枠を残す（残り%s回）",
+  async (remaining) => {
+    const f = await serverNpcScene();
+    const reply = "荷札を持って、三時に受け取りましょう。";
+    const transport = vi.fn((user: Record<string, unknown>) => {
+      if (user.reportedQuestion) return {};
+      if (user.completedWork)
+        return {
+          operation: "communicate",
+          args: {
+            goal: null,
+            text: reply,
+            mode: "nonverbal",
+            endOnSuccess: true,
+          },
+        };
+      if (user.task)
+        return {
+          operation: "report_and_pass",
+          args: {
+            goal: null,
+            finding: "荷受けは広場です。",
+            judgment: null,
+            mode: "nonverbal",
+          },
+        };
+      return {
+        operation: "inspect_and_reply",
+        args: {
+          goal: null,
+          question: "荷受け場所を確認する",
+          recipient: f.peer,
+          query: { kind: "subject", targetId: f.place },
+        },
+      };
+    });
+    const model = runtime.agent.model;
+    const original = model.transport.bind(model);
+    vi.spyOn(model, "transport").mockImplementation(async (url, options) => {
+      const request = options?.body && fixtureBody(options);
+      const content = request?.messages?.find(
+        (message: { role: string }) => message.role === "user",
+      )?.content;
+      if (
+        typeof content !== "string" ||
+        (!content.includes('"availableOperations"') &&
+          !content.includes('"reportedQuestion"'))
+      )
+        return original(url, options);
+      return Response.json({
+        id: randomUUID(),
+        model: request.model,
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        choices: [
+          {
+            message: {
+              content: JSON.stringify(transport(JSON.parse(content))),
+            },
+            finish_reason: "stop",
+          },
+        ],
+      });
+    });
+    await access.botPlay.tickNpcs(f.world);
+    await access.botPlay.tickNpcs(f.world);
+    await f.send(0, {
+      command: "say",
+      text: "分かりました。ありがとうございます。",
+    });
+    await f.send(0, { command: "end-turn" });
+    const handoff = await f.exhaust(remaining);
+    transport.mockClear();
+    const submit = vi.spyOn(access.botPlay, "submit");
+    await access.botPlay.tickNpcs(f.world);
+    expect((await f.status(0)).actorId).toBe(f.peer);
+    expect(
+      transport.mock.calls.map(([user]) => Boolean(user.reportedQuestion)),
+    ).toEqual(remaining === 2 ? [true, false] : remaining === 1 ? [false] : []);
+    expect(submit).toHaveBeenCalledTimes(1);
+    if (remaining)
+      expect(submit.mock.calls[0]?.[2]).toMatchObject({
+        command: "say",
+        text: reply,
+      });
+    else
+      expect(submit.mock.calls[0]?.[2]).toMatchObject({
+        requestId: handoff,
+        command: "end-turn",
+      });
+    const history = await access.botPlay.history(f.world, f.peer);
+    expect(
+      history.entries.some(({ payload }) =>
+        payload.entries?.some(
+          (entry: { input: string }) => entry.input === reply,
+        ),
+      ),
+    ).toBe(remaining > 0);
+  },
+);
 
 test.each([false, true])(
   "応答予算を使い切ったNPCの手番を一度だけ進める（受領判断中=%s）",

@@ -60,7 +60,11 @@ const Request = z.object({
   body: z.record(z.string(), z.unknown()),
   authenticated: z.boolean(),
   method: z.enum(["POST", "PUT"]).default("POST"),
+  submittedAt: z.number().optional(),
 });
+const SceneMembers = z.array(
+  z.object({ actorId: z.uuid(), sceneId: z.uuid() }),
+);
 type Profile = z.infer<typeof Profile>;
 const parse = () =>
   parseArgs({
@@ -78,7 +82,7 @@ const render = (value: unknown) =>
   );
 async function save(path: string, data: unknown) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.tmp`;
+  const temporary = `${path}.${randomUUID()}.tmp`;
   await writeFile(temporary, JSON.stringify(data) + "\n", { mode: 0o600 });
   await rename(temporary, path);
 }
@@ -129,14 +133,14 @@ async function http(
     return attempt();
   }
 }
+const deviceStatus = async (profile: Profile) =>
+  PlayerDeviceStatus.parse(await http(profile, "/api/player-device"));
 async function status(
   profile: Profile,
   after?: string,
   view?: "wait" | "joins",
 ) {
-  const device = PlayerDeviceStatus.parse(
-    await http(profile, "/api/player-device"),
-  );
+  const device = await deviceStatus(profile);
   if (device.state !== "ready") return { state: device.state, device };
   const query = new URLSearchParams();
   if (values.scene) query.set("sceneId", z.uuid().parse(values.scene));
@@ -332,6 +336,23 @@ async function send(
     saved.method,
   );
   await save(join(journal, `${saved.id}.json`), { ...saved, result });
+  if (
+    saved.body.command === "say" &&
+    saved.submittedAt !== undefined &&
+    result.state === "accepted"
+  ) {
+    const device = await deviceStatus(profile);
+    const scene = SceneMembers.safeParse(result.members).data?.find(
+      ({ actorId }) => actorId === device.actorId,
+    );
+    if (scene)
+      references!.recordSpeech(
+        device.id,
+        scene.sceneId,
+        saved.id,
+        saved.submittedAt,
+      );
+  }
   if (profile.joinIconRequestId === saved.id) {
     delete profile.joinIconRequestId;
     await save(profilePath, profile);
@@ -400,6 +421,7 @@ async function submit(
     body: method === "PUT" ? body : { ...body, requestId: id },
     authenticated,
     method,
+    ...(body.command === "say" ? { submittedAt: Date.now() } : {}),
   };
   await save(join(journal, `${id}.json`), saved);
   await save(profilePath, { ...profile, lastRequestId: id });
@@ -707,6 +729,29 @@ async function run() {
       typeof result.nextCursor === "string"
     )
       pendingCursor = result.nextCursor;
+    const device = result.device;
+    if (
+      !view &&
+      !values.scene &&
+      device?.actorId &&
+      result.actorId === device.actorId &&
+      result.receiving === null &&
+      typeof result.sceneId === "string"
+    ) {
+      const recentOwnSpeech = await Promise.all(
+        references
+          .recentSpeech(device.id, result.sceneId)
+          .map(async (requestId) => {
+            const saved = Request.parse(
+              JSON.parse(
+                await readFile(join(journal, `${requestId}.json`), "utf8"),
+              ),
+            );
+            return { requestId, text: saved.body.text };
+          }),
+      );
+      return { ...result, recentOwnSpeech };
+    }
     return result;
   }
   if (command === "recover") {
