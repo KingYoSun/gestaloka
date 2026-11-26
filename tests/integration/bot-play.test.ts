@@ -8778,6 +8778,8 @@ test.each([false, true])(
       expect(review.previousState).toBe(previousState);
       expect(review.allowApply).toBe(false);
       expect(review).not.toHaveProperty("confirmed");
+      // Responsesのjson_objectは、技能や申請本文にかかわらず入力にJSONの明記が必要。
+      expect(messages[0]!.content).toMatch(/json/i);
       return answer(id, {
         ...sure,
         remainingState,
@@ -8844,6 +8846,7 @@ test("他人への手当てで残る状態を受領前に読み、承認した�
       text,
       changes: { nodes: [{ text: description }] },
     });
+    expect(messages[0]!.content).toMatch(/json/i);
     return answer(id, { ...sure, remainingState });
   });
   const offered = await f.send(0, {

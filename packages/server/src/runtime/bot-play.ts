@@ -7598,7 +7598,7 @@ export class BotPlay {
                       : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {sides:整数,successThrough:整数}。1<=successThrough<sides。1からsidesまでの出目がsuccessThrough以下なら成功。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
                     diceStatePrompt +
                     (previousState !== undefined
-                      ? "previousStateは置き換える状態の本文。行為（text）と申請者が書いた処置後の状態（changes.nodesの本文）を照合し、行為が成功しても解消しない元の状態をremainingStateに文字列で必ず返す。全体が解消するなら空文字、何も解消しないなら元の本文を返す。"
+                      ? "previousStateは置き換える状態の本文。行為（text）と申請者が書いた処置後の状態（changes.nodesの本文）を照合し、ダイス設定と同じJSONオブジェクトのremainingStateに、行為が成功しても解消しない元の状態を文字列で必ず返す。全体が解消するなら空文字、何も解消しないなら元の本文を返す。"
                       : reviews.length
                         ? selfStatusPrompt + stateEndsPrompt
                         : "") +
