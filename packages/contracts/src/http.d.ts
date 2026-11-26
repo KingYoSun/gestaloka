@@ -9874,8 +9874,12 @@ export interface paths {
                                 /** @description ダイス1個の面数 */
                                 sides: number;
                             };
-                            /** @description GMが新規作成の目標値を決める基準。空欄で既定、省略で現在の設定を保つ */
+                            /** @description 新規作成のダイス基準。空欄で既定、省略で現状維持 */
                             criteria?: string;
+                            /** @description 探索の判定基準と拒否条件。空欄で既定、省略で現状維持 */
+                            exploreCriteria?: string;
+                            /** @description 技能の習得・発展・統合の成功範囲と、ダイスを振る前にエラーを返す条件。空欄で既定、省略で現状維持 */
+                            skillCriteria?: string;
                             /** @description 失敗時のファンブルをGMが設定するときの基準。空欄で既定の基準。省略すると現在の設定を保つ */
                             fumbleCriteria?: string;
                             /** @description 基準の文をプレイヤーのstatusに表示する。省略すると現在の設定を保つ。初期値は非表示 */

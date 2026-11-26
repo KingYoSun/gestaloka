@@ -2,6 +2,8 @@ import { ModelCallInProgress } from "../llm/budget.js";
 import {
   defaultCreationCriteria,
   defaultFumbleCriteria,
+  defaultSkillCriteria,
+  defaultExploreCriteria,
 } from "../runtime/bot-play.js";
 import type { PromotionProfile } from "../runtime/player-tools.js";
 import { RuntimeMonitor } from "../runtime/monitor.js";
@@ -883,21 +885,23 @@ export class Operations {
         await this.#access(context).botPlay.construction.get(input.worldId);
         if (input.operation === "creationPolicy.put")
           await db.query(
-            "INSERT INTO creation_policy(world_id,criteria,version,admin,shown,fumble_criteria,dice) VALUES($1,coalesce($2,''),$3,$4,coalesce($5,false),coalesce($6,''),$7) ON CONFLICT(world_id) DO UPDATE SET criteria=coalesce($2,creation_policy.criteria),version=EXCLUDED.version,admin=EXCLUDED.admin,shown=coalesce($5,creation_policy.shown),fumble_criteria=coalesce($6,creation_policy.fumble_criteria),dice=coalesce($7,creation_policy.dice)",
+            "INSERT INTO creation_policy(world_id,criteria,version,admin,shown,fumble_criteria,skill_criteria,explore_criteria,dice) VALUES($1,coalesce($2,''),$3,$4,coalesce($5,false),coalesce($6,''),coalesce($7,''),coalesce($8,''),$9) ON CONFLICT(world_id) DO UPDATE SET criteria=coalesce($2,creation_policy.criteria),version=EXCLUDED.version,admin=EXCLUDED.admin,shown=coalesce($5,creation_policy.shown),fumble_criteria=coalesce($6,creation_policy.fumble_criteria),skill_criteria=coalesce($7,creation_policy.skill_criteria),explore_criteria=coalesce($8,creation_policy.explore_criteria),dice=coalesce($9,creation_policy.dice)",
             [
               input.worldId,
-              input.criteria,
+              input.criteria ?? null,
               requestId,
               actor,
               input.shown ?? null,
               input.fumbleCriteria ?? null,
+              input.skillCriteria ?? null,
+              input.exploreCriteria ?? null,
               input.dice ?? null,
             ],
           );
         return {
           ...((
             await db.query(
-              `SELECT criteria,version,shown,coalesce(dice,$2::jsonb) AS dice,fumble_criteria AS "fumbleCriteria" FROM creation_policy WHERE world_id=$1`,
+              `SELECT criteria,version,shown,coalesce(dice,$2::jsonb) AS dice,fumble_criteria AS "fumbleCriteria",skill_criteria AS "skillCriteria",explore_criteria AS "exploreCriteria" FROM creation_policy WHERE world_id=$1`,
               [input.worldId, defaultDice],
             )
           ).rows[0] ?? {
@@ -905,10 +909,14 @@ export class Operations {
             version: null,
             shown: false,
             fumbleCriteria: "",
+            skillCriteria: "",
+            exploreCriteria: "",
             dice: defaultDice,
           }),
           defaultCriteria: defaultCreationCriteria,
           defaultFumbleCriteria,
+          defaultSkillCriteria,
+          defaultExploreCriteria,
         };
       }
       case "npcs.promotions":

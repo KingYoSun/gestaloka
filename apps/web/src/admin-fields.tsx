@@ -101,6 +101,11 @@ export const labels: Record<string, string> = {
   dice: "判定に使うダイス",
   sides: "ダイス1個の面数",
   count: "個数",
+  exploreCriteria: "探索の判定基準と拒否条件（空欄で既定、省略で現状維持）",
+  defaultExploreCriteria: "探索の既定基準",
+  skillCriteria:
+    "技能の習得・発展・統合の判定基準と拒否条件（空欄で既定、省略で現状維持）",
+  defaultSkillCriteria: "技能の習得・発展・統合の既定基準",
   fumbleCriteria: "ファンブルの基準（空欄で既定、省略で現状維持）",
   shown: "基準の文をプレイヤーへ表示",
   approve: "昇格を承認する（オフは却下）",
@@ -534,6 +539,10 @@ export function Fields({
       ) : [
           "reason",
           "prompt",
+          "criteria",
+          "skillCriteria",
+          "exploreCriteria",
+          "fumbleCriteria",
           "playerSettings",
           "description",
           "settings",
@@ -541,7 +550,14 @@ export function Fields({
         <Textarea
           id={id}
           value={String(value ?? "")}
-          required
+          required={
+            ![
+              "criteria",
+              "skillCriteria",
+              "exploreCriteria",
+              "fumbleCriteria",
+            ].includes(name)
+          }
           onChange={(e) => onChange(e.target.value)}
         />
       ) : (

@@ -1,7 +1,11 @@
 import { canonical } from "../llm/prompt.js";
 import type pg from "pg";
 import type { z } from "zod";
-import type { PlayCommand, PlayerReportInput } from "@gestaloka/contracts";
+import type {
+  BelongingOp,
+  PlayCommand,
+  PlayerReportInput,
+} from "@gestaloka/contracts";
 import { AccessError } from "../http/access.js";
 import type { WorldConstruction } from "./construction.js";
 import { derivedId, worldNow, type Change } from "../world/model.js";
@@ -15,6 +19,8 @@ import { commitPlayChange, directChangeScope } from "./play-change-scope.js";
 export type PromotionProfile = {
   description: string;
   memory: string;
+  items: { label: string; basis: string }[];
+  skills: { text: string; basis: string }[];
   through: string;
   snapshot: string;
 };
@@ -50,7 +56,7 @@ export class PlayerTools {
       ALTER TABLE npc_promotion ADD COLUMN IF NOT EXISTS auto_review jsonb, ADD COLUMN IF NOT EXISTS profile_chat_id bigint;
       CREATE TABLE IF NOT EXISTS npc_promotion_policy(world_id uuid PRIMARY KEY,condition text NOT NULL,version uuid NOT NULL,admin uuid NOT NULL);
       CREATE TABLE IF NOT EXISTS creation_policy(world_id uuid PRIMARY KEY,criteria text NOT NULL,version uuid NOT NULL,admin uuid NOT NULL);
-      ALTER TABLE creation_policy ADD COLUMN IF NOT EXISTS shown boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS fumble_criteria text NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS dice jsonb;
+      ALTER TABLE creation_policy ADD COLUMN IF NOT EXISTS shown boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS fumble_criteria text NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS skill_criteria text NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS explore_criteria text NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS dice jsonb;
       CREATE UNIQUE INDEX IF NOT EXISTS npc_promotion_active ON npc_promotion(world_id,source_request_id,npc_index) WHERE state<>'rejected';
       CREATE INDEX IF NOT EXISTS npc_promotion_world_time ON npc_promotion(world_id,created_at,id);
       CREATE INDEX IF NOT EXISTS npc_promotion_actor_time ON npc_promotion(world_id,actor_id,created_at,id);`);
@@ -482,18 +488,26 @@ export class PlayerTools {
             target: instant.sourceEventId,
             period: { from: at },
           });
-        if (locations.length) {
-          const placed = await planBelongings(context, commitId, at, [
-            {
-              type: "locate",
-              subjectId: npc,
-              text: locations.map((l) => l.text).join("、"),
-              aboutIds: [...new Set(locations.flatMap((l) => l.aboutIds))],
-            },
-          ]);
-          changes.nodes.push(...placed.changes.nodes);
-          changes.edges.push(...placed.changes.edges);
-        }
+        const operations: BelongingOp[] = [];
+        if (locations.length)
+          operations.push({
+            type: "locate",
+            subjectId: npc,
+            text: locations.map((l) => l.text).join("、"),
+            aboutIds: [...new Set(locations.flatMap((l) => l.aboutIds))],
+          });
+        for (const { label, basis } of profile.items)
+          operations.push({ type: "create", holder: npc, label, basis });
+        for (const { text, basis } of profile.skills)
+          operations.push({ type: "learn", person: npc, text, basis });
+        const belongings = await planBelongings(
+          context,
+          commitId,
+          at,
+          operations,
+        );
+        changes.nodes.push(...belongings.changes.nodes);
+        changes.edges.push(...belongings.changes.edges);
         const scope = directChangeScope(changes);
         try {
           await commitPlayChange(

@@ -1486,8 +1486,18 @@ export const Operation = z.discriminatedUnion("operation", [
         .string()
         .trim()
         .optional()
+        .describe("新規作成のダイス基準。空欄で既定、省略で現状維持"),
+      exploreCriteria: z
+        .string()
+        .trim()
+        .optional()
+        .describe("探索の判定基準と拒否条件。空欄で既定、省略で現状維持"),
+      skillCriteria: z
+        .string()
+        .trim()
+        .optional()
         .describe(
-          "GMが新規作成の目標値を決める基準。空欄で既定、省略で現在の設定を保つ",
+          "技能の習得・発展・統合の成功範囲と、ダイスを振る前にエラーを返す条件。空欄で既定、省略で現状維持",
         ),
       fumbleCriteria: z
         .string()

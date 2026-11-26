@@ -21,6 +21,7 @@ import {
   InventoryBundleCommand,
   PlayCommand,
   PlayerPlayCommand,
+  playQuote,
   SpectatingView,
   WaitingEvent,
 } from "@gestaloka/contracts";
@@ -5249,32 +5250,37 @@ test("管理者のお知らせは操作中の人物全員か指定した人物�
   ).toBe(2);
 });
 
-test("受容したインスタントNPCだけを昇格申請し、管理者の許可後に一度だけ永続化する", async () => {
+test("受容したNPCを根拠のある所持品と技能ごと一度だけ昇格させ、対抗判定に渡す", async () => {
   const f = await fixture(),
     admin = await auth.person(),
     source = randomUUID();
+  const item = { label: "木剣", basis: "腰に木剣を下げている" };
+  const skill = {
+    text: "籠編み：細い枝を編んで小さな籠を作る",
+    basis: "細い枝を編んで小さな籠を作る",
+  };
+  const appearance = `木陰の小さな旅人。${item.basis}。`;
+  const proposal = "鳥のように飛べる";
   await f.send(1, { command: "contact", targetId: f.actors[0] });
   f.calls.mockImplementationOnce(async (id) => answer(id, sure));
   await f.send(0, {
     requestId: source,
     command: "say",
-    text: "小さな動物が二匹、木陰を横切る",
-    instantNpcs: ["木陰の小さな動物", "別の小さな動物"],
+    text: "木陰に旅人と小さな動物が現れる",
+    instantNpcs: [appearance, "別の小さな動物"],
   });
   expect(f.calls.mock.calls.map((call) => call[1])).toEqual([
     "world-creation-dice",
   ]);
   f.calls.mockClear();
   await f.send(0, { command: "end-turn" });
-  f.calls.mockImplementation(async (id) =>
-    answer(id, { text: "木陰で様子を見る" }),
-  );
+  f.calls.mockImplementation(async (id) => answer(id, { text: skill.basis }));
   await access.botPlay.tickNpcs();
   const pending = await f.send(1, {
     command: "promote-npc",
     sourceRequestId: source,
     npcIndex: 0,
-    description: "人のそばで穏やかに過ごす小さな動物",
+    description: proposal,
   });
   await f.send(1, { command: "end-turn" });
   await access.botPlay.tickNpcs();
@@ -5307,13 +5313,23 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
     { operation: "npcs.promotions", worldId: f.world },
     { players: access.players },
   );
-  expect(JSON.stringify(list)).toContain("木陰の小さな動物");
-  f.calls.mockImplementationOnce(async (id) =>
-    answer(id, {
-      description: "木陰で暮らす小さな動物",
-      memory: "木陰で様子を見た",
-    }),
-  );
+  expect(JSON.stringify(list)).toContain(appearance);
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-npc-profile");
+    expect(JSON.parse(messages[1]!.content)).toMatchObject({
+      appearance: { description: appearance },
+      applicantDescription: proposal,
+      experiences: expect.arrayContaining([
+        expect.objectContaining({ ownAction: true, action: skill.basis }),
+      ]),
+    });
+    return answer(id, {
+      description: appearance,
+      memory: "細い枝で籠を作ったことを覚えている",
+      items: [item],
+      skills: [skill, { text: "飛行：空を飛ぶ", basis: proposal }],
+    });
+  });
   const id = randomUUID(),
     accepted = await auth.operations.execute(admin.id, id, approve, {
       players: access.players,
@@ -5325,7 +5341,11 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
   ).toEqual(accepted);
   expect(await f.store.context(f.graph).node(npc)).toMatchObject({
     kind: "existence",
-    text: "木陰の小さな動物",
+    text: appearance,
+  });
+  expect(await readBelongings(f.store.context(f.graph), npc)).toMatchObject({
+    items: [item],
+    skills: [skill],
   });
   expect(
     (
@@ -5358,6 +5378,28 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
   expect(
     await f.store.context(f.graph).node(derivedId(source + ":manual:1")),
   ).toBeUndefined();
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-opposition-dice");
+    const { materials } = JSON.parse(messages[1]!.content);
+    expect(
+      materials.find(
+        (material: { node: { id: string } }) => material.node.id === npc,
+      ),
+    ).toMatchObject({ belongings: { items: [item], skills: [skill] } });
+    return answer(id, sure);
+  });
+  const opposed = await f.send(0, {
+    command: "apply",
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "oppose",
+      targetId: npc,
+      text: "旅人が木剣を抜く前に、編みかけの籠ごと押さえる",
+      description: "旅人はその場から動けない",
+    },
+  });
+  expect(opposed.outcome).toMatchObject({ roll: expect.any(Number) });
   await auth.operations.execute(
     admin.id,
     randomUUID(),
@@ -9353,6 +9395,8 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
       ) as Promise<{
         criteria: string;
         defaultCriteria: string;
+        skillCriteria: string;
+        defaultSkillCriteria: string;
         fumbleCriteria: string;
         defaultFumbleCriteria: string;
         shown: boolean;
@@ -9360,6 +9404,7 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
   const unset = await policy({ operation: "creationPolicy.read" });
   expect(unset).toMatchObject({ dice: { count: 3, sides: 6 } });
   expect(unset.criteria).toBe("");
+  expect(unset.skillCriteria).toBe("");
   expect(unset.fumbleCriteria).toBe("");
   expect(unset.shown).toBe(false);
   const free = (id: string) =>
@@ -9410,6 +9455,7 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
     }),
   ).toMatchObject({ shown: true });
   expect((await f.status(0)).creationCriteria).toBe(unset.defaultCriteria);
+  expect((await f.status(0)).skillCriteria).toBe(unset.defaultSkillCriteria);
   expect((await f.status(0)).fumbleCriteria).toBe(unset.defaultFumbleCriteria);
   expect(
     await policy({
@@ -9420,6 +9466,18 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
     }),
   ).toMatchObject({ shown: true });
   expect((await f.status(0)).creationCriteria).toBe("この世界だけの基準");
+  const skillCriteria = "技能は、その場で実際に試せた範囲で判定する";
+  expect(
+    await policy({
+      operation: "creationPolicy.put",
+      skillCriteria,
+      reason: "技能だけ変更",
+    }),
+  ).toMatchObject({
+    skillCriteria,
+    criteria: "この世界だけの基準",
+    fumbleCriteria: "この世界だけのファンブル基準",
+  });
   expect((await f.status(0)).fumbleCriteria).toBe(
     "この世界だけのファンブル基準",
   );
@@ -9442,6 +9500,19 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
     reason: "基準を非表示",
   });
   expect((await f.status(0)).creationCriteria).toBeUndefined();
+  expect((await f.status(0)).skillCriteria).toBeUndefined();
+  expect(
+    (await policy({ operation: "creationPolicy.read" })).skillCriteria,
+  ).toBe(skillCriteria);
+  expect(
+    (
+      await policy({
+        operation: "creationPolicy.put",
+        skillCriteria: "",
+        reason: "技能を既定に戻す",
+      })
+    ).skillCriteria,
+  ).toBe("");
   f.calls.mockImplementation(async (id, _role, messages) => {
     expect(messages[0]?.content).toContain("この世界だけの基準");
     expect(messages[0]?.content).toContain("この世界だけのファンブル基準");
@@ -14431,10 +14502,10 @@ describe("現場材料", () => {
         }[];
       };
       const user = input.find(({ role }) => role === "user")!;
-      const [prefix] = user.content
+      const [prefix, current] = user.content
         .map(({ text }) => text)
         .join("")
-        .split("\n", 1);
+        .split("\n", 2);
       let text = "";
       const boundaries = input.flatMap(({ content }) =>
         content.flatMap((block) => {
@@ -14442,11 +14513,18 @@ describe("現場材料", () => {
           return block.prompt_cache_breakpoint ? [text] : [];
         }),
       );
-      return { skills: JSON.parse(prefix!).actorSkills, boundaries };
+      return {
+        skills: JSON.parse(prefix!).actorSkills,
+        current: JSON.parse(current!),
+        boundaries,
+      };
     });
     expect(sent).toHaveLength(2);
     expect(sent[0]!.skills).toEqual(expected);
     expect(sent[1]!.skills).toEqual(skills);
+    expect(sent[0]!.current).toHaveProperty("skillCriteria");
+    expect(sent[1]!.current).not.toHaveProperty("skillCriteria");
+    expect(sent[1]!.current).not.toHaveProperty("recentAttempts");
     expect(sent[0]!.boundaries.at(-1)).toBeDefined();
     expect(sent[1]!.boundaries).toContain(sent[0]!.boundaries.at(-1));
   });
@@ -14714,8 +14792,16 @@ describe("現場材料", () => {
       };
       f.calls.mockImplementationOnce(async (id, role, messages) => {
         expect(role).toBe("world-creation-dice");
-        const { proposals } = JSON.parse(String(messages[1]!.content));
+        const { proposals, skillCriteria } = JSON.parse(
+          String(messages[1]!.content),
+        );
         expect(proposals).toHaveLength(3);
+        expect(skillCriteria).toContain("制約や宣誓");
+        expect(
+          proposals.map(
+            (p: { learning?: { text: string }[] }) => p.learning?.[0]?.text,
+          ),
+        ).toEqual(["帆を繕う", "風を読む", undefined]);
         expect(proposals[0].declaredMaterials).toBeUndefined();
         expect(proposals[1].declaredMaterials).toBeUndefined();
         expect(proposals[2].declaredMaterials).toMatchObject([
@@ -15801,7 +15887,12 @@ test("技能枠が満杯でも元技能を本人が選んだときだけ作成�
   expect(lost.outcome).toMatchObject({ success: false });
   expect((await list(actor)).skills.map((s) => s.id)).toEqual(ids);
   f.calls.mockImplementationOnce(async (id, _role, messages) => {
-    const node = JSON.parse(String(messages[1]!.content)).changes.nodes[0];
+    const payload = JSON.parse(String(messages[1]!.content));
+    expect(payload.recentAttempts[actor]).toContainEqual({
+      action: "遠洋航海",
+      success: false,
+    });
+    const node = payload.changes.nodes[0];
     return answer(id, {
       ...sure,
       decided: [{ id: node.id, text: "星位と潮流から夜の沿岸航路を選べる" }],
@@ -20208,9 +20299,262 @@ test("登録済みの人物に起きることを名指しする作成は、本�
   ).toMatchObject({ success: true });
 });
 
+test("管理者が指定した技能の拒否条件を、抽選や元技能・材料の消費より先に適用する", async () => {
+  const f = await fixture(1);
+  const person = f.actors[0]!;
+  const skillCriteria = "鐘を鳴らす技能は指導者の同席がなければエラーにする";
+  await auth.operations.execute(
+    (await auth.person()).id,
+    randomUUID(),
+    {
+      operation: "creationPolicy.put",
+      worldId: f.world,
+      skillCriteria,
+      reason: "鐘の稽古条件",
+    },
+    { players: access.players },
+  );
+  await f.apply([
+    {
+      type: "learn",
+      person,
+      text: "鐘の音を聴き分ける",
+      basis: "鐘楼での稽古",
+    },
+    {
+      type: "create",
+      holder: person,
+      label: "奉納札",
+      basis: "祭礼で受け取った",
+    },
+  ]);
+  const holdings = () => readBelongings(f.store.context(f.graph), person);
+  const before = await holdings();
+  const requestId = randomUUID();
+  const reason = "鐘を鳴らす稽古を指導する人物が同席していません";
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(JSON.parse(String(messages[1]!.content)).skillCriteria).toBe(
+      skillCriteria,
+    );
+    return answer(id, { reject: reason });
+  });
+  const sp = (await access.botPlay.dailySp(f.world, person)).remaining;
+  const request = PlayerPlayCommand.parse({
+    command: "apply",
+    requestId,
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "generate",
+      plans: [
+        {
+          text: "奉納札を納め、鐘を鳴らす稽古をする",
+          materials: [{ id: before.items[0]!.id }],
+          operation: {
+            type: "learn",
+            person,
+            text: "鐘で合図を送る",
+            basis: "稽古",
+            consumeSkillIds: [before.skills[0]!.id],
+          },
+        },
+      ],
+    },
+  });
+  expect(playQuote(request)).toMatchObject({
+    expectedSp: 1,
+    chargeWhen: "review-saved",
+  });
+  const result = await f.send(0, request);
+  expect(result).toMatchObject({
+    spentSp: 1,
+    outcome: {
+      success: false,
+      reason: "SKILL_POLICY_REJECTED",
+      message: reason,
+    },
+    action: { message: expect.stringContaining(reason) },
+  });
+  expect(result.outcome).not.toHaveProperty("roll");
+  expect(await f.send(0, request)).toEqual(result);
+  expect(await holdings()).toEqual(before);
+  expect((await f.status(0)).callsUsed).toBe(1);
+  expect((await access.botPlay.dailySp(f.world, person)).remaining).toBe(
+    sp - 1,
+  );
+  expect(
+    (
+      await isolated.databases.postgres.query(
+        "SELECT 1 FROM bot_dice WHERE id=$1",
+        [derivedId(`${requestId}:creation`)],
+      )
+    ).rowCount,
+  ).toBe(0);
+});
+
+test("物品と探索の拒否は各案1 SPで、許可した物品だけが成立する", async () => {
+  const f = await fixture(1);
+  const holder = f.actors[0]!;
+  const exploreCriteria = "旅だけで報酬を保証する場所は拒否する";
+  await auth.operations.execute(
+    (await auth.person()).id,
+    randomUUID(),
+    {
+      operation: "creationPolicy.put",
+      worldId: f.world,
+      exploreCriteria,
+      shown: true,
+      reason: "探索条件の設定",
+    },
+    { players: access.players },
+  );
+  expect((await f.status(0)).exploreCriteria).toBe(exploreCriteria);
+  const sp = (await access.botPlay.dailySp(f.world, holder)).remaining;
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    expect(messages[0]?.content).toContain("希少品を複製");
+    return answer(id, {
+      settings: [{ reject: "望む宝石が無限に出てくる" }, sure],
+    });
+  });
+  const result = await f.send(0, {
+    command: "apply",
+    expectedSp: 2,
+    dependencies: [],
+    action: {
+      type: "generate",
+      plans: ["尽きない宝石箱", "木の小箱"].map((label) => ({
+        text: label,
+        operation: { type: "create", label, holder, basis: "木工" },
+      })),
+    },
+  });
+  expect(result).toMatchObject({
+    spentSp: 2,
+    outcome: {
+      proposals: [
+        { success: false, reason: "ITEM_POLICY_REJECTED" },
+        { success: true, roll: expect.any(Number) },
+      ],
+    },
+  });
+  expect(
+    (await readBelongings(f.store.context(f.graph), holder)).items.map(
+      (i) => i.label,
+    ),
+  ).toEqual(["木の小箱"]);
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    expect(messages[0]?.content).toContain(exploreCriteria);
+    return answer(id, { reject: "踏み入れるだけで報酬が確定する" });
+  });
+  const request = {
+    command: "explore",
+    requestId: randomUUID(),
+    dependencies: [],
+    fromId: f.place,
+    label: "祝福の道",
+    text: "道を通るたびに富を得る",
+  };
+  const explored = await f.send(0, request);
+  expect(explored).toMatchObject({
+    spentSp: 1,
+    outcome: { success: false, reason: "EXPLORE_POLICY_REJECTED" },
+    action: { message: expect.stringContaining("報酬") },
+  });
+  expect(explored).not.toHaveProperty("placeId");
+  expect(explored.outcome).not.toHaveProperty("roll");
+  expect(await f.send(0, request)).toEqual(explored);
+  expect((await access.botPlay.dailySp(f.world, holder)).remaining).toBe(
+    sp - 3,
+  );
+});
+
+test("世界外に接続する技能だけを差し戻し、同じ申請の技能と製作は抽選して精算する", async () => {
+  const f = await fixture(1);
+  const person = f.actors[0]!;
+  const outside = "現実の掲示板から現在の書き込みを読み取る";
+  const inside = "街角の伝言板を手早く写す";
+  const reason = "この技能は世界の外にある掲示板から情報を取得します";
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const { skillCriteria, proposals } = JSON.parse(
+      String(messages[1]!.content),
+    );
+    expect(skillCriteria).toContain("この世界の外部との接続");
+    expect(proposals.map((p: { learning?: unknown }) => !!p.learning)).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    return answer(id, { settings: [{ reject: reason }, sure, sure] });
+  });
+  const request = PlayerPlayCommand.parse({
+    command: "apply",
+    requestId: randomUUID(),
+    expectedSp: 3,
+    dependencies: [],
+    action: {
+      type: "generate",
+      plans: [
+        ...[outside, inside].map((text) => ({
+          text,
+          operation: { type: "learn", person, text, basis: "掲示板の観察" },
+        })),
+        {
+          text: "黒板を作る",
+          operation: {
+            type: "create",
+            label: "黒板",
+            holder: person,
+            basis: "工房で作った",
+          },
+        },
+      ],
+    },
+  });
+  const sp = (await access.botPlay.dailySp(f.world, person)).remaining;
+  const result = await f.send(0, request);
+  expect(result).toMatchObject({
+    spentSp: 3,
+    action: { message: expect.stringContaining(reason) },
+    outcome: {
+      success: true,
+      proposals: [
+        {
+          text: outside,
+          success: false,
+          reason: "SKILL_POLICY_REJECTED",
+          message: reason,
+        },
+        { text: inside, success: true, roll: expect.any(Number) },
+        { success: true, roll: expect.any(Number) },
+      ],
+    },
+  });
+  expect(await f.send(0, request)).toEqual(result);
+  expect((await access.botPlay.dailySp(f.world, person)).remaining).toBe(
+    sp - 3,
+  );
+  expect(await readBelongings(f.store.context(f.graph), person)).toMatchObject({
+    skills: [{ text: inside }],
+    items: [{ label: "黒板" }],
+  });
+});
+
 test("技能習得では指定した現物の消費と同名のNPC本人への作用を区別する", async () => {
   const f = await fixture(2);
   const actor = f.actors[0]!;
+  const skillCriteria = "鐘楼で音を聴く稽古をした経験を重視する";
+  await auth.operations.execute(
+    (await auth.person()).id,
+    randomUUID(),
+    {
+      operation: "creationPolicy.put",
+      worldId: f.world,
+      skillCriteria,
+      reason: "技能習得の基準を設定",
+    },
+    { players: access.players },
+  );
   await setNpc(f, 1, "server");
   const label = "人物1";
   const seed = await f.apply([
@@ -20231,6 +20575,25 @@ test("技能習得では指定した現物の消費と同名のNPC本人への�
     f.calls.mockImplementationOnce(async (id, role, messages) => {
       expect(role).toBe("world-creation-dice");
       const payload = JSON.parse(String(messages[1]!.content));
+      expect(payload.skillCriteria).toBe(skillCriteria);
+      expect(payload.learning).toMatchObject([
+        { person: actor, text: skill, basis: text },
+      ]);
+      expect(payload.nodes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            node: expect.objectContaining({ id: f.place, text: "広場" }),
+          }),
+          expect.objectContaining({
+            node: expect.objectContaining({ id: actor }),
+            belongings: expect.objectContaining({
+              items: expect.arrayContaining([
+                expect.objectContaining({ id: item, label }),
+              ]),
+            }),
+          }),
+        ]),
+      );
       expect(payload.declaredMaterials).toEqual(
         useItem
           ? [expect.objectContaining({ id: item, label, available: 1 })]

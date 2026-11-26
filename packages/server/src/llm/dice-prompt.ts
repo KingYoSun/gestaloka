@@ -17,6 +17,8 @@ type DiceInput = {
   nodes?: MaterialFact[];
   materials?: MaterialFact[];
   consumable?: { id: string; label: string; count?: number }[];
+  skillCriteria?: string;
+  recentAttempts?: unknown;
 };
 
 function compactDiceInput(input: ChatMessage, cacheSkills: boolean) {
@@ -26,6 +28,8 @@ function compactDiceInput(input: ChatMessage, cacheSkills: boolean) {
     nodes: creation,
     materials: opposition,
     consumable,
+    skillCriteria,
+    recentAttempts,
     ...action
   } = JSON.parse(input.content) as DiceInput;
   const nodes = creation ?? opposition;
@@ -140,6 +144,7 @@ function compactDiceInput(input: ChatMessage, cacheSkills: boolean) {
     ...(split ? {} : { premise, actor }),
     ...action,
     [factKey]: packedNodes,
+    ...(skillCriteria ? { skillCriteria, recentAttempts } : {}),
     ...(groundItems.length ? { groundItems } : {}),
     ...(packedConsumable
       ? { consumable: allHeldConsumable ? true : packedConsumable }
