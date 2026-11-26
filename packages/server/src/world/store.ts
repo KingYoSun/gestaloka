@@ -41,6 +41,7 @@ import {
   derivedId,
   isPlaceSeriesMembership,
   isRespawnHome,
+  actionExperience,
   respawnHome,
   summaryId,
   summaryText,
@@ -241,6 +242,51 @@ function parseJudgmentRecord<T extends object>(
 }
 const relationKey = (id: string, kind: RelationKind, direction: Direction) =>
   `relations:${id}:${kind}:${direction}`;
+const experienceToken = (text: string) =>
+  createHash("sha256").update(text).digest("hex");
+const experienceTime = (at: number) => String(at).padStart(16, "0");
+const experienceWords = new Intl.Segmenter("ja", { granularity: "word" });
+// 分かち書きで複合語の区切りが揺れる場合にも、隣り合う漢字で照合する。
+function experienceTerms(text: string) {
+  const normalized = text.normalize("NFKC").toLowerCase();
+  const terms = Array.from(experienceWords.segment(normalized))
+    .filter(({ isWordLike, segment }) => isWordLike && segment.length > 1)
+    .map(({ segment }) => segment.replace(/(?<=\p{Script=Han})[ぁ-ん]+$/u, ""));
+  for (const [word] of normalized.matchAll(/\p{Script=Han}{2,}/gu)) {
+    const letters = Array.from(word);
+    for (let i = 1; i < letters.length; i++)
+      terms.push(letters[i - 1]! + letters[i]);
+  }
+  return Array.from(new Set(terms), experienceToken);
+}
+
+function experienceIndexFields(
+  world: string,
+  actor: string,
+  at: number,
+  text: string,
+) {
+  return {
+    experienceOwner: experienceToken(`${world}:${actor}`),
+    experienceAt: experienceTime(at),
+    experienceTerms: experienceTerms(text).join(" "),
+  };
+}
+const experienceReference = (id: string) =>
+  id.toLowerCase().replaceAll("-", "");
+function experienceReferences(
+  ids: Iterable<string>,
+  nodes: ReadonlyMap<string, WorldNode>,
+) {
+  const refs = new Set<string>();
+  for (const id of ids) {
+    refs.add(`id${experienceReference(id)}`);
+    const node = nodes.get(id);
+    if (node?.kind === "existence" && node.seriesId)
+      refs.add(`series${experienceReference(node.seriesId)}`);
+  }
+  return [...refs];
+}
 const edgeKeys = (edge: WorldEdge) => [
   edgeKey(edge.id),
   relationKey(edge.source, edge.kind, "out"),
@@ -1328,6 +1374,63 @@ export class WorldContext {
     );
   }
 
+  async relevantExperiences(
+    actor: string,
+    through: number,
+    text: string,
+    referenceIds: readonly string[] = [],
+  ) {
+    const terms = experienceTerms(text).slice(0, 64);
+    const ids = [...new Set(referenceIds)].filter((id) => id !== actor);
+    const nodes = await this.nodes(ids, true);
+    const refs = experienceReferences(ids, nodes);
+    if (!terms.length && !refs.length) return [];
+    const owner = experienceToken(`${this.worldId}:${actor}`);
+    const scope = `+experienceOwner:${owner} +experienceAt:[0000000000000000 TO ${experienceTime(through)}]`;
+    const searches = [
+      ...(refs.length
+        ? [
+            {
+              index: "WorldEdge_happen_experience_refs",
+              query: `${scope} +experienceRefs:(${refs.join(" OR ")})`,
+            },
+          ]
+        : []),
+      ...(terms.length
+        ? [
+            {
+              index: "WorldEdge_happen_experience_search",
+              query: `${scope} +experienceTerms:(${terms.join(" OR ")})`,
+            },
+          ]
+        : []),
+    ];
+    return this.#read(relationKey(actor, "happen", "out"), async (tx) => {
+      const result = await tx.run(
+        `UNWIND $searches AS search
+         CALL db.index.fulltext.queryRelationships(search.index, search.query, {limit: 8})
+         YIELD relationship
+         RETURN DISTINCT endNode(relationship).id AS id, relationship.experienceRefs AS refs`,
+        { searches },
+      );
+      return result.records.map((row) => {
+        const indexed = new Set((row.get("refs") as string | null)?.split(" "));
+        const sharedReferences = ids.flatMap((id) => {
+          const [identity, series] = experienceReferences([id], nodes);
+          const match = indexed.has(identity!)
+            ? "sameId"
+            : series && indexed.has(series)
+              ? "sameSeries"
+              : undefined;
+          return match
+            ? [{ id, match, label: nodes.get(id)?.text.slice(0, 120) }]
+            : [];
+        });
+        return { id: row.get("id") as string, sharedReferences };
+      });
+    });
+  }
+
   async historyPage(
     id: string,
     kind: "see" | "interpret",
@@ -1570,6 +1673,12 @@ export class WorldStore {
         `CREATE INDEX WorldEdge_${kind}_identity IF NOT EXISTS FOR ()-[r:${kind}]-() ON (r.worldId, r.id)`,
       );
     await this.driver.executeQuery(
+      "CREATE FULLTEXT INDEX WorldEdge_happen_experience_search IF NOT EXISTS FOR ()-[r:happen]-() ON EACH [r.experienceOwner,r.experienceAt,r.experienceTerms]",
+    );
+    await this.driver.executeQuery(
+      "CREATE FULLTEXT INDEX WorldEdge_happen_experience_refs IF NOT EXISTS FOR ()-[r:happen]-() ON EACH [r.experienceOwner,r.experienceAt,r.experienceRefs]",
+    );
+    await this.driver.executeQuery(
       "CREATE TEXT INDEX WorldNode_data IF NOT EXISTS FOR (n:WorldNode) ON (n.data)",
     );
     await this.driver.executeQuery(
@@ -1596,9 +1705,86 @@ export class WorldStore {
     }
     // 同名確認は索引を指定して引くので、作成中の索引を使わせない。
     await this.driver.executeQuery("CALL db.awaitIndexes(300)");
+    await this.#replaceExperienceIndex();
+    await this.#indexExperienceTargets();
     // ADR-072: 物品を持つ関係は役割なしのhas。旧版が役割holdで記録した関係を書き換える。
     await this.driver.executeQuery(
       `MATCH ()-[r:has {role:'hold'}]->() SET r.role = null, r.data = replace(r.data, ',"role":"hold"', '')`,
+    );
+  }
+
+  async #indexExperienceTargets() {
+    const worldId = "00000000-0000-0000-0000-000000000000";
+    const key = "migration:experience-targets";
+    const session = this.driver.session();
+    try {
+      for (;;) {
+        const finished = await session.executeWrite(async (tx) => {
+          if ((await lock(tx, worldId, key)) > 0) return true;
+          const { records } = await tx.run(
+            `MATCH (actor)-[r:happen]->(event)
+             WHERE r.experienceOwner IS NOT NULL AND r.experienceRefs IS NULL
+             WITH actor,r,event LIMIT 128
+             OPTIONAL MATCH (event)-[:effect]->(target)
+             WHERE target <> actor
+             WITH r,collect(DISTINCT 'id'+replace(toLower(target.id),'-','')) AS refs
+             SET r.experienceRefs=reduce(s='', ref IN refs | s+' '+ref)
+             RETURN count(r) AS updated`,
+          );
+          if (Number(records[0]?.get("updated")) >= 128) return false;
+          await tx.run(
+            "MATCH (g:WorldGuard {worldId:$worldId,key:$key}) SET g.version=1",
+            { worldId, key },
+          );
+          return true;
+        });
+        if (finished) return;
+      }
+    } finally {
+      await session.close();
+    }
+  }
+
+  async #replaceExperienceIndex() {
+    const { records } = await this.driver.executeQuery(
+      "SHOW INDEXES YIELD name WHERE name='WorldEdge_happen_experience_key' RETURN name",
+    );
+    if (!records.length) return;
+    const session = this.driver.session();
+    try {
+      for (;;) {
+        const count = await session.executeWrite(async (tx) => {
+          const { records } = await tx.run(
+            `MATCH (actor)-[r:happen]->(event)
+             WHERE r.experienceKey IS NOT NULL
+             RETURN r.worldId AS world,r.id AS id,actor.id AS actor,r.validFrom AS at,event.data AS event LIMIT 128`,
+          );
+          if (records.length)
+            await tx.run(
+              `UNWIND $rows AS row MATCH ()-[r:happen {worldId:row.world,id:row.id}]->()
+               SET r += row.fields REMOVE r.experienceKey`,
+              {
+                rows: records.map((row) => ({
+                  world: row.get("world"),
+                  id: row.get("id"),
+                  fields: experienceIndexFields(
+                    row.get("world"),
+                    row.get("actor"),
+                    Number(row.get("at")),
+                    WorldNode.parse(JSON.parse(row.get("event"))).text,
+                  ),
+                })),
+              },
+            );
+          return records.length;
+        });
+        if (count < 128) break;
+      }
+    } finally {
+      await session.close();
+    }
+    await this.driver.executeQuery(
+      "DROP INDEX WorldEdge_happen_experience_key IF EXISTS",
     );
   }
 
@@ -2254,6 +2440,7 @@ export class WorldStore {
       seriesGrants?: string[];
       spUseProhibitionGrants?: string[];
       respawnHomeActor?: string;
+      experienceReferences?: { eventId: string; ids: string[] }[];
     },
     fromBelongingOperations = false,
     reservations?: ItemReservations,
@@ -2277,6 +2464,14 @@ export class WorldStore {
         seriesGrants: z.array(z.uuid()).optional(),
         spUseProhibitionGrants: z.array(z.uuid()).optional(),
         respawnHomeActor: z.uuid().optional(),
+        experienceReferences: z
+          .array(
+            z.strictObject({
+              eventId: z.uuid(),
+              ids: z.array(z.uuid()),
+            }),
+          )
+          .optional(),
       })
       .strict()
       .parse(input);
@@ -2351,6 +2546,9 @@ export class WorldStore {
               ? { storageEffect: parsed.storageEffect }
               : {}),
             ...(parsed.management ? { management: parsed.management } : {}),
+            ...(parsed.experienceReferences?.length
+              ? { experienceReferences: parsed.experienceReferences }
+              : {}),
           }),
         )
         .digest("hex");
@@ -2886,11 +3084,23 @@ export class WorldStore {
               ),
             },
           );
+          if (node.kind === "event" && prior.node.text !== node.text)
+            await tx.run(
+              `MATCH ()-[r:happen]->(:WorldNode {worldId:$worldId,id:$id})
+               WHERE r.experienceOwner IS NOT NULL
+               SET r.experienceTerms=$terms`,
+              {
+                worldId,
+                id: node.id,
+                terms: experienceTerms(node.text).join(" "),
+              },
+            );
         };
         const createEdge = (edge: WorldEdge, requiredSubject?: string) =>
           tx.run(
             `MATCH (s:WorldNode {worldId: $worldId, id: $source}), (t:WorldNode {worldId: $worldId, id: $target})
             CREATE (s)-[r:${edge.kind} {worldId: $worldId, id: $id, data: $data, validFrom: $from}]->(t)
+            ${edge.kind === "happen" && edge.text === actionExperience ? "SET r += $experience" : ""}
             SET r.validTo = $until, r.role = $role${edge.kind === "has" ? ", r.judgmentLong=$long,r.judgmentSourceHash=$hash,r.judgmentAvailableAt=$available" : ""}${isSpUseProhibition(edge) ? ", r.spSubject = $source, t.spUseProhibition = true" : ""}${requiredSubject ? ", r.requiredSubject = $requiredSubject, r.requiredUntil = $restrictionUntil" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $restrictionUntil" + edge.commandRestrictions.map((command) => `, r.${restrictionSubject[command]} = $source`).join("") : ""}`,
             {
               worldId,
@@ -2902,6 +3112,23 @@ export class WorldStore {
               until: edge.period.until ?? null,
               restrictionUntil: edge.period.until ?? Number.MAX_SAFE_INTEGER,
               role: edge.role ?? null,
+              experience:
+                edge.kind === "happen" && edge.text === actionExperience
+                  ? {
+                      ...experienceIndexFields(
+                        worldId,
+                        edge.source,
+                        edge.period.from,
+                        nodes.get(edge.target)!.text,
+                      ),
+                      experienceRefs: experienceReferences(
+                        (experienceByEvent.get(edge.target) ?? []).filter(
+                          (id) => id !== edge.source,
+                        ),
+                        nodes,
+                      ).join(" "),
+                    }
+                  : {},
               requiredSubject: requiredSubject ?? null,
               ...excerptProperties(
                 edge.kind === "has" && (!edge.role || edge.role === "skill")
@@ -2937,14 +3164,24 @@ export class WorldStore {
         }
         for (const [index, node] of changes.revisions.entries())
           await reviseNode(revised[index]!, node, at);
+        const experienceByEvent = new Map<string, string[]>();
+        for (const { eventId, ids } of parsed.experienceReferences ?? [])
+          experienceByEvent.set(eventId, ids);
+        for (const edge of changes.edges)
+          if (edge.kind === "effect")
+            experienceByEvent.set(edge.source, [
+              ...(experienceByEvent.get(edge.source) ?? []),
+              edge.target,
+            ]);
         const endpointIds = [
-          ...new Set(
-            changes.edges.flatMap((edge) => [
+          ...new Set([
+            ...(parsed.experienceReferences ?? []).flatMap(({ ids }) => ids),
+            ...changes.edges.flatMap((edge) => [
               edge.source,
               edge.target,
               ...(edge.observation?.sourceIds ?? []),
             ]),
-          ),
+          ]),
         ];
         const endpoints = await tx.run(
           "MATCH (n:WorldNode) WHERE n.worldId = $worldId AND n.id IN $ids RETURN n.id AS id, n.data AS data",

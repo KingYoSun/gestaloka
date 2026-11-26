@@ -6562,6 +6562,7 @@ test("隠密対抗は非戦闘地域で抽選せず、保護外では確定結�
   const alleged = "左手が床に落ちた";
   const damage = "左手を欠損している";
   const actual = "左腕に薄い擦り傷がある";
+  const performed = "人物0が刃で左腕をかすめた";
   const input = {
     command: "apply",
     requestId: randomUUID(),
@@ -6615,6 +6616,7 @@ test("隠密対抗は非戦闘地域で抽選せず、保護外では確定結�
     expect(perception.observers).toContain(witness);
     return answer(id, {
       ...injurySetting,
+      performed,
       perception: {
         states: Object.fromEntries(
           perception.states.map((id) => [id, alleged]),
@@ -6660,7 +6662,12 @@ test("隠密対抗は非戦闘地域で抽選せず、保護外では確定結�
 
   const receipt = await f.store.receipt(f.graph, requestId);
   expect(receipt?.changes.nodes).toEqual(
-    expect.arrayContaining([expect.objectContaining({ kind: "event" })]),
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: "event",
+        text: expect.stringContaining(performed),
+      }),
+    ]),
   );
   expect(receipt?.changes.edges).toContainEqual(
     expect.objectContaining({ kind: "status", source: target, text: "judged" }),
@@ -6675,13 +6682,17 @@ test("隠密対抗は非戦闘地域で抽選せず、保護外では確定結�
     expect(views).not.toContain(falseResult);
 });
 
-test("対抗申請の応答と公開記録には成否に応じてGMが確定した状態だけが載る", async () => {
+test("対抗申請で成立した行為を確定し、別の言い方でも同じ対象IDから古い経験を渡す", async () => {
   const f = await fixture(2);
   const [actor, target] = f.actors as [string, string];
   await f.send(1, { command: "contact", targetId: actor });
   await giveTurn(f, 0);
   const proposed = "相手の右手を切り落とした";
   const description = "右手を欠損している";
+  const performed = "刃で相手の右手の甲をかすめた";
+  const failedAction = "刃で相手の右手を深く傷つけた";
+  const renamed = "向かいの戦士の足元を払う";
+  const renamedEffect = "体勢を崩している";
   const strike = async (roll: number, state: string) => {
     const requestId = randomUUID();
     const setting = {
@@ -6693,16 +6704,38 @@ test("対抗申請の応答と公開記録には成否に応じてGMが確定し
       "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,$3)",
       [requestId, setting, roll],
     );
-    f.calls.mockImplementationOnce(async (id, role) => {
-      expect(role).toBe("world-opposition-dice");
-      return answer(id, setting);
-    });
+    f.calls.mockImplementationOnce(
+      async (id, role, messages, _, __, ___, validate) => {
+        expect(role).toBe("world-opposition-dice");
+        expect(messages[0]!.content).toContain("performed");
+        expect(() => validate!(JSON.stringify(setting))).toThrow();
+        if (roll === 6)
+          expect(JSON.parse(messages[1]!.content).materials).toContainEqual(
+            expect.objectContaining({
+              experiencedBy: actor,
+              node: expect.objectContaining({
+                kind: "event",
+                text: expect.stringContaining(performed),
+              }),
+            }),
+          );
+        return answer(id, {
+          ...setting,
+          performed: roll === 1 ? performed : failedAction,
+        });
+      },
+    );
     const result = await f.send(0, {
       command: "apply",
       requestId,
       expectedSp: 1,
       dependencies: [],
-      action: { type: "oppose", targetId: target, text: proposed, description },
+      action: {
+        type: "oppose",
+        targetId: target,
+        text: roll === 1 ? proposed : renamed,
+        description: roll === 1 ? description : renamedEffect,
+      },
     });
     await giveTurn(f, 1);
     const entry = (await f.status(1)).entries
@@ -6748,8 +6781,73 @@ test("対抗申請の応答と公開記録には成否に応じてGMが確定し
       text: expect.stringContaining(actual),
     }),
   );
+  expect(success.receipt?.changes.nodes).toContainEqual(
+    expect.objectContaining({
+      kind: "event",
+      text: expect.stringContaining(performed),
+    }),
+  );
 
+  const at = success.receipt!.at + 1;
+  const nodes = Array.from({ length: 10 }, (_, i) => ({
+    id: randomUUID(),
+    kind: "event" as const,
+    text: `倉庫で箱を整理した。棚番号${i}`,
+    period: { from: at },
+  }));
+  const commitId = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, commitId),
+    f.store.context(f.graph),
+    {
+      commitId,
+      at,
+      changes: {
+        nodes,
+        revisions: [],
+        endEdges: [],
+        edges: nodes.map(({ id, period }) => ({
+          id: randomUUID(),
+          kind: "happen",
+          source: actor,
+          target: id,
+          text: "action-experience",
+          period,
+        })),
+      },
+    },
+  );
+  expect(
+    await f.store
+      .context(f.graph)
+      .relevantExperiences(
+        actor,
+        Number.MAX_SAFE_INTEGER,
+        `${renamed}\n${renamedEffect}`,
+      ),
+  ).toEqual([]);
+  const model = runtime.agent.model;
+  vi.spyOn(model, "decision", "get").mockReturnValue(
+    decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+  );
+  const decide = vi
+    .spyOn(model, "decide")
+    .mockImplementation(async (_id, role, state, questions) => {
+      expect(role).toBe("world-judgment-materials");
+      expect(JSON.stringify(state)).toContain(performed);
+      expect(state).toMatchObject({
+        candidates: expect.arrayContaining([
+          expect.objectContaining({
+            evidence: expect.objectContaining({
+              sharedReferences: [{ id: target, match: "sameId" }],
+            }),
+          }),
+        ]),
+      });
+      return Object.fromEntries(Object.keys(questions).map((key) => [key, 1]));
+    });
   await giveTurn(f, 0);
+  f.calls.mockClear();
   const conditional = "右手の指を動かせない";
   const failure = await strike(6, conditional);
   expect(failure.result).toMatchObject({
@@ -6757,9 +6855,211 @@ test("対抗申請の応答と公開記録には成否に応じてGMが確定し
     action: { message: expect.stringContaining("失敗") },
   });
   expect(failure.presentation).not.toContain(conditional);
+  expect(failure.presentation).not.toContain(failedAction);
+  expect(decide).toHaveBeenCalledOnce();
+  expect(f.calls.mock.calls.map(([, role]) => role)).toEqual([
+    "world-opposition-dice",
+  ]);
+  expect(
+    await f.store
+      .context(f.graph)
+      .relevantExperiences(actor, Number.MAX_SAFE_INTEGER, "右手"),
+  ).toHaveLength(1);
   expect(failure.receipt?.changes.edges).not.toContainEqual(
     expect.objectContaining({ kind: "status", source: target, text: "judged" }),
   );
+});
+
+test("使用した物品を別の言い方で指定しても同じIDから古い経験を渡す", async () => {
+  const f = await fixture(2);
+  const [actor, other] = f.actors as [string, string];
+  const item = (
+    await f.apply([
+      {
+        type: "create",
+        label: "薬茶",
+        count: 2,
+        holder: actor,
+        basis: "検証用の薬茶",
+      },
+    ])
+  ).changes.nodes[0]!.id;
+  const requestId = randomUUID();
+  const performed = "薬茶を一杯飲んだ";
+  const state = "喉の痛みが和らいでいる";
+  f.calls.mockImplementationOnce(
+    async (id, role, messages, _, __, ___, validate) => {
+      expect(role).toBe("world-creation-dice");
+      expect(messages[0]!.content).toContain("performed");
+      const setting = { ...sure, requiredMaterials: [{ id: item, count: 1 }] };
+      expect(() => validate!(JSON.stringify(setting))).toThrow();
+      return answer(id, { ...setting, performed });
+    },
+  );
+  const input = {
+    command: "apply",
+    requestId,
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "state",
+      targetId: actor,
+      text: "薬茶を飲んで喉を楽にする",
+      description: state,
+      materials: [{ id: item }],
+    },
+  };
+  const result = await f.send(0, input);
+  expect(result.outcome).toMatchObject({ success: true });
+  expect(result.outcome).not.toHaveProperty("performed");
+  expect(await f.send(0, input)).toEqual(result);
+  const receipt = (await f.store.receipt(f.graph, requestId))!;
+  const event = receipt.changes.nodes.find((node) => node.text === performed);
+  expect(event?.kind).toBe("event");
+  expect(receipt.changes.nodes).toContainEqual(
+    expect.objectContaining({ kind: "script", text: state }),
+  );
+  expect(receipt.changes.edges).toContainEqual(
+    expect.objectContaining({
+      kind: "status",
+      role: "about",
+      target: event!.id,
+    }),
+  );
+  expect(await f.store.context(f.graph).holding(item)).toBeDefined();
+  expect(await f.store.context(f.graph).node(item)).toMatchObject({ count: 1 });
+  if (event?.kind !== "event") throw new Error("行為の出来事がありません");
+  const edge = receipt.changes.edges.find(
+    (entry) => entry.kind === "happen" && entry.target === event.id,
+  )!;
+  const graph = isolated.databases.graph;
+  await graph.executeQuery(
+    "CREATE INDEX WorldEdge_happen_experience_key IF NOT EXISTS FOR ()-[r:happen]-() ON (r.experienceKey)",
+  );
+  await graph.executeQuery(
+    `MATCH ()-[r:happen {worldId:$worldId,id:$id}]->()
+     SET r.experienceKey=$key REMOVE r.experienceOwner,r.experienceAt,r.experienceTerms`,
+    {
+      worldId: f.graph,
+      id: edge.id,
+      key: `${f.graph}:${actor}:0000000000000000:${edge.id}`,
+    },
+  );
+  await f.store.setup();
+  const at = event.period.from + 1;
+  const decoy = "声を整える練習の回数を帳簿に書き写した";
+  const newer = [
+    ...Array.from({ length: 10 }, (_, i) => ({
+      actor,
+      text: `倉庫で箱を整理した。棚番号${i}`,
+    })),
+    { actor, text: decoy },
+    { actor: other, text: "声を整えるため服薬した" },
+  ].map(({ actor: source, text }) => ({ source, text, id: randomUUID() }));
+  const commitId = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, commitId),
+    f.store.context(f.graph),
+    {
+      commitId,
+      at,
+      changes: {
+        nodes: newer.map(({ id, text }) => ({
+          id,
+          text,
+          kind: "event",
+          period: { from: at },
+        })),
+        edges: newer.map(({ id, source }) => ({
+          id: randomUUID(),
+          kind: "happen",
+          source,
+          target: id,
+          text: "action-experience",
+          period: { from: at },
+        })),
+        endEdges: [],
+        revisions: [],
+      },
+    },
+  );
+  const model = runtime.agent.model;
+  vi.spyOn(model, "decision", "get").mockReturnValue(
+    decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+  );
+  const decide = vi
+    .spyOn(model, "decide")
+    .mockImplementation(async (_id, role, state) => {
+      if (role !== "world-judgment-materials") return {};
+      const texts = (
+        state as {
+          candidates: { key: string; evidence: { node: { text: string } } }[];
+        }
+      ).candidates;
+      expect(texts.map(({ evidence }) => evidence.node.text)).toEqual(
+        expect.arrayContaining([performed, decoy]),
+      );
+      expect(texts).toHaveLength(2);
+      expect(
+        texts.find(({ evidence }) => evidence.node.text === performed)
+          ?.evidence,
+      ).toMatchObject({
+        sharedReferences: [{ id: item, match: "sameId", label: "薬茶" }],
+      });
+      return Object.fromEntries(
+        texts.flatMap(({ key, evidence }) => [
+          [`r0${key}a`, evidence.node.text === performed ? 1 : 0],
+          [`r0${key}e`, 0],
+        ]),
+      );
+    });
+
+  const rephrased = "声を整えるため服薬する";
+  const nextState = "発声が楽だ";
+  expect(
+    (
+      await f.store
+        .context(f.graph)
+        .relevantExperiences(
+          actor,
+          Number.MAX_SAFE_INTEGER,
+          `${rephrased}\n${nextState}`,
+        )
+    ).map(({ id }) => id),
+  ).not.toContain(event.id);
+  f.calls.mockClear();
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    const { nodes } = JSON.parse(messages[1]!.content);
+    expect(nodes).toContainEqual(
+      expect.objectContaining({ experiencedBy: actor, node: event }),
+    );
+    expect(JSON.stringify(nodes)).not.toContain(decoy);
+    return answer(id, {
+      ...sure,
+      performed: "声を調えるために服薬した",
+      requiredMaterials: [{ id: item, count: 1 }],
+    });
+  });
+  const next = await f.send(0, {
+    ...input,
+    requestId: randomUUID(),
+    action: {
+      type: "state",
+      targetId: actor,
+      text: rephrased,
+      description: nextState,
+      materials: [{ id: item }],
+    },
+  });
+  expect(next.outcome).toMatchObject({ success: true });
+  expect(await f.store.context(f.graph).holding(item)).toBeUndefined();
+  expect(
+    decide.mock.calls.filter(([, role]) => role === "world-judgment-materials"),
+  ).toHaveLength(1);
+  expect(f.calls.mock.calls.map(([, role]) => role)).toEqual([
+    "world-creation-dice",
+  ]);
 });
 
 test("隠密移動の現在地は今回の滞在を発見した相手だけが取得できる", async () => {
@@ -8756,7 +9056,7 @@ test.each([true, false])(
         .some(({ content }) => "validationErrors" in JSON.parse(content));
       reply(repair);
       return repair
-        ? { ...setting, endEdges: [previous] }
+        ? { ...setting, endEdges: [previous], performed: text }
         : { apply: true, endEdges: [previous], decided: [], individuals: [] };
     };
 
@@ -8772,6 +9072,11 @@ test.each([true, false])(
     ).toEqual([success ? replacement : original]);
     const receipt = await f.store.receipt(f.graph, requestId);
     expect(receipt?.changes.endEdges.includes(previous) ?? false).toBe(success);
+    expect(
+      receipt?.changes.nodes.some(
+        (node) => node.kind === "event" && node.text === text,
+      ) ?? false,
+    ).toBe(success);
   },
 );
 
