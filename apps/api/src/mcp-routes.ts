@@ -9,9 +9,9 @@ import type { WorldAccess } from "@gestaloka/server/access";
 
 const descriptions: Record<string, string> = {
   "creationPolicy.read":
-    "世界ごとの新規作成のダイス基準とファンブルの基準を確認する。",
+    "世界のダイスの個数・面数、新規作成の判定基準とファンブルの基準を確認する。",
   "creationPolicy.put":
-    "管理者が新規作成のダイス基準を設定する。空文字で既定の基準に戻す。fumbleCriteriaで失敗時のファンブルの基準を設定する。shownで基準の文をプレイヤーへ表示するかを決める。",
+    "管理者が世界の判定に使うダイスの個数（dice.count）と面数（dice.sides）、新規作成の判定基準を設定する。criteriaは省略すると現在の基準を保ち、空文字で既定の基準に戻す。fumbleCriteriaで失敗時のファンブルの基準を設定する。shownで基準の文をプレイヤーへ表示するかを決める。",
   "promotionPolicy.read": "世界ごとのNPC自動昇格条件を確認する。",
   "promotionPolicy.put":
     "管理者がNPC自動昇格の条件文を設定する。空文字で手動のみに戻す。",

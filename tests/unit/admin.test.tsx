@@ -65,6 +65,47 @@ test("共通操作一覧は全て管理画面または本人の画面に対応�
   );
 });
 
+test("世界のダイスを3d6から2d8に変更する", async () => {
+  const received: unknown[] = [];
+  server.use(
+    http.post("*/api/operations", async ({ request }) => {
+      const { command } = (await request.json()) as {
+        command: { operation: string };
+      };
+      if (command.operation === "creationPolicy.put") received.push(command);
+      return json({ result: {} });
+    }),
+  );
+  show("worlds");
+  await choose("creationPolicy.put");
+  fireEvent.click(screen.getByLabelText("判定に使うダイスを指定"));
+  const count = screen.getByRole<HTMLInputElement>("spinbutton", {
+    name: "個数",
+  });
+  const sides = screen.getByRole<HTMLInputElement>("spinbutton", {
+    name: "ダイス1個の面数",
+  });
+  expect([count.valueAsNumber, sides.valueAsNumber]).toEqual([3, 6]);
+  fireEvent.change(count, { target: { value: "2" } });
+  fireEvent.change(sides, { target: { value: "8" } });
+  fireEvent.change(screen.getByLabelText("世界ID"), { target: { value: A } });
+  fireEvent.change(screen.getByLabelText("操作の理由"), {
+    target: { value: "世界の判定に2d8を使う" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "内容を確認する" }));
+  fireEvent.click(screen.getByRole("button", { name: "この内容で実行する" }));
+  await waitFor(() =>
+    expect(received).toEqual([
+      {
+        operation: "creationPolicy.put",
+        worldId: A,
+        dice: { count: 2, sides: 8 },
+        reason: "世界の判定に2d8を使う",
+      },
+    ]),
+  );
+});
+
 test("管理画面で対象の世界と人物を確認してリスポーンを無効にする", async () => {
   const command = {
     operation: "worlds.disableActorRespawn",

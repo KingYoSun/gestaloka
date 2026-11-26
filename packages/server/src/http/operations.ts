@@ -34,6 +34,7 @@ import {
 } from "../inspection/history.js";
 
 import {
+  defaultDice,
   Member,
   Operation,
   LegacyClaimPage,
@@ -882,7 +883,7 @@ export class Operations {
         await this.#access(context).botPlay.construction.get(input.worldId);
         if (input.operation === "creationPolicy.put")
           await db.query(
-            "INSERT INTO creation_policy(world_id,criteria,version,admin,shown,fumble_criteria) VALUES($1,$2,$3,$4,coalesce($5,false),coalesce($6,'')) ON CONFLICT(world_id) DO UPDATE SET criteria=EXCLUDED.criteria,version=EXCLUDED.version,admin=EXCLUDED.admin,shown=coalesce($5,creation_policy.shown),fumble_criteria=coalesce($6,creation_policy.fumble_criteria)",
+            "INSERT INTO creation_policy(world_id,criteria,version,admin,shown,fumble_criteria,dice) VALUES($1,coalesce($2,''),$3,$4,coalesce($5,false),coalesce($6,''),$7) ON CONFLICT(world_id) DO UPDATE SET criteria=coalesce($2,creation_policy.criteria),version=EXCLUDED.version,admin=EXCLUDED.admin,shown=coalesce($5,creation_policy.shown),fumble_criteria=coalesce($6,creation_policy.fumble_criteria),dice=coalesce($7,creation_policy.dice)",
             [
               input.worldId,
               input.criteria,
@@ -890,19 +891,21 @@ export class Operations {
               actor,
               input.shown ?? null,
               input.fumbleCriteria ?? null,
+              input.dice ?? null,
             ],
           );
         return {
           ...((
             await db.query(
-              `SELECT criteria,version,shown,fumble_criteria AS "fumbleCriteria" FROM creation_policy WHERE world_id=$1`,
-              [input.worldId],
+              `SELECT criteria,version,shown,coalesce(dice,$2::jsonb) AS dice,fumble_criteria AS "fumbleCriteria" FROM creation_policy WHERE world_id=$1`,
+              [input.worldId, defaultDice],
             )
           ).rows[0] ?? {
             criteria: "",
             version: null,
             shown: false,
             fumbleCriteria: "",
+            dice: defaultDice,
           }),
           defaultCriteria: defaultCreationCriteria,
           defaultFumbleCriteria,

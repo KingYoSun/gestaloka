@@ -9867,8 +9867,15 @@ export interface paths {
                             operation: "creationPolicy.put";
                             /** Format: uuid */
                             worldId: string;
-                            /** @description 新規作成のダイスをGMが設定するときの基準。空欄で既定の基準 */
-                            criteria: string;
+                            /** @description 世界の判定で振るダイス。既定は3d6。省略すると現在の設定を保つ */
+                            dice?: {
+                                /** @description 振るダイスの個数 */
+                                count: number;
+                                /** @description ダイス1個の面数 */
+                                sides: number;
+                            };
+                            /** @description GMが新規作成の目標値を決める基準。空欄で既定、省略で現在の設定を保つ */
+                            criteria?: string;
                             /** @description 失敗時のファンブルをGMが設定するときの基準。空欄で既定の基準。省略すると現在の設定を保つ */
                             fumbleCriteria?: string;
                             /** @description 基準の文をプレイヤーのstatusに表示する。省略すると現在の設定を保つ。初期値は非表示 */
