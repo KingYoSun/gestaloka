@@ -19356,6 +19356,184 @@ test("サーバー担当NPCは断られた選択を問い直さず、受領判�
   expect(await directPlaces(f.store.context(f.graph), npc)).toEqual([f.far]);
 });
 
+async function serverNpcScene(receiving = false) {
+  const f = await fixture(2);
+  const [peer, npc] = f.actors as [string, string];
+  await f.send(0, { command: "contact", targetId: npc });
+  await giveTurn(f, receiving ? 0 : 1);
+  const application = receiving
+    ? await f.send(0, locate(npc, f.far))
+    : undefined;
+  await auth.operations.execute(
+    (await auth.person()).id,
+    randomUUID(),
+    {
+      operation: "npcs.put",
+      worldId: f.world,
+      actorId: npc,
+      controller: "server",
+      reason: "隔離試験の担当を切り替える",
+    },
+    { players: access.players },
+  );
+  const db = isolated.databases.postgres;
+  const exhaust = async () => {
+    const current = (await access.botPlay.current(f.world, npc))!;
+    const status = await f.status(0);
+    expect(status.actorId).toBe(npc);
+    const { assignment_id } = (
+      await db.query<{ assignment_id: string }>(
+        "SELECT assignment_id FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
+        [f.world, npc],
+      )
+    ).rows[0]!;
+    const id = derivedId(
+      `npc:${assignment_id}:${current.id}:${status.turn}:${status.callsUsed}:${status.commentUsed}:${current.data.receiving?.id ?? "normal"}`,
+    );
+    await db.query(
+      "INSERT INTO execution_budget(id,llm_used,llm_limit) SELECT $1,calls,calls FROM response_call_policy",
+      [id],
+    );
+    return derivedId(id + ":stay");
+  };
+  return { ...f, peer, npc, application, exhaust };
+}
+
+test.each([false, true])(
+  "応答予算を使い切ったNPCの手番を一度だけ進める（受領判断中=%s）",
+  async (receiving) => {
+    const f = await serverNpcScene(receiving);
+    if (!receiving) {
+      const assignment = (
+        await isolated.databases.postgres.query<{ user_id: string }>(
+          "SELECT user_id FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
+          [f.world, f.npc],
+        )
+      ).rows[0]!;
+      await access.botPlay.submit(
+        f.world,
+        f.npc,
+        { requestId: randomUUID(), command: "comment", text: "確認しました" },
+        assignment.user_id,
+      );
+    }
+    const handoffId = await f.exhaust();
+    const transport = vi.fn((content: unknown) => content);
+    fixtureResponse = transport;
+    const submit = vi.spyOn(access.botPlay, "submit");
+
+    await access.botPlay.tickNpcs(f.world);
+    const after = await f.status(0);
+    expect(after.actorId).toBe(f.peer);
+    await access.botPlay.tickNpcs(f.world);
+    expect(await f.status(0)).toMatchObject({
+      actorId: f.peer,
+      turn: after.turn,
+    });
+    expect(transport).not.toHaveBeenCalled();
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit.mock.calls[0]?.[2]).toMatchObject(
+      receiving
+        ? {
+            requestId: handoffId,
+            command: "receive",
+            applicationId: f.application?.applicationId,
+            accept: false,
+          }
+        : { requestId: handoffId, command: "end-turn" },
+    );
+    const history = await access.botPlay.history(f.world, f.peer);
+    if (receiving) {
+      expect(
+        history.entries.flatMap((row) => row.payload.entries ?? []),
+      ).toContainEqual(
+        expect.objectContaining({
+          actorId: f.npc,
+          result: expect.objectContaining({
+            applicationId: f.application?.applicationId,
+            state: "rejected",
+          }),
+        }),
+      );
+      expect(await directPlaces(f.store.context(f.graph), f.npc)).toEqual([
+        f.place,
+      ]);
+    } else {
+      expect(history.entries.map((row) => row.payload.comment)).toContain(
+        "確認しました",
+      );
+    }
+  },
+);
+
+test("NPCの選択処理が失敗しても別世界のNPCを処理し、次の周期に再試行する", async () => {
+  const scenes = [await serverNpcScene(), await serverNpcScene()];
+  const attempted: string[] = [];
+  const failure = new Error("モデルとの通信に失敗");
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  scenes[1]!.calls.mockImplementation(async (id, _role, messages) => {
+    attempted.push(JSON.parse(String(messages[1]!.content)).actorId);
+    if (attempted.length === 1) throw failure;
+    return answer(id, { command: "end-turn" });
+  });
+
+  await access.botPlay.tickNpcs();
+  const failed = scenes.find((f) => f.npc === attempted[0])!;
+  const continued = scenes.find((f) => f.npc === attempted[1])!;
+  expect(attempted).toEqual([failed.npc, continued.npc]);
+  expect(await failed.status(0)).toMatchObject({ actorId: failed.npc });
+  expect(await continued.status(0)).toMatchObject({ actorId: continued.peer });
+  expect(log).toHaveBeenCalledWith(
+    expect.any(String),
+    failed.world,
+    failed.npc,
+    failure,
+  );
+
+  await access.botPlay.tickNpcs();
+  expect(attempted).toEqual([failed.npc, continued.npc, failed.npc]);
+  expect(await failed.status(0)).toMatchObject({ actorId: failed.peer });
+});
+
+test.each(["担当", "手番"])(
+  "上限到達後の引き渡しは変更後の%sに適用されない",
+  async (changed) => {
+    const f = await serverNpcScene();
+    await f.exhaust();
+    const play = access.botPlay;
+    const submit = play.submit.bind(play);
+    let turn = (await f.status(0)).turn;
+    const attempt = vi
+      .spyOn(play, "submit")
+      .mockImplementationOnce(async (...args) => {
+        if (changed === "担当") {
+          await isolated.databases.postgres.query(
+            "UPDATE bot_npc SET assignment_id=$3 WHERE world_id=$1 AND actor_id=$2",
+            [f.world, f.npc, randomUUID()],
+          );
+        } else {
+          await submit(
+            f.world,
+            f.npc,
+            { requestId: randomUUID(), command: "end-turn" },
+            args[3],
+          );
+          await f.send(0, { command: "end-turn" });
+          turn = (await f.status(0)).turn;
+        }
+        return submit(...args);
+      });
+
+    await play.tickNpcs(f.world);
+    expect(attempt).toHaveBeenCalled();
+    await expect(attempt.mock.results[0]?.value).rejects.toMatchObject({
+      code:
+        changed === "担当" ? "NPC_CONTROLLER_CHANGED" : "NPC_CHOICE_EXPIRED",
+    });
+    expect(await f.status(0)).toMatchObject({ actorId: f.npc, turn });
+  },
+);
+
 test("失敗した判定はファンブルを一度だけ振り、本人に残った状態は期限まで続いて早めに終えられる", async () => {
   const f = await fixture(2);
   const [actor, target] = f.actors as [string, string];

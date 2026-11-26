@@ -37,7 +37,7 @@ import {
 import { AccessError } from "../http/access-error.js";
 import { requireMember } from "../http/operations.js";
 import { RuntimeControl, RuntimeStopped } from "./control.js";
-import { ExecutionBudget } from "../execution-budget.js";
+import { ExecutionBudget, ExecutionLimit } from "../execution-budget.js";
 import {
   WorldConflict,
   FixedPlaceMovement,
@@ -1979,297 +1979,320 @@ export class BotPlay {
     const servers = new Set(assigned.map((n) => n.world_id + n.actor_id));
     for (const npc of assigned) {
       if (paused()) return;
-      const current = await this.current(npc.world_id, npc.actor_id);
-      if (
-        !current?.data.members.some(
-          (m) => !m.instant && !servers.has(npc.world_id + m.actorId),
+      try {
+        const current = await this.current(npc.world_id, npc.actor_id);
+        if (
+          !current?.data.members.some(
+            (m) => !m.instant && !servers.has(npc.world_id + m.actorId),
+          )
         )
-      )
-        continue;
-      const status = await this.status(npc.world_id, npc.actor_id);
-      if ("session" in status || status.actorId !== npc.actor_id) continue;
-      const requestId = derivedId(
-        `npc:${npc.assignment_id}:${current.id}:${status.turn}:${status.callsUsed}:${status.commentUsed}:${current.data.receiving?.id ?? "normal"}`,
-      );
-      const world = await this.world(npc.world_id);
-      if (paused()) return;
-      await ExecutionBudget.run(
-        this.pool,
-        requestId,
-        async () => {
-          const self = await this.search(npc.world_id, npc.actor_id, {
-              kind: "self",
-            }),
-            nearby = await this.search(npc.world_id, npc.actor_id, {
-              kind: "surroundings",
-            });
-          const member = current.data.members.find(
-            (m) => m.actorId === npc.actor_id,
-          )!;
-          const scene = member.sceneId;
-          const history = await this.history(
-            npc.world_id,
-            npc.actor_id,
-            scene,
-            this.pool,
-            scene === npc.actor_id
-              ? (npc.profile_chat_id ?? undefined)
-              : undefined,
-            false,
-            { checkpoint: member.lastServerTurn?.recordId },
-          );
-          const origin =
-            npc.profile_chat_id == null &&
-            history.sceneId !== npc.actor_id &&
-            (
-              await this.pool.query(
-                "SELECT 1 FROM bot_scene WHERE id=$1 AND actor_id=$1 AND world_id=$2",
-                [npc.actor_id, npc.world_id],
-              )
-            ).rowCount
-              ? await this.history(
+          continue;
+        const status = await this.status(npc.world_id, npc.actor_id);
+        if ("session" in status || status.actorId !== npc.actor_id) continue;
+        const requestId = derivedId(
+          `npc:${npc.assignment_id}:${current.id}:${status.turn}:${status.callsUsed}:${status.commentUsed}:${current.data.receiving?.id ?? "normal"}`,
+        );
+        const world = await this.world(npc.world_id);
+        if (paused()) return;
+        await ExecutionBudget.run(
+          this.pool,
+          requestId,
+          async () => {
+            const guard = {
+              assignmentId: npc.assignment_id,
+              turnKey: turnState(current).key,
+            };
+            let choice: NpcChoice | undefined;
+            try {
+              const self = await this.search(npc.world_id, npc.actor_id, {
+                  kind: "self",
+                }),
+                nearby = await this.search(npc.world_id, npc.actor_id, {
+                  kind: "surroundings",
+                });
+              const member = current.data.members.find(
+                (m) => m.actorId === npc.actor_id,
+              )!;
+              const scene = member.sceneId;
+              const history = await this.history(
+                npc.world_id,
+                npc.actor_id,
+                scene,
+                this.pool,
+                scene === npc.actor_id
+                  ? (npc.profile_chat_id ?? undefined)
+                  : undefined,
+                false,
+                { checkpoint: member.lastServerTurn?.recordId },
+              );
+              const origin =
+                npc.profile_chat_id == null &&
+                history.sceneId !== npc.actor_id &&
+                (
+                  await this.pool.query(
+                    "SELECT 1 FROM bot_scene WHERE id=$1 AND actor_id=$1 AND world_id=$2",
+                    [npc.actor_id, npc.world_id],
+                  )
+                ).rowCount
+                  ? await this.history(
+                      npc.world_id,
+                      npc.actor_id,
+                      npc.actor_id,
+                      this.pool,
+                      undefined,
+                      false,
+                      {},
+                    )
+                  : undefined;
+              const witnessed = new Set(
+                (
+                  await this.store
+                    .context(world.id)
+                    .history(npc.actor_id, "see", "out", latest)
+                ).map((e) => e.target),
+              );
+              const npcIds = current.data.members
+                .filter(
+                  (m) =>
+                    m.instant &&
+                    (witnessed.has(m.instant.sourceEventId) ||
+                      (m.instant.latestAppearanceEventId &&
+                        witnessed.has(m.instant.latestAppearanceEventId))),
+                )
+                .map((m) => m.actorId);
+              const commands = z.union(
+                PlayerPlayCommand.options
+                  // 受領判断中に受け付けるのは、受領の返答と一度のコメントだけ。
+                  .filter((option) =>
+                    status.receiving
+                      ? option.shape.command.safeParse(
+                          status.commentUsed ? "receive" : "comment",
+                        ).success ||
+                        option.shape.command.safeParse("receive").success
+                      : !("npcId" in option.shape) || npcIds.length,
+                  )
+                  .map((option) =>
+                    "npcId" in option.shape
+                      ? option.safeExtend({ npcId: z.enum(npcIds) })
+                      : "query" in option.shape
+                        ? option.safeExtend({ query: PlaySearch })
+                        : option,
+                  ),
+              );
+              const classified = await classifyNpcHistory(
+                history.entries.slice(-historyLimit),
+                npc.actor_id,
+                npc.memory?.comparisons,
+                this.construction.agent.model,
+                requestId,
+              );
+              const rows = [
+                ...history.entries.slice(0, -historyLimit),
+                ...classified.rows,
+              ];
+              const sinceLastTurn =
+                !status.receiving && !status.callsUsed && !status.commentUsed
+                  ? this.#sinceLastTurn(member, rows, status.characters ?? [])
+                  : undefined;
+              const peers = status.characters
+                .filter((p) => p.actorId !== npc.actor_id)
+                .map((p) => p.actorId);
+              const work = npc.memory;
+              const pending =
+                !status.receiving &&
+                work?.pending &&
+                peers.includes(work.pending.recipient)
+                  ? work.pending
+                  : undefined;
+              const completed =
+                !pending &&
+                !status.receiving &&
+                work?.completed &&
+                peers.includes(work.completed.recipient)
+                  ? work.completed
+                  : undefined;
+              const operations = npcOperations(
+                peers,
+                !!status.receiving,
+                pending,
+                completed,
+              );
+              const priorResult =
+                completed &&
+                (await this.#reportedMaterial(
+                  world.id,
                   npc.world_id,
                   npc.actor_id,
-                  npc.actor_id,
-                  this.pool,
-                  undefined,
-                  false,
-                  {},
+                  npc.user_id,
+                  completed,
+                ));
+              const readChoice = (raw: string) => {
+                const value = parseOutput(raw);
+                // Previously saved completions contain only the command.
+                const plan = operations.read(value);
+                const action = commands.parse({
+                  ...(plan?.action ?? (value as object)),
+                  requestId,
+                });
+                return { plan, action };
+              };
+              const readResult = pending
+                ? (
+                    await this.pool.query(
+                      "SELECT result->'material' AS material FROM bot_request WHERE id=$1 AND world_id=$2 AND actor_id=$3",
+                      [pending.readId, npc.world_id, npc.actor_id],
+                    )
+                  ).rows[0]?.material
+                : undefined;
+              const completion = await this.#ask(
+                derivedId(`${requestId}:choice`),
+                "world-server-npc",
+                [
+                  {
+                    role: "system",
+                    content:
+                      'あなたは一人の担当人物です。本人の目的・性格と知っていることから、今成立させたい結果に対応する操作をavailableOperationsから一つ選びます。相手の証言、自分が予告したこと、実際に調べて分かったことを区別します。自分が引き受けてまだ済ませていない確認は自分で対象を選んで実行できます。報告が相手に届いた用事は完了です。目的が続いても、了承・待機・別の話題だけなら同じ用事を調べ直す必要はありません。前の答えを聞き直されたらその答えを返せます。関連する変化や再依頼、またはpriorResultがvisible-result-changedなら、自分の目的に応じて改めて確認できます。変化の内容は読んでから判断します。sinceLastTurnには前回の公開行動とその後に届いた発言・結果・参加者の増減があり、repeatOfは記録ID.番号の発言を再び聞いたことを示します。退出はセッションからの退出です。他人の意図や世界の裁定を代作しません。行動を予告するだけで持ち物や状態は変わりません。commandRestrictionsに従い、身振り・筆談はnonverbalを選びます。companionがwaitならその場で、followなら同行相手と行動します。乗り物が自ら運行するときはvehicle-travelのvehicleIdに自分のIDを使います。npc-actionは他の出現個体に対する操作です。goalには自分の現在の目的またはnullを入れます。操作の成功後、反応を待つならendOnSuccessはtrue、結果を見て自分で続けるならfalse。出力は {"operation":"操作名","args":引数} のJSONだけ。',
+                  },
+                  {
+                    role: "user",
+                    content: JSON.stringify({
+                      ...(pending
+                        ? {
+                            situation:
+                              "自分で選んだ確認を終えた。読めた内容から、引き受けた問いに答える具体的な結果を自分の口調で伝えられる。所見を想像しない。",
+                            task: {
+                              question: pending.question,
+                              recipient: pending.recipient,
+                              query: pending.query,
+                            },
+                            readResult,
+                            self,
+                            goal: work?.goal,
+                            people: status.characters,
+                            status,
+                            sinceLastTurn:
+                              sinceLastTurn &&
+                              omit(sinceLastTurn, ["recordIds"]),
+                          }
+                        : {
+                            actorId: npc.actor_id,
+                            self,
+                            nearby,
+                            goal: npc.memory?.goal ?? null,
+                            history: recentEntries(
+                              {
+                                ...history,
+                                entries: rows.map((row) => {
+                                  // The delta carries these witnessed actions in full.
+                                  if (
+                                    !sinceLastTurn ||
+                                    !sinceLastTurn.recordIds.has(row.id)
+                                  )
+                                    return row;
+                                  return {
+                                    ...row,
+                                    payload: omit(row.payload, [
+                                      "entries",
+                                      "comment",
+                                    ]),
+                                  };
+                                }),
+                              },
+                              true,
+                            ),
+                            origin: origin && recentEntries(origin, true),
+                            status,
+                            sinceLastTurn:
+                              sinceLastTurn &&
+                              omit(sinceLastTurn, ["recordIds"]),
+                            currentTurn: {
+                              actions: current.data.npcActions ?? [],
+                              comment: current.data.comment,
+                            },
+                            completedWork: completed && {
+                              question: completed.question,
+                              recipient: completed.recipient,
+                              query: completed.query,
+                              alreadyDelivered: completed.answer,
+                              priorResult,
+                              situation:
+                                priorResult === "visible-result-changed"
+                                  ? "相手に報告した後、自分が閲覧できる確認対象に変化があった。前の答えを今の状態として扱えない。相手が待っている間でも、その人の判断に関わるなら recheck_for_recipient で何が変わったか読み直し、知らせるかを選ぶ。"
+                                  : "この問いへの答えは相手に届いた。新しい依頼や関連する知らせがあれば再確認できる。前の答えを聞き直された場合は報告済みの答えを伝えられる。",
+                            },
+                          }),
+                      availableOperations: operations.availableOperations,
+                      commandSchema: z.toJSONSchema(commands),
+                    }),
+                  },
+                ],
+                "default",
+                readChoice,
+              );
+              const { plan, action: command } = readChoice(completion.content);
+              choice = {
+                ...(plan?.inspect && { inspect: plan.inspect }),
+                ...(plan?.recipient && { recipient: plan.recipient }),
+                ...(plan?.reportReadId && { reportReadId: plan.reportReadId }),
+                ...guard,
+                endOnSuccess: !status.receiving && !!plan?.endOnSuccess,
+                memory: {
+                  goal: plan ? plan.goal : (npc.memory?.goal ?? null),
+                  comparisons: classified.comparisons,
+                },
+              };
+              await this.submit(
+                npc.world_id,
+                npc.actor_id,
+                command,
+                npc.user_id,
+                choice,
+              );
+            } catch (error) {
+              // 上限到達や選択の拒否後は、追加の生成をせず受領を断るか手番を渡す。
+              if (!(error instanceof ExecutionLimit)) {
+                if (!choice || !(error instanceof AccessError)) throw error;
+                if (
+                  error.code === "NPC_CHOICE_EXPIRED" ||
+                  error.code === "NPC_CONTROLLER_CHANGED"
                 )
-              : undefined;
-          const witnessed = new Set(
-            (
-              await this.store
-                .context(world.id)
-                .history(npc.actor_id, "see", "out", latest)
-            ).map((e) => e.target),
-          );
-          const npcIds = current.data.members
-            .filter(
-              (m) =>
-                m.instant &&
-                (witnessed.has(m.instant.sourceEventId) ||
-                  (m.instant.latestAppearanceEventId &&
-                    witnessed.has(m.instant.latestAppearanceEventId))),
-            )
-            .map((m) => m.actorId);
-          const commands = z.union(
-            PlayerPlayCommand.options
-              // 受領判断中に受け付けるのは、受領の返答と一度のコメントだけ。
-              .filter((option) =>
-                status.receiving
-                  ? option.shape.command.safeParse(
-                      status.commentUsed ? "receive" : "comment",
-                    ).success ||
-                    option.shape.command.safeParse("receive").success
-                  : !("npcId" in option.shape) || npcIds.length,
-              )
-              .map((option) =>
-                "npcId" in option.shape
-                  ? option.safeExtend({ npcId: z.enum(npcIds) })
-                  : "query" in option.shape
-                    ? option.safeExtend({ query: PlaySearch })
-                    : option,
-              ),
-          );
-          const classified = await classifyNpcHistory(
-            history.entries.slice(-historyLimit),
-            npc.actor_id,
-            npc.memory?.comparisons,
-            this.construction.agent.model,
-            requestId,
-          );
-          const rows = [
-            ...history.entries.slice(0, -historyLimit),
-            ...classified.rows,
-          ];
-          const sinceLastTurn =
-            !status.receiving && !status.callsUsed && !status.commentUsed
-              ? this.#sinceLastTurn(member, rows, status.characters ?? [])
-              : undefined;
-          const peers = status.characters
-            .filter((p) => p.actorId !== npc.actor_id)
-            .map((p) => p.actorId);
-          const work = npc.memory;
-          const pending =
-            !status.receiving &&
-            work?.pending &&
-            peers.includes(work.pending.recipient)
-              ? work.pending
-              : undefined;
-          const completed =
-            !pending &&
-            !status.receiving &&
-            work?.completed &&
-            peers.includes(work.completed.recipient)
-              ? work.completed
-              : undefined;
-          const operations = npcOperations(
-            peers,
-            !!status.receiving,
-            pending,
-            completed,
-          );
-          const priorResult =
-            completed &&
-            (await this.#reportedMaterial(
-              world.id,
-              npc.world_id,
-              npc.actor_id,
-              npc.user_id,
-              completed,
-            ));
-          const readChoice = (raw: string) => {
-            const value = parseOutput(raw);
-            // Previously saved completions contain only the command.
-            const plan = operations.read(value);
-            const action = commands.parse({
-              ...(plan?.action ?? (value as object)),
-              requestId,
-            });
-            return { plan, action };
-          };
-          const readResult = pending
-            ? (
-                await this.pool.query(
-                  "SELECT result->'material' AS material FROM bot_request WHERE id=$1 AND world_id=$2 AND actor_id=$3",
-                  [pending.readId, npc.world_id, npc.actor_id],
-                )
-              ).rows[0]?.material
-            : undefined;
-          const completion = await this.#ask(
-            derivedId(`${requestId}:choice`),
-            "world-server-npc",
-            [
-              {
-                role: "system",
-                content:
-                  'あなたは一人の担当人物です。本人の目的・性格と知っていることから、今成立させたい結果に対応する操作をavailableOperationsから一つ選びます。相手の証言、自分が予告したこと、実際に調べて分かったことを区別します。自分が引き受けてまだ済ませていない確認は自分で対象を選んで実行できます。報告が相手に届いた用事は完了です。目的が続いても、了承・待機・別の話題だけなら同じ用事を調べ直す必要はありません。前の答えを聞き直されたらその答えを返せます。関連する変化や再依頼、またはpriorResultがvisible-result-changedなら、自分の目的に応じて改めて確認できます。変化の内容は読んでから判断します。sinceLastTurnには前回の公開行動とその後に届いた発言・結果・参加者の増減があり、repeatOfは記録ID.番号の発言を再び聞いたことを示します。退出はセッションからの退出です。他人の意図や世界の裁定を代作しません。行動を予告するだけで持ち物や状態は変わりません。commandRestrictionsに従い、身振り・筆談はnonverbalを選びます。companionがwaitならその場で、followなら同行相手と行動します。乗り物が自ら運行するときはvehicle-travelのvehicleIdに自分のIDを使います。npc-actionは他の出現個体に対する操作です。goalには自分の現在の目的またはnullを入れます。操作の成功後、反応を待つならendOnSuccessはtrue、結果を見て自分で続けるならfalse。出力は {"operation":"操作名","args":引数} のJSONだけ。',
-              },
-              {
-                role: "user",
-                content: JSON.stringify({
-                  ...(pending
+                  return;
+              }
+              await this.submit(
+                npc.world_id,
+                npc.actor_id,
+                {
+                  ...(status.receiving
                     ? {
-                        situation:
-                          "自分で選んだ確認を終えた。読めた内容から、引き受けた問いに答える具体的な結果を自分の口調で伝えられる。所見を想像しない。",
-                        task: {
-                          question: pending.question,
-                          recipient: pending.recipient,
-                          query: pending.query,
-                        },
-                        readResult,
-                        self,
-                        goal: work?.goal,
-                        people: status.characters,
-                        status,
-                        sinceLastTurn:
-                          sinceLastTurn && omit(sinceLastTurn, ["recordIds"]),
+                        command: "receive" as const,
+                        applicationId: status.receiving.applicationId,
+                        accept: false,
                       }
-                    : {
-                        actorId: npc.actor_id,
-                        self,
-                        nearby,
-                        goal: npc.memory?.goal ?? null,
-                        history: recentEntries(
-                          {
-                            ...history,
-                            entries: rows.map((row) => {
-                              // The delta carries these witnessed actions in full.
-                              if (
-                                !sinceLastTurn ||
-                                !sinceLastTurn.recordIds.has(row.id)
-                              )
-                                return row;
-                              return {
-                                ...row,
-                                payload: omit(row.payload, [
-                                  "entries",
-                                  "comment",
-                                ]),
-                              };
-                            }),
-                          },
-                          true,
-                        ),
-                        origin: origin && recentEntries(origin, true),
-                        status,
-                        sinceLastTurn:
-                          sinceLastTurn && omit(sinceLastTurn, ["recordIds"]),
-                        currentTurn: {
-                          actions: current.data.npcActions ?? [],
-                          comment: current.data.comment,
-                        },
-                        completedWork: completed && {
-                          question: completed.question,
-                          recipient: completed.recipient,
-                          query: completed.query,
-                          alreadyDelivered: completed.answer,
-                          priorResult,
-                          situation:
-                            priorResult === "visible-result-changed"
-                              ? "相手に報告した後、自分が閲覧できる確認対象に変化があった。前の答えを今の状態として扱えない。相手が待っている間でも、その人の判断に関わるなら recheck_for_recipient で何が変わったか読み直し、知らせるかを選ぶ。"
-                              : "この問いへの答えは相手に届いた。新しい依頼や関連する知らせがあれば再確認できる。前の答えを聞き直された場合は報告済みの答えを伝えられる。",
-                        },
-                      }),
-                  availableOperations: operations.availableOperations,
-                  commandSchema: z.toJSONSchema(commands),
-                }),
-              },
-            ],
-            "default",
-            readChoice,
-          );
-          const { plan, action: command } = readChoice(completion.content);
-          const choice = {
-            ...(plan?.inspect && { inspect: plan.inspect }),
-            ...(plan?.recipient && { recipient: plan.recipient }),
-            ...(plan?.reportReadId && { reportReadId: plan.reportReadId }),
-            assignmentId: npc.assignment_id,
-            turnKey: turnState(current).key,
-            endOnSuccess: !status.receiving && !!plan?.endOnSuccess,
-            memory: {
-              goal: plan ? plan.goal : (npc.memory?.goal ?? null),
-              comparisons: classified.comparisons,
-            },
-          };
-          try {
-            await this.submit(
-              npc.world_id,
-              npc.actor_id,
-              command,
-              npc.user_id,
-              choice,
-            );
-          } catch (error) {
-            // 断られた選択は同じ手番で問い直さず、受領を断るか手番を渡す。
-            if (!(error instanceof AccessError)) throw error;
-            if (
-              error.code === "NPC_CHOICE_EXPIRED" ||
-              error.code === "NPC_CONTROLLER_CHANGED"
-            )
-              return;
-            await this.submit(
-              npc.world_id,
-              npc.actor_id,
-              {
-                ...(status.receiving
-                  ? {
-                      command: "receive" as const,
-                      applicationId: status.receiving.applicationId,
-                      accept: false,
-                    }
-                  : { command: "end-turn" as const }),
-                requestId: derivedId(requestId + ":stay"),
-              },
-              npc.user_id,
-              choice,
-            );
-          }
-        },
-        world.id,
-        npc.user_id,
-      );
+                    : { command: "end-turn" as const }),
+                  requestId: derivedId(requestId + ":stay"),
+                },
+                npc.user_id,
+                { ...guard, endOnSuccess: false, memory: choice?.memory ?? {} },
+              );
+            }
+          },
+          world.id,
+          npc.user_id,
+        );
+      } catch (error) {
+        if (
+          error instanceof AccessError &&
+          (error.code === "NPC_CHOICE_EXPIRED" ||
+            error.code === "NPC_CONTROLLER_CHANGED")
+        )
+          continue;
+        console.error(
+          "サーバー担当NPCの手番処理に失敗",
+          npc.world_id,
+          npc.actor_id,
+          error,
+        );
+      }
     }
   }
   // 運営のお知らせを人物ごとの通知として届ける。宛先を省くと、サーバー担当のNPCを除く
