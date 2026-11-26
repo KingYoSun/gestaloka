@@ -31,6 +31,7 @@ import {
 } from "./play-panels.js";
 
 const TextNode = z.object({ text: z.string() });
+const DiceMessages = z.array(z.string());
 const PendingCommand = PlayerPlayCommand.or(
   z.object({
     body: PlayerPlayCommand,
@@ -130,6 +131,7 @@ const View = z.object({
                     effectState: z.string().optional(),
                     items: z.array(ItemOutcome).optional(),
                     outcome: z.object({ success: z.boolean() }).optional(),
+                    dice: DiceMessages.optional(),
                   })
                   .passthrough(),
               }),
@@ -166,6 +168,11 @@ const LogRow = memo(function LogRow({
             {entry.label ?? name(entry.actorId) ?? "参加者"}
           </p>
           <RichText text={entry.input} />
+          {entry.result.dice?.map((message, i) => (
+            <p className="muted" key={i}>
+              {message}
+            </p>
+          ))}
           {!row.payload.observation &&
             entry.result.action?.command !== "oppose" && (
               <p className="muted">
@@ -476,6 +483,9 @@ export function BotSession({
       {typeof mutation.data?.message === "string" && (
         <Notice>{mutation.data.message}</Notice>
       )}
+      {DiceMessages.safeParse(mutation.data?.dice).data?.map((message, i) => (
+        <Notice key={i}>{message}</Notice>
+      ))}
     </>
   );
   return (
