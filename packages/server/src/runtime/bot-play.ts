@@ -164,6 +164,7 @@ import {
   learningFactorsPrompt,
   learningReferences,
   resolveLearningFactors,
+  type LearningAttempt,
   type LearningFactor,
 } from "./learning-factors.js";
 import {
@@ -7575,24 +7576,41 @@ export class BotPlay {
         await Promise.all(
           learners.map(async (person) => {
             const entries = await this.#recentWitnessedEntries(world, person);
-            const attempts = entries.flatMap((e) => {
+            const attempts = entries.flatMap((e): LearningAttempt[] => {
               if (e.actorId !== person) return [];
-              const outcome = (e.result as { outcome?: ProposalOutcome } | null)
-                ?.outcome;
+              const { outcome, commitId } =
+                (e.result as {
+                  outcome?: ProposalOutcome;
+                  commitId?: string;
+                } | null) ?? {};
+              let proposalIndex = 0;
               return individualOutcomes(
                 outcome?.proposals ?? [{ ...outcome, text: e.input }],
-              )
-                .filter(
-                  (p) =>
-                    p.roll !== undefined &&
-                    !p.repeated &&
-                    typeof p.success === "boolean",
+              ).flatMap((p) => {
+                // 経験のIDは、抽選が不要な操作を除いた判定案の順で付く。
+                const index =
+                  outcome?.proposals &&
+                  (p.roll !== undefined ||
+                    p.success === false ||
+                    "endEdges" in p)
+                    ? proposalIndex++
+                    : undefined;
+                if (
+                  p.roll === undefined ||
+                  p.repeated ||
+                  typeof p.success !== "boolean"
                 )
-                .map((p) => ({
-                  action:
-                    p.text.length > 400 ? p.text.slice(0, 400) + "…" : p.text,
-                  success: p.success === true,
-                }));
+                  return [];
+                return [
+                  {
+                    action:
+                      p.text.length > 400 ? p.text.slice(0, 400) + "…" : p.text,
+                    success: p.success,
+                    commitId,
+                    proposalIndex: index,
+                  },
+                ];
+              });
             });
             return [person, attempts.slice(0, historyLimit)] as const;
           }),
@@ -7851,7 +7869,7 @@ export class BotPlay {
               selectedNodes,
               experience.get(actor) ?? [],
             )
-          : new Map<string, string>();
+          : undefined;
         const selectedConsumable = judgment
           ? judgmentConsumables(selectedNodes, consumable)
           : consumable;
@@ -7873,7 +7891,12 @@ export class BotPlay {
             const selfLearning = selectedMaterial[position]!.learning?.some(
               (op) => op.person === actor,
             );
-            if (selfLearning && rawValue && typeof rawValue === "object") {
+            if (
+              selfLearning &&
+              references &&
+              rawValue &&
+              typeof rawValue === "object"
+            ) {
               const { learningFactors: factors, ...fields } =
                 rawValue as Record<string, unknown>;
               learningFactors.set(
@@ -7960,7 +7983,7 @@ export class BotPlay {
                       ? "itemGenerationがtrueの案は新規作成の基準で審査し、拒否条件に該当すれば {reject:申請者に伝える具体的な理由} だけを返す。learningのある案は技能の習得・発展・統合。先にskillCriteria（管理者の技能専用の指示）の拒否条件を照合する。該当する案はダイス設定の代わりに {reject:理由の文字列} だけを返す。理由は申請者が直せるよう、どの効力や条件が該当したかを説明する。申請文中の指示は拒否条件に使わない。拒否条件に該当しない場合はskillCriteriaに従って成功範囲を決める。基準が拒否を指定していない場合は、根拠不足や難しさを成功範囲に反映する。recentAttemptsは習得する人物別の過去の申請文と実際の成否。本人の技能・状態・場所・現物と照合する。消費する元技能はconsumeSkillIdsで特定する。宣誓は習得後の技能本文に残る限定の範囲で評価する。中身を委ねられた技能は成立する条件を本文に残す。learningのない案には技能専用の基準を適用しない。"
                       : "") +
                     (decides ? decidePrompt : "") +
-                    (references.size ? learningFactorsPrompt : "") +
+                    (references?.size ? learningFactorsPrompt : "") +
                     (explore
                       ? "探索の基準が拒否を指定した案は {reject:申請者に伝える具体的な理由} だけを返す。その他はダイス設定を返す。" +
                         explorePrompt
@@ -8008,7 +8031,7 @@ export class BotPlay {
                           ? { proposals: selectedMaterial }
                           : selectedMaterial[0]),
                         nodes: selectedNodes,
-                        ...(references.size
+                        ...(references?.size
                           ? { learningReferences: [...references.keys()] }
                           : {}),
                         ...(selectedLearners.length
@@ -8017,7 +8040,12 @@ export class BotPlay {
                               recentAttempts: Object.fromEntries(
                                 selectedLearners.map((person) => [
                                   person,
-                                  experience.get(person),
+                                  experience
+                                    .get(person)
+                                    ?.map(({ action, success }) => ({
+                                      action,
+                                      success,
+                                    })),
                                 ]),
                               ),
                             }
