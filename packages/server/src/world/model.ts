@@ -25,6 +25,7 @@ export const isPlaceSeriesMembership = (edge: WorldEdge) =>
   edge.text === "place-series";
 
 export const respawnHome = "respawn-home";
+export const actionExperience = "action-experience";
 export const isRespawnHome = (edge: WorldEdge) =>
   edge.kind === "status" &&
   edge.role === "content" &&

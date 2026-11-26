@@ -51,6 +51,7 @@ import {
 } from "../world/store.js";
 import {
   atTime,
+  actionExperience,
   derivedId,
   isRespawnHome,
   validateConnection,
@@ -161,7 +162,10 @@ import {
   type RespawnHome,
 } from "./death-policy.js";
 import { historyLimit, selectStates } from "./state-selection.js";
-import { selectJudgmentMaterials } from "./judgment-materials.js";
+import {
+  selectJudgmentExperiences,
+  selectJudgmentMaterials,
+} from "./judgment-materials.js";
 import {
   completeJudgmentPreview,
   judgmentLabels,
@@ -647,6 +651,7 @@ export type Session = {
 };
 type Plan = {
   statusReview?: StatusReview;
+  experienceReferences?: { eventId: string; ids: string[] }[];
   draw?: DrawOutcome;
   drawReview?: DrawJudgement;
   storageEffect?: Awaited<ReturnType<typeof planRelocation>>["storageEffect"];
@@ -1006,6 +1011,76 @@ type CreationRoll = {
 };
 // 判定で付いた状態の関係の印。死亡の確定で終える対象になる。
 const judged = "judged";
+const PerformedAction = z.string().trim().min(1).max(240);
+const performedActionPrompt =
+  "ダイス設定を返すときは、成功したとき実際に成立する行為を、対象や使った物が分かる一文（240字以内）でperformedに返す。成功時に認める範囲だけを書く。消費を書く場合は、変更に含まれる消費か、今回消費すると判定した物を記す。申請者が主張する過去や、今回の結果として認めない効果を含めない。";
+
+function recordActionExperience(
+  changes: Change,
+  request: string,
+  actor: string,
+  at: number,
+  text: string,
+) {
+  const event = derivedId(`${request}:experience`);
+  const period = { from: at };
+  changes.nodes.push({ id: event, kind: "event", text, period });
+  changes.edges.push(
+    {
+      id: derivedId(`${event}:happen`),
+      kind: "happen",
+      source: actor,
+      target: event,
+      text: actionExperience,
+      period,
+    },
+    {
+      id: derivedId(`${event}:see`),
+      kind: "see",
+      source: actor,
+      target: event,
+      period,
+    },
+  );
+  return event;
+}
+
+const newSelfStates = (changes: Change, actor: string) =>
+  changes.edges.filter(
+    (edge) =>
+      edge.kind === "status" &&
+      edge.role === "content" &&
+      edge.source === actor &&
+      edge.text !== "location" &&
+      edge.text !== "operator",
+  );
+
+function recordSelfAction(
+  changes: Change,
+  request: string,
+  actor: string,
+  at: number,
+  performed: string,
+) {
+  const event = recordActionExperience(changes, request, actor, at, performed);
+  changes.edges.push({
+    id: derivedId(`${event}:effect`),
+    kind: "effect",
+    source: event,
+    target: actor,
+    period: { from: at },
+  });
+  for (const { target: state } of newSelfStates(changes, actor))
+    changes.edges.push({
+      id: derivedId(`${event}:state:${state}`),
+      kind: "status",
+      role: "about",
+      source: state,
+      target: event,
+      period: { from: at },
+    });
+  return event;
+}
 // 人物に残る状態を加える。続く時間があれば、その時点で終わる関係にする。
 function addState(
   changes: Change,
@@ -2635,6 +2710,7 @@ export class BotPlay {
       { success: true };
     const effect = action.effect;
     let effectState: string | null = null;
+    let performed: string | undefined;
     let effectMinutes: number | undefined;
     let effectRestrictions: CommandRestriction[] | undefined;
     let effectCondition: ConditionExpression | undefined;
@@ -2890,6 +2966,7 @@ export class BotPlay {
           playerRequest && (person || victim) ? request : undefined,
           { actor: protectedActor, target: protectedTarget },
           !victim,
+          playerRequest && !npc,
           drops
             .filter((d) => d.rule.kind === "existence")
             .map(({ id, rule }) => ({
@@ -2906,6 +2983,7 @@ export class BotPlay {
         };
         if (!npc) addFumble(changes, request, actorId, at, outcome);
         if (outcome.success) {
+          performed = saved.performed;
           if (person && !npc) {
             const state = saved.setting.states?.find(
               (state) => state.id === effect.targetId,
@@ -3024,7 +3102,9 @@ export class BotPlay {
       {
         id: event,
         text:
-          resultText ??
+          (performed && resultText
+            ? `${performed}\n${resultText}`
+            : resultText) ??
           (concealed
             ? (reductionText ??
               (outcome.success ? "対象に作用があった" : "作用は成立しなかった"))
@@ -3050,7 +3130,13 @@ export class BotPlay {
       at,
       appearances,
     );
-    if (!npc) link({ kind: "happen", source: actorId, target: event });
+    if (!npc)
+      link({
+        kind: "happen",
+        source: actorId,
+        target: event,
+        ...(performed ? { text: actionExperience } : {}),
+      });
     for (const member of session.data.members)
       if (!member.instant && (!concealed || member.actorId === actorId))
         link({ kind: "see", source: member.actorId, target: event });
@@ -3102,6 +3188,16 @@ export class BotPlay {
       recipients: [],
       outcome,
       ...(stealth ? { stealth } : {}),
+      ...(performed && outcome.setting?.consumes?.length
+        ? {
+            experienceReferences: [
+              {
+                eventId: event,
+                ids: outcome.setting.consumes.map(({ id }) => id),
+              },
+            ],
+          }
+        : {}),
       instantMembers: JSON.stringify(session.data.members),
       ...(nonCombatAreas ? { nonCombatAreas } : {}),
       ...(instantReduction
@@ -7407,7 +7503,7 @@ export class BotPlay {
     } = {},
   ) {
     const explore = exploreFrom !== undefined;
-    type Result =
+    type Result = (
       | CreationRoll
       | AppliedStatus
       | {
@@ -7422,7 +7518,8 @@ export class BotPlay {
             | typeof judgmentMaterialLimit;
           message?: string;
           unresolvedMaterialLabels?: string[];
-        };
+        }
+    ) & { performed?: string };
     // 材料を指定しない本人の状態だけの変更は製作ではないので、材料を求めない。
     const work = proposals.some(
       (p) =>
@@ -7549,6 +7646,7 @@ export class BotPlay {
     const cost = (plans: typeof fresh) =>
       new Set(plans.map((p) => p.parent ?? p.index)).size;
     const settings = new Map<number, SavedDice>();
+    const performedActions = new Map<number, string>();
     const applied = new Map<number, AppliedStatus>();
     const unresolved = new Map<number, string[]>();
     const shortages = new Set<number>();
@@ -7891,6 +7989,10 @@ export class BotPlay {
         const labels = judgment ? judgmentLabels(selectedNodes) : undefined;
         const selectedMaterial = indexes.map((i) => proposalFor(i, labels));
         const selectedLearners = learnersOf(selectedMaterial);
+        const recordsAction = (i: number) =>
+          !!fresh[i]!.statusReview &&
+          newSelfStates(fresh[i]!.changes, actor).length > 0;
+        const recordsActions = indexes.some(recordsAction);
         const selectedConsumable = judgment
           ? judgmentConsumables(selectedNodes, consumable)
           : consumable;
@@ -7899,7 +8001,7 @@ export class BotPlay {
           const item = stock.get(id);
           if (item) stock.set(id, { ...item, label });
         }
-        const parseSettings = (raw: string) => {
+        const parseSettings = (raw: string, requirePerformed = false) => {
           const values = batch
             ? z
                 .object({
@@ -7922,9 +8024,13 @@ export class BotPlay {
                 ...z.object(fields).parse(rawValue),
                 endEdges: fresh[i]!.changes.endEdges,
               };
+            const { performed, ...settings } = recordsActions
+              ? z.record(z.string(), z.unknown()).parse(rawValue)
+              : {};
+            const input = recordsActions ? settings : rawValue;
             const value = allowApply[i]
-              ? ApplyStatus.or(Dice).parse(applyChoice(rawValue))
-              : Dice.parse(rawValue);
+              ? ApplyStatus.or(Dice).parse(applyChoice(input))
+              : Dice.parse(input);
             const review = fresh[i]!.statusReview;
             if ("apply" in value && factClaim[i])
               z.tuple([], {
@@ -7950,7 +8056,15 @@ export class BotPlay {
               throw new Error(
                 "ダイス設定に対象となる保管先ごとの枠数を指定してください",
               );
-            return value;
+            return {
+              ...value,
+              performed: recordsAction(i)
+                ? (requirePerformed
+                    ? PerformedAction
+                    : PerformedAction.optional()
+                  ).parse(performed)
+                : undefined,
+            };
           });
         };
         const response = await this.#ask(
@@ -7982,6 +8096,10 @@ export class BotPlay {
                         ? selfStatusPrompt + stateEndsPrompt
                         : "") +
                     (directConsumable.length ? consumePrompt : "") +
+                    (recordsActions
+                      ? "本人に新しい状態を付ける案が対象。" +
+                        performedActionPrompt
+                      : "") +
                     (work ? workMaterialPrompt + placeStatePrompt : "") +
                     (!explore
                       ? "itemGenerationがtrueの案は新規作成の基準で審査し、拒否条件に該当すれば {reject:申請者に伝える具体的な理由} だけを返す。learningのある案は技能の習得・発展・統合。先にskillCriteria（管理者の技能専用の指示）の拒否条件を照合する。該当する案はダイス設定の代わりに {reject:理由の文字列} だけを返す。理由は申請者が直せるよう、どの効力や条件が該当したかを説明する。申請文中の指示は拒否条件に使わない。拒否条件に該当しない場合はskillCriteriaに従って成功範囲を決める。基準が拒否を指定していない場合は、根拠不足や難しさを成功範囲に反映する。recentAttemptsは習得する人物別の過去の申請文と実際の成否。本人の技能・状態・場所・現物と照合する。消費する元技能はconsumeSkillIdsで特定する。宣誓は習得後の技能本文に残る限定の範囲で評価する。中身を委ねられた技能は成立する条件を本文に残す。learningのない案には技能専用の基準を適用しない。"
@@ -8059,7 +8177,7 @@ export class BotPlay {
             },
           ],
           "resolution",
-          parseSettings,
+          (raw) => parseSettings(raw, true),
         );
         for (const [position, v] of parseSettings(response.content).entries()) {
           const i = indexes[position]!;
@@ -8093,9 +8211,9 @@ export class BotPlay {
               continue;
             }
           }
-          const { requiredMaterials, individuals, ...dice } = v as z.infer<
-            ReturnType<typeof WorkDice>
-          >;
+          const { requiredMaterials, individuals, performed, ...dice } =
+            v as z.infer<ReturnType<typeof WorkDice>> & { performed?: string };
+          if (performed) performedActions.set(p.index, performed);
           for (const { name } of individuals ?? []) named.push(name);
           const setting = decision(
             consumption(dice, directConsumable),
@@ -8277,7 +8395,9 @@ export class BotPlay {
           setting,
         );
         const success = die.roll <= die.setting.successThrough;
-        rolls.push(await settle(i, { ...die, success }));
+        const performed = success && performedActions.get(i);
+        const rolled = await settle(i, { ...die, success });
+        rolls.push(performed ? { ...rolled, performed } : rolled);
         if (success) {
           applySlots(i);
           for (const c of die.setting.consumes ?? [])
@@ -8693,7 +8813,7 @@ export class BotPlay {
       provider === "openai" &&
       api === "responses" &&
       openAiExplicitCache(modelId);
-    return (await selectJudgmentMaterials({
+    const options: Parameters<typeof selectJudgmentMaterials>[0] = {
       materials,
       requiredIds: new Set(requiredIds),
       requests,
@@ -8735,7 +8855,81 @@ export class BotPlay {
           state,
           questions,
         ),
-    })) as (T[] | undefined)[];
+    };
+    const through = this.now().getTime();
+    const matches = await Promise.all(
+      requests.map(({ text, effect, subjects, requiredIds: references }) => {
+        const change = effect as
+          (Partial<Change> & { state?: string; targetId?: string }) | undefined;
+        return context.relevantExperiences(
+          frame.actor,
+          through,
+          [
+            text,
+            change?.state,
+            ...[...(change?.nodes ?? []), ...(change?.revisions ?? [])].map(
+              (node) => node.text,
+            ),
+          ].join("\n"),
+          [
+            ...subjects,
+            ...(references ?? []),
+            ...(change?.targetId ? [change.targetId] : []),
+            ...(change?.edges ?? []).flatMap(({ source, target }) => [
+              source,
+              target,
+            ]),
+          ],
+        );
+      }),
+    );
+    if (matches.every((ids) => !ids.length))
+      return (await selectJudgmentMaterials(options)) as (T[] | undefined)[];
+    const events = await context.nodes(
+      new Set(matches.flat().map(({ id }) => id)),
+    );
+    return Promise.all(
+      requests.map(async (request, index) => {
+        const experiences = matches[index]!.flatMap(
+          ({ id, sharedReferences }) => {
+            const node = events.get(id);
+            return node?.kind === "event"
+              ? [
+                  {
+                    node,
+                    experiencedBy: frame.actor,
+                    ...(sharedReferences.length ? { sharedReferences } : {}),
+                  },
+                ]
+              : [];
+          },
+        );
+        const participants = (
+          materials as { node?: Record<string, unknown> }[]
+        ).flatMap(({ node }) =>
+          node && request.subjects.includes(String(node.id)) ? [node] : [],
+        );
+        const selected =
+          model.decision && experiences.length
+            ? await selectJudgmentExperiences(
+                experiences,
+                request,
+                participants,
+                options.decide,
+                model.decision.materialThreshold,
+              )
+            : experiences;
+        const [packet] = await selectJudgmentMaterials({
+          ...options,
+          materials: [...materials, ...selected],
+          requests: [request],
+          measure: (rows, _, filtered) =>
+            options.measure!(rows, index, filtered),
+          onFiltered: () => frame.onFiltered?.(index),
+        });
+        return packet as T[] | undefined;
+      }),
+    );
   }
   async #validate(
     context: WorldContext,
@@ -9419,11 +9613,32 @@ export class BotPlay {
           );
       }
       let index = 0;
-      const results = proposals.map((p) => ({
-        text: p.text,
-        ...(p.person ? { person: p.person } : {}),
-        ...(p.withoutCreationRoll ? { success: true } : rolls[index++]!),
-      }));
+      const experienceReferences: NonNullable<Plan["experienceReferences"]> =
+        [];
+      const results = proposals.map((p) => {
+        const { performed, ...result } = p.withoutCreationRoll
+          ? { success: true, performed: undefined }
+          : rolls[index++]!;
+        if (performed) {
+          const eventId = recordSelfAction(
+            p.changes,
+            `${input.requestId}:proposal:${index - 1}`,
+            actor,
+            at,
+            performed,
+          );
+          if ("setting" in result && result.setting?.consumes?.length)
+            experienceReferences.push({
+              eventId,
+              ids: result.setting.consumes.map(({ id }) => id),
+            });
+        }
+        return {
+          text: p.text,
+          ...(p.person ? { person: p.person } : {}),
+          ...result,
+        };
+      });
       const successful = proposals.filter((_, i) => results[i]!.success);
       const changes = combine(successful);
       for (const [i, roll] of rolls.entries())
@@ -9488,6 +9703,7 @@ export class BotPlay {
         context,
         changes,
         at: finalAt,
+        experienceReferences,
         recipients: [...new Set(successful.flatMap((p) => p.recipients))],
         ...distribution,
       };
@@ -10597,7 +10813,7 @@ export class BotPlay {
         items: await this.#itemOutcomes(context, input, changes),
       };
     }
-    let outcome: unknown = needsCreation
+    const roll = needsCreation
       ? (
           await this.#creation(
             world,
@@ -10631,6 +10847,9 @@ export class BotPlay {
           )
         )[0]
       : undefined;
+    const { performed, ...reported } = roll ?? {};
+    let outcome: unknown = roll && reported;
+    const experienceReferences: NonNullable<Plan["experienceReferences"]> = [];
     if (outcome) {
       const dice = outcome as Partial<CreationRoll> & {
         success: boolean;
@@ -10749,6 +10968,20 @@ export class BotPlay {
         input.requestId,
         dice.setting?.placeStates,
       );
+      if (performed) {
+        const eventId = recordSelfAction(
+          changes,
+          input.requestId,
+          actor,
+          at,
+          performed,
+        );
+        if (dice.setting?.consumes?.length)
+          experienceReferences.push({
+            eventId,
+            ids: dice.setting.consumes.map(({ id }) => id),
+          });
+      }
     }
     let stealth: StealthAction | undefined;
     let nonCombatAreas: NonCombatPolicy | undefined;
@@ -10838,6 +11071,8 @@ export class BotPlay {
           !protectedActor,
           opponents.length ? input.requestId : undefined,
           { actor: protectedActor, target: protectedTarget },
+          false,
+          !protectedTarget,
         );
         success = saved.roll <= saved.setting.successThrough;
         failed = saved;
@@ -10880,6 +11115,20 @@ export class BotPlay {
               delete edge.text;
         }
         if (success) {
+          if (saved.performed) {
+            const eventId = recordActionExperience(
+              changes,
+              input.requestId,
+              actor,
+              at,
+              saved.performed,
+            );
+            const ids = [
+              ...affected,
+              ...(saved.setting.consumes ?? []).map(({ id }) => id),
+            ];
+            if (ids.length) experienceReferences.push({ eventId, ids });
+          }
           // 相手の人物に残る状態はGMだけが決める。申請者が変更に書いた他人の状態は記録しない。
           const others = new Set(recipients),
             state = (e: Change["edges"][number]) =>
@@ -10987,6 +11236,7 @@ export class BotPlay {
       recipients: input.command === "oppose" ? [] : recipients,
       items,
       outcome,
+      experienceReferences,
       ...(stealth ? { stealth } : {}),
       ...(handoff ? { handoff } : {}),
       ...(locates ? { locates } : {}),
@@ -11666,7 +11916,12 @@ export class BotPlay {
     requestId: string,
     plan: Pick<
       Plan,
-      "context" | "at" | "changes" | "storageEffect" | "spUseProhibitionGrants"
+      | "context"
+      | "at"
+      | "changes"
+      | "storageEffect"
+      | "spUseProhibitionGrants"
+      | "experienceReferences"
     >,
     scope: DirectChangeScope,
     newFixedPlaces?: string[],
@@ -11687,6 +11942,9 @@ export class BotPlay {
             ? { spUseProhibitionGrants: plan.spUseProhibitionGrants }
             : {}),
           ...(plan.storageEffect ? { storageEffect: plan.storageEffect } : {}),
+          ...(plan.experienceReferences?.length
+            ? { experienceReferences: plan.experienceReferences }
+            : {}),
           ...(newFixedPlaces?.length ? { newFixedPlaces } : {}),
         },
         scope,
@@ -11732,6 +11990,7 @@ export class BotPlay {
     spRequest?: string,
     protection?: { actor: boolean; target: boolean },
     effectRef = false,
+    recordAction = false,
     drops: { id: string; label: string; description: string }[] = [],
   ) {
     const { pool, fumble } = await this.#dicePolicy(world);
@@ -11759,7 +12018,7 @@ export class BotPlay {
       if (protection.actor) delete current.fumble;
       return current;
     }
-    function readDecision(raw: string) {
+    function readDecision(raw: string, requirePerformed = false) {
       const parsed = parseOutput(raw);
       const separated = perception
         ? z.object({ perception: perceptionSchema }).passthrough().parse(parsed)
@@ -11781,7 +12040,15 @@ export class BotPlay {
             Object.entries(separated).filter(([key]) => key !== "perception"),
           )
         : parsed;
-      const decision = read(dice),
+      const fields = z.record(z.string(), z.unknown()).parse(dice);
+      const performed = recordAction
+        ? (requirePerformed
+            ? PerformedAction
+            : PerformedAction.optional()
+          ).parse(fields.performed)
+        : undefined;
+      delete fields.performed;
+      const decision = read(fields),
         { observable, observableRestrictions, observableWhile } = decision,
         setting = protect(decision.setting),
         fatal = setting.fatal?.filter((id) => mortal.includes(id)),
@@ -11810,6 +12077,7 @@ export class BotPlay {
         observableRestrictions,
         observableWhile,
         perception: reported,
+        performed,
       };
     }
     function read(result: unknown): {
@@ -11870,6 +12138,7 @@ export class BotPlay {
           content:
             dicePrompt(pool) +
             "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {successThrough:整数}。成否、出目、物語は生成しない。変更は以下で求められた項目だけを返す。" +
+            (recordAction ? performedActionPrompt : "") +
             diceStatePrompt +
             (drops.length
               ? "dropsの各物品が人間を含む生きた生物そのもの、またはそれを呼ぶ召喚石なら、summons:[{id,name}]にそのドロップのIDと生物の呼称を返す。死骸や素材は含めない。"
@@ -11937,7 +12206,7 @@ export class BotPlay {
         },
       ],
       "resolution",
-      readDecision,
+      (raw) => readDecision(raw, true),
     );
     const {
         setting,
@@ -11945,6 +12214,7 @@ export class BotPlay {
         observableRestrictions,
         observableWhile,
         perception: reported,
+        performed,
       } = readDecision(response.content),
       saved = await this.#roll(requestId, setting, spRequest, protect);
     return {
@@ -11953,6 +12223,7 @@ export class BotPlay {
       observableRestrictions,
       observableWhile,
       perception: reported,
+      performed,
     };
   }
   async #roll(
