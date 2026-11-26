@@ -84,13 +84,22 @@ export class PlayCompanions {
     ).rows;
   }
 
-  async following(db: Db, world: string, actors: string[]) {
+  following(db: Db, world: string, actors: string[]) {
+    return this.related(db, world, actors, "follow");
+  }
+
+  async related(
+    db: Db,
+    world: string,
+    actors: string[],
+    mode?: Companion["mode"],
+  ) {
     if (!actors.length) return [];
     return (
       await db.query<Companion>(
-        `SELECT * FROM bot_companion WHERE world_id=$1 AND mode='follow'
+        `SELECT * FROM bot_companion WHERE world_id=$1 AND ($3::text IS NULL OR mode=$3)
        AND (actor_id=ANY($2::uuid[]) OR npc_id=ANY($2::uuid[])) ORDER BY npc_id`,
-        [world, actors],
+        [world, actors, mode ?? null],
       )
     ).rows;
   }

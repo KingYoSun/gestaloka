@@ -68,6 +68,9 @@ const View = z.object({
   aiControlled: z.boolean().optional(),
   actorId: z.string().nullish(),
   home: z.object({ placeId: z.uuid(), name: z.string() }).optional(),
+  departureFollowers: z
+    .array(z.object({ targetId: z.uuid(), name: z.string() }))
+    .default([]),
   turnStartedAt: z.string().optional(),
   screen: PlayScreen,
   dailySp: z
@@ -596,6 +599,38 @@ export function BotSession({
                 content: (
                   <>
                     {feedback}
+                    {view.aiControlled === false &&
+                      view.departureFollowers.length > 0 && (
+                        <section aria-label="移動時に追従するNPC">
+                          <p>このまま移動すると、次のNPCも一緒に移動します。</p>
+                          <ul className="play-list">
+                            {view.departureFollowers.map(
+                              ({ targetId, name }) => (
+                                <li
+                                  className="flex flex-wrap items-center gap-2"
+                                  key={targetId}
+                                >
+                                  <span>{name}</span>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={busy}
+                                    aria-label={`${name}をここに残す`}
+                                    onClick={() =>
+                                      void send({
+                                        command: "companion-wait",
+                                        targetId,
+                                      })
+                                    }
+                                  >
+                                    ここに残す
+                                  </Button>
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </section>
+                      )}
                     {view.aiControlled === false && (
                       <PlayCommandEditor
                         worldId={id}

@@ -529,6 +529,7 @@ type SessionStatus = {
   characters: TurnParticipant[];
   stealth?: { placeId: string; place: string };
   home?: RespawnHome;
+  departureFollowers?: { targetId: string; name: string }[];
   turn: number;
   actorId: string | null;
   callsUsed: number;
@@ -3901,28 +3902,43 @@ export class BotPlay {
   }
 
   // 過去の保存状態、再開、乗降、遠隔での帰還にも同じ所在・同席の判定を使う。
-  async #syncFollowers(
+  async #syncCompanions(
     db: Db,
     world: string,
     context: WorldContext,
     actors: string[],
     request: string,
-    requestedNpc?: string,
+    {
+      joinWaiting = false,
+      requestedNpc,
+    }: {
+      joinWaiting?: boolean;
+      requestedNpc?: string;
+    } = {},
   ) {
     let changed = false;
-    for (const c of await this.companions.following(db, world, actors)) {
+    for (const c of await this.companions.related(
+      db,
+      world,
+      actors,
+      joinWaiting ? undefined : "follow",
+    )) {
       const place = await this.#places(context, c.actor_id);
       if (
         !(await this.#places(context, c.npc_id)).some((p) => place.includes(p))
       ) {
-        await this.companions.setMode(db, world, c.npc_id, "wait");
-        changed = true;
+        if (c.mode === "follow") {
+          await this.companions.setMode(db, world, c.npc_id, "wait");
+          changed = true;
+        }
         continue;
       }
       const target = await this.current(world, c.actor_id, db);
       if (!target || target.data.members.some((m) => m.actorId === c.npc_id))
         continue;
       const source = await this.current(world, c.npc_id, db);
+      if (source && source.data.members.length > 1 && requestedNpc !== c.npc_id)
+        continue;
       if (source && deciding(source, [c.npc_id])) {
         // 別の会話にいる旧データの照合で、進行中の受領を取り消さない。
         if (requestedNpc === c.npc_id)
@@ -3930,11 +3946,15 @@ export class BotPlay {
             "COMPANION_RECEIVING",
             "コンパニオンの受領判断が終わってから追従を再開してください",
           );
-        await this.companions.setMode(db, world, c.npc_id, "wait");
-        changed = true;
+        if (c.mode === "follow") {
+          await this.companions.setMode(db, world, c.npc_id, "wait");
+          changed = true;
+        }
         continue;
       }
       if (!source) {
+        if (c.mode === "wait" && (await isPermanentlyDead(context, c.npc_id)))
+          continue;
         const { rows } = await db.query<{ user_id: string | null }>(
           "SELECT user_id FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
           [world, c.npc_id],
@@ -3945,7 +3965,8 @@ export class BotPlay {
               "NPC_UNASSIGNED",
               "対象のユニークNPCには操作担当が指定されていません",
             );
-          await this.companions.setMode(db, world, c.npc_id, "wait");
+          if (c.mode === "follow")
+            await this.companions.setMode(db, world, c.npc_id, "wait");
           continue;
         }
         await this.#open(
@@ -4583,12 +4604,13 @@ export class BotPlay {
         ...r.recipients,
       ]);
       if (affected.size)
-        await this.#syncFollowers(
+        await this.#syncCompanions(
           db,
           world,
           context,
           [r.sender, ...affected],
           r.id,
+          { joinWaiting: true },
         );
     }
     return idleExpired;
@@ -4641,6 +4663,29 @@ export class BotPlay {
     ).rows[0];
     const r = session.data.receiving;
     const characters = await this.#characters(session, db);
+    const following = await this.companions.following(db, world, [actor]);
+    const departureFollowers: NonNullable<SessionStatus["departureFollowers"]> =
+      [];
+    if (following.length) {
+      const origin = await directPlaces(context, actor);
+      for (const { npc_id: targetId } of following) {
+        if (
+          !(await directPlaces(context, targetId)).some((id) =>
+            origin.includes(id),
+          ) ||
+          (await context.commandRestriction(
+            targetId,
+            "move",
+            this.now().getTime(),
+          ))
+        )
+          continue;
+        departureFollowers.push({
+          targetId,
+          name: (await context.node(targetId))?.text ?? "人物",
+        });
+      }
+    }
     const due = r ? undefined : session.data.awayUntil;
     const remainingSeconds = due
       ? Math.max(0, Math.ceil((Date.parse(due) - this.now().getTime()) / 1000))
@@ -4663,6 +4708,7 @@ export class BotPlay {
       })),
       characters,
       ...own,
+      ...(departureFollowers.length ? { departureFollowers } : {}),
       turn: session.data.number,
       ...(withClock && session.data.turnStartedAt
         ? { turnStartedAt: session.data.turnStartedAt }
@@ -13154,13 +13200,15 @@ export class BotPlay {
           input.command === "companion-follow" ||
           input.command === "companion-status"
         )
-          await this.#syncFollowers(
+          await this.#syncCompanions(
             db,
             world,
             context,
             [actor],
             input.requestId,
-            input.command === "companion-follow" ? input.targetId : undefined,
+            input.command === "companion-follow"
+              ? { requestedNpc: input.targetId }
+              : { joinWaiting: true },
           );
         const companion = {
           action,
@@ -13300,7 +13348,7 @@ export class BotPlay {
         const participants = session.data.members.map((m) => m.actorId);
         if (input.command === "contact") participants.push(input.targetId);
         if (
-          await this.#syncFollowers(
+          await this.#syncCompanions(
             db,
             world,
             this.store.context(w.id),
@@ -13405,12 +13453,13 @@ export class BotPlay {
             )
           ).get(actor);
         }
-        await this.#syncFollowers(
+        await this.#syncCompanions(
           db,
           world,
           this.store.context(w.id),
           [actor],
           input.requestId,
+          { joinWaiting: true },
         );
       } else {
         if (!session)
@@ -14586,12 +14635,17 @@ export class BotPlay {
           affected.size ||
           ["contact", "leave", "finish"].includes(input.command)
         )
-          await this.#syncFollowers(
+          await this.#syncCompanions(
             db,
             world,
             context,
-            [actor, ...affected],
+            [
+              actor,
+              ...affected,
+              ...(input.command === "contact" ? [input.targetId] : []),
+            ],
             input.requestId,
+            { joinWaiting: affected.size > 0 || input.command === "contact" },
           );
       }
       const status = await this.status(world, actor, db);
