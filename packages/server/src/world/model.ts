@@ -19,6 +19,11 @@ export const derivedId = (value: string) => {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
 };
 
+export const isPlaceSeriesMembership = (edge: WorldEdge) =>
+  edge.kind === "status" &&
+  edge.role === "content" &&
+  edge.text === "place-series";
+
 export const respawnHome = "respawn-home";
 export const isRespawnHome = (edge: WorldEdge) =>
   edge.kind === "status" &&

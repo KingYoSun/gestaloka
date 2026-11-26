@@ -7,6 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 import { z } from "zod";
 import {
+  PlaceSeries,
   PlayCommand,
   PlayerPlayCommand,
   type ApplyCommand,
@@ -85,7 +86,8 @@ import {
   linkRoute,
   locationRecords,
 } from "../world/locations.js";
-import { isNonCombatPlace, type NonCombatArea } from "../world/noncombat.js";
+import { readPlaceSeries, recordPlaceSeries } from "../world/place-series.js";
+import { isNonCombatPlace, type NonCombatPolicy } from "../world/noncombat.js";
 import { canonical, parseOutput } from "../llm/prompt.js";
 import { changeScope, matchesChangeScope } from "../world/change-scope.js";
 import {
@@ -647,7 +649,7 @@ type Plan = {
   instantMembers?: string;
   effectState?: string;
   instantReduction?: z.infer<typeof InstantReductionResult>;
-  nonCombatAreas?: NonCombatArea[];
+  nonCombatAreas?: NonCombatPolicy;
   // ダイスの設定で死亡とされ、成功で確定した対象。
   fatal?: string[];
   spUseProhibitionGrants?: string[] | undefined;
@@ -871,6 +873,7 @@ const Explored = z
     route: z.string().trim().min(1),
     description: z.string().trim().min(1),
     partOf: z.boolean(),
+    placeSeries: PlaceSeries.nullable().optional(),
     // 接続元から行き来でつながる既知の場所のうち、新しい場所と同じもの。
     sameAs: z.uuid().nullable().optional(),
     // 新しい場所から直接行き来できる既知の場所と、その道の記述。
@@ -1352,7 +1355,7 @@ const ExploreDice = z
   .object({
     sides: z.literal(100),
     successThrough: z.number().int().min(1).max(100),
-    explored: Explored,
+    explored: Explored.safeExtend({ placeSeries: PlaceSeries.nullable() }),
   })
   .strict();
 // GMが返した同じ場所とつながりのうち、渡した既知の隣の場所だけを残す。
@@ -1376,7 +1379,8 @@ function knownNeighbors(
   };
 }
 const explorePrompt =
-  "同じ応答にexplored:{route:文字列,description:文字列,partOf:真偽}を加える。routeは接続元と新しい場所を結ぶ道の記述で、どこからどう進むと着くかを一、二文で書く。「〜を探す」「〜へ向かう」のような申請の行動ではなく、後から誰でも通れる道そのものを書く。descriptionは新しい場所の様子を、後からその場所だけを調べた人が読める文で書く。partOfは、新しい場所が接続元の説明にすでにある物や区画（接続元の中の祠・部屋・岸辺など）ならtrue、接続元とは別の場所ならfalse。trueのとき、descriptionには接続元のどこにあるかを含める。neighborsは接続元から行き来でつながる既知の場所。新しい場所がそのどれかと同じ場所ならexplored.sameAsにそのIDを返し、同じものがなければnullにする。新しい場所からneighborsのどこかへ直接行き来できるなら、explored.connects:[{id,route}]にその場所のIDと、二つの場所を結ぶ道の記述を返す。該当がなければ空配列。";
+  "同じ応答にexplored:{route:文字列,description:文字列,partOf:真偽,placeSeries:文字列またはnull}を加える。routeは接続元と新しい場所を結ぶ道の記述で、どこからどう進むと着くかを一、二文で書く。「〜を探す」「〜へ向かう」のような申請の行動ではなく、後から誰でも通れる道そのものを書く。descriptionは新しい場所の様子を、後からその場所だけを調べた人が読める文で書く。partOfは、新しい場所が接続元の説明にすでにある物や区画（接続元の中の祠・部屋・岸辺など）ならtrue、接続元とは別の場所ならfalse。trueのとき、descriptionには接続元のどこにあるかを含める。neighborsは接続元から行き来でつながる既知の場所。新しい場所がそのどれかと同じ場所ならexplored.sameAsにそのIDを返し、同じものがなければnullにする。新しい場所からneighborsのどこかへ直接行き来できるなら、explored.connects:[{id,route}]にその場所のIDと、二つの場所を結ぶ道の記述を返す。該当がなければ空配列。" +
+  "explored.placeSeriesには、新しい場所を含む具体的な地理的範囲の固有名を返す。一般的な地形や集落の種類ではなく、世界の前提、接続元・近隣の確定記録と申請から、その範囲の内側かを判断する。placeSeriesByPlaceは接続元と近隣の場所IDに対応する既存の系統名。同じ範囲ならその名を使う。新たに判明した範囲なら、ほかの範囲と区別できる固有名で系統を作る。道でつながるだけなら同じ系統にしない。別の範囲にはそれを識別できる別名を使い、所属が判断できなければnull。";
 
 /** Bots select their own material; only completed public actions enter the chat. */
 export class BotPlay {
@@ -2666,7 +2670,7 @@ export class BotPlay {
       ? { observations: [] }
       : undefined;
     let instantReduction: Plan["instantReduction"];
-    let nonCombatAreas: NonCombatArea[] | undefined;
+    let nonCombatAreas: NonCombatPolicy | undefined;
     let protectedTarget = false;
     let endedState = false;
     if (effect) {
@@ -5735,13 +5739,14 @@ export class BotPlay {
       : places;
   }
   // 探索の接続元から行き来でつながる既知の場所。読み取りも判定の入力も8件までにする。
-  async #exploreNeighbors(context: WorldContext, changes: Change) {
-    const created = new Set(changes.nodes.map((n) => n.id));
-    const source = changes.edges.find(
-      (e) =>
-        e.role === "content" && e.text === "route" && !created.has(e.source),
-    )?.source;
-    return source ? await context.routeNeighbors(source) : [];
+  async #exploreGeography(context: WorldContext, source: string) {
+    const neighbors = await context.routeNeighbors(source);
+    const memberships = await readPlaceSeries(
+      context,
+      [source, ...neighbors.map((n) => n.id)],
+      this.now().getTime(),
+    );
+    return { neighbors, placeSeriesByPlace: Object.fromEntries(memberships) };
   }
   async #routes(context: WorldContext, here: string[]) {
     const routes = new Map<string, string>();
@@ -7218,7 +7223,7 @@ export class BotPlay {
     }[],
     consumable: Consumable[],
     {
-      explore = false,
+      exploreFrom,
       waitMinutes,
       splitMode,
       hasUnrolledChanges = false,
@@ -7226,7 +7231,7 @@ export class BotPlay {
       endStateTargetId,
       previousState,
     }: {
-      explore?: boolean;
+      exploreFrom?: string | undefined;
       waitMinutes?: number | undefined;
       splitMode?: "update" | "create-batch" | undefined;
       hasUnrolledChanges?: boolean;
@@ -7235,6 +7240,7 @@ export class BotPlay {
       previousState?: string | undefined;
     } = {},
   ) {
+    const explore = exploreFrom !== undefined;
     type Result =
       | CreationRoll
       | AppliedStatus
@@ -7499,9 +7505,10 @@ export class BotPlay {
           : undefined;
       const compact = onlyEnd && confirmed;
       // 探索では、接続元から行き来でつながる既知の場所を渡し、同じ場所かつながるかをGMが判断する。
-      const neighbors = explore
-        ? await this.#exploreNeighbors(context, fresh[0]!.changes)
-        : [];
+      const geography = exploreFrom
+        ? await this.#exploreGeography(context, exploreFrom)
+        : undefined;
+      const neighbors = geography?.neighbors ?? [];
       // 申請が参照する対象。その記録をGMへ渡す。
       const touching = [
         actor,
@@ -7877,7 +7884,7 @@ export class BotPlay {
                           ? { consumable: directConsumable }
                           : {}),
                         ...(waitMinutes ? { waitMinutes } : {}),
-                        ...(neighbors.length ? { neighbors } : {}),
+                        ...geography,
                       },
               ),
             },
@@ -10410,7 +10417,8 @@ export class BotPlay {
             ],
             consumable,
             {
-              explore: input.command === "explore",
+              exploreFrom:
+                input.command === "explore" ? input.fromId : undefined,
               waitMinutes: wait,
               referenced: [...parties, ...refs],
               endStateTargetId: input.endStateTargetId,
@@ -10466,6 +10474,14 @@ export class BotPlay {
       if (input.command === "explore" && explored) {
         const place = changes.nodes[0]!.id,
           script = derivedId(`${place}:description`);
+        if (explored.placeSeries)
+          await recordPlaceSeries(
+            context,
+            changes,
+            place,
+            explored.placeSeries,
+            at,
+          );
         changes.nodes.find(
           (n) => n.id === derivedId(`${input.requestId}:route`),
         )!.text = explored.route;
@@ -10527,7 +10543,7 @@ export class BotPlay {
       );
     }
     let stealth: StealthAction | undefined;
-    let nonCombatAreas: NonCombatArea[] | undefined;
+    let nonCombatAreas: NonCombatPolicy | undefined;
     if (input.command === "oppose" && !selfStatus) {
       let success = !externalEffect && [...parties].every((id) => id === actor);
       let failed: Partial<CreationRoll> = {};
@@ -10779,23 +10795,20 @@ export class BotPlay {
     actor: string,
     targets: readonly string[],
   ) {
-    const {
-      death_judgment,
-      death_criteria,
-      non_combat_areas: areas,
-    } = (
-      await this.pool.query<{
-        death_judgment: boolean;
-        death_criteria: string;
-        non_combat_areas: NonCombatArea[];
-      }>(
-        "SELECT death_judgment,death_criteria,non_combat_areas FROM world_construction WHERE id=$1",
+    const { death_judgment, death_criteria, ...areas } = (
+      await this.pool.query<
+        NonCombatPolicy & {
+          death_judgment: boolean;
+          death_criteria: string;
+        }
+      >(
+        "SELECT death_judgment,death_criteria,non_combat_areas,non_combat_place_series FROM world_construction WHERE id=$1",
         [session.world_id],
       )
     ).rows[0]!;
     const protectedActors = new Set<string>();
     const at = this.now().getTime();
-    if (areas.length)
+    if (areas.non_combat_areas.length || areas.non_combat_place_series.length)
       for (const id of new Set([actor, ...targets])) {
         const instant = session.data.members.find(
           (m) => m.actorId === id,
@@ -10815,13 +10828,13 @@ export class BotPlay {
     return { death_judgment, death_criteria, areas, protectedActors };
   }
 
-  async #checkNonCombatAreas(db: Db, world: string, areas?: NonCombatArea[]) {
+  async #checkNonCombatAreas(db: Db, world: string, areas?: NonCombatPolicy) {
     if (!areas) return;
-    const { rows } = await db.query<{ non_combat_areas: NonCombatArea[] }>(
-      "SELECT non_combat_areas FROM world_construction WHERE id=$1 FOR SHARE",
+    const { rows } = await db.query<NonCombatPolicy>(
+      "SELECT non_combat_areas,non_combat_place_series FROM world_construction WHERE id=$1 FOR SHARE",
       [world],
     );
-    if (canonical(rows[0]?.non_combat_areas) !== canonical(areas))
+    if (canonical(rows[0]) !== canonical(areas))
       throw new WorldConflict("判定中に非戦闘地域の設定が変わりました");
   }
 

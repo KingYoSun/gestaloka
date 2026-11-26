@@ -1,15 +1,24 @@
-import type { NonCombatAreas } from "@gestaloka/contracts";
+import type { Construction } from "../runtime/construction.js";
+import { readPlaceSeries } from "./place-series.js";
 import type { WorldContext } from "./store.js";
 
-export type NonCombatArea = NonCombatAreas[number];
+export type NonCombatPolicy = Pick<
+  Construction,
+  "non_combat_areas" | "non_combat_place_series"
+>;
 
 /** 判定する場所から、明示された親だけを上にたどる。 */
 export async function isNonCombatPlace(
-  context: Pick<WorldContext, "partParents">,
-  areas: readonly NonCombatArea[],
+  context: Pick<WorldContext, "partParents" | "edges" | "nodes">,
+  { non_combat_areas: areas, non_combat_place_series: series }: NonCombatPolicy,
   places: readonly string[],
   at: number,
 ) {
+  if (series.length) {
+    const memberships = await readPlaceSeries(context, places, at);
+    for (const name of memberships.values())
+      if (series.includes(name)) return true;
+  }
   if (!areas.length) return false;
   const protectedPlaces = new Set(
     areas.flatMap(({ rootId, memberPlaceIds }) => [rootId, ...memberPlaceIds]),
