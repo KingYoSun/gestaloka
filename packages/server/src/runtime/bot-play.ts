@@ -167,6 +167,13 @@ import {
   selectJudgmentMaterials,
 } from "./judgment-materials.js";
 import {
+  learningFactorsPrompt,
+  learningReferences,
+  resolveLearningFactors,
+  type LearningAttempt,
+  type LearningFactor,
+} from "./learning-factors.js";
+import {
   completeJudgmentPreview,
   judgmentLabels,
   judgmentLoader,
@@ -529,6 +536,7 @@ type Entry = {
   actorId: string;
   input: string;
   result: unknown;
+  requestId?: string;
   label?: string;
   applicationId?: string;
   itemWitnesses?: string[];
@@ -1008,6 +1016,7 @@ type CreationRoll = {
   roll: number;
   repeated?: boolean;
   fumble?: Fumble;
+  learningFactors?: LearningFactor[];
 };
 // 判定で付いた状態の関係の印。死亡の確定で終える対象になる。
 const judged = "judged";
@@ -1221,6 +1230,14 @@ function judgmentConsumables(materials: unknown[], consumables: Consumable[]) {
 }
 const individualOutcomes = (proposals: ProposalOutcome[]) =>
   proposals.flatMap((p) => p.proposals ?? [p]);
+
+const rolledOutcomes = (
+  outcome: Partial<ProposalOutcome> | undefined,
+  text: string,
+) =>
+  individualOutcomes(outcome?.proposals ?? [{ ...outcome, text }]).filter(
+    (p) => p.roll !== undefined,
+  );
 
 type CreationProposal = Extract<
   Input,
@@ -7403,6 +7420,7 @@ export class BotPlay {
     requestId: string,
     text: string,
     checkFailed = true,
+    learner = false,
   ) {
     // 同じ手番でダイスに失敗した申請の出し直しは、GMに設定を作り直させず、前回の結果を返す。
     // 同じ試みかは判断モデルが決める。未設定・呼び出しの失敗・低い確率では、通常どおりGMが設定する。
@@ -7422,13 +7440,14 @@ export class BotPlay {
         ...(known.repeated ? { repeated: true } : {}),
       };
     if (checkFailed)
-      return this.#repeatedCreation(world, actor, requestId, text);
+      return this.#repeatedCreation(world, actor, requestId, text, learner);
   }
   async #repeatedCreation(
     world: string,
     actor: string,
     requestId: string,
     text: string,
+    learner = false,
   ) {
     if (this.construction.agent.model.decision) {
       const failed = (
@@ -7442,11 +7461,17 @@ export class BotPlay {
             };
           }
         ).outcome;
-        return individualOutcomes(
-          o?.proposals ?? [{ ...o, text: e.input }],
-        ).flatMap((r) =>
+        return rolledOutcomes(o, e.input).flatMap((r, index) =>
           r.success === false && r.setting && r.roll !== undefined
-            ? [{ text: r.text, setting: r.setting, roll: r.roll }]
+            ? [
+                {
+                  text: r.text,
+                  setting: r.setting,
+                  roll: r.roll,
+                  index,
+                  request: learner ? e.requestId : undefined,
+                },
+              ]
             : [],
         );
       });
@@ -7459,13 +7484,25 @@ export class BotPlay {
             text,
           )) ?? -1
         ];
-      if (same)
+      if (same) {
+        const learningFactors = same.request
+          ? (
+              await this.pool.query<{ creation_rolls: CreationRoll[] }>(
+                "SELECT creation_rolls FROM bot_request WHERE id=$1 AND world_id=$2 AND actor_id=$3",
+                [same.request, world, actor],
+              )
+            ).rows[0]?.creation_rolls?.filter((r) => r.roll !== undefined)[
+              same.index
+            ]?.learningFactors
+          : undefined;
         return {
           setting: same.setting,
           roll: same.roll,
           success: false,
           repeated: true,
+          ...(learningFactors?.length ? { learningFactors } : {}),
         };
+      }
     }
   }
   async #creation(
@@ -7560,6 +7597,13 @@ export class BotPlay {
       stock.set(id, item);
       return item;
     };
+    const publicRolls = (rolls: Result[]) =>
+      rolls.map((roll) => {
+        if (!("learningFactors" in roll)) return roll;
+        const result = { ...roll };
+        delete result.learningFactors;
+        return result;
+      });
     const validateSaved = async (saved: Result[]) => {
       const used = new Map<string, number>();
       for (const roll of saved) {
@@ -7572,7 +7616,7 @@ export class BotPlay {
           used.set(c.id, total);
         }
       }
-      return saved;
+      return publicRolls(saved);
     };
     const previous = await this.pool.query<{
       creation_rolls: Result[] | null;
@@ -7637,7 +7681,16 @@ export class BotPlay {
     );
     const repeated = await Promise.all(
       proposals.map((p, i) =>
-        this.#previousCreation(world, actor, keys[i]!, p.text, !p.statusReview),
+        this.#previousCreation(
+          world,
+          actor,
+          keys[i]!,
+          p.text,
+          !p.statusReview,
+          !!p.operations?.some(
+            (op) => op.type === "learn" && op.person === actor,
+          ),
+        ),
       ),
     );
     const fresh = proposals.flatMap((p, i) =>
@@ -7652,6 +7705,7 @@ export class BotPlay {
     const shortages = new Set<number>();
     const refusals = new Map<number, Extract<Result, { reason: string }>>();
     const overBudget = new Set<number>();
+    const learningFactors = new Map<number, LearningFactor[]>();
     if (fresh.length) {
       const factClaim = fresh.map((p) =>
         batch ? undefined : selfStateClaim(actor, p.changes),
@@ -7719,24 +7773,41 @@ export class BotPlay {
         await Promise.all(
           learners.map(async (person) => {
             const entries = await this.#recentWitnessedEntries(world, person);
-            const attempts = entries.flatMap((e) => {
+            const attempts = entries.flatMap((e): LearningAttempt[] => {
               if (e.actorId !== person) return [];
-              const outcome = (e.result as { outcome?: ProposalOutcome } | null)
-                ?.outcome;
+              const { outcome, commitId } =
+                (e.result as {
+                  outcome?: ProposalOutcome;
+                  commitId?: string;
+                } | null) ?? {};
+              let proposalIndex = 0;
               return individualOutcomes(
                 outcome?.proposals ?? [{ ...outcome, text: e.input }],
-              )
-                .filter(
-                  (p) =>
-                    p.roll !== undefined &&
-                    !p.repeated &&
-                    typeof p.success === "boolean",
+              ).flatMap((p) => {
+                // 経験のIDは、抽選が不要な操作を除いた判定案の順で付く。
+                const index =
+                  outcome?.proposals &&
+                  (p.roll !== undefined ||
+                    p.success === false ||
+                    "endEdges" in p)
+                    ? proposalIndex++
+                    : undefined;
+                if (
+                  p.roll === undefined ||
+                  p.repeated ||
+                  typeof p.success !== "boolean"
                 )
-                .map((p) => ({
-                  action:
-                    p.text.length > 400 ? p.text.slice(0, 400) + "…" : p.text,
-                  success: p.success,
-                }));
+                  return [];
+                return [
+                  {
+                    action:
+                      p.text.length > 400 ? p.text.slice(0, 400) + "…" : p.text,
+                    success: p.success,
+                    commitId,
+                    proposalIndex: index,
+                  },
+                ];
+              });
             });
             return [person, attempts.slice(0, historyLimit)] as const;
           }),
@@ -7997,6 +8068,13 @@ export class BotPlay {
           ? judgmentConsumables(selectedNodes, consumable)
           : consumable;
         const directConsumable = work || compact ? [] : selectedConsumable;
+        const references = selectedLearners.includes(actor)
+          ? learningReferences(
+              actor,
+              selectedNodes,
+              experience.get(actor) ?? [],
+            )
+          : undefined;
         for (const [id, label] of labels ?? []) {
           const item = stock.get(id);
           if (item) stock.set(id, { ...item, label });
@@ -8011,6 +8089,23 @@ export class BotPlay {
             : [parseOutput(raw)];
           return values.map((rawValue, position) => {
             const i = indexes[position]!;
+            const selfLearning = selectedMaterial[position]!.learning?.some(
+              (op) => op.person === actor,
+            );
+            if (
+              selfLearning &&
+              references &&
+              rawValue &&
+              typeof rawValue === "object"
+            ) {
+              const { learningFactors: factors, ...fields } =
+                rawValue as Record<string, unknown>;
+              learningFactors.set(
+                fresh[i]!.index,
+                resolveLearningFactors(references, factors),
+              );
+              rawValue = fields;
+            }
             if (
               explore ||
               selectedMaterial[position]!.learning ||
@@ -8108,6 +8203,7 @@ export class BotPlay {
                     (!explore
                       ? "itemGenerationがtrueの案で、新しく作る物品が人間を含む生きた生物そのもの、またはその生物を呼ぶための召喚石なら、ダイス設定のsummons:[{id,name}]に物品ノードのIDと、生物の呼称を返す。中身を委ねられた物品も確定する中身で判断する。死骸・素材・生物をかたどった道具は含めない。サーバーが対象の物品を召喚石にする。既存の個人への作用はindividualsにも返す。"
                       : "") +
+                    (!explore ? learningFactorsPrompt : "") +
                     (explore
                       ? "探索の基準が拒否を指定した案は {reject:申請者に伝える具体的な理由} だけを返す。その他はダイス設定を返す。" +
                         explorePrompt
@@ -8155,13 +8251,21 @@ export class BotPlay {
                           ? { proposals: selectedMaterial }
                           : selectedMaterial[0]),
                         nodes: selectedNodes,
+                        ...(references?.size
+                          ? { learningReferences: [...references.keys()] }
+                          : {}),
                         ...(selectedLearners.length
                           ? {
                               skillCriteria: policy.skill,
                               recentAttempts: Object.fromEntries(
                                 selectedLearners.map((person) => [
                                   person,
-                                  experience.get(person),
+                                  experience
+                                    .get(person)
+                                    ?.map(({ action, success }) => ({
+                                      action,
+                                      success,
+                                    })),
                                 ]),
                               ),
                             }
@@ -8403,6 +8507,9 @@ export class BotPlay {
           for (const c of die.setting.consumes ?? [])
             used.set(c.id, (used.get(c.id) ?? 0) + (c.count ?? 1));
         }
+        const factors = learningFactors.get(i);
+        if (factors?.length)
+          Object.assign(rolls[i]!, { learningFactors: factors });
       }
       const spent = cost(
         fresh.filter(
@@ -8426,7 +8533,7 @@ export class BotPlay {
         [requestId, spent, world, actor],
       );
       await db.query("COMMIT");
-      return rolls;
+      return publicRolls(rolls);
     } catch (error) {
       await db.query("ROLLBACK");
       throw error;
@@ -13336,8 +13443,9 @@ export class BotPlay {
         await db.query<{
           result: Record<string, unknown> | null;
           spent: number;
+          creation_rolls: CreationRoll[] | null;
         }>(
-          "SELECT result,CASE WHEN sp_user IS NULL THEN 0 ELSE sp_amount END AS spent FROM bot_request WHERE id=$1 FOR UPDATE",
+          "SELECT result,creation_rolls,CASE WHEN sp_user IS NULL THEN 0 ELSE sp_amount END AS spent FROM bot_request WHERE id=$1 FOR UPDATE",
           [input.requestId],
         )
       ).rows[0]!;
@@ -15023,6 +15131,7 @@ export class BotPlay {
                   d.entries.push({
                     actorId:
                       input.command === "npc-action" ? input.npcId : actor,
+                    requestId: input.requestId,
                     input:
                       entryText ||
                       (plan.draw ? `「${plan.draw.target}」で抽選した。` : ""),
@@ -15166,6 +15275,18 @@ export class BotPlay {
       const outcome = result.outcome as Partial<ProposalOutcome> | undefined;
       const dice = playDiceMessages(outcome);
       if (dice.length) result.dice = dice;
+      const rolls = saved.creation_rolls?.filter(
+        (roll) => roll.roll !== undefined,
+      );
+      const learningReasons = rolledOutcomes(
+        outcome,
+        ("text" in input && input.text) || "",
+      ).flatMap((p, index) =>
+        (rolls?.[index]?.learningFactors ?? []).map(
+          ({ label, impact }) =>
+            `「${p.text}」の判定で、${label}が${impact === "helped" ? "有利" : "不利"}に働きました`,
+        ),
+      );
       const parts = individualOutcomes(outcome?.proposals ?? []);
       const refusalMessages = (parts.length ? parts : [outcome]).flatMap(
         (p) => {
@@ -15221,7 +15342,9 @@ export class BotPlay {
             }
           : {}),
       };
-      return await finish(result);
+      return await finish(
+        learningReasons.length ? { ...result, learningReasons } : result,
+      );
     } catch (error) {
       // Persist a deadline processed by the request that it invalidated.
       await db.query(

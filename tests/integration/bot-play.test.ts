@@ -14883,8 +14883,10 @@ describe("現場材料", () => {
     expect(sent[0]!.skills).toEqual(expected);
     expect(sent[1]!.skills).toEqual(skills);
     expect(sent[0]!.current).toHaveProperty("skillCriteria");
+    expect(sent[0]!.current).toHaveProperty("learningReferences");
     expect(sent[1]!.current).not.toHaveProperty("skillCriteria");
     expect(sent[1]!.current).not.toHaveProperty("recentAttempts");
+    expect(sent[1]!.current).not.toHaveProperty("learningReferences");
     expect(sent[0]!.boundaries.at(-1)).toBeDefined();
     expect(sent[1]!.boundaries).toContain(sent[0]!.boundaries.at(-1));
   });
@@ -21208,6 +21210,134 @@ test("世界外に接続する技能だけを差し戻し、同じ申請の技�
     skills: [{ text: inside }],
     items: [{ label: "黒板" }],
   });
+});
+
+test("技能判定で使った本人の技能と試行を本人にだけ返し、再送と出し直しで保持する", async () => {
+  const f = await fixture(2);
+  const [actor, other] = f.actors as [string, string];
+  const model = runtime.agent.model;
+  await f.send(1, { command: "contact", targetId: actor });
+  await giveTurn(f, 0);
+  f.calls.mockClear();
+  await f.apply([
+    {
+      type: "learn",
+      person: actor,
+      text: "潮流を読む",
+      basis: "船頭に教わった",
+    },
+    {
+      type: "learn",
+      person: other,
+      text: "隠し航路を読む",
+      basis: "私的な稽古",
+    },
+  ]);
+  const known = (await readBelongings(f.store.context(f.graph), actor))
+    .skills[0]!;
+  const hidden = (await readBelongings(f.store.context(f.graph), other))
+    .skills[0]!;
+  const learn = (text: string, skill: string) => ({
+    requestId: randomUUID(),
+    command: "apply",
+    expectedSp: 1,
+    action: {
+      type: "generate",
+      plans: [
+        {
+          text,
+          operation: { type: "learn", person: actor, text: skill, basis: text },
+        },
+      ],
+    },
+    dependencies: [],
+  });
+  const saveRoll = (requestId: string, successThrough: number) =>
+    isolated.databases.postgres.query(
+      "INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,9)",
+      [
+        derivedId(`${requestId}:creation`),
+        { count: 3, sides: 6, successThrough },
+      ],
+    );
+  const first = learn("干潮時に瀬を見分ける練習", "瀬を見分ける");
+  f.calls.mockImplementationOnce(async (id) => {
+    await saveRoll(first.requestId, 15);
+    return answer(id, {
+      successThrough: 15,
+      learningFactors: [{ ref: `skill:${known.id}`, impact: "helped" }],
+    });
+  });
+  expect(await f.send(0, first)).toMatchObject({
+    outcome: { success: true },
+    learningReasons: [expect.stringContaining("技能「潮流を読む」が有利")],
+  });
+
+  const failed = learn("夜の浅瀬を調べる", "暗闇で浅瀬を見分ける");
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const payload = JSON.parse(String(messages[1]!.content));
+    expect(payload.learningReferences).toEqual(
+      expect.arrayContaining([`skill:${known.id}`, "attempt:1"]),
+    );
+    expect(payload.learningReferences).not.toContain(`skill:${hidden.id}`);
+    expect(payload.recentAttempts[actor][0].action).toBe(
+      first.action.plans[0]!.text,
+    );
+    await saveRoll(failed.requestId, 3);
+    return answer(id, {
+      successThrough: 3,
+      learningFactors: [
+        { ref: `skill:${known.id}`, impact: "helped" },
+        { ref: "attempt:1", impact: "hindered", reason: "表示しない説明" },
+        { ref: `skill:${hidden.id}`, impact: "helped" },
+        { ref: "attempt:99", impact: "hindered" },
+      ],
+    });
+  });
+  const result = await f.send(0, failed);
+  expect(result.outcome).toMatchObject({ success: false });
+  expect(result.outcome).not.toHaveProperty("learningFactors");
+  expect(result.learningReasons).toEqual([
+    "「夜の浅瀬を調べる」の判定で、技能「潮流を読む」が有利に働きました",
+    "「夜の浅瀬を調べる」の判定で、過去の試行（成功）「干潮時に瀬を見分ける練習」が不利に働きました",
+  ]);
+  expect((await f.send(0, failed)).learningReasons).toEqual(
+    result.learningReasons,
+  );
+
+  vi.spyOn(model, "decision", "get").mockReturnValue(
+    decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+  );
+  vi.spyOn(model, "apiKey").mockResolvedValue("unused");
+  vi.spyOn(model, "transport").mockImplementation(async (_url, options) => {
+    const body = JSON.parse(String(options?.body));
+    return Response.json({
+      id: "decision",
+      model: body.model,
+      answers: Object.fromEntries(
+        Object.keys(body.questions).map((key) => [
+          key,
+          { type: "noul", noul: 0.9 },
+        ]),
+      ),
+      usage: { input_tokens: 10, output_tokens: 10, cost: 0 },
+    });
+  });
+  const repeated = await f.send(0, { ...failed, requestId: randomUUID() });
+  expect(repeated.outcome).toMatchObject({
+    ...(result.outcome as object),
+    repeated: true,
+  });
+  expect(repeated.spentSp).toBe(0);
+  expect(repeated.learningReasons).toEqual(result.learningReasons);
+  expect(f.calls).toHaveBeenCalledTimes(2);
+
+  await f.send(0, { command: "end-turn" });
+  const { entries } = await f.status(1);
+  expect(JSON.stringify(entries)).toContain("夜の浅瀬を調べる");
+  expect(JSON.stringify(entries)).not.toMatch(
+    /潮流を読む|learningFactors|learningReasons/,
+  );
 });
 
 test("技能習得では指定した現物の消費と同名のNPC本人への作用を区別する", async () => {
