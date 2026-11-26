@@ -63,6 +63,7 @@ const SearchResult = z.object({
 });
 const View = z.object({
   sessionId: z.string().optional(),
+  sceneId: z.string().optional(),
   viewerId: z.string(),
   aiControlled: z.boolean().optional(),
   actorId: z.string().nullish(),
@@ -873,6 +874,7 @@ export function BotSession({
         )}
         <PlayLogRows
           entries={view.entries}
+          liveScene={archive ? undefined : view.sceneId}
           timestamp={(row) => row.recordedAt ?? row.payload.transition?.at}
         >
           {(row) => <LogRow row={row} characters={view.characters} />}

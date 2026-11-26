@@ -49,6 +49,7 @@ const AdminOperations = lazy(() =>
 import { Button } from "./components/ui/button.js";
 import { Notice, Problem } from "./presentation.js";
 import { $api } from "./api.js";
+import { usePlayLogAudio } from "./play-log-sound.js";
 import {
   SurfaceContext,
   useSurface,
@@ -106,6 +107,7 @@ function Brand() {
 }
 function Shell() {
   const surface = useSurface();
+  usePlayLogAudio(surface === "user");
   const account = $api.useQuery("get", "/api/account");
   return (
     <>
