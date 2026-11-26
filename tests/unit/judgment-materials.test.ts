@@ -450,7 +450,7 @@ test("選別が必須とした資料は捨てず、収まらないときは結�
   ).toEqual([undefined]);
 });
 
-test("回答が不足した案には予算内の元資料を使い、予算外なら結果を作らない", async () => {
+test("回答が不足した案には予算内の元資料を使い、元資料が超過すれば必須資料を使う", async () => {
   const materials = [material("actor", [{ id: "skill", text: "糸を巻く。" }])];
   const args = {
     materials,
@@ -464,7 +464,62 @@ test("回答が不足した案には予算内の元資料を使い、予算外�
   ).toEqual([materials]);
   expect(
     await selectJudgmentMaterials({ ...args, budget: bytes(materials) - 1 }),
-  ).toEqual([undefined]);
+  ).toEqual([[material("actor", [])]]);
+});
+
+test("Jevの一部が失敗したら、正本が収まらない候補の次に評価の高い資料を残す", async () => {
+  const required = {
+    id: "required",
+    name: "作業の手順",
+    text: "手順書の内容。",
+  };
+  const unknown = { id: "unknown", text: "x".repeat(30 * 1024) };
+  const large = { id: "large", text: "長い技能の抜粋。" };
+  const short = { id: "short", text: "仕上げを助ける技能。" };
+  const materials = [material("actor", [required, unknown, large, short])];
+  const decide = vi.fn(
+    async (_state, questions: Record<string, unknown>, batch) => {
+      if (batch === 0) throw new Error("判断APIがHTTP 400を返しました");
+      return Object.fromEntries(
+        Object.keys(questions).map((key) => [
+          key,
+          key.startsWith("r0c3") ? 0.99 : 0.9,
+        ]),
+      );
+    },
+  );
+  const hydrate = vi.fn(async (packet: unknown[]) =>
+    JSON.parse(
+      JSON.stringify(packet).replace(large.text, "y".repeat(25 * 1024)),
+    ),
+  );
+  const onFiltered = vi.fn();
+  const measure = (nodes: unknown[]) =>
+    measureDiceMaterials({
+      role: "user",
+      content: JSON.stringify({
+        actor: "actor",
+        nodes,
+        text: "木の板を加工する",
+      }),
+    });
+  const [selected] = await selectJudgmentMaterials({
+    materials,
+    requiredIds: new Set([required.id]),
+    requests: [{ text: "木の板を加工する", subjects: ["actor"] }],
+    decide,
+    hydrate,
+    measure,
+    onFiltered,
+  });
+  expect(decide).toHaveBeenCalledTimes(2);
+  expect(onFiltered).toHaveBeenCalledExactlyOnceWith(0);
+  expect(hydrate).toHaveBeenCalledWith(
+    [material("actor", [required, large])],
+    0,
+  );
+  expect(selected).toEqual([material("actor", [required, short])]);
+  expect(measure(selected!)).toBeLessThanOrEqual(24 * 1024);
 });
 
 test("元のJSONが24KiBを超えていても、圧縮後に収まる元資料で選別不能時の判定を続けられる", async () => {

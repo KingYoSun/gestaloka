@@ -8075,6 +8075,77 @@ test("型付きの対人対抗は関係IDで状態を置き換え、期限と出
   expect(f.calls).toHaveBeenCalledTimes(1);
 });
 
+test("Jevの全回答が失敗し元資料が超過しても、必須資料で生成を抽選する", async () => {
+  const f = await fixture(1);
+  const actor = f.actors[0]!;
+  const unrelated = "古い航海術の条件と効果。".repeat(900);
+  await f.apply([
+    { type: "learn", person: actor, text: unrelated, basis: "航海で習得" },
+    {
+      type: "learn",
+      person: actor,
+      text: "紙折り：紙を折って形を保つ。",
+      basis: "練習で習得",
+    },
+  ]);
+  const [job] = await f.store.judgmentExcerptJobs(1, f.graph);
+  expect(
+    await f.store.finishJudgmentExcerpt(job!, "古い航海術の条件と効果。"),
+  ).toBe(true);
+  const decide = vi
+    .spyOn(runtime.agent.model, "decide")
+    .mockImplementation(async (_id, role) => {
+      expect(role).toBe("world-judgment-materials");
+      throw new Error("判断APIがHTTP 400を返しました");
+    });
+  f.calls.mockImplementation(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    const { nodes } = JSON.parse(messages[1]!.content);
+    expect(nodes).toContainEqual(
+      expect.objectContaining({
+        node: expect.objectContaining({ id: actor }),
+        belongings: expect.objectContaining({
+          skills: [
+            expect.objectContaining({ text: "紙折り：紙を折って形を保つ。" }),
+          ],
+        }),
+      }),
+    );
+    expect(nodes).toContainEqual(
+      expect.objectContaining({
+        node: expect.objectContaining({ id: f.place }),
+      }),
+    );
+    return answer(id, sure);
+  });
+  const result = await f.send(0, {
+    command: "apply",
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "generate",
+      plans: [
+        {
+          text: "紙折りで紙札を作る",
+          operation: {
+            type: "create",
+            holder: actor,
+            label: "紙札",
+            basis: "手製",
+          },
+        },
+      ],
+    },
+  });
+  expect(result).toMatchObject({
+    spentSp: 1,
+    dailySp: { remaining: 99 },
+    outcome: { roll: expect.any(Number), success: true },
+  });
+  expect(decide).toHaveBeenCalled();
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
 test("生成の必須資料が超過した案は抽選せず、独立した案を判定する", async () => {
   const f = await fixture(1);
   const actor = f.actors[0]!;
