@@ -1,7 +1,11 @@
 import { canonical } from "../llm/prompt.js";
 import type pg from "pg";
 import type { z } from "zod";
-import type { PlayCommand, PlayerReportInput } from "@gestaloka/contracts";
+import type {
+  BelongingOp,
+  PlayCommand,
+  PlayerReportInput,
+} from "@gestaloka/contracts";
 import { AccessError } from "../http/access.js";
 import type { WorldConstruction } from "./construction.js";
 import { derivedId, worldNow, type Change } from "../world/model.js";
@@ -15,6 +19,8 @@ import { commitPlayChange, directChangeScope } from "./play-change-scope.js";
 export type PromotionProfile = {
   description: string;
   memory: string;
+  items: { label: string; basis: string }[];
+  skills: { text: string; basis: string }[];
   through: string;
   snapshot: string;
 };
@@ -482,18 +488,26 @@ export class PlayerTools {
             target: instant.sourceEventId,
             period: { from: at },
           });
-        if (locations.length) {
-          const placed = await planBelongings(context, commitId, at, [
-            {
-              type: "locate",
-              subjectId: npc,
-              text: locations.map((l) => l.text).join("、"),
-              aboutIds: [...new Set(locations.flatMap((l) => l.aboutIds))],
-            },
-          ]);
-          changes.nodes.push(...placed.changes.nodes);
-          changes.edges.push(...placed.changes.edges);
-        }
+        const operations: BelongingOp[] = [];
+        if (locations.length)
+          operations.push({
+            type: "locate",
+            subjectId: npc,
+            text: locations.map((l) => l.text).join("、"),
+            aboutIds: [...new Set(locations.flatMap((l) => l.aboutIds))],
+          });
+        for (const { label, basis } of profile.items)
+          operations.push({ type: "create", holder: npc, label, basis });
+        for (const { text, basis } of profile.skills)
+          operations.push({ type: "learn", person: npc, text, basis });
+        const belongings = await planBelongings(
+          context,
+          commitId,
+          at,
+          operations,
+        );
+        changes.nodes.push(...belongings.changes.nodes);
+        changes.edges.push(...belongings.changes.edges);
         const scope = directChangeScope(changes);
         try {
           await commitPlayChange(
