@@ -1946,6 +1946,47 @@ export class BotPlay {
       throw error;
     }
   }
+  async #requestedRecheck(
+    report: NpcReport,
+    statements: { id: string; text: string }[],
+  ) {
+    const result = z.discriminatedUnion("intent", [
+      z.object({ intent: z.enum(["other", "recall"]) }),
+      z.object({
+        intent: z.literal("recheck"),
+        requestId: z.enum(statements.map(({ id }) => id)),
+      }),
+    ]);
+    const read = (raw: string) => result.parse(parseOutput(raw));
+    const response = await ExecutionBudget.withCallReserve(1, () =>
+      this.#ask(
+        derivedId(`${report.readId}:recheck-intent`),
+        "world-npc-recheck-request",
+        [
+          {
+            role: "system",
+            content:
+              '会話の分類を行う。相手の発言に、前回と同じ対象をもう一度調べて現在の事実を知らせてほしいという依頼があればrecheck。報告済みの答えの文面や内容を聞き直した場合はrecall。関心、心配、了承、別の対象についての要望、追加の事情はother。相手が調べ直すよう頼んでいるかを、話題との関連だけで判断しない。recheckの場合は実際に再調査を頼んだ発言のIDをrequestIdに入れる。出力は {"intent":"otherまたはrecall"} または {"intent":"recheck","requestId":"発言ID"} のJSONだけ。',
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              reportedQuestion: report.question,
+              statements,
+            }),
+          },
+        ],
+        "default",
+        read,
+      ),
+    ).catch((error) => {
+      if (!(error instanceof ExecutionLimit)) throw error;
+      return undefined;
+    });
+    const choice = response && read(response.content);
+    if (choice?.intent === "recheck")
+      return statements.find(({ id }) => id === choice.requestId);
+  }
   async tickNpcs(world?: string, paused = () => false) {
     if (paused() || (await RuntimeControl.isPaused(this.pool))) return;
     const active = await this.pool.query<Session>(
@@ -2110,12 +2151,6 @@ export class BotPlay {
                 peers.includes(work.completed.recipient)
                   ? work.completed
                   : undefined;
-              const operations = npcOperations(
-                peers,
-                !!status.receiving,
-                pending,
-                completed,
-              );
               const priorResult =
                 completed &&
                 (await this.#reportedMaterial(
@@ -2124,6 +2159,66 @@ export class BotPlay {
                   npc.actor_id,
                   completed,
                 ));
+              const afterReport = completed
+                ? history.entries
+                    .slice(-historyLimit)
+                    .flatMap(({ id, payload }) =>
+                      BigInt(id) > BigInt(completed.recordId)
+                        ? (payload.entries ?? []).flatMap(
+                            (entry: Entry, index: number) =>
+                              entry.actorId === completed.recipient &&
+                              Array.isArray(
+                                (
+                                  entry.result as {
+                                    instantNpcs?: unknown;
+                                  } | null
+                                )?.instantNpcs,
+                              )
+                                ? [{ id: `${id}.${index}`, text: entry.input }]
+                                : [],
+                          )
+                        : [],
+                    )
+                : [];
+              const recheckRequest =
+                completed && priorResult === "unchanged" && afterReport.length
+                  ? await this.#requestedRecheck(completed, afterReport)
+                  : undefined;
+              const readResult = pending
+                ? (
+                    await this.pool.query(
+                      "SELECT result->'material' AS material FROM bot_request WHERE id=$1 AND world_id=$2 AND actor_id=$3",
+                      [pending.readId, npc.world_id, npc.actor_id],
+                    )
+                  ).rows[0]?.material
+                : undefined;
+              const reportRecords =
+                pending?.query.kind === "subject" &&
+                Array.isArray(readResult?.states)
+                  ? [
+                      ...new Set<string>(
+                        readResult.states.flatMap(
+                          (state: { node?: { text?: unknown } }) =>
+                            typeof state.node?.text === "string" &&
+                            state.node.text.trim()
+                              ? [state.node.text]
+                              : [],
+                        ),
+                      ),
+                    ]
+                  : [];
+              const operations = npcOperations(
+                peers,
+                !!status.receiving,
+                pending,
+                completed,
+                priorResult === "visible-result-changed"
+                  ? "changed"
+                  : recheckRequest
+                    ? "requested"
+                    : undefined,
+                reportRecords,
+              );
               const readChoice = (raw: string) => {
                 const value = parseOutput(raw);
                 // Previously saved completions contain only the command.
@@ -2134,14 +2229,6 @@ export class BotPlay {
                 });
                 return { plan, action };
               };
-              const readResult = pending
-                ? (
-                    await this.pool.query(
-                      "SELECT result->'material' AS material FROM bot_request WHERE id=$1 AND world_id=$2 AND actor_id=$3",
-                      [pending.readId, npc.world_id, npc.actor_id],
-                    )
-                  ).rows[0]?.material
-                : undefined;
               const completion = await this.#ask(
                 derivedId(`${requestId}:choice`),
                 "world-server-npc",
@@ -2157,13 +2244,19 @@ export class BotPlay {
                       ...(pending
                         ? {
                             situation:
-                              "自分で選んだ確認を終えた。読めた内容から、引き受けた問いに答える具体的な結果を自分の口調で伝えられる。所見を想像しない。",
+                              "自分で選んだ確認を終えた。reportRecordsがあれば、findingには答えの根拠にする記録の番号を入れる。番号を選んだ記録はそのまま相手に引用される。ほかの場合は、findingに今回の検索結果が直接示すことと、確認できた範囲を書く。見立てを加える場合は、judgmentのproposalに自分なら取る一手を書く。使えるか、足りるかなどが未確認の条件に依存するときは、conditionに何が未確認かを書く。その条件を満たすときの提案や、条件を先に確かめる提案を伝えられる。",
                             task: {
                               question: pending.question,
                               recipient: pending.recipient,
                               query: pending.query,
                             },
                             readResult,
+                            reportRecords: reportRecords.length
+                              ? reportRecords.map((text, index) => ({
+                                  number: index + 1,
+                                  text,
+                                }))
+                              : undefined,
                             self,
                             goal: work?.goal,
                             people: status.characters,
@@ -2213,10 +2306,14 @@ export class BotPlay {
                               query: completed.query,
                               alreadyDelivered: completed.answer,
                               priorResult,
+                              afterReport,
+                              recheckRequest,
                               situation:
                                 priorResult === "visible-result-changed"
                                   ? "相手に報告した後、自分が閲覧できる確認対象に変化があった。前の答えを今の状態として扱えない。相手が待っている間でも、その人の判断に関わるなら recheck_for_recipient で何が変わったか読み直し、知らせるかを選ぶ。"
-                                  : "この問いへの答えは相手に届いた。新しい依頼や関連する知らせがあれば再確認できる。前の答えを聞き直された場合は報告済みの答えを伝えられる。",
+                                  : recheckRequest
+                                    ? "相手が改めて調べてほしいと頼んだ。引き受けるなら recheck_for_recipient で現在の結果を調べ、断るならその旨を伝える。"
+                                    : "この問いへの答えは相手に届いた。前の答えの聞き直しには手元の情報で応じられる。",
                             },
                           }),
                       availableOperations: operations.availableOperations,

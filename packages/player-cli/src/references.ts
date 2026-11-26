@@ -35,6 +35,34 @@ export class PlayerReferences {
     this.db.exec(
       "PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS refs(short TEXT PRIMARY KEY, full TEXT NOT NULL UNIQUE); CREATE TABLE IF NOT EXISTS progress(name TEXT PRIMARY KEY, cursor INTEGER NOT NULL)",
     );
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS speech (
+        device TEXT NOT NULL,
+        scene TEXT NOT NULL,
+        submitted_at INTEGER NOT NULL,
+        request TEXT NOT NULL,
+        PRIMARY KEY (device, scene, submitted_at, request)
+      ) WITHOUT ROWID
+    `);
+  }
+  recordSpeech(
+    device: string,
+    scene: string,
+    request: string,
+    submittedAt: number,
+  ) {
+    this.db
+      .prepare("INSERT OR IGNORE INTO speech VALUES(?,?,?,?)")
+      .run(device, scene, submittedAt, request);
+  }
+  recentSpeech(device: string, scene: string) {
+    return this.db
+      .prepare(
+        "SELECT request FROM speech WHERE device=? AND scene=? ORDER BY submitted_at DESC, request DESC LIMIT 10",
+      )
+      .all(device, scene)
+      .reverse()
+      .map(({ request }) => String(request));
   }
   cursor() {
     return String(

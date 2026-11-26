@@ -1,5 +1,6 @@
 import { PlaySearch } from "@gestaloka/contracts";
 import { z } from "zod";
+import { canonical } from "../llm/prompt.js";
 import type { Dependency } from "../world/store.js";
 
 // seek is an adjudicated action. It has no material to read back to a recipient.
@@ -29,6 +30,11 @@ type Decision = {
   recipient?: string;
   reportReadId?: string;
 };
+const pass = (goal: string | null): Decision => ({
+  goal,
+  action: { command: "end-turn" },
+  endOnSuccess: true,
+});
 const worldCommand = z.object({
   goal,
   endOnSuccess: z.boolean(),
@@ -42,6 +48,8 @@ export function npcOperations(
   receiving: boolean,
   pending?: NpcRead,
   completed?: NpcReport,
+  recheck?: "changed" | "requested",
+  records: string[] = [],
 ) {
   const operations = new Map<
     string,
@@ -64,30 +72,100 @@ export function npcOperations(
     });
   }
   if (!receiving) {
-    if (peers.length)
+    if (completed && !pending && recheck)
       add(
-        "inspect_and_reply",
-        "引き受けた確認を実行する。知りたいこと、調べる対象と、結果を伝える相手のIDを選ぶ。",
-        task.extend({ goal, recipient: z.enum(peers) }),
+        "recheck_for_recipient",
+        recheck === "changed"
+          ? "報告後に確認対象が変わったので、同じ相手のために最新の結果を調べる。"
+          : "届いた再依頼を引き受け、同じ相手のために最新の結果を調べる。",
+        z.object({ goal, question: message.optional() }),
         (v) => ({
           goal: v.goal,
-          inspect: task.parse(v),
-          action: { command: "search", query: v.query },
+          inspect: task.parse({
+            ...completed,
+            question: v.question ?? completed.question,
+          }),
+          action: { command: "search", query: completed.query },
           endOnSuccess: false,
         }),
       );
+    const offerInspection = () => {
+      if (pending || !peers.length) return;
+      add(
+        "inspect_and_reply",
+        completed
+          ? "新しい相手か、前の報告とは別の素材を調べる。"
+          : "引き受けた確認を実行する。知りたいこと、調べる対象と、結果を伝える相手のIDを選ぶ。",
+        task.extend({ goal, recipient: z.enum(peers) }),
+        (v) =>
+          completed?.recipient === v.recipient &&
+          canonical(completed.query) === canonical(v.query)
+            ? pass(v.goal)
+            : {
+                goal: v.goal,
+                inspect: task.parse(v),
+                action: { command: "search", query: v.query },
+                endOnSuccess: false,
+              },
+      );
+    };
+    if (!completed) offerInspection();
     if (pending)
       add(
         "report_and_pass",
-        "読んで分かった具体的な結果を本人に伝え、この用事を終えて次の人へ渡す。",
-        z.object({ goal, text: message, mode }),
-        (v) => ({
-          goal: v.goal,
-          recipient: pending.recipient,
-          reportReadId: pending.readId,
-          action: { command: "say", text: v.text, mode: v.mode },
-          endOnSuccess: true,
+        "今回の確認結果と、必要なら自分の見立てを本人に伝えて、手番を渡す。",
+        z.object({
+          goal,
+          finding: records.length
+            ? z
+                .array(z.number().int().min(1).max(records.length))
+                .describe(
+                  "答えの根拠として伝えるreportRecordsの番号。該当する記録がなければ空配列。",
+                )
+            : message.describe(
+                "今回読めた資料が直接示すことと、確かめられた範囲。",
+              ),
+          judgment: z
+            .object({
+              condition: message
+                .nullable()
+                .describe(
+                  "提案に関わる未確認の条件を、仮定や確認事項として一文で伝える。条件なしで勧められる一手ならnull。",
+                ),
+              proposal: message.describe(
+                "この結果を受けて、自分なら取る一手。資料にない事実や可否を断定せず、提案として書く。",
+              ),
+            })
+            .nullable()
+            .describe("自分の見立て。付け加える提案がなければnull。"),
+          mode,
         }),
+        (v) => {
+          const finding =
+            typeof v.finding === "string"
+              ? v.finding
+              : v.finding.length
+                ? `記録には${[...new Set(v.finding)].map((index) => `「${records[index - 1]}」`).join("、")}とあります。`
+                : "今回読んだ記録では答えを確認できませんでした。";
+          const judgment = v.judgment
+            ? [v.judgment.condition, v.judgment.proposal]
+                .filter(Boolean)
+                .join("\n")
+            : undefined;
+          return {
+            goal: v.goal,
+            recipient: pending.recipient,
+            reportReadId: pending.readId,
+            action: {
+              command: "say",
+              text: judgment
+                ? `${finding}\n私の見立てでは、${judgment}`
+                : finding,
+              mode: v.mode,
+            },
+            endOnSuccess: true,
+          };
+        },
       );
     else
       add(
@@ -100,44 +178,13 @@ export function npcOperations(
           endOnSuccess: v.endOnSuccess,
         }),
       );
-    if (completed && !pending) {
-      add(
-        "recheck_for_recipient",
-        "新しい依頼・関連する変化があり、同じ相手のために前の対象を調べ直す。",
-        z.object({ goal, reason: message }),
-        (v) => ({
-          goal: v.goal,
-          inspect: task.parse(completed),
-          action: { command: "search", query: completed.query },
-          endOnSuccess: false,
-        }),
-      );
-      add(
-        "repeat_delivered_answer",
-        "相手が前の答えを聞き直したとき、届けた答えをそのまま伝える。",
-        z.object({ goal }),
-        (v) => ({
-          goal: v.goal,
-          recipient: completed.recipient,
-          action: {
-            command: "say",
-            text: completed.answer,
-            mode: completed.mode,
-          },
-          endOnSuccess: true,
-        }),
-      );
-    }
     add(
       "pass_turn",
       "応じることや自分から行うことがなければ、無言で手番を渡す。",
       z.object({ goal }),
-      (v) => ({
-        goal: v.goal,
-        action: { command: "end-turn" },
-        endOnSuccess: true,
-      }),
+      (v) => pass(v.goal),
     );
+    if (completed) offerInspection();
   }
   add(
     "world_command",
