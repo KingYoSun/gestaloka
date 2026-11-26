@@ -5239,32 +5239,37 @@ test("管理者のお知らせは操作中の人物全員か指定した人物�
   ).toBe(2);
 });
 
-test("受容したインスタントNPCだけを昇格申請し、管理者の許可後に一度だけ永続化する", async () => {
+test("受容したNPCを根拠のある所持品と技能ごと一度だけ昇格させ、対抗判定に渡す", async () => {
   const f = await fixture(),
     admin = await auth.person(),
     source = randomUUID();
+  const item = { label: "木剣", basis: "腰に木剣を下げている" };
+  const skill = {
+    text: "籠編み：細い枝を編んで小さな籠を作る",
+    basis: "細い枝を編んで小さな籠を作る",
+  };
+  const appearance = `木陰の小さな旅人。${item.basis}。`;
+  const proposal = "鳥のように飛べる";
   await f.send(1, { command: "contact", targetId: f.actors[0] });
   f.calls.mockImplementationOnce(async (id) => answer(id, sure));
   await f.send(0, {
     requestId: source,
     command: "say",
-    text: "小さな動物が二匹、木陰を横切る",
-    instantNpcs: ["木陰の小さな動物", "別の小さな動物"],
+    text: "木陰に旅人と小さな動物が現れる",
+    instantNpcs: [appearance, "別の小さな動物"],
   });
   expect(f.calls.mock.calls.map((call) => call[1])).toEqual([
     "world-creation-dice",
   ]);
   f.calls.mockClear();
   await f.send(0, { command: "end-turn" });
-  f.calls.mockImplementation(async (id) =>
-    answer(id, { text: "木陰で様子を見る" }),
-  );
+  f.calls.mockImplementation(async (id) => answer(id, { text: skill.basis }));
   await access.botPlay.tickNpcs();
   const pending = await f.send(1, {
     command: "promote-npc",
     sourceRequestId: source,
     npcIndex: 0,
-    description: "人のそばで穏やかに過ごす小さな動物",
+    description: proposal,
   });
   await f.send(1, { command: "end-turn" });
   await access.botPlay.tickNpcs();
@@ -5297,13 +5302,23 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
     { operation: "npcs.promotions", worldId: f.world },
     { players: access.players },
   );
-  expect(JSON.stringify(list)).toContain("木陰の小さな動物");
-  f.calls.mockImplementationOnce(async (id) =>
-    answer(id, {
-      description: "木陰で暮らす小さな動物",
-      memory: "木陰で様子を見た",
-    }),
-  );
+  expect(JSON.stringify(list)).toContain(appearance);
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-npc-profile");
+    expect(JSON.parse(messages[1]!.content)).toMatchObject({
+      appearance: { description: appearance },
+      applicantDescription: proposal,
+      experiences: expect.arrayContaining([
+        expect.objectContaining({ ownAction: true, action: skill.basis }),
+      ]),
+    });
+    return answer(id, {
+      description: appearance,
+      memory: "細い枝で籠を作ったことを覚えている",
+      items: [item],
+      skills: [skill, { text: "飛行：空を飛ぶ", basis: proposal }],
+    });
+  });
   const id = randomUUID(),
     accepted = await auth.operations.execute(admin.id, id, approve, {
       players: access.players,
@@ -5315,7 +5330,11 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
   ).toEqual(accepted);
   expect(await f.store.context(f.graph).node(npc)).toMatchObject({
     kind: "existence",
-    text: "木陰の小さな動物",
+    text: appearance,
+  });
+  expect(await readBelongings(f.store.context(f.graph), npc)).toMatchObject({
+    items: [item],
+    skills: [skill],
   });
   expect(
     (
@@ -5348,6 +5367,28 @@ test("受容したインスタントNPCだけを昇格申請し、管理者の�
   expect(
     await f.store.context(f.graph).node(derivedId(source + ":manual:1")),
   ).toBeUndefined();
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-opposition-dice");
+    const { materials } = JSON.parse(messages[1]!.content);
+    expect(
+      materials.find(
+        (material: { node: { id: string } }) => material.node.id === npc,
+      ),
+    ).toMatchObject({ belongings: { items: [item], skills: [skill] } });
+    return answer(id, sure);
+  });
+  const opposed = await f.send(0, {
+    command: "apply",
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "oppose",
+      targetId: npc,
+      text: "旅人が木剣を抜く前に、編みかけの籠ごと押さえる",
+      description: "旅人はその場から動けない",
+    },
+  });
+  expect(opposed.outcome).toMatchObject({ roll: expect.any(Number) });
   await auth.operations.execute(
     admin.id,
     randomUUID(),
