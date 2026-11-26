@@ -1,6 +1,10 @@
 import { useId, useState } from "react";
 import { z } from "zod";
-import { Operation, type NonCombatAreas } from "@gestaloka/contracts";
+import {
+  defaultDice,
+  Operation,
+  type NonCombatAreas,
+} from "@gestaloka/contracts";
 import { Input } from "./components/ui/input.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { Label } from "./components/ui/label.js";
@@ -93,7 +97,10 @@ export const labels: Record<string, string> = {
   maxCharacters: "報告・感想1件の文字数上限",
   promotionId: "NPC昇格申請ID",
   condition: "自動昇格の条件（空欄で手動のみ）",
-  criteria: "新規作成のダイス基準（空欄で既定、省略で現状維持）",
+  criteria: "新規作成の目標値の基準（空欄で既定、省略で現状維持）",
+  dice: "判定に使うダイス",
+  sides: "ダイス1個の面数",
+  count: "個数",
   exploreCriteria: "探索の判定基準と拒否条件（空欄で既定、省略で現状維持）",
   defaultExploreCriteria: "探索の既定基準",
   skillCriteria:
@@ -348,7 +355,9 @@ export function Fields({
             onChange={(e) =>
               onChange(
                 e.target.checked
-                  ? initial(child)
+                  ? name === "dice"
+                    ? defaultDice
+                    : initial(child)
                   : required && nullable
                     ? null
                     : undefined,

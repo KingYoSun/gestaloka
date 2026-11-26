@@ -4,6 +4,7 @@ const DiceOutcome = z.object({
   success: z.boolean().optional(),
   roll: z.number().int(),
   setting: z.object({
+    count: z.number().int().positive().optional(),
     sides: z.number().int(),
     successThrough: z.number().int(),
     fumble: z.object({ through: z.number().int() }).optional(),
@@ -26,14 +27,18 @@ export function playDiceMessages(outcome: unknown): string[] {
   if (!data) return [];
   const { roll, setting, text, success, repeated, fumble } = data;
   const { sides, successThrough } = setting;
+  const scale =
+    setting.count === undefined
+      ? ` / ${sides}`
+      : `（${setting.count}d${sides}）`;
   const label = text ? `「${text}」の判定` : "判定";
   const replay = repeated ? "（前回の結果）" : "";
   const messages = [
-    `${label}${replay} 出目 ${roll} / ${sides}、成功は ${successThrough} 以下（${(success ?? roll <= successThrough) ? "成功" : "失敗"}）`,
+    `${label}${replay} 出目 ${roll}${scale}、成功は ${successThrough} 以下（${(success ?? roll <= successThrough) ? "成功" : "失敗"}）`,
   ];
   if (fumble && setting.fumble)
     messages.push(
-      `ファンブル判定 出目 ${fumble.roll} / ${sides}、ファンブルは ${setting.fumble.through} 以下（${fumble.success ? "ファンブル" : "ファンブルなし"}）`,
+      `ファンブル判定 出目 ${fumble.roll}${scale}、ファンブルは ${setting.fumble.through} 以下（${fumble.success ? "ファンブル" : "ファンブルなし"}）`,
     );
   return messages;
 }
