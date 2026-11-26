@@ -801,7 +801,9 @@ export function playQuote(
         chargeWhen:
           expectedSp === 0
             ? "never"
-            : input.action.type === "rename"
+            : input.action.type === "rename" ||
+                (input.action.type === "generate" &&
+                  input.action.plans.some((p) => p.operation.type === "learn"))
               ? "review-saved"
               : "new-roll",
       };

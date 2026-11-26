@@ -2,6 +2,7 @@ import { ModelCallInProgress } from "../llm/budget.js";
 import {
   defaultCreationCriteria,
   defaultFumbleCriteria,
+  defaultSkillCriteria,
 } from "../runtime/bot-play.js";
 import type { PromotionProfile } from "../runtime/player-tools.js";
 import { RuntimeMonitor } from "../runtime/monitor.js";
@@ -882,20 +883,21 @@ export class Operations {
         await this.#access(context).botPlay.construction.get(input.worldId);
         if (input.operation === "creationPolicy.put")
           await db.query(
-            "INSERT INTO creation_policy(world_id,criteria,version,admin,shown,fumble_criteria) VALUES($1,$2,$3,$4,coalesce($5,false),coalesce($6,'')) ON CONFLICT(world_id) DO UPDATE SET criteria=EXCLUDED.criteria,version=EXCLUDED.version,admin=EXCLUDED.admin,shown=coalesce($5,creation_policy.shown),fumble_criteria=coalesce($6,creation_policy.fumble_criteria)",
+            "INSERT INTO creation_policy(world_id,criteria,version,admin,shown,fumble_criteria,skill_criteria) VALUES($1,coalesce($2,''),$3,$4,coalesce($5,false),coalesce($6,''),coalesce($7,'')) ON CONFLICT(world_id) DO UPDATE SET criteria=coalesce($2,creation_policy.criteria),version=EXCLUDED.version,admin=EXCLUDED.admin,shown=coalesce($5,creation_policy.shown),fumble_criteria=coalesce($6,creation_policy.fumble_criteria),skill_criteria=coalesce($7,creation_policy.skill_criteria)",
             [
               input.worldId,
-              input.criteria,
+              input.criteria ?? null,
               requestId,
               actor,
               input.shown ?? null,
               input.fumbleCriteria ?? null,
+              input.skillCriteria ?? null,
             ],
           );
         return {
           ...((
             await db.query(
-              `SELECT criteria,version,shown,fumble_criteria AS "fumbleCriteria" FROM creation_policy WHERE world_id=$1`,
+              `SELECT criteria,version,shown,fumble_criteria AS "fumbleCriteria",skill_criteria AS "skillCriteria" FROM creation_policy WHERE world_id=$1`,
               [input.worldId],
             )
           ).rows[0] ?? {
@@ -903,9 +905,11 @@ export class Operations {
             version: null,
             shown: false,
             fumbleCriteria: "",
+            skillCriteria: "",
           }),
           defaultCriteria: defaultCreationCriteria,
           defaultFumbleCriteria,
+          defaultSkillCriteria,
         };
       }
       case "npcs.promotions":

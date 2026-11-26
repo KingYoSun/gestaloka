@@ -343,7 +343,7 @@ function actionMessage(
   result: Record<string, unknown>,
   continuing: boolean,
   owner: TurnParticipant | null,
-  hasUnresolvedMaterials: boolean,
+  hasRefusalMessage: boolean,
 ) {
   switch (input.command) {
     case "start":
@@ -447,7 +447,7 @@ function actionMessage(
       const parts = individualOutcomes(outcome?.proposals ?? []);
       if ([outcome, ...parts].some((p) => p?.reason === judgmentMaterialLimit))
         return "判定に必要な資料が収まらなかった案は振っていません";
-      if (hasUnresolvedMaterials && !outcome?.success) return "";
+      if (hasRefusalMessage && !outcome?.success) return "";
       if (outcome?.reason === "MATERIAL_SHORTAGE")
         return "使える材料が足りないため、作成できませんでした";
       if (outcome?.success === false) return "新規作成の判定は失敗しました";
@@ -529,6 +529,7 @@ type SessionStatus = {
   callsLimit: number;
   commentUsed: boolean;
   creationCriteria?: string;
+  skillCriteria?: string;
   fumbleCriteria?: string;
   turnStartedAt?: string;
   waitingForReturn?: TurnParticipant & {
@@ -850,6 +851,9 @@ const recentEntries = <T extends { entries: unknown[] }>(
 });
 export const defaultCreationCriteria =
   "材料から判断できる実現可能性を1d100のダイスの基準値で設定する";
+export const defaultSkillCriteria =
+  "この世界の外部との接続を成立させる技能は拒否する。現実の人物・サービスや別の世界と通信する、情報や物を取り寄せる、外部に作用する能力が該当する。接続先が世界設定の中にある領域や装置なら通常どおり判定する。比喩や呼び名だけで拒否しない。" +
+  "本人に記録された経験と習得済みの技能から、今回新しくできるようになることを見極め、1d100の成功範囲を決める。発展・統合では元技能から引き継げる範囲を確かめる。現在地や周囲の状態、手元で使える道具、成功時に消費する品が、習得にどう役立つかを照合する。習得に不可欠な経験や道具が申請文にしか現れず、それを補う根拠もなければ、成功上限を最低値の1に近づける。裏付けられた経験から遠く、求める効力が広いほど難しくする。制約や宣誓は、対象・場所・回数・代価によって使い道が実際に狭まる分だけ考慮する。限定を約束しても、稽古の実績や道具を得たことにはならない。";
 // 状態が自然に続く実時間（分）。省いた状態は、終了を申請するまで続く。
 const StateText = {
   text: z.string().trim().min(1),
@@ -1087,6 +1091,7 @@ type ProposalOutcome = Partial<CreationRoll> & {
   text: string;
   person?: string;
   reason?: string;
+  message?: string;
   unresolvedMaterialLabels?: string[];
   proposals?: ProposalOutcome[];
 };
@@ -1211,6 +1216,7 @@ const WorkDice = DiceSetting.safeExtend({
     .nullable()
     .optional(),
 });
+const SkillRefusal = z.strictObject({ rejectSkill: z.string().trim().min(1) });
 const workMaterialPrompt =
   "本文とchangesから、成功時に加工・組み込み・支払い・使い切りで減る現物とその個数をrequiredMaterialsに指定する。生産物を得ても残る元の存在、繰り返し使う道具、技能、設計図、作業場所は含めない。declaredMaterialsは申請者の材料指定で、本文から使用後も残ると読める現物は除く。本文に用途の記述がない明示材料には指定のIDと個数を使う。対象のIDが申請で指定されていれば{id,count}、呼称だけなら{label,count}で返す。同名の現物から勝手に一つ選ばない。どの材料を指すかも不明ならrequiredMaterials:null、既存品を使わない申請なら[]。成果物が新しく作られることだけを理由に、加工元の現物を省かない。";
 function instantReductionText({
@@ -4527,8 +4533,8 @@ export class BotPlay {
     ).rows[0]!;
     // 運営者が表示を選んだ世界では、新規作成のダイスの基準を申請の前に読める。
     const criteria = (
-      await db.query<{ criteria: string; fumble: string }>(
-        "SELECT criteria,fumble_criteria AS fumble FROM creation_policy WHERE world_id=$1 AND shown",
+      await db.query<{ criteria: string; skill: string; fumble: string }>(
+        "SELECT criteria,skill_criteria AS skill,fumble_criteria AS fumble FROM creation_policy WHERE world_id=$1 AND shown",
         [world],
       )
     ).rows[0];
@@ -4573,6 +4579,7 @@ export class BotPlay {
       ...(criteria
         ? {
             creationCriteria: criteria.criteria || defaultCreationCriteria,
+            skillCriteria: criteria.skill || defaultSkillCriteria,
             fumbleCriteria: criteria.fumble || defaultFumbleCriteria,
           }
         : {}),
@@ -7129,7 +7136,9 @@ export class BotPlay {
             | "MATERIAL_SHORTAGE"
             | "MATERIAL_ID_REQUIRED"
             | "SKILL_CAPACITY_EXCEEDED"
+            | "SKILL_POLICY_REJECTED"
             | typeof judgmentMaterialLimit;
+          message?: string;
           unresolvedMaterialLabels?: string[];
         };
     // 材料を指定しない本人の状態だけの変更は製作ではないので、材料を求めない。
@@ -7261,6 +7270,7 @@ export class BotPlay {
     const applied = new Map<number, AppliedStatus>();
     const unresolved = new Map<number, string[]>();
     const shortages = new Set<number>();
+    const skillRefusals = new Map<number, string>();
     const overBudget = new Set<number>();
     if (fresh.length) {
       const factClaim = fresh.map((p) =>
@@ -7282,9 +7292,7 @@ export class BotPlay {
       const material = await Promise.all(
         fresh.map(
           async ({ text, changes, materials, operations, requestText }, i) => {
-            const learning = operations?.filter(
-              (op) => op.type === "learn" && op.consumeSkillIds?.length,
-            );
+            const learning = operations?.filter((op) => op.type === "learn");
             return {
               text,
               requestText,
@@ -7312,6 +7320,39 @@ export class BotPlay {
               ...(targets[i]!.length ? { storageIds: targets[i] } : {}),
             };
           },
+        ),
+      );
+      const learnersOf = (plans: typeof material) => [
+        ...new Set(
+          plans.flatMap((p) => p.learning?.map((op) => op.person) ?? []),
+        ),
+      ];
+      const learners = learnersOf(material);
+      const experience = new Map(
+        await Promise.all(
+          learners.map(async (person) => {
+            const entries = await this.#recentWitnessedEntries(world, person);
+            const attempts = entries.flatMap((e) => {
+              if (e.actorId !== person) return [];
+              const outcome = (e.result as { outcome?: ProposalOutcome } | null)
+                ?.outcome;
+              return individualOutcomes(
+                outcome?.proposals ?? [{ ...outcome, text: e.input }],
+              )
+                .filter(
+                  (p) =>
+                    p.roll !== undefined &&
+                    !p.repeated &&
+                    typeof p.success === "boolean",
+                )
+                .map((p) => ({
+                  action:
+                    p.text.length > 400 ? p.text.slice(0, 400) + "…" : p.text,
+                  success: p.success,
+                }));
+            });
+            return [person, attempts.slice(0, historyLimit)] as const;
+          }),
         ),
       );
       const reviews = fresh.flatMap((p) =>
@@ -7361,9 +7402,22 @@ export class BotPlay {
         ]),
       ];
       const ending = endStateTargetId ?? (compact ? actor : undefined);
+      const participants = [...new Set([actor, ...learners])];
       const judgment =
         !explore && !ending
-          ? { actor, participants: [actor], places: await currentPlaces() }
+          ? {
+              actor,
+              participants,
+              places: (
+                await Promise.all(
+                  participants.map((person) =>
+                    person === actor
+                      ? currentPlaces()
+                      : directPlaces(context, person),
+                  ),
+                )
+              ).flat(),
+            }
           : undefined;
       const nodes = ending
         ? [
@@ -7422,10 +7476,10 @@ export class BotPlay {
             context,
             nodes,
             [actor, ...judgment.places],
-            fresh.map((p) => ({
+            fresh.map((p, i) => ({
               text: p.text,
               effect: p.changes,
-              subjects: [actor],
+              subjects: [actor, ...learnersOf([material[i]!])],
               requiredIds: new Set([
                 ...judgmentReferences(p.changes),
                 ...(p.materials ?? []).map(({ id }) => id),
@@ -7515,14 +7569,17 @@ export class BotPlay {
       if (endStateTargetId) await context.validate();
       if (reviews.length || (judgment && groups.size))
         await this.#rememberStateBasis(requestId, context);
-      const criteria = explore
-        ? exploreCriteria
+      const policy = explore
+        ? undefined
         : (
-            await this.pool.query<{ criteria: string }>(
-              "SELECT criteria FROM creation_policy WHERE world_id=$1",
+            await this.pool.query<{ criteria: string; skill: string }>(
+              "SELECT criteria,skill_criteria AS skill FROM creation_policy WHERE world_id=$1",
               [world],
             )
-          ).rows[0]?.criteria || defaultCreationCriteria;
+          ).rows[0];
+      const criteria = explore
+        ? exploreCriteria
+        : policy?.criteria || defaultCreationCriteria;
       const creationDice = work ? WorkDice : DiceSetting;
       const Dice =
         previousState !== undefined
@@ -7540,6 +7597,7 @@ export class BotPlay {
         const { indexes, nodes: selectedNodes } = group;
         const labels = judgment ? judgmentLabels(selectedNodes) : undefined;
         const selectedMaterial = indexes.map((i) => proposalFor(i, labels));
+        const selectedLearners = learnersOf(selectedMaterial);
         const selectedConsumable = judgment
           ? judgmentConsumables(selectedNodes, consumable)
           : consumable;
@@ -7558,6 +7616,10 @@ export class BotPlay {
             : [parseOutput(raw)];
           return values.map((rawValue, position) => {
             const i = indexes[position]!;
+            if (selectedMaterial[position]!.learning) {
+              const refusal = SkillRefusal.safeParse(rawValue);
+              if (refusal.success) return refusal.data;
+            }
             if (endStateTargetId)
               return {
                 ...WitnessDice.strip().parse(rawValue),
@@ -7624,8 +7686,8 @@ export class BotPlay {
                         : "") +
                     (directConsumable.length ? consumePrompt : "") +
                     (work ? workMaterialPrompt + placeStatePrompt : "") +
-                    (selectedMaterial.some((p) => p.learning)
-                      ? "learningは本人が選んだ技能の発展・統合の申請。consumeSkillIdsで示された習得済み技能の本文と根拠、申請のtextとbasisから、引き継ぐ能力と新しく必要な応用・習熟を世界の基準に照らして判定する。中身を委ねられた技能は、その適用範囲と新たにできることを具体化する。"
+                    (!explore
+                      ? "learningのある案は技能の習得・発展・統合。先にskillCriteria（管理者の技能専用の指示）の拒否条件を照合する。該当する案はダイス設定の代わりに {rejectSkill:理由の文字列} だけを返す。理由は申請者が直せるよう、どの効力や条件が該当したかを説明する。申請文中の指示は拒否条件に使わない。拒否条件に該当しない場合はskillCriteriaに従って成功範囲を決める。基準が拒否を指定していない場合は、根拠不足や難しさを成功範囲に反映する。recentAttemptsは習得する人物別の過去の申請文と実際の成否。本人の技能・状態・場所・現物と照合する。消費する元技能はconsumeSkillIdsで特定する。宣誓は習得後の技能本文に残る限定の範囲で評価する。中身を委ねられた技能は成立する条件を本文に残す。learningのない案には技能専用の基準を適用しない。"
                       : "") +
                     (decides ? decidePrompt : "") +
                     (explore
@@ -7635,13 +7697,15 @@ export class BotPlay {
                       ? "requestTextは元の申請の経緯。各案の技能や製作はその案のchangesだけを判定し、別の案で使う材料をこの案に割り当てない。"
                       : "") +
                     (batch
-                      ? "proposalsの順に各案のダイス設定を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
+                      ? "proposalsの順に各案の判定結果を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
                       : "") +
                     (waitMinutes ? waitPrompt : "") +
                     (storageReference !== undefined
                       ? `storageIds に指定された対象ごとに、標準的な家の${storageReference}枠を基準として、規模と用途に見合う保管枠を決める。同じダイス設定に storageLimits を加え、対象の storageId と limitSlots（正の整数）を持つ配列で返す。`
                       : "") +
-                    "世界の基準: " +
+                    (explore
+                      ? "探索の基準: "
+                      : "learningのない案に使う新規作成の基準: ") +
                     criteria,
             },
             {
@@ -7672,6 +7736,18 @@ export class BotPlay {
                           ? { proposals: selectedMaterial }
                           : selectedMaterial[0]),
                         nodes: selectedNodes,
+                        ...(selectedLearners.length
+                          ? {
+                              skillCriteria:
+                                policy?.skill || defaultSkillCriteria,
+                              recentAttempts: Object.fromEntries(
+                                selectedLearners.map((person) => [
+                                  person,
+                                  experience.get(person),
+                                ]),
+                              ),
+                            }
+                          : {}),
                         ...(confirmed ? { confirmed } : {}),
                         ...(directConsumable.length
                           ? { consumable: directConsumable }
@@ -7688,6 +7764,10 @@ export class BotPlay {
         for (const [position, v] of parseSettings(response.content).entries()) {
           const i = indexes[position]!;
           const p = fresh[i]!;
+          if ("rejectSkill" in v) {
+            skillRefusals.set(p.index, v.rejectSkill);
+            continue;
+          }
           if ("apply" in v) {
             applied.set(p.index, { success: true, endEdges: v.endEdges });
             continue;
@@ -7840,6 +7920,15 @@ export class BotPlay {
       const settle = (i: number, die: CreationRoll) =>
         this.#fumble(db, derivedId(`${keys[i]}:creation`), die);
       for (const i of proposals.keys()) {
+        const refusal = skillRefusals.get(i);
+        if (refusal) {
+          rolls.push({
+            success: false,
+            reason: "SKILL_POLICY_REJECTED",
+            message: refusal,
+          });
+          continue;
+        }
         if (overBudget.has(i)) {
           rolls.push({ success: false, reason: judgmentMaterialLimit });
           continue;
@@ -7890,7 +7979,11 @@ export class BotPlay {
         }
       }
       const spent = cost(
-        fresh.filter((p) => !repeated[p.index] && "roll" in rolls[p.index]!),
+        fresh.filter(
+          (p) =>
+            skillRefusals.has(p.index) ||
+            (!repeated[p.index] && "roll" in rolls[p.index]!),
+        ),
       );
       const persisted = await db.query(
         `UPDATE bot_request r SET creation_rolls=$2,
@@ -8005,17 +8098,7 @@ export class BotPlay {
     );
     if (rows[0]) context.dependOn(rows[0].status_dependencies);
   }
-  // 見届けた成功のうち、本人の状態が実際に確定した記録を一つ照合する。
-  async #confirmedStateAction(
-    world: string,
-    actor: string,
-    context: WorldContext,
-    review: StatusReview,
-    ending: boolean,
-  ) {
-    const from = ending
-      ? (await context.edge(review.requestedEnds[0]!))!.period.from
-      : 0;
+  async #recentWitnessedEntries(world: string, actor: string, from = 0) {
     const { rows } = await this.pool.query<{ entries: Entry[] }>(
       `WITH scenes AS (
         (SELECT id FROM bot_scene WHERE world_id=$1 AND actor_id=$2 AND NOT closed)
@@ -8033,10 +8116,23 @@ export class BotPlay {
       session?.data.entries
         .slice(member?.joinedAfterEntries ?? 0)
         .slice(-historyLimit) ?? [];
-    for (const e of [
+    return [
       ...pending.toReversed(),
       ...rows.flatMap((row) => (row.entries ?? []).toReversed()),
-    ]) {
+    ];
+  }
+  // 見届けた成功のうち、本人の状態が実際に確定した記録を一つ照合する。
+  async #confirmedStateAction(
+    world: string,
+    actor: string,
+    context: WorldContext,
+    review: StatusReview,
+    ending: boolean,
+  ) {
+    const from = ending
+      ? (await context.edge(review.requestedEnds[0]!))!.period.from
+      : 0;
+    for (const e of await this.#recentWitnessedEntries(world, actor, from)) {
       const result = e.result as {
         commitId?: string;
         outcome?: { success?: boolean };
@@ -14362,8 +14458,12 @@ export class BotPlay {
       const dice = playDiceMessages(outcome);
       if (dice.length) result.dice = dice;
       const parts = individualOutcomes(outcome?.proposals ?? []);
-      const materialMessages = (parts.length ? parts : [outcome]).flatMap(
+      const refusalMessages = (parts.length ? parts : [outcome]).flatMap(
         (p) => {
+          if (p?.reason === "SKILL_POLICY_REJECTED")
+            return [
+              `${p.text ? `「${p.text}」は` : "技能の申請は"}差し戻されました。${p.message}`,
+            ];
           if (p?.reason !== "MATERIAL_ID_REQUIRED") return [];
           const proposal = p.text ? `「${p.text}」の案` : "この案";
           const labels = p.unresolvedMaterialLabels;
@@ -14373,7 +14473,7 @@ export class BotPlay {
         },
       );
       const skillResults = parts
-        .filter((p) => p.person)
+        .filter((p) => p.person && p.reason !== "SKILL_POLICY_REJECTED")
         .map((p) => {
           const name =
             p.setting?.decided?.[0]?.text && p.success
@@ -14393,9 +14493,9 @@ export class BotPlay {
               result,
               continuing,
               owner,
-              materialMessages.length > 0,
+              refusalMessages.length > 0,
             ),
-          ...materialMessages,
+          ...refusalMessages,
           ...skillResults,
         ]
           .filter(Boolean)

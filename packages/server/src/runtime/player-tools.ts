@@ -50,7 +50,7 @@ export class PlayerTools {
       ALTER TABLE npc_promotion ADD COLUMN IF NOT EXISTS auto_review jsonb, ADD COLUMN IF NOT EXISTS profile_chat_id bigint;
       CREATE TABLE IF NOT EXISTS npc_promotion_policy(world_id uuid PRIMARY KEY,condition text NOT NULL,version uuid NOT NULL,admin uuid NOT NULL);
       CREATE TABLE IF NOT EXISTS creation_policy(world_id uuid PRIMARY KEY,criteria text NOT NULL,version uuid NOT NULL,admin uuid NOT NULL);
-      ALTER TABLE creation_policy ADD COLUMN IF NOT EXISTS shown boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS fumble_criteria text NOT NULL DEFAULT '';
+      ALTER TABLE creation_policy ADD COLUMN IF NOT EXISTS shown boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS fumble_criteria text NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS skill_criteria text NOT NULL DEFAULT '';
       CREATE UNIQUE INDEX IF NOT EXISTS npc_promotion_active ON npc_promotion(world_id,source_request_id,npc_index) WHERE state<>'rejected';
       CREATE INDEX IF NOT EXISTS npc_promotion_world_time ON npc_promotion(world_id,created_at,id);
       CREATE INDEX IF NOT EXISTS npc_promotion_actor_time ON npc_promotion(world_id,actor_id,created_at,id);`);

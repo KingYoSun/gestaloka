@@ -28069,8 +28069,12 @@
                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                           },
                           "criteria": {
-                            "type": "string",
-                            "description": "新規作成のダイスをGMが設定するときの基準。空欄で既定の基準"
+                            "description": "新規作成のダイス基準。空欄で既定、省略で現状維持",
+                            "type": "string"
+                          },
+                          "skillCriteria": {
+                            "description": "技能の習得・発展・統合の成功範囲と、ダイスを振る前にエラーを返す条件。空欄で既定、省略で現状維持",
+                            "type": "string"
                           },
                           "fumbleCriteria": {
                             "description": "失敗時のファンブルをGMが設定するときの基準。空欄で既定の基準。省略すると現在の設定を保つ",
@@ -28088,7 +28092,6 @@
                         "required": [
                           "operation",
                           "worldId",
-                          "criteria",
                           "reason"
                         ],
                         "additionalProperties": false
