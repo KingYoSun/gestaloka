@@ -490,6 +490,11 @@ export function BotSession({
       {DiceMessages.safeParse(mutation.data?.dice).data?.map((message, i) => (
         <Notice key={i}>{message}</Notice>
       ))}
+      {DiceMessages.safeParse(mutation.data?.learningReasons).data?.map(
+        (message, i) => (
+          <Notice key={i}>{message}</Notice>
+        ),
+      )}
     </>
   );
   return (

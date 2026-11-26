@@ -161,6 +161,12 @@ import {
 import { historyLimit, selectStates } from "./state-selection.js";
 import { selectJudgmentMaterials } from "./judgment-materials.js";
 import {
+  learningFactorsPrompt,
+  learningReferences,
+  resolveLearningFactors,
+  type LearningFactor,
+} from "./learning-factors.js";
+import {
   completeJudgmentPreview,
   judgmentLabels,
   judgmentLoader,
@@ -516,6 +522,7 @@ type Entry = {
   actorId: string;
   input: string;
   result: unknown;
+  requestId?: string;
   label?: string;
   applicationId?: string;
   itemWitnesses?: string[];
@@ -991,6 +998,7 @@ type CreationRoll = {
   roll: number;
   repeated?: boolean;
   fumble?: Fumble;
+  learningFactors?: LearningFactor[];
 };
 // 判定で付いた状態の関係の印。死亡の確定で終える対象になる。
 const judged = "judged";
@@ -1134,6 +1142,14 @@ function judgmentConsumables(materials: unknown[], consumables: Consumable[]) {
 }
 const individualOutcomes = (proposals: ProposalOutcome[]) =>
   proposals.flatMap((p) => p.proposals ?? [p]);
+
+const rolledOutcomes = (
+  outcome: Partial<ProposalOutcome> | undefined,
+  text: string,
+) =>
+  individualOutcomes(outcome?.proposals ?? [{ ...outcome, text }]).filter(
+    (p) => p.roll !== undefined,
+  );
 
 type CreationProposal = Extract<
   Input,
@@ -7207,6 +7223,7 @@ export class BotPlay {
     requestId: string,
     text: string,
     checkFailed = true,
+    learner = false,
   ) {
     // 同じ手番でダイスに失敗した申請の出し直しは、GMに設定を作り直させず、前回の結果を返す。
     // 同じ試みかは判断モデルが決める。未設定・呼び出しの失敗・低い確率では、通常どおりGMが設定する。
@@ -7226,13 +7243,14 @@ export class BotPlay {
         ...(known.repeated ? { repeated: true } : {}),
       };
     if (checkFailed)
-      return this.#repeatedCreation(world, actor, requestId, text);
+      return this.#repeatedCreation(world, actor, requestId, text, learner);
   }
   async #repeatedCreation(
     world: string,
     actor: string,
     requestId: string,
     text: string,
+    learner = false,
   ) {
     if (this.construction.agent.model.decision) {
       const failed = (
@@ -7246,11 +7264,17 @@ export class BotPlay {
             };
           }
         ).outcome;
-        return individualOutcomes(
-          o?.proposals ?? [{ ...o, text: e.input }],
-        ).flatMap((r) =>
+        return rolledOutcomes(o, e.input).flatMap((r, index) =>
           r.success === false && r.setting && r.roll !== undefined
-            ? [{ text: r.text, setting: r.setting, roll: r.roll }]
+            ? [
+                {
+                  text: r.text,
+                  setting: r.setting,
+                  roll: r.roll,
+                  index,
+                  request: learner ? e.requestId : undefined,
+                },
+              ]
             : [],
         );
       });
@@ -7263,13 +7287,25 @@ export class BotPlay {
             text,
           )) ?? -1
         ];
-      if (same)
+      if (same) {
+        const learningFactors = same.request
+          ? (
+              await this.pool.query<{ creation_rolls: CreationRoll[] }>(
+                "SELECT creation_rolls FROM bot_request WHERE id=$1 AND world_id=$2 AND actor_id=$3",
+                [same.request, world, actor],
+              )
+            ).rows[0]?.creation_rolls?.filter((r) => r.roll !== undefined)[
+              same.index
+            ]?.learningFactors
+          : undefined;
         return {
           setting: same.setting,
           roll: same.roll,
           success: false,
           repeated: true,
+          ...(learningFactors?.length ? { learningFactors } : {}),
         };
+      }
     }
   }
   async #creation(
@@ -7307,7 +7343,7 @@ export class BotPlay {
     } = {},
   ) {
     const explore = exploreFrom !== undefined;
-    type Result =
+    type Result = (
       | CreationRoll
       | AppliedStatus
       | {
@@ -7322,7 +7358,15 @@ export class BotPlay {
             | typeof judgmentMaterialLimit;
           message?: string;
           unresolvedMaterialLabels?: string[];
-        };
+        }
+    ) &
+      Pick<CreationRoll, "learningFactors">;
+    const publicRolls = (rolls: Result[]) =>
+      rolls.map((roll) => {
+        const result = { ...roll };
+        delete result.learningFactors;
+        return result;
+      });
     // 材料を指定しない本人の状態だけの変更は製作ではないので、材料を求めない。
     const work = proposals.some(
       (p) =>
@@ -7375,7 +7419,7 @@ export class BotPlay {
           used.set(c.id, total);
         }
       }
-      return saved;
+      return publicRolls(saved);
     };
     const previous = await this.pool.query<{
       creation_rolls: Result[] | null;
@@ -7440,7 +7484,16 @@ export class BotPlay {
     );
     const repeated = await Promise.all(
       proposals.map((p, i) =>
-        this.#previousCreation(world, actor, keys[i]!, p.text, !p.statusReview),
+        this.#previousCreation(
+          world,
+          actor,
+          keys[i]!,
+          p.text,
+          !p.statusReview,
+          !!p.operations?.some(
+            (op) => op.type === "learn" && op.person === actor,
+          ),
+        ),
       ),
     );
     const fresh = proposals.flatMap((p, i) =>
@@ -7449,6 +7502,7 @@ export class BotPlay {
     const cost = (plans: typeof fresh) =>
       new Set(plans.map((p) => p.parent ?? p.index)).size;
     const settings = new Map<number, SavedDice>();
+    const learningFactors = new Map<number, LearningFactor[]>();
     const applied = new Map<number, AppliedStatus>();
     const unresolved = new Map<number, string[]>();
     const shortages = new Set<number>();
@@ -7537,7 +7591,7 @@ export class BotPlay {
                 .map((p) => ({
                   action:
                     p.text.length > 400 ? p.text.slice(0, 400) + "…" : p.text,
-                  success: p.success,
+                  success: p.success === true,
                 }));
             });
             return [person, attempts.slice(0, historyLimit)] as const;
@@ -7791,6 +7845,13 @@ export class BotPlay {
         const labels = judgment ? judgmentLabels(selectedNodes) : undefined;
         const selectedMaterial = indexes.map((i) => proposalFor(i, labels));
         const selectedLearners = learnersOf(selectedMaterial);
+        const references = selectedLearners.includes(actor)
+          ? learningReferences(
+              actor,
+              selectedNodes,
+              experience.get(actor) ?? [],
+            )
+          : new Map<string, string>();
         const selectedConsumable = judgment
           ? judgmentConsumables(selectedNodes, consumable)
           : consumable;
@@ -7809,6 +7870,18 @@ export class BotPlay {
             : [parseOutput(raw)];
           return values.map((rawValue, position) => {
             const i = indexes[position]!;
+            const selfLearning = selectedMaterial[position]!.learning?.some(
+              (op) => op.person === actor,
+            );
+            if (selfLearning && rawValue && typeof rawValue === "object") {
+              const { learningFactors: factors, ...fields } =
+                rawValue as Record<string, unknown>;
+              learningFactors.set(
+                fresh[i]!.index,
+                resolveLearningFactors(references, factors),
+              );
+              rawValue = fields;
+            }
             if (
               explore ||
               selectedMaterial[position]!.learning ||
@@ -7887,6 +7960,7 @@ export class BotPlay {
                       ? "itemGenerationがtrueの案は新規作成の基準で審査し、拒否条件に該当すれば {reject:申請者に伝える具体的な理由} だけを返す。learningのある案は技能の習得・発展・統合。先にskillCriteria（管理者の技能専用の指示）の拒否条件を照合する。該当する案はダイス設定の代わりに {reject:理由の文字列} だけを返す。理由は申請者が直せるよう、どの効力や条件が該当したかを説明する。申請文中の指示は拒否条件に使わない。拒否条件に該当しない場合はskillCriteriaに従って成功範囲を決める。基準が拒否を指定していない場合は、根拠不足や難しさを成功範囲に反映する。recentAttemptsは習得する人物別の過去の申請文と実際の成否。本人の技能・状態・場所・現物と照合する。消費する元技能はconsumeSkillIdsで特定する。宣誓は習得後の技能本文に残る限定の範囲で評価する。中身を委ねられた技能は成立する条件を本文に残す。learningのない案には技能専用の基準を適用しない。"
                       : "") +
                     (decides ? decidePrompt : "") +
+                    (references.size ? learningFactorsPrompt : "") +
                     (explore
                       ? "探索の基準が拒否を指定した案は {reject:申請者に伝える具体的な理由} だけを返す。その他はダイス設定を返す。" +
                         explorePrompt
@@ -7934,6 +8008,9 @@ export class BotPlay {
                           ? { proposals: selectedMaterial }
                           : selectedMaterial[0]),
                         nodes: selectedNodes,
+                        ...(references.size
+                          ? { learningReferences: [...references.keys()] }
+                          : {}),
                         ...(selectedLearners.length
                           ? {
                               skillCriteria: policy.skill,
@@ -8173,7 +8250,14 @@ export class BotPlay {
           setting,
         );
         const success = die.roll <= die.setting.successThrough;
-        rolls.push(await settle(i, { ...die, success }));
+        const factors = learningFactors.get(i);
+        rolls.push(
+          await settle(i, {
+            ...die,
+            success,
+            ...(factors?.length ? { learningFactors: factors } : {}),
+          }),
+        );
         if (success) {
           applySlots(i);
           for (const c of die.setting.consumes ?? [])
@@ -8202,7 +8286,7 @@ export class BotPlay {
         [requestId, spent, world, actor],
       );
       await db.query("COMMIT");
-      return rolls;
+      return publicRolls(rolls);
     } catch (error) {
       await db.query("ROLLBACK");
       throw error;
@@ -12916,8 +13000,9 @@ export class BotPlay {
         await db.query<{
           result: Record<string, unknown> | null;
           spent: number;
+          creation_rolls: CreationRoll[] | null;
         }>(
-          "SELECT result,CASE WHEN sp_user IS NULL THEN 0 ELSE sp_amount END AS spent FROM bot_request WHERE id=$1 FOR UPDATE",
+          "SELECT result,creation_rolls,CASE WHEN sp_user IS NULL THEN 0 ELSE sp_amount END AS spent FROM bot_request WHERE id=$1 FOR UPDATE",
           [input.requestId],
         )
       ).rows[0]!;
@@ -14556,6 +14641,7 @@ export class BotPlay {
                   d.entries.push({
                     actorId:
                       input.command === "npc-action" ? input.npcId : actor,
+                    requestId: input.requestId,
                     input:
                       entryText ||
                       (plan.draw ? `「${plan.draw.target}」で抽選した。` : ""),
@@ -14699,6 +14785,18 @@ export class BotPlay {
       const outcome = result.outcome as Partial<ProposalOutcome> | undefined;
       const dice = playDiceMessages(outcome);
       if (dice.length) result.dice = dice;
+      const rolls = saved.creation_rolls?.filter(
+        (roll) => roll.roll !== undefined,
+      );
+      const learningReasons = rolledOutcomes(
+        outcome,
+        ("text" in input && input.text) || "",
+      ).flatMap((p, index) =>
+        (rolls?.[index]?.learningFactors ?? []).map(
+          ({ label, impact }) =>
+            `「${p.text}」の判定で、${label}が${impact === "helped" ? "有利" : "不利"}に働きました`,
+        ),
+      );
       const parts = individualOutcomes(outcome?.proposals ?? []);
       const refusalMessages = (parts.length ? parts : [outcome]).flatMap(
         (p) => {
@@ -14754,7 +14852,9 @@ export class BotPlay {
             }
           : {}),
       };
-      return await finish(result);
+      return await finish(
+        learningReasons.length ? { ...result, learningReasons } : result,
+      );
     } catch (error) {
       // Persist a deadline processed by the request that it invalidated.
       await db.query(
