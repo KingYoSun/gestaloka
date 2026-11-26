@@ -9,6 +9,8 @@ dist/
 test-results/
 playwright-report/
 artifacts/
+/infra/production/monitor/*
+!/infra/production/monitor/monitor.mjs
 
 # Captured production records must stay outside tracked evaluation reports.
 /documents/evaluations/adr042-ember-fixtures.json.gz
