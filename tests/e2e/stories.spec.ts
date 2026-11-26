@@ -62,6 +62,11 @@ test("STORIES を一行から公開し、同じ世界にプレイヤーを持つ
         [user, id],
       );
     await grant(author, world);
+    await grant(author, otherWorld);
+    await db.postgres.query(
+      "UPDATE world_construction SET public_title=CASE WHEN id=$1 THEN '川の村' ELSE '山の村' END WHERE id IN ($1,$2)",
+      [world, otherWorld],
+    );
     await grant(reader.id, otherWorld);
 
     const {
@@ -97,12 +102,21 @@ test("STORIES を一行から公開し、同じ世界にプレイヤーを持つ
     })
       .png()
       .toFile(cover);
-    await page.goto(`/worlds/${world}`);
+    await page.goto("/stories");
+    await page.getByRole("link", { name: "物語を書く", exact: true }).click();
+    const destination = page.getByRole("combobox", {
+      name: "世界",
+      exact: true,
+    });
+    await expect(destination).toHaveValue("");
+    await page.goto(`/worlds/${otherWorld}`);
     await page.getByRole("link", { name: "この世界の STORIES" }).click();
     await page.getByRole("link", { name: "この世界の物語を書く" }).click();
     await expect(
       page.getByRole("heading", { name: "物語を書く", exact: true }),
     ).toBeVisible();
+    await expect(destination).toHaveValue(otherWorld);
+    await destination.selectOption({ label: "川の村" });
     await page.getByLabel("作品名", { exact: true }).fill("初航海");
     await page.getByLabel("著者名").fill("船主");
     await page.getByLabel("本文").fill("あの冗談でようやく綱を解けた。");
@@ -119,6 +133,10 @@ test("STORIES を一行から公開し、同じ世界にプレイヤーを持つ
       page.getByRole("link", { name: "次の話", exact: true }),
     ).toHaveCount(0);
     const storyId = new URL(page.url()).pathname.split("/").at(-1)!;
+    await expect(destination).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: "川の村", exact: true }),
+    ).toHaveAttribute("href", new RegExp(world));
 
     await page.getByLabel("本文").fill("翌朝、船大工にも帆を任せてみた。");
     await page.getByRole("button", { name: "公開する" }).click();
@@ -167,6 +185,8 @@ test("STORIES を一行から公開し、同じ世界にプレイヤーを持つ
 
     const visitor = await readerContext.newPage();
     await visitor.goto("/stories");
+    const filter = visitor.getByRole("combobox", { name: "世界", exact: true });
+    await expect(filter.locator("option")).toHaveCount(2);
     await expect(
       visitor.getByText("条件に合う作品はありません。"),
     ).toBeVisible();
@@ -183,6 +203,20 @@ test("STORIES を一行から公開し、同じ世界にプレイヤーを持つ
     });
     await grant(reader.id, world);
     await visitor.goto("/stories");
+    await filter.selectOption(otherWorld);
+    await visitor.getByRole("button", { name: "一覧に適用" }).click();
+    await expect(visitor).toHaveURL(new RegExp(otherWorld));
+    await expect(
+      visitor.getByText("条件に合う作品はありません。"),
+    ).toBeVisible();
+    await filter.selectOption(world);
+    await visitor.getByRole("button", { name: "一覧に適用" }).click();
+    await expect(
+      visitor.getByRole("link", { name: "初航海", exact: true }),
+    ).toBeVisible();
+    await filter.selectOption("");
+    await visitor.getByRole("button", { name: "一覧に適用" }).click();
+    await expect(visitor).not.toHaveURL(/worldId=/);
     await visitor.getByRole("link", { name: "初航海", exact: true }).click();
     await visitor.getByRole("link", { name: "次の話", exact: true }).click();
     await expect(visitor.getByRole("heading", { name: "第2話" })).toBeVisible();

@@ -58,6 +58,7 @@ import {
   SceneInbox,
   SceneInboxQuery,
   StoryListQuery,
+  CatalogPageQuery,
   StoryReadQuery,
   StoryList,
   StoryRead,
@@ -262,6 +263,23 @@ export async function worldRoutes(
     },
     async (request) =>
       service().stories.list(await subject(request), request.query),
+  );
+  app.get(
+    "/api/stories/worlds",
+    {
+      schema: {
+        querystring: CatalogPageQuery.extend({ worldId: z.uuid().optional() }),
+        response: {
+          200: z.object({
+            items: z.array(ResourceId.extend({ title: z.string() })),
+            next: z.uuid().nullable(),
+          }),
+          ...errors,
+        },
+      },
+    },
+    async (request) =>
+      service().stories.worlds(await subject(request), request.query),
   );
   app.get(
     "/api/stories/:id",
