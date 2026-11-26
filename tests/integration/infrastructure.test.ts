@@ -15,6 +15,14 @@ afterAll(async () => {
   await databases.close();
 });
 
+test("PostgreSQLの接続待ちと取引中の無通信に2分の上限を適用する", async () => {
+  expect(databases.postgres.options.connectionTimeoutMillis).toBe(120_000);
+  const { rows } = await databases.postgres.query(
+    "SELECT setting::int AS timeout, unit FROM pg_settings WHERE name='idle_in_transaction_session_timeout'",
+  );
+  expect(rows).toEqual([{ timeout: 120_000, unit: "ms" }]);
+});
+
 test("Neo4jに保存した運用テストレコードを接続し直して読める", async () => {
   const id = randomUUID();
   await databases.graph.executeQuery(

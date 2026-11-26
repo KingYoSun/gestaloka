@@ -19,6 +19,16 @@ import {
 } from "../../infra/production/config.mjs";
 import { BackupEngine } from "../../infra/production/engine.mjs";
 import { createHash, randomUUID } from "node:crypto";
+test("本番Neo4jのトランザクションに2分の上限を設定する", async () => {
+  const compose = await readFile(
+    new URL("../../infra/production/compose.yaml", import.meta.url),
+    "utf8",
+  );
+  const neo4j = compose.match(/^ {2}neo4j:\r?\n(?:^ {4}.+\r?\n|^\r?\n)*/m);
+  assert.ok(neo4j);
+  assert.match(neo4j[0], /^ {6}NEO4J_db_transaction_timeout: 2m\r?$/m);
+});
+
 test("環境ごとに鍵を生成し、再描画では保持し、公開面と内部接続を分離する", async () => {
   const root = await mkdtemp(join(tmpdir(), "gestaloka-deploy-"));
   try {
