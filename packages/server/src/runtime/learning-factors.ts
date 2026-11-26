@@ -1,11 +1,25 @@
 import { z } from "zod";
+import { WorldNode } from "@gestaloka/contracts";
+import { visibleTo } from "../world/belongings.js";
 import { derivedId } from "../world/model.js";
 
 const Material = z.object({
-  node: z.object({ id: z.string(), kind: z.string(), text: z.string() }),
+  node: z
+    .object({ id: z.string(), kind: z.string(), text: z.string() })
+    .passthrough(),
   experiencedBy: z.string().optional(),
+  states: z.array(z.object({ node: z.unknown() })).optional(),
   belongings: z
     .object({
+      items: z
+        .array(
+          z.object({
+            id: z.string(),
+            label: z.string(),
+            ground: z.boolean().optional(),
+          }),
+        )
+        .optional(),
       skills: z.array(
         z.object({
           id: z.string(),
@@ -42,6 +56,7 @@ export function learningReferences(
   actor: string,
   materials: unknown[],
   attempts: LearningAttempt[],
+  readable?: { places: readonly string[]; subjects: readonly string[] },
 ) {
   const references = new Map<string, LearningReference>();
   for (const material of materials) {
@@ -58,6 +73,30 @@ export function learningReferences(
       references.set(`experience:${node.id}`, {
         label: `経験「${node.text}」`,
       });
+    if (!readable) continue;
+    if (node.id === actor)
+      for (const item of belongings?.items ?? [])
+        if (!item.ground)
+          references.set(`item:${item.id}`, {
+            label: `所持品「${item.label}」`,
+          });
+    const place = readable.places.includes(node.id);
+    if (node.id !== actor && !place && !readable.subjects.includes(node.id))
+      continue;
+    const subject = WorldNode.safeParse(node).data;
+    if (node.id !== actor && (!subject || !visibleTo(subject, actor, true)))
+      continue;
+    if (place)
+      references.set(`place:${node.id}`, { label: `場所「${node.text}」` });
+    for (const { node: value } of data.states ?? []) {
+      const state = WorldNode.safeParse(value).data;
+      if (
+        state?.kind === "script" &&
+        !state.spawn &&
+        (node.id === actor || visibleTo(state, actor, true))
+      )
+        references.set(`state:${state.id}`, { label: `状態「${state.text}」` });
+    }
   }
   for (const [
     index,
@@ -98,4 +137,11 @@ export function resolveLearningFactors(
 }
 
 export const learningFactorsPrompt =
-  "申請者本人のlearningにダイス設定を返す場合、判断に実際に使った主な根拠をlearningReferencesから選び、learningFactors:[{ref,impact}]で返す。impactは有利ならhelped、不利ならhindered。skill:は本人の技能ID、experience:は本人の確定済みの経験のnode.id、attempt:は本人のrecentAttemptsの先頭を1とした番号。該当する根拠がなければ省いてよい。理由文やほかの参照は書かない。";
+  "learningReferencesが示されたダイス判定では、実際に判断に使った主な根拠をその一覧から選び、learningFactors:[{ref,impact}]で返す。impactは有利ならhelped、不利ならhindered。skill:は技能ID、experience:は確定済みの経験のnode.id、attempt:は本人のrecentAttemptsの先頭を1とした番号、item:は所持品ID、place:は場所ID、state:は状態のnode.id。案別の一覧があれば、その案の一覧だけから選ぶ。該当する根拠がなければ省いてよい。理由文やほかの参照は書かない。";
+
+export function factorMessages(text: string, factors: LearningFactor[] = []) {
+  return factors.map(
+    ({ label, impact }) =>
+      `${text ? `「${text}」の判定` : "判定"}で、${label}が${impact === "helped" ? "有利" : "不利"}に働きました`,
+  );
+}

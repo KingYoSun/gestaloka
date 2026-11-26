@@ -37,7 +37,9 @@ function compactDiceInput(input: ChatMessage, cacheSkills: boolean) {
   const factKey = creation ? "nodes" : "materials";
 
   // 取得経緯は物品が増えるほど入力を膨らませる。申請がID・CLIの短縮ID・呼称で指す物品にだけ付ける。
-  const request = JSON.stringify(action);
+  const request = JSON.stringify(action, (key, value: unknown) =>
+    key === "learningReferences" ? undefined : value,
+  );
   const mentions = ({ id, label }: Pick<Item, "id" | "label">) =>
     request.includes(id) ||
     request.includes(
