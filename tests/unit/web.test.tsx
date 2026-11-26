@@ -59,6 +59,7 @@ const world = {
     deathCriteria: "",
     deathPlaceId: null,
     nonCombatAreas: [],
+    nonCombatPlaceSeries: [],
   },
 };
 let player: z.infer<typeof PlayerStatus>, run: z.infer<typeof PlayRun> | null;
@@ -360,6 +361,9 @@ test("世界の公開設定からリスポーンと非戦闘地域を保存で�
   fireEvent.click(
     await screen.findByLabelText("死亡した人物をリスポーンさせる"),
   );
+  fireEvent.change(screen.getByLabelText("非戦闘にする場所の系統"), {
+    target: { value: "水車村\n塔の森" },
+  });
   fireEvent.change(screen.getByLabelText("非戦闘地域"), {
     target: { value: `${A} ${B}\n${V}` },
   });
@@ -370,6 +374,7 @@ test("世界の公開設定からリスポーンと非戦闘地域を保存で�
     expect(saved).toMatchObject({
       operation: "worlds.configure",
       respawnEnabled: false,
+      nonCombatPlaceSeries: ["水車村", "塔の森"],
       nonCombatAreas: [
         { rootId: A, memberPlaceIds: [B] },
         { rootId: V, memberPlaceIds: [] },

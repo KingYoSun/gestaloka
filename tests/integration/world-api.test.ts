@@ -691,6 +691,7 @@ test("公開と参加受付を分け、非公開化後も参加者の参照と�
     respawnEnabled: false,
     deathCriteria: "致命傷で死亡する",
     deathPlaceId: randomUUID(),
+    nonCombatPlaceSeries: ["水車村"],
     nonCombatAreas: [
       {
         rootId: (await runtime.get(legacy.id)).root_ids[0]!,
@@ -727,6 +728,12 @@ test("公開と参加受付を分け、非公開化後も参加者の参照と�
       nonCombatAreas: [],
     }),
   ).toMatchObject({ ...changed, deathPlaceId: null, nonCombatAreas: [] });
+  expect(
+    await auth.operations.execute(legacy.subject, randomUUID(), {
+      ...cfg,
+      nonCombatPlaceSeries: [],
+    }),
+  ).toMatchObject({ nonCombatPlaceSeries: [] });
   let catalog = await auth.operations.catalog(person.subject);
   expect(catalog.items.find((w) => w.id === legacy.id)).toMatchObject({
     title: cfg.title,

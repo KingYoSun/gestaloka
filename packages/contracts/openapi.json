@@ -2765,6 +2765,16 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "nonCombatPlaceSeries": {
+                          "default": [],
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[^\\r\\n]+$",
+                            "description": "この世界の特定の地理的範囲を識別する系統名"
+                          }
                         }
                       },
                       "required": [
@@ -2778,7 +2788,8 @@
                         "respawnEnabled",
                         "deathCriteria",
                         "deathPlaceId",
-                        "nonCombatAreas"
+                        "nonCombatAreas",
+                        "nonCombatPlaceSeries"
                       ],
                       "additionalProperties": false
                     },
@@ -3229,6 +3240,16 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "nonCombatPlaceSeries": {
+                          "default": [],
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[^\\r\\n]+$",
+                            "description": "この世界の特定の地理的範囲を識別する系統名"
+                          }
                         }
                       },
                       "required": [
@@ -3242,7 +3263,8 @@
                         "respawnEnabled",
                         "deathCriteria",
                         "deathPlaceId",
-                        "nonCombatAreas"
+                        "nonCombatAreas",
+                        "nonCombatPlaceSeries"
                       ],
                       "additionalProperties": false
                     },
@@ -3755,6 +3777,16 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "nonCombatPlaceSeries": {
+                          "default": [],
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[^\\r\\n]+$",
+                            "description": "この世界の特定の地理的範囲を識別する系統名"
+                          }
                         }
                       },
                       "required": [
@@ -3768,7 +3800,8 @@
                         "respawnEnabled",
                         "deathCriteria",
                         "deathPlaceId",
-                        "nonCombatAreas"
+                        "nonCombatAreas",
+                        "nonCombatPlaceSeries"
                       ],
                       "additionalProperties": false
                     },
@@ -15759,7 +15792,8 @@
                                             "type": "string",
                                             "enum": [
                                               "memo",
-                                              "draw-source"
+                                              "draw-source",
+                                              "place-series"
                                             ]
                                           },
                                           "drawTable": {
@@ -16447,7 +16481,8 @@
                                             "type": "string",
                                             "enum": [
                                               "memo",
-                                              "draw-source"
+                                              "draw-source",
+                                              "place-series"
                                             ]
                                           },
                                           "drawTable": {
@@ -24732,7 +24767,8 @@
                                           "type": "string",
                                           "enum": [
                                             "memo",
-                                            "draw-source"
+                                            "draw-source",
+                                            "place-series"
                                           ]
                                         },
                                         "drawTable": {
@@ -25420,7 +25456,8 @@
                                           "type": "string",
                                           "enum": [
                                             "memo",
-                                            "draw-source"
+                                            "draw-source",
+                                            "place-series"
                                           ]
                                         },
                                         "drawTable": {
@@ -28557,6 +28594,16 @@
                             "type": "string",
                             "format": "uuid",
                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "nonCombatPlaceSeries": {
+                            "description": "非戦闘にする場所の系統名。世界内の特定の範囲ごとに指定する。空配列で解除し、省略すると現在の設定を保つ",
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^\\r\\n]+$",
+                              "description": "この世界の特定の地理的範囲を識別する系統名"
+                            }
                           },
                           "nonCombatAreas": {
                             "description": "非戦闘地域。範囲の場所IDと、古い地理記録を補う場所IDを指定する。両方の内部にあたる part-of の子にも適用する。空配列で解除し、省略すると現在の設定を保つ",

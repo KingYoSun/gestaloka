@@ -39,6 +39,7 @@ import {
   linkRoute,
   locationRecords,
 } from "../../packages/server/src/world/locations.js";
+import { isNonCombatPlace } from "../../packages/server/src/world/noncombat.js";
 import { BotPlay } from "@gestaloka/server/play";
 import { createApp } from "../../apps/api/src/app.js";
 import { cliVersionHeader, playerCli } from "../support/player-cli.js";
@@ -74,6 +75,7 @@ const explored = {
   route: "広場の裏手から細い小道を抜けると、新しい場所に着く。",
   description: "木立に囲まれた静かな場所。",
   partOf: false,
+  placeSeries: null,
 };
 const answer = (id: string, content: unknown) => ({
   id,
@@ -20854,6 +20856,109 @@ test("判定で付いた損傷のある乗り物は、GMが動けないと判断
   await f.send(1, locate(rider, f.place));
   expect(await at(rider)).toEqual([f.place]);
   expect(await at(vehicleId)).toEqual([f.far]);
+});
+
+test("探索のGMが系統と所属を作り、管理者が指定した系統だけを非戦闘にする", async () => {
+  const f = await fixture(2);
+  const series = "水車村";
+  const explore = async (
+    label: string,
+    name: string | null,
+    fromId: string,
+    known?: string,
+  ) => {
+    f.calls.mockImplementationOnce(async (id, _role, messages) => {
+      const input = JSON.parse(String(messages[1]!.content));
+      if (known) expect(input.placeSeriesByPlace[fromId]).toBe(known);
+      expect(messages[0]!.content).toContain("explored.placeSeries");
+      return answer(id, {
+        sides: 100,
+        successThrough: 100,
+        explored: { ...explored, placeSeries: name },
+      });
+    });
+    const request = {
+      command: "explore",
+      requestId: randomUUID(),
+      label,
+      text: label + "を見つける",
+      fromId,
+      dependencies: [],
+    };
+    const result = await f.send(0, request);
+    expect(await f.send(0, request)).toEqual(result);
+    return result.placeId as string;
+  };
+  const context = f.store.context(f.graph);
+  const membership = async (place: string) =>
+    (
+      await context.relations(place, "status", "out", Number.MAX_SAFE_INTEGER)
+    ).filter((edge) => edge.text === "place-series");
+  const square = await explore("水車の広場", series, f.place);
+  const [first] = await membership(square);
+  expect(first).toMatchObject({ source: square, role: "content" });
+  expect(await context.node(first!.target)).toMatchObject({
+    kind: "script",
+    type: "place-series",
+    text: series,
+  });
+  await f.move(0, square);
+  const lane = await explore("広場の裏路地", series, square, series);
+  expect(await membership(lane)).toMatchObject([{ target: first!.target }]);
+  const neighbor = await explore("峠の集落の入り口", "峠村", square, series);
+  expect((await membership(neighbor))[0]!.target).not.toBe(first!.target);
+  const road = await explore("村外の道標", null, square, series);
+  expect(await membership(road)).toEqual([]);
+
+  const before = await runtime.get(f.world);
+  expect(before.non_combat_place_series).toEqual([]);
+  expect(await isNonCombatPlace(context, before, [square], Date.now())).toBe(
+    false,
+  );
+  const config = {
+    operation: "worlds.configure" as const,
+    worldId: f.world,
+    title: "系統の試験",
+    description: "",
+    published: false,
+    accepting: false,
+    nonCombatPlaceSeries: [series],
+    reason: "村内を保護する",
+  };
+  const configure = (subject: string) =>
+    auth.operations.execute(subject, randomUUID(), config, {
+      players: access.players,
+    });
+  await expect(configure(f.people[0]!.id)).rejects.toMatchObject({
+    code: "ADMIN_REQUIRED",
+  });
+  await configure((await auth.person()).id);
+  const after = await runtime.get(f.world);
+  expect(after.non_combat_areas).toEqual([]);
+  for (const place of [square, lane])
+    expect(await isNonCombatPlace(context, after, [place], Date.now())).toBe(
+      true,
+    );
+  for (const place of [road, neighbor])
+    expect(await isNonCombatPlace(context, after, [place], Date.now())).toBe(
+      false,
+    );
+  await f.move(1, square);
+  await f.send(1, { command: "contact", targetId: f.actors[0] });
+  await giveTurn(f, 0);
+  await expect(
+    f.send(0, {
+      command: "apply",
+      expectedSp: 1,
+      dependencies: [],
+      action: {
+        type: "oppose",
+        targetId: f.actors[1],
+        text: "押し倒す",
+        description: "転んで膝を擦りむく",
+      },
+    }),
+  ).rejects.toMatchObject({ code: "NON_COMBAT_AREA" });
 });
 
 test("探索は接続元からつながる既知の場所を判定に渡し、同じ場所なら作らず、つながる場所へは行き来も作る", async () => {

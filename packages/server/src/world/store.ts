@@ -39,6 +39,7 @@ import {
   requestedChange,
   BelongingRole,
   derivedId,
+  isPlaceSeriesMembership,
   isRespawnHome,
   respawnHome,
   summaryId,
@@ -2131,6 +2132,7 @@ export class WorldStore {
         state.role !== "content" ||
         state.text === "location" ||
         isRespawnHome(state) ||
+        isPlaceSeriesMembership(state) ||
         isSpUseProhibition(state) ||
         !active(state) ||
         states.has(state.id)
@@ -2318,6 +2320,21 @@ export class WorldStore {
       throw new WorldConflict(
         "新しい物品へ系列を付けるには管理者の確定が必要です",
       );
+    if (!parsed.management) {
+      const memberships = submitted.edges.filter(isPlaceSeriesMembership);
+      if (
+        memberships.some(
+          (edge) => !parsed.newFixedPlaces?.includes(edge.source),
+        ) ||
+        submitted.nodes.some(
+          (node) =>
+            node.kind === "script" &&
+            node.type === "place-series" &&
+            !memberships.some((edge) => edge.target === node.id),
+        )
+      )
+        throw new WorldConflict("場所の系統と所属は探索で記録してください");
+    }
     if (lease.worldId !== context.worldId)
       throw new Error("異なる世界の文脈は確定できません");
     const { worldId, runId, generation } = lease;
@@ -2396,6 +2413,14 @@ export class WorldStore {
             );
           const original = WorldNode.parse(JSON.parse(row.get("data")));
           if (
+            original.kind === "script" &&
+            node.kind === "script" &&
+            (original.type === "place-series" ||
+              node.type === "place-series") &&
+            (node.type !== original.type || node.text !== original.text)
+          )
+            throw new WorldConflict("場所の系統の同一性を変える改訂です");
+          if (
             !parsed.management &&
             node.kind === "existence" &&
             original.kind === "existence"
@@ -2456,6 +2481,10 @@ export class WorldStore {
             at < edge.period.from
           )
             throw new WorldConflict("終了対象の関係が有効ではありません");
+          if (!parsed.management && isPlaceSeriesMembership(edge))
+            throw new WorldConflict(
+              "場所の系統への所属は通常の状態として終了できません",
+            );
           if (!parsed.management && isSpUseProhibition(edge))
             throw spUseProhibitionAdminRequired();
           if (isRespawnHome(edge) && !canChangeHome(edge.source))
@@ -2664,7 +2693,11 @@ export class WorldStore {
           )
             sourceIds.add(edge.source);
         for (const id of sourceIds) touched.add(`source:${id}`);
-        const bindings = bindingScripts([...changes.edges, ...ended]);
+        // 場所から系統へcontentを加えても、既存のaboutの主体は変わらない。
+        const bindings = bindingScripts([
+          ...changes.edges.filter((edge) => !isPlaceSeriesMembership(edge)),
+          ...ended,
+        ]);
         const keys = [
           ...new Set([
             ...touched,

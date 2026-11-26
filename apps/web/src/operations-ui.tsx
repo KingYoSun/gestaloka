@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { PlayerPreset, type WorldStatus } from "@gestaloka/contracts";
 import { api, $api } from "./api.js";
-import { NonCombatAreasField } from "./admin-fields.js";
+import { NonCombatAreasField, NonCombatLines } from "./admin-fields.js";
 import { Notice, Problem } from "./presentation.js";
 import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
@@ -251,6 +251,14 @@ export function Publication({
       <p>
         本人のHomeが設定されていれば、そちらが優先されます。Homeも世界のリスポーン先も未設定なら、本人の最初の所在地へ移ります。リスポーンを無効にすると、死亡した人物は操作できなくなります。
       </p>
+      <NonCombatLines
+        name="nonCombatPlaceSeries"
+        id="public-noncombat-series"
+        value={value.nonCombatPlaceSeries ?? []}
+        onChange={(nonCombatPlaceSeries) =>
+          set({ ...value, nonCombatPlaceSeries })
+        }
+      />
       <NonCombatAreasField
         id="public-noncombat-areas"
         value={value.nonCombatAreas}

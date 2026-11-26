@@ -61,6 +61,7 @@ export type Construction = {
   death_criteria: string;
   death_place_id: string | null;
   non_combat_areas: NonCombatAreas;
+  non_combat_place_series: string[];
   claim: string | null;
   error: string | null;
   initial_prompt: string;
@@ -117,6 +118,7 @@ export class WorldConstruction {
       ADD COLUMN IF NOT EXISTS respawn_enabled boolean NOT NULL DEFAULT true,
       ADD COLUMN IF NOT EXISTS death_criteria text NOT NULL DEFAULT '',
       ADD COLUMN IF NOT EXISTS death_place_id uuid,
+      ADD COLUMN IF NOT EXISTS non_combat_place_series text[] NOT NULL DEFAULT '{}',
       ADD COLUMN IF NOT EXISTS non_combat_areas jsonb NOT NULL DEFAULT '[]'::jsonb;`);
     for (const name of [this.queueName, `${this.queueName}-play`])
       await this.queue.createQueue(name, {
