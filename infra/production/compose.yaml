@@ -158,6 +158,7 @@ services:
       NEO4J_server_memory_heap_initial__size: 256m
       NEO4J_server_memory_heap_max__size: 512m
       NEO4J_server_memory_pagecache_size: 128m
+      NEO4J_db_transaction_timeout: 2m
     volumes:
       - graph-data:/data
     networks: [private]
