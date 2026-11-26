@@ -11,6 +11,7 @@ const scope = new AsyncLocalStorage<{
   userId?: string | undefined;
   operationId: string;
   authority?: Authority | undefined;
+  callReserve?: number;
 }>();
 export class ExecutionLimit extends Error {}
 
@@ -123,6 +124,19 @@ export class ExecutionBudget {
     return scope.getStore()?.id;
   }
 
+  static withCallReserve<T>(calls: number, work: () => T): T {
+    const current = scope.getStore();
+    return current
+      ? scope.run(
+          {
+            ...current,
+            callReserve: Math.max(current.callReserve ?? 0, calls),
+          },
+          work,
+        )
+      : work();
+  }
+
   static bind<A extends unknown[], R>(work: (...args: A) => R) {
     const current = scope.getStore();
     return RuntimeExecutions.bind(
@@ -167,8 +181,8 @@ export class ExecutionBudget {
     await this.check(database, true);
     const result = await (database ?? current.pool).query(
       `UPDATE execution_budget SET llm_used=llm_used+1,llm_limit=p.calls FROM response_call_policy p
-       WHERE id=$1 AND p.singleton AND llm_used<p.calls RETURNING id`,
-      [current.id],
+       WHERE id=$1 AND p.singleton AND llm_used<p.calls-$2::integer RETURNING id`,
+      [current.id, current.callReserve ?? 0],
     );
     if (!result.rowCount)
       throw new ExecutionLimit(
