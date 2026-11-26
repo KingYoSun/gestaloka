@@ -31,6 +31,8 @@ CLIが出力する期限や記録の時刻は、実行環境の現地時刻で�
 
 次にどこへ行けるかは、`surroundings`の`material.routes`で読む。現在地と行き来の記述で結ばれた場所の名前（`label`）とIDが並ぶ。気になる場所は`search --kind subject --target <ID>`で調べ、`apply` の `direct.operations` に入れた `locate`で移動する。通行条件がある区間では、その条件を満たす必要がある。一覧に載っていない場所へも、検索結果で受け取ったIDなら移動を申請できる。
 
+出発や移動の承認の前に、`status` の `departureFollowers` で一緒に移動するNPCを確認する。その場に残ってもらうには `companion wait --target <NPCのID>` を使う。
+
 乗車中は乗り物の現在地から経路を調べられる。自分で乗り物を設定する手順と、乗降・操縦権の取り方は[乗り物の設定・乗降・操縦](references/vehicles.md)を読む。
 
 怪我や疲れは本人の状態として`search --kind self`の`states`に残る。怪我を負う場面、治し方、死亡したときに起きることは[死亡・怪我・治療](references/health.md)を読む。

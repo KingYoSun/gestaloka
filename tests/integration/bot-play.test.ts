@@ -18992,7 +18992,14 @@ test.each(["本人の提案", "仲間の提案", "承認前に待機", "本人�
       ),
     });
     expect(move.state).toBe("receiving");
-    if (how === "承認前に待機") await mode("wait");
+    expect(await f.status(0)).toMatchObject({
+      departureFollowers: [{ targetId: npc, name: "人物1" }],
+    });
+    expect(await f.status(2)).not.toHaveProperty("departureFollowers");
+    if (how === "承認前に待機") {
+      await mode("wait");
+      expect(await f.status(0)).not.toHaveProperty("departureFollowers");
+    }
     const receipt = {
       command: "receive",
       requestId: randomUUID(),
@@ -19010,6 +19017,89 @@ test.each(["本人の提案", "仲間の提案", "承認前に待機", "本人�
     expect((await session(1)) === (await session(0))).toBe(accompanied);
   },
 );
+
+test("出発前に待機へ切り替えたNPCは、出発地の会話を続けられる", async () => {
+  const { f, owner, npc, mode, at, session } = await companionFixture();
+  await f.move(2, f.place);
+  await f.send(2, { command: "contact", targetId: owner });
+  await giveTurn(f, 0);
+  expect(await f.status(0)).toMatchObject({
+    departureFollowers: [{ targetId: npc, name: "人物1" }],
+  });
+  await mode("wait");
+  await f.send(0, locate(owner, f.far));
+  expect(await at(npc)).toEqual([f.place]);
+  expect(await session(1)).toBe(await session(2));
+  expect(await session(0)).not.toBe(await session(1));
+  await giveTurn(f, 2);
+  await heard(f, 2, "ここまでの話を続けよう", [1, 2]);
+});
+
+test.each([
+  "プレイヤーが到着",
+  "NPCを呼び戻す",
+  "セッションを再開",
+  "到着後に別の相手へ接触",
+  "NPCにセッションがない",
+])("待機中に単独のNPCが同じ場所で同席する（%s）", async (how) => {
+  const { f, owner, npc, friend, mode, status, session } =
+    await companionFixture();
+  await mode("wait");
+  await f.send(0, {
+    command: "companion-move",
+    targetId: npc,
+    placeId: f.far,
+  });
+  expect(await session(1)).not.toBe(await session(0));
+  await heard(f, 0, "出発地だけで交わした話", [0]);
+
+  if (how === "NPCを呼び戻す") {
+    await f.send(0, {
+      command: "companion-move",
+      targetId: npc,
+      placeId: f.place,
+    });
+  } else if (how === "セッションを再開") {
+    await f.send(0, { command: "end-turn" });
+    await recorded(f, "出発地だけで交わした話", [0]);
+    await f.send(0, { command: "finish" });
+    await f.move(0, f.far);
+    await f.send(0, { command: "start" });
+  } else {
+    if (how === "NPCにセッションがない") await f.send(1, { command: "finish" });
+    await f.send(0, locate(owner, f.far));
+    if (how === "到着後に別の相手へ接触") {
+      await f.send(0, { command: "contact", targetId: friend });
+      expect(await session(0)).toBe(await session(2));
+    }
+  }
+  expect(await session(1)).toBe(await session(0));
+  expect(await status()).toMatchObject({ companions: [{ mode: "wait" }] });
+  await giveTurn(f, 0);
+  const listeners = how === "到着後に別の相手へ接触" ? [0, 1, 2] : [0, 1];
+  await heard(f, 0, "同席してから交わした話", listeners);
+  await f.send(0, { command: "end-turn" });
+  if (how !== "セッションを再開")
+    await recorded(f, "出発地だけで交わした話", [0]);
+  await recorded(f, "同席してから交わした話", listeners);
+});
+
+test("待機中のNPCが別の相手と同席しているときは、その会話を続ける", async () => {
+  const { f, owner, mode, status, session } = await companionFixture();
+  await f.move(2, f.place);
+  await f.send(2, { command: "contact", targetId: owner });
+  await mode("wait");
+  await f.send(0, locate(owner, f.far));
+  const conversation = await session(2);
+  await giveTurn(f, 0);
+  await f.send(0, locate(owner, f.place));
+  expect(await status()).toMatchObject({ companions: [{ mode: "wait" }] });
+  expect(await session(1)).toBe(conversation);
+  expect(await session(2)).toBe(conversation);
+  expect(await session(0)).not.toBe(conversation);
+  await giveTurn(f, 2);
+  await heard(f, 2, "続きの話", [1, 2]);
+});
 
 test("帰還・呼び戻し・追従再開で、その時に聞けた発言だけが各人の履歴に一度ずつ残る", async () => {
   const { f, owner, npc, friend, mode, status, at, session } =
@@ -19046,6 +19136,7 @@ test("帰還・呼び戻し・追従再開で、その時に聞けた発言だ�
   await recorded(f, "呼び戻し前の知らせ", [1, 2]);
   await recorded(f, "呼び戻し後の知らせ", [2]);
   expect(await at(friend)).toEqual([f.far]);
+  expect(await session(1)).toBe(await session(0));
   await mode("follow");
   expect(await session(1)).toBe(await session(0));
   await heard(f, 0, "ふたりで出発", [0, 1]);
