@@ -8774,7 +8774,7 @@ export class BotPlay {
         concealed,
         true,
       );
-      await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
+      await db.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
         plan.stealth
           ? { outcome: plan.outcome, stealth: plan.stealth }
@@ -8786,7 +8786,7 @@ export class BotPlay {
     const prior = await this.store.receipt(w.id, input.requestId);
     if (prior) {
       const outcome = (
-        await this.pool.query("SELECT outcome FROM bot_request WHERE id=$1", [
+        await db.query("SELECT outcome FROM bot_request WHERE id=$1", [
           input.requestId,
         ])
       ).rows[0]?.outcome;
@@ -9029,7 +9029,7 @@ export class BotPlay {
         mixedMoves: successful.flatMap((p) => p.mixedMoves ?? []),
         boardings: successful.flatMap((p) => p.boardings ?? []),
       };
-      await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
+      await db.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
         splitMode ? { creationPlan: distribution } : outcome,
       ]);

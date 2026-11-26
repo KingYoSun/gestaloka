@@ -15,7 +15,13 @@ const Environment = z.object({
 
 export function connectDatabases(environment: NodeJS.ProcessEnv = process.env) {
   const config = Environment.parse(environment);
-  const postgres = new pg.Pool({ connectionString: config.DATABASE_URL });
+  // ADR-096: ロック待ちで埋まりにくい上限と、止まった取引・接続待ちの打ち切り。
+  const postgres = new pg.Pool({
+    connectionString: config.DATABASE_URL,
+    max: 30,
+    connectionTimeoutMillis: 120_000,
+    idle_in_transaction_session_timeout: 120_000,
+  });
   const graph = neo4j.driver(
     config.NEO4J_URI,
     neo4j.auth.basic(config.NEO4J_USER, config.NEO4J_PASSWORD),
