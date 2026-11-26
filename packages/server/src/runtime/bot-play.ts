@@ -7344,7 +7344,7 @@ export class BotPlay {
     } = {},
   ) {
     const explore = exploreFrom !== undefined;
-    type Result = (
+    type Result =
       | CreationRoll
       | AppliedStatus
       | {
@@ -7359,15 +7359,7 @@ export class BotPlay {
             | typeof judgmentMaterialLimit;
           message?: string;
           unresolvedMaterialLabels?: string[];
-        }
-    ) &
-      Pick<CreationRoll, "learningFactors">;
-    const publicRolls = (rolls: Result[]) =>
-      rolls.map((roll) => {
-        const result = { ...roll };
-        delete result.learningFactors;
-        return result;
-      });
+        };
     // 材料を指定しない本人の状態だけの変更は製作ではないので、材料を求めない。
     const work = proposals.some(
       (p) =>
@@ -7408,6 +7400,13 @@ export class BotPlay {
       stock.set(id, item);
       return item;
     };
+    const publicRolls = (rolls: Result[]) =>
+      rolls.map((roll) => {
+        if (!("learningFactors" in roll)) return roll;
+        const result = { ...roll };
+        delete result.learningFactors;
+        return result;
+      });
     const validateSaved = async (saved: Result[]) => {
       const used = new Map<string, number>();
       for (const roll of saved) {
@@ -7503,12 +7502,12 @@ export class BotPlay {
     const cost = (plans: typeof fresh) =>
       new Set(plans.map((p) => p.parent ?? p.index)).size;
     const settings = new Map<number, SavedDice>();
-    const learningFactors = new Map<number, LearningFactor[]>();
     const applied = new Map<number, AppliedStatus>();
     const unresolved = new Map<number, string[]>();
     const shortages = new Set<number>();
     const refusals = new Map<number, Extract<Result, { reason: string }>>();
     const overBudget = new Set<number>();
+    const learningFactors = new Map<number, LearningFactor[]>();
     if (fresh.length) {
       const factClaim = fresh.map((p) =>
         batch ? undefined : selfStateClaim(actor, p.changes),
@@ -7863,6 +7862,10 @@ export class BotPlay {
         const labels = judgment ? judgmentLabels(selectedNodes) : undefined;
         const selectedMaterial = indexes.map((i) => proposalFor(i, labels));
         const selectedLearners = learnersOf(selectedMaterial);
+        const selectedConsumable = judgment
+          ? judgmentConsumables(selectedNodes, consumable)
+          : consumable;
+        const directConsumable = work || compact ? [] : selectedConsumable;
         const references = selectedLearners.includes(actor)
           ? learningReferences(
               actor,
@@ -7870,10 +7873,6 @@ export class BotPlay {
               experience.get(actor) ?? [],
             )
           : undefined;
-        const selectedConsumable = judgment
-          ? judgmentConsumables(selectedNodes, consumable)
-          : consumable;
-        const directConsumable = work || compact ? [] : selectedConsumable;
         for (const [id, label] of labels ?? []) {
           const item = stock.get(id);
           if (item) stock.set(id, { ...item, label });
@@ -8278,19 +8277,15 @@ export class BotPlay {
           setting,
         );
         const success = die.roll <= die.setting.successThrough;
-        const factors = learningFactors.get(i);
-        rolls.push(
-          await settle(i, {
-            ...die,
-            success,
-            ...(factors?.length ? { learningFactors: factors } : {}),
-          }),
-        );
+        rolls.push(await settle(i, { ...die, success }));
         if (success) {
           applySlots(i);
           for (const c of die.setting.consumes ?? [])
             used.set(c.id, (used.get(c.id) ?? 0) + (c.count ?? 1));
         }
+        const factors = learningFactors.get(i);
+        if (factors?.length)
+          Object.assign(rolls[i]!, { learningFactors: factors });
       }
       const spent = cost(
         fresh.filter(
