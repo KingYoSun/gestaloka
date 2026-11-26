@@ -15978,6 +15978,130 @@ test("同じアカウントの2人が同時に各自のSPを消費し、再送�
     });
 });
 
+test.each([0, 1])(
+  "生物の生成は召喚石になり、1個につき別のサーバーNPCが同席する（待ち時間%d分）",
+  async (waitMinutes) => {
+    const f = await fixture(1);
+    const actor = f.actors[0]!;
+    const requestId = randomUUID();
+    const proposalItem = derivedId(requestId + ":0:node");
+    const name = "旅の薬師";
+    f.calls.mockImplementationOnce(async (id, role, messages) => {
+      expect(role).toBe("world-creation-dice");
+      expect(messages[0]!.content).toContain("summons");
+      expect(messages[1]!.content).toContain(proposalItem);
+      return answer(id, { ...sure, summons: [{ id: proposalItem, name }] });
+    });
+    const made = await f.send(0, {
+      command: "apply",
+      expectedSp: 1,
+      requestId,
+      dependencies: [],
+      action: {
+        type: "generate",
+        ...(waitMinutes ? { waitMinutes } : {}),
+        plans: [
+          {
+            text: "旅の薬師を生物として得る",
+            operation: {
+              type: "create",
+              label: name,
+              holder: actor,
+              count: 2,
+              basis: "街道で出会った",
+            },
+          },
+        ],
+      },
+    });
+    if (waitMinutes) {
+      const due = new Date((made.arrival as { dueAt: string }).dueAt);
+      await new BotPlay(runtime, () => due).deliverArrivals(f.world);
+    } else
+      expect(made.items).toMatchObject([
+        { itemId: proposalItem, label: "旅の薬師の召喚石", count: 2 },
+      ]);
+    const [stone] = (await readBelongings(f.store.context(f.graph), actor))
+      .items;
+    expect(stone).toMatchObject({
+      label: "旅の薬師の召喚石",
+      summons: name,
+      count: 2,
+    });
+    const itemId = stone!.id;
+    const summon = (stone: string) => ({
+      command: "apply",
+      expectedSp: 0,
+      requestId: randomUUID(),
+      dependencies: [],
+      action: { type: "summon", itemId: stone },
+    });
+    const imitation = (
+      await f.apply([
+        {
+          type: "create",
+          holder: actor,
+          label: "旅の薬師の召喚石",
+          basis: "石に刻んだ呼び名",
+        },
+      ])
+    ).changes.nodes[0]!.id;
+    await expect(f.send(0, summon(imitation))).rejects.toMatchObject({
+      code: "SUMMONING_STONE_REQUIRED",
+    });
+    const first = summon(itemId);
+    const commit = f.store.commit.bind(f.store);
+    vi.spyOn(f.store, "commit").mockImplementationOnce(async (...args) => {
+      await commit(...args);
+      throw new Error("召喚のグラフ確定後に中断");
+    });
+    await expect(f.send(0, first)).rejects.toThrow("召喚のグラフ確定後に中断");
+    const result = await f.send(0, first);
+    expect(await f.send(0, first)).toEqual(result);
+    expect(await f.store.context(f.graph).node(itemId)).toMatchObject({
+      count: 1,
+    });
+    const second = await f.send(0, summon(itemId));
+    expect(second.npcId).not.toBe(result.npcId);
+    expect(await f.store.context(f.graph).holding(itemId)).toBeUndefined();
+    for (const npc of [result.npcId, second.npcId] as string[]) {
+      expect(await directPlaces(f.store.context(f.graph), npc)).toEqual([
+        f.place,
+      ]);
+      expect((await f.status(0)).characters).toContainEqual(
+        expect.objectContaining({ actorId: npc, name }),
+      );
+      expect(
+        (
+          await isolated.databases.postgres.query(
+            "SELECT controller FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
+            [f.world, npc],
+          )
+        ).rows,
+      ).toEqual([{ controller: "server" }]);
+      expect(await f.store.context(f.graph).node(npc)).toMatchObject({
+        text: name,
+      });
+    }
+    expect(
+      (
+        await isolated.databases.postgres.query(
+          "SELECT 1 FROM npc_promotion WHERE world_id=$1",
+          [f.world],
+        )
+      ).rowCount,
+    ).toBe(0);
+    if ((await f.status(0)).actorId === actor)
+      await f.send(0, { command: "end-turn" });
+    const turn = (await f.status(0)).turn!;
+    f.calls.mockImplementation(async (id) =>
+      answer(id, { command: "end-turn" }),
+    );
+    await access.botPlay.tickNpcs(f.world);
+    expect((await f.status(0)).turn).toBeGreaterThan(turn);
+  },
+);
+
 test("抽選器を審査し、別の人物が結果を受け取り、同席者の履歴に残す", async () => {
   const f = await fixture();
   const [creator, visitor] = f.actors;
@@ -16378,6 +16502,41 @@ async function fixedTableFixture() {
   await edit();
   return { ...f, send, edit, change, settings, put, publish, approve };
 }
+
+test("抽選表と説明式の生物景品を召喚石で受け取る", async () => {
+  const f = await fixedTableFixture();
+  await f.settings("旅の生物をひとつ迎える");
+  const draft = await f.put({ kind: "item", label: "小さなヤモリ" });
+  const entryId = (draft.entries as { entryId: string }[])[0]!.entryId;
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-draw-review");
+    expect(messages[1]!.content).toContain(entryId);
+    return answer(id, {
+      accepted: true,
+      reason: "対象が決まっている",
+      summons: { [entryId]: "小さなヤモリ" },
+    });
+  });
+  const table = await f.publish();
+  const fixed = await f.send("draw", { versionId: table.versionId }, 1);
+  expect(fixed.reward).toMatchObject({ label: "小さなヤモリの召喚石" });
+  expect(
+    await f.store.context(f.graph).node((fixed.reward as { id: string }).id),
+  ).toMatchObject({ summons: "小さなヤモリ" });
+  f.approve();
+  await f.send("draw-configure", { description: "旅人をひとり迎える" });
+  f.calls.mockImplementationOnce(async (id, role) => {
+    expect(role).toBe("world-draw");
+    return answer(id, { kind: "item", label: "旅の陶工", summons: "旅の陶工" });
+  });
+  const generated = await f.send("draw", {}, 1);
+  expect(generated.reward).toMatchObject({ label: "旅の陶工の召喚石" });
+  expect(
+    await f.store
+      .context(f.graph)
+      .node((generated.reward as { id: string }).id),
+  ).toMatchObject({ summons: "旅の陶工" });
+});
 
 test("抽選の見積もりは公開版に従い、同意額を超える抽選は確定しない", async () => {
   const f = await fixedTableFixture();
@@ -17526,6 +17685,7 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
     admin = await auth.person(),
     rule = randomUUID(),
     drop = randomUUID(),
+    livingDrop = randomUUID(),
     id = randomUUID();
   const edge = (source: string, target: string, text?: string) => ({
     id: randomUUID(),
@@ -17568,6 +17728,18 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
               probability: 1,
             },
           },
+          {
+            id: livingDrop,
+            kind: "script",
+            text: "生きた餌",
+            spawn: {
+              kind: "existence",
+              species: "コオロギ",
+              description: "生きた虫",
+              count: 3,
+              probability: 1,
+            },
+          },
         ],
         revisions: [],
         endEdges: [],
@@ -17576,6 +17748,8 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
           edge(rule, f.place, "spawn-hit"),
           edge(f.place, drop),
           edge(drop, rule, "spawn-death"),
+          edge(f.place, livingDrop),
+          edge(livingDrop, rule, "spawn-death"),
         ],
       },
     },
@@ -17722,9 +17896,18 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
     (await present()).filter(({ actorId }) => actorId === pet),
   ).toHaveLength(1);
 
-  f.calls.mockImplementationOnce(async (id) =>
-    answer(id, { ...sure, instantReduction: { kind: "death", count: 2 } }),
-  );
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    expect(JSON.parse(messages[1]!.content).drops).toContainEqual({
+      id: livingDrop,
+      label: "コオロギ",
+      description: "生きた虫",
+    });
+    return answer(id, {
+      ...sure,
+      instantReduction: { kind: "death", count: 2 },
+      summons: [{ id: livingDrop, name: "コオロギ" }],
+    });
+  });
   const hit = attempt("鳥に対抗する", "鳥が攻撃を受けた");
   const killed = await f.send(0, hit);
   expect(killed.instantReduction).toMatchObject({
@@ -17733,8 +17916,17 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
     count: 2,
   });
   const drops = killed.appearances as { id: string; species: string }[];
-  expect(drops).toMatchObject([{ species: "羽根", count: 6 }]);
-  expect(drops).toHaveLength(1);
+  expect(drops).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ species: "羽根", count: 6 }),
+      expect.objectContaining({ species: "コオロギの召喚石", count: 6 }),
+    ]),
+  );
+  const stone = drops.find((d) => d.species === "コオロギの召喚石")!;
+  expect(await f.store.context(f.graph).node(stone.id)).toMatchObject({
+    text: "コオロギの召喚石",
+    summons: "コオロギ",
+  });
   expect(await f.send(0, hit)).toEqual(killed);
   expect(await count()).toBe(1);
   expect(
@@ -17814,7 +18006,7 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
     command: "search",
     query: { kind: "surroundings" },
   });
-  expect(JSON.stringify(seen.material)).toContain(drops[0]!.id);
+  expect(JSON.stringify(seen.material)).toContain(stone.id);
   const pick = (count?: number) =>
     f.send(2, {
       command: "update",
@@ -17825,7 +18017,7 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
           type: "move",
           from: null,
           to: f.actors[2],
-          item: drops[0]!.id,
+          item: stone.id,
           ...(count ? { count } : {}),
           basis: "拾う",
         },
@@ -17836,12 +18028,13 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
       (item) => item.count,
     );
   // 一部だけ拾うと残りはその場に残り、後から残りを拾うと手持ちの同じ物品に足される。
-  expect((await pick(1)).items).toMatchObject([
-    { itemId: drops[0]!.id, count: 1 },
-  ]);
+  expect((await pick(1)).items).toMatchObject([{ itemId: stone.id, count: 1 }]);
   expect(await carried()).toEqual([1]);
-  expect((await pick()).items).toMatchObject([{ itemId: drops[0]!.id }]);
+  expect((await pick()).items).toMatchObject([{ itemId: stone.id }]);
   expect(await carried()).toEqual([6]);
+  expect(
+    (await readBelongings(f.store.context(f.graph), f.actors[2]!)).items[0],
+  ).toMatchObject({ summons: "コオロギ" });
 });
 test("人物への対抗行動で死亡と判定されると、対象はセッションから外れて設定された場所か最初の所在地へ移り、判定で付いた状態・期限のある状態・死亡で付いた状態が現在の状態から外れる", async () => {
   const f = await fixture(),
