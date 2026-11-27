@@ -9,6 +9,7 @@ import { ExecutionBudget } from "../execution-budget.js";
 import { SupersededWorker, type Interaction } from "./agent.js";
 import type { WorldConstruction } from "./construction.js";
 import { playerIcon } from "./player-icons.js";
+import { readDicePolicy } from "./bot-play.js";
 import { playerSettings } from "./player-settings.js";
 import { isPermanentlyDead } from "./death-policy.js";
 import { worldNow } from "../world/model.js";
@@ -244,10 +245,12 @@ export class WorldPlayers {
       [userId],
     );
     const now = worldNow(world);
+    const { skill, criteria } = await readDicePolicy(db, input.worldId);
     const operationId = await this.construction.agent.create(
       {
         worldId: world.world_id,
         phase: "participant",
+        participantCriteria: { skill, creation: criteria },
         ...(input.name && { participantName: input.name }),
         at: now,
         until: now,

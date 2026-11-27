@@ -63,6 +63,9 @@ export const Interaction = z
     actorId: z.uuid().optional(),
     controlledActorId: z.uuid().optional(),
     participantName: z.string().optional(),
+    participantCriteria: z
+      .object({ skill: z.string(), creation: z.string() })
+      .optional(),
     startingItems: z.array(StartingItem).optional(),
     controlledActionText: z.string().optional(),
     triggerEdgeIds: z.array(z.uuid()).optional(),
