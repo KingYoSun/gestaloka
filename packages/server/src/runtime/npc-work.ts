@@ -8,8 +8,15 @@ const query = z.union(
   PlaySearch.options.filter((q) => q.shape.kind.value !== "seek"),
 );
 const message = z.string().trim().min(1);
-const goal = message.nullable();
+const goalChoice = {
+  goal: message.nullable(),
+  goalTurns: z.int().positive().optional(),
+};
 const mode = z.enum(["voice", "nonverbal"]);
+const completesGoal = z
+  .boolean()
+  .describe("この操作が成功すれば現在の目的を達成する場合はtrue。")
+  .optional();
 const task = z.object({ question: message, recipient: z.uuid(), query });
 export type NpcTask = z.infer<typeof task>;
 export type NpcRead = NpcTask & {
@@ -23,21 +30,25 @@ export type NpcReport = NpcRead & {
   recordId: string;
 };
 type Decision = {
-  goal: string | null;
+  goal: z.infer<typeof goalChoice.goal>;
+  goalTurns?: number | undefined;
   action: object;
   endOnSuccess: boolean;
+  completesGoal?: boolean | undefined;
   inspect?: NpcTask;
   recipient?: string;
   reportReadId?: string;
 };
-const pass = (goal: string | null): Decision => ({
-  goal,
+const pass = (choice: Pick<Decision, "goal" | "goalTurns">): Decision => ({
+  goal: choice.goal,
+  goalTurns: choice.goalTurns,
   action: { command: "end-turn" },
   endOnSuccess: true,
 });
 const worldCommand = z.object({
-  goal,
+  ...goalChoice,
   endOnSuccess: z.boolean(),
+  completesGoal,
   action: z.record(z.string(), z.unknown()),
 });
 
@@ -78,9 +89,10 @@ export function npcOperations(
         recheck === "changed"
           ? "報告後に確認対象が変わったので、同じ相手のために最新の結果を調べる。"
           : "届いた再依頼を引き受け、同じ相手のために最新の結果を調べる。",
-        z.object({ goal, question: message.optional() }),
+        z.object({ ...goalChoice, question: message.optional() }),
         (v) => ({
           goal: v.goal,
+          goalTurns: v.goalTurns,
           inspect: task.parse({
             ...completed,
             question: v.question ?? completed.question,
@@ -96,13 +108,14 @@ export function npcOperations(
         completed
           ? "新しい相手か、前の報告とは別の素材を調べる。"
           : "引き受けた確認を実行する。知りたいこと、調べる対象と、結果を伝える相手のIDを選ぶ。",
-        task.extend({ goal, recipient: z.enum(peers) }),
+        task.extend({ ...goalChoice, recipient: z.enum(peers) }),
         (v) =>
           completed?.recipient === v.recipient &&
           canonical(completed.query) === canonical(v.query)
-            ? pass(v.goal)
+            ? pass(v)
             : {
                 goal: v.goal,
+                goalTurns: v.goalTurns,
                 inspect: task.parse(v),
                 action: { command: "search", query: v.query },
                 endOnSuccess: false,
@@ -115,7 +128,10 @@ export function npcOperations(
         "report_and_pass",
         "今回の確認結果と、必要なら自分の見立てを本人に伝えて、手番を渡す。",
         z.object({
-          goal,
+          ...goalChoice,
+          completesGoal: completesGoal.describe(
+            "現在の目的で求めた結果がこの報告の内容に含まれ、届けば目的を達成する場合はtrue。目的で求めた情報が見つからず、その旨を報告するだけならfalse。",
+          ),
           finding: records.length
             ? z
                 .array(z.number().int().min(1).max(records.length))
@@ -154,6 +170,8 @@ export function npcOperations(
             : undefined;
           return {
             goal: v.goal,
+            goalTurns: v.goalTurns,
+            completesGoal: v.completesGoal,
             recipient: pending.recipient,
             reportReadId: pending.readId,
             action: {
@@ -171,9 +189,17 @@ export function npcOperations(
       add(
         "communicate",
         "手元の情報で返事をする、尋ねる、断る、または身振りで伝える。予告だけでは調べたことにならない。",
-        z.object({ goal, text: message, mode, endOnSuccess: z.boolean() }),
+        z.object({
+          ...goalChoice,
+          text: message,
+          mode,
+          endOnSuccess: z.boolean(),
+          completesGoal,
+        }),
         (v) => ({
           goal: v.goal,
+          goalTurns: v.goalTurns,
+          completesGoal: v.completesGoal,
           action: { command: "say", text: v.text, mode: v.mode },
           endOnSuccess: v.endOnSuccess,
         }),
@@ -181,8 +207,8 @@ export function npcOperations(
     add(
       "pass_turn",
       "応じることや自分から行うことがなければ、無言で手番を渡す。",
-      z.object({ goal }),
-      (v) => pass(v.goal),
+      z.object(goalChoice),
+      pass,
     );
     if (completed) offerInspection();
   }

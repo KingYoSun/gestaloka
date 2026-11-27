@@ -20483,6 +20483,213 @@ test("サーバーNPCが目的を引き継ぎ、操作の成功時に同じ手�
   ).toBeNull();
 });
 
+test.each([
+  "same",
+  "rephrased",
+  "method",
+  "different",
+  "uncertain",
+  "fallback",
+] as const)(
+  "サーバーNPCが期限を使い切った次の本人手番で目的を見直す (%s)",
+  async (review) => {
+    const f = await serverNpcScene();
+    const destination = "荷物の届け先を調べる";
+    const rephrased = "荷物をどこに届けるか確かめる";
+    const bySender = "差出人に聞いて荷物の届け先を特定する";
+    const nextGoal = "届け先が分かるまで荷物を安全に預ける";
+    const inputs: [string | null, number | undefined, string | undefined][] =
+      [];
+    const compared: string[] = [];
+    const candidate = {
+      same: destination,
+      rephrased,
+      method: bySender,
+      different: nextGoal,
+      uncertain: nextGoal,
+      fallback: rephrased,
+    }[review];
+    if (review !== "fallback") {
+      vi.spyOn(runtime.agent.model, "decision", "get").mockReturnValue(
+        decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+      );
+      vi.spyOn(runtime.agent.model, "decide").mockImplementation(
+        async (_id, role, state) => {
+          if (role !== "world-npc-goal-change") return {};
+          const { previous, current } = state as {
+            previous: string;
+            current: string;
+          };
+          expect(previous).toBe(destination);
+          compared.push(current);
+          return {
+            different:
+              current !== nextGoal ? 0.05 : review === "different" ? 0.95 : 0.5,
+          };
+        },
+      );
+    }
+    const plans: object[] = [
+      {
+        operation: "communicate",
+        args: {
+          goal: destination,
+          goalTurns: 2,
+          text: "荷札を確かめます。",
+          mode: "voice",
+          endOnSuccess: false,
+        },
+      },
+      {
+        operation: "communicate",
+        args: {
+          goal: rephrased,
+          goalTurns: 7,
+          text: "荷札の宛名が消えています。",
+          mode: "voice",
+          endOnSuccess: true,
+        },
+      },
+      { operation: "pass_turn", args: { goal: rephrased } },
+    ];
+    f.calls.mockImplementation(async (id, role, messages) => {
+      if (role === "world-npc-goal-change" && review === "fallback") {
+        const { previous, current } = JSON.parse(String(messages[1]!.content));
+        expect(previous).toBe(destination);
+        compared.push(current);
+        return answer(id, { different: false });
+      }
+      expect(role).toBe("world-server-npc");
+      const { goal, expiredGoal, goalTurnsRemaining } = JSON.parse(
+        String(messages[1]!.content),
+      );
+      if (goalTurnsRemaining === 0) expect(goal).toBeNull();
+      inputs.push([goal, goalTurnsRemaining, expiredGoal]);
+      return answer(id, plans[inputs.length - 1]);
+    });
+    await access.botPlay.tickNpcs(f.world);
+    expect((await f.status(1)).actorId).toBe(f.npc);
+    await access.botPlay.tickNpcs(f.world);
+    expect((await f.status(0)).actorId).toBe(f.actors[0]);
+    await access.botPlay.tickNpcs(f.world);
+    expect(inputs).toHaveLength(2);
+
+    await f.send(0, { command: "end-turn" });
+    await access.botPlay.tickNpcs(f.world);
+    expect((await f.status(0)).actorId).toBe(f.actors[0]);
+    const invitation = await f.send(0, locate(f.npc, f.far));
+    plans.push(
+      {
+        operation: "world_command",
+        args: {
+          goal: null,
+          endOnSuccess: false,
+          action: {
+            command: "receive",
+            applicationId: invitation.applicationId,
+            accept: false,
+          },
+        },
+      },
+      {
+        operation: "world_command",
+        args: {
+          goal: candidate,
+          goalTurns: 3,
+          action: { command: "say", text: "宛名が読めませんでした。" },
+          endOnSuccess: false,
+        },
+      },
+      {
+        operation: "pass_turn",
+        args:
+          review === "different"
+            ? { goal: null }
+            : { goal: rephrased, goalTurns: 8 },
+      },
+    );
+    await access.botPlay.tickNpcs(f.world);
+    await f.send(0, { command: "end-turn" });
+    await access.botPlay.tickNpcs(f.world);
+    expect((await f.status(1)).actorId).toBe(f.npc);
+    await access.botPlay.tickNpcs(f.world);
+    expect((await f.status(0)).actorId).toBe(f.actors[0]);
+
+    expect(inputs).toEqual([
+      [null, undefined, undefined],
+      [destination, 2, undefined],
+      [destination, 1, undefined],
+      [destination, undefined, undefined],
+      [null, 0, destination],
+      review === "different"
+        ? [nextGoal, 3, undefined]
+        : [null, undefined, destination],
+    ]);
+    expect(compared).toEqual([
+      rephrased,
+      ...(review === "same" ? [] : [candidate]),
+      ...(review === "different" ? [] : [rephrased]),
+    ]);
+    expect(
+      (
+        await isolated.databases.postgres.query(
+          "SELECT memory FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
+          [f.world, f.npc],
+        )
+      ).rows[0].memory,
+    ).toMatchObject({
+      goal: null,
+      goalTurnsRemaining: null,
+      expiredGoal: review === "different" ? null : destination,
+    });
+  },
+);
+
+test("サーバーNPCの目的を終えるのは達成を見込んだ操作が成功したとき", async () => {
+  const f = await serverNpcScene();
+  const goal = "出発を同席者に知らせる";
+  const memory = async () =>
+    (
+      await isolated.databases.postgres.query(
+        "SELECT memory FROM bot_npc WHERE world_id=$1 AND actor_id=$2",
+        [f.world, f.npc],
+      )
+    ).rows[0].memory;
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, {
+      operation: "world_command",
+      args: {
+        goal,
+        goalTurns: 3,
+        completesGoal: true,
+        endOnSuccess: false,
+        action: { command: "vehicle-board", vehicleId: randomUUID() },
+      },
+    }),
+  );
+  await access.botPlay.tickNpcs(f.world);
+  expect(await memory()).toMatchObject({ goal, goalTurnsRemaining: 2 });
+  await f.send(0, { command: "end-turn" });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, {
+      operation: "communicate",
+      args: {
+        goal,
+        text: "今から出発します。",
+        mode: "voice",
+        completesGoal: true,
+        endOnSuccess: false,
+      },
+    }),
+  );
+  await access.botPlay.tickNpcs(f.world);
+  expect((await f.status(1)).actorId).toBe(f.npc);
+  expect(await memory()).toMatchObject({
+    goal: null,
+    goalTurnsRemaining: null,
+  });
+});
+
 test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉じ、前の答えと新しい確認を区別する", async () => {
   const f = await fixture(2),
     [peer, npc] = f.actors as [string, string];
@@ -20539,15 +20746,24 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
   };
   const query = { kind: "subject", targetId: f.place };
   const submits = vi.spyOn(access.botPlay, "submit");
+  const reportGoal = "荷受け場所を相手に知らせる";
   await choose("inspect_and_reply", {
+    goal: reportGoal,
+    goalTurns: 3,
     recipient: peer,
     question: "荷受け場所の名前",
     query,
   });
   expect((await memory()).completed).toBeUndefined();
+  expect(await memory()).toMatchObject({
+    goal: reportGoal,
+    goalTurnsRemaining: 3,
+  });
   const firstRead = (await memory()).pending.readId;
   const reply = { mode: "nonverbal", text: "荷受けは広場です。" };
   const reporting = await choose("report_and_pass", {
+    goal: "相手に荷受け場所を伝える",
+    completesGoal: true,
     finding: reply.text,
     judgment: null,
     mode: reply.mode,
@@ -20560,6 +20776,7 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
   expect(operationsWhileReporting).not.toContain("inspect_and_reply");
   const done = await memory();
   expect(done.pending).toBeUndefined();
+  expect(done).toMatchObject({ goal: null, goalTurnsRemaining: null });
   expect(done.completed).toMatchObject({
     readId: firstRead,
     recipient: peer,
@@ -20626,10 +20843,11 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
     },
   );
   await f.send(0, { command: "end-turn" });
-  const changed = await choose("recheck_for_recipient", {});
+  const changed = await choose("recheck_for_recipient", { goalTurns: 3 });
   expect(changed.completedWork.priorResult).toBe("visible-result-changed");
   expect((await memory()).pending.readId).not.toBe(firstRead);
   const second = await choose("report_and_pass", {
+    completesGoal: false,
     mode: "voice",
     finding: [1],
     judgment: {
@@ -20639,6 +20857,10 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
   });
   expect(JSON.stringify(second.readResult)).toContain("渡し場の荷受け所");
   const updated = (await memory()).completed;
+  expect(await memory()).toMatchObject({
+    goal: "荷の引き渡しを見届ける",
+    goalTurnsRemaining: 2,
+  });
   expect(updated.recordId).not.toBe(done.completed.recordId);
   expect(updated.answer).toBe(
     `記録には「${notice}」とあります。\n私の見立てでは、すべての受取人に届いたかは分かりません。\n場所を知らせておくとよさそうです。`,
@@ -20669,11 +20891,13 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
   const before = await memory();
   await f.move(0, f.far);
   await choose("report_and_pass", {
+    completesGoal: true,
     mode: "voice",
     finding: [1],
     judgment: null,
   });
   expect(await memory()).toMatchObject({
+    goal: before.goal,
     pending: before.pending,
     completed: before.completed,
   });
