@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures.js";
+import { acceptWorldInvite, expect, test, worldInvite } from "./fixtures.js";
 import { createHash, randomUUID } from "node:crypto";
 import { connectDatabases } from "@gestaloka/server";
 import type { Page } from "@playwright/test";
@@ -43,6 +43,7 @@ async function participate(page: Page, skillSlots?: number) {
   await expect(
     page.getByRole("button", { name: "別の村民として参加する", exact: true }),
   ).toHaveCount(0);
+  await acceptWorldInvite(page.request, await worldInvite(page.request, id));
   await page.goto(`http://127.0.0.1:4173/worlds/${id}`);
   await page
     .getByRole("button", { name: "この設定で参加する", exact: true })
