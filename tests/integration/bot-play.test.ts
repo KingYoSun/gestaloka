@@ -22764,7 +22764,7 @@ test("技能判定で使った技能・状態・試行を本人にだけ返し�
   mark(stateChanges, actor, "足の運びを繰り返し練習した");
   mark(stateChanges, f.place, "広場に練習用の目印がある");
   mark(stateChanges, f.place, "柱に内緒の覚え書きがある");
-  const [practice, marker, privateNote] = stateChanges.nodes;
+  const [practiceState, marker, privateNote] = stateChanges.nodes;
   Object.assign(privateNote!, { viewers: [] });
   const stateCommit = randomUUID();
   await f.store.commit(
@@ -22799,7 +22799,7 @@ test("技能判定で使った技能・状態・試行を本人にだけ返し�
   f.calls.mockImplementationOnce(async (id, role, messages) => {
     expect(role).toBe("world-creation-dice");
     const { learningReferences } = JSON.parse(messages[1]!.content);
-    expect(learningReferences).toContain(`state:${practice!.id}`);
+    expect(learningReferences).toContain(`state:${practiceState!.id}`);
     expect(learningReferences).toContain(`state:${marker!.id}`);
     expect(learningReferences).not.toContain(`state:${privateNote!.id}`);
     await saveRoll(first.requestId, 15);
