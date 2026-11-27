@@ -1,0 +1,10 @@
+{
+  "name": "gestaloka-api-monitor",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-27",
+  "workers_dev": false,
+  "preview_urls": false,
+  "triggers": { "crons": ["* * * * *"] },
+  "vars": { "HEALTH_URL": "https://api.gestaloka.com/api/health" },
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+}
