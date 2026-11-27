@@ -228,6 +228,8 @@ async function verifyLocalRecovery(deployment) {
   assert.equal((await item()).node, null);
 }
 const storage = `gestaloka-recovery-s3-${suffix}`;
+const ledger = `gestaloka-recovery-ledger-${suffix}`,
+  ledgerPassword = randomUUID();
 const https = async (d, subdomain, path, method = "GET", agent = false) =>
   new Promise((resolvePromise, reject) => {
     const host = `${subdomain}.${d.config.domain}`;
@@ -359,11 +361,10 @@ try {
       accessCidrs: "0.0.0.0/0 ::/0",
     });
     deployments.push(d);
-    if (role === "target")
-      await appendFile(
-        join(d.root, "deployment.env"),
-        `\nWITHDRAWAL_LEDGER_DATABASE_URL=postgres://ory:${deployments[0].env.ORY_DATABASE_PASSWORD}@original-ledger:5432/ory\n`,
-      );
+    await appendFile(
+      join(d.root, "deployment.env"),
+      `\nWITHDRAWAL_LEDGER_DATABASE_URL=postgres://postgres:${ledgerPassword}@original-ledger:5432/postgres\n`,
+    );
     await appendFile(
       join(d.root, "deployment.env"),
       await readFile("tests/support/operator.env"),
@@ -450,21 +451,27 @@ try {
     assert.equal(JSON.parse(publicTest).status, "ok");
   }
   const [source, target] = deployments;
-  const ledgerNetwork = storage + "-ledger";
-  await command(["network", "create", "--internal", ledgerNetwork]);
   await command([
-    "network",
-    "connect",
-    ledgerNetwork,
-    `${target.config.name}-controller-1`,
+    "run",
+    "--rm",
+    "-d",
+    "--name",
+    ledger,
+    "--network",
+    `${source.config.name}_egress`,
+    "--network-alias",
+    "original-ledger",
+    "-e",
+    `POSTGRES_PASSWORD=${ledgerPassword}`,
+    "postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3",
   ]);
   await command([
     "network",
     "connect",
     "--alias",
     "original-ledger",
-    ledgerNetwork,
-    `${source.config.name}-identity-postgres-1`,
+    `${target.config.name}_egress`,
+    ledger,
   ]);
   await command([
     "run",
@@ -679,8 +686,7 @@ try {
   );
   console.log(JSON.stringify(result));
 } finally {
-  await command(["rm", "-f", storage]).catch(() => {});
+  await command(["rm", "-f", storage, ledger]).catch(() => {});
   for (const d of deployments.reverse())
     await compose(d, "down", "-v", "--remove-orphans").catch(() => {});
-  await command(["network", "rm", storage + "-ledger"]).catch(() => {});
 }
