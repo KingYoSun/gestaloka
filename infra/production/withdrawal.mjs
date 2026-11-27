@@ -117,7 +117,7 @@ export class Withdrawals {
         await this.db.query(
           `INSERT INTO withdrawal_receipt(authority,receipt,user_id,identity_id,keep,retention_days,origin_host)
       VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(authority,user_id) DO UPDATE SET user_id=excluded.user_id
-      RETURNING receipt,confirmed_at,retention_days`,
+      RETURNING receipt,confirmed_at,retention_days,keep`,
           [
             authority,
             randomUUID(),
@@ -129,7 +129,7 @@ export class Withdrawals {
           ],
         )
       ).rows[0];
-      await this.hide(db, user, keep);
+      await this.hide(db, user, row.keep);
       await db.query("COMMIT");
       return row;
     } catch (error) {
@@ -140,6 +140,12 @@ export class Withdrawals {
     }
   }
   async hide(db, user, keep) {
+    await db.query(
+      `DELETE FROM world_player_icon WHERE player_id IN (
+        SELECT a.id FROM world_access a JOIN world_subject s ON s.id=a.subject_id WHERE s.user_id=$1
+        UNION SELECT id FROM world_join WHERE subject_id=$1)`,
+      [user],
+    );
     await db.query(
       "UPDATE app_user SET banned=true,public_spectating=false WHERE id=$1",
       [user],
@@ -252,7 +258,8 @@ export class Withdrawals {
     if (!times.length) return [];
     const { rows } = await this.db.query(
       `SELECT (SELECT min(confirmed_at + (30+retention_days)*interval '1 day')
-      FROM withdrawal_receipt WHERE authority=$1 AND origin_host=$3 AND finished_at IS NULL AND (erased_at IS NULL OR erased_at>=s.at)) AS deadline
+      FROM withdrawal_receipt WHERE authority=$1 AND origin_host=$3 AND finished_at IS NULL AND retention_days>0
+        AND s.at<=confirmed_at+interval '30 days' AND (erased_at IS NULL OR erased_at>=s.at)) AS deadline
       FROM unnest($2::timestamptz[]) WITH ORDINALITY s(at,ord) ORDER BY ord`,
       [authority, times, this.engine.project],
     );
@@ -271,10 +278,11 @@ export class Withdrawals {
       for (const row of rows) {
         try {
           await this.erase(row, replay);
-          await this.db.query(
-            "UPDATE withdrawal_receipt SET structured_at=coalesce(structured_at,now()),erased_at=CASE WHEN reviewed_at IS NOT NULL THEN coalesce(erased_at,now()) END WHERE receipt=$1",
-            [row.receipt],
-          );
+          if (!replay)
+            await this.db.query(
+              "UPDATE withdrawal_receipt SET structured_at=coalesce(structured_at,now()),erased_at=CASE WHEN reviewed_at IS NOT NULL THEN coalesce(erased_at,now()) END WHERE receipt=$1",
+              [row.receipt],
+            );
           if (replay && !row.reviewed_at)
             throw new Error("WITHDRAWAL_REVIEW_PENDING");
         } catch (error) {
@@ -310,10 +318,7 @@ export class Withdrawals {
       )
         throw new Error("WITHDRAWAL_WAITING_FOR_ACTIVE_JOB");
       await db.query("SELECT id FROM app_user WHERE id=$1 FOR UPDATE", [user]);
-      await db.query(
-        "UPDATE app_user SET banned=true,public_spectating=false WHERE id=$1",
-        [user],
-      );
+      await this.hide(db, user, keep);
       const actors = (
         await db.query(
           `SELECT DISTINCT a.actor_id AS actor,c.world_id AS graph
@@ -353,6 +358,7 @@ export class Withdrawals {
         "invite_use",
         "world_participation",
         "player_report_usage",
+        "player_report",
         "app_legal_consent",
         "mcp_grant",
       ]) {
@@ -383,12 +389,6 @@ export class Withdrawals {
       );
       await db.query(
         "DELETE FROM world_event USING world_subject s WHERE subject_id=s.id AND s.user_id=$1",
-        [user],
-      );
-      await db.query(
-        `DELETE FROM world_player_icon WHERE player_id IN (
-        SELECT a.id FROM world_access a JOIN world_subject s ON s.id=a.subject_id WHERE s.user_id=$1
-        UNION SELECT id FROM world_join WHERE subject_id=$1)`,
         [user],
       );
       await db.query(
@@ -424,6 +424,10 @@ export class Withdrawals {
         [user],
       );
       await db.query("DELETE FROM bot_request WHERE user_id=$1", [user]);
+      await db.query(
+        "DELETE FROM world_intent WHERE actor_id=ANY($1::uuid[])",
+        [ids],
+      );
       if (ids.length) {
         await db.query(
           `UPDATE bot_chat SET payload=jsonb_set(payload,'{entries}',

@@ -64,10 +64,15 @@ const server = createServer(async (request, response) => {
     response
       .writeHead(200, { "content-type": "application/json" })
       .end(JSON.stringify(output));
-  } catch {
-    response
-      .writeHead(409, { "content-type": "application/json" })
-      .end('{"error":"BACKUP_OPERATION_FAILED"}');
+  } catch (error) {
+    response.writeHead(409, { "content-type": "application/json" }).end(
+      JSON.stringify({
+        error:
+          request.url === "/withdraw" && error.message === "LAST_ADMIN"
+            ? "LAST_ADMIN"
+            : "BACKUP_OPERATION_FAILED",
+      }),
+    );
   }
 });
 server.listen(3100, "0.0.0.0");
