@@ -11,7 +11,6 @@ import {
   afterEach,
   describe,
   expect,
-  onTestFinished,
   test,
   vi,
 } from "vitest";
@@ -17139,16 +17138,19 @@ test("全文要約が索引上限を超える技能数でも、発展を確定�
     Buffer.byteLength(skills.map((skill) => skill.text).join("\n")),
   ).toBeGreaterThan(32_766);
   await f.apply(skills);
-  for (const job of await f.store.judgmentExcerptJobs(skills.length, f.graph))
-    await f.store.finishJudgmentExcerpt(job, "道具を調整しながら稽古した");
-  const decide = vi
-    .spyOn(runtime.agent.model, "decide")
-    .mockImplementation(async (_id, _role, _state, questions) =>
+  const excerpts = await f.store.judgmentExcerptJobs(
+    2 * skills.length,
+    f.graph,
+  );
+  expect(excerpts).toHaveLength(skills.length);
+  for (const job of excerpts)
+    expect(
+      await f.store.finishJudgmentExcerpt(job, "道具を調整しながら稽古した"),
+    ).toBe(true);
+  vi.spyOn(runtime.agent.model, "decide").mockImplementation(
+    async (_id, _role, _state, questions) =>
       Object.fromEntries(Object.keys(questions).map((key) => [key, 0])),
-    );
-  onTestFinished(() => {
-    decide.mockRestore();
-  });
+  );
   const list = () => readBelongings(f.store.context(f.graph), person);
   const [origin] = (await list()).skills;
   const requestId = randomUUID();
