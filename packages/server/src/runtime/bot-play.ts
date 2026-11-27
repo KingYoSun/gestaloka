@@ -8576,6 +8576,7 @@ export class BotPlay {
               actor,
               selectedNodes,
               experience.get(actor) ?? [],
+              { places: locations, subjects: [], statesOnly: true },
             )
           : undefined;
         const otherReferences = selectedFields.includes("diceFactors")
