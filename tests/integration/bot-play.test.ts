@@ -18762,6 +18762,8 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
   await configure("death_criteria", "致命傷で死亡する");
   await configure("death_place_id", grave);
   const crushed = { id: f.actors[1]!, text: "頭部が砕けている。" };
+  const beforeDeath = (await access.botPlay.history(f.world, f.actors[1]!))
+    .entries.length;
   fatalDice(f.actors[1]!, "致命傷で死亡する", [crushed]);
   const first = attack(1),
     killed = await f.send(0, first);
@@ -18770,6 +18772,26 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
     setting: { fatal: [f.actors[1]] },
   });
   expect(await f.send(0, first)).toEqual(killed);
+  expect(
+    (await access.botPlay.history(f.world, f.actors[1]!)).entries.slice(
+      beforeDeath,
+    ),
+  ).toMatchObject([
+    {
+      payload: {
+        entries: [
+          {
+            actorId: f.actors[0],
+            input: expect.stringContaining(first.text),
+            result: { commitId: first.requestId, outcome: killed.outcome },
+          },
+        ],
+      },
+    },
+    {
+      payload: { transition: { type: "session-joined", actorId: f.actors[1] } },
+    },
+  ]);
   expect(await present(0)).toEqual([f.actors[0], f.actors[2]]);
   expect(await present(1)).toEqual([f.actors[1]]);
   expect(await whereabouts(1)).toEqual([grave]);
@@ -19060,6 +19082,8 @@ test("リスポーン無効時は死亡した人物の履歴を保持して操�
     "UPDATE world_construction SET respawn_enabled=false,death_place_id=$2 WHERE id=$1",
     [f.world, f.far],
   );
+  const speech = "その品を渡してほしい。";
+  await f.send(0, { command: "say", text: speech });
   f.calls.mockImplementationOnce(async (id) =>
     answer(id, { ...sure, fatal: [victim] }),
   );
@@ -19072,6 +19096,8 @@ test("リスポーン無効時は死亡した人物の履歴を保持して操�
     ],
     dependencies: [],
   };
+  const beforeDeath = (await access.botPlay.history(f.world, victim, sceneId))
+    .entries.length;
   const result = await f.send(0, attack);
   expect(result.outcome).toMatchObject({
     success: true,
@@ -19086,10 +19112,24 @@ test("リスポーン無効時は死亡した人物の履歴を保持して操�
   expect(await directPlaces(f.store.context(f.graph), victim)).toEqual([
     f.place,
   ]);
-  expect(await access.botPlay.history(f.world, victim, sceneId)).toMatchObject({
-    sceneId,
-    result: { entries: expect.any(Array) },
-  });
+  const closed = await access.botPlay.history(f.world, victim, sceneId);
+  expect(closed.sceneId).toBe(sceneId);
+  expect(closed.result.entries).toEqual(closed.entries);
+  expect(closed.entries.slice(beforeDeath)).toMatchObject([
+    {
+      payload: {
+        entries: [
+          { actorId: actor, input: speech },
+          {
+            actorId: actor,
+            input: expect.stringContaining(attack.text),
+            result: { commitId: attack.requestId, outcome: result.outcome },
+          },
+        ],
+      },
+    },
+    { payload: { transition: { type: "session-left", actorId: victim } } },
+  ]);
   const owner = f.people[1]!.id;
   await expect(f.send(1, { command: "start" })).rejects.toMatchObject({
     code: "ACTOR_DEAD",
