@@ -38,7 +38,10 @@ export async function startPlayLoop(
   const timer = setInterval(() => {
     if (paused()) return;
     if (!active) {
-      active = play.expire().then(() => play.tickNpcs(undefined, paused));
+      active = play
+        .expire()
+        .catch(console.error)
+        .then(() => play.tickNpcs(undefined, paused));
       void active.catch(console.error).finally(() => {
         active = undefined;
       });

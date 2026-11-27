@@ -1,8 +1,9 @@
+import { instantPlaceEdge } from "../world/conditions.js";
 import { classifyNpcHistory, type NpcMemory } from "./npc-history.js";
 import { npcOperations, type NpcReport, type NpcTask } from "./npc-work.js";
 import { diceFields, dicePrompt, rollDice } from "./dice.js";
 import { playDiceMessages } from "./play-dice-messages.js";
-import { ModelCallInProgress } from "../llm/budget.js";
+import { ModelCallInProgress, ResponseFormatError } from "../llm/budget.js";
 import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
@@ -44,6 +45,7 @@ import { RuntimeControl, RuntimeStopped } from "./control.js";
 import { ExecutionBudget, ExecutionLimit } from "../execution-budget.js";
 import {
   WorldConflict,
+  UnresolvedCondition,
   FixedPlaceMovement,
   isSpUseProhibition,
   WorldContext,
@@ -1139,6 +1141,7 @@ function addStateCondition(
   actor: string | undefined,
   target: string,
   effect?: WorldEdge,
+  locationSubjects?: Set<string>,
 ) {
   const refs: Readonly<Record<string, string | undefined>> = {
     $actor: actor,
@@ -1148,7 +1151,10 @@ function addStateCondition(
   const resolve = (value: string, edge = false): string => {
     if (!value.startsWith("$")) return value;
     const id = edge && value === "$effect" ? effect?.id : refs[value];
-    if (!id) throw new Error("状態の継続条件に使える参照を指定してください");
+    if (!id)
+      throw new UnresolvedCondition(
+        "状態の継続条件に使える参照を指定してください",
+      );
     return id;
   };
   const bind = (expression: ConditionExpression): ConditionExpression => {
@@ -1157,7 +1163,10 @@ function addStateCondition(
     if ("eq" in expression) {
       const operand = (value: string) => {
         const reference = /^([^.]+)\.directPlaceId$/.exec(value)?.[1];
-        return reference ? resolve(reference) + ".directPlaceId" : value;
+        if (!reference) return value;
+        const subject = resolve(reference);
+        locationSubjects?.add(subject);
+        return subject + ".directPlaceId";
       };
       return { eq: [operand(expression.eq[0]), operand(expression.eq[1])] };
     }
@@ -2169,7 +2178,18 @@ export class BotPlay {
           (m) => m.actorId === session.data.turn && m.instant,
         )
       )
-        await this.#instantTurn(session);
+        try {
+          await this.#instantTurn(session);
+        } catch (error) {
+          if (error instanceof RuntimeStopped && error.code === "MAINTENANCE")
+            return;
+          console.error(
+            "出現個体の手番処理に失敗",
+            session.world_id,
+            session.id,
+            error,
+          );
+        }
     }
     const assigned = (
       await this.pool.query<{
@@ -2658,8 +2678,30 @@ export class BotPlay {
     }
   }
   // 同席者から出現個体を外す。立ち去り、死亡、場所に誰もいなくなったときに使う。
-  async #removeInstants(db: Db, data: Session["data"], ids: string[]) {
+  async #removeInstants(db: Db, session: Session, ids: string[]) {
     if (!ids.length) return;
+    const data = session.data;
+    const actors = data.members
+      .filter((m) => m.instant && ids.includes(m.actorId))
+      .map((m) => m.actorId);
+    if (!actors.length) return;
+    const world = await this.world(session.world_id, db);
+    const context = this.store.context(world.id);
+    const places = await context.edges(actors.map(instantPlaceEdge));
+    const changes = empty();
+    for (const edge of places.values())
+      if (edge.period.until === undefined) changes.endEdges.push(edge.id);
+    if (changes.endEdges.length) {
+      const request = derivedId(
+        "instant-depart:" + changes.endEdges.sort().join(":"),
+      );
+      await this.#commit(
+        world.id,
+        request,
+        { context, at: world.at, changes },
+        directChangeScope(changes),
+      );
+    }
     data.members = data.members.filter((m) => {
       if (!m.instant || !ids.includes(m.actorId)) return true;
       for (const entry of data.entries)
@@ -2667,8 +2709,8 @@ export class BotPlay {
       return false;
     });
     await db.query(
-      "UPDATE bot_scene SET closed=true WHERE id=ANY($1::uuid[]) AND actor_id=id",
-      [ids],
+      "UPDATE bot_scene SET closed=true WHERE session_id=$1 AND actor_id=ANY($2::uuid[]) AND NOT closed",
+      [session.id, actors],
     );
   }
   // 出現場所に通常の同席者がいなくなった個体を外す。
@@ -2688,7 +2730,7 @@ export class BotPlay {
         places.add(place);
     await this.#removeInstants(
       db,
-      session.data,
+      session,
       instants
         .filter((m) => !m.instant!.places.some((place) => places.has(place)))
         .map((m) => m.actorId),
@@ -2709,7 +2751,7 @@ export class BotPlay {
     if (!target || target.count !== result.remaining + result.count)
       reject("WORLD_CHANGED", "出現した一団の個体数が変わりました");
     if (result.remaining) target.count = result.remaining;
-    else await this.#removeInstants(db, session.data, [result.targetId]);
+    else await this.#removeInstants(db, session, [result.targetId]);
     if (result.separatedId)
       await this.#addInstants(
         db,
@@ -3206,15 +3248,35 @@ export class BotPlay {
         },
         effectMinutes ? at + effectMinutes * 60000 : undefined,
       );
-      if (effectCondition)
+      if (effectCondition) {
+        const subjects = new Set<string>();
         addStateCondition(
           changes,
           changes.edges.at(-1)!.id,
           effectCondition,
-          npc ? undefined : actorId,
+          actorId,
           effect.targetId,
           effectEdge,
+          subjects,
         );
+        for (const id of subjects) {
+          const member = instant(id);
+          if (!member) continue;
+          if (member.places.length !== 1)
+            throw new UnresolvedCondition("出現個体の所在を特定できません");
+          const edge = instantPlaceEdge(id);
+          if (await context.edge(edge)) continue;
+          // 同じイベントから現れた複数の個体も、辺のIDで区別する。
+          changes.edges.push({
+            id: edge,
+            kind: "effect",
+            text: "instant-place",
+            source: member.sourceEventId,
+            target: member.places[0]!,
+            period: { from: at },
+          });
+        }
+      }
       link({ kind: "status", source: state, target: event, role: "about" });
     }
     const death = await this.#applyDeathPolicy(
@@ -3257,8 +3319,7 @@ export class BotPlay {
     };
   }
   async #instantTurn(session: Session) {
-    const actor = session.data.turn,
-      npc = session.data.members.find((m) => m.actorId === actor)!.instant!;
+    const actor = session.data.turn;
     const request = derivedId(
       `instant:${session.id}:${actor}:${session.data.number}`,
     );
@@ -3268,157 +3329,195 @@ export class BotPlay {
       request,
       async () => {
         await ExecutionBudget.check();
-        const context = this.store.context(w.id);
-        const nearby: unknown[] = await Promise.all(
-          [...(await this.#atPlaces(context, npc.places))].map(async (id) => {
-            // ダイスの材料と同じく、対象ごとに選んだ状態だけを渡す。関係のIDはサーバーが使うもので、渡さない。
-            const { states, omittedStates } = await this.#physicalStates(
-              context,
-              id,
-              true,
-              actor,
-            );
-            return {
-              node: await context.node(id),
-              states: states.map(({ id, text }) => ({ id, text })),
-              omittedStates,
-            };
-          }),
-        );
-        // 同席している他の個体も、作用の対象に選べる。
-        for (const m of session.data.members)
-          if (m.instant && m.actorId !== actor)
-            nearby.push({
-              id: m.actorId,
-              name: m.instant.name,
-              description: m.instant.description,
-              count: m.instant.count,
-            });
-        const response = await this.#ask(
-          derivedId(request + ":choice"),
-          "world-server-npc",
-          [
-            {
-              role: "system",
-              content:
-                ((npc.count ?? 1) > 1
-                  ? "あなたはその場に現れた一団です。npc.countは現在の個体数です。一団として一手を選んでください。"
-                  : "あなたはその場に現れた一個体です。") +
-                '自身の性質、見聞きした履歴、周囲から今回の一手を選んでください。tradesがあれば、相手が望めば応じる交換の品物と代価です。textに行動を、外界を変えようとするならeffectに対象IDと成功時の状態を、立ち去るならdeparts:trueを指定します。成否はサーバーが決めます。すでに示した状態が続き、周囲に伝わる行動や変化がなければ、そこに留まったまま {"command":"end-turn"} で手番を終えられます。schemaに沿うJSONだけを返してください。',
-            },
-            {
-              role: "user",
-              content: JSON.stringify({
-                npc,
-                trades: (
-                  await instantTrades(context, [{ ...npc, actorId: actor }])
-                ).map(
-                  ({ itemLabel, count, paymentLabel, paymentCount, text }) => ({
-                    itemLabel,
-                    count,
-                    paymentLabel,
-                    paymentCount,
-                    text,
-                  }),
-                ),
-                nearby,
-                history: recentEntries(
-                  await this.history(session.world_id, actor),
-                ),
-                schema: z.toJSONSchema(InstantTurnChoice),
-              }),
-            },
-          ],
-          "default",
-          (raw) => InstantTurnChoice.parse(parseOutput(raw)),
-        );
-        const choice = InstantTurnChoice.parse(parseOutput(response.content));
-        const action = "text" in choice ? choice : undefined;
-        const plan = action
-          ? await this.#instantAction(
-              session,
-              actor,
-              action,
-              request,
-              context,
-              w.at,
-            )
-          : undefined;
-        const directScope = plan && directChangeScope(plan.changes);
-        const db = await this.pool.connect();
         try {
-          await db.query("BEGIN");
-          await db.query(
-            "SELECT pg_advisory_xact_lock(hashtextextended($1,225))",
-            [session.world_id],
+          const choice = await this.#chooseInstantAction(
+            session,
+            request,
+            w.id,
+            w.at,
           );
-          const current = await this.current(session.world_id, actor, db);
-          if (
-            current &&
-            current.id === session.id &&
-            current.data.number === session.data.number &&
-            current.data.turn === actor &&
-            !current.data.receiving &&
-            JSON.stringify(current.data.members) ===
-              JSON.stringify(session.data.members)
-          ) {
-            await ExecutionBudget.check(db, true);
-            const before = turnState(current);
-            if (action && plan) {
-              await this.#checkNonCombatAreas(
-                db,
-                session.world_id,
-                plan.nonCombatAreas,
-              );
-              const receipt = await this.#commit(
-                w.id,
-                request,
-                plan,
-                directScope!,
-              );
-              current.data.entries.push({
-                actorId: actor,
-                input: action.text,
-                result: {
-                  outcome: plan.outcome,
-                  ...(plan.effectState
-                    ? { effectState: plan.effectState }
-                    : {}),
-                  ...(plan.appearances
-                    ? { appearances: plan.appearances }
-                    : {}),
-                  ...(plan.instantReduction
-                    ? { instantReduction: plan.instantReduction }
-                    : {}),
-                  commitId: receipt.commitId,
-                },
-              });
-              await this.#applyInstantReduction(
-                db,
-                current,
-                actor,
-                request,
-                plan,
-              );
-            }
-            await this.#next(db, current);
-            await this.#removeInstants(db, current.data, [
-              ...(action?.departs ? [actor] : []),
-              ...(plan?.fatal ?? []),
-            ]);
-            await this.#expel(db, current, plan?.fatal ?? [], request);
-            await this.#save(db, current, before);
-          }
-          await db.query("COMMIT");
+          await this.#finishInstantTurn(session, request, w.id, choice);
         } catch (error) {
-          await db.query("ROLLBACK");
-          throw error;
-        } finally {
-          db.release();
+          if (!(
+            error instanceof UnresolvedCondition ||
+            error instanceof ExecutionLimit ||
+            error instanceof ResponseFormatError ||
+            error instanceof z.ZodError ||
+            error instanceof SyntaxError ||
+            error instanceof AccessError
+          ))
+            throw error;
+          console.error(
+            "出現個体の行動を確定できません",
+            session.world_id,
+            session.id,
+            error,
+          );
+          await this.#finishInstantTurn(session, request, w.id, error);
         }
       },
       w.id,
     );
+  }
+
+  async #chooseInstantAction(
+    session: Session,
+    request: string,
+    graph: string,
+    at: number,
+  ) {
+    const actor = session.data.turn,
+      npc = session.data.members.find((m) => m.actorId === actor)!.instant!;
+    const context = this.store.context(graph);
+    const nearby: unknown[] = await Promise.all(
+      [...(await this.#atPlaces(context, npc.places))].map(async (id) => {
+        // ダイスの材料と同じく、対象ごとに選んだ状態だけを渡す。関係のIDはサーバーが使うもので、渡さない。
+        const { states, omittedStates } = await this.#physicalStates(
+          context,
+          id,
+          true,
+          actor,
+        );
+        return {
+          node: await context.node(id),
+          states: states.map(({ id, text }) => ({ id, text })),
+          omittedStates,
+        };
+      }),
+    );
+    // 同席している他の個体も、作用の対象に選べる。
+    for (const m of session.data.members)
+      if (m.instant && m.actorId !== actor)
+        nearby.push({
+          id: m.actorId,
+          name: m.instant.name,
+          description: m.instant.description,
+          count: m.instant.count,
+        });
+    const response = await this.#ask(
+      derivedId(request + ":choice"),
+      "world-server-npc",
+      [
+        {
+          role: "system",
+          content:
+            ((npc.count ?? 1) > 1
+              ? "あなたはその場に現れた一団です。npc.countは現在の個体数です。一団として一手を選んでください。"
+              : "あなたはその場に現れた一個体です。") +
+            '自身の性質、見聞きした履歴、周囲から今回の一手を選んでください。tradesがあれば、相手が望めば応じる交換の品物と代価です。textに行動を、外界を変えようとするならeffectに対象IDと成功時の状態を、立ち去るならdeparts:trueを指定します。成否はサーバーが決めます。すでに示した状態が続き、周囲に伝わる行動や変化がなければ、そこに留まったまま {"command":"end-turn"} で手番を終えられます。schemaに沿うJSONだけを返してください。',
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            npc,
+            trades: (
+              await instantTrades(context, [{ ...npc, actorId: actor }])
+            ).map(({ itemLabel, count, paymentLabel, paymentCount, text }) => ({
+              itemLabel,
+              count,
+              paymentLabel,
+              paymentCount,
+              text,
+            })),
+            nearby,
+            history: recentEntries(await this.history(session.world_id, actor)),
+            schema: z.toJSONSchema(InstantTurnChoice),
+          }),
+        },
+      ],
+      "default",
+      (raw) => InstantTurnChoice.parse(parseOutput(raw)),
+    );
+    const choice = InstantTurnChoice.parse(parseOutput(response.content));
+    const action = "text" in choice ? choice : undefined;
+    const plan = action
+      ? await this.#instantAction(session, actor, action, request, context, at)
+      : undefined;
+    return { action, plan };
+  }
+
+  async #finishInstantTurn(
+    session: Session,
+    request: string,
+    graph: string,
+    choice:
+      | {
+          action: z.infer<typeof NpcAction> | undefined;
+          plan: Plan | undefined;
+        }
+      | Error,
+  ) {
+    const actor = session.data.turn;
+    const db = await this.pool.connect();
+    try {
+      await db.query("BEGIN");
+      await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,225))", [
+        session.world_id,
+      ]);
+      const current = await this.current(session.world_id, actor, db);
+      if (
+        current &&
+        current.id === session.id &&
+        current.data.number === session.data.number &&
+        current.data.turn === actor &&
+        !current.data.receiving &&
+        JSON.stringify(current.data.members) ===
+          JSON.stringify(session.data.members)
+      ) {
+        await ExecutionBudget.check(db, true);
+        // グラフ確定後のDB障害は、保存済みの結果を次の周期に回収する。
+        if (
+          choice instanceof Error &&
+          (await this.store.receipt(graph, request))
+        )
+          throw choice;
+        const { action, plan } =
+          choice instanceof Error
+            ? { action: undefined, plan: undefined }
+            : choice;
+        const before = turnState(current);
+        if (action && plan) {
+          await this.#checkNonCombatAreas(
+            db,
+            session.world_id,
+            plan.nonCombatAreas,
+          );
+          const receipt = await this.#commit(
+            graph,
+            request,
+            plan,
+            directChangeScope(plan.changes),
+          );
+          current.data.entries.push({
+            actorId: actor,
+            input: action.text,
+            result: {
+              outcome: plan.outcome,
+              ...(plan.effectState ? { effectState: plan.effectState } : {}),
+              ...(plan.appearances ? { appearances: plan.appearances } : {}),
+              ...(plan.instantReduction
+                ? { instantReduction: plan.instantReduction }
+                : {}),
+              commitId: receipt.commitId,
+            },
+          });
+          await this.#applyInstantReduction(db, current, actor, request, plan);
+        }
+        await this.#next(db, current);
+        await this.#removeInstants(db, current, [
+          ...(action?.departs ? [actor] : []),
+          ...(plan?.fatal ?? []),
+        ]);
+        await this.#expel(db, current, plan?.fatal ?? [], request);
+        await this.#save(db, current, before);
+      }
+      await db.query("COMMIT");
+    } catch (error) {
+      await db.query("ROLLBACK");
+      throw error;
+    } finally {
+      db.release();
+    }
   }
   async current(world: string, actor: string, db: Db = this.pool) {
     const session = (
@@ -3464,11 +3563,11 @@ export class BotPlay {
       session.data.members.length &&
       session.data.members.every((m) => m.instant)
     ) {
-      await db.query(
-        "UPDATE bot_scene SET closed=true WHERE session_id=$1 AND actor_id=ANY($2::uuid[]) AND NOT closed",
-        [session.id, session.data.members.map((m) => m.actorId)],
+      await this.#removeInstants(
+        db,
+        session,
+        session.data.members.map((m) => m.actorId),
       );
-      session.data.members = [];
       delete session.data.nextRegular;
     }
     if (
@@ -5507,7 +5606,12 @@ export class BotPlay {
         await db.query("ROLLBACK");
         if (error instanceof RuntimeStopped && error.code === "MAINTENANCE")
           return;
-        throw error;
+        console.error(
+          "セッションの期限処理に失敗",
+          initial.world_id,
+          initial.id,
+          error,
+        );
       } finally {
         db.release();
       }
@@ -15414,7 +15518,7 @@ export class BotPlay {
                   input.requestId,
                   plan,
                 );
-                await this.#removeInstants(db, d, [
+                await this.#removeInstants(db, session, [
                   ...(input.command === "npc-action" && input.departs
                     ? [input.npcId]
                     : []),

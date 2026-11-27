@@ -7,7 +7,11 @@ import {
   type CommandRestriction,
 } from "@gestaloka/contracts";
 import { routeEndpoints } from "./locations.js";
-import { conditionAnchors, evaluateCondition } from "./conditions.js";
+import {
+  conditionAnchors,
+  evaluateCondition,
+  instantPlaceEdge,
+} from "./conditions.js";
 import {
   editBundle,
   InventoryBundleError,
@@ -118,6 +122,7 @@ export type Receipt = {
   versions?: Record<string, { before: number; after: number }>;
 };
 export class WorldConflict extends Error {}
+export class UnresolvedCondition extends WorldConflict {}
 export class FixedPlaceMovement extends WorldConflict {
   constructor() {
     super("固定場所そのものの所在や所持先は変更できません");
@@ -2257,6 +2262,12 @@ export class WorldStore {
         ...staged,
       ];
     };
+    const instantLocation = async (actor: string) => {
+      const edge = await readEdge(instantPlaceEdge(actor));
+      return edge?.kind === "effect" && edge.text === "instant-place"
+        ? edge
+        : undefined;
+    };
     const reader = {
       activeEdge: async (id: string) => {
         const edge = await readEdge(id);
@@ -2273,6 +2284,8 @@ export class WorldStore {
         (await relations(id, kind, direction, role, text, opposite, true))
           .length > 0,
       directPlace: async (actor: string) => {
+        const instant = await instantLocation(actor);
+        if (instant && active(instant)) return instant.target;
         await guard(relationKey(actor, "status", "out"));
         const before = await recordedLocations(tx, worldId, actor, at);
         const newLocations = changes.edges.filter(
@@ -2300,6 +2313,7 @@ export class WorldStore {
           );
           places.add(direct.length === 1 ? direct[0]!.target : undefined);
         }
+        if (instant && !places.size && latest < 0) return null;
         return places.size === 1 ? [...places][0] : undefined;
       },
     };
@@ -2323,12 +2337,15 @@ export class WorldStore {
         !active(state) ||
         states.has(state.id)
       )
-        throw new WorldConflict("継続条件には新しい状態を一件指定してください");
+        throw new UnresolvedCondition(
+          "継続条件には新しい状態を一件指定してください",
+        );
       states.add(state.id);
       const { edgeIds, nodeIds } = conditionAnchors(condition.expression);
       for (const id of edgeIds) {
         const fact = await readEdge(id);
-        if (!fact) throw new WorldConflict("継続条件の関係が見つかりません");
+        if (!fact)
+          throw new UnresolvedCondition("継続条件の関係が見つかりません");
         nodeIds.push(fact.source, fact.target);
       }
       const require = (source: string, target: string) => {
@@ -2343,13 +2360,28 @@ export class WorldStore {
         changes.edges.push(edge);
       };
       require(state.target, condition.id);
-      for (const id of new Set(nodeIds)) require(condition.id, id);
+      const anchors = new Set<string>();
+      for (const id of new Set(nodeIds))
+        anchors.add((await instantLocation(id))?.source ?? id);
+      for (const anchor of anchors) require(condition.id, anchor);
     }
     const changed = new Set(changes.revisions.map((node) => node.id));
+    const markLocation = async (actor: string) => {
+      changed.add(actor);
+      // 昇格前の継続条件は、個体の出現イベントを起点に再評価する。
+      const instant = await instantLocation(actor);
+      if (instant) changed.add(instant.source);
+    };
     const mark = async (edge: WorldEdge) => {
       if (edge.kind === "required") return;
       changed.add(edge.source);
       changed.add(edge.target);
+      if (
+        edge.kind === "status" &&
+        edge.role === "content" &&
+        edge.text === "location"
+      )
+        await markLocation(edge.source);
       if (
         edge.kind === "status" &&
         edge.role === "about" &&
@@ -2362,7 +2394,7 @@ export class WorldStore {
           "content",
           "location",
         ))
-          changed.add(owner.source);
+          await markLocation(owner.source);
     };
     for (const edge of [...changes.edges, ...ended]) await mark(edge);
     const close = (edge: WorldEdge) => {
@@ -2412,7 +2444,7 @@ export class WorldStore {
         const result =
           current && (await evaluateCondition(condition.expression, reader));
         if (states.has(condition.stateId) && result !== true)
-          throw new WorldConflict("状態の継続条件が成立していません");
+          throw new UnresolvedCondition("状態の継続条件が成立していません");
         if (current && result !== false) continue;
         if (state && current) {
           close(state);

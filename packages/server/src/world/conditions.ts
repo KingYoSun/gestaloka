@@ -1,4 +1,8 @@
 import type { ConditionExpression, WorldEdge } from "@gestaloka/contracts";
+import { derivedId } from "./model.js";
+
+export const instantPlaceEdge = (actor: string) =>
+  derivedId(actor + ":instant-place-edge");
 
 export type ConditionReader = {
   activeEdge(id: string): Promise<WorldEdge | undefined>;
@@ -40,7 +44,11 @@ export async function evaluateCondition(
         return nodeId ? reader.directPlace(nodeId) : operand;
       }),
     );
-    return left == null || right == null ? undefined : left === right;
+    // null は退場が記録された個体、undefined は所在が不明な存在。
+    if (left === null || right === null) return false;
+    return left === undefined || right === undefined
+      ? undefined
+      : left === right;
   }
 
   const { id, kind, source, target, role, text } = expression;
