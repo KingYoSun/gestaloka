@@ -38,7 +38,7 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
     expect(index.statusCode).toBe(200);
     expect(index.headers["content-type"]).toContain("text/html");
     const linkedGuides = Array.from(
-      index.body.matchAll(/href="([^"]+)"/g),
+      index.body.matchAll(/href="([^"/]+\.md)"/g),
       ([, file]) => file,
     );
     const packagedGuides = await readdir(
@@ -85,12 +85,30 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
     const entry = await app.inject("/api/player-cli/join");
     expect(entry.statusCode).toBe(200);
     expect(entry.headers["referrer-policy"]).toBe("no-referrer");
-    expect(entry.body).toBe(
-      await readFile(
-        join(folder, "package/skills/gestaloka-player/references/join.md"),
-        "utf8",
-      ),
+    const packagedEntry = await readFile(
+      join(folder, "package/skills/gestaloka-player/references/join.md"),
+      "utf8",
     );
+    const [beforeOperator, afterOperator] =
+      packagedEntry.split(/^<!-- 運営情報 -->.*$/m);
+    expect(entry.body.startsWith(beforeOperator!)).toBe(true);
+    expect(entry.body.endsWith(afterOperator!)).toBe(true);
+    for (const page of [entry.body, index.body]) {
+      for (const value of [
+        "試験運営者",
+        "mailto:operator@example.test",
+        "/auth/terms",
+        "/auth/privacy",
+        "トークン",
+        "disconnect",
+        "削除請求窓口",
+      ])
+        expect(page).toContain(value);
+    }
+    const invitation = await app.inject(
+      `/api/player-cli/docs/${release.version}/join.md?world=00000000-0000-4000-8000-000000000001`,
+    );
+    expect(invitation.body).toBe(entry.body);
     const skill = await app.inject("/api/player-cli/SKILL.md");
     expect(skill.statusCode).toBe(200);
     expect(skill.body).toBe(
@@ -102,12 +120,15 @@ test("ログインなしで公開中のCLIと一致する最新版情報・配�
     for (const match of skill.body.matchAll(/\]\((references\/[^)]+)\)/g)) {
       const reference = await app.inject("/api/player-cli/" + match[1]);
       expect(reference.statusCode).toBe(200);
-      expect(reference.body).toBe(
-        await readFile(
-          join(folder, "package/skills/gestaloka-player", match[1]!),
-          "utf8",
-        ),
-      );
+      if (match[1] === "references/join.md")
+        expect(reference.body).toBe(entry.body);
+      else
+        expect(reference.body).toBe(
+          await readFile(
+            join(folder, "package/skills/gestaloka-player", match[1]!),
+            "utf8",
+          ),
+        );
     }
     const linked = await app.inject("/api/player-cli/setup.md");
     expect(linked.body).toBe(setup.body);

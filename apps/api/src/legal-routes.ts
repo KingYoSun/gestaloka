@@ -6,6 +6,7 @@ import {
   beginRegistrationConsent,
   legalConfigured,
   legalContact,
+  legalContactUrl,
   legalEdition,
   legalVersion,
   privacy,
@@ -25,19 +26,14 @@ const edition = legalConfigured
   ? `<p class="legal-edition"><span>適用開始日 <time datetime="${legalEdition}">${legalEdition}</time></span><span>版 ${legalVersion}</span></p>`
   : '<p role="status">運営者名と問い合わせ先を設定中です。両方がそろうまで同意の受付を休止しています。接続と通知の読み取りは利用できます。</p>';
 function articles(text: string, heading = "h3") {
-  const contactUrl = /^https?:\/\//i.test(legalContact)
-    ? legalContact
-    : /^[^\s@]+@[^\s@]+$/.test(legalContact)
-      ? "mailto:" + legalContact
-      : null;
   return text
     .split("\n\n")
     .map((section) => {
       const [title, ...paragraphs] = section.split("\n");
       const body = paragraphs
         .map((p) => {
-          if (p === "問い合わせ先 " + legalContact && contactUrl)
-            return `<p>問い合わせ先 <a href="${escape(contactUrl)}">${escape(legalContact)}</a></p>`;
+          if (p === "問い合わせ先 " + legalContact && legalContactUrl)
+            return `<p>問い合わせ先 <a href="${escape(legalContactUrl)}">${escape(legalContact)}</a></p>`;
           return `<p>${escape(p)}</p>`;
         })
         .join("");

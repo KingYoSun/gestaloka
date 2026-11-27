@@ -144,6 +144,9 @@ importers:
       fastify:
         specifier: 5.12.7
         version: 5.12.7
+      micromark:
+        specifier: 4.0.3
+        version: 4.0.3
       semver:
         specifier: 7.8.5
         version: 7.8.5

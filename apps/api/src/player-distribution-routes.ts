@@ -1,10 +1,16 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
+import { micromark } from "micromark";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { ZodTypeProvider } from "@fastify/type-provider-zod";
 import { ApiError, PlayerCliRelease } from "@gestaloka/contracts";
 import { AccessError } from "@gestaloka/server/access";
+import {
+  legalContact,
+  legalContactUrl,
+  legalOperator,
+} from "@gestaloka/server/legal";
 
 const root = new URL("../../../artifacts/player-cli/", import.meta.url);
 const referenceGuide = z.enum([
@@ -23,12 +29,28 @@ const referenceGuide = z.enum([
   "health.md",
   "stories.md",
 ]);
+async function readGuide(name: string) {
+  const source = await readFile(new URL(name, root), "utf8");
+  if (name !== "join.md") return source;
+  const literal = (text: string) =>
+    text.replace(/[\\`*_{}[\]()<>#!|&~]/g, "\\$&");
+  const contact = legalContactUrl
+    ? `[${literal(legalContact)}](<${legalContactUrl.replace(/[<>\\\s]/g, encodeURIComponent)}>)`
+    : literal(legalContact || "未設定");
+  const origin = process.env.ORY_APP_URL?.replace(/\/$/, "") ?? "";
+  return source.replace(/^<!-- 運営情報 -->.*$/m, () =>
+    [
+      `運営者：${literal(legalOperator || "未設定")}。個人データの削除請求窓口：${contact}`,
+      `登録前に[利用規約](${origin}/auth/terms)と[プライバシーポリシー](${origin}/auth/privacy)の全文を読めます。`,
+    ].join("\n\n"),
+  );
+}
 const sendGuide = async (reply: FastifyReply, name: string) =>
   reply
     .type("text/markdown; charset=utf-8")
     .header("Cache-Control", "no-store")
     .header("Referrer-Policy", "no-referrer")
-    .send(await readFile(new URL(name, root), "utf8"));
+    .send(await readGuide(name));
 export async function playerCliRelease() {
   try {
     return PlayerCliRelease.parse(
@@ -48,17 +70,21 @@ export async function playerDistributionRoutes(instance: FastifyInstance) {
   app.get(
     "/api/player-cli/",
     { schema: { hide: true } },
-    async (_request, reply) =>
-      reply
+    async (_request, reply) => {
+      const [index, guide] = await Promise.all([
+        readFile(new URL("../player-cli-index.html", import.meta.url), "utf8"),
+        readGuide("join.md"),
+      ]);
+      const notice = guide
+        .split(/(?=^## )/m)
+        .find((section) => section.startsWith("## 参加する前に"));
+      if (!notice) throw new Error("参加案内に「参加する前に」がありません");
+      return reply
         .type("text/html; charset=utf-8")
         .header("Cache-Control", "no-store")
         .header("Referrer-Policy", "no-referrer")
-        .send(
-          await readFile(
-            new URL("../player-cli-index.html", import.meta.url),
-            "utf8",
-          ),
-        ),
+        .send(index.replace("<!-- 参加する前に -->", () => micromark(notice)));
+    },
   );
   for (const file of [...referenceGuide.options, "SKILL.md"]) {
     for (const path of [basename(file, ".md"), file, `references/${file}`]) {

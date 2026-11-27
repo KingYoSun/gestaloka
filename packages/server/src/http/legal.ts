@@ -3,12 +3,17 @@ import type pg from "pg";
 import { AccessError } from "./access-error.js";
 
 export const legalEdition = "2026-11-27";
-const operator = process.env.LEGAL_OPERATOR_NAME?.trim() ?? "";
+export const legalOperator = process.env.LEGAL_OPERATOR_NAME?.trim() ?? "";
 export const legalContact = process.env.LEGAL_CONTACT?.trim() ?? "";
-export const legalConfigured = Boolean(operator && legalContact);
+export const legalContactUrl = /^https?:\/\//i.test(legalContact)
+  ? legalContact
+  : /^[^\s@]+@[^\s@]+$/.test(legalContact)
+    ? "mailto:" + legalContact
+    : null;
+export const legalConfigured = Boolean(legalOperator && legalContact);
 const contactLine = legalContact ? "\n問い合わせ先 " + legalContact : "";
-const provider = operator
-  ? `${operator}（以下「運営者」という。）`
+const provider = legalOperator
+  ? `${legalOperator}（以下「運営者」という。）`
   : "本サービスの運営者";
 export const terms = `第1条（適用）
 本規約は、${provider}が提供するテキストMMORPG「GESTALOKA」（以下「本サービス」という。）の利用条件を定める。利用者は、本規約及びプライバシーポリシーを確認し、その双方に同意して利用登録を行う。
@@ -39,7 +44,7 @@ export const terms = `第1条（適用）
 本規約の準拠法は日本法とする。本サービスに関する紛争の管轄は、適用される法令の定めによる。${contactLine}`;
 
 export const privacy = `第1条（適用範囲）
-GESTALOKAの運営者${operator ? `（${operator}）` : ""}は、本サービスのWeb画面、プレイヤーCLI及び利用者が許可した端末を通じて取り扱う利用者情報について、次のとおり定める。
+GESTALOKAの運営者${legalOperator ? `（${legalOperator}）` : ""}は、本サービスのWeb画面、プレイヤーCLI及び利用者が許可した端末を通じて取り扱う利用者情報について、次のとおり定める。
 
 第2条（取得する情報）
 運営者は、ログインID、パスワードの照合に用いる情報、外部ログインを選択した場合の連携先の識別子及び提供された表示名、アカウント・端末・人物の識別子、招待の利用状況、同意した規約等の版及び同意日時を取り扱う。
