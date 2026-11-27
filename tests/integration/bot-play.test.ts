@@ -8937,6 +8937,14 @@ test("型付きの対人対抗は関係IDで状態を置き換え、期限と出
   expect(
     await context().relations(target, "status", "out", received.period.until!),
   ).not.toContainEqual(expect.objectContaining({ id: received.id }));
+  const endedOrigin = await isolated.databases.graph.executeQuery(
+    "MATCH ()-[r:status {worldId:$world,id:$id}]->() RETURN r.stateEndRequest AS request,r.stateEndActorId AS actor",
+    { world: f.graph, id: replaced!.id },
+  );
+  expect(endedOrigin.records[0]!.toObject()).toEqual({
+    request: command.requestId,
+    actor: f.actors[attacker],
+  });
   await send();
   expect((await f.status(attacker)).dailySp.remaining).toBe(99);
   expect(f.calls).toHaveBeenCalledTimes(1);
@@ -24566,4 +24574,232 @@ test("運行を制限する状態は乗車時に示し、運行時にはGMを呼
     spentSp: 0,
   });
   expect(f.calls).not.toHaveBeenCalled();
+});
+
+test.each([
+  [
+    "受領した人",
+    "冷たい布で手を包んで指の痛みを和らげる",
+    "指の痛みが和らいだ",
+    "指の痛みを和らげる手当て",
+  ],
+  [
+    "通った場所",
+    "輪の門を通り反対側へ一歩踏み出す",
+    "旅人は広場の輪の門をくぐり反対側に出た",
+    "輪の門を通過する歩法",
+  ],
+  [
+    "実演した場所",
+    "作業台の石板を磨き表面を薄く削る",
+    "旅人が石板の表面を薄く削った",
+    "石板の表面を薄く削る研磨法",
+  ],
+])(
+  "本人が状態を確定した経験を技能の候補に含める（%s）",
+  async (kind, text, description, skill) => {
+    const receiving = kind === "受領した人";
+    const f = await fixture(2);
+    const [actor, peer] = f.actors as [string, string],
+      targetId = receiving ? peer : f.place;
+    if (receiving) {
+      await f.send(1, { command: "contact", targetId: actor });
+      await giveTurn(f, 0);
+    }
+    f.calls.mockImplementation(async (id) => answer(id, sure));
+    const requestId = randomUUID();
+    const state = {
+      command: "apply",
+      requestId,
+      expectedSp: 1,
+      dependencies: [],
+      action: { type: "state", targetId, text, description },
+    };
+    if (receiving) {
+      const refused = await f.send(0, { ...state, requestId: randomUUID() });
+      await f.send(1, {
+        command: "receive",
+        applicationId: refused.applicationId,
+        accept: false,
+      });
+      expect(
+        await f.store
+          .context(f.graph)
+          .relevantExperiences(actor, Number.MAX_SAFE_INTEGER, skill, [
+            targetId,
+          ]),
+      ).toHaveLength(0);
+      await giveTurn(f, 0);
+    }
+    const result = await f.send(0, state);
+    const lookup = (id: string) =>
+      f.store
+        .context(f.graph)
+        .relevantExperiences(id, Number.MAX_SAFE_INTEGER, skill, [targetId]);
+    if (receiving) {
+      expect(result.state).toBe("receiving");
+      expect(await lookup(actor)).toHaveLength(0);
+      await f.send(1, {
+        command: "receive",
+        applicationId: result.applicationId,
+        accept: true,
+      });
+    }
+    await f.send(0, state);
+    const found = await lookup(actor);
+    expect(found).toHaveLength(1);
+    expect(await lookup(peer)).toHaveLength(0);
+    const ref = found[0]!.state!.ref;
+    expect(found[0]!.state!.text).toContain(description);
+    await giveTurn(f, 0);
+    await f.move(0, f.far);
+    f.calls.mockImplementationOnce(async (id, role, messages) => {
+      expect(role).toBe("world-creation-dice");
+      const material = JSON.parse(messages[1]!.content);
+      expect(material.learningReferences).toContain(ref);
+      return answer(id, {
+        ...sure,
+        learningFactors: [{ ref, impact: "helped" }],
+      });
+    });
+    const learned = await f.send(0, {
+      command: "apply",
+      expectedSp: 1,
+      dependencies: [],
+      action: {
+        type: "generate",
+        plans: [
+          {
+            text: skill,
+            operation: {
+              type: "learn",
+              person: actor,
+              text: skill,
+              basis: "以前の実演を活かす",
+            },
+          },
+        ],
+      },
+    });
+    expect(learned.learningReasons).toEqual([
+      expect.stringContaining(description),
+    ]);
+    if (receiving) {
+      const receipt = await f.store.receipt(f.graph, requestId);
+      const state = receipt!.changes.edges.find(
+        (e) => e.stateOrigin?.requestId === requestId,
+      )!;
+      await f.view(1, state.target, []);
+      expect(await lookup(actor)).toHaveLength(0);
+    }
+  },
+);
+
+test("状態を終了した人物にだけ終了経験が残り、成立時の本文と帰属も保つ", async () => {
+  const f = await fixture(2);
+  const [actor, peer] = f.actors as [string, string];
+  f.calls.mockImplementation(async (id) => answer(id, sure));
+  const requestId = randomUUID();
+  const state = await f.send(0, {
+    command: "apply",
+    requestId,
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "state",
+      targetId: f.place,
+      text: "布の目印を結ぶ",
+      description: "布の目印が結ばれている",
+    },
+  });
+  const receipt = await f.store.receipt(f.graph, state.commitId as string);
+  const edge = receipt!.changes.edges.find(
+    (e) => e.stateOrigin?.actorId === actor,
+  )!;
+  const end = {
+    command: "apply",
+    requestId: randomUUID(),
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "state",
+      operation: "end",
+      targetId: f.place,
+      text: "布の目印をほどく",
+      endStateIds: [edge.id],
+    },
+  };
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { ...sure, endEdges: [edge.id] }),
+  );
+  await f.send(1, end);
+  await f.send(1, end);
+  const lookup = (a: string) =>
+    f.store
+      .context(f.graph)
+      .relevantExperiences(a, Number.MAX_SAFE_INTEGER, "布の目印", [f.place]);
+  expect((await lookup(actor)).map((r) => r.state?.ref)).toEqual([
+    `experience:stateStart:${edge.id}`,
+  ]);
+  expect((await lookup(peer)).map((r) => r.state?.ref)).toEqual([
+    `experience:stateEnd:${edge.id}`,
+  ]);
+});
+
+test("会話・物品の取得・不成立を状態の経験にせず、本人の成立済み実演は一度だけ数える", async () => {
+  const f = await fixture(1),
+    actor = f.actors[0]!;
+  const lookup = () =>
+    f.store
+      .context(f.graph)
+      .relevantExperiences(
+        actor,
+        Number.MAX_SAFE_INTEGER,
+        "灯具の点火と葉の手入れ",
+        [f.place],
+      );
+  await f.send(0, {
+    command: "say",
+    text: "葉は布で拭きました。次は灯具の点火を練習します。",
+  });
+  await f.apply([
+    { type: "create", holder: actor, label: "灯具", basis: "受け取った灯具" },
+  ]);
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { ...sure, successThrough: 3 }),
+  );
+  await f.send(0, {
+    command: "apply",
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "state",
+      targetId: f.place,
+      text: "葉に光を当てて傷みを取り除く",
+      description: "葉の傷みが消えている",
+    },
+  });
+  expect(await lookup()).toHaveLength(0);
+  await giveTurn(f, 0);
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, {
+      ...sure,
+      performed: "灯具の芯を調節し、炎が安定するまで点火した",
+    }),
+  );
+  const res = await f.send(0, {
+    command: "apply",
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "state",
+      targetId: actor,
+      text: "手にした灯具を点火して炎を安定させる",
+      description: "安定した炎の灯具を手にしている",
+    },
+  });
+  const found = await lookup();
+  expect(found.map((r) => r.id)).toEqual([
+    derivedId(res.commitId + ":experience"),
+  ]);
 });

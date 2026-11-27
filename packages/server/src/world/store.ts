@@ -12,6 +12,7 @@ import {
   indexSemanticExperience,
   semanticExperiences,
 } from "./judgment-semantic.js";
+import { visibleTo } from "./belongings.js";
 import { routeEndpoints } from "./locations.js";
 import {
   conditionAnchors,
@@ -258,10 +259,15 @@ const experienceToken = (text: string) =>
 const experienceTime = (at: number) => String(at).padStart(16, "0");
 const experienceWords = new Intl.Segmenter("ja", { granularity: "word" });
 // 分かち書きで複合語の区切りが揺れる場合にも、隣り合う漢字で照合する。
-function experienceTerms(text: string) {
+function experienceTerms(text: string, singleKanji = false) {
   const normalized = text.normalize("NFKC").toLowerCase();
   const terms = Array.from(experienceWords.segment(normalized))
-    .filter(({ isWordLike, segment }) => isWordLike && segment.length > 1)
+    .filter(
+      ({ isWordLike, segment }) =>
+        isWordLike &&
+        (segment.length > 1 ||
+          (singleKanji && /^\p{Script=Han}$/u.test(segment))),
+    )
     .map(({ segment }) => segment.replace(/(?<=\p{Script=Han})[ぁ-ん]+$/u, ""));
   for (const [word] of normalized.matchAll(/\p{Script=Han}{2,}/gu)) {
     const letters = Array.from(word);
@@ -297,6 +303,55 @@ function experienceReferences(
       refs.add(`series${experienceReference(node.seriesId)}`);
   }
   return [...refs];
+}
+// A status already represented by its actor's action event must not be offered twice.
+function representedStates(changes: Change) {
+  const owners = new Map(
+    changes.edges
+      .filter((e) => e.kind === "happen" && e.text === actionExperience)
+      .map((e) => [e.target, e.source]),
+  );
+  return new Map(
+    changes.edges
+      .filter(
+        (e) =>
+          e.kind === "status" && e.role === "about" && owners.has(e.target),
+      )
+      .map((e) => [e.source, owners.get(e.target)!]),
+  );
+}
+const stateExperienceKey = (actor: string) => "state-experiences:" + actor;
+function stateExperienceFields(
+  world: string,
+  actor: string,
+  at: number,
+  subject: WorldNode,
+  state: WorldNode,
+  prefix: "stateStart" | "stateEnd",
+  requestId: string,
+) {
+  if (
+    state.kind !== "script" ||
+    state.spawn ||
+    (subject.id !== actor &&
+      (!visibleTo(state, actor, true) || !visibleTo(subject, actor, true)))
+  )
+    return {};
+  const text = `${subject.text}で次の状態が${prefix === "stateStart" ? "成立" : "終了"}した。${state.text}`;
+  return {
+    [prefix + "Request"]: requestId,
+    [prefix + "Owner"]: experienceToken(world + ":" + actor),
+    [prefix + "At"]: experienceTime(at),
+    [prefix + "Terms"]: experienceTerms(
+      subject.text + " " + state.text,
+      true,
+    ).join(" "),
+    [prefix + "Refs"]: experienceReferences(
+      [subject.id],
+      new Map([[subject.id, subject]]),
+    ).join(" "),
+    [prefix + "Text"]: text,
+  };
 }
 const edgeKeys = (edge: WorldEdge) => [
   edgeKey(edge.id),
@@ -1451,54 +1506,93 @@ export class WorldContext {
     referenceIds: readonly string[] = [],
   ) {
     const terms = experienceTerms(text).slice(0, 64);
+    const stateTerms = experienceTerms(text, true).slice(0, 64);
     const ids = [...new Set(referenceIds)].filter((id) => id !== actor);
     const nodes = await this.nodes(ids, true);
     const refs = experienceReferences(ids, nodes);
-    if (!terms.length && !refs.length) return [];
+    if (!terms.length && !stateTerms.length && !refs.length) return [];
     const owner = experienceToken(`${this.worldId}:${actor}`);
-    const scope = `+experienceOwner:${owner} +experienceAt:[0000000000000000 TO ${experienceTime(through)}]`;
-    const searches = [
-      ...(refs.length
-        ? [
+    const searches = ["experience", "stateStart", "stateEnd"].flatMap(
+      (prefix) => {
+        const scope = `+${prefix}Owner:${owner} +${prefix}At:[0000000000000000 TO ${experienceTime(through)}]`;
+        return (
+          [
+            ["Refs", refs],
+            ["Terms", prefix === "experience" ? terms : stateTerms],
+          ] as const
+        ).flatMap(([field, tokens]) => {
+          if (!tokens.length) return [];
+          const index =
+            prefix === "experience"
+              ? field === "Refs"
+                ? "WorldEdge_happen_experience_refs"
+                : "WorldEdge_happen_experience_search"
+              : "WorldEdge_status_experience";
+          return [
             {
-              index: "WorldEdge_happen_experience_refs",
-              query: `${scope} +experienceRefs:(${refs.join(" OR ")})`,
+              index,
+              prefix,
+              query: `${scope} +${prefix}${field}:(${tokens.join(" OR ")})`,
             },
-          ]
-        : []),
-      ...(terms.length
-        ? [
-            {
-              index: "WorldEdge_happen_experience_search",
-              query: `${scope} +experienceTerms:(${terms.join(" OR ")})`,
-            },
-          ]
-        : []),
-    ];
-    return this.#read(relationKey(actor, "happen", "out"), async (tx) => {
-      const result = await tx.run(
-        `UNWIND $searches AS search
+          ];
+        });
+      },
+    );
+    const matches = await this.#readMany(
+      [relationKey(actor, "happen", "out"), stateExperienceKey(actor)],
+      async (tx) => {
+        const result = await tx.run(
+          `UNWIND $searches AS search
          CALL db.index.fulltext.queryRelationships(search.index, search.query, {limit: 8})
          YIELD relationship
-         RETURN DISTINCT endNode(relationship).id AS id, relationship.experienceRefs AS refs`,
-        { searches },
-      );
-      return result.records.map((row) => {
-        const indexed = new Set((row.get("refs") as string | null)?.split(" "));
-        const sharedReferences = ids.flatMap((id) => {
-          const [identity, series] = experienceReferences([id], nodes);
-          const match = indexed.has(identity!)
-            ? "sameId"
-            : series && indexed.has(series)
-              ? "sameSeries"
-              : undefined;
-          return match
-            ? [{ id, match, label: nodes.get(id)?.text.slice(0, 120) }]
-            : [];
+         RETURN DISTINCT endNode(relationship).id AS id, relationship[search.prefix+'Refs'] AS refs,
+           CASE WHEN search.prefix <> 'experience' THEN {ref:'experience:'+search.prefix+':'+relationship.id,
+             text:relationship[search.prefix+'Text'],requestId:relationship[search.prefix+'Request'],subjectId:startNode(relationship).id} END AS state`,
+          { searches },
+        );
+        return result.records.map((row) => {
+          const indexed = new Set(
+            (row.get("refs") as string | null)?.split(" "),
+          );
+          const sharedReferences = ids.flatMap((id) => {
+            const [identity, series] = experienceReferences([id], nodes);
+            const match = indexed.has(identity!)
+              ? "sameId"
+              : series && indexed.has(series)
+                ? "sameSeries"
+                : undefined;
+            return match
+              ? [{ id, match, label: nodes.get(id)?.text.slice(0, 120) }]
+              : [];
+          });
+          return {
+            id: row.get("id") as string,
+            sharedReferences,
+            ...(row.get("state")
+              ? {
+                  state: row.get("state") as {
+                    ref: string;
+                    text: string;
+                    requestId: string;
+                    subjectId: string;
+                  },
+                }
+              : {}),
+          };
         });
-        return { id: row.get("id") as string, sharedReferences };
-      });
-    });
+      },
+    );
+    const subjects = await this.nodes(
+      matches.flatMap((m) => (m.state ? [m.id, m.state.subjectId] : [])),
+      true,
+    );
+    return matches.filter(
+      (m) =>
+        !m.state ||
+        m.state.subjectId === actor ||
+        (visibleTo(subjects.get(m.id), actor, true) &&
+          visibleTo(subjects.get(m.state.subjectId), actor, true)),
+    );
   }
 
   async supplementalExperiences(actor: string, at: number, texts: string[][]) {
@@ -1790,11 +1884,15 @@ export class WorldStore {
         `CREATE INDEX IF NOT EXISTS FOR ()-[r:status]-() ON (r.worldId,r.${subject},r.restrictionUntil)`,
       );
     }
+    await this.driver.executeQuery(
+      "CREATE FULLTEXT INDEX WorldEdge_status_experience IF NOT EXISTS FOR ()-[r:status]-() ON EACH [r.stateStartOwner,r.stateStartAt,r.stateStartRefs,r.stateStartTerms,r.stateEndOwner,r.stateEndAt,r.stateEndRefs,r.stateEndTerms]",
+    );
     if (semanticConfig()) await setupSemantic(this.driver);
     // 同名確認は索引を指定して引くので、作成中の索引を使わせない。
     await this.driver.executeQuery("CALL db.awaitIndexes(300)");
     await this.#replaceExperienceIndex();
     await this.#indexExperienceTargets();
+    await this.#indexStateOrigins();
     // ADR-072: 物品を持つ関係は役割なしのhas。旧版が役割holdで記録した関係を書き換える。
     await this.driver.executeQuery(
       `MATCH ()-[r:has {role:'hold'}]->() SET r.role = null, r.data = replace(r.data, ',"role":"hold"', '')`,
@@ -1864,6 +1962,111 @@ export class WorldStore {
     }
   }
 
+  // Resume the one-time scan at the indexed (world, edge) key. Older closures
+  // do not identify their author; only backfill the creation documented by its receipt.
+  async #indexStateOrigins() {
+    const cursorWorld = "00000000-0000-0000-0000-000000000000",
+      key = "migration:state-experiences";
+    const session = this.driver.session();
+    try {
+      for (;;) {
+        const done = await session.executeWrite(async (tx) => {
+          if ((await lock(tx, cursorWorld, key)) > 0) return true;
+          const cursor = (
+            await tx.run(
+              "MATCH (g:WorldGuard {worldId:$cursorWorld,key:$key}) RETURN coalesce(g.world,'') AS world,coalesce(g.edge,'') AS edge",
+              { cursorWorld, key },
+            )
+          ).records[0]!;
+          let world = cursor.get("world") as string;
+          const edge = cursor.get("edge") as string;
+          if (!edge) {
+            const next = await tx.run(
+              "MATCH ()-[r:status]->() WHERE r.worldId>$world AND r.id IS NOT NULL RETURN r.worldId AS world ORDER BY r.worldId,r.id LIMIT 1",
+              { world },
+            );
+            world = next.records[0]?.get("world") ?? "";
+          }
+          let last = "";
+          if (world) {
+            const page = await tx.run(
+              `MATCH (s)-[r:status {worldId:$world}]->() WHERE r.id>$edge
+              WITH r,s ORDER BY r.id LIMIT 128 RETURN r.id AS id,r.data AS data,s.data AS subject,r.stateStartOwner AS indexed ORDER BY id`,
+              { world, edge },
+            );
+            last =
+              page.records.length === 128 ? page.records.at(-1)!.get("id") : "";
+            const pending = page.records.flatMap((row) => {
+              const state = WorldEdge.parse(JSON.parse(row.get("data")));
+              return state.stateOrigin && !row.get("indexed")
+                ? [
+                    {
+                      id: state.id,
+                      node: state.target,
+                      request: state.stateOrigin.requestId,
+                      actor: state.stateOrigin.actorId,
+                      subject: JSON.parse(row.get("subject")) as WorldNode,
+                    },
+                  ]
+                : [];
+            });
+            if (pending.length) {
+              const receipts = await tx.run(
+                "UNWIND $ids AS id MATCH(r:WorldReceipt {worldId:$world,commitId:id}) RETURN id,r.data AS data",
+                { world, ids: [...new Set(pending.map((v) => v.request))] },
+              );
+              const byId = new Map(
+                receipts.records.map((r) => [
+                  r.get("id"),
+                  JSON.parse(r.get("data")) as Receipt,
+                ]),
+              );
+              const updates = pending.flatMap((v) => {
+                const rec = byId.get(v.request);
+                const state = rec?.changes.nodes.find((n) => n.id === v.node);
+                if (
+                  !rec ||
+                  !state ||
+                  representedStates(rec.changes).get(v.node) === v.actor
+                )
+                  return [];
+                return [
+                  {
+                    id: v.id,
+                    actor: v.actor,
+                    fields: stateExperienceFields(
+                      world,
+                      v.actor,
+                      rec.at,
+                      v.subject,
+                      state,
+                      "stateStart",
+                      v.request,
+                    ),
+                  },
+                ];
+              });
+              if (updates.length)
+                await tx.run(
+                  `UNWIND $updates AS v MATCH ()-[r:status {worldId:$world,id:v.id}]->() SET r += v.fields
+                   WITH DISTINCT v.actor AS actor ORDER BY actor
+                   MERGE (g:WorldGuard {worldId:$world,key:'state-experiences:'+actor}) SET g.version=coalesce(g.version,0)+1`,
+                  { world, updates },
+                );
+            }
+          }
+          await tx.run(
+            "MATCH(g:WorldGuard {worldId:$cursorWorld,key:$key}) SET g.world=$world,g.edge=$last,g.version=$version",
+            { cursorWorld, key, world, last, version: world ? 0 : 1 },
+          );
+          return !world;
+        });
+        if (done) return;
+      }
+    } finally {
+      await session.close();
+    }
+  }
   async #indexExperienceTargets() {
     const worldId = "00000000-0000-0000-0000-000000000000";
     const key = "migration:experience-targets";
@@ -2677,6 +2880,7 @@ export class WorldStore {
       instantProfileSnapshot?: boolean;
       spUseProhibitionGrants?: string[];
       respawnHomeActor?: string;
+      stateEnd?: { actorId: string; ids: string[] };
       experienceReferences?: { eventId: string; ids: string[] }[];
     },
     fromBelongingOperations = false,
@@ -2702,6 +2906,9 @@ export class WorldStore {
         instantProfileSnapshot: z.boolean().optional(),
         spUseProhibitionGrants: z.array(z.uuid()).optional(),
         respawnHomeActor: z.uuid().optional(),
+        stateEnd: z
+          .object({ actorId: z.uuid(), ids: z.array(z.uuid()) })
+          .optional(),
         experienceReferences: z
           .array(
             z.strictObject({
@@ -2807,6 +3014,7 @@ export class WorldStore {
               ? { storageEffect: parsed.storageEffect }
               : {}),
             ...(parsed.management ? { management: parsed.management } : {}),
+            ...(parsed.stateEnd ? { stateEnd: parsed.stateEnd } : {}),
             ...(parsed.experienceReferences?.length
               ? { experienceReferences: parsed.experienceReferences }
               : {}),
@@ -3082,6 +3290,27 @@ export class WorldStore {
         const reservedItems = [...releasing, ...additions.map((a) => a.itemId)];
         if (releasing.length !== (reservations?.release.length ?? 0))
           throw new WorldConflict("取り置きはすでに解放されています");
+        const endIds = new Set(parsed.stateEnd?.ids);
+        const endedStates = ended.filter(
+          (e) =>
+            endIds.has(e.id) && e.kind === "status" && e.role === "content",
+        );
+        const represented = representedStates(changes);
+        const endEvents = new Set(
+          changes.edges
+            .filter(
+              (e) =>
+                e.kind === "happen" &&
+                e.source === parsed.stateEnd?.actorId &&
+                e.text === actionExperience,
+            )
+            .map((e) => e.target),
+        );
+        const endedByEvent = new Set(
+          changes.edges
+            .filter((e) => e.kind === "effect" && endEvents.has(e.source))
+            .map((e) => e.target),
+        );
         const touched = new Set([
           ...changedHolderKeys,
           ...(parsed.storageEffect?.type === "install" ||
@@ -3091,6 +3320,12 @@ export class WorldStore {
           ...reservedItems.map((id) => relationKey(id, "has", "in")),
           ...changes.nodes.map((node) => nodeKey(node.id)),
           ...changes.revisions.map((node) => nodeKey(node.id)),
+          ...changes.edges.flatMap((e) =>
+            e.stateOrigin ? [stateExperienceKey(e.stateOrigin.actorId)] : [],
+          ),
+          ...(endedStates.length && parsed.stateEnd
+            ? [stateExperienceKey(parsed.stateEnd.actorId)]
+            : []),
           ...changes.edges.flatMap(edgeKeys),
           ...ended.flatMap(edgeKeys),
           ...[...summaries.values()].flatMap(({ edge }) => [
@@ -3378,7 +3613,7 @@ export class WorldStore {
           tx.run(
             `MATCH (s:WorldNode {worldId: $worldId, id: $source}), (t:WorldNode {worldId: $worldId, id: $target})
             CREATE (s)-[r:${edge.kind} {worldId: $worldId, id: $id, data: $data, validFrom: $from}]->(t)
-            ${edge.kind === "happen" && edge.text === actionExperience ? "SET r += $experience" : ""}
+            ${(edge.kind === "happen" && edge.text === actionExperience) || edge.stateOrigin ? "SET r += $experience" : ""}
             SET r.validTo = $until, r.role = $role${edge.kind === "has" ? ", r.judgmentLong=$long,r.judgmentSourceHash=$hash,r.judgmentAvailableAt=$available" : ""}${isSpUseProhibition(edge) ? ", r.spSubject = $source, t.spUseProhibition = true" : ""}${requiredSubject ? ", r.requiredSubject = $requiredSubject, r.requiredUntil = $restrictionUntil" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $restrictionUntil" + edge.commandRestrictions.map((command) => `, r.${restrictionSubject[command]} = $source`).join("") : ""}`,
             {
               worldId,
@@ -3407,7 +3642,18 @@ export class WorldStore {
                         nodes,
                       ).join(" "),
                     }
-                  : {},
+                  : edge.stateOrigin &&
+                      represented.get(edge.target) !== edge.stateOrigin.actorId
+                    ? stateExperienceFields(
+                        worldId,
+                        edge.stateOrigin.actorId,
+                        at,
+                        nodes.get(edge.source)!,
+                        nodes.get(edge.target)!,
+                        "stateStart",
+                        edge.stateOrigin.requestId,
+                      )
+                    : {},
               requiredSubject: requiredSubject ?? null,
               ...excerptProperties(
                 edge.kind === "has" && (!edge.role || edge.role === "skill")
@@ -3455,6 +3701,7 @@ export class WorldStore {
         const endpointIds = [
           ...new Set([
             ...(parsed.experienceReferences ?? []).flatMap(({ ids }) => ids),
+            ...endedStates.flatMap((e) => [e.source, e.target]),
             ...changes.edges.flatMap((edge) => [
               edge.source,
               edge.target,
@@ -3486,13 +3733,40 @@ export class WorldStore {
           );
         }
         for (const edge of ended) {
+          const endOrigin =
+            endIds.has(edge.id) &&
+            edge.kind === "status" &&
+            edge.role === "content"
+              ? parsed.stateEnd
+              : undefined;
           const data = JSON.stringify({
             ...edge,
             period: { ...edge.period, until: at },
           });
           await tx.run(
-            `MATCH ()-[r:${edge.kind} {worldId: $worldId, id: $id}]->() SET r.validTo = $at, r.data = $data${edge.kind === "required" ? ", r.requiredUntil = $at" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $at" : ""}`,
-            { worldId, id: edge.id, at, data },
+            `MATCH ()-[r:${edge.kind} {worldId: $worldId, id: $id}]->() SET r.validTo = $at, r.data = $data${endOrigin ? ", r += $endExperience" : ""}${edge.kind === "required" ? ", r.requiredUntil = $at" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $at" : ""}`,
+            {
+              worldId,
+              id: edge.id,
+              at,
+              data,
+              endExperience: endOrigin
+                ? {
+                    stateEndActorId: endOrigin.actorId,
+                    stateEndRequest: commitId,
+                    ...(!endedByEvent.has(edge.source) &&
+                      stateExperienceFields(
+                        worldId,
+                        endOrigin.actorId,
+                        at,
+                        nodes.get(edge.source)!,
+                        nodes.get(edge.target)!,
+                        "stateEnd",
+                        commitId,
+                      )),
+                  }
+                : {},
+            },
           );
         }
         if (inventory) {
