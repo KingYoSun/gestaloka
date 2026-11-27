@@ -1060,10 +1060,21 @@ const itemGeneration = (operations: BelongingOp[] | undefined) =>
     (op) =>
       op.type === "create" || (op.type === "update" && op.count !== undefined),
   );
-type CreationAttempt = { scope: string; text: string; facts: unknown[] };
-type FailedCreation = Pick<CreationRoll, "setting" | "roll"> & {
-  factors: Partial<Pick<CreationRoll, FactorField>> | null;
+type CreationHistory = {
+  recentAttempts: Record<string, Pick<LearningAttempt, "action" | "success">[]>;
+  failureId?: string;
+};
+const attemptAction = (text: string) =>
+  text.length > 400 ? text.slice(0, 400) + "…" : text;
+type CreationAttempt = {
+  scope: string;
   text: string;
+  facts: unknown[];
+  history?: CreationHistory;
+};
+type FailedCreation = Pick<CreationRoll, "setting" | "roll"> & {
+  text: string;
+  factors: Partial<Pick<CreationRoll, FactorField>> | null;
   facts: unknown[];
 };
 // 判定で付いた状態の関係の印。死亡の確定で終える対象になる。
@@ -7820,6 +7831,7 @@ export class BotPlay {
     actor: string,
     requestId: string,
     attempt: CreationAttempt,
+    latestAttemptId: string | undefined,
     factorField: FactorField,
   ): Promise<CreationRoll | undefined> {
     const { scope, text, facts } = attempt;
@@ -7836,9 +7848,10 @@ export class BotPlay {
       ).rows[0];
     let previous = await find(key);
     if (!previous && model.decision) {
-      const { rows } = await this.pool.query<
-        Pick<FailedCreation, "text"> & { text_key: string }
-      >(
+      const { rows } = await this.pool.query<{
+        text: string;
+        text_key: string;
+      }>(
         `SELECT text,text_key FROM bot_creation_failure
          WHERE world_id=$1 AND actor_id=$2 AND scope=$3
          ORDER BY recorded_at DESC LIMIT ${historyLimit}`,
@@ -7853,39 +7866,42 @@ export class BotPlay {
       if (index !== undefined) previous = await find(rows[index]!.text_key);
     }
     if (!previous) return;
-    const before = new Map(
-      previous.facts.map((fact) => [canonical(fact), fact]),
+    // 判定資料の並びやJSONのキー順は、試みの条件を変えない。
+    const before = new Set(previous.facts.map(canonical));
+    const after = new Set(facts.map(canonical));
+    const current = attempt.history?.recentAttempts;
+    const saved = previous.facts.find(
+      (fact): fact is CreationHistory =>
+        !!fact && typeof fact === "object" && "recentAttempts" in fact,
     );
-    const after = new Map(facts.map((fact) => [canonical(fact), fact]));
-    const removed = [...before]
-      .filter(([key]) => !after.has(key))
-      .map(([, value]) => value);
-    const added = [...after]
-      .filter(([key]) => !before.has(key))
-      .map(([, value]) => value);
-    if (removed.length || added.length) {
-      if (!model.decision) return;
-      const state = { previous: previous.text, current: text, removed, added };
-      const answers = await model
-        .decide(
-          derivedId(`${requestId}:repeat-conditions:${canonical(state)}`),
-          "world-creation-repeat-conditions",
-          state,
-          {
-            changed: {
-              instructions:
-                "同じ結果を求める二つの試みで、成否に影響しうる条件が実際に変わったか。addedとremovedは今回と前回の判定資料の差。資料が選ばれなかっただけで事実が消えたとは判断しない。現物の変更、利用できる道具や手段、成立した経験や周囲の状況の変化を、今回の試みにどう作用するかで判断する。手番、書き方、裏付けのない自己申告、無関係な行動や資料の差は変化としない。",
-              criteria: {
-                true: "今回の成否に影響しうる、裏付けのある条件の変化",
-                false: "成否に関わる条件は同じ、または変化の根拠がない",
-              },
-            },
-          },
-        )
-        .catch(() => undefined);
-      if (!answers || (answers.changed ?? 0) >= model.decision.repeatThreshold)
-        return;
+    if (!!saved !== !!current) return;
+    if (saved && current) {
+      before.delete(canonical(saved));
+      if (canonical(saved.recentAttempts) !== canonical(current)) {
+        const visible = current[actor] ?? [];
+        const last = visible[0];
+        // 旧記録には抽選の識別子がないため、そのときの申請文と照合する。
+        const sameRoll = saved.failureId
+          ? saved.failureId === latestAttemptId
+          : last?.action.normalize("NFKC").trim() ===
+            attemptAction(previous.text);
+        if (!sameRoll || !last || last.success) return;
+        // この失敗を先頭に加えた場合の履歴と比較し、件数上限で押し出される末尾も考慮する。
+        const expected = {
+          ...saved.recentAttempts,
+          [actor]: [last, ...(saved.recentAttempts[actor] ?? [])].slice(
+            0,
+            visible.length,
+          ),
+        };
+        if (canonical(expected) !== canonical(current)) return;
+      }
     }
+    if (
+      before.size !== after.size ||
+      [...after].some((fact) => !before.has(fact))
+    )
+      return;
     const factors = previous.factors?.[factorField];
     return {
       setting: previous.setting,
@@ -8175,7 +8191,7 @@ export class BotPlay {
         await Promise.all(
           learners.map(async (person) => {
             const entries = await this.#recentWitnessedEntries(world, person);
-            const attempts = entries.flatMap((e): LearningAttempt[] => {
+            const attempts = entries.flatMap((e) => {
               if (e.actorId !== person) return [];
               const { outcome, commitId } =
                 (e.result as {
@@ -8202,11 +8218,11 @@ export class BotPlay {
                   return [];
                 return [
                   {
-                    action:
-                      p.text.length > 400 ? p.text.slice(0, 400) + "…" : p.text,
+                    action: attemptAction(p.text),
                     success: p.success,
                     commitId,
                     proposalIndex: index,
+                    origin: `${e.requestId ?? commitId}:${index ?? 0}`,
                   },
                 ];
               });
@@ -8215,6 +8231,15 @@ export class BotPlay {
           }),
         ),
       );
+      const recentAttempts = (people: string[]) =>
+        Object.fromEntries(
+          people.map((person) => [
+            person,
+            experience
+              .get(person)!
+              .map(({ action, success }) => ({ action, success })),
+          ]),
+        );
       const reviews = fresh.flatMap((p) =>
         p.statusReview ? [p.statusReview] : [],
       );
@@ -8368,6 +8393,9 @@ export class BotPlay {
         { indexes: number[]; nodes: typeof nodes; filtered: boolean }
       >();
       const policy = await readDicePolicy(this.pool, world);
+      const storageReference = targets.some((ids) => ids.length)
+        ? (await context.inventoryLimits()).storageSlots
+        : undefined;
       const locations = await currentPlaces();
       for (const [i, packet] of packets.entries()) {
         if (!packet) {
@@ -8402,6 +8430,9 @@ export class BotPlay {
               waitMinutes,
               previousState,
               policy,
+              storageReference: targets[i]!.length
+                ? storageReference
+                : undefined,
             },
             ...stripJudgmentPreview(packet),
             ...judgmentConsumables(
@@ -8412,6 +8443,12 @@ export class BotPlay {
             ...(confirmed ? [{ confirmed }] : []),
             ...(geography ? [geography] : []),
           ],
+          ...(material[i]!.learning?.length && {
+            history: {
+              recentAttempts: recentAttempts(learnersOf([material[i]!])),
+              failureId: `${requestId}:${proposal.index}`,
+            },
+          }),
         };
         attempts.set(proposal.index, attempt);
         const prior = await ExecutionBudget.withCallReserve(fresh.length, () =>
@@ -8420,6 +8457,7 @@ export class BotPlay {
             actor,
             keys[proposal.index]!,
             attempt,
+            experience.get(actor)?.[0]?.origin,
             factorField(proposal.operations),
           ),
         );
@@ -8516,9 +8554,6 @@ export class BotPlay {
             : creationDice;
       const decides =
         !explore && (!batch || splitMode === "update") && !waitMinutes;
-      const storageReference = targets.some((ids) => ids.length)
-        ? (await context.inventoryLimits()).storageSlots
-        : undefined;
       const named: string[] = [];
       for (const group of groups.values()) {
         const { indexes, nodes: selectedNodes } = group;
@@ -8772,17 +8807,7 @@ export class BotPlay {
                         ...(selectedLearners.length
                           ? {
                               skillCriteria: policy.skill,
-                              recentAttempts: Object.fromEntries(
-                                selectedLearners.map((person) => [
-                                  person,
-                                  experience
-                                    .get(person)
-                                    ?.map(({ action, success }) => ({
-                                      action,
-                                      success,
-                                    })),
-                                ]),
-                              ),
+                              recentAttempts: recentAttempts(selectedLearners),
                             }
                           : {}),
                         ...(confirmed ? { confirmed } : {}),
@@ -9028,7 +9053,11 @@ export class BotPlay {
               attempt.scope,
               key,
               attempt.text,
-              JSON.stringify(attempt.facts),
+              JSON.stringify(
+                attempt.history
+                  ? [...attempt.facts, attempt.history]
+                  : attempt.facts,
+              ),
               rolled.setting,
               rolled.roll,
               factors ? JSON.stringify(factors) : null,
