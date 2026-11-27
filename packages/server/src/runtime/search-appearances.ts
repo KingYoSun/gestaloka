@@ -4,6 +4,7 @@ import type {
   Appearance,
   Change,
   ExchangeOffer,
+  InstantProfile,
   WorldEdge,
   WorldNode,
 } from "@gestaloka/contracts";
@@ -19,6 +20,72 @@ import { commitPlayChange, directChangeScope } from "./play-change-scope.js";
 const latest = Number.MAX_SAFE_INTEGER;
 const about = (edge: WorldEdge, text: string) =>
   edge.role === "about" && edge.text === text;
+const profileId = (group: string) => derivedId(group + ":profile");
+const profileItemId = (group: string, index: number) =>
+  derivedId(group + ":profile-item:" + index);
+
+export async function instantProfile(
+  ctx: WorldContext,
+  group: string,
+): Promise<InstantProfile | undefined> {
+  const node = await ctx.node(profileId(group));
+  return node?.kind === "script" ? node.instantProfile : undefined;
+}
+
+function recordProfile(
+  changes: Change,
+  group: Appearance,
+  profile: InstantProfile,
+  at: number,
+) {
+  const { id, species } = group;
+  changes.nodes.push(
+    { id, kind: "existence", text: species },
+    {
+      id: profileId(id),
+      kind: "script",
+      text: species + "の出現時の設定",
+      instantProfile: profile,
+      viewers: [],
+    },
+  );
+  const link = (
+    kind: "has" | "status",
+    target: string,
+    role?: "skill" | "content",
+  ) =>
+    changes.edges.push({
+      id: derivedId(id + ":" + target),
+      kind,
+      source: id,
+      target,
+      ...(role ? { role } : {}),
+      period: { from: at },
+    });
+  for (const [index, item] of profile.items.entries()) {
+    const { label, count, seriesId, unitsPerSlot } = item;
+    const target = profileItemId(id, index);
+    changes.nodes.push({
+      id: target,
+      kind: "existence",
+      text: label,
+      count,
+      seriesId,
+      unitsPerSlot,
+    });
+    link("has", target);
+  }
+  for (const [index, skill] of profile.skills.entries()) {
+    const target = derivedId(id + ":profile-skill:" + index);
+    changes.nodes.push({ id: target, kind: "script", ...skill });
+    link("has", target, "skill");
+  }
+  for (const [index, text] of profile.states.entries()) {
+    const target = derivedId(id + ":profile-state:" + index);
+    changes.nodes.push({ id: target, kind: "script", text, viewers: [] });
+    link("status", target, "content");
+  }
+}
 
 // Only references exposed in the search result are hits. Neither free text nor
 // internal dependency/version keys identify a node the player discovered.
@@ -224,9 +291,34 @@ export function deathDrops(
 export async function instantTrades(
   ctx: WorldContext,
   sellers: { actorId: string; ruleId?: string }[],
+  retryOfferId?: string,
 ) {
   const offers: z.infer<typeof ExchangeOffer>[] = [];
-  for (const { actorId, ruleId } of sellers)
+  for (const { actorId, ruleId } of sellers) {
+    const profile = await instantProfile(ctx, actorId);
+    for (const [index, item] of (profile?.items ?? []).entries()) {
+      if (!item.price) continue;
+      const itemId = profileItemId(actorId, index);
+      const id = derivedId("stock-trade:" + itemId);
+      if (
+        id !== retryOfferId &&
+        (await ctx.holding(itemId))?.source !== actorId
+      )
+        continue;
+      offers.push({
+        id,
+        itemId,
+        sellerId: actorId,
+        storageId: actorId,
+        itemLabel: item.label,
+        count: 1,
+        paymentSeriesId: item.price.seriesId,
+        paymentLabel: item.price.label,
+        paymentCount: item.price.count,
+        text:
+          item.label + "を" + item.price.count + item.price.label + "で譲る",
+      });
+    }
     for (const edge of ruleId
       ? await ctx.relations(ruleId, "status", "in", latest)
       : []) {
@@ -251,6 +343,7 @@ export async function instantTrades(
         text: node.text.trim() || itemLabel,
       });
     }
+  }
   return offers;
 }
 
@@ -317,6 +410,7 @@ export async function searchAppearances(
   const places = await directPlaces(ctx, actor);
   const appearances: Appearance[] = [];
   const descriptions: string[] = [];
+  const changes: Change = { nodes: [], edges: [], endEdges: [], revisions: [] };
   let nearby: typeof present | undefined;
   for (const ruleId of rules) {
     const node = await ctx.node(ruleId);
@@ -362,13 +456,32 @@ export async function searchAppearances(
     if (rule.kind === "instant-npc") {
       const appearance = spawned[0]!;
       appearance.ruleId = ruleId;
+      let joined = false;
       for (const group of nearby!) {
         if (group.ruleId !== ruleId) continue;
         // 一団から意図的に分けた個体には、後から現れた個体を加えない。
         const origin = await ctx.node(group.sourceEventId);
         if (origin?.kind !== "event" || origin.instantReduction) continue;
         appearance.id = group.id;
+        joined = true;
         break;
+      }
+      if (!joined) {
+        const ids = [
+          ...new Set(
+            conditions
+              .filter((edge) => about(edge, "spawn-profile"))
+              .map((edge) => edge.target),
+          ),
+        ];
+        while (ids.length) {
+          const [id] = ids.splice(randomInt(ids.length), 1);
+          const candidate = await ctx.node(id!);
+          if (candidate?.kind !== "script" || !candidate.instantProfile)
+            continue;
+          recordProfile(changes, appearance, candidate.instantProfile, at);
+          break;
+        }
       }
     }
     appearances.push(...spawned);
@@ -394,7 +507,6 @@ export async function searchAppearances(
     await ctx.validate();
     return;
   }
-  const changes: Change = { nodes: [], edges: [], endEdges: [], revisions: [] };
   const event = derivedId(request + ":appearance");
   const text = [appearanceAnnouncement(appearances), ...descriptions].join(
     "\n\n",
@@ -416,8 +528,9 @@ export async function searchAppearances(
     store,
     await store.claim(ctx.worldId, request),
     ctx,
-    { commitId: request, at, changes },
+    { commitId: request, at, changes, instantProfileSnapshot: true },
     scope,
+    true,
   );
   return appearanceResult(appearances, text);
 }

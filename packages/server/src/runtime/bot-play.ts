@@ -110,6 +110,7 @@ import {
   deathDrops,
   deathDropRules,
   recordAppearances,
+  instantProfile,
   instantTrades,
   searchAppearances,
 } from "./search-appearances.js";
@@ -3086,6 +3087,7 @@ export class BotPlay {
                 name: victim.name,
                 description: victim.description,
                 count: victim.count,
+                ...(await this.#instantMaterials(context, effect.targetId)),
               },
               ...facts,
             ]
@@ -3128,6 +3130,7 @@ export class BotPlay {
                 name: npc.name,
                 description: npc.description,
                 count: npc.count,
+                ...(await this.#instantMaterials(context, actorId)),
               }
             : actorId,
           action.text,
@@ -3477,6 +3480,18 @@ export class BotPlay {
     );
   }
 
+  async #instantMaterials(context: WorldContext, actor: string) {
+    if (!(await instantProfile(context, actor))) return {};
+    const [belongings, states] = await Promise.all([
+      readBelongings(context, actor, latest, undefined, false),
+      this.#states(context, actor),
+    ]);
+    return {
+      belongings,
+      states: states.map(({ node }) => node?.text).filter(Boolean),
+    };
+  }
+
   async #chooseInstantAction(
     session: Session,
     request: string,
@@ -3526,7 +3541,7 @@ export class BotPlay {
         {
           role: "user",
           content: JSON.stringify({
-            npc,
+            npc: { ...npc, ...(await this.#instantMaterials(context, actor)) },
             trades: (
               await instantTrades(context, [{ ...npc, actorId: actor }])
             ).map(({ itemLabel, count, paymentLabel, paymentCount, text }) => ({
@@ -6290,6 +6305,7 @@ export class BotPlay {
     session: Session | undefined,
     actor: string,
     db: Db = this.pool,
+    retryOfferId?: string,
   ) {
     const places = await this.#places(context, actor, db);
     return instantTrades(
@@ -6299,6 +6315,7 @@ export class BotPlay {
           ? [{ ...m.instant, actorId: m.actorId }]
           : [],
       ),
+      retryOfferId,
     );
   }
   async #places(
@@ -15008,7 +15025,13 @@ export class BotPlay {
                 input.offerId,
                 input.paymentItemId,
                 (
-                  await this.#trades(this.store.context(w.id), session, actor)
+                  await this.#trades(
+                    this.store.context(w.id),
+                    session,
+                    actor,
+                    db,
+                    input.offerId,
+                  )
                 ).find((trade) => trade.id === input.offerId),
               );
               result = exchange;

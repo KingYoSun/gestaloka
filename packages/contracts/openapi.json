@@ -16158,6 +16158,124 @@
                                               "place-series"
                                             ]
                                           },
+                                          "instantProfile": {
+                                            "type": "object",
+                                            "properties": {
+                                              "items": {
+                                                "maxItems": 6,
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "label": {
+                                                      "type": "string",
+                                                      "minLength": 1,
+                                                      "maxLength": 400
+                                                    },
+                                                    "count": {
+                                                      "type": "integer",
+                                                      "minimum": 0,
+                                                      "exclusiveMinimum": true,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "seriesId": {
+                                                      "type": "string",
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                    },
+                                                    "unitsPerSlot": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "integer",
+                                                          "minimum": 0,
+                                                          "exclusiveMinimum": true,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "unlimited"
+                                                          ]
+                                                        }
+                                                      ]
+                                                    },
+                                                    "price": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "seriesId": {
+                                                          "type": "string",
+                                                          "format": "uuid",
+                                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                        },
+                                                        "label": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": 0,
+                                                          "exclusiveMinimum": true,
+                                                          "maximum": 9007199254740991
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "seriesId",
+                                                        "label",
+                                                        "count"
+                                                      ],
+                                                      "additionalProperties": false
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "label",
+                                                    "count"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              },
+                                              "skills": {
+                                                "minItems": 1,
+                                                "maxItems": 3,
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "name": {
+                                                      "type": "string",
+                                                      "minLength": 1,
+                                                      "maxLength": 400
+                                                    },
+                                                    "text": {
+                                                      "type": "string",
+                                                      "minLength": 1,
+                                                      "maxLength": 400
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "name",
+                                                    "text"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              },
+                                              "states": {
+                                                "minItems": 1,
+                                                "maxItems": 3,
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 400
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "items",
+                                              "skills",
+                                              "states"
+                                            ],
+                                            "additionalProperties": false
+                                          },
                                           "drawTable": {
                                             "type": "object",
                                             "properties": {
@@ -16863,6 +16981,124 @@
                                               "draw-source",
                                               "place-series"
                                             ]
+                                          },
+                                          "instantProfile": {
+                                            "type": "object",
+                                            "properties": {
+                                              "items": {
+                                                "maxItems": 6,
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "label": {
+                                                      "type": "string",
+                                                      "minLength": 1,
+                                                      "maxLength": 400
+                                                    },
+                                                    "count": {
+                                                      "type": "integer",
+                                                      "minimum": 0,
+                                                      "exclusiveMinimum": true,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "seriesId": {
+                                                      "type": "string",
+                                                      "format": "uuid",
+                                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                    },
+                                                    "unitsPerSlot": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "integer",
+                                                          "minimum": 0,
+                                                          "exclusiveMinimum": true,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "unlimited"
+                                                          ]
+                                                        }
+                                                      ]
+                                                    },
+                                                    "price": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "seriesId": {
+                                                          "type": "string",
+                                                          "format": "uuid",
+                                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                        },
+                                                        "label": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": 0,
+                                                          "exclusiveMinimum": true,
+                                                          "maximum": 9007199254740991
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "seriesId",
+                                                        "label",
+                                                        "count"
+                                                      ],
+                                                      "additionalProperties": false
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "label",
+                                                    "count"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              },
+                                              "skills": {
+                                                "minItems": 1,
+                                                "maxItems": 3,
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "name": {
+                                                      "type": "string",
+                                                      "minLength": 1,
+                                                      "maxLength": 400
+                                                    },
+                                                    "text": {
+                                                      "type": "string",
+                                                      "minLength": 1,
+                                                      "maxLength": 400
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "name",
+                                                    "text"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              },
+                                              "states": {
+                                                "minItems": 1,
+                                                "maxItems": 3,
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 400
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "items",
+                                              "skills",
+                                              "states"
+                                            ],
+                                            "additionalProperties": false
                                           },
                                           "drawTable": {
                                             "type": "object",
@@ -25167,6 +25403,124 @@
                                             "place-series"
                                           ]
                                         },
+                                        "instantProfile": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "maxItems": 6,
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "label": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 400
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "exclusiveMinimum": true,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  "seriesId": {
+                                                    "type": "string",
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                  },
+                                                  "unitsPerSlot": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "integer",
+                                                        "minimum": 0,
+                                                        "exclusiveMinimum": true,
+                                                        "maximum": 9007199254740991
+                                                      },
+                                                      {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "unlimited"
+                                                        ]
+                                                      }
+                                                    ]
+                                                  },
+                                                  "price": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "seriesId": {
+                                                        "type": "string",
+                                                        "format": "uuid",
+                                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                      },
+                                                      "label": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      },
+                                                      "count": {
+                                                        "type": "integer",
+                                                        "minimum": 0,
+                                                        "exclusiveMinimum": true,
+                                                        "maximum": 9007199254740991
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "seriesId",
+                                                      "label",
+                                                      "count"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "required": [
+                                                  "label",
+                                                  "count"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "skills": {
+                                              "minItems": 1,
+                                              "maxItems": 3,
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "name": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 400
+                                                  },
+                                                  "text": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 400
+                                                  }
+                                                },
+                                                "required": [
+                                                  "name",
+                                                  "text"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "states": {
+                                              "minItems": 1,
+                                              "maxItems": 3,
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 400
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "skills",
+                                            "states"
+                                          ],
+                                          "additionalProperties": false
+                                        },
                                         "drawTable": {
                                           "type": "object",
                                           "properties": {
@@ -25872,6 +26226,124 @@
                                             "draw-source",
                                             "place-series"
                                           ]
+                                        },
+                                        "instantProfile": {
+                                          "type": "object",
+                                          "properties": {
+                                            "items": {
+                                              "maxItems": 6,
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "label": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 400
+                                                  },
+                                                  "count": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "exclusiveMinimum": true,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  "seriesId": {
+                                                    "type": "string",
+                                                    "format": "uuid",
+                                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                  },
+                                                  "unitsPerSlot": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "integer",
+                                                        "minimum": 0,
+                                                        "exclusiveMinimum": true,
+                                                        "maximum": 9007199254740991
+                                                      },
+                                                      {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "unlimited"
+                                                        ]
+                                                      }
+                                                    ]
+                                                  },
+                                                  "price": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "seriesId": {
+                                                        "type": "string",
+                                                        "format": "uuid",
+                                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                      },
+                                                      "label": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      },
+                                                      "count": {
+                                                        "type": "integer",
+                                                        "minimum": 0,
+                                                        "exclusiveMinimum": true,
+                                                        "maximum": 9007199254740991
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "seriesId",
+                                                      "label",
+                                                      "count"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "required": [
+                                                  "label",
+                                                  "count"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "skills": {
+                                              "minItems": 1,
+                                              "maxItems": 3,
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "name": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 400
+                                                  },
+                                                  "text": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 400
+                                                  }
+                                                },
+                                                "required": [
+                                                  "name",
+                                                  "text"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "states": {
+                                              "minItems": 1,
+                                              "maxItems": 3,
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 400
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "items",
+                                            "skills",
+                                            "states"
+                                          ],
+                                          "additionalProperties": false
                                         },
                                         "drawTable": {
                                           "type": "object",

@@ -5660,6 +5660,26 @@ export interface paths {
                                             derivedFromSkills?: string[];
                                             /** @enum {string} */
                                             type?: "memo" | "draw-source" | "place-series";
+                                            instantProfile?: {
+                                                items: {
+                                                    label: string;
+                                                    count: number;
+                                                    /** Format: uuid */
+                                                    seriesId?: string;
+                                                    unitsPerSlot?: number | "unlimited";
+                                                    price?: {
+                                                        /** Format: uuid */
+                                                        seriesId: string;
+                                                        label: string;
+                                                        count: number;
+                                                    };
+                                                }[];
+                                                skills: {
+                                                    name: string;
+                                                    text: string;
+                                                }[];
+                                                states: string[];
+                                            };
                                             drawTable?: {
                                                 /** Format: uuid */
                                                 versionId: string;
@@ -5825,6 +5845,26 @@ export interface paths {
                                             derivedFromSkills?: string[];
                                             /** @enum {string} */
                                             type?: "memo" | "draw-source" | "place-series";
+                                            instantProfile?: {
+                                                items: {
+                                                    label: string;
+                                                    count: number;
+                                                    /** Format: uuid */
+                                                    seriesId?: string;
+                                                    unitsPerSlot?: number | "unlimited";
+                                                    price?: {
+                                                        /** Format: uuid */
+                                                        seriesId: string;
+                                                        label: string;
+                                                        count: number;
+                                                    };
+                                                }[];
+                                                skills: {
+                                                    name: string;
+                                                    text: string;
+                                                }[];
+                                                states: string[];
+                                            };
                                             drawTable?: {
                                                 /** Format: uuid */
                                                 versionId: string;
@@ -9281,6 +9321,26 @@ export interface paths {
                                     derivedFromSkills?: string[];
                                     /** @enum {string} */
                                     type?: "memo" | "draw-source" | "place-series";
+                                    instantProfile?: {
+                                        items: {
+                                            label: string;
+                                            count: number;
+                                            /** Format: uuid */
+                                            seriesId?: string;
+                                            unitsPerSlot?: number | "unlimited";
+                                            price?: {
+                                                /** Format: uuid */
+                                                seriesId: string;
+                                                label: string;
+                                                count: number;
+                                            };
+                                        }[];
+                                        skills: {
+                                            name: string;
+                                            text: string;
+                                        }[];
+                                        states: string[];
+                                    };
                                     drawTable?: {
                                         /** Format: uuid */
                                         versionId: string;
@@ -9446,6 +9506,26 @@ export interface paths {
                                     derivedFromSkills?: string[];
                                     /** @enum {string} */
                                     type?: "memo" | "draw-source" | "place-series";
+                                    instantProfile?: {
+                                        items: {
+                                            label: string;
+                                            count: number;
+                                            /** Format: uuid */
+                                            seriesId?: string;
+                                            unitsPerSlot?: number | "unlimited";
+                                            price?: {
+                                                /** Format: uuid */
+                                                seriesId: string;
+                                                label: string;
+                                                count: number;
+                                            };
+                                        }[];
+                                        skills: {
+                                            name: string;
+                                            text: string;
+                                        }[];
+                                        states: string[];
+                                    };
                                     drawTable?: {
                                         /** Format: uuid */
                                         versionId: string;

@@ -37,19 +37,51 @@ const SpawnSubject = z.object({
   description: z.string().trim().min(1),
 });
 const spawnCount = z.number().int().positive().safe();
+const TradePrice = z
+  .object({
+    seriesId: z.uuid(),
+    label: z.string().trim().min(1),
+    count: spawnCount,
+  })
+  .strict();
+const ProfileText = z.string().trim().min(1).max(400);
+export const InstantProfile = z
+  .object({
+    items: z
+      .array(
+        z
+          .object({
+            label: ProfileText,
+            count: spawnCount,
+            seriesId: z.uuid().optional(),
+            unitsPerSlot: z
+              .union([spawnCount, z.literal("unlimited")])
+              .optional(),
+            price: TradePrice.optional(),
+          })
+          .strict(),
+      )
+      .max(6),
+    skills: z
+      .array(
+        z
+          .object({
+            name: ProfileText,
+            text: ProfileText,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(3),
+    states: z.array(ProfileText).min(1).max(3),
+  })
+  .strict();
+export type InstantProfile = z.infer<typeof InstantProfile>;
 const spawn = SpawnSubject.extend({
   probability: z.number().min(0).max(1),
-  price: z
-    .object({
-      seriesId: z.uuid(),
-      label: z.string().trim().min(1),
-      count: spawnCount,
-    })
-    .strict()
-    .optional()
-    .describe(
-      "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
-    ),
+  price: TradePrice.optional().describe(
+    "出現個体が品物と引き換えに受け取る代価の系列・呼称・個数。spawn-tradeで個体の発生用ノードへ結んだ品物に指定する",
+  ),
 });
 export const SpawnRule = z.union([
   spawn
@@ -208,6 +240,7 @@ export const WorldNode = z.discriminatedUnion("kind", [
       name: z.string().trim().min(1).optional(),
       derivedFromSkills: z.array(z.uuid()).optional(),
       type: z.enum(["memo", "draw-source", "place-series"]).optional(),
+      instantProfile: InstantProfile.optional(),
       drawTable: DrawTable.optional(),
       spawn: SpawnRule.optional(),
       viewers,

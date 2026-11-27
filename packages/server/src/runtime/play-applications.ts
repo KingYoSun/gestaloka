@@ -531,7 +531,7 @@ export class PlayApplications {
     return visible;
   }
 
-  // tradeは同席している出現個体の取引。在庫と場所はなく、品物を新しく作り、代価を除く。
+  // 出現個体の従来の取引では、同じIDが交換条件と生成する品物を表す。
   async exchange(
     db: Db,
     world: string,
@@ -560,8 +560,13 @@ export class PlayApplications {
           "EXCHANGE_NOT_AVAILABLE",
           "交換条件を公開している場所で受領してください",
         );
-      const item = row && (await this.#stock(context, offer, row.place!));
-      if (row && item?.text !== offer.itemLabel)
+      const fromStock = !!row || offer.id !== offer.itemId;
+      const item = row
+        ? await this.#stock(context, offer, row.place!)
+        : fromStock
+          ? await this.#held(context, offer.itemId, offer.sellerId, offer.count)
+          : undefined;
+      if (fromStock && item?.text !== offer.itemLabel)
         return reject("EXCHANGE_STOCK", "売り手の在庫が変わりました");
       const payment = await this.#held(
         context,
