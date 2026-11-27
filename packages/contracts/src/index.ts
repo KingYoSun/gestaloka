@@ -676,6 +676,7 @@ export const WorldCatalogPage = z.object({
       title: z.string(),
       description: z.string(),
       playerSettings: z.string().optional(),
+      combatMode: CombatMode,
       accepting: z.boolean(),
       canJoin: z.boolean(),
       joinBlock: z
@@ -775,6 +776,7 @@ export const PlayerDeviceStatus = z.object({
   legalConsentRequired: z.literal(true).optional(),
   id: z.uuid(),
   worldId: z.uuid(),
+  combatMode: CombatMode.optional(),
   actorId: z.uuid().nullable(),
   joinId: z.uuid().nullable(),
   presetId: z.uuid().nullable(),

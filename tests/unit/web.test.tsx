@@ -14,6 +14,7 @@ import {
   cleanup,
   fireEvent,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { setupServer } from "msw/node";
 import { http, HttpResponse } from "msw";
@@ -535,12 +536,50 @@ test("一般ユーザーは公開一覧を開き、管理アプリでは管理�
   expect(adminReads).toBe(0);
 });
 
+test("世界一覧と詳細で参加前に対人戦の設定を確認できる", async () => {
+  const pvp = { id: W, title: "港町", canJoin: true, combatMode: "pvp" };
+  server.use(
+    http.get("*/api/catalog/worlds", () =>
+      json({
+        items: [pvp, { ...pvp, id: A, title: "山村", combatMode: "pve" }],
+        next: null,
+      }),
+    ),
+    http.get("*/api/catalog/worlds/:id", () => json(pvp)),
+    http.get("*/api/catalog/presets", () => json({ items: [], next: null })),
+    http.get("*/api/worlds/:id/players", () => json({ items: [], next: null })),
+  );
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: ["/"] }),
+      )}
+    />,
+  );
+  const port = await screen.findByRole("heading", { name: "港町" });
+  const village = screen.getByRole("heading", { name: "山村" });
+  expect(
+    within(port.closest("article")!).getByText(/対人戦：PvP/),
+  ).toBeTruthy();
+  expect(
+    within(village.closest("article")!).getByText(/対人戦：PvE/),
+  ).toBeTruthy();
+  fireEvent.click(
+    within(port.closest("article")!).getByRole("link", { name: /世界を開く/ }),
+  );
+  expect(
+    await screen.findByText(
+      /非戦闘地域に指定された場所では、対象が保護されます/,
+    ),
+  ).toBeTruthy();
+});
+
 test.each([false, true])(
   "プリセットがない世界の新規参加でリスポーンを指定する（無効=%s）",
   async (disableRespawn) => {
     server.use(
       http.get("*/api/catalog/worlds/:id", () =>
-        json({ id: W, canJoin: true }),
+        json({ id: W, canJoin: true, combatMode: "pve" }),
       ),
       http.get("*/api/catalog/presets", () => json({ items: [], next: null })),
       http.get("*/api/worlds/:id/players", () =>

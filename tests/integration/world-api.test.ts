@@ -741,6 +741,20 @@ test("公開と参加受付を分け、非公開化後も参加者の参照と�
       nonCombatAreas: changed.nonCombatAreas,
       nonCombatPlaceSeries: changed.nonCombatPlaceSeries,
     });
+    const list = await app.inject({
+      url: "/api/catalog/worlds",
+      headers: { cookie: person.cookie },
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().items).toContainEqual(
+      expect.objectContaining({ id: legacy.id, combatMode }),
+    );
+    const detail = await app.inject({
+      url: `/api/catalog/worlds/${legacy.id}`,
+      headers: { cookie: person.cookie },
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toMatchObject({ id: legacy.id, combatMode });
   }
   await expect(
     auth.operations.execute(

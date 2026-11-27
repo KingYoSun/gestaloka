@@ -145,6 +145,8 @@ export function Catalog() {
                   <p className="plain-text">{w.description}</p>
                   <p className="record-meta">
                     {w.canJoin ? "参加受付中" : "新規参加は受付停止中"}
+                    {" · 対人戦："}
+                    {w.combatMode === "pvp" ? "PvP" : "PvE"}
                   </p>
                 </div>
                 <Link
@@ -239,6 +241,13 @@ export function Participation({ id }: { id: string }) {
       <div className="page-title">
         <h1>{world.data?.title || "世界への参加"}</h1>
         <p className="plain-text">{world.data?.description}</p>
+        {world.data && (
+          <p className="record-meta">
+            {world.data.combatMode === "pvp"
+              ? "対人戦：PvP。他のプレイヤーに対抗できます。非戦闘地域に指定された場所では、対象が保護されます。"
+              : "対人戦：PvE。他のプレイヤーへの対抗行動はできません。"}
+          </p>
+        )}
         <Link to="/stories" search={{ worldId: id }}>
           この世界の STORIES
         </Link>

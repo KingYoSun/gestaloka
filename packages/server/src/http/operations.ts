@@ -257,7 +257,7 @@ export class Operations {
     const account = await this.authorize(userId);
     const rows = (
       await this.pool.query(
-        `SELECT c.id,c.world_id,c.free_player_limit,c.public_title AS title,c.public_description AS description,c.player_settings AS "playerSettings",c.accepting,
+        `SELECT c.id,c.world_id,c.free_player_limit,c.public_title AS title,c.public_description AS description,c.player_settings AS "playerSettings",c.combat_mode AS "combatMode",c.accepting,
       c.accepting AND c.published AND c.world_id IS NOT NULL AND c.state IN ('finished','playing','play_paused') AS "canJoin"
       FROM world_construction c WHERE ($2::uuid IS NULL OR c.id<$2) AND ($3::uuid IS NULL OR c.id=$3)
       AND (c.published OR EXISTS (SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id

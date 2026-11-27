@@ -5,7 +5,11 @@ import { requireMember } from "./operations.js";
 import { hasLegalConsent } from "./legal.js";
 import type { WorldPlayers } from "../runtime/players.js";
 import type { z } from "zod";
-import { PlayerDeviceApproval, PlayerDeviceStatus } from "@gestaloka/contracts";
+import {
+  type CombatMode,
+  PlayerDeviceApproval,
+  PlayerDeviceStatus,
+} from "@gestaloka/contracts";
 import { playerIcon } from "../runtime/player-icons.js";
 import { playerSettings } from "../runtime/player-settings.js";
 
@@ -116,10 +120,20 @@ export class PlayerDevices {
   }
 
   async status(row: Device) {
+    const legalConsentRequired =
+      row.user_id && !(await hasLegalConsent(this.pool, row.user_id));
+    const settings =
+      row.user_id && !legalConsentRequired
+        ? (
+            await this.pool.query<{ combatMode: CombatMode }>(
+              `SELECT combat_mode AS "combatMode" FROM world_construction WHERE id=$1`,
+              [row.world_id],
+            )
+          ).rows[0]
+        : undefined;
     return PlayerDeviceStatus.parse({
-      ...(row.user_id && !(await hasLegalConsent(this.pool, row.user_id))
-        ? { legalConsentRequired: true }
-        : {}),
+      ...(legalConsentRequired ? { legalConsentRequired: true } : {}),
+      ...settings,
       id: row.id,
       worldId: row.world_id,
       actorId: row.actor_id,
