@@ -55,6 +55,7 @@ export type Construction = {
   accepting: boolean;
   player_list: boolean;
   instant_npc_multiplier: number;
+  free_player_limit: number;
   starting_items: z.infer<typeof StartingItem>[];
   death_judgment: boolean;
   respawn_enabled: boolean;
@@ -110,6 +111,7 @@ export class WorldConstruction {
       ADD COLUMN IF NOT EXISTS player_settings text NOT NULL DEFAULT '',
       ADD COLUMN IF NOT EXISTS published boolean NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS accepting boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS free_player_limit integer NOT NULL DEFAULT 1 CHECK (free_player_limit >= 0),
       ADD COLUMN IF NOT EXISTS player_list boolean NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS instant_npc_multiplier integer NOT NULL DEFAULT 2,
       ADD COLUMN IF NOT EXISTS daily_sp_limit integer NOT NULL DEFAULT 100 CHECK (daily_sp_limit > 0),

@@ -163,17 +163,21 @@ test("ログインを維持して、発行した招待と公開中の資料を�
       }),
     ),
     http.post("*/api/operations", async ({ request }) => {
-      const body = (await request.json()) as { command: { operation: string } };
+      const body = (await request.json()) as {
+        command: { operation: string; worldId?: string };
+      };
       return json({
         result:
           body.command.operation === "invites.create"
-            ? { token: "private-invitation" }
+            ? { token: "private-invitation", worldId: body.command.worldId }
             : {},
       });
     }),
   );
   show("invites");
   await choose("invites.create");
+  fireEvent.click(screen.getByLabelText("世界IDを指定"));
+  fireEvent.change(screen.getByLabelText("世界ID"), { target: { value: A } });
   fireEvent.change(screen.getByLabelText("有効期限"), {
     target: { value: "2030-01-01T12:00" },
   });
@@ -189,11 +193,6 @@ test("ログインを維持して、発行した招待と公開中の資料を�
     name: "AIに渡す参加案内をコピー",
   });
   await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
-  fireEvent.change(screen.getByLabelText("参加する世界のページ"), {
-    target: {
-      value: "https://example.test/worlds/00000000-0000-4000-8000-000000000001",
-    },
-  });
   fireEvent.submit(button.closest("form")!);
   await waitFor(() => expect(copy).toHaveBeenCalledOnce());
   const url = new URL(String(copy.mock.calls[0]![0]).split("\n").at(-1)!);

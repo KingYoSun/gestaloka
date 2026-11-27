@@ -76,6 +76,17 @@ try {
       expectedVersion: 0,
       reason: "試験",
     });
+    const { token } = await auth.operations.execute(admin, randomUUID(), {
+      operation: "invites.create",
+      worldId: world,
+      expiresAt: new Date(Date.now() + 600000).toISOString(),
+      maxUses: 1,
+      reason: "復元試験の参加招待",
+    });
+    await auth.operations.execute(user, randomUUID(), {
+      operation: "account.register",
+      invitation: token,
+    });
     await auth.operations.execute(
       user,
       join,

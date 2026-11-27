@@ -113,7 +113,8 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
         });
       const invitation = await auth.operations.execute(admin.id, randomUUID(), {
         operation: "invites.create",
-        maxUses: 1,
+        worldId: world,
+        maxUses: 2,
         expiresAt: new Date(Date.now() + 600000).toISOString(),
         reason: "新しい参加者を招く",
       });
@@ -318,10 +319,20 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
       const own = (await access.players.list(person.id, world)).items[0]!;
       expect(own.icon).toBe(icon);
       const other = randomUUID();
+      await auth.operations.execute(admin.id, randomUUID(), {
+        operation: "account.register",
+        invitation: token,
+      });
       await auth.operations.execute(
-        person.id,
+        admin.id,
         other,
-        { operation: "worlds.join", worldId: world, character: "別の人物" },
+        {
+          operation: "worlds.join",
+          worldId: world,
+          ...(base
+            ? { presetId, presetVersion: 1 }
+            : { character: "別の人物" }),
+        },
         { players: access.players },
       );
       const denied = await app.inject({
@@ -363,24 +374,26 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
       ).toBe(base ? 1 : 0);
       if (base) {
         const webJoin = randomUUID();
-        await auth.operations.execute(
-          person.id,
-          webJoin,
-          {
-            operation: "worlds.join",
-            worldId: world,
-            presetId,
-            presetVersion: 1,
-          },
-          { players: access.players },
-        );
-        await access.players.tick(webJoin);
+        await expect(
+          auth.operations.execute(
+            person.id,
+            webJoin,
+            {
+              operation: "worlds.join",
+              worldId: world,
+              presetId,
+              presetVersion: 1,
+            },
+            { players: access.players },
+          ),
+        ).rejects.toMatchObject({ code: "PLAYER_LIMIT_REACHED" });
+        await access.players.tick(other);
         expect(receivedSettings).toBe(
           `参加者の基本設定\n${base}\n\n人物の個別設定\nWebから参加する別の人物`,
         );
         const webPerson = (
-          await access.players.list(person.id, world)
-        ).items.find((p) => p.id === webJoin)!;
+          await access.players.list(admin.id, world)
+        ).items.find((p) => p.id === other)!;
         expect(webPerson.state).toBe("ready");
         expect(webPerson.actorId).not.toBe(ready.device.actorId);
       }

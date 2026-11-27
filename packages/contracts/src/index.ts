@@ -227,6 +227,7 @@ export const WorldStatus = z.object({
     description: z.string(),
     published: z.boolean(),
     accepting: z.boolean(),
+    freePlayerLimit: z.int32().nonnegative().default(1),
     playerList: z.boolean(),
     instantNpcMultiplier: z.number().int().positive(),
     deathJudgment: z.boolean(),
@@ -666,6 +667,9 @@ export const WorldCatalogPage = z.object({
       playerSettings: z.string().optional(),
       accepting: z.boolean(),
       canJoin: z.boolean(),
+      joinBlock: z
+        .enum(["WORLD_INVITATION_REQUIRED", "PLAYER_LIMIT_REACHED"])
+        .optional(),
     }),
   ),
   next: z.uuid().nullable(),
@@ -1572,6 +1576,13 @@ export const Operation = z.discriminatedUnion("operation", [
     .object({
       operation: z.literal("worlds.configure"),
       worldId: z.uuid(),
+      freePlayerLimit: z
+        .int32()
+        .nonnegative()
+        .optional()
+        .describe(
+          "一般アカウントがこの世界で所持できる無料プレイヤー数。既定は1。省略すると現在の設定を保つ",
+        ),
       dailySpLimit: z
         .int32()
         .positive()
@@ -1699,6 +1710,7 @@ export const Operation = z.discriminatedUnion("operation", [
   z
     .object({
       operation: z.literal("invites.create"),
+      worldId: z.uuid().optional(),
       expiresAt: z.iso.datetime({ offset: true }),
       maxUses: z.number().int().positive().safe(),
       reason: operationReason,

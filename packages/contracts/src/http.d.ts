@@ -1247,6 +1247,8 @@ export interface paths {
                                 description: string;
                                 published: boolean;
                                 accepting: boolean;
+                                /** @default 1 */
+                                freePlayerLimit: number;
                                 playerList: boolean;
                                 instantNpcMultiplier: number;
                                 deathJudgment: boolean;
@@ -1432,6 +1434,8 @@ export interface paths {
                                 description: string;
                                 published: boolean;
                                 accepting: boolean;
+                                /** @default 1 */
+                                freePlayerLimit: number;
                                 playerList: boolean;
                                 instantNpcMultiplier: number;
                                 deathJudgment: boolean;
@@ -1637,6 +1641,8 @@ export interface paths {
                                 description: string;
                                 published: boolean;
                                 accepting: boolean;
+                                /** @default 1 */
+                                freePlayerLimit: number;
                                 playerList: boolean;
                                 instantNpcMultiplier: number;
                                 deathJudgment: boolean;
@@ -10136,6 +10142,8 @@ export interface paths {
                             operation: "worlds.configure";
                             /** Format: uuid */
                             worldId: string;
+                            /** @description 一般アカウントがこの世界で所持できる無料プレイヤー数。既定は1。省略すると現在の設定を保つ */
+                            freePlayerLimit?: number;
                             /** @description この世界のアカウントごとの日次SP上限。既定は100。省略すると現在の設定を保つ */
                             dailySpLimit?: number;
                             /** @description 所持・保管枠の制限を有効にする */
@@ -10249,6 +10257,8 @@ export interface paths {
                         } | {
                             /** @enum {string} */
                             operation: "invites.create";
+                            /** Format: uuid */
+                            worldId?: string;
                             /** Format: date-time */
                             expiresAt: string;
                             maxUses: number;
@@ -10585,6 +10595,8 @@ export interface paths {
                                 playerSettings?: string;
                                 accepting: boolean;
                                 canJoin: boolean;
+                                /** @enum {string} */
+                                joinBlock?: "WORLD_INVITATION_REQUIRED" | "PLAYER_LIMIT_REACHED";
                             }[];
                             /** Format: uuid */
                             next: string | null;
@@ -10724,6 +10736,8 @@ export interface paths {
                             playerSettings?: string;
                             accepting: boolean;
                             canJoin: boolean;
+                            /** @enum {string} */
+                            joinBlock?: "WORLD_INVITATION_REQUIRED" | "PLAYER_LIMIT_REACHED";
                         };
                     };
                 };

@@ -233,9 +233,14 @@ function Results({
           結果をコピー
         </Button>
       </div>
-      {operation === "invites.create" && typeof data.token === "string" && (
-        <AiParticipationInvitation invitation={data.token} />
-      )}
+      {operation === "invites.create" &&
+        typeof data.token === "string" &&
+        typeof data.worldId === "string" && (
+          <AiParticipationInvitation
+            invitation={data.token}
+            worldId={data.worldId}
+          />
+        )}
       {data.kind === "inspection-history" ||
       (data.manifest && data.measurement) ? (
         <InspectionResults value={data} onUse={onUse} />

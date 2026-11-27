@@ -2,6 +2,9 @@ import { WORLD_DAY_MS } from "@gestaloka/contracts";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { connectDatabases } from "@gestaloka/server";
+import { WorldAccess } from "@gestaloka/server/access";
+import { fixtureAuth } from "../support/auth.js";
+import { fixtureRuntime } from "../support/provider.js";
 import { LlmClient } from "@gestaloka/server/llm";
 import {
   modelEnvironment,
@@ -27,6 +30,7 @@ const databases = connectDatabases(),
 const worlds: string[] = [],
   operations: string[] = [],
   budgets: string[] = [];
+const scope = `agent-${randomUUID()}`;
 const node = (kind: "existence" | "script", text: string): WorldNode => ({
   id: randomUUID(),
   kind,
@@ -217,8 +221,9 @@ test.each(
 );
 
 beforeAll(async () => {
-  await databases.verify();
-  await store.setup();
+  const { runtime } = await fixtureRuntime(scope, undefined, databases);
+  await fixtureAuth(databases.postgres);
+  await new WorldAccess(runtime).setup();
 });
 afterAll(async () => {
   await databases.postgres.query(

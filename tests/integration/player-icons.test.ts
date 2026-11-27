@@ -82,8 +82,8 @@ beforeAll(async () => {
   await access.setup();
   app = await createApp(access, auth.identity, undefined, auth.operations);
   const admin = await auth.person();
-  one = await auth.person("user");
-  two = await auth.person("user");
+  one = await auth.person();
+  two = await auth.person();
   world = (
     await access.create(admin.id, {
       requestId: randomUUID(),
@@ -107,6 +107,12 @@ beforeAll(async () => {
     reason: "検証",
   });
   preset = randomUUID();
+  const invitation = await auth.worldInvite(admin.id, world, 2);
+  for (const person of [one, two])
+    await auth.operations.execute(person.id, randomUUID(), {
+      operation: "account.register",
+      invitation,
+    });
   await auth.operations.execute(admin.id, randomUUID(), {
     operation: "presets.put",
     presetId: preset,

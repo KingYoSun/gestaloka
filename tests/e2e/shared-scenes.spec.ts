@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { test, expect } from "./fixtures.js";
+import { acceptWorldInvite, test, expect, worldInvite } from "./fixtures.js";
 import { cliVersionHeader } from "../support/player-cli.js";
 import { connectDatabases } from "@gestaloka/server";
 import { WorldStore } from "@gestaloka/server/world";
@@ -66,6 +66,7 @@ async function village(page: Page, count = 1) {
     ).ok(),
   ).toBe(true);
   const actors: string[] = [];
+  await acceptWorldInvite(page.request, await worldInvite(page.request, world));
   for (let i = 0; i < count; i++) {
     const requestId = randomUUID();
     expect(

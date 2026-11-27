@@ -112,6 +112,7 @@ export function Publication({
 }) {
   const [value, set] = useState({
     ...initial,
+    freePlayerLimit: initial.freePlayerLimit ?? 1,
     playerSettings: initial.playerSettings ?? "",
   });
   const client = useQueryClient();
@@ -195,6 +196,21 @@ export function Publication({
         />{" "}
         新しい参加を受け付ける
       </Label>
+      <Label htmlFor="world-free-player-limit">
+        アカウントごとの無料プレイヤー数
+      </Label>
+      <Input
+        id="world-free-player-limit"
+        type="number"
+        min={0}
+        max={2147483647}
+        step={1}
+        required
+        value={Number.isNaN(value.freePlayerLimit) ? "" : value.freePlayerLimit}
+        onChange={(e) =>
+          set({ ...value, freePlayerLimit: e.target.valueAsNumber })
+        }
+      />
       <Label>
         <input
           type="checkbox"
