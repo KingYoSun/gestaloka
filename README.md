@@ -230,7 +230,7 @@ pnpm world:build resume --id <constructionId>
 
 `advance`はreadyの区切りから、`--days`で指定した日数を追加します。管理者の指定は最小1日、1日単位です。内部ではミリ秒で時点を保持し、1日未満の相互作用も処理します。構築中は各人物が本人の知識から期間の活動方針を形成し、日常や短いやり取りをまとめ、重要な変化で方針を見直します。追加期間では継続意図を保って新しい方針を形成します。詳細は [ADR-007](documents/adr/ADR-007-construction-activity-plans.md) を参照してください。
 
-`finish`はその区切りで構築を完了します。管理者が公開と受付を設定すると、ユーザー画面や共通APIの `worlds.join` でプリセットを選んで参加できます。プレイヤーCLIで参加する手順も公開しています。参加時は新しい村民を生成し、試遊村民の存在・履歴・所有・知識を保持します。目標に届かず保留した構築は `resume` で再開します。[プレイヤーの参加方法](https://api.gestaloka.com/api/player-cli/join)
+`finish`はその区切りで構築を完了します。管理者が公開と受付を設定すると、ユーザー画面や共通APIの `worlds.join` でプリセットを選んで参加できます。プレイヤーCLIで参加する手順も公開しています。参加時は新しい人物を生成し、試遊で使った人物の存在・履歴・所有・知識を保持します。目標に届かず保留した構築は `resume` で再開します。[プレイヤーの参加方法](https://api.gestaloka.com/api/player-cli/join)
 
 新規参加後はユーザー画面で人物を選ぶか、プレイヤーCLIの許可を取得して手番を始めます。従来の`pnpm world:build act`は移行先を示すエラーを返します。
 
@@ -238,13 +238,13 @@ pnpm world:build resume --id <constructionId>
 
 ## 管理APIと公開知識
 
-Museなどの一般プレイヤー向けCLIは[配布・試遊手順](documents/player-cli.md)を参照してください。持ち主がブラウザーで認可URLと確認コードを照合し、1人の村民のプレイを許可・解除できます。管理者CLIとは別の配布物です。
+Museなどの一般プレイヤー向けCLIは[配布・試遊手順](documents/player-cli.md)を参照してください。持ち主がブラウザーで認可URLと確認コードを照合し、人物を1人選んでプレイを許可し、後から解除できます。管理者CLIとは別の配布物です。
 
 人物ごとのアイコンは、Webの参加時と人物設定から追加・差し替え・解除できます。共通APIは`PUT /api/worlds/:id/players/:playerId/icon`で、画像ファイルのbase64を`image`へ指定し、解除時は`null`を指定します。生成中の参加要求にも登録でき、画像登録の失敗で参加や以前のアイコンは失われません。受付形式・閲覧範囲・APIの詳細は[ADR-031](documents/adr/ADR-031-player-icons.md)を参照してください。
 
 API・ワーカーとOryを起動し、ブラウザーからは同じオリジンのAPIを利用します。`GET/POST /api/session`はOryで認証したアプリIDを返し、利用登録・BANを確認します。匿名Cookieは本人確認後の既存データ引き継ぎに限って使います。変更操作には `X-Gestaloka-Request: 1` を付け、世界の作成・構築操作には再送用のrequestIdを指定します。
 
-管理者は`/api/worlds`で予算を指定して世界を作成・取得し、`/api/worlds/:id/commands`で期間追加・再開・完了を行います。参加は`POST /api/operations`の`worlds.join`へ一本化しています。受付とpg-boss投入は同時保存され、202の後はワーカーで実行します。`/records` は管理者向けの報告、`/knowledge` は本人に対応する村民の観測・解釈だけを返します。履歴は1ページ50件で、nextから続きを取得できます。公開・参加・複数人物の選択は[ADR-013](documents/adr/ADR-013-world-participation.md)と[運用手順](documents/operations-auth.md#世界の公開と参加の共通api)を参照してください。
+管理者は`/api/worlds`で予算を指定して世界を作成・取得し、`/api/worlds/:id/commands`で期間追加・再開・完了を行います。参加は`POST /api/operations`の`worlds.join`へ一本化しています。受付とpg-boss投入は同時保存され、202の後はワーカーで実行します。`/records` は管理者向けの報告、`/knowledge` は本人が操作する人物の観測・解釈だけを返します。履歴は1ページ50件で、nextから続きを取得できます。公開・参加・複数人物の選択は[ADR-013](documents/adr/ADR-013-world-participation.md)と[運用手順](documents/operations-auth.md#世界の公開と参加の共通api)を参照してください。
 
 旧`/actions`、`/play/resume`、`POST /scene`は`PLAY_API_CHANGED`と新しい手番APIの案内を返します。本人認可を確認してからエラーを返し、旧ジョブを再開しません。過去の入力は`/api/runs/:id`で読み取れます。
 
