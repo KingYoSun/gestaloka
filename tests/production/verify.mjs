@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { join, resolve } from "node:path";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -335,6 +335,11 @@ try {
       accessCidrs: "0.0.0.0/0 ::/0",
     });
     deployments.push(d);
+    if (role === "target")
+      await appendFile(
+        join(d.root, "deployment.env"),
+        `\nWITHDRAWAL_LEDGER_DATABASE_URL=postgres://ory:${deployments[0].env.ORY_DATABASE_PASSWORD}@original-ledger:5432/ory\n`,
+      );
     await appendFile(
       join(d.root, "deployment.env"),
       await readFile("tests/support/operator.env"),
@@ -422,6 +427,14 @@ try {
   }
   const [source, target] = deployments;
   await command([
+    "network",
+    "connect",
+    "--alias",
+    "original-ledger",
+    `${target.config.name}_private`,
+    `${source.config.name}-identity-postgres-1`,
+  ]);
+  await command([
     "run",
     "-d",
     "--name",
@@ -471,6 +484,29 @@ try {
     password: "test-password-for-recovery-only",
     region: "us-east-1",
   };
+  const withdrawal = async (d, action, input = {}) => {
+    const output = JSON.parse(
+      (
+        await command([
+          "exec",
+          `${d.config.name}-api-1`,
+          "node",
+          "--input-type=module",
+          "-e",
+          "process.argv.splice(1,0,'withdrawal.mjs');const print=console.log;let value;console.log=s=>{value=s};try{await import('./tests/production/withdrawal.mjs');print(JSON.stringify({value}));}catch(e){print(JSON.stringify({failure:e.message,code:e.code,location:e.stack?.split('\\n').find(s=>s.includes('tests/production/withdrawal.mjs'))}));}",
+          action,
+          JSON.stringify(input),
+        ])
+      ).toString(),
+    );
+    assert(
+      !output.failure,
+      `退会の隔離検証 ${action}: ${JSON.stringify(output)}`,
+    );
+    return output.value;
+  };
+  const participant = JSON.parse(await withdrawal(source, "seed"));
+  await withdrawal(source, "before", participant);
   await wait(
     source.config.name,
     (
@@ -516,6 +552,45 @@ try {
   });
   assert.equal(snapshots.items.length, 1);
   const snapshot = snapshots.items[0].id;
+  const { receipt } = JSON.parse(
+    await withdrawal(source, "confirm", participant),
+  );
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await withdrawal(source, "structured", participant);
+      break;
+    } catch (error) {
+      if (attempt === 60) throw error;
+      await delay(1000);
+    }
+  }
+  assert.equal(
+    (await rpc(source.config.name, "withdrawal-status", { receipt })).erased_at,
+    null,
+  );
+  const digest = (text) => createHash("sha256").update(text).digest("hex");
+  const reviewFile = join(source.root, "withdrawal-review-test.json");
+  await writeFile(
+    reviewFile,
+    JSON.stringify({
+      action: "withdrawal-review",
+      receipt,
+      confirmed: true,
+      rules: [
+        {
+          source: "inspection",
+          key: [participant.story],
+          path: ["quote"],
+          start: 3,
+          length: 5,
+          before: digest("解説：架空の私信。続き"),
+          after: digest("解説：［削除済み］。続き"),
+        },
+      ],
+    }),
+  );
+  await cli("controller", source, reviewFile);
+  await withdrawal(source, "after", participant);
   const configureId = randomUUID();
   await ops(
     target.config.name,
@@ -540,6 +615,7 @@ try {
   );
   await wait(target.config.name, restoreId);
   await cli("sync", target);
+  await withdrawal(target, "after", participant);
   const result = JSON.parse(
     (
       await command([
@@ -571,6 +647,13 @@ try {
   );
   console.log(JSON.stringify(result));
 } finally {
+  if (deployments.length === 2)
+    await command([
+      "network",
+      "disconnect",
+      `${deployments[1].config.name}_private`,
+      `${deployments[0].config.name}-identity-postgres-1`,
+    ]).catch(() => {});
   await command(["rm", "-f", storage]).catch(() => {});
   for (const d of deployments.reverse())
     await compose(d, "down", "-v", "--remove-orphans").catch(() => {});

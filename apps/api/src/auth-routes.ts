@@ -3,6 +3,7 @@ import rateLimit from "@fastify/rate-limit";
 import type { Operations } from "@gestaloka/server/operations";
 import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
 import { oauthRoutes } from "./oauth-routes.js";
+import { withdrawalRoutes } from "./withdrawal-routes.js";
 import { authPage, authStyle, escapeHtml as escape } from "./auth-page.js";
 import { BrowserSession } from "@gestaloka/contracts";
 import { AccessError } from "@gestaloka/server/access";
@@ -71,6 +72,7 @@ export async function authRoutes(
     });
     legalRoutes(legal, identity, operations);
   });
+  if (operations) withdrawalRoutes(app, identity, operations);
   app.get(
     "/internal/auth/attempt",
     {

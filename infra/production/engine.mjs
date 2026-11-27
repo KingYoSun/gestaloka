@@ -17,6 +17,7 @@ import { parseEnv } from "node:util";
 import { BackupConfiguration, Operation } from "@gestaloka/contracts";
 import { seal, unseal } from "../../packages/server/dist/secrets.js";
 import { configuredApi, keyNames, renderDeployment } from "./config.mjs";
+import { Withdrawals } from "./withdrawal.mjs";
 
 const require = createRequire(
   new URL("../../packages/server/package.json", import.meta.url),
@@ -102,12 +103,21 @@ export class BackupEngine {
       connectionString: `postgres://gestaloka:${this.env.POSTGRES_PASSWORD}@postgres:5432/gestaloka`,
     });
     this.pool.on("error", () => {});
+    this.withdrawals = new Withdrawals(this);
     for (const name of await readdir(join(this.root, "jobs"))) {
       if (!name.endsWith(".json")) continue;
       const job = await this.load(`jobs/${name}`, null);
       if (recoverInterrupted && job.state === "running") {
         job.state = "failed";
         job.error = "CONTROLLER_INTERRUPTED";
+        await this.save(`jobs/${name}`, job);
+      }
+      if (
+        job.operation === "backups.configure" &&
+        job.cipher &&
+        ["complete", "failed"].includes(job.state)
+      ) {
+        delete job.cipher;
         await this.save(`jobs/${name}`, job);
       }
     }
@@ -335,6 +345,85 @@ export class BackupEngine {
       next: remaining.length > 50 ? `${last.at}|${last.id}` : null,
     };
   }
+  async expireSnapshots(configuration, now = Date.now(), authority) {
+    const snapshots = JSON.parse(
+      (
+        await this.restic(configuration, [
+          "snapshots",
+          "--json",
+          "--host",
+          this.project,
+          "--tag",
+          "gestaloka",
+        ])
+      ).toString(),
+    );
+    const deadlines = authority
+      ? await this.withdrawals.deadlines(
+          authority,
+          snapshots.map((s) => s.time),
+        )
+      : [];
+    const lifetime = configuration.retentionDays * 86400000;
+    let oldest = Infinity,
+      next = now + 3600000;
+    const expired = snapshots.filter((s, i) => {
+      const acquired = Date.parse(s.time);
+      const deadline = Math.min(
+        acquired + lifetime,
+        deadlines[i] ? Date.parse(deadlines[i]) : Infinity,
+      );
+      if (deadline <= now) return true;
+      oldest = Math.min(oldest, acquired);
+      next = Math.min(next, deadline);
+      return false;
+    });
+    const marker = "expiry-" + digest(configuration.repository) + ".json";
+    if (expired.length) {
+      // If interrupted between forget and prune, finish removing unreachable data.
+      await this.save(marker, true);
+      for (let i = 0; i < expired.length; i += 100)
+        await this.restic(configuration, [
+          "forget",
+          ...expired.slice(i, i + 100).map((s) => s.id),
+        ]);
+    }
+    if (await this.load(marker, false)) {
+      await this.restic(configuration, ["prune"]);
+      await rm(join(this.root, marker));
+    }
+    return { oldest, next };
+  }
+  async enforceRetention(configuration, authority) {
+    const previous = await this.load("previous-repositories.json", {});
+    let oldest = Infinity,
+      next = Date.now() + 3600000,
+      unavailable = false;
+    const repositories = Object.entries(previous).map(([key, cipher]) => [
+      key,
+      this.decrypt(cipher),
+    ]);
+    if (configuration) repositories.push([null, configuration]);
+    for (const [key, repo] of repositories) {
+      try {
+        const result = await this.expireSnapshots(repo, Date.now(), authority);
+        oldest = Math.min(oldest, result.oldest);
+        next = Math.min(next, result.next);
+        if (key && result.oldest === Infinity) {
+          delete previous[key];
+          await this.save("previous-repositories.json", previous);
+        }
+      } catch {
+        unavailable = true;
+      }
+    }
+    if (unavailable) throw new Error("RETENTION_STORAGE_UNAVAILABLE");
+    await this.withdrawals.finish(
+      authority,
+      Number.isFinite(oldest) ? new Date(oldest) : null,
+    );
+    return next;
+  }
   async step(job, phase) {
     job.phase = phase;
     await this.save(`jobs/${job.id}.json`, job);
@@ -467,6 +556,10 @@ export class BackupEngine {
     }
   }
   async capture(job) {
+    const withdrawalAuthority = await this.withdrawals.authority(
+      this.env.OPERATIONS_TOKEN_SECRET,
+      true,
+    );
     await this.freeze(job);
     await mkdir(join(this.root, "staging"), { recursive: true, mode: 0o700 });
     for (const [service, user, database, file] of [
@@ -499,6 +592,7 @@ export class BackupEngine {
       join(this.root, "staging", "manifest.json"),
       JSON.stringify({
         format: 1,
+        withdrawalAuthority,
         id: job.id,
         stack: this.project,
         domain: this.env.ORY_KRATOS_PUBLIC_URL,
@@ -516,7 +610,13 @@ export class BackupEngine {
       (file) => readFile(join("/configuration/public", file), "utf8"),
     );
   }
-  async thaw(job, manifest = job) {
+  async thaw(job, manifest = job, checkedAuthority) {
+    if (job.operation === "backups.restore" && !checkedAuthority)
+      return this.withdrawals.checkRestore(
+        this.env.OPERATIONS_TOKEN_SECRET,
+        manifest,
+        (authority) => this.thaw(job, manifest, authority),
+      );
     const paused = job.paused || (manifest.paused ?? true);
     const api = await this.activeApi();
     await this.step(job, "サービスを再起動");
@@ -535,6 +635,13 @@ export class BackupEngine {
       "hydra",
       api,
     );
+    if (checkedAuthority) {
+      await this.step(job, "公開前に退会台帳を再適用");
+      await this.withdrawals.apply(checkedAuthority, true);
+      await rm(join(this.root, "withdrawal-restore-pending.json"), {
+        force: true,
+      });
+    }
     await this.pool.query(
       "UPDATE runtime_control SET configuration=jsonb_set(configuration - 'worldEditsUntil','{paused}',$1::jsonb),version=version+1 WHERE singleton",
       [JSON.stringify(paused)],
@@ -587,8 +694,21 @@ export class BackupEngine {
     for (const file of expected)
       if ((await fileDigest(join(recovered, file))) !== manifest.files[file])
         throw new Error("BACKUP_CHECKSUM_FAILED");
+    const keys = JSON.parse(
+      await readFile(join(recovered, "keys.json"), "utf8"),
+    );
+    try {
+      await this.withdrawals.checkRestore(
+        keys.OPERATIONS_TOKEN_SECRET,
+        manifest,
+      );
+    } catch (error) {
+      await rm(join(this.root, "restore"), { recursive: true, force: true });
+      throw error;
+    }
     await this.freeze(job);
     await this.pool.end();
+    await this.save("withdrawal-restore-pending.json", { job: job.id });
     await rm(join(this.root, "staging"), { recursive: true, force: true });
     await rename(recovered, join(this.root, "staging"));
     for (const [service, user, database, file] of [
@@ -602,9 +722,6 @@ export class BackupEngine {
     if (manifest.domain === this.env.ORY_KRATOS_PUBLIC_URL)
       for (const volume of ["caddy-data", "caddy-config"])
         await this.archive(volume, `${volume}.tar`, true);
-    const keys = JSON.parse(
-      await readFile(join(this.root, "staging/keys.json"), "utf8"),
-    );
     for (const key of [...keyNames, "NEO4J_PASSWORD"]) {
       if (!/^[a-f0-9]{32,64}$/.test(keys[key] ?? ""))
         throw new Error("INVALID_BACKUP_KEYS");
@@ -689,12 +806,25 @@ export class BackupEngine {
       const current = await this.settings();
       if (input.expectedVersion !== current.version)
         throw new Error("SETTINGS_CHANGED");
+      if (
+        current.configuration?.repository !== input.configuration.repository
+      ) {
+        const previous = await this.load("previous-repositories.json", {});
+        if (current.configuration)
+          previous[digest(current.configuration.repository)] = current.cipher;
+        // Persist the previous credentials before replacing the active configuration.
+        await this.save("previous-repositories.json", previous);
+      }
       await this.save("settings.json", {
         version: current.version + 1,
         cipher: this.encrypt(input.configuration),
         lastAt: current.lastAt ?? null,
         lastScheduledAt: current.lastScheduledAt ?? null,
       });
+      this.nextExpiry = 0;
+      const previous = await this.load("previous-repositories.json", {});
+      delete previous[digest(input.configuration.repository)];
+      await this.save("previous-repositories.json", previous);
       return;
     }
     const settings = await this.settings(),
@@ -731,19 +861,7 @@ export class BackupEngine {
         `operation:${job.id}`,
       ]);
     }
-    await this.step(job, "保持期間を適用・保管データを検証");
-    await this.restic(configuration, [
-      "forget",
-      "--prune",
-      "--tag",
-      "gestaloka",
-      "--host",
-      this.project,
-      "--group-by",
-      "host,paths",
-      "--keep-within",
-      `${configuration.retentionDays}d`,
-    ]);
+    await this.step(job, "保管データを検証");
     await this.restic(configuration, ["check"]);
     await this.save("settings.json", {
       version: settings.version,
@@ -752,6 +870,34 @@ export class BackupEngine {
       lastScheduledAt: settings.lastScheduledAt ?? null,
     });
     await rm(join(this.root, "staging"), { recursive: true, force: true });
+  }
+  async maintain() {
+    if (
+      Date.now() >= Math.min(this.nextExpiry ?? 0, this.nextWithdrawal ?? 0)
+    ) {
+      const lock = await deploymentLock("/deploy.lock");
+      if (lock) {
+        try {
+          const authority = await this.withdrawals.authority(
+            this.env.OPERATIONS_TOKEN_SECRET,
+            true,
+          );
+          if (Date.now() >= (this.nextWithdrawal ?? 0)) {
+            this.nextWithdrawal = Date.now() + 60000;
+            await this.withdrawals.apply(authority);
+          }
+          if (Date.now() >= (this.nextExpiry ?? 0)) {
+            this.nextExpiry = Date.now() + 60000;
+            this.nextExpiry = await this.enforceRetention(
+              (await this.settings()).configuration,
+              authority,
+            );
+          }
+        } finally {
+          await lock.close();
+        }
+      }
+    }
   }
   async tick() {
     if (this.busy) return;
@@ -827,11 +973,13 @@ export class BackupEngine {
             current.phase = "復旧手順を確認してください";
           }
           current.finishedAt = new Date().toISOString();
+          if (current.operation === "backups.configure") delete current.cipher;
           await this.save(`jobs/${file}`, current);
         } finally {
           await lock?.close();
         }
       }
+      if (!blocked) await this.maintain();
     } finally {
       this.busy = false;
     }

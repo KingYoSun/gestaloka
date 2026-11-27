@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { BackupEngine } from "./engine.mjs";
+import { BackupEngine, deploymentLock } from "./engine.mjs";
 const input = JSON.parse(process.argv[2]),
   engine = new BackupEngine();
 await engine.initialize();
@@ -13,6 +13,14 @@ try {
       );
     await engine.thaw(job);
     result = { id: job.id, services: "restarted" };
+  } else if (input.action === "withdrawal-review") {
+    const lock = await deploymentLock("/deploy.lock", 10);
+    if (!lock) throw Error("DEPLOYMENT_BUSY");
+    try {
+      result = await engine.withdrawals.review(input);
+    } finally {
+      await lock.close();
+    }
   } else if (input.operation === "backups.read") result = await engine.read();
   else if (input.operation === "backups.job")
     result = await engine.job(input.id);

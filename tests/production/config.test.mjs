@@ -18,6 +18,55 @@ import {
   keyNames,
 } from "../../infra/production/config.mjs";
 import { BackupEngine } from "../../infra/production/engine.mjs";
+
+test("取得を止めた旧保存先でも最後の世代を削除し、pruneの成功後に接続情報を消す", async () => {
+  const root = await mkdtemp(join(tmpdir(), "withdraw-expiry-"));
+  try {
+    const engine = new BackupEngine(root),
+      previous = { repository: "old", retentionDays: 30 },
+      current = { repository: "current", retentionDays: 30 };
+    engine.env = { CONTROL_TOKEN: "2".repeat(64) };
+    engine.project = "fixture";
+    await engine.save("previous-repositories.json", {
+      old: engine.encrypt(previous),
+    });
+    let snapshots = [{ id: "old-snapshot", time: "2000-01-01T00:00:00Z" }],
+      first = true,
+      finished = false;
+    engine.withdrawals = {
+      deadlines: async () => [],
+      finish: async () => {
+        finished = true;
+      },
+    };
+    engine.restic = async (repo, args) => {
+      if (args[0] === "snapshots") {
+        assert(args.includes(engine.project));
+        return Buffer.from(
+          JSON.stringify(repo.repository === "old" ? snapshots : []),
+        );
+      }
+      assert.equal(repo.repository, "old");
+      if (args[0] === "forget") {
+        assert.deepEqual(args.slice(1), ["old-snapshot"]);
+        snapshots = [];
+      } else if (args[0] === "prune" && first) {
+        first = false;
+        throw Error("storage temporarily unavailable");
+      }
+    };
+    await assert.rejects(engine.enforceRetention(current, "authority"));
+    assert(!finished);
+    assert(
+      Object.hasOwn(await engine.load("previous-repositories.json"), "old"),
+    );
+    await engine.enforceRetention(current, "authority");
+    assert.deepEqual(await engine.load("previous-repositories.json"), {});
+    assert(finished);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 import { createHash, randomUUID } from "node:crypto";
 test("本番Neo4jのトランザクションに2分の上限を設定する", async () => {
   const compose = await readFile(
@@ -114,6 +163,7 @@ test("独立した制御台帳は秘密値を暗号化し、アプリ側の受�
     });
     const engine = new BackupEngine(root);
     await engine.initialize();
+    engine.maintain = async () => {};
     const id = randomUUID(),
       actor = randomUUID(),
       configuration = {
@@ -316,6 +366,10 @@ test("2 GiBを超えるダンプをファイル記述子で渡し、取得と復
     engine.env = {};
     engine.project = "backup-test";
     engine.freeze = async () => {};
+    engine.withdrawals = {
+      authority: async () => "test-ledger",
+      checkRestore: async () => "test-ledger",
+    };
     engine.archive = async (_volume, file) =>
       writeFile(join(root, "staging", file), payload);
     await engine.capture({ id: randomUUID() });

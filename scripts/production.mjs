@@ -131,6 +131,17 @@ if (action === "init") {
       }
       try {
         const active = await activeApi(compose);
+        if (!active)
+          await compose(
+            "run",
+            "--rm",
+            "--no-deps",
+            "--entrypoint",
+            "sh",
+            "controller",
+            "-c",
+            "test ! -e /state/withdrawal-restore-pending.json || { echo '退会台帳の照合が未完了です。復元を完了してから起動してください。' >&2; exit 1; }",
+          );
         if (action === "rollout" && !active)
           throw new Error("API更新には稼働中のCaddyが必要です");
         if (active && !active.initialized && argument !== "--initialize")
