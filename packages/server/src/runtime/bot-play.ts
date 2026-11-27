@@ -3123,7 +3123,9 @@ export class BotPlay {
                 name: victim.name,
                 description: victim.description,
                 count: victim.count,
-                ...(await this.#instantMaterials(context, effect.targetId)),
+                ...(judgment
+                  ? {}
+                  : await this.#instantMaterials(context, effect.targetId)),
               },
               ...facts,
             ]
@@ -3197,7 +3199,10 @@ export class BotPlay {
               )
             : undefined,
           person && !npc ? subjects : [],
-          stateRelations(facts, subjects),
+          stateRelations(
+            selected.filter((fact) => "node" in fact),
+            subjects,
+          ),
           subjects.length > 0 && !!previous,
           !npc && !protectedActor,
           playerRequest && (person || victim) ? request : undefined,
@@ -11854,7 +11859,7 @@ export class BotPlay {
           : undefined;
         if (stateSubjects.length)
           await this.#rememberStateBasis(input.requestId, context);
-        const allowedEnds = stateRelations(materials, stateSubjects);
+        const allowedEnds = stateRelations(selected, stateSubjects);
         const saved = await this.#oppositionRoll(
           world,
           input.requestId,

@@ -295,7 +295,7 @@ function requiredRows(
     ),
   );
   const pinned = withParents(
-    candidates.filter(({ ids, name, evidence, kind, owner }) => {
+    candidates.filter(({ ids, name, kind, owner }) => {
       if (
         kind === "root" &&
         (!owner ||
@@ -303,7 +303,6 @@ function requiredRows(
           (!request.subjects && !request.requiredIds))
       )
         return true;
-      if (array(record(evidence).commandRestrictions).length) return true;
       if (
         ids.some(
           (id) =>
@@ -327,7 +326,7 @@ function requiredRows(
     if (
       pinned.has(rootOf(candidate)) &&
       (candidate.pending ||
-        candidate.kind === "state" ||
+        array(record(candidate.evidence).commandRestrictions).length > 0 ||
         record(candidate.evidence).judgmentLocation === true)
     )
       pinned.add(candidate);
@@ -499,7 +498,7 @@ async function fit(
   finalize: (materials: unknown[]) => Promise<unknown[] | undefined>,
   groups: ReadonlyMap<Candidate, HoldingGroup>,
   incomplete: boolean,
-  fallback: Candidate[],
+  fallback: ReturnType<typeof shortlist>,
 ) {
   const important = scored.filter((row) => strength(row) >= threshold);
   let selected = withParents(
@@ -558,7 +557,10 @@ async function fit(
   for (const { candidate } of modifiers)
     if (candidate.kind !== "basis" || selected.has(candidate.parent!))
       await keepIfFits(candidate);
-  for (const candidate of fallback) await keepIfFits(candidate);
+  // 成否の種類を変えなくても、申請した行為と照合できる記録は空き枠で補う。
+  const evaluated = new Set(scored.map(({ candidate }) => candidate));
+  for (const { candidate, matches } of fallback)
+    if (matches || !evaluated.has(candidate)) await keepIfFits(candidate);
   return result;
 }
 
@@ -569,7 +571,16 @@ function shortlist(
   request: Request,
   pinned: Set<Candidate>,
 ) {
-  const input = request.text;
+  const effect = record(request.effect);
+  const input = [
+    request.text,
+    string(effect.state),
+    ...[
+      ...array(effect.nodes),
+      ...array(effect.revisions),
+      ...array(effect.edges),
+    ].map((value) => string(record(value).text)),
+  ].join("\n");
   const words = [
     ...new Set(
       Array.from(searchWords.segment(normalize(input)))
@@ -596,8 +607,7 @@ function shortlist(
       };
     })
     .sort((a, b) => b.matches - a.matches || a.position - b.position)
-    .slice(0, 20)
-    .map((r) => r.candidate);
+    .slice(0, 20);
 }
 
 export async function selectJudgmentMaterials({
@@ -688,7 +698,12 @@ export async function selectJudgmentMaterials({
         ),
         groups,
       );
-      if (previewComplete && measure(pack(rows), i, true) > budget) return;
+      const minimum = pack(rows);
+      if (
+        measure(minimum, i, true) > budget &&
+        (previewComplete || !(await finalize(minimum, i, true)))
+      )
+        return;
       for (const candidate of candidates) {
         if (
           candidate.requestIndex !== i ||
@@ -726,7 +741,7 @@ export async function selectJudgmentMaterials({
     ? [remaining.slice(0, half), remaining.slice(half)]
     : [remaining];
   const bounded = new Set<number>();
-  const extra = new Map<number, Candidate[]>();
+  const extra = new Map<number, ReturnType<typeof shortlist>>();
   let batch = 0;
   for (const active of batches) {
     if (!active.length) continue;
@@ -751,7 +766,7 @@ export async function selectJudgmentMaterials({
       offered = [
         ...new Set(
           Array.from({ length: 20 }, (_, i) =>
-            lists.flatMap((list) => (list[i] ? [list[i]!] : [])),
+            lists.flatMap((list) => (list[i] ? [list[i]!.candidate] : [])),
           ).flat(),
         ),
       ];
@@ -800,6 +815,15 @@ export async function selectJudgmentMaterials({
       }
       const pinned = required[i];
       if (!pinned) return;
+      const fallback =
+        extra.get(i) ??
+        shortlist(
+          candidates.filter(
+            (c) => c.requestIndex === undefined || c.requestIndex === i,
+          ),
+          requests[i]!,
+          pinned,
+        );
       const packet = await fit(
         pack,
         pinned,
@@ -810,15 +834,10 @@ export async function selectJudgmentMaterials({
         groups,
         incomplete || bounded.has(i),
         bounded.has(i)
-          ? (extra.get(i) ??
-              shortlist(
-                candidates.filter(
-                  (c) => c.requestIndex === undefined || c.requestIndex === i,
-                ),
-                requests[i]!,
-                pinned,
-              ))
-          : [],
+          ? fallback
+          : fallback.filter(
+              ({ matches, candidate }) => matches && candidate.kind === "state",
+            ),
       );
       if (packet) onFiltered?.(i);
       return packet;
