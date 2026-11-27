@@ -185,13 +185,12 @@ const LogRow = memo(function LogRow({
             </p>
           ))}
           {!row.payload.observation &&
-            entry.result.action?.command !== "oppose" && (
+            entry.result.action?.command !== "oppose" &&
+            entry.result.outcome?.success !== false && (
               <p className="muted">
                 結果：
                 {entry.result.outcome
-                  ? entry.result.outcome.success
-                    ? (entry.result.effectState ?? "成立しました")
-                    : "不成立でした"
+                  ? (entry.result.effectState ?? "成立しました")
                   : entry.result.state === "rejected"
                     ? "拒否しました"
                     : entry.result.state === "failed"

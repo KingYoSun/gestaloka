@@ -754,6 +754,14 @@ test("同席者の判定の出目と成功範囲をプレイログで読める",
               diceReasons: ["判定で、技能「追跡」が有利に働きました"],
             },
           },
+          {
+            actorId: actor,
+            input: "足場を作る",
+            result: {
+              outcome: { success: false },
+              diceReasons: ["この案は振っていません。使える材料が足りません"],
+            },
+          },
         ],
       },
     },
@@ -764,9 +772,35 @@ test("同席者の判定の出目と成功範囲をプレイログで読める",
     screen.getByText(/出目 42 \/ 100、成功は 25 以下（失敗）/),
   ).toBeTruthy();
   expect(
+    screen.getByText("この案は振っていません。使える材料が足りません"),
+  ).toBeTruthy();
+  expect(
     screen.getByText("判定で、技能「追跡」が有利に働きました"),
   ).toBeTruthy();
   expect(screen.getAllByText(/出目/)).toHaveLength(1);
+  expect(screen.queryByText(/不成立でした/)).toBeNull();
+});
+
+test("判定直後に出目と根拠を応答データを開かずに読める", async () => {
+  const dice = "判定 出目 12（3d6）、成功は 8 以下（失敗）";
+  const reason = "判定で、状態「霧が深い」が不利に働きました";
+  server.use(
+    http.post("*/api/worlds/:id/session", () =>
+      json({
+        outcome: { success: false },
+        dice: [dice],
+        diceReasons: [reason],
+      }),
+    ),
+  );
+  show();
+  await open("操作");
+  fireEvent.change(await screen.findByLabelText("発言・ターンコメント"), {
+    target: { value: "霧の向こうに小鳥の姿を探す" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "発言する" }));
+  expect(await screen.findByText(dice)).toBeTruthy();
+  expect(screen.getByText(reason)).toBeTruthy();
 });
 
 test("受領判断を表示し、判断後は元の人物の通常手番へ戻る", async () => {

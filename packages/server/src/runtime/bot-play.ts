@@ -2,7 +2,11 @@ import { instantPlaceEdge } from "../world/conditions.js";
 import { classifyNpcHistory, type NpcMemory } from "./npc-history.js";
 import { npcOperations, type NpcReport, type NpcTask } from "./npc-work.js";
 import { diceFields, dicePrompt, rollDice } from "./dice.js";
-import { playedDice, playDiceMessages } from "./play-dice-messages.js";
+import {
+  playedDice,
+  playDiceMessages,
+  unrolledReasons,
+} from "./play-dice-messages.js";
 import { ModelCallInProgress, ResponseFormatError } from "../llm/budget.js";
 import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -475,19 +479,8 @@ function actionMessage(
     // fall through
     case "create":
     case "create-batch": {
-      const outcome = result.outcome as
-        | {
-            success?: boolean;
-            reason?: string;
-            proposals?: ProposalOutcome[];
-          }
-        | undefined;
-      const parts = individualOutcomes(outcome?.proposals ?? []);
-      if ([outcome, ...parts].some((p) => p?.reason === judgmentMaterialLimit))
-        return "判定に必要な資料が収まらなかった案は振っていません";
+      const outcome = result.outcome as { success?: boolean } | undefined;
       if (hasRefusalMessage && !outcome?.success) return "";
-      if (outcome?.reason === "MATERIAL_SHORTAGE")
-        return "使える材料が足りないため、作成できませんでした";
       if (outcome?.success === false) return "新規作成の判定は失敗しました";
       return result.state === "receiving" || result.state === "pending"
         ? "申請を受け付けました。受領判断を待っています"
@@ -6079,15 +6072,16 @@ export class BotPlay {
       [...source, ...(destination ? [destination] : [])],
       checks,
     );
-    const passes = async (key: string) => {
+    const check = async (key: string) => {
       const saved = await this.#roll(
         derivedId(`${input.requestId}:stealth:${key}`),
         settings[key]!,
         victim && key === "action" ? input.requestId : undefined,
       );
-      return saved.roll <= saved.setting.successThrough;
+      return { ...saved, success: saved.roll <= saved.setting.successThrough };
     };
-    const success = !victim || (await passes("action"));
+    const outcome = victim ? await check("action") : { success: true };
+    const { success } = outcome;
     const name = (await context.node(actor))!.text;
     const observations: Observation[] = [];
     const discovered: string[] = [];
@@ -6095,7 +6089,7 @@ export class BotPlay {
       const victimName = (await context.node(op.from!))!.text;
       const item = (await context.node(op.item))!.text;
       for (const viewer of atSource)
-        if (await passes("attempt:" + viewer))
+        if ((await check("attempt:" + viewer)).success)
           observations.push({
             viewer,
             text: success
@@ -6106,10 +6100,10 @@ export class BotPlay {
       const from = source[0] && (await context.node(source[0]))!.text;
       const to = (await context.node(destination))!.text;
       for (const viewer of atSource)
-        if (await passes("departure:" + viewer))
+        if ((await check("departure:" + viewer)).success)
           observations.push({ viewer, text: `${name}が${from}を出た` });
       for (const viewer of atDestination)
-        if (await passes("arrival:" + viewer)) {
+        if ((await check("arrival:" + viewer)).success) {
           discovered.push(viewer);
           observations.push({ viewer, text: `${name}が${to}に着いた` });
         }
@@ -6124,7 +6118,6 @@ export class BotPlay {
       destination && location
         ? { id: location.id, placeId: destination, discovered }
         : undefined;
-    const outcome = { success };
     const stealth = { observations, ...(stay ? { stay } : {}) };
     await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
       input.requestId,
@@ -9310,9 +9303,28 @@ export class BotPlay {
       const messages = (reasons[field] ??= []);
       // 対抗の申請文には実際に成立しなかった結果も書ける。履歴には出目の見出しを使う。
       const label = opposition && !die.opponentId ? "" : (die.text ?? "");
-      messages.push(...factorMessages(label, factors));
-      if (die.fumble) messages.push(...factorMessages(label, factors, true));
+      messages.push(
+        ...factorMessages(label, factors, die.roll, die.setting.successThrough),
+      );
+      if (die.fumble && die.setting.fumble)
+        messages.push(
+          ...factorMessages(
+            label,
+            factors,
+            die.fumble.roll,
+            die.setting.fumble.through,
+            true,
+          ),
+        );
       results.set(request, reasons);
+    }
+    for (const request of requests) {
+      const refusals = unrolledReasons(request.outcome);
+      if (refusals.length) {
+        const reasons = results.get(request.id) ?? {};
+        reasons.diceReasons = [...(reasons.diceReasons ?? []), ...refusals];
+        results.set(request.id, reasons);
+      }
     }
     return results;
   }
@@ -16201,24 +16213,7 @@ export class BotPlay {
         ])
       ).get(input.requestId);
       const parts = individualOutcomes(outcome?.proposals ?? []);
-      const refusalMessages = (parts.length ? parts : [outcome]).flatMap(
-        (p) => {
-          if (
-            p?.message &&
-            (p.reason?.endsWith("_POLICY_REJECTED") ||
-              p.reason === "STATE_DESCRIPTION_REQUIRED")
-          )
-            return [
-              `${p.text ? `「${p.text}」は` : "この申請は"}差し戻されました。${p.message}`,
-            ];
-          if (p?.reason !== "MATERIAL_ID_REQUIRED") return [];
-          const proposal = p.text ? `「${p.text}」の案` : "この案";
-          const labels = p.unresolvedMaterialLabels;
-          return labels?.length
-            ? `${proposal}は振っていません。材料「${labels.join("」「")}」に使う物品を特定できません。使う物品のIDをmaterialsに指定するか、その材料を使う工程を申請文から外してください。`
-            : `${proposal}は振っていません。申請文からどの材料を使うのか読み取れません。使う材料を申請文に明記し、その物品のIDをmaterialsに指定してください。`;
-        },
-      );
+      const refusalMessages = unrolledReasons(outcome);
       const skillResults = parts
         .filter((p) => p.person && p.reason !== "SKILL_POLICY_REJECTED")
         .map((p) => {

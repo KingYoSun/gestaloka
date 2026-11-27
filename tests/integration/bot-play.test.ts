@@ -6597,12 +6597,32 @@ test("非戦闘地域のスリは成否と目撃を別に判定し、未発見�
     ["attempt:" + c]: 1,
   });
   const success = await attempt(successId, "財布を抜く動機");
-  expect(success.outcome).toEqual({ success: true });
+  expect(success.outcome).toMatchObject({ success: true, roll: 1 });
   expect(JSON.stringify(success)).not.toContain("目撃");
   expect(await attempt(successId, "財布を抜く動機")).toEqual(success);
-  expect((await attempt(failId, "失敗した試みの原文")).outcome).toEqual({
-    success: false,
-  });
+  const failed = await attempt(failId, "失敗した試みの原文");
+  const evidence = {
+    dice: ["判定 出目 6 / 6、成功は 3 以下（失敗）"],
+    diceReasons: [expect.stringContaining("成功上限 3 を超えたため、失敗")],
+  };
+  expect(failed).toMatchObject(evidence);
+  const db = isolated.databases.postgres;
+  // 旧版の応答と履歴は成否だけを持つ。目撃判定は別の出目で、復元の対象外。
+  await db.query(
+    `UPDATE bot_request SET result=jsonb_set(result - 'dice' - 'diceReasons','{outcome}','{"success":false}') WHERE id=$1`,
+    [failId],
+  );
+  await db.query(
+    `UPDATE bot_chat SET payload=jsonb_set(payload,'{entries,0,result,outcome}','{"success":false}')
+    WHERE payload #>> '{entries,0,result,commitId}'=$1`,
+    [failId],
+  );
+  expect(await attempt(failId, "失敗した試みの原文")).toMatchObject(evidence);
+  expect(
+    (await f.status(0)).entries
+      .flatMap((row) => row.payload.entries ?? [])
+      .find((entry) => entry.input === "失敗した試みの原文")?.result,
+  ).toMatchObject(evidence);
   expect(f.calls).toHaveBeenCalledTimes(2);
   expect(graphHistory).not.toHaveBeenCalled();
   graphHistory.mockRestore();
@@ -10377,11 +10397,11 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
     outcome: { success: false },
   });
   expect(spoken.diceReasons).toEqual([
-    expect.stringContaining("GMの根拠記録なし"),
+    expect.stringContaining("出目 50 が成功上限 10 を超えたため、失敗"),
   ]);
   await f.send(0, { command: "end-turn" });
   expect(JSON.stringify((await f.status(0)).entries)).toContain(
-    "物陰で何かが動いた気がする」の判定：GMの根拠記録なし",
+    "物陰で何かが動いた気がする」の判定：出目 50 が成功上限 10 を超えたため、失敗",
   );
   expect(spoken.appearances).toBeUndefined();
   expect((await f.status(0)).members).toHaveLength(1);
@@ -16348,6 +16368,15 @@ describe("現場材料", () => {
         { text: second.text, success: false, reason: "MATERIAL_SHORTAGE" },
       ],
     });
+    const shortage = `「${second.text}」の案は振っていません。使える材料が足りません`;
+    expect(result.diceReasons).toContain(shortage);
+    await f.send(0, { command: "end-turn" });
+    expect(
+      (await f.status(0)).entries
+        .flatMap((row) => row.payload.entries ?? [])
+        .find((entry) => entry.result?.commitId === result.commitId)?.result
+        .diceReasons,
+    ).toContain(shortage);
     expect(await inventory()).toEqual({
       ships: 1,
       hulls: 0,
@@ -18249,19 +18278,36 @@ test("ダイスの出目と成功範囲を申請者と同席プレイヤーがCL
     ).toBe(302);
     await f.send(1, { command: "contact", targetId: f.actors[0] });
     await giveTurn(f, 0);
+    const owner = join(cli.directory, "dice-owner.json");
+    const connected = await cli.run(
+      owner,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    await cli.approve(
+      f.people[0]!.cookie,
+      connected.userCode,
+      `actor:${f.actors[0]}`,
+    );
     f.calls.mockImplementation(async (id) =>
-      answer(id, { successThrough: 18, explored }),
+      answer(id, { successThrough: 3, explored }),
     );
     const text = "広場の裏手から小道を探す";
-    const result = await f.send(0, {
-      command: "explore",
-      fromId: f.place,
-      label: "裏手の小道",
+    const { result } = await cli.run(
+      owner,
+      "explore",
+      "--from",
+      f.place,
+      "--label",
+      "裏手の小道",
+      "--text",
       text,
-      dependencies: [],
-    });
+    );
     const { roll } = result.outcome as { roll: number };
-    const dice = [`判定 出目 ${roll}（3d6）、成功は 18 以下（成功）`];
+    const dice = [`判定 出目 ${roll}（3d6）、成功は 3 以下（失敗）`];
     expect(result.dice).toEqual(dice);
     await f.send(0, { command: "end-turn" });
     const ownEntries = (await f.status(0)).entries.flatMap(
@@ -18272,7 +18318,7 @@ test("ダイスの出目と成功範囲を申請者と同席プレイヤーがCL
         ?.result.diceReasons,
     ).toEqual(result.diceReasons);
     expect(result.diceReasons).toEqual([
-      expect.stringContaining("GMの根拠記録なし"),
+      expect.stringContaining(`出目 ${roll} が成功上限 3 を超えたため、失敗`),
     ]);
 
     const record = expect.objectContaining({
@@ -18289,25 +18335,26 @@ test("ダイスの出目と成功範囲を申請者と同席プレイヤーがCL
     for (const status of [await f.status(0), peer])
       expect(status.entries).toContainEqual(record);
     expect((await f.status(2)).entries).not.toContainEqual(record);
-    expect(JSON.stringify(peer.entries)).not.toContain("GMの根拠記録なし");
-    const owner = join(cli.directory, "dice-owner.json");
-    const connected = await cli.run(
-      owner,
-      "connect",
-      "--server",
-      cli.base,
-      "--world",
-      f.world,
-    );
-    await cli.approve(
-      f.people[0]!.cookie,
-      connected.userCode,
-      `actor:${f.actors[0]}`,
+    expect(JSON.stringify(peer.entries)).not.toContain("diceReasons");
+    // 以前は有利・不利の記録が空の応答に定型文が保存されていた。
+    await isolated.databases.postgres.query(
+      `UPDATE bot_request SET result=jsonb_set(result,'{diceReasons}',$2) WHERE world_id=$1 AND actor_id=$3 AND command='explore'`,
+      [f.world, JSON.stringify(["判定：GMの根拠記録なし"]), f.actors[0]],
     );
     const sceneId = (await f.status(0)).sceneId!;
-    await f.send(0, { command: "finish" });
+    const finished = await cli.run(owner, "finish");
     const archived = await cli.run(owner, "status", "--scene", sceneId);
-    expect(JSON.stringify(archived.entries)).toContain("GMの根拠記録なし");
+    for (const entries of [
+      finished.result.result.entries,
+      archived.entries,
+      (await access.botStatus(f.people[0]!.id, f.world, f.actors[0], sceneId))
+        .result.entries,
+    ]) {
+      expect(JSON.stringify(entries)).toContain(
+        `出目 ${roll} が成功上限 3 を超えたため、失敗`,
+      );
+      expect(JSON.stringify(entries)).not.toContain("GMの根拠記録なし");
+    }
   } finally {
     await cli.close();
     await app.close();
@@ -20131,6 +20178,16 @@ test("観戦は公開した人物の進行中の記録だけを本人の視点�
             items: [{ label: "秘密の持ち物" }],
           },
         },
+        {
+          input: "広場の先を探った",
+          result: {
+            outcome: {
+              success: false,
+              roll: 11,
+              setting: { count: 3, sides: 6, successThrough: 8 },
+            },
+          },
+        },
       ],
       receiptResult: { outcome: "rejected", message: "非表示の内訳" },
     });
@@ -20154,6 +20211,8 @@ test("観戦は公開した人物の進行中の記録だけを本人の視点�
           lines: [
             { speaker: "話し手", text: "観戦対象だけに聞こえた発言" },
             { text: "結果：扉が開いた" },
+            { text: "広場の先を探った" },
+            { text: "判定 出目 11（3d6）、成功は 8 以下（失敗）" },
             { text: "受領が拒否されました" },
           ],
         }),
@@ -22125,7 +22184,7 @@ test("失敗した判定はファンブルを一度だけ振り、本人に残�
     setting: { count: 3, sides: 6, fumble: { text: cut.text, minutes: 60 } },
   });
   expect(slipped.diceReasons).toEqual([
-    expect.stringContaining("判定：GMの根拠記録なし"),
+    expect.stringContaining("判定：出目 9 が成功上限 3 を超えたため、失敗"),
     expect.stringContaining("ファンブル判定で、申請した行為の内容が不利"),
   ]);
   expect(await f.send(0, first)).toEqual(slipped);

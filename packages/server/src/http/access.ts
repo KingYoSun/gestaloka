@@ -3,7 +3,10 @@ export { AccessError } from "./access-error.js";
 import { AccessError } from "./access-error.js";
 import { npcReport } from "../runtime/npc-mode.js";
 import { BotPlay } from "../runtime/bot-play.js";
-import { playDiceMessages } from "../runtime/play-dice-messages.js";
+import {
+  playDiceMessages,
+  unrolledReasons,
+} from "../runtime/play-dice-messages.js";
 import type {
   PlayerPlayCommand,
   InventoryBundleCommand,
@@ -41,7 +44,7 @@ import {
   ConstructionStateError,
   type WorldConstruction,
 } from "../runtime/construction.js";
-import { worldNow } from "../world/model.js";
+import { derivedId, worldNow } from "../world/model.js";
 import { WorldConflict } from "../world/store.js";
 import { WorldScenes, type SceneRow } from "../runtime/scene.js";
 import { sceneAnchors } from "../runtime/scene-data.js";
@@ -62,11 +65,36 @@ const Cursor = z
   .strict();
 type Role = "admin" | "player";
 
+type DiceEntry = {
+  input: string;
+  applicationId?: string;
+  result: Record<string, unknown> & {
+    commitId?: string;
+    applicationId?: string;
+    outcome?: { success?: boolean };
+    dice?: string[];
+    diceReasons?: string[];
+    learningReasons?: string[];
+  };
+};
+type DiceRecord = { payload: { entries?: DiceEntry[] } };
+const diceEntries = (records: DiceRecord[] = []) =>
+  Array.isArray(records)
+    ? records.flatMap((record) => record?.payload?.entries ?? [])
+    : [];
+const missingDiceRecord =
+  "この失敗の理由は特定できません。記録には出目・成功条件・判定理由が残っていません。";
+const oldReasons = (messages?: string[]) =>
+  messages?.some((message) => message.endsWith("GMの根拠記録なし"));
+
 type SpectatingChat = {
   entries?: {
+    actorId?: string;
     input: string;
     label?: string;
     result?: {
+      commitId?: string;
+      dice?: string[];
       action?: { command: string };
       effectState?: string;
       outcome?: { success?: boolean };
@@ -91,14 +119,23 @@ function spectatingLines(payload: SpectatingChat) {
   for (const { input, label, result } of payload.entries ?? []) {
     if (input)
       lines.push({ text: input, ...(label ? { speaker: label } : {}) });
-    if (payload.observation || result?.action?.command === "oppose") continue;
+    if (payload.observation) continue;
     const success = result?.outcome?.success;
+    const dice = playDiceMessages(result?.outcome);
+    const evidence = [
+      ...(dice.length ? dice : (result?.dice ?? [])),
+      ...unrolledReasons(result?.outcome),
+    ];
+    for (const text of evidence) lines.push({ text });
+    if (success === false) {
+      if (!evidence.length) lines.push({ text: missingDiceRecord });
+      continue;
+    }
+    if (result?.action?.command === "oppose") continue;
     const text =
       success === true
         ? (result?.effectState ?? "成立しました")
-        : success === false ||
-            result?.state === "failed" ||
-            result?.state === "rejected"
+        : result?.state === "failed" || result?.state === "rejected"
           ? "成立しませんでした"
           : result?.state === "receiving"
             ? "受領判断中です"
@@ -317,6 +354,32 @@ export class WorldAccess {
           error.blockingStates,
         );
       });
+    // 旧版が返した応答の再送も、履歴と同じ保存記録から補う。
+    const entry: DiceEntry = {
+      input: "text" in input ? (input.text ?? "") : "",
+      applicationId: input.requestId,
+      result,
+    };
+    const response = entry.result;
+    if (
+      oldReasons(response.diceReasons) ||
+      oldReasons(response.learningReasons) ||
+      unrolledReasons(response.outcome).some(
+        (reason) => !response.diceReasons?.includes(reason),
+      ) ||
+      (response.outcome?.success === false &&
+        !response.diceReasons?.length &&
+        !response.learningReasons?.length)
+    )
+      await this.#explainDice(id, grant.actor_id!, [entry]);
+    if (input.command === "finish") {
+      const archive = result.result as { entries?: DiceRecord[] } | undefined;
+      await this.#explainDice(
+        id,
+        grant.actor_id!,
+        diceEntries(archive?.entries),
+      );
+    }
     return Object.assign(
       await this.playCharacters(id, result, connectionId),
       (await this.botPlay.unread(id, grant.actor_id!)) as Record<
@@ -538,6 +601,17 @@ export class WorldAccess {
     if (!first.scene_id) return { name, scene: null };
     const beforePage =
       rows.length > pageSize ? rows[pageSize - 1]!.chat_id : null;
+    await this.#restoreStealthRolls(
+      rows
+        .slice(0, pageSize)
+        .flatMap(({ payload }) =>
+          (payload?.entries ?? []).flatMap(({ actorId: author, result }) =>
+            author === actorId && result?.commitId
+              ? [{ id: result.commitId, outcome: result.outcome }]
+              : [],
+          ),
+        ),
+    );
     const entries = rows
       .slice(0, pageSize)
       .reverse()
@@ -613,6 +687,111 @@ export class WorldAccess {
       }
     }
   }
+  // 旧版の隠密の行為判定は成否だけを返し、出目は別に保存していた。
+  async #restoreStealthRolls(
+    requests: { id: string; outcome?: { success?: boolean } | undefined }[],
+  ) {
+    const stealth = new Map(
+      requests
+        .filter(
+          (row) =>
+            row.outcome?.success === false &&
+            Object.keys(row.outcome).length === 1,
+        )
+        .map((row) => [derivedId(`${row.id}:stealth:action`), row]),
+    );
+    if (stealth.size) {
+      const rolls = await this.pool.query(
+        "SELECT id,roll,setting FROM bot_dice WHERE id=ANY($1::uuid[]) AND roll IS NOT NULL",
+        [[...stealth.keys()]],
+      );
+      for (const { id, roll, setting } of rolls.rows)
+        Object.assign(stealth.get(id)!.outcome!, { roll, setting });
+    }
+  }
+  async #explainDice(world: string, viewer: string, entries: DiceEntry[]) {
+    const byRequest = new Map<string, DiceEntry[]>();
+    for (const entry of entries) {
+      const { result } = entry;
+      if (!result) continue;
+      const dice = playDiceMessages(result.outcome);
+      if (dice.length) result.dice = dice;
+      const refusals = unrolledReasons(result.outcome);
+      for (const field of ["diceReasons", "learningReasons"] as const) {
+        if (oldReasons(result[field])) {
+          const recorded = result[field]!.filter(
+            (message) => !message.endsWith("GMの根拠記録なし"),
+          );
+          if (recorded.length) result[field] = recorded;
+          else delete result[field];
+        }
+      }
+      if (refusals.length)
+        result.diceReasons = [
+          ...(result.diceReasons ?? []).filter(
+            (message) => !refusals.includes(message),
+          ),
+          ...refusals,
+        ];
+      if (
+        !result.dice?.length &&
+        (result.outcome?.success !== false || refusals.length)
+      )
+        continue;
+      const request =
+        result.commitId ?? entry.applicationId ?? result.applicationId;
+      if (request) {
+        const group = byRequest.get(request) ?? [];
+        group.push(entry);
+        byRequest.set(request, group);
+      }
+      if (
+        !result.dice?.length &&
+        !result.diceReasons?.length &&
+        !result.learningReasons?.length
+      )
+        result.diceReasons = [missingDiceRecord];
+    }
+    if (!byRequest.size) return;
+    // 非公開の根拠と隠密行動の出目は、その申請の本人にだけ戻す。
+    const { rows } = await this.pool.query(
+      `SELECT id,command,creation_rolls,result->'outcome' AS outcome,
+              result->'learningReasons' AS learning,result->'diceReasons' AS other
+       FROM bot_request WHERE world_id=$1 AND actor_id=$2 AND id=ANY($3::uuid[])`,
+      [world, viewer, [...byRequest.keys()]],
+    );
+    await this.#restoreStealthRolls(rows);
+    const reasons = await this.botPlay.diceReasons(
+      this.pool,
+      rows.map((row) => ({
+        ...row,
+        text: byRequest.get(row.id)![0]!.input,
+      })),
+    );
+    for (const row of rows) {
+      const notes = reasons.get(row.id);
+      for (const { result } of byRequest.get(row.id)!) {
+        const dice = playDiceMessages(row.outcome);
+        if (!result.dice?.length && dice.length) result.dice = dice;
+        for (const [field, saved] of [
+          ["learningReasons", row.learning],
+          ["diceReasons", row.other],
+        ] as const) {
+          const recovered = notes?.[field];
+          if (
+            saved?.length &&
+            !oldReasons(saved) &&
+            (!recovered ||
+              (row.command !== "oppose" &&
+                row.command !== "npc-action" &&
+                saved.length === recovered.length))
+          )
+            result[field] = saved;
+          else if (recovered?.length) result[field] = recovered;
+        }
+      }
+    }
+  }
   async #readBotStatus(
     subject: string,
     id: string,
@@ -631,69 +810,10 @@ export class WorldAccess {
       after,
       screen,
     );
-    const ownRolls = new Map<
-      string,
-      { text: string; result: Record<string, unknown> }[]
-    >();
-    for (const { payload } of history.entries) {
-      for (const entry of payload.entries ?? []) {
-        const dice = playDiceMessages(entry.result?.outcome);
-        if (dice.length) entry.result.dice = dice;
-        if (!entry.result?.dice?.length) continue;
-        const request =
-          entry.result.commitId ??
-          entry.applicationId ??
-          entry.result.applicationId;
-        if (request) {
-          const results = ownRolls.get(request) ?? [];
-          results.push({ text: entry.input, result: entry.result });
-          ownRolls.set(request, results);
-        } else if (entry.actorId === viewerId)
-          entry.result.diceReasons = ["GMの根拠記録なし"];
-      }
-    }
-    if (ownRolls.size) {
-      // 共有ログには根拠を書かず、本人の保存済み応答だけを履歴に重ねる。
-      const { rows } = await this.pool.query(
-        `SELECT id,command,creation_rolls,result->'outcome' AS outcome,
-                result->'learningReasons' AS learning,result->'diceReasons' AS other
-         FROM bot_request WHERE world_id=$1 AND actor_id=$2 AND id=ANY($3::uuid[])`,
-        [id, viewerId, [...ownRolls.keys()]],
-      );
-      const reasons = await this.botPlay.diceReasons(
-        this.pool,
-        rows.map((row) => ({
-          id: row.id,
-          command: row.command,
-          creation_rolls: row.creation_rolls,
-          outcome: row.outcome,
-          text: ownRolls.get(row.id)![0]!.text,
-        })),
-      );
-      for (const row of rows) {
-        const notes = reasons.get(row.id);
-        for (const { result } of ownRolls.get(row.id)!) {
-          // 保存された表示文を優先し、旧版で空だった案だけ当時の抽選記録で補う。
-          for (const [field, saved] of [
-            ["learningReasons", row.learning],
-            ["diceReasons", row.other],
-          ] as const) {
-            const recovered = notes?.[field];
-            if (
-              saved?.length &&
-              (!recovered ||
-                (row.command !== "oppose" &&
-                  row.command !== "npc-action" &&
-                  saved.length === recovered.length))
-            )
-              result[field] = saved;
-            else if (recovered?.length) result[field] = recovered;
-          }
-          if (!result.learningReasons && !result.diceReasons)
-            result.diceReasons = ["GMの根拠記録なし"];
-        }
-      }
-    }
+    await this.#explainDice(id, viewerId, [
+      ...diceEntries(history.entries),
+      ...diceEntries(history.result?.entries),
+    ]);
     const result = {
       viewerId,
       ...status,
