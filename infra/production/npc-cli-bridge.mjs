@@ -254,8 +254,7 @@ async function runCli(cli, role, args, input, parsed) {
     } catch {
       throw new Error("CLI_FAILED", { cause: error });
     }
-    if (failure?.code)
-      return { code: failure.code, error: failure.error ?? failure.message };
+    if (failure?.state === "error" && failure.code) return failure;
     throw new Error("CLI_FAILED", { cause: error });
   } finally {
     if (directory) await rm(directory, { recursive: true, force: true });
