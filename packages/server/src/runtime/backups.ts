@@ -33,6 +33,19 @@ export class Backups {
       );
     }
     const data = (await response.json()) as Record<string, unknown>;
+    if (!response.ok && action === "withdraw") {
+      if (data.error === "LAST_ADMIN")
+        throw new AccessError(
+          409,
+          "LAST_ADMIN",
+          "退会前に別の有効な管理者へ運営を引き継いでください。",
+        );
+      throw new AccessError(
+        409,
+        "WITHDRAWAL_UNAVAILABLE",
+        "退会を受け付けられませんでした。時間をおいてもう一度お試しいただくか、運営窓口にご連絡ください。",
+      );
+    }
     if (!response.ok)
       throw new AccessError(
         409,
