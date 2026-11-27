@@ -1,11 +1,6 @@
 import { createHash } from "node:crypto";
-import type { ManagedTransaction } from "neo4j-driver";
-import {
-  summaryId,
-  type Change,
-  type WorldEdge,
-  type WorldNode,
-} from "./model.js";
+import { int, type ManagedTransaction } from "neo4j-driver";
+import { type Change, type WorldEdge, type WorldNode } from "./model.js";
 import {
   bundleDiscount,
   discountDeltas,
@@ -60,11 +55,9 @@ export async function usedSkillSlots(
   worldId: string,
   holderId: string,
 ) {
-  // 旧版の要約に件数がないときだけ、その人物の現在の関係から読む。
   const { records } = await tx.run(
-    `MATCH (s:WorldNode {worldId:$worldId,id:$summary})
-     RETURN coalesce(s.skillSlots, COUNT { (:WorldNode {worldId:$worldId,id:$holderId})-[h:has {role:'skill'}]->() WHERE h.validTo IS NULL }) AS used`,
-    { worldId, holderId, summary: summaryId(holderId, "skill") },
+    "MATCH (n:WorldNode {worldId:$worldId,id:$holderId}) RETURN n.skillSlots AS used",
+    { worldId, holderId },
   );
   return Number(records[0]?.get("used") ?? 0);
 }
@@ -110,16 +103,15 @@ export async function checkSkillChange(
   ended: readonly WorldEdge[],
   limit: number,
 ) {
+  const counts = [];
   for (const [holder, delta] of skillDeltas(edges, ended)) {
-    if (delta <= 0) continue;
-    const error = skillCapacityError(
-      holder,
-      await usedSkillSlots(tx, worldId, holder),
-      limit,
-      delta,
-    );
+    if (!delta) continue;
+    const used = await usedSkillSlots(tx, worldId, holder);
+    const error = skillCapacityError(holder, used, limit, delta);
     if (error) throw error;
+    counts.push({ holder, used: int(used + delta) });
   }
+  return counts;
 }
 
 export class InventoryCapacityExceeded extends Error {

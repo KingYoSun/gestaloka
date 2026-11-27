@@ -60,6 +60,7 @@ import {
   bindingScripts,
   validateBindings,
   worldNow,
+  summaryId,
   Change,
 } from "../world/model.js";
 import {
@@ -6648,6 +6649,11 @@ export class BotPlay {
       };
     } else {
       const target = query.kind === "self" ? actor : query.targetId;
+      if (target === summaryId(actor, "skill"))
+        reject(
+          "MATERIAL_NOT_AVAILABLE",
+          "現在の技能は本人検索（search --kind self）から個別に参照してください",
+        );
       const aboard = target === actor ? await ride(context, actor) : undefined;
       const companion =
         target === actor

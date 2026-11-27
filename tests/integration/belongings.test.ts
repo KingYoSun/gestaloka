@@ -9,6 +9,7 @@ import {
   readJudgmentScope,
   type BelongingOp,
 } from "@gestaloka/server/belongings";
+import { summaryId } from "../../packages/server/src/world/model.js";
 import { locationRecords } from "../../packages/server/src/world/locations.js";
 
 const databases = connectDatabases();
@@ -422,11 +423,6 @@ test("技能枠は管理編集・同時取得にも適用し、超過中の発�
   ).rejects.toMatchObject({ code: "SKILL_CAPACITY_EXCEEDED" });
   const [first, second] = full.skills.map((s) => s.id) as [string, string];
   await store.configureInventory(worldId, false, { skillSlots: 48 });
-  // 旧版の要約は有効な技能関係から件数を引き継ぐ。
-  await databases.graph.executeQuery(
-    "MATCH (:WorldNode {worldId:$worldId,id:$person})-[:has {role:'summary'}]->(s) REMOVE s.skillSlots",
-    { worldId, person },
-  );
   await expect(apply(3, [learn("波を読む")])).rejects.toMatchObject({
     capacity: { usedSlots: 50, limitSlots: 48 },
   });
@@ -539,7 +535,100 @@ test("技能の習得・範囲変更・除去の前後で、当時の一覧と�
     ["初期設定", { from: 10, until: 20 }],
     ["鍛冶場で打ち直しを仕上げた", { from: 20, until: 30 }],
   ]);
-  expect((await summaries(worldId))[0]?.text).toBe("技能\n(なし)");
+  expect(await summaries(worldId)).toEqual([]);
+});
+
+test("旧技能要約を履歴に残し、長い技能の発展は個別技能だけで確定する", async () => {
+  const { worldId, ids, apply, read } = await world("A");
+  const person = ids[0]!;
+  const skillText = "長い稽古の内容。".repeat(240);
+  const learn = (text: string, consumeSkillIds?: string[]): BelongingOp => ({
+    type: "learn",
+    person,
+    text,
+    basis: "稽古",
+    consumeSkillIds,
+  });
+  const initial = await apply(
+    10,
+    Array.from({ length: 9 }, (_, i) => learn(i + skillText)),
+  );
+  const summary = summaryId(person, "skill");
+  const edge = randomUUID();
+  const text = initial.changes.nodes
+    .map(({ text }) => text)
+    .slice(0, 5)
+    .join("\n");
+  const commitId = randomUUID();
+  const old = await store.commit(
+    await store.claim(worldId, randomUUID()),
+    store.context(worldId),
+    {
+      commitId,
+      at: 15,
+      changes: {
+        nodes: [{ id: summary, kind: "script", text }],
+        edges: [
+          {
+            id: edge,
+            kind: "has",
+            role: "summary",
+            source: person,
+            target: summary,
+            period: { from: 15 },
+          },
+        ],
+        revisions: [],
+        endEdges: [],
+      },
+    },
+  );
+  const rebuilt = {
+    id: summary,
+    kind: "script",
+    text: initial.changes.nodes.map(({ text }) => text).join("\n"),
+  };
+  await expect(
+    databases.graph.executeQuery(
+      "MATCH (n:WorldNode {worldId:$worldId,id:$summary}) SET n.data=$data",
+      { worldId, summary, data: JSON.stringify(rebuilt) },
+    ),
+  ).rejects.toThrow("Property value is too large to index");
+  // 旧版には件数をまだ保存していない要約がある。
+  await databases.graph.executeQuery(
+    "MATCH (n:WorldNode {worldId:$worldId,id:$person}) REMOVE n.skillSlots",
+    { worldId, person },
+  );
+  await store.setup();
+  await store.setup();
+  const context = store.context(worldId);
+  expect(await context.usedSkillSlots(person)).toBe(9);
+  expect(await context.node(summary)).toBeUndefined();
+  expect((await context.node(summary, 15))?.text).toBe(text);
+  expect(
+    (await context.relations(person, "has", "out", 15)).map(({ id }) => id),
+  ).toContain(edge);
+  expect(
+    (
+      await context.relations(person, "has", "out", Number.MAX_SAFE_INTEGER)
+    ).map(({ id }) => id),
+  ).not.toContain(edge);
+  expect(await store.receipt(worldId, commitId)).toEqual(old);
+
+  const request = randomUUID();
+  const first = initial.changes.nodes[0]!.id;
+  const ops = [learn("発展" + skillText, [first])];
+  const at = Date.now();
+  const result = await apply(at, ops, request);
+  expect(result.changes.nodes.map(({ text }) => text)).toEqual([
+    "発展" + skillText,
+  ]);
+  expect(result.changes.revisions).toEqual([]);
+  expect(result.changes.endEdges).toHaveLength(1);
+  expect(await apply(at, ops, request)).toEqual(result);
+  expect(await store.context(worldId).usedSkillSlots(person)).toBe(9);
+  expect((await read(person)).skills).toHaveLength(9);
+  expect(await store.receipt(worldId, commitId)).toEqual(old);
 });
 
 test("判定の範囲には双方の技能と、指定範囲の物品・保管品を含める", async () => {
