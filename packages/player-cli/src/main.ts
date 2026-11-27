@@ -372,6 +372,15 @@ async function listen(profile: Profile) {
     retry = Math.min(30000, retry * 2);
   }
 }
+function itemDescription(profile: Profile, itemId: string, after?: string) {
+  const query = new URLSearchParams({ itemId });
+  if (after) query.set("after", after);
+  return http(
+    profile,
+    `/api/worlds/${profile.worldId}/inventory/description?${query}`,
+  );
+}
+
 async function send(
   profile: Profile,
   saved: z.infer<typeof Request>,
@@ -385,6 +394,21 @@ async function send(
     saved.method,
   );
   await save(join(journal, `${saved.id}.json`), { ...saved, result });
+  if (
+    saved.body.command === "search" &&
+    (saved.body.query as { kind?: string } | undefined)?.kind === "subject" &&
+    result.material?.node?.kind === "existence"
+  ) {
+    const description = await itemDescription(
+      profile,
+      result.material.node.id,
+    ).catch((error: unknown) => {
+      const code = (error as { code?: string }).code;
+      if (code !== "ITEM_NOT_HELD" && code !== "PLAYER_DEVICE_SCOPE")
+        throw error;
+    });
+    if (description) result.material.description = description;
+  }
   if (
     saved.body.command === "say" &&
     saved.submittedAt !== undefined &&
@@ -889,6 +913,19 @@ async function run() {
         `/api/worlds/${profile.worldId}/inventory/contents?${params}`,
       ),
     );
+  }
+  if (command === "search" && values.kind === "subject" && values.after) {
+    if (values.quote || spLimit !== undefined)
+      throw new Error(
+        "説明の続きには --quote や --expected-sp を指定できません",
+      );
+    return {
+      description: await itemDescription(
+        profile,
+        z.uuid().parse(values.target),
+        values.after,
+      ),
+    };
   }
   if (command === "bundle") {
     const id = randomUUID();

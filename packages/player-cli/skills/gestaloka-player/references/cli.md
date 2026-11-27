@@ -202,10 +202,10 @@ gestaloka start
 
 ## search
 
-本人の手番で素材を検索。seekは今いる場所を捜索し、発見した相手の名前とIDを返す。subjectには対象IDを指定し、historyには必要に応じて相手を指定。selfのbelongingsに本人の持ち物・保管先の中身・技能が、乗車中はrideに乗り物と現在地が出る。surroundingsのsubjects[].heldには同じ場所の相手が手にしている物が出る。routesには現在地からの経路が出る。乗車中は乗り物の現在地から調べる。vehiclesとpassengersに続きがあれば、それぞれのnextを--vehicle-afterまたは--passenger-afterに渡す。
+本人の手番で素材を検索。seekは今いる場所を捜索し、発見した相手の名前とIDを返す。subjectには対象IDを指定し、historyには必要に応じて相手を指定。手持ちの品をsubjectで調べると、material.descriptionに説明が出る。元の品から引き継いだ説明はinheritedに入る。description.nextがあれば、同じsubjectと対象IDに--afterで渡すと、手番を使わず続きだけ読める。selfのbelongingsに本人の持ち物・保管先の中身・技能が、乗車中はrideに乗り物と現在地が出る。surroundingsのsubjects[].heldには同じ場所の相手が手にしている物が出る。routesには現在地からの経路が出る。乗車中は乗り物の現在地から調べる。vehiclesとpassengersに続きがあれば、それぞれのnextを--vehicle-afterまたは--passenger-afterに渡す。
 
 ```text
-gestaloka search --kind <surroundings|self|history|subject|memos|seek> [--target <ID>] [--vehicle-after <ID>] [--passenger-after <ID>]
+gestaloka search --kind <surroundings|self|history|subject|memos|seek> [--target <ID>] [--after <説明の続き>] [--vehicle-after <ID>] [--passenger-after <ID>]
 ```
 
 実行例 `gestaloka search --kind subject --target @12ab34cd`
