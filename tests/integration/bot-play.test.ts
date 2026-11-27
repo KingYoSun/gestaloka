@@ -12791,6 +12791,31 @@ test("一団の出現時に設定を一度だけ確定し、その手持ちを�
   });
   expect((await f.send(0, search)).appearances).toMatchObject([{ id: group }]);
   expect((await readBelongings(ctx(), group)).items).toEqual(before.items);
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-opposition-dice");
+    const { materials } = JSON.parse(messages[1]!.content);
+    expect(materials).toContainEqual(
+      expect.objectContaining({ id: group, name: "峠の行商" }),
+    );
+    expect(
+      JSON.stringify(materials).split("家の果物を完売したい。"),
+    ).toHaveLength(2);
+    expect(
+      JSON.stringify(materials).split("干した果物を見分ける"),
+    ).toHaveLength(2);
+    return answer(id, sure);
+  });
+  expect(
+    (
+      await f.send(0, {
+        command: "oppose",
+        text: "行商に品物の真贋を問いかける",
+        dependencies: [],
+        effect: { targetId: group, state: "品物を確かめた" },
+      })
+    ).outcome,
+  ).toHaveProperty("roll");
+  f.calls.mockClear();
   const offer = (
     appeared.exchangeOffers as { id: string; itemId: string }[]
   )[0]!;

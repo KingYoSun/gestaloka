@@ -34,6 +34,52 @@ test("少量の材料は選別せず、そのままGMへ渡す", async () => {
   expect(decide).not.toHaveBeenCalled();
 });
 
+test("本人と現在地の状態が資料枠を超えても、申請に関わる状態だけを主判定へ渡す", async () => {
+  const practiced = {
+    node: { id: "practice", text: "版画の色合わせを学んだ" },
+  };
+  const prepared = { node: { id: "prepared", text: "版画の試し刷りを終えた" } };
+  const noise = Array.from({ length: 32 }, (_, i) => ({
+    node: { id: `other-${i}`, text: "昨日の天気の記録。".repeat(30) },
+  }));
+  const materials = [
+    material("actor", [], { states: [...noise, practiced] }),
+    material("studio", [], { states: [...noise, prepared] }),
+  ];
+  expect(bytes(materials)).toBeGreaterThan(24 * 1024);
+  const decide = vi.fn(async (value: unknown) => {
+    const { candidates } = value as {
+      candidates: { key: string; evidence: typeof practiced }[];
+    };
+    return Object.fromEntries(
+      candidates.flatMap(({ key, evidence }) => {
+        const score = evidence.node.id === practiced.node.id ? 0.9 : 0.1;
+        return [
+          [`r0${key}a`, score],
+          [`r0${key}e`, score],
+        ];
+      }),
+    );
+  });
+  const [packet] = await selectJudgmentMaterials({
+    materials,
+    requiredIds: new Set(["actor", "studio"]),
+    requests: [
+      {
+        text: "この作業を身につける",
+        effect: { nodes: [{ text: "版画の色を合わせて刷る" }] },
+        subjects: ["actor"],
+      },
+    ],
+    decide,
+  });
+  expect(packet).toEqual([
+    { ...materials[0], states: [practiced], omittedStates: noise.length },
+    { ...materials[1], states: [prepared], omittedStates: noise.length },
+  ]);
+  expect(decide.mock.calls.length).toBeLessThanOrEqual(2);
+});
+
 test("抜粋を用意できない本文と取得経緯を、Jevで落とさず正本取得に回す", async () => {
   const text = {
     id: "pending-skill",
@@ -315,12 +361,21 @@ test("別の案が参照する大きな対象は、無関係な案の予算を�
   const actor = material("actor", []);
   const target = {
     node: { id: "target", kind: "existence", text: "長い設定。".repeat(130) },
+    states: [
+      {
+        node: { id: "silence", text: "発声できない" },
+        commandRestrictions: ["say"],
+      },
+    ],
   };
   const location = {
     node: { id: "location", text: "工作場" },
     judgmentLocation: true,
   };
   actor.states.push(location);
+  const decide = vi.fn(async (_state, questions) =>
+    Object.fromEntries(Object.keys(questions).map((key) => [key, 0.05])),
+  );
   expect(
     await selectJudgmentMaterials({
       materials: [actor, target],
@@ -333,12 +388,18 @@ test("別の案が参照する大きな対象は、無関係な案の予算を�
           requiredIds: new Set(["target"]),
         },
       ],
-      decide: async (_state, questions) =>
-        Object.fromEntries(Object.keys(questions).map((key) => [key, 0.05])),
+      decide,
+      previewComplete: false,
+      hydrate: async (packet) => packet,
       directLimit: 0,
       budget: bytes([actor]),
     }),
   ).toEqual([[actor], undefined]);
+  expect(
+    decide.mock.calls.map(([state]) =>
+      state.requests.map((r: { text: string }) => r.text),
+    ),
+  ).toEqual([["木の札を作る"]]);
 });
 
 test("現在地は選別で保持し、GMへは判定内部の印を渡さない", async () => {
