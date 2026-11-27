@@ -165,10 +165,13 @@ import {
 import { playerMaterial } from "./player-material.js";
 import {
   isPermanentlyDead,
+  latestRespawns,
   recordDeathSpProhibition,
   recordPermanentDeath,
+  recordRespawn,
   respawnHomePlace,
   respawnPolicy,
+  respawned,
   setRespawnHome,
   type RespawnHome,
 } from "./death-policy.js";
@@ -565,6 +568,7 @@ type Entry = {
   applicationId?: string;
   itemWitnesses?: string[];
   speechWitnesses?: string[];
+  recordedFor?: string;
   report?: { recipient: string; readId: string; completedGoal?: string };
 };
 type TurnParticipant = { actorId: string; name: string; count?: number };
@@ -3296,6 +3300,9 @@ export class BotPlay {
             for (const { id, label } of await context.routeNeighbors(place))
               destinations.set(id, label);
           }
+        const respawns = person
+          ? await latestRespawns(context, [effect.targetId])
+          : [];
         if (person) await this.#rememberStateBasis(request, context);
         const drops =
           victim?.places.length && !protectedTarget
@@ -3353,6 +3360,7 @@ export class BotPlay {
           {
             recordAction: !!requester && !npc,
             ...(person && !npc && !protectedTarget ? { destinations } : {}),
+            respawns,
             drops: drops
               .filter((d) => d.rule.kind === "existence")
               .map(({ id, rule }) => ({
@@ -4125,6 +4133,7 @@ export class BotPlay {
           witnesses.some(
             (e) =>
               (e.itemWitnesses && !e.itemWitnesses.includes(member.actorId)) ||
+              e.recordedFor === member.actorId ||
               (e.speechWitnesses &&
                 !e.speechWitnesses.includes(member.actorId)),
           )
@@ -4134,8 +4143,9 @@ export class BotPlay {
             .flatMap((entry, i) => {
               const original = witnesses[skip + i]!;
               if (
-                original.speechWitnesses &&
-                !original.speechWitnesses.includes(member.actorId)
+                original.recordedFor === member.actorId ||
+                (original.speechWitnesses &&
+                  !original.speechWitnesses.includes(member.actorId))
               )
                 return [];
               if (
@@ -4539,8 +4549,9 @@ export class BotPlay {
       .slice(member.joinedAfterEntries ?? 0)
       .filter(
         (e) =>
-          (fatalRequest !== undefined && e.requestId === fatalRequest) ||
-          e.speechWitnesses?.includes(member.actorId),
+          e.recordedFor !== member.actorId &&
+          ((fatalRequest !== undefined && e.requestId === fatalRequest) ||
+            e.speechWitnesses?.includes(member.actorId)),
       );
     if (entries.length)
       await this.#record(db, session, { entries }, [member.actorId]);
@@ -7268,6 +7279,7 @@ export class BotPlay {
     const active = relations.filter(
       (edge) =>
         edge.role === "content" &&
+        edge.text !== respawned &&
         !isRespawnHome(edge) &&
         (showLocation || edge.text !== "location"),
     );
@@ -10042,7 +10054,10 @@ export class BotPlay {
       : undefined;
     const stateIds = [...(stateEdges?.values() ?? [])]
       .flat()
-      .filter((e) => e.role === "content" && !isRespawnHome(e))
+      .filter(
+        (e) =>
+          e.role === "content" && e.text !== respawned && !isRespawnHome(e),
+      )
       .map((e) => e.target);
     const [stateNodes, stateAbout] = judgment
       ? await Promise.all([
@@ -10066,7 +10081,12 @@ export class BotPlay {
       // 多くの状態を持つ対象でも入力が膨らまないよう、選んだ状態だけを渡す。
       const all = stateEdges
           ? (stateEdges.get(id) ?? [])
-              .filter((e) => e.role === "content" && !isRespawnHome(e))
+              .filter(
+                (e) =>
+                  e.role === "content" &&
+                  e.text !== respawned &&
+                  !isRespawnHome(e),
+              )
               .map((relation) => ({
                 relation,
                 node: stateNodes!.get(relation.target),
@@ -12613,6 +12633,7 @@ export class BotPlay {
               new Set(moveDestinations?.values()),
             )
           : undefined;
+        const respawns = await latestRespawns(context, affected);
         if (stateSubjects.length)
           await this.#rememberStateBasis(input.requestId, context);
         const allowedEnds = stateRelations(selected, stateSubjects);
@@ -12643,6 +12664,7 @@ export class BotPlay {
           {
             recordAction: !protectedTarget,
             reasonView: { context, viewer: actor, targets: opponents },
+            respawns,
           },
         );
         success = saved.roll <= saved.setting.successThrough;
@@ -13260,6 +13282,8 @@ export class BotPlay {
         returning,
         respawn.placeId,
       );
+      for (const id of returning)
+        await recordRespawn(context, changes, request, id, at);
     }
     const { rows } = await this.pool.query<{ actor_id: string }>(
       `SELECT c.actor_id FROM world_controlled_actor c
@@ -13602,11 +13626,13 @@ export class BotPlay {
       drops = [],
       reasonView,
       destinations,
+      respawns = [],
     }: {
       recordAction?: boolean;
       drops?: { id: string; label: string; description: string }[];
       reasonView?: { context: WorldContext; viewer: string; targets: string[] };
       destinations?: ReadonlyMap<string, string>;
+      respawns?: Awaited<ReturnType<typeof latestRespawns>>;
     } = {},
   ) {
     const { pool, fumble } = await readDicePolicy(this.pool, world);
@@ -13670,6 +13696,10 @@ export class BotPlay {
           )
         : parsed;
       const fields = z.record(z.string(), z.unknown()).parse(dice);
+      const priorRemainsRequired = respawns.length
+        ? z.boolean().parse(fields.priorRemainsRequired)
+        : false;
+      delete fields.priorRemainsRequired;
       const factors = references
         ? resolveLearningFactors(
             references,
@@ -13734,6 +13764,7 @@ export class BotPlay {
         perception: reported,
         performed,
         factors,
+        priorRemainsRequired,
       };
     }
     function read(result: unknown): {
@@ -13798,6 +13829,9 @@ export class BotPlay {
               : "自律NPCの行動の上限の理由は同席者にも公開する。その場で観察できる行為や条件で説明し、未公開の設定を明かさない。") +
             "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {successThrough:整数,thresholdBasis:根拠の一文}。成否、出目、物語は生成しない。変更は以下で求められた項目だけを返す。" +
             (recordAction ? performedActionPrompt : "") +
+            (respawns.length
+              ? "respawnsは対象IDと直近の死亡から復帰した時刻(at、Unixミリ秒)です。このIDは現在活動している本人を指します。以前の死亡と、その後の復帰を順に扱ってください。通常の出力にpriorRemainsRequiredを必ず加えてください。以前の遺体にだけ成立する申請で、申請が指定したのが復帰した本人のIDならtrue、それ以外はfalseです。現在の本人への新たな行為は通常どおり判定してください。"
+              : "") +
             diceStatePrompt +
             (destinations
               ? "成功の結果として対象の人物が別の場所に着く場合、displacementに移動先を返す。destinationsに同じ場所があれば{placeId:その場所のID}を使う。そこに該当がなく、到着先が具体的に定まる場合だけ{newPlace:到着先の呼び名}で新しい場所を返す。押されても同じ場所にいる場合や移動が成立しない場合は省く。移動の経緯はperformed、移動先はdisplacement、移動後も続く負傷などはstatesに書く。現在の位置をstatesに含めない。"
@@ -13864,6 +13898,7 @@ export class BotPlay {
               : {}),
             ...(consumable.length ? { consumable } : {}),
             ...(mortal.length ? { mortal } : {}),
+            ...(respawns.length ? { respawns } : {}),
             ...(mortal.length && deathCriteria ? { deathCriteria } : {}),
             ...(affected.length ? { affected } : {}),
             ...(destinations
@@ -13878,15 +13913,27 @@ export class BotPlay {
       (raw) => readDecision(raw, true),
     );
     const {
-        setting,
-        observable,
-        observableRestrictions,
-        observableWhile,
-        perception: reported,
-        performed,
-        factors,
-      } = readDecision(response.content),
-      saved = await this.#roll(requestId, setting, spRequest, protect, factors);
+      setting,
+      observable,
+      observableRestrictions,
+      observableWhile,
+      perception: reported,
+      performed,
+      factors,
+      priorRemainsRequired,
+    } = readDecision(response.content);
+    if (priorRemainsRequired)
+      reject(
+        "OPPOSITION_PREVIOUS_BODY_REQUIRED",
+        "指定した相手は死亡後に復帰しています。以前の遺体に作用するには、そこに残っている遺体を対象にしてください。",
+      );
+    const saved = await this.#roll(
+      requestId,
+      setting,
+      spRequest,
+      protect,
+      factors,
+    );
     return {
       ...saved,
       observable,
@@ -16892,8 +16939,8 @@ export class BotPlay {
                 } else if (
                   !plan.changes.edges.length ||
                   !plan.changes.edges.every((e) => e.kind === "interpret")
-                )
-                  d.entries.push({
+                ) {
+                  const entry: Entry = {
                     actorId:
                       input.command === "npc-action" ? input.npcId : actor,
                     requestId: input.requestId,
@@ -16905,7 +16952,22 @@ export class BotPlay {
                       : {}),
                     ...(input.observe ? { speechWitnesses: [actor] } : {}),
                     result,
-                  });
+                  };
+                  if (
+                    !input.observe &&
+                    plan.fatal?.some((id) =>
+                      d.members.some(
+                        (member) => member.actorId === id && !member.instant,
+                      ),
+                    )
+                  ) {
+                    await this.#record(db, session, { entries: [entry] }, [
+                      actor,
+                    ]);
+                    entry.recordedFor = actor;
+                  }
+                  d.entries.push(entry);
+                }
                 await this.#applyInstantReduction(
                   db,
                   session,

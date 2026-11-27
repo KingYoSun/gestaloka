@@ -5,7 +5,7 @@ import {
   isSpUseProhibition,
   type WorldContext,
 } from "../world/store.js";
-import { permanentDeath } from "./death-policy.js";
+import { permanentDeath, respawned } from "./death-policy.js";
 
 const latest = Number.MAX_SAFE_INTEGER;
 
@@ -16,6 +16,7 @@ export function editableStatus(edge: WorldEdge, node?: WorldNode) {
     edge.text !== "location" &&
     edge.text !== "operator" &&
     edge.text !== permanentDeath &&
+    edge.text !== respawned &&
     !isPlaceSeriesMembership(edge) &&
     !isRespawnHome(edge) &&
     !isSpUseProhibition(edge) &&
