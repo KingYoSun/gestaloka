@@ -42,6 +42,18 @@ CADDY_TLS_MODE=internal
 
 `CADDY_TLS_MODE=internal` ではCaddyの内部CAが証明書を発行します。前段のプロキシにはそのCAを信頼する設定が必要です。`auto` はCaddyの自動HTTPSを使います。未指定時は本番で `auto`、試験環境で `internal` です。待受の指定を省くと、ポートはプロファイルの値、アドレスは本番で `0.0.0.0`、試験環境で `127.0.0.1` になります。再描画で生成される `BIND_ADDRESS`・`HTTP_PORT`・`HTTPS_PORT` はComposeが読み取ります。
 
+## 公開APIの外形監視
+
+Cloudflare Workers の `gestaloka-api-monitor` は毎分 `https://api.gestaloka.com/api/health` を確認する。配備するには対象の Cloudflare アカウントにログインし、リポジトリのルートで次を実行する。
+
+```sh
+npx wrangler@4.168.0 deploy --config infra/production/api-monitor/wrangler.jsonc
+```
+
+障害を調べるときは、Worker の Logs で `event` が `api_probe` の記録を開く。`at` は確認を始めた UTC 時刻で、`status` は HTTP ステータス、`cfRay` は取得できた `cf-ray` を示す。HTTP 応答が得られない場合は `status` と `cfRay` が `null` になり、`failure` に理由が入る。
+
+`ok: false` が続いた区間の最初の失敗と、その後の最初の `ok: true` を探す。直前の成功から最初の失敗までに Tunnel が切断し、最後の失敗から次の成功までに再接続したかを、`cloudflared` のログと UTC で照合する。この方法で分かる時刻の精度は観測間隔に限られる。
+
 ## サービスを稼働させたままデプロイする
 
 `pnpm production up` は、稼働中の旧ワーカーへ新しいNPC手番の受付停止を求める。処理中の手番があれば、モデル応答と手番の確定を待ってからコンテナを交換する。4分以内に準備が整わなければ終了コード75を返す。旧ワーカーは処理を続け、遅れて届いた応答も保存する。
