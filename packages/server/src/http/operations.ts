@@ -245,7 +245,7 @@ export class Operations {
     const account = await this.authorize(userId);
     const rows = (
       await this.pool.query(
-        `SELECT c.id,c.world_id,c.public_title AS title,c.public_description AS description,c.player_settings AS "playerSettings",c.accepting,
+        `SELECT c.id,c.world_id,c.free_player_limit,c.public_title AS title,c.public_description AS description,c.player_settings AS "playerSettings",c.accepting,
       c.accepting AND c.published AND c.world_id IS NOT NULL AND c.state IN ('finished','playing','play_paused') AS "canJoin"
       FROM world_construction c WHERE ($2::uuid IS NULL OR c.id<$2) AND ($3::uuid IS NULL OR c.id=$3)
       AND (c.published OR EXISTS (SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id
@@ -262,6 +262,7 @@ export class Operations {
         worldId,
         row.world_id,
         account.role,
+        row.free_player_limit,
       );
       if (block) {
         row.canJoin = false;
@@ -1446,8 +1447,8 @@ export class Operations {
       case "worlds.configure": {
         const row = (
           await db.query(
-            `UPDATE world_construction SET public_title=$2,public_description=$3,published=$4,accepting=$5,player_settings=coalesce($6,player_settings),player_list=coalesce($7,player_list),instant_npc_multiplier=coalesce($8,instant_npc_multiplier),starting_items=coalesce($13::jsonb,starting_items),daily_sp_limit=coalesce($14,daily_sp_limit),death_judgment=coalesce($9,death_judgment),death_criteria=coalesce($10,death_criteria),death_place_id=CASE WHEN $11 THEN $12 ELSE death_place_id END,respawn_enabled=coalesce($15,respawn_enabled),non_combat_areas=coalesce($16::jsonb,non_combat_areas),non_combat_place_series=coalesce($17::text[],non_combat_place_series) WHERE id=$1
-          RETURNING id,public_title AS title,public_description AS description,player_settings AS "playerSettings",published,accepting,player_list AS "playerList",instant_npc_multiplier AS "instantNpcMultiplier",starting_items AS "startingItems",daily_sp_limit AS "dailySpLimit",death_judgment AS "deathJudgment",death_criteria AS "deathCriteria",death_place_id AS "deathPlaceId",respawn_enabled AS "respawnEnabled",non_combat_areas AS "nonCombatAreas",non_combat_place_series AS "nonCombatPlaceSeries"`,
+            `UPDATE world_construction SET public_title=$2,public_description=$3,published=$4,accepting=$5,player_settings=coalesce($6,player_settings),player_list=coalesce($7,player_list),instant_npc_multiplier=coalesce($8,instant_npc_multiplier),starting_items=coalesce($13::jsonb,starting_items),daily_sp_limit=coalesce($14,daily_sp_limit),death_judgment=coalesce($9,death_judgment),death_criteria=coalesce($10,death_criteria),death_place_id=CASE WHEN $11 THEN $12 ELSE death_place_id END,respawn_enabled=coalesce($15,respawn_enabled),non_combat_areas=coalesce($16::jsonb,non_combat_areas),non_combat_place_series=coalesce($17::text[],non_combat_place_series),free_player_limit=coalesce($18,free_player_limit) WHERE id=$1
+          RETURNING id,public_title AS title,public_description AS description,player_settings AS "playerSettings",published,accepting,player_list AS "playerList",instant_npc_multiplier AS "instantNpcMultiplier",starting_items AS "startingItems",daily_sp_limit AS "dailySpLimit",death_judgment AS "deathJudgment",death_criteria AS "deathCriteria",death_place_id AS "deathPlaceId",respawn_enabled AS "respawnEnabled",non_combat_areas AS "nonCombatAreas",non_combat_place_series AS "nonCombatPlaceSeries",free_player_limit AS "freePlayerLimit"`,
             [
               input.worldId,
               input.title,
@@ -1468,6 +1469,7 @@ export class Operations {
                 ? JSON.stringify(input.nonCombatAreas)
                 : null,
               input.nonCombatPlaceSeries ?? null,
+              input.freePlayerLimit ?? null,
             ],
           )
         ).rows[0];

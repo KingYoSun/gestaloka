@@ -208,7 +208,7 @@ export async function playerDeviceRoutes(
         world.joinBlock === "WORLD_INVITATION_REQUIRED"
           ? "<p>この世界への参加には招待が必要です。</p>"
           : world.joinBlock === "PLAYER_LIMIT_REACHED"
-            ? "<p>この世界で所持できるプレイヤーは1人までです。</p>"
+            ? "<p>この世界の無料プレイヤー枠に空きがありません。</p>"
             : "";
       if (proposed)
         choices.unshift(

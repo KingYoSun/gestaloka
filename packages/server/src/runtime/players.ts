@@ -73,43 +73,61 @@ export class WorldPlayers {
     constructionId: string,
     worldId: string,
     role: "admin" | "user",
+    freePlayerLimit: number,
   ) {
     const { invited, pending, existing } = (
       await db.query<{
         invited: boolean;
-        pending: boolean;
+        pending: number;
         existing: boolean;
       }>(
         `SELECT EXISTS(SELECT 1 FROM world_participation WHERE user_id=$1 AND construction_id=$2) AS invited,
-              EXISTS(SELECT 1 FROM world_join WHERE subject_id=$1 AND construction_id=$2 AND state IN ('joining','paused')) AS pending,
+              (SELECT count(*)::int FROM (SELECT 1 FROM world_join WHERE subject_id=$1 AND construction_id=$2
+                AND state IN ('joining','paused') LIMIT $3) reserved) AS pending,
               EXISTS(SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id
                 WHERE s.user_id=$1 AND s.active AND (s.id=s.user_id OR s.token_hash IS NOT NULL)
                   AND a.construction_id=$2 AND a.role='player' AND a.actor_id IS NOT NULL) AS existing`,
-        [userId, constructionId],
+        [
+          userId,
+          constructionId,
+          role === "admin" ? 1 : Math.max(freePlayerLimit, 1),
+        ],
       )
     ).rows[0]!;
     if (!invited && !existing && !pending) return "WORLD_INVITATION_REQUIRED";
     if (role === "admin") return;
-    if (pending) return "PLAYER_LIMIT_REACHED";
+    const available = freePlayerLimit - pending;
+    if (available <= 0) return "PLAYER_LIMIT_REACHED";
     const context = this.construction.agent.store.context(worldId);
+    const counted = new Set<string>();
+    let after: string | null = null;
     // 死亡済みの人物は一度照合すると、以降の空き枠の検索から外れる。
     for (;;) {
-      const row = (
-        await db.query<{ id: string; actor_id: string }>(
+      const { rows }: pg.QueryResult<{ id: string; actor_id: string }> =
+        await db.query(
           `SELECT a.id,a.actor_id FROM world_access a JOIN world_subject s ON s.id=a.subject_id
          WHERE s.user_id=$1 AND s.active AND (s.id=s.user_id OR s.token_hash IS NOT NULL)
            AND a.construction_id=$2 AND a.role='player' AND a.actor_id IS NOT NULL AND NOT a.player_slot_released
-         LIMIT 1`,
-          [userId, constructionId],
-        )
-      ).rows[0];
-      if (!row) return;
-      if (!(await isPermanentlyDead(context, row.actor_id)))
-        return "PLAYER_LIMIT_REACHED";
-      await db.query(
-        "UPDATE world_access SET player_slot_released=true WHERE id=$1",
-        [row.id],
-      );
+           AND ($3::uuid IS NULL OR a.id>$3) ORDER BY a.id LIMIT $4`,
+          [
+            userId,
+            constructionId,
+            after,
+            Math.min(available - counted.size, 32),
+          ],
+        );
+      if (!rows.length) return;
+      for (const row of rows) {
+        if (counted.has(row.actor_id)) continue;
+        if (await isPermanentlyDead(context, row.actor_id))
+          await db.query(
+            "UPDATE world_access SET player_slot_released=true WHERE id=$1",
+            [row.id],
+          );
+        else counted.add(row.actor_id);
+      }
+      if (counted.size === available) return "PLAYER_LIMIT_REACHED";
+      after = rows.at(-1)!.id;
     }
   }
   async requireJoinSlot(
@@ -118,6 +136,7 @@ export class WorldPlayers {
     constructionId: string,
     worldId: string,
     role: "admin" | "user",
+    freePlayerLimit: number,
   ) {
     const block = await this.joinBlock(
       db,
@@ -125,6 +144,7 @@ export class WorldPlayers {
       constructionId,
       worldId,
       role,
+      freePlayerLimit,
     );
     if (block === "WORLD_INVITATION_REQUIRED")
       throw new AccessError(403, block, "この世界への参加には招待が必要です");
@@ -132,7 +152,7 @@ export class WorldPlayers {
       throw new AccessError(
         409,
         block,
-        "この世界で所持できるプレイヤーは1人までです",
+        `この世界の無料プレイヤー枠（${freePlayerLimit}人）に空きがありません`,
       );
   }
   async #enqueue(db: pg.PoolClient, id: string) {
@@ -154,6 +174,7 @@ export class WorldPlayers {
     const world = (
       await db.query<{
         world_id: string;
+        free_player_limit: number;
         root_ids: string[];
         at: string;
         published: boolean;
@@ -188,6 +209,7 @@ export class WorldPlayers {
       input.worldId,
       world.world_id,
       account.role,
+      world.free_player_limit,
     );
     const preset =
       input.character !== undefined

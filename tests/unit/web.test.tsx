@@ -341,7 +341,7 @@ test("Reactを描画し、生成されたHTTPクライアント型を通信に�
   expect(data?.status).toBe("ok");
 });
 
-test("世界の公開設定からリスポーンと非戦闘地域を保存できる", async () => {
+test("世界の公開設定から無料プレイヤー数とリスポーン・非戦闘地域を保存できる", async () => {
   let saved: unknown;
   server.use(
     http.post("*/api/operations", async ({ request }) => {
@@ -361,6 +361,9 @@ test("世界の公開設定からリスポーンと非戦闘地域を保存で�
   fireEvent.click(
     await screen.findByLabelText("死亡した人物をリスポーンさせる"),
   );
+  fireEvent.change(screen.getByLabelText("アカウントごとの無料プレイヤー数"), {
+    target: { value: "2" },
+  });
   fireEvent.change(screen.getByLabelText("非戦闘にする場所の系統"), {
     target: { value: "水車村\n塔の森" },
   });
@@ -373,6 +376,7 @@ test("世界の公開設定からリスポーンと非戦闘地域を保存で�
   await waitFor(() =>
     expect(saved).toMatchObject({
       operation: "worlds.configure",
+      freePlayerLimit: 2,
       respawnEnabled: false,
       nonCombatPlaceSeries: ["水車村", "塔の森"],
       nonCombatAreas: [

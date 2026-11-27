@@ -445,7 +445,7 @@ export function Participation({ id }: { id: string }) {
           {world.data?.joinBlock === "WORLD_INVITATION_REQUIRED"
             ? "この世界への参加には招待が必要です。"
             : world.data?.joinBlock === "PLAYER_LIMIT_REACHED"
-              ? "この世界で所持できるプレイヤーは1人までです。"
+              ? "この世界の無料プレイヤー枠に空きがありません。"
               : "現在、新しい参加は受け付けていません。参加済みの人物は引き続き開けます。"}
         </Notice>
       )}

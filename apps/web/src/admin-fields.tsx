@@ -190,6 +190,7 @@ export const labels: Record<string, string> = {
   description: "説明",
   published: "登録済み全員へ公開",
   accepting: "新規参加を受付",
+  freePlayerLimit: "アカウントごとの無料プレイヤー数",
   playerList: "出会えるフレンドと居場所の一覧を提供",
   instantNpcMultiplier: "出現個体の同席上限（発生数の倍率）",
   deathJudgment: "人物を死亡判定の対象にする",

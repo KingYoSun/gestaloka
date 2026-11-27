@@ -2984,6 +2984,12 @@
                         "accepting": {
                           "type": "boolean"
                         },
+                        "freePlayerLimit": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                        },
                         "playerList": {
                           "type": "boolean"
                         },
@@ -3050,6 +3056,7 @@
                         "description",
                         "published",
                         "accepting",
+                        "freePlayerLimit",
                         "playerList",
                         "instantNpcMultiplier",
                         "deathJudgment",
@@ -3459,6 +3466,12 @@
                         "accepting": {
                           "type": "boolean"
                         },
+                        "freePlayerLimit": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                        },
                         "playerList": {
                           "type": "boolean"
                         },
@@ -3525,6 +3538,7 @@
                         "description",
                         "published",
                         "accepting",
+                        "freePlayerLimit",
                         "playerList",
                         "instantNpcMultiplier",
                         "deathJudgment",
@@ -3996,6 +4010,12 @@
                         "accepting": {
                           "type": "boolean"
                         },
+                        "freePlayerLimit": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                        },
                         "playerList": {
                           "type": "boolean"
                         },
@@ -4062,6 +4082,7 @@
                         "description",
                         "published",
                         "accepting",
+                        "freePlayerLimit",
                         "playerList",
                         "instantNpcMultiplier",
                         "deathJudgment",
@@ -28849,6 +28870,12 @@
                             "type": "string",
                             "format": "uuid",
                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "freePlayerLimit": {
+                            "description": "一般アカウントがこの世界で所持できる無料プレイヤー数。既定は1。省略すると現在の設定を保つ",
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 2147483647
                           },
                           "dailySpLimit": {
                             "description": "この世界のアカウントごとの日次SP上限。既定は100。省略すると現在の設定を保つ",

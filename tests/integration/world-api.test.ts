@@ -970,16 +970,19 @@ test("世界別の招待を登録済みの本人に追加し、同時要求で�
     requestId: randomUUID(),
     command: "finish",
   });
-  for (const world of [a, b])
-    await auth.operations.execute(world.subject, randomUUID(), {
+  const configure = (world: typeof a, freePlayerLimit?: number) =>
+    auth.operations.execute(world.subject, randomUUID(), {
       operation: "worlds.configure",
       worldId: world.id,
       title: "参加受付中",
       description: "",
       published: true,
       accepting: true,
+      ...(freePlayerLimit === undefined ? {} : { freePlayerLimit }),
       reason: "世界別の招待を検証",
     });
+  for (const world of [a, b])
+    expect(await configure(world)).toMatchObject({ freePlayerLimit: 1 });
   const player = await auth.person("user"),
     returning = await auth.person("user");
   subjects.push(player.id, returning.id);
@@ -1083,6 +1086,20 @@ test("世界別の招待を登録済みの本人に追加し、同時要求で�
       )
     ).items[0]?.joinBlock,
   ).toBe("PLAYER_LIMIT_REACHED");
+  expect(await configure(b, 2)).toMatchObject({ freePlayerLimit: 2 });
+  expect(await configure(b)).toMatchObject({ freePlayerLimit: 2 });
+  await access.players.tick(
+    pair.find((response) => response.statusCode === 200)!.json().result.id,
+  );
+  expect((await join(b.id)).statusCode).toBe(200);
+  expect((await join(b.id)).json().code).toBe("PLAYER_LIMIT_REACHED");
+  expect((await join(a.id)).json().code).toBe("PLAYER_LIMIT_REACHED");
+  expect(await configure(b, 0)).toMatchObject({ freePlayerLimit: 0 });
+  await access.devices.approve(returning.id, (await device()).userCode, {
+    actorId: old.actorId!,
+  });
+  expect((await join(b.id)).json().code).toBe("PLAYER_LIMIT_REACHED");
+  await configure(b, 1);
   const graph = (await runtime.get(b.id)).world_id!;
   const store = runtime.agent.store;
   const now = Date.now(),

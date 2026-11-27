@@ -195,8 +195,8 @@ export class PlayerDevices {
         if (!owned.rowCount) throw denied();
       } else {
         const world = (
-          await db.query<{ world_id: string }>(
-            "SELECT world_id FROM world_construction WHERE id=$1 AND published AND accepting AND world_id IS NOT NULL AND state IN ('finished','playing','play_paused')",
+          await db.query<{ world_id: string; free_player_limit: number }>(
+            "SELECT world_id,free_player_limit FROM world_construction WHERE id=$1 AND published AND accepting AND world_id IS NOT NULL AND state IN ('finished','playing','play_paused')",
             [row.world_id],
           )
         ).rows[0];
@@ -212,6 +212,7 @@ export class PlayerDevices {
           row.world_id,
           world.world_id,
           account.role,
+          world.free_player_limit,
         );
         if ("character" in choice) {
           if (!row.character) throw denied();

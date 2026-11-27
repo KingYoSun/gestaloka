@@ -220,6 +220,7 @@ async function fixture(playerCount = 3) {
   const calls = vi.spyOn(runtime.agent.model, "complete");
   return {
     world,
+    admin,
     graph,
     people,
     actors,
@@ -14726,6 +14727,10 @@ test("認可済み端末は人物生成前に一度報告でき、参加後も�
       "旅の記録を集める人",
     );
     expect((await post()).statusCode).toBe(403);
+    await auth.operations.execute(user.id, randomUUID(), {
+      operation: "account.register",
+      invitation: await auth.worldInvite(f.admin.id, f.world),
+    });
     await access.devices.approve(user.id, code.userCode, { character: true });
     expect(
       (await app.inject({ url: url.replace(f.world, randomUUID()), headers }))
@@ -18445,7 +18450,7 @@ test("現在地をHomeに設定すると、手番とSPを消費せず、死亡�
 test("リスポーンが有効な世界でも、作成時に無効を選んだ人物は死亡時に戻らない", async () => {
   const f = await fixture();
   await isolated.databases.postgres.query(
-    "UPDATE world_construction SET published=true,accepting=true,state='finished',death_place_id=$2 WHERE id=$1",
+    "UPDATE world_construction SET published=true,accepting=true,state='finished',death_place_id=$2,free_player_limit=2 WHERE id=$1",
     [f.world, f.far],
   );
   for (const i of [1, 2]) {

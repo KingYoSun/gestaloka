@@ -157,7 +157,7 @@ export class WorldAccess {
       CREATE UNIQUE INDEX IF NOT EXISTS world_access_player ON world_access(subject_id,construction_id,actor_id) WHERE role='player';
       CREATE INDEX IF NOT EXISTS world_access_actor ON world_access(construction_id,actor_id,subject_id) WHERE role='player';
       ALTER TABLE world_access ADD COLUMN IF NOT EXISTS player_slot_released boolean NOT NULL DEFAULT false;
-      CREATE INDEX IF NOT EXISTS world_access_player_slot ON world_access(subject_id,construction_id)
+      CREATE INDEX IF NOT EXISTS world_access_player_slot ON world_access(subject_id,construction_id,id)
         WHERE role='player' AND actor_id IS NOT NULL AND NOT player_slot_released;
       CREATE OR REPLACE FUNCTION guard_subject_grants() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
@@ -939,6 +939,7 @@ export class WorldAccess {
         accepting: row.accepting,
         playerList: row.player_list,
         instantNpcMultiplier: row.instant_npc_multiplier,
+        freePlayerLimit: row.free_player_limit,
         deathJudgment: row.death_judgment,
         respawnEnabled: row.respawn_enabled,
         deathCriteria: row.death_criteria,
