@@ -2,18 +2,23 @@ import type { Construction } from "../runtime/construction.js";
 import { readPlaceSeries } from "./place-series.js";
 import type { WorldContext } from "./store.js";
 
-export type NonCombatPolicy = Pick<
+export type CombatPolicy = Pick<
   Construction,
-  "non_combat_areas" | "non_combat_place_series"
+  "combat_mode" | "non_combat_areas" | "non_combat_place_series"
 >;
 
 /** 判定する場所から、明示された親だけを上にたどる。 */
 export async function isNonCombatPlace(
   context: Pick<WorldContext, "partParents" | "edges" | "nodes">,
-  { non_combat_areas: areas, non_combat_place_series: series }: NonCombatPolicy,
+  {
+    combat_mode,
+    non_combat_areas: areas,
+    non_combat_place_series: series,
+  }: CombatPolicy,
   places: readonly string[],
   at: number,
 ) {
+  if (combat_mode === "pve") return false;
   if (series.length) {
     const memberships = await readPlaceSeries(context, places, at);
     for (const name of memberships.values())

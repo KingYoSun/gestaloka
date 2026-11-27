@@ -1447,8 +1447,8 @@ export class Operations {
       case "worlds.configure": {
         const row = (
           await db.query(
-            `UPDATE world_construction SET public_title=$2,public_description=$3,published=$4,accepting=$5,player_settings=coalesce($6,player_settings),player_list=coalesce($7,player_list),instant_npc_multiplier=coalesce($8,instant_npc_multiplier),starting_items=coalesce($13::jsonb,starting_items),daily_sp_limit=coalesce($14,daily_sp_limit),death_judgment=coalesce($9,death_judgment),death_criteria=coalesce($10,death_criteria),death_place_id=CASE WHEN $11 THEN $12 ELSE death_place_id END,respawn_enabled=coalesce($15,respawn_enabled),non_combat_areas=coalesce($16::jsonb,non_combat_areas),non_combat_place_series=coalesce($17::text[],non_combat_place_series),free_player_limit=coalesce($18,free_player_limit) WHERE id=$1
-          RETURNING id,public_title AS title,public_description AS description,player_settings AS "playerSettings",published,accepting,player_list AS "playerList",instant_npc_multiplier AS "instantNpcMultiplier",starting_items AS "startingItems",daily_sp_limit AS "dailySpLimit",death_judgment AS "deathJudgment",death_criteria AS "deathCriteria",death_place_id AS "deathPlaceId",respawn_enabled AS "respawnEnabled",non_combat_areas AS "nonCombatAreas",non_combat_place_series AS "nonCombatPlaceSeries",free_player_limit AS "freePlayerLimit"`,
+            `UPDATE world_construction SET public_title=$2,public_description=$3,published=$4,accepting=$5,player_settings=coalesce($6,player_settings),player_list=coalesce($7,player_list),instant_npc_multiplier=coalesce($8,instant_npc_multiplier),starting_items=coalesce($13::jsonb,starting_items),daily_sp_limit=coalesce($14,daily_sp_limit),death_judgment=coalesce($9,death_judgment),death_criteria=coalesce($10,death_criteria),death_place_id=CASE WHEN $11 THEN $12 ELSE death_place_id END,respawn_enabled=coalesce($15,respawn_enabled),non_combat_areas=coalesce($16::jsonb,non_combat_areas),non_combat_place_series=coalesce($17::text[],non_combat_place_series),free_player_limit=coalesce($18,free_player_limit),combat_mode=coalesce($19,combat_mode) WHERE id=$1
+          RETURNING id,public_title AS title,public_description AS description,player_settings AS "playerSettings",published,accepting,player_list AS "playerList",instant_npc_multiplier AS "instantNpcMultiplier",starting_items AS "startingItems",daily_sp_limit AS "dailySpLimit",death_judgment AS "deathJudgment",death_criteria AS "deathCriteria",death_place_id AS "deathPlaceId",respawn_enabled AS "respawnEnabled",non_combat_areas AS "nonCombatAreas",non_combat_place_series AS "nonCombatPlaceSeries",combat_mode AS "combatMode",free_player_limit AS "freePlayerLimit"`,
             [
               input.worldId,
               input.title,
@@ -1470,6 +1470,7 @@ export class Operations {
                 : null,
               input.nonCombatPlaceSeries ?? null,
               input.freePlayerLimit ?? null,
+              input.combatMode ?? null,
             ],
           )
         ).rows[0];

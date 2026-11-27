@@ -194,6 +194,8 @@ const InventoryLimits = z.object({
       "人物の技能枠。既定は50。手持ち枠の有効・無効にかかわらず適用する",
     ),
 });
+export const CombatMode = z.enum(["pve", "pvp"]);
+export type CombatMode = z.infer<typeof CombatMode>;
 export const NonCombatAreas = z.array(
   z.strictObject({
     rootId: z.uuid(),
@@ -231,6 +233,7 @@ export const WorldStatus = z.object({
     playerList: z.boolean(),
     instantNpcMultiplier: z.number().int().positive(),
     deathJudgment: z.boolean(),
+    combatMode: CombatMode,
     respawnEnabled: z.boolean(),
     deathCriteria: z.string(),
     deathPlaceId: z.uuid().nullable(),
@@ -1627,6 +1630,9 @@ export const Operation = z.discriminatedUnion("operation", [
         .describe(
           "プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。省略すると現在の設定を保つ",
         ),
+      combatMode: CombatMode.optional().describe(
+        "新規世界の既定はpve。pvpではプレイヤー間の対抗行動と非戦闘地域を有効にする。省略すると現在の設定を保つ",
+      ),
       respawnEnabled: z
         .boolean()
         .optional()

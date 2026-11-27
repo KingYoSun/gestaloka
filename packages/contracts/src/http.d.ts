@@ -1252,6 +1252,8 @@ export interface paths {
                                 playerList: boolean;
                                 instantNpcMultiplier: number;
                                 deathJudgment: boolean;
+                                /** @enum {string} */
+                                combatMode: "pve" | "pvp";
                                 respawnEnabled: boolean;
                                 deathCriteria: string;
                                 /** Format: uuid */
@@ -1439,6 +1441,8 @@ export interface paths {
                                 playerList: boolean;
                                 instantNpcMultiplier: number;
                                 deathJudgment: boolean;
+                                /** @enum {string} */
+                                combatMode: "pve" | "pvp";
                                 respawnEnabled: boolean;
                                 deathCriteria: string;
                                 /** Format: uuid */
@@ -1646,6 +1650,8 @@ export interface paths {
                                 playerList: boolean;
                                 instantNpcMultiplier: number;
                                 deathJudgment: boolean;
+                                /** @enum {string} */
+                                combatMode: "pve" | "pvp";
                                 respawnEnabled: boolean;
                                 deathCriteria: string;
                                 /** Format: uuid */
@@ -10185,6 +10191,11 @@ export interface paths {
                             }[];
                             /** @description プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。省略すると現在の設定を保つ */
                             deathJudgment?: boolean;
+                            /**
+                             * @description 新規世界の既定はpve。pvpではプレイヤー間の対抗行動と非戦闘地域を有効にする。省略すると現在の設定を保つ
+                             * @enum {string}
+                             */
+                            combatMode?: "pve" | "pvp";
                             /** @description 死亡した人物を復帰させる。既定は有効。無効なら死亡後はその人物で操作できない。省略すると現在の設定を保つ */
                             respawnEnabled?: boolean;
                             /** @description 人物の死亡を判定するGMへ渡す、この世界の条件文。空なら行動と結果だけから判定する。省略すると現在の設定を保つ */

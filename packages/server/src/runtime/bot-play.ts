@@ -94,7 +94,7 @@ import {
   locationRecords,
 } from "../world/locations.js";
 import { readPlaceSeries, recordPlaceSeries } from "../world/place-series.js";
-import { isNonCombatPlace, type NonCombatPolicy } from "../world/noncombat.js";
+import { isNonCombatPlace, type CombatPolicy } from "../world/noncombat.js";
 import { canonical, parseOutput } from "../llm/prompt.js";
 import { changeScope, matchesChangeScope } from "../world/change-scope.js";
 import {
@@ -679,7 +679,7 @@ type Plan = {
   instantMembers?: string;
   effectState?: string;
   instantReduction?: z.infer<typeof InstantReductionResult>;
-  nonCombatAreas?: NonCombatPolicy;
+  combatPolicy?: CombatPolicy | CombatPolicy["combat_mode"];
   // ダイスの設定で死亡とされ、成功で確定した対象。
   fatal?: string[];
   spUseProhibitionGrants?: string[] | undefined;
@@ -2956,7 +2956,7 @@ export class BotPlay {
       ? { observations: [] }
       : undefined;
     let instantReduction: Plan["instantReduction"];
-    let nonCombatAreas: NonCombatPolicy | undefined;
+    let combatPolicy: CombatPolicy | undefined;
     let protectedTarget = false;
     let endedState = false;
     if (effect) {
@@ -3008,10 +3008,15 @@ export class BotPlay {
               [context.worldId, effect.targetId, session.world_id],
             )
           ).rowCount;
-        const policy = await this.#oppositionPolicy(session, context, actorId, [
-          effect.targetId,
-        ]);
-        nonCombatAreas = policy.areas;
+        const policy = await this.#oppositionPolicy(
+          this.pool,
+          session.world_id,
+          context,
+          actorId,
+          [effect.targetId],
+          session,
+        );
+        combatPolicy = policy.combat;
         protectedTarget = policy.protectedActors.has(effect.targetId);
         if (playerRequest && !npc && protectedTarget)
           reject(
@@ -3394,7 +3399,7 @@ export class BotPlay {
           }
         : {}),
       instantMembers: JSON.stringify(session.data.members),
-      ...(nonCombatAreas ? { nonCombatAreas } : {}),
+      ...(combatPolicy ? { combatPolicy } : {}),
       ...(instantReduction
         ? {
             instantReduction,
@@ -3566,10 +3571,10 @@ export class BotPlay {
             : choice;
         const before = turnState(current);
         if (action && plan) {
-          await this.#checkNonCombatAreas(
+          await this.#checkCombatPolicy(
             db,
             session.world_id,
-            plan.nonCombatAreas,
+            plan.combatPolicy,
           );
           const receipt = await this.#commit(
             graph,
@@ -9594,7 +9599,7 @@ export class BotPlay {
     if (!(await isVehicle(context, vehicleId)))
       reject("VEHICLE_NOT_FOUND", "乗り物を指定してください");
     const changes = empty();
-    const base = { context, at, changes, recipients: [] };
+    const base: Plan = { context, at, changes, recipients: [] };
     const operator = await vehicleOperator(context, vehicleId);
     const result = { vehicleId, operatorId: actor };
     if (operator?.actorId === actor)
@@ -9673,6 +9678,9 @@ export class BotPlay {
 
     let outcome: Plan["outcome"];
     if (others.size) {
+      base.combatPolicy = (
+        await this.#oppositionPolicy(db, world, context, actor, [...others])
+      ).combat.combat_mode;
       const items = await this.#consumable(context, actor, changes);
       const consumes = new Map<string, number | undefined>();
       const contests = [];
@@ -11240,6 +11248,18 @@ export class BotPlay {
     const opposed =
       input.command === "oppose" &&
       (externalEffect || [...parties].some((id) => id !== actor));
+    const oppositionSession =
+      opposed && !hidden ? await this.current(world, actor) : undefined;
+    const policy = opposed
+      ? await this.#oppositionPolicy(
+          db,
+          world,
+          context,
+          actor,
+          [...recipients, ...(statusReview?.subjects ?? [])],
+          oppositionSession,
+        )
+      : undefined;
     const selfStatus = opposed ? undefined : statusReview;
     needsCreation =
       selfStatus !== undefined ||
@@ -11350,6 +11370,7 @@ export class BotPlay {
         at,
         recipients: [],
         ...adjudicated,
+        ...(policy && { combatPolicy: policy.combat.combat_mode }),
         items: await this.#itemOutcomes(context, input, changes),
       };
     }
@@ -11524,17 +11545,11 @@ export class BotPlay {
       }
     }
     let stealth: StealthAction | undefined;
-    let nonCombatAreas: NonCombatPolicy | undefined;
     if (input.command === "oppose" && !selfStatus) {
-      let success = !externalEffect && [...parties].every((id) => id === actor);
+      let success = !opposed;
       let failed: Partial<CreationRoll> = {};
-      if (!success) {
-        const session = (await this.current(world, actor))!;
-        const policy = await this.#oppositionPolicy(session, context, actor, [
-          ...recipients,
-          ...(statusReview?.subjects ?? []),
-        ]);
-        nonCombatAreas = policy.areas;
+      if (policy) {
+        const session = oppositionSession!;
         const protectedActor = policy.protectedActors.has(actor);
         const opponents = recipients.filter((id) =>
           session.data.members.some((m) => m.actorId === id && !m.instant),
@@ -11788,29 +11803,48 @@ export class BotPlay {
       ...(vehicleResult ? { vehicleResult } : {}),
       ...(fatal.length ? { fatal } : {}),
       spUseProhibitionGrants,
-      ...(nonCombatAreas ? { nonCombatAreas } : {}),
+      ...(policy && { combatPolicy: policy.combat }),
     };
   }
   async #oppositionPolicy(
-    session: Session,
+    db: Db,
+    world: string,
     context: WorldContext,
     actor: string,
     targets: readonly string[],
+    session?: Session,
   ) {
-    const { death_judgment, death_criteria, ...areas } = (
-      await this.pool.query<
-        NonCombatPolicy & {
+    const { death_judgment, death_criteria, ...combat } = (
+      await db.query<
+        CombatPolicy & {
           death_judgment: boolean;
           death_criteria: string;
         }
       >(
-        "SELECT death_judgment,death_criteria,non_combat_areas,non_combat_place_series FROM world_construction WHERE id=$1",
-        [session.world_id],
+        "SELECT death_judgment,death_criteria,combat_mode,non_combat_areas,non_combat_place_series FROM world_construction WHERE id=$1",
+        [world],
       )
     ).rows[0]!;
+    if (combat.combat_mode === "pve" && targets.some((id) => id !== actor)) {
+      const { rows } = await db.query<{ actor_id: string }>(
+        `SELECT c.actor_id FROM world_controlled_actor c
+         WHERE c.world_id=$1 AND c.actor_id=ANY($2::uuid[]) AND NOT EXISTS
+           (SELECT 1 FROM bot_npc n WHERE n.world_id=$3 AND n.actor_id=c.actor_id)`,
+        [context.worldId, [actor, ...targets], world],
+      );
+      if (
+        rows.some((row) => row.actor_id === actor) &&
+        rows.some((row) => row.actor_id !== actor)
+      )
+        reject("PVP_DISABLED", "PvE世界では他のプレイヤーに対抗できません");
+    }
     const protectedActors = new Set<string>();
     const at = this.now().getTime();
-    if (areas.non_combat_areas.length || areas.non_combat_place_series.length)
+    if (
+      session &&
+      combat.combat_mode === "pvp" &&
+      (combat.non_combat_areas.length || combat.non_combat_place_series.length)
+    )
       for (const id of new Set([actor, ...targets])) {
         const instant = session.data.members.find(
           (m) => m.actorId === id,
@@ -11824,19 +11858,33 @@ export class BotPlay {
             if (placeId) places.add(placeId);
           }
         if (targets.includes(id)) places.add(id);
-        if (await isNonCombatPlace(context, areas, [...places], at))
+        if (await isNonCombatPlace(context, combat, [...places], at))
           protectedActors.add(id);
       }
-    return { death_judgment, death_criteria, areas, protectedActors };
+    return { death_judgment, death_criteria, combat, protectedActors };
   }
 
-  async #checkNonCombatAreas(db: Db, world: string, areas?: NonCombatPolicy) {
-    if (!areas) return;
-    const { rows } = await db.query<NonCombatPolicy>(
-      "SELECT non_combat_areas,non_combat_place_series FROM world_construction WHERE id=$1 FOR SHARE",
+  async #checkCombatPolicy(
+    db: Db,
+    world: string,
+    policy?: Plan["combatPolicy"],
+  ) {
+    if (!policy) return;
+    const { rows } = await db.query<CombatPolicy>(
+      "SELECT combat_mode,non_combat_areas,non_combat_place_series FROM world_construction WHERE id=$1 FOR SHARE",
       [world],
     );
-    if (canonical(rows[0]) !== canonical(areas))
+    const mode = typeof policy === "string" ? policy : policy.combat_mode;
+    if (rows[0]?.combat_mode !== mode)
+      reject(
+        "COMBAT_MODE_CHANGED",
+        "判定中に世界の戦闘モードが変わりました。再送してください",
+      );
+    if (
+      typeof policy !== "string" &&
+      mode === "pvp" &&
+      canonical(rows[0]) !== canonical(policy)
+    )
       throw new WorldConflict("判定中に非戦闘地域の設定が変わりました");
   }
 
@@ -12369,7 +12417,7 @@ export class BotPlay {
       | "at"
       | "changes"
       | "storageEffect"
-      | "nonCombatAreas"
+      | "combatPolicy"
       | "spUseProhibitionGrants"
     > & { directScope: DirectChangeScope },
     fixed?: string[],
@@ -12449,8 +12497,8 @@ export class BotPlay {
       if (follows.length) scope = directChangeScope(plan.changes);
     }
     await beforeWrite?.();
-    if (plan.nonCombatAreas && !(await this.store.receipt(graph, request)))
-      await this.#checkNonCombatAreas(db, world, plan.nonCombatAreas);
+    if (plan.combatPolicy && !(await this.store.receipt(graph, request)))
+      await this.#checkCombatPolicy(db, world, plan.combatPolicy);
     return this.#commit(graph, request, plan, scope, fixed);
   }
 
@@ -13709,6 +13757,18 @@ export class BotPlay {
     }, 10000).unref();
     try {
       return await execute(owner);
+    } catch (error) {
+      if (
+        error instanceof AccessError &&
+        ["COMBAT_MODE_CHANGED", "PVP_DISABLED"].includes(error.code)
+      )
+        await this.pool.query(
+          `UPDATE bot_request r SET sp_user=NULL,sp_reset=NULL,sp_opposed=false,creation_rolls=NULL,outcome=NULL
+           FROM bot_adjudication a WHERE r.id=$4 AND r.result IS NULL AND r.sp_user IS NOT NULL
+           AND a.world_id=$1 AND a.actor_id=$2 AND a.owner=$3 AND a.request_id=r.id`,
+          [...key, input.requestId],
+        );
+      throw error;
     } finally {
       clearInterval(heartbeat);
       // If the database is unavailable, the lease expires on its own.

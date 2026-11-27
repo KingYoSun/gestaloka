@@ -3002,6 +3002,13 @@
                         "deathJudgment": {
                           "type": "boolean"
                         },
+                        "combatMode": {
+                          "type": "string",
+                          "enum": [
+                            "pve",
+                            "pvp"
+                          ]
+                        },
                         "respawnEnabled": {
                           "type": "boolean"
                         },
@@ -3060,6 +3067,7 @@
                         "playerList",
                         "instantNpcMultiplier",
                         "deathJudgment",
+                        "combatMode",
                         "respawnEnabled",
                         "deathCriteria",
                         "deathPlaceId",
@@ -3484,6 +3492,13 @@
                         "deathJudgment": {
                           "type": "boolean"
                         },
+                        "combatMode": {
+                          "type": "string",
+                          "enum": [
+                            "pve",
+                            "pvp"
+                          ]
+                        },
                         "respawnEnabled": {
                           "type": "boolean"
                         },
@@ -3542,6 +3557,7 @@
                         "playerList",
                         "instantNpcMultiplier",
                         "deathJudgment",
+                        "combatMode",
                         "respawnEnabled",
                         "deathCriteria",
                         "deathPlaceId",
@@ -4028,6 +4044,13 @@
                         "deathJudgment": {
                           "type": "boolean"
                         },
+                        "combatMode": {
+                          "type": "string",
+                          "enum": [
+                            "pve",
+                            "pvp"
+                          ]
+                        },
                         "respawnEnabled": {
                           "type": "boolean"
                         },
@@ -4086,6 +4109,7 @@
                         "playerList",
                         "instantNpcMultiplier",
                         "deathJudgment",
+                        "combatMode",
                         "respawnEnabled",
                         "deathCriteria",
                         "deathPlaceId",
@@ -29010,6 +29034,14 @@
                           "deathJudgment": {
                             "description": "プレイヤーとユニークNPCを対抗行動の死亡判定の対象にする。既定は有効。省略すると現在の設定を保つ",
                             "type": "boolean"
+                          },
+                          "combatMode": {
+                            "description": "新規世界の既定はpve。pvpではプレイヤー間の対抗行動と非戦闘地域を有効にする。省略すると現在の設定を保つ",
+                            "type": "string",
+                            "enum": [
+                              "pve",
+                              "pvp"
+                            ]
                           },
                           "respawnEnabled": {
                             "description": "死亡した人物を復帰させる。既定は有効。無効なら死亡後はその人物で操作できない。省略すると現在の設定を保つ",

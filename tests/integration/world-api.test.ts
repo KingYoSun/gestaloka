@@ -593,6 +593,19 @@ test("引き継ぎ対象は全件をページで確認でき、確定も全対�
   ).toBe(true);
 });
 
+test("戦闘モードの移行で既存世界をPvPにし、新規世界の既定をPvEにする", async () => {
+  const existing = await fixture();
+  // この試験専用のPostgreSQLスキーマを、戦闘モード追加前の形に戻す。
+  await databases.postgres.query(
+    "ALTER TABLE world_construction DROP COLUMN combat_mode",
+  );
+  await runtime.setup();
+  const fresh = await fixture();
+  await runtime.setup();
+  expect((await runtime.get(existing.id)).combat_mode).toBe("pvp");
+  expect((await runtime.get(fresh.id)).combat_mode).toBe("pve");
+});
+
 test("管理者が参加記録のない既存人物のリスポーンを無効にし、理由を監査に残す", async () => {
   const legacy = await legacyFixture(),
     other = await fixture(),
@@ -681,6 +694,7 @@ test("公開と参加受付を分け、非公開化後も参加者の参照と�
       playerList: false,
       instantNpcMultiplier: 2,
       deathJudgment: true,
+      combatMode: "pve",
       respawnEnabled: true,
       deathCriteria: "",
       deathPlaceId: null,
@@ -691,6 +705,7 @@ test("公開と参加受付を分け、非公開化後も参加者の参照と�
     playerList: true,
     instantNpcMultiplier: 1,
     deathJudgment: false,
+    combatMode: "pvp" as const,
     respawnEnabled: false,
     deathCriteria: "致命傷で死亡する",
     deathPlaceId: randomUUID(),
@@ -710,6 +725,19 @@ test("公開と参加受付を分け、非公開化後も参加者の参照と�
       { players: access.players },
     ),
   ).toMatchObject(changed);
+  for (const combatMode of ["pve", "pvp"] as const) {
+    await auth.operations.execute(legacy.subject, randomUUID(), {
+      ...cfg,
+      combatMode,
+    });
+    expect(
+      (await access.status(legacy.subject, legacy.id)).publication,
+    ).toMatchObject({
+      combatMode,
+      nonCombatAreas: changed.nonCombatAreas,
+      nonCombatPlaceSeries: changed.nonCombatPlaceSeries,
+    });
+  }
   await expect(
     auth.operations.execute(
       legacy.subject,

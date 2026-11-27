@@ -941,6 +941,7 @@ export class WorldAccess {
         instantNpcMultiplier: row.instant_npc_multiplier,
         freePlayerLimit: row.free_player_limit,
         deathJudgment: row.death_judgment,
+        combatMode: row.combat_mode,
         respawnEnabled: row.respawn_enabled,
         deathCriteria: row.death_criteria,
         deathPlaceId: row.death_place_id,

@@ -267,19 +267,37 @@ export function Publication({
       <p>
         本人のHomeが設定されていれば、そちらが優先されます。Homeも世界のリスポーン先も未設定なら、本人の最初の所在地へ移ります。リスポーンを無効にすると、死亡した人物は操作できなくなります。
       </p>
-      <NonCombatLines
-        name="nonCombatPlaceSeries"
-        id="public-noncombat-series"
-        value={value.nonCombatPlaceSeries ?? []}
-        onChange={(nonCombatPlaceSeries) =>
-          set({ ...value, nonCombatPlaceSeries })
+      <Label htmlFor="world-combat-mode">戦闘モード</Label>
+      <select
+        id="world-combat-mode"
+        value={value.combatMode}
+        onChange={(e) =>
+          set({
+            ...value,
+            combatMode: e.target.value === "pvp" ? "pvp" : "pve",
+          })
         }
-      />
-      <NonCombatAreasField
-        id="public-noncombat-areas"
-        value={value.nonCombatAreas}
-        onChange={(nonCombatAreas) => set({ ...value, nonCombatAreas })}
-      />
+      >
+        <option value="pve">PvE（プレイヤー間の対抗行動を禁止）</option>
+        <option value="pvp">PvP（プレイヤー間の対抗行動を許可）</option>
+      </select>
+      {value.combatMode === "pvp" && (
+        <>
+          <NonCombatLines
+            name="nonCombatPlaceSeries"
+            id="public-noncombat-series"
+            value={value.nonCombatPlaceSeries ?? []}
+            onChange={(nonCombatPlaceSeries) =>
+              set({ ...value, nonCombatPlaceSeries })
+            }
+          />
+          <NonCombatAreasField
+            id="public-noncombat-areas"
+            value={value.nonCombatAreas}
+            onChange={(nonCombatAreas) => set({ ...value, nonCombatAreas })}
+          />
+        </>
+      )}
       <p>非公開・受付停止にしても、参加済みの人物は利用を続けられます。</p>
       <Button disabled={mutation.isPending}>公開・参加受付を保存する</Button>
       {mutation.error && <Problem error={mutation.error} />}
