@@ -647,6 +647,7 @@ export type Session = {
       comments: Record<string, string>;
       deadline: string;
       changes: Change;
+      stateEnd?: Plan["stateEnd"];
       directScope?: DirectChangeScope;
       moveScope?: string;
       at: number;
@@ -665,6 +666,7 @@ export type Session = {
   };
 };
 type Plan = {
+  stateEnd?: { actorId: string; ids: string[] };
   statusReview?: StatusReview;
   experienceReferences?: { eventId: string; ids: string[] }[];
   draw?: DrawOutcome;
@@ -3085,6 +3087,7 @@ export class BotPlay {
     let combatPolicy: CombatPolicy | undefined;
     let protectedTarget = false;
     let endedState = false;
+    let stateEnd: Plan["stateEnd"];
     if (effect) {
       const preview = !!requester && !npc;
       const otherParticipant = session.data.members.some(
@@ -3358,6 +3361,8 @@ export class BotPlay {
                 break;
               }
             }
+        if (previous && changes.endEdges.includes(previous.relationId))
+          stateEnd = { actorId, ids: [previous.relationId] };
         const reduction = outcome.success
           ? saved.setting.instantReduction
           : undefined;
@@ -3524,6 +3529,7 @@ export class BotPlay {
       context,
       changes,
       ...death,
+      ...(stateEnd ? { stateEnd } : {}),
       recipients: [],
       outcome,
       ...(stealth ? { stealth } : {}),
@@ -5117,6 +5123,7 @@ export class BotPlay {
           {
             at: Math.max(plan?.at ?? r.at, w.at),
             changes: plan?.changes ?? r.changes,
+            ...(r.stateEnd ? { stateEnd: r.stateEnd } : {}),
             context: plan?.context ?? context,
             directScope: plan ? directChangeScope(plan.changes) : approved,
           },
@@ -8500,13 +8507,36 @@ export class BotPlay {
           }),
         ),
       );
-      const recentAttempts = (people: string[]) =>
+      const attemptsFor = (person: string, confirmed?: ReadonlySet<string>) =>
+        (experience.get(person) ?? []).filter(
+          (a) =>
+            !a.success ||
+            !a.commitId ||
+            a.proposalIndex !== undefined ||
+            !confirmed?.has(a.commitId),
+        );
+      const confirmedStates = (packet: readonly unknown[]) =>
+        new Set(
+          packet.flatMap((row) =>
+            row &&
+            typeof row === "object" &&
+            "experienceRequest" in row &&
+            typeof row.experienceRequest === "string"
+              ? [row.experienceRequest]
+              : [],
+          ),
+        );
+      const recentAttempts = (
+        people: string[],
+        confirmed?: ReadonlySet<string>,
+      ) =>
         Object.fromEntries(
           people.map((person) => [
             person,
-            experience
-              .get(person)!
-              .map(({ action, success }) => ({ action, success })),
+            attemptsFor(person, confirmed).map(({ action, success }) => ({
+              action,
+              success,
+            })),
           ]),
         );
       const reviews = fresh.flatMap((p) =>
@@ -8714,7 +8744,10 @@ export class BotPlay {
           ],
           ...(material[i]!.learning?.length && {
             history: {
-              recentAttempts: recentAttempts(learnersOf([material[i]!])),
+              recentAttempts: recentAttempts(
+                learnersOf([material[i]!]),
+                confirmedStates(packet),
+              ),
               failureId: `${requestId}:${proposal.index}`,
             },
           }),
@@ -8840,11 +8873,12 @@ export class BotPlay {
         const selectedFields = indexes.map((i) =>
           factorField(fresh[i]!.operations),
         );
+        const confirmedRequests = confirmedStates(selectedNodes);
         const learnReferences = selectedFields.includes("learningFactors")
           ? learningReferences(
               actor,
               selectedNodes,
-              experience.get(actor) ?? [],
+              attemptsFor(actor, confirmedRequests),
               { places: locations, subjects: [], statesOnly: true },
             )
           : undefined;
@@ -9077,7 +9111,10 @@ export class BotPlay {
                         ...(selectedLearners.length
                           ? {
                               skillCriteria: policy.skill,
-                              recentAttempts: recentAttempts(selectedLearners),
+                              recentAttempts: recentAttempts(
+                                selectedLearners,
+                                confirmedRequests,
+                              ),
                             }
                           : {}),
                         ...(confirmed ? { confirmed } : {}),
@@ -9961,12 +9998,17 @@ export class BotPlay {
       }),
     );
     const events = await context.nodes(
-      new Set(matches.flat().map((row) => row.id)),
+      new Set(
+        matches
+          .flat()
+          .filter((row) => !row.state)
+          .map((row) => row.id),
+      ),
     );
     const experiences = matches.map((rows) =>
-      rows.flatMap(({ id, sharedReferences }) => {
-        const node = events.get(id);
-        return node?.kind === "event"
+      rows.flatMap(({ id, state, sharedReferences }) => {
+        const node = !state && events.get(id);
+        return node && node.kind === "event"
           ? [
               {
                 node,
@@ -9997,7 +10039,7 @@ export class BotPlay {
         r.text + "\n" + JSON.stringify(r.effect ?? ""),
       ]),
     );
-    if (!more.some((ids) => ids.length)) return packets;
+
     const records = await context.nodes(new Set(more.flat()));
     for (const [i, ids] of more.entries()) {
       const packet = packets[i];
@@ -10006,10 +10048,28 @@ export class BotPlay {
         ...(packet as { node?: { id?: string } }[]).map((row) => row.node?.id),
         ...matches[i]!.map((row) => row.id),
       ]);
-      for (const id of ids) {
-        const node = records.get(id);
-        if (seen.has(id) || node?.kind !== "event") continue;
-        const addition = { node, experiencedBy: frame.actor } as T;
+      const additions = [
+        ...ids.flatMap((id) => {
+          const node = records.get(id);
+          return !seen.has(id) && node?.kind === "event"
+            ? [{ node, experiencedBy: frame.actor }]
+            : [];
+        }),
+        ...matches[i]!.flatMap(({ id, state, sharedReferences }) =>
+          state
+            ? [
+                {
+                  node: { id, kind: "script", text: state.text },
+                  experiencedBy: frame.actor,
+                  stateExperience: state.ref,
+                  experienceRequest: state.requestId,
+                  ...(sharedReferences.length ? { sharedReferences } : {}),
+                },
+              ]
+            : [],
+        ),
+      ];
+      for (const addition of additions as T[]) {
         const trial = [...packets[i]!, addition];
         if (options.measure!(trial, i, true) <= 24 * 1024) {
           packets[i] = trial;
@@ -13112,6 +13172,7 @@ export class BotPlay {
       | "changes"
       | "storageEffect"
       | "combatPolicy"
+      | "stateEnd"
       | "spUseProhibitionGrants"
     > & { directScope: DirectChangeScope },
     fixed?: string[],
@@ -13207,6 +13268,7 @@ export class BotPlay {
       | "storageEffect"
       | "spUseProhibitionGrants"
       | "experienceReferences"
+      | "stateEnd"
     >,
     scope: DirectChangeScope,
     newFixedPlaces?: string[],
@@ -13227,6 +13289,7 @@ export class BotPlay {
             ? { spUseProhibitionGrants: plan.spUseProhibitionGrants }
             : {}),
           ...(plan.storageEffect ? { storageEffect: plan.storageEffect } : {}),
+          ...(plan.stateEnd ? { stateEnd: plan.stateEnd } : {}),
           ...(plan.experienceReferences?.length
             ? { experienceReferences: plan.experienceReferences }
             : {}),
@@ -14810,6 +14873,13 @@ export class BotPlay {
     });
     const plan = preparedPlan && {
       ...preparedPlan,
+      ...(input.command === "update" &&
+      (input.endStateTargetId ||
+        input.treatmentTargetId ||
+        input.resolvedState) &&
+      input.changes?.endEdges.length
+        ? { stateEnd: { actorId: actor, ids: input.changes.endEdges } }
+        : {}),
       directScope: directChangeScope(preparedPlan.changes),
     };
     const db = await this.pool.connect();
@@ -16233,6 +16303,7 @@ export class BotPlay {
                     preview,
                     at: plan.at,
                     changes: plan.changes,
+                    ...(plan.stateEnd ? { stateEnd: plan.stateEnd } : {}),
                     directScope: plan.directScope,
                     dependencies: plan.context.dependencies,
                     ...(plan.items?.length ? { items: plan.items } : {}),
@@ -16282,6 +16353,7 @@ export class BotPlay {
                     this.now().getTime() + timeout * 1000,
                   ).toISOString(),
                   changes: plan.changes,
+                  ...(plan.stateEnd ? { stateEnd: plan.stateEnd } : {}),
                   directScope: plan.directScope,
                   ...(plan.locates || plan.mixedMoves
                     ? {

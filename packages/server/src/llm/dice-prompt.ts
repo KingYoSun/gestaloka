@@ -10,7 +10,11 @@ export const diceStoragePlace = Symbol.for("gestaloka.diceStoragePlace");
 export const diceJudgmentMaterials = Symbol.for(
   "gestaloka.diceJudgmentMaterials",
 );
-type MaterialFact = { node?: { id: string }; belongings?: Belongings };
+type MaterialFact = {
+  experienceRequest?: string;
+  node?: { id: string };
+  belongings?: Belongings;
+};
 type DiceInput = {
   premise?: string;
   actor: unknown;
@@ -115,8 +119,9 @@ function compactDiceInput(input: ChatMessage, cacheSkills: boolean) {
       }),
     ];
   };
-  const packedNodes = nodes.map(({ belongings, ...facts }) =>
-    belongings
+  const packedNodes = nodes.map(({ belongings, ...facts }) => {
+    delete facts.experienceRequest;
+    return belongings
       ? {
           ...facts,
           belongings: {
@@ -127,8 +132,8 @@ function compactDiceInput(input: ChatMessage, cacheSkills: boolean) {
               : { skills: belongings.skills.map(skill) }),
           },
         }
-      : facts,
-  );
+      : facts;
+  });
   const heldItems = new Map(held?.items.map((item) => [item.id, item]));
   const packedConsumable = consumable?.map((candidate) => {
     const held = heldItems.get(candidate.id);

@@ -46,6 +46,7 @@ type HandoffItem = {
 };
 export type Handoff = { operations: HandoffOperation[]; items: HandoffItem[] };
 type Share = {
+  stateEnd?: { actorId: string; ids: string[] };
   text: string;
   preview: string[];
   changes: Change;
@@ -371,6 +372,7 @@ export class PlayApplications {
             commitId: id,
             at,
             changes: atTime(changes, at, true),
+            ...(share.stateEnd ? { stateEnd: share.stateEnd } : {}),
             playerAction: true,
           },
           share.handoff ? directChangeScope(changes) : storedScope,
