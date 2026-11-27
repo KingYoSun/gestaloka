@@ -261,6 +261,24 @@ async function verifyApiRollout(deployment) {
   ]) {
     assert.ok(await runningId(previous));
     assert.equal(await runningId(next), "");
+    // Composeの起動完了後、ワーカーが停止準備を受け付けるまで待つ。
+    for (let i = 0; ; i++) {
+      try {
+        await compose(
+          deployment,
+          "exec",
+          "-T",
+          "worker",
+          "test",
+          "-S",
+          "/tmp/gestaloka-worker-1.sock",
+        );
+        break;
+      } catch (error) {
+        if (i === 30) throw error;
+        await delay(1000);
+      }
+    }
     let probing = true;
     const failures = [];
     const probe = async ([host, path]) => {
