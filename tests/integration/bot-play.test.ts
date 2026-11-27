@@ -7827,6 +7827,116 @@ async function conditionalFixture() {
   return f;
 }
 
+test("対抗行動で二人が同じ新しい場所に移り、次の移動後も負傷と出来事が残る", async () => {
+  const f = await fixture();
+  const [actor, first, second] = f.actors as [string, string, string];
+  await f.move(2, f.place);
+  await f.send(1, { command: "contact", targetId: actor });
+  await f.send(2, { command: "contact", targetId: actor });
+
+  const placeName = "石門の向こうの中庭";
+  const injury = "左腕に擦り傷がある。";
+  const context = () => f.store.context(f.graph);
+  const search = async (i: number) =>
+    (
+      await f.send(i, {
+        command: "search",
+        query: { kind: "subject", targetId: f.actors[i] },
+      })
+    ).material;
+  const oppose = async (target: string, success: boolean) => {
+    await giveTurn(f, 0);
+    const requestId = randomUUID();
+    const text = `人物を${placeName}へ${success ? "押し出す" : "引き込む"}。`;
+    f.calls.mockImplementationOnce(async (id, role, messages) => {
+      expect(role).toBe("world-opposition-dice");
+      expect(
+        JSON.parse(String(messages[1]!.content)).destinations,
+      ).toMatchObject({
+        [f.place]: "広場",
+      });
+      return answer(id, {
+        ...sure,
+        successThrough: success ? sure.successThrough : 3,
+        performed: text,
+        displacement: { newPlace: placeName },
+        states: [{ id: target, text: injury }],
+      });
+    });
+    const input = {
+      command: "apply",
+      requestId,
+      expectedSp: 1,
+      dependencies: [],
+      action: { type: "oppose", targetId: target, text, description: text },
+    };
+    const result = await f.send(0, input);
+    expect(result).toMatchObject({ outcome: { success } });
+    expect(await f.send(0, input)).toEqual(result);
+    return (await f.store.receipt(f.graph, requestId))!;
+  };
+
+  const failed = await oppose(first, false);
+  expect(await directPlaces(context(), first)).toEqual([f.place]);
+  expect(failed.changes.nodes.some((node) => node.text === placeName)).toBe(
+    false,
+  );
+
+  const created = await oppose(first, true);
+  const destination = created.changes.nodes.find(
+    (node) => node.kind === "existence" && node.text === placeName,
+  )!.id;
+  const reused = await oppose(second, true);
+  expect(reused.changes.nodes.some((node) => node.kind === "existence")).toBe(
+    false,
+  );
+
+  for (const [i, person, receipt] of [
+    [1, first, created],
+    [2, second, reused],
+  ] as const) {
+    expect(await directPlaces(context(), person)).toEqual([destination]);
+    expect(await search(i)).toMatchObject({
+      locations: [{ directPlaceId: destination }],
+      states: expect.arrayContaining([
+        {
+          node: expect.objectContaining({ text: injury }),
+          relation: expect.objectContaining({ text: "judged" }),
+          about: expect.any(Array),
+        },
+      ]),
+    });
+    const location = receipt.changes.edges.find(
+      (edge) => edge.text === "location",
+    )!;
+    const event = receipt.changes.nodes.find((node) => node.kind === "event")!;
+    await f.send(i, {
+      command: "update",
+      text: "避難先へ移る",
+      operations: [
+        {
+          type: "locate",
+          subjectId: person,
+          text: "離れた場所",
+          aboutIds: [f.far],
+        },
+      ],
+      dependencies: [],
+    });
+    expect(await search(i)).toMatchObject({
+      locations: [{ directPlaceId: f.far }],
+      states: expect.arrayContaining([
+        expect.objectContaining({
+          node: expect.objectContaining({ text: injury }),
+        }),
+      ]),
+    });
+    expect(JSON.stringify(await search(i))).not.toContain(placeName);
+    expect((await context().edge(location.id))?.period.until).toBeDefined();
+    expect((await context().node(event.id))?.text).toContain(placeName);
+  }
+});
+
 const samePlaceCondition: ConditionExpression = {
   eq: ["$actor.directPlaceId", "$target.directPlaceId"],
 };
