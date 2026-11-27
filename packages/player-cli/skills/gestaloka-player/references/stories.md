@@ -79,4 +79,4 @@ gestaloka stories read --story <作品ID> --until 2026-11-30 --sort newest
 
 `--since` と `--until` には日本時間の日付を指定します。両端の日を含めて絞り込みます。作品一覧では第一話の公開日、連載の目次では各話の公開日を使います。目次の並びは、指定がなければ話数順です。
 
-同じ絞り込みと並び順を保ったまま、作品一覧の `next` は `list --before` に、目次の `next` は `read --after` に渡します。
+同じ絞り込みと並び順を保ったまま、作品一覧の `next` は `list --before` に、目次の `next` は `read --after` に渡します。`read --after` では目次の続きが返ります。本文も読みたいときは `--episode` に話数を指定します。

@@ -19113,9 +19113,12 @@ test("ダイスの出目と成功範囲を申請者と同席プレイヤーがCL
     const sceneId = (await f.status(0)).sceneId!;
     const finished = await cli.run(owner, "finish");
     const archived = await cli.run(owner, "status", "--scene", sceneId);
+    const completed = await cli.run(owner, "result", "--scene", sceneId);
+    expect(completed).not.toHaveProperty("result");
     for (const entries of [
       finished.result.result.entries,
       archived.entries,
+      completed.entries,
       (await access.botStatus(f.people[0]!.id, f.world, f.actors[0], sceneId))
         .result.entries,
     ]) {
