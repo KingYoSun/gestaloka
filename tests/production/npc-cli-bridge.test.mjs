@@ -65,3 +65,31 @@ test("再送は同じCLI操作を繰り返さず、資格情報やパスを指�
     "play",
   );
 });
+
+test("通知で起床したNPCは通常の手番がなくても受領を判断できる", async () => {
+  const bridge = createNpcBridge({
+    roles: { alpha: {} },
+    verify: async () => {},
+    run: async (_role, args) => args,
+  });
+  const request = {
+    npc: "alpha",
+    callId: "receive",
+    args: ["receive", "--application", "@12ab34cd", "--accept"],
+  };
+  await assert.rejects(
+    bridge.call({ ...request, lease: bridge.issue("alpha", false) }),
+    /COMMAND_DENIED/,
+  );
+  const lease = bridge.issue("alpha", false, true);
+  assert.deepEqual(await bridge.call({ ...request, lease }), request.args);
+  const reject = ["receive", "--application", "@12ab34cd", "--reject"];
+  assert.deepEqual(
+    await bridge.call({ ...request, lease, callId: "reject", args: reject }),
+    reject,
+  );
+  await assert.rejects(
+    bridge.call({ ...request, lease, callId: "finish", args: ["finish"] }),
+    /COMMAND_DENIED/,
+  );
+});
