@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { timingSafeEqual } from "node:crypto";
-import { BackupEngine } from "./engine.mjs";
+import { BackupEngine, deploymentLock } from "./engine.mjs";
 
 const engine = new BackupEngine();
 await engine.initialize(true);
@@ -24,6 +24,20 @@ const server = createServer(async (request, response) => {
     const input = JSON.parse(body);
     let output;
     switch (request.url) {
+      case "/withdraw": {
+        const lock = await deploymentLock("/deploy.lock");
+        if (!lock) throw new Error("DEPLOYMENT_BUSY");
+        try {
+          output = await engine.withdrawals.accept(input);
+          engine.nextWithdrawal = 0;
+        } finally {
+          await lock.close();
+        }
+        break;
+      }
+      case "/withdrawal-status":
+        output = await engine.withdrawals.status(input.receipt);
+        break;
       case "/read":
         output = await engine.read();
         break;
@@ -50,10 +64,15 @@ const server = createServer(async (request, response) => {
     response
       .writeHead(200, { "content-type": "application/json" })
       .end(JSON.stringify(output));
-  } catch {
-    response
-      .writeHead(409, { "content-type": "application/json" })
-      .end('{"error":"BACKUP_OPERATION_FAILED"}');
+  } catch (error) {
+    response.writeHead(409, { "content-type": "application/json" }).end(
+      JSON.stringify({
+        error:
+          request.url === "/withdraw" && error.message === "LAST_ADMIN"
+            ? "LAST_ADMIN"
+            : "BACKUP_OPERATION_FAILED",
+      }),
+    );
   }
 });
 server.listen(3100, "0.0.0.0");

@@ -48,7 +48,7 @@ export async function createApp(
     },
   );
   await worldRoutes(app, access, identity, operations);
-  await playerDistributionRoutes(app);
+  await playerDistributionRoutes(app, operations?.backups);
   await mcpRoutes(app, operations, access);
   await app.register(async (scope) =>
     operationsRoutes(scope, identity, operations, access?.players, access),
@@ -58,7 +58,7 @@ export async function createApp(
   );
   if (identity)
     await app.register(async (scope) =>
-      authRoutes(scope, identity, hydraAdminUrl, operations),
+      authRoutes(scope, identity, hydraAdminUrl, operations, access),
     );
   await app.ready();
   return app;

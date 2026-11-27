@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { join, resolve } from "node:path";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -52,7 +52,19 @@ const wait = async (name, id) => {
   for (let i = 0; i < 900; i++) {
     const { job } = await rpc(name, "job", { id });
     if (job.state === "complete") return job;
-    assert.notEqual(job.state, "failed", `復旧ジョブの失敗: ${job.phase}`);
+    if (job.state === "failed") {
+      const log = (
+        await command(["logs", "--tail", "20", `${name}-controller-1`])
+      ).toString();
+      assert.fail(
+        `復旧ジョブの失敗: ${job.phase} ${
+          log
+            .split("\n")
+            .filter((line) => line.includes("復旧処理を中断"))
+            .at(-1) ?? ""
+        }`,
+      );
+    }
     await delay(1000);
   }
   throw new Error("復旧ジョブの待ち時間を超過しました");
@@ -113,7 +125,7 @@ async function verifyLocalRecovery(deployment) {
     configuration: {
       enabled: false,
       intervalHours: 24,
-      retentionDays: 30,
+      retentionDays: 7,
       repository: "local",
       password: "test-password-for-local-recovery-only",
     },
@@ -125,6 +137,18 @@ async function verifyLocalRecovery(deployment) {
     "local",
   );
   const before = await ops(name, { operation: "runtime.read" });
+  for (const path of ["/api/player-cli/join", "/api/player-cli/"]) {
+    const page = await https(deployment, "play", path);
+    assert.equal(page.status, 200);
+    for (const text of [
+      "24時間以内",
+      "30日以内",
+      "取得から7日以内",
+      "最長37日以内",
+      "/auth/withdraw",
+    ])
+      assert(page.text.includes(text), text);
+  }
   const editUntil = () => new Date(Date.now() + 15 * 60 * 1000).toISOString();
   await ops(name, {
     operation: "runtime.put",
@@ -204,6 +228,8 @@ async function verifyLocalRecovery(deployment) {
   assert.equal((await item()).node, null);
 }
 const storage = `gestaloka-recovery-s3-${suffix}`;
+const ledger = `gestaloka-recovery-ledger-${suffix}`,
+  ledgerPassword = randomUUID();
 const https = async (d, subdomain, path, method = "GET", agent = false) =>
   new Promise((resolvePromise, reject) => {
     const host = `${subdomain}.${d.config.domain}`;
@@ -337,6 +363,10 @@ try {
     deployments.push(d);
     await appendFile(
       join(d.root, "deployment.env"),
+      `\nWITHDRAWAL_LEDGER_DATABASE_URL=postgres://postgres:${ledgerPassword}@original-ledger:5432/postgres\n`,
+    );
+    await appendFile(
+      join(d.root, "deployment.env"),
       await readFile("tests/support/operator.env"),
     );
     await cli("build", d);
@@ -423,6 +453,28 @@ try {
   const [source, target] = deployments;
   await command([
     "run",
+    "--rm",
+    "-d",
+    "--name",
+    ledger,
+    "--network",
+    `${source.config.name}_egress`,
+    "--network-alias",
+    "original-ledger",
+    "-e",
+    `POSTGRES_PASSWORD=${ledgerPassword}`,
+    "postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3",
+  ]);
+  await command([
+    "network",
+    "connect",
+    "--alias",
+    "original-ledger",
+    `${target.config.name}_egress`,
+    ledger,
+  ]);
+  await command([
+    "run",
     "-d",
     "--name",
     storage,
@@ -471,6 +523,29 @@ try {
     password: "test-password-for-recovery-only",
     region: "us-east-1",
   };
+  const withdrawal = async (d, action, input = {}) => {
+    const output = JSON.parse(
+      (
+        await command([
+          "exec",
+          `${d.config.name}-api-1`,
+          "node",
+          "--input-type=module",
+          "-e",
+          "process.argv.splice(1,0,'withdrawal.mjs');const print=console.log;let value;console.log=s=>{value=s};try{await import('./tests/production/withdrawal.mjs');print(JSON.stringify({value}));}catch(e){print(JSON.stringify({failure:e.message,code:e.code,location:e.stack?.split('\\n').find(s=>s.includes('tests/production/withdrawal.mjs'))}));}",
+          action,
+          JSON.stringify(input),
+        ])
+      ).toString(),
+    );
+    assert(
+      !output.failure,
+      `退会の隔離検証 ${action}: ${JSON.stringify(output)}`,
+    );
+    return output.value;
+  };
+  const participant = JSON.parse(await withdrawal(source, "seed"));
+  await withdrawal(source, "before", participant);
   await wait(
     source.config.name,
     (
@@ -516,6 +591,45 @@ try {
   });
   assert.equal(snapshots.items.length, 1);
   const snapshot = snapshots.items[0].id;
+  const { receipt } = JSON.parse(
+    await withdrawal(source, "confirm", participant),
+  );
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await withdrawal(source, "structured", participant);
+      break;
+    } catch (error) {
+      if (attempt === 60) throw error;
+      await delay(1000);
+    }
+  }
+  assert.equal(
+    (await rpc(source.config.name, "withdrawal-status", { receipt })).erased_at,
+    null,
+  );
+  const digest = (text) => createHash("sha256").update(text).digest("hex");
+  const reviewFile = join(source.root, "withdrawal-review-test.json");
+  await writeFile(
+    reviewFile,
+    JSON.stringify({
+      action: "withdrawal-review",
+      receipt,
+      confirmed: true,
+      rules: [
+        {
+          source: "inspection",
+          key: [participant.story],
+          path: ["quote"],
+          start: 3,
+          length: 5,
+          before: digest("解説：架空の私信。続き"),
+          after: digest("解説：［削除済み］。続き"),
+        },
+      ],
+    }),
+  );
+  await cli("controller", source, reviewFile);
+  await withdrawal(source, "after", participant);
   const configureId = randomUUID();
   await ops(
     target.config.name,
@@ -540,6 +654,7 @@ try {
   );
   await wait(target.config.name, restoreId);
   await cli("sync", target);
+  await withdrawal(target, "after", participant);
   const result = JSON.parse(
     (
       await command([
@@ -571,7 +686,7 @@ try {
   );
   console.log(JSON.stringify(result));
 } finally {
-  await command(["rm", "-f", storage]).catch(() => {});
+  await command(["rm", "-f", storage, ledger]).catch(() => {});
   for (const d of deployments.reverse())
     await compose(d, "down", "-v", "--remove-orphans").catch(() => {});
 }

@@ -34,7 +34,9 @@ export async function readPlayUsage(
   ).rows[0]?.world_id;
   const rows = (
     await db.query<Row>(
-      `WITH r AS (SELECT id,result IS NOT NULL AS completed,CASE WHEN sp_user IS NULL THEN 0 ELSE sp_amount END AS spent,creation_rolls AS rolls,received_at,
+      `WITH r AS (SELECT id,result IS NOT NULL AS completed,
+        CASE WHEN sp_user IS NULL OR creation_pending IS NOT NULL THEN 0 ELSE sp_amount END AS spent,
+        CASE WHEN result->>'state'='cancelled' THEN NULL ELSE creation_rolls END AS rolls,received_at,
         COALESCE(command,result->'action'->>'command') AS command,COALESCE(user_id,sp_user) AS user_id,
         CASE WHEN jsonb_typeof(result->'outcome'->'proposals')='array' THEN jsonb_array_length(result->'outcome'->'proposals') END AS batch,
         COALESCE(received_at,COALESCE(sp_reset,(result->'dailySp'->>'resetsAt')::timestamptz)-interval '1 day') AS at

@@ -10614,40 +10614,17 @@ test.each(["材料", "状況"])(
     vi.spyOn(model, "decision", "get").mockReturnValue(
       decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
     );
-    vi.spyOn(model, "apiKey").mockResolvedValue("unused");
-    const changes = vi.fn();
-    vi.spyOn(model, "transport").mockImplementation(async (_url, options) => {
-      const { model, state, questions } = JSON.parse(String(options?.body));
-      return Response.json({
-        id: "decision",
-        model,
-        answers: Object.fromEntries(
-          Object.keys(questions).map((key) => {
-            if (key === "changed") changes(state);
-            return [
-              key,
-              {
-                type: "noul",
-                noul:
-                  key === "changed" &&
-                  JSON.stringify(state.added).includes(
-                    condition === "材料" ? "銀の針" : "袋縫いの習得",
-                  )
-                    ? 1
-                    : 0,
-              },
-            ];
-          }),
-        ),
-        usage: { input_tokens: 100, output_tokens: 20, cost: 0.0000042 },
-      });
-    });
+    const decisions = vi.spyOn(model, "decide").mockResolvedValue({ f0: 0 });
     f.calls.mockImplementation(async (id) => answer(id, { successThrough: 5 }));
-    const repair = (requestId = randomUUID(), material?: string) =>
+    const repair = (
+      requestId = randomUUID(),
+      material?: string,
+      text = "破れた布を繕って袋に仕立てる",
+    ) =>
       f.send(0, {
         requestId,
         command: "update",
-        text: "破れた布を繕って袋に仕立てる",
+        text,
         operations: [
           { type: "create", label: "布の袋", holder: actor, basis: "布を繕う" },
         ],
@@ -10657,16 +10634,18 @@ test.each(["材料", "状況"])(
     const first = await repair();
     expect(first.outcome).toMatchObject({ success: false, roll: 9 });
     await f.send(0, { command: "end-turn" });
-    f.calls.mockImplementationOnce(async (id) => answer(id, sure));
     const other = await f.send(0, {
-      command: "update",
+      command: "create",
       text: "木片で笛を作る",
-      operations: [
-        { type: "create", label: "木の笛", holder: actor, basis: "木を削る" },
-      ],
+      changes: {
+        nodes: [{ id: randomUUID(), kind: "existence", text: "木の笛" }],
+        revisions: [],
+        edges: [],
+        endEdges: [],
+      },
       dependencies: [],
     });
-    expect(other.outcome).toMatchObject({ success: true });
+    expect(other.outcome).toMatchObject({ success: false });
     const judged = f.calls.mock.calls.filter(
       ([, role]) => role === "world-creation-dice",
     ).length;
@@ -10682,6 +10661,7 @@ test.each(["材料", "状況"])(
     ).toHaveLength(judged);
     expect(await repair(request)).toEqual(reused);
 
+    decisions.mockClear().mockResolvedValue({ f0: 1 });
     const material =
       condition === "材料"
         ? (
@@ -10707,11 +10687,18 @@ test.each(["材料", "状況"])(
     f.calls.mockImplementationOnce(async (id) =>
       answer(id, material ? { ...sure, requiredMaterials: [] } : sure),
     );
-    const prepared = await repair(randomUUID(), material);
+    expect(await repair(request)).toEqual(reused);
+    const prepared = await repair(
+      randomUUID(),
+      material,
+      condition === "状況" ? "破れを縫い直して布袋にする" : undefined,
+    );
     expect(prepared.turn).toBe(reused.turn);
     expect(prepared).toMatchObject({ spentSp: 1, outcome: { success: true } });
     expect(prepared.outcome).not.toHaveProperty("repeated");
-    expect(changes).toHaveBeenCalled();
+    expect(decisions.mock.calls.map(([, role]) => role)).toEqual(
+      condition === "状況" ? ["world-creation-repeat"] : [],
+    );
     expect(
       f.calls.mock.calls.filter(([, role]) => role === "world-creation-dice"),
     ).toHaveLength(judged + 1);
@@ -17483,6 +17470,243 @@ test("抽選器を審査し、別の人物が結果を受け取り、同席者�
   ).toHaveLength(2);
 });
 
+describe("中断した技能発展のSP精算", () => {
+  async function pendingDevelopment() {
+    const f = await fixture(1);
+    const actor = f.actors[0]!;
+    const learn = { type: "learn", person: actor, basis: "庭で稽古した" };
+    const seed = await f.apply([{ ...learn, text: "庭で五歩を数えられる" }]);
+    const original = seed.changes.nodes[0]!.id;
+    const request = {
+      requestId: randomUUID(),
+      command: "apply",
+      expectedSp: 1,
+      dependencies: [],
+      action: {
+        type: "generate",
+        plans: [
+          {
+            text: "庭で六歩まで数える稽古をする",
+            operation: {
+              ...learn,
+              text: "庭で六歩を数えられる",
+              consumeSkillIds: [original],
+            },
+          },
+        ],
+      },
+    };
+    const row = async () =>
+      (
+        await isolated.databases.postgres.query(
+          "SELECT creation_pending,creation_rolls,result,sp_user,sp_reset,sp_amount FROM bot_request WHERE id=$1",
+          [request.requestId],
+        )
+      ).rows[0];
+    const skills = async () =>
+      (await readBelongings(f.store.context(f.graph), actor)).skills;
+    const balance = async () =>
+      (await access.botPlay.dailySp(f.world, actor)).remaining;
+    f.calls.mockImplementation(async (id) => answer(id, sure));
+    return { f, actor, original, request, row, skills, balance };
+  }
+
+  test.each([false, true])(
+    "判定保存後に中断しても同じ手番の再送で判定と予約を引き継ぐ（差分保存済み %s）",
+    async (planned) => {
+      const t = await pendingDevelopment();
+      const before = await t.balance();
+      const pool = isolated.databases.postgres;
+      const query = pool.query.bind(pool);
+      const interrupted = planned
+        ? vi
+            .spyOn(t.f.store, "commit")
+            .mockRejectedValueOnce(new Error("確定前に中断"))
+        : vi.spyOn(pool, "query").mockImplementation(((
+            sql: string,
+            args?: unknown[],
+          ) => {
+            if (
+              typeof sql === "string" &&
+              sql.startsWith("UPDATE bot_request SET outcome=$2 WHERE id=$1") &&
+              args?.[0] === t.request.requestId
+            )
+              throw new Error("確定前に中断");
+            return query(sql, args);
+          }) as typeof pool.query);
+      await expect(t.f.send(0, t.request)).rejects.toThrow("確定前に中断");
+      interrupted.mockRestore();
+      const pending = await t.row();
+      expect(!!pending.creation_pending?.plan).toBe(planned);
+      expect(pending.creation_rolls[0].success).toBe(true);
+      expect(await t.balance()).toBe(before - 1);
+      expect(
+        await t.f.store.receipt(t.f.graph, t.request.requestId),
+      ).toBeUndefined();
+      const finished = await t.f.send(0, t.request);
+      expect(finished).toMatchObject({
+        commitId: t.request.requestId,
+        spentSp: 1,
+        outcome: { success: true, roll: pending.creation_rolls[0].roll },
+      });
+      expect(await t.f.send(0, t.request)).toEqual(finished);
+      expect((await t.row()).creation_pending).toBeNull();
+      expect(await t.balance()).toBe(before - 1);
+      expect((await t.skills()).map((s) => s.text)).toEqual([
+        "庭で六歩を数えられる",
+      ]);
+      expect(t.f.calls).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test.each([false, true])(
+    "手番終了と再送が競合しても、グラフ確定の有無で一度だけ決着する（確定済み %s）",
+    async (confirmed) => {
+      const t = await pendingDevelopment();
+      const before = await t.balance();
+      const commit = t.f.store.commit.bind(t.f.store);
+      let planned: Parameters<typeof commit> | undefined;
+      const disrupted = vi
+        .spyOn(t.f.store, "commit")
+        .mockImplementationOnce(async (...args) => {
+          planned = args;
+          if (confirmed) await commit(...args);
+          throw new Error("グラフ更新の途中で中断");
+        });
+      await expect(t.f.send(0, t.request)).rejects.toThrow("グラフ更新の途中");
+      disrupted.mockRestore();
+      const pending = await t.row();
+      expect(pending.result).toBeNull();
+      expect(await t.balance()).toBe(before - 1);
+      let reach!: () => void, release!: () => void;
+      const reached = new Promise<void>((resolve) => {
+        reach = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const resolve = t.f.store.creationResolution.bind(t.f.store);
+      const delayed = vi
+        .spyOn(t.f.store, "creationResolution")
+        .mockImplementationOnce(async (...args) => {
+          reach();
+          await gate;
+          return resolve(...args);
+        });
+      await t.f.send(0, { command: "end-turn" });
+      const settlement = access.botPlay.expire(t.f.world);
+      await Promise.race([
+        reached,
+        settlement.then(() => {
+          throw new Error("精算を照合しませんでした");
+        }),
+      ]);
+      const retry = t.f.send(0, t.request);
+      release();
+      await settlement;
+      const result = await retry;
+      delayed.mockRestore();
+      expect((await t.row()).creation_rolls).toEqual(pending.creation_rolls);
+      expect((await t.row()).creation_pending).toBeNull();
+      expect(await t.f.send(0, t.request)).toEqual(result);
+      expect(t.f.calls).toHaveBeenCalledTimes(1);
+      if (confirmed) {
+        expect(result).toMatchObject({
+          state: "accepted",
+          spentSp: 1,
+          commitId: t.request.requestId,
+          outcome: { success: true, roll: pending.creation_rolls[0].roll },
+        });
+        expect((await t.skills()).map((s) => s.text)).toEqual([
+          "庭で六歩を数えられる",
+        ]);
+        expect(await t.balance()).toBe(before - 1);
+      } else {
+        expect(result).toMatchObject({ state: "cancelled", spentSp: 0 });
+        expect(await t.balance()).toBe(before);
+        expect((await t.row()).sp_user).toBeNull();
+        expect((await t.skills()).map((s) => s.id)).toEqual([t.original]);
+        expect(
+          await t.f.store.receipt(t.f.graph, t.request.requestId),
+        ).toBeUndefined();
+        const [, context, input] = planned!;
+        await expect(
+          commit(
+            await t.f.store.claim(t.f.graph, t.request.requestId),
+            context,
+            input,
+          ),
+        ).rejects.toThrow("取り消されています");
+      }
+    },
+  );
+
+  test("グラフへの遅延書き込みと手番終了が同時に進んでも、確定と取消が重ならない", async () => {
+    const t = await pendingDevelopment();
+    const before = await t.balance();
+    const commit = t.f.store.commit.bind(t.f.store);
+    let planned: Parameters<typeof commit> | undefined;
+    const interrupted = vi
+      .spyOn(t.f.store, "commit")
+      .mockImplementationOnce(async (...args) => {
+        planned = args;
+        throw new Error("グラフへの書き込みが遅延した");
+      });
+    await expect(t.f.send(0, t.request)).rejects.toThrow("書き込みが遅延");
+    interrupted.mockRestore();
+
+    await t.f.send(0, { command: "end-turn" });
+    const [write, settlement] = await Promise.allSettled([
+      commit(...planned!),
+      access.botPlay.expire(t.f.world),
+    ]);
+    expect(settlement.status).toBe("fulfilled");
+    expect((await t.row()).creation_pending).toBeNull();
+    const result = await t.f.send(0, t.request);
+    const receipt = await t.f.store.receipt(t.f.graph, t.request.requestId);
+    expect(await t.f.send(0, t.request)).toEqual(result);
+    if (write.status === "fulfilled") {
+      expect(receipt).toEqual(write.value);
+      expect(result).toMatchObject({
+        state: "accepted",
+        commitId: t.request.requestId,
+        spentSp: 1,
+      });
+      expect(await t.balance()).toBe(before - 1);
+      expect((await t.skills()).map((s) => s.text)).toEqual([
+        "庭で六歩を数えられる",
+      ]);
+    } else {
+      expect(write.reason).toMatchObject({
+        message: "この要求は取り消されています",
+      });
+      expect(receipt).toBeUndefined();
+      expect(result).toMatchObject({ state: "cancelled", spentSp: 0 });
+      expect(await t.balance()).toBe(before);
+      expect((await t.skills()).map((s) => s.id)).toEqual([t.original]);
+    }
+    expect(t.f.calls).toHaveBeenCalledTimes(1);
+  });
+
+  test("通常のダイス失敗は取り消さず、結果と1 SPを確定する", async () => {
+    const t = await pendingDevelopment();
+    const before = await t.balance();
+    t.f.calls.mockImplementation(async (id) =>
+      answer(id, { successThrough: 3 }),
+    );
+    const result = await t.f.send(0, t.request);
+    expect(result).toMatchObject({
+      state: "accepted",
+      outcome: { success: false },
+      spentSp: 1,
+    });
+    expect(await t.f.send(0, t.request)).toEqual(result);
+    expect((await t.row()).creation_pending).toBeNull();
+    expect(await t.balance()).toBe(before - 1);
+    expect((await t.skills()).map((s) => s.id)).toEqual([t.original]);
+  });
+});
+
 test("全文要約が索引上限を超える技能数でも、発展を確定してSPを一度だけ消費する", async () => {
   const f = await fixture(1);
   const person = f.actors[0]!;
@@ -22848,10 +23072,9 @@ test("世界外に接続する技能だけを差し戻し、同じ申請の技�
   });
 });
 
-test("技能判定で使った本人の技能と試行を本人にだけ返し、再送と出し直しで保持する", async () => {
+test("技能判定で使った技能・状態・試行を本人にだけ返し、別の試行が加われば振り直す", async () => {
   const f = await fixture(2);
   const [actor, other] = f.actors as [string, string];
-  const model = runtime.agent.model;
   await f.send(1, { command: "contact", targetId: actor });
   await giveTurn(f, 0);
   f.calls.mockClear();
@@ -22873,6 +23096,23 @@ test("技能判定で使った本人の技能と試行を本人にだけ返し�
     .skills[0]!;
   const hidden = (await readBelongings(f.store.context(f.graph), other))
     .skills[0]!;
+  const stateChanges: Change = {
+    nodes: [],
+    revisions: [],
+    edges: [],
+    endEdges: [],
+  };
+  mark(stateChanges, actor, "足の運びを繰り返し練習した");
+  mark(stateChanges, f.place, "広場に練習用の目印がある");
+  mark(stateChanges, f.place, "柱に内緒の覚え書きがある");
+  const [practiceState, marker, privateNote] = stateChanges.nodes;
+  Object.assign(privateNote!, { viewers: [] });
+  const stateCommit = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, stateCommit),
+    f.store.context(f.graph),
+    { commitId: stateCommit, at: 0, changes: stateChanges },
+  );
   const learn = (text: string, skill: string) => ({
     requestId: randomUUID(),
     command: "apply",
@@ -22897,16 +23137,27 @@ test("技能判定で使った本人の技能と試行を本人にだけ返し�
       ],
     );
   const first = learn("干潮時に瀬を見分ける練習", "瀬を見分ける");
-  f.calls.mockImplementationOnce(async (id) => {
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    const { learningReferences } = JSON.parse(messages[1]!.content);
+    expect(learningReferences).toContain(`state:${practiceState!.id}`);
+    expect(learningReferences).toContain(`state:${marker!.id}`);
+    expect(learningReferences).not.toContain(`state:${privateNote!.id}`);
     await saveRoll(first.requestId, 15);
     return answer(id, {
       successThrough: 15,
-      learningFactors: [{ ref: `skill:${known.id}`, impact: "helped" }],
+      learningFactors: [
+        { ref: `skill:${known.id}`, impact: "helped" },
+        { ref: `state:${marker!.id}`, impact: "helped" },
+      ],
     });
   });
   expect(await f.send(0, first)).toMatchObject({
     outcome: { success: true },
-    learningReasons: [expect.stringContaining("技能「潮流を読む」が有利")],
+    learningReasons: [
+      expect.stringContaining("技能「潮流を読む」が有利"),
+      expect.stringContaining("状態「広場に練習用の目印がある」が有利"),
+    ],
   });
 
   const failed = learn("夜の浅瀬を調べる", "暗闇で浅瀬を見分ける");
@@ -22941,32 +23192,64 @@ test("技能判定で使った本人の技能と試行を本人にだけ返し�
     result.learningReasons,
   );
 
-  vi.spyOn(model, "decision", "get").mockReturnValue(
-    decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+  const retry = () => f.send(0, { ...failed, requestId: randomUUID() });
+  expect(await retry()).toMatchObject({
+    spentSp: 0,
+    outcome: { ...(result.outcome as object), repeated: true },
+    learningReasons: result.learningReasons,
+  });
+  const model = runtime.agent.model;
+  const settings = vi
+    .spyOn(model, "decision", "get")
+    .mockReturnValue(
+      decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+    );
+  const jev = vi.spyOn(model, "decide").mockResolvedValue({ f0: 1 });
+  expect(
+    await f.send(0, learn("夜の浅瀬を調査する", "暗闇で浅瀬を見分ける")),
+  ).toMatchObject({
+    spentSp: 0,
+    outcome: { repeated: true },
+  });
+  expect(jev).toHaveBeenCalledWith(
+    expect.any(String),
+    "world-creation-repeat",
+    expect.anything(),
+    expect.anything(),
   );
-  vi.spyOn(model, "apiKey").mockResolvedValue("unused");
-  vi.spyOn(model, "transport").mockImplementation(async (_url, options) => {
-    const body = JSON.parse(String(options?.body));
-    return Response.json({
-      id: "decision",
-      model: body.model,
-      answers: Object.fromEntries(
-        Object.keys(body.questions).map((key) => [
-          key,
-          { type: "noul", noul: 0.9 },
-        ]),
-      ),
-      usage: { input_tokens: 10, output_tokens: 10, cost: 0 },
-    });
-  });
-  const repeated = await f.send(0, { ...failed, requestId: randomUUID() });
-  expect(repeated.outcome).toMatchObject({
-    ...(result.outcome as object),
-    repeated: true,
-  });
-  expect(repeated.spentSp).toBe(0);
-  expect(repeated.learningReasons).toEqual(result.learningReasons);
+  settings.mockRestore();
   expect(f.calls).toHaveBeenCalledTimes(2);
+
+  await f.apply([
+    { type: "create", label: "測深棒", holder: actor, basis: "水深を測る道具" },
+  ]);
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { successThrough: 3 }),
+  );
+  const equipped = await retry();
+  expect(equipped).toMatchObject({ spentSp: 1, outcome: { success: false } });
+  expect(equipped.outcome).not.toHaveProperty("repeated");
+
+  const practice = learn("星を読み方角を探る", "星の方位を読む");
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { successThrough: 3 }),
+  );
+  expect(await f.send(0, practice)).toMatchObject({
+    outcome: { success: false },
+  });
+
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const payload = JSON.parse(String(messages[1]!.content));
+    expect(payload.recentAttempts[actor].slice(0, 2)).toEqual([
+      { action: practice.action.plans[0]!.text, success: false },
+      { action: failed.action.plans[0]!.text, success: false },
+    ]);
+    return answer(id, sure);
+  });
+  const retried = await retry();
+  expect(retried).toMatchObject({ spentSp: 1, outcome: { success: true } });
+  expect(retried.outcome).not.toHaveProperty("repeated");
+  expect(f.calls).toHaveBeenCalledTimes(5);
 
   await f.send(0, { command: "end-turn" });
   const { entries } = await f.status(1);

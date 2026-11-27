@@ -52,6 +52,7 @@ export function Account() {
     <main className="page home">
       <div className="page-title">
         <h1>アカウント設定</h1>
+        <a href="/auth/withdraw">退会を申請する</a>
       </div>
       <section className="form-panel space-y-3">
         <h2>公開設定</h2>
