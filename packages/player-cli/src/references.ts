@@ -64,21 +64,21 @@ export class PlayerReferences {
       .reverse()
       .map(({ request }) => String(request));
   }
-  cursor() {
+  cursor(name: "status" | "welcome" = "status") {
     return String(
       this.db
         .prepare(
-          "SELECT CAST(cursor AS TEXT) AS value FROM progress WHERE name='status'",
+          "SELECT CAST(cursor AS TEXT) AS value FROM progress WHERE name=?",
         )
-        .get()?.value ?? "0",
+        .get(name)?.value ?? "0",
     );
   }
-  advance(cursor: string) {
+  advance(cursor: string, name: "status" | "welcome" = "status") {
     this.db
       .prepare(
-        "INSERT INTO progress VALUES('status',CAST(? AS INTEGER)) ON CONFLICT(name) DO UPDATE SET cursor=max(cursor,excluded.cursor)",
+        "INSERT INTO progress VALUES(?,CAST(? AS INTEGER)) ON CONFLICT(name) DO UPDATE SET cursor=max(cursor,excluded.cursor)",
       )
-      .run(cursor);
+      .run(name, cursor);
   }
   private short(full: string) {
     const prior = this.db

@@ -9,6 +9,7 @@ import { z } from "zod";
 import { cliVersion, update } from "./update.js";
 import { fileURLToPath } from "node:url";
 import { PlayerReferences, localTime, utcTime } from "./references.js";
+import { playerWelcome } from "./welcome.js";
 import {
   BlockingState,
   describeBlockingStates,
@@ -75,6 +76,9 @@ let values: ReturnType<typeof parse>["values"] = {};
 let profilePath: string, journal: string;
 let requestId: string | undefined;
 let references: PlayerReferences | undefined, pendingCursor: string | undefined;
+const welcomePending = "1",
+  welcomePrinted = "2";
+let welcomeShown = false;
 const render = (value: unknown) =>
   JSON.stringify(
     !references || values["full-ids"] ? value : references.convert(value),
@@ -146,23 +150,39 @@ async function http(
     return attempt();
   }
 }
-const deviceStatus = async (profile: Profile) =>
-  PlayerDeviceStatus.parse(await http(profile, "/api/player-device"));
+const deviceStatus = async (profile: Profile, welcome = false) =>
+  PlayerDeviceStatus.parse(
+    await http(
+      profile,
+      welcome ? "/api/player-device?welcome=1" : "/api/player-device",
+    ),
+  );
 async function status(
   profile: Profile,
   after?: string,
   view?: "wait" | "joins",
 ) {
-  const device = await deviceStatus(profile);
+  const { welcome, ...device } = await deviceStatus(
+    profile,
+    references!.cursor("welcome") === welcomePending,
+  );
   if (device.state !== "ready") return { state: device.state, device };
   const query = new URLSearchParams();
   if (values.scene) query.set("sceneId", z.uuid().parse(values.scene));
   if (after !== undefined) query.set("after", after);
   if (view) query.set("view", view);
+  const session = await http(
+    profile,
+    `/api/worlds/${profile.worldId}/session?${query}`,
+  );
+  welcomeShown = !!welcome;
   return {
     state: "ready",
     ...(view ? {} : { device }),
-    ...(await http(profile, `/api/worlds/${profile.worldId}/session?${query}`)),
+    ...session,
+    ...(welcome
+      ? { welcome: playerWelcome(welcome, device.worldId, profile.server) }
+      : {}),
   };
 }
 const WaitingControl = z.object({ enabled: z.boolean() });
@@ -936,14 +956,14 @@ async function run() {
     );
   }
   if (command === "join" || command === "resume") {
-    const device = PlayerDeviceStatus.parse(
-      await http(profile, "/api/player-device"),
-    );
+    const device = await deviceStatus(profile);
     if (command === "resume") {
-      if (!device.actorId && device.joinId)
+      if (!device.actorId && device.joinId) {
+        references.advance(welcomePending, "welcome");
         return submit(profile, "/api/operations", {
           command: { operation: "worlds.resumeJoin", joinId: device.joinId },
         });
+      }
       throw new Error("再開する参加要求がありません");
     }
     const joinCommand = JoinWorld.parse({
@@ -979,6 +999,7 @@ async function run() {
       await save(join(journal, `${icon.id}.json`), icon);
       profile.joinIconRequestId = icon.id;
     }
+    if (!device.actorId) references.advance(welcomePending, "welcome");
     return submit(
       profile,
       "/api/operations",
@@ -1160,6 +1181,7 @@ try {
     process.stdout.write(output, (e) => (e ? reject(e) : resolve())),
   );
   if (pendingCursor !== undefined) references?.advance(pendingCursor);
+  if (welcomeShown) references?.advance(welcomePrinted, "welcome");
 } catch (error) {
   const causes = z
     .array(BlockingState)

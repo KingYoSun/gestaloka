@@ -55,6 +55,7 @@ export type Construction = {
   published: boolean;
   accepting: boolean;
   player_list: boolean;
+  daily_sp_limit: number;
   instant_npc_multiplier: number;
   free_player_limit: number;
   starting_items: z.infer<typeof StartingItem>[];

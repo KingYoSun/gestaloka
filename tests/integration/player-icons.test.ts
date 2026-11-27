@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { readFile, writeFile } from "node:fs/promises";
 import { join as pathJoin } from "node:path";
 import { cliVersionHeader, playerCli } from "../support/player-cli.js";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { WorldAccess } from "@gestaloka/server/access";
 import { createApp } from "../../apps/api/src/app.js";
 import { fixtureRuntime } from "../support/provider.js";
@@ -104,6 +104,7 @@ beforeAll(async () => {
     description: "",
     published: true,
     accepting: true,
+    dailySpLimit: 73,
     reason: "検証",
   });
   preset = randomUUID();
@@ -434,6 +435,8 @@ test("CLIから参加時の画像を復旧し、Webとの更新・解除と村�
   await writeFile(red, Buffer.from(await picture("red"), "base64"));
   await writeFile(blue, Buffer.from(await picture("blue"), "base64"));
   await writeFile(bad, "not an image");
+  const webUrl = "https://play.example.test";
+  vi.stubEnv("ORY_APP_URL", webUrl);
   try {
     const first = await run(
         profiles[0]!,
@@ -466,6 +469,7 @@ test("CLIから参加時の画像を復旧し、Webとの更新・解除と村�
     const recovered = await run(profiles[0]!, "recover");
     expect(recovered.requestId).toBe(lost.requestId);
     expect(recovered.state).toBe("joining");
+    expect(recovered.welcome).toBeUndefined();
     const failed = await run(profiles[1]!, "join", "--icon", bad);
     expect(failed.code).toBe("ICON_INVALID");
     expect(
@@ -483,6 +487,25 @@ test("CLIから参加時の画像を復旧し、Webとの更新・解除と村�
       });
     const firstPlayer = (await web(one.cookie, first.id)).json().player,
       secondPlayer = (await web(two.cookie, second.id)).json().player;
+    const ready = await run(profiles[0]!, "status");
+    expect(ready.state).toBe("ready");
+    expect(ready.welcome).toMatchObject({
+      instruction: expect.stringContaining("リンクを含めて"),
+      guideUrl: `${webUrl}/api/player-cli/SKILL.md`,
+      markdown: expect.stringContaining("アイコンの村"),
+    });
+    expect(ready.welcome.markdown).toContain(firstPlayer.name);
+    expect(ready.welcome.markdown).toContain("1日73 SP");
+    expect(ready.welcome.markdown).toContain(
+      `[この世界のプレイヤー一覧](${webUrl}/worlds/${world})`,
+    );
+    expect(ready.welcome.markdown).toContain(
+      `[この世界のSTORIES](${webUrl}/stories?worldId=${world})`,
+    );
+    expect((await run(profiles[0]!, "status")).welcome).toBeUndefined();
+    const resumed = await run(profiles[1]!, "recover");
+    expect(resumed.state).toBe("ready");
+    expect(resumed.welcome.markdown).toContain(secondPlayer.name);
     expect(firstPlayer.icon).toBe(recovered.result.image);
     expect(secondPlayer.icon).not.toBe(firstPlayer.icon);
     expect(firstPlayer.actorId).not.toBe(secondPlayer.actorId);
@@ -568,6 +591,9 @@ test("CLIから参加時の画像を復旧し、Webとの更新・解除と村�
         )
       ).statusCode,
     ).toBe(302);
+    const existing = await run(extra, "status");
+    expect(existing.state).toBe("ready");
+    expect(existing.welcome).toBeUndefined();
     expect((await run(extra, "icon")).player.id).toBe(b.entry);
     const legacy = await run(extra, "icon", "--file", blue);
     expect((await web(one.cookie, b.entry)).json().player.icon).toBe(
@@ -597,6 +623,7 @@ test("CLIから参加時の画像を復旧し、Webとの更新・解除と村�
       ).rowCount,
     ).toBe(2);
   } finally {
+    vi.unstubAllEnvs();
     await fixture.close();
   }
 }, 120000);
