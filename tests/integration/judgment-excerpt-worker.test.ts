@@ -268,3 +268,121 @@ test("本人の旧経験を背景で索引化し、別人や未来の経験を�
     vi.unstubAllEnvs();
   }
 });
+
+test("判定資料を起点の現行関係に絞り、旧い状態と索引待ちを区別する", async () => {
+  vi.stubEnv("JUDGMENT_EMBEDDING_URL", "http://127.0.0.1:1234/embed");
+  vi.stubEnv("JUDGMENT_EMBEDDING_REVISION", "scoped-fixture");
+  const encode = vi.fn<typeof fetch>().mockImplementation(async (_url, opt) => {
+    const { inputs } = JSON.parse(String(opt?.body)) as { inputs: string[] };
+    return Response.json(
+      inputs.map((input) =>
+        Array.from({ length: 384 }, (_, i) =>
+          Number(i === (/解除できない|扉を開ける/u.test(input) ? 0 : 1)),
+        ),
+      ),
+    );
+  });
+  vi.stubGlobal("fetch", encode);
+  try {
+    await store.setup();
+    const actor = randomUUID(),
+      other = randomUUID(),
+      at = Date.now();
+    const expires = at + 60_000;
+    const states = [
+      "封印は解除できない",
+      "掲示板の札",
+      "解除できない前回の記録",
+      ...Array.from({ length: 19 }, (_, i) => `記録 ${i}`),
+    ].map((text) => ({ id: randomUUID(), kind: "script" as const, text }));
+    const outside = {
+      id: randomUUID(),
+      kind: "script" as const,
+      text: states[0]!.text,
+    };
+    const links = [...states, outside].map((node, index) => ({
+      id: randomUUID(),
+      kind: "status" as const,
+      role: "content" as const,
+      source: node === outside ? other : actor,
+      target: node.id,
+      period: { from: at, ...(index === 2 ? { until: expires } : {}) },
+    }));
+    const initial = randomUUID();
+    await store.commit(
+      await store.claim(world, initial),
+      store.context(world),
+      {
+        commitId: initial,
+        at,
+        changes: {
+          nodes: [
+            { id: actor, kind: "existence", text: "申請者" },
+            { id: other, kind: "existence", text: "別の人物" },
+            ...states,
+            outside,
+          ],
+          edges: links,
+          revisions: [],
+          endEdges: [],
+        },
+      },
+    );
+    const query = (time: number) =>
+      store
+        .context(world)
+        .scopedJudgmentEdges([actor], "status", ["扉を開ける"], time, [
+          states[1]!.id,
+          outside.id,
+        ]);
+    expect(await query(at)).toBeUndefined();
+    for (let i = 0; i < links.length; i++)
+      await store.indexScopedJudgmentEdges(world);
+    const result = await query(at);
+    expect(result?.ranked).toBe(true);
+    expect(result?.similarities?.get(links[0]!.id)).toBeCloseTo(1);
+    expect(result?.similarities?.has(links.at(-1)!.id)).toBe(false);
+    expect(result?.edges.get(actor)?.map(({ id }) => id)).toEqual(
+      expect.arrayContaining([links[0]!.id, links[1]!.id]),
+    );
+    expect(result?.edges.get(actor)?.map(({ source }) => source)).not.toContain(
+      other,
+    );
+    expect(result?.similarities?.has(links[2]!.id)).toBe(true);
+    expect(await query(expires)).toBeUndefined();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(expires);
+    try {
+      await store.indexScopedJudgmentEdges(world);
+    } finally {
+      clock.mockRestore();
+    }
+    const afterExpiry = await query(expires);
+    expect(afterExpiry?.similarities?.has(links[0]!.id)).toBe(true);
+    expect(afterExpiry?.edges.get(actor)?.map(({ id }) => id)).not.toContain(
+      links[2]!.id,
+    );
+    const updated = randomUUID();
+    await store.commit(
+      await store.claim(world, updated),
+      store.context(world),
+      {
+        commitId: updated,
+        at: expires + 1,
+        changes: {
+          nodes: [],
+          edges: [],
+          revisions: [{ ...states[0]!, text: "封印は解除できる" }],
+          endEdges: [links[1]!.id],
+        },
+      },
+    );
+    expect(await query(expires + 1)).toBeUndefined();
+    await store.indexScopedJudgmentEdges(world);
+    expect(
+      (await query(expires + 1))?.edges.get(actor)?.map(({ id }) => id),
+    ).not.toContain(links[1]!.id);
+  } finally {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  }
+});

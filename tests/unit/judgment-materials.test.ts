@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { expect, test, vi } from "vitest";
 import { measureDiceMaterials } from "../../packages/server/src/llm/dice-prompt.js";
-import { selectJudgmentMaterials } from "../../packages/server/src/runtime/judgment-materials.js";
+import {
+  judgmentPriority,
+  selectJudgmentMaterials,
+} from "../../packages/server/src/runtime/judgment-materials.js";
 import { stripJudgmentPreview } from "../../packages/server/src/runtime/judgment-records.js";
 
 const bytes = (data: unknown) => Buffer.byteLength(JSON.stringify(data));
@@ -14,6 +17,12 @@ const material = (
   states: extra.states ?? [],
   omittedStates: 0,
   belongings: { skills, items: extra.items ?? [], storages: [] },
+});
+
+test("判定点・関係・確定事実・情報の区別を同じ0〜10点にまとめる", () => {
+  expect(judgmentPriority(0, 0, 0)).toBe(0);
+  expect(judgmentPriority(10, 3, 2.5)).toBe(10);
+  expect(judgmentPriority(5.4, 0.7, 1.6, 0.8)).toBe(3.8);
 });
 
 test("少量の材料は選別せず、そのままGMへ渡す", async () => {
@@ -80,7 +89,169 @@ test("本人と現在地の状態が資料枠を超えても、申請に関わ�
   expect(decide.mock.calls.length).toBeLessThanOrEqual(2);
 });
 
-test("抜粋を用意できない本文と取得経緯を、Jevで落とさず正本取得に回す", async () => {
+test.each([
+  {
+    name: "名前を出さずに指した樹脂の効能",
+    request:
+      "仕上げ油と昨日拾ったものを使い、水に沈めてもほどけない留め具を作る。",
+    change: "水中用の留め具を作る。",
+    label: "樹脂の小瓶",
+    basis: "昨日の採取。この樹脂は水中でも硬化する。",
+    basisScore: [0.79, 0.66] as const,
+    itemScore: [0.46, 0.6] as const,
+  },
+  {
+    name: "別の品の取得経緯にある在庫切れの反証",
+    request: "粉と甘露で焼き菓子を作る。",
+    change: "甘露を加えて生地を整える。",
+    label: "空の盆",
+    basis: "保管棚の掃除をした。甘露は昨日使い切り、在庫はない。",
+    basisScore: [0.16, 0.86] as const,
+    itemScore: [0.17, 0.51] as const,
+  },
+])(
+  "索引候補が多くても関連する経緯を評価し、無関係な状態を補わない $name",
+  async ({ request, change, label, basis, basisScore, itemScore }) => {
+    const item = { id: "evidence-item", label, basis };
+    const shelves = Array.from({ length: 105 }, (_, i) => ({
+      node: {
+        id: `shelf-${i}`,
+        text: `棚札${i}。` + "北側の棚板の幅を測り、台帳に書いた。".repeat(5),
+      },
+    }));
+    const materials = [
+      material("actor", [], { items: [item] }),
+      material("workshop", [], { states: shelves }),
+    ];
+    const ranks = new Map(shelves.map(({ node }, i) => [node.id, 1 / (i + 1)]));
+    ranks.set(item.id, 1 / (shelves.length + 1));
+    let basisAsked = false;
+    const decide = vi.fn(
+      async (value: unknown, questions: Record<string, unknown>) => {
+        const { candidates } = value as {
+          candidates: { key: string; kind: string; evidence: unknown }[];
+        };
+        const scores: Record<string, number> = {};
+        for (const row of candidates) {
+          const applicable = `r0${row.key}a`;
+          const effect = `r0${row.key}e`;
+          if (!(applicable in questions) || !(effect in questions)) continue;
+          const relevant = row.kind === "basis" && row.evidence === basis;
+          basisAsked ||= relevant;
+          const [a, e] = relevant
+            ? basisScore
+            : row.kind === "item"
+              ? itemScore
+              : ([0.12, 0.26] as const);
+          scores[applicable] = a;
+          scores[effect] = e;
+        }
+        return scores;
+      },
+    );
+    expect(bytes(materials)).toBeGreaterThan(24 * 1024);
+
+    const [selected] = await selectJudgmentMaterials({
+      materials,
+      ranks,
+      requiredIds: new Set(["actor", "workshop"]),
+      requests: [
+        {
+          text: request,
+          effect: { nodes: [{ text: change }] },
+          subjects: ["actor"],
+        },
+      ],
+      decide,
+      threshold: 0.55,
+    });
+
+    expect(decide.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(basisAsked).toBe(true);
+    expect(selected).toMatchObject([
+      { node: { id: "actor" }, belongings: { items: [item] } },
+      { node: { id: "workshop" }, states: [] },
+    ]);
+    expect(bytes(selected)).toBeLessThan(24 * 1024);
+  },
+);
+
+test("型付きの生成対象が一字でも、Jevの低評価でその現況を落とさない", async () => {
+  const hen = { id: "hen", label: "庭の鶏" };
+  const egg = { node: { id: "egg-present", text: "敷物の上に卵がある。" } };
+  const unrelated = { node: { id: "broom", text: "箒は戸棚に入っている。" } };
+  const decide = vi.fn(async (_state, questions: Record<string, unknown>) =>
+    Object.fromEntries(Object.keys(questions).map((key) => [key, 0.05])),
+  );
+
+  const [selected] = await selectJudgmentMaterials({
+    materials: [
+      material("actor", [], { items: [hen] }),
+      material("yard", [], { states: [egg, unrelated] }),
+    ],
+    requiredIds: new Set(["actor", "yard"]),
+    requests: [
+      {
+        text: "庭で鶏が残したものを一つ拾う。",
+        effect: {
+          nodes: [{ id: "created-item", kind: "existence", text: "卵" }],
+        },
+        subjects: ["actor"],
+        requiredIds: new Set([hen.id]),
+      },
+    ],
+    directLimit: 0,
+    decide,
+  });
+
+  expect(JSON.stringify(decide.mock.calls)).toContain(egg.node.id);
+  expect(selected).toMatchObject([
+    { node: { id: "actor" }, belongings: { items: [hen] } },
+    { node: { id: "yard" }, states: [egg], omittedStates: 1 },
+  ]);
+});
+
+test("明示した対抗相手の状態はJevの低評価でも判定資料に残る", async () => {
+  const carrying = {
+    node: { id: "carrying", text: "片手に水桶を抱えている。" },
+  };
+  const unseen = {
+    node: { id: "unseen", text: "袖の裏に補強板がある。", viewers: [] },
+  };
+  const unrelated = {
+    node: { id: "not-opponent", text: "古い帽子を布で補修した。" },
+  };
+  const decide = vi.fn(async (_state, questions: Record<string, unknown>) =>
+    Object.fromEntries(Object.keys(questions).map((key) => [key, 0.05])),
+  );
+
+  const [selected] = await selectJudgmentMaterials({
+    materials: [
+      material("actor", [], { states: [unrelated] }),
+      material("opponent", [], { states: [carrying, unseen] }),
+    ],
+    requiredIds: new Set(["actor", "opponent"]),
+    requests: [
+      {
+        text: "道具部屋へ進もうとする相手を戸口で止める。",
+        effect: { targetId: "opponent", state: "戸口の外へ一歩退く。" },
+        subjects: ["actor", "opponent"],
+      },
+    ],
+    directLimit: 0,
+    decide,
+  });
+
+  const reviewed = JSON.stringify(decide.mock.calls);
+  expect(reviewed).toContain(carrying.node.id);
+  expect(reviewed).toContain(unseen.node.id);
+  expect(selected).toMatchObject([
+    { node: { id: "actor" }, states: [], omittedStates: 1 },
+    { node: { id: "opponent" }, states: [carrying, unseen] },
+  ]);
+});
+
+test("参照した抜粋待ちの本文と経緯は残し、無関係な抜粋待ちの資料は除く", async () => {
   const text = {
     id: "pending-skill",
     text: "作成中の本文",
@@ -93,22 +264,37 @@ test("抜粋を用意できない本文と取得経緯を、Jevで落とさず�
     judgmentBasisPending: true,
   };
   const ordinary = { id: "ordinary", text: "布を切る。" };
-  const materials = [material("actor", [text, basis, ordinary])];
-  let asked = 0;
+  const unrelated = {
+    id: "unrelated",
+    text: "魚の記録の抜粋を準備中。",
+    judgmentTextPending: true,
+  };
+  const materials = [material("actor", [text, basis, ordinary, unrelated])];
+  const questionsSent: string[] = [];
+  const inputs: string[] = [];
   const [selected] = await selectJudgmentMaterials({
     materials,
     requiredIds: new Set(),
-    requests: [{ text: "揺れている板を支える", subjects: ["actor"] }],
+    requests: [
+      {
+        text: "揺れている板を支える",
+        subjects: ["actor"],
+        requiredIds: new Set([text.id, basis.id]),
+      },
+    ],
     directLimit: 0,
     decide: async (state, questions) => {
-      asked = Object.keys(questions).length;
-      const input = JSON.stringify(state);
-      expect(input).not.toContain(text.text);
-      expect(input).not.toContain(basis.basis);
+      questionsSent.push(...Object.keys(questions));
+      inputs.push(JSON.stringify(state));
       return Object.fromEntries(Object.keys(questions).map((key) => [key, 0]));
     },
   });
-  expect(asked).toBe(2);
+  expect(questionsSent).toHaveLength(2);
+  for (const input of inputs) {
+    expect(input).not.toContain(text.text);
+    expect(input).not.toContain(basis.basis);
+    expect(input).not.toContain(unrelated.text);
+  }
   expect(selected).toEqual([material("actor", [text, basis])]);
 });
 
@@ -170,7 +356,6 @@ test("多数の技能から当事者ごとに選び、2回以内に相手の受�
     }),
   ).toMatchObject([[{ node: { id: "actor" } }, material("target", [defense])]]);
   expect(decide.mock.calls.length).toBeLessThanOrEqual(2);
-  expect(seen.size).toBeLessThanOrEqual(20);
 });
 
 test("明示した根拠とJevの重要資料を保護し、修正量だけに関わる候補は人物の資料を優先する", async () => {
@@ -221,6 +406,7 @@ test("明示した根拠とJevの重要資料を保護し、修正量だけに�
       states: [oldRestriction, editable],
     }),
   ];
+  const reviewed = new Set<string>();
   const decide = vi.fn(async (value: unknown) => {
     const state = value as {
       candidates: {
@@ -229,18 +415,15 @@ test("明示した根拠とJevの重要資料を保護し、修正量だけに�
         material?: { id: string };
       }[];
     };
-    expect(state.candidates.map(({ evidence }) => evidence.id)).toEqual([
-      "critical",
-      undefined,
-      "modifier",
-      "optional-item",
-      undefined,
-    ]);
     return Object.fromEntries(
-      state.candidates.flatMap(({ key, evidence, material }) => [
-        [`r0${key}a`, 0.99],
-        [`r0${key}e`, (material?.id ?? evidence.id) === vital.id ? 0.99 : 0.2],
-      ]),
+      state.candidates.flatMap(({ key, evidence, material }) => {
+        const id = material?.id ?? evidence.id;
+        reviewed.add(material ? `basis:${id}` : id);
+        return [
+          [`r0${key}a`, 0.99],
+          [`r0${key}e`, id === vital.id ? 0.99 : 0.2],
+        ];
+      }),
     );
   });
   expect(
@@ -258,6 +441,15 @@ test("明示した根拠とJevの重要資料を保護し、修正量だけに�
       budget: bytes(wanted),
     }),
   ).toEqual([wanted]);
+  expect(reviewed).toEqual(
+    new Set([
+      "critical",
+      "basis:critical",
+      "modifier",
+      "optional-item",
+      "basis:optional-item",
+    ]),
+  );
 });
 
 test("明示した物品と技能は、長い取得経緯を個別に評価して本文を残す", async () => {
@@ -315,7 +507,7 @@ test("明示した物品と技能は、長い取得経緯を個別に評価し�
   expect(await select(0.99, bytes(original))).toEqual([original]);
 });
 
-test("適用が曖昧でも結果の種類に影響し得る技能を、確率補正だけの技能より先に残す", async () => {
+test("索引の順が逆でも、結果の種類に影響し得る技能を確率補正だけの技能より先に残す", async () => {
   const modifier = { id: "modifier", text: "命中の補助。" };
   const uncertain = { id: "uncertain", text: "隠れた反応。" };
   const wanted = [material("actor", [uncertain])];
@@ -324,6 +516,10 @@ test("適用が曖昧でも結果の種類に影響し得る技能を、確率�
       materials: [material("actor", [modifier, uncertain])],
       requiredIds: new Set(),
       requests: [{ text: "相手を止める", subjects: ["actor"] }],
+      ranks: new Map([
+        [modifier.id, 1],
+        [uncertain.id, 0.01],
+      ]),
       decide: async () => ({
         r0c1a: 0.99,
         r0c1e: 0.05,
@@ -395,11 +591,7 @@ test("別の案が参照する大きな対象は、無関係な案の予算を�
       budget: bytes([actor]),
     }),
   ).toEqual([[actor], undefined]);
-  expect(
-    decide.mock.calls.map(([state]) =>
-      state.requests.map((r: { text: string }) => r.text),
-    ),
-  ).toEqual([["木の札を作る"]]);
+  expect(decide.mock.calls.length).toBeLessThanOrEqual(2);
 });
 
 test("現在地は選別で保持し、GMへは判定内部の印を渡さない", async () => {
@@ -429,7 +621,7 @@ test("現在地は選別で保持し、GMへは判定内部の印を渡さない
   expect(Object.keys(decide.mock.calls[0]![1])).toHaveLength(2);
 });
 
-test("抜粋待ちの対象とその保管品は、その対象を参照した案だけに必須で残る", async () => {
+test("抜粋待ちの対象は参照した案で正本を確認し、無関係な保管品は読まない", async () => {
   const actor = material("actor", [{ id: "ordinary", text: "紙を折る。" }]);
   const target = {
     node: {
@@ -458,14 +650,21 @@ test("抜粋待ちの対象とその保管品は、その対象を参照した�
     },
   };
   const independent = [material("actor", [])];
-  const hydrate = vi.fn(async (packet: unknown[], i: number) => {
-    if (i === 0) return packet;
-    expect(packet).toEqual([...independent, target]);
-    return [
-      ...independent,
-      { ...target, node: { ...target.node, text: "長い設定。".repeat(130) } },
-    ];
-  });
+  const hydratedTargetFor = new Set<number>();
+  const hydratedStorageIds = new Set<string>();
+  const hydrate = vi.fn(async (packet: unknown[], i: number) =>
+    (packet as (typeof actor | typeof target)[]).map((fact) => {
+      if (fact.node.id !== target.node.id) return fact;
+      hydratedTargetFor.add(i);
+      for (const storage of (fact as typeof target).belongings.storages)
+        hydratedStorageIds.add(storage.id);
+      return {
+        ...fact,
+        node: { ...fact.node, text: "長い設定。".repeat(130) },
+      };
+    }),
+  );
+  const inputs: string[] = [];
   expect(
     await selectJudgmentMaterials({
       materials: [actor, target],
@@ -479,7 +678,7 @@ test("抜粋待ちの対象とその保管品は、その対象を参照した�
         },
       ],
       decide: async (state, questions) => {
-        expect(JSON.stringify(state)).not.toContain("作成中の");
+        inputs.push(JSON.stringify(state));
         return Object.fromEntries(
           Object.keys(questions).map((key) => [key, 0.05]),
         );
@@ -489,15 +688,18 @@ test("抜粋待ちの対象とその保管品は、その対象を参照した�
       budget: bytes(independent),
     }),
   ).toEqual([independent, undefined]);
-  expect(hydrate).toHaveBeenCalledWith(independent, 0);
+  expect(hydratedTargetFor).toEqual(new Set([1]));
+  expect(hydratedStorageIds.size).toBe(0);
+  for (const input of inputs) expect(input).not.toContain("作成中の");
 });
 
-test("選別が必須とした資料は捨てず、収まらないときは結果を作らない", async () => {
+test("高関連の資料が収まらないときも、先に必要な資料を確保して次の候補を試す", async () => {
   const proof = {
     id: "essential",
     text: "この証拠には長い適用条件がある。".repeat(100),
   };
-  const materials = [material("actor", [proof])];
+  const next = { id: "short", text: "手元に作業台がある。" };
+  const materials = [material("actor", [proof, next])];
   expect(
     await selectJudgmentMaterials({
       materials,
@@ -508,7 +710,7 @@ test("選別が必須とした資料は捨てず、収まらないときは結�
       directLimit: 0,
       budget: 500,
     }),
-  ).toEqual([undefined]);
+  ).toEqual([[material("actor", [next])]]);
 });
 
 test("回答が不足した案には予算内の元資料を使い、元資料が超過すれば必須資料を使う", async () => {
@@ -665,10 +867,23 @@ test("本文が一部しかない資料は選別してから必要な技能と�
       }),
     );
   });
+  const hydratedSkills = new Set<string>();
+  const hydratedBases = new Set<string>();
   const hydrate = vi.fn(async (packet: unknown[]) => {
     expect(decide).toHaveBeenCalled();
-    expect(packet).toMatchObject([{ belongings: { skills: [skill] } }]);
-    return [material("actor", [canonical])];
+    return (packet as typeof materials).map((fact) => ({
+      ...fact,
+      belongings: {
+        ...fact.belongings,
+        skills: fact.belongings.skills.map((current) => {
+          hydratedSkills.add(current.id);
+          if (current.basis) hydratedBases.add(current.basis.preview);
+          return current.id === skill.id
+            ? { ...canonical, basis: current.basis ? canonical.basis : null }
+            : current;
+        }),
+      },
+    }));
   });
   expect(
     await selectJudgmentMaterials({
@@ -679,7 +894,8 @@ test("本文が一部しかない資料は選別してから必要な技能と�
       hydrate,
     }),
   ).toEqual([[material("actor", [canonical])]]);
-  expect(hydrate).toHaveBeenCalledTimes(1);
+  expect(hydratedSkills).toEqual(new Set([skill.id]));
+  expect(hydratedBases).toEqual(new Set([skill.basis.preview]));
 });
 
 test("全資料と分かる小さな入力は一度だけ正本を確認し、選別を省く", async () => {

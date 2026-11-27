@@ -1342,6 +1342,10 @@ type JudgmentScope = {
   actor: string;
   participants: string[];
   places: string[];
+  queries: string[];
+  references?: string[];
+  ranks: Map<string, number>;
+  scoped: boolean;
 };
 const judgmentMaterialLimit = "JUDGMENT_MATERIAL_LIMIT";
 const judgmentMaterialMessage =
@@ -1352,6 +1356,18 @@ function judgmentReferences(change: Change) {
     ...change.revisions.map(({ id }) => id),
     ...change.edges.flatMap(({ source, target }) => [source, target]),
     ...change.endEdges,
+  ];
+}
+
+function judgmentQueries(text: string, change?: Change) {
+  const details = [
+    ...(change?.nodes ?? []),
+    ...(change?.revisions ?? []),
+    ...(change?.edges ?? []),
+  ].flatMap((row) => (row.text ? [row.text] : []));
+  return [
+    [text, ...details].join("\n"),
+    `${text}\nこの行動が成立する条件と、成立を妨げる制限や例外。`,
   ];
 }
 
@@ -3159,6 +3175,9 @@ export class BotPlay {
           ? {
               actor: actorId,
               participants,
+              queries: judgmentQueries([action.text, effect.state].join("\n")),
+              ranks: new Map<string, number>(),
+              scoped: false,
               places: [
                 ...(await directPlaces(context, actorId)),
                 ...(victim
@@ -3218,7 +3237,12 @@ export class BotPlay {
                   : []),
               ],
               [{ text: action.text, effect, subjects: participants }],
-              { actor: actorId, consumable },
+              {
+                actor: actorId,
+                consumable,
+                ranks: judgment.ranks,
+                scoped: judgment.scoped,
+              },
             )
           : [materials];
         if (!selected)
@@ -8593,6 +8617,16 @@ export class BotPlay {
           ? {
               actor,
               participants,
+              queries: fresh.flatMap((p) => judgmentQueries(p.text, p.changes)),
+              references: fresh.flatMap((p) => [
+                ...judgmentReferences(p.changes),
+                ...(p.materials ?? []).map(({ id }) => id),
+                ...(p.operations ?? []).flatMap((op) =>
+                  op.type === "learn" ? (op.consumeSkillIds ?? []) : [],
+                ),
+              ]),
+              ranks: new Map<string, number>(),
+              scoped: false,
               places: (
                 await Promise.all(
                   participants.map((person) =>
@@ -8679,6 +8713,8 @@ export class BotPlay {
               premise,
               consumable: work ? [] : consumable,
               storagePlace,
+              ranks: judgment.ranks,
+              scoped: judgment.scoped,
               action: (index, labels) => {
                 const proposal = proposalFor(index, labels);
                 return batch ? { proposals: [proposal] } : proposal;
@@ -9738,6 +9774,37 @@ export class BotPlay {
     const result = [],
       includedStates = new Set<string>(),
       wanted = new Set([...ids, ...(judgment?.places ?? [])]);
+    const readScoped = async (
+      ids: Iterable<string>,
+      kind: "status" | "has",
+      at: number,
+    ) => {
+      const anchors = [...ids];
+      if (judgment) {
+        const selected = await context.scopedJudgmentEdges(
+          anchors,
+          kind,
+          judgment.queries,
+          at,
+          [...wanted, ...mentioned, ...(judgment.references ?? [])],
+        );
+        if (selected) {
+          if (anchors.length) judgment.scoped = true;
+          if (selected.similarities)
+            for (const edges of selected.edges.values())
+              for (const { id, target } of edges) {
+                const similarity = selected.similarities.get(id);
+                if (similarity !== undefined)
+                  judgment.ranks.set(
+                    target,
+                    Math.max(similarity, judgment.ranks.get(target) ?? 0),
+                  );
+              }
+          return selected.edges;
+        }
+      }
+      return context.outgoingRelations(anchors, kind, at, at, true);
+    };
     const nodes = judgment && (await context.nodes(wanted, true));
     const judgmentBelongings = judgment
       ? await readJudgmentScope(
@@ -9757,17 +9824,12 @@ export class BotPlay {
             )),
           ].flat(),
           true,
+          readScoped,
         )
       : undefined;
     const judgmentAt = this.now().getTime();
     const stateEdges = judgment
-      ? await context.outgoingRelations(
-          wanted,
-          "status",
-          judgmentAt,
-          judgmentAt,
-          true,
-        )
+      ? await readScoped(wanted, "status", judgmentAt)
       : undefined;
     const stateIds = [...(stateEdges?.values() ?? [])]
       .flat()
@@ -9915,6 +9977,8 @@ export class BotPlay {
       premise?: string;
       consumable: Consumable[];
       storagePlace?: string | undefined;
+      ranks?: ReadonlyMap<string, number>;
+      scoped?: boolean;
       action?: (index: number, labels: ReadonlyMap<string, string>) => object;
       onFiltered?: (index: number) => void;
     },
@@ -9997,87 +10061,64 @@ export class BotPlay {
         );
       }),
     );
+    const semantic = await context.supplementalExperiences(
+      frame.actor,
+      through,
+      requests.map(({ text, effect }) => [
+        text,
+        text + "\n" + JSON.stringify(effect ?? ""),
+      ]),
+    );
+    const ranks = new Map(frame.ranks);
+    const evidence = matches.map((rows, index) => {
+      const unique = new Map(
+        rows.map((row) => [row.state?.ref ?? row.id, row]),
+      );
+      for (const id of semantic[index]!) {
+        if (unique.has(id)) continue;
+        unique.set(id, { id, sharedReferences: [] });
+        ranks.set(id, 1);
+      }
+      return [...unique.values()];
+    });
     const events = await context.nodes(
       new Set(
-        matches
-          .flat()
-          .filter((row) => !row.state)
-          .map((row) => row.id),
+        evidence.flatMap((rows) =>
+          rows.flatMap(({ id, state }) => (state ? [] : [id])),
+        ),
       ),
     );
-    const experiences = matches.map((rows) =>
+    const experiences = evidence.map((rows) =>
       rows.flatMap(({ id, state, sharedReferences }) => {
-        const node = !state && events.get(id);
-        return node && node.kind === "event"
+        const node = state
+          ? { id, kind: "script" as const, text: state.text }
+          : events.get(id);
+        return node && (state || node.kind === "event")
           ? [
               {
                 node,
                 experiencedBy: frame.actor,
+                ...(state
+                  ? {
+                      stateExperience: state.ref,
+                      experienceRequest: state.requestId,
+                    }
+                  : {}),
                 ...(sharedReferences.length ? { sharedReferences } : {}),
               },
             ]
           : [];
       }),
     );
-    const packets = (await ExecutionBudget.withCallReserve(
-      requests.length,
-      () =>
-        selectJudgmentMaterials({
-          ...options,
-          experiences,
-          screenExperiences: !!model.decision,
-        }),
+    return (await ExecutionBudget.withCallReserve(requests.length, () =>
+      selectJudgmentMaterials({
+        ...options,
+        ...(ranks.size ? { ranks } : {}),
+        ...(frame.scoped ? { wholeFiltered: true } : {}),
+        experiences,
+        screenExperiences: !!model.decision,
+      }),
     )) as (T[] | undefined)[];
-    // Semantic retrieval can use spare bytes but cannot evict a referenced
-    // state, material or an experience that the ordinary selection admitted.
-    if (!packets.some((packet) => packet !== undefined)) return packets;
-    const more = await context.supplementalExperiences(
-      frame.actor,
-      through,
-      requests.map((r) => [
-        r.text,
-        r.text + "\n" + JSON.stringify(r.effect ?? ""),
-      ]),
-    );
-
-    const records = await context.nodes(new Set(more.flat()));
-    for (const [i, ids] of more.entries()) {
-      const packet = packets[i];
-      if (!packet) continue;
-      const seen = new Set([
-        ...(packet as { node?: { id?: string } }[]).map((row) => row.node?.id),
-        ...matches[i]!.map((row) => row.id),
-      ]);
-      const additions = [
-        ...ids.flatMap((id) => {
-          const node = records.get(id);
-          return !seen.has(id) && node?.kind === "event"
-            ? [{ node, experiencedBy: frame.actor }]
-            : [];
-        }),
-        ...matches[i]!.flatMap(({ id, state, sharedReferences }) =>
-          state
-            ? [
-                {
-                  node: { id, kind: "script", text: state.text },
-                  experiencedBy: frame.actor,
-                  stateExperience: state.ref,
-                  experienceRequest: state.requestId,
-                  ...(sharedReferences.length ? { sharedReferences } : {}),
-                },
-              ]
-            : [],
-        ),
-      ];
-      for (const addition of additions as T[]) {
-        const trial = [...packets[i]!, addition];
-        if (options.measure!(trial, i, true) <= 24 * 1024) {
-          packets[i] = trial;
-          frame.onFiltered?.(i);
-        }
-      }
-    }
-    return packets;
   }
   async #validate(
     context: WorldContext,
@@ -12328,12 +12369,21 @@ export class BotPlay {
         const places = await Promise.all(
           participants.map((id) => directPlaces(context, id)),
         );
+        const judgment = {
+          actor,
+          participants,
+          places: places.flat(),
+          queries: judgmentQueries(input.text, changes),
+          references: judgmentReferences(changes),
+          ranks: new Map<string, number>(),
+          scoped: false,
+        };
         const materials = await this.#facts(
           context,
           [actor, ...parties, ...refs, ...losing],
           [...stateSubjects, ...losing],
           statusReview?.scripts,
-          { actor, participants, places: places.flat() },
+          judgment,
         );
         const [selected] = await this.#selectJudgment(
           input.requestId,
@@ -12341,7 +12391,7 @@ export class BotPlay {
           materials,
           [...participants, ...places.flat(), ...judgmentReferences(changes)],
           [{ text: input.text, effect: changes, subjects: participants }],
-          { actor, consumable },
+          { actor, consumable, ranks: judgment.ranks, scoped: judgment.scoped },
         );
         if (!selected)
           return reject(judgmentMaterialLimit, judgmentMaterialMessage);
