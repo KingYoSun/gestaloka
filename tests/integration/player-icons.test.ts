@@ -506,7 +506,8 @@ test("CLIから参加時の画像を復旧し、Webとの更新・解除と村�
     const resumed = await run(profiles[1]!, "recover");
     expect(resumed.state).toBe("ready");
     expect(resumed.welcome.markdown).toContain(secondPlayer.name);
-    expect(firstPlayer.icon).toBe(recovered.result.image);
+    expect(recovered.result).toEqual({ hasIcon: true });
+    expect(firstPlayer.icon).toMatch(/^data:image\/webp;base64,/);
     expect(secondPlayer.icon).not.toBe(firstPlayer.icon);
     expect(firstPlayer.actorId).not.toBe(secondPlayer.actorId);
     expect((await run(profiles[0]!, "icon")).player).toEqual(firstPlayer);
@@ -522,15 +523,22 @@ test("CLIから参加時の画像を復旧し、Webとの更新・解除と村�
       beforeBad,
     );
     const updated = await run(profiles[0]!, "icon", "--file", red);
+    expect(updated).toMatchObject({
+      state: "ready",
+      result: { hasIcon: true },
+    });
+    expect(updated.result).not.toHaveProperty("image");
+    const updatedIcon = (await run(profiles[0]!, "icon")).player.icon;
+    expect(updatedIcon).not.toBe(beforeBad);
     expect((await web(one.cookie, first.id)).json().player.icon).toBe(
-      updated.result.image,
+      updatedIcon,
     );
     expect((await web(two.cookie, second.id)).json().player.icon).toBe(
       secondPlayer.icon,
     );
-    expect(
-      (await run(profiles[0]!, "icon", "--clear")).result.image,
-    ).toBeNull();
+    expect((await run(profiles[0]!, "icon", "--clear")).result).toEqual({
+      hasIcon: false,
+    });
     expect((await web(one.cookie, first.id)).json().player.icon).toBeNull();
     const profile = JSON.parse(await readFile(profiles[0]!, "utf8")),
       headers = {
@@ -596,8 +604,9 @@ test("CLIから参加時の画像を復旧し、Webとの更新・解除と村�
     expect(existing.welcome).toBeUndefined();
     expect((await run(extra, "icon")).player.id).toBe(b.entry);
     const legacy = await run(extra, "icon", "--file", blue);
+    expect(legacy.result).toEqual({ hasIcon: true });
     expect((await web(one.cookie, b.entry)).json().player.icon).toBe(
-      legacy.result.image,
+      (await run(extra, "icon")).player.icon,
     );
     expect((await web(one.cookie, first.id)).json().player.icon).toBeNull();
     const saved = JSON.parse(await readFile(profiles[0]!, "utf8"));

@@ -110,7 +110,8 @@ async function http(
 ) {
   // Every write reaching this helper is journaled or an idempotent presence update.
   const attempt = async () => {
-    const response = await fetch(new URL(path, profile.server), {
+    const url = new URL(path, profile.server);
+    const response = await fetch(url, {
       method: body === undefined ? "GET" : method,
       redirect: "error",
       signal: AbortSignal.timeout(15000),
@@ -155,6 +156,12 @@ async function http(
           blockingStates: data.blockingStates,
         },
       );
+    if (url.pathname === `/api/worlds/${profile.worldId}/session`) {
+      delete data.creationCriteria;
+      delete data.skillCriteria;
+      delete data.exploreCriteria;
+      delete data.fumbleCriteria;
+    }
     return data;
   };
   try {
@@ -175,7 +182,7 @@ const deviceStatus = async (profile: Profile, welcome = false) =>
 async function status(
   profile: Profile,
   after?: string,
-  view?: "wait" | "joins",
+  view?: "wait" | "joins" | "device",
 ) {
   const { welcome, ...device } = await deviceStatus(
     profile,
@@ -184,14 +191,35 @@ async function status(
   if (device.legalConsentRequired)
     return { state: "consent_required", device, ...ownerConsent(profile) };
   if (device.state !== "ready") return { state: device.state, device };
+  delete device.character;
   const query = new URLSearchParams();
   if (values.scene) query.set("sceneId", z.uuid().parse(values.scene));
   if (after !== undefined) query.set("after", after);
-  if (view) query.set("view", view);
-  const session = await http(
-    profile,
-    `/api/worlds/${profile.worldId}/session?${query}`,
-  );
+  if (view && view !== "device") query.set("view", view);
+  const session =
+    view === "device"
+      ? {}
+      : await http(profile, `/api/worlds/${profile.worldId}/session?${query}`);
+  const archived = session.result as
+    | Partial<Record<"entries" | "legacy", { id: string | number }[]>>
+    | undefined;
+  if (archived) {
+    for (const key of ["entries", "legacy"] as const) {
+      const saved = archived[key];
+      const current = session[key];
+      if (
+        Array.isArray(saved) &&
+        Array.isArray(current) &&
+        saved.length === current.length &&
+        saved.every(
+          (entry, index) =>
+            entry?.id !== undefined && entry.id === current[index]?.id,
+        )
+      )
+        delete archived[key];
+    }
+    if (!Object.keys(archived).length) delete session.result;
+  }
   welcomeShown = !!welcome;
   return {
     state: "ready",
@@ -233,6 +261,12 @@ function waitingNotice(
   frame: z.infer<typeof WaitingEvent>,
   lastWake: string | null = null,
 ) {
+  const progress = frame.progress;
+  if (
+    progress?.waitingForReturn &&
+    progress.waitingForReturn.message === progress.message
+  )
+    delete progress.message;
   const name = frame.context?.name ?? frame.progress?.name;
   const actionMessage = playActionMessage(
     frame.actionable,
@@ -387,13 +421,28 @@ async function send(
   saved: z.infer<typeof Request>,
 ): Promise<Record<string, unknown>> {
   requestId = saved.id;
-  const result = await http(
+  let result = await http(
     profile,
     saved.path,
     saved.body,
     saved.authenticated,
     saved.method,
   );
+  const icon = saved.path.endsWith("/icon");
+  if (icon) result = { hasIcon: result.image !== null };
+  if (saved.body.command === "blueprint-list") {
+    for (const view of result.quests) {
+      const { id, phase, template, plan, buildingId, productId } = view.quest;
+      view.quest = {
+        id,
+        phase,
+        name: plan.product?.label ?? plan.building?.label ?? template.name,
+        buildingId,
+        productId,
+      };
+      delete view.requirements;
+    }
+  }
   await save(join(journal, `${saved.id}.json`), { ...saved, result });
   if (
     saved.body.command === "search" &&
@@ -427,17 +476,22 @@ async function send(
         saved.submittedAt,
       );
   }
-  if (profile.joinIconRequestId === saved.id) {
+  const joiningWithIcon = profile.joinIconRequestId === saved.id;
+  if (joiningWithIcon) {
     delete profile.joinIconRequestId;
     await save(profilePath, profile);
   }
   if (!saved.authenticated) {
-    const code = PlayerDeviceCode.parse(result);
+    const { id, userCode, verificationPath } = PlayerDeviceCode.parse(result);
+    const connection = await status(profile);
     return {
-      ...(await status(profile)),
-      requestId,
-      ...code,
-      verificationUrl: new URL(code.verificationPath, profile.server).href,
+      ...connection,
+      ...(connection.device && {
+        device: { ...connection.device, id: undefined },
+      }),
+      id,
+      userCode,
+      verificationUrl: new URL(verificationPath, profile.server).href,
     };
   }
   if (
@@ -464,15 +518,15 @@ async function send(
     };
   }
   return {
-    ...(saved.path.split("?", 1)[0]!.endsWith("/session") ||
-    saved.path.endsWith("/stories") ||
-    saved.path.endsWith("/friends") ||
-    saved.path.endsWith("/inventory/bundles")
-      ? {}
-      : await status(profile).catch((error) => {
-          if (saved.path.endsWith("/reports")) return { state: "report" };
-          throw error;
-        })),
+    ...(saved.path === "/api/operations" || joiningWithIcon
+      ? await status(profile)
+      : saved.path.endsWith("/reports")
+        ? { state: "report" }
+        : saved.path.endsWith("/viewers")
+          ? { state: "ready" }
+          : icon
+            ? await status(profile, undefined, "device")
+            : {}),
     ...(saved.body.command === "finish"
       ? { state: "finished", sceneId: result.sceneId }
       : {}),
@@ -768,14 +822,34 @@ async function run() {
       after: values.after,
       image: values.image === undefined ? undefined : "1",
     });
-    const result = StoryRead.parse(
+    const read = StoryRead.parse(
       await http(profile, `/api/stories/${story}?${params(query)}`),
     );
+    const index = {
+      story: read.story,
+      episodes: read.episodes,
+      next: read.next,
+    };
+    if (
+      query.after !== undefined &&
+      query.episode === undefined &&
+      !query.image
+    )
+      return index;
+    const { image, ...episode } = read.episode;
+    const result = {
+      ...index,
+      episode,
+      previousEpisode: read.previousEpisode,
+      nextEpisode: read.nextEpisode,
+      ...(read.nextEpisode === undefined
+        ? { hasNextEpisode: read.hasNextEpisode }
+        : {}),
+    };
     if (values.image === undefined) return result;
-    const { image, ...episode } = result.episode;
     if (!image) throw new Error("この話に添付画像はありません");
     await writeFile(values.image, Buffer.from(image, "base64"), { flag: "wx" });
-    return { ...result, episode, imageFile: values.image };
+    return { ...result, imageFile: values.image };
   }
   if (
     values.scene &&
@@ -986,12 +1060,19 @@ async function run() {
       )),
     };
   if (command === "promotions") {
+    const page = await http(
+      profile,
+      `/api/worlds/${profile.worldId}/npc-promotions${values.before ? `?before=${z.uuid().parse(values.before)}` : ""}`,
+    );
+    for (const item of page.items) {
+      delete item.description;
+      delete item.sourceText;
+      delete item.decidedBy;
+      delete item.autoReview;
+    }
     return {
       state: "promotions",
-      ...(await http(
-        profile,
-        `/api/worlds/${profile.worldId}/npc-promotions${values.before ? `?before=${z.uuid().parse(values.before)}` : ""}`,
-      )),
+      ...page,
     };
   }
   if (command === "icon") {
@@ -1249,13 +1330,6 @@ try {
   const causes = z
     .array(BlockingState)
     .safeParse((error as { blockingStates?: unknown }).blockingStates).data;
-  const displayedCauses =
-    causes && references && !values["full-ids"]
-      ? (references.convert(causes) as typeof causes).map((state) => ({
-          ...state,
-          shortId: state.stateId,
-        }))
-      : causes;
   const message = error instanceof Error ? error.message : String(error);
   const causeText = describeBlockingStates(causes);
   const base =
@@ -1268,11 +1342,13 @@ try {
       ...(requestId ? { requestId } : {}),
       code: (error as { code?: string }).code ?? "CLI_ERROR",
       consentUrl: (error as { consentUrl?: string }).consentUrl,
-      message: base + describeBlockingStates(displayedCauses),
+      message: base,
       callsUsed: (error as { callsUsed?: number }).callsUsed,
       capacity: (error as { capacity?: unknown }).capacity,
       item: (error as { item?: unknown }).item,
-      blockingStates: displayedCauses,
+      blockingStates: values["full-ids"]
+        ? causes
+        : causes?.map(({ stateId, text, until }) => ({ stateId, text, until })),
     }),
   );
   process.exitCode = 1;
