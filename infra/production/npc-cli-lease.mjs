@@ -2,7 +2,7 @@ import { createConnection } from "node:net";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-export async function npcWakeLease(directory, npc, turn) {
+export async function npcWakeLease(directory, npc, turn, receive = false) {
   const enabled = await readFile(
     new URL("bridge/" + npc, directory),
     "utf8",
@@ -21,7 +21,7 @@ export async function npcWakeLease(directory, npc, turn) {
     );
     socket.on("error", reject);
     socket.on("connect", () =>
-      socket.write(JSON.stringify({ npc, turn }) + "\n"),
+      socket.write(JSON.stringify({ npc, turn, receive }) + "\n"),
     );
     let result = "";
     socket.on("data", (chunk) => {

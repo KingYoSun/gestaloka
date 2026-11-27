@@ -112,7 +112,7 @@ const tool = {
   },
 };
 
-export function validateInvocation(args, input, turn) {
+export function validateInvocation(args, input, turn, receive = false) {
   if (
     !Array.isArray(args) ||
     args.some((arg) => typeof arg !== "string" || arg === "--")
@@ -127,7 +127,11 @@ export function validateInvocation(args, input, turn) {
   const read =
     reads.has(command) ||
     (command === "stories" && ["list", "read"].includes(subcommand));
-  if (!read && !(turn && writes.has(command)))
+  if (
+    !read &&
+    !(turn && writes.has(command)) &&
+    !(receive && command === "receive")
+  )
     throw new Error("COMMAND_DENIED");
   if (input !== undefined && !fileCommands.has(command))
     throw new Error("INPUT_DENIED");
@@ -147,12 +151,13 @@ export function createNpcBridge({
 }) {
   const leases = new Map();
   const busy = new Set();
-  function issue(name, turn) {
+  function issue(name, turn, receive = false) {
     if (!Object.hasOwn(roles, name)) throw new Error("UNKNOWN_NPC");
     const token = randomBytes(32).toString("base64url");
     leases.set(token, {
       name,
       turn,
+      receive,
       expires: clock() + ttl,
       responses: new Map(),
     });
@@ -173,7 +178,12 @@ export function createNpcBridge({
         throw new Error("DUPLICATE_REQUEST_ID");
       return existing.response;
     }
-    const parsed = validateInvocation(input.args, input.input, lease.turn);
+    const parsed = validateInvocation(
+      input.args,
+      input.input,
+      lease.turn,
+      lease.receive,
+    );
     if (busy.has(lease.name)) throw new Error("NPC_BUSY");
     busy.add(lease.name);
     const role = roles[lease.name];
@@ -388,8 +398,8 @@ async function serve(path) {
         if (data.length > 256) return client.destroy();
         if (!data.endsWith("\n")) return;
         try {
-          const { npc, turn } = JSON.parse(data);
-          client.end(bridge.issue(npc, turn === true) + "\n");
+          const { npc, turn, receive } = JSON.parse(data);
+          client.end(bridge.issue(npc, turn === true, receive === true) + "\n");
         } catch {
           client.destroy();
         }
