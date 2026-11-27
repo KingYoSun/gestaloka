@@ -12,6 +12,7 @@ import {
   PlayerPlayCommand,
   PlayQuote,
   PlayResponse,
+  SkillRequestResult,
   SpectatingView,
   InventoryContents,
   InventoryContentsQuery,
@@ -122,6 +123,7 @@ export async function worldRoutes(
         "/api/worlds/:id/scene",
         "/api/worlds/:id/session",
         "/api/worlds/:id/session/quote",
+        "/api/worlds/:id/session/requests/:requestId",
         "/api/worlds/:id/inventory/description",
         "/api/worlds/:id/inventory/contents",
         "/api/worlds/:id/inventory/bundles",
@@ -659,6 +661,43 @@ export async function worldRoutes(
         deviceIds.get(request),
         request.query.expectedSp,
       ),
+  );
+  app.get(
+    "/api/worlds/:id/session/requests/:requestId",
+    {
+      schema: {
+        params: ResourceId.extend({ requestId: z.uuid() }),
+        querystring: ActorQuery,
+        response: { 200: SkillRequestResult, ...errors },
+      },
+    },
+    async (request) => {
+      try {
+        const result = await service().skillRequestResult(
+          await subject(request),
+          request.params.id,
+          request.params.requestId,
+          request.query.actorId,
+        );
+        if (result) return result;
+      } catch (error) {
+        if (
+          !(error instanceof AccessError) ||
+          ![
+            "WORLD_NOT_FOUND",
+            "PLAYER_DEVICE_SCOPE",
+            "PLAYER_DEVICE_DENIED",
+            "PLAYER_JOIN_REQUIRED",
+          ].includes(error.code)
+        )
+          throw error;
+      }
+      throw new AccessError(
+        404,
+        "SKILL_REQUEST_NOT_FOUND",
+        "照会できる技能発展の申請が見つかりません",
+      );
+    },
   );
   app.post(
     "/api/worlds/:id/session/quote",

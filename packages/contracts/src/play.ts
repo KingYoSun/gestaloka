@@ -889,6 +889,34 @@ export const ViewersInput = z
   .strict();
 export const ViewersResult = ViewersInput.omit({ requestId: true });
 export const PlayResponse = z.record(z.string(), z.unknown());
+
+const SkillRequestDice = z.object({
+  success: z.boolean(),
+  roll: z.int().optional(),
+  setting: z
+    .object({
+      count: z.int().optional(),
+      sides: z.int(),
+      successThrough: z.int(),
+    })
+    .optional(),
+});
+export const SkillRequestResult = z.object({
+  requestId: id,
+  state: z.enum(["pending", "confirmed", "cancelled", "unresolved"]),
+  phase: z
+    .enum(["judging", "awaiting-commit", "settling", "unverified"])
+    .optional(),
+  commitId: id.optional(),
+  outcome: SkillRequestDice.extend({
+    proposals: z.array(SkillRequestDice).max(5).optional(),
+  }).optional(),
+  sp: z.object({
+    reserved: z.int().nonnegative(),
+    spent: z.int().nonnegative(),
+    resetsAt: z.iso.datetime().optional(),
+  }),
+});
 export const SpectatingView = z.object({
   name: z.string(),
   scene: z

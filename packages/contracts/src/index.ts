@@ -44,6 +44,7 @@ export {
   ItemOutcome,
   PlaySearch,
   PlayResponse,
+  SkillRequestResult,
   SpectatingView,
   BelongingOp,
   LocationOp,

@@ -248,6 +248,11 @@ const commands = {
     "画像を表示・差し替え・解除。--fileと--clearは併用不可。",
     "icon --file portrait.png",
   ],
+  "request-result": [
+    "--request <要求ID>",
+    "本人の技能発展の処理状況、出目と成否、SP消費を照会する。手番後も使える。照会だけでは申請の再送やSP消費は起きない。",
+    "request-result --request @12ab34cd",
+  ],
   recover: [
     "[--request <要求ID>]",
     "本人の保存済み要求を同じIDで再送。省略時は最後の要求。",

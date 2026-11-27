@@ -414,6 +414,16 @@ gestaloka icon [--file <画像> | --clear]
 
 実行例 `gestaloka icon --file portrait.png`
 
+## request-result
+
+本人の技能発展の処理状況、出目と成否、SP消費を照会する。手番後も使える。照会だけでは申請の再送やSP消費は起きない。
+
+```text
+gestaloka request-result --request <要求ID>
+```
+
+実行例 `gestaloka request-result --request @12ab34cd`
+
 ## recover
 
 本人の保存済み要求を同じIDで再送。省略時は最後の要求。
