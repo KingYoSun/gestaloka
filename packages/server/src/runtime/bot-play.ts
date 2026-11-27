@@ -4122,6 +4122,7 @@ export class BotPlay {
     for (const id of ids) {
       const member = d.members.find((m) => m.actorId === id && !m.instant);
       if (!member) continue;
+      await this.#recordBeforeDeparture(db, session, member, request);
       if (await isPermanentlyDead(context, id)) {
         const hidden = await this.#hidden(db, session.world_id, context, id);
         const departure = await this.#transition(
@@ -4247,15 +4248,29 @@ export class BotPlay {
     ]);
     await signalTurns(db, session.world_id, ...moving.map((m) => m.actorId));
   }
-  // 手番の途中で退出する人にも、在席中に聞いた発言を一度だけ届ける。
+  // 在席中に聞いた発言と、本人の死亡を確定した公開判定を、発生順に届ける。
+  async #recordBeforeDeparture(
+    db: Db,
+    session: Session,
+    member: Member,
+    fatalRequest?: string,
+  ) {
+    const pending = session.data.entries;
+    const entries = pending
+      .slice(member.joinedAfterEntries ?? 0)
+      .filter(
+        (e) =>
+          (fatalRequest !== undefined && e.requestId === fatalRequest) ||
+          e.speechWitnesses?.includes(member.actorId),
+      );
+    if (entries.length)
+      await this.#record(db, session, { entries }, [member.actorId]);
+    member.joinedAfterEntries = pending.length;
+  }
   async #depart(db: Db, session: Session, moving: Member[]) {
     const d = session.data;
     for (const member of moving) {
-      const entries = d.entries
-        .slice(member.joinedAfterEntries ?? 0)
-        .filter((e) => e.speechWitnesses?.includes(member.actorId));
-      if (entries.length)
-        await this.#record(db, session, { entries }, [member.actorId]);
+      await this.#recordBeforeDeparture(db, session, member);
       delete member.joinedAfterEntries;
       delete member.joinedAfterComment;
     }
