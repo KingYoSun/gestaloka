@@ -111,7 +111,20 @@ async function http(
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    const data = await response.json();
+    const data = await response.json().catch((error: unknown) => {
+      if (!(error instanceof SyntaxError)) throw error;
+      const details = [`HTTP ${response.status}`];
+      const contentType = response.headers.get("content-type");
+      const ray = response.headers.get("cf-ray");
+      if (contentType) details.push(`Content-Type ${contentType}`);
+      if (ray) details.push(`cf-ray ${ray}`);
+      throw Object.assign(
+        new Error(
+          `サーバーの応答をJSONとして読み取れませんでした（${details.join("、")}）`,
+        ),
+        { code: "HTTP_ERROR" },
+      );
+    });
     if (!response.ok)
       throw Object.assign(
         new Error(data.message ?? `HTTP ${response.status}`),
