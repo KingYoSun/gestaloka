@@ -861,6 +861,27 @@ function StorageInventory({
   );
 }
 
+export function NoticeList({
+  items,
+}: {
+  items: z.infer<typeof PlayerNotices>["notices"] | undefined;
+}) {
+  if (!items) return null;
+  return items.length ? (
+    <ul className="space-y-3">
+      {items.map(({ id, at, text }) => (
+        <li key={id}>
+          <time className="muted" dateTime={at}>
+            {realTime(at)}
+          </time>
+          <p className="whitespace-pre-wrap">{text}</p>
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p className="muted">通知はありません</p>
+  );
+}
 export function PlayerPanel({
   world,
   player,
@@ -1004,21 +1025,7 @@ export function PlayerPanel({
         <Tabs.Content value="notices">
           {notices.loading && <Notice>通知を読み込んでいます</Notice>}
           {notices.error != null && <Problem error={notices.error} />}
-          {notices.items?.length === 0 && (
-            <p className="muted">通知はありません</p>
-          )}
-          {!!notices.items?.length && (
-            <ul className="space-y-3">
-              {notices.items.map(({ id, at, text }) => (
-                <li key={id}>
-                  <time className="muted" dateTime={at}>
-                    {realTime(at)}
-                  </time>
-                  <p className="whitespace-pre-wrap">{text}</p>
-                </li>
-              ))}
-            </ul>
-          )}
+          <NoticeList items={notices.items} />
           {(notices.error != null || (notices.items && notices.unread > 0)) && (
             <Button type="button" onClick={notices.read}>
               {notices.error != null ? "再試行" : "未読を読む"}

@@ -20,6 +20,7 @@ import { derivedId } from "../world/model.js";
 import { z } from "zod";
 import { AccessError, WorldAccess } from "./access.js";
 import { Stories } from "./stories.js";
+import { hasLegalConsent, requireLegalConsent } from "./legal.js";
 import { PlayerTools } from "../runtime/player-tools.js";
 import type { WorldPlayers } from "../runtime/players.js";
 import { ModelLimits } from "../llm/limits.js";
@@ -219,6 +220,7 @@ export class Operations {
       member: user ? member(user) : null,
       inviteRequired: state.invite_required,
       bootstrapAvailable: !state.bootstrapped,
+      legalConsentRequired: !(await hasLegalConsent(this.pool, userId)),
     };
   }
   async spectating(userId: string, isPublic?: boolean) {
@@ -533,6 +535,11 @@ export class Operations {
             database,
           );
         if (actor) await this.#mcpCheck(database, actor, input, context, true);
+        if (
+          actor &&
+          ["worlds.join", "worlds.resumeJoin"].includes(input.operation)
+        )
+          await requireLegalConsent(database, actor);
         if (actor && input.operation === "account.register") {
           const current = (
             await database.query<UserRow>(
@@ -542,6 +549,7 @@ export class Operations {
           ).rows[0];
           if (current?.banned)
             throw new AccessError(403, "USER_BANNED", "利用が停止されています");
+          if (!current) await requireLegalConsent(database, actor);
         }
         if (completed) {
           if (saved.error)
@@ -1675,6 +1683,7 @@ export class Operations {
               "USER_NOT_FOUND",
               "先に本人がログインしてアプリIDを確認してください",
             );
+          await requireLegalConsent(db, input.userId);
           await db.query(
             "UPDATE operation_state SET bootstrapped=true WHERE singleton",
           );

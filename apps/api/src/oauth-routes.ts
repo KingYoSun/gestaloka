@@ -113,12 +113,6 @@ export async function oauthRoutes(
       );
     },
   );
-  app.addContentTypeParser(
-    "application/x-www-form-urlencoded",
-    { parseAs: "string" },
-    (_request, body, done) =>
-      done(null, Object.fromEntries(new URLSearchParams(String(body)))),
-  );
   app.post<{ Body: { challenge?: string; csrf?: string; decision?: string } }>(
     "/auth/oauth/consent",
     async (request, reply) => {

@@ -93,6 +93,13 @@ async function save(path: string, data: unknown) {
 async function load() {
   return Profile.parse(JSON.parse(await readFile(profilePath, "utf8")));
 }
+function ownerConsent(profile: Profile) {
+  const consentUrl = new URL("/auth/legal", profile.server).href;
+  return {
+    consentUrl,
+    message: `アカウントの持ち主に ${consentUrl} を渡してください。持ち主がブラウザーで最新版に同意するとプレイを再開できます。接続と通知の読み取りは引き続き利用できます。`,
+  };
+}
 async function http(
   profile: Profile,
   path: string,
@@ -129,6 +136,13 @@ async function http(
         { code: "HTTP_ERROR" },
       );
     });
+    if (!response.ok && data.code === "LEGAL_CONSENT_REQUIRED") {
+      const handoff = ownerConsent(profile);
+      throw Object.assign(new Error(handoff.message), {
+        code: data.code,
+        consentUrl: handoff.consentUrl,
+      });
+    }
     if (!response.ok)
       throw Object.assign(
         new Error(data.message ?? `HTTP ${response.status}`),
@@ -166,6 +180,8 @@ async function status(
     profile,
     references!.cursor("welcome") === welcomePending,
   );
+  if (device.legalConsentRequired)
+    return { state: "consent_required", device, ...ownerConsent(profile) };
   if (device.state !== "ready") return { state: device.state, device };
   const query = new URLSearchParams();
   if (values.scene) query.set("sceneId", z.uuid().parse(values.scene));
@@ -1204,6 +1220,7 @@ try {
       state: "error",
       ...(requestId ? { requestId } : {}),
       code: (error as { code?: string }).code ?? "CLI_ERROR",
+      consentUrl: (error as { consentUrl?: string }).consentUrl,
       message: base + describeBlockingStates(displayedCauses),
       callsUsed: (error as { callsUsed?: number }).callsUsed,
       capacity: (error as { capacity?: unknown }).capacity,

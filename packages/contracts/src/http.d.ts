@@ -8647,6 +8647,7 @@ export interface paths {
                             } | null;
                             inviteRequired: boolean;
                             bootstrapAvailable: boolean;
+                            legalConsentRequired: boolean;
                         };
                     };
                 };
@@ -11804,6 +11805,8 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** @enum {boolean} */
+                            legalConsentRequired?: true;
                             /** Format: uuid */
                             id: string;
                             /** Format: uuid */

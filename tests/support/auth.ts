@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { OryIdentity } from "@gestaloka/server/identity";
 import { Operations } from "@gestaloka/server/operations";
+import { recordLegalConsent } from "@gestaloka/server/legal";
 
 /** Isolated test identities; never bootstrap or change a real application's membership. */
 export async function fixtureAuth(
@@ -69,6 +70,7 @@ export async function fixtureAuth(
         id,
         role,
       ]);
+      await recordLegalConsent(pool, id);
       ids.push(id);
       sessions.set(cookie, { ory, session: randomUUID() });
       return { id, cookie };

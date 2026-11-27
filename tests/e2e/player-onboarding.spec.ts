@@ -181,6 +181,9 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
         const username = `招待-${randomUUID()}`;
         const password = randomUUID();
         const begin = async (invitation: string) => {
+          await page
+            .context()
+            .clearCookies({ name: "gestaloka_registration_consent" });
           await page.goto(
             origin +
               "/auth/player?" +
@@ -189,6 +192,8 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
           await page
             .getByRole("link", { name: "招待コードで新しいIDを作る" })
             .click();
+          await page.getByRole("checkbox", { name: /利用規約/ }).check();
+          await page.getByRole("button", { name: "同意して進む" }).click();
           await page.getByLabel("ログインID").fill(username);
           await page.getByLabel("パスワード").fill(password);
           await page.getByRole("button", { name: "IDを作成する" }).click();
@@ -373,6 +378,63 @@ for (const base of ["", "共通の所属と個別の所有物を持つ新しい�
         ).rows[0].n,
       ).toBe(base ? 1 : 0);
       if (base) {
+        await db.postgres.query(
+          "UPDATE app_legal_consent SET version='previous-edition' WHERE user_id=$1",
+          [person.id],
+        );
+        const blocked = await cli.run(profile, "search", "--kind", "self");
+        expect(blocked.code).toBe("LEGAL_CONSENT_REQUIRED");
+        expect(blocked.consentUrl).toBe(cli.base + "/auth/legal");
+        expect((await cli.run(profile, "status")).consentUrl).toBe(
+          blocked.consentUrl,
+        );
+        expect(
+          (
+            await cli.run(
+              profile,
+              "connect",
+              "--server",
+              cli.base,
+              "--world",
+              world,
+              "--character",
+              settingsFile,
+              "--icon",
+              imageFile,
+            )
+          ).consentUrl,
+        ).toBe(blocked.consentUrl);
+        expect((await cli.run(profile, "notices")).state).toBe("notices");
+        expect((await cli.run(profile, "standby", "--resume")).state).not.toBe(
+          "error",
+        );
+        const webPlay = await page.request.get(
+          origin + "/api/worlds/" + world + "/session",
+        );
+        expect((await webPlay.json()).code).toBe("LEGAL_CONSENT_REQUIRED");
+        await page.goto(origin + "/auth/legal");
+        await page.getByRole("checkbox", { name: /利用規約/ }).check();
+        await page.getByRole("button", { name: "同意して進む" }).click();
+        await expect(
+          page.getByRole("heading", { name: "同意を記録しました" }),
+        ).toBeVisible();
+        expect((await cli.run(profile, "status")).consentUrl).toBeUndefined();
+        const start = await cli.run(profile, "start");
+        expect(start, JSON.stringify(start)).not.toMatchObject({
+          state: "error",
+        });
+        const self = await cli.run(profile, "search", "--kind", "self");
+        expect(self, JSON.stringify(self)).not.toMatchObject({
+          state: "error",
+        });
+        expect(
+          (
+            await db.postgres.query(
+              "SELECT version FROM app_legal_consent WHERE user_id=$1",
+              [person.id],
+            )
+          ).rowCount,
+        ).toBe(2);
         const webJoin = randomUUID();
         await expect(
           auth.operations.execute(

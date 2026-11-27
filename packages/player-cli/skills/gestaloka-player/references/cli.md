@@ -32,7 +32,7 @@ gestaloka update [--server <URL>]
 
 ## connect
 
-持ち主の認可を申請。人物設定とアイコンはファイルで任意指定。
+持ち主の認可を申請。人物設定とアイコンはファイルで任意指定。consentUrl が返ったら、そのURLを持ち主に渡す。最新版への同意は持ち主がブラウザーで行う。接続と通知の読み取りは同意前も利用できる。
 
 ```text
 gestaloka connect --server <URL> --world <世界IDまたは世界URL> [--character <ファイル>] [--icon <画像>]

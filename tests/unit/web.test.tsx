@@ -458,6 +458,53 @@ test("未認証では匿名セッションを作らずログインへ案内す�
   expect(screen.queryByRole("heading", { name: "世界を始める" })).toBeNull();
 });
 
+test("同意を保留中もログインした人物の通知をWebで読める", async () => {
+  server.use(
+    http.get("*/api/account", () =>
+      json({
+        member: { id: identity, role: "user", banned: false },
+        legalConsentRequired: true,
+      }),
+    ),
+    http.get("*/api/worlds/:id/session", () =>
+      json(
+        { code: "LEGAL_CONSENT_REQUIRED", message: "最新版への同意が必要です" },
+        403,
+      ),
+    ),
+    http.get("*/api/worlds/:id/notices", () =>
+      json({
+        notices: [
+          {
+            id: V,
+            at: "2026-11-27T00:00:00.000Z",
+            text: "運営からのお知らせ",
+            unread: true,
+          },
+        ],
+      }),
+    ),
+  );
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({
+          initialEntries: [`/worlds/${W}/play?actorId=${V}`],
+        }),
+      )}
+    />,
+  );
+  expect(
+    (
+      await screen.findByRole("link", {
+        name: "利用規約とプライバシーポリシーを確認する",
+      })
+    ).getAttribute("href"),
+  ).toBe("/auth/legal");
+  fireEvent.click(await screen.findByRole("button", { name: "通知を読む" }));
+  expect(await screen.findByText("運営からのお知らせ")).toBeTruthy();
+});
+
 test("一般ユーザーは公開一覧を開き、管理アプリでは管理用データを取得しない", async () => {
   server.use(
     http.get("*/api/account", () =>

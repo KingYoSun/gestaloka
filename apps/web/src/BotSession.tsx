@@ -25,6 +25,7 @@ import {
   PlayLog,
   PlayLogRows,
   PlayerPanel,
+  NoticeList,
   PlayScreen,
   realTime,
   SessionPanel,
@@ -430,6 +431,27 @@ export function BotSession({
       PlayerPlayCommand.parse({ ...raw, requestId: crypto.randomUUID() }),
     );
   };
+  if (
+    query.error instanceof ApiFailure &&
+    query.error.code === "LEGAL_CONSENT_REQUIRED"
+  )
+    return (
+      <section>
+        <h1>通知</h1>
+        <Button
+          disabled={notices.isPending}
+          onClick={() =>
+            notices.mutate({
+              params: { path: { id }, query: actorId ? { actorId } : {} },
+            })
+          }
+        >
+          通知を読む
+        </Button>
+        {notices.error && <Problem error={notices.error} />}
+        <NoticeList items={notices.data?.notices} />
+      </section>
+    );
   if (!view)
     return query.error ? (
       <Problem error={query.error} />

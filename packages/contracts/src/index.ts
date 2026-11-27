@@ -765,6 +765,7 @@ export const PlayerDeviceApproval = z.union([
     .strict(),
 ]);
 export const PlayerDeviceStatus = z.object({
+  legalConsentRequired: z.literal(true).optional(),
   id: z.uuid(),
   worldId: z.uuid(),
   actorId: z.uuid().nullable(),

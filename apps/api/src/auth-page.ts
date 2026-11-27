@@ -37,4 +37,9 @@ button { padding: 12px 24px; border: 1px solid var(--gold); border-radius: 8px; 
 button:first-of-type { background: var(--gold); }
 button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
 a { color: var(--navy); }
+.legal-edition { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; font-size: .875rem; overflow-wrap: anywhere; }
+.legal-scroll { max-height: min(42vh, 25rem); overflow-y: auto; scrollbar-gutter: stable; padding: 0 1.25rem; border: 1px solid #a99b87; border-radius: 8px; background: var(--paper); }
+.legal-scroll:focus-visible, input:focus-visible { outline: 3px solid var(--navy); outline-offset: 2px; }
+.legal-scroll h3 { font-size: 1rem; }
+.legal-form { flex-direction: column; align-items: flex-start; }
 @media (max-width: 640px) { main { margin: 24px auto; padding: 16px; } }`;

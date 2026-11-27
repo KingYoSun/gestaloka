@@ -62,6 +62,14 @@ export const api = createFetchClient<paths>({
     const response = await fetch(request);
     if (epoch !== session.epoch) throw new ScopeChanged();
     const identity = response.headers.get("X-Gestaloka-Subject");
+    const failure = response.ok
+      ? undefined
+      : ApiError.safeParse(
+          await response
+            .clone()
+            .json()
+            .catch(() => null),
+        ).data;
     if (
       protectedPath &&
       session.id &&
@@ -69,7 +77,8 @@ export const api = createFetchClient<paths>({
         ([401, 403, 404].includes(response.status) &&
           !(
             identity === session.id &&
-            ((storyRequest && response.status !== 401) ||
+            (failure?.code === "LEGAL_CONSENT_REQUIRED" ||
+              (storyRequest && response.status !== 401) ||
               (response.status === 404 &&
                 (spectateRequest || path.endsWith("/inventory/contents"))))
           )))
@@ -78,16 +87,10 @@ export const api = createFetchClient<paths>({
       throw new ScopeChanged();
     }
     if (!response.ok) {
-      const parsed = ApiError.safeParse(
-        await response
-          .clone()
-          .json()
-          .catch(() => null),
-      );
       throw new ApiFailure(
         response.status,
-        parsed.success ? parsed.data.code : "HTTP_ERROR",
-        parsed.success ? parsed.data.message : "通信を確認できませんでした",
+        failure?.code ?? "HTTP_ERROR",
+        failure?.message ?? "通信を確認できませんでした",
       );
     }
     return response;
