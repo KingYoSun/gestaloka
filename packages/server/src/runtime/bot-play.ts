@@ -4274,6 +4274,7 @@ export class BotPlay {
     context: WorldContext,
     actors: string[],
     located: string[] = [],
+    together: string[] = [],
   ) {
     const results = new Map<string, TeamArrival>();
     if (!actors.length) return results;
@@ -4283,21 +4284,28 @@ export class BotPlay {
     ];
     const arrivals = new Set<string>();
     const points = new Map<string, { team: string; place: string }>();
+    const groupPoints = new Map<string, string>();
     for (const member of await this.teams.members(db, world, participants)) {
       const [place = null] = await this.#places(context, member.actor_id);
       const moved = place !== member.place_id;
       if (moved) await this.teams.arrived(db, world, member.actor_id, place);
       if (moved || located.includes(member.actor_id))
         arrivals.add(member.actor_id);
-      if ((arrivals.has(member.actor_id) || member.pending) && place)
-        points.set(`${member.team_id}:${place}`, {
-          team: member.team_id,
-          place,
-        });
-      else if (!place && member.pending)
+      if ((arrivals.has(member.actor_id) || member.pending) && place) {
+        const key = `${member.team_id}:${place}`;
+        points.set(key, { team: member.team_id, place });
+        if (together.includes(member.actor_id))
+          groupPoints.set(member.actor_id, key);
+      } else if (!place && member.pending)
         await this.teams.pending(db, world, member.actor_id, false);
     }
-    for (const { team, place } of points.values()) {
+    const atPoint = async ({
+      team,
+      place,
+    }: {
+      team: string;
+      place: string;
+    }) => {
       const present = [];
       for (const member of await this.teams.team(db, world, team))
         if (
@@ -4326,6 +4334,88 @@ export class BotPlay {
         (member) => waitingCount.get(member.session_id)! > 1,
       );
       const anchor = shared ?? waiting[0] ?? present[0];
+      return { sources, anchor, hasWaiting: waiting.length > 0 };
+    };
+    const joined = (moving: Member[], target: Session) => {
+      for (const member of moving)
+        results.set(member.actorId, {
+          state: "joined",
+          sessionId: target.id,
+          message: "チームのセッションに合流しました",
+        });
+    };
+    const visibleTo = async (actor: string, viewers: Member[]) => {
+      for (const { actorId: viewer } of viewers)
+        if (
+          !(await this.#canSee(db, world, context, viewer, actor)) ||
+          !(await this.#canSee(db, world, context, actor, viewer))
+        )
+          return false;
+      return true;
+    };
+    const handled = new Set<string>();
+    if (groupPoints.size) {
+      const groups = new Map<string, string[]>();
+      for (const actor of together) {
+        const [place] = await directPlaces(context, actor);
+        const source = place && (await this.current(world, actor, db));
+        if (!source) continue;
+        const key = `${source.id}:${place}`;
+        const group = groups.get(key) ?? [];
+        group.push(actor);
+        groups.set(key, group);
+      }
+      // 行き先は、どの同行者も移す前のセッションから決める。
+      const destinations = new Map<
+        string,
+        { sessionId: string; actorId: string }
+      >();
+      for (const key of new Set(groupPoints.values())) {
+        const { anchor, hasWaiting } = await atPoint(points.get(key)!);
+        if (anchor && hasWaiting)
+          destinations.set(key, {
+            sessionId: anchor.session_id,
+            actorId: anchor.actor_id,
+          });
+      }
+      for (const ids of groups.values()) {
+        if (ids.length < 2) continue;
+        const targets = new Map<string, string>();
+        for (const id of ids) {
+          handled.add(id);
+          const point = groupPoints.get(id);
+          if (!point) continue;
+          await this.teams.pending(db, world, id, false);
+          const destination = destinations.get(point);
+          if (destination)
+            targets.set(destination.sessionId, destination.actorId);
+        }
+        if (targets.size !== 1) continue;
+        const [targetId, anchor] = targets.entries().next().value!;
+        const source = await this.current(world, ids[0]!, db);
+        if (!source || targetId === source.id || deciding(source, ids))
+          continue;
+        const members = source.data.members.filter((m) =>
+          ids.includes(m.actorId),
+        );
+        if (members.length !== ids.length) continue;
+        const target = await this.current(world, anchor, db);
+        if (target?.id !== targetId) continue;
+        const viewers = [...target.data.members];
+        for (const member of members) {
+          if (!(await visibleTo(member.actorId, viewers))) break;
+          viewers.push(member);
+        }
+        if (viewers.length !== target.data.members.length + members.length)
+          continue;
+        const before = turnState(target);
+        await this.#transfer(db, source, target, members, "team");
+        await this.#save(db, target, before);
+        joined(members, target);
+      }
+    }
+    for (const point of points.values()) {
+      const { sources, anchor } = await atPoint(point);
       if (!anchor) continue;
       const target = (await this.current(world, anchor.actor_id, db))!;
       const before = turnState(target);
@@ -4344,22 +4434,13 @@ export class BotPlay {
         const moving: Member[] = [];
         for (const candidate of candidates) {
           const actor = candidate.actor_id;
-          const viewers = [
-            ...target.data.members.map((member) => member.actorId),
-            ...moving.map((member) => member.actorId),
-          ];
-          let visible = true;
-          for (const viewer of viewers) {
-            visible =
-              (await this.#canSee(db, world, context, viewer, actor)) &&
-              (await this.#canSee(db, world, context, actor, viewer));
-            if (!visible) break;
-          }
-          if (!visible) {
+          if (handled.has(actor)) continue;
+          if (!(await visibleTo(actor, [...target.data.members, ...moving]))) {
             await this.teams.pending(db, world, actor, true);
             continue;
           }
           const party = await this.#party(db, source, actor);
+          if (party.some((member) => handled.has(member.actorId))) continue;
           const blocked = deciding(
             source,
             party.map((m) => m.actorId),
@@ -4377,13 +4458,7 @@ export class BotPlay {
         }
         if (!moving.length) continue;
         await this.#transfer(db, source, target, moving, "team");
-        for (const member of moving) {
-          results.set(member.actorId, {
-            state: "joined",
-            sessionId: target.id,
-            message: "チームのセッションに合流しました",
-          });
-        }
+        joined(moving, target);
       }
       if (before.size !== target.data.members.length)
         await this.#save(db, target, before);
@@ -4697,6 +4772,14 @@ export class BotPlay {
     const missed = unanswered.filter((id) => !moved.has(id));
     return {
       changes: receipt.changes,
+      together:
+        (r.locates ?? r.mixedMoves ?? []).filter(
+          (op) => op.type === "locate" && moved.has(op.subjectId),
+        ).length > 1
+          ? session.data.members
+              .filter((member) => moved.has(member.actorId))
+              .map((member) => member.actorId)
+          : undefined,
       settled: await this.#settle(db, session, "accepted", {
         commitId: receipt.commitId,
         ...(r.vehicleControl
@@ -4731,11 +4814,12 @@ export class BotPlay {
     const before = turnState(session);
     let idleExpired = false;
     let changes: Change | undefined;
+    let together: string[] | undefined;
     if (!r?.parallel) await beforeWrite?.();
     if (r) {
       if (new Date(r.deadline) > now) return;
       if (r.parallel)
-        ({ changes } = await this.#completeReceipt(
+        ({ changes, together } = await this.#completeReceipt(
           db,
           session,
           undefined,
@@ -4796,11 +4880,14 @@ export class BotPlay {
         r.id,
         changes,
       );
-      await this.#teamArrivals(db, world, context, [
-        ...movedActors,
-        r.sender,
-        ...r.recipients,
-      ]);
+      await this.#teamArrivals(
+        db,
+        world,
+        context,
+        [...movedActors, r.sender, ...r.recipients],
+        [],
+        together,
+      );
       if (affected.size)
         await this.#syncCompanions(
           db,
@@ -14186,6 +14273,7 @@ export class BotPlay {
         const d = session.data,
           { receiving } = d;
         let confirmedChanges: Change | undefined;
+        let together: string[] | undefined;
         const member = d.members.find((m) => m.actorId === actor);
         if (member) member.userId = user;
         if (
@@ -14319,6 +14407,7 @@ export class BotPlay {
               );
               settled = completion.settled;
               confirmedChanges = completion.changes;
+              together = completion.together;
             }
           }
           result.decision = {
@@ -15395,6 +15484,8 @@ export class BotPlay {
             world,
             this.store.context(w.id),
             movedActors,
+            [],
+            together,
           )
         ).get(actor);
         if (

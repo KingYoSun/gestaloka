@@ -12824,6 +12824,235 @@ test.each([
   },
 );
 
+test.each([
+  "合流",
+  "同じ行き先",
+  "行き先の競合",
+  "一部から先着者が見えない",
+  "一部が却下",
+  "一部が期限切れ",
+])("一括移動した一行で会話を続ける（%s）", async (scenario) => {
+  const twoTeams = scenario === "同じ行き先" || scenario === "行き先の競合";
+  const staysTogether =
+    scenario === "行き先の競合" || scenario === "一部から先着者が見えない";
+  const f = await fixture(twoTeams ? 7 : 6);
+  const [leader, teammate, patient, doctor, helper, recorder, otherAnchor] =
+    f.actors;
+  const invite = async (anchor: number, targets: number[]) => {
+    const teamId = randomUUID();
+    for (const [i, target] of targets.entries()) {
+      await f.send(anchor, {
+        command: "team-invite",
+        targetId: f.actors[target],
+        requestId: i === 0 ? teamId : randomUUID(),
+      });
+      await f.send(target, {
+        command: "team-join",
+        teamId,
+      });
+    }
+  };
+  await invite(2, [0, 1]);
+  if (otherAnchor) {
+    await f.move(6, f.far);
+    if (scenario === "同じ行き先")
+      await f.send(6, { command: "contact", targetId: patient });
+    await invite(6, [4]);
+  }
+  for (const i of [1, 3, 4, 5])
+    if ((await f.status(i)).sessionId !== (await f.status(0)).sessionId)
+      await f.send(i, { command: "contact", targetId: leader });
+  await giveTurn(f, 0);
+  const admin = await auth.person();
+  await auth.operations.execute(
+    admin.id,
+    randomUUID(),
+    {
+      operation: "npcs.put",
+      worldId: f.world,
+      actorId: doctor!,
+      controller: "server",
+      reason: "隔離試験の医師を担当する",
+    },
+    { players: access.players },
+  );
+
+  const before = await f.status(2);
+  const initial = await f.status(0);
+  if (scenario === "一部から先着者が見えない") {
+    const [location] = await locationRecords(
+      f.store.context(f.graph),
+      patient!,
+    );
+    await isolated.databases.postgres.query(
+      "INSERT INTO bot_stealth(world_id,actor_id,id,place_id,discovered) VALUES($1,$2,$3,$4,$5)",
+      [f.world, patient, location!.id, f.far, [leader, teammate]],
+    );
+  } else {
+    await f.send(2, { command: "say", text: "診療所で待っています" });
+  }
+  const pending =
+    scenario === "同じ行き先"
+      ? await f.send(2, {
+          command: "memo",
+          text: "診療所の当番を記録する",
+          participants: [otherAnchor],
+          dependencies: [],
+        })
+      : undefined;
+  const request = await f.send(0, {
+    command: "apply",
+    expectedSp: 0,
+    dependencies: [],
+    action: {
+      type: "direct",
+      text: "みんなで診療所へ移動する",
+      operations: [leader, teammate, doctor, helper, recorder].map(
+        (subjectId) => ({
+          type: "locate",
+          subjectId,
+          text: "診療所",
+          aboutIds: [f.far],
+        }),
+      ),
+    },
+  });
+  expect(request.state).toBe("receiving");
+  const { applicationId, deadline } = (await f.status(0)).receiving!;
+  const receipt = {
+    command: "receive" as const,
+    requestId: randomUUID(),
+    applicationId,
+    accept: true,
+  };
+  await access.botPlay.submit(f.world, doctor!, receipt, admin.id);
+  await f.send(1, { ...receipt, requestId: randomUUID() });
+  await f.send(4, { ...receipt, requestId: randomUUID() });
+  if (scenario === "一部が期限切れ") {
+    await new BotPlay(runtime, () => new Date(Date.parse(deadline) + 1)).expire(
+      f.world,
+    );
+  } else {
+    const last = {
+      ...receipt,
+      requestId: randomUUID(),
+      accept: scenario !== "一部が却下",
+    };
+    const settled = await f.send(5, last);
+    expect(settled.application).toMatchObject({ outcome: "accepted" });
+    expect(await f.send(5, last)).toEqual(settled);
+  }
+
+  const arrived =
+    scenario === "一部が却下" || scenario === "一部が期限切れ"
+      ? [leader!, teammate!, doctor!, helper!]
+      : [leader!, teammate!, doctor!, helper!, recorder!];
+  const target = staysTogether
+    ? (await f.status(0)).sessionId
+    : before.sessionId;
+  if (staysTogether) {
+    expect(target).not.toBe(before.sessionId);
+    if (otherAnchor) expect(target).not.toBe((await f.status(6)).sessionId);
+  }
+  for (const actor of arrived) {
+    expect(await directPlaces(f.store.context(f.graph), actor)).toEqual([
+      f.far,
+    ]);
+    expect((await access.botPlay.status(f.world, actor)).sessionId).toBe(
+      target,
+    );
+  }
+  if (!arrived.includes(recorder!)) {
+    expect(await directPlaces(f.store.context(f.graph), recorder!)).toEqual([
+      f.place,
+    ]);
+    expect((await f.status(5)).sessionId).not.toBe(target);
+  }
+  expect((await f.status(0)).sceneId).toBe(initial.sceneId);
+  if (!staysTogether) {
+    if (pending) {
+      expect((await f.status(2)).receiving).toMatchObject({
+        applicationId: pending.applicationId,
+        recipients: [otherAnchor],
+      });
+      await f.send(6, {
+        ...receipt,
+        requestId: randomUUID(),
+        applicationId: pending.applicationId,
+      });
+    }
+    expect(await f.status(2)).toMatchObject({
+      turn: before.turn,
+      actorId: patient,
+    });
+    await heard(f, 2, "先生、今の様子を確認してください", [
+      2,
+      ...(otherAnchor ? [6] : []),
+      ...arrived.map((actor) => f.actors.indexOf(actor)),
+    ]);
+    if (scenario !== "合流") await f.send(2, { command: "end-turn" });
+  }
+  if (scenario === "合流") {
+    const app = await createApp(
+      access,
+      auth.identity,
+      undefined,
+      auth.operations,
+    );
+    const cli = await playerCli(app);
+    try {
+      const profile = join(cli.directory, "patient.json");
+      const connection = await cli.run(
+        profile,
+        "connect",
+        "--server",
+        cli.base,
+        "--world",
+        f.world,
+      );
+      await cli.approve(
+        f.people[2]!.cookie,
+        connection.userCode,
+        "actor:" + patient,
+      );
+      const question = "先生、こちらの声が聞こえますか";
+      expect(
+        (await cli.run(profile, "say", "--text", question)).result.state,
+      ).toBe("accepted");
+      await cli.run(profile, "end-turn");
+      for (let i = 0; i < arrived.length; i++) {
+        const holder = (await f.status(2)).actorId;
+        if (holder === doctor) break;
+        await f.send(
+          f.actors.findIndex((actor) => actor === holder),
+          { command: "end-turn" },
+        );
+      }
+      expect((await f.status(2)).actorId).toBe(doctor);
+      const reply = "聞こえています。ここで一緒に確認しましょう";
+      f.calls.mockImplementationOnce(async (id, role, messages) => {
+        expect(role).toBe("world-server-npc");
+        expect(JSON.stringify(messages)).toContain(question);
+        return answer(id, {
+          operation: "communicate",
+          args: { goal: null, mode: "voice", text: reply, endOnSuccess: true },
+        });
+      });
+      await access.botPlay.tickNpcs(f.world);
+      const patientView = await cli.run(profile, "status", "--after", "0");
+      expect(JSON.stringify(patientView.entries)).toContain(reply);
+    } finally {
+      await cli.close();
+      await app.close();
+    }
+  }
+  if (!staysTogether) {
+    const history = JSON.stringify((await f.status(0)).entries);
+    expect(history).toContain("先生、今の様子を確認してください");
+    expect(history).not.toContain("診療所で待っています");
+  }
+});
+
 test("チームは別々に到着しても先着者の進行で続き、合流前の記録は本人にだけ残る", async () => {
   const f = await fixture();
   const [scout, follower, local] = f.actors as [string, string, string];
