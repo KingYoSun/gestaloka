@@ -1026,6 +1026,12 @@ const itemGeneration = (operations: BelongingOp[] | undefined) =>
     (op) =>
       op.type === "create" || (op.type === "update" && op.count !== undefined),
   );
+type CreationAttempt = { scope: string; text: string; facts: unknown[] };
+type FailedCreation = Pick<CreationRoll, "setting" | "roll"> & {
+  factors: Partial<Pick<CreationRoll, FactorField>> | null;
+  text: string;
+  facts: unknown[];
+};
 // 判定で付いた状態の関係の印。死亡の確定で終える対象になる。
 const judged = "judged";
 const PerformedAction = z.string().trim().min(1).max(240);
@@ -1606,6 +1612,13 @@ export class BotPlay {
       CREATE INDEX IF NOT EXISTS bot_request_received ON bot_request(world_id,received_at);
       CREATE TABLE IF NOT EXISTS bot_dice (
       id uuid PRIMARY KEY,setting jsonb NOT NULL,roll integer);
+      CREATE TABLE IF NOT EXISTS bot_creation_failure (
+      world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
+      actor_id uuid NOT NULL,scope text NOT NULL,
+      text_key text NOT NULL,text text NOT NULL,facts jsonb NOT NULL,
+      setting jsonb NOT NULL,roll integer NOT NULL,factors jsonb,recorded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+      PRIMARY KEY(world_id,actor_id,scope,text_key));
+      CREATE INDEX IF NOT EXISTS bot_creation_failure_recent ON bot_creation_failure(world_id,actor_id,scope,recorded_at DESC);
       CREATE TABLE IF NOT EXISTS bot_npc (
       world_id uuid NOT NULL REFERENCES world_construction(id),actor_id uuid NOT NULL,
       controller text CHECK(controller IN ('bot','server')),user_id uuid,assignment_id uuid NOT NULL,PRIMARY KEY(world_id,actor_id));
@@ -7428,97 +7441,87 @@ export class BotPlay {
       dependencies: context.dependencies,
     };
   }
-  async #previousCreation(
-    world: string,
-    actor: string,
-    requestId: string,
-    text: string,
-    checkFailed = true,
-    factorField?: FactorField,
-  ) {
-    // 同じ手番でダイスに失敗した申請の出し直しは、GMに設定を作り直させず、前回の結果を返す。
-    // 同じ試みかは判断モデルが決める。未設定・呼び出しの失敗・低い確率では、通常どおりGMが設定する。
-    const diceId = derivedId(`${requestId}:creation`),
-      known = (
-        await this.pool.query<{
-          setting: SavedDice;
-          roll: number;
-          repeated: boolean;
-        }>("SELECT setting,roll,repeated FROM bot_dice WHERE id=$1", [diceId])
-      ).rows[0];
-    if (known && known.roll !== null)
-      return {
-        setting: known.setting,
-        roll: known.roll,
-        success: known.roll <= known.setting.successThrough,
-        ...(known.repeated ? { repeated: true } : {}),
-      };
-    if (checkFailed)
-      return this.#repeatedCreation(world, actor, requestId, text, factorField);
-  }
   async #repeatedCreation(
     world: string,
     actor: string,
     requestId: string,
-    text: string,
+    attempt: CreationAttempt,
     factorField?: FactorField,
-  ) {
-    if (this.construction.agent.model.decision) {
-      const failed = (
-        (await this.current(world, actor))?.data.entries ?? []
-      ).flatMap((e) => {
-        if (e.actorId !== actor) return [];
-        const o = (
-          e.result as {
-            outcome?: Partial<CreationRoll> & {
-              proposals?: ProposalOutcome[];
-            };
-          }
-        ).outcome;
-        return rolledOutcomes(o, e.input).flatMap((r, index) =>
-          r.success === false && r.setting && r.roll !== undefined
-            ? [
-                {
-                  text: r.text,
-                  setting: r.setting,
-                  roll: r.roll,
-                  index,
-                  request: factorField ? e.requestId : undefined,
-                },
-              ]
-            : [],
-        );
-      });
-      const same =
-        failed[
-          (await this.#sameAttempt(
-            requestId,
-            "world-creation-repeat",
-            failed.map((f) => f.text),
-            text,
-          )) ?? -1
-        ];
-      if (same) {
-        const factors =
-          same.request && factorField
-            ? (
-                await this.pool.query<{ creation_rolls: CreationRoll[] }>(
-                  "SELECT creation_rolls FROM bot_request WHERE id=$1 AND world_id=$2 AND actor_id=$3",
-                  [same.request, world, actor],
-                )
-              ).rows[0]?.creation_rolls?.filter((r) => r.roll !== undefined)[
-                same.index
-              ]?.[factorField]
-            : undefined;
-        return {
-          setting: same.setting,
-          roll: same.roll,
-          success: false,
-          repeated: true,
-          ...(factorField && factors?.length ? { [factorField]: factors } : {}),
-        };
-      }
+  ): Promise<CreationRoll | undefined> {
+    const { scope, text, facts } = attempt;
+    const key = createHash("sha256").update(text).digest("hex");
+    const values = [world, actor, scope];
+    const model = this.construction.agent.model;
+    const find = async (key: string) =>
+      (
+        await this.pool.query<FailedCreation>(
+          `SELECT text,facts,setting,roll,factors FROM bot_creation_failure
+           WHERE world_id=$1 AND actor_id=$2 AND scope=$3 AND text_key=$4`,
+          [...values, key],
+        )
+      ).rows[0];
+    let previous = await find(key);
+    if (!previous && model.decision) {
+      const { rows } = await this.pool.query<
+        Pick<FailedCreation, "text"> & { text_key: string }
+      >(
+        `SELECT text,text_key FROM bot_creation_failure
+         WHERE world_id=$1 AND actor_id=$2 AND scope=$3
+         ORDER BY recorded_at DESC LIMIT ${historyLimit}`,
+        values,
+      );
+      const index = await this.#sameAttempt(
+        requestId,
+        "world-creation-repeat",
+        rows.map((row) => row.text),
+        text,
+      );
+      if (index !== undefined) previous = await find(rows[index]!.text_key);
     }
+    if (!previous) return;
+    const before = new Map(
+      previous.facts.map((fact) => [canonical(fact), fact]),
+    );
+    const after = new Map(facts.map((fact) => [canonical(fact), fact]));
+    const removed = [...before]
+      .filter(([key]) => !after.has(key))
+      .map(([, value]) => value);
+    const added = [...after]
+      .filter(([key]) => !before.has(key))
+      .map(([, value]) => value);
+    if (removed.length || added.length) {
+      if (!model.decision) return;
+      const state = { previous: previous.text, current: text, removed, added };
+      const answers = await model
+        .decide(
+          derivedId(`${requestId}:repeat-conditions:${canonical(state)}`),
+          "world-creation-repeat-conditions",
+          state,
+          {
+            changed: {
+              instructions:
+                "同じ結果を求める二つの試みで、成否に影響しうる条件が実際に変わったか。addedとremovedは今回と前回の判定資料の差。資料が選ばれなかっただけで事実が消えたとは判断しない。現物の変更、利用できる道具や手段、成立した経験や周囲の状況の変化を、今回の試みにどう作用するかで判断する。手番、書き方、裏付けのない自己申告、無関係な行動や資料の差は変化としない。",
+              criteria: {
+                true: "今回の成否に影響しうる、裏付けのある条件の変化",
+                false: "成否に関わる条件は同じ、または変化の根拠がない",
+              },
+            },
+          },
+        )
+        .catch(() => undefined);
+      if (!answers || (answers.changed ?? 0) >= model.decision.repeatThreshold)
+        return;
+    }
+    const factors = factorField && previous.factors?.[factorField];
+    return {
+      setting: previous.setting,
+      roll: previous.roll,
+      success: false,
+      repeated: true,
+      ...(factorField && factors && factors.length
+        ? { [factorField]: factors }
+        : {}),
+    };
   }
   async #creation(
     world: string,
@@ -7704,18 +7707,24 @@ export class BotPlay {
     const keys = proposals.map((_, i) =>
       batch ? derivedId(`${requestId}:proposal:${i}`) : requestId,
     );
-    const repeated = await Promise.all(
-      proposals.map((p, i) =>
-        this.#previousCreation(
-          world,
-          actor,
-          keys[i]!,
-          p.text,
-          !p.statusReview,
-          factorField(p.operations),
-        ),
-      ),
+    const repeated: (CreationRoll | undefined)[] = await Promise.all(
+      keys.map(async (key) => {
+        const {
+          rows: [known],
+        } = await this.pool.query<CreationRoll>(
+          "SELECT setting,roll,repeated FROM bot_dice WHERE id=$1 AND roll IS NOT NULL",
+          [derivedId(`${key}:creation`)],
+        );
+        if (known)
+          return {
+            setting: known.setting,
+            roll: known.roll,
+            success: known.roll <= known.setting.successThrough,
+            ...(known.repeated ? { repeated: true } : {}),
+          };
+      }),
     );
+    const attempts = new Map<number, CreationAttempt>();
     const fresh = proposals.flatMap((p, i) =>
       repeated[i] ? [] : [{ ...p, index: i }],
     );
@@ -7985,9 +7994,59 @@ export class BotPlay {
         string,
         { indexes: number[]; nodes: typeof nodes; filtered: boolean }
       >();
+      const policy = await this.#dicePolicy(world);
+      const locations = await currentPlaces();
       for (const [i, packet] of packets.entries()) {
         if (!packet) {
           overBudget.add(fresh[i]!.index);
+          continue;
+        }
+        const proposal = fresh[i]!;
+        const created = new Set(proposal.changes.nodes.map(({ id }) => id));
+        const attempt = {
+          text: proposal.text.normalize("NFKC").trim(),
+          scope: createHash("sha256")
+            .update(
+              canonical([
+                exploreFrom,
+                endStateTargetId,
+                [
+                  ...new Set(
+                    judgmentReferences(proposal.changes).filter(
+                      (id) => !created.has(id),
+                    ),
+                  ),
+                ].sort(),
+              ]),
+            )
+            .digest("hex"),
+          facts: [
+            {
+              locations: [...locations].sort(),
+              waitMinutes,
+              previousState,
+              policy,
+            },
+            ...stripJudgmentPreview(packet),
+            ...judgmentConsumables(
+              packet,
+              work ? [...stock.values()] : consumable,
+            ),
+            ...(material[i]!.declaredMaterials ?? []),
+            ...(confirmed ? [{ confirmed }] : []),
+            ...(geography ? [geography] : []),
+          ],
+        };
+        attempts.set(proposal.index, attempt);
+        const prior = await this.#repeatedCreation(
+          world,
+          actor,
+          keys[proposal.index]!,
+          attempt,
+          factorField(proposal.operations),
+        );
+        if (prior) {
+          repeated[proposal.index] = prior;
           continue;
         }
         const claim = factClaim[i];
@@ -8041,14 +8100,15 @@ export class BotPlay {
             filtered: filtered.has(i),
           });
       }
-      const reserved = fresh.filter((p, i) => packets[i] && !allowApply[i]);
+      const reserved = fresh.filter(
+        (p, i) => packets[i] && !allowApply[i] && !repeated[p.index],
+      );
       const needsSp = reserved.length > 0;
       if (needsSp)
         await this.#reserveSp(world, actor, user, requestId, cost(reserved));
       if (endStateTargetId) await context.validate();
-      if (reviews.length || (judgment && groups.size))
+      if (reviews.length || (judgment && attempts.size))
         await this.#rememberStateBasis(requestId, context);
-      const policy = await this.#dicePolicy(world);
       const { pool } = policy;
       const criteria =
         (explore ? policy.explore : policy.criteria) +
@@ -8349,18 +8409,6 @@ export class BotPlay {
             applied.set(p.index, { success: true, endEdges: v.endEdges });
             continue;
           }
-          if (p.statusReview) {
-            const previousFailure = await this.#repeatedCreation(
-              world,
-              actor,
-              keys[p.index]!,
-              p.text,
-            );
-            if (previousFailure) {
-              repeated[p.index] = previousFailure;
-              continue;
-            }
-          }
           const { requiredMaterials, individuals, performed, ...dice } =
             v as z.infer<ReturnType<typeof WorkDice>> & { performed?: string };
           if (performed) performedActions.set(p.index, performed);
@@ -8547,13 +8595,39 @@ export class BotPlay {
         const success = die.roll <= die.setting.successThrough;
         const performed = success && performedActions.get(i);
         const rolled = await settle(i, { ...die, success });
+        const factors = factorsByProposal.get(i);
+        Object.assign(rolled, factors);
         rolls.push(performed ? { ...rolled, performed } : rolled);
+        const attempt = attempts.get(i)!;
+        const key = createHash("sha256").update(attempt.text).digest("hex");
+        if (success)
+          await db.query(
+            "DELETE FROM bot_creation_failure WHERE world_id=$1 AND actor_id=$2 AND scope=$3 AND text_key=$4",
+            [world, actor, attempt.scope, key],
+          );
+        else
+          await db.query(
+            `INSERT INTO bot_creation_failure(world_id,actor_id,scope,text_key,text,facts,setting,roll,factors)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+             ON CONFLICT(world_id,actor_id,scope,text_key) DO UPDATE
+             SET facts=excluded.facts,setting=excluded.setting,roll=excluded.roll,factors=excluded.factors,recorded_at=excluded.recorded_at`,
+            [
+              world,
+              actor,
+              attempt.scope,
+              key,
+              attempt.text,
+              JSON.stringify(attempt.facts),
+              rolled.setting,
+              rolled.roll,
+              factors ? JSON.stringify(factors) : null,
+            ],
+          );
         if (success) {
           applySlots(i);
           for (const c of die.setting.consumes ?? [])
             used.set(c.id, (used.get(c.id) ?? 0) + (c.count ?? 1));
         }
-        Object.assign(rolls[i]!, factorsByProposal.get(i));
       }
       const spent = cost(
         fresh.filter(
