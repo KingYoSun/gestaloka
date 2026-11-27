@@ -10,7 +10,14 @@ import {
   semanticConfig,
   setupSemantic,
   indexSemanticExperience,
+  indexSemanticJudgmentEdge,
+  judgmentEdgeFilter,
+  judgmentOpenEnd,
+  judgmentQueryVectors,
+  scopedSemanticConfig,
+  semanticJudgmentEdgeScores,
   semanticExperiences,
+  type JudgmentEdgeKind,
 } from "./judgment-semantic.js";
 import { visibleTo } from "./belongings.js";
 import { routeEndpoints } from "./locations.js";
@@ -176,6 +183,8 @@ const edgesById = `UNWIND $ids AS id CALL (id) { ${RelationKind.options
 const judgmentTextKey = '"text":"';
 const excerptKinds = ["node", "has"] as const;
 type ExcerptKind = (typeof excerptKinds)[number];
+const evidenceKinds = ["status", "has"] as const;
+type EvidenceCursor = `evidence-${JudgmentEdgeKind}`;
 export type JudgmentExcerptJob = {
   kind: ExcerptKind;
   worldId: string;
@@ -186,6 +195,14 @@ export type JudgmentExcerptJob = {
 };
 const excerptPatterns = {
   experience: { match: "()-[v:happen]->()", identity: "v:happen(worldId,id)" },
+  "evidence-status": {
+    match: "()-[v:status]->()",
+    identity: "v:status(worldId,id)",
+  },
+  "evidence-has": {
+    match: "()-[v:has]->()",
+    identity: "v:has(worldId,id)",
+  },
   node: {
     match: "(v:WorldNode)",
     identity: "v:WorldNode(worldId,id)",
@@ -410,6 +427,10 @@ async function recordedLocations(
 export class WorldContext {
   readonly #dependencies = new Map<string, number>();
   readonly #histories = new Map<string, WorldEdge[]>();
+  readonly #judgmentQueries = new Map<
+    string,
+    ReturnType<typeof judgmentQueryVectors>
+  >();
   constructor(
     readonly driver: Driver,
     readonly worldId: string,
@@ -849,6 +870,195 @@ export class WorldContext {
         ),
       );
     return bySubject;
+  }
+
+  async scopedJudgmentEdges(
+    ids: readonly string[],
+    kind: JudgmentEdgeKind,
+    texts: readonly string[],
+    at: number,
+    refs: readonly string[],
+  ): Promise<
+    | {
+        edges: Map<string, JudgmentPreview<WorldEdge>[]>;
+        ranked: boolean;
+        similarities?: ReadonlyMap<string, number>;
+      }
+    | undefined
+  > {
+    const world = this.worldId;
+    const config = scopedSemanticConfig();
+    const anchors = [...new Set(ids)];
+    const bySubject = new Map<string, JudgmentPreview<WorldEdge>[]>(
+      anchors.map((id) => [id, []]),
+    );
+    if (!config) return;
+    if (!anchors.length) return { edges: bySubject, ranked: false };
+    const dependencies = anchors.flatMap((id) => [
+      relationKey(id, kind, "out"),
+      ...(kind === "status" ? [`source:${id}`] : []),
+    ]);
+    const scope = { world, at, anchors, revision: config.revision };
+    const frontier = await this.#readMany(dependencies, async (tx) => {
+      const { records } = await tx.run(
+        `MATCH (cursor:WorldJudgmentExcerptCursor)
+         WHERE cursor.kind IN $cursors AND cursor.done AND cursor.revision=$revision
+         RETURN NOT EXISTS {
+           UNWIND $anchors AS anchor
+           MATCH ()-[r:${kind}]->() USING RANGE INDEX r:${kind}(worldId,judgmentSemanticAnchor,judgmentSemanticThrough,judgmentSemanticDue)
+           WHERE r.worldId=$world AND r.judgmentSemanticAnchor=anchor
+             AND r.judgmentSemanticThrough>$at
+             AND r.judgmentSemanticDue IS NOT NULL
+             AND r.validFrom<=$at AND (r.validTo IS NULL OR $at<r.validTo)
+         } AS ready LIMIT 1`,
+        {
+          ...scope,
+          cursors: [`evidence-${kind}`, `evidence-${kind}:${world}`],
+        },
+      );
+      if (!records[0]?.get("ready")) return;
+      // Small anchors retain the current direct path and need no encoder call.
+      const small = await tx.run(
+        `UNWIND $anchors AS anchor CALL (anchor) {
+           MATCH ()-[r:${kind}]->() USING RANGE INDEX r:${kind}(worldId,judgmentSemanticAnchor,judgmentSemanticThrough)
+           WHERE r.worldId=$world AND r.judgmentSemanticAnchor=anchor
+             AND r.judgmentSemanticThrough>$at
+             AND r.validFrom<=$at AND (r.validTo IS NULL OR $at<r.validTo)
+           WITH r LIMIT 21 RETURN r.id AS id
+         } RETURN id LIMIT 21`,
+        scope,
+      );
+      return small.records.map((row) => row.get("id") as string);
+    });
+    if (!frontier) return;
+    let candidates = frontier;
+    let similarities: ReadonlyMap<string, number> | undefined;
+    const normalized = texts.map((text) =>
+      text.normalize("NFKC").toLowerCase(),
+    );
+    const exact = [
+      ...new Set([
+        ...refs,
+        ...normalized.flatMap(
+          (text) =>
+            text.match(
+              /@[a-f0-9]{8}\b|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\b/gu,
+            ) ?? [],
+        ),
+      ]),
+    ];
+    const prefixes = new Set<string>();
+    for (const text of normalized) {
+      const characters = [...text];
+      for (const [i, character] of characters.entries()) {
+        prefixes.add(character);
+        if (characters[i + 1]) prefixes.add(character + characters[i + 1]);
+      }
+    }
+    const ranked = frontier.length > 20;
+    if (ranked) {
+      const key = JSON.stringify([config.revision, texts]);
+      let pending = this.#judgmentQueries.get(key);
+      if (!pending) {
+        pending = judgmentQueryVectors(config, texts);
+        this.#judgmentQueries.set(key, pending);
+      }
+      const queries = await pending;
+      if (!queries?.length) return;
+      similarities = await semanticJudgmentEdgeScores(
+        this.driver,
+        config,
+        world,
+        kind,
+        anchors,
+        at,
+        queries,
+      );
+      if (!similarities) return;
+      candidates = [...similarities.keys()];
+    }
+    await this.#readMany(dependencies, async (tx) => {
+      const { records } = await tx.run(
+        `CALL () {
+           UNWIND $edgeIds AS id
+           MATCH ()-[r:${kind} {worldId:$world,id:id}]->() RETURN r
+           UNION
+           UNWIND $exact AS id
+           MATCH ()-[r:${kind}]->(:WorldNode {worldId:$world,id:id}) RETURN r
+           UNION
+           UNWIND $anchors AS anchor
+           MATCH ()-[r:${kind}]->()
+           USING RANGE INDEX r:${kind}(worldId,judgmentSemanticAnchor,judgmentSemanticFixed,judgmentSemanticThrough)
+           WHERE r.worldId=$world AND r.judgmentSemanticAnchor=anchor AND r.judgmentSemanticFixed=true
+             AND r.judgmentSemanticThrough>$at
+           RETURN r
+           UNION
+           UNWIND $anchors AS anchor
+           MATCH ()-[r:${kind}]->()
+           USING RANGE INDEX r:${kind}(worldId,judgmentSemanticAnchor,judgmentSemanticShortEdge,judgmentSemanticThrough)
+           WHERE r.worldId=$world AND r.judgmentSemanticAnchor=anchor AND r.judgmentSemanticShortEdge IN $short
+             AND r.judgmentSemanticThrough>$at
+           RETURN r
+           UNION
+           UNWIND $anchors AS anchor
+           MATCH ()-[r:${kind}]->()
+           USING RANGE INDEX r:${kind}(worldId,judgmentSemanticAnchor,judgmentSemanticShortNode,judgmentSemanticThrough)
+           WHERE r.worldId=$world AND r.judgmentSemanticAnchor=anchor AND r.judgmentSemanticShortNode IN $short
+             AND r.judgmentSemanticThrough>$at
+           RETURN r
+           UNION
+           UNWIND $anchors AS anchor
+           MATCH ()-[r:${kind}]->()
+           USING RANGE INDEX r:${kind}(worldId,judgmentSemanticAnchor,judgmentSemanticPrefix,judgmentSemanticThrough)
+           WHERE r.worldId=$world AND r.judgmentSemanticAnchor=anchor AND r.judgmentSemanticPrefix IN $prefixes
+             AND r.judgmentSemanticThrough>$at
+             AND any(text IN $texts WHERE text CONTAINS r.judgmentSemanticName)
+           RETURN r
+         }
+         MATCH (s:WorldNode)-[r]->()
+         WHERE s.id IN $anchors AND r.worldId=$world AND ${judgmentEdgeFilter(kind, "r")}
+           AND r.validFrom<=$at AND (r.validTo IS NULL OR $at<r.validTo)
+         WITH s.id AS id,r.data AS data ${
+           kind === "has"
+             ? ",r.judgmentLong AS excerptLong,r.judgmentExcerpt AS excerpt " +
+               judgmentProjection
+             : " RETURN id,data"
+         }`,
+        {
+          ...scope,
+          edgeIds: [...new Set([...candidates, ...exact])],
+          exact,
+          short: exact.filter((id) => id.startsWith("@")),
+          prefixes: [...prefixes],
+          texts: normalized,
+          textKey: judgmentTextKey,
+        },
+      );
+      for (const row of records)
+        bySubject.get(row.get("id"))!.push(parseJudgmentRecord(row, WorldEdge));
+    });
+    const order = new Map(candidates.map((id, rank) => [id, rank]));
+    for (const [id, edges] of bySubject)
+      bySubject.set(
+        id,
+        this.#merge(
+          edges,
+          id,
+          kind,
+          "out",
+          (edge) =>
+            edge.period.from <= at &&
+            (edge.period.until === undefined || at < edge.period.until),
+          (a, b) =>
+            (ranked ? (order.get(a.id) ?? -1) - (order.get(b.id) ?? -1) : 0) ||
+            a.id.localeCompare(b.id),
+        ),
+      );
+    return {
+      edges: bySubject,
+      ranked,
+      ...(similarities ? { similarities } : {}),
+    };
   }
 
   async node(id: string, at?: number): Promise<WorldNode | undefined> {
@@ -1802,6 +2012,7 @@ export class WorldContext {
 }
 
 export class WorldStore {
+  #maintainJudgmentEvidence = false;
   readonly #drafts = new AsyncLocalStorage<{
     worldId: string;
     drafts: readonly { at: number; changes: Change }[];
@@ -1887,7 +2098,17 @@ export class WorldStore {
     await this.driver.executeQuery(
       "CREATE FULLTEXT INDEX WorldEdge_status_experience IF NOT EXISTS FOR ()-[r:status]-() ON EACH [r.stateStartOwner,r.stateStartAt,r.stateStartRefs,r.stateStartTerms,r.stateEndOwner,r.stateEndAt,r.stateEndRefs,r.stateEndTerms]",
     );
-    if (semanticConfig()) await setupSemantic(this.driver);
+    if (semanticConfig()) {
+      await setupSemantic(this.driver);
+      this.#maintainJudgmentEvidence = true;
+    } else {
+      // Configuration can resume with the same model revision. Keep an
+      // initialized index up to date through writes while the encoder is off.
+      const previous = await this.driver.executeQuery(
+        "MATCH (c:WorldJudgmentExcerptCursor) WHERE c.kind STARTS WITH 'evidence-' RETURN c.kind LIMIT 1",
+      );
+      this.#maintainJudgmentEvidence = previous.records.length !== 0;
+    }
     // 同名確認は索引を指定して引くので、作成中の索引を使わせない。
     await this.driver.executeQuery("CALL db.awaitIndexes(300)");
     await this.#replaceExperienceIndex();
@@ -2145,7 +2366,7 @@ export class WorldStore {
   // 旧記録は順序つきID索引から一定件数ずつ進め、同じ更新で位置と登録結果を保存する。
   async #backfillJudgmentExcerpts(
     tx: ManagedTransaction,
-    kind: ExcerptKind | "experience",
+    kind: ExcerptKind | "experience" | EvidenceCursor,
     scope?: string,
     revision?: string,
   ) {
@@ -2165,8 +2386,12 @@ export class WorldStore {
     const { match, identity } = excerptPatterns[kind];
     const worldId: string = cursor.get("worldId");
     const id: string = cursor.get("id");
-    const eligible =
-      kind === "experience"
+    const evidence = evidenceKinds.find((edge) => kind === `evidence-${edge}`);
+    const eligible = evidence
+      ? `${judgmentEdgeFilter(evidence, "v")} AND (v.validTo IS NULL OR v.validTo>$now)
+         AND coalesce(v.judgmentSemanticRevision,'')<>$revision
+         AND (v.judgmentSemanticDue IS NULL OR v.judgmentSemanticThrough IS NULL)`
+      : kind === "experience"
         ? "v.experienceOwner IS NOT NULL AND coalesce(v.semanticRevision,'')<>$revision AND v.semanticDue IS NULL"
         : "v.judgmentLong IS NULL AND " +
           (kind === "node"
@@ -2180,7 +2405,13 @@ export class WorldStore {
          WITH v ORDER BY v.worldId,v.id LIMIT $limit
          RETURN v.worldId AS worldId,v.id AS id,
            CASE WHEN ${eligible} THEN v.data END AS data`,
-          { worldId, id, limit: int(limit), revision: revision ?? null },
+          {
+            worldId,
+            id,
+            limit: int(limit),
+            revision: revision ?? null,
+            now: Date.now(),
+          },
         )
       ).records;
     const limit = 64;
@@ -2200,7 +2431,18 @@ export class WorldStore {
         },
       ];
     });
-    if (entries.length && kind === "experience")
+    if (entries.length && evidence)
+      await tx.run(
+        `UNWIND $entries AS entry
+         MATCH (s)-[v:${evidence} {worldId:entry.worldId,id:entry.id}]->()
+         WHERE v.data=entry.data AND (v.judgmentSemanticDue IS NULL OR v.judgmentSemanticThrough IS NULL)
+           AND coalesce(v.judgmentSemanticRevision,'')<>$revision
+         SET v.judgmentSemanticDue=0,v.judgmentSemanticAnchor=s.id,
+             v.judgmentSemanticThrough=coalesce(v.validTo,${judgmentOpenEnd})
+         REMOVE v.judgmentSemanticClaim`,
+        { entries, revision },
+      );
+    else if (entries.length && kind === "experience")
       await tx.run(
         `UNWIND $entries AS entry MATCH ()-[v:happen {worldId:entry.worldId,id:entry.id}]->()
         WHERE v.semanticDue IS NULL AND coalesce(v.semanticRevision,'')<>$revision SET v.semanticDue=0`,
@@ -2246,6 +2488,27 @@ export class WorldStore {
       await session.close();
     }
     await indexSemanticExperience(this.driver, config, worldId);
+  }
+
+  async indexScopedJudgmentEdges(worldId?: string) {
+    const config = scopedSemanticConfig();
+    if (!config) return;
+    const session = this.driver.session();
+    try {
+      await session.executeWrite(async (tx) => {
+        for (const kind of evidenceKinds)
+          await this.#backfillJudgmentExcerpts(
+            tx,
+            `evidence-${kind}`,
+            worldId,
+            config.revision,
+          );
+      });
+    } finally {
+      await session.close();
+    }
+    for (const kind of evidenceKinds)
+      await indexSemanticJudgmentEdge(this.driver, config, kind, worldId);
   }
 
   async judgmentExcerptJobs(
@@ -3608,13 +3871,33 @@ export class WorldStore {
                 terms: experienceTerms(node.text).join(" "),
               },
             );
+          if (this.#maintainJudgmentEvidence)
+            for (const kind of evidenceKinds)
+              await tx.run(
+                `MATCH (s)-[r:${kind}]->(:WorldNode {worldId:$worldId,id:$id})
+                 WHERE ${judgmentEdgeFilter(kind, "r")} AND (r.validTo IS NULL OR r.validTo>$at)
+                 SET r.judgmentSemanticDue=0,r.judgmentSemanticAnchor=s.id,
+                     r.judgmentSemanticThrough=coalesce(r.validTo,${judgmentOpenEnd})
+                 REMOVE r.judgmentSemanticClaim`,
+                { worldId, id: node.id, at },
+              );
         };
         const createEdge = (edge: WorldEdge, requiredSubject?: string) =>
           tx.run(
             `MATCH (s:WorldNode {worldId: $worldId, id: $source}), (t:WorldNode {worldId: $worldId, id: $target})
             CREATE (s)-[r:${edge.kind} {worldId: $worldId, id: $id, data: $data, validFrom: $from}]->(t)
             ${(edge.kind === "happen" && edge.text === actionExperience) || edge.stateOrigin ? "SET r += $experience" : ""}
-            SET r.validTo = $until, r.role = $role${edge.kind === "has" ? ", r.judgmentLong=$long,r.judgmentSourceHash=$hash,r.judgmentAvailableAt=$available" : ""}${isSpUseProhibition(edge) ? ", r.spSubject = $source, t.spUseProhibition = true" : ""}${requiredSubject ? ", r.requiredSubject = $requiredSubject, r.requiredUntil = $restrictionUntil" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $restrictionUntil" + edge.commandRestrictions.map((command) => `, r.${restrictionSubject[command]} = $source`).join("") : ""}`,
+             SET r.role = $role
+             ${
+               this.#maintainJudgmentEvidence &&
+               (edge.kind === "has" || edge.kind === "status")
+                 ? `FOREACH (_ IN CASE WHEN ${judgmentEdgeFilter(edge.kind, "r")}
+                    AND ($until IS NULL OR $until>$now) THEN [1] ELSE [] END |
+                    SET r.judgmentSemanticDue=0,r.judgmentSemanticAnchor=s.id,
+                        r.judgmentSemanticThrough=coalesce($until,${judgmentOpenEnd}))`
+                 : ""
+             }
+             SET r.validTo = $until${edge.kind === "has" ? ", r.judgmentLong=$long,r.judgmentSourceHash=$hash,r.judgmentAvailableAt=$available" : ""}${isSpUseProhibition(edge) ? ", r.spSubject = $source, t.spUseProhibition = true" : ""}${requiredSubject ? ", r.requiredSubject = $requiredSubject, r.requiredUntil = $restrictionUntil" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $restrictionUntil" + edge.commandRestrictions.map((command) => `, r.${restrictionSubject[command]} = $source`).join("") : ""}`,
             {
               worldId,
               source: edge.source,
@@ -3623,6 +3906,7 @@ export class WorldStore {
               data: JSON.stringify(edge),
               from: edge.period.from,
               until: edge.period.until ?? null,
+              now: Date.now(),
               restrictionUntil: edge.period.until ?? Number.MAX_SAFE_INTEGER,
               role: edge.role ?? null,
               experience:
@@ -3744,12 +4028,22 @@ export class WorldStore {
             period: { ...edge.period, until: at },
           });
           await tx.run(
-            `MATCH ()-[r:${edge.kind} {worldId: $worldId, id: $id}]->() SET r.validTo = $at, r.data = $data${endOrigin ? ", r += $endExperience" : ""}${edge.kind === "required" ? ", r.requiredUntil = $at" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $at" : ""}`,
+            `MATCH ()-[r:${edge.kind} {worldId: $worldId, id: $id}]->() SET r.validTo = $at, r.data = $data${endOrigin ? ", r += $endExperience" : ""}${edge.kind === "required" ? ", r.requiredUntil = $at" : ""}${edge.commandRestrictions?.length ? ", r.restrictionUntil = $at" : ""}
+             ${
+               this.#maintainJudgmentEvidence &&
+               (edge.kind === "has" || edge.kind === "status")
+                 ? `SET r.judgmentSemanticThrough=$at
+                  WITH r WHERE r.validTo<=$now
+                  REMOVE r.judgmentSemanticDue,r.judgmentSemanticClaim,r.judgmentSemanticAnchor
+                  WITH r MATCH (p:WorldJudgmentPassage {worldId:r.worldId,edge:r.id}) DELETE p`
+                 : ""
+             }`,
             {
               worldId,
               id: edge.id,
               at,
               data,
+              now: Date.now(),
               endExperience: endOrigin
                 ? {
                     stateEndActorId: endOrigin.actorId,

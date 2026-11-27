@@ -723,11 +723,13 @@ export async function readJudgmentScope(
   storageOwners: readonly string[],
   storageIds: readonly string[] = [],
   preview = false,
+  read = (ids: Iterable<string>, kind: "has" | "status", at: number) =>
+    context.outgoingRelations(ids, kind, at, at, preview),
 ) {
   const roots = [...new Set([...subjects, ...places, ...storageIds])];
   const [holdings, placeStates] = await Promise.all([
-    context.outgoingRelations(roots, "has", LATEST, LATEST, preview),
-    context.outgoingRelations(places, "status", LATEST, LATEST, preview),
+    read(roots, "has", LATEST),
+    read(places, "status", LATEST),
   ]);
   const registered = new Map(
     storageOwners.map((id) => [
@@ -741,17 +743,15 @@ export async function readJudgmentScope(
       .map((edge) => edge.target),
   );
   const [storageHeld, placements] = await Promise.all([
-    context.outgoingRelations(
+    read(
       [...registered.values()]
         .flat()
         .map((edge) => edge.target)
         .filter((id) => !holdings.has(id)),
       "has",
       LATEST,
-      LATEST,
-      preview,
     ),
-    context.outgoingRelations(groundStates, "status", LATEST, LATEST, preview),
+    read(groundStates, "status", LATEST),
   ]);
   for (const [storage, edges] of storageHeld) holdings.set(storage, edges);
   const ground = [...placements.values()].flat();

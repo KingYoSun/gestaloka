@@ -7496,7 +7496,7 @@ test("使用した物品を別の言い方で指定しても同じIDから古い
       };
       const contents = JSON.stringify(candidates);
       expect(contents).toContain(decoy);
-      expect(contents).not.toContain(performed); // same-ID evidence bypasses optional reranking
+      expect(contents).toContain(performed);
       return Object.fromEntries(
         candidates.flatMap(({ key }) => [
           [`r0${key}a`, 0],

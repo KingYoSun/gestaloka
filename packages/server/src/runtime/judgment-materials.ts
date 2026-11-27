@@ -325,8 +325,7 @@ function requiredRows(
   for (const candidate of candidates) {
     if (
       pinned.has(rootOf(candidate)) &&
-      (candidate.pending ||
-        array(record(candidate.evidence).commandRestrictions).length > 0 ||
+      (array(record(candidate.evidence).commandRestrictions).length > 0 ||
         record(candidate.evidence).judgmentLocation === true)
     )
       pinned.add(candidate);
@@ -406,7 +405,8 @@ function* questionBatches(
         const root = rootOf(row);
         return (
           !pinned.has(row) &&
-          (!(row.pending || root.pending) || pinned.has(root))
+          !row.pending &&
+          (!root.pending || pinned.has(root))
         );
       });
       if (!askedRows.length) continue;
@@ -474,20 +474,73 @@ function* questionBatches(
 
 const strength = ({ applicable, effect }: Scored) =>
   Math.min(applicable, effect);
-const priority = ({ candidate }: Scored) =>
-  candidate.kind === "state" || candidate.kind === "skill"
-    ? 0
-    : candidate.kind === "basis"
-      ? 3
-      : candidate.parent?.kind === "storage"
-        ? 2
-        : 1;
 const probability = (value: unknown): value is number =>
   typeof value === "number" && value >= 0 && value <= 1;
-const comparePriority = (a: Scored, b: Scored) =>
-  priority(a) - priority(b) ||
-  b.applicable - a.applicable ||
-  b.effect - a.effect;
+
+const judgmentWeight = 0.45;
+const estimatedContext = 0.8;
+
+export function judgmentPriority(
+  judgment: number,
+  relationship: number,
+  facts: number,
+  multiplier = 1,
+) {
+  return (
+    Math.round(
+      (judgmentWeight * judgment + relationship + facts) * multiplier * 10,
+    ) / 10
+  );
+}
+
+type Rated = {
+  candidate: Candidate;
+  position: number;
+  similarity: number;
+  matches: number;
+  relationship: number;
+  facts: number;
+  linked: boolean;
+  essential: boolean;
+};
+
+function priority(row: Rated, threshold: number, score?: Scored) {
+  if (row.essential) return judgmentPriority(10, 3, 2.5);
+  const judgment = score
+    ? score.effect >= threshold
+      ? 8 * score.effect * (0.5 + 0.5 * score.applicable)
+      : score.applicable >= threshold
+        ? 5 * score.applicable
+        : 2 * Math.max(score.applicable, score.effect)
+    : 0;
+  const facts =
+    score &&
+    score.applicable >= threshold &&
+    typeof record(row.candidate.evidence).since === "number"
+      ? Math.max(row.facts, 1.5)
+      : row.facts;
+  return judgmentPriority(
+    judgment,
+    row.relationship,
+    facts,
+    score || row.linked || row.matches ? 1 : estimatedContext,
+  );
+}
+
+const compareRated = (
+  a: Rated & { priority: number; score?: Scored | undefined },
+  b: Rated & { priority: number; score?: Scored | undefined },
+) =>
+  b.priority - a.priority ||
+  (b.score?.effect ?? 0) - (a.score?.effect ?? 0) ||
+  (b.score?.applicable ?? 0) - (a.score?.applicable ?? 0) ||
+  (a.score && b.score
+    ? Number(b.candidate.kind === "state" || b.candidate.kind === "skill") -
+      Number(a.candidate.kind === "state" || a.candidate.kind === "skill")
+    : 0) ||
+  b.matches - a.matches ||
+  a.position - b.position ||
+  b.similarity - a.similarity;
 
 async function fit(
   pack: ReturnType<typeof materialRows>["pack"],
@@ -497,71 +550,82 @@ async function fit(
   threshold: number,
   finalize: (materials: unknown[]) => Promise<unknown[] | undefined>,
   groups: ReadonlyMap<Candidate, HoldingGroup>,
-  incomplete: boolean,
-  fallback: ReturnType<typeof shortlist>,
+  rated: Rated[],
 ) {
-  const important = scored.filter((row) => strength(row) >= threshold);
-  let selected = withParents(
-    incomplete
-      ? required
-      : [...required, ...important.map(({ candidate }) => candidate)],
-    groups,
-  );
-  let result = await finalize(pack(selected));
-  if (!result) return;
-
-  const keepIfFits = async (candidate: Candidate) => {
-    if (selected.has(candidate)) return;
+  // An explicitly retained item or skill must carry its grounds when Jev
+  // confirms that those grounds can change what happens.
+  const grounds = scored
+    .filter(
+      ({ candidate, applicable, effect }) =>
+        candidate.kind === "basis" &&
+        (candidate.parent?.kind === "item" ||
+          candidate.parent?.kind === "skill") &&
+        required.has(candidate.parent) &&
+        Math.min(applicable, effect) >= threshold,
+    )
+    .map(({ candidate }) => candidate);
+  const essential = withParents([...required, ...grounds], groups);
+  let selected = new Set<Candidate>();
+  let result: unknown[] | undefined;
+  const answers = new Map(scored.map((answer) => [answer.candidate, answer]));
+  const uncertain = new Set<string>();
+  let includedHoldingNote = false;
+  const ordered = rated
+    .map((row) => {
+      const score = answers.get(row.candidate);
+      const rated = { ...row, essential: essential.has(row.candidate) };
+      return { ...rated, score, priority: priority(rated, threshold, score) };
+    })
+    .sort(compareRated);
+  for (const { candidate, score, matches, linked, essential } of ordered) {
+    if (selected.has(candidate)) continue;
+    const possible =
+      !!score &&
+      score.effect >= threshold &&
+      score.applicable < threshold &&
+      (candidate.kind === "state" || candidate.kind === "skill") &&
+      !!candidate.owner &&
+      (!subjects || subjects.includes(candidate.owner)) &&
+      !uncertain.has(candidate.owner);
+    const holdingNote =
+      !!score &&
+      candidate.kind === "basis" &&
+      groups.has(candidate) &&
+      selected.has(candidate.parent!) &&
+      !includedHoldingNote &&
+      strength(score) >= 0.5 &&
+      strength(score) < threshold;
+    const applicable =
+      !!score &&
+      score.applicable >= threshold &&
+      (score.effect >= threshold ||
+        candidate.kind !== "basis" ||
+        selected.has(candidate.parent!));
+    const lexical =
+      matches > 0 &&
+      (candidate.requestIndex === undefined ||
+        !score ||
+        score.effect >= threshold);
+    // A rejected experience cannot become evidence through shared words alone.
+    if (
+      !essential &&
+      !applicable &&
+      !possible &&
+      !holdingNote &&
+      !linked &&
+      !lexical
+    )
+      continue;
     const trial = withParents([...selected, candidate], groups);
     const packed = await finalize(pack(trial));
-    if (!packed) return;
+    if (!packed) continue;
     selected = trial;
     result = packed;
-  };
-  if (incomplete) {
-    important.sort(
-      (a, b) => strength(b) - strength(a) || comparePriority(a, b),
-    );
-    for (const { candidate } of important) await keepIfFits(candidate);
+    if (possible) uncertain.add(candidate.owner);
+    if (holdingNote) includedHoldingNote = true;
   }
-
-  const ranked = scored
-    .filter((row) => strength(row) < threshold && !selected.has(row.candidate))
-    .sort(comparePriority);
-  const modifiers = ranked.filter(({ applicable }) => applicable >= threshold);
-  const uncertain = new Map<string, Scored>();
-  for (const row of ranked) {
-    const owner = row.candidate.owner;
-    if (priority(row) || !owner || (subjects && !subjects.includes(owner)))
-      continue;
-    if (
-      row.effect >= threshold &&
-      row.applicable < threshold &&
-      !uncertain.has(owner)
-    ) {
-      uncertain.set(owner, row);
-    }
-  }
-  for (const { candidate } of uncertain.values()) await keepIfFits(candidate);
-  const holdingNote = ranked
-    .filter(
-      (row) =>
-        row.candidate.kind === "basis" &&
-        groups.has(row.candidate) &&
-        selected.has(row.candidate.parent!) &&
-        strength(row) >= 0.5 &&
-        strength(row) < threshold,
-    )
-    .sort((a, b) => b.effect - a.effect || b.applicable - a.applicable)[0];
-  if (holdingNote) await keepIfFits(holdingNote.candidate);
-  for (const { candidate } of modifiers)
-    if (candidate.kind !== "basis" || selected.has(candidate.parent!))
-      await keepIfFits(candidate);
-  // 成否の種類を変えなくても、申請した行為と照合できる記録は空き枠で補う。
-  const evaluated = new Set(scored.map(({ candidate }) => candidate));
-  for (const { candidate, matches } of fallback)
-    if (matches || !evaluated.has(candidate)) await keepIfFits(candidate);
-  return result;
+  if ([...essential].every((row) => selected.has(row)))
+    return result ?? (await finalize(pack(selected)));
 }
 
 const searchWords = new Intl.Segmenter("ja", { granularity: "word" });
@@ -570,48 +634,102 @@ function shortlist(
   candidates: Candidate[],
   request: Request,
   pinned: Set<Candidate>,
+  threshold: number,
+  ranks?: ReadonlyMap<string, number>,
 ) {
   const effect = record(request.effect);
+  const nodes = [...array(effect.nodes), ...array(effect.revisions)];
   const input = [
     request.text,
     string(effect.state),
-    ...[
-      ...array(effect.nodes),
-      ...array(effect.revisions),
-      ...array(effect.edges),
-    ].map((value) => string(record(value).text)),
+    ...[...nodes, ...array(effect.edges)].map((value) =>
+      string(record(value).text),
+    ),
   ].join("\n");
+  const named = new Set(
+    [
+      ...nodes.map((value) => string(record(value).text)),
+      ...candidates
+        .filter((candidate) =>
+          candidate.ids.some((id) => request.requiredIds?.has(id)),
+        )
+        .map(({ name }) => name),
+    ].flatMap((text) =>
+      Array.from(searchWords.segment(normalize(text)))
+        .filter(
+          ({ isWordLike, segment }) =>
+            isWordLike && /^\p{Script=Han}$/u.test(segment),
+        )
+        .map(({ segment }) => segment),
+    ),
+  );
   const words = [
     ...new Set(
       Array.from(searchWords.segment(normalize(input)))
-        .filter((w) => w.isWordLike && w.segment.length > 1)
-        .map((w) => w.segment),
+        .filter(
+          ({ isWordLike, segment }) =>
+            isWordLike && (segment.length > 1 || named.has(segment)),
+        )
+        .map(({ segment }) => segment),
     ),
   ].slice(0, 64);
   const counts = new Map<string, number>();
   return candidates
-    .filter(
-      (c) =>
-        !pinned.has(c) &&
-        (!(c.pending || rootOf(c).pending) || pinned.has(rootOf(c))),
-    )
     .map((candidate) => {
       const key = candidate.owner + ":" + candidate.kind;
       const position = counts.get(key) ?? 0;
       counts.set(key, position + 1);
       const text = normalize(JSON.stringify(candidate.evidence));
-      return {
+      const row = candidate.kind === "basis" ? candidate.parent! : candidate;
+      const similarity = Math.max(
+        0,
+        ...row.ids.map((id) => ranks?.get(id) ?? 0),
+      );
+      const matches = words.filter((word) => text.includes(word)).length;
+      const shared = array(record(row.evidence).sharedReferences);
+      const targetState =
+        row.kind === "state" && !!row.owner && row.owner === effect.targetId;
+      const direct =
+        targetState ||
+        (row.kind !== "root" && pinned.has(row)) ||
+        array(record(row.evidence).about).some(
+          (id) => typeof id === "string" && request.requiredIds?.has(id),
+        ) ||
+        shared.some((value) => record(value).match === "sameId");
+      const series = shared.some(
+        (value) => record(value).match === "sameSeries",
+      );
+      const rated: Rated = {
         candidate,
         position,
-        matches: words.filter((word) => text.includes(word)).length,
+        similarity,
+        matches,
+        relationship: direct
+          ? 2
+          : series
+            ? 1.5
+            : pinned.has(rootOf(row))
+              ? 1
+              : matches || similarity > 0
+                ? 0.5
+                : 0,
+        facts: targetState
+          ? 1.5
+          : candidate.kind === "basis" || candidate.requestIndex !== undefined
+            ? 0.5
+            : 0,
+        linked: direct || series,
+        essential: pinned.has(candidate),
       };
+      return { ...rated, priority: priority(rated, threshold) };
     })
-    .sort((a, b) => b.matches - a.matches || a.position - b.position)
-    .slice(0, 20);
+    .sort(compareRated);
 }
 
 export async function selectJudgmentMaterials({
   materials,
+  ranks,
+  wholeFiltered = false,
   requiredIds,
   requests,
   decide,
@@ -626,6 +744,8 @@ export async function selectJudgmentMaterials({
   previewComplete = !hydrate,
 }: {
   materials: unknown[];
+  ranks?: ReadonlyMap<string, number>;
+  wholeFiltered?: boolean;
   requiredIds: ReadonlySet<string>;
   requests: readonly Request[];
   decide: (
@@ -663,12 +783,19 @@ export async function selectJudgmentMaterials({
   const whole = (index: number) => {
     const saved = originals.get(index);
     if (saved) return saved;
-    const pending = finalize(all(index), index, false);
+    const pending = finalize(all(index), index, wholeFiltered).then(
+      (packet) => {
+        if (packet && wholeFiltered) onFiltered?.(index);
+        return packet;
+      },
+    );
     originals.set(index, pending);
     return pending;
   };
   const direct = await Promise.all(
     requests.map((_, i) =>
+      !wholeFiltered &&
+      !ranks?.size &&
       previewComplete &&
       !(
         screenExperiences &&
@@ -676,7 +803,7 @@ export async function selectJudgmentMaterials({
           (row) => !array(record(row).sharedReferences).length,
         )
       ) &&
-      measure(all(i), i, false) <= Math.min(directLimit, budget)
+      measure(all(i), i, wholeFiltered) <= Math.min(directLimit, budget)
         ? whole(i)
         : undefined,
     ),
@@ -685,37 +812,19 @@ export async function selectJudgmentMaterials({
 
   const { candidates, pack } = materialRows(materials, experiences);
   const groups = sameHoldings(candidates);
-  const required = await Promise.all(
-    requests.map(async (request, i) => {
-      if (direct[i]) return;
-      const rows = withParents(
-        requiredRows(
-          candidates.filter(
-            (c) => c.requestIndex === undefined || c.requestIndex === i,
+  const required = requests.map((request, i) =>
+    direct[i]
+      ? undefined
+      : withParents(
+          requiredRows(
+            candidates.filter(
+              (c) => c.requestIndex === undefined || c.requestIndex === i,
+            ),
+            request,
+            requiredIds,
           ),
-          request,
-          requiredIds,
+          groups,
         ),
-        groups,
-      );
-      const minimum = pack(rows);
-      if (
-        measure(minimum, i, true) > budget &&
-        (previewComplete || !(await finalize(minimum, i, true)))
-      )
-        return;
-      for (const candidate of candidates) {
-        if (
-          candidate.requestIndex !== i ||
-          !array(record(candidate.evidence).sharedReferences).length ||
-          rows.has(candidate)
-        )
-          continue;
-        const trial = new Set([...rows, candidate]);
-        if (await finalize(pack(trial), i, true)) rows.add(candidate);
-      }
-      return rows;
-    }),
   );
   const subjects = new Set(
     requests.flatMap((request) => request.subjects ?? []),
@@ -748,29 +857,30 @@ export async function selectJudgmentMaterials({
     const truncate = () => {
       for (const i of active) bounded.add(i);
     };
-    let offered = candidates;
-    if (candidates.length > 40 || split) {
-      truncate();
-      const lists = active.map((i) => {
-        const list = shortlist(
-          candidates.filter(
-            (c) => c.requestIndex === undefined || c.requestIndex === i,
-          ),
-          requests[i]!,
-          required[i]!,
-        );
-        extra.set(i, list);
-        return list;
-      });
-      // Round robin keeps the first proposal from spending the whole question budget.
-      offered = [
-        ...new Set(
-          Array.from({ length: 20 }, (_, i) =>
-            lists.flatMap((list) => (list[i] ? [list[i]!.candidate] : [])),
-          ).flat(),
+    if (split) truncate();
+    const lists = active.map((i) => {
+      const list = shortlist(
+        candidates.filter(
+          (c) => c.requestIndex === undefined || c.requestIndex === i,
         ),
-      ];
-    }
+        requests[i]!,
+        required[i]!,
+        threshold,
+        ranks,
+      );
+      extra.set(i, list);
+      return list;
+    });
+    // Round robin keeps the first proposal from spending the whole question budget.
+    const offered = [
+      ...new Set(
+        Array.from(
+          { length: Math.max(...lists.map((list) => list.length)) },
+          (_, i) =>
+            lists.flatMap((list) => (list[i] ? [list[i]!.candidate] : [])),
+        ).flat(),
+      ),
+    ];
     const limit = split ? batch + 1 : 2;
     for (const { state, questions, asked } of questionBatches(
       offered,
@@ -807,23 +917,17 @@ export async function selectJudgmentMaterials({
       const incomplete = failed.has(i);
       if (
         incomplete &&
+        !ranks &&
+        !wholeFiltered &&
         (!bounded.has(i) ||
-          (candidates.length <= 20 && measure(all(i), i, false) <= budget))
+          (candidates.length <= 20 &&
+            measure(all(i), i, wholeFiltered) <= budget))
       ) {
         const packet = await whole(i);
         if (packet) return packet;
       }
       const pinned = required[i];
       if (!pinned) return;
-      const fallback =
-        extra.get(i) ??
-        shortlist(
-          candidates.filter(
-            (c) => c.requestIndex === undefined || c.requestIndex === i,
-          ),
-          requests[i]!,
-          pinned,
-        );
       const packet = await fit(
         pack,
         pinned,
@@ -832,12 +936,7 @@ export async function selectJudgmentMaterials({
         threshold,
         (packet) => finalize(packet, i, true),
         groups,
-        incomplete || bounded.has(i),
-        bounded.has(i)
-          ? fallback
-          : fallback.filter(
-              ({ matches, candidate }) => matches && candidate.kind === "state",
-            ),
+        extra.get(i)!,
       );
       if (packet) onFiltered?.(i);
       return packet;

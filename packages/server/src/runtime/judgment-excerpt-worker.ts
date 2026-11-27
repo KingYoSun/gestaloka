@@ -25,6 +25,9 @@ export class JudgmentExcerptWorker {
     await this.store
       .indexJudgmentExperience(worldId)
       .catch((error: unknown) => console.error(error));
+    await this.store
+      .indexScopedJudgmentEdges(worldId)
+      .catch((error: unknown) => console.error(error));
     if (!configured) return;
     const [job] = await this.store.judgmentExcerptJobs(1, worldId);
     if (!job) return;

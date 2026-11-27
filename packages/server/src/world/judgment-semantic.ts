@@ -37,6 +37,19 @@ export function semanticConfig() {
   return url && revision ? { url, revision } : undefined;
 }
 type Config = NonNullable<ReturnType<typeof semanticConfig>>;
+export function scopedSemanticConfig() {
+  const config = semanticConfig();
+  return config && { ...config, revision: config.revision + ":scoped-v2" };
+}
+export const judgmentOpenEnd = Number.MAX_SAFE_INTEGER + 1;
+export type JudgmentEdgeKind = "has" | "status";
+export function judgmentEdgeFilter(kind: JudgmentEdgeKind, edge: string) {
+  return kind === "has"
+    ? `(${edge}.role IS NULL OR ${edge}.role IN ['skill','use'])`
+    : `(${edge}.role IN ['content','about'] OR
+       (${edge}.role IS NULL AND (${edge}.data CONTAINS '"role":"content"'
+         OR ${edge}.data CONTAINS '"role":"about"')))`;
+}
 async function embed(config: Config, inputs: string[]) {
   const res = await fetch(config.url, {
     method: "POST",
@@ -57,15 +70,70 @@ export async function setupSemantic(driver: Driver) {
   await driver.executeQuery(
     "CREATE INDEX IF NOT EXISTS FOR ()-[r:happen]-() ON (r.semanticDue)",
   );
-  await driver.executeQuery(
-    "CREATE INDEX IF NOT EXISTS FOR (p:WorldExperiencePassage) ON (p.worldId,p.edge)",
-  );
-  for (const key of tables)
+  for (const kind of ["has", "status"]) {
+    for (const fields of [
+      "r.judgmentSemanticDue",
+      "r.worldId,r.judgmentSemanticAnchor,r.judgmentSemanticThrough",
+      "r.worldId,r.judgmentSemanticAnchor,r.judgmentSemanticThrough,r.judgmentSemanticDue",
+      ...[
+        "judgmentSemanticFixed",
+        "judgmentSemanticPrefix",
+        "judgmentSemanticShortEdge",
+        "judgmentSemanticShortNode",
+      ].map(
+        (field) =>
+          `r.worldId,r.judgmentSemanticAnchor,r.${field},r.judgmentSemanticThrough`,
+      ),
+    ])
+      await driver.executeQuery(
+        `CREATE INDEX IF NOT EXISTS FOR ()-[r:${kind}]-() ON (${fields})`,
+      );
+  }
+  for (const label of ["WorldExperiencePassage", "WorldJudgmentPassage"]) {
     await driver.executeQuery(
-      "CREATE INDEX IF NOT EXISTS FOR (p:WorldExperiencePassage) ON (p.owner,p." +
-        key +
-        ")",
+      `CREATE INDEX IF NOT EXISTS FOR (p:${label}) ON (p.worldId,p.edge)`,
     );
+    for (const key of tables)
+      await driver.executeQuery(
+        `CREATE INDEX IF NOT EXISTS FOR (p:${label}) ON (p.owner,p.${key})`,
+      );
+  }
+  for (const fields of ["p.expiresAt", "p.worldId,p.expiresAt"])
+    await driver.executeQuery(
+      `CREATE INDEX IF NOT EXISTS FOR (p:WorldJudgmentPassage) ON (${fields})`,
+    );
+}
+
+async function passageRows(config: Config, text: string, edgeId: string) {
+  const quotes = new Set<string>();
+  for (const { segment } of segments.segment(text)) {
+    const chars = [...segment.trim()];
+    for (let i = 0; i < chars.length; i += 64) {
+      quotes.add(chars.slice(i, i + 96).join(""));
+      if (i + 96 >= chars.length) break;
+    }
+  }
+  const pieces = [...quotes],
+    rows = [];
+  for (let i = 0; i < pieces.length; i += 32) {
+    const part = pieces.slice(i, i + 32);
+    const vectors = await embed(
+      config,
+      part.map((t) => "passage: " + t),
+    );
+    for (const [j, vector] of vectors.entries()) {
+      const salt = createHash("sha256")
+        .update(edgeId + ":" + String(i + j))
+        .digest("hex")
+        .slice(0, 12);
+      const codes = signature(vector);
+      rows.push({
+        vector,
+        ...Object.fromEntries(tables.map((key, t) => [key, codes[t] + salt])),
+      });
+    }
+  }
+  return rows;
 }
 
 export async function indexSemanticExperience(
@@ -87,36 +155,12 @@ export async function indexSemanticExperience(
     )
   ).records[0];
   if (!job) return;
-  const data = job.get("data") as string,
-    text = JSON.parse(data).text as string;
-  const quotes = new Set<string>();
-  for (const { segment } of segments.segment(text)) {
-    const chars = [...segment.trim()];
-    for (let i = 0; i < chars.length; i += 64) {
-      quotes.add(chars.slice(i, i + 96).join(""));
-      if (i + 96 >= chars.length) break;
-    }
-  }
-  const pieces = [...quotes],
-    rows = [];
-  for (let i = 0; i < pieces.length; i += 32) {
-    const part = pieces.slice(i, i + 32);
-    const vectors = await embed(
-      config,
-      part.map((t) => "passage: " + t),
-    );
-    for (const [j, vector] of vectors.entries()) {
-      const salt = createHash("sha256")
-        .update(job.get("edge") + ":" + String(i + j))
-        .digest("hex")
-        .slice(0, 12);
-      const codes = signature(vector);
-      rows.push({
-        vector,
-        ...Object.fromEntries(tables.map((key, t) => [key, codes[t] + salt])),
-      });
-    }
-  }
+  const data = job.get("data") as string;
+  const rows = await passageRows(
+    config,
+    JSON.parse(data).text,
+    job.get("edge"),
+  );
   await driver.executeQuery(
     `MATCH ()-[r:happen {worldId:$world,id:$edge}]->(n)
      SET r.semanticLock=true REMOVE r.semanticLock
@@ -141,18 +185,206 @@ export async function indexSemanticExperience(
 // Each range uses the scoped index order and stops before scoring any vectors.
 // Check the canonical event and its owner again on the bounded result, including
 // after a revision but before the worker has replaced the old vectors.
-const probes = tables
-  .flatMap((key, i) =>
-    ["ASC", "DESC"].map((order) => {
-      const comparison = order === "DESC" ? "<" : ">=";
-      // Including the equality prefix in ORDER BY lets Neo4j stop the index seek
-      // at eight rows. Ordering by the signature alone sorts the entire range.
-      return `MATCH (p:WorldExperiencePassage) USING RANGE INDEX p:WorldExperiencePassage(owner,${key})
+const probes = (label: "WorldExperiencePassage" | "WorldJudgmentPassage") =>
+  tables
+    .flatMap((key, i) =>
+      ["ASC", "DESC"].map((order) => {
+        const comparison = order === "DESC" ? "<" : ">=";
+        // Including the equality prefix in ORDER BY lets Neo4j stop the index seek
+        // at eight rows. Ordering by the signature alone sorts the entire range.
+        return `MATCH (p:${label}) USING RANGE INDEX p:${label}(owner,${key})
     WHERE p.owner=$owner AND p.${key} ${comparison} q.codes[${i}]
     WITH p ORDER BY p.owner ${order},p.${key} ${order} LIMIT 8 RETURN p`;
-    }),
+      }),
+    )
+    .join(" UNION ALL ");
+
+const experienceProbes = probes("WorldExperiencePassage");
+const judgmentProbes = probes("WorldJudgmentPassage");
+
+export async function judgmentQueryVectors(
+  config: Config,
+  texts: readonly string[],
+) {
+  const inputs = [...new Set(texts.map((text) => text.trim().slice(0, 2400)))];
+  if (!inputs.length || inputs.every((text) => !text)) return [];
+  const vectors = await embed(
+    config,
+    inputs.map((text) => "query: " + text),
+  ).catch(() => undefined);
+  return vectors?.map((vec, i) => ({
+    vec,
+    codes: signature(vec).map(
+      (part) =>
+        part +
+        createHash("sha256").update(inputs[i]!).digest("hex").slice(0, 12),
+    ),
+  }));
+}
+
+function judgmentOwner(
+  world: string,
+  kind: JudgmentEdgeKind,
+  anchor: string,
+  revision: string,
+) {
+  return partition(`${world}:${kind}:${anchor}`, revision);
+}
+
+export async function indexSemanticJudgmentEdge(
+  driver: Driver,
+  config: Config,
+  kind: JudgmentEdgeKind,
+  worldId?: string,
+) {
+  const claim = randomUUID();
+  const now = Date.now();
+  if (kind === "status")
+    await driver.executeQuery(
+      `MATCH (p:WorldJudgmentPassage)
+       USING RANGE INDEX p:WorldJudgmentPassage(${worldId ? "worldId," : ""}expiresAt)
+       WHERE ${worldId ? "p.worldId=$scope AND " : ""}p.expiresAt<=$now
+       WITH p ORDER BY ${worldId ? "p.worldId," : ""}p.expiresAt LIMIT 64 DELETE p`,
+      { now, scope: worldId ?? null },
+    );
+  const job = (
+    await driver.executeQuery(
+      `MATCH (s)-[r:${kind}]->(n) USING INDEX r:${kind}(judgmentSemanticDue)
+       WHERE r.judgmentSemanticDue<=$now AND ($scope IS NULL OR r.worldId=$scope)
+       WITH s,r,n ORDER BY r.judgmentSemanticDue LIMIT 1
+       SET r.judgmentSemanticLock=true REMOVE r.judgmentSemanticLock
+       WITH s,r,n WHERE r.judgmentSemanticDue<=$now
+       SET r.judgmentSemanticDue=$lease,r.judgmentSemanticClaim=$claim
+       RETURN r.worldId AS world,s.id AS anchor,r.id AS edge,r.data AS edgeData,n.data AS nodeData,r.validTo AS until`,
+      { now, lease: now + 60000, claim, scope: worldId ?? null },
+    )
+  ).records[0];
+  if (!job) return;
+  const world: string = job.get("world"),
+    anchor: string = job.get("anchor"),
+    edge: string = job.get("edge"),
+    edgeData: string = job.get("edgeData"),
+    nodeData: string = job.get("nodeData");
+  const source = JSON.parse(edgeData) as {
+    role?: string;
+    text?: string;
+    commandRestrictions?: string[];
+  };
+  const body = JSON.parse(nodeData) as {
+    id: string;
+    text?: string;
+    name?: string;
+  };
+  const name = (
+    kind === "status"
+      ? body.name
+      : source.role === "skill"
+        ? (body.name ?? /^([^：:\n]{2,40})[：:]/u.exec(body.text ?? "")?.[1])
+        : body.text
   )
-  .join(" UNION ALL ");
+    ?.normalize("NFKC")
+    .toLowerCase()
+    .trim();
+  const fixed =
+    kind === "has"
+      ? source.role === "use"
+      : source.role === "about" ||
+        ["location", "ground", "system:sp-use-prohibited"].includes(
+          source.text ?? "",
+        ) ||
+        !!source.commandRestrictions?.length;
+  const until = job.get("until");
+  const rows =
+    fixed || (until !== null && Number(until) <= now)
+      ? []
+      : await passageRows(
+          config,
+          [
+            ...new Set([body.name, body.text, source.text].filter(Boolean)),
+          ].join("\n"),
+          edge,
+        );
+  await driver.executeQuery(
+    `MATCH (s)-[r:${kind} {worldId:$world,id:$edge}]->(n)
+     SET r.judgmentSemanticLock=true REMOVE r.judgmentSemanticLock
+     WITH s,r,n WHERE r.judgmentSemanticClaim=$claim AND r.data=$edgeData AND n.data=$nodeData
+     CALL (r) { MATCH (old:WorldJudgmentPassage {worldId:r.worldId,edge:r.id}) DELETE old }
+     SET r.judgmentSemanticRevision=$revision,r.judgmentSemanticName=$name,
+         r.judgmentSemanticPrefix=$prefix,
+         r.judgmentSemanticShortEdge=$shortEdge,r.judgmentSemanticShortNode=$shortNode,
+         r.judgmentSemanticFixed=$fixed,r.judgmentSemanticAnchor=s.id,
+         r.judgmentSemanticThrough=coalesce(r.validTo,${judgmentOpenEnd})
+     REMOVE r.judgmentSemanticDue,r.judgmentSemanticClaim
+     WITH s,r,n UNWIND $rows AS row
+     CREATE (p:WorldJudgmentPassage {worldId:r.worldId,edge:r.id,owner:$owner,known:n.knownFrom,expiresAt:r.validTo})
+     SET p+=row`,
+    {
+      world,
+      edge,
+      edgeData,
+      nodeData,
+      claim,
+      fixed,
+      name: name || null,
+      prefix: name ? [...name].slice(0, 2).join("") : null,
+      shortEdge: judgmentShortId(edge),
+      shortNode: judgmentShortId(body.id),
+      rows,
+      revision: config.revision,
+      owner: judgmentOwner(world, kind, anchor, config.revision),
+    },
+  );
+}
+
+const judgmentShortId = (id: string) =>
+  "@" + createHash("sha256").update(id).digest("hex").slice(0, 8);
+
+export async function semanticJudgmentEdgeScores(
+  driver: Driver,
+  config: Config,
+  world: string,
+  kind: JudgmentEdgeKind,
+  anchors: readonly string[],
+  at: number,
+  qs: NonNullable<Awaited<ReturnType<typeof judgmentQueryVectors>>>,
+) {
+  if (!qs.length) return new Map<string, number>();
+  const { records } = await driver.executeQuery(
+    `UNWIND $scopes AS scope
+     WITH scope.anchor AS anchor,scope.owner AS owner UNWIND $qs AS q
+     CALL (q,owner,anchor) {
+       CALL (q,owner) { ${judgmentProbes.replaceAll("$owner", "owner")} }
+       WITH DISTINCT p,q,anchor
+       OPTIONAL MATCH (s:WorldNode {worldId:$world,id:anchor})-[r:${kind} {worldId:$world,id:p.edge}]->(n)
+       WHERE n.knownFrom=p.known AND r.judgmentSemanticRevision=$revision
+         AND r.judgmentSemanticDue IS NULL AND r.validFrom<=$at AND (r.validTo IS NULL OR r.validTo>$at)
+       WITH r.id AS id,max(vector.similarity.cosine(p.vector,q.vec)) AS score
+       ORDER BY score DESC,id
+       RETURN id,score
+     }
+     WITH id,max(score) AS score ORDER BY score DESC,id
+     RETURN id,score`,
+    {
+      world,
+      qs,
+      at,
+      revision: config.revision,
+      scopes: anchors.map((anchor) => ({
+        anchor,
+        owner: judgmentOwner(world, kind, anchor, config.revision),
+      })),
+    },
+  );
+  // An invalid posting already used a slot in a bounded index probe. Its
+  // absence after validation does not establish that no valid neighbor exists.
+  if (records.some((record) => record.get("id") === null)) return;
+  return new Map<string, number>(
+    records.map((record) => [
+      record.get("id") as string,
+      Math.max(0, Math.min(1, record.get("score") as number)),
+    ]),
+  );
+}
 export async function semanticExperiences(
   driver: Driver,
   config: Config,
@@ -190,7 +422,7 @@ export async function semanticExperiences(
   }));
   const { records } = await driver.executeQuery(
     `UNWIND $qs AS q CALL (q) {
-       CALL (q) { ${probes} }
+       CALL (q) { ${experienceProbes} }
        WITH DISTINCT p,q WHERE p.at<=$at
        WITH p.event AS id,p.edge AS edge,p.known AS known,max(vector.similarity.cosine(p.vector,q.vec)) AS score
        ORDER BY score DESC,id LIMIT 20
