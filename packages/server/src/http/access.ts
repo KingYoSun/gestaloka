@@ -325,6 +325,31 @@ export class WorldAccess {
       >,
     );
   }
+  async skillRequestResult(
+    subject: string,
+    id: string,
+    requestId: string,
+    actorId?: string,
+  ) {
+    // 端末が人物を指定しない場合も、本人の要求から操作人物を特定できる。
+    const requestedActor =
+      actorId ??
+      (
+        await this.pool.query<{ actor_id: string }>(
+          "SELECT actor_id FROM bot_request WHERE id=$1 AND world_id=$2 AND user_id=$3 AND skill_request",
+          [requestId, id, subject],
+        )
+      ).rows[0]?.actor_id;
+    if (!requestedActor) return;
+    await this.authorize(subject, id, "player", this.pool, requestedActor);
+    return this.botPlay.skillRequestResult(
+      id,
+      requestedActor,
+      subject,
+      requestId,
+    );
+  }
+
   async botQuote(
     subject: string,
     id: string,

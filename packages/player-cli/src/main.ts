@@ -16,6 +16,7 @@ import {
   PlayerDeviceCode,
   PlayerPlayCommand,
   PlayQuote,
+  SkillRequestResult,
   WorldApplication,
   applicationSp,
   PlayerDeviceStatus,
@@ -826,6 +827,15 @@ async function run() {
       return { ...result, recentOwnSpeech };
     }
     return result;
+  }
+  if (command === "request-result") {
+    const id = z.uuid().parse(values.request);
+    return SkillRequestResult.parse(
+      await http(
+        profile,
+        `/api/worlds/${profile.worldId}/session/requests/${id}`,
+      ),
+    );
   }
   if (command === "recover") {
     const id = z.uuid().parse(values.request ?? profile.lastRequestId);

@@ -3,7 +3,7 @@ import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import {
   beforeAll,
   beforeEach,
@@ -17367,8 +17367,8 @@ test("抽選器を審査し、別の人物が結果を受け取り、同席者�
 });
 
 describe("中断した技能発展のSP精算", () => {
-  async function pendingDevelopment() {
-    const f = await fixture(1);
+  async function pendingDevelopment(players = 1) {
+    const f = await fixture(players);
     const actor = f.actors[0]!;
     const learn = { type: "learn", person: actor, basis: "庭で稽古した" };
     const seed = await f.apply([{ ...learn, text: "庭で五歩を数えられる" }]);
@@ -17600,6 +17600,303 @@ describe("中断した技能発展のSP精算", () => {
     expect((await t.row()).creation_pending).toBeNull();
     expect(await t.balance()).toBe(before - 1);
     expect((await t.skills()).map((s) => s.id)).toEqual([t.original]);
+  });
+  describe("要求IDからの技能発展の照会", () => {
+    test("判定中の予約と手番終了後の結果を本人だけが読み取れる", async () => {
+      const t = await pendingDevelopment(2);
+      const app = await createApp(
+        access,
+        auth.identity,
+        undefined,
+        auth.operations,
+      );
+      const path = `/api/worlds/${t.f.world}/session/requests/${t.request.requestId}`;
+      const read = (person: number, url = path) =>
+        app.inject({ url, headers: { cookie: t.f.people[person]!.cookie } });
+      let enter!: () => void, release!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      t.f.calls.mockImplementationOnce(async (id) => {
+        enter();
+        await gate;
+        return answer(id, sure);
+      });
+      const before = await t.balance();
+      const submit = t.f.send(0, t.request);
+      try {
+        await Promise.race([
+          entered,
+          submit.then(() => {
+            throw new Error("判定を開始しませんでした");
+          }),
+        ]);
+        const pending = await read(0);
+        expect(pending.statusCode).toBe(200);
+        expect(pending.json()).toMatchObject({
+          requestId: t.request.requestId,
+          state: "pending",
+          phase: "judging",
+          sp: { spent: 0, reserved: 1 },
+        });
+        expect(await t.balance()).toBe(before - 1);
+        const unknown = await read(
+          1,
+          path.replace(t.request.requestId, randomUUID()),
+        );
+        const other = await read(1);
+        expect(other.statusCode).toBe(404);
+        expect(other.json()).toEqual(unknown.json());
+        // 現在同じ人物を操作できても、依頼したアカウントの結果だけを読む。
+        await isolated.databases.postgres.query(
+          "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3)",
+          [t.f.people[1]!.id, t.f.world, t.actor],
+        );
+        const controller = await read(1, path + "?actorId=" + t.actor);
+        expect(controller.statusCode).toBe(404);
+        expect(controller.json()).toEqual(unknown.json());
+        expect(
+          (await read(0, path.replace(t.f.world, randomUUID()))).json(),
+        ).toEqual(unknown.json());
+        release();
+        const result = await submit;
+        expect(result).toMatchObject({
+          spentSp: 1,
+          outcome: { success: true },
+        });
+        const finishId = randomUUID();
+        await t.f.send(0, { command: "finish", requestId: finishId });
+        await isolated.databases.postgres.query(
+          "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3)",
+          [t.f.people[0]!.id, t.f.world, t.f.actors[1]!],
+        );
+        const saved = await t.row(),
+          calls = t.f.calls.mock.calls.length;
+        const resubmit = vi.spyOn(access.botPlay, "submit");
+        const finish = await read(0);
+        expect(finish.statusCode).toBe(200);
+        expect(finish.headers["cache-control"]).toBe("private, no-store");
+        expect(finish.json()).toMatchObject({
+          state: "confirmed",
+          commitId: t.request.requestId,
+          outcome: {
+            success: true,
+            roll: saved.creation_rolls[0].roll,
+            setting: { successThrough: 17 },
+          },
+          sp: { spent: 1, reserved: 0 },
+        });
+        expect((await read(0)).json()).toEqual(finish.json());
+        const unsupported = await read(
+          0,
+          path.replace(t.request.requestId, finishId),
+        );
+        expect(unsupported.statusCode).toBe(404);
+        expect(unsupported.json()).toEqual(unknown.json());
+        expect(resubmit).not.toHaveBeenCalled();
+        resubmit.mockRestore();
+        expect(await t.row()).toEqual(saved);
+        expect(await t.balance()).toBe(before - 1);
+        expect(t.f.calls).toHaveBeenCalledTimes(calls);
+      } finally {
+        release();
+        await Promise.allSettled([submit]);
+        await app.close();
+      }
+    });
+
+    test.each([false, true])(
+      "中断後も照会では精算・取消を進めない（確定記録あり %s）",
+      async (committed) => {
+        const t = await pendingDevelopment();
+        const app = await createApp(
+          access,
+          auth.identity,
+          undefined,
+          auth.operations,
+        );
+        const read = () =>
+          app.inject({
+            url: `/api/worlds/${t.f.world}/session/requests/${t.request.requestId}`,
+            headers: { cookie: t.f.people[0]!.cookie },
+          });
+        const commit = t.f.store.commit.bind(t.f.store);
+        const interrupted = vi
+          .spyOn(t.f.store, "commit")
+          .mockImplementationOnce(async (...args) => {
+            if (committed) await commit(...args);
+            throw new Error("グラフ確定の境界で中断");
+          });
+        try {
+          await expect(t.f.send(0, t.request)).rejects.toThrow(
+            "グラフ確定の境界",
+          );
+          interrupted.mockRestore();
+          const before = await t.row();
+          const balance = await t.balance();
+          const resolution = vi.spyOn(t.f.store, "creationResolution");
+          const pending = await read();
+          expect(pending.statusCode).toBe(200);
+          expect(pending.json()).toMatchObject({
+            state: "pending",
+            phase: committed ? "settling" : "awaiting-commit",
+            sp: { reserved: 1, spent: 0 },
+          });
+          if (committed)
+            expect(pending.json()).toMatchObject({
+              commitId: t.request.requestId,
+              outcome: { success: true, roll: before.creation_rolls[0].roll },
+            });
+          expect((await read()).json()).toEqual(pending.json());
+          expect(await t.row()).toEqual(before);
+          expect(await t.balance()).toBe(balance);
+          expect(resolution).not.toHaveBeenCalled();
+          resolution.mockRestore();
+          await t.f.send(0, { command: "end-turn" });
+          await access.botPlay.expire(t.f.world);
+          const completed = await read();
+          expect(completed.statusCode).toBe(200);
+          expect(completed.json()).toMatchObject({
+            state: committed ? "confirmed" : "cancelled",
+            sp: { reserved: 0, spent: committed ? 1 : 0 },
+          });
+          if (!committed)
+            expect(completed.json()).not.toHaveProperty("outcome");
+          expect(t.f.calls).toHaveBeenCalledTimes(1);
+        } finally {
+          await app.close();
+        }
+      },
+    );
+
+    test("物品の製作と技能発展を同時に確定した場合も元案の順で結果を返す", async () => {
+      const t = await pendingDevelopment();
+      const app = await createApp(
+        access,
+        auth.identity,
+        undefined,
+        auth.operations,
+      );
+      const request = {
+        ...t.request,
+        expectedSp: 2,
+        action: {
+          type: "generate",
+          plans: [
+            ...t.request.action.plans,
+            {
+              text: "紙から小さな札を一つ作る",
+              operation: {
+                type: "create",
+                holder: t.actor,
+                label: "紙の札",
+                basis: "作業台で形を整えた",
+              },
+            },
+          ],
+        },
+      };
+      t.f.calls.mockImplementationOnce(async (id) =>
+        answer(id, { settings: [sure, { successThrough: 3 }] }),
+      );
+      try {
+        expect(await t.f.send(0, request)).toMatchObject({ spentSp: 2 });
+        const found = await app.inject({
+          url: `/api/worlds/${t.f.world}/session/requests/${request.requestId}`,
+          headers: { cookie: t.f.people[0]!.cookie },
+        });
+        expect(found.statusCode).toBe(200);
+        expect(found.json()).toMatchObject({
+          state: "confirmed",
+          commitId: request.requestId,
+          sp: { spent: 2, reserved: 0 },
+          outcome: {
+            success: true,
+            proposals: [
+              { success: true, roll: 9, setting: { successThrough: 17 } },
+              { success: false, roll: 9, setting: { successThrough: 3 } },
+            ],
+          },
+        });
+        expect(
+          found.json().outcome.proposals.every((p: object) => !("text" in p)),
+        ).toBe(true);
+        expect(t.f.calls).toHaveBeenCalledTimes(1);
+      } finally {
+        await app.close();
+      }
+    });
+
+    test("応答を失ったCLIはジャーナル本文を失っても失敗の出目と消費SPを取得できる", async () => {
+      const t = await pendingDevelopment();
+      const app = await createApp(
+        access,
+        auth.identity,
+        undefined,
+        auth.operations,
+      );
+      const cli = await playerCli(app),
+        profile = join(cli.directory, "lookup.json");
+      const run = (...args: string[]) => cli.run(profile, ...args);
+      try {
+        const { userCode } = await run(
+          "connect",
+          "--server",
+          cli.base,
+          "--world",
+          t.f.world,
+        );
+        expect(
+          (
+            await cli.approve(
+              t.f.people[0]!.cookie,
+              userCode,
+              `actor:${t.actor}`,
+            )
+          ).statusCode,
+        ).toBe(302);
+        t.f.calls.mockImplementation(async (id) =>
+          answer(id, { successThrough: 3 }),
+        );
+        const file = join(cli.directory, "skill.json");
+        await writeFile(file, JSON.stringify(t.request), "utf8");
+        cli.dropNextResponse("apply");
+        const lost = await run("play", "--file", file);
+        expect(lost.state).toBe("error");
+        expect(lost.requestId).toMatch(/^@/);
+        const { lastRequestId } = JSON.parse(await readFile(profile, "utf8"));
+        await unlink(join(profile + ".requests", lastRequestId + ".json"));
+        await unlink(file);
+        await t.f.send(0, { command: "finish" });
+        const calls = t.f.calls.mock.calls.length,
+          balance = await t.balance();
+        const resubmit = vi.spyOn(access.botPlay, "submit");
+        const result = await run("request-result", "--request", lost.requestId);
+        expect(result).toMatchObject({
+          requestId: lost.requestId,
+          state: "confirmed",
+          outcome: {
+            success: false,
+            roll: expect.any(Number),
+            setting: { successThrough: 3 },
+          },
+          sp: { spent: 1, reserved: 0 },
+        });
+        expect(await run("request-result", "--request", lastRequestId)).toEqual(
+          result,
+        );
+        expect(await t.balance()).toBe(balance);
+        expect(t.f.calls).toHaveBeenCalledTimes(calls);
+        expect(resubmit).not.toHaveBeenCalled();
+        resubmit.mockRestore();
+      } finally {
+        await cli.close();
+        await app.close();
+      }
+    });
   });
 });
 

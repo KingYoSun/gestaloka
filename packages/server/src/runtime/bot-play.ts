@@ -14,6 +14,7 @@ import {
   PlaceSeries,
   PlayCommand,
   PlayerPlayCommand,
+  SkillRequestResult,
   type ApplyCommand,
   type WorldApplication,
   applicationSp,
@@ -1672,7 +1673,7 @@ export class BotPlay {
       CREATE TABLE IF NOT EXISTS bot_request (
       id uuid PRIMARY KEY,actor_id uuid NOT NULL,world_id uuid NOT NULL,hash text NOT NULL,result jsonb,outcome jsonb);
       ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS prepared_turn text;
-      ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS status_dependencies jsonb, ADD COLUMN IF NOT EXISTS creation_pending jsonb;
+      ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS status_dependencies jsonb, ADD COLUMN IF NOT EXISTS creation_pending jsonb, ADD COLUMN IF NOT EXISTS skill_request boolean;
       CREATE INDEX IF NOT EXISTS bot_request_pending_creation_turn ON bot_request(world_id,actor_id,prepared_turn) WHERE creation_pending IS NOT NULL;
       CREATE TABLE IF NOT EXISTS player_friend (
         id uuid PRIMARY KEY,world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
@@ -8148,6 +8149,11 @@ export class BotPlay {
       recoverable?: boolean;
     } = {},
   ) {
+    if (recoverable)
+      await this.pool.query(
+        "UPDATE bot_request SET skill_request=true WHERE id=$1 AND skill_request=false",
+        [requestId],
+      );
     const explore = exploreFrom !== undefined;
     const factorField = (operations: BelongingOp[] | undefined): FactorField =>
       operations?.some((op) => op.type === "learn" && op.person === actor)
@@ -14198,6 +14204,95 @@ export class BotPlay {
     return playQuote(input);
   }
 
+  async skillRequestResult(
+    world: string,
+    actor: string,
+    user: string,
+    request: string,
+  ) {
+    type Row = {
+      graph: string | null;
+      pending: boolean;
+      judging: boolean;
+      finished: boolean;
+      state: string | null;
+      commit_id: string | null;
+      outcome: unknown;
+      reserved: number;
+      spent: number;
+      resets_at: Date | null;
+    };
+    const read = async () => {
+      const { rows } = await this.pool.query<Row>(
+        `SELECT c.world_id AS graph,r.creation_pending IS NOT NULL AS pending,
+           a.request_id IS NOT NULL AS judging,r.result IS NOT NULL AS finished,
+           r.result->>'state' AS state,r.result->>'commitId' AS commit_id,
+           COALESCE(r.result->'outcome',r.creation_pending->'plan'->'outcome',
+             r.outcome->'creationPlan'->'outcome',r.outcome) AS outcome,
+           CASE WHEN r.result IS NOT NULL THEN 0
+                WHEN r.creation_pending IS NOT NULL AND r.sp_user IS NOT NULL THEN r.sp_amount
+                WHEN a.sp_user IS NOT NULL THEN a.sp_amount ELSE 0 END AS reserved,
+           CASE WHEN r.creation_pending IS NULL AND r.sp_user IS NOT NULL
+                THEN r.sp_amount ELSE 0 END AS spent,
+           COALESCE(r.sp_reset,a.sp_reset) AS resets_at
+         FROM bot_request r JOIN world_construction c ON c.id=r.world_id
+         LEFT JOIN bot_adjudication a ON a.world_id=r.world_id AND a.actor_id=r.actor_id
+           AND a.request_id=r.id AND a.expires_at>clock_timestamp()
+         WHERE r.id=$1 AND r.world_id=$2 AND r.actor_id=$3 AND r.user_id=$4 AND r.skill_request`,
+        [request, world, actor, user],
+      );
+      return rows[0];
+    };
+    let row = await read();
+    if (!row) return;
+    let commitId: string | undefined;
+    let unverified = false;
+    if (row.pending && row.graph) {
+      try {
+        commitId = (await this.store.receipt(row.graph, request))?.commitId;
+      } catch {
+        unverified = true;
+      }
+      // 照合中に精算が進んだ場合は、新しいPostgreSQLの結果を優先する。
+      row = await read();
+      if (!row) return;
+    }
+    const state = row.finished
+      ? row.state === "cancelled"
+        ? "cancelled"
+        : "confirmed"
+      : row.pending || row.judging
+        ? "pending"
+        : "unresolved";
+    const phase =
+      state === "pending"
+        ? commitId
+          ? "settling"
+          : unverified
+            ? "unverified"
+            : row.pending
+              ? "awaiting-commit"
+              : "judging"
+        : undefined;
+    const outcome = SkillRequestResult.shape.outcome.safeParse(row.outcome);
+    return SkillRequestResult.parse({
+      requestId: request,
+      state,
+      phase,
+      ...(state === "confirmed" || state === "pending"
+        ? {
+            commitId: row.commit_id ?? commitId,
+            outcome: outcome.success ? outcome.data : undefined,
+          }
+        : {}),
+      sp: {
+        reserved: row.reserved,
+        spent: row.spent,
+        resetsAt: row.resets_at?.toISOString(),
+      },
+    });
+  }
+
   async submit(
     world: string,
     actor: string,
@@ -14249,9 +14344,23 @@ export class BotPlay {
       submitted.command === "apply"
         ? await this.#application(world, actor, submitted)
         : submitted;
+    // 本人の技能だけを扱う生成案は受付時に判別できる。混在案は受領の有無を計画で確かめる。
+    const plans =
+      submitted.command === "apply" && submitted.action.type === "generate"
+        ? submitted.action.plans
+        : [];
+    const skillRequest = skillDevelopment(
+      actor,
+      plans.map((p) => p.operation),
+    )
+      ? plans.every(
+          ({ operation }) =>
+            operation.type === "learn" && operation.person === actor,
+        )
+      : null;
     await this.pool.query(
-      "INSERT INTO bot_request(id,actor_id,world_id,hash,user_id,command) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
-      [input.requestId, actor, world, hash, user, input.command],
+      "INSERT INTO bot_request(id,actor_id,world_id,hash,user_id,command,skill_request) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING",
+      [input.requestId, actor, world, hash, user, input.command, skillRequest],
     );
     const saved = (
       await this.pool.query<{
