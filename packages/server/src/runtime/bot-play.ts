@@ -2,7 +2,7 @@ import { instantPlaceEdge } from "../world/conditions.js";
 import { classifyNpcHistory, type NpcMemory } from "./npc-history.js";
 import { npcOperations, type NpcReport, type NpcTask } from "./npc-work.js";
 import { diceFields, dicePrompt, rollDice } from "./dice.js";
-import { playDiceMessages } from "./play-dice-messages.js";
+import { playedDice, playDiceMessages } from "./play-dice-messages.js";
 import { ModelCallInProgress, ResponseFormatError } from "../llm/budget.js";
 import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -1301,14 +1301,6 @@ function judgmentConsumables(materials: unknown[], consumables: Consumable[]) {
 }
 const individualOutcomes = (proposals: ProposalOutcome[]) =>
   proposals.flatMap((p) => p.proposals ?? [p]);
-
-const rolledOutcomes = (
-  outcome: Partial<ProposalOutcome> | undefined,
-  text: string,
-) =>
-  individualOutcomes(outcome?.proposals ?? [{ ...outcome, text }]).filter(
-    (p) => p.roll !== undefined,
-  );
 
 type CreationProposal = Extract<
   Input,
@@ -2931,7 +2923,7 @@ export class BotPlay {
     context: WorldContext,
     at: number,
     concealed = false,
-    playerRequest = false,
+    requester?: string,
   ): Promise<Plan> {
     const instant = (id: string) =>
       session.data.members.find((m) => m.actorId === id)?.instant;
@@ -3030,7 +3022,7 @@ export class BotPlay {
     let protectedTarget = false;
     let endedState = false;
     if (effect) {
-      const preview = playerRequest && !npc;
+      const preview = !!requester && !npc;
       const otherParticipant = session.data.members.some(
         (member) =>
           member.actorId === effect.targetId && member.actorId !== actorId,
@@ -3088,7 +3080,7 @@ export class BotPlay {
         );
         combatPolicy = policy.combat;
         protectedTarget = policy.protectedActors.has(effect.targetId);
-        if (playerRequest && !npc && protectedTarget)
+        if (requester && !npc && protectedTarget)
           reject(
             "NON_COMBAT_AREA",
             "相手は非戦闘地域にいるため、対抗行動はできません",
@@ -3133,7 +3125,9 @@ export class BotPlay {
                 name: victim.name,
                 description: victim.description,
                 count: victim.count,
-                ...(await this.#instantMaterials(context, effect.targetId)),
+                ...(judgment
+                  ? {}
+                  : await this.#instantMaterials(context, effect.targetId)),
               },
               ...facts,
             ]
@@ -3207,14 +3201,17 @@ export class BotPlay {
               )
             : undefined,
           person && !npc ? subjects : [],
-          stateRelations(facts, subjects),
+          stateRelations(
+            selected.filter((fact) => "node" in fact),
+            subjects,
+          ),
           subjects.length > 0 && !!previous,
           !npc && !protectedActor,
-          playerRequest && (person || victim) ? request : undefined,
+          requester && (person || victim) ? request : undefined,
           { actor: protectedActor, target: protectedTarget },
           !victim,
           {
-            recordAction: playerRequest && !npc,
+            recordAction: !!requester && !npc,
             drops: drops
               .filter((d) => d.rule.kind === "existence")
               .map(({ id, rule }) => ({
@@ -3222,8 +3219,14 @@ export class BotPlay {
                 label: rule.species,
                 description: rule.description,
               })),
-            ...(playerRequest && !npc
-              ? { reasonView: { context, targets: [effect.targetId] } }
+            ...(requester
+              ? {
+                  reasonView: {
+                    context,
+                    viewer: requester,
+                    targets: [effect.targetId],
+                  },
+                }
               : {}),
           },
         );
@@ -3339,7 +3342,7 @@ export class BotPlay {
       ? (outcome.setting?.fumble?.text ?? "")
       : "";
     const resultText =
-      playerRequest && effect
+      requester && effect
         ? outcome.success
           ? `対抗行動の判定に成功しました。${appliedEffect}`
           : `対抗行動の判定は失敗しました${outcome.reason ? `（${outcome.reason}）` : ""}。${fumbleState}`
@@ -7828,7 +7831,7 @@ export class BotPlay {
     requestId: string,
     attempt: CreationAttempt,
     latestAttemptId: string | undefined,
-    factorField?: FactorField,
+    factorField: FactorField,
   ): Promise<CreationRoll | undefined> {
     const { scope, text, facts } = attempt;
     const key = createHash("sha256").update(text).digest("hex");
@@ -7898,15 +7901,13 @@ export class BotPlay {
       [...after].some((fact) => !before.has(fact))
     )
       return;
-    const factors = factorField && previous.factors?.[factorField];
+    const factors = previous.factors?.[factorField];
     return {
       setting: previous.setting,
       roll: previous.roll,
       success: false,
       repeated: true,
-      ...(factorField && factors && factors.length
-        ? { [factorField]: factors }
-        : {}),
+      ...(factors ? { [factorField]: factors } : {}),
     };
   }
   async #creation(
@@ -7948,14 +7949,10 @@ export class BotPlay {
     } = {},
   ) {
     const explore = exploreFrom !== undefined;
-    const factorField = (
-      operations: BelongingOp[] | undefined,
-    ): FactorField | undefined =>
+    const factorField = (operations: BelongingOp[] | undefined): FactorField =>
       operations?.some((op) => op.type === "learn" && op.person === actor)
         ? "learningFactors"
-        : explore || itemGeneration(operations)
-          ? "diceFactors"
-          : undefined;
+        : "diceFactors";
     type Result = (
       | CreationRoll
       | AppliedStatus
@@ -8533,7 +8530,9 @@ export class BotPlay {
       const criteria =
         (explore ? policy.explore : policy.criteria) +
         "\n" +
-        dicePrompt(pool, !!explore);
+        dicePrompt(pool, !!explore) +
+        "\n" +
+        learningFactorsPrompt;
       const fields = diceFields(pool, !!explore);
       const creationDice = work ? WorkDice(pool) : DiceSetting(pool);
       const Dice = observe
@@ -8585,14 +8584,20 @@ export class BotPlay {
               actor,
               selectedNodes,
               exploreFrom ? [exploreFrom] : [],
+              observe ? [observe.targetId] : [],
             )
           : undefined;
+        // 状態終了の短い入力にはノードの代わりに、終了対象の関係IDと本文が入る。
+        if (otherReferences && ending === actor)
+          for (const state of nodes[0]?.states ?? [])
+            if ("relationId" in state && "text" in state)
+              otherReferences.set(`state:${state.relationId}`, {
+                label: `状態「${state.text}」`,
+              });
         const referencesFor = (position: number) =>
           selectedFields[position] === "learningFactors"
             ? learnReferences
-            : selectedFields[position] === "diceFactors"
-              ? otherReferences
-              : undefined;
+            : otherReferences;
         const referencesInput = (position: number) => {
           const references = referencesFor(position);
           return references?.size
@@ -8621,10 +8626,17 @@ export class BotPlay {
               rawValue &&
               typeof rawValue === "object"
             ) {
-              const { learningFactors: factors, ...fields } =
-                rawValue as Record<string, unknown>;
+              const {
+                learningFactors: factors,
+                fumbleFactors,
+                ...fields
+              } = rawValue as Record<string, unknown>;
               factorsByProposal.set(fresh[i]!.index, {
-                [factor]: resolveLearningFactors(references, factors),
+                [factor]: resolveLearningFactors(
+                  references,
+                  factors,
+                  fumbleFactors,
+                ),
               });
               rawValue = fields;
             }
@@ -8731,7 +8743,6 @@ export class BotPlay {
                       (!explore
                         ? "itemGenerationがtrueの案で、新しく作る物品が人間を含む生きた生物そのもの、またはその生物を呼ぶための召喚石なら、ダイス設定のsummons:[{id,name}]に物品ノードのIDと、生物の呼称を返す。中身を委ねられた物品も確定する中身で判断する。死骸・素材・生物をかたどった道具は含めない。サーバーが対象の物品を召喚石にする。既存の個人への作用はindividualsにも返す。"
                         : "") +
-                      learningFactorsPrompt +
                       (explore
                         ? "探索の基準が拒否を指定した案は {reject:申請者に伝える具体的な理由} だけを返す。その他はダイス設定を返す。" +
                           explorePrompt
@@ -8759,6 +8770,7 @@ export class BotPlay {
                 endStateTargetId
                   ? {
                       premise,
+                      ...referencesInput(0),
                       targetId: endStateTargetId,
                       self: endStateTargetId === actor,
                       text: fresh[0]!.text,
@@ -8769,6 +8781,7 @@ export class BotPlay {
                         actor,
                         text: fresh[0]!.text,
                         allowApply: true,
+                        ...referencesInput(0),
                         states: nodes[0]!.states,
                         confirmed,
                       }
@@ -9271,6 +9284,66 @@ export class BotPlay {
           ...(ended.length ? { ended } : {}),
         };
     }
+  }
+  async diceReasons(
+    db: Db,
+    requests: {
+      id: string;
+      command: string;
+      text: string;
+      outcome: unknown;
+      creation_rolls: CreationRoll[] | null;
+    }[],
+  ) {
+    const checks = requests.flatMap((request) => {
+      const creation = request.creation_rolls?.filter(
+        (roll) => roll.roll !== undefined,
+      );
+      return playedDice(request.outcome, request.text).map((die, i) => ({
+        request: request.id,
+        die,
+        creation: creation?.[i],
+        opposition:
+          die.opponentId && request.command === "vehicle-request-control"
+            ? derivedId(`${request.id}:vehicle-opposition:${die.opponentId}`)
+            : request.command === "oppose" || request.command === "npc-action"
+              ? request.id
+              : undefined,
+      }));
+    });
+    const ids = checks.flatMap(({ opposition }) =>
+      opposition ? [opposition] : [],
+    );
+    const rows = ids.length
+      ? (
+          await db.query<{ id: string; factors: LearningFactor[] | null }>(
+            "SELECT id,factors FROM bot_dice WHERE id=ANY($1::uuid[])",
+            [ids],
+          )
+        ).rows
+      : [];
+    const opposed = new Map(rows.map(({ id, factors }) => [id, factors ?? []]));
+    const results = new Map<
+      string,
+      { learningReasons?: string[]; diceReasons?: string[] }
+    >();
+    for (const { request, die, creation, opposition } of checks) {
+      const reasons = results.get(request) ?? {};
+      const contest = opposition && opposed.get(opposition);
+      const field =
+        !contest && creation?.learningFactors
+          ? "learningReasons"
+          : "diceReasons";
+      const factors =
+        contest || creation?.learningFactors || creation?.diceFactors;
+      const messages = (reasons[field] ??= []);
+      // 対抗の申請文には実際に成立しなかった結果も書ける。履歴には出目の見出しを使う。
+      const label = opposition && !die.opponentId ? "" : (die.text ?? "");
+      messages.push(...factorMessages(label, factors));
+      if (die.fumble) messages.push(...factorMessages(label, factors, true));
+      results.set(request, reasons);
+    }
+    return results;
   }
   async #playerDiceReferences(
     world: string,
@@ -9853,7 +9926,13 @@ export class BotPlay {
           requestId,
           undefined,
           false,
-          { reasonView: { context, targets: [vehicleId, opponentId] } },
+          {
+            reasonView: {
+              context,
+              viewer: actor,
+              targets: [vehicleId, opponentId],
+            },
+          },
         );
         const success = roll.roll <= roll.setting.successThrough;
         contests.push({
@@ -9957,7 +10036,7 @@ export class BotPlay {
         context,
         w.at,
         false,
-        true,
+        actor,
       );
     }
     if (isVehicleCommand(input)) {
@@ -10084,7 +10163,7 @@ export class BotPlay {
         context,
         w.at,
         concealed,
-        true,
+        actor,
       );
       await db.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
         input.requestId,
@@ -11882,7 +11961,7 @@ export class BotPlay {
           : undefined;
         if (stateSubjects.length)
           await this.#rememberStateBasis(input.requestId, context);
-        const allowedEnds = stateRelations(materials, stateSubjects);
+        const allowedEnds = stateRelations(selected, stateSubjects);
         const saved = await this.#oppositionRoll(
           world,
           input.requestId,
@@ -11909,7 +11988,7 @@ export class BotPlay {
           false,
           {
             recordAction: !protectedTarget,
-            reasonView: { context, targets: opponents },
+            reasonView: { context, viewer: actor, targets: opponents },
           },
         );
         success = saved.roll <= saved.setting.successThrough;
@@ -12868,18 +12947,18 @@ export class BotPlay {
     }: {
       recordAction?: boolean;
       drops?: { id: string; label: string; description: string }[];
-      reasonView?: { context: WorldContext; targets: string[] };
+      reasonView?: { context: WorldContext; viewer: string; targets: string[] };
     } = {},
   ) {
     const { pool, fumble } = await readDicePolicy(this.pool, world);
     const settingSchema = DiceSetting(pool);
     const perceptionSchema = Perception(pool);
     const references =
-      reasonView && typeof actor === "string" && Array.isArray(materials)
+      reasonView && Array.isArray(materials)
         ? await this.#playerDiceReferences(
             world,
             reasonView.context,
-            actor,
+            reasonView.viewer,
             materials,
             [],
             reasonView.targets,
@@ -12931,9 +13010,16 @@ export class BotPlay {
         : parsed;
       const fields = z.record(z.string(), z.unknown()).parse(dice);
       const factors = references
-        ? resolveLearningFactors(references, fields.learningFactors)
+        ? resolveLearningFactors(
+            references,
+            fields.learningFactors,
+            fields.fumbleFactors,
+          )
         : undefined;
-      if (references) delete fields.learningFactors;
+      if (references) {
+        delete fields.learningFactors;
+        delete fields.fumbleFactors;
+      }
       const performed = recordAction
         ? (requirePerformed
             ? PerformedAction
@@ -16132,45 +16218,17 @@ export class BotPlay {
       const outcome = result.outcome as Partial<ProposalOutcome> | undefined;
       const dice = playDiceMessages(outcome);
       if (dice.length) result.dice = dice;
-      const rolls = saved.creation_rolls?.filter(
-        (roll) => roll.roll !== undefined,
-      );
-      const adjudicated = rolledOutcomes(
-        outcome,
-        ("text" in input && input.text) || "",
-      );
-      const learningReasons = adjudicated.flatMap((p, index) =>
-        factorMessages(p.text, rolls?.[index]?.learningFactors),
-      );
-      const diceReasons = adjudicated.flatMap((p, index) =>
-        factorMessages(p.text, rolls?.[index]?.diceFactors),
-      );
-      const contests = (
-        outcome as { contests?: { opponentId: string }[] } | undefined
-      )?.contests;
-      const opposition =
-        input.command === "vehicle-request-control" && contests
-          ? contests.map(({ opponentId }, index) => ({
-              id: derivedId(
-                `${input.requestId}:vehicle-opposition:${opponentId}`,
-              ),
-              text: `対抗判定 ${index + 1}`,
-            }))
-          : input.command === "oppose" && outcome?.roll !== undefined
-            ? [{ id: input.requestId, text: input.text }]
-            : [];
-      if (opposition.length) {
-        const { rows } = await db.query<{
-          id: string;
-          factors: LearningFactor[];
-        }>(
-          "SELECT id, factors FROM bot_dice WHERE id=ANY($1::uuid[]) AND factors IS NOT NULL",
-          [opposition.map(({ id }) => id)],
-        );
-        const byId = new Map(rows.map(({ id, factors }) => [id, factors]));
-        for (const { id, text } of opposition)
-          diceReasons.push(...factorMessages(text, byId.get(id)));
-      }
+      const reasons = (
+        await this.diceReasons(db, [
+          {
+            id: input.requestId,
+            command: input.command,
+            outcome,
+            text: "text" in input ? (input.text ?? "") : "",
+            creation_rolls: saved.creation_rolls,
+          },
+        ])
+      ).get(input.requestId);
       const parts = individualOutcomes(outcome?.proposals ?? []);
       const refusalMessages = (parts.length ? parts : [outcome]).flatMap(
         (p) => {
@@ -16231,11 +16289,7 @@ export class BotPlay {
             }
           : {}),
       };
-      return await finish({
-        ...result,
-        ...(learningReasons.length ? { learningReasons } : {}),
-        ...(diceReasons.length ? { diceReasons } : {}),
-      });
+      return await finish({ ...result, ...reasons });
     } catch (error) {
       // Persist a deadline processed by the request that it invalidated.
       await db.query(
