@@ -26,15 +26,29 @@ export const keyNames = [
   "HYDRA_PAIRWISE_SALT",
 ];
 
-export function apiService(caddyfile) {
+export function routeFile(caddyfile) {
+  return /^# (?:initializing )?(active-api(?:-alt)?)\n/.exec(caddyfile)?.[1];
+}
+
+export async function configuredApi(caddyfile, read) {
+  const file = routeFile(caddyfile);
+  if (file) {
+    const slot = (await read(file)).toString().trim();
+    if (slot === "initial") return "api";
+    if (slot !== "api" && slot !== "api-next")
+      throw new Error("API転送先が不正です");
+    return slot;
+  }
+  // 固定転送先を持つ旧版の設定。
   return caddyfile.startsWith("# api-next\n") ? "api-next" : "api";
 }
 
 export function caddy(
   config,
   env,
-  { api = "api", web = "/srv", initializing = false } = {},
+  { file = "active-api", initializing = false } = {},
 ) {
+  const selector = `{file./etc/caddy/${file}}`;
   const tlsMode = z
     .enum(["auto", "internal"])
     .parse(
@@ -47,32 +61,41 @@ export function caddy(
 }
 https://${host} {
   ${tls}
+  import app_route
   ${protect}
   @auth path /auth/*
   redir @auth ${env.ORY_KRATOS_PUBLIC_URL}{uri} 303
   handle /api/* {
-    reverse_proxy ${api}:3000
+    reverse_proxy {app_api}:3000
   }
   handle {
-    root * ${web}/${root}
+    root * {app_web}/${root}
     try_files {path} /index.html
     file_server
   }
 }`;
-  return `# ${initializing ? "initializing" : api}
+  return `# ${initializing ? "initializing " : ""}${file}
 {
   admin off
   auto_https disable_redirects
 }
+(app_route) {
+  map ${selector} {app_api} {app_web} {
+    initial api /srv
+    api api /etc/caddy/site-api
+    api-next api-next /etc/caddy/site-api-next
+  }
+}
 http://:3000 {
+  import app_route
   bind 0.0.0.0
   @probe {
     remote_ip 127.0.0.1
     path /
   }
-  respond @probe ${api}
+  respond @probe ${selector}
   handle /internal/auth/invitation {
-    reverse_proxy ${api}:3000
+    reverse_proxy {app_api}:3000
   }
   respond 404
 }
@@ -83,6 +106,7 @@ http://api.${config.domain}:80 {
 }
 https://api.${config.domain} {
   ${tls}
+  import app_route
   ${protect}
   @internal path /internal/*
   handle @internal {
@@ -94,7 +118,7 @@ https://api.${config.domain} {
       method POST
       path /self-service/login /self-service/registration
     }
-    forward_auth @attempt ${api}:3000 {
+    forward_auth @attempt {app_api}:3000 {
       uri /internal/auth/attempt
     }
     reverse_proxy kratos:4433
@@ -104,7 +128,7 @@ https://api.${config.domain} {
     reverse_proxy hydra:4444
   }
   handle {
-    reverse_proxy ${api}:3000
+    reverse_proxy {app_api}:3000
   }
 }
 `;
@@ -191,6 +215,9 @@ export async function renderDeployment(directory) {
     caddy(config, env),
     { mode: 0o644 },
   );
+  await writeFile(join(root, "configuration/public/active-api"), "initial", {
+    mode: 0o644,
+  });
   return { config, env, root };
 }
 

@@ -1376,6 +1376,7 @@ function instantReductionText({
   return `一団のうち${count}体が${change}（残り${remaining}体）`;
 }
 const diceStatePrompt =
+  "人物設定を引用した発言・申請や本人の自己認識（interpret）は、その人物がそう語る根拠です。能力の効力や成功範囲は、世界の基準と、そこで確定した技能・経験・道具・状態が今回の使用条件を満たすかで決めます。自己申告だけで効果を加えたり被害を無効にしたりしません。" +
   "同じ対象の確定済みの状態（states）が矛盾するときは、状態が有効になった時点（since）が新しい記述を、矛盾する範囲の判定に使う。同じ時点の記述には新旧の差をつけない。申請中の変化は成功前の状態に含めない。";
 const stateEndsPrompt =
   "人物の状態が終了する場合は、申請の意図と状態の本文を照合し、成功時に終了する現在の状態のrelationIdをendEdgesに返す。候補は対象人物のstatesでrelationIdが付いたもの。申請の終了IDが別の性質を指す場合は意図に合う状態だけを選ぶ。終了するものがなければ空配列。";
@@ -1390,6 +1391,28 @@ const commandRestrictionsPrompt = (field: string) =>
   'には、その状態が有効な間に常にできない操作だけを指定する。"say"は発声（身振りや筆談は残る）、"move"は本人の移動、"vehicle-travel"は乗り物の運行。成功率が下がるだけの操作や、状況次第でできる操作は含めない。制限がなければ空配列。';
 export const defaultFumbleCriteria =
   "行動そのものの危険、申請に書かれた進め方、本人の状態と持ち物から、失敗がさらに悪い結果になる見込みをダイスの基準値で設定する。本人に残る変化がなければ設定しない";
+export async function readDicePolicy(db: Db, world: string) {
+  const row = (
+    await db.query<{
+      dice: WorldDice | null;
+      skill_criteria: string;
+      explore_criteria: string;
+      criteria: string;
+      fumble_criteria: string;
+    }>(
+      "SELECT dice,criteria,fumble_criteria,skill_criteria,explore_criteria FROM creation_policy WHERE world_id=$1",
+      [world],
+    )
+  ).rows[0];
+  return {
+    pool: row?.dice ?? defaultDice,
+    skill: row?.skill_criteria || defaultSkillCriteria,
+    explore: row?.explore_criteria || defaultExploreCriteria,
+    criteria: row?.criteria || defaultCreationCriteria,
+    fumble: row?.fumble_criteria || defaultFumbleCriteria,
+  };
+}
+
 const fumblePrompt = (criteria: string) =>
   "ファンブルの基準に照らして、この行動が失敗したうえ、さらに悪い結果として申請者本人に変化が残り得るなら、同じ応答にfumble:{through:整数,text:文字列,minutes:整数}を加える。失敗したときだけ同じ個数・面数でもう一度振り、出目がthrough以下ならtextを申請者本人の状態として記録する。throughは出目の最小値以上、最大値未満。textは変化後の本人の状態を、後から本人だけを調べた人が読める一文で書き、経緯や原因の推測を除く。部位や程度は一つに決め、複数の候補を並べない。死亡は含めない。該当しなければfumbleを省く。" +
   minutesPrompt +
@@ -5809,27 +5832,6 @@ export class BotPlay {
       db.release();
     }
   }
-  async #dicePolicy(world: string) {
-    const row = (
-      await this.pool.query<{
-        dice: WorldDice | null;
-        skill_criteria: string;
-        explore_criteria: string;
-        criteria: string;
-        fumble_criteria: string;
-      }>(
-        "SELECT dice,criteria,fumble_criteria,skill_criteria,explore_criteria FROM creation_policy WHERE world_id=$1",
-        [world],
-      )
-    ).rows[0];
-    return {
-      pool: row?.dice ?? defaultDice,
-      skill: row?.skill_criteria || defaultSkillCriteria,
-      explore: row?.explore_criteria || defaultExploreCriteria,
-      criteria: row?.criteria || defaultCreationCriteria,
-      fumble: row?.fumble_criteria || defaultFumbleCriteria,
-    };
-  }
   async #stealthDice(
     world: string,
     context: WorldContext,
@@ -5840,7 +5842,7 @@ export class BotPlay {
     checks: { key: string; actorId: string }[],
   ) {
     if (!checks.length) return {};
-    const { pool } = await this.#dicePolicy(world);
+    const { pool } = await readDicePolicy(this.pool, world);
     const witness = z.strictObject(diceFields(pool));
     const read = (raw: string) => {
       const settings = z.record(z.string(), witness).parse(parseOutput(raw));
@@ -6996,13 +6998,7 @@ export class BotPlay {
         states.push(node.text);
     }
     const premise = (await this.construction.get(world)).initial_prompt;
-    const criteria =
-      (
-        await this.pool.query<{ criteria: string }>(
-          "SELECT criteria FROM creation_policy WHERE world_id=$1",
-          [world],
-        )
-      ).rows[0]?.criteria || defaultCreationCriteria;
+    const { criteria } = await readDicePolicy(this.pool, world);
     return { target, states, premise, criteria };
   }
 
@@ -8286,7 +8282,7 @@ export class BotPlay {
         string,
         { indexes: number[]; nodes: typeof nodes; filtered: boolean }
       >();
-      const policy = await this.#dicePolicy(world);
+      const policy = await readDicePolicy(this.pool, world);
       const locations = await currentPlaces();
       for (const [i, packet] of packets.entries()) {
         if (!packet) {
@@ -12543,7 +12539,7 @@ export class BotPlay {
       reasonView?: { context: WorldContext; targets: string[] };
     } = {},
   ) {
-    const { pool, fumble } = await this.#dicePolicy(world);
+    const { pool, fumble } = await readDicePolicy(this.pool, world);
     const settingSchema = DiceSetting(pool);
     const perceptionSchema = Perception(pool);
     const references =

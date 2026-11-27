@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { apiService, caddy } from "./config.mjs";
+import { configuredApi, routeFile, caddy } from "./config.mjs";
 import { command } from "./engine.mjs";
 
 const slots = ["api", "api-next"];
@@ -29,11 +29,14 @@ export async function activeApi(compose) {
   const contents = (
     await compose("exec", "-T", "caddy", "cat", "/etc/caddy/Caddyfile")
   ).toString();
-  const initialized = /^# (api|api-next)\n/.test(contents);
-  const api = await probe(compose);
+  const initialized = /^# (api|api-next|active-api(?:-alt)?)\n/.test(contents);
+  const token = await probe(compose);
+  const api = token === "initial" ? "api" : token;
   if (!initialized) return { api: "api", initialized };
-  if (slots.includes(api) && api === apiService(contents))
-    return { api, initialized };
+  const configured = await configuredApi(contents, (file) =>
+    compose("exec", "-T", "caddy", "cat", `/etc/caddy/${file}`),
+  );
+  if (slots.includes(api) && api === configured) return { api, initialized };
   throw new Error("稼働中のCaddyのAPI転送先を確認できません");
 }
 
@@ -55,26 +58,35 @@ export async function stageWeb(deployment, api) {
     "sh",
     site,
   ]);
-  return `/etc/caddy/site-${api}`;
 }
 
 export async function setApiRoute(deployment, compose, controller, route) {
   const previous = (
     await compose("exec", "-T", "caddy", "cat", "/etc/caddy/Caddyfile")
   ).toString();
-  const contents = caddy(deployment.config, deployment.env, route);
-  const previousApi = await probe(compose);
-  const proxy = (await compose("ps", "-q", "caddy")).toString().trim();
-  const file = join(deployment.root, "Caddyfile.next");
-  let published = false;
-  const publish = async (text, validate) => {
-    await writeFile(file, text);
-    await command([
-      "cp",
+  const current = routeFile(previous);
+  const configFor = (file) =>
+    caddy(deployment.config, deployment.env, {
       file,
-      `${controller}:/configuration/public/Caddyfile.next`,
-    ]);
-    if (validate)
+      initializing: route.initializing,
+    });
+  const reload = !current || previous !== configFor(current);
+  // 設定自体の更新時は旧設定の参照先を保ち、再読み込みの失敗時に戻せるようにする。
+  const selector = reload
+    ? current === "active-api"
+      ? "active-api-alt"
+      : "active-api"
+    : current;
+  const previousApi = await probe(compose);
+  const target = route.initializing ? "initial" : route.api;
+  if (current && ![...slots, "initial"].includes(previousApi))
+    throw new Error("切り替え前のAPI転送先を確認できません");
+  const publish = async (name, text) => {
+    const file = join(deployment.root, name + ".next");
+    await writeFile(file, text);
+    const dest = "/configuration/public/" + name;
+    await command(["cp", file, `${controller}:${dest}.next`]);
+    if (name === "Caddyfile")
       await compose(
         "exec",
         "-T",
@@ -86,15 +98,10 @@ export async function setApiRoute(deployment, compose, controller, route) {
         "--config",
         "/etc/caddy/Caddyfile.next",
       );
-    await compose(
-      "exec",
-      "-T",
-      "controller",
-      "mv",
-      "/configuration/public/Caddyfile.next",
-      "/configuration/public/Caddyfile",
-    );
-    published = true;
+    await compose("exec", "-T", "controller", "mv", dest + ".next", dest);
+  };
+  const signal = async () => {
+    const proxy = (await compose("ps", "-q", "caddy")).toString().trim();
     await command(["kill", "--signal=USR1", proxy]);
   };
   const waitForRoute = async (api) => {
@@ -106,14 +113,19 @@ export async function setApiRoute(deployment, compose, controller, route) {
       `CaddyのAPI転送先を確認できません。${api || "初期設定"}への再読み込みが未確認です`,
     );
   };
+  await publish(selector, target);
+  if (reload) await publish("Caddyfile", configFor(selector));
   try {
-    await publish(contents, true);
-    await waitForRoute(route.api);
+    if (reload) await signal();
+    await waitForRoute(target);
   } catch (error) {
-    if (published) {
-      await publish(previous, false);
-      await waitForRoute(previousApi);
+    if (reload) {
+      await publish("Caddyfile", previous);
+      await signal();
+    } else {
+      await publish(selector, previousApi);
     }
+    await waitForRoute(previousApi);
     throw error;
   }
 }

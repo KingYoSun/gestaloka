@@ -7,7 +7,11 @@ import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldConstruction } from "@gestaloka/server/construction";
 import { WorldAccess } from "@gestaloka/server/access";
 import { createApp } from "../../apps/api/src/app.js";
-import { modelEnvironment, approvedTransport } from "../support/model.js";
+import {
+  modelEnvironment,
+  approvedTransport,
+  fixtureBody,
+} from "../support/model.js";
 import { fixtureAuth } from "../support/auth.js";
 import { legacyPlayer } from "../support/legacy-player.js";
 import { isolatedDatabases } from "../support/isolated-db.js";
@@ -1237,6 +1241,26 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
     )
   ).rows[0].request;
   expect(joinRequest.startingItems).toEqual(startingItems);
+  const participantCriteria = {
+    creation: "世界外からの招来は認めない",
+    skill: "防御技能には使用条件が必要",
+  };
+  const policy = (await auth.operations.execute(
+    scene.subject,
+    randomUUID(),
+    {
+      operation: "creationPolicy.put",
+      worldId: scene.id,
+      criteria: participantCriteria.creation,
+      skillCriteria: participantCriteria.skill,
+      reason: "参加ごとの生成基準を確認",
+    },
+    { players: access.players },
+  )) as { defaultCriteria: string; defaultSkillCriteria: string };
+  expect(joinRequest.participantCriteria).toEqual({
+    creation: policy.defaultCriteria,
+    skill: policy.defaultSkillCriteria,
+  });
   const oldSettings = joinRequest.actionText;
   await auth.operations.execute(scene.subject, randomUUID(), {
     operation: "presets.put",
@@ -1260,7 +1284,37 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
     (await access.players.list(one.subject, scene.id)).items[0],
   ).toMatchObject({ id: id1, actorId: null, state: "joining" });
   await access.players.tick(id1);
-  await access.players.tick(id2);
+  // 初回の候補を差し戻し、次の候補だけがグラフに残ることを確認する。
+  const transport = model.transport;
+  let firstCandidate: string | undefined;
+  const review = vi
+    .spyOn(model, "transport")
+    .mockImplementation(async (url, options) => {
+      const result = await transport(url, options);
+      if (String(url).endsWith(":countTokens")) return result;
+      const input = JSON.parse(fixtureBody(options).messages[1].content);
+      const request = input.commitReview?.request ?? input.request;
+      expect(request.participantCriteria).toEqual(participantCriteria);
+      if (!input.commitReview || firstCandidate) return result;
+      firstCandidate = input.commitReview.candidate.newParticipantId;
+      const data = await result.json();
+      data.choices[0].message.content = JSON.stringify({
+        type: "revise",
+        reason: "来歴だけに基づく効力を除いてください",
+      });
+      return Response.json(data);
+    });
+  try {
+    await access.players.tick(id2);
+  } finally {
+    review.mockRestore();
+  }
+  expect(firstCandidate).toBeDefined();
+  expect(
+    await runtime.agent.store
+      .context((await runtime.get(scene.id)).world_id!)
+      .node(firstCandidate!),
+  ).toBeUndefined();
   const a = (await access.players.list(one.subject, scene.id)).items[0]!
       .actorId!,
     b = (await access.players.list(two.subject, scene.id)).items[0]!.actorId!;
