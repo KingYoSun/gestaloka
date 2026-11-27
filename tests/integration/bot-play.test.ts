@@ -526,6 +526,110 @@ const locate = (subjectId: string, placeId: string) => ({
   ],
 });
 
+test("同じ所在へのlocateは変更0件と所持先を案内し、moveで初めて品が移る", async () => {
+  const f = await fixture(1);
+  const actor = f.actors[0]!;
+  const seed = await f.apply(
+    ["本", "箱"].map((label) => ({
+      type: "create",
+      label,
+      holder: actor,
+      basis: "持参した",
+    })),
+  );
+  const items = seed.changes.nodes.filter((n) => n.kind === "existence");
+  const book = items.find((n) => n.text === "本")!.id;
+  const box = items.find((n) => n.text === "箱")!.id;
+  const operations = items.map(({ id }) => ({
+    type: "locate",
+    subjectId: id,
+    text: "広場で荷物を下ろす",
+    aboutIds: [f.place],
+  }));
+  const direct = (operations: unknown[], requestId = randomUUID()) =>
+    f.send(0, {
+      command: "apply",
+      expectedSp: 0,
+      dependencies: [],
+      requestId,
+      action: { type: "direct", text: "荷物を整理する", operations },
+    });
+  const changed = await direct(operations);
+  expect(changed).toMatchObject({
+    state: "accepted",
+    action: { message: expect.not.stringContaining("変更は0件") },
+  });
+  const request = randomUUID();
+  const same = await direct(operations, request);
+  expect(same).toMatchObject({
+    state: "accepted",
+    spentSp: 0,
+    commitId: request,
+    action: {
+      message: expect.stringMatching(
+        /変更は0件.*対象2件の所在はすでに「広場」.*所持先.*move/,
+      ),
+    },
+  });
+  expect((await direct(operations, request)).action).toEqual(same.action);
+  expect(await f.store.context(f.graph).holding(book, false)).toMatchObject({
+    source: actor,
+  });
+  const moved = await direct([
+    { type: "move", item: book, from: actor, to: box, basis: "本をしまう" },
+  ]);
+  expect(moved.items).toMatchObject([
+    { itemId: book, holding: { fromId: actor, toId: box } },
+  ]);
+  expect(moved.action).toMatchObject({
+    message: expect.not.stringContaining("変更は0件"),
+  });
+});
+
+test("同行者の所在が同じときは承認後に両者へ変更0件を伝える", async () => {
+  const f = await fixture(2);
+  const [sender, companion] = f.actors as [string, string];
+  await f.send(1, { command: "contact", targetId: sender });
+  const requestId = randomUUID();
+  const pending = await f.send(0, {
+    command: "apply",
+    requestId,
+    expectedSp: 0,
+    dependencies: [],
+    action: {
+      type: "direct",
+      text: "広場に集合する",
+      operations: [sender, companion].map((subjectId) => ({
+        type: "locate",
+        subjectId,
+        aboutIds: [f.place],
+        text: "広場に集合する",
+      })),
+    },
+  });
+  expect(pending.state).toBe("receiving");
+  expect(pending.action).toMatchObject({
+    message: expect.not.stringContaining("変更は0件"),
+  });
+  const approved = await f.send(1, {
+    command: "receive",
+    applicationId: requestId,
+    accept: true,
+  });
+  expect(approved.action).toMatchObject({
+    message: expect.stringContaining("変更は0件"),
+  });
+  const feed = await access.botPlay.turnFeed(f.world, sender, "0");
+  expect(feed.receiptResults).toMatchObject([
+    {
+      receiptResult: {
+        applicationId: requestId,
+        message: expect.stringContaining("変更は0件"),
+      },
+    },
+  ]);
+});
+
 test("乗降と運行は専用操作とlocateで同じ所在になり、通行条件と出発後の乗り場を照合する", async () => {
   const f = await fixture();
   const [driver, passenger, outside] = f.actors as [string, string, string];

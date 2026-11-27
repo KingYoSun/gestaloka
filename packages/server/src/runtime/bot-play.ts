@@ -653,7 +653,7 @@ export type Session = {
       items?: ItemOutcome[];
       text: string;
       // 所在の変更だけの申請では、却下した同行者を除いて確定する。
-      locates?: BelongingOp[];
+      locates?: Locate[];
       mixedMoves?: Locate[];
       declined?: string[];
       parallel?: { departAloneOnTimeout: boolean };
@@ -686,7 +686,7 @@ type Plan = {
   fatal?: string[];
   spUseProhibitionGrants?: string[] | undefined;
   appearances?: Appearance[];
-  locates?: BelongingOp[];
+  locates?: Locate[];
   mixedMoves?: Locate[];
   vehicleControl?: VehicleApplication;
   companion?: string;
@@ -1044,6 +1044,28 @@ const observationId = (requestId: string) =>
   derivedId(`${requestId}:observation`);
 const observationReader = (id: string, actor: string) =>
   derivedId(`${id}:see:${actor}`);
+
+async function unchangedLocateMessage(
+  locates: Locate[] | undefined,
+  receipt: { at: number; changes: Change },
+  context: WorldContext,
+) {
+  if (
+    !locates?.length ||
+    Object.values(receipt.changes).some((rows) => rows.length)
+  )
+    return;
+  const destinations = new Map(
+    locates.map((op) => [op.subjectId, destinationOf(op)]),
+  );
+  const places = new Set(destinations.values());
+  const [placeId] = places;
+  const place =
+    places.size === 1 && placeId
+      ? (await context.node(placeId, receipt.at))?.text
+      : undefined;
+  return `所在の変更は0件です。対象${destinations.size}件の所在はすでに${place ? `「${place}」` : "指定どおり"}です。品の所持先は変わっていません。品を置く・渡すには move を使ってください。`;
+}
 
 function confirmedObservation(changes: Change, requestId: string) {
   const id = observationId(requestId);
@@ -5143,8 +5165,14 @@ export class BotPlay {
       ),
     );
     const missed = unanswered.filter((id) => !moved.has(id));
+    const locateMessage = await unchangedLocateMessage(
+      ops,
+      receipt,
+      this.store.context(w.id),
+    );
     return {
       changes: receipt.changes,
+      locateMessage,
       together:
         (r.locates ?? r.mixedMoves ?? []).filter(
           (op) => op.type === "locate" && moved.has(op.subjectId),
@@ -5163,12 +5191,15 @@ export class BotPlay {
             }
           : {}),
         ...(declined.length ? { declined } : {}),
+        ...(locateMessage ? { message: locateMessage } : {}),
         ...(missed.length
           ? {
               unanswered: missed,
-              message: r.recipients.some((id) => moved.has(id))
-                ? "受領期限に達したため、申請者と承認した同行者の移動を確定しました"
-                : "受領期限に達したため、申請者が単独で出発しました",
+              message: locateMessage
+                ? `受領期限に達しました。${locateMessage}`
+                : r.recipients.some((id) => moved.has(id))
+                  ? "受領期限に達したため、申請者と承認した同行者の移動を確定しました"
+                  : "受領期限に達したため、申請者が単独で出発しました",
             }
           : {}),
       }),
@@ -11000,7 +11031,7 @@ export class BotPlay {
       externalEffect = false,
       impossible = false,
       fatal: string[] = [],
-      locates: BelongingOp[] | undefined;
+      locates: Locate[] | undefined;
     let mixedMoves: Locate[] | undefined;
     const boardings: Boarding[] = [];
     let statusReview: StatusReview | undefined;
@@ -15385,6 +15416,8 @@ export class BotPlay {
               );
               settled = completion.settled;
               confirmedChanges = completion.changes;
+              if (completion.locateMessage)
+                result.action = { message: completion.locateMessage };
               together = completion.together;
             }
           }
@@ -16247,6 +16280,11 @@ export class BotPlay {
                     [input.requestId],
                   );
                 }
+                const locateMessage = await unchangedLocateMessage(
+                  plan.locates,
+                  receipt,
+                  plan.context,
+                );
                 if (summoned) {
                   const name = receipt.changes.nodes.find(
                     (n) => n.id === summoned,
@@ -16267,6 +16305,9 @@ export class BotPlay {
                     ? { npcId: summoned, action: { message: entryText } }
                     : {}),
                   commitId: receipt.commitId,
+                  ...(locateMessage
+                    ? { action: { message: locateMessage } }
+                    : {}),
                   ...confirmedObservation(receipt.changes, input.requestId),
                   ...plan.vehicleResult,
                   ...(plan.items?.length ? { items: plan.items } : {}),
