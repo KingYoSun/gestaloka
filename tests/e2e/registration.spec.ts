@@ -37,7 +37,8 @@ test("本人の登録操作で初代管理者となって元の画面へ戻り�
       ["terms", "利用規約"],
       ["privacy", "プライバシーポリシー"],
     ]) {
-      await page.goto(origin + "/auth/" + path);
+      const document = await page.goto(origin + "/auth/" + path);
+      expect(document?.headers()["cache-control"]).toContain("no-transform");
       await expect(
         page.getByRole("heading", { level: 1, name: heading! }),
       ).toBeVisible();
@@ -63,9 +64,10 @@ test("本人の登録操作で初代管理者となって元の画面へ戻り�
     });
     expect(direct.status()).toBe(403);
     expect((await direct.json()).code).toBe("LEGAL_CONSENT_REQUIRED");
-    await page.goto(
+    const consent = await page.goto(
       `${origin}/auth/register?return_to=${encodeURIComponent(back)}`,
     );
+    expect(consent?.headers()["cache-control"]).toContain("no-transform");
     const consentPage = page.url();
     expect(new URL(consentPage).pathname).toBe("/auth/legal");
     for (const title of ["利用規約", "プライバシーポリシー"]) {

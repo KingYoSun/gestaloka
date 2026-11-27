@@ -64,7 +64,13 @@ export async function authRoutes(
     (_request, body, done) =>
       done(null, Object.fromEntries(new URLSearchParams(String(body)))),
   );
-  legalRoutes(app, identity, operations);
+  await app.register(async (legal) => {
+    // Keep the published contact link and agreed text intact through the CDN.
+    legal.addHook("onRequest", async (_request, reply) => {
+      reply.header("Cache-Control", "no-store, no-transform");
+    });
+    legalRoutes(legal, identity, operations);
+  });
   app.get(
     "/internal/auth/attempt",
     {
