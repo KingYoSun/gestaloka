@@ -12408,6 +12408,134 @@ test("同名の別ルールと別の場所はそれぞれの一団を持ち、�
   expect(elsewhere).toMatchObject([{ count: 1 }, { count: 1 }]);
   expect(elsewhere.some((p) => first.some((a) => a.id === p.id))).toBe(false);
 });
+test("一団の出現時に設定を一度だけ確定し、その手持ちを現物で交換する", async () => {
+  const f = await fixture();
+  const buyer = f.actors[0]!;
+  const seriesId = randomUUID();
+  const coin = randomUUID();
+  const rule = randomUUID();
+  const candidate = randomUUID();
+  const setup = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, setup),
+    f.store.context(f.graph),
+    {
+      commitId: setup,
+      at: 0,
+      management: {
+        editorId: (await auth.person()).id,
+        reason: "行商の出現設定",
+        requestHash: "d".repeat(64),
+      },
+      changes: {
+        nodes: [
+          { id: coin, kind: "existence", text: "木札", count: 5, seriesId },
+          {
+            id: rule,
+            kind: "script",
+            text: "峠の行商",
+            spawn: {
+              kind: "instant-npc",
+              species: "峠の行商",
+              description: "籠を背負う",
+              probability: 1,
+              count: 1,
+            },
+          },
+          {
+            id: candidate,
+            kind: "script",
+            text: "果物を売る行商",
+            instantProfile: {
+              items: [
+                {
+                  label: "干し果物",
+                  count: 1,
+                  price: { seriesId, label: "木札", count: 2 },
+                },
+              ],
+              skills: [{ name: "目利き", text: "干した果物を見分ける" }],
+              states: ["家の果物を完売したい。"],
+            },
+          },
+        ],
+        edges: [
+          { kind: "has", source: buyer, target: coin },
+          { kind: "status", role: "content", source: f.place, target: rule },
+          {
+            kind: "status",
+            role: "about",
+            source: rule,
+            target: f.place,
+            text: "spawn-hit",
+          },
+          {
+            kind: "status",
+            role: "about",
+            source: rule,
+            target: candidate,
+            text: "spawn-profile",
+          },
+        ].map((edge) => ({ ...edge, id: randomUUID(), period: { from: 0 } })),
+        endEdges: [],
+      },
+    },
+  );
+  const search = { command: "search", query: { kind: "surroundings" } };
+  const request = { ...search, requestId: randomUUID() };
+  const appeared = await f.send(0, request);
+  expect(await f.send(0, request)).toEqual(appeared);
+  const group = (appeared.appearances as { id: string }[])[0]!.id;
+  const ctx = () => f.store.context(f.graph);
+  const before = await readBelongings(ctx(), group);
+  expect(before.items).toMatchObject([{ label: "干し果物", count: 1 }]);
+  expect(before.skills).toMatchObject([{ text: "干した果物を見分ける" }]);
+  const states = await ctx().relations(
+    group,
+    "status",
+    "out",
+    Number.MAX_SAFE_INTEGER,
+  );
+  expect(await ctx().node(states[0]!.target)).toMatchObject({
+    text: "家の果物を完売したい。",
+  });
+  expect((await f.send(0, search)).appearances).toMatchObject([{ id: group }]);
+  expect((await readBelongings(ctx(), group)).items).toEqual(before.items);
+  const offer = (
+    appeared.exchangeOffers as { id: string; itemId: string }[]
+  )[0]!;
+  const order = {
+    command: "exchange",
+    requestId: randomUUID(),
+    offerId: offer.id,
+    paymentItemId: coin,
+  };
+  const exchanged = await f.send(0, order);
+  expect(exchanged.state).toBe("accepted");
+  expect(await f.send(0, order)).toEqual(exchanged);
+  expect((await readBelongings(ctx(), buyer)).items).toContainEqual(
+    expect.objectContaining({ id: offer.itemId, label: "干し果物", count: 1 }),
+  );
+  expect((await readBelongings(ctx(), group)).items).toMatchObject([
+    { label: "木札", count: 2 },
+  ]);
+  expect((await f.send(0, search)).exchangeOffers ?? []).not.toContainEqual(
+    expect.objectContaining({ id: offer.id }),
+  );
+  await f.send(0, { command: "end-turn" });
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const { npc } = JSON.parse(String(messages[1]!.content));
+    expect(npc.states).toContain("家の果物を完売したい。");
+    expect(npc.belongings.skills).toMatchObject([
+      { text: "干した果物を見分ける" },
+    ]);
+    expect(npc.belongings.items).toMatchObject([{ label: "木札", count: 2 }]);
+    return answer(id, { command: "end-turn" });
+  });
+  await access.botPlay.tickNpcs();
+  expect(f.calls).toHaveBeenCalledOnce();
+});
+
 test("出現個体の発生用ノードへ結んだ取引は同席中だけ受領でき、代価を除いて品物を一度だけ作る", async () => {
   const f = await fixture(),
     buyer = f.actors[0]!,

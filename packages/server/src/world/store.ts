@@ -2470,6 +2470,7 @@ export class WorldStore {
       storageEffect?: StorageEffect;
       management?: { editorId: string; reason: string; requestHash: string };
       seriesGrants?: string[];
+      instantProfileSnapshot?: boolean;
       spUseProhibitionGrants?: string[];
       respawnHomeActor?: string;
       experienceReferences?: { eventId: string; ids: string[] }[];
@@ -2494,6 +2495,7 @@ export class WorldStore {
           .strict()
           .optional(),
         seriesGrants: z.array(z.uuid()).optional(),
+        instantProfileSnapshot: z.boolean().optional(),
         spUseProhibitionGrants: z.array(z.uuid()).optional(),
         respawnHomeActor: z.uuid().optional(),
         experienceReferences: z
@@ -2509,6 +2511,23 @@ export class WorldStore {
       .parse(input);
     const { commitId, at } = parsed;
     const submitted = normalizeChange(parsed.changes, at);
+    if (
+      !parsed.management &&
+      ((!parsed.instantProfileSnapshot &&
+        submitted.nodes.some(
+          (node) => node.kind === "script" && node.instantProfile,
+        )) ||
+        submitted.revisions.some(
+          (node) => node.kind === "script" && node.instantProfile,
+        ) ||
+        submitted.edges.some(
+          (edge) =>
+            edge.kind === "status" &&
+            edge.role === "about" &&
+            edge.text === "spawn-profile",
+        ))
+    )
+      throw new WorldConflict("出現時の設定は管理者が登録してください");
     if (
       submitted.edges.some((edge) => edge.kind === "required") ||
       submitted.revisions.some((node) => node.kind === "condition")
@@ -2648,6 +2667,12 @@ export class WorldStore {
               "同一性・種別・既存の記録履歴を維持できない改訂です",
             );
           const original = WorldNode.parse(JSON.parse(row.get("data")));
+          if (
+            !parsed.management &&
+            original.kind === "script" &&
+            original.instantProfile
+          )
+            throw new WorldConflict("出現時の設定は管理者が登録してください");
           if (
             original.kind === "script" &&
             node.kind === "script" &&

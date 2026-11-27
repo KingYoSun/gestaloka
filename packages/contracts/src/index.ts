@@ -66,6 +66,7 @@ export {
   PlaceSeries,
   Change,
   Appearance,
+  InstantProfile,
   InstantReduction,
   InstantReductionResult,
   WorldNode,
