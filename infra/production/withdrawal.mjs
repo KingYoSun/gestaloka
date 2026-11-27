@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 import { z } from "zod";
 import { redact, reviewRule } from "./withdrawal-review.mjs";
 
@@ -32,6 +34,8 @@ export class Withdrawals {
     if (register) {
       await this.db.query(`CREATE TABLE IF NOT EXISTS withdrawal_authority (
         source text PRIMARY KEY, id uuid UNIQUE NOT NULL, restore_after timestamptz);
+        CREATE TABLE IF NOT EXISTS withdrawal_legacy_backup(authority uuid NOT NULL REFERENCES withdrawal_authority(id),
+          job uuid NOT NULL, PRIMARY KEY(authority,job));
         CREATE TABLE IF NOT EXISTS withdrawal_receipt (
         authority uuid NOT NULL REFERENCES withdrawal_authority(id), receipt uuid PRIMARY KEY,
         user_id uuid, identity_id uuid, keep uuid[] NOT NULL, confirmed_at timestamptz NOT NULL DEFAULT now(),
@@ -49,7 +53,20 @@ export class Withdrawals {
       const id = await this.authority(secret);
       if (expected && expected !== id)
         throw new Error("WITHDRAWAL_LEDGER_MISMATCH");
-      if (!expected) await this.engine.save(marker, id);
+      if (!expected) {
+        // Legacy manifests have no authority ID. Bind only generations for
+        // which this installation has an independent completed capture receipt.
+        for (const name of await readdir(join(this.engine.root, "jobs"))) {
+          if (!name.endsWith(".json")) continue;
+          const job = await this.engine.load("jobs/" + name, null);
+          if (job?.operation === "backups.create" && job.state === "complete")
+            await this.db.query(
+              "INSERT INTO withdrawal_legacy_backup VALUES($1,$2) ON CONFLICT DO NOTHING",
+              [id, job.id],
+            );
+        }
+        await this.engine.save(marker, id);
+      }
       return id;
     }
     const id = (
@@ -77,14 +94,15 @@ export class Withdrawals {
       );
       const account = (
         await db.query(
-          `SELECT u.role FROM app_user u JOIN app_identity i ON i.id=u.id
-      WHERE u.id=$1 AND i.ory_id=$2 AND NOT u.banned`,
+          `SELECT u.role,u.banned FROM app_identity i LEFT JOIN app_user u ON i.id=u.id
+      WHERE i.id=$1 AND i.ory_id=$2`,
           [user, identity],
         )
       ).rows[0];
       if (!account) throw new Error("WITHDRAWAL_ACCOUNT_UNAVAILABLE");
       if (
         account.role === "admin" &&
+        !account.banned &&
         !(
           await db.query(
             "SELECT 1 FROM app_user WHERE role='admin' AND NOT banned AND id<>$1 LIMIT 1",
@@ -99,7 +117,7 @@ export class Withdrawals {
         await this.db.query(
           `INSERT INTO withdrawal_receipt(authority,receipt,user_id,identity_id,keep,retention_days,origin_host)
       VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(authority,user_id) DO UPDATE SET user_id=excluded.user_id
-      RETURNING receipt,confirmed_at`,
+      RETURNING receipt,confirmed_at,retention_days`,
           [
             authority,
             randomUUID(),
@@ -161,6 +179,16 @@ export class Withdrawals {
         (manifest.withdrawalAuthority && manifest.withdrawalAuthority !== id)
       )
         throw new Error("WITHDRAWAL_LEDGER_MISMATCH");
+      if (
+        !manifest.withdrawalAuthority &&
+        !(
+          await db.query(
+            "SELECT 1 FROM withdrawal_legacy_backup WHERE authority=$1 AND job=$2",
+            [id, manifest.id],
+          )
+        ).rowCount
+      )
+        throw new Error("WITHDRAWAL_LEDGER_UNAVAILABLE");
       if (resume) await resume(id);
       await db.query("COMMIT");
     } catch (error) {
@@ -300,9 +328,11 @@ export class Withdrawals {
       await db.query(
         `UPDATE operation_request r SET result=NULL,
         error='{"status":410,"code":"WITHDRAWN","message":"退会に伴い、この記録の公開を終了しました"}'
-        WHERE result IS NOT NULL AND (actor_id=$1 OR EXISTS (
-          SELECT 1 FROM player_story s WHERE s.author_id=$1 AND
-          (r.result->'story'->>'id'=s.id::text OR r.result->'items' @> jsonb_build_array(jsonb_build_object('id',s.id)))))`,
+        WHERE result IS NOT NULL AND (actor_id=$1 OR id IN (
+          SELECT cached.id FROM player_story s JOIN operation_request cached ON
+            (cached.operation='stories.read' AND cached.result->'story'->>'id'=s.id::text) OR
+            (cached.operation='stories.list' AND cached.result->'items' @> jsonb_build_array(jsonb_build_object('id',s.id)))
+          WHERE s.author_id=$1))`,
         [user],
       );
       await db.query(
@@ -399,7 +429,7 @@ export class Withdrawals {
           `UPDATE bot_chat SET payload=jsonb_set(payload,'{entries}',
           (SELECT jsonb_agg(CASE WHEN e->>'actorId'=ANY($1::text[]) THEN e||'{"label":"退会済み"}'::jsonb ELSE e END ORDER BY ord)
             FROM jsonb_array_elements(payload->'entries') WITH ORDINALITY AS items(e,ord)))
-          WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(payload->'entries') e WHERE e->>'actorId'=ANY($1::text[]))`,
+          WHERE jsonb_path_query_array(payload,'$.entries[*].actorId') ?| $1::text[]`,
           [ids],
         );
         const driver = neo4j.driver(

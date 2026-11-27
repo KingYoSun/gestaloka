@@ -7,6 +7,20 @@ import { legalContact } from "@gestaloka/server/legal";
 import { z } from "zod";
 import { authPage, escapeHtml as html } from "./auth-page.js";
 
+function deadlines(receipt: Record<string, unknown>) {
+  const start = Date.parse(String(receipt.confirmed_at));
+  const limit = (days: number) => {
+    const date = new Date(start + days * 86400000);
+    return Number.isFinite(date.getTime())
+      ? date.toLocaleString("ja-JP", {
+          timeZone: "Asia/Tokyo",
+          hour12: false,
+        }) + "（日本時間）"
+      : `確定から${days}日以内`;
+  };
+  return `<dl><dt>公開停止期限</dt><dd>${limit(1)}</dd><dt>本番原本の削除期限</dt><dd>${limit(30)}</dd><dt>バックアップを含む消去期限</dt><dd>${limit(30 + Number(receipt.retention_days))}</dd></dl>`;
+}
+
 export function withdrawalRoutes(
   app: FastifyInstance,
   identity: OryIdentity,
@@ -34,11 +48,13 @@ export function withdrawalRoutes(
         ? "バックアップの消去を確認しました。"
         : status.erased_at
           ? "本番の原本を削除しました。バックアップの消去を確認中です。"
-          : "退会を受け付けました。削除作業中です。";
+          : status.structured_at
+            ? "本人に紐付く記録の削除が済みました。運営が引用や紹介資料を個別に確認しています。"
+            : "退会を受け付けました。削除作業中です。";
       return authPage(
         reply,
         "退会の受付状況",
-        `<p>${phase}</p><p>問い合わせ窓口：${html(legalContact)}</p>`,
+        `<p>${phase}</p>${deadlines(status)}<p>問い合わせ窓口：${html(legalContact)}</p>`,
       );
     },
   );
@@ -168,7 +184,7 @@ export function withdrawalRoutes(
       return authPage(
         reply,
         "退会を受け付けました",
-        `<p>受付番号 <code>${html(receipt.receipt)}</code></p><p><a href="/auth/withdraw/status/${html(receipt.receipt)}">退会の受付状況を確認する</a>。このリンクを手元に保存してください。</p><p>個別のご相談は、受付番号を添えて運営窓口（${html(legalContact)}）へご連絡ください。</p>`,
+        `<p>受付番号 <code>${html(receipt.receipt)}</code></p>${deadlines(receipt)}<p><a href="/auth/withdraw/status/${html(receipt.receipt)}">退会の受付状況を確認する</a>。このリンクを手元に保存してください。</p><p>個別のご相談は、受付番号を添えて運営窓口（${html(legalContact)}）へご連絡ください。</p>`,
       );
     },
   );

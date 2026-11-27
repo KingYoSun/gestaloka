@@ -1701,6 +1701,7 @@ export class BotPlay {
       PRIMARY KEY(world_id,actor_id,connection_id));
       CREATE INDEX IF NOT EXISTS player_waiting_live ON player_waiting(world_id,actor_id,last_seen);
       CREATE INDEX IF NOT EXISTS bot_chat_session ON bot_chat(session_id,id);
+      CREATE INDEX IF NOT EXISTS bot_chat_entry_actors ON bot_chat USING gin(jsonb_path_query_array(payload,'$.entries[*].actorId'));
       CREATE INDEX IF NOT EXISTS bot_chat_receipt_application ON bot_chat ((payload->'receiptResult'->>'applicationId')) WHERE payload ? 'receiptResult';
       CREATE TABLE IF NOT EXISTS bot_arrival (
       id uuid PRIMARY KEY,world_id uuid NOT NULL,actor_id uuid NOT NULL,due timestamptz NOT NULL,

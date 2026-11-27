@@ -184,6 +184,9 @@ export class Operations {
         PRIMARY KEY(user_id,construction_id));
       CREATE TABLE IF NOT EXISTS operation_request(id uuid PRIMARY KEY,actor_id uuid REFERENCES app_identity(id),
         operation text NOT NULL,input_hash text NOT NULL,result jsonb,error jsonb,created_at timestamptz NOT NULL DEFAULT now());
+      CREATE INDEX IF NOT EXISTS operation_request_actor ON operation_request(actor_id);
+      CREATE INDEX IF NOT EXISTS operation_story_read ON operation_request((result->'story'->>'id')) WHERE operation='stories.read';
+      CREATE INDEX IF NOT EXISTS operation_story_items ON operation_request USING gin((result->'items') jsonb_path_ops) WHERE operation='stories.list';
       CREATE TABLE IF NOT EXISTS operation_audit(id bigserial PRIMARY KEY,request_id uuid NOT NULL REFERENCES operation_request(id),
         actor_id uuid REFERENCES app_identity(id),operation text NOT NULL,outcome text NOT NULL,details jsonb NOT NULL,
         created_at timestamptz NOT NULL DEFAULT now());

@@ -396,6 +396,11 @@ export class BackupEngine {
   }
   async enforceRetention(configuration, authority) {
     const previous = await this.load("previous-repositories.json", {});
+    const activeKey = configuration && digest(configuration.repository);
+    if (activeKey && Object.hasOwn(previous, activeKey)) {
+      delete previous[activeKey];
+      await this.save("previous-repositories.json", previous);
+    }
     let oldest = Infinity,
       next = Date.now() + 3600000,
       unavailable = false;
@@ -967,9 +972,15 @@ export class BackupEngine {
             await this.process(current);
             current.state = "complete";
             current.phase = "完了";
-          } catch {
+          } catch (error) {
             current.state = "failed";
             current.error = "BACKUP_OPERATION_FAILED";
+            const code = String(error.code ?? error.message);
+            console.log(
+              "復旧処理を中断",
+              current.phase,
+              /^[A-Z0-9_]{3,64}$/.test(code) ? code : "OPERATION_FAILED",
+            );
             current.phase = "復旧手順を確認してください";
           }
           current.finishedAt = new Date().toISOString();

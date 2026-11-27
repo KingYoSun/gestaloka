@@ -52,7 +52,19 @@ const wait = async (name, id) => {
   for (let i = 0; i < 900; i++) {
     const { job } = await rpc(name, "job", { id });
     if (job.state === "complete") return job;
-    assert.notEqual(job.state, "failed", `復旧ジョブの失敗: ${job.phase}`);
+    if (job.state === "failed") {
+      const log = (
+        await command(["logs", "--tail", "20", `${name}-controller-1`])
+      ).toString();
+      assert.fail(
+        `復旧ジョブの失敗: ${job.phase} ${
+          log
+            .split("\n")
+            .filter((line) => line.includes("復旧処理を中断"))
+            .at(-1) ?? ""
+        }`,
+      );
+    }
     await delay(1000);
   }
   throw new Error("復旧ジョブの待ち時間を超過しました");
@@ -113,7 +125,7 @@ async function verifyLocalRecovery(deployment) {
     configuration: {
       enabled: false,
       intervalHours: 24,
-      retentionDays: 30,
+      retentionDays: 7,
       repository: "local",
       password: "test-password-for-local-recovery-only",
     },
@@ -125,6 +137,18 @@ async function verifyLocalRecovery(deployment) {
     "local",
   );
   const before = await ops(name, { operation: "runtime.read" });
+  for (const path of ["/api/player-cli/join", "/api/player-cli/"]) {
+    const page = await https(deployment, "play", path);
+    assert.equal(page.status, 200);
+    for (const text of [
+      "24時間以内",
+      "30日以内",
+      "取得から7日以内",
+      "最長37日以内",
+      "/auth/withdraw",
+    ])
+      assert(page.text.includes(text), text);
+  }
   const editUntil = () => new Date(Date.now() + 15 * 60 * 1000).toISOString();
   await ops(name, {
     operation: "runtime.put",
@@ -426,12 +450,20 @@ try {
     assert.equal(JSON.parse(publicTest).status, "ok");
   }
   const [source, target] = deployments;
+  const ledgerNetwork = storage + "-ledger";
+  await command(["network", "create", "--internal", ledgerNetwork]);
+  await command([
+    "network",
+    "connect",
+    ledgerNetwork,
+    `${target.config.name}-controller-1`,
+  ]);
   await command([
     "network",
     "connect",
     "--alias",
     "original-ledger",
-    `${target.config.name}_private`,
+    ledgerNetwork,
     `${source.config.name}-identity-postgres-1`,
   ]);
   await command([
@@ -647,14 +679,8 @@ try {
   );
   console.log(JSON.stringify(result));
 } finally {
-  if (deployments.length === 2)
-    await command([
-      "network",
-      "disconnect",
-      `${deployments[1].config.name}_private`,
-      `${deployments[0].config.name}-identity-postgres-1`,
-    ]).catch(() => {});
   await command(["rm", "-f", storage]).catch(() => {});
   for (const d of deployments.reverse())
     await compose(d, "down", "-v", "--remove-orphans").catch(() => {});
+  await command(["network", "rm", storage + "-ledger"]).catch(() => {});
 }
