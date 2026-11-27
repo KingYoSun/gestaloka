@@ -22744,7 +22744,7 @@ test("世界外に接続する技能だけを差し戻し、同じ申請の技�
   });
 });
 
-test("技能判定で使った本人の技能と試行を本人にだけ返し、再送と出し直しで保持する", async () => {
+test("技能判定で使った技能・状態・試行を本人にだけ返し、再送と出し直しで保持する", async () => {
   const f = await fixture(2);
   const [actor, other] = f.actors as [string, string];
   const model = runtime.agent.model;
@@ -22769,6 +22769,23 @@ test("技能判定で使った本人の技能と試行を本人にだけ返し�
     .skills[0]!;
   const hidden = (await readBelongings(f.store.context(f.graph), other))
     .skills[0]!;
+  const stateChanges: Change = {
+    nodes: [],
+    revisions: [],
+    edges: [],
+    endEdges: [],
+  };
+  mark(stateChanges, actor, "足の運びを繰り返し練習した");
+  mark(stateChanges, f.place, "広場に練習用の目印がある");
+  mark(stateChanges, f.place, "柱に内緒の覚え書きがある");
+  const [practice, marker, privateNote] = stateChanges.nodes;
+  Object.assign(privateNote!, { viewers: [] });
+  const stateCommit = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, stateCommit),
+    f.store.context(f.graph),
+    { commitId: stateCommit, at: 0, changes: stateChanges },
+  );
   const learn = (text: string, skill: string) => ({
     requestId: randomUUID(),
     command: "apply",
@@ -22793,16 +22810,27 @@ test("技能判定で使った本人の技能と試行を本人にだけ返し�
       ],
     );
   const first = learn("干潮時に瀬を見分ける練習", "瀬を見分ける");
-  f.calls.mockImplementationOnce(async (id) => {
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    const { learningReferences } = JSON.parse(messages[1]!.content);
+    expect(learningReferences).toContain(`state:${practice!.id}`);
+    expect(learningReferences).toContain(`state:${marker!.id}`);
+    expect(learningReferences).not.toContain(`state:${privateNote!.id}`);
     await saveRoll(first.requestId, 15);
     return answer(id, {
       successThrough: 15,
-      learningFactors: [{ ref: `skill:${known.id}`, impact: "helped" }],
+      learningFactors: [
+        { ref: `skill:${known.id}`, impact: "helped" },
+        { ref: `state:${marker!.id}`, impact: "helped" },
+      ],
     });
   });
   expect(await f.send(0, first)).toMatchObject({
     outcome: { success: true },
-    learningReasons: [expect.stringContaining("技能「潮流を読む」が有利")],
+    learningReasons: [
+      expect.stringContaining("技能「潮流を読む」が有利"),
+      expect.stringContaining("状態「広場に練習用の目印がある」が有利"),
+    ],
   });
 
   const failed = learn("夜の浅瀬を調べる", "暗闇で浅瀬を見分ける");
