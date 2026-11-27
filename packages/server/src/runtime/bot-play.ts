@@ -165,10 +165,7 @@ import {
   type RespawnHome,
 } from "./death-policy.js";
 import { historyLimit, selectStates } from "./state-selection.js";
-import {
-  selectJudgmentExperiences,
-  selectJudgmentMaterials,
-} from "./judgment-materials.js";
+import { selectJudgmentMaterials } from "./judgment-materials.js";
 import {
   factorMessages,
   learningFactorsPrompt,
@@ -8363,12 +8360,14 @@ export class BotPlay {
           ],
         };
         attempts.set(proposal.index, attempt);
-        const prior = await this.#repeatedCreation(
-          world,
-          actor,
-          keys[proposal.index]!,
-          attempt,
-          factorField(proposal.operations),
+        const prior = await ExecutionBudget.withCallReserve(fresh.length, () =>
+          this.#repeatedCreation(
+            world,
+            actor,
+            keys[proposal.index]!,
+            attempt,
+            factorField(proposal.operations),
+          ),
         );
         if (prior) {
           repeated[proposal.index] = prior;
@@ -8392,23 +8391,25 @@ export class BotPlay {
               action: fresh[i]!.text,
               claim,
             };
-            const answers = await model
-              .decide(
-                derivedId(`${requestId}:state-fact:${canonical(state)}`),
-                "world-state-fact",
-                state,
-                {
-                  recorded: {
-                    instructions:
-                      "statesとskillsは本人の確定記録。actionは今回の申請理由、claimは追加したい記述。この申請が既存事実の転記だけで、claimの内容すべてが今この本人についてすでに成立していると確定記録から言えるか。技能があることは今回それを使った証拠にならない。期限付きの状態を恒久的な性質にする場合もfalse。自己申告、過去の出来事からの推測、新たな行為・効力・対象・条件を含む場合はfalse。",
-                    criteria: {
-                      true: "全内容がすでに成立した同じ事実の再記述",
-                      false: "一部でも新しい変化または根拠不足がある",
+            const answers = await ExecutionBudget.withCallReserve(
+              fresh.length,
+              () =>
+                model.decide(
+                  derivedId(`${requestId}:state-fact:${canonical(state)}`),
+                  "world-state-fact",
+                  state,
+                  {
+                    recorded: {
+                      instructions:
+                        "statesとskillsは本人の確定記録。actionは今回の申請理由、claimは追加したい記述。この申請が既存事実の転記だけで、claimの内容すべてが今この本人についてすでに成立していると確定記録から言えるか。技能があることは今回それを使った証拠にならない。期限付きの状態を恒久的な性質にする場合もfalse。自己申告、過去の出来事からの推測、新たな行為・効力・対象・条件を含む場合はfalse。",
+                      criteria: {
+                        true: "全内容がすでに成立した同じ事実の再記述",
+                        false: "一部でも新しい変化または根拠不足がある",
+                      },
                     },
                   },
-                },
-              )
-              .catch(() => undefined);
+                ),
+            ).catch(() => undefined);
             if ((answers?.recorded ?? 0) >= 0.85) {
               applied.set(fresh[i]!.index, { success: true, endEdges: [] });
               continue;
@@ -9222,12 +9223,13 @@ export class BotPlay {
           true,
         )
       : undefined;
+    const judgmentAt = this.now().getTime();
     const stateEdges = judgment
       ? await context.outgoingRelations(
           wanted,
           "status",
-          this.now().getTime(),
-          latest,
+          judgmentAt,
+          judgmentAt,
           true,
         )
       : undefined;
@@ -9238,7 +9240,13 @@ export class BotPlay {
     const [stateNodes, stateAbout] = judgment
       ? await Promise.all([
           context.nodes(stateIds, true),
-          context.outgoingRelations(stateIds, "status", latest, latest, true),
+          context.outgoingRelations(
+            stateIds,
+            "status",
+            judgmentAt,
+            judgmentAt,
+            true,
+          ),
         ])
       : [];
     for (const id of wanted) {
@@ -9453,53 +9461,64 @@ export class BotPlay {
         );
       }),
     );
-    if (matches.every((ids) => !ids.length))
-      return (await selectJudgmentMaterials(options)) as (T[] | undefined)[];
     const events = await context.nodes(
-      new Set(matches.flat().map(({ id }) => id)),
+      new Set(matches.flat().map((row) => row.id)),
     );
-    return Promise.all(
-      requests.map(async (request, index) => {
-        const experiences = matches[index]!.flatMap(
-          ({ id, sharedReferences }) => {
-            const node = events.get(id);
-            return node?.kind === "event"
-              ? [
-                  {
-                    node,
-                    experiencedBy: frame.actor,
-                    ...(sharedReferences.length ? { sharedReferences } : {}),
-                  },
-                ]
-              : [];
-          },
-        );
-        const participants = (
-          materials as { node?: Record<string, unknown> }[]
-        ).flatMap(({ node }) =>
-          node && request.subjects.includes(String(node.id)) ? [node] : [],
-        );
-        const selected =
-          model.decision && experiences.length
-            ? await selectJudgmentExperiences(
-                experiences,
-                request,
-                participants,
-                options.decide,
-                model.decision.materialThreshold,
-              )
-            : experiences;
-        const [packet] = await selectJudgmentMaterials({
-          ...options,
-          materials: [...materials, ...selected],
-          requests: [request],
-          measure: (rows, _, filtered) =>
-            options.measure!(rows, index, filtered),
-          onFiltered: () => frame.onFiltered?.(index),
-        });
-        return packet as T[] | undefined;
+    const experiences = matches.map((rows) =>
+      rows.flatMap(({ id, sharedReferences }) => {
+        const node = events.get(id);
+        return node?.kind === "event"
+          ? [
+              {
+                node,
+                experiencedBy: frame.actor,
+                ...(sharedReferences.length ? { sharedReferences } : {}),
+              },
+            ]
+          : [];
       }),
     );
+    const packets = (await ExecutionBudget.withCallReserve(
+      requests.length,
+      () =>
+        selectJudgmentMaterials({
+          ...options,
+          experiences,
+          screenExperiences: !!model.decision,
+        }),
+    )) as (T[] | undefined)[];
+    // Semantic retrieval can use spare bytes but cannot evict a referenced
+    // state, material or an experience that the ordinary selection admitted.
+    if (!packets.some((packet) => packet !== undefined)) return packets;
+    const more = await context.supplementalExperiences(
+      frame.actor,
+      through,
+      requests.map((r) => [
+        r.text,
+        r.text + "\n" + JSON.stringify(r.effect ?? ""),
+      ]),
+    );
+    if (!more.some((ids) => ids.length)) return packets;
+    const records = await context.nodes(new Set(more.flat()));
+    for (const [i, ids] of more.entries()) {
+      const packet = packets[i];
+      if (!packet) continue;
+      const seen = new Set([
+        ...(packet as { node?: { id?: string } }[]).map((row) => row.node?.id),
+        ...matches[i]!.map((row) => row.id),
+      ]);
+      for (const id of ids) {
+        const node = records.get(id);
+        if (seen.has(id) || node?.kind !== "event") continue;
+        const addition = { node, experiencedBy: frame.actor } as T;
+        const trial = [...packets[i]!, addition];
+        if (options.measure!(trial, i, true) <= 24 * 1024) {
+          packets[i] = trial;
+          frame.onFiltered?.(i);
+        }
+      }
+    }
+    return packets;
   }
   async #validate(
     context: WorldContext,

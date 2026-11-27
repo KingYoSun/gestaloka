@@ -139,3 +139,132 @@ test("抜粋を待っている間もプレイ手番を進め、停止時には�
     await (stopping ?? stop());
   }
 });
+test("本人の旧経験を背景で索引化し、別人や未来の経験を返さない", async () => {
+  vi.stubEnv("JUDGMENT_EMBEDDING_URL", "http://127.0.0.1:1234/embed");
+  vi.stubEnv("JUDGMENT_EMBEDDING_REVISION", "fixture-v1");
+  const encode = vi.fn<typeof fetch>().mockImplementation(async (_url, opt) => {
+    const { inputs } = JSON.parse(String(opt?.body)) as { inputs: string[] };
+    return Response.json(
+      inputs.map(() => Array.from({ length: 384 }, (_, i) => Number(i === 0))),
+    );
+  });
+  vi.stubGlobal("fetch", encode);
+  try {
+    await store.setup();
+    const actors = [randomUUID(), randomUUID()],
+      ids = [randomUUID(), randomUUID(), randomUUID()];
+    const commit = randomUUID();
+    await store.commit(await store.claim(world, commit), store.context(world), {
+      commitId: commit,
+      at: 1,
+      changes: {
+        nodes: [
+          ...actors.map((id) => ({
+            id,
+            kind: "existence" as const,
+            text: "技師",
+          })),
+          ...ids.map((id, i) => ({
+            id,
+            kind: "event" as const,
+            text: "耳殻が振動を遮った。" + i,
+            period: { from: i + 1 },
+          })),
+        ],
+        edges: ids.map((id, i) => ({
+          id: randomUUID(),
+          kind: "happen",
+          text: "action-experience",
+          source: actors[i === 1 ? 1 : 0]!,
+          target: id,
+          period: { from: i + 1 },
+        })),
+        endEdges: [],
+        revisions: [],
+      },
+    });
+    await isolated.databases.graph.executeQuery(
+      "MATCH ()-[r:happen {worldId:$world}]->() REMOVE r.semanticDue",
+      { world },
+    );
+    for (let i = 0; i < 3; i++) await store.indexJudgmentExperience(world);
+    const issued = vi.spyOn(isolated.databases.graph, "executeQuery");
+    const ctx = store.context(world);
+    expect(
+      await ctx.supplementalExperiences(actors[0]!, 2, [["鐘を鳴らす"]]),
+    ).toEqual([[ids[0]]]);
+    expect(
+      await ctx.supplementalExperiences(actors[1]!, 5, [["鐘を鳴らす"]]),
+    ).toEqual([[ids[1]]]);
+    expect(
+      await ctx.supplementalExperiences(actors[0]!, 0, [["鐘を鳴らす"]]),
+    ).toEqual([[]]);
+    const lookup = issued.mock.calls.find(
+      ([cypher]) =>
+        typeof cypher === "string" && cypher.startsWith("UNWIND $qs AS q"),
+    );
+    expect(lookup).toBeDefined();
+    const explained = await isolated.databases.graph.executeQuery(
+      "EXPLAIN " + lookup![0],
+      lookup![1],
+    );
+    const plan = explained.summary.plan;
+    if (!plan) throw new Error("索引の実行計画がありません");
+    const countLimitedSeeks = (p: Exclude<typeof plan, false>): number =>
+      (p.operatorType.startsWith("Limit") &&
+      p.children.some(
+        (child) =>
+          child.operatorType.includes("IndexSeek") ||
+          child.children.some((n) => n.operatorType.includes("IndexSeek")),
+      )
+        ? 1
+        : 0) + p.children.reduce((n, child) => n + countLimitedSeeks(child), 0);
+    expect(countLimitedSeeks(plan)).toBe(24);
+    issued.mockRestore();
+    const revised = randomUUID();
+    await store.commit(
+      await store.claim(world, revised),
+      store.context(world),
+      {
+        commitId: revised,
+        at: 10,
+        changes: {
+          nodes: [],
+          edges: [],
+          endEdges: [],
+          revisions: [
+            {
+              id: ids[0]!,
+              kind: "event",
+              text: "改訂済みの経験。",
+              period: { from: 1 },
+            },
+          ],
+        },
+      },
+    );
+    expect(
+      (
+        await store
+          .context(world)
+          .supplementalExperiences(actors[0]!, 20, [["鐘を鳴らす"]])
+      )[0],
+    ).not.toContain(ids[0]);
+    await store.indexJudgmentExperience(world);
+    expect(
+      (
+        await store
+          .context(world)
+          .supplementalExperiences(actors[0]!, 20, [["鐘を鳴らす"]])
+      )[0],
+    ).toContain(ids[0]);
+    expect(encode).toHaveBeenCalled();
+    encode.mockRejectedValueOnce(new Error("local encoder unavailable"));
+    expect(
+      await ctx.supplementalExperiences(actors[0]!, 5, [["鐘を鳴らす"]]),
+    ).toEqual([[]]);
+  } finally {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  }
+});

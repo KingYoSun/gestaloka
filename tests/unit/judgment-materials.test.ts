@@ -66,7 +66,7 @@ test("抜粋を用意できない本文と取得経緯を、Jevで落とさず�
   expect(selected).toEqual([material("actor", [text, basis])]);
 });
 
-test("候補を切り捨てずに分割し、相手の名前が挙がらない受動技能も判定に得る", async () => {
+test("多数の技能から当事者ごとに選び、2回以内に相手の受動技能を判定に得る", async () => {
   const defense = {
     id: "old-defense",
     text: "熱を通さない皮膚。外からの火傷を防ぐ。",
@@ -122,9 +122,9 @@ test("候補を切り捨てずに分割し、相手の名前が挙がらない�
       decide,
       directLimit: 0,
     }),
-  ).toEqual([[material("actor", []), material("target", [defense])]]);
-  expect(decide.mock.calls.length).toBeGreaterThan(1);
-  expect(seen).toHaveLength(72);
+  ).toMatchObject([[{ node: { id: "actor" } }, material("target", [defense])]]);
+  expect(decide.mock.calls.length).toBeLessThanOrEqual(2);
+  expect(seen.size).toBeLessThanOrEqual(20);
 });
 
 test("明示した根拠とJevの重要資料を保護し、修正量だけに関わる候補は人物の資料を優先する", async () => {
@@ -467,7 +467,7 @@ test("回答が不足した案には予算内の元資料を使い、元資料�
   ).toEqual([[material("actor", [])]]);
 });
 
-test("Jevの一部が失敗したら、正本が収まらない候補の次に評価の高い資料を残す", async () => {
+test("単独で送信枠を超す候補を送らず、正本が収まる次の資料を残す", async () => {
   const required = {
     id: "required",
     name: "作業の手順",
@@ -479,7 +479,8 @@ test("Jevの一部が失敗したら、正本が収まらない候補の次に�
   const materials = [material("actor", [required, unknown, large, short])];
   const decide = vi.fn(
     async (_state, questions: Record<string, unknown>, batch) => {
-      if (batch === 0) throw new Error("判断APIがHTTP 400を返しました");
+      expect(batch).toBe(0);
+      expect(JSON.stringify(_state)).not.toContain(unknown.text);
       return Object.fromEntries(
         Object.keys(questions).map((key) => [
           key,
@@ -512,7 +513,7 @@ test("Jevの一部が失敗したら、正本が収まらない候補の次に�
     measure,
     onFiltered,
   });
-  expect(decide).toHaveBeenCalledTimes(2);
+  expect(decide).toHaveBeenCalledTimes(1);
   expect(onFiltered).toHaveBeenCalledExactlyOnceWith(0);
   expect(hydrate).toHaveBeenCalledWith(
     [material("actor", [required, large])],
