@@ -36,6 +36,7 @@ let entries: Entry[] = [],
   comment: string | undefined,
   posted: { requestId: string; command: string; actorId: string | null }[] = [],
   drop = false,
+  publicDiceBasis = false,
   spectating = false;
 let view: Record<string, unknown>;
 const receipts = new Map<string, unknown>();
@@ -50,11 +51,17 @@ const server = setupServer(
   http.get("*/api/account", () =>
     json({ member: { id: user, role: "user", banned: false } }),
   ),
-  http.get("*/api/account/spectating", () => json({ public: spectating })),
+  http.get("*/api/account/spectating", () =>
+    json({ public: spectating, publicDiceBasis }),
+  ),
   http.put("*/api/account/spectating", async ({ request }) => {
-    const { public: enabled } = (await request.json()) as { public: boolean };
-    spectating = enabled;
-    return json({ public: spectating });
+    const update = (await request.json()) as {
+      public?: boolean;
+      publicDiceBasis?: boolean;
+    };
+    spectating = update.public ?? spectating;
+    publicDiceBasis = update.publicDiceBasis ?? publicDiceBasis;
+    return json({ public: spectating, publicDiceBasis });
   }),
   http.get("*/api/worlds/:id/knowledge", () =>
     json({ viewerId: actor, items: [], next: null, previous: null }),
@@ -168,6 +175,7 @@ beforeEach(() => {
   posted = [];
   drop = false;
   spectating = false;
+  publicDiceBasis = false;
   view = {
     viewerId: actor,
     aiControlled: false,
@@ -227,6 +235,12 @@ test("公開設定を保存すると本人のプレイ画面だけで観戦URL�
       timeout: 5000,
     },
   )) as HTMLInputElement;
+  const basis = screen.getByRole("checkbox", {
+    name: /ダイスの上限/,
+  }) as HTMLInputElement;
+  expect(basis.checked).toBe(false);
+  fireEvent.click(basis);
+  await waitFor(() => expect(basis.checked).toBe(true));
   expect(option.checked).toBe(false);
   fireEvent.click(option);
   await waitFor(() => expect(option.checked).toBe(true));
@@ -744,6 +758,9 @@ test("同席者の判定の出目と成功範囲をプレイログで読める",
             result: {
               outcome: { success: false },
               dice: ["判定 出目 42 / 100、成功は 25 以下（失敗）"],
+              thresholdReasons: [
+                "成功上限 25 の根拠：霧で広場の先を見通せない。",
+              ],
             },
           },
           {
@@ -752,6 +769,14 @@ test("同席者の判定の出目と成功範囲をプレイログで読める",
             result: {
               state: "accepted",
               diceReasons: ["判定で、技能「追跡」が有利に働きました"],
+            },
+          },
+          {
+            actorId: actor,
+            input: "足場を作る",
+            result: {
+              outcome: { success: false },
+              diceReasons: ["この案は振っていません。使える材料が足りません"],
             },
           },
         ],
@@ -764,9 +789,38 @@ test("同席者の判定の出目と成功範囲をプレイログで読める",
     screen.getByText(/出目 42 \/ 100、成功は 25 以下（失敗）/),
   ).toBeTruthy();
   expect(
+    screen.getByText("この案は振っていません。使える材料が足りません"),
+  ).toBeTruthy();
+  expect(
     screen.getByText("判定で、技能「追跡」が有利に働きました"),
   ).toBeTruthy();
+  expect(
+    screen.getByText("成功上限 25 の根拠：霧で広場の先を見通せない。"),
+  ).toBeTruthy();
   expect(screen.getAllByText(/出目/)).toHaveLength(1);
+  expect(screen.queryByText(/不成立でした/)).toBeNull();
+});
+
+test("判定直後に出目と根拠を応答データを開かずに読める", async () => {
+  const dice = "判定 出目 12（3d6）、成功は 8 以下（失敗）";
+  const reason = "成功上限 8 の根拠：霧が深く見通せる距離が短い。";
+  server.use(
+    http.post("*/api/worlds/:id/session", () =>
+      json({
+        outcome: { success: false },
+        dice: [dice],
+        thresholdReasons: [reason],
+      }),
+    ),
+  );
+  show();
+  await open("操作");
+  fireEvent.change(await screen.findByLabelText("発言・ターンコメント"), {
+    target: { value: "霧の向こうに小鳥の姿を探す" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "発言する" }));
+  expect(await screen.findByText(dice)).toBeTruthy();
+  expect(screen.getByText(reason)).toBeTruthy();
 });
 
 test("受領判断を表示し、判断後は元の人物の通常手番へ戻る", async () => {

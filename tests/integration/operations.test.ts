@@ -536,7 +536,7 @@ test("観戦の公開設定は非公開で始まり、登録済みの本人だ�
     (await update(unregistered.cookie, { public: true })).json().code,
   ).toBe("REGISTRATION_REQUIRED");
   const initial = await read(owner.cookie);
-  expect(initial.json()).toEqual({ public: false });
+  expect(initial.json()).toEqual({ public: false, publicDiceBasis: false });
   expect(initial.headers["cache-control"]).toBe("private, no-store");
   expect(
     (
@@ -553,11 +553,22 @@ test("観戦の公開設定は非公開で始まり、登録済みの本人だ�
   ).toBe(400);
   expect((await update(owner.cookie, { public: true })).json()).toEqual({
     public: true,
+    publicDiceBasis: false,
   });
-  expect((await read(owner.cookie)).json()).toEqual({ public: true });
-  expect((await read(admin.cookie)).json()).toEqual({ public: false });
+  expect((await read(owner.cookie)).json()).toEqual({
+    public: true,
+    publicDiceBasis: false,
+  });
+  expect((await read(admin.cookie)).json()).toEqual({
+    public: false,
+    publicDiceBasis: false,
+  });
+  expect(
+    (await update(owner.cookie, { publicDiceBasis: true })).json(),
+  ).toEqual({ public: true, publicDiceBasis: true });
   expect((await update(owner.cookie, { public: false })).json()).toEqual({
     public: false,
+    publicDiceBasis: true,
   });
   await run(admin.id, {
     operation: "users.ban",

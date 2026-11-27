@@ -658,7 +658,13 @@ export const Member = z.object({
   banned: z.boolean(),
   createdAt: z.iso.datetime(),
 });
-export const SpectatingSetting = z.strictObject({ public: z.boolean() });
+export const SpectatingSetting = z.strictObject({
+  public: z.boolean(),
+  publicDiceBasis: z.boolean(),
+});
+export const SpectatingUpdate = SpectatingSetting.partial().refine(
+  (value) => Object.keys(value).length > 0,
+);
 const operationPage = { before: z.uuid().optional() };
 const operationReason = z.string().trim().min(1);
 export const CatalogPageQuery = z.object({ before: z.uuid().optional() });

@@ -63,18 +63,37 @@ export function Account() {
         {settings.error ? (
           <Problem error={settings.error} />
         ) : settings.data ? (
-          <Label>
-            <input
-              type="checkbox"
-              aria-describedby="spectating-description"
-              checked={settings.data.public}
-              disabled={save.isPending}
-              onChange={(event) =>
-                save.mutate({ body: { public: event.target.checked } })
-              }
-            />
-            他のユーザーからの観戦を許可する
-          </Label>
+          <>
+            <Label>
+              <input
+                type="checkbox"
+                aria-describedby="spectating-description"
+                checked={settings.data.public}
+                disabled={save.isPending}
+                onChange={(event) =>
+                  save.mutate({ body: { public: event.target.checked } })
+                }
+              />
+              他のユーザーからの観戦を許可する
+            </Label>
+            <Label>
+              <input
+                type="checkbox"
+                checked={settings.data.publicDiceBasis}
+                disabled={save.isPending}
+                aria-describedby="dice-basis-description"
+                onChange={(event) =>
+                  save.mutate({
+                    body: { publicDiceBasis: event.target.checked },
+                  })
+                }
+              />
+              ダイスの上限を決めた根拠を同席者・観戦者に公開する
+            </Label>
+            <p id="dice-basis-description">
+              自分の判定はいつでも確認できます。公開範囲を変更すると、過去の判定にも反映されます。
+            </p>
+          </>
         ) : (
           <Notice>公開設定を読み込んでいます</Notice>
         )}
