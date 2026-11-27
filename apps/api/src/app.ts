@@ -58,7 +58,7 @@ export async function createApp(
   );
   if (identity)
     await app.register(async (scope) =>
-      authRoutes(scope, identity, hydraAdminUrl, operations),
+      authRoutes(scope, identity, hydraAdminUrl, operations, access),
     );
   await app.ready();
   return app;

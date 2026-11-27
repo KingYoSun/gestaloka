@@ -191,11 +191,14 @@ export class Withdrawals {
     const db = await this.engine.pool.connect();
     try {
       await db.query("BEGIN");
-      await redact(db, rules);
+      await redact(db, rules, true);
+      const allRules = [
+        ...new Set([...row.rules, ...rules].map((r) => JSON.stringify(r))),
+      ].map((s) => JSON.parse(s));
       // Commit the replay instructions first. A retry recognizes the edited hash.
       await this.db.query(
         "UPDATE withdrawal_receipt SET rules=$2,reviewed_at=now(),erased_at=NULL WHERE receipt=$1",
-        [receipt, JSON.stringify(rules)],
+        [receipt, JSON.stringify(allRules)],
       );
       await db.query("COMMIT");
     } catch (error) {

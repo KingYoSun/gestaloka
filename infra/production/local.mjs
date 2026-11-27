@@ -13,11 +13,27 @@ try {
       );
     await engine.thaw(job);
     result = { id: job.id, services: "restarted" };
-  } else if (input.action === "withdrawal-review") {
+  } else if (input.action === "withdrawal-pending") {
+    const authority = await engine.withdrawals.authority(
+      engine.env.OPERATIONS_TOKEN_SECRET,
+    );
+    result = (
+      await engine.withdrawals.db.query(
+        `SELECT receipt,confirmed_at,structured_at,reviewed_at,erased_at FROM withdrawal_receipt
+      WHERE authority=$1 AND finished_at IS NULL AND ($2::uuid IS NULL OR receipt>$2) ORDER BY receipt LIMIT 50`,
+        [authority, input.after ?? null],
+      )
+    ).rows;
+  } else if (
+    ["withdrawal-review", "withdrawal-confirm"].includes(input.action)
+  ) {
     const lock = await deploymentLock("/deploy.lock", 10);
     if (!lock) throw Error("DEPLOYMENT_BUSY");
     try {
-      result = await engine.withdrawals.review(input);
+      result =
+        input.action === "withdrawal-review"
+          ? await engine.withdrawals.review(input)
+          : await engine.withdrawals.accept(input);
     } finally {
       await lock.close();
     }

@@ -1,15 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import Fastify from "fastify";
 import { OryIdentity } from "@gestaloka/server/identity";
 import { Operations } from "@gestaloka/server/operations";
 import { Stories } from "../../packages/server/dist/http/stories.js";
 import { PlayerDevices } from "../../packages/server/dist/http/player-devices.js";
-import { authRoutes } from "../../apps/api/dist/auth-routes.js";
-const cookie = createRequire(
-  new URL("../../apps/api/package.json", import.meta.url),
-)("@fastify/cookie");
+import { createApp } from "../../apps/api/dist/app.js";
 
 const require = createRequire(
   new URL("../../packages/server/package.json", import.meta.url),
@@ -113,15 +109,11 @@ try {
         identity: { id: input.identity, state: "active" },
       }),
     );
-    const app = Fastify();
-    await app.register(cookie);
-    await app.register(async (scope) =>
-      authRoutes(
-        scope,
-        identity,
-        undefined,
-        new Operations(pool, process.env.OPERATIONS_TOKEN_SECRET),
-      ),
+    const app = await createApp(
+      undefined,
+      identity,
+      undefined,
+      new Operations(pool, process.env.OPERATIONS_TOKEN_SECRET),
     );
     try {
       const headers = { cookie: "synthetic=owner" };

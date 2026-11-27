@@ -28,9 +28,13 @@ export const reviewRule = z.object({
   after: z.string().regex(/^[a-f0-9]{64}$/),
 });
 const hash = (s) => createHash("sha256").update(s).digest("hex");
-export async function redact(db, rules) {
-  for (const input of rules) {
-    const r = reviewRule.parse(input);
+export async function redact(db, rules, requireTarget = false) {
+  const fields = Map.groupBy(
+    rules.map((input) => reviewRule.parse(input)),
+    (r) => JSON.stringify([r.source, r.key, r.path]),
+  );
+  for (const edits of fields.values()) {
+    const r = edits[0];
     const [table, column, ...keys] = sources[r.source];
     if (keys.length !== r.key.length) throw new Error("WITHDRAWAL_REVIEW_KEY");
     const where = keys.map((key, i) => `${key}=$${i + 1}`).join(" AND ");
@@ -42,18 +46,26 @@ export async function redact(db, rules) {
         params,
       )
     ).rows[0];
-    if (row?.value == null) continue;
+    if (row?.value == null) {
+      if (requireTarget) throw new Error("WITHDRAWAL_REVIEW_TARGET_NOT_FOUND");
+      continue;
+    }
     if (typeof row.value !== "string")
       throw new Error("WITHDRAWAL_REVIEW_TYPE");
-    if (hash(row.value) === r.after) continue;
-    const chars = Array.from(row.value);
-    if (hash(row.value) !== r.before || r.start + r.length > chars.length)
+    let text = row.value;
+    for (const edit of edits) {
+      if (hash(text) !== edit.before) continue;
+      const chars = Array.from(text);
+      text =
+        chars.slice(0, edit.start).join("") +
+        "［削除済み］" +
+        chars.slice(edit.start + edit.length).join("");
+      if (edit.start + edit.length > chars.length || hash(text) !== edit.after)
+        throw new Error("WITHDRAWAL_REVIEW_RANGE");
+    }
+    if (!edits.some((e) => e.after === hash(text)))
       throw new Error("WITHDRAWAL_REVIEW_VERSION");
-    const text =
-      chars.slice(0, r.start).join("") +
-      "［削除済み］" +
-      chars.slice(r.start + r.length).join("");
-    if (hash(text) !== r.after) throw new Error("WITHDRAWAL_REVIEW_RANGE");
+    if (text === row.value) continue;
     const replacement = "to_jsonb($" + (params.length + 1) + "::text)";
     await db.query(
       `UPDATE ${table} SET ${column}=CASE WHEN cardinality(${path}::text[])=0 THEN ${replacement}
