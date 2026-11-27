@@ -12499,7 +12499,11 @@ test("出現個体は同席者が一巡するごとに人数まで続きから�
     );
     if (mark)
       f.calls.mockImplementationOnce(async (id) =>
-        answer(id, { ...sure, observable: mark }),
+        answer(id, {
+          ...sure,
+          observable: mark,
+          observableWhile: { eq: [bird + ".directPlaceId", f.place] },
+        }),
       );
     await access.botPlay.tickNpcs();
     return (await f.status(0)).actorId;
@@ -12524,6 +12528,103 @@ test("出現個体は同席者が一巡するごとに人数まで続きから�
   expect(states.sort()).toEqual(
     ["羽根につつき跡が二つある", "羽根は無傷"].sort(),
   );
+  await f.send(0, {
+    command: "npc-action",
+    npcId: bird,
+    text: "飛び去る",
+    departs: true,
+  });
+  const remaining = await f.store
+    .context(f.graph)
+    .relations(wheel, "status", "out", Number.MAX_SAFE_INTEGER);
+  expect(remaining.some((e) => e.target === intact)).toBe(true);
+  expect(remaining.filter((e) => e.text !== "location")).toHaveLength(1);
+});
+test("出現個体が確定できないときも別のセッションの個体とサーバー担当NPCに手番が回る", async () => {
+  const f = await fixture(4);
+  await f.send(0, { command: "contact", targetId: f.actors[1] });
+  await giveTurn(f, 1);
+  await auth.operations.execute(
+    (await auth.person()).id,
+    randomUUID(),
+    {
+      operation: "npcs.put",
+      worldId: f.world,
+      actorId: f.actors[1]!,
+      controller: "server",
+      reason: "隔離試験",
+    },
+    { players: access.players },
+  );
+  const sources = [randomUUID(), randomUUID()];
+  for (const [i, source] of sources.entries()) {
+    f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+    await f.send(i + 2, {
+      command: "say",
+      requestId: source,
+      text: "鳥が降りてきた",
+      instantNpcs: ["鳥"],
+    });
+    expect((await f.send(i + 2, { command: "end-turn" })).actorId).toBe(
+      derivedId(source + ":manual:0"),
+    );
+  }
+  const bird = derivedId(sources[0] + ":manual:0");
+  const turn = await f.status(2);
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  let unavailable = true;
+  let instantChoices = 0;
+  f.calls.mockImplementation(async (id, role, messages) => {
+    const input = JSON.parse(String(messages[1]!.content));
+    if (role === "world-opposition-dice")
+      return answer(id, {
+        ...sure,
+        observable: "羽が光る",
+        observableWhile: { eq: [bird + ".directPlaceId", f.place] },
+      });
+    if (input.npc) {
+      instantChoices++;
+      if (unavailable && input.npc.places.includes(f.far))
+        throw new Error("モデルへの接続が中断しました");
+      return answer(
+        id,
+        input.npc.places.includes(f.far)
+          ? {
+              text: "羽を広げる",
+              effect: { targetId: f.actors[2], state: "羽が光る" },
+              departs: true,
+            }
+          : { command: "end-turn" },
+      );
+    }
+    return answer(id, {
+      goal: "見守る",
+      endOnSuccess: true,
+      action: { command: "end-turn" },
+    });
+  });
+  await access.botPlay.tickNpcs(f.world);
+  expect(instantChoices).toBe(2);
+  expect((await f.status(2)).actorId).toBe(bird);
+  expect((await f.status(3)).actorId).toBe(f.actors[3]);
+  expect((await f.status(0)).actorId).toBe(f.actors[0]);
+  unavailable = false;
+  await access.botPlay.tickNpcs(f.world);
+  expect(errors).toHaveBeenCalledWith(
+    "出現個体の行動を確定できません",
+    f.world,
+    turn.sessionId,
+    expect.objectContaining({ message: "状態の継続条件が成立していません" }),
+  );
+  const after = await f.status(2);
+  expect(after.actorId).toBe(f.actors[2]);
+  expect(after.characters?.some((c) => c.actorId === bird)).toBe(true);
+  expect(
+    await f.store.receipt(
+      f.graph,
+      derivedId(`instant:${turn.sessionId}:${bird}:${turn.turn}`),
+    ),
+  ).toBeUndefined();
 });
 test.each([false, true])(
   "出現場所の全員が移ると、確定直後に個体が外れて同じ手番が続く（同行者あり: %s）",
@@ -13019,9 +13120,11 @@ test("到着処理を待っている間も期限処理とNPC手番を進める",
   const pending = new Promise<void>((resolve) => {
     release = resolve;
   });
+  const failure = new Error("期限処理の失敗");
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
   const play = {
     deliverArrivals: vi.fn(() => pending),
-    expire: vi.fn(async () => {}),
+    expire: vi.fn(async () => {}).mockRejectedValueOnce(failure),
     tickNpcs: vi.fn(async () => {}),
   };
   const stop = await startPlayLoop(play);
@@ -13035,6 +13138,7 @@ test("到着処理を待っている間も期限処理とNPC手番を進める",
     await vi.waitFor(() => expect(play.tickNpcs).toHaveBeenCalledTimes(2), {
       timeout: 5000,
     });
+    expect(logged).toHaveBeenCalledWith(failure);
     expect(play.expire).toHaveBeenCalledTimes(2);
     expect(play.deliverArrivals).toHaveBeenCalledOnce();
   } finally {
@@ -13277,7 +13381,11 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
         expect(() =>
           validate!(JSON.stringify({ ...dice, observable: "羽根" })),
         ).toThrow();
-        return answer(id, { ...dice, observable: "羽根が折れて回らない" });
+        return answer(id, {
+          ...dice,
+          observable: "羽根が折れて回らない",
+          observableWhile: { eq: ["$actor.directPlaceId", f.place] },
+        });
       },
     );
   const ticking = access.botPlay.tickNpcs();
@@ -13430,6 +13538,15 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
   expect(JSON.stringify(inspected.material)).toContain("羽根が折れて回らない");
   expect(JSON.stringify(inspected.material)).not.toContain("体当たり");
   expect(JSON.stringify(inspected.material)).not.toContain("羽根は無傷");
+  await f.apply([
+    { type: "locate", subjectId: bear, text: "離れた場所", aboutIds: [f.far] },
+  ]);
+  const remaining = await f.store
+    .context(f.graph)
+    .relations(wheel, "status", "out", Number.MAX_SAFE_INTEGER);
+  expect(
+    remaining.some((edge) => edge.target === derivedId(request + ":state")),
+  ).toBe(false);
 });
 test("初回接続と状態照会のタイムアウトを復旧し、終了時に履歴を返す", async () => {
   const f = await fixture(),

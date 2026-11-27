@@ -9,6 +9,7 @@ import type {
 import { AccessError } from "../http/access.js";
 import type { WorldConstruction } from "./construction.js";
 import { derivedId, worldNow, type Change } from "../world/model.js";
+import { instantPlaceEdge } from "../world/conditions.js";
 import { locationRecords } from "../world/locations.js";
 import { planBelongings } from "../world/belongings.js";
 import { WorldConflict } from "../world/store.js";
@@ -488,6 +489,11 @@ export class PlayerTools {
             target: instant.sourceEventId,
             period: { from: at },
           });
+        if (instant) {
+          const presence = await context.edge(instantPlaceEdge(npc));
+          if (presence && presence.period.until === undefined)
+            changes.endEdges.push(presence.id);
+        }
         const operations: BelongingOp[] = [];
         if (locations.length)
           operations.push({
