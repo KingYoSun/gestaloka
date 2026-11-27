@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { join, resolve } from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { Agent, get } from "node:https";
 import { initializeDeployment } from "../../infra/production/config.mjs";
@@ -335,6 +335,10 @@ try {
       accessCidrs: "0.0.0.0/0 ::/0",
     });
     deployments.push(d);
+    await appendFile(
+      join(d.root, "deployment.env"),
+      await readFile("tests/support/operator.env"),
+    );
     await cli("build", d);
     for (const role of ["api", "worker", "controller"]) {
       const image = `${d.config.name}-${role === "controller" ? role : "server"}`;

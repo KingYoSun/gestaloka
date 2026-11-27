@@ -244,6 +244,8 @@ export async function initializeDeployment(directory, input) {
   );
   const env = {
     ...secrets,
+    LEGAL_OPERATOR_NAME: "",
+    LEGAL_CONTACT: "",
     ORY_GOOGLE_CLIENT_ID: "",
     ORY_GOOGLE_CLIENT_SECRET: "",
     ORY_X_API_KEY: "",

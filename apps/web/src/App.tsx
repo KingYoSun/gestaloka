@@ -105,6 +105,14 @@ function Brand() {
     </>
   );
 }
+function LegalLinks() {
+  return (
+    <footer className="page flex gap-4">
+      <a href="/auth/terms">利用規約</a>
+      <a href="/auth/privacy">プライバシーポリシー</a>
+    </footer>
+  );
+}
 function Shell() {
   const surface = useSurface();
   usePlayLogAudio(surface === "user");
@@ -143,6 +151,7 @@ function Shell() {
       >
         <Outlet />
       </Suspense>
+      <LegalLinks />
     </>
   );
 }
@@ -364,7 +373,15 @@ function Membership({
       </main>
     );
   return (
-    <ResourceScope key={account.data.member.role} navigation={navigation} />
+    <>
+      {surface === "user" && account.data.legalConsentRequired && (
+        <aside className="notice" aria-label="規約改定のお知らせ">
+          ゲームプレイには最新版への同意が必要です。{" "}
+          <a href="/auth/legal">利用規約とプライバシーポリシーを確認する</a>
+        </aside>
+      )}
+      <ResourceScope key={account.data.member.role} navigation={navigation} />
+    </>
   );
 }
 function ResourceScope({
@@ -435,6 +452,7 @@ export function App({
             <Notice>接続を確認しています</Notice>
           )}
         </main>
+        <LegalLinks />
       </>
     );
   return (

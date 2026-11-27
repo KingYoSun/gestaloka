@@ -3,6 +3,7 @@ import { test, expect } from "@playwright/test";
 import { connectDatabases } from "@gestaloka/server";
 import { OryIdentity } from "@gestaloka/server/identity";
 import { Operations } from "@gestaloka/server/operations";
+import { legalVersion, terms, privacy } from "@gestaloka/server/legal";
 import { createApp } from "../../apps/api/src/app.js";
 
 test("本人の登録操作で初代管理者となって元の画面へ戻り、再訪でも登録と監査を増やさない", async ({
@@ -32,6 +33,15 @@ test("本人の登録操作で初代管理者となって元の画面へ戻り�
   const app = await createApp(undefined, identity, undefined, operations);
   const origin = await app.listen({ host: "127.0.0.1", port: 0 });
   try {
+    for (const [path, heading] of [
+      ["terms", "利用規約"],
+      ["privacy", "プライバシーポリシー"],
+    ]) {
+      await page.goto(origin + "/auth/" + path);
+      await expect(
+        page.getByRole("heading", { level: 1, name: heading! }),
+      ).toBeVisible();
+    }
     await page.context().addCookies([
       {
         name: "ory_test",
@@ -44,9 +54,54 @@ test("本人の登録操作で初代管理者となって元の画面へ戻り�
       route.fulfill({ body: "" }),
     );
     const back = "http://app.invalid/worlds?tab=mine";
+    const direct = await page.request.post(origin + "/api/operations", {
+      headers: { "x-gestaloka-request": "1" },
+      data: {
+        requestId: randomUUID(),
+        command: { operation: "account.register" },
+      },
+    });
+    expect(direct.status()).toBe(403);
+    expect((await direct.json()).code).toBe("LEGAL_CONSENT_REQUIRED");
     await page.goto(
       `${origin}/auth/register?return_to=${encodeURIComponent(back)}`,
     );
+    const consentPage = page.url();
+    expect(new URL(consentPage).pathname).toBe("/auth/legal");
+    for (const title of ["利用規約", "プライバシーポリシー"]) {
+      const region = page.getByRole("region", { name: title, exact: true });
+      await expect(region).toBeVisible();
+      expect(
+        await region.evaluate((e) => e.scrollHeight > e.clientHeight),
+      ).toBe(true);
+    }
+    const checkbox = page.getByRole("checkbox", { name: /利用規約/ });
+    await expect(checkbox).not.toBeChecked();
+    await page.getByRole("button", { name: "同意して進む" }).click();
+    await expect(checkbox).toBeFocused();
+    let csrf = await page.locator('[name="csrf"]').inputValue();
+    expect(
+      (
+        await page.request.post(consentPage, {
+          form: { csrf, version: legalVersion },
+        })
+      ).status(),
+    ).toBe(400);
+    await page.reload();
+    csrf = await page.locator('[name="csrf"]').inputValue();
+    expect(
+      (
+        await page.request.post(consentPage, {
+          form: { csrf, version: "older-edition", agree: "yes" },
+        })
+      ).status(),
+    ).toBe(409);
+    expect(
+      (await db.postgres.query("SELECT * FROM app_legal_consent")).rowCount,
+    ).toBe(0);
+    await page.reload();
+    await checkbox.check();
+    await page.getByRole("button", { name: "同意して進む" }).click();
     await expect(
       page.getByText(
         "最初に利用登録した1人が管理者になります。その後は招待制になります。",
@@ -61,6 +116,21 @@ test("本人の登録操作で初代管理者となって元の画面へ戻り�
     expect(
       (await db.postgres.query("SELECT role FROM app_user")).rows[0].role,
     ).toBe("admin");
+    expect(
+      (
+        await db.postgres.query(
+          "SELECT version,accepted_at FROM app_legal_consent",
+        )
+      ).rows,
+    ).toEqual([{ version: legalVersion, accepted_at: expect.any(Date) }]);
+    expect(
+      (
+        await db.postgres.query(
+          "SELECT terms,privacy FROM app_legal_edition WHERE version=$1",
+          [legalVersion],
+        )
+      ).rows,
+    ).toEqual([{ terms, privacy }]);
     expect(
       Number(
         (await db.postgres.query("SELECT count(*) FROM app_user")).rows[0]

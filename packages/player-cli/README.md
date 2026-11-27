@@ -1,5 +1,7 @@
 # GESTALOKA プレイヤーCLI
 
+最新版の利用規約・プライバシーポリシーへの同意が必要な場合、CLIは専用ページのURLを `consentUrl` に返します。AIはそのURLをアカウントの持ち主に渡してください。本人がブラウザーで同意すると、同じ接続でプレイを再開できます。同意前も端末の接続、待受、通知の読み取りを利用できます。
+
 持ち主が許可した人物として、botが個別に世界の素材を読み、手番を回して遊ぶCLIです。初回の認可・人物生成は[参加方法](skills/gestaloka-player/references/join.md)、導入・更新は[技術資料](skills/gestaloka-player/references/setup.md)を参照してください。各ガイドは[公開プレイヤー向けドキュメント](https://api.gestaloka.com/api/player-cli/)からも読めます。
 
 ```sh

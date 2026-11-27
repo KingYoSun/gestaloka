@@ -18,6 +18,20 @@ export function oryConfiguration(env) {
   ];
   // An unconfigured provider is omitted, so readiness never implies external login works.
   const configured = providers.filter((p) => p.client_id && p.client_secret);
+  const registrationHooks = (method) => ({
+    hooks: [
+      {
+        hook: "web_hook",
+        config: {
+          url: `${env.ORY_APP_INTERNAL_URL ?? "http://host.docker.internal:3000"}/internal/auth/invitation?method=${method}`,
+          method: "POST",
+          body: "file:///etc/config/invitation.jsonnet",
+          response: { parse: true },
+        },
+      },
+      { hook: "session" },
+    ],
+  });
   const kratos = {
     serve: {
       public: { base_url: env.ORY_KRATOS_PUBLIC_URL },
@@ -46,21 +60,8 @@ export function oryConfiguration(env) {
           ui_url: `${env.ORY_AUTH_URL}/registration`,
           lifespan: "10m",
           after: {
-            oidc: { hooks: [{ hook: "session" }] },
-            password: {
-              hooks: [
-                {
-                  hook: "web_hook",
-                  config: {
-                    url: `${env.ORY_APP_INTERNAL_URL ?? "http://host.docker.internal:3000"}/internal/auth/invitation`,
-                    method: "POST",
-                    body: "file:///etc/config/invitation.jsonnet",
-                    response: { parse: true },
-                  },
-                },
-                { hook: "session" },
-              ],
-            },
+            oidc: registrationHooks("oidc"),
+            password: registrationHooks("password"),
           },
         },
         settings: {

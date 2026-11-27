@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type pg from "pg";
 import { AccessError } from "./access.js";
 import { requireMember } from "./operations.js";
+import { hasLegalConsent } from "./legal.js";
 import type { WorldPlayers } from "../runtime/players.js";
 import type { z } from "zod";
 import { PlayerDeviceApproval, PlayerDeviceStatus } from "@gestaloka/contracts";
@@ -114,8 +115,11 @@ export class PlayerDevices {
     return row;
   }
 
-  status(row: Device) {
+  async status(row: Device) {
     return PlayerDeviceStatus.parse({
+      ...(row.user_id && !(await hasLegalConsent(this.pool, row.user_id))
+        ? { legalConsentRequired: true }
+        : {}),
       id: row.id,
       worldId: row.world_id,
       actorId: row.actor_id,

@@ -6,6 +6,13 @@ import { oauthRoutes } from "./oauth-routes.js";
 import { authPage, authStyle, escapeHtml as escape } from "./auth-page.js";
 import { BrowserSession } from "@gestaloka/contracts";
 import { AccessError } from "@gestaloka/server/access";
+import { registrationConsent } from "@gestaloka/server/legal";
+import {
+  legalPageUrl,
+  legalRoutes,
+  registrationCookie,
+} from "./legal-routes.js";
+import { z } from "zod";
 
 type Message = { id?: number; text: string };
 const passwordErrors: Record<number, string> = {
@@ -51,6 +58,13 @@ export async function authRoutes(
     });
   });
   await app.register(rateLimit, { global: false });
+  app.addContentTypeParser(
+    "application/x-www-form-urlencoded",
+    { parseAs: "string" },
+    (_request, body, done) =>
+      done(null, Object.fromEntries(new URLSearchParams(String(body)))),
+  );
+  legalRoutes(app, identity, operations);
   app.get(
     "/internal/auth/attempt",
     {
@@ -63,11 +77,25 @@ export async function authRoutes(
     "/internal/auth/invitation",
     { schema: { hide: true } },
     async (request, reply) => {
-      const { requestUrl } = request.body as { requestUrl?: string };
+      const { requestUrl, receipt, flow } = request.body as {
+        requestUrl?: string;
+        receipt?: string;
+        flow?: string;
+      };
+      const password = (request.query as { method?: string }).method !== "oidc";
       const target = URL.parse(requestUrl ?? "")?.searchParams.get("return_to");
       const token = URL.parse(target ?? "")?.searchParams.get("invitation");
-      if (token && (await operations?.hasInvitation(token)))
-        return reply.code(204).send();
+      const validInvite =
+        !password || (token && (await operations?.hasInvitation(token)));
+      const accepted =
+        operations &&
+        z.uuid().safeParse(flow).success &&
+        validInvite &&
+        (await registrationConsent(operations.pool, receipt, flow, true));
+      if (accepted)
+        return reply.send({
+          identity: { metadata_public: { registrationConsent: accepted } },
+        });
       return reply.code(403).send({
         messages: [
           {
@@ -76,7 +104,9 @@ export async function authRoutes(
               {
                 id: 1,
                 type: "error",
-                text: "この招待では登録できません。招待を送った人に確認してください。",
+                text: validInvite
+                  ? "登録前に利用規約とプライバシーポリシーへの同意が必要です。"
+                  : "この招待では登録できません。招待を送った人に確認してください。",
               },
             ],
           },
@@ -112,6 +142,16 @@ export async function authRoutes(
     }>(`/auth/${kind}`, async (request, reply) => {
       const { flow, return_to } = request.query;
       const base = identity.publicUrl.replace(/\/$/, "");
+      if (
+        kind === "registration" &&
+        (!operations ||
+          !(await registrationConsent(
+            operations.pool,
+            request.cookies[registrationCookie],
+            flow,
+          )))
+      )
+        return reply.redirect(legalPageUrl(request.url));
       if (!flow) {
         const url = new URL(`${base}/self-service/${kind}/browser`);
         if (return_to) url.searchParams.set("return_to", return_to);
@@ -222,7 +262,10 @@ export async function authRoutes(
             : kind === "settings"
               ? "<p>追加できるログイン方法はありません。</p>"
               : "") +
-          password,
+          password +
+          (providers && kind === "login" && !data.refresh
+            ? `<p><a href="/auth/registration${data.return_to ? "?" + escape(new URLSearchParams({ return_to: data.return_to }).toString()) : ""}">外部アカウントで新規登録する</a></p>`
+            : ""),
         `'self' ${new URL(base).origin} https://accounts.google.com https://api.twitter.com https://api.x.com https://twitter.com https://x.com`,
       );
     });

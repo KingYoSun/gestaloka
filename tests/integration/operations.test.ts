@@ -4,6 +4,11 @@ import { afterAll, afterEach, beforeEach, expect, test } from "vitest";
 import { connectDatabases } from "@gestaloka/server";
 import { OryIdentity } from "@gestaloka/server/identity";
 import { Operations } from "@gestaloka/server/operations";
+import {
+  beginRegistrationConsent,
+  legalVersion,
+  recordLegalConsent,
+} from "@gestaloka/server/legal";
 import type { Operation } from "@gestaloka/contracts";
 import type { z } from "zod";
 import { createApp } from "../../apps/api/src/app.js";
@@ -60,6 +65,7 @@ async function person() {
     ory,
   ]);
   cookies.set(cookie, ory);
+  await recordLegalConsent(db.postgres, id);
   return { id, cookie };
 }
 const run = (
@@ -67,6 +73,29 @@ const run = (
   input: z.infer<typeof Operation>,
   request = randomUUID(),
 ) => ops.execute(actor, request, input);
+test("外部ログインの新規登録では本人が同意した版を一つの認証フローに結び付ける", async () => {
+  const flow = randomUUID();
+  const hook = (flow: string, receipt?: string) =>
+    app.inject({
+      method: "POST",
+      url: "/internal/auth/invitation?method=oidc",
+      payload: { flow, receipt },
+    });
+  expect((await hook(flow)).statusCode).toBe(403);
+  const receipt = await beginRegistrationConsent(db.postgres);
+  const accepted = await hook(flow, receipt);
+  expect(accepted.json().identity.metadata_public.registrationConsent).toEqual({
+    version: legalVersion,
+    acceptedAt: expect.any(String),
+  });
+  expect((await hook(flow, receipt)).statusCode).toBe(200);
+  expect((await hook(randomUUID(), receipt)).statusCode).toBe(403);
+  await db.postgres.query(
+    "UPDATE app_legal_registration SET version='previous-edition' WHERE id=$1",
+    [receipt],
+  );
+  expect((await hook(flow, receipt)).statusCode).toBe(403);
+});
 async function founder() {
   const actor = await person();
   await run(actor.id, { operation: "account.register" });
@@ -542,8 +571,16 @@ test("観戦の公開設定は非公開で始まり、登録済みの本人だ�
   );
 });
 
-test("復旧CLIは未登録の本人IDも管理者として登録でき、自動初代付与を繰り返さない", async () => {
+test("復旧CLIによる初回登録にも本人の同意を要し、自動初代付与を繰り返さない", async () => {
   const actor = await person();
+  await db.postgres.query("DELETE FROM app_legal_consent WHERE user_id=$1", [
+    actor.id,
+  ]);
+  await expect(
+    ops.recover(actor.id, randomUUID(), "管理者登録"),
+  ).rejects.toMatchObject({ code: "LEGAL_CONSENT_REQUIRED" });
+  expect((await ops.state(actor.id)).member).toBeNull();
+  await recordLegalConsent(db.postgres, actor.id);
   const result = await ops.recover(
     actor.id,
     randomUUID(),

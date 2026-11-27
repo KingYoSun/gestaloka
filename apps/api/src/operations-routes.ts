@@ -23,6 +23,8 @@ import type { WorldPlayers } from "@gestaloka/server/players";
 import { AccessError } from "@gestaloka/server/access";
 import type { WorldAccess } from "@gestaloka/server/access";
 import { authPage, escapeHtml } from "./auth-page.js";
+import { accessMessage, legalPageUrl } from "./legal-routes.js";
+import { requireLegalConsent } from "@gestaloka/server/legal";
 
 export async function operationsRoutes(
   instance: FastifyInstance,
@@ -158,11 +160,11 @@ export async function operationsRoutes(
         "同じ画面から操作してください",
       );
   });
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof AccessError)
       return reply
         .code(error.status)
-        .send({ code: error.code, message: error.message });
+        .send({ code: error.code, message: accessMessage(request, error) });
     if (error instanceof IdentityError)
       return reply
         .code(error.status)
@@ -197,6 +199,7 @@ export async function operationsRoutes(
             member: Member.nullable(),
             inviteRequired: z.boolean(),
             bootstrapAvailable: z.boolean(),
+            legalConsentRequired: z.boolean(),
           }),
           ...errors,
         },
@@ -375,8 +378,10 @@ export async function operationsRoutes(
           "MODEL_NOT_CONFIGURED",
           "参加処理を設定してください",
         );
+      const userId = await actor(request);
+      await requireLegalConsent(service().pool, userId);
       return players.setIcon(
-        await actor(request),
+        userId,
         request.params.id,
         request.params.playerId,
         request.body.image,
@@ -439,6 +444,16 @@ export async function operationsRoutes(
       .parse(request.method === "POST" ? request.body : request.query);
     const userId = await actor(request);
     const state = await service().state(userId);
+    if (state.legalConsentRequired && !state.member) {
+      const next = new URLSearchParams();
+      if (player) next.set("player", player);
+      if (invitation) next.set("invitation", invitation);
+      if (return_to) next.set("return_to", return_to);
+      return reply.redirect(
+        legalPageUrl("/auth/register" + (next.size ? "?" + next : "")),
+        303,
+      );
+    }
     const invitationWorld =
       invitation && players
         ? await service().invitationWorld(invitation)

@@ -56,6 +56,7 @@ test.beforeEach(async ({ page, context }) => {
   ]);
   await page.route(/\/(api|auth)\//, async (route) => {
     const u = new URL(route.request().url());
+    if (u.origin === origin) return route.continue();
     await route.fulfill({
       response: await route.fetch({
         url: origin + u.pathname + u.search,
@@ -364,7 +365,9 @@ test("招待・追加管理者・BANを画面から操作し、権限変更で�
       sameSite: "Strict",
     },
   ]);
-  await page.goto("http://127.0.0.1:4174/auth/register");
+  await page.goto(app.listeningOrigin + "/auth/register");
+  await page.getByRole("checkbox", { name: /利用規約/ }).check();
+  await page.getByRole("button", { name: "同意して進む" }).click();
   await page
     .getByLabel("招待トークン", { exact: true })
     .fill("invalid-invitation");

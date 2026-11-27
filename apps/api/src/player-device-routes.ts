@@ -82,10 +82,15 @@ export async function playerDeviceRoutes(
     },
     async (request) => {
       const { devices, construction } = service();
-      const status = devices.status(
+      const status = await devices.status(
         await devices.read(request.headers.authorization),
       );
-      if (!request.query.welcome || !status.joinId || !status.actorId)
+      if (
+        status.legalConsentRequired ||
+        !request.query.welcome ||
+        !status.joinId ||
+        !status.actorId
+      )
         return status;
       const world = await construction.get(status.worldId);
       if (!world.world_id) return status;

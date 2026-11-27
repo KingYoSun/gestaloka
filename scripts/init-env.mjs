@@ -10,6 +10,8 @@ const content = [
   "NEO4J_USER=neo4j",
   `NEO4J_PASSWORD=${graphPassword}`,
   "PORT=3000",
+  "LEGAL_OPERATOR_NAME=",
+  "LEGAL_CONTACT=",
   "",
 ].join("\n");
 try {

@@ -16,6 +16,7 @@
     "./scene": "./dist/runtime/scene.js",
     "./players": "./dist/runtime/players.js",
     "./identity": "./dist/http/identity.js",
+    "./legal": "./dist/http/legal.js",
     "./operations": "./dist/http/operations.js",
     "./mcp": "./dist/http/mcp.js"
   },

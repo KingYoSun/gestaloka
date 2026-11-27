@@ -23430,12 +23430,16 @@
                     },
                     "bootstrapAvailable": {
                       "type": "boolean"
+                    },
+                    "legalConsentRequired": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "member",
                     "inviteRequired",
-                    "bootstrapAvailable"
+                    "bootstrapAvailable",
+                    "legalConsentRequired"
                   ],
                   "additionalProperties": false
                 }
@@ -33116,6 +33120,12 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "legalConsentRequired": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
                     "id": {
                       "type": "string",
                       "format": "uuid",

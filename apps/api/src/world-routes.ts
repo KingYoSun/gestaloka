@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { setTimeout as delay } from "node:timers/promises";
 import cookie from "@fastify/cookie";
+import { requireLegalConsent } from "@gestaloka/server/legal";
+import { accessMessage } from "./legal-routes.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "@fastify/type-provider-zod";
 import {
@@ -109,6 +111,7 @@ export async function worldRoutes(
         "認証サービスを設定してください",
       );
     let id: string;
+    let needsCharacter = false;
     if (request.headers.authorization) {
       const route = request.routeOptions.url ?? "";
       const storyLibrary =
@@ -153,22 +156,38 @@ export async function worldRoutes(
         storyLibrary ? undefined : params.id,
         query.actorId,
       );
-      if (
+      needsCharacter =
         !device.actor_id &&
         !storyLibrary &&
-        request.routeOptions.url !== "/api/worlds/:id/reports"
-      )
-        throw new AccessError(
-          409,
-          "PLAYER_JOIN_REQUIRED",
-          "参加完了を確認してください",
-        );
+        route !== "/api/worlds/:id/reports";
       if (device.actor_id && !storyLibrary) query.actorId = device.actor_id;
       deviceIds.set(request, device.id);
       id = device.user_id!;
     } else id = (await identity.session(request.headers.cookie)).userId;
     await operations.authorize(id);
     identities.set(request, id);
+    const route = request.routeOptions.url;
+    if (
+      ![
+        "/api/session",
+        "/api/worlds/:id/notices",
+        "/api/worlds/:id/waiting",
+        "/api/worlds/:id/waiting/events",
+        "/api/worlds/:id/cursor",
+        "/api/worlds/:id/events",
+        "/api/worlds",
+        "/api/worlds/:id",
+        "/api/worlds/:id/records",
+        "/api/worlds/:id/commands",
+      ].includes(route ?? "")
+    )
+      await requireLegalConsent(operations.pool, id);
+    if (needsCharacter)
+      throw new AccessError(
+        409,
+        "PLAYER_JOIN_REQUIRED",
+        "参加完了を確認してください",
+      );
     return id;
   };
   app.addHook("onSend", async (request, reply, payload) => {
@@ -221,7 +240,9 @@ export async function worldRoutes(
     if (error instanceof AccessError)
       return reply.code(error.status).send({
         code: error.code,
-        message: error.message + describeBlockingStates(error.blockingStates),
+        message:
+          accessMessage(request, error) +
+          describeBlockingStates(error.blockingStates),
         callsUsed: error.callsUsed,
         capacity: error.inventory?.capacity,
         item: error.inventory?.item,
