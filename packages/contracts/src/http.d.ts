@@ -3751,6 +3751,20 @@ export interface paths {
                             description?: string;
                         } | {
                             /** @enum {string} */
+                            type: "observe";
+                            /** Format: uuid */
+                            targetId: string;
+                            /** Format: uuid */
+                            observerId?: string;
+                            text: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "record-observation";
+                            /** Format: uuid */
+                            observationId: string;
+                            participants?: string[];
+                        } | {
+                            /** @enum {string} */
                             type: "oppose";
                             text: string;
                             /** Format: uuid */
@@ -4688,6 +4702,20 @@ export interface paths {
                             text: string;
                             endStateIds: string[];
                             description?: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "observe";
+                            /** Format: uuid */
+                            targetId: string;
+                            /** Format: uuid */
+                            observerId?: string;
+                            text: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "record-observation";
+                            /** Format: uuid */
+                            observationId: string;
+                            participants?: string[];
                         } | {
                             /** @enum {string} */
                             type: "oppose";
@@ -6072,6 +6100,13 @@ export interface paths {
                                     /** Format: date-time */
                                     at: string;
                                     message: string;
+                                    observation?: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        text: string;
+                                        /** Format: date-time */
+                                        at: string;
+                                    };
                                     code?: string;
                                     rejectedBy?: {
                                         /** Format: uuid */

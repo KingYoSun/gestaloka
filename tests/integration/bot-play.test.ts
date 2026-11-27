@@ -86,6 +86,156 @@ const explored = {
   partOf: false,
   placeSeries: null,
 };
+
+test("観察で提示した結果を共有グラフから読み、後の申請で同じ結果を記録できる", async () => {
+  const f = await fixture();
+  const [actor] = f.actors;
+  const requestId = randomUUID();
+  const finding = "石畳の溝に沿って水が流れ、東の端だけに砂がたまっている。";
+  const observe = {
+    command: "apply",
+    requestId,
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "observe",
+      targetId: f.place,
+      text: "広場の水の流れを目で追う",
+    },
+  };
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(JSON.parse(String(messages[1]!.content))).toMatchObject({
+      observerId: actor,
+      targetId: f.place,
+    });
+    return answer(id, { ...sure, observation: finding });
+  });
+  const result = await f.send(0, observe);
+  const id = derivedId(`${requestId}:observation`);
+  const context = f.store.context(f.graph);
+  const event = await context.node(id);
+  if (event?.kind !== "event") throw new Error("観察結果が保存されていません");
+  const at = new Date(event.period.from).toISOString();
+  expect(event).toMatchObject({
+    kind: "event",
+    text: expect.stringContaining(finding),
+  });
+  expect(result).toMatchObject({
+    spentSp: 1,
+    observation: { id, text: event.text, at },
+    action: { message: expect.stringContaining(finding) },
+  });
+  expect(await f.send(0, observe)).toEqual(result);
+  const record = {
+    command: "apply",
+    requestId: randomUUID(),
+    expectedSp: 0,
+    dependencies: [],
+    action: { type: "record-observation", observationId: id },
+  };
+  await expect(
+    f.send(1, { ...record, requestId: randomUUID() }),
+  ).rejects.toMatchObject({
+    code: "OBSERVATION_NOT_AVAILABLE",
+  });
+  const copied = await f.send(0, record);
+  expect(copied.spentSp).toBe(0);
+  const memo = await context.node(derivedId(`${record.requestId}:memo`));
+  expect(memo?.text).toBe(`観察日時 ${at}（${id}）\n${event.text}`);
+  expect(
+    (await f.send(0, { command: "search", query: { kind: "memos" } })).material,
+  ).toContainEqual(expect.objectContaining({ id: memo?.id, text: memo?.text }));
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
+test("他者が観察する申請は観察者が受領してから同じ本文を確定する", async () => {
+  const f = await fixture();
+  const [senderId, targetId, observerId] = f.actors;
+  await f.move(2, f.place);
+  await f.send(1, { command: "contact", targetId: senderId });
+  await f.send(2, { command: "contact", targetId: senderId });
+  const requestId = randomUUID();
+  const id = derivedId(`${requestId}:observation`);
+  const finding = "手を動かすと袖口の継ぎ目が開き、裏側の青い糸が見える。";
+  f.calls.mockImplementationOnce(async (callId) =>
+    answer(callId, { ...sure, observation: finding }),
+  );
+  expect(
+    await f.send(0, {
+      command: "apply",
+      requestId,
+      expectedSp: 1,
+      dependencies: [],
+      action: {
+        type: "observe",
+        observerId,
+        targetId,
+        text: "同席者に上着の袖を観察してもらう",
+      },
+    }),
+  ).toMatchObject({ state: "receiving" });
+  const preview = (await f.status(2)).receiving?.changes?.nodes[0];
+  expect(preview).toMatchObject({ id, text: expect.stringContaining(finding) });
+  expect(await f.store.context(f.graph).node(id)).toBeUndefined();
+  expect(
+    await f.send(1, {
+      command: "receive",
+      applicationId: requestId,
+      accept: true,
+    }),
+  ).toMatchObject({ application: { state: "waiting" } });
+  expect(await f.store.context(f.graph).node(id)).toBeUndefined();
+  expect(
+    await f.send(2, {
+      command: "receive",
+      applicationId: requestId,
+      accept: true,
+    }),
+  ).toMatchObject({
+    application: {
+      state: "confirmed",
+      observation: { id, text: preview?.text },
+      message: expect.stringContaining(finding),
+    },
+  });
+  expect(await f.store.context(f.graph).node(id)).toMatchObject({
+    id,
+    text: preview?.text,
+  });
+});
+
+test("記録の目的だけを書いた新規状態はダイスもSP消費もなく差し戻す", async () => {
+  const f = await fixture(1);
+  const requestId = randomUUID();
+  const reason =
+    "観察の結果がありません。確定済みの結果を record-observation に指定してください。";
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    expect(messages[0]!.content).toContain("record-observation");
+    return answer(id, { reject: reason });
+  });
+  const result = await f.send(0, {
+    command: "apply",
+    requestId,
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "state",
+      targetId: f.actors[0],
+      text: "水路の点検で分かったことを記録する",
+      description: "調査で得た結果を記録する。",
+    },
+  });
+  expect(result).toMatchObject({
+    state: "rejected",
+    spentSp: 0,
+    outcome: { success: false, reason: "STATE_DESCRIPTION_REQUIRED" },
+    action: { message: expect.stringContaining(reason) },
+  });
+  expect(
+    await f.store.context(f.graph).node(derivedId(`${requestId}:state`)),
+  ).toBeUndefined();
+});
 const answer = (id: string, content: unknown) => ({
   id,
   model: "fixture",
