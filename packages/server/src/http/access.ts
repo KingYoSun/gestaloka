@@ -73,6 +73,10 @@ type DiceEntry = {
     applicationId?: string;
     outcome?: { success?: boolean };
     dice?: string[];
+    thresholdReasons?: string[];
+    action?: { command: string };
+    effectState?: string;
+    state?: string;
     diceReasons?: string[];
     learningReasons?: string[];
   };
@@ -88,19 +92,7 @@ const oldReasons = (messages?: string[]) =>
   messages?.some((message) => message.endsWith("GMの根拠記録なし"));
 
 type SpectatingChat = {
-  entries?: {
-    actorId?: string;
-    input: string;
-    label?: string;
-    result?: {
-      commitId?: string;
-      dice?: string[];
-      action?: { command: string };
-      effectState?: string;
-      outcome?: { success?: boolean };
-      state?: string;
-    } | null;
-  }[];
+  entries?: (DiceEntry & { actorId?: string; label?: string })[];
   comment?: string;
   observation?: string;
   reason?: string;
@@ -125,6 +117,7 @@ function spectatingLines(payload: SpectatingChat) {
     const evidence = [
       ...(dice.length ? dice : (result?.dice ?? [])),
       ...unrolledReasons(result?.outcome),
+      ...(result?.thresholdReasons ?? []),
     ];
     for (const text of evidence) lines.push({ text });
     if (success === false) {
@@ -362,6 +355,7 @@ export class WorldAccess {
     };
     const response = entry.result;
     if (
+      response.dice?.length ||
       oldReasons(response.diceReasons) ||
       oldReasons(response.learningReasons) ||
       unrolledReasons(response.outcome).some(
@@ -371,13 +365,14 @@ export class WorldAccess {
         !response.diceReasons?.length &&
         !response.learningReasons?.length)
     )
-      await this.#explainDice(id, grant.actor_id!, [entry]);
+      await this.#explainDice(id, grant.actor_id!, [entry], subject);
     if (input.command === "finish") {
       const archive = result.result as { entries?: DiceRecord[] } | undefined;
       await this.#explainDice(
         id,
         grant.actor_id!,
         diceEntries(archive?.entries),
+        subject,
       );
     }
     return Object.assign(
@@ -612,6 +607,11 @@ export class WorldAccess {
           ),
         ),
     );
+    await this.#explainDice(
+      id,
+      null,
+      rows.slice(0, pageSize).flatMap((row) => row.payload?.entries ?? []),
+    );
     const entries = rows
       .slice(0, pageSize)
       .reverse()
@@ -709,7 +709,12 @@ export class WorldAccess {
         Object.assign(stealth.get(id)!.outcome!, { roll, setting });
     }
   }
-  async #explainDice(world: string, viewer: string, entries: DiceEntry[]) {
+  async #explainDice(
+    world: string,
+    viewer: string | null,
+    entries: DiceEntry[],
+    account: string | null = null,
+  ) {
     const byRequest = new Map<string, DiceEntry[]>();
     for (const entry of entries) {
       const { result } = entry;
@@ -753,24 +758,46 @@ export class WorldAccess {
         result.diceReasons = [missingDiceRecord];
     }
     if (!byRequest.size) return;
-    // 非公開の根拠と隠密行動の出目は、その申請の本人にだけ戻す。
+    // 申請者の設定で上限の説明だけを共有し、技能などの内訳は本人の記録にだけ重ねる。
     const { rows } = await this.pool.query(
-      `SELECT id,command,creation_rolls,result->'outcome' AS outcome,
-              result->'learningReasons' AS learning,result->'diceReasons' AS other
-       FROM bot_request WHERE world_id=$1 AND actor_id=$2 AND id=ANY($3::uuid[])`,
-      [world, viewer, [...byRequest.keys()]],
+      `WITH requests AS (
+         SELECT r.*,r.actor_id=$2 AS own,
+                (r.user_id=$4 OR u.public_dice_basis OR (r.user_id IS NULL AND r.actor_id=$2)) AS show_basis
+         FROM bot_request r LEFT JOIN app_user u ON u.id=r.user_id AND NOT u.banned
+         WHERE r.world_id=$1 AND r.id=ANY($3::uuid[])
+       )
+       SELECT id,own,show_basis,command,
+              CASE WHEN show_basis THEN result->'thresholdReasons' END AS basis,
+              CASE WHEN own THEN creation_rolls END AS creation_rolls,
+              CASE WHEN own THEN result->'outcome' END AS outcome,
+              CASE WHEN own THEN result->'learningReasons' END AS learning,
+              CASE WHEN own THEN result->'diceReasons' END AS other
+       FROM requests`,
+      [world, viewer, [...byRequest.keys()], account],
     );
-    await this.#restoreStealthRolls(rows);
+    for (const row of rows)
+      for (const { result } of byRequest.get(row.id)!) {
+        if (!row.show_basis) delete result.thresholdReasons;
+        else if (row.basis?.length) result.thresholdReasons = row.basis;
+      }
+    const own = rows.filter((row) => row.own);
+    await this.#restoreStealthRolls(own);
     const reasons = await this.botPlay.diceReasons(
       this.pool,
-      rows.map((row) => ({
+      own.map((row) => ({
         ...row,
         text: byRequest.get(row.id)![0]!.input,
       })),
     );
-    for (const row of rows) {
+    for (const row of own) {
       const notes = reasons.get(row.id);
       for (const { result } of byRequest.get(row.id)!) {
+        if (
+          row.show_basis &&
+          !result.thresholdReasons?.length &&
+          notes?.thresholdReasons
+        )
+          result.thresholdReasons = notes.thresholdReasons;
         const dice = playDiceMessages(row.outcome);
         if (!result.dice?.length && dice.length) result.dice = dice;
         for (const [field, saved] of [
@@ -810,10 +837,15 @@ export class WorldAccess {
       after,
       screen,
     );
-    await this.#explainDice(id, viewerId, [
-      ...diceEntries(history.entries),
-      ...diceEntries(history.result?.entries),
-    ]);
+    await this.#explainDice(
+      id,
+      viewerId,
+      [
+        ...diceEntries(history.entries),
+        ...diceEntries(history.result?.entries),
+      ],
+      subject,
+    );
     const result = {
       viewerId,
       ...status,

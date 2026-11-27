@@ -6,6 +6,7 @@ import {
   ApiError,
   Member,
   SpectatingSetting,
+  SpectatingUpdate,
   Operation,
   LegacyClaimPage,
   CatalogPageQuery,
@@ -216,12 +217,16 @@ export async function operationsRoutes(
     "/api/account/spectating",
     {
       schema: {
-        body: SpectatingSetting,
+        body: SpectatingUpdate,
         response: { 200: SpectatingSetting, ...errors },
       },
     },
     async (request) =>
-      service().spectating(await actor(request), request.body.public),
+      service().spectating(
+        await actor(request),
+        request.body.public,
+        request.body.publicDiceBasis,
+      ),
   );
   app.post(
     "/api/operations",

@@ -68,6 +68,7 @@ export async function fixtureRuntime(
         // 既定の3d6で選べる最大の目標値。
         const dice = (proposal: Record<string, unknown>) => ({
           successThrough: 17,
+          thresholdBasis: "必要な材料と作業の手順がそろっている。",
           ...(input.messages[0]?.content.includes("でperformedに返す") &&
           proposal.allowApply !== undefined
             ? { performed: "申請された本人の行為が成立した。" }

@@ -169,7 +169,7 @@ export class Operations {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS app_user (
       id uuid PRIMARY KEY REFERENCES app_identity(id),role text NOT NULL CHECK(role IN ('admin','user')),
       banned boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now());
-      ALTER TABLE app_user ADD COLUMN IF NOT EXISTS public_spectating boolean NOT NULL DEFAULT false;
+      ALTER TABLE app_user ADD COLUMN IF NOT EXISTS public_spectating boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS public_dice_basis boolean NOT NULL DEFAULT false;
       CREATE TABLE IF NOT EXISTS operation_state (singleton boolean PRIMARY KEY CHECK(singleton),
         bootstrapped boolean NOT NULL DEFAULT false,invite_required boolean NOT NULL DEFAULT true);
       INSERT INTO operation_state(singleton) VALUES(true) ON CONFLICT DO NOTHING;
@@ -223,13 +223,20 @@ export class Operations {
       legalConsentRequired: !(await hasLegalConsent(this.pool, userId)),
     };
   }
-  async spectating(userId: string, isPublic?: boolean) {
+  async spectating(
+    userId: string,
+    isPublic?: boolean,
+    publicDiceBasis?: boolean,
+  ) {
+    const fields =
+      'public_spectating AS "public",public_dice_basis AS "publicDiceBasis"';
+    const read = isPublic === undefined && publicDiceBasis === undefined;
     const setting = (
-      await this.pool.query<{ public: boolean }>(
-        isPublic === undefined
-          ? 'SELECT public_spectating AS "public" FROM app_user WHERE id=$1 AND NOT banned'
-          : 'UPDATE app_user SET public_spectating=$2 WHERE id=$1 AND NOT banned RETURNING public_spectating AS "public"',
-        isPublic === undefined ? [userId] : [userId, isPublic],
+      await this.pool.query<{ public: boolean; publicDiceBasis: boolean }>(
+        read
+          ? `SELECT ${fields} FROM app_user WHERE id=$1 AND NOT banned`
+          : `UPDATE app_user SET public_spectating=COALESCE($2,public_spectating),public_dice_basis=COALESCE($3,public_dice_basis) WHERE id=$1 AND NOT banned RETURNING ${fields}`,
+        read ? [userId] : [userId, isPublic, publicDiceBasis],
       )
     ).rows[0];
     if (!setting) {

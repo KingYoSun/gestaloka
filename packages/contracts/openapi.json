@@ -23802,10 +23802,14 @@
                   "properties": {
                     "public": {
                       "type": "boolean"
+                    },
+                    "publicDiceBasis": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "public"
+                    "public",
+                    "publicDiceBasis"
                   ],
                   "additionalProperties": false
                 }
@@ -24020,11 +24024,11 @@
                 "properties": {
                   "public": {
                     "type": "boolean"
+                  },
+                  "publicDiceBasis": {
+                    "type": "boolean"
                   }
                 },
-                "required": [
-                  "public"
-                ],
                 "additionalProperties": false
               }
             }
@@ -24040,10 +24044,14 @@
                   "properties": {
                     "public": {
                       "type": "boolean"
+                    },
+                    "publicDiceBasis": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "public"
+                    "public",
+                    "publicDiceBasis"
                   ],
                   "additionalProperties": false
                 }
