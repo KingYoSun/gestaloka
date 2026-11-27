@@ -772,6 +772,14 @@ export const PlayerDeviceStatus = z.object({
   presetId: z.uuid().nullable(),
   presetVersion: z.number().int().positive().nullable(),
   character: z.string().optional(),
+  welcome: z
+    .object({
+      worldName: z.string(),
+      playerName: z.string(),
+      dailySpLimit: z.number().int().positive(),
+      webUrl: z.url().optional(),
+    })
+    .optional(),
   state: z.enum([
     "authorization_pending",
     "authorized",

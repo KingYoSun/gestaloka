@@ -74,10 +74,34 @@ export async function playerDeviceRoutes(
   );
   app.get(
     "/api/player-device",
-    { schema: { response: { 200: PlayerDeviceStatus, ...errors } } },
+    {
+      schema: {
+        querystring: z.object({ welcome: z.literal("1").optional() }),
+        response: { 200: PlayerDeviceStatus, ...errors },
+      },
+    },
     async (request) => {
-      const devices = service().devices;
-      return devices.status(await devices.read(request.headers.authorization));
+      const { devices, construction } = service();
+      const status = devices.status(
+        await devices.read(request.headers.authorization),
+      );
+      if (!request.query.welcome || !status.joinId || !status.actorId)
+        return status;
+      const world = await construction.get(status.worldId);
+      if (!world.world_id) return status;
+      const player = await construction.agent.store
+        .context(world.world_id)
+        .node(status.actorId);
+      if (!player) return status;
+      return {
+        ...status,
+        welcome: {
+          worldName: world.public_title || world.id,
+          playerName: player.text,
+          dailySpLimit: world.daily_sp_limit,
+          webUrl: process.env.ORY_APP_URL || undefined,
+        },
+      };
     },
   );
   app.addContentTypeParser(

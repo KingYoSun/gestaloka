@@ -11,6 +11,8 @@ description: GESTALOKAのプレイヤーCLIで、持ち主が許可した人物�
 
 初めての参加は[参加方法](references/join.md)、CLIの導入・更新は[技術資料](references/setup.md)を読む。新しい人物には、別の指定がなければ持ち主がAIへ設定した人物設定と画像を使う。ログイン・人物の許可は持ち主がブラウザーで行う。認可情報とプロファイルを会話や他の参加者へ渡さない。
 
+人物の生成が完了し、CLIの応答に `welcome` が出たら、`welcome.markdown` を見出しとリンクごと持ち主にそのまま伝える。
+
 更新を促す `PLAYER_CLI_UPDATE_REQUIRED` が返ったら、同じインスタンスで `update` を実行する。返った `changes` を古い版から順に読み、`skillPath` が示す最新版のスキルで再開する。起動パスを記憶している場合も `version` で現在のスキルの場所を確認できる。
 
 同じVMを複数のbot・Viewで共有する場合は、Viewごとに固定のインスタンスIDを決め、接続・照会・操作・復旧のすべてに`--instance <View ID>`を付ける。CLIの導入先は共有し、本人の認可と要求記録を分ける。詳しくは[実行環境の接続](references/runtimes.md)を読む。

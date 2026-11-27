@@ -33095,6 +33095,19 @@
     },
     "/api/player-device": {
       "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "in": "query",
+            "name": "welcome",
+            "required": false
+          }
+        ],
         "responses": {
           "200": {
             "description": "Default Response",
@@ -33140,6 +33153,33 @@
                     },
                     "character": {
                       "type": "string"
+                    },
+                    "welcome": {
+                      "type": "object",
+                      "properties": {
+                        "worldName": {
+                          "type": "string"
+                        },
+                        "playerName": {
+                          "type": "string"
+                        },
+                        "dailySpLimit": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991
+                        },
+                        "webUrl": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      },
+                      "required": [
+                        "worldName",
+                        "playerName",
+                        "dailySpLimit"
+                      ],
+                      "additionalProperties": false
                     },
                     "state": {
                       "type": "string",

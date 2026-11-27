@@ -11788,7 +11788,9 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    welcome?: "1";
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -11814,6 +11816,13 @@ export interface paths {
                             presetId: string | null;
                             presetVersion: number | null;
                             character?: string;
+                            welcome?: {
+                                worldName: string;
+                                playerName: string;
+                                dailySpLimit: number;
+                                /** Format: uri */
+                                webUrl?: string;
+                            };
                             /** @enum {string} */
                             state: "authorization_pending" | "authorized" | "joining" | "paused" | "ready";
                         };
