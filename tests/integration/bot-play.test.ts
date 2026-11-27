@@ -10132,7 +10132,7 @@ test.each(["材料", "状況"])(
     const reused = await repair(request);
     expect(reused).toMatchObject({
       spentSp: 0,
-      outcome: { ...first.outcome, repeated: true },
+      outcome: { ...(first.outcome as object), repeated: true },
     });
     expect(reused.turn).not.toBe(first.turn);
     expect(
