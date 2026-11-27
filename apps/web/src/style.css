@@ -471,8 +471,7 @@ select {
   font-weight: 700;
   margin-bottom: 16px;
 }
-.play-profile .player-avatar,
-.play-dialog-heading .player-avatar {
+.play-profile .player-avatar {
   width: 48px;
   height: 48px;
 }
@@ -632,6 +631,11 @@ select {
 }
 .play-dialog-heading {
   margin-bottom: 16px;
+}
+.play-dialog-heading .player-character {
+  --player-icon-size: 96px;
+  font-size: 32px;
+  overflow-wrap: anywhere;
 }
 .play-tooltip {
   z-index: 52;
