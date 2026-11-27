@@ -4431,6 +4431,89 @@ test("HTTPとCLIは本人の手番APIを使い、旧書込を拒否し、同じ�
   }
 });
 
+test("CLIの対象検索で手持ちの品の説明を読み、手番を使わず続きを読める", async () => {
+  const f = await fixture(2);
+  const [buyer, seller] = f.actors as [string, string];
+  await f.apply([
+    {
+      type: "create",
+      holder: seller,
+      label: "道しるべ帳",
+      count: 5,
+      basis: "店で作った",
+    },
+  ]);
+  const held = async (actor: string) =>
+    (await readBelongings(f.store.context(f.graph), actor)).items[0]!.id;
+  const original = await held(seller);
+  const descriptions = Array.from({ length: 51 }, (_, i) => `目印 ${i}`);
+  const changes: Change = { nodes: [], edges: [], revisions: [], endEdges: [] };
+  for (const description of descriptions) mark(changes, original, description);
+  mark(changes, original, "店主の控え");
+  Object.assign(changes.nodes.at(-1)!, { viewers: [seller] });
+  await f.store.commit(
+    await f.store.claim(f.graph, randomUUID()),
+    f.store.context(f.graph),
+    { commitId: randomUUID(), at: 0, changes },
+  );
+  await f.apply([
+    {
+      type: "move",
+      item: original,
+      from: seller,
+      to: buyer,
+      count: 1,
+      basis: "店で購入",
+    },
+  ]);
+  const item = await held(buyer);
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  const profile = join(cli.directory, "buyer.json");
+  const run = (...args: string[]) => cli.run(profile, ...args, "--full-ids");
+  try {
+    const { userCode } = await run(
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (await cli.approve(f.people[0]!.cookie, userCode, `actor:${buyer}`))
+        .statusCode,
+    ).toBe(302);
+    const search = ["search", "--kind", "subject", "--target", item];
+    const first = await run(...search);
+    expect(first.result.callsUsed).toBe(1);
+    const description = first.result.material.description;
+    expect(description).toMatchObject({
+      origin: "店で作った",
+      states: [],
+      next: expect.any(String),
+    });
+    expect(
+      (await run("search", "--kind", "subject", "--target", f.place)).result
+        .material,
+    ).not.toHaveProperty("description");
+    await f.send(0, { command: "finish" });
+    const second = (await run(...search, "--after", description.next))
+      .description;
+    expect(second.next).toBeNull();
+    expect([...description.inherited, ...second.inherited].sort()).toEqual(
+      descriptions.sort(),
+    );
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
+
 test("同じVMのCLIをView別インスタンスで並列実行し、認可と要求の復旧を分離する", async () => {
   const f = await fixture(),
     app = await createApp(access, auth.identity, undefined, auth.operations),

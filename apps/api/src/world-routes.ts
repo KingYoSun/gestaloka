@@ -122,6 +122,7 @@ export async function worldRoutes(
         "/api/worlds/:id/scene",
         "/api/worlds/:id/session",
         "/api/worlds/:id/session/quote",
+        "/api/worlds/:id/inventory/description",
         "/api/worlds/:id/inventory/contents",
         "/api/worlds/:id/inventory/bundles",
         "/api/worlds/:id/waiting",
