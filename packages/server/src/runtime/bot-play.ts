@@ -1029,6 +1029,12 @@ const DiceSetting = (pool: WorldDice) => {
       )
       .optional(),
     explored: Explored.optional(),
+    displacement: z
+      .union([
+        z.strictObject({ placeId: z.uuid() }),
+        z.strictObject({ newPlace: z.string().trim().min(1).max(120) }),
+      ])
+      .optional(),
     // 物が外れる場所の説明のうち、成功時に終えて置き換えるもの。
     placeStates: z
       .array(
@@ -3042,6 +3048,21 @@ export class BotPlay {
     let outcome: Partial<CreationRoll> & { success: boolean; reason?: string } =
       { success: true };
     const effect = action.effect;
+    const movementText = (change: Change) => {
+      const location = change.edges.find(
+        (edge) =>
+          edge.kind === "status" &&
+          edge.role === "content" &&
+          edge.text === "location" &&
+          edge.source === effect?.targetId,
+      );
+      const name = change.nodes.find(
+        (node) => node.id === location?.target,
+      )?.text;
+      return name ? `対象は「${name}」へ移されました。` : undefined;
+    };
+    const summarize = (change: Change, state?: string | null) =>
+      [movementText(change), state].filter(Boolean).join(" ") || undefined;
     let effectState: string | null = null;
     let performed: string | undefined;
     let effectMinutes: number | undefined;
@@ -3084,6 +3105,7 @@ export class BotPlay {
       const recorded = prior.changes.nodes.find((n) => n.id === event);
       const instantReduction =
         recorded?.kind === "event" ? recorded.instantReduction : undefined;
+      const effectSummary = summarize(prior.changes, state?.text);
       return {
         context,
         changes: prior.changes,
@@ -3096,8 +3118,8 @@ export class BotPlay {
               instantReduction,
               effectState: instantReductionText(instantReduction),
             }
-          : state
-            ? { effectState: state.text }
+          : effectSummary
+            ? { effectState: effectSummary }
             : {}),
         ...(restored.success && restored.setting?.fatal
           ? { fatal: restored.setting.fatal }
@@ -3266,6 +3288,14 @@ export class BotPlay {
           : [materials];
         if (!selected)
           return reject(judgmentMaterialLimit, judgmentMaterialMessage);
+        const destinations = new Map<string, string>();
+        if (person && !npc && !protectedTarget)
+          for (const place of new Set(judgment?.places ?? places)) {
+            const node = await context.node(place);
+            if (node?.kind === "existence") destinations.set(place, node.text);
+            for (const { id, label } of await context.routeNeighbors(place))
+              destinations.set(id, label);
+          }
         if (person) await this.#rememberStateBasis(request, context);
         const drops =
           victim?.places.length && !protectedTarget
@@ -3322,6 +3352,7 @@ export class BotPlay {
           !victim,
           {
             recordAction: !!requester && !npc,
+            ...(person && !npc && !protectedTarget ? { destinations } : {}),
             drops: drops
               .filter((d) => d.rule.kind === "existence")
               .map(({ id, rule }) => ({
@@ -3340,6 +3371,8 @@ export class BotPlay {
               : {}),
           },
         );
+        const displacement = saved.setting.displacement;
+        delete saved.setting.displacement;
         outcome = {
           setting: saved.setting,
           roll: saved.roll,
@@ -3368,6 +3401,44 @@ export class BotPlay {
               saved.perception,
             );
           fatal = saved.setting.fatal ?? [];
+          if (displacement && !fatal.includes(effect.targetId)) {
+            await context.assertMovable(effect.targetId);
+            const existing =
+              "placeId" in displacement
+                ? [displacement.placeId]
+                : await context.namedPlaces(displacement.newPlace);
+            const place =
+              existing.length === 1
+                ? await context.node(existing[0]!)
+                : undefined;
+            if (
+              (existing.length === 1 && place?.kind !== "existence") ||
+              ("newPlace" in displacement &&
+                place &&
+                place.text !== displacement.newPlace)
+            )
+              reject("WORLD_CHANGED", "確定する移動先が見つかりません");
+            const destination = place ?? {
+              id: derivedId(request + ":displacement-place"),
+              kind: "existence" as const,
+              text: "newPlace" in displacement ? displacement.newPlace : "",
+            };
+            if (!place) changes.nodes.push(destination);
+            at = await this.#append(
+              context,
+              request + ":displacement",
+              at,
+              changes,
+              [
+                {
+                  type: "locate",
+                  subjectId: effect.targetId,
+                  text: destination.text,
+                  aboutIds: [destination.id],
+                },
+              ],
+            );
+          }
           at = await this.#consume(
             context,
             request,
@@ -3441,11 +3512,12 @@ export class BotPlay {
           );
       }
     }
+    const effectSummary = summarize(changes, effectState);
     const reductionText =
       instantReduction && instantReductionText(instantReduction);
     const appliedEffect =
       reductionText ??
-      (fatal.length ? "対象が死亡しました。" : effectState) ??
+      (fatal.length ? "対象が死亡しました。" : effectSummary) ??
       (endedState ? "対象の既存の状態が終了しました。" : undefined) ??
       (protectedTarget
         ? "非戦闘地域のため、対象の状態は変わりませんでした。"
@@ -3479,7 +3551,7 @@ export class BotPlay {
               ? action.text +
                 (outcome.success
                   ? "。結果：" +
-                    (reductionText ?? effectState ?? "作用が成立した")
+                    (reductionText ?? effectSummary ?? "作用が成立した")
                   : "。作用は成立しなかった")
               : action.text),
         ...(cause ? { instantActor: cause } : {}),
@@ -3593,8 +3665,8 @@ export class BotPlay {
             instantReduction,
             effectState: instantReductionText(instantReduction),
           }
-        : effectState
-          ? { effectState }
+        : effectSummary
+          ? { effectState: effectSummary }
           : {}),
       ...(fatal.length ? { fatal } : {}),
       ...(appearances.length ? { appearances } : {}),
@@ -13529,10 +13601,12 @@ export class BotPlay {
       recordAction = false,
       drops = [],
       reasonView,
+      destinations,
     }: {
       recordAction?: boolean;
       drops?: { id: string; label: string; description: string }[];
       reasonView?: { context: WorldContext; viewer: string; targets: string[] };
+      destinations?: ReadonlyMap<string, string>;
     } = {},
   ) {
     const { pool, fumble } = await readDicePolicy(this.pool, world);
@@ -13551,9 +13625,11 @@ export class BotPlay {
         : undefined;
     // 再送が参照する保存済みのダイス設定にも、確定前の保護を適用する。
     function protect(setting: SavedDice) {
-      if (!protection?.actor && !protection?.target) return setting;
+      if (!protection?.actor && !protection?.target && !setting.displacement)
+        return setting;
       const current = { ...setting };
-      if (protection.target) {
+      if (!destinations || protection?.target) delete current.displacement;
+      if (protection?.target) {
         const fatal = current.fatal?.filter((id) => mortal.includes(id));
         const states = current.states?.filter((state) =>
           affected.includes(state.id),
@@ -13568,7 +13644,7 @@ export class BotPlay {
           );
         if (!group) delete current.instantReduction;
       }
-      if (protection.actor) delete current.fumble;
+      if (protection?.actor) delete current.fumble;
       return current;
     }
     function readDecision(raw: string, requirePerformed = false) {
@@ -13617,6 +13693,21 @@ export class BotPlay {
         setting = protect(decision.setting),
         fatal = setting.fatal?.filter((id) => mortal.includes(id)),
         states = setting.states?.filter((s) => affected.includes(s.id));
+      const displacement = setting.displacement;
+      if (displacement && destinations) {
+        if ("placeId" in displacement) {
+          if (!destinations.has(displacement.placeId))
+            throw new Error("移動先はdestinationsのIDを指定してください");
+        } else {
+          const matching = [...destinations].filter(
+            ([, label]) => label === displacement.newPlace,
+          );
+          if (matching.length > 1)
+            throw new Error("同名の場所のうち移動先のIDを指定してください");
+          if (matching.length === 1)
+            setting.displacement = { placeId: matching[0]![0] };
+        }
+      }
       validateStateEnds(setting.endEdges, stateEnds, requireStateEnds);
       delete setting.fatal;
       delete setting.states;
@@ -13708,6 +13799,9 @@ export class BotPlay {
             "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {successThrough:整数,thresholdBasis:根拠の一文}。成否、出目、物語は生成しない。変更は以下で求められた項目だけを返す。" +
             (recordAction ? performedActionPrompt : "") +
             diceStatePrompt +
+            (destinations
+              ? "成功の結果として対象の人物が別の場所に着く場合、displacementに移動先を返す。destinationsに同じ場所があれば{placeId:その場所のID}を使う。そこに該当がなく、到着先が具体的に定まる場合だけ{newPlace:到着先の呼び名}で新しい場所を返す。押されても同じ場所にいる場合や移動が成立しない場合は省く。移動の経緯はperformed、移動先はdisplacement、移動後も続く負傷などはstatesに書く。現在の位置をstatesに含めない。"
+              : "") +
             (references?.size ? learningFactorsPrompt : "") +
             (drops.length
               ? "dropsの各物品が人間を含む生きた生物そのもの、またはそれを呼ぶ召喚石なら、summons:[{id,name}]にそのドロップのIDと生物の呼称を返す。死骸や素材は含めない。"
@@ -13772,6 +13866,9 @@ export class BotPlay {
             ...(mortal.length ? { mortal } : {}),
             ...(mortal.length && deathCriteria ? { deathCriteria } : {}),
             ...(affected.length ? { affected } : {}),
+            ...(destinations
+              ? { destinations: Object.fromEntries(destinations) }
+              : {}),
             ...(group ? { group } : {}),
             ...(perception ? { perception } : {}),
           }),

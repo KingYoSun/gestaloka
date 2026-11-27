@@ -1505,6 +1505,20 @@ export class WorldContext {
       }));
     });
   }
+  // 近隣の候補にない呼称でも、登録済みか所在に使われた同名の場所を見つける。
+  async namedPlaces(label: string) {
+    const { records } = await this.driver.executeQuery(
+      `MATCH (n:WorldNode) USING TEXT INDEX n:WorldNode(data)
+       WHERE n.worldId=$world AND n.kind='existence' AND n.data CONTAINS $text
+         AND (n.fixedPlace OR EXISTS {
+           MATCH ()-[a:status {role:'about'}]->(n)
+           WHERE a.data CONTAINS '"text":"direct-place"'
+         })
+       RETURN n.id AS id LIMIT 2`,
+      { world: this.worldId, text: '"text":' + JSON.stringify(label) },
+    );
+    return records.map((row) => row.get("id") as string);
+  }
   // 場所の説明が part-of で指す親。説明や about の変更は source キーを更新する。
   async partParents(id: string, at: number) {
     return this.#read(`source:${id}`, async (tx) => {
