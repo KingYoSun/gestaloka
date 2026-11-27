@@ -55,6 +55,7 @@ const world = {
     playerList: false,
     instantNpcMultiplier: 2,
     deathJudgment: true,
+    combatMode: "pve",
     respawnEnabled: true,
     deathCriteria: "",
     deathPlaceId: null,
@@ -364,6 +365,10 @@ test("世界の公開設定から無料プレイヤー数とリスポーン・�
   fireEvent.change(screen.getByLabelText("アカウントごとの無料プレイヤー数"), {
     target: { value: "2" },
   });
+  expect(screen.queryByLabelText("非戦闘地域")).toBeNull();
+  fireEvent.change(screen.getByLabelText("戦闘モード"), {
+    target: { value: "pvp" },
+  });
   fireEvent.change(screen.getByLabelText("非戦闘にする場所の系統"), {
     target: { value: "水車村\n塔の森" },
   });
@@ -377,6 +382,7 @@ test("世界の公開設定から無料プレイヤー数とリスポーン・�
     expect(saved).toMatchObject({
       operation: "worlds.configure",
       freePlayerLimit: 2,
+      combatMode: "pvp",
       respawnEnabled: false,
       nonCombatPlaceSeries: ["水車村", "塔の森"],
       nonCombatAreas: [

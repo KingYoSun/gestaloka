@@ -198,6 +198,7 @@ export const labels: Record<string, string> = {
   respawnDisabled: "リスポーンなし",
   deathCriteria: "人物の死亡を判定する条件",
   deathPlaceId: "リスポーン先の場所ID",
+  combatMode: "戦闘モード",
   nonCombatAreas: "非戦闘地域",
   nonCombatPlaceSeries: "非戦闘にする場所の系統",
   settings: "生成用の設定本文",

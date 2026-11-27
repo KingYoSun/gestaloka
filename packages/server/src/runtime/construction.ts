@@ -7,6 +7,7 @@ import type { PgBoss } from "pg-boss";
 import { z } from "zod";
 import {
   ConstructionDuration,
+  type CombatMode,
   type NonCombatAreas,
   type StartingItem,
 } from "@gestaloka/contracts";
@@ -61,6 +62,7 @@ export type Construction = {
   respawn_enabled: boolean;
   death_criteria: string;
   death_place_id: string | null;
+  combat_mode: CombatMode;
   non_combat_areas: NonCombatAreas;
   non_combat_place_series: string[];
   claim: string | null;
@@ -121,7 +123,9 @@ export class WorldConstruction {
       ADD COLUMN IF NOT EXISTS death_criteria text NOT NULL DEFAULT '',
       ADD COLUMN IF NOT EXISTS death_place_id uuid,
       ADD COLUMN IF NOT EXISTS non_combat_place_series text[] NOT NULL DEFAULT '{}',
-      ADD COLUMN IF NOT EXISTS non_combat_areas jsonb NOT NULL DEFAULT '[]'::jsonb;`);
+      ADD COLUMN IF NOT EXISTS non_combat_areas jsonb NOT NULL DEFAULT '[]'::jsonb,
+      ADD COLUMN IF NOT EXISTS combat_mode text NOT NULL DEFAULT 'pvp' CHECK (combat_mode IN ('pve','pvp'));
+      ALTER TABLE world_construction ALTER COLUMN combat_mode SET DEFAULT 'pve';`);
     for (const name of [this.queueName, `${this.queueName}-play`])
       await this.queue.createQueue(name, {
         retryLimit: 2,

@@ -128,7 +128,7 @@ afterAll(async () => {
   await isolated.close();
 }, 120000);
 
-async function fixture(playerCount = 3) {
+async function fixture(playerCount = 3, combatMode: "pve" | "pvp" = "pvp") {
   const admin = await auth.person(),
     world = (
       await access.create(admin.id, {
@@ -137,6 +137,10 @@ async function fixture(playerCount = 3) {
         prompt: "独立したbotの検証世界",
       })
     ).id;
+  await isolated.databases.postgres.query(
+    "UPDATE world_construction SET combat_mode=$2 WHERE id=$1",
+    [world, combatMode],
+  );
   await runtime.tick(world);
   const graph = (await runtime.get(world)).world_id!;
   graphs.push(graph);
@@ -504,6 +508,126 @@ test("同乗者は手番記録で乗り場と到着先を読んでから降り�
   expect(await records(1)).toContainEqual(
     expect.objectContaining({ input: "「離れた場所」で「台車」を降りた。" }),
   );
+});
+
+test("PvEは直接攻撃・強奪・スリ・操縦権への対抗を判定前に拒否し、NPCとは両方向に戦える", async () => {
+  const f = await fixture(3, "pve");
+  const [actor, target, npc] = f.actors as [string, string, string];
+  await setNpc(f, 2, "bot");
+  await f.move(2, f.place);
+  const vehicleId = await vehicleFixture(f);
+  await f.send(2, { command: "vehicle-request-control", vehicleId });
+  await f.apply([
+    { type: "move", item: vehicleId, from: null, to: target, basis: "運ぶ" },
+  ]);
+  const item = (
+    await f.apply([
+      { type: "create", holder: target, label: "銀貨", basis: "携行" },
+    ])
+  ).changes.nodes[0]!.id;
+  await f.send(1, { command: "contact", targetId: actor });
+  await f.send(2, { command: "contact", targetId: actor });
+  await giveTurn(f, 0);
+  await isolated.databases.postgres.query(
+    "UPDATE world_construction SET non_combat_areas=$2 WHERE id=$1",
+    [f.world, JSON.stringify([{ rootId: f.place, memberPlaceIds: [] }])],
+  );
+  const attack = (targetId: string) => ({
+    type: "oppose",
+    targetId,
+    text: "押し返す",
+    description: "よろめいている",
+  });
+  const apply = (action: object) => ({
+    command: "apply",
+    expectedSp: 1,
+    dependencies: [],
+    action,
+  });
+  const operation = {
+    type: "move",
+    item,
+    from: target,
+    to: actor,
+    basis: "奪取",
+  };
+  const before = await f.status(0);
+  f.calls.mockClear();
+  for (const input of [
+    apply(attack(target)),
+    apply({ type: "seize", text: "奪う", operation }),
+    apply({ type: "seize", text: "抜き取る", operation, stealth: true }),
+    { command: "vehicle-request-control", vehicleId, oppose: true },
+  ]) {
+    const requestId = randomUUID();
+    await expect(f.send(0, { ...input, requestId })).rejects.toMatchObject({
+      code: "PVP_DISABLED",
+    });
+    expect(await f.store.receipt(f.graph, requestId)).toBeUndefined();
+  }
+  expect(f.calls).not.toHaveBeenCalled();
+  expect((await f.status(0)).dailySp).toEqual(before.dailySp);
+  const context = f.store.context(f.graph);
+  expect((await context.holding(item))?.source).toBe(target);
+  expect((await context.holding(vehicleId))?.source).toBe(target);
+  expect((await vehicleOperator(context, vehicleId))?.actorId).toBe(npc);
+  f.calls.mockImplementation(async (id) =>
+    answer(id, { ...sure, performed: "相手を押し返した" }),
+  );
+  await expect(f.send(0, apply(attack(npc)))).resolves.toHaveProperty(
+    "outcome.success",
+    true,
+  );
+  await giveTurn(f, 2);
+  await expect(f.send(2, apply(attack(actor)))).resolves.toHaveProperty(
+    "outcome.success",
+    true,
+  );
+});
+
+test("対抗の判定中にPvEに切り替えると確定せず、再送とSPは現在の設定に従う", async () => {
+  const f = await fixture(2);
+  const [actor, target] = f.actors as [string, string];
+  await f.send(1, { command: "contact", targetId: actor });
+  await giveTurn(f, 0);
+  const input = {
+    requestId: randomUUID(),
+    command: "apply",
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "oppose",
+      targetId: target,
+      text: "押し返す",
+      description: "よろめいている",
+    },
+  };
+  const before = (await f.status(0)).dailySp;
+  const setMode = (mode: string) =>
+    isolated.databases.postgres.query(
+      "UPDATE world_construction SET combat_mode=$2 WHERE id=$1",
+      [f.world, mode],
+    );
+  f.calls.mockImplementation(async (id) => {
+    await setMode("pve");
+    return answer(id, { ...sure, performed: "押し返した" });
+  });
+  await expect(f.send(0, input)).rejects.toMatchObject({
+    code: "COMBAT_MODE_CHANGED",
+  });
+  await expect(f.send(0, input)).rejects.toMatchObject({
+    code: "PVP_DISABLED",
+  });
+  expect(await f.store.receipt(f.graph, input.requestId)).toBeUndefined();
+  expect((await f.status(0)).dailySp).toEqual(before);
+  await setMode("pvp");
+  f.calls.mockImplementation(async (id) =>
+    answer(id, { ...sure, performed: "押し返した" }),
+  );
+  const accepted = await f.send(0, input);
+  expect(accepted).toMatchObject({ spentSp: 1, outcome: { success: true } });
+  await setMode("pve");
+  expect(await f.send(0, input)).toEqual(accepted);
 });
 
 test("他人の所持と操縦権には明示したときだけ対抗し、相手別の出目で一括確定する", async () => {
@@ -18288,7 +18412,7 @@ test("一団へのダイスが分離と死亡を確定し、分けた個体を�
     ).toHaveLength(0);
   }
   await db.query(
-    "UPDATE world_construction SET non_combat_areas='[]' WHERE id=$1",
+    "UPDATE world_construction SET combat_mode='pve' WHERE id=$1",
     [f.world],
   );
 
