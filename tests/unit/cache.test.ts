@@ -183,6 +183,42 @@ test("対抗の資料を圧縮しても、技能の正式名・根拠と地面�
   expect(prompt.system[0]?.text).toContain("成立時点,名称(任意)");
 });
 
+test("判定根拠の候補にある物品IDは申請者が指定した材料として扱わない", () => {
+  const prompt = prepareDicePrompt(
+    [
+      {
+        role: "user",
+        content: JSON.stringify({
+          actor: "actor",
+          proposals: [
+            { text: "箱を作る", learningReferences: ["item:hammer"] },
+          ],
+          nodes: [
+            {
+              node: { id: "actor" },
+              belongings: {
+                items: [
+                  {
+                    id: "hammer",
+                    label: "木槌",
+                    basis: "先代から譲り受けた",
+                    since: 0,
+                  },
+                ],
+                storages: [],
+                skills: [],
+              },
+            },
+          ],
+        }),
+      },
+    ],
+    false,
+  )!;
+  expect(prompt.messages[0]!.content).toContain('"item:hammer"');
+  expect(prompt.messages[0]!.content).not.toContain("先代から譲り受けた");
+});
+
 test("資料の計測は重複した根拠とキャッシュ部分を含む実際の送信本文から申請だけを除く", () => {
   const base = {
     premise: "海の近く",

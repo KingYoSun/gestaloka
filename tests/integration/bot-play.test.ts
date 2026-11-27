@@ -544,11 +544,15 @@ test("他人の所持と操縦権には明示したときだけ対抗し、相�
   f.calls.mockImplementation(async (id) => answer(id, setting));
   const prepare = async (requestId: string, failures: string[] = []) => {
     for (const opponent of [operator, holder])
-      await db.query("INSERT INTO bot_dice(id,setting,roll) VALUES($1,$2,$3)", [
-        derivedId(`${requestId}:vehicle-opposition:${opponent}`),
-        setting,
-        failures.includes(opponent) ? 4 : 3,
-      ]);
+      await db.query(
+        "INSERT INTO bot_dice(id,setting,roll,factors) VALUES($1,$2,$3,$4)",
+        [
+          derivedId(`${requestId}:vehicle-opposition:${opponent}`),
+          setting,
+          failures.includes(opponent) ? 4 : 3,
+          JSON.stringify([{ label: "所持品「道具の材料」", impact: "helped" }]),
+        ],
+      );
   };
   const context = () => f.store.context(f.graph);
   const failedId = randomUUID();
@@ -578,6 +582,10 @@ test("他人の所持と操縦権には明示したときだけ対抗し、相�
     operatorId: actor,
     previousOperatorId: operator,
     outcome: { success: true },
+    diceReasons: [
+      "「対抗判定 1」の判定で、所持品「道具の材料」が有利に働きました",
+      "「対抗判定 2」の判定で、所持品「道具の材料」が有利に働きました",
+    ],
   });
   expect(await claim(0, { oppose: true, requestId })).toEqual(expected);
   expect(rolls()).toHaveLength(4);
@@ -14886,7 +14894,7 @@ describe("現場材料", () => {
     expect(sent[0]!.current).toHaveProperty("learningReferences");
     expect(sent[1]!.current).not.toHaveProperty("skillCriteria");
     expect(sent[1]!.current).not.toHaveProperty("recentAttempts");
-    expect(sent[1]!.current).not.toHaveProperty("learningReferences");
+    expect(sent[1]!.current).toHaveProperty("learningReferences");
     expect(sent[0]!.boundaries.at(-1)).toBeDefined();
     expect(sent[1]!.boundaries).toContain(sent[0]!.boundaries.at(-1));
   });
@@ -20943,6 +20951,109 @@ test("登録済みの人物に起きることを名指しする作成は、本�
       })
     ).outcome,
   ).toMatchObject({ success: true });
+});
+
+test("物品生成・探索・対抗の判定根拠は読める資料だけを本人に返す", async () => {
+  const f = await fixture(2);
+  const [actor, other] = f.actors as [string, string];
+  await f.send(1, { command: "contact", targetId: actor });
+  await giveTurn(f, 0);
+  await f.apply([
+    { type: "create", holder: actor, label: "木槌", basis: "工房で受け取った" },
+  ]);
+  const tool = (await readBelongings(f.store.context(f.graph), actor)).items[0]!
+    .id;
+  const states: Change = { nodes: [], revisions: [], edges: [], endEdges: [] };
+  mark(states, other, "片手に荷物を抱えている");
+  mark(states, other, "袖の裏に秘密の印がある");
+  const [publicState, privateState] = states.nodes;
+  Object.assign(privateState!, { viewers: [] });
+  const commitId = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, commitId),
+    f.store.context(f.graph),
+    { commitId, at: 0, changes: states },
+  );
+  const inputs = [
+    {
+      request: {
+        command: "apply",
+        expectedSp: 1,
+        action: {
+          type: "generate",
+          plans: [
+            {
+              text: "板を合わせて小箱を作る",
+              operation: {
+                type: "create",
+                holder: actor,
+                label: "木の小箱",
+                basis: "板を組んだ",
+              },
+            },
+          ],
+        },
+      },
+      ref: `item:${tool}`,
+      impact: "helped",
+      message: "所持品「木槌」が有利に働きました",
+      setting: { ...sure, requiredMaterials: [] },
+    },
+    {
+      request: {
+        command: "explore",
+        fromId: f.place,
+        label: "裏手の物置",
+        text: "広場から物置へ通じる道を探す",
+      },
+      ref: `place:${f.place}`,
+      impact: "hindered",
+      message: "場所「広場」が不利に働きました",
+      setting: { ...sure, explored },
+    },
+    {
+      request: {
+        command: "apply",
+        expectedSp: 1,
+        action: {
+          type: "oppose",
+          targetId: other,
+          text: "相手が広場へ踏み出すのを止める",
+          description: "足を止めている",
+        },
+      },
+      ref: `state:${publicState!.id}`,
+      impact: "helped",
+      message: "状態「片手に荷物を抱えている」が有利に働きました",
+      setting: { ...sure, performed: "相手の前に出て立ち止まらせた" },
+    },
+  ];
+  for (const { request, ref, impact, message, setting } of inputs) {
+    f.calls.mockImplementationOnce(async (id, _role, messages) => {
+      const { learningReferences } = JSON.parse(messages[1]!.content);
+      expect(learningReferences).toContain(ref);
+      expect(learningReferences).not.toContain(`state:${privateState!.id}`);
+      return answer(id, {
+        ...setting,
+        learningFactors: [
+          { ref, impact },
+          { ref: `state:${privateState!.id}`, impact: "hindered" },
+        ],
+      });
+    });
+    const input = { ...request, requestId: randomUUID(), dependencies: [] };
+    const result = await f.send(0, input);
+    expect(result.outcome).toMatchObject({ roll: expect.any(Number) });
+    expect(result.diceReasons).toEqual([expect.stringContaining(message)]);
+    expect(JSON.stringify(result.outcome)).not.toMatch(
+      /(?:learning|dice)Factors/,
+    );
+    expect((await f.send(0, input)).diceReasons).toEqual(result.diceReasons);
+  }
+  await f.send(0, { command: "end-turn" });
+  const shared = JSON.stringify((await f.status(1)).entries);
+  expect(shared).toContain("成功は");
+  expect(shared).not.toMatch(/diceFactors|diceReasons|に働きました/);
 });
 
 test("管理者が指定した技能の拒否条件を、抽選や元技能・材料の消費より先に適用する", async () => {
