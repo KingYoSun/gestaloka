@@ -1,6 +1,6 @@
 import type pg from "pg";
 import { z } from "zod";
-import { ExecutionBudget } from "../execution-budget.js";
+import { ExecutionBudget, ExecutionLimit } from "../execution-budget.js";
 import { ModelLimits } from "./limits.js";
 import { WorldBudget } from "./world-budget.js";
 
@@ -95,6 +95,8 @@ export class BudgetLedger {
       CREATE INDEX IF NOT EXISTS llm_call_time ON llm_call(created_at,id);
       CREATE INDEX IF NOT EXISTS llm_call_user ON llm_call(user_id,created_at,id);
       CREATE INDEX IF NOT EXISTS llm_call_response ON llm_call(response_id,created_at,id);
+      CREATE INDEX IF NOT EXISTS llm_call_material_selection ON llm_call(response_id)
+        WHERE request->>'role'='world-judgment-materials';
       CREATE INDEX IF NOT EXISTS llm_call_world ON llm_call(world_id,created_at);`);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS llm_prompt_cache(
       key text PRIMARY KEY,call_id uuid NOT NULL,name text,expires_at timestamptz,
@@ -212,6 +214,21 @@ export class BudgetLedger {
         );
       }
       await ExecutionBudget.take(client);
+      // take holds the response row until this reservation commits. Cached calls
+      // returned above do not take a slot, including after a worker restart.
+      if (
+        ExecutionBudget.id &&
+        (request as { role?: string } | null)?.role ===
+          "world-judgment-materials" &&
+        (
+          await client.query(
+            `SELECT 1 FROM llm_call WHERE response_id=$1
+           AND request->>'role'='world-judgment-materials' LIMIT 1 OFFSET 1`,
+            [ExecutionBudget.id],
+          )
+        ).rowCount
+      )
+        throw new ExecutionLimit("この応答の判定資料の選別を終了しました");
       await client.query(
         "INSERT INTO llm_call (id, budget_id, hash, reserved_nano, request,world_id,user_id,response_id,operation_id,delivery,reservation_basis) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'reserved',$10)",
         [

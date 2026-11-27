@@ -161,3 +161,40 @@ test("グラフ照会に件数上限を置かず、別の応答は独立したca
     );
   }
 });
+
+test("再開と並列の選別で2枠を共有し、判定本体の予約分を消費しない", async () => {
+  const response = randomUUID(),
+    ids = Array.from({ length: 4 }, () => randomUUID());
+  scopes.push(response);
+  const select = (id: string) =>
+    ExecutionBudget.run(db.postgres, response, () =>
+      ExecutionBudget.withCallReserve(3, () =>
+        model.complete(id, "world-judgment-materials", messages),
+      ),
+    );
+  const results = await Promise.allSettled(ids.map(select));
+  expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(2);
+  expect(
+    results.filter(
+      (r) => r.status === "rejected" && r.reason instanceof ExecutionLimit,
+    ),
+  ).toHaveLength(2);
+  await select(ids[results.findIndex((r) => r.status === "fulfilled")]!);
+  expect(await usage(response)).toMatchObject({ llm_used: 2 });
+  const tight = randomUUID();
+  scopes.push(tight);
+  await ExecutionBudget.run(db.postgres, tight, async () => {
+    await db.postgres.query(
+      "UPDATE execution_budget SET llm_used=61 WHERE id=$1",
+      [tight],
+    );
+    await expect(
+      ExecutionBudget.withCallReserve(3, () =>
+        model.complete(randomUUID(), "world-judgment-materials", messages),
+      ),
+    ).rejects.toBeInstanceOf(ExecutionLimit);
+    for (let i = 0; i < 3; i++)
+      await model.complete(randomUUID(), "limit-test", messages);
+  });
+  expect(await usage(tight)).toMatchObject({ llm_used: 64 });
+});

@@ -91,6 +91,10 @@
 
 状態を追加する `state` には、影響を受ける `targetId`、行為の `text`、成立したときの `description` を指定します。既存の状態を置き換える場合は、`stateId` に状態の関係ID（`material.states[].relation.id`）を指定します。着脱可能な物を付けるときは `attachedItemId` を指定できます。場所の効果を後の移動に反映させるときは `affectsMovement` を指定します。たとえば広場に霧を作る申請は広場に対して1 SPです。霧を後の移動条件として読んでも、術者への追加課金はありません。
 
+対象を調べて結果を得るには `apply` の `observe` を使います。`targetId` に対象、`text` に何を知りたいかと調べ方を書きます。別の同席者が調べる場合は `observerId` を指定し、その人の承認を得ます。対象が操作担当のいる人物なら、必要な受領を経て観察結果が確定します。新しいダイス判定には1 SPを使います。
+
+確定結果の `observation.id` は後から所見を記録するときに使えます。`apply` の `record-observation` に `observationId` を指定すると、本人に提示された結果が、観察日時と参照ID付きのメモになります。共有先があれば `participants` に人物IDを指定します。記録にSPはかかりません。
+
 本人の基本情報を置き換えるには、まず `search --kind self` で現在の状態を確認します。木の義足から鉄の義足に替える例では、`targetId` に本人の人物ID、`stateId` に木の義足の行の `relation.id` を指定します。`text` は「木の義足を外して鉄の義足に替える」、`description` は「鉄の義足を使っている」です。
 
 `oppose` には同席する相手の `targetId`、行為の `text`、成功時に外から観察できる `description` を指定します。相手の状態を置き換える案なら、関係IDを `replacesStateId` に指定します。相手の品を奪う場合は `seize` の `operation` に、相手を `from`、本人を `to` とした `move` を入れます。非戦闘地域の扱いは [死亡・怪我・治療](health.md) を参照してください。

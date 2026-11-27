@@ -236,6 +236,17 @@ export const WorldApplication = z.xor([
     description: text.optional(),
   }),
   z.strictObject({
+    type: z.literal("observe"),
+    targetId: id,
+    observerId: id.optional(),
+    text,
+  }),
+  z.strictObject({
+    type: z.literal("record-observation"),
+    observationId: id,
+    participants: z.array(id).optional(),
+  }),
+  z.strictObject({
     type: z.literal("oppose"),
     text,
     targetId: id,
@@ -274,6 +285,7 @@ export function applicationSp(action: WorldApplication): number {
     action.type === "remove-place-item" ||
     action.type === "clarify" ||
     action.type === "interpret" ||
+    action.type === "record-observation" ||
     action.type === "revise-memo"
   )
     return 0;
@@ -922,6 +934,7 @@ export const ReceiptResult = z.object({
   turn: z.number().int(),
   at: z.iso.datetime(),
   message: z.string(),
+  observation: z.strictObject({ id, text, at: z.iso.datetime() }).optional(),
   code: z.string().optional(),
   rejectedBy: z.object({ actorId: z.uuid(), name: z.string() }).optional(),
   unanswered: z.array(z.uuid()).optional(),

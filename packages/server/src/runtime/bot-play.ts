@@ -15,6 +15,7 @@ import {
   PlayCommand,
   PlayerPlayCommand,
   type ApplyCommand,
+  type WorldApplication,
   applicationSp,
   playQuote,
   DrawReward,
@@ -166,10 +167,7 @@ import {
   type RespawnHome,
 } from "./death-policy.js";
 import { historyLimit, selectStates } from "./state-selection.js";
-import {
-  selectJudgmentExperiences,
-  selectJudgmentMaterials,
-} from "./judgment-materials.js";
+import { selectJudgmentMaterials } from "./judgment-materials.js";
 import {
   factorMessages,
   learningFactorsPrompt,
@@ -253,10 +251,14 @@ type CompanionJudgement = z.infer<typeof BlueprintDecision> & {
   text: string;
   repeated?: true;
 };
+type ObservationApplication = Extract<WorldApplication, { type: "observe" }>;
 type Input = z.infer<typeof PlayCommand> & {
   summonItemId?: string;
   endStateTargetId?: string;
   treatmentTargetId?: string;
+  observe?: ObservationApplication;
+  recordObservationId?: string;
+  checkStateDescription?: true;
 };
 type VehicleControl = Extract<Input, { command: "vehicle-request-control" }>;
 type VehicleApplication = {
@@ -459,6 +461,11 @@ function actionMessage(
           ? "対抗判定に失敗しました"
           : "操縦権を確認しました";
     case "update":
+      if (
+        input.observe &&
+        (result.outcome as { success?: boolean })?.success === false
+      )
+        return "観察の判定に失敗しました";
       if (input.stealth && result.stealth) {
         const { place } = result.stealth as NonNullable<
           SessionStatus["stealth"]
@@ -991,8 +998,30 @@ const DiceSetting = (pool: WorldDice) => {
 };
 // 旧版で保存した判定には個数がなく、ダイス1個の出目が残る。
 type SavedDice = Omit<z.infer<ReturnType<typeof DiceSetting>>, "count"> & {
+  observation?: string;
   count?: number | undefined;
 };
+
+const observationId = (requestId: string) =>
+  derivedId(`${requestId}:observation`);
+const observationReader = (id: string, actor: string) =>
+  derivedId(`${id}:see:${actor}`);
+
+function confirmedObservation(changes: Change, requestId: string) {
+  const id = observationId(requestId);
+  const event = changes.nodes.find(
+    (node) => node.kind === "event" && node.id === id,
+  );
+  return event?.kind === "event"
+    ? {
+        observation: {
+          id,
+          text: event.text,
+          at: new Date(event.period.from).toISOString(),
+        },
+      }
+    : {};
+}
 const Perception = (pool: WorldDice) =>
   z
     .object({
@@ -1042,6 +1071,11 @@ const judged = "judged";
 const PerformedAction = z.string().trim().min(1).max(240);
 const performedActionPrompt =
   "ダイス設定を返すときは、成功したとき実際に成立する行為を、対象や使った物が分かる一文（240字以内）でperformedに返す。成功時に認める範囲だけを書く。消費を書く場合は、変更に含まれる消費か、今回消費すると判定した物を記す。申請者が主張する過去や、今回の結果として認めない効果を含めない。";
+const observationPrompt =
+  "指定されたobserverIdの人物がtargetIdの対象を、申請文textの方法で調べる。JSON {successThrough:整数,observation:文字列} を返す。" +
+  "observationは、ダイスが成功して観察を終えた場面で、観察者が何を知覚したかをそのままプレイヤーへ伝える本文。観察者が実際に見分けた特徴や手がかりを、既に起きたこととして1200文字以内で書く。" +
+  "既存の記録に結果がなくても、世界の記録と両立し、その場と方法で知覚できる具体的な特徴は今回の観察結果として定める。条件ごとの一般論、調べ方の説明、申請文の言い換えで結果を代用しない。" +
+  "方法に限界があるときも、その場で何が見えたか、何が観察を妨げたかを具体的に示す。知覚した特徴、本人が伝えたこと、そこから推測する原因を区別し、観察で届かない原因や他者の内心は断定しない。";
 
 function recordActionExperience(
   changes: Change,
@@ -4773,6 +4807,9 @@ export class BotPlay {
         ? [recipient]
         : [];
     const unanswered = extra.unanswered as string[] | undefined;
+    const observation = extra.observation as z.infer<
+      typeof ReceiptResult
+    >["observation"];
     if (state === "failed") {
       await this.#record(db, session, {
         applicationId: r.id,
@@ -4821,6 +4858,7 @@ export class BotPlay {
       outcome,
       turn: session.data.number,
       at: this.now().toISOString(),
+      ...(observation ? { observation } : {}),
       ...(typeof extra.code === "string" ? { code: extra.code } : {}),
       ...(unanswered?.length ? { unanswered } : {}),
       message:
@@ -4836,7 +4874,7 @@ export class BotPlay {
                 cancelled:
                   "の受領判断は、関係する参加者が退出したため成立しませんでした",
               }[outcome]
-            }${
+            }${observation ? `。\n${observation.text}` : ""}${
               state === "accepted" && items?.length
                 ? `。${await itemOutcomeMessage(this.store.context((await this.world(session.world_id)).id), items)}`
                 : ""
@@ -5041,6 +5079,7 @@ export class BotPlay {
           : undefined,
       settled: await this.#settle(db, session, "accepted", {
         commitId: receipt.commitId,
+        ...confirmedObservation(receipt.changes, r.id),
         ...(r.vehicleControl
           ? {
               vehicleId: r.vehicleControl.vehicleId,
@@ -7878,6 +7917,8 @@ export class BotPlay {
       referenced = [],
       endStateTargetId,
       previousState,
+      observe,
+      checkStateDescription,
     }: {
       exploreFrom?: string | undefined;
       waitMinutes?: number | undefined;
@@ -7886,6 +7927,8 @@ export class BotPlay {
       referenced?: string[];
       endStateTargetId?: string | undefined;
       previousState?: string | undefined;
+      observe?: ObservationApplication | undefined;
+      checkStateDescription?: true | undefined;
     } = {},
   ) {
     const explore = exploreFrom !== undefined;
@@ -7909,6 +7952,7 @@ export class BotPlay {
             | "SKILL_POLICY_REJECTED"
             | "ITEM_POLICY_REJECTED"
             | "EXPLORE_POLICY_REJECTED"
+            | "STATE_DESCRIPTION_REQUIRED"
             | typeof judgmentMaterialLimit;
           message?: string;
           unresolvedMaterialLabels?: string[];
@@ -8348,6 +8392,9 @@ export class BotPlay {
                     ),
                   ),
                 ].sort(),
+                ...(observe
+                  ? [observe.observerId ?? actor, observe.targetId]
+                  : []),
               ]),
             )
             .digest("hex"),
@@ -8369,12 +8416,14 @@ export class BotPlay {
           ],
         };
         attempts.set(proposal.index, attempt);
-        const prior = await this.#repeatedCreation(
-          world,
-          actor,
-          keys[proposal.index]!,
-          attempt,
-          factorField(proposal.operations),
+        const prior = await ExecutionBudget.withCallReserve(fresh.length, () =>
+          this.#repeatedCreation(
+            world,
+            actor,
+            keys[proposal.index]!,
+            attempt,
+            factorField(proposal.operations),
+          ),
         );
         if (prior) {
           repeated[proposal.index] = prior;
@@ -8398,23 +8447,25 @@ export class BotPlay {
               action: fresh[i]!.text,
               claim,
             };
-            const answers = await model
-              .decide(
-                derivedId(`${requestId}:state-fact:${canonical(state)}`),
-                "world-state-fact",
-                state,
-                {
-                  recorded: {
-                    instructions:
-                      "statesとskillsは本人の確定記録。actionは今回の申請理由、claimは追加したい記述。この申請が既存事実の転記だけで、claimの内容すべてが今この本人についてすでに成立していると確定記録から言えるか。技能があることは今回それを使った証拠にならない。期限付きの状態を恒久的な性質にする場合もfalse。自己申告、過去の出来事からの推測、新たな行為・効力・対象・条件を含む場合はfalse。",
-                    criteria: {
-                      true: "全内容がすでに成立した同じ事実の再記述",
-                      false: "一部でも新しい変化または根拠不足がある",
+            const answers = await ExecutionBudget.withCallReserve(
+              fresh.length,
+              () =>
+                model.decide(
+                  derivedId(`${requestId}:state-fact:${canonical(state)}`),
+                  "world-state-fact",
+                  state,
+                  {
+                    recorded: {
+                      instructions:
+                        "statesとskillsは本人の確定記録。actionは今回の申請理由、claimは追加したい記述。この申請が既存事実の転記だけで、claimの内容すべてが今この本人についてすでに成立していると確定記録から言えるか。技能があることは今回それを使った証拠にならない。期限付きの状態を恒久的な性質にする場合もfalse。自己申告、過去の出来事からの推測、新たな行為・効力・対象・条件を含む場合や、本文が記録の目的や指示に留まる場合はfalse。",
+                      criteria: {
+                        true: "全内容がすでに成立した同じ事実の再記述",
+                        false: "一部でも新しい変化または根拠不足がある",
+                      },
                     },
                   },
-                },
-              )
-              .catch(() => undefined);
+                ),
+            ).catch(() => undefined);
             if ((answers?.recorded ?? 0) >= 0.85) {
               applied.set(fresh[i]!.index, { success: true, endEdges: [] });
               continue;
@@ -8438,7 +8489,7 @@ export class BotPlay {
       if (needsSp)
         await this.#reserveSp(world, actor, user, requestId, cost(reserved));
       if (endStateTargetId) await context.validate();
-      if (reviews.length || (judgment && attempts.size))
+      if (observe || reviews.length || (judgment && attempts.size))
         await this.#rememberStateBasis(requestId, context);
       const { pool } = policy;
       const criteria =
@@ -8447,8 +8498,11 @@ export class BotPlay {
         dicePrompt(pool, !!explore);
       const fields = diceFields(pool, !!explore);
       const creationDice = work ? WorkDice(pool) : DiceSetting(pool);
-      const Dice =
-        previousState !== undefined
+      const Dice = observe
+        ? creationDice.safeExtend({
+            observation: z.string().trim().min(1).max(1200),
+          })
+        : previousState !== undefined
           ? creationDice.safeExtend({
               replacementState: z.string().trim().min(1),
             })
@@ -8541,6 +8595,7 @@ export class BotPlay {
             }
             if (
               explore ||
+              checkStateDescription ||
               selectedMaterial[position]!.learning ||
               selectedMaterial[position]!.itemGeneration
             ) {
@@ -8608,53 +8663,58 @@ export class BotPlay {
               content: endStateTargetId
                 ? "指定された状態を終了する申請の成否を判定する。statesは成功時にすべて終了する。selfがtrueなら申請者本人が対象。申請文（text）、終了対象の状態、世界の前提（premise）と基準から判断し、{successThrough:整数}をJSONで返す。世界の基準: " +
                   criteria
-                : compact
-                  ? selfStatusPrompt +
-                    stateEndsPrompt +
-                    diceStatePrompt +
-                    "confirmedは先行する成功時に確定した状態。今回の対象についての結果かを本文と時点で確かめる。不確実なら{successThrough,endEdges}。世界の基準: " +
-                    criteria
-                  : (reviews.length
-                      ? "申請した変更を審査する。ダイスを振る場合は{successThrough:整数}を返す。世界の基準と確定した材料から判断する。"
-                      : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {successThrough:整数}。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
-                    diceStatePrompt +
-                    (previousState !== undefined
-                      ? "previousStateは終了する状態の本文。ダイス設定は {successThrough:整数,replacementState:空でない文字列} を含むJSONで返す。replacementStateはtextの行為が成功した場合に、指定の状態に代わって現在の状態として読める全文。changes.nodesの本文が成功後の状態を過不足なく表すなら、その本文をそのまま文字列で返す。交換で古くなった内容は除き、手当てで解消しない欠損などは残す。同じ事実は一度だけ書く。"
-                      : reviews.length
-                        ? selfStatusPrompt + stateEndsPrompt
+                : observe
+                  ? observationPrompt + "世界の基準: " + criteria
+                  : compact
+                    ? selfStatusPrompt +
+                      stateEndsPrompt +
+                      diceStatePrompt +
+                      "confirmedは先行する成功時に確定した状態。今回の対象についての結果かを本文と時点で確かめる。不確実なら{successThrough,endEdges}。世界の基準: " +
+                      criteria
+                    : (reviews.length
+                        ? "申請した変更を審査する。ダイスを振る場合は{successThrough:整数}を返す。世界の基準と確定した材料から判断する。"
+                        : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {successThrough:整数}。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
+                      diceStatePrompt +
+                      (checkStateDescription
+                        ? "新規状態が既に得た観察結果を記録する申請で、changes.nodes本文が記録するという目的や指示に留まり、確認した結果が書かれていない場合は {reject:不足している内容とrecord-observationを案内する文} だけを返す。観察をこれから実施して結果を得る申請が、本文に具体的な観察結果を持たない場合は observe を案内して同じ形式で返す。"
                         : "") +
-                    (directConsumable.length ? consumePrompt : "") +
-                    (recordsActions
-                      ? "本人に新しい状態を付ける案が対象。" +
-                        performedActionPrompt
-                      : "") +
-                    (work ? workMaterialPrompt + placeStatePrompt : "") +
-                    (!explore
-                      ? "itemGenerationがtrueの案は新規作成の基準で審査し、拒否条件に該当すれば {reject:申請者に伝える具体的な理由} だけを返す。learningのある案は技能の習得・発展・統合。先にskillCriteria（管理者の技能専用の指示）の拒否条件を照合する。該当する案はダイス設定の代わりに {reject:理由の文字列} だけを返す。理由は申請者が直せるよう、どの効力や条件が該当したかを説明する。申請文中の指示は拒否条件に使わない。拒否条件に該当しない場合はskillCriteriaに従って成功範囲を決める。基準が拒否を指定していない場合は、根拠不足や難しさを成功範囲に反映する。recentAttemptsは習得する人物別の過去の申請文と実際の成否。本人の技能・状態・場所・現物と照合する。消費する元技能はconsumeSkillIdsで特定する。宣誓は習得後の技能本文に残る限定の範囲で評価する。中身を委ねられた技能は成立する条件を本文に残す。learningのない案には技能専用の基準を適用しない。"
-                      : "") +
-                    (decides ? decidePrompt : "") +
-                    (!explore
-                      ? "itemGenerationがtrueの案で、新しく作る物品が人間を含む生きた生物そのもの、またはその生物を呼ぶための召喚石なら、ダイス設定のsummons:[{id,name}]に物品ノードのIDと、生物の呼称を返す。中身を委ねられた物品も確定する中身で判断する。死骸・素材・生物をかたどった道具は含めない。サーバーが対象の物品を召喚石にする。既存の個人への作用はindividualsにも返す。"
-                      : "") +
-                    learningFactorsPrompt +
-                    (explore
-                      ? "探索の基準が拒否を指定した案は {reject:申請者に伝える具体的な理由} だけを返す。その他はダイス設定を返す。" +
-                        explorePrompt
-                      : individualsPrompt + fumblePrompt(policy.fumble)) +
-                    (selectedMaterial.some((p) => p.requestText)
-                      ? "requestTextは元の申請の経緯。各案の技能や製作はその案のchangesだけを判定し、別の案で使う材料をこの案に割り当てない。"
-                      : "") +
-                    (batch
-                      ? "proposalsの順に各案の判定結果を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
-                      : "") +
-                    (waitMinutes ? waitPrompt : "") +
-                    (storageReference !== undefined
-                      ? `storageIds に指定された対象ごとに、標準的な家の${storageReference}枠を基準として、規模と用途に見合う保管枠を決める。同じダイス設定に storageLimits を加え、対象の storageId と limitSlots（正の整数）を持つ配列で返す。`
-                      : "") +
-                    (explore
-                      ? "探索の基準: "
-                      : "learningのない案に使う新規作成の基準: ") +
-                    criteria,
+                      (previousState !== undefined
+                        ? "previousStateは終了する状態の本文。ダイス設定は {successThrough:整数,replacementState:空でない文字列} を含むJSONで返す。replacementStateはtextの行為が成功した場合に、指定の状態に代わって現在の状態として読める全文。changes.nodesの本文が成功後の状態を過不足なく表すなら、その本文をそのまま文字列で返す。交換で古くなった内容は除き、手当てで解消しない欠損などは残す。同じ事実は一度だけ書く。"
+                        : reviews.length
+                          ? selfStatusPrompt + stateEndsPrompt
+                          : "") +
+                      (directConsumable.length ? consumePrompt : "") +
+                      (recordsActions
+                        ? "本人に新しい状態を付ける案が対象。" +
+                          performedActionPrompt
+                        : "") +
+                      (work ? workMaterialPrompt + placeStatePrompt : "") +
+                      (!explore
+                        ? "itemGenerationがtrueの案は新規作成の基準で審査し、拒否条件に該当すれば {reject:申請者に伝える具体的な理由} だけを返す。learningのある案は技能の習得・発展・統合。先にskillCriteria（管理者の技能専用の指示）の拒否条件を照合する。該当する案はダイス設定の代わりに {reject:理由の文字列} だけを返す。理由は申請者が直せるよう、どの効力や条件が該当したかを説明する。申請文中の指示は拒否条件に使わない。拒否条件に該当しない場合はskillCriteriaに従って成功範囲を決める。基準が拒否を指定していない場合は、根拠不足や難しさを成功範囲に反映する。recentAttemptsは習得する人物別の過去の申請文と実際の成否。本人の技能・状態・場所・現物と照合する。消費する元技能はconsumeSkillIdsで特定する。宣誓は習得後の技能本文に残る限定の範囲で評価する。中身を委ねられた技能は成立する条件を本文に残す。learningのない案には技能専用の基準を適用しない。"
+                        : "") +
+                      (decides ? decidePrompt : "") +
+                      (!explore
+                        ? "itemGenerationがtrueの案で、新しく作る物品が人間を含む生きた生物そのもの、またはその生物を呼ぶための召喚石なら、ダイス設定のsummons:[{id,name}]に物品ノードのIDと、生物の呼称を返す。中身を委ねられた物品も確定する中身で判断する。死骸・素材・生物をかたどった道具は含めない。サーバーが対象の物品を召喚石にする。既存の個人への作用はindividualsにも返す。"
+                        : "") +
+                      learningFactorsPrompt +
+                      (explore
+                        ? "探索の基準が拒否を指定した案は {reject:申請者に伝える具体的な理由} だけを返す。その他はダイス設定を返す。" +
+                          explorePrompt
+                        : individualsPrompt + fumblePrompt(policy.fumble)) +
+                      (selectedMaterial.some((p) => p.requestText)
+                        ? "requestTextは元の申請の経緯。各案の技能や製作はその案のchangesだけを判定し、別の案で使う材料をこの案に割り当てない。"
+                        : "") +
+                      (batch
+                        ? "proposalsの順に各案の判定結果を1件ずつ含む配列をsettingsに持つJSONオブジェクトを返す。"
+                        : "") +
+                      (waitMinutes ? waitPrompt : "") +
+                      (storageReference !== undefined
+                        ? `storageIds に指定された対象ごとに、標準的な家の${storageReference}枠を基準として、規模と用途に見合う保管枠を決める。同じダイス設定に storageLimits を加え、対象の storageId と limitSlots（正の整数）を持つ配列で返す。`
+                        : "") +
+                      (explore
+                        ? "探索の基準: "
+                        : "learningのない案に使う新規作成の基準: ") +
+                      criteria,
             },
             {
               role: "user",
@@ -8680,6 +8740,10 @@ export class BotPlay {
                     : {
                         premise,
                         actor,
+                        ...(observe && {
+                          observerId: observe.observerId ?? actor,
+                          targetId: observe.targetId,
+                        }),
                         ...(batch
                           ? {
                               proposals: selectedMaterial.map(
@@ -8728,7 +8792,9 @@ export class BotPlay {
               ? "EXPLORE_POLICY_REJECTED"
               : material[i]!.learning
                 ? "SKILL_POLICY_REJECTED"
-                : "ITEM_POLICY_REJECTED";
+                : checkStateDescription
+                  ? "STATE_DESCRIPTION_REQUIRED"
+                  : "ITEM_POLICY_REJECTED";
             refusals.set(p.index, {
               success: false,
               reason,
@@ -8963,7 +9029,7 @@ export class BotPlay {
       const spent = cost(
         fresh.filter(
           (p) =>
-            refusals.has(p.index) ||
+            (refusals.has(p.index) && !checkStateDescription) ||
             (!repeated[p.index] && "roll" in rolls[p.index]!),
         ),
       );
@@ -9228,12 +9294,13 @@ export class BotPlay {
           true,
         )
       : undefined;
+    const judgmentAt = this.now().getTime();
     const stateEdges = judgment
       ? await context.outgoingRelations(
           wanted,
           "status",
-          this.now().getTime(),
-          latest,
+          judgmentAt,
+          judgmentAt,
           true,
         )
       : undefined;
@@ -9244,7 +9311,13 @@ export class BotPlay {
     const [stateNodes, stateAbout] = judgment
       ? await Promise.all([
           context.nodes(stateIds, true),
-          context.outgoingRelations(stateIds, "status", latest, latest, true),
+          context.outgoingRelations(
+            stateIds,
+            "status",
+            judgmentAt,
+            judgmentAt,
+            true,
+          ),
         ])
       : [];
     for (const id of wanted) {
@@ -9459,53 +9532,64 @@ export class BotPlay {
         );
       }),
     );
-    if (matches.every((ids) => !ids.length))
-      return (await selectJudgmentMaterials(options)) as (T[] | undefined)[];
     const events = await context.nodes(
-      new Set(matches.flat().map(({ id }) => id)),
+      new Set(matches.flat().map((row) => row.id)),
     );
-    return Promise.all(
-      requests.map(async (request, index) => {
-        const experiences = matches[index]!.flatMap(
-          ({ id, sharedReferences }) => {
-            const node = events.get(id);
-            return node?.kind === "event"
-              ? [
-                  {
-                    node,
-                    experiencedBy: frame.actor,
-                    ...(sharedReferences.length ? { sharedReferences } : {}),
-                  },
-                ]
-              : [];
-          },
-        );
-        const participants = (
-          materials as { node?: Record<string, unknown> }[]
-        ).flatMap(({ node }) =>
-          node && request.subjects.includes(String(node.id)) ? [node] : [],
-        );
-        const selected =
-          model.decision && experiences.length
-            ? await selectJudgmentExperiences(
-                experiences,
-                request,
-                participants,
-                options.decide,
-                model.decision.materialThreshold,
-              )
-            : experiences;
-        const [packet] = await selectJudgmentMaterials({
-          ...options,
-          materials: [...materials, ...selected],
-          requests: [request],
-          measure: (rows, _, filtered) =>
-            options.measure!(rows, index, filtered),
-          onFiltered: () => frame.onFiltered?.(index),
-        });
-        return packet as T[] | undefined;
+    const experiences = matches.map((rows) =>
+      rows.flatMap(({ id, sharedReferences }) => {
+        const node = events.get(id);
+        return node?.kind === "event"
+          ? [
+              {
+                node,
+                experiencedBy: frame.actor,
+                ...(sharedReferences.length ? { sharedReferences } : {}),
+              },
+            ]
+          : [];
       }),
     );
+    const packets = (await ExecutionBudget.withCallReserve(
+      requests.length,
+      () =>
+        selectJudgmentMaterials({
+          ...options,
+          experiences,
+          screenExperiences: !!model.decision,
+        }),
+    )) as (T[] | undefined)[];
+    // Semantic retrieval can use spare bytes but cannot evict a referenced
+    // state, material or an experience that the ordinary selection admitted.
+    if (!packets.some((packet) => packet !== undefined)) return packets;
+    const more = await context.supplementalExperiences(
+      frame.actor,
+      through,
+      requests.map((r) => [
+        r.text,
+        r.text + "\n" + JSON.stringify(r.effect ?? ""),
+      ]),
+    );
+    if (!more.some((ids) => ids.length)) return packets;
+    const records = await context.nodes(new Set(more.flat()));
+    for (const [i, ids] of more.entries()) {
+      const packet = packets[i];
+      if (!packet) continue;
+      const seen = new Set([
+        ...(packet as { node?: { id?: string } }[]).map((row) => row.node?.id),
+        ...matches[i]!.map((row) => row.id),
+      ]);
+      for (const id of ids) {
+        const node = records.get(id);
+        if (seen.has(id) || node?.kind !== "event") continue;
+        const addition = { node, experiencedBy: frame.actor } as T;
+        const trial = [...packets[i]!, addition];
+        if (options.measure!(trial, i, true) <= 24 * 1024) {
+          packets[i] = trial;
+          frame.onFiltered?.(i);
+        }
+      }
+    }
+    return packets;
   }
   async #validate(
     context: WorldContext,
@@ -10023,6 +10107,119 @@ export class BotPlay {
         ),
       };
     }
+    if (input.observe) {
+      const { targetId, observerId = actor, text } = input.observe;
+      const [observer, target] = await Promise.all([
+        context.node(observerId),
+        context.node(targetId),
+      ]);
+      const places = await this.#places(context, observerId, db);
+      const holder = target && (await context.holding(targetId));
+      const targetPlaces = await this.#places(
+        context,
+        holder?.source ?? targetId,
+        db,
+      );
+      if (
+        observer?.kind !== "existence" ||
+        target?.kind !== "existence" ||
+        !visibleTo(target, observerId, true) ||
+        !(
+          targetId === observerId ||
+          places.includes(targetId) ||
+          places.some((place) => targetPlaces.includes(place))
+        ) ||
+        !(await this.#canSee(db, world, context, observerId, targetId)) ||
+        !(await this.#canSee(db, world, context, actor, targetId))
+      )
+        reject(
+          "OBSERVATION_TARGET_NOT_AVAILABLE",
+          "観察者がその場で調べられる対象を指定してください",
+        );
+      const session = await this.current(world, actor, db);
+      const recipients = new Set<string>();
+      if (observerId !== actor) {
+        if (
+          !session?.data.members.some(
+            (member) =>
+              member.actorId === observerId && !member.instant && member.userId,
+          )
+        )
+          reject(
+            "OBSERVATION_OBSERVER_NOT_AVAILABLE",
+            "観察を承認できる同席者を指定してください",
+          );
+        recipients.add(observerId);
+      }
+      if (
+        targetId !== actor &&
+        (
+          await db.query(
+            "SELECT 1 FROM world_controlled_actor WHERE world_id=$1 AND actor_id=$2 UNION ALL SELECT 1 FROM bot_npc WHERE world_id=$3 AND actor_id=$2",
+            [w.id, targetId, world],
+          )
+        ).rowCount
+      ) {
+        if (
+          !session?.data.members.some((member) => member.actorId === targetId)
+        )
+          reject(
+            "REMOTE_RECEIVING",
+            "対象の人物と合流してから観察を申請してください",
+          );
+        recipients.add(targetId);
+      }
+      const changes = empty();
+      const [roll] = await this.#creation(
+        world,
+        actor,
+        user,
+        input.requestId,
+        context,
+        [{ text, changes }],
+        [],
+        { observe: input.observe, referenced: [observerId, targetId] },
+      );
+      const setting = roll && "setting" in roll ? roll.setting : undefined;
+      const { observation, ...dice } = setting ?? {};
+      const outcome = setting ? { ...roll, setting: dice } : roll;
+      if (roll?.success && observation) {
+        const id = observationId(input.requestId);
+        const period = { from: w.at };
+        changes.nodes.push({
+          id,
+          kind: "event",
+          text: `${observer.text}が「${target.text}」を観察した。\n${observation}`,
+          period,
+        });
+        changes.edges.push({
+          id: derivedId(`${id}:happen`),
+          kind: "happen",
+          source: observerId,
+          target: id,
+          period,
+        });
+        for (const reader of [actor, ...recipients])
+          changes.edges.push({
+            id: observationReader(id, reader),
+            kind: "see",
+            source: reader,
+            target: id,
+            period,
+          });
+      }
+      await db.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
+        input.requestId,
+        outcome,
+      ]);
+      return {
+        context,
+        at: w.at,
+        changes,
+        recipients: changes.nodes.length ? [...recipients] : [],
+        outcome,
+      };
+    }
     if (input.summonItemId) {
       const id = input.summonItemId;
       const stone = await context.node(id);
@@ -10305,6 +10502,7 @@ export class BotPlay {
     const actorFilter = hidden ? " AND actor_id=ANY($2::uuid[])" : "";
     const resolveActorsOnDemand =
       configuringDraw ||
+      input.command === "memo" ||
       ("operations" in input &&
         input.operations?.every((op) => op.type === "locate"));
     const registered = resolveActorsOnDemand
@@ -10567,15 +10765,33 @@ export class BotPlay {
       needsCreation = true;
     } else if (input.command === "memo") {
       const id = derivedId(`${input.requestId}:memo`);
+      let text = input.text;
+      if (input.recordObservationId) {
+        const source = await context.node(input.recordObservationId);
+        const seen = await context.edge(
+          observationReader(input.recordObservationId, actor),
+        );
+        if (
+          source?.kind !== "event" ||
+          seen?.kind !== "see" ||
+          seen.source !== actor ||
+          seen.target !== source.id
+        )
+          reject(
+            "OBSERVATION_NOT_AVAILABLE",
+            "本人に提示された確定済みの観察結果を指定してください",
+          );
+        text = `観察日時 ${new Date(source.period.from).toISOString()}（${source.id}）\n${source.text}`;
+      }
       changes.nodes.push({
         id,
         kind: "script",
         type: "memo",
-        text: input.text,
+        text,
       });
       for (const person of new Set([actor, ...input.participants])) {
         if (
-          !controlled.has(person) ||
+          !(await isControlled(person)) ||
           (await context.node(person))?.kind !== "existence"
         )
           reject(
@@ -11438,6 +11654,7 @@ export class BotPlay {
               referenced: [...parties, ...refs],
               endStateTargetId: input.endStateTargetId,
               previousState,
+              checkStateDescription: input.checkStateDescription,
             },
           )
         )[0]
@@ -13243,6 +13460,22 @@ export class BotPlay {
     const quoted = applicationSp(action);
     if (quoted !== input.expectedSp)
       reject("SP_QUOTE_CHANGED", `この申請で必要なSPは${quoted}です`);
+    if (action.type === "observe")
+      return {
+        ...common,
+        command: "update",
+        text: action.text,
+        changes: empty(),
+        observe: action,
+      };
+    if (action.type === "record-observation")
+      return {
+        ...common,
+        command: "memo",
+        text: "確定した観察結果を記録する",
+        participants: action.participants ?? [],
+        recordObservationId: action.observationId,
+      };
     if (action.type === "direct") {
       const { text, operations, deferredUntil, stealth, departAloneOnTimeout } =
         action;
@@ -13547,6 +13780,7 @@ export class BotPlay {
       text: action.text,
       materials: action.materials,
       ...(action.stateId && { treatmentTargetId: action.targetId }),
+      ...(!action.stateId && !item && { checkStateDescription: true as const }),
       changes: {
         nodes: [
           {
@@ -15287,6 +15521,13 @@ export class BotPlay {
             } else if (plan?.vehicleUnchanged) {
               await plan.context.validate();
               result = { state: "accepted", ...plan.vehicleResult };
+            } else if (
+              plan &&
+              (plan.outcome as ProposalOutcome | undefined)?.reason ===
+                "STATE_DESCRIPTION_REQUIRED"
+            ) {
+              await plan.context.validate();
+              result = { state: "rejected", outcome: plan.outcome };
             } else if (plan) {
               if (
                 plan.instantMembers &&
@@ -15436,6 +15677,9 @@ export class BotPlay {
                   applicationId: input.requestId,
                   actorId: actor,
                   input: entryText,
+                  ...(input.observe
+                    ? { speechWitnesses: [actor, ...plan.recipients] }
+                    : {}),
                   result: {
                     applicationId: input.requestId,
                     state: "receiving",
@@ -15572,6 +15816,7 @@ export class BotPlay {
                     ? { npcId: summoned, action: { message: entryText } }
                     : {}),
                   commitId: receipt.commitId,
+                  ...confirmedObservation(receipt.changes, input.requestId),
                   ...plan.vehicleResult,
                   ...(plan.items?.length ? { items: plan.items } : {}),
                   ...(plan.outcome ? { outcome: plan.outcome } : {}),
@@ -15718,6 +15963,7 @@ export class BotPlay {
                     ...(plan.items?.length
                       ? { itemWitnesses: d.members.map((m) => m.actorId) }
                       : {}),
+                    ...(input.observe ? { speechWitnesses: [actor] } : {}),
                     result,
                   });
                 await this.#applyInstantReduction(
@@ -15899,7 +16145,11 @@ export class BotPlay {
       const parts = individualOutcomes(outcome?.proposals ?? []);
       const refusalMessages = (parts.length ? parts : [outcome]).flatMap(
         (p) => {
-          if (p?.message && p.reason?.endsWith("_POLICY_REJECTED"))
+          if (
+            p?.message &&
+            (p.reason?.endsWith("_POLICY_REJECTED") ||
+              p.reason === "STATE_DESCRIPTION_REQUIRED")
+          )
             return [
               `${p.text ? `「${p.text}」は` : "この申請は"}差し戻されました。${p.message}`,
             ];
@@ -15936,6 +16186,7 @@ export class BotPlay {
             ),
           ...refusalMessages,
           ...skillResults,
+          (result.observation as { text: string } | undefined)?.text,
         ]
           .filter(Boolean)
           .join("\n"),

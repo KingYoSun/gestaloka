@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { connectDatabases, ExecutionBudget } from "@gestaloka/server";
+import {
+  connectDatabases,
+  ExecutionBudget,
+  ExecutionLimit,
+} from "@gestaloka/server";
 import {
   BudgetUnavailable,
   ResponseFormatError,
@@ -72,34 +76,46 @@ test("OpenRouter Decisionsの400応答を呼び出しごとに台帳へ保存す
     transport,
   );
   await client.ledger.setup();
-  const operationId = randomUUID();
+  const operationIds = [randomUUID(), randomUUID()];
   const ids = cases.map(() => randomUUID());
+  const decide = (id: string, batch: number) =>
+    client.decide(
+      id,
+      "world-judgment-materials",
+      { batch },
+      {
+        relevant: {
+          instructions: "この資料が申請に関係するか。",
+          criteria: { true: "関係する", false: "無関係" },
+        },
+      },
+    );
   try {
-    await ExecutionBudget.run(databases.postgres, operationId, async () => {
-      for (const [batch, id] of ids.entries()) {
-        await expect(
-          client.decide(
-            id,
-            "world-judgment-materials",
-            { batch },
-            {
-              relevant: {
-                instructions: "この資料が申請に関係するか。",
-                criteria: { true: "関係する", false: "無関係" },
-              },
-            },
-          ),
-        ).rejects.toThrow("判断APIがHTTP 400を返しました");
-      }
-    });
+    for (const [group, operationId] of operationIds.entries()) {
+      await ExecutionBudget.run(databases.postgres, operationId, async () => {
+        const first = group * 2;
+        for (const batch of [first, first + 1]) {
+          await expect(decide(ids[batch]!, batch)).rejects.toThrow(
+            "判断APIがHTTP 400を返しました",
+          );
+        }
+        await expect(decide(randomUUID(), first + 2)).rejects.toBeInstanceOf(
+          ExecutionLimit,
+        );
+        await expect(decide(ids[first]!, first)).rejects.toThrow(
+          "判断APIがHTTP 400を返しました",
+        );
+      });
+    }
     const { rows } = await databases.postgres.query(
-      "SELECT id, state, charged_nano, request, response FROM llm_call WHERE operation_id=$1",
-      [operationId],
+      "SELECT id, operation_id, state, charged_nano, request, response FROM llm_call WHERE operation_id=ANY($1::uuid[])",
+      [operationIds],
     );
     expect(rows).toHaveLength(cases.length);
     for (const [batch, { body, providerCode }] of cases.entries()) {
       const row = rows.find(({ id }) => id === ids[batch]);
       expect(row).toMatchObject({
+        operation_id: operationIds[Math.floor(batch / 2)],
         state: "complete",
         charged_nano: "0",
         request: {
@@ -115,9 +131,10 @@ test("OpenRouter Decisionsの400応答を呼び出しごとに台帳へ保存す
       });
     }
   } finally {
-    await databases.postgres.query("DELETE FROM execution_budget WHERE id=$1", [
-      operationId,
-    ]);
+    await databases.postgres.query(
+      "DELETE FROM execution_budget WHERE id=ANY($1::uuid[])",
+      [operationIds],
+    );
   }
   expect(transport).toHaveBeenCalledTimes(cases.length);
 });

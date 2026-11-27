@@ -86,6 +86,156 @@ const explored = {
   partOf: false,
   placeSeries: null,
 };
+
+test("観察で提示した結果を共有グラフから読み、後の申請で同じ結果を記録できる", async () => {
+  const f = await fixture();
+  const [actor] = f.actors;
+  const requestId = randomUUID();
+  const finding = "石畳の溝に沿って水が流れ、東の端だけに砂がたまっている。";
+  const observe = {
+    command: "apply",
+    requestId,
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "observe",
+      targetId: f.place,
+      text: "広場の水の流れを目で追う",
+    },
+  };
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-creation-dice");
+    expect(JSON.parse(String(messages[1]!.content))).toMatchObject({
+      observerId: actor,
+      targetId: f.place,
+    });
+    return answer(id, { ...sure, observation: finding });
+  });
+  const result = await f.send(0, observe);
+  const id = derivedId(`${requestId}:observation`);
+  const context = f.store.context(f.graph);
+  const event = await context.node(id);
+  if (event?.kind !== "event") throw new Error("観察結果が保存されていません");
+  const at = new Date(event.period.from).toISOString();
+  expect(event).toMatchObject({
+    kind: "event",
+    text: expect.stringContaining(finding),
+  });
+  expect(result).toMatchObject({
+    spentSp: 1,
+    observation: { id, text: event.text, at },
+    action: { message: expect.stringContaining(finding) },
+  });
+  expect(await f.send(0, observe)).toEqual(result);
+  const record = {
+    command: "apply",
+    requestId: randomUUID(),
+    expectedSp: 0,
+    dependencies: [],
+    action: { type: "record-observation", observationId: id },
+  };
+  await expect(
+    f.send(1, { ...record, requestId: randomUUID() }),
+  ).rejects.toMatchObject({
+    code: "OBSERVATION_NOT_AVAILABLE",
+  });
+  const copied = await f.send(0, record);
+  expect(copied.spentSp).toBe(0);
+  const memo = await context.node(derivedId(`${record.requestId}:memo`));
+  expect(memo?.text).toBe(`観察日時 ${at}（${id}）\n${event.text}`);
+  expect(
+    (await f.send(0, { command: "search", query: { kind: "memos" } })).material,
+  ).toContainEqual(expect.objectContaining({ id: memo?.id, text: memo?.text }));
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
+test("他者が観察する申請は観察者が受領してから同じ本文を確定する", async () => {
+  const f = await fixture();
+  const [senderId, targetId, observerId] = f.actors;
+  await f.move(2, f.place);
+  await f.send(1, { command: "contact", targetId: senderId });
+  await f.send(2, { command: "contact", targetId: senderId });
+  const requestId = randomUUID();
+  const id = derivedId(`${requestId}:observation`);
+  const finding = "手を動かすと袖口の継ぎ目が開き、裏側の青い糸が見える。";
+  f.calls.mockImplementationOnce(async (callId) =>
+    answer(callId, { ...sure, observation: finding }),
+  );
+  expect(
+    await f.send(0, {
+      command: "apply",
+      requestId,
+      expectedSp: 1,
+      dependencies: [],
+      action: {
+        type: "observe",
+        observerId,
+        targetId,
+        text: "同席者に上着の袖を観察してもらう",
+      },
+    }),
+  ).toMatchObject({ state: "receiving" });
+  const preview = (await f.status(2)).receiving?.changes?.nodes[0];
+  expect(preview).toMatchObject({ id, text: expect.stringContaining(finding) });
+  expect(await f.store.context(f.graph).node(id)).toBeUndefined();
+  expect(
+    await f.send(1, {
+      command: "receive",
+      applicationId: requestId,
+      accept: true,
+    }),
+  ).toMatchObject({ application: { state: "waiting" } });
+  expect(await f.store.context(f.graph).node(id)).toBeUndefined();
+  expect(
+    await f.send(2, {
+      command: "receive",
+      applicationId: requestId,
+      accept: true,
+    }),
+  ).toMatchObject({
+    application: {
+      state: "confirmed",
+      observation: { id, text: preview?.text },
+      message: expect.stringContaining(finding),
+    },
+  });
+  expect(await f.store.context(f.graph).node(id)).toMatchObject({
+    id,
+    text: preview?.text,
+  });
+});
+
+test("記録の目的だけを書いた新規状態はダイスもSP消費もなく差し戻す", async () => {
+  const f = await fixture(1);
+  const requestId = randomUUID();
+  const reason =
+    "観察の結果がありません。確定済みの結果を record-observation に指定してください。";
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    expect(messages[0]!.content).toContain("record-observation");
+    return answer(id, { reject: reason });
+  });
+  const result = await f.send(0, {
+    command: "apply",
+    requestId,
+    expectedSp: 1,
+    dependencies: [],
+    action: {
+      type: "state",
+      targetId: f.actors[0],
+      text: "水路の点検で分かったことを記録する",
+      description: "調査で得た結果を記録する。",
+    },
+  });
+  expect(result).toMatchObject({
+    state: "rejected",
+    spentSp: 0,
+    outcome: { success: false, reason: "STATE_DESCRIPTION_REQUIRED" },
+    action: { message: expect.stringContaining(reason) },
+  });
+  expect(
+    await f.store.context(f.graph).node(derivedId(`${requestId}:state`)),
+  ).toBeUndefined();
+});
 const answer = (id: string, content: unknown) => ({
   id,
   model: "fixture",
@@ -7046,22 +7196,7 @@ test("対抗申請で成立した行為を確定し、別の言い方でも同�
   vi.spyOn(model, "decision", "get").mockReturnValue(
     decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
   );
-  const decide = vi
-    .spyOn(model, "decide")
-    .mockImplementation(async (_id, role, state, questions) => {
-      expect(role).toBe("world-judgment-materials");
-      expect(JSON.stringify(state)).toContain(performed);
-      expect(state).toMatchObject({
-        candidates: expect.arrayContaining([
-          expect.objectContaining({
-            evidence: expect.objectContaining({
-              sharedReferences: [{ id: target, match: "sameId" }],
-            }),
-          }),
-        ]),
-      });
-      return Object.fromEntries(Object.keys(questions).map((key) => [key, 1]));
-    });
+  const decide = vi.spyOn(model, "decide");
   await giveTurn(f, 0);
   f.calls.mockClear();
   const conditional = "右手の指を動かせない";
@@ -7072,7 +7207,7 @@ test("対抗申請で成立した行為を確定し、別の言い方でも同�
   });
   expect(failure.presentation).not.toContain(conditional);
   expect(failure.presentation).not.toContain(failedAction);
-  expect(decide).toHaveBeenCalledOnce();
+  expect(decide).not.toHaveBeenCalled();
   expect(f.calls.mock.calls.map(([, role]) => role)).toEqual([
     "world-opposition-dice",
   ]);
@@ -7207,24 +7342,15 @@ test("使用した物品を別の言い方で指定しても同じIDから古い
     .spyOn(model, "decide")
     .mockImplementation(async (_id, role, state) => {
       if (role !== "world-judgment-materials") return {};
-      const texts = (
-        state as {
-          candidates: { key: string; evidence: { node: { text: string } } }[];
-        }
-      ).candidates;
-      expect(texts.map(({ evidence }) => evidence.node.text)).toEqual(
-        expect.arrayContaining([performed, decoy]),
-      );
-      expect(texts).toHaveLength(2);
-      expect(
-        texts.find(({ evidence }) => evidence.node.text === performed)
-          ?.evidence,
-      ).toMatchObject({
-        sharedReferences: [{ id: item, match: "sameId", label: "薬茶" }],
-      });
+      const { candidates } = state as {
+        candidates: { key: string; evidence: unknown }[];
+      };
+      const contents = JSON.stringify(candidates);
+      expect(contents).toContain(decoy);
+      expect(contents).not.toContain(performed); // same-ID evidence bypasses optional reranking
       return Object.fromEntries(
-        texts.flatMap(({ key, evidence }) => [
-          [`r0${key}a`, evidence.node.text === performed ? 1 : 0],
+        candidates.flatMap(({ key }) => [
+          [`r0${key}a`, 0],
           [`r0${key}e`, 0],
         ]),
       );
@@ -8806,6 +8932,87 @@ test("生成の必須資料が超過した案は抽選せず、独立した案�
     (result.outcome as { proposals: unknown[] }).proposals[0],
   ).not.toHaveProperty("roll");
   expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
+test("長い5案を通常の一括作成で判定し、選別は応答全体で2回以内に収める", async () => {
+  const f = await fixture(1),
+    actor = f.actors[0]!;
+  const seed = await f.apply([
+    {
+      type: "create",
+      holder: actor,
+      label: "厚紙",
+      count: 10,
+      basis: "工作用",
+    },
+  ]);
+  const board = seed.changes.nodes.find((n) => n.kind === "existence")!.id;
+  for (let batch = 0; batch < 6; batch++)
+    await f.apply(
+      Array.from({ length: 8 }, (_, i) => ({
+        type: "learn",
+        person: actor,
+        text: `手仕事${batch * 8 + i}：` + "細工の手順を確かめる。".repeat(15),
+        basis: `第${batch * 8 + i}工房での訓練。`.repeat(20),
+      })),
+    );
+  vi.spyOn(runtime.agent.model, "decision", "get").mockReturnValue(
+    decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+  );
+  const decide = vi
+    .spyOn(runtime.agent.model, "decide")
+    .mockImplementation(async (_id, _role, state, questions) => {
+      expect(
+        Buffer.byteLength(JSON.stringify({ state, questions })),
+      ).toBeLessThanOrEqual(30 * 1024);
+      return Object.fromEntries(
+        Object.keys(questions).map((key) => [key, 0.2]),
+      );
+    });
+  f.calls.mockImplementation(async (id, role, msg) => {
+    expect(role).toBe("world-creation-dice");
+    const { proposals, nodes } = JSON.parse(msg[1]!.content);
+    expect(JSON.stringify(nodes)).toContain(board);
+    return answer(id, {
+      settings: proposals.map(() => ({
+        ...sure,
+        requiredMaterials: [{ id: board, count: 1 }],
+      })),
+    });
+  });
+  const request = {
+    requestId: randomUUID(),
+    command: "create-batch",
+    dependencies: [],
+    proposals: Array.from({ length: 5 }, (_, i) => ({
+      text: `厚紙を切って第${i + 1}巻の札を作る。`,
+      materials: [{ id: board, count: 1 }],
+      operations: [
+        {
+          type: "create",
+          holder: actor,
+          label: `巻札${i}`,
+          basis: "折り返し部分の形を現物に合わせて裁断した。".repeat(83),
+        },
+      ],
+    })),
+  };
+  const result = await f.send(0, request);
+  expect(result.outcome).toMatchObject({
+    proposals: Array.from({ length: 5 }, () => ({ roll: 9 })),
+  });
+  expect(decide.mock.calls.length).toBeGreaterThan(0);
+  expect(decide.mock.calls.length).toBeLessThanOrEqual(2);
+  const count = decide.mock.calls.length,
+    gmCalls = f.calls.mock.calls.length;
+  expect((await f.send(0, request)).outcome).toEqual(result.outcome);
+  expect(decide).toHaveBeenCalledTimes(count);
+  expect(f.calls).toHaveBeenCalledTimes(gmCalls);
+  expect(
+    (await readBelongings(f.store.context(f.graph), actor)).items.find(
+      (row) => row.id === board,
+    )?.count,
+  ).toBe(5);
 });
 
 test("生成は保存済みの抜粋で選別してから原文と習得経緯を読み、圧縮して抽選する", async () => {

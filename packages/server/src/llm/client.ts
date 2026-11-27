@@ -499,6 +499,11 @@ export class LlmClient {
         ]),
       ),
     };
+    if (
+      role === "world-judgment-materials" &&
+      Buffer.byteLength(JSON.stringify(request)) > 30 * 1024
+    )
+      return undefined;
     const stored = {
       role,
       request,
