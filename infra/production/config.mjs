@@ -108,6 +108,13 @@ https://api.${config.domain} {
   ${tls}
   import app_route
   ${protect}
+  ${
+    env.NPC_CLI_BRIDGE === "1"
+      ? `handle_path /npc-cli/* {
+    reverse_proxy npc-cli:18862
+  }`
+      : ""
+  }
   @internal path /internal/*
   handle @internal {
     respond 404

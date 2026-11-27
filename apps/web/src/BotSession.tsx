@@ -137,6 +137,7 @@ const View = z.object({
                     items: z.array(ItemOutcome).optional(),
                     outcome: z.object({ success: z.boolean() }).optional(),
                     dice: DiceMessages.optional(),
+                    thresholdReasons: DiceMessages.optional(),
                     diceReasons: DiceMessages.optional(),
                     learningReasons: DiceMessages.optional(),
                   })
@@ -177,6 +178,7 @@ const LogRow = memo(function LogRow({
           <RichText text={entry.input} />
           {[
             ...(entry.result.dice ?? []),
+            ...(entry.result.thresholdReasons ?? []),
             ...(entry.result.learningReasons ?? []),
             ...(entry.result.diceReasons ?? []),
           ].map((message, i) => (
@@ -185,13 +187,12 @@ const LogRow = memo(function LogRow({
             </p>
           ))}
           {!row.payload.observation &&
-            entry.result.action?.command !== "oppose" && (
+            entry.result.action?.command !== "oppose" &&
+            entry.result.outcome?.success !== false && (
               <p className="muted">
                 結果：
                 {entry.result.outcome
-                  ? entry.result.outcome.success
-                    ? (entry.result.effectState ?? "成立しました")
-                    : "不成立でした"
+                  ? (entry.result.effectState ?? "成立しました")
                   : entry.result.state === "rejected"
                     ? "拒否しました"
                     : entry.result.state === "failed"
@@ -519,6 +520,7 @@ export function BotSession({
         <Notice key={i}>{message}</Notice>
       ))}
       {[
+        ...(DiceMessages.safeParse(mutation.data?.thresholdReasons).data ?? []),
         ...(DiceMessages.safeParse(mutation.data?.learningReasons).data ?? []),
         ...(DiceMessages.safeParse(mutation.data?.diceReasons).data ?? []),
       ].map((message, i) => (

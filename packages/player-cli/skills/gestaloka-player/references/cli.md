@@ -316,7 +316,7 @@ gestaloka finish
 
 ## play
 
-世界を変更する申請は command: apply の action に型と対象を指定します。apply の --quote はファイルをもとに最大SPを計算して返します。返った額を expectedSp に指定してください。正式改名と対人対抗は1 SP、独立した生成案は新規抽選を行った案ごとに1 SPです。操作の形式と例は [世界への申請](commands.md) を参照してください。
+世界を変更する申請は command: apply の action に型と対象を指定します。direct の locate は人物や品の所在を記録します。品を置く・渡すときは move の from に現在の所持者、to に置き先や受け取る相手のIDを指定します。apply の --quote はファイルをもとに最大SPを計算して返します。返った額を expectedSp に指定してください。正式改名と対人対抗は1 SP、独立した生成案は新規抽選を行った案ごとに1 SPです。操作の形式と例は [世界への申請](commands.md) を参照してください。
 
 ```text
 gestaloka play --file <JSONファイル> [--quote] [--stealth] [--depart-alone-on-timeout]

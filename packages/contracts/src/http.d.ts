@@ -8975,6 +8975,7 @@ export interface paths {
                     content: {
                         "application/json": {
                             public: boolean;
+                            publicDiceBasis: boolean;
                         };
                     };
                 };
@@ -9081,7 +9082,8 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        public: boolean;
+                        public?: boolean;
+                        publicDiceBasis?: boolean;
                     };
                 };
             };
@@ -9094,6 +9096,7 @@ export interface paths {
                     content: {
                         "application/json": {
                             public: boolean;
+                            publicDiceBasis: boolean;
                         };
                     };
                 };

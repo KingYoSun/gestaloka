@@ -2,7 +2,11 @@ import { instantPlaceEdge } from "../world/conditions.js";
 import { classifyNpcHistory, type NpcMemory } from "./npc-history.js";
 import { npcOperations, type NpcReport, type NpcTask } from "./npc-work.js";
 import { diceFields, dicePrompt, rollDice } from "./dice.js";
-import { playedDice, playDiceMessages } from "./play-dice-messages.js";
+import {
+  playedDice,
+  playDiceMessages,
+  unrolledReasons,
+} from "./play-dice-messages.js";
 import { ModelCallInProgress, ResponseFormatError } from "../llm/budget.js";
 import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -476,19 +480,8 @@ function actionMessage(
     // fall through
     case "create":
     case "create-batch": {
-      const outcome = result.outcome as
-        | {
-            success?: boolean;
-            reason?: string;
-            proposals?: ProposalOutcome[];
-          }
-        | undefined;
-      const parts = individualOutcomes(outcome?.proposals ?? []);
-      if ([outcome, ...parts].some((p) => p?.reason === judgmentMaterialLimit))
-        return "判定に必要な資料が収まらなかった案は振っていません";
+      const outcome = result.outcome as { success?: boolean } | undefined;
       if (hasRefusalMessage && !outcome?.success) return "";
-      if (outcome?.reason === "MATERIAL_SHORTAGE")
-        return "使える材料が足りないため、作成できませんでした";
       if (outcome?.success === false) return "新規作成の判定は失敗しました";
       return result.state === "receiving" || result.state === "pending"
         ? "申請を受け付けました。受領判断を待っています"
@@ -661,7 +654,7 @@ export type Session = {
       items?: ItemOutcome[];
       text: string;
       // 所在の変更だけの申請では、却下した同行者を除いて確定する。
-      locates?: BelongingOp[];
+      locates?: Locate[];
       mixedMoves?: Locate[];
       declined?: string[];
       parallel?: { departAloneOnTimeout: boolean };
@@ -694,7 +687,7 @@ type Plan = {
   fatal?: string[];
   spUseProhibitionGrants?: string[] | undefined;
   appearances?: Appearance[];
-  locates?: BelongingOp[];
+  locates?: Locate[];
   mixedMoves?: Locate[];
   vehicleControl?: VehicleApplication;
   companion?: string;
@@ -971,6 +964,7 @@ const DiceSetting = (pool: WorldDice) => {
     fumble: z
       .object({
         through: fields.successThrough,
+        thresholdBasis: fields.thresholdBasis,
         ...StateText,
       })
       .strict()
@@ -1025,15 +1019,54 @@ const DiceSetting = (pool: WorldDice) => {
   });
 };
 // 旧版で保存した判定には個数がなく、ダイス1個の出目が残る。
-type SavedDice = Omit<z.infer<ReturnType<typeof DiceSetting>>, "count"> & {
+type JudgedDice = z.infer<ReturnType<typeof DiceSetting>>;
+type SavedDice = Omit<JudgedDice, "count" | "thresholdBasis" | "fumble"> & {
   observation?: string;
   count?: number | undefined;
+  thresholdBasis?: string | undefined;
+  fumble?:
+    | (Omit<NonNullable<JudgedDice["fumble"]>, "thresholdBasis"> & {
+        thresholdBasis?: string | undefined;
+      })
+    | undefined;
 };
+
+function publicDice(setting: SavedDice): SavedDice {
+  const shared = { ...setting };
+  delete shared.thresholdBasis;
+  if (setting.fumble) {
+    shared.fumble = { ...setting.fumble };
+    delete shared.fumble.thresholdBasis;
+  }
+  return shared;
+}
 
 const observationId = (requestId: string) =>
   derivedId(`${requestId}:observation`);
 const observationReader = (id: string, actor: string) =>
   derivedId(`${id}:see:${actor}`);
+
+async function unchangedLocateMessage(
+  locates: Locate[] | undefined,
+  receipt: { at: number; changes: Change },
+  context: WorldContext,
+) {
+  if (
+    !locates?.length ||
+    Object.values(receipt.changes).some((rows) => rows.length)
+  )
+    return;
+  const destinations = new Map(
+    locates.map((op) => [op.subjectId, destinationOf(op)]),
+  );
+  const places = new Set(destinations.values());
+  const [placeId] = places;
+  const place =
+    places.size === 1 && placeId
+      ? (await context.node(placeId, receipt.at))?.text
+      : undefined;
+  return `所在の変更は0件です。対象${destinations.size}件の所在はすでに${place ? `「${place}」` : "指定どおり"}です。品の所持先は変わっていません。品を置く・渡すには move を使ってください。`;
+}
 
 function confirmedObservation(changes: Change, requestId: string) {
   const id = observationId(requestId);
@@ -1111,7 +1144,7 @@ const PerformedAction = z.string().trim().min(1).max(240);
 const performedActionPrompt =
   "ダイス設定を返すときは、成功したとき実際に成立する行為を、対象や使った物が分かる一文（240字以内）でperformedに返す。成功時に認める範囲だけを書く。消費を書く場合は、変更に含まれる消費か、今回消費すると判定した物を記す。申請者が主張する過去や、今回の結果として認めない効果を含めない。";
 const observationPrompt =
-  "指定されたobserverIdの人物がtargetIdの対象を、申請文textの方法で調べる。JSON {successThrough:整数,observation:文字列} を返す。" +
+  "指定されたobserverIdの人物がtargetIdの対象を、申請文textの方法で調べる。JSON {successThrough:整数,thresholdBasis:根拠の一文,observation:文字列} を返す。" +
   "observationは、ダイスが成功して観察を終えた場面で、観察者が何を知覚したかをそのままプレイヤーへ伝える本文。観察者が実際に見分けた特徴や手がかりを、既に起きたこととして1200文字以内で書く。" +
   "既存の記録に結果がなくても、世界の記録と両立し、その場と方法で知覚できる具体的な特徴は今回の観察結果として定める。条件ごとの一般論、調べ方の説明、申請文の言い換えで結果を代用しない。" +
   "方法に限界があるときも、その場で何が見えたか、何が観察を妨げたかを具体的に示す。知覚した特徴、本人が伝えたこと、そこから推測する原因を区別し、観察で届かない原因や他者の内心は断定しない。";
@@ -1481,7 +1514,7 @@ export async function readDicePolicy(db: Db, world: string) {
 }
 
 const fumblePrompt = (criteria: string) =>
-  "ファンブルの基準に照らして、この行動が失敗したうえ、さらに悪い結果として申請者本人に変化が残り得るなら、同じ応答にfumble:{through:整数,text:文字列,minutes:整数}を加える。失敗したときだけ同じ個数・面数でもう一度振り、出目がthrough以下ならtextを申請者本人の状態として記録する。throughは出目の最小値以上、最大値未満。textは変化後の本人の状態を、後から本人だけを調べた人が読める一文で書き、経緯や原因の推測を除く。部位や程度は一つに決め、複数の候補を並べない。死亡は含めない。該当しなければfumbleを省く。" +
+  "ファンブルの基準に照らして、この行動が失敗したうえ、さらに悪い結果として申請者本人に変化が残り得るなら、同じ応答にfumble:{through:整数,thresholdBasis:文字列,text:文字列,minutes:整数}を加える。失敗したときだけ同じ個数・面数でもう一度振り、出目がthrough以下ならtextを申請者本人の状態として記録する。throughは出目の最小値以上、最大値未満。fumble.thresholdBasisにはこの手段や状況でどの危険を見込んでその上限にしたかを書く。textは変化後の本人の状態を、後から本人だけを調べた人が読める一文で書き、経緯や原因の推測を除く。部位や程度は一つに決め、複数の候補を並べない。死亡は含めない。該当しなければfumbleを省く。" +
   minutesPrompt +
   commandRestrictionsPrompt("fumble.commandRestrictions") +
   "ファンブルの基準: " +
@@ -3700,11 +3733,26 @@ export class BotPlay {
             plan,
             directChangeScope(plan.changes),
           );
+          // 自律NPCの公開行動には、公開範囲を設定する申請者がいない。
+          const reasons = (
+            await this.diceReasons(db, [
+              {
+                id: request,
+                command: "npc-action",
+                text: "",
+                outcome: plan.outcome,
+                creation_rolls: null,
+              },
+            ])
+          ).get(request);
           current.data.entries.push({
             actorId: actor,
             input: action.text,
             result: {
               outcome: plan.outcome,
+              ...(reasons?.thresholdReasons
+                ? { thresholdReasons: reasons.thresholdReasons }
+                : {}),
               ...(plan.effectState ? { effectState: plan.effectState } : {}),
               ...(plan.appearances ? { appearances: plan.appearances } : {}),
               ...(plan.instantReduction
@@ -5118,8 +5166,14 @@ export class BotPlay {
       ),
     );
     const missed = unanswered.filter((id) => !moved.has(id));
+    const locateMessage = await unchangedLocateMessage(
+      ops,
+      receipt,
+      this.store.context(w.id),
+    );
     return {
       changes: receipt.changes,
+      locateMessage,
       together:
         (r.locates ?? r.mixedMoves ?? []).filter(
           (op) => op.type === "locate" && moved.has(op.subjectId),
@@ -5138,12 +5192,15 @@ export class BotPlay {
             }
           : {}),
         ...(declined.length ? { declined } : {}),
+        ...(locateMessage ? { message: locateMessage } : {}),
         ...(missed.length
           ? {
               unanswered: missed,
-              message: r.recipients.some((id) => moved.has(id))
-                ? "受領期限に達したため、申請者と承認した同行者の移動を確定しました"
-                : "受領期限に達したため、申請者が単独で出発しました",
+              message: locateMessage
+                ? `受領期限に達しました。${locateMessage}`
+                : r.recipients.some((id) => moved.has(id))
+                  ? "受領期限に達したため、申請者と承認した同行者の移動を確定しました"
+                  : "受領期限に達したため、申請者が単独で出発しました",
             }
           : {}),
       }),
@@ -5998,7 +6055,7 @@ export class BotPlay {
         {
           role: "system",
           content:
-            "隠密行動のダイス設定をJSONオブジェクトで返す。checksのkeyをキーとし、各値は{successThrough}。合計が目標値以下なら、actionは行為成功、departureとarrivalは目撃、attemptは試みの発見、seekは捜索成功。行為の成否と各人物の発見確率は独立に設定する。指定された現在の材料だけで判断し、出目や物語は返さない。" +
+            "隠密行動のダイス設定をJSONオブジェクトで返す。checksのkeyをキーとし、各値は{successThrough,thresholdBasis}。合計が目標値以下なら、actionは行為成功、departureとarrivalは目撃、attemptは試みの発見、seekは捜索成功。行為の成否と各人物の発見確率は独立に設定する。指定された現在の材料だけで判断し、出目や物語は返さない。" +
             dicePrompt(pool) +
             diceStatePrompt,
         },
@@ -6139,15 +6196,16 @@ export class BotPlay {
       [...source, ...(destination ? [destination] : [])],
       checks,
     );
-    const passes = async (key: string) => {
+    const check = async (key: string) => {
       const saved = await this.#roll(
         derivedId(`${input.requestId}:stealth:${key}`),
         settings[key]!,
         victim && key === "action" ? input.requestId : undefined,
       );
-      return saved.roll <= saved.setting.successThrough;
+      return { ...saved, success: saved.roll <= saved.setting.successThrough };
     };
-    const success = !victim || (await passes("action"));
+    const outcome = victim ? await check("action") : { success: true };
+    const { success } = outcome;
     const name = (await context.node(actor))!.text;
     const observations: Observation[] = [];
     const discovered: string[] = [];
@@ -6155,7 +6213,7 @@ export class BotPlay {
       const victimName = (await context.node(op.from!))!.text;
       const item = (await context.node(op.item))!.text;
       for (const viewer of atSource)
-        if (await passes("attempt:" + viewer))
+        if ((await check("attempt:" + viewer)).success)
           observations.push({
             viewer,
             text: success
@@ -6166,10 +6224,10 @@ export class BotPlay {
       const from = source[0] && (await context.node(source[0]))!.text;
       const to = (await context.node(destination))!.text;
       for (const viewer of atSource)
-        if (await passes("departure:" + viewer))
+        if ((await check("departure:" + viewer)).success)
           observations.push({ viewer, text: `${name}が${from}を出た` });
       for (const viewer of atDestination)
-        if (await passes("arrival:" + viewer)) {
+        if ((await check("arrival:" + viewer)).success) {
           discovered.push(viewer);
           observations.push({ viewer, text: `${name}が${to}に着いた` });
         }
@@ -6184,7 +6242,6 @@ export class BotPlay {
       destination && location
         ? { id: location.id, placeId: destination, discovered }
         : undefined;
-    const outcome = { success };
     const stealth = { observations, ...(stay ? { stay } : {}) };
     await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
       input.requestId,
@@ -8219,9 +8276,8 @@ export class BotPlay {
     };
     const publicRolls = (rolls: Result[]) =>
       rolls.map((roll) => {
-        if (!("learningFactors" in roll) && !("diceFactors" in roll))
-          return roll;
-        const result = { ...roll };
+        if (!("setting" in roll) || !roll.setting) return roll;
+        const result = { ...roll, setting: publicDice(roll.setting) };
         if ("learningFactors" in result) delete result.learningFactors;
         if ("diceFactors" in result) delete result.diceFactors;
         return result;
@@ -8923,7 +8979,7 @@ export class BotPlay {
             {
               role: "system",
               content: endStateTargetId
-                ? "指定された状態を終了する申請の成否を判定する。statesは成功時にすべて終了する。selfがtrueなら申請者本人が対象。申請文（text）、終了対象の状態、世界の前提（premise）と基準から判断し、{successThrough:整数}をJSONで返す。世界の基準: " +
+                ? "指定された状態を終了する申請の成否を判定する。statesは成功時にすべて終了する。selfがtrueなら申請者本人が対象。申請文（text）、終了対象の状態、世界の前提（premise）と基準から判断し、{successThrough:整数,thresholdBasis:根拠の一文}をJSONで返す。世界の基準: " +
                   criteria
                 : observe
                   ? observationPrompt + "世界の基準: " + criteria
@@ -8931,17 +8987,17 @@ export class BotPlay {
                     ? selfStatusPrompt +
                       stateEndsPrompt +
                       diceStatePrompt +
-                      "confirmedは先行する成功時に確定した状態。今回の対象についての結果かを本文と時点で確かめる。不確実なら{successThrough,endEdges}。世界の基準: " +
+                      "confirmedは先行する成功時に確定した状態。今回の対象についての結果かを本文と時点で確かめる。不確実なら{successThrough,thresholdBasis,endEdges}。世界の基準: " +
                       criteria
                     : (reviews.length
-                        ? "申請した変更を審査する。ダイスを振る場合は{successThrough:整数}を返す。世界の基準と確定した材料から判断する。"
-                        : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {successThrough:整数}。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
+                        ? "申請した変更を審査する。ダイスを振る場合は{successThrough:整数,thresholdBasis:根拠の一文}を返す。世界の基準と確定した材料から判断する。"
+                        : "新しいノード・エッジを作成する申請の成否を決めるダイス設定だけを返す。物品の個数を増やす申請も同じく判定する。JSON: {successThrough:整数,thresholdBasis:根拠の一文}。世界の基準に従い、申請者、申請、関係する確定済みの材料を参照する。物語・行動結果・追加の変更を生成しない。") +
                       diceStatePrompt +
                       (checkStateDescription
                         ? "新規状態が既に得た観察結果を記録する申請で、changes.nodes本文が記録するという目的や指示に留まり、確認した結果が書かれていない場合は {reject:不足している内容とrecord-observationを案内する文} だけを返す。観察をこれから実施して結果を得る申請が、本文に具体的な観察結果を持たない場合は observe を案内して同じ形式で返す。"
                         : "") +
                       (previousState !== undefined
-                        ? "previousStateは終了する状態の本文。ダイス設定は {successThrough:整数,replacementState:空でない文字列} を含むJSONで返す。replacementStateはtextの行為が成功した場合に、指定の状態に代わって現在の状態として読める全文。changes.nodesの本文が成功後の状態を過不足なく表すなら、その本文をそのまま文字列で返す。交換で古くなった内容は除き、手当てで解消しない欠損などは残す。同じ事実は一度だけ書く。"
+                        ? "previousStateは終了する状態の本文。ダイス設定は {successThrough:整数,thresholdBasis:根拠の一文,replacementState:空でない文字列} を含むJSONで返す。replacementStateはtextの行為が成功した場合に、指定の状態に代わって現在の状態として読める全文。changes.nodesの本文が成功後の状態を過不足なく表すなら、その本文をそのまま文字列で返す。交換で古くなった内容は除き、手当てで解消しない欠損などは残す。同じ事実は一度だけ書く。"
                         : reviews.length
                           ? selfStatusPrompt + stateEndsPrompt
                           : "") +
@@ -9540,36 +9596,78 @@ export class BotPlay {
       }));
     });
     const ids = checks.flatMap(({ opposition }) =>
-      opposition ? [opposition] : [],
+      opposition ? [opposition, derivedId(`${opposition}:stealth:action`)] : [],
     );
     const rows = ids.length
       ? (
-          await db.query<{ id: string; factors: LearningFactor[] | null }>(
-            "SELECT id,factors FROM bot_dice WHERE id=ANY($1::uuid[])",
+          await db.query<{
+            id: string;
+            basis: string | null;
+            fumble_basis: string | null;
+            factors: LearningFactor[] | null;
+          }>(
+            "SELECT id,setting->>'thresholdBasis' AS basis,setting #>> '{fumble,thresholdBasis}' AS fumble_basis,factors FROM bot_dice WHERE id=ANY($1::uuid[])",
             [ids],
           )
         ).rows
       : [];
-    const opposed = new Map(rows.map(({ id, factors }) => [id, factors ?? []]));
+    const opposed = new Map(rows.map((row) => [row.id, row]));
     const results = new Map<
       string,
-      { learningReasons?: string[]; diceReasons?: string[] }
+      {
+        learningReasons?: string[];
+        diceReasons?: string[];
+        thresholdReasons?: string[];
+      }
     >();
     for (const { request, die, creation, opposition } of checks) {
       const reasons = results.get(request) ?? {};
-      const contest = opposition && opposed.get(opposition);
+      const contest = opposition
+        ? (opposed.get(opposition) ??
+          opposed.get(derivedId(`${opposition}:stealth:action`)))
+        : undefined;
       const field =
         !contest && creation?.learningFactors
           ? "learningReasons"
           : "diceReasons";
       const factors =
-        contest || creation?.learningFactors || creation?.diceFactors;
+        contest?.factors ?? creation?.learningFactors ?? creation?.diceFactors;
       const messages = (reasons[field] ??= []);
       // 対抗の申請文には実際に成立しなかった結果も書ける。履歴には出目の見出しを使う。
       const label = opposition && !die.opponentId ? "" : (die.text ?? "");
-      messages.push(...factorMessages(label, factors));
-      if (die.fumble) messages.push(...factorMessages(label, factors, true));
+      const heading = label ? `「${label}」の` : "";
+      const basis = (reasons.thresholdReasons ??= []);
+      const unrecorded =
+        "この判定を行った時点の記録には、上限を決めた理由が残っていません。";
+      basis.push(
+        `${heading}成功上限 ${die.setting.successThrough} の根拠：${contest?.basis ?? creation?.setting.thresholdBasis ?? unrecorded}`,
+      );
+      if (die.fumble && die.setting.fumble)
+        basis.push(
+          `${heading}ファンブル上限 ${die.setting.fumble.through} の根拠：${contest?.fumble_basis ?? creation?.setting.fumble?.thresholdBasis ?? unrecorded}`,
+        );
+      messages.push(
+        ...factorMessages(label, factors, die.roll, die.setting.successThrough),
+      );
+      if (die.fumble && die.setting.fumble)
+        messages.push(
+          ...factorMessages(
+            label,
+            factors,
+            die.fumble.roll,
+            die.setting.fumble.through,
+            true,
+          ),
+        );
       results.set(request, reasons);
+    }
+    for (const request of requests) {
+      const refusals = unrolledReasons(request.outcome);
+      if (refusals.length) {
+        const reasons = results.get(request.id) ?? {};
+        reasons.diceReasons = [...(reasons.diceReasons ?? []), ...refusals];
+        results.set(request.id, reasons);
+      }
     }
     return results;
   }
@@ -10939,7 +11037,7 @@ export class BotPlay {
       externalEffect = false,
       impossible = false,
       fatal: string[] = [],
-      locates: BelongingOp[] | undefined;
+      locates: Locate[] | undefined;
     let mixedMoves: Locate[] | undefined;
     const boardings: Boarding[] = [];
     let statusReview: StatusReview | undefined;
@@ -13354,7 +13452,10 @@ export class BotPlay {
           role: "system",
           content:
             dicePrompt(pool) +
-            "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {successThrough:整数}。成否、出目、物語は生成しない。変更は以下で求められた項目だけを返す。" +
+            (reasonView
+              ? ""
+              : "自律NPCの行動の上限の理由は同席者にも公開する。その場で観察できる行為や条件で説明し、未公開の設定を明かさない。") +
+            "受領を経ない対抗行動の確率をダイス設定だけで返す。JSON: {successThrough:整数,thresholdBasis:根拠の一文}。成否、出目、物語は生成しない。変更は以下で求められた項目だけを返す。" +
             (recordAction ? performedActionPrompt : "") +
             diceStatePrompt +
             (references?.size ? learningFactorsPrompt : "") +
@@ -13402,7 +13503,7 @@ export class BotPlay {
             (consumable.length ? consumePrompt : "") +
             placeStatePrompt +
             (perception
-              ? "隠密中の行動。成功時に使うperceptionも返す。形式は{states:{状態・物品ID:本文},about:[関係ID],observation:文字列またはnull,witnesses:{人物ID:{successThrough}}}。statesはperception.statesの全IDについて、対象を後から調べるだけで確認できる結果を書く。名前・種別・呼び名や参照を含め、攻撃や移転を起こした主体、使用者、経緯、原因の断定は入れない。傷や破損、変化した性質は残す。物品の呼称は物自体が分かるように書く。aboutは指定された関係のうち、その結果だけから確認できる参照を選ぶ。observationは行為そのものを見たときに分かる内容を書き、実行者が見えるなら呼称を含める。私的な動機や目撃だけでは分からない指示者は含めない。目撃できる内容がなければnull。witnessesは指定された全observersに対して、到着を見たかと独立に今回の行為に気づく確率を設定する。"
+              ? "隠密中の行動。成功時に使うperceptionも返す。形式は{states:{状態・物品ID:本文},about:[関係ID],observation:文字列またはnull,witnesses:{人物ID:{successThrough,thresholdBasis}}}。statesはperception.statesの全IDについて、対象を後から調べるだけで確認できる結果を書く。名前・種別・呼び名や参照を含め、攻撃や移転を起こした主体、使用者、経緯、原因の断定は入れない。傷や破損、変化した性質は残す。物品の呼称は物自体が分かるように書く。aboutは指定された関係のうち、その結果だけから確認できる参照を選ぶ。observationは行為そのものを見たときに分かる内容を書き、実行者が見えるなら呼称を含める。私的な動機や目撃だけでは分からない指示者は含めない。目撃できる内容がなければnull。witnessesは指定された全observersに対して、到着を見たかと独立に今回の行為に気づく確率を設定する。"
               : ""),
         },
         {
@@ -13485,7 +13586,7 @@ export class BotPlay {
           rejectAdjudication();
       }
       await db.query("COMMIT");
-      return die;
+      return { ...die, setting: publicDice(die.setting) };
     } catch (error) {
       await db.query("ROLLBACK");
       throw error;
@@ -13509,6 +13610,7 @@ export class BotPlay {
       ...(setting.count === undefined ? {} : { count: setting.count }),
       sides: setting.sides,
       successThrough: fumble.through,
+      thresholdBasis: fumble.thresholdBasis,
     });
     return { ...die, fumble: { roll, success: roll <= fumble.through } };
   }
@@ -15423,6 +15525,8 @@ export class BotPlay {
               );
               settled = completion.settled;
               confirmedChanges = completion.changes;
+              if (completion.locateMessage)
+                result.action = { message: completion.locateMessage };
               together = completion.together;
             }
           }
@@ -15525,7 +15629,6 @@ export class BotPlay {
                     "INSERT INTO bot_stealth_search(session_id,turn,stay_id,found) VALUES($1,$2,$3,$4)",
                     [...key, attempt.found],
                   );
-                  await db.query("DELETE FROM bot_dice WHERE id=$1", [dieId]);
                 }
                 if (!attempt.found) continue;
                 await this.#reveal(
@@ -16286,6 +16389,11 @@ export class BotPlay {
                     [input.requestId],
                   );
                 }
+                const locateMessage = await unchangedLocateMessage(
+                  plan.locates,
+                  receipt,
+                  plan.context,
+                );
                 if (summoned) {
                   const name = receipt.changes.nodes.find(
                     (n) => n.id === summoned,
@@ -16306,6 +16414,9 @@ export class BotPlay {
                     ? { npcId: summoned, action: { message: entryText } }
                     : {}),
                   commitId: receipt.commitId,
+                  ...(locateMessage
+                    ? { action: { message: locateMessage } }
+                    : {}),
                   ...confirmedObservation(receipt.changes, input.requestId),
                   ...plan.vehicleResult,
                   ...(plan.items?.length ? { items: plan.items } : {}),
@@ -16605,24 +16716,7 @@ export class BotPlay {
         ])
       ).get(input.requestId);
       const parts = individualOutcomes(outcome?.proposals ?? []);
-      const refusalMessages = (parts.length ? parts : [outcome]).flatMap(
-        (p) => {
-          if (
-            p?.message &&
-            (p.reason?.endsWith("_POLICY_REJECTED") ||
-              p.reason === "STATE_DESCRIPTION_REQUIRED")
-          )
-            return [
-              `${p.text ? `「${p.text}」は` : "この申請は"}差し戻されました。${p.message}`,
-            ];
-          if (p?.reason !== "MATERIAL_ID_REQUIRED") return [];
-          const proposal = p.text ? `「${p.text}」の案` : "この案";
-          const labels = p.unresolvedMaterialLabels;
-          return labels?.length
-            ? `${proposal}は振っていません。材料「${labels.join("」「")}」に使う物品を特定できません。使う物品のIDをmaterialsに指定するか、その材料を使う工程を申請文から外してください。`
-            : `${proposal}は振っていません。申請文からどの材料を使うのか読み取れません。使う材料を申請文に明記し、その物品のIDをmaterialsに指定してください。`;
-        },
-      );
+      const refusalMessages = unrolledReasons(outcome);
       const skillResults = parts
         .filter((p) => p.person && p.reason !== "SKILL_POLICY_REJECTED")
         .map((p) => {

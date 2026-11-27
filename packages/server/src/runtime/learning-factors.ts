@@ -158,20 +158,33 @@ function selectedFactors(
 }
 
 export const learningFactorsPrompt =
-  "learningReferencesが示されたダイス判定では、実際に判断に使った主な根拠をその一覧から選び、learningFactors:[{ref,impact}]で返す。impactは有利ならhelped、不利ならhindered。ファンブルの範囲を設定する場合、その範囲の根拠は同じ形式でfumbleFactorsに分ける。fumbleFactorsのhelpedは本人がファンブルを免れる側に有利。actionは申請した行為そのもの、skill:は技能ID、experience:は確定済みの経験のnode.id、attempt:は本人のrecentAttemptsの先頭を1とした番号、item:は所持品ID、place:は場所ID、state:は状態のnode.id（終了対象はrelationId）。案別の一覧があれば、その案の一覧だけから選ぶ。該当する根拠がなければ省いてよい。理由文やほかの参照は書かない。";
+  "learningReferencesが示されたダイス判定では、実際に判断に使った主な根拠をその一覧から選び、learningFactors:[{ref,impact}]で返す。impactは有利ならhelped、不利ならhindered。ファンブルの範囲を設定する場合、その範囲の根拠は同じ形式でfumbleFactorsに分ける。fumbleFactorsのhelpedは本人がファンブルを免れる側に有利。actionは申請した行為そのもの、skill:は技能ID、experience:は確定済みの経験のnode.id、attempt:は本人のrecentAttemptsの先頭を1とした番号、item:は所持品ID、place:は場所ID、state:は状態のnode.id（終了対象はrelationId）。案別の一覧があれば、その案の一覧だけから選ぶ。上限を決める際に有利・不利に働いた参照は必ず返す。該当する参照がなければ空配列にする。learningFactorsとfumbleFactorsには参照とimpactだけを返し、上限を決めた理由は各thresholdBasisに書く。";
 
 export function factorMessages(
   text: string,
-  factors: LearningFactor[] = [],
+  factors: LearningFactor[] | undefined,
+  roll: number,
+  through: number,
   fumble = false,
 ) {
   const label =
     (text ? `「${text}」の` : "") + (fumble ? "ファンブル判定" : "判定");
-  const messages = factors
+  const messages = (factors ?? [])
     .filter((factor) => !!factor.fumble === fumble)
     .map(
       ({ label: source, impact }) =>
         `${label}で、${source}が${impact === "helped" ? "有利" : "不利"}に働きました`,
     );
-  return messages.length ? messages : [`${label}：GMの根拠記録なし`];
+  if (messages.length) return messages;
+  const within = roll <= through;
+  const outcome = fumble
+    ? within
+      ? "ファンブル"
+      : "ファンブルなし"
+    : within
+      ? "成功"
+      : "失敗";
+  return [
+    `${label}：出目 ${roll} が${fumble ? "ファンブル" : "成功"}上限 ${through} ${within ? "以下だった" : "を超えた"}ため、${outcome}です。`,
+  ];
 }
