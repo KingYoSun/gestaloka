@@ -701,6 +701,33 @@ type Plan = {
   vehicleUnchanged?: true;
   boardings?: Boarding[];
 };
+type CreationHistory = CreationAttempt & {
+  key: string;
+  roll: CreationRoll;
+  factors: Partial<Pick<CreationRoll, FactorField>> | null;
+};
+type PendingCreation = {
+  changes: Change[];
+  history: CreationHistory[];
+  turnEnded?: true;
+  plan?: Omit<Plan, "context"> & { dependencies: Dependency[] };
+};
+type PendingCreationRequest = {
+  id: string;
+  prepared_turn: string;
+  command: string;
+  outcome: { creationPlan?: { outcome: unknown } } | null;
+  creation_pending: PendingCreation;
+  sp_amount: number;
+};
+const creationTurn = (session: Session) =>
+  JSON.stringify([session.id, session.data.number]);
+const skillDevelopment = (actor: string, ops: BelongingOp[] | undefined) =>
+  ops?.some(
+    (op) =>
+      op.type === "learn" && op.person === actor && op.consumeSkillIds?.length,
+  );
+
 function deciding(session: Session, actors: string[]) {
   const r = session.data.receiving;
   return (
@@ -1642,7 +1669,8 @@ export class BotPlay {
       CREATE TABLE IF NOT EXISTS bot_request (
       id uuid PRIMARY KEY,actor_id uuid NOT NULL,world_id uuid NOT NULL,hash text NOT NULL,result jsonb,outcome jsonb);
       ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS prepared_turn text;
-      ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS status_dependencies jsonb;
+      ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS status_dependencies jsonb, ADD COLUMN IF NOT EXISTS creation_pending jsonb;
+      CREATE INDEX IF NOT EXISTS bot_request_pending_creation_turn ON bot_request(world_id,actor_id,prepared_turn) WHERE creation_pending IS NOT NULL;
       CREATE TABLE IF NOT EXISTS player_friend (
         id uuid PRIMARY KEY,world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
         proposer uuid NOT NULL,recipient uuid NOT NULL,accepted boolean NOT NULL DEFAULT false,
@@ -1678,6 +1706,7 @@ export class BotPlay {
       CREATE INDEX IF NOT EXISTS bot_request_actor_sp ON bot_request(world_id,actor_id,sp_reset) WHERE sp_reset IS NOT NULL;
       ALTER TABLE bot_request ADD COLUMN IF NOT EXISTS received_at timestamptz, ADD COLUMN IF NOT EXISTS user_id uuid, ADD COLUMN IF NOT EXISTS command text;
       ALTER TABLE bot_request ALTER COLUMN received_at SET DEFAULT now();
+      CREATE INDEX IF NOT EXISTS bot_request_ended_creation ON bot_request(received_at,id) WHERE creation_pending ? 'turnEnded';
       CREATE INDEX IF NOT EXISTS bot_request_received ON bot_request(world_id,received_at);
       CREATE TABLE IF NOT EXISTS bot_dice (
       id uuid PRIMARY KEY,setting jsonb NOT NULL,roll integer);
@@ -4019,6 +4048,12 @@ export class BotPlay {
   ) {
     const skipped = reason === "absence" || reason === "idle";
     const d = session.data;
+    // PostgreSQLで手番が確定してから、Neo4jで取消を確定できる。
+    await db.query(
+      `UPDATE bot_request SET creation_pending=jsonb_set(creation_pending,'{turnEnded}','true')
+       WHERE world_id=$1 AND actor_id=$2 AND prepared_turn=$3 AND creation_pending IS NOT NULL`,
+      [session.world_id, d.turn, creationTurn(session)],
+    );
     await db.query(
       "DELETE FROM bot_stealth_search WHERE session_id=$1 AND turn=$2",
       [session.id, d.number],
@@ -5815,6 +5850,18 @@ export class BotPlay {
         db.release();
       }
     }
+    const ended = (
+      await this.pool.query<{ id: string; world_id: string; actor_id: string }>(
+        `SELECT id,world_id,actor_id FROM bot_request WHERE creation_pending ? 'turnEnded'
+       AND ($1::uuid IS NULL OR world_id=$1) ORDER BY received_at,id LIMIT 20`,
+        [world ?? null],
+      )
+    ).rows;
+    for (const row of ended)
+      await this.#resumeCreation(row.world_id, row.actor_id, row.id).catch(
+        (error) =>
+          console.error("手番終了後の技能発展の精算に失敗", row.id, error),
+      );
   }
   // 自動の期限処理で手番が進む場合に、管理用操作からも進められる。
   async advance(db: Db, world: string, id: string) {
@@ -7893,6 +7940,148 @@ export class BotPlay {
         : {}),
     };
   }
+  async #saveCreationHistory(
+    db: Db,
+    world: string,
+    actor: string,
+    history: CreationHistory[],
+  ) {
+    for (const { scope, key, text, facts, roll, factors } of history) {
+      if (roll.success)
+        await db.query(
+          "DELETE FROM bot_creation_failure WHERE world_id=$1 AND actor_id=$2 AND scope=$3 AND text_key=$4",
+          [world, actor, scope, key],
+        );
+      else
+        await db.query(
+          `INSERT INTO bot_creation_failure(world_id,actor_id,scope,text_key,text,facts,setting,roll,factors)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           ON CONFLICT(world_id,actor_id,scope,text_key) DO UPDATE
+           SET facts=excluded.facts,setting=excluded.setting,roll=excluded.roll,factors=excluded.factors,recorded_at=excluded.recorded_at`,
+          [
+            world,
+            actor,
+            scope,
+            key,
+            text,
+            JSON.stringify(facts),
+            roll.setting,
+            roll.roll,
+            factors ? JSON.stringify(factors) : null,
+          ],
+        );
+    }
+  }
+
+  async #resolveCreation(
+    db: Db,
+    world: string,
+    graph: string,
+    actor: string,
+    row: PendingCreationRequest,
+    turnEnded: boolean,
+  ) {
+    const receipt = await this.store.creationResolution(
+      graph,
+      row.id,
+      turnEnded,
+    );
+    // 元の手番なら通常の経路でシーンの記録まで確定する。
+    if (receipt === undefined || (receipt && !turnEnded)) return;
+    if (receipt)
+      await this.#saveCreationHistory(
+        db,
+        world,
+        actor,
+        row.creation_pending.history,
+      );
+    const outcome =
+      row.creation_pending.plan?.outcome ??
+      row.outcome?.creationPlan?.outcome ??
+      row.outcome;
+    if (!receipt) {
+      await db.query(
+        "UPDATE bot_request SET sp_user=NULL,sp_reset=NULL WHERE id=$1",
+        [row.id],
+      );
+      await db.query(
+        "DELETE FROM bot_adjudication WHERE world_id=$1 AND actor_id=$2 AND request_id=$3",
+        [world, actor, row.id],
+      );
+    }
+    const dice = receipt ? playDiceMessages(outcome) : [];
+    const result = {
+      state: receipt ? "accepted" : "cancelled",
+      ...(receipt
+        ? {
+            commitId: receipt.commitId,
+            outcome,
+            ...(dice.length ? { dice } : {}),
+            ...(row.creation_pending.plan?.items?.length
+              ? { items: row.creation_pending.plan.items }
+              : {}),
+          }
+        : {}),
+      spentSp: receipt ? row.sp_amount : 0,
+      dailySp: await this.dailySp(world, actor, db),
+      action: {
+        command: row.command,
+        message: receipt
+          ? "保存済みの確定結果を回収しました"
+          : "申請した手番が終了したため、未確定の技能発展を取り消しました",
+      },
+    };
+    await db.query(
+      "UPDATE bot_request SET result=$2,creation_pending=NULL,status_dependencies=NULL WHERE id=$1",
+      [row.id, result],
+    );
+    return result;
+  }
+
+  async #resumeCreation(world: string, actor: string, request: string) {
+    const db = await this.pool.connect();
+    try {
+      await db.query("BEGIN");
+      await RuntimeControl.check(db, {}, true);
+      await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,225))", [
+        world,
+      ]);
+      const row = (
+        await db.query<
+          PendingCreationRequest & { result: Record<string, unknown> | null }
+        >(
+          "SELECT id,prepared_turn,command,outcome,creation_pending,sp_amount,result FROM bot_request WHERE id=$1 FOR UPDATE",
+          [request],
+        )
+      ).rows[0]!;
+      let result = row.result ?? undefined;
+      if (row.creation_pending) {
+        const current = row.creation_pending.turnEnded
+          ? undefined
+          : await this.current(world, actor, db);
+        const ended =
+          !current ||
+          current.data.turn !== actor ||
+          creationTurn(current) !== row.prepared_turn;
+        result = await this.#resolveCreation(
+          db,
+          world,
+          (await this.world(world, db)).id,
+          actor,
+          row,
+          ended,
+        );
+      }
+      await db.query("COMMIT");
+      return result;
+    } catch (error) {
+      await db.query("ROLLBACK");
+      throw error;
+    } finally {
+      db.release();
+    }
+  }
+
   async #creation(
     world: string,
     actor: string,
@@ -7919,6 +8108,7 @@ export class BotPlay {
       previousState,
       observe,
       checkStateDescription,
+      recoverable = false,
     }: {
       exploreFrom?: string | undefined;
       waitMinutes?: number | undefined;
@@ -7929,6 +8119,7 @@ export class BotPlay {
       previousState?: string | undefined;
       observe?: ObservationApplication | undefined;
       checkStateDescription?: true | undefined;
+      recoverable?: boolean;
     } = {},
   ) {
     const explore = exploreFrom !== undefined;
@@ -8024,12 +8215,20 @@ export class BotPlay {
     const previous = await this.pool.query<{
       creation_rolls: Result[] | null;
       status_dependencies: Dependency[] | null;
+      creation_pending: PendingCreation | null;
     }>(
-      "SELECT creation_rolls,status_dependencies FROM bot_request WHERE id=$1",
+      "SELECT creation_rolls,status_dependencies,creation_pending FROM bot_request WHERE id=$1",
       [requestId],
     );
     if (previous.rows[0]?.creation_rolls) {
       context.dependOn(previous.rows[0].status_dependencies ?? []);
+      const pending = previous.rows[0].creation_pending;
+      if (pending) {
+        if (pending.changes.length !== proposals.length)
+          throw new WorldConflict("保存した判定対象の構成が変わりました");
+        for (const [index, proposal] of proposals.entries())
+          Object.assign(proposal.changes, pending.changes[index]);
+      }
       return validateSaved(previous.rows[0].creation_rolls);
     }
     const batch = proposals.length > 1;
@@ -8923,21 +9122,42 @@ export class BotPlay {
     const db = await this.pool.connect();
     try {
       await db.query("BEGIN");
+      if (recoverable)
+        await db.query(
+          "SELECT pg_advisory_xact_lock_shared(hashtextextended($1,225))",
+          [world],
+        );
       if (fresh.length)
         await db.query(
           "SELECT pg_advisory_xact_lock(hashtextextended($1,309))",
           [world + actor],
         );
       const saved = (
-        await db.query<{ creation_rolls: Result[] | null }>(
-          "SELECT creation_rolls FROM bot_request WHERE id=$1 FOR UPDATE",
+        await db.query<{
+          creation_rolls: Result[] | null;
+          prepared_turn: string | null;
+          result: unknown;
+        }>(
+          "SELECT creation_rolls,prepared_turn,result FROM bot_request WHERE id=$1 FOR UPDATE",
           [requestId],
         )
-      ).rows[0]!.creation_rolls;
-      if (saved) {
+      ).rows[0]!;
+      if (saved.result) rejectAdjudication();
+      if (saved.creation_rolls) {
         await db.query("COMMIT");
-        return validateSaved(saved);
+        return validateSaved(saved.creation_rolls);
       }
+      if (recoverable) {
+        const current = await this.current(world, actor, db);
+        if (
+          !current ||
+          current.data.receiving ||
+          current.data.turn !== actor ||
+          creationTurn(current) !== saved.prepared_turn
+        )
+          reject("TURN_REQUIRED", "申請した手番は終了しました");
+      }
+      const history: CreationHistory[] = [];
       const rolls: Result[] = [];
       const used = new Map<string, number>();
       const settle = (i: number, die: CreationRoll) =>
@@ -8997,29 +9217,12 @@ export class BotPlay {
         rolls.push(performed ? { ...rolled, performed } : rolled);
         const attempt = attempts.get(i)!;
         const key = createHash("sha256").update(attempt.text).digest("hex");
-        if (success)
-          await db.query(
-            "DELETE FROM bot_creation_failure WHERE world_id=$1 AND actor_id=$2 AND scope=$3 AND text_key=$4",
-            [world, actor, attempt.scope, key],
-          );
-        else
-          await db.query(
-            `INSERT INTO bot_creation_failure(world_id,actor_id,scope,text_key,text,facts,setting,roll,factors)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
-             ON CONFLICT(world_id,actor_id,scope,text_key) DO UPDATE
-             SET facts=excluded.facts,setting=excluded.setting,roll=excluded.roll,factors=excluded.factors,recorded_at=excluded.recorded_at`,
-            [
-              world,
-              actor,
-              attempt.scope,
-              key,
-              attempt.text,
-              JSON.stringify(attempt.facts),
-              rolled.setting,
-              rolled.roll,
-              factors ? JSON.stringify(factors) : null,
-            ],
-          );
+        history.push({
+          ...attempt,
+          key,
+          roll: rolled,
+          factors: factors ?? null,
+        });
         if (success) {
           applySlots(i);
           for (const c of die.setting.consumes ?? [])
@@ -9033,14 +9236,27 @@ export class BotPlay {
             (!repeated[p.index] && "roll" in rolls[p.index]!),
         ),
       );
+      const pending = recoverable && spent > 0;
+      if (!pending) await this.#saveCreationHistory(db, world, actor, history);
       const persisted = await db.query(
         `UPDATE bot_request r SET creation_rolls=$2,
         outcome=CASE WHEN $5 THEN '{"creationPlan":{}}'::jsonb ELSE r.outcome END,
         sp_user=CASE WHEN $3::int>0 THEN a.sp_user END, sp_reset=CASE WHEN $3::int>0 THEN a.sp_reset END,
-        sp_amount=greatest($3::int,1)
+        sp_amount=greatest($3::int,1),creation_pending=$6,
+        status_dependencies=CASE WHEN $6::jsonb IS NULL THEN r.status_dependencies ELSE $7 END
         FROM bot_adjudication a WHERE r.id=$1 AND a.world_id=r.world_id AND a.actor_id=r.actor_id
         AND a.request_id=r.id AND a.expires_at>clock_timestamp() AND ($3::int=0 OR (a.sp_user=$4 AND a.sp_amount>=$3::int))`,
-        [requestId, JSON.stringify(rolls), spent, user, !!splitMode],
+        [
+          requestId,
+          JSON.stringify(rolls),
+          spent,
+          user,
+          !!splitMode,
+          pending
+            ? { changes: proposals.map((p) => p.changes), history }
+            : null,
+          pending ? JSON.stringify(context.dependencies) : null,
+        ],
       );
       if (!persisted.rowCount) rejectAdjudication();
       await db.query(
@@ -10374,6 +10590,9 @@ export class BotPlay {
         consumable,
         {
           splitMode,
+          recoverable:
+            proposals.every((p) => !p.recipients.length) &&
+            proposals.some((p) => skillDevelopment(actor, p.operations)),
           hasUnrolledChanges: rolledPlans.length < proposals.length,
         },
       );
@@ -10474,10 +10693,10 @@ export class BotPlay {
         mixedMoves: successful.flatMap((p) => p.mixedMoves ?? []),
         boardings: successful.flatMap((p) => p.boardings ?? []),
       };
-      await db.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
-        input.requestId,
-        splitMode ? { creationPlan: distribution } : outcome,
-      ]);
+      await db.query(
+        "UPDATE bot_request SET outcome=$2 WHERE id=$1 AND result IS NULL",
+        [input.requestId, splitMode ? { creationPlan: distribution } : outcome],
+      );
       return {
         context,
         changes,
@@ -11651,6 +11870,12 @@ export class BotPlay {
               exploreFrom:
                 input.command === "explore" ? input.fromId : undefined,
               waitMinutes: wait,
+              recoverable:
+                input.command === "update" &&
+                !wait &&
+                !deadline &&
+                !recipients.length &&
+                !!skillDevelopment(actor, input.operations),
               referenced: [...parties, ...refs],
               endStateTargetId: input.endStateTargetId,
               previousState,
@@ -11669,10 +11894,10 @@ export class BotPlay {
       };
       const stealth =
         concealed && !dice.success ? { observations: [] } : undefined;
-      await this.pool.query("UPDATE bot_request SET outcome=$2 WHERE id=$1", [
-        input.requestId,
-        stealth ? { outcome, stealth } : outcome,
-      ]);
+      await this.pool.query(
+        "UPDATE bot_request SET outcome=$2 WHERE id=$1 AND result IS NULL",
+        [input.requestId, stealth ? { outcome, stealth } : outcome],
+      );
       if (!dice.success) {
         changes = empty();
         if (!input.endStateTargetId)
@@ -13913,6 +14138,7 @@ export class BotPlay {
         world_id: string;
         hash: string;
         result: Record<string, unknown> | null;
+        creation_pending: PendingCreation | null;
       }>("SELECT * FROM bot_request WHERE id=$1", [input.requestId])
     ).rows[0]!;
     if (
@@ -13922,6 +14148,10 @@ export class BotPlay {
     )
       reject("REQUEST_CONFLICT", "同じ要求IDに異なる内容は使用できません");
     if (saved.result) return this.#replay(world, input, saved.result);
+    if (saved.creation_pending) {
+      const result = await this.#resumeCreation(world, actor, input.requestId);
+      if (result) return result;
+    }
     // companionの移動は、本人の申請による所在の変更として確定する（ADR-076）。
     if (
       input.command === "companion-move" ||
@@ -14063,6 +14293,7 @@ export class BotPlay {
     await this.#requireLivingActor(this.store.context(w.id), actor);
     let prepared: Session | undefined;
     let stateBasis: Dependency[] | undefined;
+    let storedPlan: PendingCreation["plan"];
     const basis = "dependencies" in input ? input.dependencies : [];
     if (adjudicationOwner) {
       const { rows } = await this.pool.query<{
@@ -14070,12 +14301,14 @@ export class BotPlay {
         outcome: DrawOutcome | null;
         prepared_turn: string | null;
         status_dependencies: Dependency[] | null;
+        creation_pending: PendingCreation | null;
         spent: number;
       }>(
-        "SELECT result,outcome,prepared_turn,status_dependencies,CASE WHEN sp_user IS NULL THEN 0 ELSE sp_amount END AS spent FROM bot_request WHERE id=$1",
+        "SELECT result,outcome,prepared_turn,status_dependencies,creation_pending,CASE WHEN sp_user IS NULL THEN 0 ELSE sp_amount END AS spent FROM bot_request WHERE id=$1",
         [input.requestId],
       );
       const prior = rows[0]!;
+      storedPlan = prior.creation_pending?.plan;
       if (prior.result) return this.#replay(world, input, prior.result);
       if (
         prior.status_dependencies &&
@@ -14090,7 +14323,7 @@ export class BotPlay {
       prepared = await this.current(world, actor);
       const turnKey =
         prepared && prepared.data.turn === actor && !prepared.data.receiving
-          ? JSON.stringify([prepared.id, prepared.data.number])
+          ? creationTurn(prepared)
           : null;
       if (
         input.command === "draw" &&
@@ -14202,14 +14435,28 @@ export class BotPlay {
         // 申請者が検索で得た依存版は申請の時点で確かめる。計画には操作が読んだ記録の版だけを残す。
         if (basis.length && !(await this.store.receipt(w.id, input.requestId)))
           await this.store.context(w.id, basis).validate();
-        const planned = await this.#plan(
-          world,
-          actor,
-          user,
-          "dependencies" in input ? { ...input, dependencies: [] } : input,
-          { expectedSp },
-        );
+        const planned = storedPlan
+          ? {
+              ...storedPlan,
+              at: Math.max(storedPlan.at, w.at),
+              context: this.store.context(w.id, storedPlan.dependencies),
+            }
+          : await this.#plan(
+              world,
+              actor,
+              user,
+              "dependencies" in input ? { ...input, dependencies: [] } : input,
+              { expectedSp },
+            );
         if (planned && stateBasis) planned.context.dependOn(stateBasis);
+        if (planned && !storedPlan) {
+          const { context, ...plan } = planned;
+          await this.pool.query(
+            `UPDATE bot_request SET creation_pending=jsonb_set(creation_pending,'{plan}',$2)
+             WHERE id=$1 AND creation_pending IS NOT NULL AND result IS NULL`,
+            [input.requestId, { ...plan, dependencies: context.dependencies }],
+          );
+        }
         if (planned?.vehicleResult) {
           await this.pool.query(
             "UPDATE bot_request SET outcome=$2 WHERE id=$1 AND result IS NULL",
@@ -14237,16 +14484,6 @@ export class BotPlay {
     let committedRejection: AccessError | undefined;
     try {
       await db.query("BEGIN");
-      const saved = (
-        await db.query<{
-          result: Record<string, unknown> | null;
-          spent: number;
-          creation_rolls: CreationRoll[] | null;
-        }>(
-          "SELECT result,creation_rolls,CASE WHEN sp_user IS NULL THEN 0 ELSE sp_amount END AS spent FROM bot_request WHERE id=$1 FOR UPDATE",
-          [input.requestId],
-        )
-      ).rows[0]!;
       await requireMember(db, user);
       const assignment = (
         await db.query<{
@@ -14290,6 +14527,17 @@ export class BotPlay {
       await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,225))", [
         world,
       ]);
+      const saved = (
+        await db.query<{
+          result: Record<string, unknown> | null;
+          spent: number;
+          creation_rolls: CreationRoll[] | null;
+          creation_pending: PendingCreation | null;
+        }>(
+          "SELECT result,creation_rolls,creation_pending,CASE WHEN sp_user IS NULL THEN 0 ELSE sp_amount END AS spent FROM bot_request WHERE id=$1 FOR UPDATE",
+          [input.requestId],
+        )
+      ).rows[0]!;
       if (saved.result) {
         await db.query("COMMIT");
         return this.#replay(world, input, saved.result);
@@ -15796,6 +16044,18 @@ export class BotPlay {
                     : [],
                 );
                 confirmedChanges = receipt.changes;
+                if (saved.creation_pending) {
+                  await this.#saveCreationHistory(
+                    db,
+                    world,
+                    actor,
+                    saved.creation_pending.history,
+                  );
+                  await db.query(
+                    "UPDATE bot_request SET creation_pending=NULL WHERE id=$1",
+                    [input.requestId],
+                  );
+                }
                 if (summoned) {
                   const name = receipt.changes.nodes.find(
                     (n) => n.id === summoned,

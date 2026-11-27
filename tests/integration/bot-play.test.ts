@@ -17331,6 +17331,243 @@ test("抽選器を審査し、別の人物が結果を受け取り、同席者�
   ).toHaveLength(2);
 });
 
+describe("中断した技能発展のSP精算", () => {
+  async function pendingDevelopment() {
+    const f = await fixture(1);
+    const actor = f.actors[0]!;
+    const learn = { type: "learn", person: actor, basis: "庭で稽古した" };
+    const seed = await f.apply([{ ...learn, text: "庭で五歩を数えられる" }]);
+    const original = seed.changes.nodes[0]!.id;
+    const request = {
+      requestId: randomUUID(),
+      command: "apply",
+      expectedSp: 1,
+      dependencies: [],
+      action: {
+        type: "generate",
+        plans: [
+          {
+            text: "庭で六歩まで数える稽古をする",
+            operation: {
+              ...learn,
+              text: "庭で六歩を数えられる",
+              consumeSkillIds: [original],
+            },
+          },
+        ],
+      },
+    };
+    const row = async () =>
+      (
+        await isolated.databases.postgres.query(
+          "SELECT creation_pending,creation_rolls,result,sp_user,sp_reset,sp_amount FROM bot_request WHERE id=$1",
+          [request.requestId],
+        )
+      ).rows[0];
+    const skills = async () =>
+      (await readBelongings(f.store.context(f.graph), actor)).skills;
+    const balance = async () =>
+      (await access.botPlay.dailySp(f.world, actor)).remaining;
+    f.calls.mockImplementation(async (id) => answer(id, sure));
+    return { f, actor, original, request, row, skills, balance };
+  }
+
+  test.each([false, true])(
+    "判定保存後に中断しても同じ手番の再送で判定と予約を引き継ぐ（差分保存済み %s）",
+    async (planned) => {
+      const t = await pendingDevelopment();
+      const before = await t.balance();
+      const pool = isolated.databases.postgres;
+      const query = pool.query.bind(pool);
+      const interrupted = planned
+        ? vi
+            .spyOn(t.f.store, "commit")
+            .mockRejectedValueOnce(new Error("確定前に中断"))
+        : vi.spyOn(pool, "query").mockImplementation(((
+            sql: string,
+            args?: unknown[],
+          ) => {
+            if (
+              typeof sql === "string" &&
+              sql.startsWith("UPDATE bot_request SET outcome=$2 WHERE id=$1") &&
+              args?.[0] === t.request.requestId
+            )
+              throw new Error("確定前に中断");
+            return query(sql, args);
+          }) as typeof pool.query);
+      await expect(t.f.send(0, t.request)).rejects.toThrow("確定前に中断");
+      interrupted.mockRestore();
+      const pending = await t.row();
+      expect(!!pending.creation_pending?.plan).toBe(planned);
+      expect(pending.creation_rolls[0].success).toBe(true);
+      expect(await t.balance()).toBe(before - 1);
+      expect(
+        await t.f.store.receipt(t.f.graph, t.request.requestId),
+      ).toBeUndefined();
+      const finished = await t.f.send(0, t.request);
+      expect(finished).toMatchObject({
+        commitId: t.request.requestId,
+        spentSp: 1,
+        outcome: { success: true, roll: pending.creation_rolls[0].roll },
+      });
+      expect(await t.f.send(0, t.request)).toEqual(finished);
+      expect((await t.row()).creation_pending).toBeNull();
+      expect(await t.balance()).toBe(before - 1);
+      expect((await t.skills()).map((s) => s.text)).toEqual([
+        "庭で六歩を数えられる",
+      ]);
+      expect(t.f.calls).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test.each([false, true])(
+    "手番終了と再送が競合しても、グラフ確定の有無で一度だけ決着する（確定済み %s）",
+    async (confirmed) => {
+      const t = await pendingDevelopment();
+      const before = await t.balance();
+      const commit = t.f.store.commit.bind(t.f.store);
+      let planned: Parameters<typeof commit> | undefined;
+      const disrupted = vi
+        .spyOn(t.f.store, "commit")
+        .mockImplementationOnce(async (...args) => {
+          planned = args;
+          if (confirmed) await commit(...args);
+          throw new Error("グラフ更新の途中で中断");
+        });
+      await expect(t.f.send(0, t.request)).rejects.toThrow("グラフ更新の途中");
+      disrupted.mockRestore();
+      const pending = await t.row();
+      expect(pending.result).toBeNull();
+      expect(await t.balance()).toBe(before - 1);
+      let reach!: () => void, release!: () => void;
+      const reached = new Promise<void>((resolve) => {
+        reach = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const resolve = t.f.store.creationResolution.bind(t.f.store);
+      const delayed = vi
+        .spyOn(t.f.store, "creationResolution")
+        .mockImplementationOnce(async (...args) => {
+          reach();
+          await gate;
+          return resolve(...args);
+        });
+      await t.f.send(0, { command: "end-turn" });
+      const settlement = access.botPlay.expire(t.f.world);
+      await Promise.race([
+        reached,
+        settlement.then(() => {
+          throw new Error("精算を照合しませんでした");
+        }),
+      ]);
+      const retry = t.f.send(0, t.request);
+      release();
+      await settlement;
+      const result = await retry;
+      delayed.mockRestore();
+      expect((await t.row()).creation_rolls).toEqual(pending.creation_rolls);
+      expect((await t.row()).creation_pending).toBeNull();
+      expect(await t.f.send(0, t.request)).toEqual(result);
+      expect(t.f.calls).toHaveBeenCalledTimes(1);
+      if (confirmed) {
+        expect(result).toMatchObject({
+          state: "accepted",
+          spentSp: 1,
+          commitId: t.request.requestId,
+          outcome: { success: true, roll: pending.creation_rolls[0].roll },
+        });
+        expect((await t.skills()).map((s) => s.text)).toEqual([
+          "庭で六歩を数えられる",
+        ]);
+        expect(await t.balance()).toBe(before - 1);
+      } else {
+        expect(result).toMatchObject({ state: "cancelled", spentSp: 0 });
+        expect(await t.balance()).toBe(before);
+        expect((await t.row()).sp_user).toBeNull();
+        expect((await t.skills()).map((s) => s.id)).toEqual([t.original]);
+        expect(
+          await t.f.store.receipt(t.f.graph, t.request.requestId),
+        ).toBeUndefined();
+        const [, context, input] = planned!;
+        await expect(
+          commit(
+            await t.f.store.claim(t.f.graph, t.request.requestId),
+            context,
+            input,
+          ),
+        ).rejects.toThrow("取り消されています");
+      }
+    },
+  );
+
+  test("グラフへの遅延書き込みと手番終了が同時に進んでも、確定と取消が重ならない", async () => {
+    const t = await pendingDevelopment();
+    const before = await t.balance();
+    const commit = t.f.store.commit.bind(t.f.store);
+    let planned: Parameters<typeof commit> | undefined;
+    const interrupted = vi
+      .spyOn(t.f.store, "commit")
+      .mockImplementationOnce(async (...args) => {
+        planned = args;
+        throw new Error("グラフへの書き込みが遅延した");
+      });
+    await expect(t.f.send(0, t.request)).rejects.toThrow("書き込みが遅延");
+    interrupted.mockRestore();
+
+    await t.f.send(0, { command: "end-turn" });
+    const [write, settlement] = await Promise.allSettled([
+      commit(...planned!),
+      access.botPlay.expire(t.f.world),
+    ]);
+    expect(settlement.status).toBe("fulfilled");
+    expect((await t.row()).creation_pending).toBeNull();
+    const result = await t.f.send(0, t.request);
+    const receipt = await t.f.store.receipt(t.f.graph, t.request.requestId);
+    expect(await t.f.send(0, t.request)).toEqual(result);
+    if (write.status === "fulfilled") {
+      expect(receipt).toEqual(write.value);
+      expect(result).toMatchObject({
+        state: "accepted",
+        commitId: t.request.requestId,
+        spentSp: 1,
+      });
+      expect(await t.balance()).toBe(before - 1);
+      expect((await t.skills()).map((s) => s.text)).toEqual([
+        "庭で六歩を数えられる",
+      ]);
+    } else {
+      expect(write.reason).toMatchObject({
+        message: "この要求は取り消されています",
+      });
+      expect(receipt).toBeUndefined();
+      expect(result).toMatchObject({ state: "cancelled", spentSp: 0 });
+      expect(await t.balance()).toBe(before);
+      expect((await t.skills()).map((s) => s.id)).toEqual([t.original]);
+    }
+    expect(t.f.calls).toHaveBeenCalledTimes(1);
+  });
+
+  test("通常のダイス失敗は取り消さず、結果と1 SPを確定する", async () => {
+    const t = await pendingDevelopment();
+    const before = await t.balance();
+    t.f.calls.mockImplementation(async (id) =>
+      answer(id, { successThrough: 3 }),
+    );
+    const result = await t.f.send(0, t.request);
+    expect(result).toMatchObject({
+      state: "accepted",
+      outcome: { success: false },
+      spentSp: 1,
+    });
+    expect(await t.f.send(0, t.request)).toEqual(result);
+    expect((await t.row()).creation_pending).toBeNull();
+    expect(await t.balance()).toBe(before - 1);
+    expect((await t.skills()).map((s) => s.id)).toEqual([t.original]);
+  });
+});
+
 test("全文要約が索引上限を超える技能数でも、発展を確定してSPを一度だけ消費する", async () => {
   const f = await fixture(1);
   const person = f.actors[0]!;
