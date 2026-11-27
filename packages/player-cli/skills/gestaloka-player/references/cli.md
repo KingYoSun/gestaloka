@@ -342,7 +342,7 @@ gestaloka memo --text <本文> [--participants <人物ID,人物ID>] [--deferred-
 gestaloka explore --from <場所ID> --label <場所の呼び名> (--text <説明> | --file <本文ファイル>) [--quote | --expected-sp <SP>]
 ```
 
-実行例 `gestaloka explore --from @12ab34cd --label 森の奥の沢 --text ぶー森の小道を奥へ進むと浅い沢に出る`
+実行例 `gestaloka explore --from @12ab34cd --label 森の奥の沢 --text 灯葉の森の小道を奥へ進むと浅い沢に出る`
 
 ## promote-npc
 
