@@ -9303,9 +9303,10 @@ export class BotPlay {
       const factors =
         contest || creation?.learningFactors || creation?.diceFactors;
       const messages = (reasons[field] ??= []);
-      messages.push(...factorMessages(die.text ?? "", factors));
-      if (die.fumble)
-        messages.push(...factorMessages(die.text ?? "", factors, true));
+      // 対抗の申請文には実際に成立しなかった結果も書ける。履歴には出目の見出しを使う。
+      const label = opposition && !die.opponentId ? "" : (die.text ?? "");
+      messages.push(...factorMessages(label, factors));
+      if (die.fumble) messages.push(...factorMessages(label, factors, true));
       results.set(request, reasons);
     }
     return results;

@@ -681,7 +681,10 @@ export class WorldAccess {
             const recovered = notes?.[field];
             if (
               saved?.length &&
-              (!recovered || saved.length === recovered.length)
+              (!recovered ||
+                (row.command !== "oppose" &&
+                  row.command !== "npc-action" &&
+                  saved.length === recovered.length))
             )
               result[field] = saved;
             else if (recovered?.length) result[field] = recovered;
