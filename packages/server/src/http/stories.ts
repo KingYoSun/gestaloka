@@ -26,6 +26,7 @@ export async function setupStories(pool: pg.Pool) {
     updated_at timestamptz NOT NULL DEFAULT now()
   );
   ALTER TABLE player_story ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
+  CREATE INDEX IF NOT EXISTS player_story_owner ON player_story(author_id,id);
   CREATE INDEX IF NOT EXISTS player_story_active_latest ON player_story(published_at,id) WHERE deleted_at IS NULL;
   CREATE INDEX IF NOT EXISTS player_story_active_world ON player_story(world_id,published_at,id) WHERE deleted_at IS NULL;
   CREATE INDEX IF NOT EXISTS player_story_active_author ON player_story(md5(author),published_at,id) WHERE deleted_at IS NULL;

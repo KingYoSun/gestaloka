@@ -57,7 +57,11 @@ export function learningReferences(
   actor: string,
   materials: unknown[],
   attempts: LearningAttempt[],
-  readable?: { places: readonly string[]; subjects: readonly string[] },
+  readable?: {
+    places: readonly string[];
+    subjects: readonly string[];
+    statesOnly?: true;
+  },
 ) {
   const references = new Map<string, LearningReference>([
     ["action", { label: "申請した行為の内容" }],
@@ -77,7 +81,7 @@ export function learningReferences(
         label: `経験「${node.text}」`,
       });
     if (!readable) continue;
-    if (node.id === actor)
+    if (node.id === actor && !readable.statesOnly)
       for (const item of belongings?.items ?? [])
         if (!item.ground)
           references.set(`item:${item.id}`, {
@@ -89,7 +93,7 @@ export function learningReferences(
     const subject = WorldNode.safeParse(node).data;
     if (node.id !== actor && (!subject || !visibleTo(subject, actor, true)))
       continue;
-    if (place)
+    if (place && !readable.statesOnly)
       references.set(`place:${node.id}`, { label: `場所「${node.text}」` });
     for (const { node: value } of data.states ?? []) {
       const state = WorldNode.safeParse(value).data;

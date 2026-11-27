@@ -2305,6 +2305,33 @@ export class WorldStore {
     return result.records.map((r) => JSON.parse(r.get("data")) as Receipt);
   }
 
+  // 取消と確定は同じ要求のロックで順序を決める。undefined は未確定、null は取消を示す。
+  async creationResolution(worldId: string, commitId: string, cancel: boolean) {
+    const session = this.driver.session();
+    try {
+      return await session.executeWrite(async (tx) => {
+        await lock(tx, worldId, `commit:${commitId}`);
+        const params = { worldId, commitId };
+        const receipt = (
+          await tx.run(
+            "MATCH (r:WorldReceipt {worldId:$worldId,commitId:$commitId}) RETURN r.data AS data",
+            params,
+          )
+        ).records[0];
+        if (receipt) return JSON.parse(receipt.get("data")) as Receipt;
+        const run = await tx.run(
+          cancel
+            ? "MERGE (r:WorldRun {worldId:$worldId,runId:$commitId}) ON CREATE SET r.generation=0 SET r.cancelled=true RETURN r.cancelled AS cancelled"
+            : "MATCH (r:WorldRun {worldId:$worldId,runId:$commitId}) RETURN r.cancelled AS cancelled",
+          params,
+        );
+        return run.records[0]?.get("cancelled") === true ? null : undefined;
+      });
+    } finally {
+      await session.close();
+    }
+  }
+
   async pendingReceipts(worldId: string): Promise<Receipt[]> {
     const key = "delivery:initialized";
     const initialized = await this.driver.executeQuery(
@@ -2810,9 +2837,11 @@ export class WorldStore {
         }
         const fence = await tx.run(
           `MATCH (r:WorldRun {worldId: $worldId, runId: $runId})
-          SET r._lock = true REMOVE r._lock RETURN r.generation AS generation`,
+          SET r._lock = true REMOVE r._lock RETURN r.generation AS generation,r.cancelled AS cancelled`,
           { worldId, runId },
         );
+        if (fence.records[0]?.get("cancelled") === true)
+          throw new WorldConflict("この要求は取り消されています");
         if (
           !fence.records[0] ||
           Number(fence.records[0].get("generation")) !== generation
