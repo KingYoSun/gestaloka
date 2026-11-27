@@ -9835,6 +9835,10 @@ test("CLIで複数の短縮IDを指定すると、その状態だけを新しい
       expect(messages[0]!.content).toContain("JSON");
       expect(JSON.parse(messages[1]!.content)).toEqual({
         premise,
+        learningReferences: [
+          "action",
+          ...ended.map((_, i) => `state:${changes.edges[i]!.id}`),
+        ],
         targetId: actor,
         self: true,
         text: `${request.action.text}\n${request.action.description}`,
@@ -9846,6 +9850,9 @@ test("CLIで複数の短縮IDを指定すると、その状態だけを新しい
       });
       return answer(id, {
         ...sure,
+        learningFactors: [
+          { ref: `state:${changes.edges[0]!.id}`, impact: "helped" },
+        ],
         endEdges: [changes.edges[0]!.id, changes.edges[2]!.id],
       });
     });
@@ -9854,6 +9861,9 @@ test("CLIで複数の短縮IDを指定すると、その状態だけを新しい
     expect(played.result).toMatchObject({
       state: "accepted",
       spentSp: 1,
+      diceReasons: [
+        expect.stringContaining("状態「濡れた袖」が有利に働きました"),
+      ],
       outcome: { success: true, setting: sure, roll: expect.any(Number) },
     });
     expect(
