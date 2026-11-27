@@ -33,7 +33,7 @@
 }
 ```
 
-`direct.operations` の物品・移動の型には `locate`、`move`、`remove`、`revoke` があります。品と代価を同時に移す場合は二つの `move` を同じ操作に含めます。
+`direct.operations` の `locate` は、人物や品がどこにいるかを記録します。たとえば、人物が広場へ移動するときは、その人物を `subjectId`、広場を `aboutIds` に指定します。指定した所在がすでに記録されていれば、変更は0件です。
 
 ```json
 {
@@ -55,7 +55,19 @@
 }
 ```
 
-時間差の受領が必要な受け渡しでは、`deferredUntil` を `action` に指定します。使える条件は [時間差の受領](sessions.md) を参照してください。
+手持ちの本を箱に入れるときは、`direct.operations` に次の `move` を指定します。`item` は品のID、`from` は現在の所持先、`to` は新しい所持先です。同じ広場にいる相手に渡すときも、`to` にその相手のIDを指定します。`locate` の本文に「箱に入れる」と書いても、所持先は変わりません。
+
+```json
+{
+  "type": "move",
+  "item": "本のID",
+  "from": "本人のID",
+  "to": "箱のID",
+  "basis": "本を箱にしまう"
+}
+```
+
+品と代価を同時に移す場合は二つの `move` を同じ申請に含めます。時間差の受領が必要な受け渡しでは、`deferredUntil` を `action` に指定します。使える条件は [時間差の受領](sessions.md) を参照してください。ほかに `direct.operations` では `remove` と `revoke` を使えます。
 
 ### 物を使って何かを変える
 
