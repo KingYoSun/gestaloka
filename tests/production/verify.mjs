@@ -5,7 +5,7 @@ import { once } from "node:events";
 import { join, resolve } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
-import { get } from "node:https";
+import { Agent, get } from "node:https";
 import { initializeDeployment } from "../../infra/production/config.mjs";
 import { command } from "../../infra/production/engine.mjs";
 
@@ -204,7 +204,7 @@ async function verifyLocalRecovery(deployment) {
   assert.equal((await item()).node, null);
 }
 const storage = `gestaloka-recovery-s3-${suffix}`;
-const https = async (d, subdomain, path, method = "GET") =>
+const https = async (d, subdomain, path, method = "GET", agent = false) =>
   new Promise((resolvePromise, reject) => {
     const host = `${subdomain}.${d.config.domain}`;
     const request = get(
@@ -214,7 +214,7 @@ const https = async (d, subdomain, path, method = "GET") =>
         port: d.config.httpsPort,
         path,
         method,
-        agent: false,
+        agent,
         headers: { host: `${host}:${d.config.httpsPort}` },
         rejectUnauthorized: false,
       },
@@ -225,7 +225,11 @@ const https = async (d, subdomain, path, method = "GET") =>
           text += c;
         });
         response.on("end", () =>
-          resolvePromise({ status: response.statusCode, text }),
+          resolvePromise({
+            status: response.statusCode,
+            text,
+            reused: request.reusedSocket,
+          }),
         );
       },
     );
@@ -281,10 +285,15 @@ async function verifyApiRollout(deployment) {
     }
     let probing = true;
     const failures = [];
-    const probe = async ([host, path]) => {
+    const keepAlive = new Agent({ keepAlive: true, maxSockets: 1 });
+    const probe = async ([host, path], agent = false) => {
+      let first = true;
       do {
         try {
-          const page = await https(deployment, host, path);
+          const page = await https(deployment, host, path, "GET", agent);
+          if (agent && !first)
+            assert.ok(page.reused, "切り替え中に既存のHTTPS接続が閉じました");
+          first = false;
           assert.equal(page.status, 200);
           if (path === "/api/health")
             assert.equal(JSON.parse(page.text).status, "ok");
@@ -294,7 +303,10 @@ async function verifyApiRollout(deployment) {
         if (probing) await delay(100);
       } while (probing);
     };
-    const probes = Promise.all(paths.map(probe));
+    const probes = Promise.all([
+      ...paths.map((path) => probe(path)),
+      probe(paths[1], keepAlive),
+    ]);
     try {
       await cli("rollout", deployment);
       assert.ok(await runningId(next));
@@ -303,8 +315,9 @@ async function verifyApiRollout(deployment) {
     } finally {
       probing = false;
       await probes;
+      keepAlive.destroy();
     }
-    await Promise.all(paths.map(probe));
+    await Promise.all(paths.map((path) => probe(path)));
     assert.deepEqual(failures, [], `${previous} → ${next}`);
   }
 }

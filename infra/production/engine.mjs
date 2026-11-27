@@ -16,7 +16,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { parseEnv } from "node:util";
 import { BackupConfiguration, Operation } from "@gestaloka/contracts";
 import { seal, unseal } from "../../packages/server/dist/secrets.js";
-import { apiService, keyNames, renderDeployment } from "./config.mjs";
+import { configuredApi, keyNames, renderDeployment } from "./config.mjs";
 
 const require = createRequire(
   new URL("../../packages/server/package.json", import.meta.url),
@@ -511,8 +511,9 @@ export class BackupEngine {
     );
   }
   async activeApi() {
-    return apiService(
+    return configuredApi(
       await readFile("/configuration/public/Caddyfile", "utf8"),
+      (file) => readFile(join("/configuration/public", file), "utf8"),
     );
   }
   async thaw(job, manifest = job) {

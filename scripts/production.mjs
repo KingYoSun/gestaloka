@@ -159,7 +159,7 @@ if (action === "init") {
           }
           await update("controller");
           const next = active.api === "api" ? "api-next" : "api";
-          const web = await stageWeb(deployment, next);
+          await stageWeb(deployment, next);
           try {
             await update(next);
             if (!active.initialized) {
@@ -185,7 +185,6 @@ if (action === "init") {
           }
           await setApiRoute(deployment, compose, await controller(), {
             api: next,
-            web,
           });
           await compose("--profile", "api-handoff", "stop", active.api);
         });
