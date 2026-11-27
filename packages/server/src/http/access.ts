@@ -631,10 +631,64 @@ export class WorldAccess {
       after,
       screen,
     );
+    const ownRolls = new Map<
+      string,
+      { text: string; result: Record<string, unknown> }[]
+    >();
     for (const { payload } of history.entries) {
       for (const entry of payload.entries ?? []) {
         const dice = playDiceMessages(entry.result?.outcome);
         if (dice.length) entry.result.dice = dice;
+        if (!entry.result?.dice?.length) continue;
+        const request =
+          entry.result.commitId ??
+          entry.applicationId ??
+          entry.result.applicationId;
+        if (request) {
+          const results = ownRolls.get(request) ?? [];
+          results.push({ text: entry.input, result: entry.result });
+          ownRolls.set(request, results);
+        } else if (entry.actorId === viewerId)
+          entry.result.diceReasons = ["GMの根拠記録なし"];
+      }
+    }
+    if (ownRolls.size) {
+      // 共有ログには根拠を書かず、本人の保存済み応答だけを履歴に重ねる。
+      const { rows } = await this.pool.query(
+        `SELECT id,command,creation_rolls,result->'outcome' AS outcome,
+                result->'learningReasons' AS learning,result->'diceReasons' AS other
+         FROM bot_request WHERE world_id=$1 AND actor_id=$2 AND id=ANY($3::uuid[])`,
+        [id, viewerId, [...ownRolls.keys()]],
+      );
+      const reasons = await this.botPlay.diceReasons(
+        this.pool,
+        rows.map((row) => ({
+          id: row.id,
+          command: row.command,
+          creation_rolls: row.creation_rolls,
+          outcome: row.outcome,
+          text: ownRolls.get(row.id)![0]!.text,
+        })),
+      );
+      for (const row of rows) {
+        const notes = reasons.get(row.id);
+        for (const { result } of ownRolls.get(row.id)!) {
+          // 保存された表示文を優先し、旧版で空だった案だけ当時の抽選記録で補う。
+          for (const [field, saved] of [
+            ["learningReasons", row.learning],
+            ["diceReasons", row.other],
+          ] as const) {
+            const recovered = notes?.[field];
+            if (
+              saved?.length &&
+              (!recovered || saved.length === recovered.length)
+            )
+              result[field] = saved;
+            else if (recovered?.length) result[field] = recovered;
+          }
+          if (!result.learningReasons && !result.diceReasons)
+            result.diceReasons = ["GMの根拠記録なし"];
+        }
       }
     }
     const result = {

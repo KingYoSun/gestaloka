@@ -748,8 +748,11 @@ test("同席者の判定の出目と成功範囲をプレイログで読める",
           },
           {
             actorId: actor,
-            input: "そばで待つ",
-            result: { state: "accepted" },
+            input: "足跡を調べる",
+            result: {
+              state: "accepted",
+              diceReasons: ["判定で、技能「追跡」が有利に働きました"],
+            },
           },
         ],
       },
@@ -759,6 +762,9 @@ test("同席者の判定の出目と成功範囲をプレイログで読める",
   await screen.findByText("広場の先を探る");
   expect(
     screen.getByText(/出目 42 \/ 100、成功は 25 以下（失敗）/),
+  ).toBeTruthy();
+  expect(
+    screen.getByText("判定で、技能「追跡」が有利に働きました"),
   ).toBeTruthy();
   expect(screen.getAllByText(/出目/)).toHaveLength(1);
 });

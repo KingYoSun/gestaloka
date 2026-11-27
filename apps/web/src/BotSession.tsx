@@ -137,6 +137,8 @@ const View = z.object({
                     items: z.array(ItemOutcome).optional(),
                     outcome: z.object({ success: z.boolean() }).optional(),
                     dice: DiceMessages.optional(),
+                    diceReasons: DiceMessages.optional(),
+                    learningReasons: DiceMessages.optional(),
                   })
                   .passthrough(),
               }),
@@ -173,7 +175,11 @@ const LogRow = memo(function LogRow({
             {entry.label ?? name(entry.actorId) ?? "参加者"}
           </p>
           <RichText text={entry.input} />
-          {entry.result.dice?.map((message, i) => (
+          {[
+            ...(entry.result.dice ?? []),
+            ...(entry.result.learningReasons ?? []),
+            ...(entry.result.diceReasons ?? []),
+          ].map((message, i) => (
             <p className="muted" key={i}>
               {message}
             </p>
