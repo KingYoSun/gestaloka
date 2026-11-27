@@ -13042,6 +13042,134 @@ test("一団の出現時に設定を一度だけ確定し、その手持ちを�
   expect(f.calls).toHaveBeenCalledOnce();
 });
 
+test("発言で現れた売り手との交換は買い手が一回だけ受領でき、品物と代価を同時に確定する", async () => {
+  const f = await fixture(2);
+  const [buyer] = f.actors;
+  const coin = randomUUID();
+  const seriesId = randomUUID();
+  const setup = randomUUID();
+  await f.store.commit(
+    await f.store.claim(f.graph, setup),
+    f.store.context(f.graph),
+    {
+      commitId: setup,
+      at: 0,
+      changes: {
+        nodes: [
+          { id: coin, kind: "existence", text: "木札", count: 5, seriesId },
+        ],
+        revisions: [],
+        edges: [
+          {
+            id: randomUUID(),
+            kind: "has",
+            source: buyer!,
+            target: coin,
+            period: { from: 0 },
+          },
+        ],
+        endEdges: [],
+      },
+      management: {
+        editorId: (await auth.person()).id,
+        reason: "代価の系列を登録",
+        requestHash: "c".repeat(64),
+      },
+    },
+  );
+  await f.send(1, { command: "contact", targetId: buyer });
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+  await f.send(0, {
+    command: "say",
+    text: "売り手さん、乾かした梨を木札2枚で買います。",
+    instantNpcs: ["露店の売り手"],
+  });
+  await f.send(0, { command: "end-turn" });
+  await f.send(1, { command: "end-turn" });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, {
+      command: "offer",
+      buyerId: buyer,
+      itemLabel: "乾かした梨",
+      count: 1,
+      paymentLabel: "木札",
+      paymentCount: 2,
+    }),
+  );
+  await access.botPlay.tickNpcs();
+
+  const holdings = async () =>
+    (await readBelongings(f.store.context(f.graph), buyer!)).items;
+  expect(await holdings()).toMatchObject([{ id: coin, count: 5 }]);
+  const search = { command: "search", query: { kind: "surroundings" } };
+  const listed = await f.send(0, search);
+  expect(listed.exchangeOffers).toMatchObject([
+    {
+      itemLabel: "乾かした梨",
+      count: 1,
+      paymentSeriesId: seriesId,
+      paymentCount: 2,
+    },
+  ]);
+  const [{ id: offerId }] = listed.exchangeOffers as [{ id: string }];
+  const witness = f.actors[1]!;
+  expect(
+    (await access.botPlay.screen(f.world, witness, [witness])).exchangeOffers,
+  ).toEqual([]);
+  const order = {
+    command: "exchange",
+    requestId: randomUUID(),
+    offerId,
+    paymentItemId: coin,
+  };
+  const commit = f.store.commit.bind(f.store);
+  const failAfterCommit = vi
+    .spyOn(f.store, "commit")
+    .mockImplementationOnce(async (...args) => {
+      const saved = await commit(...args);
+      expect(saved.commitId).toBe(order.requestId);
+      throw new Error("グラフの確定後に応答が途切れた");
+    });
+  try {
+    await expect(f.send(0, order)).rejects.toThrow(
+      "グラフの確定後に応答が途切れた",
+    );
+  } finally {
+    failAfterCommit.mockRestore();
+  }
+  await expect(
+    f.send(0, { ...order, requestId: randomUUID() }),
+  ).rejects.toMatchObject({
+    code: "EXCHANGE_NOT_AVAILABLE",
+  });
+  const result = await f.send(0, order);
+  expect(result).toMatchObject({ state: "accepted", offerId });
+  const receipt = await f.store.receipt(f.graph, order.requestId);
+  expect(receipt?.changes.nodes).toContainEqual(
+    expect.objectContaining({ text: "乾かした梨", count: 1 }),
+  );
+  expect(receipt?.changes.revisions).toContainEqual(
+    expect.objectContaining({ id: coin, count: 3 }),
+  );
+  expect(receipt?.changes.edges).toContainEqual(
+    expect.objectContaining({ kind: "has", source: buyer }),
+  );
+  expect(await f.send(0, order)).toEqual(result);
+  expect((await f.send(0, search)).exchangeOffers ?? []).toEqual([]);
+  await expect(
+    f.send(0, { ...order, requestId: randomUUID() }),
+  ).rejects.toMatchObject({
+    code: "EXCHANGE_NOT_AVAILABLE",
+  });
+  const items = await holdings();
+  expect(items).toHaveLength(2);
+  expect(items).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: coin, count: 3 }),
+      expect.objectContaining({ label: "乾かした梨", count: 1 }),
+    ]),
+  );
+});
 test("出現個体の発生用ノードへ結んだ取引は同席中だけ受領でき、代価を除いて品物を一度だけ作る", async () => {
   const f = await fixture(),
     buyer = f.actors[0]!,

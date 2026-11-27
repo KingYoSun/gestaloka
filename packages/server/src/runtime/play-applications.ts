@@ -543,6 +543,7 @@ export class PlayApplications {
     id: string,
     paymentItemId: string,
     trade?: Offer,
+    once = false,
   ) {
     const row = trade ? undefined : await this.#row(db, world, id),
       offer = trade ?? row?.offer;
@@ -554,6 +555,13 @@ export class PlayApplications {
     const context = this.store.context(w.id),
       prior = await this.store.receipt(w.id, request);
     if (!prior) {
+      // 会話の交換では受領要求が変わっても品物のIDを固定し、確定済みの申し出を再使用できなくする。
+      const planId = once ? derivedId(id + ":exchange") : request;
+      if (once && (await context.node(derivedId(planId + ":0:node"))))
+        return reject(
+          "EXCHANGE_NOT_AVAILABLE",
+          "この交換はすでに成立しています",
+        );
       if (
         row &&
         (row.result || (await directPlaces(context, buyer))[0] !== row.place)
@@ -618,11 +626,11 @@ export class PlayApplications {
       try {
         if (item) await context.assertMovable(item.id);
         await context.assertMovable(payment.id);
-        const plan = await planBelongings(context, request, w.at, ops);
+        const plan = await planBelongings(context, planId, w.at, ops);
         const scope = directChangeScope(plan.changes);
         await checkBelongingCapacity(
           context,
-          request,
+          planId,
           plan.at,
           plan.changes,
           ops,

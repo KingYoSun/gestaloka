@@ -27,6 +27,7 @@ import {
   type DrawTable,
   type DrawTableAction,
   ExchangeTerms,
+  type ExchangeOffer,
   NpcAction,
   InstantReduction,
   type InstantReductionResult,
@@ -244,7 +245,24 @@ const BlueprintDecision = z
 const InstantTurnChoice = z.union([
   NpcAction,
   z.strictObject({ command: z.literal("end-turn") }),
+  z.strictObject({
+    command: z.literal("offer"),
+    buyerId: z.uuid(),
+    itemLabel: ExchangeTerms.shape.paymentLabel,
+    count: ExchangeTerms.shape.count,
+    paymentLabel: ExchangeTerms.shape.paymentLabel,
+    paymentCount: ExchangeTerms.shape.paymentCount,
+  }),
 ]);
+type InstantOffer = Extract<
+  z.infer<typeof InstantTurnChoice>,
+  { command: "offer" }
+>;
+type InstantChoice = {
+  action?: z.infer<typeof NpcAction>;
+  plan?: Plan;
+  offer?: InstantOffer;
+};
 const ConstructionDecision = BlueprintDecision.extend({
   storageLimitSlots: z.number().int().positive().safe().optional(),
 });
@@ -612,6 +630,7 @@ type Member = {
     description: string;
     sourceEventId: string;
     latestAppearanceEventId?: string;
+    offers?: { buyerId: string; offer: z.infer<typeof ExchangeOffer> }[];
     places: string[];
     ruleId?: string;
     count?: number;
@@ -3655,12 +3674,20 @@ export class BotPlay {
             ((npc.count ?? 1) > 1
               ? "あなたはその場に現れた一団です。npc.countは現在の個体数です。一団として一手を選んでください。"
               : "あなたはその場に現れた一個体です。") +
-            '自身の性質、見聞きした履歴、周囲から今回の一手を選んでください。tradesがあれば、相手が望めば応じる交換の品物と代価です。textに行動を、外界を変えようとするならeffectに対象IDと成功時の状態を、立ち去るならdeparts:trueを指定します。成否はサーバーが決めます。すでに示した状態が続き、周囲に伝わる行動や変化がなければ、そこに留まったまま {"command":"end-turn"} で手番を終えられます。schemaに沿うJSONだけを返してください。',
+            '自身の性質、見聞きした履歴、周囲から今回の一手を選んでください。tradesは受領できる交換です。該当する交換があれば案内してください。pendingOffersにある相手への申し出は繰り返さず、確定済みの交換は履歴を参照してください。会話で初めて出た品と代価で買い手と合意したら、command:"offer"にbuyerId、itemLabel、count、paymentLabel、paymentCountを指定します。代価は合意した品の呼称を使います。交換は買い手が受領すると成立します。支払い、品物の受領、残額はtextやeffectで確定せず、成立した交換の結果を参照してください。textに行動を、外界の状態を変えようとするならeffectに対象IDと成功時の状態を、立ち去るならdeparts:trueを指定します。成否はサーバーが決めます。すでに示した状態が続き、周囲に伝わる行動や変化がなければ、そこに留まったまま {"command":"end-turn"} で手番を終えられます。schemaに沿うJSONだけを返してください。',
         },
         {
           role: "user",
           content: JSON.stringify({
-            npc: { ...npc, ...(await this.#instantMaterials(context, actor)) },
+            npc: {
+              ...npc,
+              offers: undefined,
+              ...(await this.#instantMaterials(context, actor)),
+            },
+            pendingOffers: npc.offers?.map(({ buyerId, offer }) => ({
+              buyerId,
+              text: offer.text,
+            })),
             trades: (
               await instantTrades(context, [{ ...npc, actorId: actor }])
             ).map(({ itemLabel, count, paymentLabel, paymentCount, text }) => ({
@@ -3680,23 +3707,25 @@ export class BotPlay {
       (raw) => InstantTurnChoice.parse(parseOutput(raw)),
     );
     const choice = InstantTurnChoice.parse(parseOutput(response.content));
-    const action = "text" in choice ? choice : undefined;
-    const plan = action
-      ? await this.#instantAction(session, actor, action, request, context, at)
-      : undefined;
-    return { action, plan };
+    if ("command" in choice && choice.command === "offer")
+      return { offer: choice };
+    if (!("text" in choice)) return {};
+    const plan = await this.#instantAction(
+      session,
+      actor,
+      choice,
+      request,
+      context,
+      at,
+    );
+    return { action: choice, plan };
   }
 
   async #finishInstantTurn(
     session: Session,
     request: string,
     graph: string,
-    choice:
-      | {
-          action: z.infer<typeof NpcAction> | undefined;
-          plan: Plan | undefined;
-        }
-      | Error,
+    choice: InstantChoice | Error,
   ) {
     const actor = session.data.turn;
     const db = await this.pool.connect();
@@ -3722,11 +3751,10 @@ export class BotPlay {
           (await this.store.receipt(graph, request))
         )
           throw choice;
-        const { action, plan } =
-          choice instanceof Error
-            ? { action: undefined, plan: undefined }
-            : choice;
+        const { action, plan, offer } = choice instanceof Error ? {} : choice;
         const before = turnState(current);
+        if (offer)
+          await this.#offerInstantTrade(db, current, graph, request, offer);
         if (action && plan) {
           await this.#checkCombatPolicy(
             db,
@@ -6466,6 +6494,57 @@ export class BotPlay {
       !!(await vehiclePerson(db, context.worldId, id))
     );
   }
+  async #offerInstantTrade(
+    db: Db,
+    session: Session,
+    graph: string,
+    request: string,
+    { buyerId, itemLabel, count, paymentLabel, paymentCount }: InstantOffer,
+  ) {
+    const sellerId = session.data.turn;
+    const seller = session.data.members.find(
+      (m) => m.actorId === sellerId,
+    )!.instant!;
+    const context = this.store.context(graph);
+    if (
+      !session.data.members.some((m) => m.actorId === buyerId && !m.instant) ||
+      !(await this.#places(context, buyerId, db)).some((place) =>
+        seller.places.includes(place),
+      )
+    )
+      return;
+    const ids = await context.materialIds(buyerId, paymentLabel);
+    const payment = ids.length === 1 ? await context.node(ids[0]!) : undefined;
+    const message =
+      payment?.kind === "existence" && payment.seriesId
+        ? `${itemLabel}×${count}を${paymentLabel}×${paymentCount}でお譲りします。`
+        : `${paymentLabel}での交換条件を確定できませんでした。代価に使う品を確認してください。`;
+    if (payment?.kind === "existence" && payment.seriesId) {
+      const id = derivedId(request + ":exchange-offer");
+      (seller.offers ??= []).push({
+        buyerId,
+        offer: {
+          id,
+          itemId: id,
+          sellerId,
+          storageId: sellerId,
+          itemLabel,
+          count,
+          paymentLabel,
+          paymentCount,
+          paymentSeriesId: payment.seriesId,
+          text: message,
+        },
+      });
+    }
+    await context.validate();
+    session.data.entries.push({
+      actorId: sellerId,
+      input: message,
+      result: {},
+    });
+  }
+
   // 同じ場所に同席している出現個体が応じる取引。
   async #trades(
     context: WorldContext,
@@ -6475,16 +6554,74 @@ export class BotPlay {
     retryOfferId?: string,
   ) {
     const places = await this.#places(context, actor, db);
-    return instantTrades(
-      context,
-      (session?.data.members ?? []).flatMap((m) =>
-        m.instant?.places.some((place) => places.includes(place))
-          ? [{ ...m.instant, actorId: m.actorId }]
-          : [],
-      ),
-      retryOfferId,
+    const sellers = (session?.data.members ?? []).flatMap((m) =>
+      m.instant?.places.some((place) => places.includes(place))
+        ? [{ ...m.instant, actorId: m.actorId }]
+        : [],
     );
+    return [
+      ...(await instantTrades(context, sellers, retryOfferId)),
+      ...sellers.flatMap(({ offers }) =>
+        (offers ?? [])
+          .filter((entry) => entry.buyerId === actor)
+          .map(({ offer }) => offer),
+      ),
+    ];
   }
+
+  async #exchange(
+    db: Db,
+    world: string,
+    w: { id: string; at: number },
+    session: Session | undefined,
+    actor: string,
+    input: Extract<Input, { command: "exchange" }>,
+    recovering = false,
+  ) {
+    const seller = session?.data.members.find((m) =>
+      m.instant?.offers?.some(({ offer }) => offer.id === input.offerId),
+    )?.instant;
+    const conversation = seller?.offers?.find(
+      ({ offer, buyerId }) => offer.id === input.offerId && buyerId === actor,
+    );
+    const trade =
+      recovering && conversation
+        ? conversation.offer
+        : (
+            await this.#trades(
+              this.store.context(w.id),
+              session,
+              actor,
+              db,
+              input.offerId,
+            )
+          ).find((offer) => offer.id === input.offerId);
+    const result = await this.applications.exchange(
+      db,
+      world,
+      w,
+      actor,
+      input.requestId,
+      input.offerId,
+      input.paymentItemId,
+      trade,
+      Boolean(conversation),
+    );
+    if (session && seller && conversation) {
+      seller.offers = seller.offers!.filter((entry) => entry !== conversation);
+      if (recovering) {
+        session.data.entries.push({
+          actorId: actor,
+          input: result.message,
+          result,
+        });
+        const before = turnState(session);
+        await this.#save(db, session, before);
+      }
+    }
+    return result;
+  }
+
   async #places(
     context: WorldContext,
     actor: string,
@@ -15305,21 +15442,14 @@ export class BotPlay {
                 )
               : input.command === "exchange" &&
                   (await this.store.receipt(w.id, input.requestId))
-                ? await this.applications.exchange(
+                ? await this.#exchange(
                     db,
                     world,
                     w,
+                    await this.current(world, actor, db),
                     actor,
-                    input.requestId,
-                    input.offerId,
-                    input.paymentItemId,
-                    (
-                      await this.#trades(
-                        this.store.context(w.id),
-                        await this.current(world, actor, db),
-                        actor,
-                      )
-                    ).find((trade) => trade.id === input.offerId),
+                    input,
+                    true,
                   )
                 : undefined;
       if (application) {
@@ -15907,23 +16037,13 @@ export class BotPlay {
               );
               result = { state: "offered", offer };
             } else if (input.command === "exchange") {
-              const exchange = await this.applications.exchange(
+              const exchange = await this.#exchange(
                 db,
                 world,
                 w,
+                session,
                 actor,
-                input.requestId,
-                input.offerId,
-                input.paymentItemId,
-                (
-                  await this.#trades(
-                    this.store.context(w.id),
-                    session,
-                    actor,
-                    db,
-                    input.offerId,
-                  )
-                ).find((trade) => trade.id === input.offerId),
+                input,
               );
               result = exchange;
               d.entries.push({
