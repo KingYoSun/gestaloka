@@ -285,15 +285,12 @@ export async function planBelongings(
             end([skill]);
           }
           // 本人が同じ本文の技能を持っていれば、新しく作らずその技能として扱う。
-          const held = (
-            await context.relations(op.person, "has", "out", LATEST)
-          ).filter(
-            (edge) =>
-              edge.role === "skill" && !change.endEdges.includes(edge.id),
-          );
           if (
-            (await Promise.all(held.map((edge) => current(edge.target)))).some(
-              (skill) => skill?.text === op.text,
+            await context.hasSkillText(
+              op.person,
+              op.text,
+              change.endEdges,
+              revised,
             )
           )
             break;
@@ -933,7 +930,7 @@ export async function readBelongings(
           (edge) => edge.role === role,
         )
     )
-      // 要約と同じく、成立した順に並べる。
+      // 成立した順に並べる。
       .sort(
         (x, y) => x.period.from - y.period.from || x.id.localeCompare(y.id),
       );

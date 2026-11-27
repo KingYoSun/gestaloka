@@ -47,7 +47,6 @@ import {
   validateBindings,
   normalizeChange,
   requestedChange,
-  BelongingRole,
   derivedId,
   isPlaceSeriesMembership,
   isRespawnHome,
@@ -705,6 +704,7 @@ export class WorldContext {
       async (tx) => {
         const { records } = await tx.run(
           `UNWIND $ids AS id MATCH (n:WorldNode {worldId:$worldId,id:id})
+           WHERE n.skillSummaryUntil IS NULL
            WITH id,n.data AS data ${preview ? ",n.judgmentLong AS excerptLong,n.judgmentExcerpt AS excerpt " + judgmentProjection : "RETURN data"}`,
           { worldId: this.worldId, ids: [...wanted], textKey: judgmentTextKey },
         );
@@ -802,7 +802,9 @@ export class WorldContext {
     const stored = await this.#read(nodeKey(id), async (tx) => {
       const result = await tx.run(
         `MATCH (n:WorldNode {worldId: $worldId, id: $id})
-         WHERE $at IS NULL OR n.knownFrom <= $at RETURN n.data AS data
+         WHERE ($at IS NULL OR n.knownFrom <= $at)
+         AND (n.skillSummaryUntil IS NULL OR $at < n.skillSummaryUntil)
+         RETURN n.data AS data
          UNION ALL
          MATCH (r:WorldRevision {worldId: $worldId, nodeId: $id})
          WHERE $at IS NOT NULL AND r.knownFrom <= $at AND $at < r.knownUntil RETURN r.data AS data`,
@@ -824,6 +826,7 @@ export class WorldContext {
       const original = await this.#read(nodeKey(id), async (tx) => {
         const result = await tx.run(
           `MATCH (n:WorldNode {worldId:$worldId,id:$id,kind:'script'})
+           WHERE n.skillSummaryUntil IS NULL
            OPTIONAL MATCH (r:WorldRevision {worldId:$worldId,nodeId:$id})
            RETURN coalesce(r.data,n.data) AS data ORDER BY r.version LIMIT 1`,
           { worldId: this.worldId, id },
@@ -1121,6 +1124,61 @@ export class WorldContext {
         : undefined;
     });
   }
+  async hasSkillText(
+    holder: string,
+    text: string,
+    ending: string[],
+    revised: Map<string, WorldNode>,
+  ) {
+    const stored = await this.#read(
+      relationKey(holder, "has", "out"),
+      async (tx) => {
+        const result = await tx.run(
+          `MATCH (n:WorldNode) USING TEXT INDEX n:WorldNode(data)
+         WHERE n.data CONTAINS $fragment AND n.worldId=$world AND n.kind='script'
+         MATCH (:WorldNode {worldId:$world,id:$holder})-[h:has {role:'skill'}]->(n)
+         WHERE h.validTo IS NULL AND NOT h.id IN $ending AND NOT n.id IN $revised
+         RETURN n.data AS data`,
+          {
+            world: this.worldId,
+            holder,
+            fragment: '"text":' + JSON.stringify(text),
+            ending,
+            revised: [...revised.keys()],
+          },
+        );
+        return result.records.some(
+          (row) => JSON.parse(row.get("data")).text === text,
+        );
+      },
+    );
+    if (stored) return true;
+    for (const [id, node] of revised)
+      if (
+        node.text === text &&
+        (await this.relations(id, "has", "in", Number.MAX_SAFE_INTEGER)).some(
+          (edge) =>
+            edge.source === holder &&
+            edge.role === "skill" &&
+            !ending.includes(edge.id),
+        )
+      )
+        return true;
+    for (const draft of this.drafts)
+      for (const edge of draft.changes.edges)
+        if (
+          edge.source === holder &&
+          edge.kind === "has" &&
+          edge.role === "skill" &&
+          edge.period.until === undefined &&
+          !ending.includes(edge.id) &&
+          (revised.get(edge.target) ?? (await this.node(edge.target)))?.text ===
+            text
+        )
+          return true;
+    return false;
+  }
+
   // 自由入力の呼称を現物に結び付ける。2件あれば曖昧なのでそれ以上は読まない。
   async materialIds(holder: string, label: string) {
     return this.#read(relationKey(holder, "has", "out"), async (tx) => {
@@ -1741,6 +1799,69 @@ export class WorldStore {
     await this.driver.executeQuery(
       `MATCH ()-[r:has {role:'hold'}]->() SET r.role = null, r.data = replace(r.data, ',"role":"hold"', '')`,
     );
+    await this.#retireSkillSummaries();
+  }
+
+  async #retireSkillSummaries() {
+    const { records } = await this.driver.executeQuery(
+      `MATCH (s:WorldNode)-[r:has {role:'summary'}]->(n:WorldNode)
+       WHERE r.validTo IS NULL
+       RETURN s.worldId AS worldId,s.id AS holder,n.id AS id,r.id AS edgeId`,
+    );
+    const session = this.driver.session();
+    try {
+      for (const row of records) {
+        const { worldId, holder, id, edgeId } = row.toObject() as {
+          worldId: string;
+          holder: string;
+          id: string;
+          edgeId: string;
+        };
+        if (id !== summaryId(holder, "skill")) continue;
+        await session.executeWrite(async (tx) => {
+          await lock(tx, worldId, "inventory");
+          const keys = [
+            nodeKey(id),
+            edgeKey(edgeId),
+            relationKey(holder, "has", "out"),
+            relationKey(id, "has", "in"),
+          ].sort();
+          for (const key of keys) await lock(tx, worldId, key);
+          const found = await tx.run(
+            `MATCH (s:WorldNode {worldId:$worldId,id:$holder})-[r:has {id:$edgeId}]->(n:WorldNode {worldId:$worldId,id:$id})
+             WHERE r.validTo IS NULL
+             RETURN r.data AS data,n.knownFrom AS knownFrom`,
+            { worldId, holder, id, edgeId },
+          );
+          if (!found.records.length) return;
+          const record = found.records[0]!;
+          const edge = WorldEdge.parse(JSON.parse(record.get("data")));
+          const until = Math.max(
+            Date.now(),
+            edge.period.from,
+            Number(record.get("knownFrom")),
+          );
+          const data = JSON.stringify({
+            ...edge,
+            period: { ...edge.period, until },
+          });
+          await tx.run(
+            `MATCH (s:WorldNode {worldId:$worldId,id:$holder})-[r:has {id:$edgeId}]->(n:WorldNode {worldId:$worldId,id:$id})
+             SET s.skillSlots=coalesce(s.skillSlots,n.skillSlots,COUNT {
+               (s)-[skill:has {role:'skill'}]->() WHERE skill.validTo IS NULL
+             }), r.validTo=$until, r.data=$data, n.skillSummaryUntil=$until
+             REMOVE n.skillSlots`,
+            { worldId, holder, id, edgeId, until: int(until), data },
+          );
+          await tx.run(
+            `UNWIND $keys AS key MATCH (g:WorldGuard {worldId:$worldId,key:key}) SET g.version=g.version+1`,
+            { worldId, keys },
+          );
+        });
+      }
+    } finally {
+      await session.close();
+    }
   }
 
   async #indexExperienceTargets() {
@@ -2826,10 +2947,11 @@ export class WorldStore {
           [...changes.edges, ...ended].some((edge) => edge.kind === "has");
         let inventorySettings:
           Awaited<ReturnType<typeof initializeInventory>> | undefined;
+        let skillCounts: Awaited<ReturnType<typeof checkSkillChange>> = [];
         if (inventoryTouched) {
           await lock(tx, worldId, "inventory");
           inventorySettings = await initializeInventory(tx, worldId);
-          await checkSkillChange(
+          skillCounts = await checkSkillChange(
             tx,
             worldId,
             changes.edges,
@@ -2837,7 +2959,7 @@ export class WorldStore {
             inventorySettings.limits.skillSlots,
           );
         }
-        // 持つ物品・役割つきhasの集合か、その対象の本文が変わる主体は、同じ確定で要約を作り直す。
+        // 持つ物品と登録した保管先の要約を同じ確定で更新する。
         const summaries = new Map<
           string,
           { role: SummaryKind; edge: WorldEdge }
@@ -2860,7 +2982,7 @@ export class WorldStore {
           (await kindOf(edge.target)) === "existence";
         const summarize = (subject: string, value: unknown) => {
           const role: SummaryKind | undefined =
-            value === "hold" ? value : BelongingRole.safeParse(value).data;
+            value === "hold" || value === "use" ? value : undefined;
           if (!role) return;
           const target = summaryId(subject, role);
           summaries.set(target, {
@@ -2878,22 +3000,27 @@ export class WorldStore {
         for (const edge of [...changes.edges, ...ended])
           if (edge.kind === "has")
             summarize(edge.source, (await held(edge)) ? "hold" : edge.role);
-        const stackHolders = new Set<string>();
+        const changedHolderKeys = new Set<string>();
         for (const [index, node] of changes.revisions.entries()) {
           const key = relationKey(node.id, "has", "in");
           dependencies.push({ key, version: await version(tx, worldId, key) });
           const holders = await tx.run(
             `MATCH(s:WorldNode)-[r:has {worldId:$worldId}]->(t:WorldNode {worldId:$worldId,id:$id})
-            WHERE r.validTo IS NULL AND (r.role IS NOT NULL OR t.kind='existence')
-            RETURN s.id AS subject,coalesce(r.role,'hold') AS role`,
+            WHERE r.validTo IS NULL AND (r.role IN ['use','skill'] OR (r.role IS NULL AND t.kind='existence'))
+            RETURN s.id AS subject,r.role AS role`,
             { worldId, id: node.id },
           );
           for (const row of holders.records) {
-            summarize(row.get("subject"), row.get("role"));
+            const role = row.get("role") ?? "hold";
+            summarize(row.get("subject"), role);
+            if (role === "skill")
+              changedHolderKeys.add(
+                relationKey(row.get("subject"), "has", "out"),
+              );
             const prior = revised[index]!.node;
             const holder = row.get("subject") as string;
             if (
-              row.get("role") === "hold" &&
+              role === "hold" &&
               node.kind === "existence" &&
               prior.kind === "existence" &&
               inventorySettings &&
@@ -2908,7 +3035,7 @@ export class WorldStore {
                   holder,
                 )
             )
-              stackHolders.add(relationKey(holder, "has", "out"));
+              changedHolderKeys.add(relationKey(holder, "has", "out"));
           }
         }
         const releasing = reservations?.release.length
@@ -2927,7 +3054,7 @@ export class WorldStore {
         if (releasing.length !== (reservations?.release.length ?? 0))
           throw new WorldConflict("取り置きはすでに解放されています");
         const touched = new Set([
-          ...stackHolders,
+          ...changedHolderKeys,
           ...(parsed.storageEffect?.type === "install" ||
           parsed.storageEffect?.type === "relocate"
             ? [placeKey(parsed.storageEffect.storageId)]
@@ -3428,12 +3555,13 @@ export class WorldStore {
               derived.revisions.push(node);
             }
           }
-          if (role === "skill")
-            await tx.run(
-              "MATCH (s:WorldNode {worldId:$worldId,id:$id}) SET s.skillSlots=$used",
-              { worldId, id, used: int(targets.records.length) },
-            );
         }
+        if (skillCounts.length)
+          await tx.run(
+            `UNWIND $counts AS count MATCH (s:WorldNode {worldId:$worldId,id:count.holder})
+             SET s.skillSlots=count.used`,
+            { worldId, counts: skillCounts },
+          );
         for (const key of touched) {
           await tx.run(
             "MATCH (g:WorldGuard {worldId: $worldId, key: $key}) SET g.version = g.version + 1",

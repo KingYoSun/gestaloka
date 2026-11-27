@@ -82,7 +82,7 @@ export class WorldManagement {
     }
     if (q.kind === "nodes") {
       const r = await graph.executeQuery(
-        "MATCH(n:WorldNode {worldId:$world}) WHERE $after IS NULL OR n.id>$after RETURN n.id AS id ORDER BY id LIMIT 51",
+        "MATCH(n:WorldNode {worldId:$world}) WHERE n.skillSummaryUntil IS NULL AND ($after IS NULL OR n.id>$after) RETURN n.id AS id ORDER BY id LIMIT 51",
         { world: world.id, after: q.after ?? null },
       );
       const ids = r.records.map((r) => r.get("id") as string),

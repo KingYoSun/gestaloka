@@ -1,10 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  Change,
-  WorldNode,
-  WorldEdge,
-  BelongingRole,
-} from "@gestaloka/contracts";
+import { Change, WorldNode, WorldEdge } from "@gestaloka/contracts";
 export {
   Change,
   WorldNode,
@@ -67,13 +62,12 @@ export const atTime = (
 
 // 持つ物品と役割つきhasの現在の集合から導出する要約。正本は関係で、要約は確定時に作り直す。
 // 持つ物品の要約は、既存の要約の同一性を保つためholdの名で導出する。
-export type SummaryKind = "hold" | BelongingRole;
-export const summaryId = (subject: string, kind: SummaryKind) =>
+export type SummaryKind = "hold" | "use";
+export const summaryId = (subject: string, kind: SummaryKind | "skill") =>
   derivedId(`summary:${subject}:${kind}`);
 const summaryTitle = {
   hold: "保持している物品",
   use: "利用できる保管先",
-  skill: "技能",
 };
 export const summaryText = (role: SummaryKind, targets: readonly WorldNode[]) =>
   [

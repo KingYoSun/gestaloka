@@ -17331,6 +17331,71 @@ test("抽選器を審査し、別の人物が結果を受け取り、同席者�
   ).toHaveLength(2);
 });
 
+test("全文要約が索引上限を超える技能数でも、発展を確定してSPを一度だけ消費する", async () => {
+  const f = await fixture(1);
+  const person = f.actors[0]!;
+  const text = "道具を調整しながら繰り返し稽古する。".repeat(105);
+  const skills = Array.from({ length: 9 }, (_, index) => ({
+    type: "learn",
+    person,
+    text: index + text,
+    basis: "日々の稽古",
+  }));
+  expect(
+    Buffer.byteLength(skills.map((skill) => skill.text).join("\n")),
+  ).toBeGreaterThan(32_766);
+  await f.apply(skills);
+  const excerpts = await f.store.judgmentExcerptJobs(
+    2 * skills.length,
+    f.graph,
+  );
+  expect(excerpts).toHaveLength(skills.length);
+  for (const job of excerpts)
+    expect(
+      await f.store.finishJudgmentExcerpt(job, "道具を調整しながら稽古した"),
+    ).toBe(true);
+  vi.spyOn(runtime.agent.model, "decide").mockImplementation(
+    async (_id, _role, _state, questions) =>
+      Object.fromEntries(Object.keys(questions).map((key) => [key, 0])),
+  );
+  const list = () => readBelongings(f.store.context(f.graph), person);
+  const [origin] = (await list()).skills;
+  const requestId = randomUUID();
+  const request = {
+    requestId,
+    command: "update",
+    text: "道具を使った稽古の技を発展させる",
+    dependencies: [],
+    operations: [
+      {
+        type: "learn",
+        person,
+        text: "調整した道具で反復の精度を上げる",
+        basis: "道具を使って稽古した",
+        consumeSkillIds: [origin!.id],
+      },
+    ],
+  };
+  f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+  const result = await f.send(0, request);
+  expect(result).toMatchObject({
+    outcome: { success: true },
+    commitId: requestId,
+    spentSp: 1,
+  });
+  expect((await f.store.receipt(f.graph, requestId))?.changes).toMatchObject({
+    nodes: [expect.objectContaining({ text: request.operations[0]!.text })],
+    revisions: [],
+    endEdges: [expect.any(String)],
+  });
+  expect((await list()).skills.map((skill) => skill.id)).not.toContain(
+    origin!.id,
+  );
+  expect((await list()).skills).toHaveLength(9);
+  expect(await f.send(0, request)).toEqual(result);
+  expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
 test("技能枠が満杯でも元技能を本人が選んだときだけ作成判定し、成功時だけ入れ替える", async () => {
   const f = await fixture(2);
   const actor = f.actors[0]!,
