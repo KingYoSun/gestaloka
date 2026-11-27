@@ -132,7 +132,9 @@ const View = z.object({
                 result: z
                   .object({
                     state: z.string().optional(),
-                    action: z.object({ command: z.string() }).optional(),
+                    action: z
+                      .object({ command: z.string().optional() })
+                      .optional(),
                     effectState: z.string().optional(),
                     items: z.array(ItemOutcome).optional(),
                     outcome: z.object({ success: z.boolean() }).optional(),
