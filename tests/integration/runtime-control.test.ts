@@ -92,6 +92,10 @@ async function prepareJoin() {
     reason: "試験",
   });
   const id = randomUUID();
+  await auth.operations.execute(user, randomUUID(), {
+    operation: "account.register",
+    invitation: await auth.worldInvite(admin, world),
+  });
   await auth.operations.execute(
     user,
     id,

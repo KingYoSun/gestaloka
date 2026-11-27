@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { connectDatabases } from "@gestaloka/server";
-import { test, expect } from "./fixtures.js";
+import { test, expect, worldInvite } from "./fixtures.js";
 import { cliVersionHeader } from "../support/player-cli.js";
 
 test("持ち主が確認コードで新規参加を許可し、ブラウザーで解除できる", async ({
@@ -71,7 +71,11 @@ test("持ち主が確認コードで新規参加を許可し、ブラウザー�
   });
   expect(pairing.ok(), await pairing.text()).toBe(true);
   const code = await pairing.json();
-  await page.goto(code.verificationPath);
+  const invitation = await worldInvite(page.request, world);
+  await page.goto(
+    `${code.verificationPath}&invitation=${encodeURIComponent(invitation)}`,
+  );
+  await page.getByRole("button", { name: "招待を受け取る" }).click();
   await expect(
     page.getByRole("heading", { name: "AIにプレイを許可する" }),
   ).toBeVisible();

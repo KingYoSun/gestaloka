@@ -277,6 +277,7 @@ export async function operationsRoutes(
           await actor(request),
           undefined,
           request.params.id,
+          players,
         )
       ).items[0];
       if (!row)
@@ -438,7 +439,17 @@ export async function operationsRoutes(
       .parse(request.method === "POST" ? request.body : request.query);
     const userId = await actor(request);
     const state = await service().state(userId);
+    const invitationWorld =
+      invitation && players
+        ? await service().invitationWorld(invitation)
+        : undefined;
     if (state.member && !state.member.banned) {
+      if (invitationWorld)
+        return authPage(
+          reply,
+          "世界への招待",
+          `<p>「${escapeHtml(invitationWorld.title)}」への招待を受け取ります。</p>${error ? `<p role="alert">${escapeHtml(error)}</p>` : ""}<form method="post">${fields(request, reply, "/auth/register")}<input type="hidden" name="invitation" value="${escapeHtml(invitation!)}">${player ? `<input type="hidden" name="player" value="${player}">` : ""}<button>招待を受け取る</button></form>`,
+        );
       if (player) return reply.redirect(`/auth/player?code=${player}`);
       // 戻り先はKratosが許可リストで検証し、指定が無ければ既定のアプリURLへ戻す。
       const url = new URL(
@@ -457,7 +468,7 @@ export async function operationsRoutes(
     const suppliedInvite = invitation && (player || request.method === "GET");
     const status = state.member
       ? "<p>利用が停止されています。</p>"
-      : `${state.bootstrapAvailable ? "<p>最初に利用登録した1人が管理者になります。その後は招待制になります。</p>" : state.inviteRequired ? (suppliedInvite ? "<p>招待を受け取っています。下の「利用登録する」を押してください。</p>" : "<p>利用登録には招待トークンが必要です。</p>") : "<p>利用登録できます。</p>"}<form method="post">${fields(request, reply, "/auth/register")}${player ? `<input type="hidden" name="player" value="${player}">` : ""}${return_to ? `<input type="hidden" name="return_to" value="${escapeHtml(return_to)}">` : ""}${state.bootstrapAvailable || !state.inviteRequired ? "" : suppliedInvite ? `<input type="hidden" name="invitation" value="${escapeHtml(invitation)}">` : '<label>招待トークン <input name="invitation" autocomplete="off" required></label>'}<button>利用登録する</button></form>`;
+      : `${state.bootstrapAvailable ? "<p>最初に利用登録した1人が管理者になります。その後は招待制になります。</p>" : state.inviteRequired ? (suppliedInvite ? "<p>招待を受け取っています。下の「利用登録する」を押してください。</p>" : "<p>利用登録には招待トークンが必要です。</p>") : "<p>利用登録できます。</p>"}<form method="post">${fields(request, reply, "/auth/register")}${player ? `<input type="hidden" name="player" value="${player}">` : ""}${return_to ? `<input type="hidden" name="return_to" value="${escapeHtml(return_to)}">` : ""}${suppliedInvite ? `<input type="hidden" name="invitation" value="${escapeHtml(invitation)}">` : state.bootstrapAvailable || !state.inviteRequired ? "" : '<label>招待トークン <input name="invitation" autocomplete="off" required></label>'}<button>利用登録する</button></form>`;
     return authPage(
       reply,
       "利用登録",

@@ -121,9 +121,9 @@ export class WorldAccess {
   readonly stories: Stories;
   constructor(readonly construction: WorldConstruction) {
     this.botPlay = new BotPlay(construction);
-    this.devices = new PlayerDevices(construction.pool);
     this.scenes = new WorldScenes(construction);
     this.players = new WorldPlayers(construction);
+    this.devices = new PlayerDevices(construction.pool, this.players);
     this.stories = new Stories(construction.pool);
   }
   get pool() {
@@ -156,6 +156,9 @@ export class WorldAccess {
       CREATE UNIQUE INDEX IF NOT EXISTS world_access_admin ON world_access(subject_id,construction_id) WHERE role='admin';
       CREATE UNIQUE INDEX IF NOT EXISTS world_access_player ON world_access(subject_id,construction_id,actor_id) WHERE role='player';
       CREATE INDEX IF NOT EXISTS world_access_actor ON world_access(construction_id,actor_id,subject_id) WHERE role='player';
+      ALTER TABLE world_access ADD COLUMN IF NOT EXISTS player_slot_released boolean NOT NULL DEFAULT false;
+      CREATE INDEX IF NOT EXISTS world_access_player_slot ON world_access(subject_id,construction_id)
+        WHERE role='player' AND actor_id IS NOT NULL AND NOT player_slot_released;
       CREATE OR REPLACE FUNCTION guard_subject_grants() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
         PERFORM id FROM world_subject WHERE id=CASE WHEN TG_OP='DELETE' THEN OLD.subject_id ELSE NEW.subject_id END FOR SHARE;

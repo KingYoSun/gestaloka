@@ -10,6 +10,7 @@ import { SupersededWorker, type Interaction } from "./agent.js";
 import type { WorldConstruction } from "./construction.js";
 import { playerIcon } from "./player-icons.js";
 import { playerSettings } from "./player-settings.js";
+import { isPermanentlyDead } from "./death-policy.js";
 import { worldNow } from "../world/model.js";
 import type { PlayerCharacter, JoinWorld } from "@gestaloka/contracts";
 import { z } from "zod";
@@ -55,7 +56,9 @@ export class WorldPlayers {
         ADD COLUMN IF NOT EXISTS hidden_from_selection boolean NOT NULL DEFAULT false,
         ADD COLUMN IF NOT EXISTS respawn_disabled boolean NOT NULL DEFAULT false;
       CREATE INDEX IF NOT EXISTS world_join_respawn_disabled ON world_join(construction_id, actor_id)
-        WHERE respawn_disabled;`,
+        WHERE respawn_disabled;
+      CREATE INDEX IF NOT EXISTS world_join_pending_player ON world_join(subject_id,construction_id)
+        WHERE state IN ('joining','paused');`,
     );
     await this.construction.queue.createQueue(this.queueName, {
       retryLimit: 2,
@@ -63,6 +66,74 @@ export class WorldPlayers {
       expireInSeconds: 900,
       heartbeatSeconds: 30,
     });
+  }
+  async joinBlock(
+    db: Pick<pg.Pool, "query">,
+    userId: string,
+    constructionId: string,
+    worldId: string,
+    role: "admin" | "user",
+  ) {
+    const { invited, pending, existing } = (
+      await db.query<{
+        invited: boolean;
+        pending: boolean;
+        existing: boolean;
+      }>(
+        `SELECT EXISTS(SELECT 1 FROM world_participation WHERE user_id=$1 AND construction_id=$2) AS invited,
+              EXISTS(SELECT 1 FROM world_join WHERE subject_id=$1 AND construction_id=$2 AND state IN ('joining','paused')) AS pending,
+              EXISTS(SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id
+                WHERE s.user_id=$1 AND s.active AND (s.id=s.user_id OR s.token_hash IS NOT NULL)
+                  AND a.construction_id=$2 AND a.role='player' AND a.actor_id IS NOT NULL) AS existing`,
+        [userId, constructionId],
+      )
+    ).rows[0]!;
+    if (!invited && !existing && !pending) return "WORLD_INVITATION_REQUIRED";
+    if (role === "admin") return;
+    if (pending) return "PLAYER_LIMIT_REACHED";
+    const context = this.construction.agent.store.context(worldId);
+    // 死亡済みの人物は一度照合すると、以降の空き枠の検索から外れる。
+    for (;;) {
+      const row = (
+        await db.query<{ id: string; actor_id: string }>(
+          `SELECT a.id,a.actor_id FROM world_access a JOIN world_subject s ON s.id=a.subject_id
+         WHERE s.user_id=$1 AND s.active AND (s.id=s.user_id OR s.token_hash IS NOT NULL)
+           AND a.construction_id=$2 AND a.role='player' AND a.actor_id IS NOT NULL AND NOT a.player_slot_released
+         LIMIT 1`,
+          [userId, constructionId],
+        )
+      ).rows[0];
+      if (!row) return;
+      if (!(await isPermanentlyDead(context, row.actor_id)))
+        return "PLAYER_LIMIT_REACHED";
+      await db.query(
+        "UPDATE world_access SET player_slot_released=true WHERE id=$1",
+        [row.id],
+      );
+    }
+  }
+  async requireJoinSlot(
+    db: Pick<pg.Pool, "query">,
+    userId: string,
+    constructionId: string,
+    worldId: string,
+    role: "admin" | "user",
+  ) {
+    const block = await this.joinBlock(
+      db,
+      userId,
+      constructionId,
+      worldId,
+      role,
+    );
+    if (block === "WORLD_INVITATION_REQUIRED")
+      throw new AccessError(403, block, "この世界への参加には招待が必要です");
+    if (block === "PLAYER_LIMIT_REACHED")
+      throw new AccessError(
+        409,
+        block,
+        "この世界で所持できるプレイヤーは1人までです",
+      );
   }
   async #enqueue(db: pg.PoolClient, id: string) {
     await McpOrigin.capture(db, "join", id);
@@ -78,7 +149,7 @@ export class WorldPlayers {
     input: Omit<z.infer<typeof JoinWorld>, "operation">,
     db: pg.PoolClient,
   ) {
-    await requireMember(db, userId);
+    const account = await requireMember(db, userId);
     await RuntimeControl.check(db, {}, true);
     const world = (
       await db.query<{
@@ -110,6 +181,14 @@ export class WorldPlayers {
         "JOIN_CLOSED",
         "現在は参加を受け付けていません",
       );
+    // Operations のトランザクションで枠の確認から参加要求の保存まで直列化する。
+    await this.requireJoinSlot(
+      db,
+      userId,
+      input.worldId,
+      world.world_id,
+      account.role,
+    );
     const preset =
       input.character !== undefined
         ? undefined

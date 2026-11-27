@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
-import { expect, test } from "./fixtures.js";
+import { acceptWorldInvite, expect, test, worldInvite } from "./fixtures.js";
 import { connectDatabases } from "@gestaloka/server";
 import { WorldStore } from "@gestaloka/server/world";
 import { fixtureAuth } from "../support/auth.js";
@@ -64,6 +64,8 @@ test("参加時の画像を再読込後に再試行し、Web・共通APIの変�
     accepting: true,
     reason: "検証",
   });
+  const invitation = await worldInvite(page.request, world, 2);
+  await acceptWorldInvite(page.request, invitation);
   const preset = randomUUID();
   await post({
     operation: "presets.put",
@@ -212,6 +214,7 @@ test("参加時の画像を再読込後に再試行し、Web・共通APIの変�
       },
     ]);
     const otherEntry = randomUUID();
+    await acceptWorldInvite(second.request, invitation);
     const join = await second.request.post("/api/operations", {
       headers: { "x-gestaloka-request": "1" },
       data: {

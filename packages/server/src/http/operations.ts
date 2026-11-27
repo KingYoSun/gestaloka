@@ -56,13 +56,55 @@ const member = (row: UserRow) =>
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 type Database = Pick<pg.Pool, "query">;
-async function availableInvite(db: Database, token: string, lock = false) {
+async function availableInvite(db: Database, token: string) {
   return (
     await db.query<{ id: string }>(
-      `SELECT id FROM app_invite WHERE token_hash=$1 AND NOT revoked AND expires_at>now() AND uses<max_uses${lock ? " FOR UPDATE" : ""}`,
+      "SELECT id FROM app_invite WHERE token_hash=$1 AND NOT revoked AND expires_at>now() AND uses<max_uses",
       [hash(token)],
     )
   ).rows[0];
+}
+async function useInvite(
+  db: Database,
+  token: string,
+  userId: string,
+  requiredForRegistration: boolean,
+) {
+  const invite = (
+    await db.query<{
+      id: string;
+      construction_id: string | null;
+      available: boolean;
+    }>(
+      `SELECT id,construction_id,NOT revoked AND expires_at>now() AND uses<max_uses AS available
+     FROM app_invite WHERE token_hash=$1 FOR UPDATE`,
+      [hash(token)],
+    )
+  ).rows[0];
+  if (!requiredForRegistration && !invite?.construction_id) return;
+  if (invite?.construction_id) {
+    const already = await db.query(
+      "SELECT 1 FROM world_participation WHERE user_id=$1 AND construction_id=$2",
+      [userId, invite.construction_id],
+    );
+    if (already.rowCount) return;
+  }
+  if (!invite?.available)
+    throw new AccessError(
+      403,
+      "INVITATION_REQUIRED",
+      "有効な招待トークンが必要です",
+    );
+  if (invite.construction_id)
+    await db.query(
+      "INSERT INTO world_participation(user_id,construction_id) VALUES($1,$2)",
+      [userId, invite.construction_id],
+    );
+  await db.query("INSERT INTO invite_use(invite_id,user_id) VALUES($1,$2)", [
+    invite.id,
+    userId,
+  ]);
+  await db.query("UPDATE app_invite SET uses=uses+1 WHERE id=$1", [invite.id]);
 }
 type Context = {
   continuation?: McpPermission | null;
@@ -135,6 +177,10 @@ export class Operations {
         revoked boolean NOT NULL DEFAULT false,created_by uuid NOT NULL REFERENCES app_user(id),created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS invite_use(invite_id uuid NOT NULL REFERENCES app_invite(id),user_id uuid NOT NULL REFERENCES app_user(id),
         used_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(invite_id,user_id));
+      ALTER TABLE app_invite ADD COLUMN IF NOT EXISTS construction_id uuid;
+      CREATE TABLE IF NOT EXISTS world_participation(
+        user_id uuid NOT NULL REFERENCES app_user(id), construction_id uuid NOT NULL,
+        PRIMARY KEY(user_id,construction_id));
       CREATE TABLE IF NOT EXISTS operation_request(id uuid PRIMARY KEY,actor_id uuid REFERENCES app_identity(id),
         operation text NOT NULL,input_hash text NOT NULL,result jsonb,error jsonb,created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS operation_audit(id bigserial PRIMARY KEY,request_id uuid NOT NULL REFERENCES operation_request(id),
@@ -147,6 +193,15 @@ export class Operations {
   }
   async hasInvitation(token: string) {
     return !!(await availableInvite(this.pool, token));
+  }
+  async invitationWorld(token: string) {
+    return (
+      await this.pool.query<{ title: string }>(
+        `SELECT coalesce(nullif(w.public_title,''),w.id::text) AS title FROM app_invite i JOIN world_construction w ON w.id=i.construction_id
+       WHERE i.token_hash=$1`,
+        [hash(token)],
+      )
+    ).rows[0];
   }
   async state(userId: string) {
     const user = (
@@ -181,11 +236,16 @@ export class Operations {
     }
     return setting;
   }
-  async catalog(userId: string, before?: string, worldId?: string) {
-    await this.authorize(userId);
+  async catalog(
+    userId: string,
+    before?: string,
+    worldId?: string,
+    players?: WorldPlayers,
+  ) {
+    const account = await this.authorize(userId);
     const rows = (
       await this.pool.query(
-        `SELECT c.id,c.public_title AS title,c.public_description AS description,c.player_settings AS "playerSettings",c.accepting,
+        `SELECT c.id,c.world_id,c.public_title AS title,c.public_description AS description,c.player_settings AS "playerSettings",c.accepting,
       c.accepting AND c.published AND c.world_id IS NOT NULL AND c.state IN ('finished','playing','play_paused') AS "canJoin"
       FROM world_construction c WHERE ($2::uuid IS NULL OR c.id<$2) AND ($3::uuid IS NULL OR c.id=$3)
       AND (c.published OR EXISTS (SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id
@@ -194,6 +254,20 @@ export class Operations {
         [userId, before ?? null, worldId ?? null],
       )
     ).rows;
+    const row = rows[0];
+    if (worldId && players && row?.canJoin) {
+      const block = await players.joinBlock(
+        this.pool,
+        userId,
+        worldId,
+        row.world_id,
+        account.role,
+      );
+      if (block) {
+        row.canJoin = false;
+        row.joinBlock = block;
+      }
+    }
     return WorldCatalogPage.parse({
       items: rows.slice(0, 50),
       next: rows.length > 50 ? rows[49]!.id : null,
@@ -515,6 +589,7 @@ export class Operations {
             "MAINTENANCE",
             "USER_BANNED",
             "AUTHORITY_LOST",
+            "PLAYER_LIMIT_REACHED",
             "MCP_AUTH_REVOKED",
           ].includes(failure.code));
       if (!completed)
@@ -1525,6 +1600,8 @@ export class Operations {
         if (known) {
           if (known.banned)
             throw new AccessError(403, "USER_BANNED", "利用が停止されています");
+          if (input.invitation)
+            await useInvite(db, input.invitation, actor!, false);
           return { member: member(known) };
         }
         const state = (
@@ -1532,17 +1609,6 @@ export class Operations {
             "SELECT * FROM operation_state WHERE singleton",
           )
         ).rows[0]!;
-        let invite: string | undefined;
-        if (state.bootstrapped && state.invite_required) {
-          const row = await availableInvite(db, input.invitation ?? "", true);
-          if (!row)
-            throw new AccessError(
-              403,
-              "INVITATION_REQUIRED",
-              "有効な招待トークンが必要です",
-            );
-          invite = row.id;
-        }
         const row = (
           await db.query<UserRow>(
             "INSERT INTO app_user(id,role) VALUES($1,$2) RETURNING *",
@@ -1553,15 +1619,9 @@ export class Operations {
           await db.query(
             "UPDATE operation_state SET bootstrapped=true WHERE singleton",
           );
-        if (invite) {
-          await db.query("UPDATE app_invite SET uses=uses+1 WHERE id=$1", [
-            invite,
-          ]);
-          await db.query(
-            "INSERT INTO invite_use(invite_id,user_id) VALUES($1,$2)",
-            [invite, actor],
-          );
-        }
+        const inviteRequired = state.bootstrapped && state.invite_required;
+        if (input.invitation || inviteRequired)
+          await useInvite(db, input.invitation ?? "", actor!, inviteRequired);
         return { member: member(row) };
       }
       case "settings.read":
@@ -1669,12 +1729,33 @@ export class Operations {
             "INVITE_EXPIRY",
             "招待の有効期限は未来の日時にしてください",
           );
+        if (
+          input.worldId &&
+          !(
+            await db.query("SELECT id FROM world_construction WHERE id=$1", [
+              input.worldId,
+            ])
+          ).rowCount
+        )
+          throw new AccessError(404, "WORLD_NOT_FOUND", "世界が見つかりません");
         const id = randomUUID();
         await db.query(
-          "INSERT INTO app_invite(id,token_hash,expires_at,max_uses,created_by) VALUES($1,$2,$3,$4,$5)",
-          [id, hash(this.#token(id)), input.expiresAt, input.maxUses, actor],
+          "INSERT INTO app_invite(id,token_hash,expires_at,max_uses,created_by,construction_id) VALUES($1,$2,$3,$4,$5,$6)",
+          [
+            id,
+            hash(this.#token(id)),
+            input.expiresAt,
+            input.maxUses,
+            actor,
+            input.worldId ?? null,
+          ],
         );
-        return { id, expiresAt: input.expiresAt, maxUses: input.maxUses };
+        return {
+          id,
+          expiresAt: input.expiresAt,
+          maxUses: input.maxUses,
+          ...(input.worldId && { worldId: input.worldId }),
+        };
       }
       case "invites.revoke": {
         const row = await db.query(
@@ -1692,13 +1773,14 @@ export class Operations {
       case "invites.list": {
         const rows = (
           await db.query(
-            "SELECT id,expires_at,max_uses,uses,revoked,created_by,created_at FROM app_invite WHERE ($1::uuid IS NULL OR id<$1) ORDER BY id DESC LIMIT 51",
+            "SELECT id,construction_id,expires_at,max_uses,uses,revoked,created_by,created_at FROM app_invite WHERE ($1::uuid IS NULL OR id<$1) ORDER BY id DESC LIMIT 51",
             [input.before ?? null],
           )
         ).rows;
         return {
           items: rows.slice(0, 50).map((row) => ({
             id: row.id,
+            ...(row.construction_id && { worldId: row.construction_id }),
             expiresAt: row.expires_at.toISOString(),
             maxUses: Number(row.max_uses),
             uses: Number(row.uses),

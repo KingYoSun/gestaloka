@@ -47,6 +47,16 @@ export async function fixtureAuth(
   return {
     identity,
     operations,
+    async worldInvite(admin: string, worldId: string, maxUses = 1) {
+      const result = await operations.execute(admin, randomUUID(), {
+        operation: "invites.create",
+        worldId,
+        expiresAt: new Date(Date.now() + 600000).toISOString(),
+        maxUses,
+        reason: "テスト用の参加招待",
+      });
+      return String(result.token);
+    },
     async person(role: "admin" | "user" = "admin") {
       const id = randomUUID(),
         ory = randomUUID(),
@@ -67,6 +77,17 @@ export async function fixtureAuth(
       sessions.delete(cookie);
     },
     async cleanup() {
+      await pool.query(
+        "DELETE FROM invite_use WHERE user_id=ANY($1) OR invite_id IN (SELECT id FROM app_invite WHERE created_by=ANY($1))",
+        [ids],
+      );
+      await pool.query("DELETE FROM app_invite WHERE created_by=ANY($1)", [
+        ids,
+      ]);
+      await pool.query(
+        "DELETE FROM world_participation WHERE user_id=ANY($1)",
+        [ids],
+      );
       await pool.query("DELETE FROM player_preset WHERE updated_by=ANY($1)", [
         ids,
       ]);

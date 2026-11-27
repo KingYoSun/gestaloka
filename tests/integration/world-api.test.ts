@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { WORLD_DAY_MS, type Change } from "@gestaloka/contracts";
-import { connectDatabases } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldBuilder } from "@gestaloka/server/build";
@@ -11,8 +10,11 @@ import { createApp } from "../../apps/api/src/app.js";
 import { modelEnvironment, approvedTransport } from "../support/model.js";
 import { fixtureAuth } from "../support/auth.js";
 import { legacyPlayer } from "../support/legacy-player.js";
+import { isolatedDatabases } from "../support/isolated-db.js";
+import { recordPermanentDeath } from "../../packages/server/src/runtime/death-policy.js";
 
-const databases = connectDatabases(),
+const isolated = isolatedDatabases(),
+  { databases } = isolated,
   budgetId = randomUUID();
 const subjects: string[] = [],
   ids: string[] = [],
@@ -204,6 +206,7 @@ async function archivedParticipant(scene: { subject: string; id: string }) {
   );
 }
 beforeAll(async () => {
+  await isolated.setup();
   await databases.verify();
   databases.queue.on("error", console.error);
   await databases.queue.start();
@@ -293,7 +296,7 @@ afterAll(async () => {
       { worldId },
     );
   await databases.queue.stop();
-  await databases.close();
+  await isolated.close();
 });
 
 test("本人の確認で匿名主体を結び付け、操作対象・世界・履歴を保持する", async () => {
@@ -960,6 +963,152 @@ test("自由記述のプリセットを版付きで編集し、本文は管理�
   ).not.toContain(input.settings);
 });
 
+test("世界別の招待を登録済みの本人に追加し、同時要求でも1人分だけ受け付ける", async () => {
+  const a = await fixture(),
+    b = await legacyFixture();
+  await access.command(a.subject, a.id, {
+    requestId: randomUUID(),
+    command: "finish",
+  });
+  for (const world of [a, b])
+    await auth.operations.execute(world.subject, randomUUID(), {
+      operation: "worlds.configure",
+      worldId: world.id,
+      title: "参加受付中",
+      description: "",
+      published: true,
+      accepting: true,
+      reason: "世界別の招待を検証",
+    });
+  const player = await auth.person("user"),
+    returning = await auth.person("user");
+  subjects.push(player.id, returning.id);
+  await databases.postgres.query(
+    "UPDATE operation_state SET bootstrapped=true",
+  );
+  await databases.postgres.query("DELETE FROM app_user WHERE id=$1", [
+    player.id,
+  ]);
+  const redeem = (invitation: string) =>
+    auth.operations.execute(player.id, randomUUID(), {
+      operation: "account.register",
+      invitation,
+    });
+  const join = (worldId: string, requestId = randomUUID()) =>
+    app.inject({
+      method: "POST",
+      url: "/api/operations",
+      headers: headers(player.cookie),
+      payload: {
+        requestId,
+        command: {
+          operation: "worlds.join",
+          worldId,
+          character: "世界に暮らす人物",
+        },
+      },
+    });
+  await redeem(await auth.worldInvite(a.subject, a.id));
+  const wrong = await join(b.id);
+  expect(wrong.json().code).toBe("WORLD_INVITATION_REQUIRED");
+  const device = async () => {
+    const secret = createHash("sha256").update(randomUUID()).digest("hex");
+    return access.devices.begin(randomUUID(), b.id, secret, "世界に暮らす人物");
+  };
+  const pairing = await device();
+  await expect(
+    access.devices.approve(player.id, pairing.userCode, { character: true }),
+  ).rejects.toMatchObject({ code: "WORLD_INVITATION_REQUIRED" });
+  expect(await access.players.list(player.id, b.id)).toMatchObject({
+    items: [],
+  });
+  expect(
+    (
+      await databases.postgres.query(
+        "SELECT 1 FROM world_operation WHERE request->>'worldId'=$1 AND request->>'phase'='participant'",
+        [(await runtime.get(b.id)).world_id],
+      )
+    ).rowCount,
+  ).toBe(1); // Bには移行前の人物の生成記録だけがある。
+  const invitation = await auth.worldInvite(b.subject, b.id);
+  await Promise.all([redeem(invitation), redeem(invitation)]);
+  await redeem(await auth.worldInvite(b.subject, b.id));
+  expect(
+    (
+      await databases.postgres.query(
+        "SELECT count(*)::int AS uses FROM invite_use WHERE user_id=$1",
+        [player.id],
+      )
+    ).rows[0].uses,
+  ).toBe(2);
+  await access.devices.approve(player.id, pairing.userCode, {
+    character: true,
+  });
+  const pair = await Promise.all([join(b.id), join(b.id)]);
+  expect(pair.map((response) => response.statusCode).sort()).toEqual([
+    200, 409,
+  ]);
+  expect(
+    pair.find((response) => response.statusCode === 409)!.json().code,
+  ).toBe("PLAYER_LIMIT_REACHED");
+  expect((await access.players.list(player.id, b.id)).items).toHaveLength(1);
+  expect((await join(a.id)).statusCode).toBe(200);
+
+  await databases.postgres.query(
+    "UPDATE world_subject SET user_id=$1 WHERE id=$2",
+    [returning.id, b.legacyId],
+  );
+  const old = (await access.players.list(returning.id, b.id)).items[0]!;
+  expect(old.actorId).toBeTruthy();
+  await access.devices.approve(returning.id, (await device()).userCode, {
+    actorId: old.actorId!,
+  });
+  expect(
+    (
+      await auth.operations.catalog(
+        returning.id,
+        undefined,
+        a.id,
+        access.players,
+      )
+    ).items[0]?.joinBlock,
+  ).toBe("WORLD_INVITATION_REQUIRED");
+  expect(
+    (
+      await auth.operations.catalog(
+        returning.id,
+        undefined,
+        b.id,
+        access.players,
+      )
+    ).items[0]?.joinBlock,
+  ).toBe("PLAYER_LIMIT_REACHED");
+  const graph = (await runtime.get(b.id)).world_id!;
+  const store = runtime.agent.store;
+  const now = Date.now(),
+    commitId = randomUUID(),
+    changes = empty();
+  recordPermanentDeath(changes, old.actorId!, now);
+  await store.commit(await store.claim(graph, commitId), store.context(graph), {
+    commitId,
+    at: now,
+    changes,
+  });
+  expect(
+    (
+      await auth.operations.catalog(
+        returning.id,
+        undefined,
+        b.id,
+        access.players,
+      )
+    ).items[0]?.canJoin,
+  ).toBe(true);
+  expect(
+    (await access.players.list(returning.id, b.id)).items[0]?.actorId,
+  ).toBe(old.actorId);
+});
+
 test("2人の参加要求から別の人物を生成し、他人の操作対象とシーンを拒否する", async () => {
   const scene = await fixture(),
     one = await session("user"),
@@ -1045,6 +1194,15 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
   expect(await configure(startingItems)).toMatchObject({ startingItems });
   // 省略すると現在の設定を保つ。
   expect(await configure()).toMatchObject({ startingItems });
+  const denied = await join(one.cookie, randomUUID());
+  expect(denied.statusCode).toBe(403);
+  expect(denied.json().code).toBe("WORLD_INVITATION_REQUIRED");
+  const invitation = await auth.worldInvite(scene.subject, scene.id, 2);
+  for (const person of [one, two])
+    await auth.operations.execute(person.subject, randomUUID(), {
+      operation: "account.register",
+      invitation,
+    });
   expect((await join(one.cookie, randomUUID(), 2)).statusCode).toBe(409);
   const repeated = await Promise.all([
     join(one.cookie, id1),
@@ -1052,6 +1210,9 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
   ]);
   expect(repeated.map((r) => r.statusCode)).toEqual([200, 200]);
   expect(repeated[0]!.json()).toEqual(repeated[1]!.json());
+  const full = await join(one.cookie, randomUUID());
+  expect(full.statusCode).toBe(409);
+  expect(full.json().code).toBe("PLAYER_LIMIT_REACHED");
   const joinRequest = (
     await databases.postgres.query(
       "SELECT o.request FROM world_join j JOIN world_operation o ON o.id=j.operation_id WHERE j.id=$1",
@@ -1141,6 +1302,12 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
     ),
   ).rejects.toThrow("本人の入力");
   const id3 = randomUUID();
+  await auth.operations.execute(scene.subject, randomUUID(), {
+    operation: "users.role",
+    userId: one.subject,
+    role: "admin",
+    reason: "管理アカウントの複数作成を検証",
+  });
   expect((await join(one.cookie, id3, 2)).statusCode).toBe(200);
   const original = runtime.agent.run.bind(runtime.agent);
   const calls = vi.spyOn(runtime.agent.model, "complete");

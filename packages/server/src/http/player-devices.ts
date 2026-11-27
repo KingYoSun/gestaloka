@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type pg from "pg";
 import { AccessError } from "./access.js";
 import { requireMember } from "./operations.js";
+import type { WorldPlayers } from "../runtime/players.js";
 import type { z } from "zod";
 import { PlayerDeviceApproval, PlayerDeviceStatus } from "@gestaloka/contracts";
 import { playerIcon } from "../runtime/player-icons.js";
@@ -34,7 +35,10 @@ const denied = () =>
 
 /** A device can receive one existing actor or one fixed join request, never an account session. */
 export class PlayerDevices {
-  constructor(readonly pool: pg.Pool) {}
+  constructor(
+    readonly pool: pg.Pool,
+    readonly players: WorldPlayers,
+  ) {}
 
   async setup() {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS player_device (
@@ -161,7 +165,7 @@ export class PlayerDevices {
     const db = await this.pool.connect();
     try {
       await db.query("BEGIN");
-      await requireMember(db, userId);
+      const account = await requireMember(db, userId);
       const row = (
         await db.query<Device>(
           "SELECT * FROM player_device WHERE user_code=$1 AND NOT revoked FOR UPDATE",
@@ -189,26 +193,36 @@ export class PlayerDevices {
           [userId, row.world_id, choice.actorId],
         );
         if (!owned.rowCount) throw denied();
-      } else if ("character" in choice) {
-        if (!row.character) throw denied();
-        const world = await db.query(
-          "SELECT id FROM world_construction WHERE id=$1 AND published AND accepting AND world_id IS NOT NULL AND state IN ('finished','playing','play_paused')",
-          [row.world_id],
-        );
-        if (!world.rowCount)
+      } else {
+        const world = (
+          await db.query<{ world_id: string }>(
+            "SELECT world_id FROM world_construction WHERE id=$1 AND published AND accepting AND world_id IS NOT NULL AND state IN ('finished','playing','play_paused')",
+            [row.world_id],
+          )
+        ).rows[0];
+        if (!world)
           throw new AccessError(
             409,
             "JOIN_CLOSED",
             "現在は参加を受け付けていません",
           );
-      } else {
-        const available = await db.query(
-          `SELECT p.id FROM player_preset p,world_construction w
-          WHERE p.id=$1 AND p.version=$2 AND w.id=$3 AND w.published AND w.accepting
-          AND w.world_id IS NOT NULL AND w.state IN ('finished','playing','play_paused')`,
-          [choice.presetId, choice.presetVersion, row.world_id],
+        await this.players.requireJoinSlot(
+          db,
+          userId,
+          row.world_id,
+          world.world_id,
+          account.role,
         );
-        if (!available.rowCount)
+        if ("character" in choice) {
+          if (!row.character) throw denied();
+        } else if (
+          !(
+            await db.query(
+              "SELECT id FROM player_preset WHERE id=$1 AND version=$2",
+              [choice.presetId, choice.presetVersion],
+            )
+          ).rowCount
+        )
           throw new AccessError(
             409,
             "JOIN_CLOSED",

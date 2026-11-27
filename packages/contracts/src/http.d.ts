@@ -10249,6 +10249,8 @@ export interface paths {
                         } | {
                             /** @enum {string} */
                             operation: "invites.create";
+                            /** Format: uuid */
+                            worldId?: string;
                             /** Format: date-time */
                             expiresAt: string;
                             maxUses: number;
@@ -10585,6 +10587,8 @@ export interface paths {
                                 playerSettings?: string;
                                 accepting: boolean;
                                 canJoin: boolean;
+                                /** @enum {string} */
+                                joinBlock?: "WORLD_INVITATION_REQUIRED" | "PLAYER_LIMIT_REACHED";
                             }[];
                             /** Format: uuid */
                             next: string | null;
@@ -10724,6 +10728,8 @@ export interface paths {
                             playerSettings?: string;
                             accepting: boolean;
                             canJoin: boolean;
+                            /** @enum {string} */
+                            joinBlock?: "WORLD_INVITATION_REQUIRED" | "PLAYER_LIMIT_REACHED";
                         };
                     };
                 };

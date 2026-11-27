@@ -306,9 +306,11 @@ export function Participation({ id }: { id: string }) {
           {person?.state === "ready" && person.actorId ? (
             <>
               {open(person.actorId, "この人物で始める")}
-              <Button variant="outline" onClick={() => save(null)}>
-                別の人物で参加する
-              </Button>
+              {world.data?.canJoin && (
+                <Button variant="outline" onClick={() => save(null)}>
+                  別の人物で参加する
+                </Button>
+              )}
             </>
           ) : person?.state === "joining" ? (
             <Notice>
@@ -440,7 +442,11 @@ export function Participation({ id }: { id: string }) {
         </form>
       ) : (
         <Notice>
-          現在、新しい参加は受け付けていません。参加済みの人物は引き続き開けます。
+          {world.data?.joinBlock === "WORLD_INVITATION_REQUIRED"
+            ? "この世界への参加には招待が必要です。"
+            : world.data?.joinBlock === "PLAYER_LIMIT_REACHED"
+              ? "この世界で所持できるプレイヤーは1人までです。"
+              : "現在、新しい参加は受け付けていません。参加済みの人物は引き続き開けます。"}
         </Notice>
       )}
       {join.error && <Problem error={join.error} />}

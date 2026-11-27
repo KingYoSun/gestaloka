@@ -666,6 +666,9 @@ export const WorldCatalogPage = z.object({
       playerSettings: z.string().optional(),
       accepting: z.boolean(),
       canJoin: z.boolean(),
+      joinBlock: z
+        .enum(["WORLD_INVITATION_REQUIRED", "PLAYER_LIMIT_REACHED"])
+        .optional(),
     }),
   ),
   next: z.uuid().nullable(),
@@ -1699,6 +1702,7 @@ export const Operation = z.discriminatedUnion("operation", [
   z
     .object({
       operation: z.literal("invites.create"),
+      worldId: z.uuid().optional(),
       expiresAt: z.iso.datetime({ offset: true }),
       maxUses: z.number().int().positive().safe(),
       reason: operationReason,
