@@ -26,22 +26,28 @@ test("3d6の全216通りで、合計10と11が最も多く、3と18は各1通り
 
 test("2d8の通常判定は2～15、探索は16までを目標値にできる", () => {
   const dice = { count: 2, sides: 8 };
+  const basis = { thresholdBasis: "足場が安定している。" };
   const check = z.strictObject(diceFields(dice));
-  expect(check.parse({ successThrough: 2 })).toEqual({
+  expect(check.parse({ ...basis, successThrough: 2 })).toEqual({
     ...dice,
+    ...basis,
     successThrough: 2,
   });
-  expect(check.safeParse({ successThrough: 15 }).success).toBe(true);
+  expect(check.safeParse({ ...basis, successThrough: 15 }).success).toBe(true);
   for (const invalid of [
-    { successThrough: 1 },
-    { successThrough: 16 },
-    { successThrough: 8, sides: 6 },
-    { successThrough: 8, count: 3 },
+    { successThrough: 2 },
+    { successThrough: 2, thresholdBasis: "  " },
+    { successThrough: 2, thresholdBasis: "2" },
+    { ...basis, successThrough: 1 },
+    { ...basis, successThrough: 16 },
+    { ...basis, successThrough: 8, sides: 6 },
+    { ...basis, successThrough: 8, count: 3 },
   ])
     expect(check.safeParse(invalid).success).toBe(false);
   expect(
-    z.strictObject(diceFields(dice, true)).parse({ successThrough: 16 })
-      .successThrough,
+    z
+      .strictObject(diceFields(dice, true))
+      .parse({ ...basis, successThrough: 16 }).successThrough,
   ).toBe(16);
   expect(rollDice(dice, (_min, max) => max - 1)).toBe(16);
   expect(rollDice({ sides: 100 }, (_min, max) => max - 1)).toBe(100);

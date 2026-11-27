@@ -50,3 +50,37 @@ export function playDiceMessages(outcome: unknown): string[] {
     return messages;
   });
 }
+
+// 出目のない案には、抽選を止めた条件か審査で返された理由が保存される。
+export function unrolledReasons(outcome: unknown): string[] {
+  if (!outcome || typeof outcome !== "object") return [];
+  const p = outcome as Record<string, unknown>;
+  if (Array.isArray(p.proposals)) return p.proposals.flatMap(unrolledReasons);
+  if (
+    p.success !== false ||
+    p.roll !== undefined ||
+    typeof p.reason !== "string"
+  )
+    return [];
+  const proposal = p.text ? `「${p.text}」の案` : "この案";
+  if (p.reason === "MATERIAL_ID_REQUIRED") {
+    const labels = z
+      .array(z.string())
+      .safeParse(p.unresolvedMaterialLabels).data;
+    return [
+      labels?.length
+        ? `${proposal}は振っていません。材料「${labels.join("」「")}」に使う物品を特定できません。使う物品のIDをmaterialsに指定するか、その材料を使う工程を申請文から外してください。`
+        : `${proposal}は振っていません。申請文からどの材料を使うのか読み取れません。使う材料を申請文に明記し、その物品のIDをmaterialsに指定してください。`,
+    ];
+  }
+  if (typeof p.message === "string" && p.message.trim())
+    return [
+      `${p.text ? `「${p.text}」は` : "この申請は"}差し戻されました。${p.message}`,
+    ];
+  const reasons: Record<string, string> = {
+    MATERIAL_SHORTAGE: "使える材料が足りません",
+    SKILL_CAPACITY_EXCEEDED: "技能の空き枠が足りません",
+    JUDGMENT_MATERIAL_LIMIT: "判定に必要な資料が収まりません",
+  };
+  return [`${proposal}は振っていません。${reasons[p.reason] ?? p.reason}`];
+}
