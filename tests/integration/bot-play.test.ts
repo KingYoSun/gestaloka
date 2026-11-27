@@ -7046,22 +7046,7 @@ test("対抗申請で成立した行為を確定し、別の言い方でも同�
   vi.spyOn(model, "decision", "get").mockReturnValue(
     decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
   );
-  const decide = vi
-    .spyOn(model, "decide")
-    .mockImplementation(async (_id, role, state, questions) => {
-      expect(role).toBe("world-judgment-materials");
-      expect(JSON.stringify(state)).toContain(performed);
-      expect(state).toMatchObject({
-        candidates: expect.arrayContaining([
-          expect.objectContaining({
-            evidence: expect.objectContaining({
-              sharedReferences: [{ id: target, match: "sameId" }],
-            }),
-          }),
-        ]),
-      });
-      return Object.fromEntries(Object.keys(questions).map((key) => [key, 1]));
-    });
+  const decide = vi.spyOn(model, "decide");
   await giveTurn(f, 0);
   f.calls.mockClear();
   const conditional = "右手の指を動かせない";
@@ -7072,7 +7057,7 @@ test("対抗申請で成立した行為を確定し、別の言い方でも同�
   });
   expect(failure.presentation).not.toContain(conditional);
   expect(failure.presentation).not.toContain(failedAction);
-  expect(decide).toHaveBeenCalledOnce();
+  expect(decide).not.toHaveBeenCalled();
   expect(f.calls.mock.calls.map(([, role]) => role)).toEqual([
     "world-opposition-dice",
   ]);
@@ -7207,24 +7192,15 @@ test("使用した物品を別の言い方で指定しても同じIDから古い
     .spyOn(model, "decide")
     .mockImplementation(async (_id, role, state) => {
       if (role !== "world-judgment-materials") return {};
-      const texts = (
-        state as {
-          candidates: { key: string; evidence: { node: { text: string } } }[];
-        }
-      ).candidates;
-      expect(texts.map(({ evidence }) => evidence.node.text)).toEqual(
-        expect.arrayContaining([performed, decoy]),
-      );
-      expect(texts).toHaveLength(2);
-      expect(
-        texts.find(({ evidence }) => evidence.node.text === performed)
-          ?.evidence,
-      ).toMatchObject({
-        sharedReferences: [{ id: item, match: "sameId", label: "薬茶" }],
-      });
+      const { candidates } = state as {
+        candidates: { key: string; evidence: unknown }[];
+      };
+      const contents = JSON.stringify(candidates);
+      expect(contents).toContain(decoy);
+      expect(contents).not.toContain(performed); // same-ID evidence bypasses optional reranking
       return Object.fromEntries(
-        texts.flatMap(({ key, evidence }) => [
-          [`r0${key}a`, evidence.node.text === performed ? 1 : 0],
+        candidates.flatMap(({ key }) => [
+          [`r0${key}a`, 0],
           [`r0${key}e`, 0],
         ]),
       );
@@ -8806,6 +8782,87 @@ test("生成の必須資料が超過した案は抽選せず、独立した案�
     (result.outcome as { proposals: unknown[] }).proposals[0],
   ).not.toHaveProperty("roll");
   expect(f.calls).toHaveBeenCalledTimes(1);
+});
+
+test("長い5案を通常の一括作成で判定し、選別は応答全体で2回以内に収める", async () => {
+  const f = await fixture(1),
+    actor = f.actors[0]!;
+  const seed = await f.apply([
+    {
+      type: "create",
+      holder: actor,
+      label: "厚紙",
+      count: 10,
+      basis: "工作用",
+    },
+  ]);
+  const board = seed.changes.nodes.find((n) => n.kind === "existence")!.id;
+  for (let batch = 0; batch < 6; batch++)
+    await f.apply(
+      Array.from({ length: 8 }, (_, i) => ({
+        type: "learn",
+        person: actor,
+        text: `手仕事${batch * 8 + i}：` + "細工の手順を確かめる。".repeat(15),
+        basis: `第${batch * 8 + i}工房での訓練。`.repeat(20),
+      })),
+    );
+  vi.spyOn(runtime.agent.model, "decision", "get").mockReturnValue(
+    decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+  );
+  const decide = vi
+    .spyOn(runtime.agent.model, "decide")
+    .mockImplementation(async (_id, _role, state, questions) => {
+      expect(
+        Buffer.byteLength(JSON.stringify({ state, questions })),
+      ).toBeLessThanOrEqual(30 * 1024);
+      return Object.fromEntries(
+        Object.keys(questions).map((key) => [key, 0.2]),
+      );
+    });
+  f.calls.mockImplementation(async (id, role, msg) => {
+    expect(role).toBe("world-creation-dice");
+    const { proposals, nodes } = JSON.parse(msg[1]!.content);
+    expect(JSON.stringify(nodes)).toContain(board);
+    return answer(id, {
+      settings: proposals.map(() => ({
+        ...sure,
+        requiredMaterials: [{ id: board, count: 1 }],
+      })),
+    });
+  });
+  const request = {
+    requestId: randomUUID(),
+    command: "create-batch",
+    dependencies: [],
+    proposals: Array.from({ length: 5 }, (_, i) => ({
+      text: `厚紙を切って第${i + 1}巻の札を作る。`,
+      materials: [{ id: board, count: 1 }],
+      operations: [
+        {
+          type: "create",
+          holder: actor,
+          label: `巻札${i}`,
+          basis: "折り返し部分の形を現物に合わせて裁断した。".repeat(83),
+        },
+      ],
+    })),
+  };
+  const result = await f.send(0, request);
+  expect(result.outcome).toMatchObject({
+    proposals: Array.from({ length: 5 }, () => ({ roll: 9 })),
+  });
+  expect(decide.mock.calls.length).toBeGreaterThan(0);
+  expect(decide.mock.calls.length).toBeLessThanOrEqual(2);
+  const count = decide.mock.calls.length,
+    gmCalls = f.calls.mock.calls.length;
+  expect((await f.send(0, request)).outcome).toEqual(result.outcome);
+  expect(decide).toHaveBeenCalledTimes(count);
+  expect(f.calls).toHaveBeenCalledTimes(gmCalls);
+  expect(
+    (await readBelongings(f.store.context(f.graph), actor)).items.find(
+      (row) => row.id === board,
+    )?.count,
+  ).toBe(5);
 });
 
 test("生成は保存済みの抜粋で選別してから原文と習得経緯を読み、圧縮して抽選する", async () => {

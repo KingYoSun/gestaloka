@@ -6,6 +6,12 @@ import {
   InstallationPolicy,
   type CommandRestriction,
 } from "@gestaloka/contracts";
+import {
+  semanticConfig,
+  setupSemantic,
+  indexSemanticExperience,
+  semanticExperiences,
+} from "./judgment-semantic.js";
 import { routeEndpoints } from "./locations.js";
 import {
   conditionAnchors,
@@ -179,6 +185,7 @@ export type JudgmentExcerptJob = {
   sourceHash: string;
 };
 const excerptPatterns = {
+  experience: { match: "()-[v:happen]->()", identity: "v:happen(worldId,id)" },
   node: {
     match: "(v:WorldNode)",
     identity: "v:WorldNode(worldId,id)",
@@ -1436,6 +1443,23 @@ export class WorldContext {
     });
   }
 
+  async supplementalExperiences(actor: string, at: number, texts: string[][]) {
+    const config = semanticConfig();
+    if (!config) return texts.map((): string[] => []);
+    await this.#read(
+      relationKey(actor, "happen", "out"),
+      async () => undefined,
+    );
+    return semanticExperiences(
+      this.driver,
+      config,
+      this.worldId,
+      experienceToken(this.worldId + ":" + actor),
+      at,
+      texts,
+    );
+  }
+
   async historyPage(
     id: string,
     kind: "see" | "interpret",
@@ -1708,6 +1732,7 @@ export class WorldStore {
         `CREATE INDEX IF NOT EXISTS FOR ()-[r:status]-() ON (r.worldId,r.${subject},r.restrictionUntil)`,
       );
     }
+    if (semanticConfig()) await setupSemantic(this.driver);
     // 同名確認は索引を指定して引くので、作成中の索引を使わせない。
     await this.driver.executeQuery("CALL db.awaitIndexes(300)");
     await this.#replaceExperienceIndex();
@@ -1796,17 +1821,20 @@ export class WorldStore {
   // 旧記録は順序つきID索引から一定件数ずつ進め、同じ更新で位置と登録結果を保存する。
   async #backfillJudgmentExcerpts(
     tx: ManagedTransaction,
-    kind: ExcerptKind,
+    kind: ExcerptKind | "experience",
     scope?: string,
+    revision?: string,
   ) {
-    const key = scope ? `${kind}:${scope}` : kind;
+    const key = [kind, scope].filter(Boolean).join(":");
     const cursor = (
       await tx.run(
         `MERGE (cursor:WorldJudgmentExcerptCursor {kind:$key})
          ON CREATE SET cursor.lastWorldId=$scope,cursor.id='',cursor.done=false
          SET cursor.lock=true REMOVE cursor.lock
+         FOREACH (_ IN CASE WHEN $revision IS NOT NULL AND coalesce(cursor.revision,'')<>$revision THEN [1] ELSE [] END |
+           SET cursor.revision=$revision,cursor.lastWorldId=$scope,cursor.id='',cursor.done=false)
          RETURN cursor.lastWorldId AS worldId,cursor.id AS id,cursor.done AS done`,
-        { key, scope: scope ?? "" },
+        { key, scope: scope ?? "", revision: revision ?? null },
       )
     ).records[0]!;
     if (cursor.get("done")) return;
@@ -1814,9 +1842,12 @@ export class WorldStore {
     const worldId: string = cursor.get("worldId");
     const id: string = cursor.get("id");
     const eligible =
-      kind === "node"
-        ? "v.kind IN ['script','existence'] AND NOT EXISTS { MATCH ()-[:has {role:'summary'}]->(v) }"
-        : "(v.role IS NULL OR v.role='skill')";
+      kind === "experience"
+        ? "v.experienceOwner IS NOT NULL AND coalesce(v.semanticRevision,'')<>$revision AND v.semanticDue IS NULL"
+        : "v.judgmentLong IS NULL AND " +
+          (kind === "node"
+            ? "v.kind IN ['script','existence'] AND NOT EXISTS { MATCH ()-[:has {role:'summary'}]->(v) }"
+            : "(v.role IS NULL OR v.role='skill')");
     const page = async (same: boolean, limit: number) =>
       (
         await tx.run(
@@ -1824,8 +1855,8 @@ export class WorldStore {
          WHERE ${same ? "v.worldId=$worldId AND v.id>$id" : "v.worldId>$worldId AND v.id IS NOT NULL"}
          WITH v ORDER BY v.worldId,v.id LIMIT $limit
          RETURN v.worldId AS worldId,v.id AS id,
-           CASE WHEN v.judgmentLong IS NULL AND ${eligible} THEN v.data END AS data`,
-          { worldId, id, limit: int(limit) },
+           CASE WHEN ${eligible} THEN v.data END AS data`,
+          { worldId, id, limit: int(limit), revision: revision ?? null },
         )
       ).records;
     const limit = 64;
@@ -1845,7 +1876,13 @@ export class WorldStore {
         },
       ];
     });
-    if (entries.length)
+    if (entries.length && kind === "experience")
+      await tx.run(
+        `UNWIND $entries AS entry MATCH ()-[v:happen {worldId:entry.worldId,id:entry.id}]->()
+        WHERE v.semanticDue IS NULL AND coalesce(v.semanticRevision,'')<>$revision SET v.semanticDue=0`,
+        { entries, revision },
+      );
+    else if (entries.length)
       await tx.run(
         `UNWIND $entries AS entry
          MATCH ${match} USING INDEX ${identity}
@@ -1866,6 +1903,25 @@ export class WorldStore {
         done: rows.length < limit,
       },
     );
+  }
+
+  async indexJudgmentExperience(worldId?: string) {
+    const config = semanticConfig();
+    if (!config) return;
+    const session = this.driver.session();
+    try {
+      await session.executeWrite((tx) =>
+        this.#backfillJudgmentExcerpts(
+          tx,
+          "experience",
+          worldId,
+          config.revision,
+        ),
+      );
+    } finally {
+      await session.close();
+    }
+    await indexSemanticExperience(this.driver, config, worldId);
   }
 
   async judgmentExcerptJobs(
@@ -3150,11 +3206,11 @@ export class WorldStore {
               ),
             },
           );
-          if (node.kind === "event" && prior.node.text !== node.text)
+          if (node.kind === "event")
             await tx.run(
               `MATCH ()-[r:happen]->(:WorldNode {worldId:$worldId,id:$id})
                WHERE r.experienceOwner IS NOT NULL
-               SET r.experienceTerms=$terms`,
+               SET r.experienceTerms=$terms, r.semanticDue=0 REMOVE r.semanticClaim`,
               {
                 worldId,
                 id: node.id,
@@ -3181,6 +3237,7 @@ export class WorldStore {
               experience:
                 edge.kind === "happen" && edge.text === actionExperience
                   ? {
+                      semanticDue: 0,
                       ...experienceIndexFields(
                         worldId,
                         edge.source,

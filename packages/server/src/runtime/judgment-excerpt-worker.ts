@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { semanticConfig } from "../world/judgment-semantic.js";
 import type { LlmClient } from "../llm/client.js";
 import { buildJudgmentExcerpts } from "../llm/judgment-excerpts.js";
 import { derivedId, type WorldStore } from "../world/store.js";
@@ -12,7 +13,7 @@ export class JudgmentExcerptWorker {
 
   async tick(worldId?: string) {
     const configured = this.model.decision;
-    if (!configured) return;
+    if (!configured && !semanticConfig()) return;
     try {
       await RuntimeControl.check(this.model.ledger.pool);
     } catch (error) {
@@ -20,6 +21,11 @@ export class JudgmentExcerptWorker {
         return;
       throw error;
     }
+    // An unavailable local encoder must not prevent ordinary excerpt preparation.
+    await this.store
+      .indexJudgmentExperience(worldId)
+      .catch((error: unknown) => console.error(error));
+    if (!configured) return;
     const [job] = await this.store.judgmentExcerptJobs(1, worldId);
     if (!job) return;
     const requestId = derivedId(
