@@ -10510,40 +10510,17 @@ test.each(["材料", "状況"])(
     vi.spyOn(model, "decision", "get").mockReturnValue(
       decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
     );
-    vi.spyOn(model, "apiKey").mockResolvedValue("unused");
-    const changes = vi.fn();
-    vi.spyOn(model, "transport").mockImplementation(async (_url, options) => {
-      const { model, state, questions } = JSON.parse(String(options?.body));
-      return Response.json({
-        id: "decision",
-        model,
-        answers: Object.fromEntries(
-          Object.keys(questions).map((key) => {
-            if (key === "changed") changes(state);
-            return [
-              key,
-              {
-                type: "noul",
-                noul:
-                  key === "changed" &&
-                  JSON.stringify(state.added).includes(
-                    condition === "材料" ? "銀の針" : "袋縫いの習得",
-                  )
-                    ? 1
-                    : 0,
-              },
-            ];
-          }),
-        ),
-        usage: { input_tokens: 100, output_tokens: 20, cost: 0.0000042 },
-      });
-    });
+    const decisions = vi.spyOn(model, "decide").mockResolvedValue({ f0: 0 });
     f.calls.mockImplementation(async (id) => answer(id, { successThrough: 5 }));
-    const repair = (requestId = randomUUID(), material?: string) =>
+    const repair = (
+      requestId = randomUUID(),
+      material?: string,
+      text = "破れた布を繕って袋に仕立てる",
+    ) =>
       f.send(0, {
         requestId,
         command: "update",
-        text: "破れた布を繕って袋に仕立てる",
+        text,
         operations: [
           { type: "create", label: "布の袋", holder: actor, basis: "布を繕う" },
         ],
@@ -10553,16 +10530,18 @@ test.each(["材料", "状況"])(
     const first = await repair();
     expect(first.outcome).toMatchObject({ success: false, roll: 9 });
     await f.send(0, { command: "end-turn" });
-    f.calls.mockImplementationOnce(async (id) => answer(id, sure));
     const other = await f.send(0, {
-      command: "update",
+      command: "create",
       text: "木片で笛を作る",
-      operations: [
-        { type: "create", label: "木の笛", holder: actor, basis: "木を削る" },
-      ],
+      changes: {
+        nodes: [{ id: randomUUID(), kind: "existence", text: "木の笛" }],
+        revisions: [],
+        edges: [],
+        endEdges: [],
+      },
       dependencies: [],
     });
-    expect(other.outcome).toMatchObject({ success: true });
+    expect(other.outcome).toMatchObject({ success: false });
     const judged = f.calls.mock.calls.filter(
       ([, role]) => role === "world-creation-dice",
     ).length;
@@ -10578,6 +10557,7 @@ test.each(["材料", "状況"])(
     ).toHaveLength(judged);
     expect(await repair(request)).toEqual(reused);
 
+    decisions.mockClear().mockResolvedValue({ f0: 1 });
     const material =
       condition === "材料"
         ? (
@@ -10603,11 +10583,18 @@ test.each(["材料", "状況"])(
     f.calls.mockImplementationOnce(async (id) =>
       answer(id, material ? { ...sure, requiredMaterials: [] } : sure),
     );
-    const prepared = await repair(randomUUID(), material);
+    expect(await repair(request)).toEqual(reused);
+    const prepared = await repair(
+      randomUUID(),
+      material,
+      condition === "状況" ? "破れを縫い直して布袋にする" : undefined,
+    );
     expect(prepared.turn).toBe(reused.turn);
     expect(prepared).toMatchObject({ spentSp: 1, outcome: { success: true } });
     expect(prepared.outcome).not.toHaveProperty("repeated");
-    expect(changes).toHaveBeenCalled();
+    expect(decisions.mock.calls.map(([, role]) => role)).toEqual(
+      condition === "状況" ? ["world-creation-repeat"] : [],
+    );
     expect(
       f.calls.mock.calls.filter(([, role]) => role === "world-creation-dice"),
     ).toHaveLength(judged + 1);
@@ -22744,10 +22731,9 @@ test("世界外に接続する技能だけを差し戻し、同じ申請の技�
   });
 });
 
-test("技能判定で使った本人の技能と試行を本人にだけ返し、再送と出し直しで保持する", async () => {
+test("技能判定で使った根拠を本人にだけ返し、同じ失敗だけなら再利用し、別の試行が加われば振り直す", async () => {
   const f = await fixture(2);
   const [actor, other] = f.actors as [string, string];
-  const model = runtime.agent.model;
   await f.send(1, { command: "contact", targetId: actor });
   await giveTurn(f, 0);
   f.calls.mockClear();
@@ -22837,32 +22823,64 @@ test("技能判定で使った本人の技能と試行を本人にだけ返し�
     result.learningReasons,
   );
 
-  vi.spyOn(model, "decision", "get").mockReturnValue(
-    decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+  const retry = () => f.send(0, { ...failed, requestId: randomUUID() });
+  expect(await retry()).toMatchObject({
+    spentSp: 0,
+    outcome: { ...(result.outcome as object), repeated: true },
+    learningReasons: result.learningReasons,
+  });
+  const model = runtime.agent.model;
+  const settings = vi
+    .spyOn(model, "decision", "get")
+    .mockReturnValue(
+      decisionSettings({ LLM_DECISION_MODEL: "fixture/decide" }),
+    );
+  const jev = vi.spyOn(model, "decide").mockResolvedValue({ f0: 1 });
+  expect(
+    await f.send(0, learn("夜の浅瀬を調査する", "暗闇で浅瀬を見分ける")),
+  ).toMatchObject({
+    spentSp: 0,
+    outcome: { repeated: true },
+  });
+  expect(jev).toHaveBeenCalledWith(
+    expect.any(String),
+    "world-creation-repeat",
+    expect.anything(),
+    expect.anything(),
   );
-  vi.spyOn(model, "apiKey").mockResolvedValue("unused");
-  vi.spyOn(model, "transport").mockImplementation(async (_url, options) => {
-    const body = JSON.parse(String(options?.body));
-    return Response.json({
-      id: "decision",
-      model: body.model,
-      answers: Object.fromEntries(
-        Object.keys(body.questions).map((key) => [
-          key,
-          { type: "noul", noul: 0.9 },
-        ]),
-      ),
-      usage: { input_tokens: 10, output_tokens: 10, cost: 0 },
-    });
-  });
-  const repeated = await f.send(0, { ...failed, requestId: randomUUID() });
-  expect(repeated.outcome).toMatchObject({
-    ...(result.outcome as object),
-    repeated: true,
-  });
-  expect(repeated.spentSp).toBe(0);
-  expect(repeated.learningReasons).toEqual(result.learningReasons);
+  settings.mockRestore();
   expect(f.calls).toHaveBeenCalledTimes(2);
+
+  await f.apply([
+    { type: "create", label: "測深棒", holder: actor, basis: "水深を測る道具" },
+  ]);
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { successThrough: 3 }),
+  );
+  const equipped = await retry();
+  expect(equipped).toMatchObject({ spentSp: 1, outcome: { success: false } });
+  expect(equipped.outcome).not.toHaveProperty("repeated");
+
+  const practice = learn("星を読み方角を探る", "星の方位を読む");
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { successThrough: 3 }),
+  );
+  expect(await f.send(0, practice)).toMatchObject({
+    outcome: { success: false },
+  });
+
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const payload = JSON.parse(String(messages[1]!.content));
+    expect(payload.recentAttempts[actor].slice(0, 2)).toEqual([
+      { action: practice.action.plans[0]!.text, success: false },
+      { action: failed.action.plans[0]!.text, success: false },
+    ]);
+    return answer(id, sure);
+  });
+  const retried = await retry();
+  expect(retried).toMatchObject({ spentSp: 1, outcome: { success: true } });
+  expect(retried.outcome).not.toHaveProperty("repeated");
+  expect(f.calls).toHaveBeenCalledTimes(5);
 
   await f.send(0, { command: "end-turn" });
   const { entries } = await f.status(1);
