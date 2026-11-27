@@ -742,6 +742,35 @@ test("目撃した物品の参照と渡した先を表示する", async () => {
   expect(screen.getByText(/渡す人物.*受け取る人物/)).toBeTruthy();
 });
 
+test("コマンド名がない行動結果を含む保存済みのプレイログを読める", async () => {
+  view.entries = [
+    {
+      id: "12",
+      payload: {
+        entries: [
+          {
+            actorId: actor,
+            input: "木箱を入口に移す",
+            result: {
+              state: "accepted",
+              action: { message: "木箱はすでに入口にあります。" },
+            },
+          },
+          {
+            actorId: peer,
+            input: "木箱を守る",
+            result: { state: "accepted", action: { command: "oppose" } },
+          },
+        ],
+      },
+    },
+  ];
+  show();
+  await screen.findByText("木箱を入口に移す");
+  expect(screen.getByText("木箱を守る")).toBeTruthy();
+  expect(screen.getAllByText("結果：受理しました")).toHaveLength(1);
+});
+
 test("同席者の判定の出目と成功範囲をプレイログで読める", async () => {
   view.characters = [
     { actorId: actor, name: "観測者", icon: null },
