@@ -13,6 +13,8 @@ export type NpcMemory = {
   pending?: NpcRead;
   completed?: NpcReport;
   goal?: string | null;
+  goalTurnsRemaining?: number | null;
+  expiredGoal?: string | null;
   comparisons?: Record<string, number>;
 };
 
