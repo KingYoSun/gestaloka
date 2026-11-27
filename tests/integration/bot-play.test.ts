@@ -109,7 +109,11 @@ test("観察で提示した結果を共有グラフから読み、後の申請�
       observerId: actor,
       targetId: f.place,
     });
-    return answer(id, { ...sure, observation: finding });
+    return answer(id, {
+      ...sure,
+      observation: finding,
+      learningFactors: [{ ref: "action", impact: "helped" }],
+    });
   });
   const result = await f.send(0, observe);
   const id = derivedId(`${requestId}:observation`);
@@ -124,6 +128,7 @@ test("観察で提示した結果を共有グラフから読み、後の申請�
   expect(result).toMatchObject({
     spentSp: 1,
     observation: { id, text: event.text, at },
+    diceReasons: [expect.stringContaining("申請した行為の内容が有利")],
     action: { message: expect.stringContaining(finding) },
   });
   expect(await f.send(0, observe)).toEqual(result);
@@ -9830,6 +9835,10 @@ test("CLIで複数の短縮IDを指定すると、その状態だけを新しい
       expect(messages[0]!.content).toContain("JSON");
       expect(JSON.parse(messages[1]!.content)).toEqual({
         premise,
+        learningReferences: [
+          "action",
+          ...ended.map((_, i) => `state:${changes.edges[i]!.id}`),
+        ],
         targetId: actor,
         self: true,
         text: `${request.action.text}\n${request.action.description}`,
@@ -9841,6 +9850,9 @@ test("CLIで複数の短縮IDを指定すると、その状態だけを新しい
       });
       return answer(id, {
         ...sure,
+        learningFactors: [
+          { ref: `state:${changes.edges[0]!.id}`, impact: "helped" },
+        ],
         endEdges: [changes.edges[0]!.id, changes.edges[2]!.id],
       });
     });
@@ -9849,6 +9861,9 @@ test("CLIで複数の短縮IDを指定すると、その状態だけを新しい
     expect(played.result).toMatchObject({
       state: "accepted",
       spentSp: 1,
+      diceReasons: [
+        expect.stringContaining("状態「濡れた袖」が有利に働きました"),
+      ],
       outcome: { success: true, setting: sure, roll: expect.any(Number) },
     });
     expect(
@@ -10224,6 +10239,7 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
       "text",
       "changes",
       "allowApply",
+      "learningReferences",
       "nodes",
     ]);
     for (const node of input.nodes)
@@ -10360,6 +10376,13 @@ test("作成の規則で許可・拒否できる場合はGMを呼ばず、本人
     instantNpcs: [],
     outcome: { success: false },
   });
+  expect(spoken.diceReasons).toEqual([
+    expect.stringContaining("GMの根拠記録なし"),
+  ]);
+  await f.send(0, { command: "end-turn" });
+  expect(JSON.stringify((await f.status(0)).entries)).toContain(
+    "物陰で何かが動いた気がする」の判定：GMの根拠記録なし",
+  );
   expect(spoken.appearances).toBeUndefined();
   expect((await f.status(0)).members).toHaveLength(1);
 });
@@ -18241,6 +18264,16 @@ test("ダイスの出目と成功範囲を申請者と同席プレイヤーがCL
     const dice = [`判定 出目 ${roll}（3d6）、成功は 18 以下（成功）`];
     expect(result.dice).toEqual(dice);
     await f.send(0, { command: "end-turn" });
+    const ownEntries = (await f.status(0)).entries.flatMap(
+      ({ payload }) => payload.entries ?? [],
+    );
+    expect(
+      ownEntries.find((entry: { input: string }) => entry.input === text)
+        ?.result.diceReasons,
+    ).toEqual(result.diceReasons);
+    expect(result.diceReasons).toEqual([
+      expect.stringContaining("GMの根拠記録なし"),
+    ]);
 
     const record = expect.objectContaining({
       payload: expect.objectContaining({
@@ -18256,6 +18289,25 @@ test("ダイスの出目と成功範囲を申請者と同席プレイヤーがCL
     for (const status of [await f.status(0), peer])
       expect(status.entries).toContainEqual(record);
     expect((await f.status(2)).entries).not.toContainEqual(record);
+    expect(JSON.stringify(peer.entries)).not.toContain("GMの根拠記録なし");
+    const owner = join(cli.directory, "dice-owner.json");
+    const connected = await cli.run(
+      owner,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    await cli.approve(
+      f.people[0]!.cookie,
+      connected.userCode,
+      `actor:${f.actors[0]}`,
+    );
+    const sceneId = (await f.status(0)).sceneId!;
+    await f.send(0, { command: "finish" });
+    const archived = await cli.run(owner, "status", "--scene", sceneId);
+    expect(JSON.stringify(archived.entries)).toContain("GMの根拠記録なし");
   } finally {
     await cli.close();
     await app.close();
@@ -22062,6 +22114,7 @@ test("失敗した判定はファンブルを一度だけ振り、本人に残�
     return answer(id, {
       successThrough: 3,
       fumble: { ...cut, through: most },
+      fumbleFactors: [{ ref: "action", impact: "hindered" }],
     });
   });
   const first = craft(),
@@ -22071,6 +22124,10 @@ test("失敗した判定はファンブルを一度だけ振り、本人に残�
     fumble: { roll: 9, success: true },
     setting: { count: 3, sides: 6, fumble: { text: cut.text, minutes: 60 } },
   });
+  expect(slipped.diceReasons).toEqual([
+    expect.stringContaining("判定：GMの根拠記録なし"),
+    expect.stringContaining("ファンブル判定で、申請した行為の内容が不利"),
+  ]);
   expect(await f.send(0, first)).toEqual(slipped);
   const [wound] = await states(0);
   expect(await states(0)).toHaveLength(1);
@@ -22413,6 +22470,8 @@ test("物品生成・探索・対抗の判定根拠は読める資料だけを�
     expect((await f.send(0, input)).diceReasons).toEqual(result.diceReasons);
   }
   await f.send(0, { command: "end-turn" });
+  const own = JSON.stringify((await f.status(0)).entries);
+  for (const { message } of inputs) expect(own).toContain(message);
   const shared = JSON.stringify((await f.status(1)).entries);
   expect(shared).toContain("成功は");
   expect(shared).not.toMatch(/diceFactors|diceReasons|に働きました/);
@@ -22807,6 +22866,7 @@ test("技能判定で使った本人の技能と試行を本人にだけ返し�
 
   await f.send(0, { command: "end-turn" });
   const { entries } = await f.status(1);
+  expect(JSON.stringify((await f.status(0)).entries)).toContain("潮流を読む");
   expect(JSON.stringify(entries)).toContain("夜の浅瀬を調べる");
   expect(JSON.stringify(entries)).not.toMatch(
     /潮流を読む|learningFactors|learningReasons/,
