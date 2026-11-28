@@ -121,7 +121,11 @@ const directTool = {
   inputSchema: {
     ...tool.inputSchema,
     properties: {
-      callId: tool.inputSchema.properties.callId,
+      callId: {
+        type: "string",
+        description:
+          "Use a fresh UUID for each invocation. Reuse it only to retry the same invocation.",
+      },
       args: tool.inputSchema.properties.args,
       input: tool.inputSchema.properties.input,
     },
@@ -395,7 +399,9 @@ export function createNpcMcpServer(bridge, roles) {
     if (req.method !== "POST") return json(res, 405);
     if (npc) {
       const hash = Object.hasOwn(roles, npc) && roles[npc].directTokenSha256;
-      const token = /^Bearer ([\w-]{43})$/.exec(req.headers.authorization)?.[1];
+      const token = /^Bearer ([\w-]{43})$/i.exec(
+        req.headers.authorization,
+      )?.[1];
       if (
         !token ||
         !hash ||
