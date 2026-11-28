@@ -2,11 +2,75 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { test } from "node:test";
+import { forwardWakes } from "../../infra/production/wake-sender.mjs";
 import {
   createNpcBridge,
   createNpcMcpServer,
   validateInvocation,
 } from "../../infra/production/npc-cli-bridge.mjs";
+
+test("待機通知と重なって手番の起床を逃しても、現在の手番を再配信して一度だけ進める", async () => {
+  const commands = [];
+  const bridge = createNpcBridge({
+    roles: { alpha: {} },
+    verify: async () => {},
+    run: async (_role, [command]) => {
+      commands.push(command);
+      return {};
+    },
+  });
+  const notice = {
+    state: "standby",
+    noticeKey: "11111111-1111-4111-8111-111111111111",
+  };
+  const turn = { state: "turn", actionable: true, wakeKey: "b".repeat(64) };
+  const retry = new AbortController();
+  const frames = [notice, turn, "timeout", turn, turn, { state: "inactive" }];
+  const delivered = [];
+  const saved = [];
+  const call = (grant, command) =>
+    bridge.call({ ...grant, callId: command, args: [command] });
+  await forwardWakes({
+    retrySignal: () => retry.signal,
+    async listen(afterWake, afterNotice, signal) {
+      const frame = frames.shift();
+      if (frame === "timeout") {
+        assert.equal(afterWake, turn.wakeKey);
+        assert.equal(afterNotice, notice.noticeKey);
+        assert.equal(signal, retry.signal);
+        // The notice worker still owns the lock. The first turn wake exited.
+        await call(delivered[0], "status");
+        await assert.rejects(call(delivered[0], "say"), /COMMAND_DENIED/);
+        await call(delivered[1], "status");
+        retry.abort();
+        throw new DOMException("retry", "AbortError");
+      }
+      if (frame === turn) assert.notEqual(afterWake, turn.wakeKey);
+      return frame;
+    },
+    mint(key, receive) {
+      const lease = bridge.issue("alpha", !!key, receive, key);
+      return lease === "USED" ? { used: true } : { npc: "alpha", lease };
+    },
+    async post(_state, body) {
+      delivered.push(body);
+      if (delivered.length !== 3) return;
+      assert.equal(body.wakeKey, turn.wakeKey);
+      assert.notEqual(body.lease, delivered[1].lease);
+      for (const command of ["status", "say", "end-turn"])
+        await call(body, command);
+      await assert.rejects(call(delivered[1], "say"), /WAKE_ALREADY_HANDLED/);
+    },
+    save: (kind, key) => saved.push([kind, key]),
+  });
+  assert.equal(frames.length, 0);
+  assert.equal(delivered.length, 3);
+  assert.deepEqual(commands, ["status", "status", "status", "say", "end-turn"]);
+  assert.deepEqual(saved, [
+    ["notice", notice.noticeKey],
+    ["key", turn.wakeKey],
+  ]);
+});
 
 test("起床の権限は別のNPCへ渡らず、期限を過ぎると使えない", async () => {
   let now = 10;

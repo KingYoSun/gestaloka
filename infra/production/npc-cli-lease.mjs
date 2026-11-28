@@ -2,7 +2,13 @@ import { createConnection } from "node:net";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-export async function npcWakeLease(directory, npc, turn, receive = false) {
+export async function npcWakeLease(
+  directory,
+  npc,
+  turn,
+  receive = false,
+  wakeKey,
+) {
   const enabled = await readFile(
     new URL("bridge/" + npc, directory),
     "utf8",
@@ -21,7 +27,7 @@ export async function npcWakeLease(directory, npc, turn, receive = false) {
     );
     socket.on("error", reject);
     socket.on("connect", () =>
-      socket.write(JSON.stringify({ npc, turn, receive }) + "\n"),
+      socket.write(JSON.stringify({ npc, turn, receive, wakeKey }) + "\n"),
     );
     let result = "";
     socket.on("data", (chunk) => {
@@ -31,9 +37,10 @@ export async function npcWakeLease(directory, npc, turn, receive = false) {
     });
     socket.on("end", () => {
       const token = result.trim();
-      if (/^[a-zA-Z0-9_-]{43}$/.test(token)) resolve(token);
+      if ((wakeKey && token === "USED") || /^[a-zA-Z0-9_-]{43}$/.test(token))
+        resolve(token);
       else reject(new Error("NPC_CLI_LEASE_INVALID"));
     });
   });
-  return { npc, lease };
+  return lease === "USED" ? { used: true } : { npc, lease };
 }

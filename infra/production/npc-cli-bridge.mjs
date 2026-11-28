@@ -160,7 +160,11 @@ export function validateInvocation(args, input, turn, receive = false) {
     throw new Error("INPUT_DENIED");
   if (command === "recover" && !/^[a-f0-9-]{36}$/i.test(values.request ?? ""))
     throw new Error("REQUEST_ID_REQUIRED");
-  return { command, request: values.request };
+  return {
+    command,
+    request: values.request,
+    writes: writes.has(command) && !values.help && !values.quote,
+  };
 }
 
 export function createNpcBridge({
@@ -171,15 +175,28 @@ export function createNpcBridge({
   ttl = 10 * 60_000,
 }) {
   const leases = new Map();
+  const turnWakes = new Map();
   const directLeases = new Map();
   const busy = new Set();
-  function issue(name, turn, receive = false) {
+  function issue(name, turn, receive = false, wakeKey) {
     if (!Object.hasOwn(roles, name)) throw new Error("UNKNOWN_NPC");
+    let wake;
+    if (wakeKey !== undefined) {
+      if (!turn || !/^[a-f0-9]{64}$/.test(wakeKey))
+        throw new Error("INVALID_WAKE_KEY");
+      wake = turnWakes.get(name);
+      if (wake?.key !== wakeKey) {
+        wake = { key: wakeKey };
+        turnWakes.set(name, wake);
+      }
+      if (wake.owner) return "USED";
+    }
     const token = randomBytes(32).toString("base64url");
     leases.set(token, {
       name,
       turn,
       receive,
+      wake,
       expires: clock() + ttl,
       responses: new Map(),
     });
@@ -215,7 +232,17 @@ export function createNpcBridge({
           await verify(role);
           lease.verified = true;
         }
-        return await run(role, input.args, input.input, parsed);
+        const wake = lease.wake;
+        if (
+          wake &&
+          writes.has(parsed.command) &&
+          (turnWakes.get(lease.name) !== wake ||
+            (wake.owner && wake.owner !== input.lease))
+        )
+          throw new Error("WAKE_ALREADY_HANDLED");
+        const result = await run(role, input.args, input.input, parsed);
+        if (wake && parsed.writes && !result?.code) wake.owner = input.lease;
+        return result;
       } finally {
         busy.delete(lease.name);
       }
@@ -378,8 +405,10 @@ async function serve(path) {
         if (data.length > 256) return client.destroy();
         if (!data.endsWith("\n")) return;
         try {
-          const { npc, turn, receive } = JSON.parse(data);
-          client.end(bridge.issue(npc, turn === true, receive === true) + "\n");
+          const { npc, turn, receive, wakeKey } = JSON.parse(data);
+          client.end(
+            bridge.issue(npc, turn === true, receive === true, wakeKey) + "\n",
+          );
         } catch {
           client.destroy();
         }
