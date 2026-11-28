@@ -9367,6 +9367,8 @@ export interface paths {
                                 enabled: boolean;
                                 redirectUris: string[];
                                 scopes: string[];
+                                /** @description OAuthの同意画面で登録済みの全操作権限をまとめて要求する */
+                                requestAllScopes?: boolean;
                                 worldIds: string[] | null;
                             };
                             advertisedReadScopes?: string[];

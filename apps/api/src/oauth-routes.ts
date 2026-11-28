@@ -4,6 +4,8 @@ import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
 import { authPage, escapeHtml as escape } from "./auth-page.js";
 import type { Operations } from "@gestaloka/server/operations";
 
+type Consent = Parameters<Operations["mcp"]["consent"]>[0];
+
 export async function oauthRoutes(
   app: FastifyInstance,
   identity: OryIdentity,
@@ -71,29 +73,39 @@ export async function oauthRoutes(
   );
   const consent = async (cookie: string | undefined, challenge: string) => {
     const session = await identity.session(cookie);
-    const data = await hydra<{
-      subject: string;
-      request_url: string;
-      requested_scope: string[];
-      requested_access_token_audience: string[];
-      client: { client_name?: string; client_id: string };
-    }>("consent", challenge);
+    const data = await hydra<Consent>("consent", challenge);
     if (data.subject !== session.userId) throw new IdentityError(401);
-    if (data.requested_scope.includes("mcp.connect")) {
-      if (!operations) throw new IdentityError(401);
-      await operations.mcp.consent(data);
-    }
-    return data;
+    if (!data.requested_scope.includes("mcp.connect")) return { data };
+    if (!operations) throw new IdentityError(401);
+    return { data, configuration: await operations.mcp.consent(data) };
   };
   app.get<{ Querystring: { consent_challenge?: string } }>(
     "/auth/oauth/consent",
     async (request, reply) => {
       const challenge = request.query.consent_challenge;
       if (!challenge) throw new IdentityError(401);
-      const data = await consent(request.headers.cookie, challenge);
-      const targets = data.requested_scope.includes("mcp.connect")
-        ? (await operations!.mcp.consent(data)).worldIds
-        : undefined;
+      const { data, configuration } = await consent(
+        request.headers.cookie,
+        challenge,
+      );
+      if (
+        configuration?.requestAllScopes &&
+        configuration.scopes.some(
+          (scope) => !data.requested_scope.includes(scope),
+        )
+      ) {
+        const authorization = new URL(data.request_url);
+        authorization.searchParams.delete("login_verifier");
+        authorization.searchParams.delete("consent_verifier");
+        authorization.searchParams.set(
+          "scope",
+          [...new Set([...data.requested_scope, ...configuration.scopes])].join(
+            " ",
+          ),
+        );
+        return reply.redirect(authorization.href);
+      }
+      const targets = configuration?.worldIds;
       const csrf = randomBytes(32).toString("hex");
       reply.setCookie("gestaloka_consent", csrf, {
         path: "/auth/oauth/consent",
@@ -123,7 +135,7 @@ export async function oauthRoutes(
         !["accept", "reject"].includes(decision ?? "")
       )
         throw new IdentityError(401);
-      const data = await consent(request.headers.cookie, challenge);
+      const { data } = await consent(request.headers.cookie, challenge);
       const result = await hydra<{ redirect_to: string }>(
         `consent/${decision}`,
         challenge,
