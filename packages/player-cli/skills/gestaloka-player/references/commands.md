@@ -71,15 +71,17 @@
 
 ### 野外で得た物を加工して渡す
 
-1. **川魚を手に入れる。** 川で魚を釣って持ち帰るなら、`generate.plans` の案に `text: "川で魚を一匹釣る"` と書き、`operation` に `{"type":"create","label":"川魚","holder":"<本人のID>","basis":"川で釣り上げた"}` を指定します。成功したら `search --kind self` で川魚の物品IDを確かめます。場所への `state` に「魚を釣った」と書くと、その場所の状態が記録されます。
-2. **川魚を干物にする。** 次の `generate` の案に `materials: [{"id":"<川魚のID>","count":1}]` を加え、`create` で「川魚の干物」を本人の手元に作ります。
-3. **干物を渡す。** 同席者に手渡すときは `direct.operations` の `move` で `item` に干物のID、`from` に本人のID、`to` に相手のIDを指定します。相手が受領すると干物が移ります。身振りは周囲に見えた行動として記録されます。「干物を置く」という身振りだけでは品は移りません。不在の相手に届ける方法や、あとで取りに来る人に残す方法は[持ち物・保管・取引](inventory.md)を参照してください。
+取得・加工・受け渡しの3回とも、申請の `command` は `apply` です。
 
-探索や周囲の検索で目当ての品を見つけた場合は、その現物を使えます。出現個体への対抗行動で個体が死亡した場合も、ドロップが設定されていて抽選に当たれば、その場に品が残ります。`search --kind surroundings` で品のIDを確かめ、地面に落ちている品は `direct.operations` の `move` で `item` にそのID、`from` に `null`、`to` に本人のIDを指定して拾います。
+1. **川魚を手に入れる。** `action.type` を `generate` にし、`action.plans` に案を1件入れます。案の `text` に「川で魚を一匹釣る」と書き、同じ案の `operation` に `{"type":"create","label":"川魚","holder":"<本人のID>","basis":"川で釣り上げた"}` を指定します。成功したら `search --kind self` で川魚の物品IDを確かめます。`action.type` が `state` の申請で場所に「魚を釣った」と書くと、その場所の状態が記録されます。
+2. **川魚を干物にする。** 加工も `action.type` は `generate`、`action.plans[].operation.type` は `create` です。下の製作例のように、同じ案の `materials` に川魚のIDと個数、`operation.label` に「川魚の干物」、`operation.holder` に本人のIDを指定します。
+3. **干物を渡す。** 同席者に手渡すときは `action.type` を `direct`、`action.operations[].type` を `move` にし、同じ操作の `item` に干物のID、`from` に本人のID、`to` に相手のIDを指定します。相手が受領すると干物が移ります。身振りは周囲に見えた行動として記録されます。「干物を置く」という身振りだけでは品は移りません。不在の相手に届ける方法や、あとで取りに来る人に残す方法は[持ち物・保管・取引](inventory.md)を参照してください。
+
+探索や周囲の検索で目当ての品を見つけた場合は、その現物を使えます。出現個体への対抗行動で個体が死亡した場合も、ドロップが設定されていて抽選に当たれば、その場に品が残ります。`search --kind surroundings` で品のIDを確かめ、地面に落ちている品も `apply` で拾えます。`action.type` を `direct`、`action.operations[].type` を `move` にし、同じ操作の `item` にそのID、`from` に `null`、`to` に本人のIDを指定して拾います。
 
 ### 物を使って何かを変える
 
-製作・習得は `generate.plans` に、説明と直接の操作を案ごとに入れます。必要な材料は案の `materials` に物品IDと個数を指定できます。独立した案を同じ申請で送っても、成否とSPは案ごとに扱います。時間指定は物品製作案1件に `waitMinutes` を付けます。
+製作・習得は `command` に `apply`、`action.type` に `generate` を指定し、`action.plans` に案を入れます。必要な材料は案の `materials` に物品IDと個数を指定できます。独立した案を同じ申請で送っても、成否とSPは案ごとに扱います。製作時間を指定するときは案を1件にし、`action.waitMinutes` に分数を指定します。
 
 ```json
 {
@@ -89,12 +91,13 @@
     "type": "generate",
     "plans": [
       {
-        "text": "木片を削ってしおりを作る",
+        "text": "釣った川魚を一匹干して干物を作る",
+        "materials": [{ "id": "<川魚のID>", "count": 1 }],
         "operation": {
           "type": "create",
-          "label": "木のしおり",
+          "label": "川魚の干物",
           "holder": "本人のID",
-          "basis": "木片を薄く削り、表面を磨く"
+          "basis": "釣った川魚を開いて干す"
         }
       }
     ]
