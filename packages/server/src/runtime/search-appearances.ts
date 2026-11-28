@@ -334,7 +334,7 @@ export async function instantTrades(
         id,
         sellerId: actorId,
         storageId: actorId,
-        itemId: id,
+        createsItem: true,
         itemLabel,
         count: "count" in node.spawn ? node.spawn.count : node.spawn.maxCount,
         paymentSeriesId: price.seriesId,

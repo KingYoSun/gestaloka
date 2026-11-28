@@ -26,6 +26,7 @@ export {
 export {
   DeferredApplication,
   ExchangeOffer,
+  StockExchangeOffer,
   ExchangeTerms,
   BlueprintDraft,
   BlueprintPublication,

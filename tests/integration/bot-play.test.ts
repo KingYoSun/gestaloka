@@ -17,6 +17,7 @@ import {
 import {
   type ConditionExpression,
   type FriendCommand,
+  type ExchangeOffer,
   BlueprintDraft,
   InventoryBundleCommand,
   PlayCommand,
@@ -13120,6 +13121,7 @@ test("一団の出現時に設定を一度だけ確定し、その手持ちを�
   const offer = (
     appeared.exchangeOffers as { id: string; itemId: string }[]
   )[0]!;
+  expect(offer).not.toHaveProperty("createsItem");
   await f.send(0, { command: "end-turn" });
   f.calls.mockImplementationOnce(async (id) =>
     answer(id, {
@@ -13228,16 +13230,73 @@ test("発言で現れた売り手との交換は買い手が一回だけ受領�
     (await readBelongings(f.store.context(f.graph), buyer!)).items;
   expect(await holdings()).toMatchObject([{ id: coin, count: 5 }]);
   const search = { command: "search", query: { kind: "surroundings" } };
-  const listed = await f.send(0, search);
+  const searchRequest = { ...search, requestId: randomUUID() };
+  const listed = await f.send(0, searchRequest);
   expect(listed.exchangeOffers).toMatchObject([
     {
       itemLabel: "乾かした梨",
       count: 1,
       paymentSeriesId: seriesId,
       paymentCount: 2,
+      createsItem: true,
     },
   ]);
-  const [{ id: offerId }] = listed.exchangeOffers as [{ id: string }];
+  const [offer] = listed.exchangeOffers as [
+    Extract<z.infer<typeof ExchangeOffer>, { createsItem: true }>,
+  ];
+  const { id: offerId, createsItem, ...terms } = offer;
+  expect(createsItem).toBe(true);
+  expect(offer).not.toHaveProperty("itemId");
+
+  // 更新前のセッションと検索結果にも同じ申し出を保存しておく。
+  const legacy = { ...terms, id: offerId, itemId: offerId };
+  const session = (await access.botPlay.current(f.world, buyer!))!;
+  session.data.members.find(
+    (m) => m.instant?.offers?.length,
+  )!.instant!.offers![0]!.offer = legacy;
+  await isolated.databases.postgres.query(
+    "UPDATE bot_session SET data=$2 WHERE id=$1",
+    [session.id, session.data],
+  );
+  await isolated.databases.postgres.query(
+    "UPDATE bot_request SET result=$2 WHERE id=$1",
+    [searchRequest.requestId, { ...listed, exchangeOffers: [legacy] }],
+  );
+  expect((await f.send(0, searchRequest)).exchangeOffers).toEqual([offer]);
+
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  try {
+    const profile = join(cli.directory, "buyer.json");
+    const { userCode } = await cli.run(
+      profile,
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (await cli.approve(f.people[0]!.cookie, userCode, `actor:${buyer}`))
+        .statusCode,
+    ).toBe(302);
+    const { result } = await cli.run(
+      profile,
+      "search",
+      "--kind",
+      "surroundings",
+      "--full-ids",
+    );
+    expect(result.exchangeOffers).toEqual([offer]);
+  } finally {
+    await cli.close();
+    await app.close();
+  }
   const witness = f.actors[1]!;
   expect(
     (await access.botPlay.screen(f.world, witness, [witness])).exchangeOffers,
@@ -13373,9 +13432,12 @@ test("出現個体の発生用ノードへ結んだ取引は同席中だけ受�
       paymentSeriesId: seriesId,
       paymentLabel: "木札",
       paymentCount: 2,
+      createsItem: true,
     },
   ]);
-  const offerId = (listed.exchangeOffers as { id: string }[])[0]!.id;
+  const [offer] = listed.exchangeOffers as [{ id: string }];
+  expect(offer).not.toHaveProperty("itemId");
+  const offerId = offer.id;
   const exchange = (paymentItemId: string) => ({
     command: "exchange",
     offerId,

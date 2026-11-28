@@ -36,11 +36,17 @@ export const ExchangeTerms = z
     text,
   })
   .strict();
-export const ExchangeOffer = ExchangeTerms.extend({
+export const StockExchangeOffer = ExchangeTerms.extend({
   id,
   sellerId: id,
   itemLabel: text,
 });
+export const ExchangeOffer = z.union([
+  StockExchangeOffer,
+  StockExchangeOffer.omit({ itemId: true }).extend({
+    createsItem: z.literal(true),
+  }),
+]);
 export const DeferredApplication = z.object({
   id,
   senderId: id,
