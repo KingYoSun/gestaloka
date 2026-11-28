@@ -1,4 +1,4 @@
-import { PlaySearch } from "@gestaloka/contracts";
+import { applicationSp, PlaySearch } from "@gestaloka/contracts";
 import { z } from "zod";
 import { canonical } from "../llm/prompt.js";
 import type { Dependency } from "../world/store.js";
@@ -75,10 +75,11 @@ export function npcOperations(
     description: string,
     parameters: T,
     decode: (args: z.output<T>) => Decision,
+    advertised: z.ZodType = parameters,
   ) {
     operations.set(name, {
       description,
-      parameters,
+      parameters: advertised,
       decode: (value) => decode(parameters.parse(value)),
     });
   }
@@ -87,7 +88,7 @@ export function npcOperations(
       add(
         "recheck_for_recipient",
         recheck === "changed"
-          ? "報告後に確認対象が変わったので、同じ相手のために最新の結果を調べる。"
+          ? "前回の報告からの変化が、元の問いへの答えや相手の今の判断に関わるときに、内容を調べる。"
           : "届いた再依頼を引き受け、同じ相手のために最新の結果を調べる。",
         z.object({ ...goalChoice, question: message.optional() }),
         (v) => ({
@@ -123,40 +124,45 @@ export function npcOperations(
       );
     };
     if (!completed) offerInspection();
-    if (pending)
+    if (pending) {
+      const text = message.describe(
+        "相手に実際に伝える本人の言葉または身振り。根拠で分かったこと、確認の限界、必要なら自分の提案を、場面と人物の口調に合わせて伝える。",
+      );
+      const report = z.object({
+        ...goalChoice,
+        completesGoal: completesGoal.describe(
+          "現在の目的で求めた結果がこの報告の内容に含まれ、届けば目的を達成する場合はtrue。目的で求めた情報が見つからず、その旨を報告するだけならfalse。",
+        ),
+        finding: records.length
+          ? z
+              .array(z.number().int().min(1).max(records.length))
+              .describe(
+                "答えの根拠として伝えるreportRecordsの番号。該当する記録がなければ空配列。",
+              )
+          : message.describe(
+              "今回読めた資料が直接示すことと、確かめられた範囲。",
+            ),
+        judgment: z
+          .object({
+            condition: message
+              .nullable()
+              .describe(
+                "提案に関わる未確認の条件を、仮定や確認事項として一文で伝える。条件なしで勧められる一手ならnull。",
+              ),
+            proposal: message.describe(
+              "この結果を受けて、自分なら取る一手。資料にない事実や可否を断定せず、提案として書く。",
+            ),
+          })
+          .nullable()
+          .describe("自分の見立て。付け加える提案がなければnull。"),
+        mode,
+      });
       add(
         "report_and_pass",
-        "今回の確認結果と、必要なら自分の見立てを本人に伝えて、手番を渡す。",
-        z.object({
-          ...goalChoice,
-          completesGoal: completesGoal.describe(
-            "現在の目的で求めた結果がこの報告の内容に含まれ、届けば目的を達成する場合はtrue。目的で求めた情報が見つからず、その旨を報告するだけならfalse。",
-          ),
-          finding: records.length
-            ? z
-                .array(z.number().int().min(1).max(records.length))
-                .describe(
-                  "答えの根拠として伝えるreportRecordsの番号。該当する記録がなければ空配列。",
-                )
-            : message.describe(
-                "今回読めた資料が直接示すことと、確かめられた範囲。",
-              ),
-          judgment: z
-            .object({
-              condition: message
-                .nullable()
-                .describe(
-                  "提案に関わる未確認の条件を、仮定や確認事項として一文で伝える。条件なしで勧められる一手ならnull。",
-                ),
-              proposal: message.describe(
-                "この結果を受けて、自分なら取る一手。資料にない事実や可否を断定せず、提案として書く。",
-              ),
-            })
-            .nullable()
-            .describe("自分の見立て。付け加える提案がなければnull。"),
-          mode,
-        }),
+        "確認結果を本人の言葉で相手に伝えて、手番を渡す。",
+        report.extend({ text: text.optional() }),
         (v) => {
+          // Saved model responses from before the public text field can be replayed.
           const finding =
             typeof v.finding === "string"
               ? v.finding
@@ -176,16 +182,19 @@ export function npcOperations(
             reportReadId: pending.readId,
             action: {
               command: "say",
-              text: judgment
-                ? `${finding}\n私の見立てでは、${judgment}`
-                : finding,
+              text:
+                v.text ??
+                (judgment
+                  ? `${finding}\n私の見立てでは、${judgment}`
+                  : finding),
               mode: v.mode,
             },
             endOnSuccess: true,
           };
         },
+        report.extend({ text }),
       );
-    else
+    } else
       add(
         "communicate",
         "手元の情報で返事をする、尋ねる、断る、または身振りで伝える。予告だけでは調べたことにならない。",
@@ -203,6 +212,40 @@ export function npcOperations(
           action: { command: "say", text: v.text, mode: v.mode },
           endOnSuccess: v.endOnSuccess,
         }),
+      );
+    if (peers.length)
+      add(
+        "oppose_person",
+        "同席者が抵抗し得る行為を試み、結果を判定にかける。成立した場合に相手に起こる状態を指定する。",
+        z.object({
+          ...goalChoice,
+          completesGoal,
+          endOnSuccess: z.boolean(),
+          targetId: z.enum(peers),
+          text: message.describe(
+            "自分が試みる行為。相手の反応や判定は決めない。",
+          ),
+          description: message.describe("成功した場合に相手に生じる状態。"),
+          replacesStateId: z.uuid().optional(),
+        }),
+        ({ targetId, text, description, replacesStateId, ...choice }) => {
+          const action = {
+            type: "oppose" as const,
+            targetId,
+            text,
+            description,
+            replacesStateId,
+          };
+          return {
+            ...choice,
+            action: {
+              command: "apply",
+              action,
+              expectedSp: applicationSp(action),
+              dependencies: [],
+            },
+          };
+        },
       );
     add(
       "pass_turn",
@@ -233,4 +276,30 @@ export function npcOperations(
       return op.decode("args" in value ? value.args : value);
     },
   };
+}
+
+// Compare only material that was visible to the NPC at each read.
+export function visibleMaterialChanges(
+  before: Record<string, unknown>,
+  material: unknown,
+): { field: string; before: unknown; after: unknown }[] {
+  const after = material as Record<string, unknown>;
+  if (!after || typeof after !== "object" || Array.isArray(after))
+    return [{ field: "material", before, after: material }];
+  const fields = new Set([...Object.keys(before), ...Object.keys(after)]);
+  return [...fields].flatMap((field) => {
+    const old = before[field];
+    const current = after[field];
+    if (canonical(old) === canonical(current)) return [];
+    if (Array.isArray(old) && Array.isArray(current)) {
+      const oldKeys = new Set(old.map(canonical));
+      const currentKeys = new Set(current.map(canonical));
+      const removed = old.filter((item) => !currentKeys.has(canonical(item)));
+      const added = current.filter((item) => !oldKeys.has(canonical(item)));
+      return removed.length || added.length
+        ? [{ field, before: removed, after: added }]
+        : [];
+    }
+    return [{ field, before: old, after: current }];
+  });
 }
