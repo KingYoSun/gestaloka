@@ -25255,6 +25255,10 @@
                                   "pattern": "^[a-zA-Z]+(?:\\.[a-zA-Z]+)+$"
                                 }
                               },
+                              "requestAllScopes": {
+                                "description": "OAuthの同意画面で登録済みの全操作権限をまとめて要求する",
+                                "type": "boolean"
+                              },
                               "worldIds": {
                                 "nullable": true,
                                 "type": "array",

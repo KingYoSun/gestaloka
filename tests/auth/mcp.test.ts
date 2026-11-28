@@ -9,6 +9,7 @@ import { fixtureRuntime } from "../support/provider.js";
 import { isolatedDatabases } from "../support/isolated-db.js";
 import { WorldAccess } from "@gestaloka/server/access";
 import { RuntimeControl } from "@gestaloka/server";
+import { Operation } from "@gestaloka/contracts";
 import { createApp } from "../../apps/api/src/app.js";
 const hydra = "http://127.0.0.1:24444",
   hydraAdmin = "http://127.0.0.1:24445",
@@ -52,7 +53,7 @@ afterAll(async () => {
   await db.queue.stop();
   await isolated.close();
 });
-async function client(scopes: string[]) {
+async function client(scopes: string[], requestAllScopes?: boolean) {
   const id = randomUUID();
   clients.push(id);
   await auth.operations.execute(admin, randomUUID(), {
@@ -63,6 +64,7 @@ async function client(scopes: string[]) {
       enabled: true,
       redirectUris: ["http://127.0.0.1:18984/callback"],
       scopes,
+      ...(requestAllScopes === undefined ? {} : { requestAllScopes }),
       worldIds: null,
     },
     expectedVersion: 0,
@@ -103,25 +105,37 @@ async function authorize(
     url.searchParams.delete("code_challenge");
     url.searchParams.delete("code_challenge_method");
   }
-  const first = await fetch(url, { redirect: "manual", headers: headers() });
-  remember(first.headers.getSetCookie());
-  expect(first.status).toBe(302);
-  const loginUrl = new URL(first.headers.get("location")!);
-  const login = await app.inject({
-    url: loginUrl.pathname + loginUrl.search,
-    headers: headers(),
-  });
-  expect(login.statusCode).toBe(302);
-  const next = await fetch(String(login.headers.location), {
-    redirect: "manual",
-    headers: headers(),
-  });
-  remember(next.headers.getSetCookie());
-  const consentUrl = new URL(next.headers.get("location")!);
-  const page = await app.inject({
-    url: consentUrl.pathname + consentUrl.search,
-    headers: headers(),
-  });
+  const openConsent = async (authorization: URL) => {
+    const first = await fetch(authorization, {
+      redirect: "manual",
+      headers: headers(),
+    });
+    remember(first.headers.getSetCookie());
+    expect(first.status).toBe(302);
+    const loginUrl = new URL(first.headers.get("location")!);
+    const login = await app.inject({
+      url: loginUrl.pathname + loginUrl.search,
+      headers: headers(),
+    });
+    expect(login.statusCode).toBe(302);
+    const next = await fetch(String(login.headers.location), {
+      redirect: "manual",
+      headers: headers(),
+    });
+    remember(next.headers.getSetCookie());
+    const consentUrl = new URL(next.headers.get("location")!);
+    const page = await app.inject({
+      url: consentUrl.pathname + consentUrl.search,
+      headers: headers(),
+    });
+    return { consentUrl, page };
+  };
+  let { consentUrl, page } = await openConsent(url);
+  if (page.statusCode === 302) {
+    const expanded = new URL(String(page.headers.location));
+    expect(expanded.origin).toBe(url.origin);
+    ({ consentUrl, page } = await openConsent(expanded));
+  }
   if (page.statusCode !== 200) return { denied: page, token: null };
   remember(
     Array.isArray(page.headers["set-cookie"])
@@ -170,8 +184,47 @@ async function authorize(
   }
   expect(response.status).toBe(200);
   const token = (await response.json()) as { access_token: string };
-  return { denied: null, token: token.access_token };
+  return { denied: null, token: token.access_token, consentPage: page.body };
 }
+test("一括同意を設定したクライアントは接続用scopeから全操作を本人同意し、世界一覧を取得できる", async () => {
+  const scopes = Operation.options.map(
+    (option) => option.shape.operation.value,
+  );
+  const configured = await client(scopes, true);
+  const { token, consentPage } = await authorize(configured, [
+    "offline_access",
+  ]);
+  expect(consentPage).toContain(scopes.join(", "));
+  expect(token).toBeTruthy();
+  const principal = await auth.operations.mcp.verify(`Bearer ${token}`);
+  expect(principal.scopes).toEqual(
+    expect.arrayContaining(["mcp.connect", "offline_access", ...scopes]),
+  );
+  const external = new Client({ name: "all-scopes-test", version: "1" });
+  try {
+    await external.connect(
+      new StreamableHTTPClientTransport(new URL(resource), {
+        requestInit: { headers: { authorization: `Bearer ${token}` } },
+      }),
+    );
+    const result = await external.callTool({
+      name: "worlds_list",
+      arguments: { requestId: randomUUID() },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(
+      JSON.parse((result.content[0] as { text: string }).text).items,
+    ).toEqual([]);
+  } finally {
+    await external.close();
+  }
+  const ordinary = await authorize(await client(scopes), ["offline_access"]);
+  expect(ordinary.consentPage).not.toContain("worlds.list");
+  const ordinaryPrincipal = await auth.operations.mcp.verify(
+    `Bearer ${ordinary.token}`,
+  );
+  expect(ordinaryPrincipal.scopes).not.toContain("worlds.list");
+});
 test("事前登録・実HydraのPKCE・本人同意から外部MCPクライアントで運用し、失効を反映する", async () => {
   const id = await client([
       "worlds.create",

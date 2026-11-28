@@ -1133,6 +1133,10 @@ export const McpClientConfiguration = z
       )
       .min(1),
     scopes: z.array(z.string().regex(/^[a-zA-Z]+(?:\.[a-zA-Z]+)+$/)),
+    requestAllScopes: z
+      .boolean()
+      .optional()
+      .describe("OAuthの同意画面で登録済みの全操作権限をまとめて要求する"),
     worldIds: z.array(z.uuid()).nullable(),
   })
   .strict();
