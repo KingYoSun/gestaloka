@@ -22,9 +22,8 @@ export async function forwardWakes({
   retrySignal = () => AbortSignal.timeout(60_000),
 }) {
   let pending;
-  let noticeMayBeRunning = Boolean(lastNotice);
   for (;;) {
-    // Keep accepting newer turns and notices while the bot waits for its lock.
+    // Listen for newer events until it is time to recheck the current turn.
     const retry = pending && !pending.retry.aborted ? pending.retry : undefined;
     const afterWake = pending ? retry && pending.key : lastWake;
     let frame;
@@ -57,7 +56,6 @@ export async function forwardWakes({
       await save("key", wakeKey);
       lastWake = wakeKey;
       pending = undefined;
-      noticeMayBeRunning = false;
       if (!noticeKey) continue;
       wakeKey = undefined;
       grant = await mint(undefined, true);
@@ -74,18 +72,16 @@ export async function forwardWakes({
         }),
     });
     if (wakeKey) {
-      if (grant.lease && (noticeMayBeRunning || pending?.key === wakeKey)) {
+      if (grant.lease) {
         pending = { key: wakeKey, retry: retrySignal() };
       } else {
         await save("key", wakeKey);
         lastWake = wakeKey;
       }
-      noticeMayBeRunning = false;
     }
     if (noticeKey) {
       await save("notice", noticeKey);
       lastNotice = noticeKey;
-      if (!wakeKey && grant.lease) noticeMayBeRunning = true;
     }
   }
 }
