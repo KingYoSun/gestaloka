@@ -578,6 +578,7 @@ export const PlayCommand = z.discriminatedUnion("command", [
     .object({
       ...request,
       command: z.literal("search"),
+      findItems: z.boolean().optional().describe("新しく物品を探す"),
       // 旧版のCLIが送るbelongingsは受け付けて、本人検索へ誘導する。
       query: z.union([
         PlaySearch,

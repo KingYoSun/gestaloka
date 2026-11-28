@@ -484,9 +484,11 @@ test("出現した一団を一人分の同席枠に現在数つきで表示す�
 });
 
 test("検索結果とセッションのチャットに同じ出現描写を表示する", async () => {
-  const appearanceText = "水鳥が現れた\n\n浅瀬の飛び石を順に指さす。";
+  const appearanceText = "木の実を2個見つけた。その場に計7個ある。";
+  const commands = vi.fn();
   server.use(
-    http.post("*/api/worlds/:id/session", () => {
+    http.post("*/api/worlds/:id/session", async ({ request }) => {
+      commands(await request.json());
       view.entries = [
         {
           id: "1",
@@ -503,7 +505,7 @@ test("検索結果とセッションのチャットに同じ出現描写を表�
   );
   show();
   await open("操作");
-  fireEvent.click(await screen.findByRole("button", { name: "周囲を見る" }));
+  fireEvent.click(await screen.findByRole("button", { name: "新しく探す" }));
   const search = (await screen.findByText("自分への検索結果")).parentElement!;
   const chat = screen.getByLabelText("セッションのチャット");
   for (const text of appearanceText.split("\n\n")) {
@@ -511,6 +513,13 @@ test("検索結果とセッションのチャットに同じ出現描写を表�
     await within(chat).findByText(text);
   }
   expect(within(chat).queryByText("本人だけに返った素材")).toBeNull();
+  expect(commands).toHaveBeenCalledWith(
+    expect.objectContaining({
+      command: "search",
+      query: { kind: "surroundings" },
+      findItems: true,
+    }),
+  );
 });
 
 test("本人の素材を個別表示し、手番終了時に入力・結果・任意コメントを共有する", async () => {

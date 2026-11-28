@@ -384,6 +384,7 @@ export async function searchAppearances(
   instantPlaces: () => Promise<string[]>,
   multiplier: number,
   players: number,
+  findItems: boolean,
 ) {
   const prior = await store.receipt(ctx.worldId, request);
   if (prior) {
@@ -410,13 +411,18 @@ export async function searchAppearances(
   const places = await directPlaces(ctx, actor);
   const appearances: Appearance[] = [];
   const descriptions: string[] = [];
+  const itemCounts = new Map<
+    string,
+    { species: string; added: number; total: number }
+  >();
   const changes: Change = { nodes: [], edges: [], endEdges: [], revisions: [] };
   let nearby: typeof present | undefined;
   for (const ruleId of rules) {
     const node = await ctx.node(ruleId);
     if (node?.kind !== "script" || !node.spawn) continue;
-    const rule = node.spawn,
-      conditions = await ctx.relations(ruleId, "status", "out", latest);
+    const rule = node.spawn;
+    if (rule.kind === "existence" && !findItems) continue;
+    const conditions = await ctx.relations(ruleId, "status", "out", latest);
     if (
       !conditions.every((edge) => {
         if (about(edge, "spawn-hold")) return held.has(edge.target);
@@ -435,6 +441,7 @@ export async function searchAppearances(
     // その場に残っている同種の個体と合わせて、発生数に世界ごとの倍率を掛けた数を超えない。
     // 物品は、その場に落ちている同じ物と合わせて、発生数に同席するプレイヤーの人数（最低1）を
     // 掛けた数を超えない。拾われれば、また現れる。
+    const label = rule.species + "：" + rule.description;
     const limit =
         ("count" in rule ? rule.count : rule.maxCount) *
         (rule.kind === "instant-npc" ? multiplier : Math.max(1, players)),
@@ -444,7 +451,7 @@ export async function searchAppearances(
               .filter((p) => p.name === rule.species || p.ruleId === ruleId)
               .reduce((count, p) => count + (p.count ?? 1), 0)
           : rule.kind === "existence"
-            ? await lying(ctx, places, rule.species + "：" + rule.description)
+            ? await lying(ctx, places, label)
             : 0;
     if (staying >= limit) continue;
     const spawned = appear(
@@ -484,6 +491,14 @@ export async function searchAppearances(
         }
       }
     }
+    if (rule.kind === "existence") {
+      const added = (itemCounts.get(label)?.added ?? 0) + spawned[0]!.count!;
+      itemCounts.set(label, {
+        species: rule.species,
+        added,
+        total: staying + added,
+      });
+    }
     appearances.push(...spawned);
     const candidates: string[] = [];
     const descriptionIds = new Set(
@@ -508,9 +523,16 @@ export async function searchAppearances(
     return;
   }
   const event = derivedId(request + ":appearance");
-  const text = [appearanceAnnouncement(appearances), ...descriptions].join(
-    "\n\n",
-  );
+  const other = appearances.filter((a) => a.kind !== "existence");
+  const text = [
+    ...(other.length ? [appearanceAnnouncement(other)] : []),
+    ...Array.from(
+      itemCounts.values(),
+      ({ species, added, total }) =>
+        `${species}を${added}個見つけた。その場に計${total}個ある。`,
+    ),
+    ...descriptions,
+  ].join("\n\n");
   const link = await recordAppearances(
     ctx,
     changes,
