@@ -72,6 +72,55 @@ test("待機通知と重なって手番の起床を逃しても、現在の手�
   ]);
 });
 
+test("通常手番でも書き込み前の拒否から再配信し、成功後や手番交代後は再配信しない", async () => {
+  const key = "a".repeat(64);
+  const next = "b".repeat(64);
+  const frames = [key, key, key, next, null];
+  const delivered = [];
+  const saved = [];
+  const commands = [];
+  const bridge = createNpcBridge({
+    roles: { alpha: {} },
+    verify: async () => {},
+    run: async (_role, [command]) => commands.push(command),
+  });
+  const call = (body, command) =>
+    bridge.call({ ...body, callId: command, args: [command] });
+  await forwardWakes({
+    retrySignal: () => AbortSignal.abort(),
+    async listen(afterWake) {
+      const wakeKey = frames.shift();
+      if (wakeKey === null) return { state: "inactive" };
+      assert.notEqual(afterWake, wakeKey);
+      return { state: "turn", actionable: true, wakeKey };
+    },
+    mint(wakeKey) {
+      const lease = bridge.issue("alpha", true, false, wakeKey);
+      return lease === "USED" ? { used: true } : { npc: "alpha", lease };
+    },
+    async post(_state, body) {
+      delivered.push(body);
+      if (body.wakeKey === next) return;
+      if (delivered.length === 1) {
+        await call(body, "status");
+        await assert.rejects(call(body, "unknown"), /COMMAND_DENIED/);
+        return;
+      }
+      assert.notEqual(body.lease, delivered[0].lease);
+      // The original worker resumes just as the retry arrives.
+      await call(delivered[0], "say");
+      await assert.rejects(call(body, "say"), /WAKE_ALREADY_HANDLED/);
+    },
+    save: (_kind, wakeKey) => saved.push(wakeKey),
+  });
+  assert.deepEqual(
+    delivered.map((body) => body.wakeKey),
+    [key, key, next],
+  );
+  assert.deepEqual(commands, ["status", "say"]);
+  assert.deepEqual(saved, [key, next]);
+});
+
 test("起床の権限は別のNPCへ渡らず、期限を過ぎると使えない", async () => {
   let now = 10;
   const bridge = createNpcBridge({
