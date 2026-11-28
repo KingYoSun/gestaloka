@@ -261,6 +261,16 @@ type InstantOffer = Extract<
   z.infer<typeof InstantTurnChoice>,
   { command: "offer" }
 >;
+// 更新前の申し出は生成予定の品を申し出IDで表していた。
+function readExchangeOffer(
+  offer: z.infer<typeof ExchangeOffer>,
+): z.infer<typeof ExchangeOffer> {
+  if (!("itemId" in offer)) return offer;
+  const { itemId, ...terms } = offer;
+  return itemId === offer.id && offer.storageId === offer.sellerId
+    ? { ...terms, createsItem: true }
+    : offer;
+}
 type InstantChoice = {
   action?: z.infer<typeof NpcAction>;
   plan?: Plan;
@@ -6646,7 +6656,7 @@ export class BotPlay {
           buyerId,
           offer: {
             id,
-            itemId: id,
+            createsItem: true,
             sellerId,
             storageId: sellerId,
             itemLabel,
@@ -6686,7 +6696,7 @@ export class BotPlay {
       ...sellers.flatMap(({ offers }) =>
         (offers ?? [])
           .filter((entry) => entry.buyerId === actor)
-          .map(({ offer }) => offer),
+          .map(({ offer }) => readExchangeOffer(offer)),
       ),
     ];
   }
@@ -6708,7 +6718,7 @@ export class BotPlay {
     );
     const trade =
       recovering && conversation
-        ? conversation.offer
+        ? readExchangeOffer(conversation.offer)
         : (
             await this.#trades(
               this.store.context(w.id),
@@ -14288,7 +14298,13 @@ export class BotPlay {
     };
   }
   async #replay(world: string, input: Input, result: Record<string, unknown>) {
-    if (input.command !== "search" || !("material" in result)) return result;
+    if (input.command !== "search") return result;
+    if (Array.isArray(result.exchangeOffers))
+      result = {
+        ...result,
+        exchangeOffers: result.exchangeOffers.map(readExchangeOffer),
+      };
+    if (!("material" in result)) return result;
     const w = await this.world(world);
     const visible = await playerMaterial(
       this.store.context(w.id),

@@ -4,6 +4,7 @@ import type {
   DeferredApplication,
   ExchangeOffer,
   ExchangeTerms,
+  StockExchangeOffer,
   ItemOutcome,
 } from "@gestaloka/contracts";
 import { AccessError } from "../http/access.js";
@@ -35,7 +36,7 @@ import {
 
 type Db = Pick<pg.Pool, "query">;
 type World = { id: string; at: number };
-type Offer = z.infer<typeof ExchangeOffer>;
+type Offer = z.infer<typeof StockExchangeOffer>;
 type HandoffOperation = Extract<BelongingOp, { type: "move" }>;
 type HandoffItem = {
   itemId: string;
@@ -533,7 +534,6 @@ export class PlayApplications {
     return visible;
   }
 
-  // 出現個体の従来の取引では、同じIDが交換条件と生成する品物を表す。
   async exchange(
     db: Db,
     world: string,
@@ -542,7 +542,7 @@ export class PlayApplications {
     request: string,
     id: string,
     paymentItemId: string,
-    trade?: Offer,
+    trade?: z.infer<typeof ExchangeOffer>,
     once = false,
   ) {
     const row = trade ? undefined : await this.#row(db, world, id),
@@ -570,13 +570,12 @@ export class PlayApplications {
           "EXCHANGE_NOT_AVAILABLE",
           "交換条件を公開している場所で受領してください",
         );
-      const fromStock = !!row || offer.id !== offer.itemId;
-      const item = row
-        ? await this.#stock(context, offer, row.place!)
-        : fromStock
+      const item = row?.offer
+        ? await this.#stock(context, row.offer, row.place!)
+        : "itemId" in offer
           ? await this.#held(context, offer.itemId, offer.sellerId, offer.count)
           : undefined;
-      if (fromStock && item?.text !== offer.itemLabel)
+      if ("itemId" in offer && item?.text !== offer.itemLabel)
         return reject("EXCHANGE_STOCK", "売り手の在庫が変わりました");
       const payment = await this.#held(
         context,

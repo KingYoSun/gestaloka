@@ -5,7 +5,7 @@ import type {
   BlueprintDraft,
   BlueprintProposal,
   BlueprintPublication,
-  ExchangeOffer,
+  StockExchangeOffer,
 } from "@gestaloka/contracts";
 import { AccessError } from "../http/access.js";
 import { atTime, derivedId, type Change } from "../world/model.js";
@@ -34,7 +34,7 @@ type Context = ReturnType<WorldStore["context"]>;
 type Proposal = z.infer<typeof BlueprintProposal>;
 type Publication = z.infer<typeof BlueprintPublication>;
 type Draft = z.infer<typeof BlueprintDraft>;
-type Offer = z.infer<typeof ExchangeOffer>;
+type Offer = z.infer<typeof StockExchangeOffer>;
 type Template = Publication &
   Partial<Pick<Draft, "instructions" | "materials" | "installation">> & {
     id: string;
