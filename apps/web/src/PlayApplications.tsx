@@ -126,7 +126,9 @@ export function PlayApplications({
           const payments = (screen.belongings?.items ?? []).filter(
             (item) =>
               item.id &&
-              item.seriesId === offer.paymentSeriesId &&
+              ("paymentItemId" in offer
+                ? item.id === offer.paymentItemId
+                : item.seriesId === offer.paymentSeriesId) &&
               (item.count ?? 1) >= offer.paymentCount,
           );
           return (

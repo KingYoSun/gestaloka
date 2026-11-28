@@ -23280,10 +23280,13 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
   ).toBe(false);
 });
 
-test("登録済みNPCとの会話の交換を一度だけ受領し、再訪で決済記録を参照できる", async () => {
+test.each([true, false])("対面交換（系列あり: %s）", async (series) => {
   const f = await fixture(3);
   const [buyer, npc, visitor] = f.actors as [string, string, string];
-  const coin = randomUUID();
+  const price = randomUUID();
+  const other = randomUUID();
+  const seriesId = series ? randomUUID() : undefined;
+  const paymentLabel = series ? "木札" : "旅の干しパン";
   const setup = randomUUID();
   const ctx = () => f.store.context(f.graph);
   await f.store.commit(await f.store.claim(f.graph, setup), ctx(), {
@@ -23292,12 +23295,13 @@ test("登録済みNPCとの会話の交換を一度だけ受領し、再訪で�
     changes: {
       nodes: [
         {
-          id: coin,
+          id: price,
           kind: "existence",
-          text: "木札",
+          text: paymentLabel,
           count: 5,
-          seriesId: randomUUID(),
+          ...(seriesId && { seriesId }),
         },
+        { id: other, kind: "existence", text: "別の品", count: 3 },
       ],
       revisions: [],
       edges: [
@@ -23305,7 +23309,14 @@ test("登録済みNPCとの会話の交換を一度だけ受領し、再訪で�
           id: randomUUID(),
           kind: "has",
           source: buyer,
-          target: coin,
+          target: price,
+          period: { from: 0 },
+        },
+        {
+          id: randomUUID(),
+          kind: "has",
+          source: buyer,
+          target: other,
           period: { from: 0 },
         },
       ],
@@ -23313,7 +23324,7 @@ test("登録済みNPCとの会話の交換を一度だけ受領し、再訪で�
     },
     management: {
       editorId: f.admin.id,
-      reason: "代価の系列を登録",
+      reason: "交換用の所持品を用意",
       requestHash: "c".repeat(64),
     },
   });
@@ -23356,14 +23367,17 @@ test("登録済みNPCとの会話の交換を一度だけ受領し、再訪で�
         buyerId: buyer,
         itemLabel: "染め布",
         count: 1,
-        paymentLabel: "木札",
+        paymentLabel,
         paymentCount: 2,
       },
     });
   });
   await access.botPlay.tickNpcs(f.world);
   const holdings = async () => (await readBelongings(ctx(), buyer)).items;
-  expect(await holdings()).toMatchObject([{ id: coin, count: 5 }]);
+  expect(await holdings()).toContainEqual(
+    expect.objectContaining({ id: price, count: 5 }),
+  );
+  expect((await readBelongings(ctx(), npc)).items).toEqual([]);
   const search = { command: "search", query: { kind: "surroundings" } };
   f.calls.mockImplementation(async (id) => pass(id));
   await advance(buyer);
@@ -23373,7 +23387,11 @@ test("登録済みNPCとの会話の交換を一度だけ受領し、再訪で�
     sellerId: npc,
     itemLabel: "染め布",
     createsItem: true,
+    ...(seriesId ? { paymentSeriesId: seriesId } : { paymentItemId: price }),
   });
+  expect(offer).not.toHaveProperty(
+    seriesId ? "paymentItemId" : "paymentSeriesId",
+  );
   await advance(visitor);
   expect((await f.send(2, search)).exchangeOffers ?? []).toEqual([]);
   await advance(buyer);
@@ -23381,8 +23399,18 @@ test("登録済みNPCとの会話の交換を一度だけ受領し、再訪で�
     command: "exchange",
     requestId: randomUUID(),
     offerId: offer!.id,
-    paymentItemId: coin,
+    paymentItemId: price,
   };
+  if (!series) {
+    await expect(
+      f.send(0, {
+        ...exchange,
+        requestId: randomUUID(),
+        paymentItemId: other,
+      }),
+    ).rejects.toMatchObject({ code: "EXCHANGE_PAYMENT" });
+    expect(await holdings()).toHaveLength(2);
+  }
   const settled = await f.send(0, exchange);
   expect(settled.state).toBe("accepted");
   expect(await f.send(0, exchange)).toEqual(settled);
@@ -23391,9 +23419,12 @@ test("登録済みNPCとの会話の交換を一度だけ受領し、再訪で�
   ).rejects.toMatchObject({ code: "EXCHANGE_NOT_AVAILABLE" });
   expect(await holdings()).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ id: coin, count: 3 }),
+      expect.objectContaining({ id: price, count: 3 }),
       expect.objectContaining({ label: "染め布", count: 1 }),
     ]),
+  );
+  expect((await readBelongings(ctx(), npc)).items).toEqual(
+    series ? [] : [expect.objectContaining({ label: paymentLabel, count: 2 })],
   );
   await f.send(0, { command: "leave" });
   await f.send(0, { command: "contact", targetId: npc });

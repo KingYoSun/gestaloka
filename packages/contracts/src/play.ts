@@ -41,10 +41,14 @@ export const StockExchangeOffer = ExchangeTerms.extend({
   sellerId: id,
   itemLabel: text,
 });
+const CreatedExchangeOffer = StockExchangeOffer.omit({ itemId: true }).extend({
+  createsItem: z.literal(true),
+});
 export const ExchangeOffer = z.union([
   StockExchangeOffer,
-  StockExchangeOffer.omit({ itemId: true }).extend({
-    createsItem: z.literal(true),
+  CreatedExchangeOffer,
+  CreatedExchangeOffer.omit({ paymentSeriesId: true }).extend({
+    paymentItemId: id,
   }),
 ]);
 export const DeferredApplication = z.object({

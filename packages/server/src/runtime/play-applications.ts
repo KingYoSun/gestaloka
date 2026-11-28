@@ -583,45 +583,49 @@ export class PlayApplications {
         buyer,
         offer.paymentCount,
       );
-      if (!payment || payment.seriesId !== offer.paymentSeriesId)
+      const exactPayment = "paymentItemId" in offer;
+      if (
+        !payment ||
+        (exactPayment
+          ? payment.id !== offer.paymentItemId
+          : payment.seriesId !== offer.paymentSeriesId)
+      )
         return reject(
           "EXCHANGE_PAYMENT",
-          "提示された系列と個数を満たす、本人の手持ちの品を指定してください",
+          exactPayment
+            ? "申し出で指定された品と個数を、本人の手持ちから指定してください"
+            : "提示された系列と個数を満たす、本人の手持ちの品を指定してください",
         );
       const basis = offer.text;
-      const ops: BelongingOp[] = item
-        ? [
-            {
+      const paymentUnits = payment.count ? { count: offer.paymentCount } : {};
+      const ops: BelongingOp[] = [
+        item
+          ? {
               type: "move",
               item: item.id,
               from: offer.storageId,
               to: buyer,
               ...(item.count ? { count: offer.count } : {}),
               basis,
-            },
-            {
-              type: "move",
-              item: payment.id,
-              from: buyer,
-              to: offer.storageId,
-              ...(payment.count ? { count: offer.paymentCount } : {}),
-              basis,
-            },
-          ]
-        : [
-            {
+            }
+          : {
               type: "create",
               label: offer.itemLabel,
               count: offer.count,
               holder: buyer,
               basis,
             },
-            {
-              type: "remove",
-              id: payment.id,
-              ...(payment.count ? { count: offer.paymentCount } : {}),
-            },
-          ];
+        item || exactPayment
+          ? {
+              type: "move",
+              item: payment.id,
+              from: buyer,
+              to: offer.storageId,
+              ...paymentUnits,
+              basis,
+            }
+          : { type: "remove", id: payment.id, ...paymentUnits },
+      ];
       try {
         if (item) await context.assertMovable(item.id);
         await context.assertMovable(payment.id);
