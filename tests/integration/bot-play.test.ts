@@ -13352,7 +13352,10 @@ test("発言で現れた売り手との交換は買い手が一回だけ受領�
     },
   ]);
   const [offer] = listed.exchangeOffers as [
-    Extract<z.infer<typeof ExchangeOffer>, { createsItem: true }>,
+    Extract<
+      z.infer<typeof ExchangeOffer>,
+      { createsItem: true; paymentSeriesId: string }
+    >,
   ];
   const { id: offerId, createsItem, ...terms } = offer;
   expect(createsItem).toBe(true);
