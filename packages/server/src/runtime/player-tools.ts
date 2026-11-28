@@ -10,7 +10,7 @@ import { AccessError } from "../http/access.js";
 import type { WorldConstruction } from "./construction.js";
 import { derivedId, worldNow, type Change } from "../world/model.js";
 import { instantPlaceEdge } from "../world/conditions.js";
-import { locationRecords } from "../world/locations.js";
+import { directPlaces } from "../world/locations.js";
 import { planBelongings } from "../world/belongings.js";
 import { WorldConflict } from "../world/store.js";
 import type { Session } from "./bot-play.js";
@@ -64,6 +64,21 @@ export class PlayerTools {
   }
   #day(now = this.now()) {
     return new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10);
+  }
+  async playerNotice(
+    db: Db,
+    world: string,
+    actor: string,
+    id: string,
+    text: string,
+  ) {
+    await db.query(
+      `WITH inserted AS (
+         INSERT INTO player_notice(id,world_id,actor_id,created_at,text)
+         VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING actor_id
+       ) SELECT pg_notify('gestaloka_turn',$2::text||':'||actor_id::text) FROM inserted`,
+      [id, world, actor, this.now(), text],
+    );
   }
   // サーバー担当NPCの手番は、操作担当の管理者の通常手番に数えない。
   async completedTurn(db: Db, user: string, world: string, actor: string) {
@@ -394,6 +409,7 @@ export class PlayerTools {
       source?.appearances as Appearance[] | undefined
     )?.filter((a) => a.kind === "instant-npc")[row.npc_index];
     const npc = appearance?.id ?? derivedId(`promotion:${id}:npc`);
+    let notice = `「${row.label}」の昇格申請は却下されました。`;
     if (approve) {
       const session = await this.#promotionSession(db, world, npc);
       if (!profile)
@@ -418,19 +434,53 @@ export class PlayerTools {
       const w = await this.construction.get(world),
         store = this.construction.agent.store,
         commitId = derivedId(`promotion:${id}`);
-      if (!(await store.receipt(w.world_id!, commitId))) {
-        const context = store.context(w.world_id!),
-          locations = instant
-            ? await Promise.all(
-                instant.places.map(async (place) => ({
-                  text: (await context.node(place))?.text ?? "",
-                  aboutIds: [place],
-                })),
+      const receipt = await store.receipt(w.world_id!, commitId);
+      const context = store.context(w.world_id!);
+      const presence = await context.edge(instantPlaceEdge(npc));
+      let [place] = await directPlaces(context, npc, receipt?.at);
+      if (!receipt) {
+        place ??= instant?.places[0] ?? presence?.target;
+        if (!place) {
+          place =
+            (
+              await db.query<{ instant_place_id: string | null }>(
+                "SELECT instant_place_id FROM bot_scene WHERE id=$1 AND actor_id=$1 AND world_id=$2",
+                [npc, world],
               )
-            : await locationRecords(context, row.actor_id);
+            ).rows[0]?.instant_place_id ?? undefined;
+        }
+        // 旧版の個体には出現場所の列がない。出現イベントを起こした人物の当時の所在を使う。
+        if (!place) {
+          const source = await store.receipt(
+            w.world_id!,
+            row.source_request_id,
+          );
+          const event = source?.changes.nodes.find((n) => n.kind === "event");
+          const speaker = source?.changes.edges.find(
+            (e) => e.kind === "happen" && e.target === event?.id,
+          )?.source;
+          if (event && speaker)
+            place = (
+              await directPlaces(context, speaker, event.period.from)
+            )[0];
+        }
+      }
+      if (!place) {
+        const reason = `「${row.label}」がいた場所を記録から特定できないため、昇格の承認を保留しました。`;
+        await this.playerNotice(
+          db,
+          world,
+          row.actor_id,
+          derivedId(`promotion:${id}:location-pending`),
+          reason,
+        );
+        return { id, state: "pending", reason };
+      }
+      const placeName = (await context.node(place, receipt?.at))!.text;
+      if (!receipt) {
         const at = Math.max(
           worldNow(w, this.now().getTime()),
-          (await context.latestTime(row.actor_id)) ?? 0,
+          (await context.latestTime(npc)) ?? 0,
         );
         const changes: Change = {
           nodes: [
@@ -489,19 +539,16 @@ export class PlayerTools {
             target: instant.sourceEventId,
             period: { from: at },
           });
-        if (instant) {
-          const presence = await context.edge(instantPlaceEdge(npc));
-          if (presence && presence.period.until === undefined)
-            changes.endEdges.push(presence.id);
-        }
-        const operations: BelongingOp[] = [];
-        if (locations.length)
-          operations.push({
+        if (presence && presence.period.until === undefined)
+          changes.endEdges.push(presence.id);
+        const operations: BelongingOp[] = [
+          {
             type: "locate",
             subjectId: npc,
-            text: locations.map((l) => l.text).join("、"),
-            aboutIds: [...new Set(locations.flatMap((l) => l.aboutIds))],
-          });
+            text: placeName,
+            aboutIds: [place],
+          },
+        ];
         for (const { label, basis } of profile.items)
           operations.push({ type: "create", holder: npc, label, basis });
         for (const { text, basis } of profile.skills)
@@ -530,8 +577,8 @@ export class PlayerTools {
         }
       }
       await db.query(
-        "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,$4,$5,$3) ON CONFLICT DO NOTHING",
-        [world, npc, id, instant ? "server" : null, instant ? admin : null],
+        "INSERT INTO bot_npc(world_id,actor_id,controller,user_id,assignment_id) VALUES($1,$2,'server',$3,$4) ON CONFLICT DO NOTHING",
+        [world, npc, admin, id],
       );
       if (currentSession && member && instant) {
         delete member.instant;
@@ -545,7 +592,17 @@ export class PlayerTools {
         "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
         [w.world_id, npc],
       );
+      notice =
+        `「${row.label}」の昇格が承認されました。本人のIDは ${npc} です。` +
+        `承認時の所在地は「${placeName}」（${place}）です。現地で gestaloka contact --target ${npc} を使えます。`;
     }
+    await this.playerNotice(
+      db,
+      world,
+      row.actor_id,
+      derivedId(`promotion:${id}:notice`),
+      notice,
+    );
     await db.query(
       "UPDATE npc_promotion SET state=$2,npc_id=$3,decided_by=$4,profile_chat_id=$5 WHERE id=$1",
       [

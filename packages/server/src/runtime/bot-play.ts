@@ -459,6 +459,8 @@ function actionMessage(
         : "あなたの承認を受け付け、申請は確定しました";
     }
     case "promote-npc":
+      if (result.state === "pending" && typeof result.reason === "string")
+        return result.reason;
       return result.state === "approved"
         ? "NPCの昇格が承認されました"
         : "NPCの昇格申請を受け付けました。管理者の判断待ちです";
@@ -1752,6 +1754,7 @@ export class BotPlay {
       id uuid NOT NULL,actor_id uuid NOT NULL,world_id uuid NOT NULL REFERENCES world_construction(id),
       session_id uuid NOT NULL REFERENCES bot_session(id),closed boolean NOT NULL DEFAULT false,result jsonb,
       created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(id,actor_id));
+      ALTER TABLE bot_scene ADD COLUMN IF NOT EXISTS instant_place_id uuid;
       CREATE UNIQUE INDEX IF NOT EXISTS bot_scene_active ON bot_scene(world_id,actor_id) WHERE NOT closed;
       CREATE TABLE IF NOT EXISTS bot_chat (
       id bigserial PRIMARY KEY,session_id uuid NOT NULL REFERENCES bot_session(id),payload jsonb NOT NULL);
@@ -2076,7 +2079,7 @@ export class BotPlay {
               .context((await this.world(world, db)).id)
               .node(actor)
           )?.text ?? "人物";
-        await this.#playerNotice(
+        await this.tools.playerNotice(
           db,
           world,
           input.targetId,
@@ -2876,7 +2879,7 @@ export class BotPlay {
         `通知を届けられない人物です: ${missing.join(", ")}`,
       );
     for (const actor of targets)
-      await this.#playerNotice(
+      await this.tools.playerNotice(
         db,
         world,
         actor,
@@ -2884,21 +2887,6 @@ export class BotPlay {
         text,
       );
     return { actorIds: targets };
-  }
-  async #playerNotice(
-    db: Db,
-    world: string,
-    actor: string,
-    id: string,
-    text: string,
-  ) {
-    await db.query(
-      `WITH inserted AS (
-         INSERT INTO player_notice(id,world_id,actor_id,created_at,text)
-         VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING actor_id
-       ) SELECT pg_notify('gestaloka_turn',$2::text||':'||actor_id::text) FROM inserted`,
-      [id, world, actor, this.now(), text],
-    );
   }
   async world(id: string, db: Db = this.pool) {
     const row = (
@@ -2944,8 +2932,8 @@ export class BotPlay {
         },
       });
       await db.query(
-        "INSERT INTO bot_scene(id,actor_id,world_id,session_id) VALUES($1,$1,$2,$3)",
-        [animal.id, session.world_id, session.id],
+        "INSERT INTO bot_scene(id,actor_id,world_id,session_id,instant_place_id) VALUES($1,$1,$2,$3,$4)",
+        [animal.id, session.world_id, session.id, places[0] ?? null],
       );
     }
   }
@@ -9537,7 +9525,7 @@ export class BotPlay {
         if (persons.length)
           reject(
             "PERSON_REFERENCE_REQUIRED",
-            `${persons.map((text) => `「${text}」`).join("・")}は登録済みの人物です。本人に起きることは、新しい物品や個体の作成では確定できません。同じ場所で本人のIDを指定し、受領が必要な操作か、applyのopposeで申請してください`,
+            `${persons.map((text) => `「${text}」`).join("・")}は登録済みの人物です。昇格を申請した方は notices で承認時の所在地を確認できます。周囲で本人を確認できたら、そのIDを指定して接触や申請をしてください`,
           );
       }
       if (!needsSp && settings.size)
