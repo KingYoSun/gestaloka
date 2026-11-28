@@ -589,6 +589,13 @@ type Entry = {
   recordedFor?: string;
   report?: { recipient: string; readId: string; completedGoal?: string };
 };
+function entryVisible(entry: Entry, actor: string) {
+  return (
+    entry.recordedFor !== actor &&
+    (!entry.speechWitnesses || entry.speechWitnesses.includes(actor))
+  );
+}
+
 type TurnParticipant = { actorId: string; name: string; count?: number };
 type SessionStatus = {
   sessionId: string;
@@ -1728,6 +1735,15 @@ const explorePrompt =
 
 /** Bots select their own material; only completed public actions enter the chat. */
 export class BotPlay {
+  #resultAudience = new WeakMap<
+    Db,
+    (
+      member: Member,
+      payload: Record<string, unknown>,
+      entries: Entry[],
+      skip: number,
+    ) => void
+  >();
   private readonly teams = new PlayTeams();
   private readonly companions = new PlayCompanions();
   readonly tools: PlayerTools;
@@ -4152,21 +4168,14 @@ export class BotPlay {
           witnesses.some(
             (e) =>
               (e.itemWitnesses && !e.itemWitnesses.includes(member.actorId)) ||
-              e.recordedFor === member.actorId ||
-              (e.speechWitnesses &&
-                !e.speechWitnesses.includes(member.actorId)),
+              !entryVisible(e, member.actorId),
           )
         ) {
           const entries = (payload.entries as Entry[])
             .slice(skip)
             .flatMap((entry, i) => {
               const original = witnesses[skip + i]!;
-              if (
-                original.recordedFor === member.actorId ||
-                (original.speechWitnesses &&
-                  !original.speechWitnesses.includes(member.actorId))
-              )
-                return [];
+              if (!entryVisible(original, member.actorId)) return [];
               if (
                 !original.itemWitnesses ||
                 original.itemWitnesses.includes(member.actorId)
@@ -4200,6 +4209,7 @@ export class BotPlay {
         "INSERT INTO bot_record(scene_id,actor_id,chat_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
         [member.sceneId, member.actorId, visibleId],
       );
+      this.#resultAudience.get(db)?.(member, payload, witnesses, skip);
       for (const { entry: e, report, index } of reports) {
         if (
           index < skip ||
@@ -5772,6 +5782,7 @@ export class BotPlay {
     if (!selected)
       return {
         entries: [],
+        historyState: "empty",
         ...(after === undefined ? {} : { nextCursor: after }),
       };
     const valid = (
@@ -5816,17 +5827,29 @@ export class BotPlay {
         sceneId: selected,
         entries,
         nextCursor: String(entries.at(-1)?.id ?? after),
+        historyState: entries.length
+          ? "available"
+          : (
+                await db.query(
+                  "SELECT 1 FROM bot_record WHERE scene_id=$1 AND actor_id=$2 LIMIT 1",
+                  [selected, actor],
+                )
+              ).rowCount
+            ? "no-new-records"
+            : "empty",
       };
+    const legacy = (
+      await db.query(
+        "SELECT kind,id,payload FROM world_scene_record WHERE session_id=$1 AND actor_id=$2 ORDER BY kind,position",
+        [selected, actor],
+      )
+    ).rows;
     return {
       sceneId: selected,
       result: valid.result,
-      legacy: (
-        await db.query(
-          "SELECT kind,id,payload FROM world_scene_record WHERE session_id=$1 AND actor_id=$2 ORDER BY kind,position",
-          [selected, actor],
-        )
-      ).rows,
+      legacy,
       entries,
+      historyState: entries.length || legacy.length ? "available" : "empty",
     };
   }
   async screen(world: string, actor: string, characters: string[]) {
@@ -15341,6 +15364,34 @@ export class BotPlay {
         if (!updated.rowCount)
           reject("NPC_CONTROLLER_CHANGED", "NPCの操作担当が変わりました");
       }
+      const displayed = new Map<string, string | undefined>([
+        [actor, undefined],
+      ]);
+      const requestId = input.requestId;
+      const isResult = (entry: Entry) =>
+        entry.requestId === requestId || entry.applicationId === requestId;
+      this.#resultAudience.set(db, (member, payload, entries, skip) => {
+        const transition = payload.transition as
+          { actorId: string; type: string; reason?: string } | undefined;
+        if (
+          entries
+            .slice(skip)
+            .some(
+              (entry) => isResult(entry) && entryVisible(entry, member.actorId),
+            ) ||
+          (transition?.actorId === actor &&
+            ((input.command === "contact" &&
+              transition.type === "session-joined") ||
+              (input.command === "end-turn" &&
+                transition.type === "turn-ended") ||
+              ((input.command === "leave" || input.command === "finish") &&
+                transition.reason === input.command))) ||
+          (input.command === "receive" &&
+            (payload.receiptResult as { applicationId?: string } | undefined)
+              ?.applicationId === input.applicationId)
+        )
+          displayed.set(member.actorId, member.instant?.name);
+      });
       const finish = async (result: Record<string, unknown>) => {
         const outcome = result.outcome as
           (Partial<ProposalOutcome> & { accepted?: boolean }) | undefined;
@@ -15388,6 +15439,46 @@ export class BotPlay {
               },
             };
           }
+        }
+        const current = await this.current(world, actor, db);
+        const data = current?.data;
+        const index = data?.entries.findIndex(isResult) ?? -1;
+        const entry = data?.entries[index];
+        const pending = (data?.members ?? []).filter(
+          (member) =>
+            !displayed.has(member.actorId) &&
+            (entry
+              ? (member.joinedAfterEntries ?? 0) <= index &&
+                entryVisible(entry, member.actorId)
+              : input.command === "comment" &&
+                (data?.receiving?.comments[actor] === input.text ||
+                  (data?.turn === actor &&
+                    data.comment === input.text &&
+                    !member.joinedAfterComment))),
+        );
+        const context = this.store.context(w.id);
+        const named = async (actorId: string, instantName?: string) => ({
+          actorId,
+          name: instantName ?? (await context.node(actorId))?.text ?? "参加者",
+        });
+        result.resultAudience = {
+          displayedTo: await Promise.all(
+            [...displayed].map(([id, name]) => named(id, name)),
+          ),
+          pendingFor: await Promise.all(
+            pending.map((member) =>
+              named(member.actorId, member.instant?.name),
+            ),
+          ),
+        };
+        if (
+          input.command === "say" &&
+          displayed.size === 1 &&
+          pending.length === 0 &&
+          result.action
+        ) {
+          const action = result.action as { message: string };
+          action.message += "。ほかの人物には届いていません";
         }
         await db.query(
           "UPDATE bot_request SET result=$2, status_dependencies=NULL WHERE id=$1",
@@ -16019,6 +16110,7 @@ export class BotPlay {
             entries: [
               {
                 actorId: actor,
+                requestId: input.requestId,
                 input: input.accept ? "受領を承認する" : "受領を拒否する",
                 result: {
                   applicationId: input.applicationId,
@@ -16179,6 +16271,7 @@ export class BotPlay {
                   entries: [
                     {
                       actorId: actor,
+                      requestId: input.requestId,
                       input: description.appearanceText ?? "出現",
                       result: visible,
                     },
@@ -16293,6 +16386,7 @@ export class BotPlay {
               result = exchange;
               d.entries.push({
                 actorId: actor,
+                requestId: input.requestId,
                 input: exchange.message,
                 result,
               });
@@ -16349,6 +16443,7 @@ export class BotPlay {
               }
               d.entries.push({
                 actorId: actor,
+                requestId: input.requestId,
                 input: `${result.label}の昇格申請: ${input.description}`,
                 result,
               });
@@ -16390,6 +16485,7 @@ export class BotPlay {
               result = { contact: "joined", targetId: input.targetId };
               d.entries.push({
                 actorId: actor,
+                requestId: input.requestId,
                 input: `${(await context.node(input.targetId))?.text ?? "相手"}に接触する`,
                 result,
               });
@@ -16504,6 +16600,7 @@ export class BotPlay {
               if (animals.length) result.appearances = animals;
               d.entries.push({
                 actorId: actor,
+                requestId: input.requestId,
                 input: input.text,
                 result,
                 speechWitnesses: [...listeners, ...animals.map((a) => a.id)],
@@ -17228,6 +17325,7 @@ export class BotPlay {
       }
       throw playError(error);
     } finally {
+      this.#resultAudience.delete(db);
       db.release();
     }
   }
