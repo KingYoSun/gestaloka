@@ -5733,6 +5733,98 @@ test("管理者のお知らせは操作中の人物全員か指定した人物�
   ).toBe(2);
 });
 
+test.each(["出現場所あり", "旧記録", "所在不明"])(
+  "申請者が帰宅した後の昇格と通知（%s）",
+  async (record) => {
+    const f = await fixture(1),
+      source = randomUUID();
+    const npc = derivedId(source + ":manual:0");
+    if (record === "所在不明")
+      await f.apply([
+        {
+          type: "locate",
+          subjectId: f.actors[0],
+          text: "一帯",
+          aboutIds: [f.place, f.far],
+        },
+      ]);
+    f.calls.mockImplementationOnce(async (id) => answer(id, sure));
+    await f.send(0, {
+      command: "say",
+      requestId: source,
+      text: "広場で織物を並べる人に声をかけた",
+      instantNpcs: ["織り手"],
+    });
+    const pending = await f.send(0, {
+      command: "promote-npc",
+      sourceRequestId: source,
+      npcIndex: 0,
+      description: "広場で出会った織り手",
+    });
+    await f.move(0, f.far, Date.now());
+    await f.send(0, { command: "end-turn" });
+    expect(await access.botPlay.current(f.world, npc)).toBeUndefined();
+    if (record === "旧記録") {
+      await isolated.databases.postgres.query(
+        "UPDATE bot_scene SET instant_place_id=NULL WHERE id=$1 AND actor_id=$1",
+        [npc],
+      );
+    }
+    const approve = {
+      operation: "npcs.decidePromotion" as const,
+      worldId: f.world,
+      promotionId: String(pending.promotionId),
+      approve: true,
+      reason: "再訪できる人物にする",
+    };
+    f.calls.mockImplementationOnce(async (id) =>
+      answer(id, {
+        description: "広場で布を売る人",
+        memory: "広場で訪問者に声をかけられた。",
+      }),
+    );
+    for (let i = 0; i < 2; i++)
+      await auth.operations.execute(f.admin.id, randomUUID(), approve, {
+        players: access.players,
+      });
+    const { notices } = await access.notices(
+      f.people[0]!.id,
+      f.world,
+      f.actors[0],
+    );
+    expect(notices).toHaveLength(1);
+    if (record === "所在不明") {
+      expect(notices[0]!.text).toContain("場所を記録から特定できないため");
+      expect(
+        (
+          await access.botPlay.tools.promotions(
+            isolated.databases.postgres,
+            f.world,
+          )
+        ).items[0],
+      ).toMatchObject({ state: "pending", npcId: null });
+      expect(await f.store.context(f.graph).node(npc)).toBeUndefined();
+      return;
+    }
+    expect(notices[0]!.text).toContain(f.place);
+    expect(notices[0]!.text).toContain("広場");
+    expect(notices[0]!.text).toContain(`contact --target ${npc}`);
+    await expect(
+      f.send(0, { command: "contact", targetId: npc }),
+    ).rejects.toMatchObject({ code: "CONTACT_MISMATCH" });
+    await f.move(0, f.place, Date.now());
+    expect(
+      await f.send(0, { command: "contact", targetId: npc }),
+    ).toMatchObject({ contact: "joined", targetId: npc });
+    expect((await f.status(0)).actorId).toBe(npc);
+    f.calls.mockImplementation(async (id) =>
+      answer(id, { command: "end-turn" }),
+    );
+    await access.botPlay.tickNpcs(f.world);
+    expect((await f.status(0)).actorId).toBe(f.actors[0]);
+  },
+);
+
 test("受容したNPCを根拠のある所持品と技能ごと一度だけ昇格させ、対抗判定に渡す", async () => {
   const f = await fixture(),
     admin = await auth.person(),
@@ -8584,6 +8676,13 @@ test("世界の事前条件をGMが照合し、明確な合致だけ同じ個体
     )?.instant,
   ).toBeUndefined();
   expect(await ask(0, id)).toEqual(accepted);
+  const { notices } = await access.notices(
+    f.people[0]!.id,
+    f.world,
+    f.actors[0],
+  );
+  expect(notices).toHaveLength(1);
+  expect(notices[0]!.text).toContain(`contact --target ${npc}`);
   f.calls.mockImplementationOnce(async (call) =>
     answer(call, { match: "unmet", reason: "該当する記録なし" }),
   );

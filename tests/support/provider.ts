@@ -114,6 +114,7 @@ export async function fixtureRuntime(
                 role: "content",
                 source: actor,
                 target: state,
+                text: "location",
                 period: { from: 0 },
               },
               {
@@ -122,6 +123,7 @@ export async function fixtureRuntime(
                 role: "about",
                 source: state,
                 target: place,
+                text: "direct-place",
                 period: { from: 0 },
               },
               {

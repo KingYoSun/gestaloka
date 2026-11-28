@@ -1301,10 +1301,10 @@ export class WorldContext {
   }
   // 主体の有効な所在記録と、所在記録の最新の始点・最後の時点。終わった記録はDBの中で集計だけに使い、
   // 移動を重ねても読み出す量を有効な記録の数に保つ。
-  async locations(actor: string) {
+  async locations(actor: string, at?: number) {
     z.uuid().parse(actor);
     const stored = await this.#read(relationKey(actor, "status", "out"), (tx) =>
-      recordedLocations(tx, this.worldId, actor),
+      recordedLocations(tx, this.worldId, actor, at),
     );
     const drafts = this.drafts
       .flatMap((d) => d.changes.edges)
@@ -1313,7 +1313,8 @@ export class WorldContext {
           e.kind === "status" &&
           e.source === actor &&
           e.role === "content" &&
-          e.text === "location",
+          e.text === "location" &&
+          (at === undefined || e.period.from <= at),
       );
     const times = drafts.flatMap((e) => [e.period.from, e.period.until ?? 0]);
     return {
@@ -1325,7 +1326,11 @@ export class WorldContext {
       active: [
         ...new Map(
           [
-            ...drafts.filter((e) => e.period.until === undefined),
+            ...drafts.filter(
+              (e) =>
+                e.period.until === undefined ||
+                (at !== undefined && at < e.period.until),
+            ),
             ...stored.active,
           ].map((e) => [e.id, e]),
         ).values(),
