@@ -19,6 +19,7 @@ import {
   type FriendCommand,
   type ExchangeOffer,
   BlueprintDraft,
+  DeferredApplication,
   InventoryBundleCommand,
   PlayCommand,
   PlayerPlayCommand,
@@ -6632,6 +6633,106 @@ test("作った物品は持つ人物の物になり、渡すと受け取った�
       ?.result,
   ).toMatchObject({ items: created.items });
 });
+
+test.each(["accepted", "rejected", "expired"] as const)(
+  "受け手の申請一覧から同席の手渡しを判断できる (%s)",
+  async (outcome) => {
+    const f = await fixture();
+    const [sender, recipient] = f.actors;
+    await f.send(1, { command: "contact", targetId: sender });
+    await f.move(2, f.place);
+    await f.send(2, { command: "contact", targetId: sender });
+    await giveTurn(f, 0);
+
+    const created = await f.apply([
+      {
+        type: "create",
+        label: "布袋",
+        holder: sender,
+        basis: "試験用の持ち物",
+      },
+    ]);
+    const item = created.changes.nodes[0]!.id;
+    const text = "布袋を手渡す";
+    const { turn } = await f.status(0);
+    const sent = await f.send(0, {
+      command: "update",
+      text,
+      operations: [
+        { type: "move", item, from: sender, to: recipient, basis: text },
+      ],
+      dependencies: [],
+    });
+    expect(sent).toMatchObject({
+      state: "receiving",
+      turn,
+      actorId: recipient,
+    });
+    const { deadline } = (await f.status(1)).receiving!;
+    const list = () => f.send(1, { command: "applications" });
+    const pending = [
+      {
+        id: sent.applicationId,
+        senderId: sender,
+        senderName: "人物0",
+        text,
+        deadline,
+        awaitingYou: true,
+        preview: ["布袋"],
+      },
+    ];
+    const applications = DeferredApplication.array().parse(
+      (await list()).applications,
+    );
+    expect(applications).toEqual(pending);
+    for (const viewer of [0, 2])
+      expect(await f.send(viewer, { command: "applications" })).toMatchObject({
+        applications: [],
+      });
+
+    const heldBy = () =>
+      f.store
+        .context(f.graph)
+        .relations(item, "has", "in", Number.MAX_SAFE_INTEGER);
+    expect(await heldBy()).toMatchObject([{ source: sender }]);
+    const { id: applicationId } = applications[0]!;
+    if (outcome === "expired") {
+      const atDeadline = new BotPlay(runtime, () => new Date(deadline));
+      expect(
+        await atDeadline.submit(
+          f.world,
+          recipient!,
+          { command: "applications", requestId: randomUUID() },
+          f.people[1]!.id,
+        ),
+      ).toMatchObject({ applications: [] });
+      await atDeadline.expire(f.world);
+      expect((await f.status(0)).receiving).toBeNull();
+    } else {
+      const receive = {
+        requestId: randomUUID(),
+        command: "receive",
+        applicationId,
+        accept: outcome === "accepted",
+      };
+      const result = await f.send(1, receive);
+      expect(result).toMatchObject({ application: { outcome } });
+      expect(await f.send(1, receive)).toEqual(result);
+    }
+    expect(await list()).toMatchObject({ applications: [] });
+    expect(await heldBy()).toMatchObject([
+      { source: outcome === "accepted" ? recipient : sender },
+    ]);
+    const receipt = await f.store.receipt(f.graph, applicationId);
+    if (outcome === "accepted")
+      expect(
+        receipt?.changes.edges.filter(
+          (edge) => edge.kind === "has" && edge.target === item,
+        ),
+      ).toMatchObject([{ source: recipient }]);
+    else expect(receipt).toBeUndefined();
+  },
+);
 
 test("目撃した手渡しには対象と渡した先が残り、合流前の取得結果から参照は渡らない", async () => {
   const f = await fixture(),

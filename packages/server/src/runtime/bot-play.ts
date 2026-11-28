@@ -779,13 +779,14 @@ function awaitingReceipt(receipt: Receipt, actor: string) {
   return receipt.recipients.includes(actor) && !receipt.decided.includes(actor);
 }
 
+function receiptOwner(receipt: Receipt, viewer?: string) {
+  return receipt.parallel && viewer && awaitingReceipt(receipt, viewer)
+    ? viewer
+    : receipt.recipients.find((id) => !receipt.decided.includes(id));
+}
+
 function turnOwner(data: Session["data"], viewer?: string) {
-  const receipt = data.receiving;
-  return receipt
-    ? receipt.parallel && viewer && awaitingReceipt(receipt, viewer)
-      ? viewer
-      : receipt.recipients.find((id) => !receipt.decided.includes(id))
-    : data.turn;
+  return data.receiving ? receiptOwner(data.receiving, viewer) : data.turn;
 }
 function turnState(session: Session) {
   const actor = turnOwner(session.data);
@@ -3981,6 +3982,45 @@ export class BotPlay {
     } finally {
       db.release();
     }
+  }
+  async #listApplications(
+    db: Db,
+    world: string,
+    context: WorldContext,
+    actor: string,
+  ) {
+    const result = await this.applications.list(db, world, context, actor);
+    const { rows } = await db.query<{ receipt: Receipt | null }>(
+      `SELECT s.data->'receiving' AS receipt
+       FROM bot_scene p JOIN bot_session s ON s.id=p.session_id
+       WHERE p.world_id=$1 AND p.actor_id=$2 AND NOT p.closed`,
+      [world, actor],
+    );
+    const receipt = rows[0]?.receipt;
+    if (
+      receipt &&
+      receiptOwner(receipt, actor) === actor &&
+      Date.parse(receipt.deadline) > this.now().getTime()
+    ) {
+      result.applications.unshift({
+        id: receipt.id,
+        senderId: receipt.sender,
+        senderName: (await context.node(receipt.sender))?.text ?? "申請者",
+        text: receipt.text,
+        deadline: receipt.deadline,
+        awaitingYou: true,
+        preview: [
+          ...[...receipt.changes.nodes, ...receipt.changes.revisions].flatMap(
+            (node) =>
+              node.kind === "script" && node.type === "memo" ? [node.text] : [],
+          ),
+          ...(receipt.items ?? []).map(({ label, count }) =>
+            count ? `${label} × ${count}` : label,
+          ),
+        ],
+      });
+    }
+    return result;
   }
   async current(world: string, actor: string, db: Db = this.pool) {
     const session = (
@@ -15792,7 +15832,7 @@ export class BotPlay {
       }
       const application =
         input.command === "applications"
-          ? await this.applications.list(
+          ? await this.#listApplications(
               db,
               world,
               this.store.context(w.id),
