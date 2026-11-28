@@ -201,8 +201,10 @@ test("実Hydraとアプリのログイン・同意を経てPKCEコードを発�
     ]);
     currentId = oryId;
     const accepted = await submit(csrf);
-    expect(accepted.statusCode).toBe(302);
-    const callback = await follow(String(accepted.headers.location));
+    expect(accepted.statusCode).toBe(200);
+    const callback = await follow(
+      String(accepted.headers.refresh).replace(/^0; url=/, ""),
+    );
     const code = new URL(callback.headers.get("location")!).searchParams.get(
       "code",
     );

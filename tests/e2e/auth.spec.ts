@@ -60,7 +60,7 @@ for (const [provider, target] of [
   });
 }
 
-test("OAuth同意後にHydraと登録済みクライアントへ遷移できる", async ({
+test("OAuth同意後にクライアントが別オリジンへ転送しても遷移できる", async ({
   page,
 }) => {
   const databases = connectDatabases();
@@ -71,7 +71,12 @@ test("OAuth同意後にHydraと登録済みクライアントへ遷移できる"
     origin = "";
   const upstream = createServer((request, response) => {
     if (request.url === "/complete") {
-      response.writeHead(303, { location: target });
+      response.writeHead(303, { location: `${origin}/callback` });
+      response.end();
+      return;
+    }
+    if (request.url === "/callback") {
+      response.writeHead(308, { location: target });
       response.end();
       return;
     }
@@ -84,7 +89,7 @@ test("OAuth同意後にHydraと登録済みクライアントへ遷移できる"
               subject: appUser,
               requested_scope: ["openid"],
               requested_access_token_audience: [],
-              request_url: `${origin}/oauth2/auth?redirect_uri=${encodeURIComponent(target)}`,
+              request_url: `${origin}/oauth2/auth?redirect_uri=${encodeURIComponent(`${origin}/callback`)}`,
               client: { client_id: "browser-test" },
             },
       ),
