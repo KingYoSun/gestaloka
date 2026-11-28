@@ -9525,7 +9525,7 @@ export class BotPlay {
         if (persons.length)
           reject(
             "PERSON_REFERENCE_REQUIRED",
-            `${persons.map((text) => `「${text}」`).join("・")}は登録済みの人物です。昇格を申請した方は notices で承認時の所在地を確認できます。周囲で本人を確認できたら、そのIDを指定して接触や申請をしてください`,
+            `${persons.map((text) => `「${text}」`).join("・")}は登録済みの人物です。周囲で本人を確認できたら、本人のIDを指定し、受領が必要な操作か、applyのopposeで申請してください。昇格を申請した方は notices で承認時の所在地を確認できます`,
           );
       }
       if (!needsSp && settings.size)
