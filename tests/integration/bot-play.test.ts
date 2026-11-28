@@ -31,6 +31,7 @@ import { LlmClient } from "@gestaloka/server/llm";
 import { decisionSettings } from "../../packages/server/src/llm/config.js";
 import { prepareDicePrompt } from "../../packages/server/src/llm/dice-prompt.js";
 import { buildJudgmentExcerpts } from "../../packages/server/src/llm/judgment-excerpts.js";
+import { unrolledReasons } from "../../packages/server/src/runtime/play-dice-messages.js";
 import { readPlayUsage } from "../../packages/server/src/runtime/play-usage.js";
 import { changeBelongings, readBelongings } from "@gestaloka/server/belongings";
 import { derivedId, WorldContext } from "@gestaloka/server/world";
@@ -17213,9 +17214,12 @@ describe("現場材料", () => {
         success: false,
         reason: "MATERIAL_ID_REQUIRED",
         unresolvedMaterialLabels: ["船体"],
+        missingMaterialLabels: [],
       },
       action: {
-        message: expect.stringMatching(/「船体」.*物品のIDをmaterialsに指定/),
+        message: expect.stringMatching(
+          /「船体」には同名の候補が複数.*使う物品のIDをmaterialsに指定/,
+        ),
       },
     });
     expect(
@@ -17232,6 +17236,19 @@ describe("現場材料", () => {
       boards: 2,
       tools: 1,
     });
+  });
+  test("候補数のない旧形式の結果では材料名と物品IDの案内を表示する", () => {
+    expect(
+      unrolledReasons({
+        success: false,
+        reason: "MATERIAL_ID_REQUIRED",
+        unresolvedMaterialLabels: ["川魚"],
+      }),
+    ).toEqual([
+      expect.stringMatching(
+        /「川魚」に使う物品を特定できません.*物品のIDをmaterialsに指定/,
+      ),
+    ]);
   });
   test("材料名が分からないときは申請文と物品IDの指定を案内する", async () => {
     const { f, plan } = await workshop(1);
@@ -17254,8 +17271,8 @@ describe("現場材料", () => {
     });
   });
   test("一括製作の結果に成功した物品と未判定の案ごとの材料名を表示する", async () => {
-    const { f, ids, plan } = await workshop(1);
-    const proposals = [plan(1, ids[0]), plan(2, ids[0]), plan(3, ids[0])];
+    const { f, ids, plan } = await workshop(2);
+    const proposals = [plan(1, ids[0]), plan(2), plan(3, ids[0])];
     f.calls.mockResolvedValueOnce(
       answer(randomUUID(), {
         settings: [
@@ -17280,19 +17297,23 @@ describe("現場材料", () => {
         { success: true },
         {
           reason: "MATERIAL_ID_REQUIRED",
-          unresolvedMaterialLabels: ["蜜蝋", "麻糸"],
+          unresolvedMaterialLabels: ["船体", "蜜蝋", "麻糸"],
+          missingMaterialLabels: ["蜜蝋", "麻糸"],
         },
         { reason: "MATERIAL_ID_REQUIRED", unresolvedMaterialLabels: ["染料"] },
       ],
     });
     const { message } = result.action as { message: string };
+    expect(message.split("\n")[1]).toMatch(
+      /search --kind self.*search --kind surroundings.*generateのcreate.*「船体」には同名の候補が複数.*IDをmaterialsに指定/,
+    );
     expect(message.split("\n")).toEqual([
       expect.stringContaining("「交易船」を手元に置きました"),
       expect.stringContaining(
-        `「${proposals[1]!.text}」の案は振っていません。材料「蜜蝋」「麻糸」`,
+        `「${proposals[1]!.text}」の案は振っていません。材料「蜜蝋」「麻糸」の候補が見つかりません`,
       ),
       expect.stringContaining(
-        `「${proposals[2]!.text}」の案は振っていません。材料「染料」`,
+        `「${proposals[2]!.text}」の案は振っていません。材料「染料」の候補が見つかりません`,
       ),
     ]);
   });
