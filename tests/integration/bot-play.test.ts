@@ -17305,7 +17305,7 @@ describe("現場材料", () => {
     });
     const { message } = result.action as { message: string };
     expect(message.split("\n")[1]).toMatch(
-      /search --kind self.*search --kind surroundings.*generateのcreate.*「船体」には同名の候補が複数.*IDをmaterialsに指定/,
+      /search --kind self.*search --kind surroundings.*command に apply.*action\.type に generate.*action\.plans\[\]\.operation\.type に create.*「船体」には同名の候補が複数.*IDをmaterialsに指定/,
     );
     expect(message.split("\n")).toEqual([
       expect.stringContaining("「交易船」を手元に置きました"),
