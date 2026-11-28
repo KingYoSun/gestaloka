@@ -80,6 +80,7 @@ let references: PlayerReferences | undefined, pendingCursor: string | undefined;
 const welcomePending = "1",
   welcomePrinted = "2";
 let welcomeShown = false;
+let readingHistory = false;
 const render = (value: unknown) =>
   JSON.stringify(
     !references || values["full-ids"] ? value : references.convert(value),
@@ -196,10 +197,17 @@ async function status(
   if (values.scene) query.set("sceneId", z.uuid().parse(values.scene));
   if (after !== undefined) query.set("after", after);
   if (view && view !== "device") query.set("view", view);
+  readingHistory = !view;
   const session =
     view === "device"
       ? {}
       : await http(profile, `/api/worlds/${profile.worldId}/session?${query}`);
+  const historyMessage =
+    session.historyState === "no-new-records"
+      ? "新しい記録は0件です。現在の履歴は status --after 0 で読み直せます。"
+      : session.historyState === "empty"
+        ? "この人物のプレイ履歴はまだ0件です。"
+        : undefined;
   const archived = session.result as
     | Partial<Record<"entries" | "legacy", { id: string | number }[]>>
     | undefined;
@@ -225,6 +233,7 @@ async function status(
     state: "ready",
     ...(view ? {} : { device }),
     ...session,
+    ...(historyMessage ? { historyMessage } : {}),
     ...(welcome
       ? { welcome: playerWelcome(welcome, device.worldId, profile.server) }
       : {}),
@@ -1341,6 +1350,13 @@ try {
       state: "error",
       ...(requestId ? { requestId } : {}),
       code: (error as { code?: string }).code ?? "CLI_ERROR",
+      ...(readingHistory
+        ? {
+            historyState: "unavailable",
+            historyMessage:
+              "プレイ履歴の取得に失敗しました。同じコマンドで読み直せます。",
+          }
+        : {}),
       consentUrl: (error as { consentUrl?: string }).consentUrl,
       message: base,
       callsUsed: (error as { callsUsed?: number }).callsUsed,

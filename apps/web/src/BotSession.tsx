@@ -344,7 +344,7 @@ function PersonalMaterial({
           <span>{x.text}</span>
           {x.contactAvailable && (
             <Button disabled={disabled} onClick={() => contact(x.id)}>
-              接触する
+              会話に合流する
             </Button>
           )}
         </div>
@@ -463,7 +463,12 @@ export function BotSession({
     );
   if (!view)
     return query.error ? (
-      <Problem error={query.error} />
+      <>
+        <Problem error={query.error} />
+        <Button onClick={() => void query.refetch()}>
+          プレイログを読み直す
+        </Button>
+      </>
     ) : (
       <Notice>セッションを読み込んでいます</Notice>
     );
@@ -509,6 +514,12 @@ export function BotSession({
       : view.actorId
         ? `${personName(view.actorId)}の手番を待っています`
         : "待機中です") + (view.receiving ? "（受領判断中）" : "");
+  const audience = z
+    .object({
+      displayedTo: z.array(z.object({ actorId: z.string(), name: z.string() })),
+      pendingFor: z.array(z.object({ actorId: z.string(), name: z.string() })),
+    })
+    .safeParse(mutation.data?.resultAudience).data;
   const feedback = (
     <>
       {mutation.error && <Problem error={mutation.error} />}
@@ -517,6 +528,23 @@ export function BotSession({
       )}
       {typeof mutation.data?.message === "string" && (
         <Notice>{mutation.data.message}</Notice>
+      )}
+      {audience && (
+        <Notice>
+          {mutation.variables?.body.command === "say" &&
+            audience.displayedTo.every(
+              ({ actorId }) => actorId === view.viewerId,
+            ) &&
+            audience.pendingFor.length === 0 &&
+            "ほかの人物には届いていません。"}
+          表示先 {audience.displayedTo.map(({ name }) => name).join("、")}
+          {audience.pendingFor.length > 0 && (
+            <>
+              （記録待ち{" "}
+              {audience.pendingFor.map(({ name }) => name).join("、")}）
+            </>
+          )}
+        </Notice>
       )}
       {DiceMessages.safeParse(mutation.data?.dice).data?.map((message, i) => (
         <Notice key={i}>{message}</Notice>
@@ -945,13 +973,26 @@ export function BotSession({
             <Notice>{state}</Notice>
           </div>
         )}
-        <PlayLogRows
-          entries={view.entries}
-          liveScene={archive ? undefined : view.sceneId}
-          timestamp={(row) => row.recordedAt ?? row.payload.transition?.at}
-        >
-          {(row) => <LogRow row={row} characters={view.characters} />}
-        </PlayLogRows>
+        {query.error ? (
+          <Button onClick={() => void query.refetch()}>
+            プレイログを読み直す
+          </Button>
+        ) : (
+          !view.entries.length && (
+            <Button variant="ghost" onClick={() => void query.refetch()}>
+              プレイログを読み直す
+            </Button>
+          )
+        )}
+        {(!query.error || view.entries.length > 0) && (
+          <PlayLogRows
+            entries={view.entries}
+            liveScene={archive ? undefined : view.sceneId}
+            timestamp={(row) => row.recordedAt ?? row.payload.transition?.at}
+          >
+            {(row) => <LogRow row={row} characters={view.characters} />}
+          </PlayLogRows>
+        )}
         {view.legacy.length > 0 && sceneId && (
           <details className="initial-setting" open={archive}>
             <summary>引き継いだプレイ履歴</summary>

@@ -15108,6 +15108,121 @@ test("通常手番のCLIは本人が受理された直近10発言を再起動後
   }
 }, 60000);
 
+test("表示先は接触前後の実際の履歴と対応し、CLIは新着0件と履歴0件を区別する", async () => {
+  const f = await fixture();
+  const [speaker, listener, elsewhere] = f.actors;
+  const person = (actorId: string | undefined, name: string) => ({
+    actorId,
+    name,
+  });
+  const own = person(speaker, "人物0");
+  const other = person(listener, "人物1");
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  const profile = join(cli.directory, "audience.json");
+  const run = (...args: string[]) => cli.run(profile, ...args, "--full-ids");
+  try {
+    const connection = await run(
+      "connect",
+      "--server",
+      cli.base,
+      "--world",
+      f.world,
+    );
+    expect(
+      (
+        await cli.approve(
+          f.people[0]!.cookie,
+          connection.userCode,
+          "actor:" + speaker,
+        )
+      ).statusCode,
+    ).toBe(302);
+    expect(await run("status")).toMatchObject({
+      entries: [],
+      historyState: "empty",
+    });
+    const search = await f.send(0, {
+      command: "search",
+      query: { kind: "surroundings" },
+    });
+    expect(search).toMatchObject({
+      material: {
+        subjects: expect.arrayContaining([
+          expect.objectContaining({ id: listener, contactAvailable: true }),
+        ]),
+      },
+      resultAudience: { displayedTo: [own], pendingFor: [] },
+    });
+    const privateSpeech = "広場の端で声をかける。";
+    const solo = await cli.run(profile, "say", "--text", privateSpeech);
+    expect(solo.result).toMatchObject({
+      resultAudience: {
+        displayedTo: [
+          { actorId: expect.stringMatching(/^@[a-f0-9]{8,}$/), name: "人物0" },
+        ],
+        pendingFor: [],
+      },
+      action: {
+        message: expect.stringContaining("ほかの人物には届いていません"),
+      },
+    });
+    const contact = await f.send(0, { command: "contact", targetId: listener });
+    expect(contact).toMatchObject({
+      resultAudience: {
+        displayedTo: expect.arrayContaining([own, other]),
+        pendingFor: [],
+      },
+    });
+    await giveTurn(f, 0);
+    const sharedSpeech = "切り株に新しい傷がある。";
+    const request = {
+      command: "say",
+      requestId: randomUUID(),
+      text: sharedSpeech,
+    };
+    const shared = await f.send(0, request);
+    expect(shared).toMatchObject({
+      resultAudience: { displayedTo: [own], pendingFor: [other] },
+    });
+    const ended = await f.send(0, { command: "end-turn" });
+    expect(ended).toMatchObject({
+      resultAudience: {
+        displayedTo: expect.arrayContaining([own, other]),
+        pendingFor: [],
+      },
+    });
+    expect(await f.send(0, request)).toEqual(shared);
+    const history = (await f.status(1)).entries;
+    expect(JSON.stringify(history)).toContain(sharedSpeech);
+    expect(JSON.stringify(history)).not.toContain(privateSpeech);
+    expect(JSON.stringify((await f.status(2)).entries)).not.toContain(
+      sharedSpeech,
+    );
+    expect(JSON.stringify(ended.resultAudience)).not.toContain(elsewhere);
+    expect(await run("status")).toMatchObject({ historyState: "available" });
+    expect(await run("status")).toMatchObject({
+      entries: [],
+      historyState: "no-new-records",
+    });
+    expect(await run("status", "--scene", randomUUID())).toMatchObject({
+      state: "error",
+      code: "SCENE_NOT_FOUND",
+      historyState: "unavailable",
+    });
+    expect(JSON.stringify(await run("status", "--after", "0"))).toContain(
+      sharedSpeech,
+    );
+  } finally {
+    await cli.close();
+  }
+});
+
 test("CLIの自己照会は本人が聞いた発言だけを添え、既読位置を進めない", async () => {
   const f = await fixture();
   const app = await createApp(
