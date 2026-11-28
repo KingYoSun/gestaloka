@@ -20529,6 +20529,192 @@ test("人物への対抗行動で死亡と判定されると、対象はセッ�
   expect((await f.status(1)).dailySp).toEqual(resumed.dailySp);
 });
 
+test("対抗行動を確定すると、WebとCLIで双方がその手番中に死亡判定を一度ずつ読める", async () => {
+  const f = await fixture(2);
+  const [attacker, target] = f.actors as [string, string];
+  const app = await createApp(
+    access,
+    auth.identity,
+    undefined,
+    auth.operations,
+  );
+  const cli = await playerCli(app);
+  const run = (i: number, ...args: string[]) =>
+    cli.run(undefined, ...args, "--full-ids", "--instance", `player-${i}`);
+  const deaths = (view: Awaited<ReturnType<typeof f.status>>) =>
+    view.entries.flatMap(({ payload }) =>
+      (payload.entries ?? []).filter(
+        ({
+          result,
+        }: {
+          result: {
+            outcome?: { success?: boolean; setting?: { fatal?: string[] } };
+          };
+        }) =>
+          result.outcome?.success &&
+          result.outcome.setting?.fatal?.includes(target),
+      ),
+    );
+  try {
+    for (const i of [0, 1]) {
+      await f.send(i, { command: "finish" });
+      const code = await run(
+        i,
+        "connect",
+        "--server",
+        cli.base,
+        "--world",
+        f.world,
+      );
+      expect(code).toMatchObject({
+        userCode: expect.stringMatching(/^[A-F0-9]{10}$/),
+      });
+      expect(
+        (
+          await cli.approve(
+            f.people[i]!.cookie,
+            code.userCode,
+            `actor:${f.actors[i]}`,
+          )
+        ).statusCode,
+      ).toBe(302);
+      expect((await run(i, "start")).result.sessionId).toEqual(
+        expect.any(String),
+      );
+      expect((await run(i, "status")).viewerId).toBe(f.actors[i]);
+    }
+    await f.send(1, { command: "contact", targetId: attacker });
+    const request = {
+      requestId: randomUUID(),
+      command: "oppose",
+      text: "相手を突き倒す",
+      effect: { targetId: target, state: "倒れて動かなくなる。" },
+      dependencies: [],
+    };
+    f.calls.mockImplementationOnce(async (id) =>
+      answer(id, { ...sure, fatal: [target], performed: "相手を突き倒した。" }),
+    );
+    const result = await f.send(0, request);
+    expect(result.outcome).toMatchObject({
+      success: true,
+      setting: { fatal: [target] },
+    });
+    expect((await f.status(0)).actorId).toBe(attacker);
+    const web = async (i: number) => {
+      const response = await app.inject({
+        url: `/api/worlds/${f.world}/session?view=screen&actorId=${f.actors[i]}`,
+        headers: { cookie: f.people[i]!.cookie },
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json();
+    };
+    for (const i of [0, 1]) {
+      const [webView, cliView] = await Promise.all([web(i), run(i, "status")]);
+      expect(deaths(webView)).toMatchObject([
+        { input: expect.stringContaining("対象が死亡しました") },
+      ]);
+      expect(deaths(cliView)).toHaveLength(1);
+    }
+    expect(await f.send(0, request)).toEqual(result);
+    await f.send(0, { command: "end-turn" });
+    for (const i of [0, 1]) {
+      const [webView, cliView] = await Promise.all([
+        web(i),
+        run(i, "status", "--after", "0"),
+      ]);
+      expect(deaths(webView)).toHaveLength(1);
+      expect(deaths(cliView)).toHaveLength(1);
+      expect(deaths(await run(i, "status"))).toHaveLength(0);
+    }
+  } finally {
+    await cli.close();
+    await app.close();
+  }
+});
+
+test("復帰したユニークNPCへの再接触で以前の遺体に対する申請を差し戻す", async () => {
+  const f = await fixture(2);
+  const [attacker, target] = f.actors as [string, string];
+  await f.move(1, f.far, 1);
+  await f.move(0, f.far, 1);
+  await f.send(1, { command: "contact", targetId: attacker });
+  await giveTurn(f, 0);
+  await auth.operations.execute(
+    f.admin.id,
+    randomUUID(),
+    {
+      operation: "npcs.put",
+      worldId: f.world,
+      actorId: target,
+      controller: "server",
+      reason: "隔離試験",
+    },
+    { players: access.players },
+  );
+  const oppose = (text: string, state: string) =>
+    f.send(0, {
+      command: "oppose",
+      text,
+      effect: { targetId: target, state },
+      dependencies: [],
+    });
+  const death = "水路にいた番人を倒した。";
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { ...sure, fatal: [target], performed: death }),
+  );
+  expect((await oppose("番人を倒す", "息絶える。")).outcome).toMatchObject({
+    success: true,
+    setting: { fatal: [target] },
+  });
+  await f.move(0, f.place, Date.now());
+  await f.send(0, { command: "contact", targetId: target });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, { command: "end-turn" }),
+  );
+  await access.botPlay.tickNpcs(f.world);
+  expect((await f.status(0)).actorId).toBe(attacker);
+  const remains = "遺体は持ち去られて残っていない。";
+  f.calls.mockImplementationOnce(async (id, role, messages) => {
+    expect(role).toBe("world-opposition-dice");
+    const input = JSON.parse(String(messages[1]!.content));
+    expect(input.respawns).toEqual([{ id: target, at: expect.any(Number) }]);
+    expect(JSON.stringify(input.materials)).toContain(death);
+    return answer(id, {
+      ...sure,
+      performed: "以前の遺体を持ち去った。",
+      states: [{ id: target, text: remains }],
+      priorRemainsRequired: true,
+    });
+  });
+  await expect(
+    oppose("以前倒した番人の遺体を持ち去る", remains),
+  ).rejects.toMatchObject({
+    code: "OPPOSITION_PREVIOUS_BODY_REQUIRED",
+  });
+  const bruise = "腕に打ち身がある。";
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, {
+      ...sure,
+      performed: "そこにいる番人の腕を打った。",
+      states: [{ id: target, text: bruise }],
+      priorRemainsRequired: false,
+    }),
+  );
+  expect(
+    (await oppose("いまいる番人の腕を打つ", bruise)).outcome,
+  ).toMatchObject({
+    success: true,
+  });
+  const context = f.store.context(f.graph);
+  const states = await Promise.all(
+    (await context.relations(target, "status", "out", Date.now())).map(
+      ({ target: id }) => context.node(id),
+    ),
+  );
+  expect(states.map((state) => state?.text)).toContain(bruise);
+  expect(states.map((state) => state?.text)).not.toContain(remains);
+});
+
 test("現在地をHomeに設定すると、手番とSPを消費せず、死亡時は世界指定よりHomeを優先する", async () => {
   const f = await fixture(2);
   const target = f.actors[1]!;

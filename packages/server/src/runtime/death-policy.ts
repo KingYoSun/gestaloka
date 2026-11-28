@@ -11,7 +11,49 @@ import {
 import { commitPlayChange, directChangeScope } from "./play-change-scope.js";
 
 export const permanentDeath = "permanent-death";
+export const respawned = "respawned";
 const deathEdgeId = (actor: string) => derivedId(`${permanentDeath}:${actor}`);
+
+export async function latestRespawns(
+  context: WorldContext,
+  actors: readonly string[],
+) {
+  return (
+    await Promise.all(
+      actors.map(async (id) => {
+        const [edge] = await context.marked(id, "status", respawned);
+        return edge ? [{ id, at: edge.period.from }] : [];
+      }),
+    )
+  ).flat();
+}
+
+export async function recordRespawn(
+  context: WorldContext,
+  change: Change,
+  request: string,
+  actor: string,
+  at: number,
+) {
+  const script = derivedId(`${request}:${respawned}:${actor}`);
+  for (const edge of await context.marked(actor, "status", respawned))
+    change.endEdges.push(edge.id);
+  change.nodes.push({
+    id: script,
+    kind: "script",
+    text: "死亡後に復帰した。",
+    viewers: [],
+  });
+  change.edges.push({
+    id: derivedId(`${script}:content`),
+    kind: "status",
+    role: "content",
+    source: actor,
+    target: script,
+    text: respawned,
+    period: { from: at },
+  });
+}
 
 export type RespawnHome = { placeId: string; name: string };
 
