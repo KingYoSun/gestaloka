@@ -13120,6 +13120,22 @@ test("一団の出現時に設定を一度だけ確定し、その手持ちを�
   const offer = (
     appeared.exchangeOffers as { id: string; itemId: string }[]
   )[0]!;
+  await f.send(0, { command: "end-turn" });
+  f.calls.mockImplementationOnce(async (id) =>
+    answer(id, {
+      command: "offer",
+      buyerId: buyer,
+      itemLabel: "干し果物",
+      count: 1,
+      paymentLabel: "木札",
+      paymentCount: 2,
+    }),
+  );
+  await access.botPlay.tickNpcs();
+  expect((await f.send(0, search)).exchangeOffers).toEqual(
+    appeared.exchangeOffers,
+  );
+  f.calls.mockClear();
   const order = {
     command: "exchange",
     requestId: randomUUID(),
