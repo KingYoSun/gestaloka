@@ -207,6 +207,8 @@ CLIの `status --scene <シーンID>` では、各行動の `result.thresholdRea
 | `PERSON_REFERENCE_REQUIRED` | 本人を参照せず、登録済みの人物の身体の一部を得るなど、本人に起きることを作成で確定しようとした。同じ場所で本人のIDを指定して申請する。                                      |
 | `UPDATE_REJECTED`           | 操作が現在の記録と合わない。指定した個数の品がない、`locate` に直接の滞在先を指定していない、など。メッセージで理由を確かめる。                                             |
 
+`MATERIAL_ID_REQUIRED` で製作が止まったら、案ごとの結果で材料名を確認してください。同名の候補が複数ある場合は、使う物品のIDを `materials` に指定します。候補が見つからず、これから材料を入手する場合は[野外で得た物を加工して渡す](commands.md#野外で得た物を加工して渡す)を参照してください。
+
 ### エラーではない失敗
 
 - `outcome.success: false` で `setting` と `roll` がある: ダイスの失敗。申請した変更は確定せず、通常枠を1回使う。`outcome.fumble.success` が `true` なら、`outcome.setting.fumble.text` の状態が本人に残っている。

@@ -67,6 +67,20 @@ export function unrolledReasons(outcome: unknown): string[] {
     const labels = z
       .array(z.string())
       .safeParse(p.unresolvedMaterialLabels).data;
+    const missing = z.array(z.string()).safeParse(p.missingMaterialLabels).data;
+    if (labels?.length && missing) {
+      const ambiguous = labels.filter((label) => !missing.includes(label));
+      const guidance = [];
+      if (missing.length)
+        guidance.push(
+          `材料「${missing.join("」「")}」の候補が見つかりません。手持ち（search --kind self）と現在地（search --kind surroundings）を調べ、使う物品のIDをmaterialsに指定してください。現物がまだなければ、generateのcreateで取得を申請するか、現在地の発見物を拾えます。`,
+        );
+      if (ambiguous.length)
+        guidance.push(
+          `材料「${ambiguous.join("」「")}」には同名の候補が複数あります。使う物品のIDをmaterialsに指定してください。`,
+        );
+      return [`${proposal}は振っていません。${guidance.join("")}`];
+    }
     return [
       labels?.length
         ? `${proposal}は振っていません。材料「${labels.join("」「")}」に使う物品を特定できません。使う物品のIDをmaterialsに指定するか、その材料を使う工程を申請文から外してください。`

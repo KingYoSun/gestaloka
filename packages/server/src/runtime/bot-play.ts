@@ -8509,6 +8509,7 @@ export class BotPlay {
             | typeof judgmentMaterialLimit;
           message?: string;
           unresolvedMaterialLabels?: string[];
+          missingMaterialLabels?: string[];
         }
     ) & { performed?: string };
     // 材料を指定しない本人の状態だけの変更は製作ではないので、材料を求めない。
@@ -8668,7 +8669,7 @@ export class BotPlay {
     const settings = new Map<number, SavedDice>();
     const performedActions = new Map<number, string>();
     const applied = new Map<number, AppliedStatus>();
-    const unresolved = new Map<number, string[]>();
+    const unresolved = new Map<number, Map<string, number>>();
     const shortages = new Set<number>();
     const refusals = new Map<number, Extract<Result, { reason: string }>>();
     const overBudget = new Set<number>();
@@ -9443,7 +9444,7 @@ export class BotPlay {
             p.changes,
             decides,
           );
-          const unresolvedLabels = new Set<string>();
+          const unresolvedLabels = new Map<string, number>();
           const required = new Map<string, number>();
           for (const m of requiredMaterials ?? []) {
             let id: string;
@@ -9462,7 +9463,7 @@ export class BotPlay {
                   ids.push(...(await context.materialIds(place, m.label)));
               }
               if (ids.length !== 1) {
-                unresolvedLabels.add(m.label);
+                unresolvedLabels.set(m.label, ids.length);
                 continue;
               }
               id = ids[0]!;
@@ -9474,7 +9475,7 @@ export class BotPlay {
             (p.materials?.length && requiredMaterials === undefined) ||
             unresolvedLabels.size
           )
-            unresolved.set(p.index, [...unresolvedLabels]);
+            unresolved.set(p.index, unresolvedLabels);
           for (const [id, count] of required) {
             // 申請が状態などを付ける対象そのものは、材料に挙がっても消費しない。
             if (touched.has(id)) continue;
@@ -9617,7 +9618,12 @@ export class BotPlay {
           rolls.push({
             success: false,
             reason: "MATERIAL_ID_REQUIRED",
-            ...(labels.length ? { unresolvedMaterialLabels: labels } : {}),
+            ...(labels.size > 0 && {
+              unresolvedMaterialLabels: [...labels.keys()],
+              missingMaterialLabels: [...labels]
+                .filter(([, count]) => count === 0)
+                .map(([label]) => label),
+            }),
           });
           continue;
         }
