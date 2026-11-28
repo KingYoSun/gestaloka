@@ -142,11 +142,14 @@ async function authorize(
       decision: "accept",
     }).toString(),
   });
-  expect(accepted.statusCode, accepted.body).toBe(302);
-  const callback = await fetch(String(accepted.headers.location), {
-    redirect: "manual",
-    headers: headers(),
-  });
+  expect(accepted.statusCode, accepted.body).toBe(200);
+  const callback = await fetch(
+    String(accepted.headers.refresh).replace(/^0; url=/, ""),
+    {
+      redirect: "manual",
+      headers: headers(),
+    },
+  );
   const result = new URL(callback.headers.get("location")!);
   expect(result.searchParams.get("state")).toBe(state);
   const response = await fetch(`${hydra}/oauth2/token`, {

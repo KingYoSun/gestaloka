@@ -91,12 +91,9 @@ export async function oauthRoutes(
       const challenge = request.query.consent_challenge;
       if (!challenge) throw new IdentityError(401);
       const data = await consent(request.headers.cookie, challenge);
-      const requestUrl = new URL(data.request_url);
       const targets = data.requested_scope.includes("mcp.connect")
         ? (await operations!.mcp.consent(data)).worldIds
         : undefined;
-      const callback = new URL(requestUrl.searchParams.get("redirect_uri")!);
-      const formSources = `'self' ${requestUrl.origin} ${callback.origin === "null" ? callback.protocol : callback.origin}`;
       const csrf = randomBytes(32).toString("hex");
       reply.setCookie("gestaloka_consent", csrf, {
         path: "/auth/oauth/consent",
@@ -109,7 +106,6 @@ export async function oauthRoutes(
         reply,
         "アクセスの許可",
         `<p>${escape(data.client.client_name ?? data.client.client_id)}</p><p>要求する権限: ${escape(data.requested_scope.join(", "))}</p>${targets === undefined ? "" : `<p>対象の世界: ${targets === null ? "すべての世界" : targets.length ? escape(targets.join(", ")) : "なし"}</p>`}<form method="post"><input type="hidden" name="challenge" value="${escape(challenge)}"><input type="hidden" name="csrf" value="${csrf}"><button name="decision" value="accept">許可する</button><button name="decision" value="reject">拒否する</button></form>`,
-        formSources,
       );
     },
   );
@@ -159,7 +155,15 @@ export async function oauthRoutes(
             },
       );
       reply.clearCookie("gestaloka_consent", { path: "/auth/oauth/consent" });
-      return reply.redirect(result.redirect_to);
+      // A new navigation lets the OAuth client follow its own redirects while
+      // the consent form itself can only submit to this origin.
+      const next = result.redirect_to;
+      reply.header("Refresh", `0; url=${next}`);
+      return authPage(
+        reply,
+        "アクセス許可の手続き完了",
+        `<p><a href="${escape(next)}">クライアントへ戻る</a></p>`,
+      );
     },
   );
   app.get<{ Querystring: { logout_challenge?: string } }>(
