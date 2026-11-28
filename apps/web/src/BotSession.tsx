@@ -753,6 +753,18 @@ export function BotSession({
                               onClick={() =>
                                 void send({
                                   command: "search",
+                                  query: { kind: "surroundings" },
+                                  findItems: true,
+                                })
+                              }
+                            >
+                              新しく探す
+                            </Button>
+                            <Button
+                              disabled={busy}
+                              onClick={() =>
+                                void send({
+                                  command: "search",
                                   query: { kind: "self" },
                                 })
                               }

@@ -12522,7 +12522,9 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
   );
   await f.send(1, { command: "contact", targetId: f.actors[0] });
   const query = { kind: "subject", targetId: f.place },
-    body = { command: "search", query, requestId: randomUUID() };
+    search = { command: "search", query },
+    find = { ...search, findItems: true },
+    body = { ...find, requestId: randomUUID() };
   // The player still holds the required tool at the other site; a hit on it alone must not spawn anything there.
   await f.move(0, f.far);
   const depId = randomUUID(),
@@ -12545,19 +12547,19 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
     },
   );
   expect(
-    (await f.send(0, { command: "search", query: { kind: "self" } }))
-      .appearances,
+    (await f.send(0, { ...find, query: { kind: "self" } })).appearances,
   ).toBeUndefined();
   await f.move(0, f.place);
+  expect((await f.send(0, search)).appearances).toBeUndefined();
   const found = await f.send(0, body);
   const items = found.appearances as { id: string }[];
-  expect(found.appearanceText).toBeUndefined();
+  expect(found.appearanceText).toBe("砂金を3個見つけた。その場に計3個ある。");
   expect((await f.status(1)).entries).toContainEqual(
     expect.objectContaining({
       payload: expect.objectContaining({
         entries: [
           expect.objectContaining({
-            input: "出現",
+            input: found.appearanceText,
             result: expect.objectContaining({
               sourceRequestId: body.requestId,
             }),
@@ -12585,6 +12587,13 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
     ],
   });
   expect(await f.send(0, body)).toEqual(found);
+  for (const player of [0, 1]) {
+    expect((await f.send(player, search)).appearances).toBeUndefined();
+    expect(await f.store.context(world).node(items[0]!.id)).toMatchObject({
+      count: 2,
+    });
+    await f.send(player, { command: "end-turn" });
+  }
   // 次に現れた物品は、その場に残っている同じ物品へ足され、物品は増えない。状態が付いていても足される。
   // 落ちている数は、発生数3に同席するプレイヤー2人を掛けた6個を超えない。
   const state = randomUUID();
@@ -12611,13 +12620,14 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
       },
     },
   );
-  const second = await f.send(0, { command: "search", query });
+  const second = await f.send(0, find);
   expect(second.appearances).toMatchObject([{ id: items[0]!.id, count: 3 }]);
-  expect(
-    (await f.send(0, { command: "search", query })).appearances,
-  ).toMatchObject([{ id: items[0]!.id, count: 1 }]);
+  expect(second.appearanceText).toBe("砂金を3個見つけた。その場に計5個ある。");
+  expect((await f.send(0, find)).appearances).toMatchObject([
+    { id: items[0]!.id, count: 1 },
+  ]);
   // 上限まで落ちている間は、検索しても現れない。
-  const full = await f.send(0, { command: "search", query });
+  const full = await f.send(0, find);
   expect(full.appearances).toBeUndefined();
   expect(JSON.stringify((await f.status(1)).entries)).toContain(items[0]!.id);
   expect(JSON.stringify((await f.status(2)).entries)).not.toContain(
@@ -12643,9 +12653,9 @@ test("検索で発生した複数の物品は個数つきの1つの物品とし�
       },
     ],
   });
-  expect(
-    (await f.send(0, { command: "search", query })).appearances,
-  ).toMatchObject([{ id: items[0]!.id, count: 1 }]);
+  expect((await f.send(0, find)).appearances).toMatchObject([
+    { id: items[0]!.id, count: 1 },
+  ]);
   await f.send(0, { command: "finish" });
   await f.send(1, { command: "finish" });
   await f.move(2, f.place);

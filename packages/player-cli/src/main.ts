@@ -1218,6 +1218,7 @@ async function run() {
             : {}),
           ...(command === "search"
             ? {
+                ...(values["find-items"] ? { findItems: true } : {}),
                 query: {
                   kind: values.kind,
                   ...(values.target ? { targetId: values.target } : {}),

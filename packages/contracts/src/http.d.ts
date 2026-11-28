@@ -4160,6 +4160,8 @@ export interface paths {
                         requestId: string;
                         /** @enum {string} */
                         command: "search";
+                        /** @description 新しく物品を探す */
+                        findItems?: boolean;
                         query: ({
                             /** @enum {string} */
                             kind: "surroundings";
@@ -5277,6 +5279,8 @@ export interface paths {
                         requestId: string;
                         /** @enum {string} */
                         command: "search";
+                        /** @description 新しく物品を探す */
+                        findItems?: boolean;
                         query: ({
                             /** @enum {string} */
                             kind: "surroundings";

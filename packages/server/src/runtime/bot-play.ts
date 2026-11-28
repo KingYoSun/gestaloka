@@ -16246,6 +16246,7 @@ export class BotPlay {
                 () => this.#places(queried.context, actor, db),
                 multiplier,
                 players,
+                input.findItems === true,
               );
               if (appearance) {
                 const { appearances, ...description } = appearance;

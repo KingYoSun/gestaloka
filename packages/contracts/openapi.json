@@ -11010,6 +11010,10 @@
                           "search"
                         ]
                       },
+                      "findItems": {
+                        "description": "新しく物品を探す",
+                        "type": "boolean"
+                      },
                       "query": {
                         "anyOf": [
                           {
@@ -14913,6 +14917,10 @@
                         "enum": [
                           "search"
                         ]
+                      },
+                      "findItems": {
+                        "description": "新しく物品を探す",
+                        "type": "boolean"
                       },
                       "query": {
                         "anyOf": [
