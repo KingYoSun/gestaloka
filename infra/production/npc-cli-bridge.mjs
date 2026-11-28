@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { createServer as createSocket } from "node:net";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
   chmod,
@@ -111,6 +111,27 @@ const tool = {
     additionalProperties: false,
   },
 };
+const directTool = {
+  ...tool,
+  name: "npc_cli_direct",
+  description:
+    "Use the GESTALOKA CLI for the NPC bound to this connection. After a " +
+    "direct request from your owner, read status, then use start if there " +
+    "is no current session. Reuse callId when retrying a call.",
+  inputSchema: {
+    ...tool.inputSchema,
+    properties: {
+      callId: {
+        type: "string",
+        description:
+          "Use a fresh UUID for each invocation. Reuse it only to retry the same invocation.",
+      },
+      args: tool.inputSchema.properties.args,
+      input: tool.inputSchema.properties.input,
+    },
+    required: ["callId", "args"],
+  },
+};
 
 export function validateInvocation(args, input, turn, receive = false) {
   if (
@@ -150,6 +171,7 @@ export function createNpcBridge({
   ttl = 10 * 60_000,
 }) {
   const leases = new Map();
+  const directLeases = new Map();
   const busy = new Set();
   function issue(name, turn, receive = false) {
     if (!Object.hasOwn(roles, name)) throw new Error("UNKNOWN_NPC");
@@ -201,7 +223,15 @@ export function createNpcBridge({
     lease.responses.set(id, { invocation, response });
     return response;
   }
-  return { issue, call };
+  function callDirect(npc, { callId, args, input } = {}) {
+    let lease = directLeases.get(npc);
+    if ((leases.get(lease)?.expires ?? 0) <= clock()) {
+      lease = issue(npc, true);
+      directLeases.set(npc, lease);
+    }
+    return call({ npc, lease, callId, args, input });
+  }
+  return { issue, call, callDirect };
 }
 
 function json(res, status, body) {
@@ -329,57 +359,7 @@ async function serve(path) {
         throw new Error("PROFILE_MISMATCH");
     },
   });
-  const server = createServer(async (req, res) => {
-    if (req.url !== "/mcp") return json(res, 404);
-    if (req.headers.origin) return json(res, 403);
-    if (req.method !== "POST") return json(res, 405);
-    let msg;
-    try {
-      msg = await requestBody(req);
-    } catch {
-      return json(res, 400);
-    }
-    if (!msg || msg.jsonrpc !== "2.0") return json(res, 400);
-    if (!Object.hasOwn(msg, "id")) return json(res, 202);
-    if (typeof msg.id !== "string" && typeof msg.id !== "number")
-      return json(res, 400);
-    const result = (payload) =>
-      json(res, 200, { jsonrpc: "2.0", id: msg.id, result: payload });
-    if (msg.method === "initialize")
-      return result({
-        protocolVersion: ["2025-03-26", "2025-06-18", "2025-11-25"].includes(
-          msg.params?.protocolVersion,
-        )
-          ? msg.params.protocolVersion
-          : "2025-11-25",
-        capabilities: { tools: {} },
-        serverInfo: { name: "gestaloka-npc-cli", version: "1" },
-      });
-    if (msg.method === "ping") return result({});
-    if (msg.method === "tools/list") return result({ tools: [tool] });
-    if (msg.method !== "tools/call" || msg.params?.name !== tool.name)
-      return json(res, 200, {
-        jsonrpc: "2.0",
-        id: msg.id,
-        error: { code: -32601, message: "Method not found" },
-      });
-    try {
-      const value = await bridge.call(msg.params.arguments);
-      return result({
-        content: [{ type: "text", text: JSON.stringify(value) }],
-        ...(value.code ? { isError: true } : {}),
-      });
-    } catch (error) {
-      const code = /^[A-Z_]+$/.test(error.message)
-        ? error.message
-        : "INVALID_ARGUMENTS";
-      return result({
-        content: [{ type: "text", text: JSON.stringify({ error: code }) }],
-        isError: true,
-      });
-    }
-  });
-  server.requestTimeout = 10000;
+  const server = createNpcMcpServer(bridge, config.roles);
   server.listen(config.port, config.address);
   for (const address of config.sockets) {
     const previous = await lstat(address).catch((error) => {
@@ -409,6 +389,81 @@ async function serve(path) {
       void chmod(address, 0o600);
     });
   }
+}
+
+export function createNpcMcpServer(bridge, roles) {
+  const server = createServer(async (req, res) => {
+    const npc = /^\/direct\/([a-z0-9_-]+)\/mcp$/.exec(req.url)?.[1];
+    if (!npc && req.url !== "/mcp") return json(res, 404);
+    if (req.headers.origin) return json(res, 403);
+    if (req.method !== "POST") return json(res, 405);
+    if (npc) {
+      const hash = Object.hasOwn(roles, npc) && roles[npc].directTokenSha256;
+      const token = /^Bearer ([\w-]{43})$/i.exec(
+        req.headers.authorization,
+      )?.[1];
+      if (
+        !token ||
+        !hash ||
+        !/^[a-f0-9]{64}$/.test(hash) ||
+        !timingSafeEqual(
+          Buffer.from(hash, "hex"),
+          createHash("sha256").update(token).digest(),
+        )
+      )
+        return json(res, 401);
+    }
+    const availableTool = npc ? directTool : tool;
+    let msg;
+    try {
+      msg = await requestBody(req);
+    } catch {
+      return json(res, 400);
+    }
+    if (!msg || msg.jsonrpc !== "2.0") return json(res, 400);
+    if (!Object.hasOwn(msg, "id")) return json(res, 202);
+    if (typeof msg.id !== "string" && typeof msg.id !== "number")
+      return json(res, 400);
+    const result = (payload) =>
+      json(res, 200, { jsonrpc: "2.0", id: msg.id, result: payload });
+    if (msg.method === "initialize")
+      return result({
+        protocolVersion: ["2025-03-26", "2025-06-18", "2025-11-25"].includes(
+          msg.params?.protocolVersion,
+        )
+          ? msg.params.protocolVersion
+          : "2025-11-25",
+        capabilities: { tools: {} },
+        serverInfo: { name: "gestaloka-npc-cli", version: "1" },
+      });
+    if (msg.method === "ping") return result({});
+    if (msg.method === "tools/list") return result({ tools: [availableTool] });
+    if (msg.method !== "tools/call" || msg.params?.name !== availableTool.name)
+      return json(res, 200, {
+        jsonrpc: "2.0",
+        id: msg.id,
+        error: { code: -32601, message: "Method not found" },
+      });
+    try {
+      const value = npc
+        ? await bridge.callDirect(npc, msg.params.arguments)
+        : await bridge.call(msg.params.arguments);
+      return result({
+        content: [{ type: "text", text: JSON.stringify(value) }],
+        ...(value.code ? { isError: true } : {}),
+      });
+    } catch (error) {
+      const code = /^[A-Z_]+$/.test(error.message)
+        ? error.message
+        : "INVALID_ARGUMENTS";
+      return result({
+        content: [{ type: "text", text: JSON.stringify({ error: code }) }],
+        isError: true,
+      });
+    }
+  });
+  server.requestTimeout = 10000;
+  return server;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
