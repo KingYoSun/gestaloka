@@ -1,6 +1,12 @@
 import { instantPlaceEdge } from "../world/conditions.js";
 import { classifyNpcHistory, type NpcMemory } from "./npc-history.js";
-import { npcOperations, type NpcReport, type NpcTask } from "./npc-work.js";
+import {
+  npcOperations,
+  visibleMaterialChanges,
+  type NpcRead,
+  type NpcReport,
+  type NpcTask,
+} from "./npc-work.js";
 import { diceFields, dicePrompt, rollDice } from "./dice.js";
 import {
   playedDice,
@@ -2274,6 +2280,15 @@ export class BotPlay {
     await signalTurns(db, world, actor);
     return session;
   }
+  async #npcReadMaterial(world: string, actor: string, read: NpcRead) {
+    return (
+      await this.pool.query<{ material: Record<string, unknown> | null }>(
+        "SELECT result->'material' AS material FROM bot_request WHERE id=$1 AND world_id=$2 AND actor_id=$3",
+        [read.readId, world, actor],
+      )
+    ).rows[0]?.material;
+  }
+
   async #reportedMaterial(
     graph: string,
     world: string,
@@ -2282,7 +2297,7 @@ export class BotPlay {
   ) {
     try {
       await this.store.context(graph, report.dependencies).validate();
-      return "unchanged";
+      return { priorResult: "unchanged" as const };
     } catch (error) {
       if (!(error instanceof WorldConflict)) throw error;
     }
@@ -2295,16 +2310,22 @@ export class BotPlay {
           (await this.#search(world, actor, report.query, [], db)).visible
             .material,
       );
-      return createHash("sha256").update(canonical(material)).digest("hex") ===
+      if (
+        createHash("sha256").update(canonical(material)).digest("hex") ===
         report.materialHash
-        ? "unchanged"
-        : "visible-result-changed";
+      )
+        return { priorResult: "unchanged" as const };
+      const before = await this.#npcReadMaterial(world, actor, report);
+      const changes = before && visibleMaterialChanges(before, material);
+      return changes?.length === 0
+        ? { priorResult: "unchanged" as const }
+        : { priorResult: "visible-result-changed" as const, changes };
     } catch (error) {
       if (
         error instanceof AccessError &&
         error.code === "MATERIAL_NOT_AVAILABLE"
       )
-        return "unavailable";
+        return { priorResult: "unavailable" as const };
       throw error;
     }
   }
@@ -2527,7 +2548,7 @@ export class BotPlay {
                 peers.includes(work.completed.recipient)
                   ? work.completed
                   : undefined;
-              const priorResult =
+              const comparison =
                 completed &&
                 (await this.#reportedMaterial(
                   world.id,
@@ -2535,6 +2556,7 @@ export class BotPlay {
                   npc.actor_id,
                   completed,
                 ));
+              const priorResult = comparison?.priorResult;
               const afterReport = completed
                 ? history.entries
                     .slice(-historyLimit)
@@ -2561,12 +2583,11 @@ export class BotPlay {
                   ? await this.#requestedRecheck(completed, afterReport)
                   : undefined;
               const readResult = pending
-                ? (
-                    await this.pool.query(
-                      "SELECT result->'material' AS material FROM bot_request WHERE id=$1 AND world_id=$2 AND actor_id=$3",
-                      [pending.readId, npc.world_id, npc.actor_id],
-                    )
-                  ).rows[0]?.material
+                ? await this.#npcReadMaterial(
+                    npc.world_id,
+                    npc.actor_id,
+                    pending,
+                  )
                 : undefined;
               const reportRecords =
                 pending?.query.kind === "subject" &&
@@ -2612,7 +2633,7 @@ export class BotPlay {
                   {
                     role: "system",
                     content:
-                      'あなたは一人の担当人物です。本人の目的・性格と知っていることから、今成立させたい結果に対応する操作をavailableOperationsから一つ選びます。相手の証言、自分が予告したこと、実際に調べて分かったことを区別します。自分が引き受けてまだ済ませていない確認は自分で対象を選んで実行できます。報告が相手に届いた用事は完了です。目的が続いても、了承・待機・別の話題だけなら同じ用事を調べ直す必要はありません。前の答えを聞き直されたらその答えを返せます。関連する変化や再依頼、またはpriorResultがvisible-result-changedなら、自分の目的に応じて改めて確認できます。変化の内容は読んでから判断します。sinceLastTurnには前回の公開行動とその後に届いた発言・結果・参加者の増減があり、repeatOfは記録ID.番号の発言を再び聞いたことを示します。退出はセッションからの退出です。他人の意図や世界の裁定を代作しません。行動を予告するだけで持ち物や状態は変わりません。commandRestrictionsに従い、身振り・筆談はnonverbalを選びます。companionがwaitならその場で、followなら同行相手と行動します。乗り物が自ら運行するときはvehicle-travelのvehicleIdに自分のIDを使います。npc-actionは他の出現個体に対する操作です。goalには自分の現在の目的またはnullを入れます。通常の手番で新しい目的を選んだら、この手番を含め、何回の本人手番を使うかを正の整数goalTurnsで決めます。同じ目的を続けている間は、言い換えた場合もgoalTurnsを省きます。expiredGoalには期限を使い切って終了した目的が入ります。これまでに分かったことを踏まえ、次に達成したい結果が変わる場合は、新しいgoalとgoalTurnsを決めます。同じ結果を目指す目的の延長はできません。言い換えや手段だけの変更も延長にあたります。新しい目的がなければgoalをnullにして、状況に合う操作を選びます。以前からの目的に残り手番数がまだなければ、通常の手番で続けるときにgoalTurnsを決めます。受領への返答では目的を更新しません。選ぶ操作が成功すれば現在の目的を達成する場合は、その目的をgoalに入れたままcompletesGoalをtrueにします。報告で目的を達成するには、目的で求めた内容が報告に含まれ、相手に届く必要があります。求めた情報が見つからず、その経緯を伝えるだけの場合や、報告が別の目的の途中の一手の場合はcompletesGoalをfalseにします。操作の成功後、反応を待つならendOnSuccessはtrue、結果を見て自分で続けるならfalse。出力は {"operation":"操作名","args":引数} のJSONだけ。',
+                      'あなたは一人の担当人物です。本人の目的・性格と知っていることから、今成立させたい結果に対応する操作をavailableOperationsから一つ選びます。相手の証言、自分が予告したこと、実際に調べて分かったことを区別します。自分が引き受けてまだ済ませていない確認は自分で対象を選んで実行できます。報告が相手に届いた用事は完了です。目的が続いても、了承・待機・別の話題だけなら同じ用事を調べ直す必要はありません。前の答えを聞き直されたらその答えを返せます。completedWork.changesには前の確認から見える範囲で変わった項目が入ります。元の問いへの答えや相手の判断に関わる変化、または再依頼があれば、自分の目的に応じて改めて確認できます。sinceLastTurnには前回の公開行動とその後に届いた発言・結果・参加者の増減があり、repeatOfは記録ID.番号の発言を再び聞いたことを示します。退出はセッションからの退出です。他人の意図や世界の裁定を代作しません。発言は相手に言葉を届けます。同席者に働きかけ、その結果を判定にかけたいときはoppose_personを選べます。commandRestrictionsに従い、身振り・筆談はnonverbalを選びます。companionがwaitならその場で、followなら同行相手と行動します。乗り物が自ら運行するときはvehicle-travelのvehicleIdに自分のIDを使います。npc-actionは他の出現個体に対する操作です。goalには自分の現在の目的またはnullを入れます。通常の手番で新しい目的を選んだら、この手番を含め、何回の本人手番を使うかを正の整数goalTurnsで決めます。同じ目的を続けている間は、言い換えた場合もgoalTurnsを省きます。expiredGoalには期限を使い切って終了した目的が入ります。これまでに分かったことを踏まえ、次に達成したい結果が変わる場合は、新しいgoalとgoalTurnsを決めます。同じ結果を目指す目的の延長はできません。言い換えや手段だけの変更も延長にあたります。新しい目的がなければgoalをnullにして、状況に合う操作を選びます。以前からの目的に残り手番数がまだなければ、通常の手番で続けるときにgoalTurnsを決めます。受領への返答では目的を更新しません。選ぶ操作が成功すれば現在の目的を達成する場合は、その目的をgoalに入れたままcompletesGoalをtrueにします。報告で目的を達成するには、目的で求めた内容が報告に含まれ、相手に届く必要があります。求めた情報が見つからず、その経緯を伝えるだけの場合や、報告が別の目的の途中の一手の場合はcompletesGoalをfalseにします。操作の成功後、反応を待つならendOnSuccessはtrue、結果を見て自分で続けるならfalse。出力は {"operation":"操作名","args":引数} のJSONだけ。',
                   },
                   {
                     role: "user",
@@ -2620,7 +2641,7 @@ export class BotPlay {
                       ...(pending
                         ? {
                             situation:
-                              "自分で選んだ確認を終えた。reportRecordsがあれば、findingには答えの根拠にする記録の番号を入れる。番号を選んだ記録はそのまま相手に引用される。ほかの場合は、findingに今回の検索結果が直接示すことと、確認できた範囲を書く。見立てを加える場合は、judgmentのproposalに自分なら取る一手を書く。使えるか、足りるかなどが未確認の条件に依存するときは、conditionに何が未確認かを書く。その条件を満たすときの提案や、条件を先に確かめる提案を伝えられる。",
+                              "自分で選んだ確認を終えた。reportRecordsがあれば、findingには答えの根拠にする記録の番号を入れる。findingとjudgmentには根拠と見立てを分けて記入し、textに相手へ実際に伝える言葉や身振りを書く。引用が役に立つなら本人の言葉に組み込める。ほかの場合は、findingに今回の検索結果が直接示すことと、確認できた範囲を書く。見立てを加える場合は、judgmentのproposalに自分なら取る一手を書く。使えるか、足りるかなどが未確認の条件に依存するときは、conditionに何が未確認かを書く。その条件を満たすときの提案や、条件を先に確かめる提案を伝えられる。",
                             task: {
                               question: pending.question,
                               recipient: pending.recipient,
@@ -2679,12 +2700,12 @@ export class BotPlay {
                               recipient: completed.recipient,
                               query: completed.query,
                               alreadyDelivered: completed.answer,
-                              priorResult,
+                              ...comparison,
                               afterReport,
                               recheckRequest,
                               situation:
                                 priorResult === "visible-result-changed"
-                                  ? "相手に報告した後、自分が閲覧できる確認対象に変化があった。前の答えを今の状態として扱えない。相手が待っている間でも、その人の判断に関わるなら recheck_for_recipient で何が変わったか読み直し、知らせるかを選ぶ。"
+                                  ? "changesに、元の問いへの答えや相手の判断を変え得る具体的な根拠があれば、recheck_for_recipient で確かめられる。同じ場所の別の物が増えただけなら、探していた物まで変わったとは考えず、今の話題や目的に応じる。"
                                   : recheckRequest
                                     ? "相手が改めて調べてほしいと頼んだ。引き受けるなら recheck_for_recipient で現在の結果を調べ、断るならその旨を伝える。"
                                     : "この問いへの答えは相手に届いた。前の答えの聞き直しには手元の情報で応じられる。",
@@ -15823,6 +15844,11 @@ export class BotPlay {
           { receiving } = d;
         let confirmedChanges: Change | undefined;
         let together: string[] | undefined;
+        if (
+          plan?.instantMembers &&
+          plan.instantMembers !== JSON.stringify(d.members)
+        )
+          reject("WORLD_CHANGED", "NPCの同席者が変わりました");
         const member = d.members.find((m) => m.actorId === actor);
         if (member) member.userId = user;
         if (
@@ -16531,11 +16557,6 @@ export class BotPlay {
               await plan.context.validate();
               result = { state: "rejected", outcome: plan.outcome };
             } else if (plan) {
-              if (
-                plan.instantMembers &&
-                plan.instantMembers !== JSON.stringify(d.members)
-              )
-                reject("WORLD_CHANGED", "NPCの同席者が変わりました");
               const deadline = deferred(input);
               const reviewedSource = plan.drawReview?.versionId
                 ? (plan.changes.nodes[0] ?? plan.changes.revisions[0])
