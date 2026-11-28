@@ -6742,11 +6742,18 @@ export class BotPlay {
       return {};
     const ids = await context.materialIds(buyerId, paymentLabel);
     const payment = ids.length === 1 ? await context.node(ids[0]!) : undefined;
-    const message =
-      payment?.kind === "existence" && payment.seriesId
-        ? `${itemLabel}×${count}を${paymentLabel}×${paymentCount}でお譲りします。`
-        : `${paymentLabel}での交換条件を確定できませんでした。代価に使う品を確認してください。`;
-    if (payment?.kind === "existence" && payment.seriesId) {
+    const price =
+      payment?.kind === "existence"
+        ? payment.seriesId
+          ? { paymentSeriesId: payment.seriesId }
+          : !seller.instant
+            ? { paymentItemId: payment.id }
+            : undefined
+        : undefined;
+    const message = price
+      ? `${itemLabel}×${count}を${paymentLabel}×${paymentCount}でお譲りします。`
+      : `${paymentLabel}での交換条件を確定できませんでした。代価に使う品を確認してください。`;
+    if (price) {
       const offered = [
         ...(seller.instant
           ? await instantTrades(context, [
@@ -6761,7 +6768,11 @@ export class BotPlay {
           offer.itemLabel === itemLabel &&
           offer.count === count &&
           offer.paymentLabel === paymentLabel &&
-          offer.paymentSeriesId === payment.seriesId &&
+          ("paymentItemId" in price
+            ? "paymentItemId" in offer &&
+              offer.paymentItemId === price.paymentItemId
+            : "paymentSeriesId" in offer &&
+              offer.paymentSeriesId === price.paymentSeriesId) &&
           offer.paymentCount === paymentCount,
       );
       if (!offered) {
@@ -6777,7 +6788,7 @@ export class BotPlay {
             count,
             paymentLabel,
             paymentCount,
-            paymentSeriesId: payment.seriesId,
+            ...price,
             text: message,
           },
         });
