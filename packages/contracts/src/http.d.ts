@@ -10887,6 +10887,8 @@ export interface paths {
                                 title: string;
                                 description: string;
                                 playerSettings?: string;
+                                /** @enum {string} */
+                                combatMode: "pve" | "pvp";
                                 accepting: boolean;
                                 canJoin: boolean;
                                 /** @enum {string} */
@@ -11028,6 +11030,8 @@ export interface paths {
                             title: string;
                             description: string;
                             playerSettings?: string;
+                            /** @enum {string} */
+                            combatMode: "pve" | "pvp";
                             accepting: boolean;
                             canJoin: boolean;
                             /** @enum {string} */
@@ -12013,6 +12017,8 @@ export interface paths {
                             id: string;
                             /** Format: uuid */
                             worldId: string;
+                            /** @enum {string} */
+                            combatMode?: "pve" | "pvp";
                             /** Format: uuid */
                             actorId: string | null;
                             /** Format: uuid */

@@ -14788,7 +14788,7 @@ test("出現個体の手番中は本人だけが動き、外界への作用と�
   ).toBe(false);
 });
 test("初回接続と状態照会のタイムアウトを復旧し、終了時に履歴を返す", async () => {
-  const f = await fixture(),
+  const f = await fixture(3, "pve"),
     app = await createApp(access, auth.identity, undefined, auth.operations),
     cli = await playerCli(app);
   const profile = join(cli.directory, "cold.json");
@@ -14818,7 +14818,17 @@ test("初回接続と状態照会のタイムアウトを復旧し、終了時�
       `actor:${f.actors[0]}`,
     );
     cli.timeoutNextResponse("/api/player-device");
-    expect((await cli.run(profile, "status")).state).toBe("ready");
+    expect(await cli.run(profile, "status")).toMatchObject({
+      state: "ready",
+      device: { combatMode: "pve" },
+    });
+    await isolated.databases.postgres.query(
+      "UPDATE world_construction SET combat_mode=$2 WHERE id=$1",
+      [f.world, "pvp"],
+    );
+    expect(await cli.run(profile, "status")).toMatchObject({
+      device: { combatMode: "pvp" },
+    });
     await cli.run(profile, "say", "--text", "旅の手帳を閉じる");
     const end = await cli.run(profile, "finish");
     expect(end).toMatchObject({
