@@ -661,6 +661,14 @@ export class PlayApplications {
       row ? [offer.sellerId, buyer] : [buyer],
       text,
     );
-    return { state: "accepted", commitId: request, offerId: id, message: text };
+    return {
+      sellerId: offer.sellerId,
+      result: {
+        state: "accepted",
+        commitId: request,
+        offerId: id,
+        message: text,
+      },
+    };
   }
 }
