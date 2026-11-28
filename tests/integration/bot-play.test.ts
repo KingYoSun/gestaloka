@@ -23168,6 +23168,31 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
     ...reply,
   });
   expect((await memory()).completed).toEqual(done.completed);
+  await f.send(0, {
+    command: "say",
+    text: "同じ札で荷の宛先も分かりますか。",
+  });
+  await f.send(0, { command: "end-turn" });
+  await choose("inspect_and_reply", {
+    recipient: peer,
+    question: "荷の宛先",
+    query,
+  });
+  expect((await memory()).pending).toMatchObject({
+    readId: done.completed.readId,
+    question: "荷の宛先",
+    reused: true,
+  });
+  const limited =
+    "この札から分かるのは荷受け場所までです。宛先は荷札で確かめてください。";
+  const reused = await choose("report_and_pass", {
+    finding: "記録から確認できるのは荷受け場所まで。",
+    judgment: null,
+    mode: "voice",
+    text: limited,
+  });
+  expect(reused.readResult).toBeDefined();
+  expect((await memory()).completed).toMatchObject({ answer: limited });
   const updatedMaterial: Change = {
     nodes: [],
     edges: [],
@@ -23253,6 +23278,141 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
       .flatMap((row) => row.payload.entries ?? [])
       .some((e) => e.input === `記録には「${notice}」とあります。`),
   ).toBe(false);
+});
+
+test("登録済みNPCとの会話の交換を一度だけ受領し、再訪で決済記録を参照できる", async () => {
+  const f = await fixture(3);
+  const [buyer, npc, visitor] = f.actors as [string, string, string];
+  const coin = randomUUID();
+  const setup = randomUUID();
+  const ctx = () => f.store.context(f.graph);
+  await f.store.commit(await f.store.claim(f.graph, setup), ctx(), {
+    commitId: setup,
+    at: 0,
+    changes: {
+      nodes: [
+        {
+          id: coin,
+          kind: "existence",
+          text: "木札",
+          count: 5,
+          seriesId: randomUUID(),
+        },
+      ],
+      revisions: [],
+      edges: [
+        {
+          id: randomUUID(),
+          kind: "has",
+          source: buyer,
+          target: coin,
+          period: { from: 0 },
+        },
+      ],
+      endEdges: [],
+    },
+    management: {
+      editorId: f.admin.id,
+      reason: "代価の系列を登録",
+      requestHash: "c".repeat(64),
+    },
+  });
+  await f.move(2, f.place);
+  await f.send(0, { command: "contact", targetId: npc });
+  await f.send(2, { command: "contact", targetId: npc });
+  await giveTurn(f, 1);
+  await auth.operations.execute(
+    f.admin.id,
+    randomUUID(),
+    {
+      operation: "npcs.put",
+      worldId: f.world,
+      actorId: npc,
+      controller: "server",
+      reason: "架空の売り手を担当",
+    },
+    { players: access.players },
+  );
+  const pass = (id: string) =>
+    answer(id, { operation: "pass_turn", args: { goal: null } });
+  const advance = async (target: string) => {
+    for (let i = 0; i < 3; i++) {
+      const holder = (await f.status(0)).actorId;
+      if (holder === target) return;
+      if (holder === npc) await access.botPlay.tickNpcs(f.world);
+      else await f.send(holder === buyer ? 0 : 2, { command: "end-turn" });
+    }
+    expect((await f.status(0)).actorId).toBe(target);
+  };
+  f.calls.mockImplementationOnce(async (id, _role, messages) => {
+    const context = JSON.parse(String(messages[1]!.content));
+    expect(context.availableOperations).toContainEqual(
+      expect.objectContaining({ name: "offer_exchange" }),
+    );
+    return answer(id, {
+      operation: "offer_exchange",
+      args: {
+        goal: null,
+        buyerId: buyer,
+        itemLabel: "染め布",
+        count: 1,
+        paymentLabel: "木札",
+        paymentCount: 2,
+      },
+    });
+  });
+  await access.botPlay.tickNpcs(f.world);
+  const holdings = async () => (await readBelongings(ctx(), buyer)).items;
+  expect(await holdings()).toMatchObject([{ id: coin, count: 5 }]);
+  const search = { command: "search", query: { kind: "surroundings" } };
+  f.calls.mockImplementation(async (id) => pass(id));
+  await advance(buyer);
+  const listed = await f.send(0, search);
+  const [offer] = listed.exchangeOffers as { id: string }[];
+  expect(offer).toMatchObject({
+    sellerId: npc,
+    itemLabel: "染め布",
+    createsItem: true,
+  });
+  await advance(visitor);
+  expect((await f.send(2, search)).exchangeOffers ?? []).toEqual([]);
+  await advance(buyer);
+  const exchange = {
+    command: "exchange",
+    requestId: randomUUID(),
+    offerId: offer!.id,
+    paymentItemId: coin,
+  };
+  const settled = await f.send(0, exchange);
+  expect(settled.state).toBe("accepted");
+  expect(await f.send(0, exchange)).toEqual(settled);
+  await expect(
+    f.send(0, { ...exchange, requestId: randomUUID() }),
+  ).rejects.toMatchObject({ code: "EXCHANGE_NOT_AVAILABLE" });
+  expect(await holdings()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: coin, count: 3 }),
+      expect.objectContaining({ label: "染め布", count: 1 }),
+    ]),
+  );
+  await f.send(0, { command: "leave" });
+  await f.send(0, { command: "contact", targetId: npc });
+  f.calls.mockImplementation(async (id, role, messages) => {
+    if (role === "world-server-npc") {
+      const context = JSON.parse(String(messages[1]!.content));
+      expect(context.settledExchanges).toEqual([
+        { buyerId: buyer, terms: settled.message },
+      ]);
+      expect(context.pendingOffers).toEqual([]);
+    }
+    return answer(id, { operation: "pass_turn", args: { goal: null } });
+  });
+  await advance(npc);
+  f.calls.mockClear();
+  await access.botPlay.tickNpcs(f.world);
+  expect(
+    f.calls.mock.calls.some(([, role]) => role === "world-server-npc"),
+  ).toBe(true);
 });
 
 test("サーバー担当NPCは断られた選択を問い直さず、受領判断中は返答と一度のコメントだけを選べる", async () => {

@@ -1,4 +1,4 @@
-import { applicationSp, PlaySearch } from "@gestaloka/contracts";
+import { applicationSp, ExchangeTerms, PlaySearch } from "@gestaloka/contracts";
 import { z } from "zod";
 import { canonical } from "../llm/prompt.js";
 import type { Dependency } from "../world/store.js";
@@ -8,6 +8,12 @@ const query = z.union(
   PlaySearch.options.filter((q) => q.shape.kind.value !== "seek"),
 );
 const message = z.string().trim().min(1);
+export const ConversationOffer = ExchangeTerms.pick({
+  count: true,
+  paymentLabel: true,
+  paymentCount: true,
+}).extend({ buyerId: z.uuid(), itemLabel: message });
+export type ConversationOffer = z.infer<typeof ConversationOffer>;
 const goalChoice = {
   goal: message.nullable(),
   goalTurns: z.int().positive().optional(),
@@ -23,6 +29,7 @@ export type NpcRead = NpcTask & {
   readId: string;
   dependencies: Dependency[];
   materialHash: string;
+  reused?: boolean;
 };
 export type NpcReport = NpcRead & {
   answer: string;
@@ -36,6 +43,8 @@ type Decision = {
   endOnSuccess: boolean;
   completesGoal?: boolean | undefined;
   inspect?: NpcTask;
+  reuseRead?: NpcRead;
+  offer?: ConversationOffer;
   recipient?: string;
   reportReadId?: string;
 };
@@ -61,6 +70,8 @@ export function npcOperations(
   completed?: NpcReport,
   recheck?: "changed" | "requested",
   records: string[] = [],
+  followup = false,
+  buyers: string[] = [],
 ) {
   const operations = new Map<
     string,
@@ -107,23 +118,52 @@ export function npcOperations(
       add(
         "inspect_and_reply",
         completed
-          ? "新しい相手か、前の報告とは別の素材を調べる。"
+          ? "新しい相手か、追加の問いのために調べる。別の根拠が必要なら検索対象を変える。同じ資料を選んだ場合は、前に読めた範囲で新しい問いに答える。"
           : "引き受けた確認を実行する。知りたいこと、調べる対象と、結果を伝える相手のIDを選ぶ。",
         task.extend({ ...goalChoice, recipient: z.enum(peers) }),
-        (v) =>
-          completed?.recipient === v.recipient &&
-          canonical(completed.query) === canonical(v.query)
-            ? pass(v)
-            : {
-                goal: v.goal,
-                goalTurns: v.goalTurns,
-                inspect: task.parse(v),
-                action: { command: "search", query: v.query },
-                endOnSuccess: false,
-              },
+        (v) => {
+          const prior =
+            completed?.recipient === v.recipient &&
+            canonical(completed.query) === canonical(v.query) &&
+            !recheck
+              ? completed
+              : undefined;
+          if (prior && !followup) return pass(v);
+          const inspect = task.parse(v);
+          return {
+            goal: v.goal,
+            goalTurns: v.goalTurns,
+            action: { command: "search", query: v.query },
+            ...(prior
+              ? {
+                  reuseRead: {
+                    ...inspect,
+                    readId: prior.readId,
+                    dependencies: prior.dependencies,
+                    materialHash: prior.materialHash,
+                    reused: true,
+                  },
+                }
+              : { inspect }),
+            endOnSuccess: false,
+          };
+        },
       );
     };
     if (!completed) offerInspection();
+    if (buyers.length)
+      add(
+        "offer_exchange",
+        "買い手とその場で合意した品と代価を申し出る。買い手が受領すると品を用意して交換が成立する。在庫の現物には保管先を指定する通常のofferを使う。",
+        ConversationOffer.extend({ ...goalChoice, buyerId: z.enum(buyers) }),
+        ({ goal, goalTurns, ...offer }) => ({
+          goal,
+          goalTurns,
+          offer,
+          action: { command: "say", text: offer.itemLabel, mode: "nonverbal" },
+          endOnSuccess: true,
+        }),
+      );
     if (pending) {
       const text = message.describe(
         "相手に実際に伝える本人の言葉または身振り。根拠で分かったこと、確認の限界、必要なら自分の提案を、場面と人物の口調に合わせて伝える。",

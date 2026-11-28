@@ -1,6 +1,7 @@
 import { instantPlaceEdge } from "../world/conditions.js";
 import { classifyNpcHistory, type NpcMemory } from "./npc-history.js";
 import {
+  ConversationOffer,
   npcOperations,
   visibleMaterialChanges,
   type NpcRead,
@@ -254,19 +255,8 @@ const BlueprintDecision = z
 const InstantTurnChoice = z.union([
   NpcAction,
   z.strictObject({ command: z.literal("end-turn") }),
-  z.strictObject({
-    command: z.literal("offer"),
-    buyerId: z.uuid(),
-    itemLabel: ExchangeTerms.shape.paymentLabel,
-    count: ExchangeTerms.shape.count,
-    paymentLabel: ExchangeTerms.shape.paymentLabel,
-    paymentCount: ExchangeTerms.shape.paymentCount,
-  }),
+  ConversationOffer.extend({ command: z.literal("offer") }),
 ]);
-type InstantOffer = Extract<
-  z.infer<typeof InstantTurnChoice>,
-  { command: "offer" }
->;
 // 更新前の申し出は生成予定の品を申し出IDで表していた。
 function readExchangeOffer(
   offer: z.infer<typeof ExchangeOffer>,
@@ -280,7 +270,7 @@ function readExchangeOffer(
 type InstantChoice = {
   action?: z.infer<typeof NpcAction>;
   plan?: Plan;
-  offer?: InstantOffer;
+  offer?: ConversationOffer;
 };
 const ConstructionDecision = BlueprintDecision.extend({
   storageLimitSlots: z.number().int().positive().safe().optional(),
@@ -635,6 +625,8 @@ type IdleSessionStatus = {
   Partial<Record<Exclude<keyof SessionStatus, "stealth" | "home">, never>>;
 type NpcChoice = {
   inspect?: NpcTask;
+  reuseRead?: NpcRead;
+  offer?: ConversationOffer;
   recipient?: string;
   reportReadId?: string;
   completedGoal?: string;
@@ -643,7 +635,10 @@ type NpcChoice = {
   endOnSuccess: boolean;
   memory: NpcMemory;
 };
-type Member = {
+type ConversationOffers = {
+  offers?: { buyerId: string; offer: z.infer<typeof ExchangeOffer> }[];
+};
+type Member = ConversationOffers & {
   actorId: string;
   sceneId: string;
   userId?: string;
@@ -654,12 +649,11 @@ type Member = {
   };
   joinedAfterEntries?: number;
   joinedAfterComment?: boolean;
-  instant?: {
+  instant?: ConversationOffers & {
     name: string;
     description: string;
     sourceEventId: string;
     latestAppearanceEventId?: string;
-    offers?: { buyerId: string; offer: z.infer<typeof ExchangeOffer> }[];
     places: string[];
     ruleId?: string;
     count?: number;
@@ -1827,6 +1821,10 @@ export class BotPlay {
       ALTER TABLE bot_request ALTER COLUMN received_at SET DEFAULT now();
       CREATE INDEX IF NOT EXISTS bot_request_ended_creation ON bot_request(received_at,id) WHERE creation_pending ? 'turnEnded';
       CREATE INDEX IF NOT EXISTS bot_request_received ON bot_request(world_id,received_at);
+      CREATE TABLE IF NOT EXISTS npc_last_exchange (
+        world_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
+        seller_id uuid NOT NULL,buyer_id uuid NOT NULL,terms text NOT NULL,
+        PRIMARY KEY(world_id,seller_id,buyer_id));
       CREATE TABLE IF NOT EXISTS bot_dice (
       id uuid PRIMARY KEY,setting jsonb NOT NULL,roll integer);
       CREATE TABLE IF NOT EXISTS bot_creation_failure (
@@ -2623,6 +2621,23 @@ export class BotPlay {
                       ),
                     ]
                   : [];
+              const buyers = current.data.members
+                .filter((m) => m.actorId !== npc.actor_id && !m.instant)
+                .map((m) => m.actorId);
+              const pendingOffers = member.offers?.map(
+                ({ buyerId, offer }) => ({
+                  buyerId,
+                  text: offer.text,
+                }),
+              );
+              const settledExchanges = buyers.length
+                ? (
+                    await this.pool.query<{ buyerId: string; terms: string }>(
+                      'SELECT buyer_id AS "buyerId",terms FROM npc_last_exchange WHERE world_id=$1 AND seller_id=$2 AND buyer_id=ANY($3::uuid[])',
+                      [npc.world_id, npc.actor_id, buyers],
+                    )
+                  ).rows
+                : [];
               const operations = npcOperations(
                 peers,
                 !!status.receiving,
@@ -2634,6 +2649,8 @@ export class BotPlay {
                     ? "requested"
                     : undefined,
                 reportRecords,
+                afterReport.length > 0,
+                buyers,
               );
               const readChoice = (raw: string) => {
                 const value = parseOutput(raw);
@@ -2652,7 +2669,7 @@ export class BotPlay {
                   {
                     role: "system",
                     content:
-                      'あなたは一人の担当人物です。本人の目的・性格と知っていることから、今成立させたい結果に対応する操作をavailableOperationsから一つ選びます。相手の証言、自分が予告したこと、実際に調べて分かったことを区別します。自分が引き受けてまだ済ませていない確認は自分で対象を選んで実行できます。報告が相手に届いた用事は完了です。目的が続いても、了承・待機・別の話題だけなら同じ用事を調べ直す必要はありません。前の答えを聞き直されたらその答えを返せます。completedWork.changesには前の確認から見える範囲で変わった項目が入ります。元の問いへの答えや相手の判断に関わる変化、または再依頼があれば、自分の目的に応じて改めて確認できます。sinceLastTurnには前回の公開行動とその後に届いた発言・結果・参加者の増減があり、repeatOfは記録ID.番号の発言を再び聞いたことを示します。退出はセッションからの退出です。他人の意図や世界の裁定を代作しません。発言は相手に言葉を届けます。同席者に働きかけ、その結果を判定にかけたいときはoppose_personを選べます。commandRestrictionsに従い、身振り・筆談はnonverbalを選びます。companionがwaitならその場で、followなら同行相手と行動します。乗り物が自ら運行するときはvehicle-travelのvehicleIdに自分のIDを使います。npc-actionは他の出現個体に対する操作です。goalには自分の現在の目的またはnullを入れます。通常の手番で新しい目的を選んだら、この手番を含め、何回の本人手番を使うかを正の整数goalTurnsで決めます。同じ目的を続けている間は、言い換えた場合もgoalTurnsを省きます。expiredGoalには期限を使い切って終了した目的が入ります。これまでに分かったことを踏まえ、次に達成したい結果が変わる場合は、新しいgoalとgoalTurnsを決めます。同じ結果を目指す目的の延長はできません。言い換えや手段だけの変更も延長にあたります。新しい目的がなければgoalをnullにして、状況に合う操作を選びます。以前からの目的に残り手番数がまだなければ、通常の手番で続けるときにgoalTurnsを決めます。受領への返答では目的を更新しません。選ぶ操作が成功すれば現在の目的を達成する場合は、その目的をgoalに入れたままcompletesGoalをtrueにします。報告で目的を達成するには、目的で求めた内容が報告に含まれ、相手に届く必要があります。求めた情報が見つからず、その経緯を伝えるだけの場合や、報告が別の目的の途中の一手の場合はcompletesGoalをfalseにします。操作の成功後、反応を待つならendOnSuccessはtrue、結果を見て自分で続けるならfalse。出力は {"operation":"操作名","args":引数} のJSONだけ。',
+                      'あなたは一人の担当人物です。本人の目的・性格と知っていることから、今成立させたい結果に対応する操作をavailableOperationsから一つ選びます。相手の証言、自分が予告したこと、実際に調べて分かったことを区別します。自分が引き受けてまだ済ませていない確認は自分で対象を選んで実行できます。報告が相手に届いた用事は完了です。目的が続いても、了承・待機・別の話題だけなら同じ用事を調べ直す必要はありません。前の答えを聞き直されたらその答えを返せます。completedWork.changesには前の確認から見える範囲で変わった項目が入ります。元の問いへの答えや相手の判断に関わる変化、または再依頼があれば、自分の目的に応じて改めて確認できます。sinceLastTurnには前回の公開行動とその後に届いた発言・結果・参加者の増減があり、repeatOfは記録ID.番号の発言を再び聞いたことを示します。退出はセッションからの退出です。他人の意図や世界の裁定を代作しません。発言は相手に言葉を届けます。売買では合意、申し出、決済を区別します。本人の記憶や状態描写は決済の記録ではありません。履歴のresultにofferIdとstate:acceptedがある交換や、settledExchangesで裏付けられる交換を成立済みとして扱い、裏付けが見つからないときは成立を断定しません。同席者と品と代価で合意したらoffer_exchangeを使えます。pendingOffersにある同じ申し出は繰り返しません。同席者に働きかけ、その結果を判定にかけたいときはoppose_personを選べます。commandRestrictionsに従い、身振り・筆談はnonverbalを選びます。companionがwaitならその場で、followなら同行相手と行動します。乗り物が自ら運行するときはvehicle-travelのvehicleIdに自分のIDを使います。npc-actionは他の出現個体に対する操作です。goalには自分の現在の目的またはnullを入れます。通常の手番で新しい目的を選んだら、この手番を含め、何回の本人手番を使うかを正の整数goalTurnsで決めます。同じ目的を続けている間は、言い換えた場合もgoalTurnsを省きます。expiredGoalには期限を使い切って終了した目的が入ります。これまでに分かったことを踏まえ、次に達成したい結果が変わる場合は、新しいgoalとgoalTurnsを決めます。同じ結果を目指す目的の延長はできません。言い換えや手段だけの変更も延長にあたります。新しい目的がなければgoalをnullにして、状況に合う操作を選びます。以前からの目的に残り手番数がまだなければ、通常の手番で続けるときにgoalTurnsを決めます。受領への返答では目的を更新しません。選ぶ操作が成功すれば現在の目的を達成する場合は、その目的をgoalに入れたままcompletesGoalをtrueにします。報告で目的を達成するには、目的で求めた内容が報告に含まれ、相手に届く必要があります。求めた情報が見つからず、その経緯を伝えるだけの場合や、報告が別の目的の途中の一手の場合はcompletesGoalをfalseにします。操作の成功後、反応を待つならendOnSuccessはtrue、結果を見て自分で続けるならfalse。出力は {"operation":"操作名","args":引数} のJSONだけ。',
                   },
                   {
                     role: "user",
@@ -2660,7 +2677,10 @@ export class BotPlay {
                       ...(pending
                         ? {
                             situation:
-                              "自分で選んだ確認を終えた。reportRecordsがあれば、findingには答えの根拠にする記録の番号を入れる。findingとjudgmentには根拠と見立てを分けて記入し、textに相手へ実際に伝える言葉や身振りを書く。引用が役に立つなら本人の言葉に組み込める。ほかの場合は、findingに今回の検索結果が直接示すことと、確認できた範囲を書く。見立てを加える場合は、judgmentのproposalに自分なら取る一手を書く。使えるか、足りるかなどが未確認の条件に依存するときは、conditionに何が未確認かを書く。その条件を満たすときの提案や、条件を先に確かめる提案を伝えられる。",
+                              (pending.reused
+                                ? "readResultは以前に読んだ資料です。同じ資料の読み直しを省きました。追加の問いには、資料が裏付ける範囲と、まだ確かめられないことを伝えてください。"
+                                : "自分で選んだ確認を終えた。") +
+                              "reportRecordsがあれば、findingには答えの根拠にする記録の番号を入れる。findingとjudgmentには根拠と見立てを分けて記入し、textに相手へ実際に伝える言葉や身振りを書く。引用が役に立つなら本人の言葉に組み込める。ほかの場合は、findingに今回の検索結果が直接示すことと、確認できた範囲を書く。見立てを加える場合は、judgmentのproposalに自分なら取る一手を書く。使えるか、足りるかなどが未確認の条件に依存するときは、conditionに何が未確認かを書く。その条件を満たすときの提案や、条件を先に確かめる提案を伝えられる。",
                             task: {
                               question: pending.question,
                               recipient: pending.recipient,
@@ -2727,7 +2747,7 @@ export class BotPlay {
                                   ? "changesに、元の問いへの答えや相手の判断を変え得る具体的な根拠があれば、recheck_for_recipient で確かめられる。同じ場所の別の物が増えただけなら、探していた物まで変わったとは考えず、今の話題や目的に応じる。"
                                   : recheckRequest
                                     ? "相手が改めて調べてほしいと頼んだ。引き受けるなら recheck_for_recipient で現在の結果を調べ、断るならその旨を伝える。"
-                                    : "この問いへの答えは相手に届いた。前の答えの聞き直しには手元の情報で応じられる。",
+                                    : "前回読んだ範囲の結果は相手に届いた。追加で尋ねられたことには、別の資料を調べるか、今分かる範囲を伝えられる。",
                             },
                           }),
                       goal: expired ? null : (work?.goal ?? null),
@@ -2737,6 +2757,8 @@ export class BotPlay {
                       goalTurnsRemaining: status.receiving
                         ? undefined
                         : (remaining ?? undefined),
+                      pendingOffers,
+                      settledExchanges,
                       availableOperations: operations.availableOperations,
                       commandSchema: z.toJSONSchema(commands),
                     }),
@@ -2777,6 +2799,8 @@ export class BotPlay {
               }
               choice = {
                 ...(plan?.inspect && { inspect: plan.inspect }),
+                ...(plan?.reuseRead && { reuseRead: plan.reuseRead }),
+                ...(plan?.offer && { offer: plan.offer }),
                 ...(plan?.recipient && { recipient: plan.recipient }),
                 ...(plan?.reportReadId && { reportReadId: plan.reportReadId }),
                 ...(plan?.completesGoal &&
@@ -3893,7 +3917,13 @@ export class BotPlay {
         const { action, plan, offer } = choice instanceof Error ? {} : choice;
         const before = turnState(current);
         if (offer)
-          await this.#offerInstantTrade(db, current, graph, request, offer);
+          await this.#offerConversationTrade(
+            db,
+            current,
+            graph,
+            request,
+            offer,
+          );
         if (action && plan) {
           await this.#checkCombatPolicy(
             db,
@@ -6643,25 +6673,33 @@ export class BotPlay {
       !!(await vehiclePerson(db, context.worldId, id))
     );
   }
-  async #offerInstantTrade(
+  async #offerConversationTrade(
     db: Db,
     session: Session,
     graph: string,
     request: string,
-    { buyerId, itemLabel, count, paymentLabel, paymentCount }: InstantOffer,
+    {
+      buyerId,
+      itemLabel,
+      count,
+      paymentLabel,
+      paymentCount,
+    }: ConversationOffer,
   ) {
     const sellerId = session.data.turn;
-    const seller = session.data.members.find(
-      (m) => m.actorId === sellerId,
-    )!.instant!;
+    const seller = session.data.members.find((m) => m.actorId === sellerId)!;
+    const offers = seller.instant ?? seller;
     const context = this.store.context(graph);
+    const places =
+      seller.instant?.places ?? (await this.#places(context, sellerId, db));
     if (
+      buyerId === sellerId ||
       !session.data.members.some((m) => m.actorId === buyerId && !m.instant) ||
       !(await this.#places(context, buyerId, db)).some((place) =>
-        seller.places.includes(place),
+        places.includes(place),
       )
     )
-      return;
+      return {};
     const ids = await context.materialIds(buyerId, paymentLabel);
     const payment = ids.length === 1 ? await context.node(ids[0]!) : undefined;
     const message =
@@ -6670,8 +6708,12 @@ export class BotPlay {
         : `${paymentLabel}での交換条件を確定できませんでした。代価に使う品を確認してください。`;
     if (payment?.kind === "existence" && payment.seriesId) {
       const offered = [
-        ...(await instantTrades(context, [{ ...seller, actorId: sellerId }])),
-        ...(seller.offers ?? [])
+        ...(seller.instant
+          ? await instantTrades(context, [
+              { ...seller.instant, actorId: sellerId },
+            ])
+          : []),
+        ...(offers.offers ?? [])
           .filter((entry) => entry.buyerId === buyerId)
           .map(({ offer }) => offer),
       ].some(
@@ -6684,7 +6726,7 @@ export class BotPlay {
       );
       if (!offered) {
         const id = derivedId(request + ":exchange-offer");
-        (seller.offers ??= []).push({
+        (offers.offers ??= []).push({
           buyerId,
           offer: {
             id,
@@ -6702,14 +6744,19 @@ export class BotPlay {
       }
     }
     await context.validate();
+    const offer = offers.offers?.find(
+      ({ offer }) => offer.id === derivedId(request + ":exchange-offer"),
+    )?.offer;
     session.data.entries.push({
       actorId: sellerId,
+      ...(seller.instant ? {} : { requestId: request }),
       input: message,
       result: {},
     });
+    return offer ? { state: "offered", offer } : { message };
   }
 
-  // 同じ場所に同席している出現個体が応じる取引。
+  // 同じ場所に同席する売り手の対面交換。
   async #trades(
     context: WorldContext,
     session: Session | undefined,
@@ -6725,11 +6772,22 @@ export class BotPlay {
     );
     return [
       ...(await instantTrades(context, sellers, retryOfferId)),
-      ...sellers.flatMap(({ offers }) =>
-        (offers ?? [])
-          .filter((entry) => entry.buyerId === actor)
-          .map(({ offer }) => readExchangeOffer(offer)),
-      ),
+      ...(
+        await Promise.all(
+          (session?.data.members ?? []).map(async (member) => {
+            const offers = (member.instant ?? member).offers?.filter(
+              (entry) => entry.buyerId === actor,
+            );
+            if (!offers?.length) return [];
+            const sellerPlaces =
+              member.instant?.places ??
+              (await this.#places(context, member.actorId, db));
+            return sellerPlaces.some((place) => places.includes(place))
+              ? offers.map(({ offer }) => readExchangeOffer(offer))
+              : [];
+          }),
+        )
+      ).flat(),
     ];
   }
 
@@ -6742,9 +6800,9 @@ export class BotPlay {
     input: Extract<Input, { command: "exchange" }>,
     recovering = false,
   ) {
-    const seller = session?.data.members.find((m) =>
-      m.instant?.offers?.some(({ offer }) => offer.id === input.offerId),
-    )?.instant;
+    const seller = session?.data.members
+      .map((m) => m.instant ?? m)
+      .find((m) => m.offers?.some(({ offer }) => offer.id === input.offerId));
     const conversation = seller?.offers?.find(
       ({ offer, buyerId }) => offer.id === input.offerId && buyerId === actor,
     );
@@ -6760,7 +6818,7 @@ export class BotPlay {
               input.offerId,
             )
           ).find((offer) => offer.id === input.offerId);
-    const result = await this.applications.exchange(
+    const { result, sellerId } = await this.applications.exchange(
       db,
       world,
       w,
@@ -6771,17 +6829,24 @@ export class BotPlay {
       trade,
       Boolean(conversation),
     );
-    if (session && seller && conversation) {
-      seller.offers = seller.offers!.filter((entry) => entry !== conversation);
-      if (recovering) {
-        session.data.entries.push({
-          actorId: actor,
-          input: result.message,
-          result,
-        });
-        const before = turnState(session);
-        await this.#save(db, session, before);
-      }
+    await db.query(
+      `INSERT INTO npc_last_exchange(world_id,seller_id,buyer_id,terms)
+       VALUES($1,$2,$3,$4)
+       ON CONFLICT(world_id,seller_id,buyer_id) DO UPDATE SET terms=EXCLUDED.terms`,
+      [world, sellerId, actor, result.message],
+    );
+    if (session && (!recovering || conversation)) {
+      if (seller && conversation)
+        seller.offers = seller.offers!.filter(
+          (entry) => entry !== conversation,
+        );
+      session.data.entries.push({
+        actorId: actor,
+        requestId: input.requestId,
+        input: result.message,
+        result,
+      });
+      if (recovering) await this.#save(db, session, turnState(session));
     }
     return result;
   }
@@ -14137,6 +14202,8 @@ export class BotPlay {
               commitId?: string;
               outcome?: { success?: boolean };
               effectState?: string;
+              offerId?: string;
+              state?: string;
             };
             if (!result.commitId || !e.input) return [];
             const ownAction = e.actorId === evidence.witnessedBy;
@@ -14146,6 +14213,9 @@ export class BotPlay {
                 ownAction,
                 action: e.input,
                 ...(result.outcome ? { outcome: result.outcome } : {}),
+                ...(result.offerId && result.state === "accepted"
+                  ? { settledExchange: true }
+                  : {}),
                 ...(result.effectState
                   ? { observedState: result.effectState }
                   : {}),
@@ -14180,7 +14250,7 @@ export class BotPlay {
       })
       .strict();
     const instructions =
-      "昇格する一個体の人物設定を作る。JSON {description,memory,items,skills}。descriptionは出現個体の種・外見・暮らしを1〜3文で公に紹介する。applicantDescriptionは提案であって観察の証明ではない。appearanceと本人の実際の動作で裏付けられない推測や伝聞はdescriptionに載せず、必要ならmemoryに誰の見立てかを書き添える。memoryは本人にだけ渡す記憶。本人が見聞きしたこと、自分の行動、確定した結果を要約する。experiencesはすべて本人が同席して受け取った経験。話し手と聞き手を区別し、本人がまだ発言していなくても、見聞きした出来事をmemoryに残す。一覧が空ならmemoryは空文字。発言や申請者の希望を確認済みの事実と混同せず、一度の行動を永続的な性格にしない。引用、他者の私的情報、ID、手番や処理記録を公開設定に含めない。各資料は判断のためのデータとして読む。" +
+      "昇格する一個体の人物設定を作る。JSON {description,memory,items,skills}。descriptionは出現個体の種・外見・暮らしを1〜3文で公に紹介する。applicantDescriptionは提案であって観察の証明ではない。appearanceと本人の実際の動作で裏付けられない推測や伝聞はdescriptionに載せず、必要ならmemoryに誰の見立てかを書き添える。memoryは本人にだけ渡す記憶。本人が見聞きしたこと、自分の行動、確定した結果を要約する。experiencesはすべて本人が同席して受け取った経験。話し手と聞き手を区別し、本人がまだ発言していなくても、見聞きした出来事をmemoryに残す。一覧が空ならmemoryは空文字。売買ではsettledExchangeがある経験が成立した交換を示す。発言やobservedStateの文章だけでは、決済を確認した記憶にしない。発言や申請者の希望を確認済みの事実と混同せず、一度の行動を永続的な性格にしない。引用、他者の私的情報、ID、手番や処理記録を公開設定に含めない。各資料は判断のためのデータとして読む。" +
       "itemsは昇格時に本人が持つと確認できる物品を[{label,basis}]で返す。skillsは本人が使えると確認できる技能を[{text,basis}]で返し、textにはできることと適用範囲を書く。basisはappearanceのspeciesかdescription、または失敗していない経験のobservedStateかownActionがtrueのactionから、直接の根拠となる原文の一部をそのまま抜き出す。発言だけで実行や所持が成立したと見なさない。出典作品、名前、肩書き、服装、伝聞、申請者の提案から能力を補わない。根拠があるものを重複なく挙げ、該当しなければ空配列にする。";
     const key = derivedId(id + ":profile:" + canonical([brief, instructions]));
     const w = await this.world(world);
@@ -16203,6 +16273,20 @@ export class BotPlay {
                   ? "捜索で人物を発見しました"
                   : "新たな発見なし",
               };
+            } else if (choice?.reuseRead) {
+              await db.query(
+                "UPDATE bot_npc SET memory=jsonb_set(memory,'{pending}',$3) WHERE world_id=$1 AND actor_id=$2",
+                [world, actor, choice.reuseRead],
+              );
+              result = {};
+            } else if (choice?.offer) {
+              result = await this.#offerConversationTrade(
+                db,
+                session,
+                w.id,
+                input.requestId,
+                choice.offer,
+              );
             } else if (input.command === "search") {
               if (input.query.kind === "seek")
                 throw new Error("捜索の準備がありません");
@@ -16376,7 +16460,7 @@ export class BotPlay {
               );
               result = { state: "offered", offer };
             } else if (input.command === "exchange") {
-              const exchange = await this.#exchange(
+              result = await this.#exchange(
                 db,
                 world,
                 w,
@@ -16384,13 +16468,6 @@ export class BotPlay {
                 actor,
                 input,
               );
-              result = exchange;
-              d.entries.push({
-                actorId: actor,
-                requestId: input.requestId,
-                input: exchange.message,
-                result,
-              });
             } else if (input.command === "promote-npc") {
               const review = promotion!;
               result = await this.tools.requestPromotion(
