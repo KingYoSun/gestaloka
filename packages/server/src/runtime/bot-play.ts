@@ -6616,22 +6616,37 @@ export class BotPlay {
         ? `${itemLabel}×${count}を${paymentLabel}×${paymentCount}でお譲りします。`
         : `${paymentLabel}での交換条件を確定できませんでした。代価に使う品を確認してください。`;
     if (payment?.kind === "existence" && payment.seriesId) {
-      const id = derivedId(request + ":exchange-offer");
-      (seller.offers ??= []).push({
-        buyerId,
-        offer: {
-          id,
-          itemId: id,
-          sellerId,
-          storageId: sellerId,
-          itemLabel,
-          count,
-          paymentLabel,
-          paymentCount,
-          paymentSeriesId: payment.seriesId,
-          text: message,
-        },
-      });
+      const offered = [
+        ...(await instantTrades(context, [{ ...seller, actorId: sellerId }])),
+        ...(seller.offers ?? [])
+          .filter((entry) => entry.buyerId === buyerId)
+          .map(({ offer }) => offer),
+      ].some(
+        (offer) =>
+          offer.itemLabel === itemLabel &&
+          offer.count === count &&
+          offer.paymentLabel === paymentLabel &&
+          offer.paymentSeriesId === payment.seriesId &&
+          offer.paymentCount === paymentCount,
+      );
+      if (!offered) {
+        const id = derivedId(request + ":exchange-offer");
+        (seller.offers ??= []).push({
+          buyerId,
+          offer: {
+            id,
+            itemId: id,
+            sellerId,
+            storageId: sellerId,
+            itemLabel,
+            count,
+            paymentLabel,
+            paymentCount,
+            paymentSeriesId: payment.seriesId,
+            text: message,
+          },
+        });
+      }
     }
     await context.validate();
     session.data.entries.push({
