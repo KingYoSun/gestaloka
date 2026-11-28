@@ -73,7 +73,7 @@ export function unrolledReasons(outcome: unknown): string[] {
       const guidance = [];
       if (missing.length)
         guidance.push(
-          `材料「${missing.join("」「")}」の候補が見つかりません。手持ち（search --kind self）と現在地（search --kind surroundings）を調べ、使う物品のIDをmaterialsに指定してください。現物がまだなければ、generateのcreateで取得を申請するか、現在地の発見物を拾えます。`,
+          `材料「${missing.join("」「")}」の候補が見つかりません。手持ち（search --kind self）と現在地（search --kind surroundings）を調べ、使う物品のIDをmaterialsに指定してください。現物がまだなければ、取得を申請するか、現在地の発見物を拾えます。取得の申請では command に apply、action.type に generate、action.plans[].operation.type に create を指定してください。`,
         );
       if (ambiguous.length)
         guidance.push(

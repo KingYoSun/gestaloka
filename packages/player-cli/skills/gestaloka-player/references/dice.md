@@ -4,7 +4,7 @@
 
 ## ダイスを振る申請
 
-`apply` の `generate`、`increase-count`、`state`、`oppose`、`seize`、`remove-place-item` では、新しく判定する場合にダイスを振ります。`explore` や `say --npc` にも判定があります。取得した出目は応答の `outcome.roll`、独立した案をまとめた場合は各案の `roll` に表示されます。
+`command` が `apply` で、`action.type` が `generate`、`increase-count`、`state`、`oppose`、`seize`、`remove-place-item` のいずれかなら、新しく判定する場合にダイスを振ります。`explore` や `say --npc` にも判定があります。取得した出目は応答の `outcome.roll`、独立した案をまとめた場合は各案の `roll` に表示されます。
 
 正式改名の `rename` はGM審査のみで、ダイスを使いません。単純な移動・受け渡しの `direct` や、確定済みの付着を外す `detach` は、必要な権限と条件が揃えばダイスなしで成立します。
 
@@ -48,7 +48,7 @@ CLIの `status --scene <シーンID>` では、各行動の `result.thresholdRea
 - **人物の状態**: 対抗判定で、GMは成功時に人物に加わる状態（`outcome.setting.states`）と終了する状態（`outcome.setting.endEdges`）を決める。申請者が `description` に書くのは、外から観察できる結果の案。失敗すれば相手の状態は変わらない。非戦闘地域での扱いと死亡後の復帰は[死亡・怪我・治療](health.md)を参照する。
 - **ファンブル**: 作成の判定と対抗の判定では、GMが失敗の先にある悪い結果として、申請者本人に残る状態を決めることがある（ファンブルを振った判定の `outcome.setting.fumble` の `text`）。GMは、世界のファンブルの基準に従って範囲 `through` を決める。既定の基準では、行動の危険、`text` に書いた進め方、本人の状態と持ち物から決める。ファンブルすると、その状態が本人に残る。`explore` と死亡の判定にファンブルはない。
 - **状態の期限**: GMは、ファンブルの状態と、対抗行動の成功で相手に残る状態に、続く時間（`minutes`、現実の分）を付けることがある。期限のある状態は、本人検索の `material.states[].relation.period.until` に終わる時刻が入り、その時刻を過ぎると現在の状態から外れる。手当てなどで早く終えたいときは、[状態の置き換えや終了](commands.md)を申請する。
-- **時間**: 物品の製作案1件を送る `generate` に `waitMinutes` を付けると、時間をかけるほど成立しやすい申請では判定が緩くなる。成功すると、物品は `arrival.dueAt` を過ぎてから成立する。
+- **時間**: `apply` で `action.type` を `generate` にし、製作案1件にかける時間を `action.waitMinutes` に指定すると、時間をかけるほど成立しやすい申請では判定が緩くなる。成功すると、物品は `arrival.dueAt` を過ぎてから成立する。
 
 ### 登録済みの人物に起きること
 
@@ -97,7 +97,7 @@ CLIの `status --scene <シーンID>` では、各行動の `result.thresholdRea
 
 ### 本人の保管先に直接作る
 
-`generate` の案に次の `operation` を入れる。`holder` に本人が登録した保管先（自宅など）や手に持つ箱を指定すると、作った物はそこに置かれる。
+`apply` の `action.type` を `generate` にし、`action.plans` に入れる案の `operation` を次のように書く。`holder` に本人が登録した保管先（自宅など）や手に持つ箱を指定すると、作った物はそこに置かれる。
 
 ```json
 {
@@ -129,7 +129,7 @@ CLIの `status --scene <シーンID>` では、各行動の `result.thresholdRea
 
 ### 技能を身につける
 
-独立した習得案ごとに、`generate.plans` の案の `operation` に `learn` を入れる。ダイスを振った案と、世界の技能基準で差し戻された案は、それぞれ1 SPを使う。同じ要求IDを再送したときは保存済みの結果が返る。
+`apply` の `action.type` を `generate` にし、`action.plans` に習得案を入れる。それぞれの案の `operation.type` は `learn` にする。ダイスを振った案と、世界の技能基準で差し戻された案は、それぞれ1 SPを使う。同じ要求IDを再送したときは保存済みの結果が返る。
 
 既定では、現実の通信サービスから情報を得るといった、世界の外部と繋がる技能は差し戻される。管理者は世界ごとにこの条件を変更・解除でき、ほかの拒否条件も指定できる。該当した技能案には出目が付かず、結果の `reason` に `SKILL_POLICY_REJECTED`、`message` に理由が入る。その案の元技能と材料は手元に残り、一緒に送ったほかの案は通常どおり判定される。
 
@@ -154,11 +154,11 @@ CLIの `status --scene <シーンID>` では、各行動の `result.thresholdRea
 
 ### 中身を相手や場所に委ねる
 
-祈りや贈り物のように、中身を本人が決めない申請では、`generate` の案を1件にし、委ねる相手と範囲を書く（例: 「泉の精が選ぶ、水にまつわる小さな技能を1つ」）。成功すると、GMが決めた本文で技能や物品が確定する。確定した本文は `outcome.setting.decided` や `search --kind self` で読める。複数案をまとめた申請や `waitMinutes` を付けた申請では、品や技能の中身を申請者が指定する。
+祈りや贈り物のように、中身を本人が決めない申請では、`apply` の `action.type` を `generate` にして `action.plans` に案を1件入れ、委ねる相手と範囲を書く（例: 「泉の精が選ぶ、水にまつわる小さな技能を1つ」）。成功すると、GMが決めた本文で技能や物品が確定する。確定した本文は `outcome.setting.decided` や `search --kind self` で読める。複数案をまとめた申請や `waitMinutes` を付けた申請では、品や技能の中身を申請者が指定する。
 
 ### 時間をかけて取り寄せる
 
-物品を作る案が1件の `generate` に `waitMinutes` を加える。書き方は[世界への申請](commands.md)の「物を使って何かを変える」を読む。
+`apply` の `action.type` を `generate` にし、`action.plans` に物品の製作案を1件、`action.waitMinutes` に待つ時間を分単位で指定する。書き方は[世界への申請](commands.md)の「物を使って何かを変える」を読む。
 
 ### 新しい性質や関係を記録する
 
@@ -207,7 +207,7 @@ CLIの `status --scene <シーンID>` では、各行動の `result.thresholdRea
 | `PERSON_REFERENCE_REQUIRED` | 本人を参照せず、登録済みの人物の身体の一部を得るなど、本人に起きることを作成で確定しようとした。同じ場所で本人のIDを指定して申請する。                                      |
 | `UPDATE_REJECTED`           | 操作が現在の記録と合わない。指定した個数の品がない、`locate` に直接の滞在先を指定していない、など。メッセージで理由を確かめる。                                             |
 
-`MATERIAL_ID_REQUIRED` で製作が止まったら、案ごとの結果で材料名を確認してください。同名の候補が複数ある場合は、使う物品のIDを `materials` に指定します。候補が見つからず、これから材料を入手する場合は[野外で得た物を加工して渡す](commands.md#野外で得た物を加工して渡す)を参照してください。
+`MATERIAL_ID_REQUIRED` で製作が止まったら、案ごとの結果で材料名を確認してください。同名の候補が複数ある場合は、製作の申請（`command` は `apply`、`action.type` は `generate`）の `action.plans[].materials` に使う物品のIDと個数を指定します。候補が見つからず、これから材料を入手する場合は[野外で得た物を加工して渡す](commands.md#野外で得た物を加工して渡す)を参照してください。
 
 ### エラーではない失敗
 
@@ -220,7 +220,7 @@ CLIの `status --scene <シーンID>` では、各行動の `result.thresholdRea
 申請の `text`、操作の `basis`、関係の `text` は、`say` と同じく記述として記録される。GMは判定の材料として読み、他の参加者も読めるが、世界の構造は変えない。
 
 - `basis` に「貸しただけ」と書いても、返却は守られない。物は受け取った存在の物になる。
-- `text` に「空き地に置く」と書いても、物品の所在は変わらない。物を持つ存在は `create` の `holder` か `move` の `to` で決まる。
+- `text` に「空き地に置く」と書いても、物品の所在は変わらない。`apply` で物品を作るときの所持先は `action.plans[].operation.holder`、品を移すときの移動先は `action.operations[].to` に指定する。
 - `text` に「村長の許可を得た」と書いても、受領判断の代わりにはならない。
 
 申請の結果は、応答の `items[].holding` と、`search --kind self` の `belongings` で確かめる。

@@ -17404,7 +17404,7 @@ describe("現場材料", () => {
     });
     const { message } = result.action as { message: string };
     expect(message.split("\n")[1]).toMatch(
-      /search --kind self.*search --kind surroundings.*generateのcreate.*「船体」には同名の候補が複数.*IDをmaterialsに指定/,
+      /search --kind self.*search --kind surroundings.*command に apply.*action\.type に generate.*action\.plans\[\]\.operation\.type に create.*「船体」には同名の候補が複数.*IDをmaterialsに指定/,
     );
     expect(message.split("\n")).toEqual([
       expect.stringContaining("「交易船」を手元に置きました"),
@@ -22940,6 +22940,7 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
           readResult?: unknown;
           completedWork: {
             priorResult: string;
+            changes?: { field: string; before: unknown; after: unknown }[];
             recheckRequest?: { id: string; text: string };
           };
           availableOperations: { name: string }[];
@@ -22980,7 +22981,8 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
   const reporting = await choose("report_and_pass", {
     goal: "相手に荷受け場所を伝える",
     completesGoal: true,
-    finding: reply.text,
+    finding: "場所の記録では広場と確認できた。",
+    text: reply.text,
     judgment: null,
     mode: reply.mode,
   });
@@ -23061,11 +23063,16 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
   await f.send(0, { command: "end-turn" });
   const changed = await choose("recheck_for_recipient", { goalTurns: 3 });
   expect(changed.completedWork.priorResult).toBe("visible-result-changed");
+  expect(JSON.stringify(changed.completedWork.changes)).toContain(
+    "渡し場の荷受け所",
+  );
+  expect(JSON.stringify(changed.completedWork.changes)).toContain(notice);
   expect((await memory()).pending.readId).not.toBe(firstRead);
   const second = await choose("report_and_pass", {
     completesGoal: false,
     mode: "voice",
     finding: [1],
+    text: "次は渡し場です。皆にも伝えておきましょうか。",
     judgment: {
       condition: "すべての受取人に届いたかは分かりません。",
       proposal: "場所を知らせておくとよさそうです。",
@@ -23078,9 +23085,7 @@ test("サーバーNPCは確認結果が相手の履歴に載ると用事を閉�
     goalTurnsRemaining: 2,
   });
   expect(updated.recordId).not.toBe(done.completed.recordId);
-  expect(updated.answer).toBe(
-    `記録には「${notice}」とあります。\n私の見立てでは、すべての受取人に届いたかは分かりません。\n場所を知らせておくとよさそうです。`,
-  );
+  expect(updated.answer).toBe("次は渡し場です。皆にも伝えておきましょうか。");
   const updatedHistory = await access.botPlay.history(f.world, peer);
   expect(
     updatedHistory.entries.find(({ id }) => id === updated.recordId)?.payload
@@ -23219,6 +23224,58 @@ async function serverNpcScene(receiving = false) {
   };
   return { ...f, peer, npc, application, exhaust };
 }
+
+test("サーバーNPCの対抗操作を既存の申請として裁定し、同席者へ状態と判定結果を届ける", async () => {
+  const f = await serverNpcScene();
+  const text = "練習の組み手で相手を枠の外へ押そうとする。";
+  const state = "枠の外へ片足をついた。";
+  f.calls.mockImplementation(async (id, role) => {
+    if (role === "world-opposition-dice")
+      return answer(id, {
+        ...sure,
+        states: [{ id: f.peer, text: state, minutes: 5 }],
+      });
+    expect(role).toBe("world-server-npc");
+    return answer(id, {
+      operation: "oppose_person",
+      args: {
+        goal: null,
+        targetId: f.peer,
+        text,
+        description: state,
+        endOnSuccess: true,
+      },
+    });
+  });
+  await access.botPlay.tickNpcs(f.world);
+  const { entries } = await access.botPlay.history(f.world, f.peer);
+  expect(
+    entries.flatMap(({ payload }) => payload.entries ?? []),
+  ).toContainEqual(
+    expect.objectContaining({
+      actorId: f.npc,
+      result: expect.objectContaining({
+        action: expect.objectContaining({ command: "oppose" }),
+        effectState: state,
+        outcome: expect.objectContaining({ success: true }),
+      }),
+    }),
+  );
+  const {
+    rows: [request],
+  } = await isolated.databases.postgres.query<{ id: string }>(
+    "SELECT id FROM bot_request WHERE world_id=$1 AND actor_id=$2 AND command='oppose'",
+    [f.world, f.npc],
+  );
+  const receipt = await f.store.receipt(f.graph, request!.id);
+  expect(receipt?.changes.edges).toContainEqual(
+    expect.objectContaining({
+      kind: "status",
+      source: f.peer,
+      target: derivedId(request!.id + ":state"),
+    }),
+  );
+});
 
 test("相手の非公開状態の変更だけではNPCに内容を渡さず、報告済みの確認を開き直さない", async () => {
   const f = await serverNpcScene();
